@@ -1,16 +1,13 @@
 /**
- * File Browser API Client
- *
- * API client for browsing and reading project files.
- * Follows patterns from lib/api/explorer.ts.
+ * File browser API client.
  */
 
-import { buildQueryString, fetchWithErrorHandling } from './utils'
 import { getApiBaseUrl } from '../api-config'
+import { buildQueryString, fetchWithErrorHandling, throwFromResponse } from './utils'
 
-// ============================================================================
-// Types
-// ============================================================================
+export type FileBrowserScope =
+  | { kind: 'project'; projectId: string }
+  | { kind: 'workspace' }
 
 export interface FileTreeEntry {
   name: string
@@ -39,28 +36,67 @@ export interface FileContentResponse {
   truncated: boolean
 }
 
-// ============================================================================
-// API Functions
-// ============================================================================
+export interface FileUploadResponse {
+  path: string
+  directory: string
+  name: string
+  size: number
+}
+
+function getFilesApiBase(scope: FileBrowserScope): string {
+  const apiBase = getApiBaseUrl()
+  if (scope.kind === 'project') {
+    return `${apiBase}/api/projects/${scope.projectId}/files`
+  }
+  return `${apiBase}/api/files`
+}
+
+export function getFileScopeKey(scope: FileBrowserScope): string {
+  return scope.kind === 'project' ? `project:${scope.projectId}` : 'workspace'
+}
 
 export function fetchFileTree(
-  projectId: string,
+  scope: FileBrowserScope,
   path: string = '',
 ): Promise<FileTreeResponse> {
   const qs = buildQueryString({ path: path || undefined })
   return fetchWithErrorHandling<FileTreeResponse>(
-    `${getApiBaseUrl()}/api/projects/${projectId}/files/tree${qs}`,
+    `${getFilesApiBase(scope)}/tree${qs}`,
     { errorMessage: 'Failed to load file tree' },
   )
 }
 
 export function fetchFileContent(
-  projectId: string,
+  scope: FileBrowserScope,
   path: string,
 ): Promise<FileContentResponse> {
   const qs = buildQueryString({ path })
   return fetchWithErrorHandling<FileContentResponse>(
-    `${getApiBaseUrl()}/api/projects/${projectId}/files/content${qs}`,
+    `${getFilesApiBase(scope)}/content${qs}`,
     { errorMessage: 'Failed to load file content' },
   )
+}
+
+export function getFileDownloadUrl(scope: FileBrowserScope, path: string): string {
+  const qs = buildQueryString({ path })
+  return `${getFilesApiBase(scope)}/download${qs}`
+}
+
+export async function uploadFile(
+  scope: FileBrowserScope,
+  directoryPath: string,
+  file: File,
+): Promise<FileUploadResponse> {
+  const formData = new FormData()
+  formData.append('upload', file)
+
+  const qs = buildQueryString({ path: directoryPath || undefined })
+  const response = await fetch(`${getFilesApiBase(scope)}/upload${qs}`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!response.ok) {
+    await throwFromResponse(response, 'Failed to upload file')
+  }
+  return response.json() as Promise<FileUploadResponse>
 }

@@ -215,7 +215,14 @@ def main(argv: list[str]) -> int:
         infos = [info for info in infos if info.cwd.expanduser().resolve() == target_cwd]
 
     for info in infos:
-        if not should_sync(info.path, info.mtime, info.size, state, args.force):
+        if not should_sync(
+            info.path,
+            info.mtime,
+            info.size,
+            state,
+            args.force,
+            close_session=args.close,
+        ):
             continue
         ok, detail, status = sync_transcript(
             info=info, state=state, api_url=DEFAULT_API,

@@ -58,12 +58,22 @@ def update_state_entry(
     }
 
 
-def should_sync(path: Path, mtime: float, size: int, state: dict[str, object], force: bool) -> bool:
+def should_sync(
+    path: Path,
+    mtime: float,
+    size: int,
+    state: dict[str, object],
+    force: bool,
+    *,
+    close_session: bool = False,
+) -> bool:
     if force:
         return True
     entry = get_state_entry(path, state)
     if entry is None:
         return True
+    if close_session:
+        return entry.get("status") != "terminal"
     if entry.get("status") == "terminal":
         return False
     if _entry_is_permanent_error(entry):

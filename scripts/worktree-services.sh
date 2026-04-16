@@ -123,15 +123,38 @@ parse_args() {
     fi
 }
 
-# Fetch service configuration from API
+# Build worktree config directly from repo-local project identity + service templates
+build_local_config() {
+    local project_id="$1"
+    local project_root=""
+    project_root="$(resolve_project_root "$project_id" 2>/dev/null || true)"
+
+    local py
+    py=$(find_venv_python || command -v python3 || true)
+    [ -n "$py" ] || return 1
+
+    local cmd=("$py" -m app.worktree_service_config --project "$project_id")
+    if [ -n "$project_root" ]; then
+        cmd+=(--root "$project_root")
+    fi
+
+    PYTHONPATH="${SUMMITFLOW_ROOT_OVERRIDE}/backend${PYTHONPATH:+:${PYTHONPATH}}" "${cmd[@]}"
+}
+
+# Fetch service configuration, preferring repo-local identity over API indirection
 fetch_config() {
     local project_id="$1"
-    local config_url="${API_BASE_URL}/api/projects/${project_id}/services"
+    local response=""
 
-    local response
+    if response=$(build_local_config "$project_id" 2>/dev/null); then
+        echo "$response"
+        return 0
+    fi
+
+    local config_url="${API_BASE_URL}/api/projects/${project_id}/services"
     response=$(curl -sf "$config_url" 2>/dev/null) || {
-        echo -e "${RED}Error: Failed to fetch config from ${config_url}${NC}" >&2
-        echo -e "${RED}Make sure SummitFlow API is running and project exists.${NC}" >&2
+        echo -e "${RED}Error: Failed to derive local config and failed to fetch ${config_url}${NC}" >&2
+        echo -e "${RED}Make sure project identity exists or SummitFlow API is running.${NC}" >&2
         exit 1
     }
 
@@ -150,6 +173,13 @@ get_service_prop() {
     local service="$2"
     local prop="$3"
     echo "$config" | jq -r ".services.\"${service}\".${prop} // empty"
+}
+
+get_service_prop_json() {
+    local config="$1"
+    local service="$2"
+    local prop="$3"
+    echo "$config" | jq -c ".services.\"${service}\".${prop} // empty"
 }
 
 # Calculate deterministic port offset from task ID using MD5
@@ -200,11 +230,29 @@ venv_is_usable() {
 # Check if a port is in use
 check_port() {
     local port="$1"
-    if nc -z localhost "$port" 2>/dev/null; then
-        return 0  # Port is in use
-    else
-        return 1  # Port is available
+    if command -v nc >/dev/null 2>&1; then
+        if nc -z 127.0.0.1 "$port" 2>/dev/null; then
+            return 0  # Port is in use
+        fi
     fi
+
+    local py
+    py=$(command -v python3 || true)
+    [ -n "$py" ] || return 1
+
+    "$py" - "$port" <<'PY' >/dev/null 2>&1
+import socket
+import sys
+
+sock = socket.socket()
+sock.settimeout(0.5)
+try:
+    sock.connect(("127.0.0.1", int(sys.argv[1])))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
 }
 
 # Get worktree path (per-project: /srv/workspaces/lanes/<project-id>/<task-id>/ when available)
@@ -224,11 +272,238 @@ get_pid_dir() {
     echo "${worktree_path}/.pids"
 }
 
-# Substitute {port} placeholder in command
-substitute_port() {
+expand_runtime_value() {
+    local raw_value="$1"
+    local expanded_value=""
+    eval "expanded_value=\"$raw_value\""
+    printf '%s' "$expanded_value"
+}
+
+# Substitute legacy placeholders in command strings
+substitute_placeholders() {
     local command="$1"
     local port="$2"
-    echo "${command//\{port\}/$port}"
+    local backend_port="$3"
+    local frontend_port="$4"
+    local worktree_root="$5"
+    command="${command//\{port\}/$port}"
+    command="${command//\{backend_port\}/$backend_port}"
+    command="${command//\{frontend_port\}/$frontend_port}"
+    command="${command//\{worktree_root\}/$worktree_root}"
+    echo "$command"
+}
+
+get_saved_port() {
+    local worktree_path="$1"
+    local service_name="$2"
+    local ports_file="${worktree_path}/ports.json"
+    [ -f "$ports_file" ] || return 0
+    echo "$(<"$ports_file")" | jq -r --arg key "${service_name}_port" '.[$key] // empty'
+}
+
+resolve_service_port() {
+    local config="$1"
+    local task_id="$2"
+    local service_name="$3"
+    local worktree_path="$4"
+
+    local saved_port
+    saved_port=$(get_saved_port "$worktree_path" "$service_name")
+    if [[ "$saved_port" =~ ^[0-9]+$ ]]; then
+        echo "$saved_port"
+        return 0
+    fi
+
+    local port_base port_range
+    port_base=$(get_service_prop "$config" "$service_name" "worktree_port_base")
+    port_range=$(get_service_prop "$config" "$service_name" "worktree_port_range")
+    [ -n "$port_base" ] || return 0
+    get_worktree_port "$task_id" "$port_base" "$port_range"
+}
+
+copy_repo_relative_env_file() {
+    local worktree_path="$1"
+    local repo_relative="$2"
+    local target="${worktree_path}/${repo_relative}"
+    [ -f "$target" ] && return 0
+
+    local project_root=""
+    project_root="$(resolve_project_root "$PROJECT_ID" 2>/dev/null || true)"
+    [ -n "$project_root" ] || return 0
+
+    local source="${project_root}/${repo_relative}"
+    [ -f "$source" ] || return 0
+
+    mkdir -p "$(dirname "$target")"
+    cp "$source" "$target"
+}
+
+copy_legacy_env_file() {
+    local worktree_path="$1"
+    local cwd="$2"
+    local env_file="$3"
+    local service_dir="$worktree_path"
+    if [ -n "$cwd" ]; then
+        service_dir="${worktree_path}/${cwd}"
+    fi
+    [ -f "${service_dir}/${env_file}" ] && return 0
+
+    local project_root=""
+    project_root="$(resolve_project_root "$PROJECT_ID" 2>/dev/null || true)"
+    local main_env_candidates=(
+        "${project_root}/${cwd}/${env_file}"
+        "${project_root}/${env_file}"
+        "${HOME}/${cwd}/${env_file}"
+    )
+    local candidate
+    for candidate in "${main_env_candidates[@]}"; do
+        if [ -f "$candidate" ]; then
+            cp "$candidate" "${service_dir}/${env_file}"
+            break
+        fi
+    done
+}
+
+prepare_node_workspace() {
+    local worktree_path="$1"
+    local cwd="$2"
+    local project_root=""
+    project_root="$(resolve_project_root "$PROJECT_ID" 2>/dev/null || true)"
+    [ -n "$project_root" ] || return 0
+
+    local py
+    py=$(find_venv_python || command -v python3 || true)
+    [ -n "$py" ] || return 0
+
+    local cmd=(
+        "$py" -m app.worktree_node_workspace
+        --lane-root "$worktree_path"
+        --main-root "$project_root"
+    )
+    if [ -n "$cwd" ]; then
+        cmd+=(--cwd "$cwd")
+    fi
+
+    local prep_json
+    prep_json=$(
+        PYTHONPATH="${SUMMITFLOW_ROOT_OVERRIDE}/backend${PYTHONPATH:+:${PYTHONPATH}}" "${cmd[@]}"
+    )
+
+    local removed_count materialized_count needs_install
+    removed_count=$(echo "$prep_json" | jq '.removed_node_modules_symlinks | length')
+    materialized_count=$(echo "$prep_json" | jq '.materialized_file_dependency_links | length')
+    needs_install=$(echo "$prep_json" | jq -r '.needs_install')
+
+    if [ "$removed_count" -gt 0 ]; then
+        echo -e "${YELLOW}Removed ${removed_count} escaped/broken node_modules symlink(s).${NC}" >&2
+    fi
+    if [ "$materialized_count" -gt 0 ]; then
+        echo -e "${YELLOW}Materialized ${materialized_count} file: dependency link(s).${NC}" >&2
+    fi
+
+    echo "$needs_install"
+}
+
+latest_tree_mtime() {
+    local path="$1"
+    shift || true
+    [ -e "$path" ] || return 0
+
+    if [ -f "$path" ]; then
+        stat -c '%Y' "$path" 2>/dev/null || echo 0
+        return 0
+    fi
+
+    find "$path" -type f "$@" -printf '%T@\n' 2>/dev/null | sort -nr | head -1 || true
+}
+
+mtime_is_greater() {
+    local left="${1:-0}"
+    local right="${2:-0}"
+    awk -v left="$left" -v right="$right" 'BEGIN { exit !(left > right) }'
+}
+
+node_latest_build_mtime() {
+    local service_dir="$1"
+    local command="$2"
+
+    if [[ "$command" == *"next start"* ]] && [ -f "${service_dir}/.next/BUILD_ID" ]; then
+        stat -c '%Y' "${service_dir}/.next/BUILD_ID" 2>/dev/null || echo 0
+        return 0
+    fi
+
+    local latest=0 candidate
+    for candidate in \
+        "$(latest_tree_mtime "${service_dir}/.next")" \
+        "$(latest_tree_mtime "${service_dir}/dist")" \
+        "$(latest_tree_mtime "${service_dir}/build")"
+    do
+        if mtime_is_greater "$candidate" "$latest"; then
+            latest="$candidate"
+        fi
+    done
+    echo "${latest:-0}"
+}
+
+node_latest_source_mtime() {
+    local worktree_path="$1"
+    local service_dir="$2"
+    local latest=0 candidate path
+
+    for path in \
+        "$service_dir" \
+        "${worktree_path}/package.json" \
+        "${worktree_path}/pnpm-workspace.yaml" \
+        "${worktree_path}/pnpm-lock.yaml" \
+        "${worktree_path}/packages"
+    do
+        [ -e "$path" ] || continue
+        candidate=$(latest_tree_mtime \
+            "$path" \
+            ! -path '*/node_modules/*' \
+            ! -path '*/.next/*' \
+            ! -path '*/dist/*' \
+            ! -path '*/build/*' \
+            ! -path '*/coverage/*' \
+            ! -path '*/.turbo/*')
+        if mtime_is_greater "$candidate" "$latest"; then
+            latest="$candidate"
+        fi
+    done
+
+    echo "${latest:-0}"
+}
+
+node_build_required() {
+    local service_dir="$1"
+    local worktree_path="$2"
+    local command="$3"
+
+    if [ -d "${service_dir}/.next" ] && [ ! -f "${service_dir}/.next/BUILD_ID" ]; then
+        return 0
+    fi
+
+    local build_mtime source_mtime
+    build_mtime=$(node_latest_build_mtime "$service_dir" "$command")
+    if [ -z "$build_mtime" ] || [ "$build_mtime" = "0" ]; then
+        return 0
+    fi
+
+    source_mtime=$(node_latest_source_mtime "$worktree_path" "$service_dir")
+    mtime_is_greater "$source_mtime" "$build_mtime"
+}
+
+launch_service_process() {
+    local command="$1"
+    local log_file="$2"
+    local shell_command="exec ${command}"
+
+    if command -v setsid >/dev/null 2>&1; then
+        setsid bash -lc "$shell_command" </dev/null > "$log_file" 2>&1 &
+    else
+        nohup bash -lc "$shell_command" </dev/null > "$log_file" 2>&1 &
+    fi
+    echo $!
 }
 
 # Start a single service
@@ -241,17 +516,20 @@ start_service() {
     local log_dir="$6"
 
     # Get service configuration
-    local command port_base port_range cwd env_file build_command
+    local command cwd env_file build_command install_command env_files_json environment_json
     command=$(get_service_prop "$config" "$service_name" "command")
-    port_base=$(get_service_prop "$config" "$service_name" "worktree_port_base")
-    port_range=$(get_service_prop "$config" "$service_name" "worktree_port_range")
     cwd=$(get_service_prop "$config" "$service_name" "cwd")
     env_file=$(get_service_prop "$config" "$service_name" "env_file")
     build_command=$(get_service_prop "$config" "$service_name" "build_command")
+    install_command=$(get_service_prop "$config" "$service_name" "install_command")
+    env_files_json=$(get_service_prop_json "$config" "$service_name" "env_files")
+    environment_json=$(get_service_prop_json "$config" "$service_name" "environment")
 
-    # Calculate port
-    local port
-    port=$(get_worktree_port "$task_id" "$port_base" "$port_range")
+    # Resolve ports, preferring persisted claim-time allocation
+    local port backend_port frontend_port
+    port=$(resolve_service_port "$config" "$task_id" "$service_name" "$worktree_path")
+    backend_port=$(resolve_service_port "$config" "$task_id" "backend" "$worktree_path")
+    frontend_port=$(resolve_service_port "$config" "$task_id" "frontend" "$worktree_path")
 
     # Determine service directory
     local service_dir="$worktree_path"
@@ -273,7 +551,7 @@ start_service() {
     fi
 
     # Handle Python venv setup for backend-like services
-    if [[ "$command" == *"uvicorn"* ]] || [[ "$command" == *"python"* ]]; then
+    if [ -f "${service_dir}/pyproject.toml" ] || [ -f "${service_dir}/setup.py" ]; then
         if ! venv_is_usable "$service_dir"; then
             echo -e "${YELLOW}Creating venv...${NC}"
             rm -rf "${service_dir}/.venv"
@@ -286,40 +564,43 @@ start_service() {
         fi
     fi
 
-    # Handle npm install for frontend-like services
-    if [[ "$command" == *"npm"* ]]; then
-        if [ ! -d "${service_dir}/node_modules" ]; then
+    # Handle node dependency install/build for frontend-like services
+    if [ -f "${service_dir}/package.json" ]; then
+        local node_workspace_needs_install="false"
+        node_workspace_needs_install=$(prepare_node_workspace "$worktree_path" "$cwd")
+        if [ ! -d "${service_dir}/node_modules" ] || [ "$node_workspace_needs_install" = "true" ]; then
             echo -e "${YELLOW}Installing npm deps...${NC}"
-            (cd "$service_dir" && npm install)
+            if [ -z "$install_command" ]; then
+                if [ -f "${service_dir}/pnpm-lock.yaml" ] || [ -f "${worktree_path}/pnpm-workspace.yaml" ]; then
+                    install_command="pnpm install"
+                else
+                    install_command="npm install"
+                fi
+            fi
+            (cd "$service_dir" && CI=true eval "$install_command")
         fi
         # Run build command if specified and no build output exists
-        if [ -n "$build_command" ] && [ ! -d "${service_dir}/.next" ] && [ ! -d "${service_dir}/dist" ] && [ ! -d "${service_dir}/build" ]; then
+        if [ -n "$build_command" ] && node_build_required "$service_dir" "$worktree_path" "$command"; then
             echo -e "${YELLOW}Building...${NC}"
-            (cd "$service_dir" && eval "$build_command")
+            (cd "$service_dir" && CI=true eval "$build_command")
         fi
     fi
 
-    # Copy env file if specified and not present
-    if [ -n "$env_file" ] && [ ! -f "${service_dir}/${env_file}" ]; then
-        # Try to find source env file from main project
-        local project_root=""
-        project_root="$(resolve_project_root "$PROJECT_ID" 2>/dev/null || true)"
-        local main_env_candidates=(
-            "${project_root}/${cwd}/${env_file}"
-            "${project_root}/${env_file}"
-            "${HOME}/${cwd}/${env_file}"
-        )
-        for candidate in "${main_env_candidates[@]}"; do
-            if [ -f "$candidate" ]; then
-                cp "$candidate" "${service_dir}/${env_file}"
-                break
-            fi
-        done
+    # Copy declared env files into the worktree if needed
+    local repo_env_file
+    while IFS= read -r repo_env_file; do
+        [ -n "$repo_env_file" ] || continue
+        copy_repo_relative_env_file "$worktree_path" "$repo_env_file"
+    done < <(echo "$env_files_json" | jq -r '.[]?')
+
+    # Legacy single env_file support
+    if [ -n "$env_file" ]; then
+        copy_legacy_env_file "$worktree_path" "$cwd" "$env_file"
     fi
 
-    # Substitute port in command
+    # Substitute legacy placeholders in command
     local final_command
-    final_command=$(substitute_port "$command" "$port")
+    final_command=$(substitute_placeholders "$command" "$port" "$backend_port" "$frontend_port" "$worktree_path")
 
     # Start the service
     (
@@ -333,13 +614,48 @@ start_service() {
 
         # Set environment variables
         export PORT="$port"
+        export WORKTREE_ROOT="$worktree_path"
         export WORKTREE_MODE=1
         export WORKTREE_TASK_ID="$task_id"
+        export SF_WORKTREE_BACKEND_PORT="${backend_port:-0}"
+        export SF_WORKTREE_FRONTEND_PORT="${frontend_port:-0}"
         load_shared_env
+        export SF_COMMAND_GUARD_DISABLE=1
 
-        # Run the service
-        nohup bash -c "$final_command" > "${log_dir}/${service_name}.log" 2>&1 &
-        echo $! > "${pid_dir}/${service_name}.pid"
+        # Source repo-local env files after shared env so lane-local overrides win
+        while IFS= read -r repo_env_file; do
+            [ -n "$repo_env_file" ] || continue
+            if [ -f "${WORKTREE_ROOT}/${repo_env_file}" ]; then
+                set -a
+                # shellcheck disable=SC1090
+                source "${WORKTREE_ROOT}/${repo_env_file}"
+                set +a
+            fi
+        done < <(echo "$env_files_json" | jq -r '.[]?')
+
+        # Legacy single env_file support
+        if [ -n "$env_file" ]; then
+            local legacy_env_path="${service_dir}/${env_file}"
+            if [ -f "$legacy_env_path" ]; then
+                set -a
+                # shellcheck disable=SC1090
+                source "$legacy_env_path"
+                set +a
+            fi
+        fi
+
+        # Template-derived environment exports
+        while IFS= read -r entry; do
+            [ -n "$entry" ] || continue
+            local key="${entry%%=*}"
+            local value="${entry#*=}"
+            local expanded_value
+            expanded_value=$(expand_runtime_value "$value")
+            export "$key=$expanded_value"
+        done < <(echo "$environment_json" | jq -r 'to_entries[]? | "\(.key)=\(.value)"')
+
+        # Run the service fully detached so it survives launcher shell exit
+        launch_service_process "$final_command" "${log_dir}/${service_name}.log" > "${pid_dir}/${service_name}.pid"
     )
 
     echo -e "${GREEN}Started (PID: $(cat "${pid_dir}/${service_name}.pid"))${NC}"
@@ -387,10 +703,8 @@ start_services() {
     service_names=$(get_service_names "$config")
 
     for service_name in $service_names; do
-        local port_base port_range port
-        port_base=$(get_service_prop "$config" "$service_name" "worktree_port_base")
-        port_range=$(get_service_prop "$config" "$service_name" "worktree_port_range")
-        port=$(get_worktree_port "$task_id" "$port_base" "$port_range")
+        local port
+        port=$(resolve_service_port "$config" "$task_id" "$service_name" "$worktree_path")
 
         ports_json="${ports_json},\"${service_name}_port\":${port}"
 
@@ -407,10 +721,8 @@ start_services() {
     echo ""
     echo "URLs:"
     for service_name in $service_names; do
-        local port_base port_range port
-        port_base=$(get_service_prop "$config" "$service_name" "worktree_port_base")
-        port_range=$(get_service_prop "$config" "$service_name" "worktree_port_range")
-        port=$(get_worktree_port "$task_id" "$port_base" "$port_range")
+        local port
+        port=$(resolve_service_port "$config" "$task_id" "$service_name" "$worktree_path")
         echo "  ${service_name}: http://localhost:${port}"
     done
     echo ""
@@ -441,7 +753,7 @@ stop_services() {
             local pid
             pid=$(cat "$pid_file")
             echo -n "Stopping ${service_name} (PID: $pid)... "
-            if kill "$pid" 2>/dev/null; then
+            if kill -- "-${pid}" 2>/dev/null || kill "$pid" 2>/dev/null; then
                 echo -e "${GREEN}Stopped${NC}"
                 stopped=$((stopped + 1))
             else
@@ -485,10 +797,8 @@ check_status() {
     service_names=$(get_service_names "$config")
 
     for service_name in $service_names; do
-        local port_base port_range port
-        port_base=$(get_service_prop "$config" "$service_name" "worktree_port_base")
-        port_range=$(get_service_prop "$config" "$service_name" "worktree_port_range")
-        port=$(get_worktree_port "$task_id" "$port_base" "$port_range")
+        local port
+        port=$(resolve_service_port "$config" "$task_id" "$service_name" "$worktree_path")
 
         local pid_file="${pid_dir}/${service_name}.pid"
 
@@ -517,10 +827,8 @@ check_status() {
     echo ""
     echo "URLs:"
     for service_name in $service_names; do
-        local port_base port_range port
-        port_base=$(get_service_prop "$config" "$service_name" "worktree_port_base")
-        port_range=$(get_service_prop "$config" "$service_name" "worktree_port_range")
-        port=$(get_worktree_port "$task_id" "$port_base" "$port_range")
+        local port
+        port=$(resolve_service_port "$config" "$task_id" "$service_name" "$worktree_path")
         echo "  ${service_name}: http://localhost:${port}"
     done
 }
@@ -536,15 +844,15 @@ show_ports() {
     # Fetch configuration
     local config
     config=$(fetch_config "$project_id")
+    local worktree_path
+    worktree_path=$(get_worktree_path "$task_id")
 
     local service_names
     service_names=$(get_service_names "$config")
 
     for service_name in $service_names; do
-        local port_base port_range port
-        port_base=$(get_service_prop "$config" "$service_name" "worktree_port_base")
-        port_range=$(get_service_prop "$config" "$service_name" "worktree_port_range")
-        port=$(get_worktree_port "$task_id" "$port_base" "$port_range")
+        local port
+        port=$(resolve_service_port "$config" "$task_id" "$service_name" "$worktree_path")
 
         echo "  ${service_name}: ${port}"
     done
@@ -552,20 +860,16 @@ show_ports() {
     echo ""
     echo "URLs:"
     for service_name in $service_names; do
-        local port_base port_range port
-        port_base=$(get_service_prop "$config" "$service_name" "worktree_port_base")
-        port_range=$(get_service_prop "$config" "$service_name" "worktree_port_range")
-        port=$(get_worktree_port "$task_id" "$port_base" "$port_range")
+        local port
+        port=$(resolve_service_port "$config" "$task_id" "$service_name" "$worktree_path")
         echo "  ${service_name}: http://localhost:${port}"
     done
 
     echo ""
     echo "Port status:"
     for service_name in $service_names; do
-        local port_base port_range port
-        port_base=$(get_service_prop "$config" "$service_name" "worktree_port_base")
-        port_range=$(get_service_prop "$config" "$service_name" "worktree_port_range")
-        port=$(get_worktree_port "$task_id" "$port_base" "$port_range")
+        local port
+        port=$(resolve_service_port "$config" "$task_id" "$service_name" "$worktree_path")
 
         if check_port "$port"; then
             echo -e "  ${service_name}: ${YELLOW}In use${NC}"

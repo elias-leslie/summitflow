@@ -1,38 +1,38 @@
-'use client'
+"use client"
 
 import { FolderOpen } from 'lucide-react'
 import { Breadcrumb, type BreadcrumbItem } from '@/components/ui/breadcrumb'
 
 interface FileBreadcrumbProps {
-  projectId: string
+  rootLabel: string
+  rootHref: string
   filePath: string
   className?: string
 }
 
 export function FileBreadcrumb({
-  projectId,
+  rootLabel,
+  rootHref,
   filePath,
   className,
 }: FileBreadcrumbProps) {
   const segments = filePath.split('/')
   const items: BreadcrumbItem[] = [
     {
-      label: projectId,
-      href: `/projects/${projectId}/files`,
+      label: rootLabel,
+      href: rootHref,
       icon: <FolderOpen className="h-3.5 w-3.5" />,
     },
   ]
 
-  // Build breadcrumb items from path segments
-  for (let i = 0; i < segments.length; i++) {
-    const segment = segments[i]
-    const isLast = i === segments.length - 1
-    const segmentPath = segments.slice(0, i + 1).join('/')
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index]
+    const isLast = index === segments.length - 1
+    const segmentPath = segments.slice(0, index + 1).join('/')
 
     items.push({
       label: segment,
-      // Last item has no link (rendered as current page by Breadcrumb)
-      href: isLast ? undefined : `/projects/${projectId}/files?path=${encodeURIComponent(segmentPath)}`,
+      href: isLast ? undefined : `${rootHref}?path=${encodeURIComponent(segmentPath)}`,
     })
   }
 

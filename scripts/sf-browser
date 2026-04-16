@@ -8,7 +8,7 @@
 #   sf-browser health                           Check engine status
 #   sf-browser open <url>                       Open URL (Chrome, 1600x900 viewport)
 #   sf-browser screenshot [path]                Screenshot current page
-#   sf-browser check <url> [screenshot-path]    Open + screenshot + console errors
+#   sf-browser check <url> [screenshot-path]    Open + responsive screenshots + console errors
 #   sf-browser snapshot                         Accessibility tree
 #   sf-browser eval <js>                        Run JavaScript
 #   sf-browser [command] [args...]              Standardized browser interface
@@ -43,11 +43,13 @@ Behavior:
   sf-browser is the canonical SummitFlow interface for browser UI verification.
   It standardizes remote CDP attachment, engine selection, default viewport,
   submit-button handling, and tab cleanup for all agents.
+  Standard responsive audit set for `check`: desktop `1600x900`,
+  narrow desktop `1180x900`, and mobile `390x844` unless overridden by env.
   It also prunes stale orphaned agent-browser helpers before each run.
 
 Built-in commands:
   health      Report remote Chrome and Lightpanda engine health
-  check       Open a URL, capture a screenshot, and report console/network issues
+  check       Open a URL, capture desktop/narrow/mobile screenshots, and report console/network issues
   update      Show the managed browser package version and upgrade instructions
 
 Forwarded commands:
@@ -182,6 +184,26 @@ generate_check_session_name() {
 
 close_current_tab() {
     "$AGENT_BROWSER_BIN" --cdp "$WS" "$@" tab close >/dev/null 2>&1 || true
+}
+
+with_screenshot_suffix() {
+    local path="$1"
+    local suffix="$2"
+    local filename="${path##*/}"
+    local dirname="${path%/*}"
+    local stem="$path"
+    local ext=""
+
+    if [[ "$dirname" == "$path" ]]; then
+        dirname="."
+    fi
+
+    if [[ "$filename" == *.* ]]; then
+        stem="${path%.*}"
+        ext=".${filename##*.}"
+    fi
+
+    printf '%s%s%s\n' "$stem" "$suffix" "$ext"
 }
 
 extract_check_context_args() {
@@ -453,8 +475,32 @@ case "${1:-}" in
         WS="$CHECK_WS"
         trap 'close_target_ws 9222 "${CHECK_TARGET_ID:-}"' EXIT
 
-        # Set viewport
-        "$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" set viewport 1600 900 2>/dev/null || true
+        CHECK_DESKTOP_WIDTH="${SF_BROWSER_CHECK_DESKTOP_WIDTH:-1600}"
+        CHECK_DESKTOP_HEIGHT="${SF_BROWSER_CHECK_DESKTOP_HEIGHT:-900}"
+        CHECK_NARROW_WIDTH="${SF_BROWSER_CHECK_NARROW_WIDTH:-1180}"
+        CHECK_NARROW_HEIGHT="${SF_BROWSER_CHECK_NARROW_HEIGHT:-900}"
+        CHECK_MOBILE_WIDTH="${SF_BROWSER_CHECK_MOBILE_WIDTH:-390}"
+        CHECK_MOBILE_HEIGHT="${SF_BROWSER_CHECK_MOBILE_HEIGHT:-844}"
+        CHECK_VIEWPORT_SETTLE_MS="${SF_BROWSER_CHECK_VIEWPORT_SETTLE_MS:-350}"
+        CHECK_RESPONSIVE="${SF_BROWSER_CHECK_RESPONSIVE:-1}"
+
+        declare -a CHECK_CAPTURE_LABELS=("desktop")
+        declare -a CHECK_CAPTURE_WIDTHS=("${CHECK_DESKTOP_WIDTH}")
+        declare -a CHECK_CAPTURE_HEIGHTS=("${CHECK_DESKTOP_HEIGHT}")
+        declare -a CHECK_CAPTURE_PATHS=("${SCREENSHOT_PATH}")
+
+        if [[ "${CHECK_RESPONSIVE}" != "0" ]]; then
+            CHECK_CAPTURE_LABELS+=("narrow" "mobile")
+            CHECK_CAPTURE_WIDTHS+=("${CHECK_NARROW_WIDTH}" "${CHECK_MOBILE_WIDTH}")
+            CHECK_CAPTURE_HEIGHTS+=("${CHECK_NARROW_HEIGHT}" "${CHECK_MOBILE_HEIGHT}")
+            CHECK_CAPTURE_PATHS+=(
+                "$(with_screenshot_suffix "${SCREENSHOT_PATH}" "-narrow")"
+                "$(with_screenshot_suffix "${SCREENSHOT_PATH}" "-mobile")"
+            )
+        fi
+
+        # Set desktop viewport first so load-time layout matches the primary baseline.
+        "$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" set viewport "${CHECK_DESKTOP_WIDTH}" "${CHECK_DESKTOP_HEIGHT}" 2>/dev/null || true
 
         # Allow the page created for this target to settle before inspection.
         "$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" wait "$WAIT_MS" 2>/dev/null || true
@@ -470,8 +516,13 @@ case "${1:-}" in
         # Brief wait for late async errors
         "$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" wait 2000 2>/dev/null || true
 
-        # Screenshot
-        "$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" screenshot "$SCREENSHOT_PATH" 2>/dev/null
+        declare -a CAPTURED_SCREENSHOTS=()
+        for index in "${!CHECK_CAPTURE_LABELS[@]}"; do
+            "$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" set viewport "${CHECK_CAPTURE_WIDTHS[$index]}" "${CHECK_CAPTURE_HEIGHTS[$index]}" 2>/dev/null || true
+            "$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" wait "${CHECK_VIEWPORT_SETTLE_MS}" 2>/dev/null || true
+            "$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" screenshot "${CHECK_CAPTURE_PATHS[$index]}" 2>/dev/null
+            CAPTURED_SCREENSHOTS+=("${CHECK_CAPTURE_LABELS[$index]}:${CHECK_CAPTURE_PATHS[$index]}")
+        done
 
         # Collect errors (agent-browser wraps eval output in quotes, so we strip them)
         RAW_ERRORS=$("$AGENT_BROWSER_BIN" --cdp "$WS" "${CHECK_CONTEXT[@]}" eval "JSON.stringify({errors: window.__sfErrors || [], warnings: window.__sfWarnings || [], url: location.href, title: document.title})" 2>/dev/null) || RAW_ERRORS='{"errors":[],"warnings":[]}'
@@ -489,6 +540,13 @@ case "${1:-}" in
 
         # Output results
         echo "Screenshot: ${SCREENSHOT_PATH}"
+        echo "Responsive set: desktop ${CHECK_DESKTOP_WIDTH}x${CHECK_DESKTOP_HEIGHT}, narrow ${CHECK_NARROW_WIDTH}x${CHECK_NARROW_HEIGHT}, mobile ${CHECK_MOBILE_WIDTH}x${CHECK_MOBILE_HEIGHT}"
+        if [[ ${#CAPTURED_SCREENSHOTS[@]} -gt 1 ]]; then
+            echo "Additional screenshots:"
+            for capture in "${CAPTURED_SCREENSHOTS[@]:1}"; do
+                echo "  ${capture%%:*}: ${capture#*:}"
+            done
+        fi
         echo "Page: $(echo "$ERRORS" | jq -r '.url // "unknown"' 2>/dev/null)"
         echo "Title: $(echo "$ERRORS" | jq -r '.title // "unknown"' 2>/dev/null)"
 
@@ -566,6 +624,11 @@ else
     }
 fi
 
+mapfile -t __sf_browser_command_parts < <(extract_command_and_target "$@")
+__sf_browser_command="${__sf_browser_command_parts[0]:-}"
+__sf_browser_target="${__sf_browser_command_parts[1]:-}"
+mapfile -t __sf_browser_eval_context < <(extract_eval_context_args "$@")
+
 # --- Viewport ---
 
 DEFAULT_VIEWPORT_WIDTH="${SF_BROWSER_VIEWPORT_WIDTH:-1600}"
@@ -582,14 +645,13 @@ should_apply_default_viewport() {
     return 1
 }
 
-if should_apply_default_viewport "$@"; then
-    "$AGENT_BROWSER_BIN" --cdp "$WS" set viewport "$DEFAULT_VIEWPORT_WIDTH" "$DEFAULT_VIEWPORT_HEIGHT" 2>/dev/null || true
-fi
+apply_default_viewport() {
+    "$AGENT_BROWSER_BIN" --cdp "$WS" "$@" set viewport "$DEFAULT_VIEWPORT_WIDTH" "$DEFAULT_VIEWPORT_HEIGHT" 2>/dev/null || true
+}
 
-mapfile -t __sf_browser_command_parts < <(extract_command_and_target "$@")
-__sf_browser_command="${__sf_browser_command_parts[0]:-}"
-__sf_browser_target="${__sf_browser_command_parts[1]:-}"
-mapfile -t __sf_browser_eval_context < <(extract_eval_context_args "$@")
+if should_apply_default_viewport "$@"; then
+    apply_default_viewport "${__sf_browser_eval_context[@]}"
+fi
 
 # Submit buttons need form activation semantics that the raw click path sometimes misses
 if [[ "$__sf_browser_command" == "click" && -n "$__sf_browser_target" ]] && selector_needs_submit_semantics "$__sf_browser_target" "${__sf_browser_eval_context[@]}"; then
@@ -601,6 +663,10 @@ fi
 
 "$AGENT_BROWSER_BIN" --cdp "$WS" "$@"
 EXIT_CODE=$?
+
+if [[ "$EXIT_CODE" -eq 0 && "$__sf_browser_command" == "open" ]] && should_apply_default_viewport "$@"; then
+    apply_default_viewport "${__sf_browser_eval_context[@]}"
+fi
 
 # Clean up only the current tab for one-shot artifact commands.
 case "${1:-}" in

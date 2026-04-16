@@ -169,6 +169,31 @@ def _run_sf_browser_check(
     return result, _read_log(agent_log_path), _read_lines(curl_log_path)
 
 
+def _run_sf_browser_open(
+    tmp_path: Path,
+    *,
+    extra_args: list[str] | None = None,
+    extra_env: dict[str, str] | None = None,
+) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
+    env, agent_log_path, _ = _prepare_sf_browser_env(
+        tmp_path,
+        submit_mode="submit",
+        extra_env=extra_env,
+    )
+    script_path = Path(__file__).resolve().parents[3] / "scripts" / "sf-browser"
+    command = [str(script_path), *(extra_args or []), "open", "http://example.test"]
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    return result, _read_log(agent_log_path)
+
+
 def _session_names(calls: list[list[str]]) -> list[str]:
     sessions: list[str] = []
     for call in calls:
@@ -230,6 +255,20 @@ def test_sf_browser_sessioned_click_still_uses_request_submit(tmp_path: Path) ->
     assert not any("click" in call for call in calls)
 
 
+def test_sf_browser_open_reapplies_default_viewport_after_navigation(tmp_path: Path) -> None:
+    _, calls = _run_sf_browser_open(tmp_path)
+
+    viewport_calls = [
+        index
+        for index, call in enumerate(calls)
+        if len(call) >= 6 and call[-4:] == ["set", "viewport", "1600", "900"]
+    ]
+    open_call_index = next(index for index, call in enumerate(calls) if "open" in call)
+
+    assert len(viewport_calls) == 2
+    assert viewport_calls[0] < open_call_index < viewport_calls[1]
+
+
 def test_sf_browser_check_uses_generated_session_and_closes_only_current_tab(tmp_path: Path) -> None:
     result, calls, curl_requests = _run_sf_browser_check(tmp_path)
 
@@ -242,6 +281,22 @@ def test_sf_browser_check_uses_generated_session_and_closes_only_current_tab(tmp
     assert any("/json/list" in request for request in curl_requests)
     assert any("/json/close/TESTTAB" in request for request in curl_requests)
     assert "No console errors, warnings, or failed network requests." in result.stdout
+
+
+def test_sf_browser_check_captures_desktop_narrow_and_mobile_by_default(tmp_path: Path) -> None:
+    result, calls, _ = _run_sf_browser_check(tmp_path)
+
+    screenshot_calls = [call for call in calls if "screenshot" in call]
+    screenshot_paths = [call[-1] for call in screenshot_calls]
+
+    assert screenshot_paths == [
+        str(tmp_path / "check.png"),
+        str(tmp_path / "check-narrow.png"),
+        str(tmp_path / "check-mobile.png"),
+    ]
+    assert "Additional screenshots:" in result.stdout
+    assert f"narrow: {tmp_path / 'check-narrow.png'}" in result.stdout
+    assert f"mobile: {tmp_path / 'check-mobile.png'}" in result.stdout
 
 
 def test_sf_browser_check_preserves_explicit_session(tmp_path: Path) -> None:

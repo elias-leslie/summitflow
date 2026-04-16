@@ -43,6 +43,20 @@ export interface MockupStats {
   avg_generation_time_ms: number | null
 }
 
+export interface CreateMockupRequest {
+  name: string
+  description?: string
+  mockup_type?: string
+  file_path?: string
+  content?: string
+  task_id?: string
+  page_path?: string
+  parent_mockup_id?: number
+  generator?: string
+  generation_prompt?: string
+  generation_time_ms?: number
+}
+
 export interface MockupFilters {
   limit?: number
   offset?: number
@@ -87,6 +101,20 @@ export async function fetchMockupStats(
   return fetchWithErrorHandling<MockupStats>(
     `/api/projects/${projectId}/mockups/stats`,
     { errorMessage: 'Failed to fetch mockup stats' },
+  )
+}
+
+/**
+ * Create a new mockup record.
+ */
+export async function createMockup(
+  projectId: string,
+  payload: CreateMockupRequest,
+): Promise<Mockup> {
+  return postJson<Mockup>(
+    `/api/projects/${projectId}/mockups`,
+    payload,
+    'Failed to create mockup',
   )
 }
 

@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import { CheckSquare, Grid3X3, List, Palette, Sparkles, X } from 'lucide-react'
 
@@ -17,6 +18,7 @@ interface DesignHeaderProps {
   onSelectModeToggle: () => void
   onCancelSelectMode: () => void
   onPrimaryAction: () => void
+  extraActions?: ReactNode
 }
 
 export function DesignHeader({
@@ -31,6 +33,7 @@ export function DesignHeader({
   onSelectModeToggle,
   onCancelSelectMode,
   onPrimaryAction,
+  extraActions,
 }: DesignHeaderProps): React.ReactElement {
   return (
     <div className="mb-6 flex items-start justify-between gap-4">
@@ -52,6 +55,8 @@ export function DesignHeader({
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
+        {extraActions}
+
         {!selectMode && (
           <button type="button" onClick={onPrimaryAction} className="btn-primary flex items-center gap-2">
             <Sparkles className="h-4 w-4" />

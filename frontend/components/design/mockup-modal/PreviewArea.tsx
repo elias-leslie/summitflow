@@ -7,6 +7,7 @@ import {
   GitCompare,
   History,
   Image as ImageIcon,
+  Layers3,
   Trash2,
 } from 'lucide-react'
 import Image from 'next/image'
@@ -31,6 +32,7 @@ interface PreviewAreaProps {
   canCompare: boolean
   onToggleComparison: () => void
   onToggleHistory: () => void
+  onCreateIteration: () => void
   onDelete: () => void
 }
 
@@ -42,6 +44,7 @@ export function PreviewArea({
   canCompare,
   onToggleComparison,
   onToggleHistory,
+  onCreateIteration,
   onDelete,
 }: PreviewAreaProps) {
   return (
@@ -119,6 +122,14 @@ export function PreviewArea({
         >
           <History className="w-4 h-4" />
           History
+        </button>
+        <button
+          type="button"
+          onClick={onCreateIteration}
+          className="btn-secondary flex items-center gap-2"
+        >
+          <Layers3 className="w-4 h-4" />
+          New Iteration
         </button>
         <div className="flex-1" />
         <button

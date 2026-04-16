@@ -225,6 +225,30 @@ class TestSessionsCommandAliases:
             project_id=None,
         )
 
+    def test_sessions_show_uses_projectless_client(self) -> None:
+        mock_client = MagicMock()
+        mock_client.get_session.return_value = {"id": "sess-show"}
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client) as mock_client_ctor:
+            result = runner.invoke(app, ["sessions", "show", "sess-show"])
+
+        assert result.exit_code == 0
+        assert '"id": "sess-show"' in result.output
+        mock_client_ctor.assert_called_once_with(require_project=False)
+        mock_client.get_session.assert_called_once_with("sess-show")
+
+    def test_sessions_close_uses_projectless_client(self) -> None:
+        mock_client = MagicMock()
+        mock_client.close_session.return_value = {"closed": True}
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client) as mock_client_ctor:
+            result = runner.invoke(app, ["sessions", "close", "sess-close"])
+
+        assert result.exit_code == 0
+        assert '"closed": true' in result.output
+        mock_client_ctor.assert_called_once_with(require_project=False)
+        mock_client.close_session.assert_called_once_with("sess-close")
+
 
 class TestSessionCommands:
     """Tests for helper behavior in session listing."""

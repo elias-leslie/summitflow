@@ -10,8 +10,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import typer
+from typer.testing import CliRunner
 
 from cli.client import STClient
+from cli.commands.done import app as done_app
 from cli.commands.done_git import git_stash_pop, git_stash_push
 from cli.commands.done_subtask import auto_close_subtasks
 from cli.commands.done_task import (
@@ -20,6 +22,8 @@ from cli.commands.done_task import (
     complete_task,
 )
 from cli.commands.done_validators import is_subtask_id
+
+runner = CliRunner()
 
 
 class TestIsSubtaskId:
@@ -697,6 +701,21 @@ class TestSTClientTaskHelpers:
         client = STClient(base_url="http://localhost:8001", project_id="summitflow")
 
         assert hasattr(client, "get_task_completion_readiness")
+
+
+class TestDoneFeedbackHint:
+    def test_done_emits_inline_tag_fallback_hint(self) -> None:
+        with (
+            patch("cli.commands.done.STClient", return_value=MagicMock()),
+            patch(
+                "cli.commands.done.complete_task",
+                return_value={"merged": True, "base_branch": "main"},
+            ),
+        ):
+            result = runner.invoke(done_app, ["task-123"])
+
+        assert result.exit_code == 0
+        assert "fallback in final reply: [[F:friction:sf.cli:short issue]]" in result.stderr
 
 
 class TestGitStashHelpers:

@@ -285,13 +285,83 @@ run_migrations() {
     [ ${PIPESTATUS[0]} -eq 0 ] && log_success "Migrations applied" || log_warn "Migration returned non-zero"
 }
 
+find_venv_python() {
+    local py
+    for py in python3.13 python3.12 python3; do
+        if ! command -v "$py" >/dev/null 2>&1; then
+            continue
+        fi
+        if ! "$py" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' >/dev/null 2>&1; then
+            continue
+        fi
+        echo "$py"
+        return 0
+    done
+    return 1
+}
+
+prepare_node_workspace_for_rebuild() {
+    local main_root
+    main_root="$(resolve_project_root "$PROJECT" 2>/dev/null || true)"
+    [ -n "$main_root" ] || { echo "false"; return 0; }
+
+    local py
+    py=$(find_venv_python || true)
+    [ -n "$py" ] || { echo "false"; return 0; }
+
+    local cmd=(
+        "$py" -m app.worktree_node_workspace
+        --lane-root "$ROOT_DIR"
+        --main-root "$main_root"
+    )
+    if [ -n "$FRONTEND_SUBDIR" ] && [ "$FRONTEND_SUBDIR" != "." ]; then
+        cmd+=(--cwd "$FRONTEND_SUBDIR")
+    fi
+
+    local prep_json
+    prep_json=$(
+        PYTHONPATH="${SUMMITFLOW_ROOT}/backend${PYTHONPATH:+:${PYTHONPATH}}" "${cmd[@]}"
+    ) || {
+        echo "false"
+        return 0
+    }
+
+    local summary
+    summary=$(
+        printf '%s' "$prep_json" | "$py" -c '
+import json, sys
+payload = json.load(sys.stdin)
+print(len(payload.get("removed_node_modules_symlinks", [])))
+print(len(payload.get("materialized_file_dependency_links", [])))
+print("true" if payload.get("needs_install") else "false")
+'
+    )
+
+    local removed_count materialized_count needs_install
+    removed_count=$(printf '%s\n' "$summary" | sed -n '1p')
+    materialized_count=$(printf '%s\n' "$summary" | sed -n '2p')
+    needs_install=$(printf '%s\n' "$summary" | sed -n '3p')
+
+    if [ "${removed_count:-0}" -gt 0 ] 2>/dev/null; then
+        log_warn "Removed ${removed_count} broken lane node_modules link(s)"
+    fi
+    if [ "${materialized_count:-0}" -gt 0 ] 2>/dev/null; then
+        log_warn "Materialized ${materialized_count} lane file: dependency link(s)"
+    fi
+
+    echo "${needs_install:-false}"
+}
+
 build_frontend() {
     [ ! -f "$FRONTEND_DIR/package.json" ] && return 0
     log "Building frontend..."
     rm -rf "$FRONTEND_DIR/.next" "$FRONTEND_DIR/dist" 2>/dev/null || true
 
+    local node_workspace_needs_install="false"
+    node_workspace_needs_install=$(prepare_node_workspace_for_rebuild)
+
     # Install deps if missing
-    if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
+    if [ ! -d "$FRONTEND_DIR/node_modules" ] || [ "$node_workspace_needs_install" = "true" ]; then
         log "Installing dependencies..."
         (cd "$FRONTEND_DIR" && pnpm install) 2>&1 | tail -10
     fi

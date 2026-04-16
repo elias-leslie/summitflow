@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { BulkActionBar } from '@/components/design/BulkActionBar'
 import { DesignFilters, type TypeFilter } from '@/components/design/DesignFilters'
 import { DesignHeader, type ViewMode } from '@/components/design/DesignHeader'
+import { CreateMockupDialog } from '@/components/design/CreateMockupDialog'
 import { GenerateMockupDialog } from '@/components/design/GenerateMockupDialog'
 import { MockupDetailModal } from '@/components/design/MockupDetailModal'
 import { MockupGrid } from '@/components/design/MockupGrid'
@@ -42,9 +43,11 @@ export function UiDesignWorkspace({
   const [selectedMockup, setSelectedMockup] = useState<Mockup | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
   const [selectedMockups, setSelectedMockups] = useState<Set<string>>(new Set())
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [iterationParentMockup, setIterationParentMockup] = useState<Mockup | null>(null)
   const pageSize = 24
   const queryClient = useQueryClient()
 
@@ -106,7 +109,7 @@ export function UiDesignWorkspace({
       <div className="flex min-w-0 flex-1 flex-col">
         <DesignHeader
           title="UI Design"
-          subtitle="Analyze live pages, generate redesign mockups, and move visual revisions through review."
+          subtitle="Analyze live pages, capture hand-authored concepts, and move mockups through the normal review flow."
           totalLabel={stats?.total !== undefined ? `${stats.total} mockups` : undefined}
           primaryActionLabel="Analyze Page"
           viewMode={viewMode}
@@ -119,6 +122,20 @@ export function UiDesignWorkspace({
             setSelectedMockups(new Set())
           }}
           onPrimaryAction={() => setGenerateDialogOpen(true)}
+          extraActions={
+            !selectMode ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setIterationParentMockup(null)
+                  setCreateDialogOpen(true)
+                }}
+                className="btn-secondary"
+              >
+                New Concept
+              </button>
+            ) : null
+          }
         />
 
         {stats && (
@@ -169,7 +186,7 @@ export function UiDesignWorkspace({
         {!isLoading && !error && mockups.length === 0 && (
           <EmptyState
             title="No UI mockups yet"
-            description="Analyze a page to capture a screenshot, audit design issues, and generate redesign concepts inside the same review loop."
+            description="Use Analyze Page for screenshot-based audits or New Concept for hand-authored HTML mockups and design notes."
           />
         )}
         {!isLoading && !error && mockups.length > 0 && (
@@ -200,6 +217,10 @@ export function UiDesignWorkspace({
             open={modalOpen}
             onOpenChange={setModalOpen}
             onStatusChange={() => refetch()}
+            onCreateIteration={(mockup) => {
+              setIterationParentMockup(mockup)
+              setCreateDialogOpen(true)
+            }}
           />
         )}
 
@@ -207,6 +228,22 @@ export function UiDesignWorkspace({
           projectId={projectId}
           open={generateDialogOpen}
           onOpenChange={setGenerateDialogOpen}
+        />
+
+        <CreateMockupDialog
+          projectId={projectId}
+          open={createDialogOpen}
+          onOpenChange={(open) => {
+            setCreateDialogOpen(open)
+            if (!open) {
+              setIterationParentMockup(null)
+            }
+          }}
+          parentMockup={iterationParentMockup}
+          onCreated={(mockup) => {
+            setSelectedMockup(mockup)
+            setModalOpen(true)
+          }}
         />
 
         {showDeleteConfirm && (

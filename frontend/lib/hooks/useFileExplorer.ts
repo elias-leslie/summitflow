@@ -1,44 +1,42 @@
 /**
- * useFileExplorer - Data fetching hooks for the file browser
- *
- * Provides:
- * - File tree listing with lazy loading
- * - File content fetching with language detection
- * - React Query caching with appropriate stale times
+ * useFileExplorer - Data fetching hooks for the file browser.
  */
 
 import { useQuery } from '@tanstack/react-query'
 import {
-  fetchFileTree,
   fetchFileContent,
-  type FileTreeResponse,
+  fetchFileTree,
+  getFileScopeKey,
+  type FileBrowserScope,
   type FileContentResponse,
+  type FileTreeResponse,
 } from '@/lib/api/files'
 import { POLL_SLOW, STALE_GIT } from '@/lib/polling'
 
-// Query key factories for consistent cache management
 export const fileQueryKeys = {
   all: ['files'] as const,
-  tree: (projectId: string, path: string) =>
-    [...fileQueryKeys.all, 'tree', projectId, path] as const,
-  content: (projectId: string, path: string) =>
-    [...fileQueryKeys.all, 'content', projectId, path] as const,
+  scope: (scope: FileBrowserScope) =>
+    [...fileQueryKeys.all, getFileScopeKey(scope)] as const,
+  tree: (scope: FileBrowserScope, path: string) =>
+    [...fileQueryKeys.scope(scope), 'tree', path] as const,
+  content: (scope: FileBrowserScope, path: string) =>
+    [...fileQueryKeys.scope(scope), 'content', path] as const,
 }
 
-export function useFileTree(projectId: string, path: string = '') {
+export function useFileTree(scope: FileBrowserScope, path: string = '') {
   return useQuery<FileTreeResponse>({
-    queryKey: fileQueryKeys.tree(projectId, path),
-    queryFn: () => fetchFileTree(projectId, path),
-    enabled: !!projectId,
+    queryKey: fileQueryKeys.tree(scope, path),
+    queryFn: () => fetchFileTree(scope, path),
+    enabled: scope.kind === 'workspace' || !!scope.projectId,
     staleTime: STALE_GIT,
   })
 }
 
-export function useFileContent(projectId: string, path: string | null) {
+export function useFileContent(scope: FileBrowserScope, path: string | null) {
   return useQuery<FileContentResponse>({
-    queryKey: fileQueryKeys.content(projectId, path ?? ''),
-    queryFn: () => fetchFileContent(projectId, path!),
-    enabled: !!projectId && !!path,
+    queryKey: fileQueryKeys.content(scope, path ?? ''),
+    queryFn: () => fetchFileContent(scope, path!),
+    enabled: (scope.kind === 'workspace' || !!scope.projectId) && !!path,
     staleTime: POLL_SLOW,
   })
 }

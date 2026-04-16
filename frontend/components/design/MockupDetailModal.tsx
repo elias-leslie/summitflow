@@ -14,6 +14,7 @@ interface MockupDetailModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onStatusChange: () => void
+  onCreateIteration: (mockup: Mockup) => void
 }
 
 export function MockupDetailModal({
@@ -22,6 +23,7 @@ export function MockupDetailModal({
   open,
   onOpenChange,
   onStatusChange,
+  onCreateIteration,
 }: MockupDetailModalProps) {
   const {
     updating,
@@ -68,6 +70,7 @@ export function MockupDetailModal({
             canCompare={canCompare}
             onToggleComparison={() => setShowComparison(!showComparison)}
             onToggleHistory={() => setShowHistory(!showHistory)}
+            onCreateIteration={() => onCreateIteration(mockup)}
             onDelete={() => setShowDeleteConfirm(true)}
           />
 

@@ -21,6 +21,13 @@ from .done_validators import is_subtask_id
 
 app = typer.Typer(help="Complete task or subtask work")
 
+FEEDBACK_CLOSEOUT_HINT = (
+    "💡 Feedback: st feedback search \"keyword\" then st feedback report "
+    "<component> \"title\" --type friction|idea|improvement|praise "
+    "--session <sid> --vote-if-match; "
+    "fallback in final reply: [[F:friction:sf.cli:short issue]]"
+)
+
 
 def _handle_subtask_completion(
     client: STClient,
@@ -52,10 +59,7 @@ def _handle_task_completion(
         typer.echo(f"  Merged to: {base_branch}")
     else:
         output_success(f"Task {id} completed without checkpoint merge.")
-    typer.echo(
-        "💡 Any feedback? st feedback search \"keyword\" then st feedback report <component> \"title\" --type friction|idea|improvement|praise --session <sid> --vote-if-match",
-        err=True,
-    )
+    typer.echo(FEEDBACK_CLOSEOUT_HINT, err=True)
 
 
 @app.command(name="done")

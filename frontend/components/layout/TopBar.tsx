@@ -1,4 +1,4 @@
-'use client'
+"use client"
 
 import { useParams, usePathname } from 'next/navigation'
 import { useMemo, useState } from 'react'
@@ -10,34 +10,31 @@ import { AnimatedLogo } from './topbar/AnimatedLogo'
 import { Navigation } from './topbar/Navigation'
 import { TaskSearch } from './topbar/TaskSearch'
 import { useAdaptiveNavigation } from './topbar/useAdaptiveNavigation'
+import { WorkspaceFilesButton } from './topbar/WorkspaceFilesButton'
 
 export function TopBar() {
   const pathname = usePathname()
   const params = useParams<{ id?: string }>()
   const [isSearchExpanded, setIsSearchExpanded] = useState(false)
-  const { compact, measureRef, slotRef } =
-    useAdaptiveNavigation(isSearchExpanded)
+  const { compact, measureRef, slotRef } = useAdaptiveNavigation(isSearchExpanded)
+
   const notificationProjectId = useMemo(() => {
     if (pathname?.startsWith('/projects/')) {
       return getProjectIdOrDefault(params.id)
     }
-
     return DEFAULT_PROJECT_ID
   }, [params.id, pathname])
 
   return (
     <>
-      <header className="flex-shrink-0 border-b border-slate-700/60 bg-slate-950/88 backdrop-blur-md z-40 relative">
+      <header className="relative z-40 flex-shrink-0 border-b border-slate-700/60 bg-slate-950/88 backdrop-blur-md">
         <div className="relative flex h-[64px] items-center gap-3 px-3 sm:px-4 lg:h-[68px] lg:px-5">
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.015),transparent)] opacity-60" />
           <div className="relative z-10 flex min-w-0 flex-1 items-center gap-3">
             <div className="flex shrink-0 items-center rounded-[1.15rem] border border-slate-700/60 bg-slate-900/84 px-2.5 py-1.5 shadow-[0_14px_32px_-26px_rgba(0,0,0,0.92)]">
               <AnimatedLogo />
             </div>
-            <div
-              ref={slotRef}
-              className="relative flex min-w-0 flex-1 items-center"
-            >
+            <div ref={slotRef} className="relative flex min-w-0 flex-1 items-center">
               <div
                 ref={measureRef}
                 aria-hidden="true"
@@ -52,7 +49,7 @@ export function TopBar() {
           </div>
           <div className="relative z-10 flex flex-shrink-0 items-center gap-1.5 rounded-[1.15rem] border border-slate-700/60 bg-slate-900/84 px-1.5 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_14px_30px_-24px_rgba(0,0,0,0.9)]">
             <TaskSearch onExpandedChange={setIsSearchExpanded} />
-            <div className="h-6 w-px bg-slate-800/80" />
+            <WorkspaceFilesButton />
             <div className="topbar-button p-1">
               <NotesProvider apiPrefix="/api" projectScope="summitflow">
                 <NotesButton />

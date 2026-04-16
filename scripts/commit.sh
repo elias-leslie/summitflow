@@ -1237,7 +1237,7 @@ main() {
         $SYNC_ONLY && label="SYNC"
         echo "${label}[${total}]:ok=${success_count}|skip=${skip_count}|err=${error_count}|blocked=${blocked_count}:${status}"
         if [[ "$status" == "SUCCESS" && $success_count -gt 0 ]]; then
-            echo "💡 Friction or ideas? st feedback search \"keyword\" or st feedback report <component> \"title\"" >&2
+            echo "💡 Feedback: st feedback search \"keyword\" then st feedback report <component> \"title\" --type friction|idea|improvement|praise --session <sid> --vote-if-match; fallback in final reply: [[F:friction:sf.cli:short issue]]" >&2
         fi
     fi
 

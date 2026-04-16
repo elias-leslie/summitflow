@@ -151,12 +151,19 @@ EXTRA_ARGS=()
 CLEANROOM_ENV_VARS=()
 CLEANROOM_UNSET_KEYS=()
 CLEANROOM_KEEP_DIR=0
+MISPLACED_GLOBAL_FLAG=""
+TOOL_HELP_REQUESTED=0
 if [[ "$ACTION" == "tool_toon" ]]; then
     _passthrough=0
     for arg in "$@"; do
         if [[ $_passthrough -eq 0 ]]; then
             case $arg in
                 --changed-only|-d) CHANGED_ONLY=1; continue ;;
+                --help|-h) TOOL_HELP_REQUESTED=1; continue ;;
+                --check|-c|--quick|-q|--frontend-only|--fe|--fix|-f|--fix-all|--rebuild-venv)
+                    [[ -z "$MISPLACED_GLOBAL_FLAG" ]] && MISPLACED_GLOBAL_FLAG="$arg"
+                    continue
+                    ;;
                 --) _passthrough=1; continue ;;  # strip separator, start passthrough
             esac
         fi
@@ -213,6 +220,84 @@ log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_header() { echo -e "\n${BOLD}${CYAN}=== $1 ===${NC}"; }
+
+print_misplaced_global_flag_error() {
+    local tool_name="$1"
+    local flag="$2"
+
+    echo "ERROR:global_flag_after_subcommand:${flag}" >&2
+    echo "Move wrapper flags before the tool subcommand." >&2
+    echo "Use 'dt ${flag}' for wrapper mode, or 'dt ${tool_name} -- ...' for tool arguments." >&2
+    echo "Only '--changed-only' is accepted after a tool subcommand." >&2
+}
+
+show_tool_help() {
+    local tool_name="$1"
+    local usage_tool="$tool_name"
+
+    echo "Usage: $0 $usage_tool [--changed-only] [-- <tool args>]"
+    echo ""
+    echo "Wrapper rules:"
+    echo "  Put dt-wide flags before the subcommand: dt --check, dt --quick, dt --frontend-only"
+    echo "  After a tool subcommand, only --changed-only is handled by dt."
+    echo "  Use '--' to pass flags directly to the underlying tool."
+    echo ""
+
+    case "$tool_name" in
+        pytest)
+            cat <<EOF
+Examples:
+  dt pytest
+  dt pytest -- backend/tests/unit/test_dev_tools_sh.py
+  dt pytest -- -k changed_only
+EOF
+            ;;
+        types)
+            cat <<EOF
+Examples:
+  dt types
+  dt types backend/app/example.py
+  dt types --changed-only
+EOF
+            ;;
+        biome)
+            cat <<EOF
+Examples:
+  dt biome
+  dt biome frontend/app/page.tsx
+  dt --frontend-only
+EOF
+            ;;
+        tsc)
+            cat <<EOF
+Examples:
+  dt tsc
+  dt tsc -- --pretty false
+  dt --frontend-only
+EOF
+            ;;
+        vitest)
+            cat <<EOF
+Examples:
+  dt vitest
+  dt vitest src/__tests__/compactness.test.ts
+  dt vitest frontend/src/__tests__/compactness.test.ts
+  dt vitest -- --runInBand
+
+Path notes:
+  Vitest file filters run from frontend/, so frontend-relative paths are canonical.
+  Repo-root paths under frontend/ are accepted and normalized for you.
+EOF
+            ;;
+        *)
+            cat <<EOF
+Examples:
+  dt $tool_name
+  dt $tool_name -- --help
+EOF
+            ;;
+    esac
+}
 
 run_cleanroom_command() {
     local summitflow_python="$SUMMITFLOW_ROOT_OVERRIDE/backend/.venv/bin/python"
@@ -274,9 +359,12 @@ get_changed_files() {
     done
 }
 
-# Get changed Python files in backend
+# Get changed Python files covered by backend quality tools
 get_changed_python_files() {
-    get_changed_files "py" "$PROJECT_DIR" | grep -E "^$BACKEND_PATH" | grep -v "alembic/versions/" || true
+    get_changed_files "py" "$PROJECT_DIR" \
+        | grep -E "^$BACKEND_PATH|^$PROJECT_DIR/scripts/" \
+        | grep -v "alembic/versions/" \
+        || true
 }
 
 # Get frontend root directory for current project
@@ -1078,9 +1166,14 @@ count_issues() {
             echo "$count"
             ;;
         biome_parse)
-            # Biome output: count lines with lint/ prefix (rule violations)
+            # Biome may fail on lint, formatter drift, or config/runtime errors.
+            # Count explicit lint findings when present; otherwise preserve any
+            # non-zero exit as a failure so local dt matches CI behavior.
             local count
             count=$(echo "$output" | grep -c "lint/") || count=0
+            if [[ "$count" -eq 0 && "$retval" -ne 0 ]]; then
+                count=1
+            fi
             echo "$count"
             ;;
         coderabbit_parse)
@@ -1196,6 +1289,8 @@ normalize_tool_args() {
                 if [[ "$dir_type" == "backend" || ("$dir_type" == "test" && "$tool_name" == "pytest") ]]; then
                     if [[ "$normalized" == backend/* ]]; then
                         normalized="${normalized#backend/}"
+                    elif [[ "$normalized" != "." && "$normalized" != .. && "$normalized" != ../* && -e "$PROJECT_DIR/$normalized" ]]; then
+                        normalized="../$normalized"
                     fi
                 elif [[ "$dir_type" == "frontend" ]]; then
                     if [[ "$normalized" == frontend/* ]]; then
@@ -1569,6 +1664,14 @@ case "$ACTION" in
         rebuild_venv "$PROJECT_DIR"
         ;;
     tool_toon)
+        if [[ "$TOOL_HELP_REQUESTED" == "1" ]]; then
+            show_tool_help "$TOOL_NAME"
+            exit 0
+        fi
+        if [[ -n "$MISPLACED_GLOBAL_FLAG" ]]; then
+            print_misplaced_global_flag_error "$TOOL_NAME" "$MISPLACED_GLOBAL_FLAG"
+            exit 2
+        fi
         run_tool_toon "$TOOL_NAME"
         ;;
     cleanroom)
