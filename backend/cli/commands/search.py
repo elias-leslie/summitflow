@@ -20,7 +20,11 @@ from app.services.explorer.analyzers.symbol_types import SymbolRecord
 from .._output_state import is_compact
 from ..client import APIError, STClient
 from ..config import get_config_optional
-from ..lib.execution_context import canonical_repo_root, resolve_checkout_root
+from ..lib.execution_context import (
+    canonical_repo_root,
+    resolve_checkout_project_id,
+    resolve_checkout_root,
+)
 from ..output import handle_api_error, output_json
 
 app = typer.Typer(help="Precision Code Search")
@@ -145,6 +149,7 @@ def _emit_precision_search_metadata_note(metadata: dict) -> None:
 def _resolve_search_roots(project_override: str | None, scope: SearchScope) -> SearchRoots:
     """Resolve canonical project and current-checkout roots for this search."""
     checkout_root = resolve_checkout_root()
+    canonical_root = canonical_repo_root()
     if scope == SearchScope.CHECKOUT:
         return SearchRoots(
             scope=scope,
@@ -154,14 +159,18 @@ def _resolve_search_roots(project_override: str | None, scope: SearchScope) -> S
         )
 
     config = get_config_optional()
-    current_project_id = config.project_id or None
-    project_root = Path(config.project_root).resolve() if config.project_root else canonical_repo_root()
+    selected_project_id = project_override or config.project_id or None
+    checkout_project_id = resolve_checkout_project_id()
 
-    if scope == SearchScope.PROJECT or (project_override and project_override != current_project_id):
+    project_root = Path(config.project_root).resolve() if config.project_root else None
+    if project_root is None and selected_project_id and checkout_project_id and selected_project_id == checkout_project_id:
+        project_root = canonical_root
+
+    if scope == SearchScope.PROJECT or (selected_project_id and checkout_project_id and selected_project_id != checkout_project_id):
         effective_scope = "project"
     elif checkout_root is not None and project_root is not None and checkout_root != project_root:
         effective_scope = "combined"
-    elif checkout_root is not None and project_root is None:
+    elif checkout_root is not None and project_root is None and selected_project_id is None:
         effective_scope = "checkout"
     else:
         effective_scope = "project"

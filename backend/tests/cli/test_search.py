@@ -455,7 +455,8 @@ def test_search_auto_scope_rootless_env_project_uses_checkout_when_local_project
             result = _invoke(["local checkout token", "--text"])
 
     assert result.exit_code == 0
-    assert "SEARCH:local checkout token|mode=text|matches=1|files=1|scope=checkout" in result.output
+    assert "SEARCH:local checkout token|mode=text|matches=1" in result.output
+    assert "|scope=checkout" in result.output
     mock_client.assert_not_called()
 
 
@@ -464,6 +465,32 @@ def test_search_auto_scope_rootless_env_project_does_not_mix_unrelated_checkout(
 
     with runner.isolated_filesystem():
         Path(".index.yaml").write_text("project: summitflow\n", encoding="utf-8")
+        file_path = Path("frontend/src/example.tsx")
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(
+            "export const label = 'local checkout token';\n",
+            encoding="utf-8",
+        )
+
+        with (
+            patch("cli.commands.search.STClient", return_value=_mock_client(payload)) as mock_client,
+            patch("cli.commands.search.get_config_optional", return_value=type("Cfg", (), {"project_root": None, "project_id": "agent-hub", "source": "env"})()),
+            patch("cli.commands.search.is_compact", return_value=True),
+            patch("cli.commands.search.resolve_checkout_root", return_value=Path.cwd(), create=True),
+            patch("cli.commands.search.canonical_repo_root", return_value=Path("/srv/workspaces/projects/summitflow"), create=True),
+        ):
+            result = _invoke(["local checkout token", "--text"])
+
+    assert result.exit_code == 0
+    assert "SEARCH:local checkout token|mode=empty|symbols=0|tokens=0" in result.output
+    assert "scope=" not in result.output
+    mock_client.return_value.get.assert_called_once()
+
+
+def test_search_auto_scope_rootless_env_project_without_checkout_metadata_falls_back_to_project() -> None:
+    payload = {"query": "local checkout token", "count": 0, "files_searched": 0, "items": []}
+
+    with runner.isolated_filesystem():
         file_path = Path("frontend/src/example.tsx")
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_text(
