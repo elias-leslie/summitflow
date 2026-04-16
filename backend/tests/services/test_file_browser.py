@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from typing import cast
 
 import pytest
 
@@ -33,7 +34,7 @@ def test_write_uploaded_file_rejects_existing_target(tmp_path) -> None:
     target_dir.mkdir()
     (target_dir / 'note.txt').write_text('old')
 
-    with pytest.raises(FileExistsError, match='File already exists: note.txt'):
+    with pytest.raises(FileExistsError, match=r'File already exists: note\.txt'):
         file_browser.write_uploaded_file(
             tmp_path,
             'docs',
@@ -54,7 +55,13 @@ def test_list_directory_includes_hidden_and_previously_skipped_entries(tmp_path)
     (tmp_path / 'node_modules').mkdir()
 
     result = file_browser.list_directory(tmp_path)
-    names = {entry['name'] for entry in result['entries']}
+    entries = result['entries']
+    assert isinstance(entries, list)
+    names = {
+        str(cast(dict[str, object], entry).get('name'))
+        for entry in entries
+        if isinstance(entry, dict)
+    }
 
     assert '.git' in names
     assert '.hidden' in names

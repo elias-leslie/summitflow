@@ -4,35 +4,44 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, Protocol
 
 # Ensure scripts/lib is importable regardless of cwd
 sys.path.insert(0, str(Path(__file__).parent / "lib"))
 
-from codex_sync_api import (  # noqa: E402
-    finalize_and_close,
-    ingest_transcript,
-    send_heartbeat,
-    upsert_session,
-)
-from codex_sync_credentials import load_env_credentials  # noqa: E402
-from codex_sync_git import build_project_context  # noqa: E402
-from codex_sync_state import (  # noqa: E402
-    get_state_entry,
-    get_checkpoint,
-    load_state,
-    save_state,
-    should_sync,
-    update_state_entry,
-)
-from codex_sync_transcripts import (  # noqa: E402
-    TranscriptInfo,
-    iter_recent_transcripts,
-    read_transcript_info,
-)
+
+def _load_symbol(module_name: str, symbol: str) -> Any:
+    return getattr(importlib.import_module(module_name), symbol)
+
+
+class TranscriptInfoLike(Protocol):
+    session_id: str
+    path: Path
+    cwd: Path
+    model: str
+    mtime: float
+    size: int
+
+
+finalize_and_close = _load_symbol("codex_sync_api", "finalize_and_close")
+ingest_transcript = _load_symbol("codex_sync_api", "ingest_transcript")
+send_heartbeat = _load_symbol("codex_sync_api", "send_heartbeat")
+upsert_session = _load_symbol("codex_sync_api", "upsert_session")
+load_env_credentials = _load_symbol("codex_sync_credentials", "load_env_credentials")
+build_project_context = _load_symbol("codex_sync_git", "build_project_context")
+get_state_entry = _load_symbol("codex_sync_state", "get_state_entry")
+get_checkpoint = _load_symbol("codex_sync_state", "get_checkpoint")
+load_state = _load_symbol("codex_sync_state", "load_state")
+save_state = _load_symbol("codex_sync_state", "save_state")
+should_sync = _load_symbol("codex_sync_state", "should_sync")
+update_state_entry = _load_symbol("codex_sync_state", "update_state_entry")
+iter_recent_transcripts = _load_symbol("codex_sync_transcripts", "iter_recent_transcripts")
+read_transcript_info = _load_symbol("codex_sync_transcripts", "read_transcript_info")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -62,7 +71,7 @@ def log(message: str) -> None:
 
 
 def sync_transcript(
-    info: TranscriptInfo,
+    info: TranscriptInfoLike,
     state: dict[str, object],
     api_url: str,
     client_id: str,
@@ -70,9 +79,10 @@ def sync_transcript(
     close_session: bool,
     verbose: bool,
 ) -> tuple[bool, str, int | None]:
-    project = build_project_context(info.cwd)
-    if project is None:
+    project_data = build_project_context(info.cwd)
+    if not isinstance(project_data, dict):
         return False, f"skip non-git cwd={info.cwd}", None
+    project: dict[str, object] = project_data
 
     meta: dict[str, object] = {
         "transcript_path": str(info.path),
@@ -80,8 +90,12 @@ def sync_transcript(
         "worktree_path": str(info.cwd),
         "host": os.uname().nodename,
     }
-    kw = dict(api_url=api_url, client_id=client_id, client_secret=client_secret,
-               source_path=_SOURCE_PATH)
+    kw: dict[str, str] = {
+        "api_url": api_url,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "source_path": _SOURCE_PATH,
+    }
     entry = get_state_entry(info.path, state)
 
     if _should_upsert(entry, info.session_id):
@@ -142,17 +156,19 @@ def _should_upsert(entry: dict[str, object] | None, session_id: str) -> bool:
 
 def _upsert_with_project_aliases(
     *,
-    info: TranscriptInfo,
+    info: TranscriptInfoLike,
     project: dict[str, object],
-    kw: dict[str, object],
+    kw: dict[str, str],
 ) -> tuple[bool, str, int | None, dict[str, object]]:
     candidates = [project]
-    for alias in project.get("project_aliases", []):
-        if not isinstance(alias, str) or not alias:
-            continue
-        alias_project = dict(project)
-        alias_project["project_id"] = alias
-        candidates.append(alias_project)
+    aliases = project.get("project_aliases")
+    if isinstance(aliases, list):
+        for alias in aliases:
+            if not isinstance(alias, str) or not alias:
+                continue
+            alias_project = dict(project)
+            alias_project["project_id"] = alias
+            candidates.append(alias_project)
 
     last_err = ""
     last_status: int | None = None
@@ -207,7 +223,7 @@ def main(argv: list[str]) -> int:
     state = load_state()
     if args.transcript is not None:
         info = read_transcript_info(args.transcript, log_fn=log)
-        infos: list[TranscriptInfo] = [info] if info is not None else []
+        infos: list[TranscriptInfoLike] = [info] if info is not None else []
     else:
         infos = iter_recent_transcripts(args.recent_hours, log_fn=log)
     if args.cwd is not None:

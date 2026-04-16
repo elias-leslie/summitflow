@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 STATE_PATH = Path.home() / ".local" / "state" / "codex-session-sync" / "state.json"
 ERROR_RETRY_SECONDS = 300
@@ -25,12 +26,23 @@ def save_state(state: dict[str, object]) -> None:
     STATE_PATH.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def _transcripts_map(state: dict[str, object], *, create: bool = False) -> dict[str, object] | None:
+    transcripts = state.get("transcripts")
+    if isinstance(transcripts, dict):
+        return cast(dict[str, object], transcripts)
+    if not create:
+        return None
+    transcripts = {}
+    state["transcripts"] = transcripts
+    return transcripts
+
+
 def get_state_entry(path: Path, state: dict[str, object]) -> dict[str, object] | None:
-    entries = state.get("transcripts") or {}
-    if not isinstance(entries, dict):
+    entries = _transcripts_map(state)
+    if entries is None:
         return None
     entry = entries.get(str(path))
-    return entry if isinstance(entry, dict) else None
+    return cast(dict[str, object], entry) if isinstance(entry, dict) else None
 
 
 def update_state_entry(
@@ -43,11 +55,9 @@ def update_state_entry(
     detail: str,
     checkpoint: str | None = None,
 ) -> None:
-    transcripts = state.setdefault("transcripts", {})
-    if not isinstance(transcripts, dict):
-        state["transcripts"] = {}
-        transcripts = state["transcripts"]  # type: ignore[assignment]
-    transcripts[str(path)] = {  # type: ignore[index]
+    transcripts = _transcripts_map(state, create=True)
+    assert transcripts is not None
+    transcripts[str(path)] = {
         "session_id": session_id,
         "mtime": mtime,
         "size": size,
@@ -89,7 +99,8 @@ def get_checkpoint(path: Path, state: dict[str, object]) -> str | None:
     entry = get_state_entry(path, state)
     if entry is None:
         return None
-    return entry.get("checkpoint")  # type: ignore[return-value]
+    checkpoint = entry.get("checkpoint")
+    return checkpoint if isinstance(checkpoint, str) else None
 
 
 def _entry_is_permanent_error(entry: dict[str, object]) -> bool:

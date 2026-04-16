@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import sys
 from pathlib import Path
 
@@ -7,7 +8,7 @@ SCRIPTS_LIB = Path(__file__).resolve().parents[3] / "scripts" / "lib"
 if str(SCRIPTS_LIB) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_LIB))
 
-import codex_sync_state
+codex_sync_state = importlib.import_module("codex_sync_state")
 
 
 def _state_for(path: Path, *, status: str, mtime: float = 10.0, size: int = 200) -> dict[str, object]:
