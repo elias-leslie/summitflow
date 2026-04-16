@@ -155,10 +155,11 @@ class TestCompatCruftExcludePatterns:
         excludes = COMPAT_CRUFT_EXCLUDE_PATTERNS["legacy_vars"]
         assert "*migration*" in excludes
 
-    def test_stale_todos_not_excluded(self) -> None:
-        """Test that stale_todos has no exclusions."""
+    def test_stale_todos_excludes_test_files(self) -> None:
+        """Test that stale_todos excludes test files."""
         excludes = COMPAT_CRUFT_EXCLUDE_PATTERNS["stale_todos"]
-        assert len(excludes) == 0
+        assert "*test*" in excludes
+        assert "*spec*" in excludes
 
     def test_alias_exports_excludes_init_files(self) -> None:
         """Test that alias_exports excludes __init__.py files."""

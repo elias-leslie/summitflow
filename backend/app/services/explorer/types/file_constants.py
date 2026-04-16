@@ -156,7 +156,7 @@ COMPAT_CRUFT_EXCLUDE_PATTERNS: dict[str, list[str]] = {
     # Don't flag legacy vars in migrations or tests
     "legacy_vars": ["*migration*", "*test*", "*spec*"],
     # Don't flag TODOs in tests (often intentional placeholders)
-    "stale_todos": [],
+    "stale_todos": ["*test*", "*spec*"],
     # Don't flag alias exports in __init__.py (often intentional)
     "alias_exports": ["__init__.py"],
 }
