@@ -44,6 +44,21 @@ class TestFeedbackLimitValidation:
 class TestFeedbackCommandRouting:
     """Feedback command flags should wire through to implementations."""
 
+    def test_search_accepts_explicit_query_option(self) -> None:
+        with patch("cli.commands.feedback.search_impl") as mock_search_impl:
+            result = runner.invoke(app, ["search", "--query", "--frontend-only compiler flag"])
+
+        assert result.exit_code == 0
+        assert mock_search_impl.call_args.args[0] == "--frontend-only compiler flag"
+
+    def test_search_rejects_positional_query_with_query_option(self) -> None:
+        with patch("cli.commands.feedback.search_impl") as mock_search_impl:
+            result = runner.invoke(app, ["search", "memory", "--query", "error"])
+
+        assert result.exit_code == 2
+        assert "Specify either SEARCH query or --query, not both" in result.output
+        mock_search_impl.assert_not_called()
+
     def test_report_passes_vote_if_match(self) -> None:
         with patch("cli.commands.feedback.report_impl") as mock_report_impl:
             result = runner.invoke(
