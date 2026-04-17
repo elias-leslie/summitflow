@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-_DEP_NAMES = {"node_modules"}
+_DEP_NAMES = {".venv", "node_modules"}
 
 
 def _is_git_ignored(repo_root: Path, rel: Path) -> bool:
