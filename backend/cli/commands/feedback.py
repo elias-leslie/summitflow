@@ -88,7 +88,11 @@ def report(
 
 @app.command("search")
 def search(
-    query: Annotated[str, typer.Argument(help="Search query")],
+    query: Annotated[str | None, typer.Argument(help="Search query")] = None,
+    query_option: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Explicit search query; use when the text starts with - or --"),
+    ] = None,
     component_id: Annotated[
         str | None, typer.Option("--component", "-c", help="Filter by component")
     ] = None,
@@ -110,10 +114,16 @@ def search(
 
     Examples:
       st feedback search "memory injection"
+      st feedback search --query "--frontend-only compiler flag"
       st feedback search "error" --component sf.cli --type friction
     """
+    if query is not None and query_option is not None:
+        raise typer.BadParameter("Specify either SEARCH query or --query, not both")
+    resolved_query = query_option if query_option is not None else query
+    if resolved_query is None:
+        raise typer.BadParameter("Search query is required")
     search_impl(
-        query,
+        resolved_query,
         component_id=component_id,
         feedback_type=feedback_type,
         status=status,
