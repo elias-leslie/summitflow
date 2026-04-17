@@ -109,6 +109,28 @@ class TestMemoryUpdateContentInput:
         assert "Specify only one of --content or --content-file" in result.output
         mock_update_impl.assert_not_called()
 
+    def test_update_rejects_blank_content_and_file_together(self, tmp_path: Path) -> None:
+        """An explicit blank `--content` should still conflict with `--content-file`."""
+        content_file = tmp_path / "episode.md"
+        content_file.write_text("content\n", encoding="utf-8")
+
+        with patch("cli.commands.memory.update_impl") as mock_update_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "update",
+                    "abc12345",
+                    "--content",
+                    "",
+                    "--content-file",
+                    str(content_file),
+                ],
+            )
+
+        assert result.exit_code == 2
+        assert "Specify only one of --content or --content-file" in result.output
+        mock_update_impl.assert_not_called()
+
 
 class TestMemorySaveContentInput:
     """Tests for safe content ingestion in `st memory save`."""
@@ -154,6 +176,67 @@ class TestMemorySaveContentInput:
         args = mock_save_impl.call_args.args
         assert args[1] == "**Quality Checks**: Use dt for all quality checks.\n"
         assert args[8:16] == (None, None, None, None, None, None, None, None)
+
+    def test_save_accepts_content_option(self) -> None:
+        """`--content` should support explicit inline save content."""
+        with patch("cli.commands.memory.save_impl") as mock_save_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "save",
+                    "--content",
+                    "**Quality Checks**: Use dt for all quality checks.\n",
+                    "--summary",
+                    "Use dt for checks",
+                ],
+            )
+
+        assert result.exit_code == 0
+        args = mock_save_impl.call_args.args
+        assert args[1] == "**Quality Checks**: Use dt for all quality checks.\n"
+        assert args[8:16] == (None, None, None, None, None, None, None, None)
+
+    def test_save_rejects_blank_positional_and_content_option_together(self) -> None:
+        """A blank positional CONTENT should still conflict with explicit `--content`."""
+        with patch("cli.commands.memory.save_impl") as mock_save_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "save",
+                    "",
+                    "--content",
+                    "**Quality Checks**: Use dt for all quality checks.\n",
+                    "--summary",
+                    "Use dt for checks",
+                ],
+            )
+
+        assert result.exit_code == 2
+        assert "Specify either [CONTENT] or --content, not both" in result.output
+        mock_save_impl.assert_not_called()
+
+    def test_save_rejects_blank_content_option_and_file_together(self, tmp_path: Path) -> None:
+        """An explicit blank `--content` should still conflict with `--content-file`."""
+        content_file = tmp_path / "episode.md"
+        content_file.write_text("content\n", encoding="utf-8")
+
+        with patch("cli.commands.memory.save_impl") as mock_save_impl:
+            result = runner.invoke(
+                app,
+                [
+                    "save",
+                    "--content",
+                    "",
+                    "--content-file",
+                    str(content_file),
+                    "--summary",
+                    "Use dt for checks",
+                ],
+            )
+
+        assert result.exit_code == 2
+        assert "Specify only one of --content or --content-file" in result.output
+        mock_save_impl.assert_not_called()
 
     def test_save_warns_on_memory_compactness(self) -> None:
         with (
