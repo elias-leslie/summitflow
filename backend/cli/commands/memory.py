@@ -99,7 +99,7 @@ app = typer.Typer(help="Memory system commands (Agent Hub)")
 
 def _resolve_content(content: str | None, content_file: str | None, *, require_value: bool) -> str | None:
     """Resolve content from inline text or file/stdin."""
-    if content and content_file:
+    if content is not None and content_file is not None:
         raise typer.BadParameter("Specify only one of --content or --content-file")
 
     if content_file is None:
@@ -175,6 +175,10 @@ def save(
     ctx: typer.Context,
     summary: SaveSummaryOpt = None,
     content: ContentArg = None,
+    content_option: Annotated[
+        str | None,
+        typer.Option("--content", help="Learning content to save"),
+    ] = None,
     content_file: ContentFileOpt = None,
     tier: TierOpt = "reference",
     confidence: ConfidenceOpt = 80,
@@ -195,7 +199,10 @@ def save(
     change_reason: ChangeReasonOpt = None,
 ) -> None:
     """Save a learning to the memory system."""
-    resolved_content = _resolve_and_validate_save(summary, content, content_file)
+    if content is not None and content_option is not None:
+        raise typer.BadParameter("Specify either [CONTENT] or --content, not both")
+    resolved_inline_content = content_option if content_option is not None else content
+    resolved_content = _resolve_and_validate_save(summary, resolved_inline_content, content_file)
     assert summary is not None
     warn_memory_compactness(summary, resolved_content)
     enforce_memory_compactness(summary, resolved_content)
