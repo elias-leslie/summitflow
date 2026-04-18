@@ -143,6 +143,8 @@ def _build_result_metadata(
     project_id: str,
     normalized_queries: list[str],
     state: _RetrievalState,
+    *,
+    path_prefix: str | None = None,
 ) -> dict[str, object]:
     naive_file_tokens = (
         estimate_naive_file_tokens(project_id, state.symbols)
@@ -159,6 +161,7 @@ def _build_result_metadata(
 
     return {
         "query_count": len(normalized_queries),
+        "path_prefix": path_prefix,
         "symbol_count": len(state.symbols),
         "text_match_count": len(text_items) if isinstance(text_items, list) else 0,
         "text_files_searched": state.text_results.get("files_searched", 0),
@@ -217,6 +220,7 @@ def _search_symbols_for_queries(
     normalized_queries: list[str],
     *,
     symbol_limit: int = _SEARCH_LIMIT,
+    path_prefix: str | None = None,
 ) -> tuple[list[dict[str, object]], str]:
     """Run symbol search and build the symbol section.
 
@@ -231,7 +235,7 @@ def _search_symbols_for_queries(
         # Try symbol search with case-expanded variants from NL words
         nl_terms = nl_to_symbol_terms(normalized_queries)
         if nl_terms:
-            symbols = search_and_rank_symbols(project_id, nl_terms, symbol_limit=symbol_limit)
+            symbols = search_and_rank_symbols(project_id, nl_terms, symbol_limit=symbol_limit, path_prefix=path_prefix)
             if symbols:
                 section = build_symbol_section(project_id, symbols)
                 return symbols, section
@@ -239,7 +243,7 @@ def _search_symbols_for_queries(
 
     _path_terms, symbol_terms = split_path_and_symbol_terms(normalized_queries)
     symbol_queries = symbol_terms if symbol_terms else normalized_queries
-    symbols = search_and_rank_symbols(project_id, symbol_queries, symbol_limit=symbol_limit)
+    symbols = search_and_rank_symbols(project_id, symbol_queries, symbol_limit=symbol_limit, path_prefix=path_prefix)
     section = build_symbol_section(project_id, symbols) if symbols else ""
     return symbols, section
 
@@ -248,6 +252,8 @@ def _text_fallback(
     project_id: str,
     normalized_queries: list[str],
     symbol_section: str,
+    *,
+    path_prefix: str | None = None,
 ) -> tuple[dict[str, Any], str]:
     """Run text search as a fallback when symbol search yields nothing.
 
@@ -261,7 +267,7 @@ def _text_fallback(
 
     path_terms, _symbol_terms = split_path_and_symbol_terms(normalized_queries)
     text_query = " ".join(path_terms) if path_terms else " ".join(normalized_queries)
-    text_results = search_text(project_id, text_query, limit=_ENTRY_LIMIT)
+    text_results = search_text(project_id, text_query, limit=_ENTRY_LIMIT, path_prefix=path_prefix)
 
     # If phrase search found nothing, try individual terms (longest first)
     if not text_results.get("items") and " " in text_query:
@@ -269,7 +275,7 @@ def _text_fallback(
         for term in terms:
             if len(term) < 3:
                 continue
-            term_results = search_text(project_id, term, limit=_ENTRY_LIMIT)
+            term_results = search_text(project_id, term, limit=_ENTRY_LIMIT, path_prefix=path_prefix)
             if term_results.get("items"):
                 text_results = term_results
                 break
@@ -283,13 +289,22 @@ def _retrieve_and_assemble(
     budget_tokens: int,
     *,
     symbol_limit: int = _SEARCH_LIMIT,
+    path_prefix: str | None = None,
 ) -> _RetrievalState:
     """Retrieve symbols/text matches, assemble sections, return retrieval state."""
     index_status, refreshed_index = _ensure_index(project_id)
     symbols, symbol_section = _search_symbols_for_queries(
-        project_id, normalized_queries, symbol_limit=symbol_limit,
+        project_id,
+        normalized_queries,
+        symbol_limit=symbol_limit,
+        path_prefix=path_prefix,
     )
-    text_results, text_section = _text_fallback(project_id, normalized_queries, symbol_section)
+    text_results, text_section = _text_fallback(
+        project_id,
+        normalized_queries,
+        symbol_section,
+        path_prefix=path_prefix,
+    )
 
     used_symbol_first = bool(symbol_section)
     used_fallback = not used_symbol_first and bool(text_section)
@@ -323,6 +338,7 @@ def collect_precision_code_search_context(
     *,
     budget_tokens: int = MAX_EXPLORER_TOKENS,
     symbol_limit: int = _SEARCH_LIMIT,
+    path_prefix: str | None = None,
 ) -> PrecisionCodeSearchResult:
     """Build symbol-first retrieval context with explicit fallback and telemetry."""
     normalized_queries = normalize_queries(queries)
@@ -334,8 +350,19 @@ def collect_precision_code_search_context(
             metadata={"query_count": len(normalized_queries), "skipped_reason": "workflow_meta_low_signal"},
         )
 
-    state = _retrieve_and_assemble(project_id, normalized_queries, budget_tokens, symbol_limit=symbol_limit)
-    metadata = _build_result_metadata(project_id, normalized_queries, state)
+    state = _retrieve_and_assemble(
+        project_id,
+        normalized_queries,
+        budget_tokens,
+        symbol_limit=symbol_limit,
+        path_prefix=path_prefix,
+    )
+    metadata = _build_result_metadata(
+        project_id,
+        normalized_queries,
+        state,
+        path_prefix=path_prefix,
+    )
 
     mode = "symbol-first" if state.used_symbol_first else ("text-fallback" if state.truncated_body else "empty")
     _log_result(project_id, metadata, mode)

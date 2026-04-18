@@ -646,3 +646,48 @@ def test_search_combined_scope_uses_checkout_leading_mode_in_compact_output() ->
     assert result.exit_code == 0
     assert "SEARCH:special checkout marker|mode=text-fallback" in result.output
     assert "## Current Checkout Matches" in result.output
+
+
+def test_search_precision_path_option_calls_precision_endpoint_with_path_prefix() -> None:
+    payload = {
+        "query": "transition-all",
+        "prompt_context": "Precision Code Search: text-fallback",
+        "metadata": {"symbol_count": 0, "used_symbol_first": False, "path_prefix": "packages/notes-ui"},
+    }
+
+    with patch("cli.commands.search.STClient", return_value=_mock_client(payload)) as mock_client:
+        result = _invoke(["transition-all", "--path", "packages/notes-ui", "--project", "summitflow", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == payload
+    mock_client.return_value.get.assert_called_once_with(
+        "http://testserver/explorer/precision-search?q=transition-all&budget=1200&limit=20&path_prefix=packages%2Fnotes-ui"
+    )
+
+
+def test_search_auto_scope_skips_checkout_overlay_when_checkout_is_clean() -> None:
+    payload = {
+        "prompt_context": "Precision Code Search: symbol-first\n\n## Relevant Symbols\n\n- `WorkspaceChatFooter`",
+        "metadata": {
+            "symbol_count": 1,
+            "used_symbol_first": True,
+            "estimated_tokens_saved": 100,
+            "final_tokens": 40,
+        },
+    }
+
+    with (
+        runner.isolated_filesystem(),
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.get_config_optional", return_value=type("Cfg", (), {"project_root": "/srv/workspaces/projects/summitflow", "project_id": "summitflow"})()),
+        patch("cli.commands.search.is_compact", return_value=True),
+        patch("cli.commands.search.resolve_checkout_root", return_value=Path.cwd(), create=True),
+        patch("cli.commands.search.canonical_repo_root", return_value=Path("/srv/workspaces/projects/summitflow"), create=True),
+        patch("cli.commands.search._checkout_has_local_changes", return_value=False),
+    ):
+        result = _invoke(["WorkspaceChatFooter", "--project", "summitflow"])
+
+    assert result.exit_code == 0
+    assert "scope=combined" not in result.output
+    assert "## Current Checkout Overrides" not in result.output
+    assert "WorkspaceChatFooter" in result.output

@@ -80,13 +80,14 @@ def search_and_rank_symbols(
     queries: list[str],
     *,
     symbol_limit: int = 5,
+    path_prefix: str | None = None,
 ) -> list[dict[str, object]]:
     """Search for symbol candidates, filter, rank, and return the top matches."""
     candidates: dict[str, dict[str, object]] = {}
     query_terms = extract_query_terms(queries)
 
     for query in query_terms:
-        for row in search_symbols(project_id, query, limit=_CANDIDATE_LIMIT):
+        for row in search_symbols(project_id, query, limit=_CANDIDATE_LIMIT, path_prefix=path_prefix):
             candidates.setdefault(str(row["symbol_id"]), row)
 
     if not candidates:
