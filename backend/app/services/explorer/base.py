@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, LiteralString, cast
+
+from psycopg import sql
 
 from ...logging_config import get_logger
 from ...storage import explorer as storage
@@ -138,9 +140,9 @@ def get_project_config(project_id: str) -> dict[str, Any] | None:
     """Get full project configuration from database. Returns config dict or None."""
     from ...storage.connection import get_cursor
 
-    cols = ", ".join(_PROJECT_COLUMNS)
+    cols = sql.SQL(", ").join(sql.SQL(cast(LiteralString, col)) for col in _PROJECT_COLUMNS)
     with get_cursor() as cur:
-        cur.execute(f"SELECT {cols} FROM projects WHERE id = %s", (project_id,))
+        cur.execute(sql.SQL("SELECT {cols} FROM projects WHERE id = %s").format(cols=cols), (project_id,))
         row = cur.fetchone()
         if not row:
             return None

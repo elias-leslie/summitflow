@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from psycopg import sql
+
 from ..logging_config import get_logger
+from ._sql import static_sql
 from ._subtask_dep_helpers import (
     DEP_SELECT,
     CycleError,
@@ -37,12 +40,14 @@ def add_dependency(subtask_id: str, depends_on_subtask_id: str) -> dict[str, Any
         cur = conn.cursor()
         try:
             cur.execute(
-                f"""
+                sql.SQL(
+                    """
                 INSERT INTO subtask_dependencies (subtask_id, depends_on_subtask_id)
                 VALUES (%s, %s)
                 ON CONFLICT (subtask_id, depends_on_subtask_id) DO NOTHING
-                RETURNING {DEP_SELECT}
-                """,
+                RETURNING {returning}
+                """
+                ).format(returning=static_sql(DEP_SELECT)),
                 (subtask_id, depends_on_subtask_id),
             )
             row = cur.fetchone()

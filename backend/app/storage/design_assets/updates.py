@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from psycopg import sql
+
+from .._sql import static_sql
 from ..connection import get_connection
 from .core import ASSET_SELECT_COLUMNS, ASSET_STATUSES, _row_to_asset
 
@@ -21,7 +24,8 @@ def update_asset_status(
     approved_at_sql = "NOW()" if status == "approved" else "NULL"
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            sql.SQL(
+                """
             UPDATE design_assets
             SET
                 status = %s,
@@ -29,8 +33,12 @@ def update_asset_status(
                 approved_at = {approved_at_sql},
                 updated_at = NOW()
             WHERE project_id = %s AND asset_id = %s
-            RETURNING {ASSET_SELECT_COLUMNS}
-            """,
+            RETURNING {returning}
+            """
+            ).format(
+                approved_at_sql=static_sql(approved_at_sql),
+                returning=static_sql(ASSET_SELECT_COLUMNS),
+            ),
             (status, approved_by, project_id, asset_id),
         )
         row = cur.fetchone()
