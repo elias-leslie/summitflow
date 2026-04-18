@@ -6,7 +6,10 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from psycopg import sql
+
 from ..logging_config import get_logger
+from ._sql import static_sql
 from ._task_spirit_helpers import SPIRIT_SELECT, _row_to_dict
 from .connection import get_connection
 
@@ -38,7 +41,8 @@ def approve_plan(
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            f"""
+            sql.SQL(
+                """
             UPDATE task_spirit SET
                 plan_status = 'approved',
                 plan_approved_at = %s,
@@ -46,8 +50,9 @@ def approve_plan(
                 plan_history = COALESCE(plan_history, '[]'::jsonb) || %s::jsonb,
                 updated_at = NOW()
             WHERE task_id = %s
-            RETURNING {SPIRIT_SELECT}
-            """,
+            RETURNING {returning}
+            """
+            ).format(returning=static_sql(SPIRIT_SELECT)),
             (now, approved_by, json.dumps([history_entry]), task_id),
         )
         row = cur.fetchone()
@@ -82,14 +87,16 @@ def reject_plan(
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            f"""
+            sql.SQL(
+                """
             UPDATE task_spirit SET
                 plan_status = 'rejected',
                 plan_history = COALESCE(plan_history, '[]'::jsonb) || %s::jsonb,
                 updated_at = NOW()
             WHERE task_id = %s
-            RETURNING {SPIRIT_SELECT}
-            """,
+            RETURNING {returning}
+            """
+            ).format(returning=static_sql(SPIRIT_SELECT)),
             (json.dumps([history_entry]), task_id),
         )
         row = cur.fetchone()
@@ -116,7 +123,8 @@ def set_plan_status(
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            f"""
+            sql.SQL(
+                """
             UPDATE task_spirit SET
                 plan_status = %s,
                 plan_approved_at = CASE WHEN %s = 'approved' THEN COALESCE(plan_approved_at, %s) ELSE NULL END,
@@ -124,8 +132,9 @@ def set_plan_status(
                 plan_history = COALESCE(plan_history, '[]'::jsonb) || %s::jsonb,
                 updated_at = NOW()
             WHERE task_id = %s
-            RETURNING {SPIRIT_SELECT}
-            """,
+            RETURNING {returning}
+            """
+            ).format(returning=static_sql(SPIRIT_SELECT)),
             (plan_status, plan_status, now, plan_status, actor, json.dumps([history_entry]), task_id),
         )
         row = cur.fetchone()

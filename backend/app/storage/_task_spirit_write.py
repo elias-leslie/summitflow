@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from psycopg import sql
+
 from ..logging_config import get_logger
+from ._sql import static_sql
 from ._task_spirit_helpers import SPIRIT_SELECT, _row_to_dict
 from .connection import get_connection
 
@@ -47,10 +50,16 @@ def create_task_spirit(
         Created task_spirit record as dict
     """
     params = _build_insert_params(task_id, done_when, context, complexity)
-    sql = f"INSERT INTO task_spirit {_INSERT_FIELDS} VALUES {_INSERT_PLACEHOLDERS} RETURNING {SPIRIT_SELECT}"
+    query = sql.SQL(
+        "INSERT INTO task_spirit {fields} VALUES {placeholders} RETURNING {returning}"
+    ).format(
+        fields=static_sql(_INSERT_FIELDS),
+        placeholders=static_sql(_INSERT_PLACEHOLDERS),
+        returning=static_sql(SPIRIT_SELECT),
+    )
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute(sql, params)
+        cur.execute(query, params)
         row = cur.fetchone()
         conn.commit()
     logger.info("Created task_spirit for task %s", task_id)
@@ -71,18 +80,24 @@ def upsert_task_spirit(
     Used during plan.json import to handle both new tasks and updates.
     """
     params = _build_insert_params(task_id, done_when, context, complexity)
-    sql = f"""
-        INSERT INTO task_spirit {_INSERT_FIELDS} VALUES {_INSERT_PLACEHOLDERS}
+    query = sql.SQL(
+        """
+        INSERT INTO task_spirit {fields} VALUES {placeholders}
         ON CONFLICT (task_id) DO UPDATE SET
             done_when = EXCLUDED.done_when,
             context = EXCLUDED.context,
             complexity = EXCLUDED.complexity,
             updated_at = NOW()
-        RETURNING {SPIRIT_SELECT}
+        RETURNING {returning}
     """
+    ).format(
+        fields=static_sql(_INSERT_FIELDS),
+        placeholders=static_sql(_INSERT_PLACEHOLDERS),
+        returning=static_sql(SPIRIT_SELECT),
+    )
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute(sql, params)
+        cur.execute(query, params)
         row = cur.fetchone()
         conn.commit()
     logger.info("Upserted task_spirit for task %s", task_id)

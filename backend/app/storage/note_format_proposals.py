@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
+from psycopg import sql
+
+from ._sql import static_sql
 from .connection import generate_prefixed_id, get_connection, get_cursor
 
-_SELECT_COLS = """
-    SELECT id, note_id, status, original_title, original_content,
-           proposed_title, proposed_content, error_message, created_at, completed_at
-    FROM note_format_proposals
+_RETURNING_COLS = """
+    id, note_id, status, original_title, original_content,
+    proposed_title, proposed_content, error_message, created_at, completed_at
 """
+
+_SELECT_COLS = f"SELECT {_RETURNING_COLS} FROM note_format_proposals"
 
 
 def _row_to_dict(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -42,11 +46,13 @@ def create_proposal(
             (note_id,),
         )
         cur.execute(
-            f"""
+            sql.SQL(
+                """
             INSERT INTO note_format_proposals (id, note_id, status, original_title, original_content)
             VALUES (%s, %s, 'pending', %s, %s)
-            {_SELECT_COLS.replace('SELECT', 'RETURNING').replace('FROM note_format_proposals', '')}
-            """,
+            RETURNING {returning}
+            """
+            ).format(returning=static_sql(_RETURNING_COLS)),
             (proposal_id, note_id, original_title, original_content),
         )
         result = cur.fetchone()
@@ -102,7 +108,7 @@ def get_latest_proposal(note_id: str) -> dict[str, Any] | None:
     """Get the most recent pending or complete proposal for a note."""
     with get_cursor() as cur:
         cur.execute(
-            _SELECT_COLS + "WHERE note_id = %s AND status IN ('pending', 'complete') ORDER BY created_at DESC LIMIT 1",
+            f"{_SELECT_COLS} WHERE note_id = %s AND status IN ('pending', 'complete') ORDER BY created_at DESC LIMIT 1",
             (note_id,),
         )
         row = cur.fetchone()
