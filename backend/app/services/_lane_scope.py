@@ -1,4 +1,4 @@
-"""Scope loading, normalization, and overlap detection for task lane preflight."""
+"""Scope loading, normalization, and overlap detection for task-session preflight."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ def load_task_scope(task_id: str) -> TaskScope | None:
 
 
 def load_live_lane_scope(session: dict[str, object], task_id: str | None) -> LaneScope | None:
-    """Prefer live session scope, falling back to task spirit scope for managed lanes."""
+    """Prefer live session scope, falling back to task spirit scope for managed sessions."""
     declared_paths = normalize_scope_values(session.get("declared_scope_paths"))
     write_paths = declared_paths | normalize_scope_values(session.get("observed_write_paths"))
     read_paths = normalize_scope_values(session.get("observed_read_paths"))

@@ -19,7 +19,6 @@ from ._git_branches import (
 )
 from ._git_core import (
     CONFIG_REPOS,
-    LANES_BASE_DIR,
     fetch_repository,
     get_managed_repos,
     get_repo_status,
@@ -38,7 +37,6 @@ from ._git_diff import (
 
 __all__ = [
     "CONFIG_REPOS",
-    "LANES_BASE_DIR",
     "build_repo_workspace_summary",
     "extract_task_id_from_branch",
     "fetch_repository",

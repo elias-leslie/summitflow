@@ -62,13 +62,3 @@ def find_manifest_scope_dir(
         None,
     )
 
-
-def lane_scopes_for_project(
-    project_dir: Path, project_id: str
-) -> list[tuple[str, SnapshotScope]]:
-    """Return (project_id, scope) pairs for lane dirs containing a .git entry."""
-    return [
-        (project_id, SnapshotScope("lane", lane_dir.name, lane_dir.resolve()))
-        for lane_dir in sorted(project_dir.iterdir())
-        if lane_dir.is_dir() and (lane_dir / ".git").exists()
-    ]

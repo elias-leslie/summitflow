@@ -80,12 +80,12 @@ class TestTaskLaneScopes:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues == [
-            "Another active coding lane overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"
+            "Another active coding session overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"
         ]
         assert result.conflicting_tasks == ["task-999"]
 
         assert result.issues == [
-            "Another active coding lane overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"
+            "Another active coding session overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"
         ]
         assert result.conflicting_tasks == ["task-999"]
         assert result.overlap_kind == "exact_file"
@@ -117,7 +117,7 @@ class TestTaskLaneScopes:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues == [
-            "Another active coding lane is already modifying shared plumbing in project summitflow: "
+            "Another active coding session is already modifying shared plumbing in project summitflow: "
             "task-999 (backend/app/services/tools/catalog.py, backend/app/services/tools/tool_handler.py)"
         ]
         assert result.conflicting_tasks == ["task-999"]
@@ -172,7 +172,7 @@ class TestTaskLaneScopes:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues == [
-            "Another active coding lane exists in project summitflow but lacks usable file scope: task-999"
+            "Another active coding session exists in project summitflow but lacks usable file scope: task-999"
         ]
         assert result.conflicting_tasks == ["task-999"]
         assert any("scope unavailable" in suggestion for suggestion in result.suggestions)
@@ -202,7 +202,7 @@ class TestTaskLaneScopes:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues == [
-            "Another active coding lane exists in project summitflow but lacks usable file scope: task-999"
+            "Another active coding session exists in project summitflow but lacks usable file scope: task-999"
         ]
         assert result.conflicting_tasks == ["task-999"]
 
@@ -231,7 +231,7 @@ class TestTaskLaneScopes:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues == [
-            "Another active coding lane overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"
+            "Another active coding session overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"
         ]
         assert result.conflicting_tasks == ["task-999"]
 
@@ -265,7 +265,7 @@ class TestTaskLaneScopes:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues == [
-            "Another active coding lane overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"
+            "Another active coding session overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"
         ]
         assert result.conflicting_tasks == ["task-999"]
 
@@ -357,7 +357,7 @@ class TestTaskLaneScopes:
         assert result.overlap_kind == "read_overlap"
         assert result.overlap_paths == ["backend/app/foo.py"]
         assert result.issues == [
-            "Another active coding lane is reading files in the target scope in project summitflow: task-999 (backend/app/foo.py)"
+            "Another active coding session is reading files in the target scope in project summitflow: task-999 (backend/app/foo.py)"
         ]
 
     @patch("app.services._lane_scope.get_task_spirit")
@@ -385,7 +385,7 @@ class TestTaskLaneScopes:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues == [
-            "Another active coding lane exists in project summitflow but lacks usable file scope: task-123"
+            "Another active coding session exists in project summitflow but lacks usable file scope: task-123"
         ]
 
     @patch("app.services._lane_scope.get_task_spirit")
@@ -413,7 +413,7 @@ class TestTaskLaneScopes:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues == [
-            "Another active coding lane exists in project summitflow but lacks usable file scope: task-123"
+            "Another active coding session exists in project summitflow but lacks usable file scope: task-123"
         ]
 
     @patch("app.services._lane_scope.get_task_spirit")
@@ -472,7 +472,7 @@ class TestTaskLaneScopes:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues == [
-            "Another active coding lane overlaps exact files in project summitflow: task-aaa (backend/app/foo.py)"
+            "Another active coding session overlaps exact files in project summitflow: task-aaa (backend/app/foo.py)"
         ]
         assert result.conflicting_tasks == ["task-aaa"]
 
@@ -508,7 +508,7 @@ class TestTaskLaneScopes:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues == [
-            "Another active coding lane overlaps exact files in project summitflow: task-zzz (backend/app/foo.py)"
+            "Another active coding session overlaps exact files in project summitflow: task-zzz (backend/app/foo.py)"
         ]
         assert result.conflicting_tasks == ["task-zzz"]
 

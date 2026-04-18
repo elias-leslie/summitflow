@@ -38,12 +38,10 @@ const SOURCE_LABEL: Record<string, string> = {
 
 const SCOPE_TYPE_STYLE: Record<string, string> = {
   project: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
-  lane: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
 }
 
 const SCOPE_ACCENT: Record<string, string> = {
   project: 'border-l-emerald-500',
-  lane: 'border-l-blue-500',
 }
 
 const STATE_BADGE: Record<string, string> = {
@@ -107,7 +105,7 @@ function SnapshotRow({ snap }: { snap: BtrfsSnapshot }) {
         onClick={handleRecover}
         disabled={recovering}
         className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 disabled:opacity-40 transition-all shrink-0"
-        title="Recover to sibling scope"
+        title="Recover to sibling project"
       >
         {recovering ? (
           <Loader2 className="w-3 h-3 animate-spin" />

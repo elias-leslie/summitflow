@@ -52,22 +52,6 @@ def get_cache_base_dir(cache_name: str | None = None) -> Path:
     return base_dir
 
 
-def get_lanes_base_dir(project_id: str | None = None) -> Path:
-    """Return the Btrfs-backed lanes base directory when available."""
-    base_dir = get_workspaces_root() / "lanes"
-    if project_id:
-        base_dir = base_dir / project_id
-    if workspaces_root_available():
-        base_dir.mkdir(parents=True, exist_ok=True)
-    return base_dir
-
-
-def get_lane_path(task_id: str, project_id: str | None = None) -> Path:
-    """Return the shared lane path for a task id."""
-    sanitized = sanitize_task_id(task_id)
-    return get_lanes_base_dir(project_id) / sanitized
-
-
 def sanitize_task_id(task_id: str) -> str:
     """Sanitize task ID for safe use in file paths.
 

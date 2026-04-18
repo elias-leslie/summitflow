@@ -17,7 +17,7 @@ class TestTaskObservability:
             {
                 "external_id": None,
                 "current_branch": None,
-                "repo_root": "/srv/workspaces/lanes/agent-hub/task-bc3ed9c0",
+                "repo_root": "/srv/workspaces/projects/agent-hub/task-bc3ed9c0",
             }
         ) == "task-bc3ed9c0"
 
@@ -180,13 +180,13 @@ class TestTaskObservability:
             "status": "active",
             "external_id": None,
             "current_branch": None,
-            "repo_root": f"/srv/workspaces/lanes/{test_project_id}/{task_id}",
+            "repo_root": f"/srv/workspaces/projects/{test_project_id}/{task_id}",
             "effective_model": "claude-sonnet-4-6",
             "updated_at": "2026-03-26T00:00:00Z",
             "live_activity": {
                 "phase": "finalizing",
                 "status": "active",
-                "summary": "Finalizing lane",
+                "summary": "Finalizing checkout",
                 "health": "stalled",
                 "stalled": True,
                 "files_touched": [],

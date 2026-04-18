@@ -27,7 +27,7 @@ logger = get_logger(__name__)
 
 
 def _guard_existing_same_task_lane(task_id: str, project_id: str) -> dict[str, Any] | None:
-    """Avoid replaying the same task when an active live lane already exists."""
+    """Avoid replaying the same task when an active live session already exists."""
     lane_check = check_task_lane_conflicts(task_id, project_id)
     if lane_check.overlap_kind != "same_task" or lane_check.disposition != "block":
         return None
@@ -36,11 +36,11 @@ def _guard_existing_same_task_lane(task_id: str, project_id: str) -> dict[str, A
     emit_log(
         task_id,
         "info",
-        f"Execution skipped: active task lane already owned by session {owner}",
+        f"Execution skipped: active task session already owned by session {owner}",
         project_id=project_id,
     )
     logger.info(
-        "Skipping duplicate autonomous execution for active task lane",
+        "Skipping duplicate autonomous execution for active task session",
         task_id=task_id,
         project_id=project_id,
         owner_session_id=lane_check.owner_session_id,
@@ -49,7 +49,7 @@ def _guard_existing_same_task_lane(task_id: str, project_id: str) -> dict[str, A
     return {
         "task_id": task_id,
         "status": "already_running",
-        "message": "Active task lane already exists",
+        "message": "Active task session already exists",
         "owner_session_id": lane_check.owner_session_id,
     }
 

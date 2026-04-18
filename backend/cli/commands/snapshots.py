@@ -21,7 +21,7 @@ from ..output import output_json
 from ..output_context import OutputContext
 
 app = typer.Typer(
-    help="Btrfs-backed snapshots and recovery for the current lane or project scope",
+    help="Btrfs-backed snapshots and recovery for the current project scope",
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
 )
 
@@ -63,7 +63,7 @@ def snap_command(
     ctx: typer.Context,
     name: Annotated[str | None, typer.Argument(help="Optional snapshot label")] = None,
 ) -> None:
-    """Capture a Btrfs snapshot for the current lane or project scope."""
+    """Capture a Btrfs snapshot for the current project scope."""
     config = get_config()
     try:
         snapshot = capture_snapshot(name, project_id=config.project_id)
@@ -83,7 +83,7 @@ def snap_command(
 
 @app.command("snaps")
 def snaps_command(ctx: typer.Context) -> None:
-    """List snapshots for the current lane or project scope."""
+    """List snapshots for the current project scope."""
     config = get_config()
     try:
         snapshots = list_snapshots(project_id=config.project_id)
@@ -120,9 +120,10 @@ def snaps_command(ctx: typer.Context) -> None:
         "snapshots": [
             {
                 **snapshot.to_dict(),
-                "usage": usage_by_id[snapshot.id].to_dict() if usage_by_id[snapshot.id] else None,
+                "usage": usage.to_dict() if usage is not None else None,
             }
             for snapshot in snapshots
+            for usage in [usage_by_id[snapshot.id]]
         ],
         "total": len(snapshots),
     })
@@ -137,10 +138,10 @@ def recover_command(
     target: Annotated[str, typer.Argument(help="Snapshot id, name, or negative index like -1")],
     name: Annotated[
         str | None,
-        typer.Option("--name", help="Optional recovery lane or project name"),
+        typer.Option("--name", help="Optional recovery project name"),
     ] = None,
 ) -> None:
-    """Recover a snapshot into a sibling lane or project copy."""
+    """Recover a snapshot into a sibling project copy."""
     config = get_config()
     try:
         snapshot = recover_snapshot(target, project_id=config.project_id, name=name)
@@ -170,7 +171,7 @@ def rollback_command(
         typer.Option("--confirm", help="Confirm token from preview run"),
     ] = None,
 ) -> None:
-    """Destructively restore the current task lane to a recorded snapshot.
+    """Destructively restore the current project root to a recorded snapshot.
 
     Two-pass confirmation: first run shows what will be replaced,
     second run with --confirm TOKEN executes.
@@ -193,14 +194,14 @@ def rollback_command(
             raise typer.Exit(1) from None
 
         preview_lines = [
-            f"ROLLBACK will destructively replace lane: {scope.scope_name}",
+            f"ROLLBACK will destructively replace project root: {scope.scope_name}",
             f"  Snapshot: {snapshot.id}",
             f"  Name: {_compact_name(snapshot.name)}",
             f"  Created: {snapshot.created_at}",
             f"  Branch: {snapshot.branch or 'detached'}",
             f"  HEAD: {snapshot.head_oid or '?'}",
             "",
-            "Current lane contents will be permanently destroyed.",
+            "Current project contents will be permanently destroyed.",
             "Consider 'st recover' instead for non-destructive restoration.",
         ]
 
@@ -237,11 +238,11 @@ def prune_command(
         if ctx.obj.is_compact:
             action = "would-prune" if dry_run else "pruned"
             print(
-                f"PRUNE[0]|action:{action}|lane_interval:{policy['lane_interval_minutes']}|"
-                f"project_interval:{policy['project_interval_minutes']}|"
+                f"PRUNE[0]|action:{action}|interval:{policy['interval_minutes']}|"
                 f"baseline_stale:{policy['baseline_stale_minutes']}|"
-                f"lane_keep:{policy['lane_auto_keep_per_scope']}|"
-                f"project_keep:{policy['project_auto_keep_per_scope']}|"
+                f"auto_keep:{policy['auto_keep_per_scope']}|"
+                f"archived_auto_keep:{policy['archived_auto_keep_per_scope']}|"
+                f"archived_scope_keep:{policy['archived_keep_per_project']}|"
                 f"manual_keep:{policy['manual_keep_per_scope']}"
             )
         else:
@@ -252,11 +253,11 @@ def prune_command(
     if ctx.obj.is_compact:
         action = "would prune" if dry_run else "pruned"
         print(
-            f"PRUNE[{total}]|action:{action}|lane_interval:{policy['lane_interval_minutes']}|"
-            f"project_interval:{policy['project_interval_minutes']}|"
+            f"PRUNE[{total}]|action:{action}|interval:{policy['interval_minutes']}|"
             f"baseline_stale:{policy['baseline_stale_minutes']}|"
-            f"lane_keep:{policy['lane_auto_keep_per_scope']}|"
-            f"project_keep:{policy['project_auto_keep_per_scope']}|"
+            f"auto_keep:{policy['auto_keep_per_scope']}|"
+            f"archived_auto_keep:{policy['archived_auto_keep_per_scope']}|"
+            f"archived_scope_keep:{policy['archived_keep_per_project']}|"
             f"manual_keep:{policy['manual_keep_per_scope']}"
         )
         for scope_key, entries in results.items():

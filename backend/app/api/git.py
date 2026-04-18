@@ -226,7 +226,7 @@ async def resolve_conflict(task_id: str) -> dict[str, object]:
 
 @router.post("/git/tasks/{task_id}/finalize", tags=["git"])
 async def finalize_task_merge(task_id: str) -> dict[str, object]:
-    """Finalize merge/cleanup for a residue task lane that is no longer actively executing."""
+    """Finalize merge/cleanup for a residue task checkpoint that is no longer actively executing."""
     task = task_store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")

@@ -1,4 +1,4 @@
-"""Live lane/workstream conflict checks via Agent Hub session inventory."""
+"""Live session/workstream conflict checks via Agent Hub session inventory."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ class TaskLaneConflictCheckDict(TypedDict):
 
 @dataclass
 class TaskLaneConflictCheck:
-    """Result of a live lane conflict check."""
+    """Result of a live session conflict check."""
 
     issues: list[str] = field(default_factory=list)
     suggestions: list[str] = field(default_factory=list)
@@ -108,7 +108,7 @@ class TaskLaneConflictCheck:
 
 
 def _lane_task_id(session: dict[str, object]) -> str | None:
-    """Infer the task id associated with a live lane session."""
+    """Infer the task id associated with a live task session."""
     task_id = session.get("task_id")
     if isinstance(task_id, str) and task_id.startswith("task-"):
         return task_id
@@ -185,26 +185,26 @@ def _apply_same_task_conflict(
         result.overlap_kind = _STALE_SAME_TASK
         result.disposition = _RECONCILE
         result.issues.append(
-            f"Task status is {target_status} but it still has a leftover live lane: {_lane_summary(session)}"
+            f"Task status is {target_status} but it still has a leftover live session: {_lane_summary(session)}"
         )
         result.suggestions.append(
-            "Reconcile or retire the leftover same-task lane before redispatching or treating "
+            "Reconcile or retire the leftover same-task session before redispatching or treating "
             "the task as cleanly closed."
         )
     elif _is_stale_lane_session(session):
         result.overlap_kind = _STALE_SAME_TASK
         result.disposition = _RECONCILE
-        result.issues.append(f"Task already has a likely stale active lane: {_lane_summary(session)}")
+        result.issues.append(f"Task already has a likely stale active session: {_lane_summary(session)}")
         result.suggestions.append(
-            f"Inspect the lane with `{_SESSIONS_INSPECT_CMD.format(project_id=project_id)}` "
+            f"Inspect the active session with `{_SESSIONS_INSPECT_CMD.format(project_id=project_id)}` "
             "and reconcile or retire it before queueing another execution."
         )
     else:
         result.overlap_kind = _SAME_TASK
         result.disposition = _BLOCK
-        result.issues.append(f"Task already has an active lane: {_lane_summary(session)}")
+        result.issues.append(f"Task already has an active session: {_lane_summary(session)}")
         result.suggestions.append(
-            "Wait for the active lane to finish or reconcile it before queueing another execution."
+            "Wait for the active session to finish or reconcile it before queueing another execution."
         )
 
 
@@ -216,7 +216,7 @@ def _apply_unscoped_conflict(
     lane_sessions: list[dict[str, object]],
     suggestion_prefix: str,
 ) -> None:
-    """Handle both unscoped-target and unscoped-lane conflicts."""
+    """Handle both unscoped-target and unscoped-session conflicts."""
     chosen = lane_sessions[0]
     chosen_task_id = _lane_task_id(chosen)
     _set_owner_from_session(result, chosen)
@@ -225,13 +225,13 @@ def _apply_unscoped_conflict(
     result.overlap_kind = overlap_kind
     result.disposition = _WARN
     result.issues.append(
-        f"Another active coding lane exists in project {project_id} but lacks usable file scope: {display_id}"
+        f"Another active coding session exists in project {project_id} but lacks usable file scope: {display_id}"
     )
     if lane_preview:
-        result.suggestions.append(f"Active lane details: {lane_preview}")
+        result.suggestions.append(f"Active session details: {lane_preview}")
     result.suggestions.append(
         f"{suggestion_prefix}; keep the current project-level guard and finish, retire, "
-        "or scope the active lane before dispatching another coding task."
+        "or scope the active session before dispatching another coding task."
     )
 
 
@@ -255,13 +255,13 @@ def _apply_write_overlap_conflict(
         result.overlap_kind = _SHARED_PLUMBING
         result.shared_plumbing = True
         result.issues.append(
-            f"Another active coding lane is already modifying shared plumbing in project {project_id}: "
+            f"Another active coding session is already modifying shared plumbing in project {project_id}: "
             f"{overlap_id} ({preview})"
         )
         result.suggestions.append(
             f"Shared-plumbing overlap with {overlap_id}: {preview}. "
-            "Do not run parallel coding lanes in adapters/tooling/orchestration areas; finish or retire "
-            "the active lane first."
+            "Do not run parallel coding sessions in adapters/tooling/orchestration areas; finish or retire "
+            "the active session first."
         )
         return
 
@@ -272,18 +272,18 @@ def _apply_write_overlap_conflict(
         result.overlap_kind = _SHARED_PLUMBING
         result.shared_plumbing = True
         result.issues.append(
-            f"Another active coding lane overlaps shared plumbing files in project {project_id}: "
+            f"Another active coding session overlaps shared plumbing files in project {project_id}: "
             f"{overlap_id} ({preview})"
         )
     else:
         result.overlap_kind = _EXACT_FILE
         result.issues.append(
-            f"Another active coding lane overlaps exact files in project {project_id}: "
+            f"Another active coding session overlaps exact files in project {project_id}: "
             f"{overlap_id} ({preview})"
         )
     result.suggestions.append(
         f"Exact-file overlap with {overlap_id}: {preview}. "
-        "Finish or retire the active lane before dispatching another coding task."
+        "Finish or retire the active session before dispatching another coding task."
     )
 
 
@@ -303,11 +303,11 @@ def _apply_read_overlap_conflict(
     result.disposition = _WARN
     preview = ", ".join(overlap_paths[:3])
     result.issues.append(
-        f"Another active coding lane is reading files in the target scope in project {project_id}: "
+        f"Another active coding session is reading files in the target scope in project {project_id}: "
         f"{overlap_id} ({preview})"
     )
     result.suggestions.append(
-        f"Read-scope overlap with {overlap_id}: {preview}. Coordinate before editing if that lane "
+        f"Read-scope overlap with {overlap_id}: {preview}. Coordinate before editing if that session "
         "may promote into writes, but safe parallel work can continue."
     )
 
@@ -318,7 +318,7 @@ def _apply_stale_lane_conflict(
     lane_sessions: list[dict[str, object]],
     stale_sessions: list[dict[str, object]],
 ) -> None:
-    """Handle stale active lane sessions."""
+    """Handle stale active task sessions."""
     _set_owner_from_session(result, stale_sessions[0])
     result.overlap_kind = _STALE_LANE
     result.disposition = _RECONCILE
@@ -326,12 +326,12 @@ def _apply_stale_lane_conflict(
     preview = ", ".join(result.conflicting_tasks[:3])
     lane_preview = "; ".join(_lane_summary(s) for s in lane_sessions[:2])
     result.issues.append(
-        f"Another likely stale active coding lane exists in project {project_id}: {preview}"
+        f"Another likely stale active coding session exists in project {project_id}: {preview}"
     )
     if lane_preview:
-        result.suggestions.append(f"Active lane details: {lane_preview}")
+        result.suggestions.append(f"Active session details: {lane_preview}")
     result.suggestions.append(
-        f"Inspect the lane with `{_SESSIONS_INSPECT_CMD.format(project_id=project_id)}` "
+        f"Inspect the active session with `{_SESSIONS_INSPECT_CMD.format(project_id=project_id)}` "
         "and retire or reconcile it if the session is no longer truly live."
     )
 
@@ -358,7 +358,7 @@ def _apply_scoped_conflict(
         chosen_sessions = [s for s in lane_sessions if (_lane_task_id(s) or _UNKNOWN_TASK) == chosen_id]
         _apply_unscoped_conflict(
             result, _UNSCOPED_LANE, chosen_id, project_id, chosen_sessions or lane_sessions,
-            "Active lane scope unavailable",
+            "Active session scope unavailable",
         )
 
 
@@ -385,11 +385,11 @@ def _apply_other_lane_conflict(
     result.disposition = _BLOCK
     result.conflicting_tasks = [owner_task] if owner_task else []
     result.issues.append(
-        f"Another active coding lane already owns the shared checkout for project {project_id}: {_lane_summary(primary)}"
+        f"Another active coding session already owns the shared checkout for project {project_id}: {_lane_summary(primary)}"
     )
     result.suggestions.append(
-        "Shared-checkout mode does not allow parallel same-project coding lanes. "
-        "Finish, retire, or reconcile the active lane before dispatching another task."
+        "Shared-checkout mode does not allow parallel same-project coding sessions. "
+        "Finish, retire, or reconcile the active session before dispatching another task."
     )
     return
 
@@ -399,7 +399,7 @@ def _apply_other_lane_conflict(
 def _partition_sessions(
     sessions: list[dict[str, object]], task_id: str,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    """Partition sessions into same-task and other-active-task lanes."""
+    """Partition sessions into same-task and other-active-task sessions."""
     same_task: list[dict[str, object]] = []
     other_lanes: list[dict[str, object]] = []
     for session in sessions:
@@ -419,7 +419,7 @@ def _partition_sessions(
 
 
 def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflictCheck:
-    """Check whether active Agent Hub lanes conflict with autonomous dispatch."""
+    """Check whether active Agent Hub sessions conflict with autonomous dispatch."""
     try:
         sessions, specialists = fetch_live_project_inventory(project_id)
     except Exception as e:

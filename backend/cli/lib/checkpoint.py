@@ -89,7 +89,7 @@ def remove_checkpoint_for_scope_path(
     *,
     project_id: str | None = None,
 ) -> bool:
-    """Delete checkpoint metadata associated with a legacy lane path."""
+    """Delete checkpoint metadata associated with a legacy scoped path."""
     task_id = Path(scope_path).name
     meta = load_snapshot_meta(task_id)
     if not meta:

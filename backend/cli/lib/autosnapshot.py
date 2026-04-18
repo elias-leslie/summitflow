@@ -1,11 +1,11 @@
 """Autosnapshot policy library — baseline, lifecycle, periodic, and retention pruning.
 
-Provides the automation backbone for Btrfs-backed snapshots:
-- ``ensure_baseline``: idempotent baseline snapshot for scope activation (claim, session start)
+Provides the automation backbone for Btrfs-backed project snapshots:
+- ``ensure_baseline``: idempotent baseline snapshot for project activity
 - ``capture_lifecycle_baseline``: best-effort protective snapshot before destructive lifecycle cleanup
-- ``sweep_periodic``: periodic safety-net snapshots for active scopes
+- ``sweep_periodic``: periodic safety-net snapshots for active projects
 - ``prune_scope`` / ``prune_all``: retention enforcement per scope
-- ``enumerate_prunable_scopes``: walk Btrfs-backed lanes/projects plus retained orphan manifests
+- ``enumerate_prunable_scopes``: walk Btrfs-backed projects plus retained archived manifests
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ from pathlib import Path
 from .autosnapshot_helpers import (
     find_manifest_scope_dir,
     iter_archived_manifest_scopes,
-    lane_scopes_for_project,
 )
 from .quick_snapshots import (
     QuickSnapshot,
@@ -39,46 +38,33 @@ _AUTO_SOURCE_PREFIX = "auto-"
 
 @dataclass(frozen=True)
 class AutosnapshotPolicy:
-    """Retention and interval policy for automatic snapshots."""
+    """Retention and interval policy for automatic project snapshots."""
 
-    lane_interval_minutes: int = 60
-    project_interval_minutes: int = 1440
+    interval_minutes: int = 1440
     baseline_stale_minutes: int = 30
-    auto_keep_per_scope: int | None = None
-    lane_auto_keep_per_scope: int = 24
-    project_auto_keep_per_scope: int = 7
-    archived_lane_auto_keep_per_scope: int = 3
-    archived_lane_keep_per_project: int = 3
+    auto_keep_per_scope: int = 7
+    archived_auto_keep_per_scope: int = 3
+    archived_keep_per_project: int = 3
     manual_keep_per_scope: int = 20
 
     def to_dict(self) -> dict[str, int]:
-        data = {
-            "lane_interval_minutes": self.lane_interval_minutes,
-            "project_interval_minutes": self.project_interval_minutes,
+        return {
+            "interval_minutes": self.interval_minutes,
             "baseline_stale_minutes": self.baseline_stale_minutes,
-            "lane_auto_keep_per_scope": self.lane_auto_keep_per_scope,
-            "project_auto_keep_per_scope": self.project_auto_keep_per_scope,
-            "archived_lane_auto_keep_per_scope": self.archived_lane_auto_keep_per_scope,
-            "archived_lane_keep_per_project": self.archived_lane_keep_per_project,
+            "auto_keep_per_scope": self.auto_keep_per_scope,
+            "archived_auto_keep_per_scope": self.archived_auto_keep_per_scope,
+            "archived_keep_per_project": self.archived_keep_per_project,
             "manual_keep_per_scope": self.manual_keep_per_scope,
         }
-        if self.auto_keep_per_scope is not None:
-            data["auto_keep_per_scope"] = self.auto_keep_per_scope
-        return data
 
     def auto_keep_for_scope(
         self,
-        scope: SnapshotScope,
         *,
         scope_state: str = "active",
     ) -> int:
-        if self.auto_keep_per_scope is not None:
-            return self.auto_keep_per_scope
-        if scope_state == "archived" and scope.scope_type == "lane":
-            return self.archived_lane_auto_keep_per_scope
-        if scope.scope_type == "project":
-            return self.project_auto_keep_per_scope
-        return self.lane_auto_keep_per_scope
+        if scope_state == "archived":
+            return self.archived_auto_keep_per_scope
+        return self.auto_keep_per_scope
 
 
 DEFAULT_POLICY = AutosnapshotPolicy()
@@ -186,22 +172,12 @@ def capture_lifecycle_baseline(
 
 
 def enumerate_active_scopes() -> list[tuple[str, SnapshotScope]]:
-    """Walk Btrfs workspaces and return ``(project_id, scope)`` pairs.
-
-    Filters to directories containing a ``.git`` file or directory (real scopes).
-    """
+    """Walk Btrfs workspaces and return active project scopes."""
     if not workspaces_root_available():
         return []
 
     scopes: list[tuple[str, SnapshotScope]] = []
     root = get_workspaces_root()
-
-    # Lanes: /srv/workspaces/lanes/<project>/<lane>/
-    lanes_root = root / "lanes"
-    if lanes_root.is_dir():
-        for project_dir in sorted(lanes_root.iterdir()):
-            if project_dir.is_dir():
-                scopes.extend(lane_scopes_for_project(project_dir, project_dir.name))
 
     # Projects: /srv/workspaces/projects/<project>/
     projects_root = root / "projects"
@@ -222,8 +198,8 @@ def enumerate_snapshot_scopes(
 ) -> list[tuple[str, SnapshotScope, str]]:
     """Return snapshot scopes as ``(project_id, scope, state)`` tuples.
 
-    Active scopes map to real current Btrfs-backed lanes/projects. Archived
-    scopes are retained recovery manifests for deleted or retired lanes.
+    Active scopes map to real current Btrfs-backed projects. Archived
+    scopes are retained recovery manifests for deleted or retired projects.
     """
     scopes_by_key: dict[str, tuple[str, SnapshotScope, str]] = {}
     for project_id, scope in enumerate_active_scopes():
@@ -234,6 +210,8 @@ def enumerate_snapshot_scopes(
 
     snaps_root = Path.home() / ".local" / "share" / "st" / "snaps"
     for _, project_id, scope in iter_archived_manifest_scopes(snaps_root):
+        if scope.scope_type != "project":
+            continue
         key = _scope_key(project_id, scope)
         if key not in scopes_by_key:
             scopes_by_key[key] = (project_id, scope, "archived")
@@ -285,14 +263,9 @@ def sweep_periodic(
     created: list[QuickSnapshot] = []
 
     for project_id, scope in enumerate_active_scopes():
-        interval = (
-            policy.lane_interval_minutes
-            if scope.scope_type == "lane"
-            else policy.project_interval_minutes
-        )
         entries = load_manifest(project_id, scope)
         age = _minutes_since(_latest_entry(entries).created_at) if entries else None
-        if age is not None and age < interval:
+        if age is not None and age < policy.interval_minutes:
             continue
         if entries and not _scope_state_needs_snapshot(scope.path, entries):
             continue
@@ -334,7 +307,7 @@ def prune_scope(
         key=lambda e: e.created_at,
     )
 
-    auto_limit = policy.auto_keep_for_scope(scope, scope_state=scope_state)
+    auto_limit = policy.auto_keep_for_scope(scope_state=scope_state)
     to_prune = (
         auto_entries[: max(0, len(auto_entries) - auto_limit)]
         + manual_entries[: max(0, len(manual_entries) - policy.manual_keep_per_scope)]
@@ -367,10 +340,10 @@ def _build_drop_scope_keys(
     scopes: list[tuple[str, SnapshotScope, str]],
     keep_per_project: int,
 ) -> set[str]:
-    """Return scope keys for archived auto-only lane scopes that exceed the per-project cap."""
+    """Return scope keys for archived auto-only project scopes that exceed the per-project cap."""
     archived_by_project: dict[str, list[tuple[str, SnapshotScope]]] = {}
     for project_id, scope, scope_state in scopes:
-        if scope_state != "archived" or scope.scope_type != "lane":
+        if scope_state != "archived" or scope.scope_type != "project":
             continue
         entries = load_manifest(project_id, scope)
         if not entries or any(not e.source.startswith(_AUTO_SOURCE_PREFIX) for e in entries):
@@ -413,7 +386,7 @@ def prune_all(
     """Enforce retention policy across active and retained orphan scopes."""
     results: dict[str, list[QuickSnapshot]] = {}
     scopes = list(enumerate_snapshot_scopes(include_archived=True))
-    keep_per_project = max(0, policy.archived_lane_keep_per_project)
+    keep_per_project = max(0, policy.archived_keep_per_project)
     drop_scope_keys = _build_drop_scope_keys(scopes, keep_per_project)
 
     for project_id, scope, scope_state in scopes:

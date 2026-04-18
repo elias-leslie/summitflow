@@ -5,6 +5,7 @@ Provides checkpoint cleanup, orphan inspection, and minimal salvage recovery.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -15,7 +16,7 @@ from app.utils.git_helpers import build_repo_workspace_summary
 
 from ..config import get_config_optional
 from ..lib.checkpoint import get_active_checkpoints, get_stale_checkpoints
-from ..lib.confirm_token import confirm_gate, format_preview, generate_token
+from ..lib.confirm_token import confirm_gate
 from ..lib.quick_snapshots import find_snapshot_residue
 from ..lib.workspace_paths import workspaces_root_available
 from ..output import output_error, output_json, output_success
@@ -27,14 +28,6 @@ from .cleanup_analysis import (
     analyze_checkpoint,
     cleanup_checkpoint,
     format_analysis,
-)
-from .cleanup_btrfs import (
-    build_lane_preview_lines,
-    collect_lane_targets,
-    exit_if_empty,
-    resolve_lanes_project_ids,
-    run_lane_deletions,
-    run_snapshot_deletions,
 )
 from .cleanup_display import RepoEntry, format_cleanup_status_compact, print_git_residue_report
 from .cleanup_handlers import (
@@ -70,7 +63,6 @@ app = typer.Typer(
         "Cleanup modes:\n"
         "  st cleanup checkpoints --auto  # delete only SAFE/ALREADY_MERGED cases\n"
         "  st cleanup checkpoints --force # destructive preview, then rerun with --confirm TOKEN\n"
-        "  st cleanup lanes             # destructive preview, then rerun with --confirm TOKEN\n"
         "  st cleanup snapshots         # destructive preview, then rerun with --confirm TOKEN\n\n"
         "Path cleanup removes literal paths only. Globs are rejected and directories require --recursive."
     )
@@ -110,6 +102,57 @@ def _iter_target_repos(all_projects: bool, project_id_override: str | None = Non
 def _iter_target_project_ids(all_projects: bool, project_id_override: str | None = None) -> list[str]:
     """Return managed project IDs relevant to the cleanup request."""
     return [repo.name for repo in _iter_target_repos(all_projects, project_id_override)]
+
+
+def exit_if_empty(is_empty: bool, named: str | None, msg_named: str, msg_all: str) -> None:
+    """Output result for empty target collection and raise Exit."""
+    if not is_empty:
+        return
+    if named:
+        output_error(msg_named)
+        raise typer.Exit(1)
+    output_success(msg_all)
+    raise typer.Exit(0)
+
+
+def _execute_snapshot_deletions(residues: list) -> tuple[int, list[str]]:
+    """Delete snapshot residues; return (deleted_count, errors)."""
+    from ..lib.quick_snapshots import delete_snapshot_residue
+
+    deleted = 0
+    errors: list[str] = []
+    for residue in residues:
+        label = f"{residue.project_id or 'unowned'}/{residue.residue_name}"
+        try:
+            delete_snapshot_residue(residue)
+            typer.echo(f"  Deleted snapshot residue: {label}")
+            deleted += 1
+        except Exception as exc:
+            errors.append(f"{label}: {exc}")
+    return deleted, errors
+
+
+def run_snapshot_deletions(residues, dry_run: bool) -> None:
+    """Output dry-run preview or execute snapshot deletions and report results."""
+    if dry_run:
+        typer.echo("DRY RUN — would delete:")
+        for residue in residues:
+            typer.echo(f"  {residue.project_id or 'unowned'}/{residue.residue_name} ({residue.residue_type})")
+        return
+
+    cwd = Path.cwd()
+    for residue in residues:
+        try:
+            cwd.relative_to(residue.path)
+            os.chdir(Path.home())
+            break
+        except ValueError:
+            continue
+
+    deleted, errors = _execute_snapshot_deletions(residues)
+    output_success(f"Deleted {deleted} target(s), {len(errors)} error(s)")
+    for err in errors:
+        typer.echo(f"  ERROR {err}", err=True)
 
 
 def _categorize_analyses(analyses: list[CheckpointAnalysis]) -> tuple[list[str], list[str], list[str]]:
@@ -248,7 +291,7 @@ def cleanup_checkpoints(
     ``--auto`` only deletes SAFE/ALREADY_MERGED residue and then prunes
     safe git residue. ``--force`` is destructive: it first prints a blast-radius
     preview, then requires ``--confirm TOKEN`` to remove every analyzed
-    checkpoint residue, including active or unmerged task lanes.
+    checkpoint residue, including active or unmerged task checkpoints.
     """
     project_id = get_project_id(all_projects)
     checkpoints = get_active_checkpoints(project_id)
@@ -341,7 +384,7 @@ def salvage_orphan(
         typer.Option("--all", help="Search all managed projects instead of the current project only."),
     ] = False,
 ) -> None:
-    """Recover a missing-task orphan branch into a normal task lane.
+    """Recover a missing-task orphan branch into a normal task checkpoint.
 
     This only works for ``inspect-orphans`` entries marked ``resolution:salvage``.
     It recreates the task record, restores the branch into a managed checkpoint,
@@ -365,65 +408,6 @@ def salvage_orphan(
     recover_orphan_task(repo_path, item, task_id)
 
 
-@app.command("lanes")
-def cleanup_lanes(
-    lane_name: Annotated[str | None, typer.Argument(help="Specific lane name to delete (omit to scan all)")] = None,
-    all_projects: Annotated[
-        bool,
-        typer.Option("--all", help="Scan all managed projects instead of the current project only."),
-    ] = False,
-    dry_run: Annotated[
-        bool,
-        typer.Option("--dry-run", help="Preview lane/snapshot deletions without deleting anything."),
-    ] = False,
-    confirm: Annotated[
-        str | None,
-        typer.Option("--confirm", help="Single-use confirm token from the preview run."),
-    ] = None,
-) -> None:
-    """Delete orphaned Btrfs lanes and their snapshots.
-
-    Without a lane name, this targets only orphaned/unmanaged lanes plus
-    orphaned snapshot directories. With an explicit lane name, it will delete
-    that exact lane even if legacy git checkout metadata still exists.
-
-    Uses two-pass confirmation: first run shows blast radius, second run with
-    --confirm TOKEN executes.
-    """
-    if not workspaces_root_available():
-        output_error("Btrfs workspaces not available — nothing to clean up.")
-        raise typer.Exit(1)
-
-    project_id = get_project_id(all_projects)
-    if not project_id and not all_projects:
-        output_error("Could not determine project. Use --all or run from a project directory.")
-        raise typer.Exit(1)
-
-    project_ids = resolve_lanes_project_ids(all_projects, project_id)
-    inspections, orphaned_snap_dirs, stale_checkpoints = collect_lane_targets(project_ids, lane_name)
-
-    exit_if_empty(
-        not inspections and not orphaned_snap_dirs and not stale_checkpoints,
-        lane_name,
-        "No matching lane, orphaned snapshots, or stale checkpoints found to clean up.",
-        "No orphaned lanes, orphaned snapshots, or stale checkpoints found to clean up.",
-    )
-
-    scope_label = "all" if all_projects else project_ids[0]
-    command_key = f"cleanup-lanes-{scope_label}-{lane_name or 'all-lanes'}"
-    preview_lines = build_lane_preview_lines(inspections, orphaned_snap_dirs, stale_checkpoints, lane_name)
-    cmd = " ".join(["st cleanup lanes"] + ([lane_name] if lane_name else []) + (["--all"] if all_projects else []))
-
-    if confirm is None and dry_run:
-        token = generate_token(command_key)
-        print(format_preview(cmd, preview_lines, token))
-        typer.echo("  (dry-run: no token needed)")
-        raise typer.Exit(0)
-
-    confirm_gate(command_key, confirm, preview_lines, cmd)
-    run_lane_deletions(inspections, orphaned_snap_dirs, stale_checkpoints, dry_run)
-
-
 @app.command("snapshots")
 def cleanup_snapshots(
     residue_name: Annotated[str | None, typer.Argument(help="Specific legacy snapshot residue to delete")] = None,
@@ -440,7 +424,7 @@ def cleanup_snapshots(
         typer.Option("--confirm", help="Single-use confirm token from the preview run."),
     ] = None,
 ) -> None:
-    """Delete legacy snapshot residue outside the current managed lane/project layout.
+    """Delete legacy snapshot residue outside the current managed project layout.
 
     This command is destructive and always uses the two-pass confirm-token flow:
     run once to preview targets, then rerun with ``--confirm TOKEN`` to

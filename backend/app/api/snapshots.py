@@ -1,6 +1,6 @@
 """Btrfs snapshot browsing and management API.
 
-Exposes Btrfs-backed lane/project snapshots to the UI.
+Exposes Btrfs-backed project snapshots to the UI.
 Data lives in JSON manifests on disk — no database tables.
 Reuses CLI library functions from quick_snapshots and autosnapshot.
 """
@@ -49,13 +49,11 @@ class ScopeResponse(BaseModel):
 
 
 class PolicyResponse(BaseModel):
-    lane_interval_minutes: int
-    project_interval_minutes: int
+    interval_minutes: int
     baseline_stale_minutes: int
-    lane_auto_keep_per_scope: int
-    project_auto_keep_per_scope: int
-    archived_lane_auto_keep_per_scope: int
-    archived_lane_keep_per_project: int
+    auto_keep_per_scope: int
+    archived_auto_keep_per_scope: int
+    archived_keep_per_project: int
     manual_keep_per_scope: int
 
 

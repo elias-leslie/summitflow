@@ -1,14 +1,4 @@
-"""Btrfs-backed snapshot and recovery helpers for lane/project rewind.
-
-These snapshots are designed for agentic use:
-- `snap` is safe for the current Btrfs-backed scope.
-- `recover` is the default restore path and creates a sibling recovery scope.
-- `rollback` is destructive and intentionally limited to the current lane scope.
-
-Legacy lane snapshots capture the full Btrfs subvolume plus the checkout's Git
-index state. The index lives outside the lane subvolume in Git admin metadata,
-so Btrfs alone is not enough to recreate staged state.
-"""
+"""Btrfs-backed project snapshot and recovery helpers."""
 
 from __future__ import annotations
 
@@ -19,53 +9,41 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
-from .repo_git import get_current_branch, run_git
+from .repo_git import get_current_branch
 from .snapshots._cleanup import (
-    OrphanedSnapshotDir,
     SnapshotResidue,
-    find_empty_lane_dirs,
     find_legacy_manifest_dirs,
     find_legacy_snapshot_roots,
-    find_orphaned_lane_manifest_dirs,
-    find_orphaned_snapshot_dirs,
     find_snapshot_residue,
-    inspect_lane,
-    list_snapshots,
 )
 from .snapshots._helpers import (
     _absolute_git_dir,
-    _canonical_repo_root,
     _find_snapshot,
     _head_oid,
     _head_ref,
     _now_iso,
     _parse_btrfs_du_raw,
     _require_workspaces,
-    _resolve_lane_repo_root,
     _resolve_repo_root,
     _resolve_scope,
-    _restore_lane_git_state,
     _safe_cwd_for_scope,
     _snapshot_id,
 )
 from .snapshots._manifest import (
     _copy_index_artifact,
     _load_manifest,
-    _recovery_branch_name,
     _recovery_name,
-    _rsync_snapshot_contents,
     _save_manifest,
     _snapshot_destination,
     _update_manifest_entries,
 )
 from .snapshots._models import (
-    LaneInspection,
     QuickSnapshot,
     SnapshotError,
     SnapshotScope,
     SnapshotUsage,
 )
-from .workspace_paths import get_lanes_base_dir, get_projects_base_dir
+from .workspace_paths import get_projects_base_dir
 
 # ---------------------------------------------------------------------------
 # Btrfs I/O primitives (kept here — tests monkeypatch these by module path)
@@ -251,42 +229,7 @@ def restore_snapshot(
     project_id: str,
     cwd: str | Path | None = None,
 ) -> QuickSnapshot:
-    repo_root = _resolve_repo_root(cwd)
-    scope = _resolve_scope(repo_root, project_id)
-    if scope.scope_type != "lane":
-        raise SnapshotError(
-            "Destructive rollback is only allowed for task lanes. "
-            "Use 'st recover' from a project snapshot instead."
-        )
-
-    entries = _load_manifest(project_id, scope)
-    snapshot = _find_snapshot(target, entries)
-
-    if snapshot.scope_path != str(scope.path):
-        raise SnapshotError(
-            "Snapshot belongs to a different lane.\n"
-            f"  snapshot: {snapshot.scope_path}\n"
-            f"  current:  {scope.path}"
-        )
-    if snapshot.scope_type != "lane":
-        raise SnapshotError("Destructive rollback is only supported for lane snapshots.")
-
-    if snapshot.branch and (current_branch := get_current_branch(repo_root)) and snapshot.branch != current_branch:
-        raise SnapshotError(
-            f"Snapshot belongs to branch '{snapshot.branch}', but current branch is '{current_branch}'."
-        )
-
-    source_snapshot = Path(snapshot.snapshot_path)
-    if not source_snapshot.exists():
-        raise SnapshotError(f"Snapshot path is missing: {source_snapshot}")
-
-    def _post_swap():
-        _restore_lane_git_state(repo_root, snapshot)
-
-    _atomic_subvolume_swap(scope, source_snapshot, post_swap_fn=_post_swap)
-    return _update_manifest_entries(
-        entries, snapshot, project_id, scope, last_restored_at=_now_iso(),
-    )
+    return restore_project_snapshot(target, project_id=project_id, cwd=cwd)
 
 
 def restore_project_snapshot(
@@ -331,54 +274,21 @@ def restore_project_snapshot(
 def _cleanup_failed_recovery(
     destination: Path,
 ) -> None:
-    """Best-effort cleanup after a failed lane recovery attempt."""
+    """Best-effort cleanup after a failed recovery attempt."""
     if destination.exists():
         with contextlib.suppress(SnapshotError):
             _delete_subvolume(destination)
         if destination.exists():
             shutil.rmtree(destination, ignore_errors=False)
 
-
-def _recover_lane(
-    snapshot: QuickSnapshot,
-    snapshot_path: Path,
-    recovery_name: str,
-    repo_root: Path,
+def list_snapshots(
+    *,
     project_id: str,
-) -> tuple[Path, str]:
-    """Create a legacy recovery lane clone from a lane snapshot."""
-    destination = get_lanes_base_dir(project_id) / recovery_name
-    if destination.exists():
-        raise SnapshotError(f"Recovery destination already exists: {destination}")
-
-    canonical_root = _canonical_repo_root(repo_root)
-    recovery_branch = _recovery_branch_name(snapshot, recovery_name)
-    _btrfs(["subvolume", "create", str(destination)])
-    try:
-        subprocess.run(
-            ["git", "clone", "--no-checkout", str(canonical_root), str(destination)],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(destination), "checkout", "-B", recovery_branch, snapshot.head_oid or "HEAD"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        _rsync_snapshot_contents(snapshot_path, destination)
-        recovered_git_dir = _absolute_git_dir(destination)
-        if snapshot.index_artifact_path:
-            shutil.copy2(snapshot.index_artifact_path, recovered_git_dir / "index")
-    except subprocess.CalledProcessError as exc:
-        _cleanup_failed_recovery(destination)
-        stderr = exc.stderr.strip() or str(exc)
-        raise SnapshotError(f"Failed to recover legacy lane clone:\n{stderr}") from exc
-    except Exception:
-        _cleanup_failed_recovery(destination)
-        raise
-    return destination, recovery_branch
+    cwd: str | Path | None = None,
+) -> list[QuickSnapshot]:
+    repo_root = _resolve_repo_root(cwd)
+    scope = _resolve_scope(repo_root, project_id)
+    return _load_manifest(project_id, scope)
 
 
 def recover_snapshot(
@@ -399,6 +309,8 @@ def recover_snapshot(
             f"  snapshot: {snapshot.scope_path}\n"
             f"  current:  {scope.path}"
         )
+    if snapshot.scope_type != "project":
+        raise SnapshotError("Recovery requires a project-scoped snapshot.")
 
     snapshot_path = Path(snapshot.snapshot_path)
     if not snapshot_path.exists():
@@ -406,16 +318,16 @@ def recover_snapshot(
 
     rec_name = _recovery_name(name, snapshot)
 
-    if snapshot.scope_type == "project":
-        destination = get_projects_base_dir() / rec_name
-        if destination.exists():
-            raise SnapshotError(f"Recovery destination already exists: {destination}")
+    destination = get_projects_base_dir() / rec_name
+    if destination.exists():
+        raise SnapshotError(f"Recovery destination already exists: {destination}")
+
+    try:
         _snapshot_subvolume(snapshot_path, destination, readonly=False)
         recovery_branch = get_current_branch(destination)
-    else:
-        destination, recovery_branch = _recover_lane(
-            snapshot, snapshot_path, rec_name, repo_root, project_id,
-        )
+    except Exception:
+        _cleanup_failed_recovery(destination)
+        raise
 
     return _update_manifest_entries(
         entries, snapshot, project_id, scope,
@@ -423,116 +335,6 @@ def recover_snapshot(
         recovery_path=str(destination),
         recovery_branch=recovery_branch,
     )
-
-
-# ---------------------------------------------------------------------------
-# Lane deletion
-# ---------------------------------------------------------------------------
-
-
-def _linked_git_admin_dir(checkout_path: Path) -> Path | None:
-    git_file = checkout_path / ".git"
-    if not git_file.is_file():
-        return None
-    content = git_file.read_text(encoding="utf-8").strip()
-    if not content.startswith("gitdir:"):
-        return None
-    git_dir = Path(content.split(":", 1)[1].strip())
-    if not git_dir.is_absolute():
-        git_dir = (checkout_path / git_dir).resolve()
-    return git_dir
-
-
-def _remove_checkout_metadata(checkout_path: Path) -> None:
-    """Remove legacy lane path plus detached git admin metadata."""
-    linked_git_dir = _linked_git_admin_dir(checkout_path)
-
-    if checkout_path.exists():
-        try:
-            _delete_subvolume(checkout_path)
-        except SnapshotError:
-            if checkout_path.is_dir():
-                shutil.rmtree(checkout_path, ignore_errors=False)
-            elif checkout_path.exists():
-                checkout_path.unlink()
-
-    if linked_git_dir and linked_git_dir.exists():
-        try:
-            if linked_git_dir.is_dir():
-                shutil.rmtree(linked_git_dir, ignore_errors=False)
-            else:
-                linked_git_dir.unlink()
-        except OSError as exc:
-            raise SnapshotError(f"Failed to remove legacy lane git metadata: {exc}") from exc
-
-
-def _delete_lane_branch(inspection: LaneInspection, repo_root: Path) -> None:
-    """Delete the lane's tracking branch if it is safe to remove."""
-    if not inspection.branch or inspection.branch in {"main", "master", "HEAD"}:
-        return
-    branch_ref = f"refs/heads/{inspection.branch}"
-    branch_result = run_git(["show-ref", "--verify", branch_ref], cwd=repo_root, check=False)
-    if branch_result.returncode != 0:
-        return
-    delete_result = run_git(
-        ["branch", "-D", inspection.branch], cwd=repo_root, check=False,
-    )
-    if delete_result.returncode != 0:
-        stderr = delete_result.stderr.strip() or delete_result.stdout.strip() or "unknown git error"
-        raise SnapshotError(f"Failed to delete lane branch '{inspection.branch}': {stderr}")
-
-
-def delete_lane(inspection: LaneInspection) -> None:
-    """Delete a Btrfs lane, its snapshots, and metadata.
-
-    Must be called from outside the lane directory (caller responsibility).
-    """
-    if inspection.has_checkout_metadata:
-        repo_root = _resolve_lane_repo_root(inspection.lane_path)
-        _remove_checkout_metadata(inspection.lane_path)
-        _delete_lane_branch(inspection, repo_root)
-
-    for snap_path in inspection.snapshot_paths:
-        _delete_subvolume(snap_path)
-
-    if inspection.snapshot_dir and inspection.snapshot_dir.exists():
-        with contextlib.suppress(OSError):
-            inspection.snapshot_dir.rmdir()
-
-    try:
-        _delete_subvolume(inspection.lane_path)
-    except SnapshotError as exc:
-        message = str(exc)
-        if "Invalid argument" not in message and "Not a Btrfs subvolume" not in message:
-            raise
-        if inspection.lane_path.is_dir():
-            shutil.rmtree(inspection.lane_path, ignore_errors=False)
-        elif inspection.lane_path.exists():
-            inspection.lane_path.unlink()
-
-    if inspection.manifest_dir and inspection.manifest_dir.exists():
-        shutil.rmtree(inspection.manifest_dir, ignore_errors=True)
-
-    with contextlib.suppress(Exception):
-        from .checkpoint import remove_checkpoint_for_scope_path
-
-        remove_checkpoint_for_scope_path(
-            inspection.lane_path,
-            project_id=inspection.project_id,
-        )
-
-
-def delete_orphaned_snapshots(orphan: OrphanedSnapshotDir) -> None:
-    """Delete orphaned snapshot subvolumes and metadata."""
-    for snap_path in orphan.snapshot_paths:
-        _delete_subvolume(snap_path)
-
-    if orphan.snapshot_dir.exists():
-        with contextlib.suppress(OSError):
-            orphan.snapshot_dir.rmdir()
-
-    if orphan.manifest_dir and orphan.manifest_dir.exists():
-        shutil.rmtree(orphan.manifest_dir, ignore_errors=True)
 
 
 def delete_snapshot_residue(residue: SnapshotResidue) -> None:
@@ -567,26 +369,18 @@ require_workspaces = _require_workspaces
 require_btrfs_subvolume = _require_btrfs_subvolume
 
 __all__ = [
-    "LaneInspection",
-    "OrphanedSnapshotDir",
     "QuickSnapshot",
     "SnapshotError",
     "SnapshotResidue",
     "SnapshotScope",
     "SnapshotUsage",
     "capture_snapshot",
-    "delete_lane",
-    "delete_orphaned_snapshots",
     "delete_snapshot_residue",
     "delete_subvolume",
-    "find_empty_lane_dirs",
     "find_legacy_manifest_dirs",
     "find_legacy_snapshot_roots",
-    "find_orphaned_lane_manifest_dirs",
-    "find_orphaned_snapshot_dirs",
     "find_snapshot_residue",
     "get_snapshot_usage",
-    "inspect_lane",
     "list_snapshots",
     "load_manifest",
     "recover_snapshot",

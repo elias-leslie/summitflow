@@ -80,7 +80,7 @@ class TestFormatContextTask:
             "complexity": "STANDARD",
             "title": "Coordinate shared plumbing edit",
             "lane_preflight": {
-                "issues": ["Another active coding lane is already modifying shared plumbing"],
+                "issues": ["Another active coding session is already modifying shared plumbing"],
                 "disposition": "block",
                 "overlap_kind": "shared_plumbing",
                 "conflicting_tasks": ["task-999"],
@@ -110,7 +110,7 @@ class TestFormatContextTask:
             "complexity": "STANDARD",
             "title": "Assess adjacent validation lane",
             "lane_preflight": {
-                "issues": ["Another active coding lane exists in project summitflow but lacks usable file scope"],
+                "issues": ["Another active coding session exists in project summitflow but lacks usable file scope"],
                 "disposition": "warn",
                 "overlap_kind": "unscoped_target",
                 "conflicting_tasks": ["task-42f6700b"],

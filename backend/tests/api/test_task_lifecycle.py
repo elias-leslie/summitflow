@@ -157,8 +157,8 @@ class TestTaskLifecycleEndpoints:
             "app.api.tasks.update_endpoints.validate_task_ready",
             return_value=SimpleNamespace(
                 ready=False,
-                issues=["Another active coding lane overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"],
-                suggestions=["Exact-file overlap with task-999: backend/app/foo.py. Finish or retire the active lane before dispatching another coding task."],
+                issues=["Another active coding session overlaps exact files in project summitflow: task-999 (backend/app/foo.py)"],
+                suggestions=["Exact-file overlap with task-999: backend/app/foo.py. Finish or retire the active session before dispatching another coding task."],
                 lane_conflict={
                     "overlap_kind": "exact_file",
                     "disposition": "block",

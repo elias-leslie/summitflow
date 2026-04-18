@@ -75,7 +75,7 @@ def sync(
 
 @app.command("finalize-task")
 def finalize_task(task_id: str) -> None:
-    """Finalize merge/cleanup for a completed or conflicted residue task lane."""
+    """Finalize merge/cleanup for a completed or conflicted residue task checkpoint."""
     client = STClient(require_project=False)
     try:
         result = client.finalize_task_merge(task_id)

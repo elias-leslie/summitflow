@@ -15,13 +15,11 @@ client = TestClient(app)
 class _FakePolicy:
     def to_dict(self) -> dict[str, int]:
         return {
-            "lane_interval_minutes": 60,
-            "project_interval_minutes": 1440,
+            "interval_minutes": 1440,
             "baseline_stale_minutes": 30,
-            "lane_auto_keep_per_scope": 24,
-            "project_auto_keep_per_scope": 7,
-            "archived_lane_auto_keep_per_scope": 3,
-            "archived_lane_keep_per_project": 3,
+            "auto_keep_per_scope": 7,
+            "archived_auto_keep_per_scope": 3,
+            "archived_keep_per_project": 3,
             "manual_keep_per_scope": 20,
         }
 
@@ -42,7 +40,7 @@ def _snapshot(
         scope_type=scope_type,
         scope_name=scope_name,
         snapshot_path=f"/snaps/{scope_name}-{source}",
-        branch=f"{scope_name}/main" if scope_type == "lane" else "main",
+        branch="main",
         head_oid=f"oid-{scope_name}",
         head_ref="refs/heads/main",
         git_dir="/repo/.git",
@@ -53,21 +51,21 @@ def _snapshot(
 
 
 def _patch_snapshot_libs(monkeypatch) -> None:
-    active_scope = SnapshotScope("lane", "task-live", Path("/workspaces/task-live"))
-    archived_scope = SnapshotScope("lane", "task-old", Path("/workspaces/task-old"))
+    active_scope = SnapshotScope("project", "summitflow", Path("/workspaces/summitflow"))
+    archived_scope = SnapshotScope("project", "summitflow-archived", Path("/workspaces/summitflow-archived"))
     manifests = {
-        ("summitflow", "task-live"): [
+        ("summitflow", "summitflow"): [
             _snapshot(
-                scope_type="lane",
-                scope_name="task-live",
+                scope_type="project",
+                scope_name="summitflow",
                 source="auto-periodic",
                 created_at="2026-03-24T19:36:22+00:00",
             )
         ],
-        ("summitflow", "task-old"): [
+        ("summitflow", "summitflow-archived"): [
             _snapshot(
-                scope_type="lane",
-                scope_name="task-old",
+                scope_type="project",
+                scope_name="summitflow-archived",
                 source="auto-baseline",
                 created_at="2026-03-24T10:35:22+00:00",
             )
@@ -99,8 +97,8 @@ def test_snapshot_scopes_default_omits_archived_scopes(monkeypatch) -> None:
     assert response.json() == [
         {
             "project_id": "summitflow",
-            "scope_type": "lane",
-            "scope_name": "task-live",
+            "scope_type": "project",
+            "scope_name": "summitflow",
             "scope_state": "active",
             "snapshot_count": 1,
             "total_bytes": None,
@@ -134,8 +132,8 @@ def test_snapshot_summary_reports_active_and_archived_counts(monkeypatch) -> Non
     assert body["active_snapshot_count"] == 1
     assert body["archived_snapshot_count"] == 1
     assert body["total_snapshots"] == 2
-    assert body["policy"]["archived_lane_auto_keep_per_scope"] == 3
-    assert body["policy"]["archived_lane_keep_per_project"] == 3
+    assert body["policy"]["archived_auto_keep_per_scope"] == 3
+    assert body["policy"]["archived_keep_per_project"] == 3
 
 
 def test_list_all_snapshots_filters_exact_archived_scope(monkeypatch) -> None:
@@ -145,8 +143,8 @@ def test_list_all_snapshots_filters_exact_archived_scope(monkeypatch) -> None:
         "/api/snapshots",
         params={
             "project_id": "summitflow",
-            "scope_type": "lane",
-            "scope_name": "task-old",
+            "scope_type": "project",
+            "scope_name": "summitflow-archived",
             "include_archived": "true",
         },
     )
@@ -154,5 +152,5 @@ def test_list_all_snapshots_filters_exact_archived_scope(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert len(body) == 1
-    assert body[0]["scope_name"] == "task-old"
+    assert body[0]["scope_name"] == "summitflow-archived"
     assert body[0]["source"] == "auto-baseline"

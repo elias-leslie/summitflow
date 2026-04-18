@@ -87,10 +87,10 @@ CHECKPOINT (claim -> done | abandon):
   abandon <task>                           # preview: show blast radius + confirm token
   abandon <task> --confirm TOKEN           # execute with token from preview
   checkpoints [-p project] [-d task]       # show active checkpoints (auto-cleans stale)
-  snap [name]                              # save a Btrfs snapshot for the current lane or project scope
-  snaps                                    # list snapshots for the current lane or project scope
-  recover <id|name|-N> [--name lane]       # safe default: recover snapshot into sibling lane/project copy
-  rollback <id|name|-N>                    # preview: destructive restore for current task lane
+  snap [name]                              # save a Btrfs snapshot for the current project scope
+  snaps                                    # list snapshots for the current project scope
+  recover <id|name|-N> [--name project]    # safe default: recover snapshot into sibling project copy
+  rollback <id|name|-N>                    # preview: destructive restore for current project root
   rollback <id|name|-N> --confirm TOKEN   # execute with token from preview
   prune [--dry-run]                        # remove old auto snapshots per retention policy
 

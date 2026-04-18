@@ -145,7 +145,7 @@ class TestContextEndpoint:
         cleanup_task: Callable[[str], None],
     ) -> None:
         mock_lane_check.return_value = TaskLaneConflictCheck(
-            issues=["Another active coding lane is already modifying shared plumbing"],
+            issues=["Another active coding session is already modifying shared plumbing"],
             conflicting_tasks=["task-999"],
             overlap_kind="shared_plumbing",
             overlap_paths=["backend/app/services/tools/catalog.py"],
@@ -380,7 +380,7 @@ class TestContextEndpoint:
         cleanup_task: Callable[[str], None],
     ) -> None:
         mock_lane_check.return_value = TaskLaneConflictCheck(
-            issues=["Another active coding lane overlaps exact files"],
+            issues=["Another active coding session overlaps exact files"],
             suggestions=["Finish the active lane first"],
             conflicting_tasks=["task-999"],
             overlap_kind="exact_file",
@@ -411,7 +411,7 @@ class TestContextEndpoint:
         )
         assert response.status_code == 200
         assert response.json()["lane_preflight"] == {
-            "issues": ["Another active coding lane overlaps exact files"],
+            "issues": ["Another active coding session overlaps exact files"],
             "suggestions": ["Finish the active lane first"],
             "conflicting_tasks": ["task-999"],
             "overlap_kind": "exact_file",

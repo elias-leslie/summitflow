@@ -14,7 +14,6 @@ from ..logging_config import get_logger
 # Re-export repo-source helpers so existing imports and mocks on this module work.
 from ._git_repo_sources import (  # noqa: F401
     FALLBACK_FILE,
-    LANES_BASE_DIR,
     _collect_db_extra_repos,
     _collect_db_repos,
     _is_shadowed_project_repo,

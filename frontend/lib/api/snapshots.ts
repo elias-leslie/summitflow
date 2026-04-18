@@ -12,7 +12,7 @@ export interface BtrfsSnapshot {
   id: string
   name: string | null
   project_id: string
-  scope_type: 'lane' | 'project'
+  scope_type: 'project'
   scope_name: string
   branch: string | null
   head_oid: string | null
@@ -23,7 +23,7 @@ export interface BtrfsSnapshot {
 
 export interface BtrfsScope {
   project_id: string
-  scope_type: 'lane' | 'project'
+  scope_type: 'project'
   scope_name: string
   scope_state: 'active' | 'archived'
   snapshot_count: number
@@ -33,13 +33,11 @@ export interface BtrfsScope {
 }
 
 export interface BtrfsPolicy {
-  lane_interval_minutes: number
-  project_interval_minutes: number
+  interval_minutes: number
   baseline_stale_minutes: number
-  lane_auto_keep_per_scope: number
-  project_auto_keep_per_scope: number
-  archived_lane_auto_keep_per_scope: number
-  archived_lane_keep_per_project: number
+  auto_keep_per_scope: number
+  archived_auto_keep_per_scope: number
+  archived_keep_per_project: number
   manual_keep_per_scope: number
 }
 

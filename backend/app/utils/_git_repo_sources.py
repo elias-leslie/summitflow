@@ -15,7 +15,6 @@ _HOST_HOME_PATH = os.environ.get("HOST_HOME_PATH", "")
 _DOCKER_HOME_MOUNT = os.environ.get("BACKUP_HOST_ROOT", "")
 
 FALLBACK_FILE = Path.home() / ".claude" / "config" / "managed-repos.txt"
-LANES_BASE_DIR = Path("/srv/workspaces/lanes")
 
 # SQL queries
 _SQL_SELECT_ROOT_PATHS = "SELECT root_path FROM projects WHERE root_path IS NOT NULL"

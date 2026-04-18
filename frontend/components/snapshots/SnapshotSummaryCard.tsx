@@ -135,18 +135,15 @@ export function SnapshotSummaryCard({
 
         {/* Policy summary */}
         <div className="mt-2 text-[10px] text-slate-600 leading-relaxed">
-          Lanes: every {summary.policy.lane_interval_minutes}min, keep{' '}
-          {summary.policy.lane_auto_keep_per_scope} &middot; Projects: every{' '}
-          {Math.round(summary.policy.project_interval_minutes / 60)}h, keep{' '}
-          {summary.policy.project_auto_keep_per_scope}
+          Projects: every {Math.round(summary.policy.interval_minutes / 60)}h,
+          keep {summary.policy.auto_keep_per_scope}
         </div>
         <div className="mt-1 text-[10px] text-slate-600 leading-relaxed">
-          Archived auto lanes: keep{' '}
-          {summary.policy.archived_lane_keep_per_project} recent scopes per
-          project, {summary.policy.archived_lane_auto_keep_per_scope} auto
-          snapshot
-          {summary.policy.archived_lane_auto_keep_per_scope === 1 ? '' : 's'}{' '}
-          each
+          Archived auto scopes: keep {summary.policy.archived_keep_per_project}{' '}
+          recent scope
+          {summary.policy.archived_keep_per_project === 1 ? '' : 's'} per
+          project, {summary.policy.archived_auto_keep_per_scope} auto snapshot
+          {summary.policy.archived_auto_keep_per_scope === 1 ? '' : 's'} each
         </div>
 
         {/* Actions */}

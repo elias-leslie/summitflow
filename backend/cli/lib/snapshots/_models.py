@@ -22,7 +22,7 @@ class SnapshotScope:
 
 @dataclass
 class QuickSnapshot:
-    """Manifest entry for a Btrfs-backed lane or project snapshot."""
+    """Manifest entry for a Btrfs-backed project snapshot."""
 
     id: str
     name: str | None
@@ -99,22 +99,3 @@ class SnapshotUsage:
             "exclusive_bytes": self.exclusive_bytes,
             "shared_bytes": self.shared_bytes,
         }
-
-
-@dataclass(frozen=True)
-class LaneInspection:
-    """Result of inspecting a Btrfs lane for cleanup."""
-
-    project_id: str
-    lane_name: str
-    lane_path: Path
-    has_checkout_metadata: bool
-    branch: str | None
-    snapshot_paths: list[Path]
-    snapshot_dir: Path | None
-    manifest_dir: Path | None
-
-    @property
-    def total_items(self) -> int:
-        """Number of subvolumes that will be deleted (snapshots + lane)."""
-        return len(self.snapshot_paths) + 1

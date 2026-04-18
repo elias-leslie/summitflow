@@ -494,11 +494,11 @@ def test_start_execution_skips_duplicate_same_task_lane(
     assert result == {
         "task_id": "task-123",
         "status": "already_running",
-        "message": "Active task lane already exists",
+        "message": "Active task session already exists",
         "owner_session_id": "sess-existing",
     }
     assert mock_emit_log.call_args_list[-1].args[2] == (
-        "Execution skipped: active task lane already owned by session sess-existing"
+        "Execution skipped: active task session already owned by session sess-existing"
     )
 
 

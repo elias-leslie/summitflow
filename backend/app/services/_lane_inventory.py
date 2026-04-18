@@ -1,4 +1,4 @@
-"""Agent Hub inventory fetching and session normalization for task lane preflight."""
+"""Agent Hub inventory fetching and session normalization for task-session preflight."""
 
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ def fetch_live_project_inventory(
     project_id: str,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     """Return (owner_sessions, specialist_rows) for the given project."""
-    headers = build_agent_hub_headers(default_request_source="summitflow-task-lane-preflight")
+    headers = build_agent_hub_headers(default_request_source="summitflow-task-session-preflight")
     with httpx.Client(timeout=_LIST_SESSIONS_TIMEOUT) as client:
         ownership_url = f"{AGENT_HUB_URL}{_LIVE_OWNERSHIP_PATH.format(project_id=project_id)}"
         ownership_response = client.get(ownership_url, headers=headers)

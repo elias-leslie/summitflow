@@ -157,7 +157,7 @@ class TestTaskLaneConflicts:
 
         result = check_task_lane_conflicts("task-123", "summitflow")
 
-        assert "likely stale active lane" in result.issues[0]
+        assert "likely stale active session" in result.issues[0]
         assert "st sessions list --status active --project summitflow" in result.suggestions[0]
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
@@ -184,8 +184,8 @@ class TestTaskLaneConflicts:
 
         assert result.overlap_kind == "stale_same_task"
         assert result.disposition == "reconcile"
-        assert "Task status is cancelled but it still has a leftover live lane" in result.issues[0]
-        assert "Reconcile or retire the leftover same-task lane" in result.suggestions[0]
+        assert "Task status is cancelled but it still has a leftover live session" in result.issues[0]
+        assert "Reconcile or retire the leftover same-task session" in result.suggestions[0]
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_other_task_stale_lane_updates_project_guidance(
@@ -211,6 +211,6 @@ class TestTaskLaneConflicts:
 
         result = check_task_lane_conflicts("task-123", "summitflow")
 
-        assert "likely stale active coding lane" in result.issues[0]
+        assert "likely stale active coding session" in result.issues[0]
         assert result.conflicting_tasks == ["task-999"]
         assert "retire or reconcile it" in result.suggestions[1]
