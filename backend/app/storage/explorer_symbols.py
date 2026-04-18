@@ -202,6 +202,7 @@ def search_symbols(
     language: str | None = None,
     kind: str | None = None,
     limit: int = 20,
+    path_prefix: str | None = None,
 ) -> list[dict[str, Any]]:
     """Search symbols by name, qualified name, signature, summary, or keywords."""
     if not query.strip():
@@ -211,6 +212,10 @@ def search_symbols(
     query_value = query.strip()
     exact = query_value.lower()
     fuzzy = f"%{query_value}%"
+    normalized_prefix = str(path_prefix or "").strip().replace("\\", "/")
+    if normalized_prefix.startswith("./"):
+        normalized_prefix = normalized_prefix[2:]
+    normalized_prefix = normalized_prefix.strip("/")
 
     conditions = ["project_id = %s"]
     params: list[Any] = [project_id]
@@ -220,6 +225,9 @@ def search_symbols(
     if kind:
         conditions.append("kind = %s")
         params.append(kind)
+    if normalized_prefix:
+        conditions.append("(file_path = %s OR file_path LIKE %s)")
+        params.extend([normalized_prefix, f"{normalized_prefix}/%"])
 
     conditions.append(
         "("

@@ -101,6 +101,7 @@ async def precision_search(
     q: str = Query(..., min_length=1, description="Search query (symbol name, function, class, endpoint)"),
     budget: int = Query(1200, ge=100, le=10000, description="Token budget for prompt context"),
     limit: int = Query(5, ge=1, le=20, description="Maximum symbol results"),
+    path_prefix: str | None = Query(None, description="Optional relative file/subtree prefix filter"),
 ) -> dict[str, Any]:
     """Full Precision Code Search: symbol-first retrieval with fallback and token budgeting."""
     validate_project_exists(project_id)
@@ -108,7 +109,13 @@ async def precision_search(
         collect_precision_code_search_context,
     )
 
-    result = collect_precision_code_search_context(project_id, [q], budget_tokens=budget, symbol_limit=limit)
+    result = collect_precision_code_search_context(
+        project_id,
+        [q],
+        budget_tokens=budget,
+        symbol_limit=limit,
+        path_prefix=path_prefix,
+    )
     return {
         "query": q,
         "prompt_context": result.prompt_context,
@@ -121,10 +128,11 @@ async def search_text(
     project_id: str,
     q: str = Query(..., min_length=1, description="Text query"),
     limit: int = Query(20, ge=1, le=100, description="Maximum results"),
+    path_prefix: str | None = Query(None, description="Optional relative file/subtree prefix filter"),
 ) -> dict[str, Any]:
     """Search indexed project file contents for matching lines."""
     validate_project_exists(project_id)
-    result = explorer.search_text(project_id, q, limit=limit)
+    result = explorer.search_text(project_id, q, limit=limit, path_prefix=path_prefix)
     return {
         "query": q,
         **result,
@@ -138,6 +146,7 @@ async def search_symbols(
     language: str | None = Query(None, description="Optional language filter"),
     kind: str | None = Query(None, description="Optional kind filter"),
     limit: int = Query(20, ge=1, le=100, description="Maximum results"),
+    path_prefix: str | None = Query(None, description="Optional relative file/subtree prefix filter"),
 ) -> dict[str, Any]:
     """Search project symbols by name, signature, or summary."""
     validate_project_exists(project_id)
@@ -147,11 +156,13 @@ async def search_symbols(
         language=language,
         kind=kind,
         limit=limit,
+        path_prefix=path_prefix,
     )
     return {
         "query": q,
         "count": len(rows),
         "items": rows,
+        "path_prefix": path_prefix,
     }
 
 

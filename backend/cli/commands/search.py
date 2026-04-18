@@ -71,6 +71,7 @@ class SearchRoots:
     effective_scope: str
     project_root: Path | None
     checkout_root: Path | None
+    checkout_has_changes: bool = False
 
 
 def _generate_hint(query: str, mode: str, metadata: dict) -> str | None:
@@ -86,7 +87,7 @@ def _generate_hint(query: str, mode: str, metadata: dict) -> str | None:
         used_fallback = metadata.get("used_fallback", False)
         files_searched = metadata.get("text_files_searched", 0)
         if has_path_segments(queries):
-            return "path terms reduce symbol precision. Try just the symbol name, or `st search --file <path>` to list symbols in a file."
+            return "path terms reduce symbol precision. Try just the symbol name, `st search --path <subtree> --text <query>` for subtree text matches, or `st search --file <path>` to list symbols in a file."
         if is_short_or_generic(queries):
             return "query is too short/generic for symbol matching. Try a specific function, class, or variable name."
         # Text fallback already ran and found nothing — don't suggest --text again
@@ -96,14 +97,14 @@ def _generate_hint(query: str, mode: str, metadata: dict) -> str | None:
 
     if mode == "text-fallback":
         if has_path_segments(queries):
-            return "fell back to text search (no symbol match). Path-qualified terms are noisy — try just the symbol name."
+            return "fell back to text search (no symbol match). Path-qualified terms are noisy — try just the symbol name or use `--path` with `--text` for subtree content search."
         return "fell back to text search (no symbol match). Try a specific identifier like `FunctionName` or `function_name`."
 
     # Symbol-first with low match quality — check if results look incidental
     symbol_count = metadata.get("symbol_count", 0)
     if mode == "symbol-first" and symbol_count > 0:
         if has_path_segments(queries):
-            return "path terms in symbol search may favor incidental mentions. Try `st search --text <query>` for file-content matches."
+            return "path terms in symbol search may favor incidental mentions. Try `st search --path <subtree> --text <query>` for subtree file-content matches."
         if is_short_or_generic(queries):
             return "short/generic query may produce incidental symbol matches. Verify relevance or try a more specific identifier."
 
@@ -123,9 +124,18 @@ def _start_delayed_status_timer(message: str) -> threading.Timer:
     return timer
 
 
-def _run_precision_search(client: STClient, query: str, budget: int, limit: int) -> dict:
+def _run_precision_search(
+    client: STClient,
+    query: str,
+    budget: int,
+    limit: int,
+    *,
+    path_prefix: str | None = None,
+) -> dict:
     """Run precision search with a delayed status line so stale refreshes don't look hung."""
-    params = urlencode({"q": query, "budget": budget, "limit": limit})
+    params = urlencode(
+        {k: v for k, v in {"q": query, "budget": budget, "limit": limit, "path_prefix": path_prefix}.items() if v is not None}
+    )
     timer = _start_delayed_status_timer(_SEARCH_PROGRESS_MESSAGE)
     try:
         return client.get(client._url(f"/explorer/precision-search?{params}"))
@@ -146,16 +156,62 @@ def _emit_precision_search_metadata_note(metadata: dict) -> None:
         _emit_status("st search: prepended current checkout results ahead of indexed project context.")
 
 
+def _normalize_path_prefix(path_prefix: str | None) -> str | None:
+    """Normalize an optional relative file/subtree prefix."""
+    if path_prefix is None:
+        return None
+    normalized = str(path_prefix).strip().replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    normalized = normalized.strip("/")
+    return normalized or None
+
+
+def _path_matches_prefix(path: str, path_prefix: str | None) -> bool:
+    """Return True when the relative path falls under the requested prefix."""
+    normalized_prefix = _normalize_path_prefix(path_prefix)
+    if not normalized_prefix:
+        return True
+    return path == normalized_prefix or path.startswith(f"{normalized_prefix}/")
+
+
+def _checkout_has_local_changes(root: Path | None) -> bool:
+    """Return True when the checkout contains tracked or untracked changes.
+
+    If git state cannot be determined, preserve freshness by assuming changes exist.
+    """
+    if root is None:
+        return False
+    try:
+        proc = subprocess.run(
+            ["git", "status", "--short", "--untracked-files=all"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+    if proc.returncode != 0:
+        return True
+    return bool(proc.stdout.strip())
+
+
 def _resolve_search_roots(project_override: str | None, scope: SearchScope) -> SearchRoots:
     """Resolve canonical project and current-checkout roots for this search."""
     checkout_root = resolve_checkout_root()
     canonical_root = canonical_repo_root()
+    checkout_has_changes = _checkout_has_local_changes(checkout_root)
     if scope == SearchScope.CHECKOUT:
         return SearchRoots(
             scope=scope,
             effective_scope="checkout" if checkout_root else "project",
             project_root=None,
             checkout_root=checkout_root,
+            checkout_has_changes=checkout_has_changes,
         )
 
     config = get_config_optional()
@@ -168,7 +224,12 @@ def _resolve_search_roots(project_override: str | None, scope: SearchScope) -> S
 
     if scope == SearchScope.PROJECT or (selected_project_id and checkout_project_id and selected_project_id != checkout_project_id):
         effective_scope = "project"
-    elif checkout_root is not None and project_root is not None and checkout_root != project_root:
+    elif (
+        checkout_root is not None
+        and project_root is not None
+        and checkout_root != project_root
+        and checkout_has_changes
+    ):
         effective_scope = "combined"
     elif checkout_root is not None and project_root is None and selected_project_id is None:
         effective_scope = "checkout"
@@ -180,6 +241,7 @@ def _resolve_search_roots(project_override: str | None, scope: SearchScope) -> S
         effective_scope=effective_scope,
         project_root=project_root,
         checkout_root=checkout_root,
+        checkout_has_changes=checkout_has_changes,
     )
 
 
@@ -191,10 +253,32 @@ def _normalize_rel_path(root: Path, path: Path) -> str | None:
         return None
 
 
-def _iter_checkout_files(root: Path, *, allowed_suffixes: set[str] | None = None) -> list[Path]:
+def _resolve_checkout_path_prefix(root: Path, path_prefix: str | None) -> tuple[str | None, Path | None]:
+    """Resolve an optional checkout subtree/file prefix relative to the checkout root."""
+    normalized_prefix = _normalize_path_prefix(path_prefix)
+    if not normalized_prefix:
+        return None, root
+    target = (root / normalized_prefix).resolve()
+    rel_target = _normalize_rel_path(root, target)
+    if rel_target is None or not target.exists():
+        return normalized_prefix, None
+    return normalized_prefix, target
+
+
+def _iter_checkout_files(
+    root: Path,
+    *,
+    allowed_suffixes: set[str] | None = None,
+    start_root: Path | None = None,
+) -> list[Path]:
     """Return candidate files under a checkout root with common junk directories excluded."""
+    walk_root = (start_root or root).resolve()
+    if walk_root.is_file():
+        if allowed_suffixes is not None and walk_root.suffix.lower() not in allowed_suffixes:
+            return []
+        return [walk_root]
     results: list[Path] = []
-    for dirpath, dirnames, filenames in root.walk(top_down=True):
+    for dirpath, dirnames, filenames in walk_root.walk(top_down=True):
         dirnames[:] = [name for name in dirnames if name not in _CHECKOUT_EXCLUDE_DIRS]
         for filename in filenames:
             path = dirpath / filename
@@ -210,10 +294,15 @@ def _ripgrep_candidate_paths(
     *,
     limit: int,
     suffixes: set[str] | None = None,
+    path_prefix: str | None = None,
 ) -> list[Path]:
     """Return file candidates containing the query under the current checkout."""
     rg_path = shutil.which("rg")
     if not rg_path:
+        return []
+
+    normalized_prefix, target_root = _resolve_checkout_path_prefix(root, path_prefix)
+    if normalized_prefix and target_root is None:
         return []
 
     args = [
@@ -228,7 +317,7 @@ def _ripgrep_candidate_paths(
             args.extend(["--glob", f"*{suffix}"])
     for glob in _CHECKOUT_EXCLUDE_GLOBS:
         args.extend(["--glob", glob])
-    args.extend([query, "."])
+    args.extend([query, normalized_prefix or "."])
 
     try:
         proc = subprocess.run(
@@ -260,13 +349,38 @@ def _ripgrep_candidate_paths(
     return results
 
 
-def _search_checkout_text(root: Path, query: str, *, limit: int) -> dict[str, Any]:
+def _search_checkout_text(
+    root: Path,
+    query: str,
+    *,
+    limit: int,
+    path_prefix: str | None = None,
+) -> dict[str, Any]:
     """Search the current checkout directly from the filesystem."""
     query_value = query.strip()
+    normalized_prefix, target_root = _resolve_checkout_path_prefix(root, path_prefix)
     if not query_value:
-        return {"query": query, "count": 0, "files_searched": 0, "items": [], "truncated": False, "scope": "checkout"}
+        return {
+            "query": query,
+            "count": 0,
+            "files_searched": 0,
+            "items": [],
+            "truncated": False,
+            "scope": "checkout",
+            "path_prefix": normalized_prefix,
+        }
+    if normalized_prefix and target_root is None:
+        return {
+            "query": query,
+            "count": 0,
+            "files_searched": 0,
+            "items": [],
+            "truncated": False,
+            "scope": "checkout",
+            "path_prefix": normalized_prefix,
+        }
 
-    all_checkout_files = _iter_checkout_files(root)
+    all_checkout_files = _iter_checkout_files(root, start_root=target_root)
     rg_path = shutil.which("rg")
     if rg_path:
         args = [
@@ -278,7 +392,7 @@ def _search_checkout_text(root: Path, query: str, *, limit: int) -> dict[str, An
         ]
         for glob in _CHECKOUT_EXCLUDE_GLOBS:
             args.extend(["--glob", glob])
-        args.extend([query_value, "."])
+        args.extend([query_value, normalized_prefix or "."])
         try:
             proc = subprocess.run(
                 args,
@@ -304,6 +418,8 @@ def _search_checkout_text(root: Path, query: str, *, limit: int) -> dict[str, An
                     if not sep:
                         continue
                     rel_path = path_part[2:] if path_part.startswith("./") else path_part
+                    if not _path_matches_prefix(rel_path, normalized_prefix):
+                        continue
                     try:
                         line_number = int(line_part)
                     except ValueError:
@@ -328,6 +444,7 @@ def _search_checkout_text(root: Path, query: str, *, limit: int) -> dict[str, An
                     "strategy": "checkout_ripgrep",
                     "scope": "checkout",
                     "root_path": str(root),
+                    "path_prefix": normalized_prefix,
                 }
 
     query_lower = query_value.lower()
@@ -341,7 +458,7 @@ def _search_checkout_text(root: Path, query: str, *, limit: int) -> dict[str, An
             continue
         files_searched += 1
         rel_path = _normalize_rel_path(root, path)
-        if rel_path is None:
+        if rel_path is None or not _path_matches_prefix(rel_path, normalized_prefix):
             continue
         for line_number, line in enumerate(content.splitlines(), start=1):
             if query_lower not in line.lower():
@@ -370,6 +487,7 @@ def _search_checkout_text(root: Path, query: str, *, limit: int) -> dict[str, An
         "strategy": "checkout_fallback",
         "scope": "checkout",
         "root_path": str(root),
+        "path_prefix": normalized_prefix,
     }
 
 
@@ -446,8 +564,25 @@ def _symbol_record_to_item(symbol: SymbolRecord, rel_path: str) -> dict[str, Any
     }
 
 
-def _search_checkout_symbols(root: Path, query: str, *, limit: int) -> dict[str, Any]:
+def _search_checkout_symbols(
+    root: Path,
+    query: str,
+    *,
+    limit: int,
+    path_prefix: str | None = None,
+) -> dict[str, Any]:
     """Search current-checkout symbols by extracting supported files locally."""
+    normalized_prefix, target_root = _resolve_checkout_path_prefix(root, path_prefix)
+    if normalized_prefix and target_root is None:
+        return {
+            "query": query,
+            "count": 0,
+            "items": [],
+            "scope": "checkout",
+            "root_path": str(root),
+            "path_prefix": normalized_prefix,
+        }
+
     query_terms = _expand_symbol_queries(query)
     candidate_paths: list[Path] = []
     seen_candidate_paths: set[Path] = set()
@@ -457,19 +592,24 @@ def _search_checkout_symbols(root: Path, query: str, *, limit: int) -> dict[str,
             query_term,
             limit=max(limit * 3, _CHECKOUT_CANDIDATE_LIMIT),
             suffixes=_SUPPORTED_SYMBOL_EXTENSIONS,
+            path_prefix=normalized_prefix,
         ):
             if candidate in seen_candidate_paths:
                 continue
             seen_candidate_paths.add(candidate)
             candidate_paths.append(candidate)
     if not candidate_paths:
-        candidate_paths = _iter_checkout_files(root, allowed_suffixes=_SUPPORTED_SYMBOL_EXTENSIONS)
+        candidate_paths = _iter_checkout_files(
+            root,
+            allowed_suffixes=_SUPPORTED_SYMBOL_EXTENSIONS,
+            start_root=target_root,
+        )
 
     seen: set[tuple[str, str, int]] = set()
     scored_items: list[tuple[int, dict[str, Any]]] = []
     for path in candidate_paths:
         rel_path = _normalize_rel_path(root, path)
-        if rel_path is None:
+        if rel_path is None or not _path_matches_prefix(rel_path, normalized_prefix):
             continue
         for symbol in extract_symbols(path, rel_path):
             score = _symbol_score(symbol, rel_path, query_terms)
@@ -496,6 +636,7 @@ def _search_checkout_symbols(root: Path, query: str, *, limit: int) -> dict[str,
         "items": items,
         "scope": "checkout",
         "root_path": str(root),
+        "path_prefix": normalized_prefix,
     }
 
 
@@ -575,9 +716,17 @@ def _build_checkout_text_prompt(result: dict[str, Any]) -> str:
     return "\n".join(lines).strip()
 
 
-def _build_checkout_precision_result(query: str, checkout_root: Path, budget: int, limit: int) -> dict[str, Any]:
+def _build_checkout_precision_result(
+    query: str,
+    checkout_root: Path,
+    budget: int,
+    limit: int,
+    *,
+    path_prefix: str | None = None,
+) -> dict[str, Any]:
     """Build a prompt-ready precision result from the current checkout only."""
-    symbol_result = _search_checkout_symbols(checkout_root, query, limit=limit)
+    normalized_prefix = _normalize_path_prefix(path_prefix)
+    symbol_result = _search_checkout_symbols(checkout_root, query, limit=limit, path_prefix=normalized_prefix)
     if symbol_result.get("items"):
         body = _build_checkout_symbol_prompt(checkout_root, symbol_result["items"])
         prompt_context = _truncate_prompt_to_budget(body, budget)
@@ -587,6 +736,7 @@ def _build_checkout_precision_result(query: str, checkout_root: Path, budget: in
             "metadata": {
                 "scope": "checkout",
                 "checkout_root": str(checkout_root),
+                "path_prefix": normalized_prefix,
                 "symbol_count": symbol_result.get("count", 0),
                 "text_match_count": 0,
                 "text_files_searched": 0,
@@ -597,7 +747,7 @@ def _build_checkout_precision_result(query: str, checkout_root: Path, budget: in
             },
         }
 
-    text_result = _search_checkout_text(checkout_root, query, limit=limit)
+    text_result = _search_checkout_text(checkout_root, query, limit=limit, path_prefix=normalized_prefix)
     if text_result.get("items"):
         body = _build_checkout_text_prompt(text_result)
         prompt_context = _truncate_prompt_to_budget(body, budget)
@@ -607,6 +757,7 @@ def _build_checkout_precision_result(query: str, checkout_root: Path, budget: in
             "metadata": {
                 "scope": "checkout",
                 "checkout_root": str(checkout_root),
+                "path_prefix": normalized_prefix,
                 "symbol_count": 0,
                 "text_match_count": text_result.get("count", 0),
                 "text_files_searched": text_result.get("files_searched", 0),
@@ -623,6 +774,7 @@ def _build_checkout_precision_result(query: str, checkout_root: Path, budget: in
         "metadata": {
             "scope": "checkout",
             "checkout_root": str(checkout_root),
+            "path_prefix": normalized_prefix,
             "symbol_count": 0,
             "text_match_count": 0,
             "text_files_searched": text_result.get("files_searched", 0),
@@ -662,6 +814,7 @@ def _merge_precision_results(
             "scope": scope,
             "checkout_root": checkout_metadata.get("checkout_root"),
             "project_root": str(roots.project_root) if roots.project_root else None,
+            "path_prefix": checkout_metadata.get("path_prefix") or project_metadata.get("path_prefix"),
             "checkout_overlay_applied": True,
             "checkout_symbol_count": checkout_metadata.get("symbol_count", 0),
             "checkout_text_match_count": checkout_metadata.get("text_match_count", 0),
@@ -721,6 +874,10 @@ def search(
         str | None,
         typer.Option("--file", "-f", help="List all symbols in a specific file"),
     ] = None,
+    path: Annotated[
+        str | None,
+        typer.Option("--path", help="Restrict search to a relative file/subtree prefix"),
+    ] = None,
     hint: Annotated[
         bool,
         typer.Option("--hint/--no-hint", help="Show refinement hints when results are poor"),
@@ -747,6 +904,7 @@ def search(
         st search scan_history --json
     """
     q = " ".join(query).strip() if query else ""
+    normalized_path = _normalize_path_prefix(path)
     if not q and not file:
         typer.echo("Error: empty query", err=True)
         raise typer.Exit(1)
@@ -784,32 +942,38 @@ def search(
     try:
         if text:
             if roots.effective_scope in {"checkout", "combined"} and roots.checkout_root is not None:
-                result = _search_checkout_text(roots.checkout_root, q, limit=limit)
+                result = _search_checkout_text(roots.checkout_root, q, limit=limit, path_prefix=normalized_path)
             else:
                 client = STClient(project_id=project) if project else STClient()
-                params = urlencode({"q": q, "limit": limit})
+                params = urlencode({k: v for k, v in {"q": q, "limit": limit, "path_prefix": normalized_path}.items() if v is not None})
                 result = client.get(client._url(f"/explorer/text/search?{params}"))
         elif symbols:
             if roots.effective_scope in {"checkout", "combined"} and roots.checkout_root is not None:
-                local_result = _search_checkout_symbols(roots.checkout_root, q, limit=limit)
+                local_result = _search_checkout_symbols(roots.checkout_root, q, limit=limit, path_prefix=normalized_path)
                 if local_result.get("count") or roots.effective_scope == "checkout":
                     result = local_result
                 else:
                     client = STClient(project_id=project) if project else STClient()
-                    params = urlencode({"q": q, "limit": limit})
+                    params = urlencode({k: v for k, v in {"q": q, "limit": limit, "path_prefix": normalized_path}.items() if v is not None})
                     result = client.get(client._url(f"/explorer/symbols/search?{params}"))
             else:
                 client = STClient(project_id=project) if project else STClient()
-                params = urlencode({"q": q, "limit": limit})
+                params = urlencode({k: v for k, v in {"q": q, "limit": limit, "path_prefix": normalized_path}.items() if v is not None})
                 result = client.get(client._url(f"/explorer/symbols/search?{params}"))
         else:
             if roots.effective_scope == "checkout" and roots.checkout_root is not None:
-                result = _build_checkout_precision_result(q, roots.checkout_root, budget, limit)
+                result = _build_checkout_precision_result(q, roots.checkout_root, budget, limit, path_prefix=normalized_path)
             else:
                 client = STClient(project_id=project) if project else STClient()
-                project_result = _run_precision_search(client, q, budget, limit)
+                project_result = _run_precision_search(client, q, budget, limit, path_prefix=normalized_path)
                 if roots.effective_scope == "combined" and roots.checkout_root is not None:
-                    checkout_result = _build_checkout_precision_result(q, roots.checkout_root, budget, limit)
+                    checkout_result = _build_checkout_precision_result(
+                        q,
+                        roots.checkout_root,
+                        budget,
+                        limit,
+                        path_prefix=normalized_path,
+                    )
                     result = _merge_precision_results(q, project_result, checkout_result, roots, budget)
                 else:
                     result = project_result
@@ -842,6 +1006,14 @@ def _scope_suffix(scope: str | None) -> str:
     return f"|scope={scope}"
 
 
+def _path_suffix(path_prefix: str | None) -> str:
+    """Return a compact path suffix when search is restricted to a subtree/file."""
+    normalized_prefix = _normalize_path_prefix(path_prefix)
+    if not normalized_prefix:
+        return ""
+    return f"|path={normalized_prefix}"
+
+
 def _truncate_prompt_to_budget(text: str, budget: int) -> str:
     """Trim prompt text until the local token estimator is within the requested budget."""
     truncated = truncate_to_tokens(text, budget)
@@ -871,9 +1043,10 @@ def _print_precision_compact(
     tokens_saved = metadata.get("estimated_tokens_saved", 0)
     final_tokens = metadata.get("final_tokens", 0)
     scope_suffix = _scope_suffix(metadata.get("scope"))
+    path_suffix = _path_suffix(metadata.get("path_prefix"))
 
     if not prompt_context:
-        print(f"SEARCH:{query}|mode=empty|symbols=0|tokens=0{scope_suffix}")
+        print(f"SEARCH:{query}|mode=empty|symbols=0|tokens=0{scope_suffix}{path_suffix}")
         if show_hint:
             hint_text = _generate_hint(query, "empty", metadata)
             if hint_text:
@@ -882,7 +1055,7 @@ def _print_precision_compact(
 
     print(
         f"SEARCH:{query}|mode={mode}|symbols={symbol_count}"
-        f"|tokens={final_tokens}|saved={tokens_saved}{scope_suffix}"
+        f"|tokens={final_tokens}|saved={tokens_saved}{scope_suffix}{path_suffix}"
     )
     if show_hint:
         hint_text = _generate_hint(query, mode, metadata)
@@ -898,12 +1071,13 @@ def _print_text_compact(query: str, result: dict) -> None:
     count = result.get("count", len(items) if isinstance(items, list) else 0)
     files_searched = result.get("files_searched", 0)
     scope_suffix = _scope_suffix(result.get("scope"))
+    path_suffix = _path_suffix(result.get("path_prefix"))
 
     if not items:
-        print(f"SEARCH:{query}|mode=empty|symbols=0|tokens=0{scope_suffix}")
+        print(f"SEARCH:{query}|mode=empty|symbols=0|tokens=0{scope_suffix}{path_suffix}")
         return
 
-    print(f"SEARCH:{query}|mode=text|matches={count}|files={files_searched}{scope_suffix}")
+    print(f"SEARCH:{query}|mode=text|matches={count}|files={files_searched}{scope_suffix}{path_suffix}")
     print()
     for item in items:
         if not isinstance(item, dict):
@@ -916,12 +1090,13 @@ def _print_symbols_compact(query: str, result: dict) -> None:
     items = result.get("items", [])
     count = result.get("count", len(items) if isinstance(items, list) else 0)
     scope_suffix = _scope_suffix(result.get("scope"))
+    path_suffix = _path_suffix(result.get("path_prefix"))
 
     if not items:
-        print(f"SEARCH:{query}|mode=empty|symbols=0|tokens=0{scope_suffix}")
+        print(f"SEARCH:{query}|mode=empty|symbols=0|tokens=0{scope_suffix}{path_suffix}")
         return
 
-    print(f"SEARCH:{query}|mode=symbols|symbols={count}{scope_suffix}")
+    print(f"SEARCH:{query}|mode=symbols|symbols={count}{scope_suffix}{path_suffix}")
     print()
     for item in items:
         if not isinstance(item, dict):
