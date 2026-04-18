@@ -16,11 +16,33 @@ from ..project_identity import (
 )
 from .connection import get_connection
 
+_PROJECT_SOURCE_TYPE = "project"
+_PROJECT_SYNC_FAILURE = "Project identity sync failed for {canonical_id}"
+_PROJECT_NOT_REGISTERED = (
+    "Project {project_id} is not registered in SummitFlow; create it before syncing identity"
+)
+
 _PROJECT_ROW_SQL = """
     SELECT id, name, base_url, public_url, health_endpoint, root_path, category, sidebar_rank, created_at
     FROM projects
     WHERE id = ANY(%s)
 """
+
+_SINGLE_PROJECT_ROW_SQL = """
+    SELECT id, name, base_url, public_url, health_endpoint, root_path, category, sidebar_rank, created_at
+    FROM projects
+    WHERE id = %s
+"""
+
+_INSERT_PROJECT_ROW_SQL = """
+    INSERT INTO projects (
+        id, name, base_url, public_url, health_endpoint, root_path,
+        category, sidebar_rank, created_at
+    )
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+"""
+
+_UPDATE_PROJECT_ROW_SQL = "UPDATE projects SET name = %s, root_path = %s WHERE id = %s"
 
 _BACKUP_SOURCE_ROW_SQL = """
     SELECT id, name, path, source_type, project_id, enabled, frequency, retention_days,
@@ -30,6 +52,41 @@ _BACKUP_SOURCE_ROW_SQL = """
     FROM backup_sources
     WHERE id = ANY(%s) OR project_id = ANY(%s)
 """
+
+_UPSERT_BACKUP_SOURCE_SQL = """
+    INSERT INTO backup_sources (
+        id, name, path, source_type, project_id, enabled, frequency,
+        retention_days, last_run_at, next_run_at, storage_backend_id,
+        last_restore_tested_at, last_restore_test_ok, last_restore_test_error,
+        last_drill_at, last_drill_ok, last_drill_backup_id, last_drill_result
+    )
+    VALUES (
+        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+        %s, %s, %s, %s, %s, %s, %s
+    )
+    ON CONFLICT (id) DO UPDATE
+    SET name = EXCLUDED.name,
+        path = EXCLUDED.path,
+        source_type = EXCLUDED.source_type,
+        project_id = EXCLUDED.project_id,
+        enabled = EXCLUDED.enabled,
+        frequency = EXCLUDED.frequency,
+        retention_days = EXCLUDED.retention_days,
+        last_run_at = EXCLUDED.last_run_at,
+        next_run_at = EXCLUDED.next_run_at,
+        storage_backend_id = EXCLUDED.storage_backend_id,
+        last_restore_tested_at = EXCLUDED.last_restore_tested_at,
+        last_restore_test_ok = EXCLUDED.last_restore_test_ok,
+        last_restore_test_error = EXCLUDED.last_restore_test_error,
+        last_drill_at = EXCLUDED.last_drill_at,
+        last_drill_ok = EXCLUDED.last_drill_ok,
+        last_drill_backup_id = EXCLUDED.last_drill_backup_id,
+        last_drill_result = EXCLUDED.last_drill_result,
+        updated_at = NOW()
+"""
+
+_DELETE_LEGACY_BACKUP_SOURCE_SQL = "DELETE FROM backup_sources WHERE id = %s AND source_type = %s"
+_DELETE_LEGACY_PROJECT_SQL = "DELETE FROM projects WHERE id = %s"
 
 
 @dataclass(frozen=True)
@@ -130,162 +187,194 @@ def _choose_backup_source_row(
     if not rows:
         return None
 
-    project_rows = [row for row in rows if str(row[3]) == "project"]
+    project_rows = [row for row in rows if str(row[3]) == _PROJECT_SOURCE_TYPE]
     candidates = project_rows or rows
     row_by_id = {str(row[0]): row for row in candidates}
     return row_by_id.get(canonical_id) or row_by_id.get(requested_id) or candidates[0]
 
 
-def sync_project_identity(project_id: str) -> dict[str, Any]:
-    """Reconcile DB project metadata and references to the manifest canonical identity."""
-    meta = _build_metadata(project_id)
+def _legacy_aliases(meta: ProjectIdentityMetadata) -> list[str]:
+    return [alias for alias in meta.aliases if alias != meta.canonical_id]
 
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(_PROJECT_ROW_SQL, (list(meta.aliases),))
-        project_rows = list(cur.fetchall())
-        if not project_rows:
-            raise ValueError(
-                f"Project {project_id} is not registered in SummitFlow; create it before syncing identity"
-            )
 
-        canonical_row = next((row for row in project_rows if str(row[0]) == meta.canonical_id), None)
-        source_project = _choose_project_row(
-            project_rows,
-            requested_id=project_id,
-            canonical_id=meta.canonical_id,
-        )
+def _load_project_rows(
+    cur: Cursor[Any],
+    *,
+    meta: ProjectIdentityMetadata,
+    requested_id: str,
+) -> tuple[list[tuple[Any, ...]], tuple[Any, ...], bool]:
+    cur.execute(_PROJECT_ROW_SQL, (list(meta.aliases),))
+    rows = list(cur.fetchall())
+    if not rows:
+        raise ValueError(_PROJECT_NOT_REGISTERED.format(project_id=requested_id))
 
-        if canonical_row is None:
-            cur.execute(
-                """
-                INSERT INTO projects (
-                    id, name, base_url, public_url, health_endpoint, root_path,
-                    category, sidebar_rank, created_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    meta.canonical_id,
-                    meta.display_name,
-                    source_project[2],
-                    source_project[3],
-                    source_project[4],
-                    meta.root_path,
-                    source_project[6],
-                    source_project[7],
-                    source_project[8],
-                ),
-            )
-        else:
-            cur.execute(
-                "UPDATE projects SET name = %s, root_path = %s WHERE id = %s",
-                (meta.display_name, meta.root_path, meta.canonical_id),
-            )
+    has_canonical_row = any(str(row[0]) == meta.canonical_id for row in rows)
+    source_row = _choose_project_row(
+        rows,
+        requested_id=requested_id,
+        canonical_id=meta.canonical_id,
+    )
+    return rows, source_row, has_canonical_row
 
-        project_fk_targets = _discover_foreign_key_targets(cur, foreign_table="projects")
-        for legacy_id in meta.aliases:
-            if legacy_id != meta.canonical_id:
-                _update_foreign_key_rows(
-                    cur,
-                    targets=project_fk_targets,
-                    old_value=legacy_id,
-                    new_value=meta.canonical_id,
-                )
 
-        cur.execute(_BACKUP_SOURCE_ROW_SQL, (list(meta.aliases), list(meta.aliases)))
-        backup_rows = list(cur.fetchall())
-        source_backup = _choose_backup_source_row(
-            backup_rows,
-            requested_id=project_id,
-            canonical_id=meta.canonical_id,
-        )
-        if source_backup is not None:
-            cur.execute(
-                """
-                INSERT INTO backup_sources (
-                    id, name, path, source_type, project_id, enabled, frequency,
-                    retention_days, last_run_at, next_run_at, storage_backend_id,
-                    last_restore_tested_at, last_restore_test_ok, last_restore_test_error,
-                    last_drill_at, last_drill_ok, last_drill_backup_id, last_drill_result
-                )
-                VALUES (
-                    %s, %s, %s, 'project', %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s
-                )
-                ON CONFLICT (id) DO UPDATE
-                SET name = EXCLUDED.name,
-                    path = EXCLUDED.path,
-                    source_type = EXCLUDED.source_type,
-                    project_id = EXCLUDED.project_id,
-                    enabled = EXCLUDED.enabled,
-                    frequency = EXCLUDED.frequency,
-                    retention_days = EXCLUDED.retention_days,
-                    last_run_at = EXCLUDED.last_run_at,
-                    next_run_at = EXCLUDED.next_run_at,
-                    storage_backend_id = EXCLUDED.storage_backend_id,
-                    last_restore_tested_at = EXCLUDED.last_restore_tested_at,
-                    last_restore_test_ok = EXCLUDED.last_restore_test_ok,
-                    last_restore_test_error = EXCLUDED.last_restore_test_error,
-                    last_drill_at = EXCLUDED.last_drill_at,
-                    last_drill_ok = EXCLUDED.last_drill_ok,
-                    last_drill_backup_id = EXCLUDED.last_drill_backup_id,
-                    last_drill_result = EXCLUDED.last_drill_result,
-                    updated_at = NOW()
-                """,
-                (
-                    meta.canonical_id,
-                    meta.display_name,
-                    meta.root_path,
-                    meta.canonical_id,
-                    source_backup[5],
-                    source_backup[6],
-                    source_backup[7],
-                    source_backup[8],
-                    source_backup[9],
-                    source_backup[10],
-                    source_backup[11],
-                    source_backup[12],
-                    source_backup[13],
-                    source_backup[14],
-                    source_backup[15],
-                    source_backup[16],
-                    source_backup[17],
-                ),
-            )
+def _insert_canonical_project_row(
+    cur: Cursor[Any],
+    *,
+    meta: ProjectIdentityMetadata,
+    source_row: tuple[Any, ...],
+) -> None:
+    (
+        _source_id,
+        _source_name,
+        base_url,
+        public_url,
+        health_endpoint,
+        _source_root_path,
+        category,
+        sidebar_rank,
+        created_at,
+    ) = source_row
+    cur.execute(
+        _INSERT_PROJECT_ROW_SQL,
+        (
+            meta.canonical_id,
+            meta.display_name,
+            base_url,
+            public_url,
+            health_endpoint,
+            meta.root_path,
+            category,
+            sidebar_rank,
+            created_at,
+        ),
+    )
 
-            backup_fk_targets = _discover_foreign_key_targets(cur, foreign_table="backup_sources")
-            for legacy_id in meta.aliases:
-                if legacy_id != meta.canonical_id:
-                    _update_foreign_key_rows(
-                        cur,
-                        targets=backup_fk_targets,
-                        old_value=legacy_id,
-                        new_value=meta.canonical_id,
-                    )
 
-        for legacy_id in meta.aliases:
-            if legacy_id == meta.canonical_id:
-                continue
-            cur.execute(
-                "DELETE FROM backup_sources WHERE id = %s AND source_type = 'project'",
-                (legacy_id,),
-            )
-            cur.execute("DELETE FROM projects WHERE id = %s", (legacy_id,))
-
-        conn.commit()
-
+def _sync_project_row(
+    cur: Cursor[Any],
+    *,
+    meta: ProjectIdentityMetadata,
+    source_row: tuple[Any, ...],
+    has_canonical_row: bool,
+) -> None:
+    if has_canonical_row:
         cur.execute(
-            """
-            SELECT id, name, base_url, public_url, health_endpoint, root_path, category, sidebar_rank, created_at
-            FROM projects
-            WHERE id = %s
-            """,
-            (meta.canonical_id,),
+            _UPDATE_PROJECT_ROW_SQL,
+            (meta.display_name, meta.root_path, meta.canonical_id),
         )
-        row = cur.fetchone()
-        if row is None:
-            raise ValueError(f"Project identity sync failed for {meta.canonical_id}")
+        return
 
+    _insert_canonical_project_row(cur, meta=meta, source_row=source_row)
+
+
+def _sync_project_foreign_keys(cur: Cursor[Any], *, meta: ProjectIdentityMetadata) -> None:
+    targets = _discover_foreign_key_targets(cur, foreign_table="projects")
+    for legacy_id in _legacy_aliases(meta):
+        _update_foreign_key_rows(
+            cur,
+            targets=targets,
+            old_value=legacy_id,
+            new_value=meta.canonical_id,
+        )
+
+
+def _load_backup_source_rows(cur: Cursor[Any], *, meta: ProjectIdentityMetadata) -> list[tuple[Any, ...]]:
+    cur.execute(_BACKUP_SOURCE_ROW_SQL, (list(meta.aliases), list(meta.aliases)))
+    return list(cur.fetchall())
+
+
+def _upsert_canonical_backup_source(
+    cur: Cursor[Any],
+    *,
+    meta: ProjectIdentityMetadata,
+    source_row: tuple[Any, ...],
+) -> None:
+    (
+        _source_id,
+        _source_name,
+        _source_path,
+        _source_type,
+        _source_project_id,
+        enabled,
+        frequency,
+        retention_days,
+        last_run_at,
+        next_run_at,
+        storage_backend_id,
+        last_restore_tested_at,
+        last_restore_test_ok,
+        last_restore_test_error,
+        last_drill_at,
+        last_drill_ok,
+        last_drill_backup_id,
+        last_drill_result,
+    ) = source_row
+    cur.execute(
+        _UPSERT_BACKUP_SOURCE_SQL,
+        (
+            meta.canonical_id,
+            meta.display_name,
+            meta.root_path,
+            _PROJECT_SOURCE_TYPE,
+            meta.canonical_id,
+            enabled,
+            frequency,
+            retention_days,
+            last_run_at,
+            next_run_at,
+            storage_backend_id,
+            last_restore_tested_at,
+            last_restore_test_ok,
+            last_restore_test_error,
+            last_drill_at,
+            last_drill_ok,
+            last_drill_backup_id,
+            last_drill_result,
+        ),
+    )
+
+
+def _sync_backup_source_rows(
+    cur: Cursor[Any],
+    *,
+    meta: ProjectIdentityMetadata,
+    requested_id: str,
+) -> None:
+    rows = _load_backup_source_rows(cur, meta=meta)
+    source_row = _choose_backup_source_row(
+        rows,
+        requested_id=requested_id,
+        canonical_id=meta.canonical_id,
+    )
+    if source_row is None:
+        return
+
+    _upsert_canonical_backup_source(cur, meta=meta, source_row=source_row)
+    targets = _discover_foreign_key_targets(cur, foreign_table="backup_sources")
+    for legacy_id in _legacy_aliases(meta):
+        _update_foreign_key_rows(
+            cur,
+            targets=targets,
+            old_value=legacy_id,
+            new_value=meta.canonical_id,
+        )
+
+
+def _delete_legacy_alias_rows(cur: Cursor[Any], *, meta: ProjectIdentityMetadata) -> None:
+    for legacy_id in _legacy_aliases(meta):
+        cur.execute(_DELETE_LEGACY_BACKUP_SOURCE_SQL, (legacy_id, _PROJECT_SOURCE_TYPE))
+        cur.execute(_DELETE_LEGACY_PROJECT_SQL, (legacy_id,))
+
+
+def _fetch_synced_project_row(cur: Cursor[Any], canonical_id: str) -> tuple[Any, ...]:
+    cur.execute(_SINGLE_PROJECT_ROW_SQL, (canonical_id,))
+    row = cur.fetchone()
+    if row is None:
+        raise ValueError(_PROJECT_SYNC_FAILURE.format(canonical_id=canonical_id))
+    return row
+
+
+def _serialize_project_row(row: tuple[Any, ...], *, aliases: tuple[str, ...]) -> dict[str, Any]:
     return {
         "id": row[0],
         "name": row[1],
@@ -296,5 +385,30 @@ def sync_project_identity(project_id: str) -> dict[str, Any]:
         "category": row[6],
         "sidebar_rank": row[7],
         "created_at": row[8],
-        "aliases": meta.aliases,
+        "aliases": aliases,
     }
+
+
+def sync_project_identity(project_id: str) -> dict[str, Any]:
+    """Reconcile DB project metadata and references to the manifest canonical identity."""
+    meta = _build_metadata(project_id)
+
+    with get_connection() as conn, conn.cursor() as cur:
+        _project_rows, source_project, has_canonical_row = _load_project_rows(
+            cur,
+            meta=meta,
+            requested_id=project_id,
+        )
+        _sync_project_row(
+            cur,
+            meta=meta,
+            source_row=source_project,
+            has_canonical_row=has_canonical_row,
+        )
+        _sync_project_foreign_keys(cur, meta=meta)
+        _sync_backup_source_rows(cur, meta=meta, requested_id=project_id)
+        _delete_legacy_alias_rows(cur, meta=meta)
+        conn.commit()
+        row = _fetch_synced_project_row(cur, meta.canonical_id)
+
+    return _serialize_project_row(row, aliases=meta.aliases)
