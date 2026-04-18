@@ -6,7 +6,6 @@ import type {
   RuntimeServiceMetrics,
   RuntimeServiceStatus,
 } from '@/lib/api/runtime'
-import { LogViewer } from './LogViewer'
 import {
   healthAccentClass,
   healthDotClass,
@@ -14,6 +13,7 @@ import {
   managerLabel,
   resolveHealthTone,
 } from './health-utils'
+import { LogViewer } from './LogViewer'
 import { useServiceAction } from './useServiceAction'
 
 function MetricStat({ label, value }: { label: string; value: string }) {
@@ -22,7 +22,10 @@ function MetricStat({ label, value }: { label: string; value: string }) {
       <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
         {label}
       </div>
-      <div className="truncate text-xs text-slate-200 font-mono tabular-nums mt-0.5" title={value}>
+      <div
+        className="truncate text-xs text-slate-200 font-mono tabular-nums mt-0.5"
+        title={value}
+      >
         {value}
       </div>
     </div>
@@ -62,7 +65,16 @@ export function ServiceCard({
           <span className="font-medium text-slate-100 text-sm truncate flex-1">
             {container.display_name}
           </span>
-          <span className={clsx('text-2xs capitalize', tone === 'healthy' ? 'text-emerald-400' : tone === 'unhealthy' ? 'text-red-400' : 'text-slate-500')}>
+          <span
+            className={clsx(
+              'text-2xs capitalize',
+              tone === 'healthy'
+                ? 'text-emerald-400'
+                : tone === 'unhealthy'
+                  ? 'text-red-400'
+                  : 'text-slate-500',
+            )}
+          >
             {healthLabel(container.state, container.health)}
           </span>
         </div>

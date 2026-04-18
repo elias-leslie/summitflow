@@ -57,7 +57,14 @@ type ConfirmDeleteDialogProps = EntityProps & CommonProps
 // ============================================================================
 
 export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
-  const { isDeleting, isError, onConfirm, onCancel, zIndex = 'z-50', positioning = 'fixed' } = props
+  const {
+    isDeleting,
+    isError,
+    onConfirm,
+    onCancel,
+    zIndex = 'z-50',
+    positioning = 'fixed',
+  } = props
 
   const isDesignEntity =
     props.entityType === 'mockup' || props.entityType === 'mockups'
@@ -80,7 +87,12 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
   if (isDesignEntity) {
     return (
       <div
-        className={clsx(positioning, 'inset-0 flex items-center justify-center', zIndex, positioning === 'absolute' && 'bg-slate-950/90 backdrop-blur-sm')}
+        className={clsx(
+          positioning,
+          'inset-0 flex items-center justify-center',
+          zIndex,
+          positioning === 'absolute' && 'bg-slate-950/90 backdrop-blur-sm',
+        )}
       >
         {/* Backdrop (only for fixed positioning) */}
         {positioning === 'fixed' && (
@@ -103,9 +115,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
               <h3 className="text-lg font-semibold text-slate-100 mb-2">
                 {title}
               </h3>
-              <p className="text-slate-400 text-sm mb-6">
-                {description}
-              </p>
+              <p className="text-slate-400 text-sm mb-6">{description}</p>
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
@@ -144,7 +154,11 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
   // Task-style layout (AlertCircle, red theme)
   return (
     <div
-      className={clsx(positioning, 'inset-0 flex items-center justify-center bg-slate-950/90 backdrop-blur-sm', zIndex)}
+      className={clsx(
+        positioning,
+        'inset-0 flex items-center justify-center bg-slate-950/90 backdrop-blur-sm',
+        zIndex,
+      )}
       onClick={onCancel}
     >
       <div
@@ -157,9 +171,7 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
             <h3 className="text-lg font-semibold text-slate-100 mb-2">
               {title}
             </h3>
-            <p className="text-sm text-slate-300 mb-3">
-              {description}
-            </p>
+            <p className="text-sm text-slate-300 mb-3">{description}</p>
 
             {/* Entity detail block */}
             {props.entityType === 'task' && (

@@ -1,8 +1,8 @@
 'use client'
 
 import { RefreshCw } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import { useSystemStats } from '@/hooks/useSystemStats'
+import { cn } from '@/lib/utils'
 
 interface SystemHealthWidgetProps {
   className?: string
@@ -19,9 +19,21 @@ function formatDiskSize(gb: number): string {
 }
 
 const STATUS_COLORS = {
-  ok: { bar: 'bg-neon-cyan', text: 'text-neon-cyan', glow: '0 0 8px rgba(0, 245, 255, 0.3)' },
-  warning: { bar: 'bg-amber-400', text: 'text-amber-400', glow: '0 0 8px rgba(251, 191, 36, 0.3)' },
-  critical: { bar: 'bg-rose-500', text: 'text-rose-500', glow: '0 0 8px rgba(244, 63, 94, 0.3)' },
+  ok: {
+    bar: 'bg-neon-cyan',
+    text: 'text-neon-cyan',
+    glow: '0 0 8px rgba(0, 245, 255, 0.3)',
+  },
+  warning: {
+    bar: 'bg-amber-400',
+    text: 'text-amber-400',
+    glow: '0 0 8px rgba(251, 191, 36, 0.3)',
+  },
+  critical: {
+    bar: 'bg-rose-500',
+    text: 'text-rose-500',
+    glow: '0 0 8px rgba(244, 63, 94, 0.3)',
+  },
 } as const
 
 export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
@@ -29,7 +41,12 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
 
   if (isLoading) {
     return (
-      <div className={cn('flex items-center gap-2 text-xs text-slate-500', className)}>
+      <div
+        className={cn(
+          'flex items-center gap-2 text-xs text-slate-500',
+          className,
+        )}
+      >
         <div className="w-3 h-3 border border-slate-600 border-t-phosphor-500 rounded-full animate-spin" />
         <span>Loading metrics...</span>
       </div>
@@ -38,7 +55,12 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
 
   if (error || !data) {
     return (
-      <div className={cn('flex items-center gap-2 text-xs text-slate-500', className)}>
+      <div
+        className={cn(
+          'flex items-center gap-2 text-xs text-slate-500',
+          className,
+        )}
+      >
         <span className="text-rose-400/80">Metrics unavailable</span>
         <button
           type="button"
@@ -54,8 +76,16 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
 
   const metrics = [
     { label: 'CPU', percent: data.cpu.percent_used, status: data.cpu.status },
-    { label: 'RAM', percent: data.memory.percent_used, status: data.memory.status },
-    { label: 'Disk', percent: data.disk.percent_used, status: data.disk.status },
+    {
+      label: 'RAM',
+      percent: data.memory.percent_used,
+      status: data.memory.status,
+    },
+    {
+      label: 'Disk',
+      percent: data.disk.percent_used,
+      status: data.disk.status,
+    },
   ] as const
   const monitoredDisks = data.disks?.length ? data.disks : [data.disk]
 
@@ -63,15 +93,32 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
     <div className={cn('space-y-2.5', className)}>
       <div className="flex flex-wrap items-center gap-3">
         {metrics.map((m) => (
-          <div key={m.label} className="flex items-center gap-1.5" title={`${m.label}: ${m.percent}%`}>
-            <span className="text-2xs text-slate-500 font-medium tracking-wide">{m.label}</span>
+          <div
+            key={m.label}
+            className="flex items-center gap-1.5"
+            title={`${m.label}: ${m.percent}%`}
+          >
+            <span className="text-2xs text-slate-500 font-medium tracking-wide">
+              {m.label}
+            </span>
             <div className="w-16 sm:w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden ring-1 ring-white/[0.03]">
               <div
-                className={cn('h-full rounded-full transition-all duration-700', STATUS_COLORS[m.status].bar)}
-                style={{ width: `${Math.min(m.percent, 100)}%`, boxShadow: STATUS_COLORS[m.status].glow }}
+                className={cn(
+                  'h-full rounded-full transition-all duration-700',
+                  STATUS_COLORS[m.status].bar,
+                )}
+                style={{
+                  width: `${Math.min(m.percent, 100)}%`,
+                  boxShadow: STATUS_COLORS[m.status].glow,
+                }}
               />
             </div>
-            <span className={cn('text-2xs font-mono tabular-nums', STATUS_COLORS[m.status].text)}>
+            <span
+              className={cn(
+                'text-2xs font-mono tabular-nums',
+                STATUS_COLORS[m.status].text,
+              )}
+            >
               {m.percent}%
             </span>
           </div>
@@ -93,11 +140,20 @@ export function SystemHealthWidget({ className }: SystemHealthWidgetProps) {
             key={disk.mount_path ?? disk.label ?? 'disk'}
             className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-slate-900/45 px-2.5 py-1.5"
           >
-            <span className="text-2xs font-medium text-slate-300">{disk.label ?? 'Disk'}</span>
+            <span className="text-2xs font-medium text-slate-300">
+              {disk.label ?? 'Disk'}
+            </span>
             {disk.mount_path && (
-              <span className="text-2xs font-mono text-slate-500">{disk.mount_path}</span>
+              <span className="text-2xs font-mono text-slate-500">
+                {disk.mount_path}
+              </span>
             )}
-            <span className={cn('text-2xs font-mono tabular-nums', STATUS_COLORS[disk.status].text)}>
+            <span
+              className={cn(
+                'text-2xs font-mono tabular-nums',
+                STATUS_COLORS[disk.status].text,
+              )}
+            >
               {Math.round(disk.percent_used)}%
             </span>
             <span className="text-2xs font-mono tabular-nums text-slate-500">

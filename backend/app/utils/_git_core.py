@@ -14,7 +14,7 @@ from ..logging_config import get_logger
 # Re-export repo-source helpers so existing imports and mocks on this module work.
 from ._git_repo_sources import (  # noqa: F401
     FALLBACK_FILE,
-    WORKTREES_BASE_DIR,
+    LANES_BASE_DIR,
     _collect_db_extra_repos,
     _collect_db_repos,
     _is_shadowed_project_repo,
@@ -105,9 +105,9 @@ def run_git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def has_uncommitted_changes(worktree_path: Path) -> bool:
-    """Check if worktree has uncommitted changes."""
-    result = run_git(["status", "--porcelain"], worktree_path)
+def has_uncommitted_changes(repo_path: Path) -> bool:
+    """Check if a repository checkout has uncommitted changes."""
+    result = run_git(["status", "--porcelain"], repo_path)
     return bool(result.stdout.strip())
 
 
@@ -167,7 +167,7 @@ def get_repo_status(
     repo_path: Path,
     project_id: str | None = None,
     *,
-    active_worktrees_by_project: dict[str, list] | None = None,
+    active_checkpoints_by_project: dict[str, list] | None = None,
 ) -> RepoStatus | None:
     """Get status information for a git repository."""
     from ..api.models.git_models import RepoStatus
@@ -184,15 +184,15 @@ def get_repo_status(
     ahead, behind = _get_ahead_behind(repo_path, branch)
     state = _classify_state(uncommitted, behind, ahead)
     resolved_project_id = _resolve_project_id(repo_path, project_id)
-    active_worktrees = (
-        active_worktrees_by_project.get(resolved_project_id, [])
-        if active_worktrees_by_project is not None and resolved_project_id
+    active_checkpoints = (
+        active_checkpoints_by_project.get(resolved_project_id, [])
+        if active_checkpoints_by_project is not None and resolved_project_id
         else None
     )
     branches = get_all_branches(
         repo_path,
         resolved_project_id,
-        active_worktrees=active_worktrees,
+        active_checkpoints=active_checkpoints,
     )
 
     return RepoStatus(
@@ -208,7 +208,7 @@ def get_repo_status(
             repo_path,
             resolved_project_id,
             branches=branches,
-            active_worktrees=active_worktrees,
+            active_checkpoints=active_checkpoints,
         ),
     )
 

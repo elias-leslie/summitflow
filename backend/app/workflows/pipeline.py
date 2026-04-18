@@ -222,9 +222,9 @@ async def review_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 async def merge_cleanup_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
     from typing import cast
 
-    from ..tasks.autonomous.cleanup import merge_and_cleanup_task_worktree
+    from ..tasks.autonomous.cleanup import merge_and_cleanup_task_checkpoint
 
-    result = await asyncio.to_thread(merge_and_cleanup_task_worktree, input.task_id, input.project_id)
+    result = await asyncio.to_thread(merge_and_cleanup_task_checkpoint, input.task_id, input.project_id)
     return cast(dict[str, Any], result)
 
 

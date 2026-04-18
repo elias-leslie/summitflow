@@ -307,17 +307,8 @@ def format_context_snapshot(snapshot: dict[str, Any]) -> str:
         lines[0] += f"|since:{ts}"
     if base_branch := snapshot.get("base_branch"):
         lines.append(f"BASE_BRANCH:{base_branch}")
-    if worktree_path := snapshot.get("worktree_path"):
-        lines.append(f"WORKTREE_PATH:{worktree_path}")
-    if worktree_branch := snapshot.get("worktree_branch"):
-        lines.append(f"TASK_BRANCH:{worktree_branch}")
-    ports: list[str] = []
-    if bp := snapshot.get("backend_port"):
-        ports.append(f"backend:{bp}")
-    if fp := snapshot.get("frontend_port"):
-        ports.append(f"frontend:{fp}")
-    if ports:
-        lines.append(f"PORTS:{' | '.join(ports)}")
+    if branch := snapshot.get("branch"):
+        lines.append(f"TASK_BRANCH:{branch}")
     return "\n".join(lines)
 
 

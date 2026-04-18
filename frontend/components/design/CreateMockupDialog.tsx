@@ -1,12 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Layers3, Sparkles, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
-  createMockup,
   type CreateMockupRequest,
+  createMockup,
   type Mockup,
 } from '@/lib/api/mockups'
 import { getErrorMessage } from '@/lib/utils'
@@ -42,14 +42,18 @@ export function CreateMockupDialog({
   parentMockup = null,
 }: CreateMockupDialogProps): React.ReactElement | null {
   const queryClient = useQueryClient()
-  const [draft, setDraft] = useState<CreateMockupRequest>(buildInitialDraft(parentMockup))
+  const [draft, setDraft] = useState<CreateMockupRequest>(
+    buildInitialDraft(parentMockup),
+  )
 
   useEffect(() => {
     if (!open) return
     setDraft(buildInitialDraft(parentMockup))
   }, [open, parentMockup])
 
-  const title = parentMockup ? 'Create Mockup Iteration' : 'Create Manual Mockup'
+  const title = parentMockup
+    ? 'Create Mockup Iteration'
+    : 'Create Manual Mockup'
   const helperCopy = parentMockup
     ? `Create a new stored revision linked to ${parentMockup.name}.`
     : 'Store a hand-authored concept, HTML mockup, or design note in the normal mockup workflow.'
@@ -59,7 +63,9 @@ export function CreateMockupDialog({
     onSuccess: (mockup) => {
       queryClient.invalidateQueries({ queryKey: ['mockups', projectId] })
       queryClient.invalidateQueries({ queryKey: ['mockup-stats', projectId] })
-      toast.success(parentMockup ? 'Mockup iteration created' : 'Mockup created')
+      toast.success(
+        parentMockup ? 'Mockup iteration created' : 'Mockup created',
+      )
       onCreated?.(mockup)
       onOpenChange(false)
     },
@@ -69,7 +75,10 @@ export function CreateMockupDialog({
   })
 
   const canSubmit = useMemo(() => {
-    return Boolean(draft.name?.trim() && (draft.content?.trim() || draft.description?.trim()))
+    return Boolean(
+      draft.name?.trim() &&
+        (draft.content?.trim() || draft.description?.trim()),
+    )
   }, [draft.content, draft.description, draft.name])
 
   if (!open) return null
@@ -90,9 +99,7 @@ export function CreateMockupDialog({
               <h2 className="text-lg font-semibold text-slate-100 display">
                 {title}
               </h2>
-              <p className="mt-1 text-sm text-slate-400">
-                {helperCopy}
-              </p>
+              <p className="mt-1 text-sm text-slate-400">{helperCopy}</p>
             </div>
           </div>
           <button
@@ -125,7 +132,12 @@ export function CreateMockupDialog({
               <span className="font-medium text-slate-300">Name</span>
               <input
                 value={draft.name ?? ''}
-                onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
                 placeholder="Workspace footer concept"
                 className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
               />
@@ -135,7 +147,12 @@ export function CreateMockupDialog({
               <span className="font-medium text-slate-300">Type</span>
               <select
                 value={draft.mockup_type ?? DEFAULT_TYPE}
-                onChange={(event) => setDraft((current) => ({ ...current, mockup_type: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    mockup_type: event.target.value,
+                  }))
+                }
                 className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
               >
                 <option value="page">Page</option>
@@ -151,7 +168,12 @@ export function CreateMockupDialog({
             <span className="font-medium text-slate-300">Description</span>
             <textarea
               value={draft.description ?? ''}
-              onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  description: event.target.value,
+                }))
+              }
               placeholder="Short summary of what changed and why."
               rows={3}
               className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
@@ -163,7 +185,12 @@ export function CreateMockupDialog({
               <span className="font-medium text-slate-300">Target Page</span>
               <input
                 value={draft.page_path ?? ''}
-                onChange={(event) => setDraft((current) => ({ ...current, page_path: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    page_path: event.target.value,
+                  }))
+                }
                 placeholder="/persona"
                 className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
               />
@@ -173,7 +200,12 @@ export function CreateMockupDialog({
               <span className="font-medium text-slate-300">Review Notes</span>
               <input
                 value={draft.generation_prompt ?? ''}
-                onChange={(event) => setDraft((current) => ({ ...current, generation_prompt: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    generation_prompt: event.target.value,
+                  }))
+                }
                 placeholder="Remaining items, rationale, or implementation notes."
                 className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
               />
@@ -184,13 +216,19 @@ export function CreateMockupDialog({
             <span className="font-medium text-slate-300">Mockup Content</span>
             <textarea
               value={draft.content ?? ''}
-              onChange={(event) => setDraft((current) => ({ ...current, content: event.target.value }))}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  content: event.target.value,
+                }))
+              }
               placeholder="Paste full HTML/CSS for a rendered mockup, or plain text notes if this concept is still schematic."
               rows={16}
               className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-100"
             />
             <p className="text-xs text-slate-500">
-              Full HTML renders in the preview modal. Plain text remains readable as a design note.
+              Full HTML renders in the preview modal. Plain text remains
+              readable as a design note.
             </p>
           </label>
         </div>
@@ -213,7 +251,11 @@ export function CreateMockupDialog({
               disabled={!canSubmit || mutation.isPending}
               className="btn-primary disabled:opacity-50"
             >
-              {mutation.isPending ? 'Saving...' : parentMockup ? 'Create Iteration' : 'Create Mockup'}
+              {mutation.isPending
+                ? 'Saving...'
+                : parentMockup
+                  ? 'Create Iteration'
+                  : 'Create Mockup'}
             </button>
           </div>
         </div>

@@ -137,7 +137,8 @@ export function DiffPanel({
               {/* Aggregate stats */}
               <div className="flex items-center gap-3 text-xs font-mono">
                 <span className="text-slate-500">
-                  {stats.files_changed} file{stats.files_changed !== 1 ? 's' : ''}
+                  {stats.files_changed} file
+                  {stats.files_changed !== 1 ? 's' : ''}
                 </span>
                 <span className="text-emerald-400 flex items-center gap-0.5">
                   <Plus className="w-3 h-3" />
@@ -149,7 +150,11 @@ export function DiffPanel({
                 </span>
               </div>
               <Dialog.Close asChild>
-                <button type="button" aria-label="Close diff" className="p-1.5 rounded-md text-slate-500 hover:text-slate-100 hover:bg-slate-800 transition-colors">
+                <button
+                  type="button"
+                  aria-label="Close diff"
+                  className="p-1.5 rounded-md text-slate-500 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+                >
                   <X className="w-4 h-4" />
                 </button>
               </Dialog.Close>

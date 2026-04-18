@@ -5,15 +5,18 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import type { AgentHubEvent } from '@/lib/api/tasks'
 import { formatTimestamp } from '@/lib/format'
-import { EVENT_CONFIG } from './agentTimelineConfig'
 import { AgentTimelineEventContent } from './AgentTimelineEventContent'
+import { EVENT_CONFIG } from './agentTimelineConfig'
 
 interface AgentTimelineEventProps {
   event: AgentHubEvent
   searchTerm?: string
 }
 
-export function AgentTimelineEvent({ event, searchTerm }: AgentTimelineEventProps) {
+export function AgentTimelineEvent({
+  event,
+  searchTerm,
+}: AgentTimelineEventProps) {
   const [expanded, setExpanded] = useState(false)
   const { time, isRecent } = formatTimestamp(event.created_at)
   const config = EVENT_CONFIG[event.event_type] || EVENT_CONFIG.error
@@ -25,11 +28,21 @@ export function AgentTimelineEvent({ event, searchTerm }: AgentTimelineEventProp
 
   return (
     <div
-      className={clsx('group flex gap-3 py-2.5 px-3', config.bg, 'border-l-2', config.border, 'hover:bg-slate-700/30 transition-colors border-b border-slate-800/30', hasExpandableContent && 'cursor-pointer')}
+      className={clsx(
+        'group flex gap-3 py-2.5 px-3',
+        config.bg,
+        'border-l-2',
+        config.border,
+        'hover:bg-slate-700/30 transition-colors border-b border-slate-800/30',
+        hasExpandableContent && 'cursor-pointer',
+      )}
       onClick={() => hasExpandableContent && setExpanded(!expanded)}
     >
       <span
-        className={clsx('text-2xs mono shrink-0 w-14 tabular-nums', isRecent ? 'text-cyan-500' : 'text-slate-600')}
+        className={clsx(
+          'text-2xs mono shrink-0 w-14 tabular-nums',
+          isRecent ? 'text-cyan-500' : 'text-slate-600',
+        )}
       >
         {time}
       </span>

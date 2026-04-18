@@ -16,12 +16,12 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import type { TaskType } from '@/lib/api/tasks-types'
+import type { Complexity, TaskSummaryCardProps } from './taskIdeationTypes'
 import {
   COMPLEXITY_OPTIONS,
   PRIORITY_OPTIONS,
   TYPE_OPTIONS,
 } from './taskIdeationTypes'
-import type { Complexity, TaskSummaryCardProps } from './taskIdeationTypes'
 
 function ComplexityBadge({ complexity }: { complexity: Complexity }) {
   const variantMap: Record<Complexity, 'phosphor' | 'amber' | 'rose'> = {
@@ -33,7 +33,13 @@ function ComplexityBadge({ complexity }: { complexity: Complexity }) {
 }
 
 function PriorityBadge({ priority }: { priority: number }) {
-  const labels: Record<number, string> = { 0: 'P0', 1: 'P1', 2: 'P2', 3: 'P3', 4: 'P4' }
+  const labels: Record<number, string> = {
+    0: 'P0',
+    1: 'P1',
+    2: 'P2',
+    3: 'P3',
+    4: 'P4',
+  }
   const variants: Record<number, 'rose' | 'amber' | 'default' | 'slate'> = {
     0: 'rose',
     1: 'amber',
@@ -72,7 +78,9 @@ export function TaskSummaryCard({
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <CheckCircle2 className="w-5 h-5 text-phosphor-400" />
-        <h3 className="text-lg font-semibold text-slate-100 display">Task Ready for Creation</h3>
+        <h3 className="text-lg font-semibold text-slate-100 display">
+          Task Ready for Creation
+        </h3>
       </div>
 
       <div className="rounded-lg border border-phosphor-500/20 bg-slate-800/50 p-5 space-y-5">
@@ -144,7 +152,9 @@ export function TaskSummaryCard({
             <Label>Complexity</Label>
             <Select
               value={taskData.complexity}
-              onValueChange={(v) => onUpdateField('complexity', v as Complexity)}
+              onValueChange={(v) =>
+                onUpdateField('complexity', v as Complexity)
+              }
               disabled={isSubmitting}
             >
               <SelectTrigger className="w-full">

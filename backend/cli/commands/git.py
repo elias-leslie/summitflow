@@ -87,7 +87,7 @@ def finalize_task(task_id: str) -> None:
 
 @app.command("resolve-conflict")
 def resolve_conflict(task_id: str) -> None:
-    """Reopen a residue task for conflict-resolution autocode in its task worktree."""
+    """Reopen a residue task for conflict-resolution autocode in its shared task checkout."""
     client = STClient(require_project=False)
     try:
         result = client.resolve_task_conflict(task_id)

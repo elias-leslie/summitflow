@@ -215,15 +215,11 @@ services:
     name: backend
     command: "$VENV_DIR/bin/uvicorn app.main:app --host 0.0.0.0 --port {port}"
     port: $BACKEND_PORT
-    worktree_port_base: $((BACKEND_PORT + 100))
-    worktree_port_range: 100
     cwd: backend
   frontend:
     name: frontend
     command: "$VENV_DIR/bin/uvicorn server:app --host 0.0.0.0 --port {port}"
     port: $FRONTEND_PORT
-    worktree_port_base: $((FRONTEND_PORT + 100))
-    worktree_port_range: 100
     cwd: frontend
 EOF
 

@@ -4,8 +4,8 @@ import { toast } from 'sonner'
 import {
   deleteMockup,
   fetchMockupHistory,
-  updateMockupStatus,
   type Mockup,
+  updateMockupStatus,
 } from '@/lib/api/mockups'
 import { getErrorMessage } from '@/lib/utils'
 

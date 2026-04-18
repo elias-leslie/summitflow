@@ -1,4 +1,4 @@
-import { RefreshCw, Radio } from 'lucide-react'
+import { Radio, RefreshCw } from 'lucide-react'
 
 interface TimelineHeaderProps {
   isConnected: boolean

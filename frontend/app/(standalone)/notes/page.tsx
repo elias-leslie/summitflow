@@ -13,7 +13,9 @@ export default async function NotesPopoutPage({
   const scopeParam = resolvedSearchParams.scope
   const scopeValue = Array.isArray(scopeParam) ? scopeParam[0] : scopeParam
   const projectScope =
-    typeof scopeValue === 'string' && scopeValue.trim() ? scopeValue.trim() : 'summitflow'
+    typeof scopeValue === 'string' && scopeValue.trim()
+      ? scopeValue.trim()
+      : 'summitflow'
 
   return (
     <NotesProvider apiPrefix="/api" projectScope={projectScope}>

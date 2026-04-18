@@ -238,7 +238,9 @@ interface RawExplorerEntry {
   last_evidence_at?: string | null
 }
 
-function normalizeExplorerEntry(entry: RawExplorerEntry | ExplorerEntry): ExplorerEntry {
+function normalizeExplorerEntry(
+  entry: RawExplorerEntry | ExplorerEntry,
+): ExplorerEntry {
   if ('entryType' in entry) {
     return entry
   }
@@ -363,16 +365,19 @@ export async function fetchExplorerSymbolDetail(
     symbol_id: params.symbolId,
     context_lines: params.contextLines,
   })
-  const response = await fetchWithErrorHandling<ExplorerSymbolDetailResponse & {
-    file_entry: RawExplorerEntry | ExplorerEntry | null
-    related_entries: Array<RawExplorerEntry | ExplorerEntry>
-  }>(
-    `/api/projects/${projectId}/explorer/symbols/detail${query}`,
-    { errorMessage: 'Failed to fetch symbol detail' },
-  )
+  const response = await fetchWithErrorHandling<
+    ExplorerSymbolDetailResponse & {
+      file_entry: RawExplorerEntry | ExplorerEntry | null
+      related_entries: Array<RawExplorerEntry | ExplorerEntry>
+    }
+  >(`/api/projects/${projectId}/explorer/symbols/detail${query}`, {
+    errorMessage: 'Failed to fetch symbol detail',
+  })
   return {
     ...response,
-    file_entry: response.file_entry ? normalizeExplorerEntry(response.file_entry) : null,
+    file_entry: response.file_entry
+      ? normalizeExplorerEntry(response.file_entry)
+      : null,
     related_entries: response.related_entries.map(normalizeExplorerEntry),
   }
 }

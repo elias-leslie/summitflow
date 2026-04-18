@@ -15,7 +15,8 @@ const nextConfig: NextConfig = {
   // This enables same-origin routing, avoiding CF Access cookie issues
   async rewrites() {
     const apiUrl = process.env.API_URL || `http://localhost:${PORTS.backend}`
-    const agentHubApiUrl = process.env.AGENT_HUB_URL || `http://localhost:${PORTS.agentHub}`
+    const agentHubApiUrl =
+      process.env.AGENT_HUB_URL || `http://localhost:${PORTS.agentHub}`
     return {
       // Agent Hub proxy: Route Handler at app/proxy-hub/agent-hub/[...path]/route.ts
       // injects client credentials and streams SSE directly to Agent Hub.

@@ -5,9 +5,9 @@
 'use client'
 
 import { FileCode } from 'lucide-react'
+import { SortableHeader, TargetRow } from './RefactorTargetsTableRows'
 import type { RefactorTarget } from './utils/codeHealthApi'
 import type { SortDir, SortField } from './utils/codeHealthUtils'
-import { SortableHeader, TargetRow } from './RefactorTargetsTableRows'
 
 interface RefactorTargetsTableProps {
   targets: RefactorTarget[]

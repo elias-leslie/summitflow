@@ -56,49 +56,6 @@ def test_create_project_creates_backup_source(client, monkeypatch) -> None:
             conn.commit()
 
 
-def test_get_project_services_returns_manifest_derived_config(client, monkeypatch) -> None:
-    """GET /api/projects/{id}/services should expose worktree runtime config."""
-    monkeypatch.setattr(
-        "app.api.projects.load_project_worktree_services_dict",
-        lambda project_id: {
-            "config_source": "project_identity",
-            "services": {
-                "backend": {
-                    "name": "backend",
-                    "command": "uvicorn app.main:app --port ${PORT}",
-                    "port": 8003,
-                    "worktree_port_base": 8100,
-                    "worktree_port_range": 100,
-                    "cwd": "backend",
-                    "env_files": [],
-                    "environment": {"AGENT_HUB_PORT": "${SF_WORKTREE_BACKEND_PORT}"},
-                    "build_command": None,
-                    "install_command": None,
-                }
-            },
-        },
-    )
-
-    response = client.get("/api/projects/agent-hub/services")
-
-    assert response.status_code == 200
-    assert response.json()["config_source"] == "project_identity"
-    assert response.json()["services"]["backend"]["cwd"] == "backend"
-
-
-def test_get_project_services_returns_404_for_unknown_manifest(client, monkeypatch) -> None:
-    """GET /api/projects/{id}/services should report missing manifest clearly."""
-    monkeypatch.setattr(
-        "app.api.projects.load_project_worktree_services_dict",
-        lambda project_id: (_ for _ in ()).throw(ValueError(f"Project identity manifest not found for {project_id}")),
-    )
-
-    response = client.get("/api/projects/missing-project/services")
-
-    assert response.status_code == 404
-    assert "Project identity manifest not found for missing-project" in response.text
-
-
 def test_create_project_syncs_agent_hub_permission_when_requested(client, monkeypatch) -> None:
     """POST /api/projects should provision Agent Hub permission bootstrap when requested."""
     project_id = f"bootstrap-{uuid4().hex[:8]}"

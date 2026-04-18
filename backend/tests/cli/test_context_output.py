@@ -84,7 +84,7 @@ class TestFormatContextTask:
                 "disposition": "block",
                 "overlap_kind": "shared_plumbing",
                 "conflicting_tasks": ["task-999"],
-                "owner_location": "worktree /tmp/worktrees/task-999",
+                "owner_location": "checkout /tmp/lanes/task-999",
                 "overlap_paths": [
                     "backend/app/services/tools/catalog.py",
                     "backend/app/services/tools/tool_handler.py",
@@ -96,7 +96,7 @@ class TestFormatContextTask:
         output = format_context_task(task)
 
         assert (
-            "LANE:disp:block | kind:shared_plumbing | tasks:task-999 | owner:worktree /tmp/worktrees/task-999 | "
+            "LANE:disp:block | kind:shared_plumbing | tasks:task-999 | owner:checkout /tmp/lanes/task-999 | "
             "paths:backend/app/services/tools/catalog.py,backend/app/services/tools/tool_handler.py | shared:yes"
             in output
         )
@@ -114,7 +114,7 @@ class TestFormatContextTask:
                 "disposition": "warn",
                 "overlap_kind": "unscoped_target",
                 "conflicting_tasks": ["task-42f6700b"],
-                "owner_location": "worktree /tmp/worktrees/task-42f6700b",
+                "owner_location": "checkout /tmp/lanes/task-42f6700b",
             },
         }
 
@@ -122,7 +122,7 @@ class TestFormatContextTask:
 
         assert (
             "LANE_ADVISORY:disp:warn | kind:unscoped_target | active_tasks:task-42f6700b | "
-            "owner:worktree /tmp/worktrees/task-42f6700b"
+            "owner:checkout /tmp/lanes/task-42f6700b"
             in output
         )
 
@@ -314,24 +314,19 @@ class TestFormatContextTask:
 class TestFormatContextSnapshot:
     """Tests for snapshot/checkpoint state formatting."""
 
-    def test_formats_active_snapshot_with_all_fields(self) -> None:
+    def test_formats_active_snapshot_with_core_fields(self) -> None:
         snapshot = {
             "claimed_by": "agent-coder",
             "created_at": "2026-03-10T14:30:00.123456",
             "base_branch": "main",
-            "worktree_path": "/srv/workspaces/lanes/proj/task-123",
-            "worktree_branch": "task/task-123",
-            "backend_port": 8081,
-            "frontend_port": 3001,
+            "branch": "task/task-123",
         }
 
         output = format_context_snapshot(snapshot)
 
         assert "SNAPSHOT:active|claimed_by:agent-coder|since:2026-03-10T14:30:00" in output
         assert "BASE_BRANCH:main" in output
-        assert "WORKTREE_PATH:/srv/workspaces/lanes/proj/task-123" in output
         assert "TASK_BRANCH:task/task-123" in output
-        assert "PORTS:backend:8081 | frontend:3001" in output
 
     def test_returns_empty_for_empty_snapshot(self) -> None:
         assert format_context_snapshot({}) == ""
@@ -341,7 +336,7 @@ class TestFormatContextSnapshot:
         output = format_context_snapshot({})
         assert output == ""
 
-    def test_partial_snapshot_without_worktree(self) -> None:
+    def test_partial_snapshot_without_branch(self) -> None:
         snapshot = {
             "claimed_by": "human",
             "created_at": "2026-03-10T10:00:00",
@@ -351,7 +346,7 @@ class TestFormatContextSnapshot:
         output = format_context_snapshot(snapshot)
 
         assert "SNAPSHOT:active|claimed_by:human|since:2026-03-10T10:00:00" in output
-        assert "WORKTREE_PATH" not in output
+        assert "TASK_BRANCH" not in output
         assert "PORTS" not in output
 
 
@@ -388,7 +383,6 @@ class TestTaskContextCommand:
             patch("cli.commands.tasks_context.output_context"),
             patch("cli.commands.tasks_context.check_task_lane_conflicts") as mock_lane,
             patch("cli.commands.tasks_context._load_snapshot_info", return_value=None),
-            patch("cli.commands.tasks_context.get_worktree_info", return_value=None),
         ):
             mock_sync.return_value.syncable = []
             mock_sync.return_value.skipped = []
@@ -419,7 +413,6 @@ class TestTaskContextCommand:
             patch("cli.commands.tasks_context.output_context"),
             patch("cli.commands.tasks_context.check_task_lane_conflicts") as mock_lane,
             patch("cli.commands.tasks_context._load_snapshot_info", return_value=None),
-            patch("cli.commands.tasks_context.get_worktree_info", return_value=None),
         ):
             mock_sync.return_value.syncable = []
             mock_sync.return_value.skipped = []
@@ -468,7 +461,6 @@ class TestTaskContextCommand:
             patch("cli.commands.tasks_context.output_context") as mock_output,
             patch("cli.commands.tasks_context.check_task_lane_conflicts") as mock_lane,
             patch("cli.commands.tasks_context._load_snapshot_info", return_value=None),
-            patch("cli.commands.tasks_context.get_worktree_info", return_value=None),
         ):
             mock_sync.return_value.syncable = []
             mock_sync.return_value.skipped = []

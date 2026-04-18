@@ -5,7 +5,7 @@ import { Clock } from 'lucide-react'
 import type { AgentHubEvent } from '@/lib/api/tasks'
 import { formatDuration } from '@/lib/format'
 import type { EventConfig } from './agentTimelineConfig'
-import { highlightText, formatTokens } from './agentTimelineUtils'
+import { formatTokens, highlightText } from './agentTimelineUtils'
 
 interface AgentTimelineEventContentProps {
   event: AgentHubEvent
@@ -25,7 +25,12 @@ export function AgentTimelineEventContent({
       return (
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={clsx('text-xs font-semibold uppercase tracking-wide', config.color)}>
+            <span
+              className={clsx(
+                'text-xs font-semibold uppercase tracking-wide',
+                config.color,
+              )}
+            >
               Thinking
             </span>
             {event.tokens && (
@@ -42,7 +47,10 @@ export function AgentTimelineEventContent({
           </div>
           {event.content && (
             <p
-              className={clsx('text-sm text-slate-300/80 mt-1.5 leading-relaxed whitespace-pre-wrap font-mono text-xs', !expanded && 'line-clamp-3')}
+              className={clsx(
+                'text-sm text-slate-300/80 mt-1.5 leading-relaxed whitespace-pre-wrap font-mono text-xs',
+                !expanded && 'line-clamp-3',
+              )}
             >
               {highlightText(event.content, searchTerm)}
             </p>
@@ -54,7 +62,12 @@ export function AgentTimelineEventContent({
       return (
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={clsx('text-xs font-semibold uppercase tracking-wide', config.color)}>
+            <span
+              className={clsx(
+                'text-xs font-semibold uppercase tracking-wide',
+                config.color,
+              )}
+            >
               Tool Call
             </span>
             {event.tool_name && (
@@ -81,7 +94,12 @@ export function AgentTimelineEventContent({
       return (
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={clsx('text-xs font-semibold uppercase tracking-wide', config.color)}>
+            <span
+              className={clsx(
+                'text-xs font-semibold uppercase tracking-wide',
+                config.color,
+              )}
+            >
               Tool Result
             </span>
             {event.tool_name && (
@@ -109,7 +127,12 @@ export function AgentTimelineEventContent({
       return (
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={clsx('text-xs font-semibold uppercase tracking-wide', config.color)}>
+            <span
+              className={clsx(
+                'text-xs font-semibold uppercase tracking-wide',
+                config.color,
+              )}
+            >
               Memory Injected
             </span>
             {event.tokens && (
@@ -120,7 +143,10 @@ export function AgentTimelineEventContent({
           </div>
           {event.content && (
             <p
-              className={clsx('text-sm text-slate-300/80 mt-1.5 leading-relaxed', !expanded && 'line-clamp-2')}
+              className={clsx(
+                'text-sm text-slate-300/80 mt-1.5 leading-relaxed',
+                !expanded && 'line-clamp-2',
+              )}
             >
               {highlightText(event.content, searchTerm)}
             </p>
@@ -132,7 +158,12 @@ export function AgentTimelineEventContent({
       return (
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={clsx('text-xs font-semibold uppercase tracking-wide', config.color)}>
+            <span
+              className={clsx(
+                'text-xs font-semibold uppercase tracking-wide',
+                config.color,
+              )}
+            >
               Memory Cited
             </span>
           </div>
@@ -149,7 +180,12 @@ export function AgentTimelineEventContent({
     case 'system_message':
       return (
         <div className="flex-1 min-w-0">
-          <span className={clsx('text-xs font-semibold uppercase tracking-wide', config.color)}>
+          <span
+            className={clsx(
+              'text-xs font-semibold uppercase tracking-wide',
+              config.color,
+            )}
+          >
             {event.event_type === 'user_message'
               ? 'User'
               : event.event_type === 'assistant_message'
@@ -168,7 +204,12 @@ export function AgentTimelineEventContent({
       return (
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={clsx('text-xs font-semibold uppercase tracking-wide', config.color)}>
+            <span
+              className={clsx(
+                'text-xs font-semibold uppercase tracking-wide',
+                config.color,
+              )}
+            >
               Error
             </span>
           </div>

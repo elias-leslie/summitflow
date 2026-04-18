@@ -18,13 +18,13 @@ import { toast } from 'sonner'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import type { FeedbackFilters, FeedbackStatus } from '@/lib/api/feedback'
 import {
-  type FeedbackItem,
   deleteFeedbackItem,
+  type FeedbackItem,
   fetchFeedbackItem,
   updateFeedbackStatus,
 } from '@/lib/api/feedback'
 import { formatShortDate, formatTimeAgo } from '@/lib/format'
-import { TYPE_CONFIG, STATUS_CONFIG } from './feedbackConstants'
+import { STATUS_CONFIG, TYPE_CONFIG } from './feedbackConstants'
 
 // ─── Accent colors by type ───────────────────────────────────────
 
@@ -244,9 +244,7 @@ function InlineDetail({
                   )}
                   <div className="flex items-center gap-2 text-2xs text-slate-600">
                     {vote.agent_slug && <span>{vote.agent_slug}</span>}
-                    <span>
-                      {formatShortDate(vote.created_at)}
-                    </span>
+                    <span>{formatShortDate(vote.created_at)}</span>
                   </div>
                 </div>
               </div>
@@ -259,92 +257,87 @@ function InlineDetail({
       <div className="flex items-center gap-2 pt-1">
         {item.status !== 'archived' &&
           (showResolveInput ? (
-              <div className="flex items-center gap-2 flex-1">
-                <input
-                  type="text"
-                  value={resolutionNote}
-                  onChange={(e) => setResolutionNote(e.target.value)}
-                  placeholder="Resolution note (optional)"
-                  className="flex-1 px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded
+            <div className="flex items-center gap-2 flex-1">
+              <input
+                type="text"
+                value={resolutionNote}
+                onChange={(e) => setResolutionNote(e.target.value)}
+                placeholder="Resolution note (optional)"
+                className="flex-1 px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded
                              text-xs text-slate-200 placeholder-slate-500
                              focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
-                />
-                <button
-                  type="button"
-                  onClick={handleResolveConfirm}
-                  disabled={statusMutation.isPending}
-                  className="text-2xs px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors flex items-center gap-1"
-                >
-                  {statusMutation.isPending ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <Check className="w-3 h-3" />
-                  )}
-                  Confirm
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowResolveInput(false)}
-                  className="text-2xs px-2 py-1 text-slate-500 hover:text-slate-300 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <>
-                {(item.status === 'open' ||
-                  item.status === 'acknowledged') && (
-                  <>
-                    {item.status === 'open' && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          statusMutation.mutate({ status: 'acknowledged' })
-                        }
-                        disabled={statusMutation.isPending}
-                        className="text-2xs px-2 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 disabled:opacity-40 transition-colors flex items-center gap-1"
-                      >
-                        <Clock className="w-3 h-3" />
-                        Acknowledge
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setShowResolveInput(true)}
-                      disabled={statusMutation.isPending}
-                      className="text-2xs px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors flex items-center gap-1"
-                    >
-                      <Check className="w-3 h-3" />
-                      Resolve
-                    </button>
+              />
+              <button
+                type="button"
+                onClick={handleResolveConfirm}
+                disabled={statusMutation.isPending}
+                className="text-2xs px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors flex items-center gap-1"
+              >
+                {statusMutation.isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Check className="w-3 h-3" />
+                )}
+                Confirm
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowResolveInput(false)}
+                className="text-2xs px-2 py-1 text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <>
+              {(item.status === 'open' || item.status === 'acknowledged') && (
+                <>
+                  {item.status === 'open' && (
                     <button
                       type="button"
                       onClick={() =>
-                        statusMutation.mutate({ status: 'wont_fix' })
+                        statusMutation.mutate({ status: 'acknowledged' })
                       }
                       disabled={statusMutation.isPending}
-                      className="text-2xs px-2 py-1 text-slate-500 hover:text-slate-400 disabled:opacity-40 transition-colors"
+                      className="text-2xs px-2 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 disabled:opacity-40 transition-colors flex items-center gap-1"
                     >
-                      Won&apos;t Fix
+                      <Clock className="w-3 h-3" />
+                      Acknowledge
                     </button>
-                  </>
-                )}
-                {(item.status === 'resolved' ||
-                  item.status === 'wont_fix') && (
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowResolveInput(true)}
+                    disabled={statusMutation.isPending}
+                    className="text-2xs px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors flex items-center gap-1"
+                  >
+                    <Check className="w-3 h-3" />
+                    Resolve
+                  </button>
                   <button
                     type="button"
                     onClick={() =>
-                      statusMutation.mutate({ status: 'archived' })
+                      statusMutation.mutate({ status: 'wont_fix' })
                     }
                     disabled={statusMutation.isPending}
-                    className="text-2xs px-2 py-1 rounded bg-slate-700/40 text-slate-400 hover:bg-slate-700/60 disabled:opacity-40 transition-colors"
+                    className="text-2xs px-2 py-1 text-slate-500 hover:text-slate-400 disabled:opacity-40 transition-colors"
                   >
-                    Archive
+                    Won&apos;t Fix
                   </button>
-                )}
-              </>
-            )
-          )}
+                </>
+              )}
+              {(item.status === 'resolved' || item.status === 'wont_fix') && (
+                <button
+                  type="button"
+                  onClick={() => statusMutation.mutate({ status: 'archived' })}
+                  disabled={statusMutation.isPending}
+                  className="text-2xs px-2 py-1 rounded bg-slate-700/40 text-slate-400 hover:bg-slate-700/60 disabled:opacity-40 transition-colors"
+                >
+                  Archive
+                </button>
+              )}
+            </>
+          ))}
 
         <button
           type="button"
@@ -445,8 +438,7 @@ export function FeedbackList({
               tabIndex={0}
               onClick={() => onItemClick(isExpanded ? null : item.id)}
               onKeyDown={(e) =>
-                e.key === 'Enter' &&
-                onItemClick(isExpanded ? null : item.id)
+                e.key === 'Enter' && onItemClick(isExpanded ? null : item.id)
               }
               className="flex items-start gap-3 px-4 py-3 cursor-pointer select-none group"
             >
@@ -459,10 +451,7 @@ export function FeedbackList({
 
               {/* Type icon */}
               <div
-                className={clsx(
-                  'mt-0.5 shrink-0 rounded p-1.5',
-                  typeConf.bg,
-                )}
+                className={clsx('mt-0.5 shrink-0 rounded p-1.5', typeConf.bg)}
               >
                 <TypeIcon className={clsx('h-3 w-3', typeConf.color)} />
               </div>

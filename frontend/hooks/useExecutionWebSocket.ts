@@ -6,12 +6,12 @@ import type {
   ExecutionState,
 } from '@/components/kanban/ExecutionPanel'
 import { getWsUrl } from '@/lib/api-config'
+import type { WebSocketMessage } from './websocketTypes'
 import {
   INITIAL_RECONNECT_DELAY,
   MAX_RECONNECT_DELAY,
   RECONNECT_MULTIPLIER,
 } from './websocketTypes'
-import type { WebSocketMessage } from './websocketTypes'
 
 // ============================================================================
 // Shared Utilities
@@ -61,7 +61,9 @@ export function useExecutionWebSocket({
 
     setConnecting(true)
 
-    const ws = new WebSocket(getWebSocketUrl(taskId, lastSequenceRef.current || undefined))
+    const ws = new WebSocket(
+      getWebSocketUrl(taskId, lastSequenceRef.current || undefined),
+    )
     wsRef.current = ws
 
     ws.onopen = () => {
@@ -117,7 +119,9 @@ export function useExecutionWebSocket({
 
   const sendMessage = useCallback((message: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'chat_message', data: { message } }))
+      wsRef.current.send(
+        JSON.stringify({ type: 'chat_message', data: { message } }),
+      )
     }
   }, [])
 
@@ -165,7 +169,11 @@ function handleMessage(
       const completed = progressData.completed_subtasks || 0
       const total = progressData.total_subtasks || 1
       const progress = Math.round((completed / total) * 100)
-      setExecution((prev) => ({ ...prev, progress, currentStep: progressData.status }))
+      setExecution((prev) => ({
+        ...prev,
+        progress,
+        currentStep: progressData.status,
+      }))
       break
     }
 

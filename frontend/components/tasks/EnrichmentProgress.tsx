@@ -1,13 +1,13 @@
 'use client'
 
 import { useCallback } from 'react'
-import type { EnrichmentProgressProps } from './enrichment/types'
-import { estimateSteps } from './enrichment/enrichmentSteps'
-import { useEnrichmentPolling } from './enrichment/useEnrichmentPolling'
-import { EnrichmentProgressHeader } from './enrichment/EnrichmentProgressHeader'
-import { EnrichmentProgressSteps } from './enrichment/EnrichmentProgressSteps'
 import { EnrichmentProgressBar } from './enrichment/EnrichmentProgressBar'
 import { EnrichmentProgressError } from './enrichment/EnrichmentProgressError'
+import { EnrichmentProgressHeader } from './enrichment/EnrichmentProgressHeader'
+import { EnrichmentProgressSteps } from './enrichment/EnrichmentProgressSteps'
+import { estimateSteps } from './enrichment/enrichmentSteps'
+import type { EnrichmentProgressProps } from './enrichment/types'
+import { useEnrichmentPolling } from './enrichment/useEnrichmentPolling'
 
 export function EnrichmentProgress({
   projectId,

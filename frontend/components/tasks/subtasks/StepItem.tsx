@@ -99,7 +99,14 @@ export function StepItem({
               {step.step_number}.
             </span>
             <span
-              className={clsx('text-xs transition-all duration-200', passes ? 'text-slate-600 line-through decoration-slate-700' : isActive ? 'text-slate-200 font-medium' : 'text-slate-400')}
+              className={clsx(
+                'text-xs transition-all duration-200',
+                passes
+                  ? 'text-slate-600 line-through decoration-slate-700'
+                  : isActive
+                    ? 'text-slate-200 font-medium'
+                    : 'text-slate-400',
+              )}
             >
               {step.description}
             </span>
@@ -118,7 +125,12 @@ export function StepItem({
                 type="button"
                 onClick={() => setIsSpecExpanded(!isSpecExpanded)}
                 data-testid={`spec-btn-${step.step_number}`}
-                className={clsx('flex-shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded transition-all duration-150', isSpecExpanded ? 'bg-blue-500/15 text-blue-400' : 'bg-slate-800/60 text-slate-500 hover:bg-slate-700/60 hover:text-blue-400')}
+                className={clsx(
+                  'flex-shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded transition-all duration-150',
+                  isSpecExpanded
+                    ? 'bg-blue-500/15 text-blue-400'
+                    : 'bg-slate-800/60 text-slate-500 hover:bg-slate-700/60 hover:text-blue-400',
+                )}
                 aria-label={isSpecExpanded ? 'Hide spec' : 'Show spec'}
               >
                 <Braces className="w-3 h-3" />
@@ -145,7 +157,12 @@ export function StepItem({
                   <button
                     type="button"
                     onClick={handleCopy}
-                    className={clsx('absolute top-2 right-2 p-1.5 rounded-md transition-all duration-150 z-10', copied ? 'bg-phosphor-500/20 text-phosphor-400' : 'bg-slate-700/80 text-slate-400 opacity-60 group-hover/spec:opacity-100 hover:bg-slate-600 hover:text-slate-200')}
+                    className={clsx(
+                      'absolute top-2 right-2 p-1.5 rounded-md transition-all duration-150 z-10',
+                      copied
+                        ? 'bg-phosphor-500/20 text-phosphor-400'
+                        : 'bg-slate-700/80 text-slate-400 opacity-60 group-hover/spec:opacity-100 hover:bg-slate-600 hover:text-slate-200',
+                    )}
                     aria-label="Copy spec"
                   >
                     {copied ? (

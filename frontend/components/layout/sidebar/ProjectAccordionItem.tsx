@@ -4,16 +4,36 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { ButtonHTMLAttributes } from 'react'
 import type { Project } from '@/lib/api'
-import type { NavItemId } from './types'
 import { projectNavItems } from './constants'
 import { ProjectNavItem } from './ProjectNavItem'
+import type { NavItemId } from './types'
 import { useProjectPermissionTier } from './useProjectPermissionTier'
 
 const TIER_BADGE_CONFIG = {
-  off: { label: 'OFF', bg: 'bg-slate-600/30', text: 'text-slate-500', border: 'border-slate-600/40' },
-  read: { label: 'R', bg: 'bg-blue-500/15', text: 'text-blue-400', border: 'border-blue-500/30' },
-  write: { label: 'W', bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30' },
-  yolo: { label: 'Y', bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+  off: {
+    label: 'OFF',
+    bg: 'bg-slate-600/30',
+    text: 'text-slate-500',
+    border: 'border-slate-600/40',
+  },
+  read: {
+    label: 'R',
+    bg: 'bg-blue-500/15',
+    text: 'text-blue-400',
+    border: 'border-blue-500/30',
+  },
+  write: {
+    label: 'W',
+    bg: 'bg-amber-500/15',
+    text: 'text-amber-400',
+    border: 'border-amber-500/30',
+  },
+  yolo: {
+    label: 'Y',
+    bg: 'bg-emerald-500/15',
+    text: 'text-emerald-400',
+    border: 'border-emerald-500/30',
+  },
 } as const
 
 interface ProjectAccordionItemProps {
@@ -22,7 +42,10 @@ interface ProjectAccordionItemProps {
   isActive: boolean
   activeTab: NavItemId | null
   onToggleExpand: () => void
-  getProjectNavHref: (projectId: string, item: typeof projectNavItems[number]) => string
+  getProjectNavHref: (
+    projectId: string,
+    item: (typeof projectNavItems)[number],
+  ) => string
   dragHandleProps?: ButtonHTMLAttributes<HTMLButtonElement>
   isDragging?: boolean
 }
@@ -39,7 +62,9 @@ export function ProjectAccordionItem({
 }: ProjectAccordionItemProps) {
   const pathname = usePathname()
   const tier = useProjectPermissionTier(project.id)
-  const badge = tier ? TIER_BADGE_CONFIG[tier as keyof typeof TIER_BADGE_CONFIG] : null
+  const badge = tier
+    ? TIER_BADGE_CONFIG[tier as keyof typeof TIER_BADGE_CONFIG]
+    : null
   const healthLabel = project.health_status === 'healthy' ? 'healthy' : 'watch'
 
   return (
@@ -142,7 +167,9 @@ export function ProjectAccordionItem({
             <span
               className={clsx(
                 'mt-0.5 flex-shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-bold leading-none',
-                badge.bg, badge.text, badge.border,
+                badge.bg,
+                badge.text,
+                badge.border,
               )}
               title={`Permission tier: ${tier}`}
             >
@@ -177,41 +204,41 @@ export function ProjectAccordionItem({
       >
         <div className="mx-3 mb-3 rounded-2xl border border-slate-800/70 bg-slate-950/40 p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
           <div className="space-y-1">
-          {projectNavItems.map((item) => {
-            const isItemActive = isActive && activeTab === item.id
-            const href = getProjectNavHref(project.id, item)
+            {projectNavItems.map((item) => {
+              const isItemActive = isActive && activeTab === item.id
+              const href = getProjectNavHref(project.id, item)
 
-            return (
-              <ProjectNavItem
-                key={item.id}
-                item={item}
-                href={href}
-                isActive={isItemActive}
-              />
-            )
-          })}
+              return (
+                <ProjectNavItem
+                  key={item.id}
+                  item={item}
+                  href={href}
+                  isActive={isItemActive}
+                />
+              )
+            })}
 
-          {/* Settings link */}
-          <Link
-            href={`/projects/${project.id}/settings`}
-            className={clsx(
-              'group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200',
-              isActive && pathname.includes('/settings')
-                ? 'bg-slate-500/15 text-slate-300'
-                : 'text-slate-400 hover:bg-slate-500/10 hover:text-slate-300',
-            )}
-          >
-            <Settings2
+            {/* Settings link */}
+            <Link
+              href={`/projects/${project.id}/settings`}
               className={clsx(
-                'w-4 h-4 flex-shrink-0 transition-colors duration-200',
+                'group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200',
                 isActive && pathname.includes('/settings')
-                  ? 'text-slate-300'
-                  : 'text-slate-500 group-hover:text-slate-300',
+                  ? 'bg-slate-500/15 text-slate-300'
+                  : 'text-slate-400 hover:bg-slate-500/10 hover:text-slate-300',
               )}
-            />
-            <span className="truncate">Settings</span>
-          </Link>
-        </div>
+            >
+              <Settings2
+                className={clsx(
+                  'w-4 h-4 flex-shrink-0 transition-colors duration-200',
+                  isActive && pathname.includes('/settings')
+                    ? 'text-slate-300'
+                    : 'text-slate-500 group-hover:text-slate-300',
+                )}
+              />
+              <span className="truncate">Settings</span>
+            </Link>
+          </div>
         </div>
       </div>
     </div>

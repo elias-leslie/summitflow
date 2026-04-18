@@ -11,6 +11,8 @@ from ....services.task_lane_preflight import check_task_lane_conflicts
 from ....storage import tasks as task_store
 from ....storage.subtasks import get_subtasks_for_task
 from .agent_execution import execute_agent_feedback
+from .checkout import check_main_repo_leakage
+from .checkout_setup import setup_task_checkout
 from .completion_handler import (
     handle_early_completion,
     handle_failed_execution,
@@ -20,8 +22,6 @@ from .completion_handler import (
 from .events import emit_error, emit_log, emit_progress
 from .execution_loop import execute_subtask_loop
 from .pristine_validation import validate_pristine_codebase
-from .worktree import check_main_repo_leakage
-from .worktree_setup import setup_worktree
 
 logger = get_logger(__name__)
 
@@ -77,7 +77,7 @@ def start_execution(
 def _prepare_execution(
     task_id: str, project_id: str,
 ) -> tuple[dict[str, Any] | None, str | None, str | None, str | None]:
-    """Validate task and set up worktree. Returns (error, path, task_type, agent_override)."""
+    """Validate task and set up the shared checkout. Returns (error, path, task_type, agent_override)."""
     task = task_store.get_task(task_id)
     if not task:
         emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
@@ -92,10 +92,10 @@ def _prepare_execution(
             None, None, None,
         )
 
-    project_path = setup_worktree(task_id, project_id)
+    project_path = setup_task_checkout(task_id, project_id)
     if not project_path:
         return (
-            {"task_id": task_id, "status": "failed", "error": "Worktree creation failed", "reason": "worktree_creation_failed"},
+            {"task_id": task_id, "status": "failed", "error": "Task branch setup failed", "reason": "task_branch_setup_failed"},
             None, None, None,
         )
 

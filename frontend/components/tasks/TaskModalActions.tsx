@@ -1,10 +1,10 @@
 'use client'
 
 import type { Task, TaskStatus } from '@/lib/api/tasks'
-import { StatusActionButtons } from './StatusActionButtons'
-import { AutonomousToggle } from './AutonomousToggle'
 import { AgentSelector } from './AgentSelector'
+import { AutonomousToggle } from './AutonomousToggle'
 import { EditDeleteActions } from './EditDeleteActions'
+import { StatusActionButtons } from './StatusActionButtons'
 
 interface TaskModalActionsProps {
   task: Task

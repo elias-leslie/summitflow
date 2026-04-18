@@ -9,10 +9,10 @@
 
 import { Clock, Loader2, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import type { ExplorerOverviewScan } from '@/lib/api/explorer'
 import { formatDate, formatTimeAgo } from '@/lib/format'
 import { POLL_SLOW } from '@/lib/polling'
 import { cn } from '@/lib/utils'
-import type { ExplorerOverviewScan } from '@/lib/api/explorer'
 import { StatusIndicator } from './StatusIndicator'
 import type { ExplorerStats, ExplorerType, HealthStatus } from './types'
 
@@ -39,7 +39,6 @@ const typeLabels: Record<ExplorerType, { singular: string; plural: string }> = {
   dependencies: { singular: 'dependency', plural: 'dependencies' },
   architecture: { singular: 'module', plural: 'modules' },
 }
-
 
 export function SummaryBar({
   type,
@@ -133,7 +132,9 @@ export function SummaryBar({
       {/* Scan trust signals */}
       <div className="hidden xl:flex items-center gap-2 text-xs text-slate-500">
         <Clock className="w-3 h-3" />
-        <span title={formatDate(stats.lastScan)}>This view scanned {timeAgo}</span>
+        <span title={formatDate(stats.lastScan)}>
+          This view scanned {timeAgo}
+        </span>
         <span className="text-slate-700">|</span>
         <span title={formatDate(lastCompletedScan?.completed_at || null)}>
           Project scan {projectTimeAgo}

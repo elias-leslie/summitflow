@@ -1,14 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import {
-  fetchExplorerOverview,
   type ExplorerOverview,
+  fetchExplorerOverview,
 } from '@/lib/api/explorer'
 import { GC_EXPLORER, POLL_SLOW, STALE_GIT } from '@/lib/polling'
 
 export const overviewKeys = {
   all: ['explorer-overview'] as const,
-  detail: (projectId: string) =>
-    [...overviewKeys.all, projectId] as const,
+  detail: (projectId: string) => [...overviewKeys.all, projectId] as const,
 }
 
 interface UseExplorerOverviewReturn {

@@ -41,7 +41,7 @@ def _init_repo(repo: Path) -> None:
     _git(repo, "commit", "-m", "initial")
 
 
-def _write_checkpoint(home: Path, project_id: str, task_id: str, worktree_path: str | None) -> Path:
+def _write_checkpoint(home: Path, project_id: str, task_id: str) -> Path:
     checkpoint_dir = home / ".local" / "share" / "st" / "checkpoints" / project_id
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     meta_path = checkpoint_dir / f"{task_id}.meta.json"
@@ -53,9 +53,6 @@ def _write_checkpoint(home: Path, project_id: str, task_id: str, worktree_path: 
                 "base_branch": "main",
                 "created_at": "2026-03-24T06:00:00+00:00",
                 "claimed_by": "Test",
-                "worktree_path": worktree_path,
-                "backend_port": 8100,
-                "frontend_port": 3100,
             }
         ),
         encoding="utf-8",
@@ -80,8 +77,8 @@ def repo_with_checkpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Pa
 def test_get_active_checkpoints_filters_stale_global_metadata(repo_with_checkpoints: Path) -> None:
     home = Path(os.environ["HOME"])
     _git(repo_with_checkpoints, "branch", "task-live/main")
-    _write_checkpoint(home, "summitflow", "task-live", None)
-    stale_meta = _write_checkpoint(home, "summitflow", "task-stale", "/missing/worktree")
+    _write_checkpoint(home, "summitflow", "task-live")
+    stale_meta = _write_checkpoint(home, "summitflow", "task-stale")
 
     active = get_active_checkpoints("summitflow")
     stale = get_stale_checkpoints("summitflow")
@@ -93,7 +90,7 @@ def test_get_active_checkpoints_filters_stale_global_metadata(repo_with_checkpoi
 
 def test_auto_cleanup_safe_items_deletes_global_stale_metadata(repo_with_checkpoints: Path) -> None:
     home = Path(os.environ["HOME"])
-    stale_meta = _write_checkpoint(home, "summitflow", "task-stale", "/missing/worktree")
+    stale_meta = _write_checkpoint(home, "summitflow", "task-stale")
 
     cleaned_meta, cleaned_sql, cleaned_branches, review = auto_cleanup_safe_items("summitflow")
 
@@ -107,8 +104,8 @@ def test_auto_cleanup_safe_items_deletes_global_stale_metadata(repo_with_checkpo
 def test_checkpoints_command_omits_and_cleans_stale_metadata(repo_with_checkpoints: Path) -> None:
     home = Path(os.environ["HOME"])
     _git(repo_with_checkpoints, "branch", "task-live/main")
-    _write_checkpoint(home, "summitflow", "task-live", None)
-    stale_meta = _write_checkpoint(home, "summitflow", "task-stale", "/missing/worktree")
+    _write_checkpoint(home, "summitflow", "task-live")
+    stale_meta = _write_checkpoint(home, "summitflow", "task-stale")
 
     result = runner.invoke(app, ["--project", "summitflow"])
 

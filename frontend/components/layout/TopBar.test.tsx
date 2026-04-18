@@ -76,7 +76,9 @@ describe('TopBar', () => {
 
     render(<TopBar />)
 
-    expect(screen.getByTestId('notification-bell')).toHaveTextContent('agent-hub')
+    expect(screen.getByTestId('notification-bell')).toHaveTextContent(
+      'agent-hub',
+    )
     expect(notificationBellMock).toHaveBeenCalledWith(
       expect.objectContaining({ projectId: 'agent-hub' }),
     )
@@ -85,7 +87,9 @@ describe('TopBar', () => {
   it('falls back to the default project outside project routes', () => {
     render(<TopBar />)
 
-    expect(screen.getByTestId('notification-bell')).toHaveTextContent('summitflow')
+    expect(screen.getByTestId('notification-bell')).toHaveTextContent(
+      'summitflow',
+    )
     expect(notificationBellMock).toHaveBeenCalledWith(
       expect.objectContaining({ projectId: 'summitflow' }),
     )
@@ -94,13 +98,22 @@ describe('TopBar', () => {
   it('compacts navigation when task search expands', () => {
     render(<TopBar />)
 
-    expect(screen.getByTestId('navigation')).toHaveAttribute('data-compact', 'no')
+    expect(screen.getByTestId('navigation')).toHaveAttribute(
+      'data-compact',
+      'no',
+    )
     expect(screen.getByTestId('navigation')).toHaveAttribute('data-dense', 'no')
 
     fireEvent.click(screen.getByTestId('task-search'))
 
-    expect(screen.getByTestId('navigation')).toHaveAttribute('data-compact', 'yes')
-    expect(screen.getByTestId('navigation')).toHaveAttribute('data-dense', 'yes')
+    expect(screen.getByTestId('navigation')).toHaveAttribute(
+      'data-compact',
+      'yes',
+    )
+    expect(screen.getByTestId('navigation')).toHaveAttribute(
+      'data-dense',
+      'yes',
+    )
     expect(navigationMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ compact: true, dense: true }),
     )
@@ -111,6 +124,9 @@ describe('TopBar', () => {
 
     render(<TopBar />)
 
-    expect(screen.getByRole('link', { name: 'Global files' })).toHaveAttribute('href', '/files')
+    expect(screen.getByRole('link', { name: 'Global files' })).toHaveAttribute(
+      'href',
+      '/files',
+    )
   })
 })

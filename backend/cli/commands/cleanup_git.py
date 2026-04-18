@@ -1,4 +1,4 @@
-"""Git operations for cleanup commands."""
+"""Git operations for checkpoint cleanup commands."""
 
 from __future__ import annotations
 
@@ -30,24 +30,32 @@ def get_repo_root() -> Path | None:
         return None
 
 
-def get_commits_ahead_behind(worktree_path: Path, base_branch: str = "main") -> tuple[int, int]:
-    """Get number of commits ahead and behind base branch."""
-    try:
-        # Fetch to ensure we have latest refs
-        run_git(["fetch", "origin", base_branch], cwd=worktree_path, check=False)
+def _resolve_base_ref(repo_path: Path, base_branch: str) -> str:
+    remote_ref = f"origin/{base_branch}"
+    remote_exists = run_git(["rev-parse", "--verify", remote_ref], cwd=repo_path, check=False)
+    return remote_ref if remote_exists.returncode == 0 else base_branch
 
-        # Get commits ahead (in worktree but not in origin/base)
+
+def get_commits_ahead_behind(
+    repo_path: Path,
+    branch_name: str,
+    base_branch: str = "main",
+) -> tuple[int, int]:
+    """Get number of commits ahead and behind base branch for a task branch."""
+    try:
+        run_git(["fetch", "origin", base_branch], cwd=repo_path, check=False)
+        base_ref = _resolve_base_ref(repo_path, base_branch)
+
         result = run_git(
-            ["rev-list", "--count", f"origin/{base_branch}..HEAD"],
-            cwd=worktree_path,
+            ["rev-list", "--count", f"{base_ref}..{branch_name}"],
+            cwd=repo_path,
             check=False,
         )
         ahead = int(result.stdout.strip()) if result.returncode == 0 else 0
 
-        # Get commits behind (in origin/base but not in worktree)
         result = run_git(
-            ["rev-list", "--count", f"HEAD..origin/{base_branch}"],
-            cwd=worktree_path,
+            ["rev-list", "--count", f"{branch_name}..{base_ref}"],
+            cwd=repo_path,
             check=False,
         )
         behind = int(result.stdout.strip()) if result.returncode == 0 else 0
@@ -57,70 +65,65 @@ def get_commits_ahead_behind(worktree_path: Path, base_branch: str = "main") -> 
         return 0, 0
 
 
-def has_merge_conflicts(worktree_path: Path, base_branch: str = "main") -> bool:
-    """Check if merging base branch would cause conflicts."""
+def has_merge_conflicts(repo_path: Path, branch_name: str, base_branch: str = "main") -> bool:
+    """Check if merging base branch into branch_name would cause conflicts."""
     try:
-        # Get current HEAD
-        head_result = run_git(["rev-parse", "HEAD"], cwd=worktree_path, check=False)
+        base_ref = _resolve_base_ref(repo_path, base_branch)
+        head_result = run_git(["rev-parse", branch_name], cwd=repo_path, check=False)
         if head_result.returncode != 0:
             return False
         head = head_result.stdout.strip()
 
-        # Get base branch ref
         base_result = run_git(
-            ["rev-parse", f"origin/{base_branch}"],
-            cwd=worktree_path,
+            ["rev-parse", base_ref],
+            cwd=repo_path,
             check=False,
         )
         if base_result.returncode != 0:
             return False
         base = base_result.stdout.strip()
 
-        # Get merge base
         merge_base_result = run_git(
             ["merge-base", head, base],
-            cwd=worktree_path,
+            cwd=repo_path,
             check=False,
         )
         if merge_base_result.returncode != 0:
             return False
         merge_base = merge_base_result.stdout.strip()
 
-        # If merge-base equals head, base is ahead - no conflicts
         if merge_base == head:
             return False
 
-        # Check for file conflicts by doing a dry-run merge
         result = run_git(
-            ["merge", "--no-commit", "--no-ff", f"origin/{base_branch}"],
-            cwd=worktree_path,
+            ["merge-tree", merge_base, head, base],
+            cwd=repo_path,
             check=False,
         )
-        has_conflict = result.returncode != 0 and "CONFLICT" in result.stdout + result.stderr
-
-        # Abort the merge
-        run_git(["merge", "--abort"], cwd=worktree_path, check=False)
-
-        return has_conflict
+        return "CONFLICT" in result.stdout + result.stderr
     except (subprocess.CalledProcessError, OSError):
         return False
 
 
-def has_uncommitted_changes(worktree_path: Path) -> bool:
-    """Check if worktree has uncommitted changes."""
+def has_uncommitted_changes(repo_path: Path, branch_name: str | None = None) -> bool:
+    """Check if the current checkout has uncommitted changes for branch_name."""
     try:
-        result = run_git(["status", "--porcelain"], cwd=worktree_path, check=False)
+        if branch_name:
+            current = run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_path, check=False)
+            if current.returncode != 0 or current.stdout.strip() != branch_name:
+                return False
+        result = run_git(["status", "--porcelain"], cwd=repo_path, check=False)
         return bool(result.stdout.strip())
     except (subprocess.CalledProcessError, OSError):
         return False
 
 
-def get_last_commit_age_days(worktree_path: Path) -> int | None:
-    """Get age of last commit in days."""
+def get_last_commit_age_days(repo_path: Path, branch_name: str) -> int | None:
+    """Get age of last commit on a branch in days."""
     try:
         result = run_git(
-            ["log", "-1", "--format=%ct"],
-            cwd=worktree_path,
+            ["log", "-1", "--format=%ct", branch_name],
+            cwd=repo_path,
             check=False,
         )
         if result.returncode != 0:
@@ -133,19 +136,18 @@ def get_last_commit_age_days(worktree_path: Path) -> int | None:
         return None
 
 
-def is_already_merged(worktree_path: Path, base_branch: str = "main") -> bool:
-    """Check if worktree branch is already merged into base."""
+def is_already_merged(repo_path: Path, branch_name: str, base_branch: str = "main") -> bool:
+    """Check if branch_name is already merged into base."""
     try:
-        # Get current branch HEAD
-        head_result = run_git(["rev-parse", "HEAD"], cwd=worktree_path, check=False)
+        head_result = run_git(["rev-parse", branch_name], cwd=repo_path, check=False)
         if head_result.returncode != 0:
             return False
         head = head_result.stdout.strip()
+        base_ref = _resolve_base_ref(repo_path, base_branch)
 
-        # Check if this commit is an ancestor of origin/base
         result = run_git(
-            ["merge-base", "--is-ancestor", head, f"origin/{base_branch}"],
-            cwd=worktree_path,
+            ["merge-base", "--is-ancestor", head, base_ref],
+            cwd=repo_path,
             check=False,
         )
         return result.returncode == 0

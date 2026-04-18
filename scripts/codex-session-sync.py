@@ -87,7 +87,7 @@ def sync_transcript(
     meta: dict[str, object] = {
         "transcript_path": str(info.path),
         "repo_root": project["repo_root"],
-        "worktree_path": str(info.cwd),
+        "cwd": str(info.cwd),
         "host": os.uname().nodename,
     }
     kw: dict[str, str] = {

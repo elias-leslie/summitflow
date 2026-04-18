@@ -229,7 +229,7 @@ def test_subtask_execution_winds_down_when_task_is_paused() -> None:
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
-@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_worktree", return_value="/tmp/worktree")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout", return_value="/tmp/checkout")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.execute_subtask_loop")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_progress")
@@ -285,7 +285,7 @@ def test_start_execution_orchestration_flow(
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
-@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_worktree", return_value="/tmp/worktree")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout", return_value="/tmp/checkout")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.execute_subtask_loop")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.execute_agent_feedback")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.handle_successful_completion", return_value=True)
@@ -323,7 +323,7 @@ def test_start_execution_routes_completion_before_optional_feedback(
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
-@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_worktree", return_value="/tmp/worktree")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout", return_value="/tmp/checkout")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.execute_subtask_loop")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.execute_agent_feedback")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.handle_failed_execution")
@@ -359,7 +359,7 @@ def test_start_execution_collects_feedback_after_failed_run(
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
-@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_worktree", return_value="/tmp/worktree")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout", return_value="/tmp/checkout")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.execute_subtask_loop")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_progress")
@@ -398,7 +398,7 @@ def test_start_execution_reopens_passed_subtasks_for_conflict_resolution(
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
-@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_worktree", return_value="/tmp/worktree")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout", return_value="/tmp/checkout")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.execute_subtask_loop")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_progress")
@@ -439,7 +439,7 @@ def test_execute_task_locked_skips_status_update_when_already_running(
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
-@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_worktree", return_value="/tmp/worktree")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout", return_value="/tmp/checkout")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.execute_subtask_loop")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_progress")
@@ -485,7 +485,7 @@ def test_start_execution_skips_duplicate_same_task_lane(
         overlap_kind="same_task",
         disposition="block",
         owner_session_id="sess-existing",
-        owner_location="worktree /tmp/task-123",
+        owner_location="checkout /tmp/task-123",
     )
 
     result = start_execution("task-123", "agent-hub")

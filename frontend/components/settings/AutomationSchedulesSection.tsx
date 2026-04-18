@@ -15,7 +15,9 @@ function scopeLabel(schedule: AutonomousSchedule, projectId: string): string {
   if (schedule.scope === 'project') {
     return 'Project'
   }
-  return schedule.managed_project_id === projectId ? 'System' : `System · ${schedule.managed_project_id}`
+  return schedule.managed_project_id === projectId
+    ? 'System'
+    : `System · ${schedule.managed_project_id}`
 }
 
 export function AutomationSchedulesSection({
@@ -32,8 +34,8 @@ export function AutomationSchedulesSection({
           Scheduled Jobs
         </h3>
         <p className="text-xs text-slate-400 mt-2">
-          Every SummitFlow cron job is listed here. Disable the noisy entrypoints first,
-          then tune deeper behavior below.
+          Every SummitFlow cron job is listed here. Disable the noisy
+          entrypoints first, then tune deeper behavior below.
         </p>
       </div>
 
@@ -69,7 +71,11 @@ export function AutomationSchedulesSection({
                   disabled={isPending}
                   role="switch"
                   aria-checked={schedule.enabled}
-                  aria-label={schedule.enabled ? `Disable ${schedule.label}` : `Enable ${schedule.label}`}
+                  aria-label={
+                    schedule.enabled
+                      ? `Disable ${schedule.label}`
+                      : `Enable ${schedule.label}`
+                  }
                   className={clsx(
                     'relative h-6 w-12 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900',
                     schedule.enabled ? 'bg-amber-500' : 'bg-slate-600',

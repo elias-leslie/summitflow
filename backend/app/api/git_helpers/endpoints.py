@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from ...logging_config import get_logger
 from ...storage import tasks as task_store
 from ...storage.tasks.update import update_task_fields
-from ...tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_worktree
+from ...tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_checkpoint
 from ...tasks.autonomous.cleanup.merge_types import MergeResult
 from ...utils.git_helpers import (
     get_all_branches,
@@ -34,13 +34,13 @@ from ..models.git_models import (
     SnapshotInfo,
     TaskDiffResponse,
 )
+from .checkpoint_helpers import collect_checkpoints, enrich_snapshots
 from .db_helpers import (
     get_project_path,
     get_project_root_with_fallback,
     query_conflicts,
     query_recent_merges,
 )
-from .worktree_helpers import collect_worktrees, enrich_snapshots
 
 _logger = get_logger(__name__)
 
@@ -309,7 +309,7 @@ async def build_project_dashboard(
 ) -> ProjectDashboardResponse:
     """Build project dashboard response."""
     repo_path = get_project_root_with_fallback(project_id)
-    worktrees = [w for w in collect_worktrees() if w.project_id == project_id]
+    checkpoints = [c for c in collect_checkpoints() if c.project_id == project_id]
     branches = get_all_branches(repo_path, project_id=project_id)
     merges_resp = build_recent_merges_response(limit=10, project_id=project_id)
     commits = get_recent_commits(repo_path, limit=commits_limit)
@@ -317,7 +317,7 @@ async def build_project_dashboard(
     enrich_snapshots(snapshots)
     conflicts = build_conflicts_response(project_id=project_id)
     return ProjectDashboardResponse(
-        worktrees=worktrees,
+        checkpoints=checkpoints,
         branches=branches,
         recent_merges=merges_resp.merges,
         recent_commits=commits,
@@ -330,27 +330,27 @@ async def build_project_dashboard(
 
 
 def _resolve_conflict_response(
-    task_id: str, project_id: str, worktree: Any, files: list[str], status: str
+    task_id: str, project_id: str, checkout: Any, files: list[str], status: str
 ) -> dict[str, object]:
     return {
         "task_id": task_id,
         "status": status,
         "project_id": project_id,
-        "worktree_path": str(worktree.path),
-        "task_branch": worktree.branch,
-        "base_branch": worktree.base_branch,
+        "checkout_path": str(checkout.path),
+        "task_branch": checkout.branch,
+        "base_branch": checkout.base_branch,
         "conflicting_files": files,
     }
 
 
 async def handle_resolve_conflict(task_id: str) -> dict[str, object]:
     """Reopen a residue task and dispatch execution to resolve its merge conflict."""
-    from ...services.worktree import create_task_worktree, get_task_worktree
+    from ...services.task_checkout import create_task_checkout, get_task_checkout
     from ...storage import log_task_event
     from ...storage.subtasks import get_subtasks_for_task, update_subtask_passes
     from ...storage.tasks.claims import claim_task
     from ...storage.tasks.status import update_task_status
-    from ...tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_worktree
+    from ...tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_checkpoint
     from ...workflows.models import TaskInput
     from ...workflows.pipeline import execute_wf
 
@@ -365,7 +365,7 @@ async def handle_resolve_conflict(task_id: str) -> dict[str, object]:
         )
     conflict_info = task.get("conflict_info") or {}
     if (not isinstance(conflict_info, dict) or not conflict_info) and status == "failed":
-        merge_result: MergeResult = merge_and_cleanup_task_worktree(task_id, str(task["project_id"]))
+        merge_result: MergeResult = merge_and_cleanup_task_checkpoint(task_id, str(task["project_id"]))
         if str(merge_result.get("status") or "") != "failed":
             return cast(dict[str, object], merge_result)
         task = task_store.get_task(task_id) or task
@@ -374,9 +374,9 @@ async def handle_resolve_conflict(task_id: str) -> dict[str, object]:
         raise HTTPException(status_code=400, detail="Task does not have conflict metadata to resolve")
 
     project_id = str(task["project_id"])
-    worktree = get_task_worktree(task_id, project_id) or create_task_worktree(task_id, project_id)
-    if not worktree:
-        raise HTTPException(status_code=500, detail="Unable to prepare task worktree for conflict resolution")
+    checkout = get_task_checkout(task_id, project_id) or create_task_checkout(task_id, project_id)
+    if not checkout:
+        raise HTTPException(status_code=500, detail="Unable to prepare task branch for conflict resolution")
     files = conflict_info.get("conflicting_files") or []
     message = "Resolve merge conflict against current main" + (f" in {', '.join(files[:5])}" if files else "")
     update_task_status(task_id, "failed", error_message=message, validate_transition=False)
@@ -387,9 +387,9 @@ async def handle_resolve_conflict(task_id: str) -> dict[str, object]:
     log_task_event(task_id, f"Conflict resolution reopened for autocode: {message}")
     worker_id = f"resolve-conflict-{project_id}"
     if not claim_task(task_id, worker_id, lock_duration_minutes=60):
-        return _resolve_conflict_response(task_id, project_id, worktree, files, "already_claimed")
+        return _resolve_conflict_response(task_id, project_id, checkout, files, "already_claimed")
     await execute_wf.aio_run_no_wait(TaskInput(task_id=task_id, project_id=project_id))
-    return _resolve_conflict_response(task_id, project_id, worktree, files, "dispatched_for_conflict_resolution")
+    return _resolve_conflict_response(task_id, project_id, checkout, files, "dispatched_for_conflict_resolution")
 
 
 def handle_finalize_task_merge(task_id: str, task: dict[str, Any]) -> MergeResult:
@@ -415,7 +415,7 @@ def handle_finalize_task_merge(task_id: str, task: dict[str, Any]) -> MergeResul
         )
     if status == "failed":
         update_task_fields(task_id, conflict_info=None)
-    return merge_and_cleanup_task_worktree(task_id, task["project_id"])
+    return merge_and_cleanup_task_checkpoint(task_id, task["project_id"])
 
 
 # --- Collection helpers ---

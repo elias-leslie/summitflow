@@ -11,8 +11,6 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
-import { SourceTypeBadge } from './SourceTypeBadge'
-import { StatusBadge } from './StatusBadge'
 import {
   type Backup,
   type BackupHealthItem,
@@ -23,6 +21,8 @@ import {
   updateBackupSource,
 } from '@/lib/api/backups'
 import { formatBytes, formatDate, formatTimeAgo } from '@/lib/format'
+import { SourceTypeBadge } from './SourceTypeBadge'
+import { StatusBadge } from './StatusBadge'
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -96,9 +96,15 @@ function RestoreConfidenceBadge({ confidence }: { confidence: string | null }) {
 function CoverageChips({ coverage }: { coverage: CoverageResponse | null }) {
   if (!coverage) return null
 
-  const components = coverage.result?.components ?? coverage.contract.map((c) => ({
-    key: c.key, label: c.label, category: c.category, present: false, error: null,
-  }))
+  const components =
+    coverage.result?.components ??
+    coverage.contract.map((c) => ({
+      key: c.key,
+      label: c.label,
+      category: c.category,
+      present: false,
+      error: null,
+    }))
 
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -177,7 +183,9 @@ export function SourceCard({
 
   useEffect(() => {
     if (expanded && isInfra && !coverage) {
-      fetchInfraCoverage().then(setCoverage).catch(() => setCoverage(null))
+      fetchInfraCoverage()
+        .then(setCoverage)
+        .catch(() => setCoverage(null))
     }
   }, [expanded, isInfra, coverage])
 
@@ -335,7 +343,9 @@ export function SourceCard({
                   <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
                     Restore
                   </span>
-                  <RestoreConfidenceBadge confidence={health.restore_confidence} />
+                  <RestoreConfidenceBadge
+                    confidence={health.restore_confidence}
+                  />
                 </div>
                 {health.last_drill_at && (
                   <span className="text-[10px] text-slate-600 ml-auto">
@@ -383,9 +393,7 @@ export function SourceCard({
                   Next Run
                 </div>
                 <div className="truncate text-xs text-slate-200">
-                  {source.next_run_at
-                    ? formatTimeAgo(source.next_run_at)
-                    : '-'}
+                  {source.next_run_at ? formatTimeAgo(source.next_run_at) : '-'}
                 </div>
               </div>
             </div>

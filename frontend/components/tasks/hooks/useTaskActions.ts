@@ -10,10 +10,7 @@ import {
   updateTask,
   updateTaskStatus,
 } from '@/lib/api/tasks'
-import {
-  formatTaskStatus,
-  useTaskMutationSync,
-} from '@/lib/task-mutation-sync'
+import { formatTaskStatus, useTaskMutationSync } from '@/lib/task-mutation-sync'
 import { getErrorMessage } from '@/lib/utils'
 
 interface UseTaskActionsOptions {
@@ -81,12 +78,9 @@ export function useTaskActions({
     [task, projectId, setSubtasks],
   )
 
-  const handleObjectiveEdit = useCallback(
-    async (_newObjective: string) => {
-      // objective field removed from Task type — no-op
-    },
-    [],
-  )
+  const handleObjectiveEdit = useCallback(async (_newObjective: string) => {
+    // objective field removed from Task type — no-op
+  }, [])
 
   const handleToggleAutonomous = useCallback(async () => {
     if (!task) return

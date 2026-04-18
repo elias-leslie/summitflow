@@ -57,19 +57,10 @@ export function FeedbackDetailBody({ item }: FeedbackDetailBodyProps) {
         />
         <MetricBox label="Votes" value={String(item.vote_count)} />
         <MetricBox label="Project" value={item.project_id} />
-        <MetricBox
-          label="Created"
-          value={formatShortDate(item.created_at)}
-        />
-        {item.agent_slug && (
-          <MetricBox label="Agent" value={item.agent_slug} />
-        )}
-        {item.model_used && (
-          <MetricBox label="Model" value={item.model_used} />
-        )}
-        {item.severity && (
-          <MetricBox label="Severity" value={item.severity} />
-        )}
+        <MetricBox label="Created" value={formatShortDate(item.created_at)} />
+        {item.agent_slug && <MetricBox label="Agent" value={item.agent_slug} />}
+        {item.model_used && <MetricBox label="Model" value={item.model_used} />}
+        {item.severity && <MetricBox label="Severity" value={item.severity} />}
         {item.linked_task_id && (
           <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
             <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
@@ -123,9 +114,7 @@ export function FeedbackDetailBody({ item }: FeedbackDetailBodyProps) {
                     )}
                     <div className="flex items-center gap-2 text-2xs text-slate-600">
                       {vote.agent_slug && <span>{vote.agent_slug}</span>}
-                      <span>
-                        {formatShortDate(vote.created_at)}
-                      </span>
+                      <span>{formatShortDate(vote.created_at)}</span>
                     </div>
                   </div>
                 </div>

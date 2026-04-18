@@ -25,8 +25,12 @@ vi.mock('next/link', () => ({
 
 vi.mock('motion/react', () => ({
   motion: {
-    div: ({ children, ...props }: { children: ReactNode }) => <div {...props}>{children}</div>,
-    section: ({ children, ...props }: { children: ReactNode }) => <section {...props}>{children}</section>,
+    div: ({ children, ...props }: { children: ReactNode }) => (
+      <div {...props}>{children}</div>
+    ),
+    section: ({ children, ...props }: { children: ReactNode }) => (
+      <section {...props}>{children}</section>
+    ),
   },
 }))
 

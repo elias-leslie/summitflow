@@ -29,7 +29,9 @@ export function ExecutionControlSection({
 }: ExecutionControlSectionProps) {
   return (
     <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700 space-y-6">
-      <h3 className="text-base font-medium text-slate-100">Execution Control</h3>
+      <h3 className="text-base font-medium text-slate-100">
+        Execution Control
+      </h3>
 
       {/* Max Concurrent */}
       <div>
@@ -59,7 +61,10 @@ export function ExecutionControlSection({
 
       {/* Max Tasks Per Day */}
       <div>
-        <Label htmlFor="max-tasks-per-day" className="text-slate-200 mb-2 block">
+        <Label
+          htmlFor="max-tasks-per-day"
+          className="text-slate-200 mb-2 block"
+        >
           Max Tasks Per Day
         </Label>
         <p className="text-xs text-slate-400 mb-3">
@@ -98,7 +103,10 @@ export function ExecutionControlSection({
 
       {/* Check Frequency */}
       <div>
-        <Label htmlFor="frequency" className="text-slate-200 mb-2 flex items-center gap-2">
+        <Label
+          htmlFor="frequency"
+          className="text-slate-200 mb-2 flex items-center gap-2"
+        >
           <Timer className="w-4 h-4 text-slate-400" />
           Check Frequency (minutes)
         </Label>

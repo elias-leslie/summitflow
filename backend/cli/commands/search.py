@@ -886,7 +886,7 @@ def search(
         SearchScope,
         typer.Option(
             "--scope",
-            help="Search scope: canonical project index, current checkout/worktree, or auto-detect both when needed",
+            help="Search scope: canonical project index, current checkout, or auto-detect both when needed",
             case_sensitive=False,
         ),
     ] = SearchScope.AUTO,

@@ -31,16 +31,24 @@ export function SectionLabel({
         onToggle && 'group cursor-pointer hover:opacity-90 transition-opacity',
       )}
     >
-      {onToggle && (
-        expanded
-          ? <ChevronDown className="w-3 h-3 text-slate-500" />
-          : <ChevronRight className="w-3 h-3 text-slate-600 group-hover:text-slate-400 transition-colors" />
-      )}
+      {onToggle &&
+        (expanded ? (
+          <ChevronDown className="w-3 h-3 text-slate-500" />
+        ) : (
+          <ChevronRight className="w-3 h-3 text-slate-600 group-hover:text-slate-400 transition-colors" />
+        ))}
       <Icon className={clsx('w-3.5 h-3.5', color)} />
       <span className="text-2xs font-semibold uppercase tracking-[0.12em] text-slate-400">
         {label}
       </span>
-      <span className={clsx('text-[9px] font-mono px-1.5 py-0.5 rounded-full border', badgeBg, color, badgeBorder)}>
+      <span
+        className={clsx(
+          'text-[9px] font-mono px-1.5 py-0.5 rounded-full border',
+          badgeBg,
+          color,
+          badgeBorder,
+        )}
+      >
         {count}
       </span>
     </Wrapper>

@@ -37,7 +37,9 @@ describe('MaintenanceStatusCard', () => {
     render(<MaintenanceStatusCard />)
 
     expect(screen.getByText('Maintenance')).toBeInTheDocument()
-    expect(screen.getByText('Routine upkeep completed · 2 tasks')).toBeInTheDocument()
+    expect(
+      screen.getByText('Routine upkeep completed · 2 tasks'),
+    ).toBeInTheDocument()
   })
 
   it('shows latest workflow details when expanded', () => {
@@ -97,6 +99,8 @@ describe('MaintenanceStatusCard', () => {
     fireEvent.click(screen.getByText('Maintenance'))
 
     expect(screen.getByText('Routine upkeep never run')).toBeInTheDocument()
-    expect(screen.getByText('No maintenance runs recorded yet.')).toBeInTheDocument()
+    expect(
+      screen.getByText('No maintenance runs recorded yet.'),
+    ).toBeInTheDocument()
   })
 })

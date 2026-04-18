@@ -40,7 +40,7 @@ def _detect_base_branch(project_path: str) -> str:
 
 
 def _has_work_product(project_path: str) -> bool:
-    """Check if the worktree contains branch-local work to verify."""
+    """Check if the checkout contains branch-local work to verify."""
     try:
         base_branch = _detect_base_branch(project_path)
         commits = subprocess.run(

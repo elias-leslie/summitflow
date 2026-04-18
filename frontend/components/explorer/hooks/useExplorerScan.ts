@@ -11,10 +11,10 @@ import {
 } from '@/lib/api/explorer-scan'
 import { scanHistoryKeys } from '@/lib/hooks/useScanHistory'
 import { getErrorMessage } from '@/lib/utils'
-import type { ExplorerType } from '../types'
 import { uiTypeToApiType } from '../explorerConstants'
-import { overviewKeys } from './useExplorerOverview'
+import type { ExplorerType } from '../types'
 import { explorerKeys } from './useExplorerData'
+import { overviewKeys } from './useExplorerOverview'
 
 interface UseExplorerScanReturn {
   isScanning: boolean
@@ -35,7 +35,9 @@ export function useExplorerScan(
 ): UseExplorerScanReturn {
   const queryClient = useQueryClient()
   const [isScanning, setIsScanning] = useState(false)
-  const [scanProgress, setScanProgress] = useState<ScanStatusResponse | null>(null)
+  const [scanProgress, setScanProgress] = useState<ScanStatusResponse | null>(
+    null,
+  )
   const [scanError, setScanError] = useState<string | null>(null)
   const [scanCompletedAt, setScanCompletedAt] = useState<number | null>(null)
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -53,59 +55,69 @@ export function useExplorerScan(
     setScanProgress(null)
   }, [clearPendingPoll])
 
-  const pollScanStatus = useCallback(async (deadline: number) => {
-    try {
-      const status = await fetchScanStatus(projectId)
-      setScanProgress(status)
+  const pollScanStatus = useCallback(
+    async (deadline: number) => {
+      try {
+        const status = await fetchScanStatus(projectId)
+        setScanProgress(status)
 
-      if (status.status === 'completed') {
-        setScanCompletedAt(Date.now())
+        if (status.status === 'completed') {
+          setScanCompletedAt(Date.now())
+          finishScan()
+          void Promise.all([
+            queryClient.invalidateQueries({ queryKey: scanHistoryKeys.all }),
+            queryClient.invalidateQueries({ queryKey: overviewKeys.all }),
+            queryClient.invalidateQueries({
+              queryKey: explorerKeys.entries(projectId),
+            }),
+            queryClient.invalidateQueries({
+              queryKey: explorerKeys.stats(projectId),
+            }),
+          ])
+          return
+        }
+
+        if (status.status === 'failed') {
+          setScanError(status.error || 'Scan failed')
+          finishScan()
+          return
+        }
+
+        if (Date.now() >= deadline) {
+          setScanError('Scan timed out')
+          finishScan()
+          return
+        }
+
+        pollTimeoutRef.current = setTimeout(() => {
+          void pollScanStatus(deadline)
+        }, POLL_INTERVAL_MS)
+      } catch (pollErr) {
+        setScanError(getErrorMessage(pollErr, 'Failed to poll scan status'))
         finishScan()
-        void Promise.all([
-          queryClient.invalidateQueries({ queryKey: scanHistoryKeys.all }),
-          queryClient.invalidateQueries({ queryKey: overviewKeys.all }),
-          queryClient.invalidateQueries({ queryKey: explorerKeys.entries(projectId) }),
-          queryClient.invalidateQueries({ queryKey: explorerKeys.stats(projectId) }),
-        ])
-        return
       }
+    },
+    [finishScan, projectId, queryClient],
+  )
 
-      if (status.status === 'failed') {
-        setScanError(status.error || 'Scan failed')
+  const startScan = useCallback(
+    async (scanType?: ScanTriggerType) => {
+      clearPendingPoll()
+      setIsScanning(true)
+      setScanProgress(null)
+      setScanError(null)
+      setScanCompletedAt(null)
+
+      try {
+        await triggerExplorerScan(projectId, scanType)
+        void pollScanStatus(Date.now() + SCAN_TIMEOUT_MS)
+      } catch (err) {
+        setScanError(getErrorMessage(err, 'Failed to start scan'))
         finishScan()
-        return
       }
-
-      if (Date.now() >= deadline) {
-        setScanError('Scan timed out')
-        finishScan()
-        return
-      }
-
-      pollTimeoutRef.current = setTimeout(() => {
-        void pollScanStatus(deadline)
-      }, POLL_INTERVAL_MS)
-    } catch (pollErr) {
-      setScanError(getErrorMessage(pollErr, 'Failed to poll scan status'))
-      finishScan()
-    }
-  }, [finishScan, projectId, queryClient])
-
-  const startScan = useCallback(async (scanType?: ScanTriggerType) => {
-    clearPendingPoll()
-    setIsScanning(true)
-    setScanProgress(null)
-    setScanError(null)
-    setScanCompletedAt(null)
-
-    try {
-      await triggerExplorerScan(projectId, scanType)
-      void pollScanStatus(Date.now() + SCAN_TIMEOUT_MS)
-    } catch (err) {
-      setScanError(getErrorMessage(err, 'Failed to start scan'))
-      finishScan()
-    }
-  }, [clearPendingPoll, finishScan, pollScanStatus, projectId])
+    },
+    [clearPendingPoll, finishScan, pollScanStatus, projectId],
+  )
 
   const handleScan = useCallback(async () => {
     const apiType = uiTypeToApiType[activeType]

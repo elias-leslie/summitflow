@@ -96,7 +96,9 @@ export function MockupCard({
     mockup.content != null &&
     (() => {
       const t = mockup.content!.trimStart()
-      return t.startsWith('<!') || t.startsWith('<html') || t.startsWith('<HTML')
+      return (
+        t.startsWith('<!') || t.startsWith('<html') || t.startsWith('<HTML')
+      )
     })()
 
   const formattedDate = mockup.created_at
@@ -115,19 +117,21 @@ export function MockupCard({
         tabIndex={0}
         onClick={onClick}
         onKeyDown={handleKeyDown}
-        className={clsx('card p-4 flex items-center gap-4 cursor-pointer transition-colors',
+        className={clsx(
+          'card p-4 flex items-center gap-4 cursor-pointer transition-colors',
           selectMode && isSelected
             ? 'bg-outrun-500/10 border-outrun-500/50 ring-2 ring-outrun-500/30'
-            : 'hover:bg-slate-700/50'
+            : 'hover:bg-slate-700/50',
         )}
       >
         {/* Checkbox */}
         {selectMode && (
           <div
-            className={clsx('w-5 h-5 rounded border-2 flex items-center justify-center transition-all',
+            className={clsx(
+              'w-5 h-5 rounded border-2 flex items-center justify-center transition-all',
               isSelected
                 ? 'bg-outrun-500 border-outrun-500'
-                : 'border-slate-600 hover:border-outrun-400'
+                : 'border-slate-600 hover:border-outrun-400',
             )}
           >
             {isSelected && <Check className="w-3.5 h-3.5 text-slate-100" />}
@@ -158,10 +162,15 @@ export function MockupCard({
             </div>
           )}
           <div
-            className={clsx('flex items-center gap-1.5 px-2 py-1 rounded', status.bg)}
+            className={clsx(
+              'flex items-center gap-1.5 px-2 py-1 rounded',
+              status.bg,
+            )}
           >
             <StatusIcon className={clsx('w-3.5 h-3.5', status.color)} />
-            <span className={clsx('text-xs', status.color)}>{status.label}</span>
+            <span className={clsx('text-xs', status.color)}>
+              {status.label}
+            </span>
           </div>
         </div>
 
@@ -182,10 +191,11 @@ export function MockupCard({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={handleKeyDown}
-      className={clsx('card overflow-hidden cursor-pointer transition-all group',
+      className={clsx(
+        'card overflow-hidden cursor-pointer transition-all group',
         selectMode && isSelected
           ? 'ring-2 ring-outrun-500 bg-outrun-500/5'
-          : 'hover:ring-2 hover:ring-outrun-500/50'
+          : 'hover:ring-2 hover:ring-outrun-500/50',
       )}
     >
       {/* Thumbnail */}
@@ -194,10 +204,11 @@ export function MockupCard({
         {selectMode && (
           <div className="absolute top-2 left-2 z-10">
             <div
-              className={clsx('w-6 h-6 rounded border-2 flex items-center justify-center transition-all backdrop-blur-sm',
+              className={clsx(
+                'w-6 h-6 rounded border-2 flex items-center justify-center transition-all backdrop-blur-sm',
                 isSelected
                   ? 'bg-outrun-500 border-outrun-500 shadow-lg shadow-outrun-500/50'
-                  : 'bg-slate-900/80 border-slate-600 hover:border-outrun-400'
+                  : 'bg-slate-900/80 border-slate-600 hover:border-outrun-400',
               )}
             >
               {isSelected && <Check className="w-4 h-4 text-slate-100" />}
@@ -241,10 +252,16 @@ export function MockupCard({
             </div>
           )}
           <div
-            className={clsx('flex items-center gap-1 px-2 py-1 rounded', status.bg, 'backdrop-blur-sm')}
+            className={clsx(
+              'flex items-center gap-1 px-2 py-1 rounded',
+              status.bg,
+              'backdrop-blur-sm',
+            )}
           >
             <StatusIcon className={clsx('w-3 h-3', status.color)} />
-            <span className={clsx('text-xs', status.color)}>{status.label}</span>
+            <span className={clsx('text-xs', status.color)}>
+              {status.label}
+            </span>
           </div>
         </div>
 

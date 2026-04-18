@@ -1,24 +1,24 @@
 'use client'
 
-import { useState } from 'react'
 import { clsx } from 'clsx'
 import {
   ArrowRight,
   CheckCircle2,
   HardDrive,
-  Loader2,
   ListChecks,
+  Loader2,
   Play,
   Server,
   ShieldCheck,
 } from 'lucide-react'
 import Link from 'next/link'
+import { useState } from 'react'
 import {
   type BackupHealthItem,
   type BackupSource,
-  type StorageStatus,
   createBackupSource,
   createSourceBackup,
+  type StorageStatus,
   updateBackupSource,
 } from '@/lib/api/backups'
 
@@ -221,75 +221,77 @@ export function SetupChecklist({
       </button>
 
       {/* Steps */}
-      {expanded && <div className="border-t border-slate-800/40">
-        {steps.map((step) => (
-          <div
-            key={step.id}
-            className={clsx(
-              'px-4 py-3 flex items-start gap-3 border-b border-slate-800/30 last:border-b-0',
-              step.complete && 'opacity-50',
-            )}
-          >
-            <div className="mt-0.5 shrink-0">
-              {step.complete ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              ) : (
-                <span className="text-slate-500">{step.icon}</span>
+      {expanded && (
+        <div className="border-t border-slate-800/40">
+          {steps.map((step) => (
+            <div
+              key={step.id}
+              className={clsx(
+                'px-4 py-3 flex items-start gap-3 border-b border-slate-800/30 last:border-b-0',
+                step.complete && 'opacity-50',
               )}
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <p
-                className={clsx(
-                  'text-sm font-medium',
-                  step.complete ? 'text-slate-400' : 'text-slate-200',
-                )}
-              >
-                {step.title}
-              </p>
-              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                {step.description}
-              </p>
-            </div>
-
-            {!step.complete && (
-              <div className="shrink-0 mt-0.5">
-                {step.id === 'storage' && (
-                  <Link
-                    href="/backups/setup"
-                    className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 transition-colors"
-                  >
-                    Configure
-                    <ArrowRight className="w-3 h-3" />
-                  </Link>
-                )}
-                {step.id === 'sources' && (
-                  <span className="text-2xs text-slate-600 italic">
-                    See below
-                  </span>
-                )}
-                {step.id === 'infra' && (
-                  <button
-                    type="button"
-                    onClick={handleSetupInfra}
-                    disabled={runningAction === 'infra'}
-                    className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
-                  >
-                    {runningAction === 'infra' ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Play className="w-3 h-3" />
-                    )}
-                    {sources.some((s) => s.source_type === 'infrastructure')
-                      ? 'Retry'
-                      : 'Enable'}
-                  </button>
+            >
+              <div className="mt-0.5 shrink-0">
+                {step.complete ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <span className="text-slate-500">{step.icon}</span>
                 )}
               </div>
-            )}
-          </div>
-        ))}
-      </div>}
+
+              <div className="flex-1 min-w-0">
+                <p
+                  className={clsx(
+                    'text-sm font-medium',
+                    step.complete ? 'text-slate-400' : 'text-slate-200',
+                  )}
+                >
+                  {step.title}
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  {step.description}
+                </p>
+              </div>
+
+              {!step.complete && (
+                <div className="shrink-0 mt-0.5">
+                  {step.id === 'storage' && (
+                    <Link
+                      href="/backups/setup"
+                      className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 transition-colors"
+                    >
+                      Configure
+                      <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  )}
+                  {step.id === 'sources' && (
+                    <span className="text-2xs text-slate-600 italic">
+                      See below
+                    </span>
+                  )}
+                  {step.id === 'infra' && (
+                    <button
+                      type="button"
+                      onClick={handleSetupInfra}
+                      disabled={runningAction === 'infra'}
+                      className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
+                    >
+                      {runningAction === 'infra' ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Play className="w-3 h-3" />
+                      )}
+                      {sources.some((s) => s.source_type === 'infrastructure')
+                        ? 'Retry'
+                        : 'Enable'}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Restore guidance — only when expanded */}
       {(!allDone || expanded) && (

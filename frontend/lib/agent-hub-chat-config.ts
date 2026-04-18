@@ -1,5 +1,8 @@
 import type { ChatStreamApiConfig } from '@agent-hub/chat-ui'
-import { getProjectIdOrDefault, getProjectMemoryGroupPrefix } from './project-config'
+import {
+  getProjectIdOrDefault,
+  getProjectMemoryGroupPrefix,
+} from './project-config'
 
 interface BuildAgentHubChatApiConfigOptions {
   proxyBase: string

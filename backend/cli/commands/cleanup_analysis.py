@@ -1,31 +1,35 @@
-"""Worktree analysis logic for cleanup commands."""
+"""Checkpoint analysis logic for cleanup commands."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 
 from app.storage import tasks as task_store
+from app.storage.projects import get_project_root_path
 
-from ..lib.worktree import WorktreeInfo, remove_worktree
+from ..lib.checkpoint import SnapshotMeta, remove_snapshot
+from ..lib.checkpoint_branches import get_task_branches
 from .cleanup_git import (
     get_commits_ahead_behind,
     get_last_commit_age_days,
     has_merge_conflicts,
     has_uncommitted_changes,
     is_already_merged,
+    run_git,
 )
 
 
 class CleanupAction(StrEnum):
-    """Recommended action for a stale worktree."""
+    """Recommended action for checkpoint cleanup."""
 
-    SAFE_DELETE = "safe_delete"  # No commits ahead, safe to remove
-    ALREADY_MERGED = "already_merged"  # Commits already in main
-    NEEDS_MERGE = "needs_merge"  # Has commits not in main
-    HAS_CONFLICTS = "has_conflicts"  # Would conflict with main
-    MANUAL_REVIEW = "manual_review"  # Complex state, needs human review
-    TASK_ACTIVE = "task_active"  # Task still running/pending
+    SAFE_DELETE = "safe_delete"
+    ALREADY_MERGED = "already_merged"
+    NEEDS_MERGE = "needs_merge"
+    HAS_CONFLICTS = "has_conflicts"
+    MANUAL_REVIEW = "manual_review"
+    TASK_ACTIVE = "task_active"
 
 
 _CLEANUP_ELIGIBLE_TASK_STATUSES = {
@@ -43,12 +47,23 @@ _CLEANUP_ELIGIBLE_LIFECYCLES = {
 }
 
 
-@dataclass
-class WorktreeAnalysis:
-    """Analysis result for a worktree."""
+@dataclass(frozen=True)
+class CheckpointResidue:
+    """One checkpoint branch plus its repo context."""
 
-    worktree: WorktreeInfo
-    task_status: str | None  # None if task not found
+    task_id: str
+    project_id: str
+    repo_path: Path | None
+    branch: str
+    base_branch: str
+
+
+@dataclass
+class CheckpointAnalysis:
+    """Analysis result for one checkpoint residue item."""
+
+    checkpoint: CheckpointResidue
+    task_status: str | None
     task_title: str | None
     commits_ahead: int
     commits_behind: int
@@ -60,7 +75,7 @@ class WorktreeAnalysis:
 
 
 def get_task_info(task_id: str) -> tuple[str | None, str | None]:
-    """Get task status and title. Returns (status, title) or (None, None) if not found."""
+    """Get task status and title. Returns (None, None) if not found."""
     task = task_store.get_task(task_id)
     if not task:
         return None, None
@@ -71,6 +86,29 @@ def get_task_info(task_id: str) -> tuple[str | None, str | None]:
     return status, task.get("title")
 
 
+def _repo_path(project_id: str) -> Path | None:
+    root = get_project_root_path(project_id)
+    return Path(root).resolve() if root else None
+
+
+def _branch_name(checkpoint: SnapshotMeta) -> str:
+    return f"{checkpoint.task_id}/main"
+
+
+def _branch_exists(repo_path: Path, branch: str) -> bool:
+    return run_git(["rev-parse", "--verify", branch], cwd=repo_path, check=False).returncode == 0
+
+
+def _build_checkpoint_residue(checkpoint: SnapshotMeta) -> CheckpointResidue:
+    return CheckpointResidue(
+        task_id=checkpoint.task_id,
+        project_id=checkpoint.project_id,
+        repo_path=_repo_path(checkpoint.project_id),
+        branch=_branch_name(checkpoint),
+        base_branch=checkpoint.base_branch or "main",
+    )
+
+
 def _determine_action(
     task_status: str | None,
     commits_ahead: int,
@@ -78,27 +116,22 @@ def _determine_action(
     has_uncommitted: bool,
     has_conflicts: bool,
 ) -> tuple[CleanupAction, str]:
-    """Determine cleanup action and reason from git/task state."""
-    if task_status in ("running", "pending"):
+    if task_status in {"running", "pending"}:
         return CleanupAction.TASK_ACTIVE, f"Task is {task_status}"
     if has_uncommitted:
-        return CleanupAction.MANUAL_REVIEW, "Has uncommitted changes"
+        return CleanupAction.MANUAL_REVIEW, "Current checkout has uncommitted changes"
     if task_status == "cancelled":
         if is_merged or commits_ahead == 0:
-            reason = "Cancelled task can be discarded"
-        elif has_conflicts:
-            reason = "Cancelled task branch conflicts with main and can be discarded"
-        else:
-            reason = f"Cancelled task has {commits_ahead} unmerged commit(s) and can be discarded"
-        return CleanupAction.SAFE_DELETE, reason
+            return CleanupAction.SAFE_DELETE, "Cancelled task can be discarded"
+        if has_conflicts:
+            return CleanupAction.SAFE_DELETE, "Cancelled task conflicts with base and can be discarded"
+        return CleanupAction.SAFE_DELETE, f"Cancelled task has {commits_ahead} unmerged commit(s) and can be discarded"
     if task_status == "failed":
         if is_merged or commits_ahead == 0:
             action = CleanupAction.ALREADY_MERGED if is_merged else CleanupAction.SAFE_DELETE
-            reason = "Already merged" if is_merged else f"{task_status.capitalize()} task has no commits ahead of main"
-        else:
-            action = CleanupAction.MANUAL_REVIEW
-            reason = f"{task_status.capitalize()} task has unmerged commits and requires review before cleanup"
-        return action, reason
+            reason = "Already merged" if is_merged else "Failed task has no commits ahead of base"
+            return action, reason
+        return CleanupAction.MANUAL_REVIEW, "Failed task still has unmerged commits"
     if task_status in _CLEANUP_ELIGIBLE_TASK_STATUSES:
         if is_merged or commits_ahead == 0:
             action = CleanupAction.ALREADY_MERGED if is_merged else CleanupAction.SAFE_DELETE
@@ -106,22 +139,23 @@ def _determine_action(
             return action, reason
         return CleanupAction.MANUAL_REVIEW, f"{task_status.capitalize()} residue still has unmerged commits"
     if has_conflicts:
-        return CleanupAction.HAS_CONFLICTS, "Would conflict with main"
+        return CleanupAction.HAS_CONFLICTS, "Would conflict with base"
     if is_merged or commits_ahead == 0:
         action = CleanupAction.ALREADY_MERGED if is_merged else CleanupAction.SAFE_DELETE
-        return action, "Already merged" if is_merged else "No commits ahead of main"
+        return action, "Already merged" if is_merged else "No commits ahead of base"
     if commits_ahead > 0:
-        return CleanupAction.NEEDS_MERGE, f"{commits_ahead} commit(s) not in main"
+        return CleanupAction.NEEDS_MERGE, f"{commits_ahead} commit(s) not in base"
     return CleanupAction.MANUAL_REVIEW, "Complex state"
 
 
-def analyze_worktree(worktree: WorktreeInfo) -> WorktreeAnalysis:
-    """Analyze a worktree and recommend cleanup action."""
-    task_status, task_title = get_task_info(worktree.task_id)
+def analyze_checkpoint(checkpoint: SnapshotMeta) -> CheckpointAnalysis:
+    """Analyze a checkpoint and recommend cleanup action."""
+    residue = _build_checkpoint_residue(checkpoint)
+    task_status, task_title = get_task_info(checkpoint.task_id)
 
-    if not worktree.path.exists() or not (worktree.path / ".git").exists():
-        return WorktreeAnalysis(
-            worktree=worktree,
+    if residue.repo_path is None or not residue.repo_path.exists():
+        return CheckpointAnalysis(
+            checkpoint=residue,
             task_status=task_status,
             task_title=task_title,
             commits_ahead=0,
@@ -130,19 +164,41 @@ def analyze_worktree(worktree: WorktreeInfo) -> WorktreeAnalysis:
             has_uncommitted=False,
             last_commit_age_days=None,
             action=CleanupAction.SAFE_DELETE,
-            reason="Worktree path already removed; prune stale registration",
+            reason="Checkpoint metadata points to a missing project root",
         )
 
-    commits_ahead, commits_behind = get_commits_ahead_behind(worktree.path, worktree.base_branch)
-    has_uncommitted = has_uncommitted_changes(worktree.path)
-    has_conflicts = has_merge_conflicts(worktree.path, worktree.base_branch)
-    last_commit_age = get_last_commit_age_days(worktree.path)
-    is_merged = is_already_merged(worktree.path, worktree.base_branch)
+    if not _branch_exists(residue.repo_path, residue.branch):
+        return CheckpointAnalysis(
+            checkpoint=residue,
+            task_status=task_status,
+            task_title=task_title,
+            commits_ahead=0,
+            commits_behind=0,
+            has_conflicts=False,
+            has_uncommitted=False,
+            last_commit_age_days=None,
+            action=CleanupAction.SAFE_DELETE,
+            reason="Checkpoint metadata stale; task branch no longer exists",
+        )
 
-    action, reason = _determine_action(task_status, commits_ahead, is_merged, has_uncommitted, has_conflicts)
-
-    return WorktreeAnalysis(
-        worktree=worktree,
+    commits_ahead, commits_behind = get_commits_ahead_behind(
+        residue.repo_path,
+        residue.branch,
+        residue.base_branch,
+    )
+    has_uncommitted = has_uncommitted_changes(residue.repo_path, residue.branch)
+    has_conflicts = has_merge_conflicts(residue.repo_path, residue.branch, residue.base_branch)
+    last_commit_age = get_last_commit_age_days(residue.repo_path, residue.branch)
+    is_merged = is_already_merged(residue.repo_path, residue.branch, residue.base_branch)
+    action, reason = _determine_action(
+        task_status,
+        commits_ahead,
+        is_merged,
+        has_uncommitted,
+        has_conflicts,
+    )
+    return CheckpointAnalysis(
+        checkpoint=residue,
         task_status=task_status,
         task_title=task_title,
         commits_ahead=commits_ahead,
@@ -155,8 +211,8 @@ def analyze_worktree(worktree: WorktreeInfo) -> WorktreeAnalysis:
     )
 
 
-def categorize_analysis(analysis: WorktreeAnalysis) -> tuple[str, str]:
-    """Return category label and display reason for a worktree analysis."""
+def categorize_analysis(analysis: CheckpointAnalysis) -> tuple[str, str]:
+    """Return category label and display reason."""
     if analysis.action in (CleanupAction.SAFE_DELETE, CleanupAction.ALREADY_MERGED):
         return "SAFE", analysis.reason
     if analysis.action == CleanupAction.NEEDS_MERGE:
@@ -168,32 +224,43 @@ def categorize_analysis(analysis: WorktreeAnalysis) -> tuple[str, str]:
     return "REVIEW", analysis.reason
 
 
-def format_analysis(analysis: WorktreeAnalysis) -> str:
+def format_analysis(analysis: CheckpointAnalysis) -> str:
     """Render a compact cleanup analysis line."""
     category, reason = categorize_analysis(analysis)
-    return f"{analysis.worktree.task_id} [{category}] {reason}"
+    branch = analysis.checkpoint.branch
+    return f"{analysis.checkpoint.task_id} [{category}] {reason} branch:{branch}"
 
 
-def cleanup_worktree(analysis: WorktreeAnalysis, force: bool = False) -> tuple[bool, str]:
-    """Cleanup a worktree based on analysis.
+def _delete_task_family_branches(repo_path: Path, task_id: str, base_branch: str) -> None:
+    current_branch = run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_path, check=False)
+    if current_branch.returncode == 0 and current_branch.stdout.strip().startswith(f"{task_id}/"):
+        run_git(["checkout", base_branch], cwd=repo_path, check=False)
 
-    Returns:
-        (success, message)
-    """
+    for branch_info in get_task_branches(task_id, project_id=repo_path.name):
+        branch_name = branch_info.get("branch") or ""
+        if branch_name:
+            run_git(["branch", "-D", branch_name], cwd=repo_path, check=False)
+
+
+def cleanup_checkpoint(analysis: CheckpointAnalysis, force: bool = False) -> tuple[bool, str]:
+    """Remove checkpoint metadata and task-family branches when permitted."""
     if analysis.action == CleanupAction.TASK_ACTIVE and not force:
-        return False, "Cannot remove active task worktree without --force"
-
+        return False, "Cannot remove active task checkpoint without --force"
     if analysis.action in (CleanupAction.NEEDS_MERGE, CleanupAction.HAS_CONFLICTS, CleanupAction.MANUAL_REVIEW) and not force:
-        return False, f"Worktree requires manual review: {analysis.reason}"
+        return False, f"Checkpoint requires manual review: {analysis.reason}"
 
+    repo_path = analysis.checkpoint.repo_path
     try:
-        success = remove_worktree(
-            analysis.worktree.task_id,
-            delete_branch=True,
-            project_id=analysis.worktree.project_id,
+        if repo_path and repo_path.exists():
+            _delete_task_family_branches(
+                repo_path,
+                analysis.checkpoint.task_id,
+                analysis.checkpoint.base_branch,
+            )
+        remove_snapshot(
+            analysis.checkpoint.task_id,
+            project_id=analysis.checkpoint.project_id,
         )
+        return True, f"Removed {analysis.checkpoint.task_id}"
     except Exception as exc:
         return False, f"Error: {exc}"
-    if success:
-        return True, f"Removed {analysis.worktree.task_id}"
-    return False, f"Failed to remove {analysis.worktree.task_id}"

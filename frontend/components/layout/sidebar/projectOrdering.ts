@@ -4,7 +4,10 @@ import {
   type ProjectCategory,
 } from '@/lib/api'
 
-type SidebarProjectLike = Pick<Project, 'id' | 'name' | 'category' | 'sidebar_rank'>
+type SidebarProjectLike = Pick<
+  Project,
+  'id' | 'name' | 'category' | 'sidebar_rank'
+>
 
 function getCategoryIndex(category: ProjectCategory): number {
   return PROJECT_CATEGORY_ORDER.indexOf(category)
@@ -14,7 +17,8 @@ export function compareProjectsForSidebar(
   a: SidebarProjectLike,
   b: SidebarProjectLike,
 ): number {
-  const categoryDiff = getCategoryIndex(a.category) - getCategoryIndex(b.category)
+  const categoryDiff =
+    getCategoryIndex(a.category) - getCategoryIndex(b.category)
   if (categoryDiff !== 0) return categoryDiff
 
   const aHasRank = a.sidebar_rank != null
@@ -29,7 +33,9 @@ export function compareProjectsForSidebar(
   return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
 }
 
-export function sortProjectsForSidebar<T extends SidebarProjectLike>(projects: T[]): T[] {
+export function sortProjectsForSidebar<T extends SidebarProjectLike>(
+  projects: T[],
+): T[] {
   return [...projects].sort(compareProjectsForSidebar)
 }
 
@@ -62,11 +68,18 @@ export function reorderProjectsWithinCategory<T extends SidebarProjectLike>(
   category: ProjectCategory,
   activeId: string,
   overId: string,
-): { projects: T[]; updates: Array<{ id: string; sidebar_rank: number }> } | null {
+): {
+  projects: T[]
+  updates: Array<{ id: string; sidebar_rank: number }>
+} | null {
   const grouped = groupProjectsForSidebar(projects)
   const categoryProjects = grouped[category]
-  const activeIndex = categoryProjects.findIndex((project) => project.id === activeId)
-  const overIndex = categoryProjects.findIndex((project) => project.id === overId)
+  const activeIndex = categoryProjects.findIndex(
+    (project) => project.id === activeId,
+  )
+  const overIndex = categoryProjects.findIndex(
+    (project) => project.id === overId,
+  )
 
   if (activeIndex < 0 || overIndex < 0 || activeIndex === overIndex) {
     return null
@@ -77,7 +90,9 @@ export function reorderProjectsWithinCategory<T extends SidebarProjectLike>(
     id: project.id,
     sidebar_rank: index,
   }))
-  const sidebarRankById = new Map(updates.map((update) => [update.id, update.sidebar_rank]))
+  const sidebarRankById = new Map(
+    updates.map((update) => [update.id, update.sidebar_rank]),
+  )
   const nextProjects = projects.map((project) => {
     const sidebarRank = sidebarRankById.get(project.id)
     return sidebarRank == null

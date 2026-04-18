@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Mapping
 
 import typer
+
+from app.storage.projects import get_project_root_path
 
 from ..client import APIError, STClient
 from ..lib.autosnapshot import capture_lifecycle_baseline
@@ -96,7 +99,7 @@ def _build_preview_lines(
     task_id: str,
     subtask_branches: list[str],
     has_snapshot: bool,
-    snapshot_info: dict[str, object] | None,
+    snapshot_info: Mapping[str, object] | None,
     unmerged: int,
     dirty_files: list[str],
 ) -> list[str]:
@@ -112,8 +115,7 @@ def _build_preview_lines(
         if len(subtask_branches) > 5:
             lines.append(f"    ... and {len(subtask_branches) - 5} more")
     if has_snapshot and snapshot_info:
-        wt = snapshot_info.get("worktree_path", "?")
-        lines.append(f"  Remove worktree: {wt}")
+        lines.append("  Remove checkpoint metadata")
     if unmerged > 0:
         lines.append(f"  DISCARD {unmerged} unmerged commits")
     if dirty_files:
@@ -194,9 +196,9 @@ def abandon_task(
     if has_snapshot:
         capture_lifecycle_baseline(
             project_id=project_id,
-            cwd=snapshot_info.get("worktree_path") if snapshot_info else None,
+            cwd=get_project_root_path(project_id) if project_id else None,
         )
-        remove_snapshot(task_id, remove_worktree=True, project_id=project_id)
+        remove_snapshot(task_id, project_id=project_id)
 
     delete_task_branches(task_id)
 

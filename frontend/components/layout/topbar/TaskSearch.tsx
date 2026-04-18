@@ -1,7 +1,7 @@
 'use client'
 
-import clsx from 'clsx'
 import { useQuery } from '@tanstack/react-query'
+import clsx from 'clsx'
 import { Search, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -232,7 +232,10 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
           value={searchValue}
           onChange={(e) => setSearchValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          className={clsx('input pr-4 py-2 text-sm bg-slate-800/80 border-slate-700 w-56 focus:w-72 focus:border-outrun-500/50 transition-all duration-300', !isSearchFocused && !searchValue ? 'pl-12' : 'pl-4')}
+          className={clsx(
+            'input pr-4 py-2 text-sm bg-slate-800/80 border-slate-700 w-56 focus:w-72 focus:border-outrun-500/50 transition-all duration-300',
+            !isSearchFocused && !searchValue ? 'pl-12' : 'pl-4',
+          )}
           onFocus={() => setIsSearchFocused(true)}
         />
         {resultsDropdown}

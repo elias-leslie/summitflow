@@ -13,7 +13,7 @@ const COMPONENT_LABELS: Record<string, string> = {
   'sf.cli.memory': 'Memory CLI',
   'sf.dt': 'Dev Tools',
   'sf.quality': 'Quality Gates',
-  'sf.worktree': 'Worktree',
+  'sf.checkpoints': 'Checkpoints',
   'sf.api': 'SF API',
   'sf.search': 'Search',
   'sf.storage': 'Storage',
@@ -166,9 +166,7 @@ function GroupSection({
     <div
       className={clsx(
         'rounded-lg border border-slate-700/60 bg-slate-800/40 overflow-hidden transition-all duration-200',
-        expanded
-          ? 'border-slate-700/80'
-          : 'hover:bg-slate-800/60',
+        expanded ? 'border-slate-700/80' : 'hover:bg-slate-800/60',
       )}
     >
       <button

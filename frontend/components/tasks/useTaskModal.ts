@@ -1,12 +1,12 @@
 'use client'
 
 import { useEffect } from 'react'
-import type { Subtask, Task, TaskStatus } from '@/lib/api/tasks'
 import { useCollapsibleSections } from '@/components/tasks/hooks/useCollapsibleSections'
 import { useTaskActions } from '@/components/tasks/hooks/useTaskActions'
 import { useTaskData } from '@/components/tasks/hooks/useTaskData'
 import { useTaskEdit } from '@/components/tasks/hooks/useTaskEdit'
 import { useTaskExecution } from '@/components/tasks/hooks/useTaskExecution'
+import type { Subtask, Task, TaskStatus } from '@/lib/api/tasks'
 
 interface UseTaskModalOptions {
   taskId: string | null

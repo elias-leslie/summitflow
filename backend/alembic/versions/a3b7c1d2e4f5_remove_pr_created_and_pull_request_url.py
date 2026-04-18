@@ -1,7 +1,7 @@
 """remove pr_created status and pull_request_url column
 
 Solo dev + agents workflow — no CI/CD/PR review pipeline.
-Agents work on worktree branches and merge directly.
+Agents work on task branches and merge directly.
 The pr_created status and pull_request_url column are unused.
 
 Revision ID: a3b7c1d2e4f5

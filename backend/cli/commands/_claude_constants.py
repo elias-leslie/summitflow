@@ -18,7 +18,7 @@ _TASK_STATUS_RUNNING = "running"
 _WORKER_SUBAGENT_NAME = "task-worker"
 _WORKER_SUBAGENT_MODEL = "sonnet"
 _COMMIT_SCRIPT = "commit.sh"
-_WORKTREE_PATH_PREFIX = "WORKTREE_PATH:"
+_TASK_BRANCH_PREFIX = "TASK_BRANCH:"
 _ORCHESTRATE_TMPDIR_PREFIX = "st-claude-orchestrate-"
 _ORCHESTRATOR_PROMPT_FNAME = "orchestrator_prompt.md"
 _ORCHESTRATOR_AGENTS_FNAME = "orchestrator_agents.json"
@@ -30,14 +30,14 @@ _PATIENCE_NOTE = (
 
 _WORKER_SUBAGENT_PAYLOAD: dict[str, Any] = {
     _WORKER_SUBAGENT_NAME: {
-        "description": "Lane-bound task implementation worker",
+        "description": "Single-checkout task implementation worker",
         "prompt": (
-            "You are assigned exactly one SummitFlow task lane. Work only inside the provided "
-            "task worktree and only on files required for that task. Preserve behavior unless "
+            "You are assigned exactly one SummitFlow task. Work only inside the provided "
+            "project checkout and only on files required for that task. Preserve behavior unless "
             "the task explicitly changes it. Run task-appropriate verification and `dt --quick "
             "--changed-only` before reporting success. If everything passes, run "
             '`commit.sh --current --push --task <task-id> --msg "..."` from the assigned '
-            "worktree. Do not run `st done`; report back to the orchestrator."
+            "project root. Do not run `st done`; report back to the orchestrator."
         ),
         "tools": ["Read", "Edit", "MultiEdit", "Write", "Bash", "Glob", "Grep", "LS"],
         "model": _WORKER_SUBAGENT_MODEL,
@@ -61,5 +61,5 @@ class OrchestratorTask:
     task_id: str
     project_id: str
     project_root: Path
-    worktree_path: Path
+    task_branch: str | None
     context_text: str

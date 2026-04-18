@@ -5,6 +5,7 @@ import subprocess
 
 import typer
 
+from app.storage.projects import get_project_root_path
 from app.tasks.autonomous.exec_modules.diff_gate import check_diff_gate
 from app.utils.shared_paths import resolve_script
 
@@ -35,15 +36,24 @@ def _done_result(
     }
 
 
-def ensure_worktree_clean(snapshot_info: dict[str, str | int | None]) -> None:
-    """Fail fast when the claimed worktree still has uncommitted changes."""
-    raw = snapshot_info.get("worktree_path")
-    worktree_path = str(raw) if raw else None
-    if not worktree_path or is_working_tree_clean(worktree_path):
+def _checkpoint_repo_root(project_id: str | None) -> str | None:
+    if not project_id:
+        return None
+    return get_project_root_path(project_id)
+
+
+def ensure_checkpoint_clean(
+    snapshot_info: dict[str, str | int | None],
+) -> None:
+    """Fail fast when the claimed checkpoint branch still has uncommitted changes."""
+    raw_project_id = snapshot_info.get("project_id")
+    project_id = str(raw_project_id) if isinstance(raw_project_id, str) and raw_project_id else None
+    repo_root = _checkpoint_repo_root(project_id)
+    if not repo_root or is_working_tree_clean(repo_root):
         return
     output_error(
-        "Claimed worktree has uncommitted changes.\n"
-        f"  Path: {worktree_path}\n"
+        "Claimed checkpoint branch has uncommitted changes.\n"
+        f"  Path: {repo_root}\n"
         f"Commit or stash there before running st done."
     )
     raise typer.Exit(1)
@@ -83,12 +93,12 @@ def _run_smart_prereqs(client: STClient, task_id: str, project_id: str | None) -
     _auto_verify_readiness(client, task_id)
 
 
-def _completion_status_kwargs(client: STClient, task_id: str) -> dict[str, bool]:
+def _completion_skip_gates(client: STClient, task_id: str) -> bool:
     try:
         task = client.get_task(task_id)
     except APIError:
-        return {}
-    return {"skip_gates": True} if task.get("status") in {"pending", "failed"} else {}
+        return False
+    return task.get("status") in {"pending", "failed"}
 
 
 def _close_task_safely(client: STClient, task_id: str, message: str | None) -> None:
@@ -100,9 +110,10 @@ def _close_task_safely(client: STClient, task_id: str, message: str | None) -> N
 
 
 def _capture_and_remove_snapshot(
-    task_id: str, project_id: str | None, worktree_path: object
+    task_id: str, project_id: str | None
 ) -> None:
-    lifecycle_snapshot = capture_lifecycle_baseline(project_id=project_id, cwd=worktree_path)
+    repo_root = _checkpoint_repo_root(project_id)
+    lifecycle_snapshot = capture_lifecycle_baseline(project_id=project_id, cwd=repo_root)
     if lifecycle_snapshot:
         output_success(f"Protective snapshot captured before cleanup: {lifecycle_snapshot.id}")
     remove_snapshot(task_id, project_id=project_id)
@@ -159,10 +170,11 @@ def _perform_completion(
     skip_diff_gate: bool = False,
 ) -> None:
     if not skip_diff_gate:
-        raw = snapshot_info.get("worktree_path")
-        wt = str(raw) if raw else None
-        if wt:
-            diff_result = check_diff_gate(wt)
+        repo_root = _checkpoint_repo_root(
+            str(snapshot_info.get("project_id")) if snapshot_info.get("project_id") else None
+        )
+        if repo_root:
+            diff_result = check_diff_gate(repo_root)
             if not diff_result.passed:
                 output_error(
                     f"Diff gate blocked completion: {diff_result.summary}\n"
@@ -173,13 +185,13 @@ def _perform_completion(
         _run_smart_prereqs(client, task_id, project_id)
     merge_task_branch(task_id, project_id=project_id)
     try:
-        client.update_status(task_id, "completed", **_completion_status_kwargs(client, task_id))
+        client.update_status(task_id, "completed", skip_gates=_completion_skip_gates(client, task_id))
     except APIError as e:
         output_warning(
             f"Code merged but status update failed: {e.detail}\n"
             f"  Recovery: st done {task_id} --admin"
         )
-    _capture_and_remove_snapshot(task_id, project_id, snapshot_info.get("worktree_path"))
+    _capture_and_remove_snapshot(task_id, project_id)
     _trigger_health_check(task_id, project_id)
 
 
@@ -233,12 +245,12 @@ def complete_task(
         pid = snapshot_info.get("project_id")
         project_id = str(pid) if isinstance(pid, str) and pid else None
         _close_task_safely(client, task_id, message)
-        _capture_and_remove_snapshot(task_id, project_id, snapshot_info.get("worktree_path"))
+        _capture_and_remove_snapshot(task_id, project_id)
         return _done_result(
             task_id, snapshot_removed=True, base_branch=str(snapshot_info.get("base_branch", "main"))
         )
 
-    ensure_worktree_clean(snapshot_info)
+    ensure_checkpoint_clean(snapshot_info)
     pid = snapshot_info.get("project_id")
     project_id = str(pid) if isinstance(pid, str) and pid else None
     base_branch = str(snapshot_info.get("base_branch", "main"))
@@ -248,7 +260,7 @@ def complete_task(
         _perform_completion(client, task_id, snapshot_info, project_id, strict, skip_diff_gate)
         _publish_completed_work(task_id, project_id)
     except SystemExit as exc:
-        raise typer.Exit(exc.code) from None
+        raise typer.Exit(exc.code if isinstance(exc.code, int) else 1) from None
     finally:
         if stashed:
             git_stash_pop()

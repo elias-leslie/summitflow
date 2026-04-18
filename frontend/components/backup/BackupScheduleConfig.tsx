@@ -70,9 +70,7 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), FEEDBACK_TIMEOUT)
     } catch (err) {
-      setSaveError(
-        getErrorMessage(err, 'Failed to save schedule'),
-      )
+      setSaveError(getErrorMessage(err, 'Failed to save schedule'))
     } finally {
       setSaving(false)
     }
@@ -101,7 +99,8 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
         Backup Schedule
       </h3>
       <p className="text-sm text-slate-400 mb-6">
-        Configure automatic backups for this source. Manual backups can still be created anytime.
+        Configure automatic backups for this source. Manual backups can still be
+        created anytime.
       </p>
 
       <div className="space-y-6">

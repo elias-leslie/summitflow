@@ -99,7 +99,9 @@
     box-shadow: 0 0 8px rgba(0, 245, 255, 0.15);
   }
   50% {
-    box-shadow: 0 0 20px rgba(0, 245, 255, 0.3), 0 0 40px rgba(0, 245, 255, 0.1);
+    box-shadow:
+      0 0 20px rgba(0, 245, 255, 0.3),
+      0 0 40px rgba(0, 245, 255, 0.1);
   }
 }
 
@@ -150,15 +152,22 @@ html {
 body {
   font-family: var(--font-body), system-ui, sans-serif;
   background:
-    radial-gradient(circle at 10% -10%, rgba(255, 0, 102, 0.07), transparent 24%),
+    radial-gradient(
+      circle at 10% -10%,
+      rgba(255, 0, 102, 0.07),
+      transparent 24%
+    ),
     radial-gradient(circle at 82% 0%, rgba(0, 245, 255, 0.04), transparent 18%),
-    radial-gradient(circle at 50% 125%, rgba(255, 153, 0, 0.03), transparent 26%),
+    radial-gradient(
+      circle at 50% 125%,
+      rgba(255, 153, 0, 0.03),
+      transparent 26%
+    ),
     var(--slate-deep);
   color: var(--text-primary);
   min-height: 100vh;
   overflow-x: hidden;
 }
-
 
 body::after {
   content: "";
@@ -166,17 +175,33 @@ body::after {
   inset: 0;
   pointer-events: none;
   z-index: 1;
-  background: linear-gradient(180deg, rgba(7, 4, 13, 0.01) 0%, rgba(7, 4, 13, 0.08) 100%);
+  background: linear-gradient(
+    180deg,
+    rgba(7, 4, 13, 0.01) 0%,
+    rgba(7, 4, 13, 0.08) 100%
+  );
 }
 
 /* Grid background pattern - outrun style with radial atmosphere */
 .bg-grid {
   background-image:
-    radial-gradient(circle at 18% 0%, rgba(255, 0, 102, 0.03) 0%, transparent 24%),
-    radial-gradient(circle at 90% 12%, rgba(0, 245, 255, 0.025) 0%, transparent 18%),
+    radial-gradient(
+      circle at 18% 0%,
+      rgba(255, 0, 102, 0.03) 0%,
+      transparent 24%
+    ),
+    radial-gradient(
+      circle at 90% 12%,
+      rgba(0, 245, 255, 0.025) 0%,
+      transparent 18%
+    ),
     linear-gradient(to right, var(--grid-color) 1px, transparent 1px),
     linear-gradient(to bottom, var(--grid-color-strong) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 56px 56px, 56px 56px;
+  background-size:
+    100% 100%,
+    100% 100%,
+    56px 56px,
+    56px 56px;
   background-color: rgba(7, 4, 13, 0.98);
 }
 
@@ -192,7 +217,10 @@ body::after {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.03),
     0 24px 60px -46px rgba(0, 0, 0, 0.95);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
 }
 
 .card:hover {
@@ -204,7 +232,11 @@ body::after {
 
 .card-elevated {
   @apply rounded-xl;
-  background: linear-gradient(180deg, rgba(23, 16, 34, 0.99) 0%, rgba(10, 8, 18, 0.985) 100%);
+  background: linear-gradient(
+    180deg,
+    rgba(23, 16, 34, 0.99) 0%,
+    rgba(10, 8, 18, 0.985) 100%
+  );
   border: 1px solid rgba(123, 83, 170, 0.32);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
@@ -275,7 +307,10 @@ body::after {
 }
 
 .btn-primary:focus-visible {
-  box-shadow: 0 0 30px rgba(255, 0, 102, 0.35), 0 0 0 2px var(--color-slate-900), 0 0 0 4px rgba(255, 0, 102, 0.4);
+  box-shadow:
+    0 0 30px rgba(255, 0, 102, 0.35),
+    0 0 0 2px var(--color-slate-900),
+    0 0 0 4px rgba(255, 0, 102, 0.4);
 }
 
 .btn-secondary {
@@ -315,7 +350,11 @@ body::after {
 .panel-glass {
   border-radius: 1rem;
   border: 1px solid rgba(96, 67, 133, 0.34);
-  background: linear-gradient(180deg, rgba(18, 12, 28, 0.985) 0%, rgba(9, 7, 16, 0.98) 100%);
+  background: linear-gradient(
+    180deg,
+    rgba(18, 12, 28, 0.985) 0%,
+    rgba(9, 7, 16, 0.98) 100%
+  );
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
     0 12px 28px -24px rgba(0, 0, 0, 0.76);
@@ -328,7 +367,11 @@ body::after {
   font-weight: 700;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  background: linear-gradient(90deg, var(--text-tertiary), rgba(154, 145, 170, 0.6));
+  background: linear-gradient(
+    90deg,
+    var(--text-tertiary),
+    rgba(154, 145, 170, 0.6)
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -415,11 +458,21 @@ body::after {
 }
 
 /* Staggered animation delays */
-.stagger-1 { animation-delay: 0.05s; }
-.stagger-2 { animation-delay: 0.1s; }
-.stagger-3 { animation-delay: 0.15s; }
-.stagger-4 { animation-delay: 0.2s; }
-.stagger-5 { animation-delay: 0.25s; }
+.stagger-1 {
+  animation-delay: 0.05s;
+}
+.stagger-2 {
+  animation-delay: 0.1s;
+}
+.stagger-3 {
+  animation-delay: 0.15s;
+}
+.stagger-4 {
+  animation-delay: 0.2s;
+}
+.stagger-5 {
+  animation-delay: 0.25s;
+}
 
 /* Shimmer animation for skeletons */
 .animate-shimmer {
@@ -473,8 +526,15 @@ body::after {
 }
 
 @keyframes dot-pulse {
-  0%, 100% { box-shadow: 0 0 4px currentColor; }
-  50% { box-shadow: 0 0 10px currentColor, 0 0 20px rgba(0, 245, 255, 0.1); }
+  0%,
+  100% {
+    box-shadow: 0 0 4px currentColor;
+  }
+  50% {
+    box-shadow:
+      0 0 10px currentColor,
+      0 0 20px rgba(0, 245, 255, 0.1);
+  }
 }
 
 /* ============================================================================

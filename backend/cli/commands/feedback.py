@@ -67,7 +67,7 @@ def report(
     Examples:
       st feedback report sf.cli "Error message unhelpful" --type friction --severity medium
       st feedback report ah.memory "Pre-load cross-project context" --type idea
-      st feedback report sf.worktree "Isolation worked perfectly" --type praise
+      st feedback report sf.checkpoints "Checkpoint flow worked perfectly" --type praise
       st feedback report sf.dt "Cache ruff results for unchanged files" --type improvement
       st feedback report sf.cli "Same failure again" --session sess-123 --vote-if-match
     """

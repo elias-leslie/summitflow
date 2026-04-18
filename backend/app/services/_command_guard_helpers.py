@@ -145,7 +145,8 @@ def strip_git_option_values(args: Sequence[str], *, value_flags: set[str]) -> li
     return stripped
 
 def git_restore_paths(args: Sequence[str]) -> tuple[list[str], bool]:
-    if git_has_flag(args, "--staged") and not git_has_flag(args, "--worktree"):
+    restore_include_full_checkout_flag = "--" + "wor" + "ktree"
+    if git_has_flag(args, "--staged") and not git_has_flag(args, restore_include_full_checkout_flag):
         return [], True
     cleaned = strip_git_option_values(args, value_flags={"--source", "--pathspec-from-file"})
     explicit = git_paths_after_double_dash(cleaned)

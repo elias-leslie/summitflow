@@ -33,12 +33,12 @@ function renderContent() {
 }
 
 describe('DashboardContent', () => {
-  it('renders branch and worktree sections from the project dashboard', async () => {
+  it('renders branch and checkout sections from the project dashboard', async () => {
     apiMocks.fetchProjectDashboard.mockResolvedValue({
-      worktrees: [
+      checkpoints: [
         {
           task_id: 'task-123',
-          path: '/home/testuser/.local/share/st/worktrees/project-alpha/task-123',
+          path: '/home/testuser//.local/share/st/checkpoints/project-alpha/task-123',
           branch: 'task-123/main',
           base_branch: 'main',
           is_active: true,
@@ -49,11 +49,11 @@ describe('DashboardContent', () => {
         {
           name: 'task-123/main',
           is_current: false,
-          has_worktree: true,
+          has_checkpoint: true,
           repo_name: 'repo-folder',
           project_id: 'project-alpha',
-          worktree_path:
-            '/home/testuser/.local/share/st/worktrees/project-alpha/task-123',
+          checkout_path:
+            '/home/testuser//.local/share/st/checkpoints/project-alpha/task-123',
           task_id: 'task-123',
           last_commit_short: 'abc1234',
           last_commit_date: '2026-03-17T10:00:00Z',
@@ -68,14 +68,14 @@ describe('DashboardContent', () => {
     renderContent()
 
     expect(
-      await screen.findByText('Worktrees', { selector: 'span' }),
+      await screen.findByText('Checkouts', { selector: 'span' }),
     ).toBeInTheDocument()
     expect(
       screen.getByText('Branches', { selector: 'span' }),
     ).toBeInTheDocument()
     expect(screen.getAllByText('task-123/main')).toHaveLength(2)
     expect(
-      screen.getByText('Worktree', { selector: 'span' }),
+      screen.getByText('Checkout', { selector: 'span' }),
     ).toBeInTheDocument()
   })
 })

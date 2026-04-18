@@ -22,7 +22,10 @@ export function TaskCardHeader({ task }: TaskCardHeaderProps) {
         </span>
         <span className="text-xs mono text-slate-500">{task.id}</span>
         <span
-          className={clsx('text-xs px-1.5 py-0.5 rounded border mono font-medium', getPriorityClasses(task.priority))}
+          className={clsx(
+            'text-xs px-1.5 py-0.5 rounded border mono font-medium',
+            getPriorityClasses(task.priority),
+          )}
         >
           P{task.priority}
         </span>

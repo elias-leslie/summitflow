@@ -63,7 +63,6 @@ const eventConfig: Record<
   },
 }
 
-
 function getStatusBadgeClass(status: string): string {
   if (status === 'completed') {
     return 'bg-green-500/20 text-green-400'
@@ -115,7 +114,9 @@ function ActivityRow({
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm text-slate-300">{event.message}</p>
         <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          <span className="uppercase tracking-wide text-slate-600">{config.label}</span>
+          <span className="uppercase tracking-wide text-slate-600">
+            {config.label}
+          </span>
           {showProjectLink ? (
             <Link
               href={`/projects/${event.project_id}`}
@@ -125,7 +126,12 @@ function ActivityRow({
             </Link>
           ) : null}
           {event.metadata.status && (
-            <span className={clsx('rounded px-1.5 py-0.5 text-xs', getStatusBadgeClass(event.metadata.status))}>
+            <span
+              className={clsx(
+                'rounded px-1.5 py-0.5 text-xs',
+                getStatusBadgeClass(event.metadata.status),
+              )}
+            >
               {event.metadata.status}
             </span>
           )}
@@ -162,7 +168,9 @@ export function ActivityFeed({
 }: ActivityFeedProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [listHeight, setListHeight] = useState(400)
-  const [typeFilter, setTypeFilter] = useState<ActivityEventType | 'all'>(defaultFilter)
+  const [typeFilter, setTypeFilter] = useState<ActivityEventType | 'all'>(
+    defaultFilter,
+  )
   // Tick counter to force re-renders so relative timestamps update
   const [, setTick] = useState(0)
 
@@ -207,7 +215,10 @@ export function ActivityFeed({
   }, [])
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => setTick((t) => t + 1), POLL_SLOW)
+    const intervalId = window.setInterval(
+      () => setTick((t) => t + 1),
+      POLL_SLOW,
+    )
     return () => window.clearInterval(intervalId)
   }, [])
 
@@ -215,7 +226,9 @@ export function ActivityFeed({
   const items = pages.flatMap((page) => page.items)
   const total = pages[0]?.total ?? items.length
   const lastUpdated =
-    dataUpdatedAt > 0 ? formatTimeAgo(new Date(dataUpdatedAt).toISOString(), 'never') : 'never'
+    dataUpdatedAt > 0
+      ? formatTimeAgo(new Date(dataUpdatedAt).toISOString(), 'never')
+      : 'never'
   const emptyLabel =
     typeFilter === 'all'
       ? projectId
@@ -258,7 +271,12 @@ export function ActivityFeed({
             onClick={() => refetch()}
             className="inline-flex items-center gap-1 text-2xs text-slate-500 transition-colors hover:text-slate-300"
           >
-            <RefreshCw className={clsx('h-3 w-3', (isRefetching || isFetchingNextPage) && 'animate-spin')} />
+            <RefreshCw
+              className={clsx(
+                'h-3 w-3',
+                (isRefetching || isFetchingNextPage) && 'animate-spin',
+              )}
+            />
             Refresh
           </button>
         </div>

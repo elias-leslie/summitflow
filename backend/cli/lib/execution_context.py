@@ -1,7 +1,4 @@
-"""Shared execution-context helpers for CLI commands.
-
-Keeps project/worktree detection logic in one place for CLI consumers.
-"""
+"""Shared execution-context helpers for CLI commands."""
 
 from __future__ import annotations
 
@@ -54,7 +51,7 @@ def resolve_git_common_dir(cwd: Path | None = None) -> Path | None:
 
 
 def resolve_checkout_root(cwd: Path | None = None) -> Path | None:
-    """Return the root directory for the current checkout/worktree."""
+    """Return the root directory for the current checkout."""
     return _resolve_git_path(["git", "rev-parse", "--path-format=absolute", "--show-toplevel"], cwd)
 
 

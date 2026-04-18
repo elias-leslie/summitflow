@@ -1,4 +1,4 @@
-"""Git operations for worktree management."""
+"""Core git helpers for CLI checkout and branch flows."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import subprocess
 from pathlib import Path
 
 
-class WorktreeError(Exception):
-    """Error during worktree operations."""
+class RepoGitError(Exception):
+    """Error during repo git operations."""
 
     pass
 
@@ -26,7 +26,7 @@ def run_git(
         CompletedProcess with command results.
 
     Raises:
-        WorktreeError: If command fails and check is True.
+        RepoGitError: If command fails and check is True.
     """
     cmd = ["git", *args]
     try:
@@ -40,7 +40,7 @@ def run_git(
         return result
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.strip() if e.stderr else str(e)
-        raise WorktreeError(f"Git command failed: {' '.join(cmd)}\n{stderr}") from e
+        raise RepoGitError(f"Git command failed: {' '.join(cmd)}\n{stderr}") from e
 
 
 def get_repo_root(cwd: Path | None = None) -> Path:
@@ -53,7 +53,7 @@ def get_repo_root(cwd: Path | None = None) -> Path:
         Path to the repository root.
 
     Raises:
-        WorktreeError: If not in a git repository.
+        RepoGitError: If not in a git repository.
     """
     result = run_git(["rev-parse", "--show-toplevel"], cwd=cwd)
     return Path(result.stdout.strip())
@@ -85,5 +85,5 @@ def get_current_branch(cwd: Path | None = None) -> str | None:
         if result.returncode == 0:
             return result.stdout.strip()
         return None
-    except (WorktreeError, OSError):
+    except (RepoGitError, OSError):
         return None

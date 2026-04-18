@@ -16,7 +16,7 @@ def test_build_complete_kwargs_passes_task_id_as_external_id() -> None:
         result = build_complete_kwargs(
             prompt="Refactor this file",
             agent_slug="refactor",
-            project_path="/tmp/worktree",
+            project_path="/tmp/checkout",
             project_id="summitflow",
             task_id="task-123",
             session_id="sess-1",
@@ -25,7 +25,7 @@ def test_build_complete_kwargs_passes_task_id_as_external_id() -> None:
 
     assert result["external_id"] == "task-123"
     assert result["current_branch"] == "task-123/main"
-    assert result["working_dir"] == "/tmp/worktree"
+    assert result["working_dir"] == "/tmp/checkout"
 
 
 def test_build_complete_kwargs_leaves_model_selection_to_agent_routing() -> None:
@@ -37,7 +37,7 @@ def test_build_complete_kwargs_leaves_model_selection_to_agent_routing() -> None
         result = build_complete_kwargs(
             prompt="Refactor this file",
             agent_slug="refactor",
-            project_path="/tmp/worktree",
+            project_path="/tmp/checkout",
             project_id="agent-hub",
             task_id="task-123",
             session_id="sess-1",
@@ -57,7 +57,7 @@ def test_build_complete_kwargs_does_not_set_timeout_for_autonomous_runs() -> Non
         result = build_complete_kwargs(
             prompt="Refactor this file",
             agent_slug="refactor",
-            project_path="/tmp/worktree",
+            project_path="/tmp/checkout",
             project_id="agent-hub",
             task_id="task-123",
             session_id="sess-1",

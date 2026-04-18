@@ -9,7 +9,9 @@ describe('buildUrlWithUpdatedSearchParams', () => {
       { task: 'task-123', status: 'running' },
     )
 
-    expect(url).toBe('/projects/summitflow?tab=tasks&status=running&task=task-123')
+    expect(url).toBe(
+      '/projects/summitflow?tab=tasks&status=running&task=task-123',
+    )
   })
 
   it('removes params and omits the query string when none remain', () => {

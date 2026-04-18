@@ -3,8 +3,8 @@
 import { Image as ImageIcon } from 'lucide-react'
 import NextImage from 'next/image'
 import {
-  getDesignAssetImageUrl,
   type GenerateDesignAssetResponse,
+  getDesignAssetImageUrl,
 } from '@/lib/api/design-assets'
 
 interface GenerateResultProps {
@@ -20,7 +20,9 @@ export function GenerateResult({
 }: GenerateResultProps): React.ReactElement {
   if (!result.success || result.assets.length === 0) {
     return (
-      <div className="text-sm text-red-400">Generation failed for {assetName}</div>
+      <div className="text-sm text-red-400">
+        Generation failed for {assetName}
+      </div>
     )
   }
 

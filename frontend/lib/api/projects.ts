@@ -5,23 +5,27 @@
  * Re-exports automation and type definitions for backward compatibility.
  */
 
-import { buildQueryString, fetchWithErrorHandling, patchJson, postJson } from './utils'
 import type {
   FetchQualityResultsOptions,
   Project,
   ProjectCreate,
   ProjectHealth,
-  ProjectUpdate,
   ProjectsWithStatsResponse,
+  ProjectUpdate,
   QualityCheckResultsResponse,
   QualityGateHealth,
 } from './projects-types'
-
-// Re-export all types for backward compatibility
-export * from './projects-types'
+import {
+  buildQueryString,
+  fetchWithErrorHandling,
+  patchJson,
+  postJson,
+} from './utils'
 
 // Re-export all automation functions for backward compatibility
 export * from './projects-automation'
+// Re-export all types for backward compatibility
+export * from './projects-types'
 
 // ============================================================================
 // Core Project CRUD Operations

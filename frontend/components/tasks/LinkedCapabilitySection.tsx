@@ -60,14 +60,20 @@ export function LinkedCapabilitySection({
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs text-slate-500">Criteria</span>
               <span
-                className={clsx('text-xs mono font-medium', allPassed ? 'text-phosphor-400' : 'text-slate-400')}
+                className={clsx(
+                  'text-xs mono font-medium',
+                  allPassed ? 'text-phosphor-400' : 'text-slate-400',
+                )}
               >
                 {capability.criteria_passed}/{capability.criteria_total}
               </span>
             </div>
             <div className="h-1.5 w-full bg-slate-700 rounded-full overflow-hidden">
               <div
-                className={clsx('h-full transition-all duration-300', allPassed ? 'bg-phosphor-500' : 'bg-blue-500')}
+                className={clsx(
+                  'h-full transition-all duration-300',
+                  allPassed ? 'bg-phosphor-500' : 'bg-blue-500',
+                )}
                 style={{ width: `${progressPct}%` }}
               />
             </div>

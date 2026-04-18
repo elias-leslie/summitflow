@@ -3,11 +3,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { createProject } from '@/lib/api'
 import type { ProjectCategory } from '@/lib/api'
+import { createProject } from '@/lib/api'
 import {
-  buildManagedRootPath,
   buildHealthPreview,
+  buildManagedRootPath,
   DEFAULT_HEALTH_ENDPOINT,
   isManagedWorkspaceRootPath,
   normalizeProjectFormValues,
@@ -69,7 +69,10 @@ export function useNewProjectForm() {
     })
   }
 
-  const syncManagedDefaults = (nextProjectId: string, previousProjectId: string) => {
+  const syncManagedDefaults = (
+    nextProjectId: string,
+    previousProjectId: string,
+  ) => {
     const previousRootPath = buildManagedRootPath(previousProjectId)
     const nextRootPath = buildManagedRootPath(nextProjectId)
     setProjectId(nextProjectId)
@@ -111,14 +114,26 @@ export function useNewProjectForm() {
   }
 
   const validate = (): boolean => {
-    const newErrors = validateProjectForm({ name, projectId, baseUrl, healthEndpoint, rootPath })
+    const newErrors = validateProjectForm({
+      name,
+      projectId,
+      baseUrl,
+      healthEndpoint,
+      rootPath,
+    })
     if (isManagedWorkspaceRootPath(rootPath) && !baseUrl.trim()) {
       delete newErrors.baseUrl
     }
     setErrors(newErrors)
 
     if (Object.keys(newErrors).length === 0) {
-      const normalized = normalizeProjectFormValues({ name, projectId, baseUrl, healthEndpoint, rootPath })
+      const normalized = normalizeProjectFormValues({
+        name,
+        projectId,
+        baseUrl,
+        healthEndpoint,
+        rootPath,
+      })
       setProjectId(normalized.projectId ?? '')
       setBaseUrl(normalized.baseUrl)
       setHealthEndpoint(normalized.healthEndpoint)
@@ -132,7 +147,13 @@ export function useNewProjectForm() {
     e.preventDefault()
     if (!validate()) return
 
-    const normalized = normalizeProjectFormValues({ name, projectId, baseUrl, healthEndpoint, rootPath })
+    const normalized = normalizeProjectFormValues({
+      name,
+      projectId,
+      baseUrl,
+      healthEndpoint,
+      rootPath,
+    })
     const summitflowHosted = isManagedWorkspaceRootPath(normalized.rootPath)
 
     mutation.mutate({
@@ -151,9 +172,7 @@ export function useNewProjectForm() {
             execution_end_hour: EXECUTION_END_HOUR,
           }
         : undefined,
-      onboarding: normalized.rootPath
-        ? { ...DEFAULT_ONBOARDING }
-        : undefined,
+      onboarding: normalized.rootPath ? { ...DEFAULT_ONBOARDING } : undefined,
     })
   }
 

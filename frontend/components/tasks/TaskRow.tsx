@@ -8,14 +8,10 @@ import { ChevronDown, ChevronRight, ListTodo, Loader2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { Task, TaskStatus } from '@/lib/api'
+import { formatTimeAgo } from '@/lib/format'
+import { priorityConfig, statusIconConfig, typeIcons } from '@/lib/task-config'
 import { cn } from '@/lib/utils'
 import { ExecutionTimeline } from './ExecutionTimeline'
-import { formatTimeAgo } from '@/lib/format'
-import {
-  priorityConfig,
-  statusIconConfig,
-  typeIcons,
-} from '@/lib/task-config'
 
 interface TaskRowProps {
   task: Task
@@ -47,7 +43,12 @@ export function TaskRow({
           isExpanded && 'bg-slate-800/30',
         )}
         onClick={onToggle}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onToggle()
+          }
+        }}
         tabIndex={0}
       >
         {/* Expand */}

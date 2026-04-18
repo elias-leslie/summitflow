@@ -21,8 +21,8 @@ tags: [skill:commit-conventions, git, commit]
 - Prefix with `[auto-fix]` for quality gate auto-fix commits
 
 ## Branch Naming
-- Feature branches: `task/<task-id>` (created by worktree system)
-- Worktree branches are managed by the orchestrator
+- Task branches are created by the checkpoint system
+- Branch coordination and cleanup happen through the shared checkout flow
 
 ## Commit Safety
 - Never use `git commit` directly — use `commit.sh --push --msg "..."` (or `commit.sh --all --push --msg "..."` for multi-repo work)

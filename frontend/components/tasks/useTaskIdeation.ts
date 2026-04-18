@@ -1,22 +1,28 @@
+import type { ChatMessage } from '@agent-hub/chat-ui'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import type { ChatMessage } from '@agent-hub/chat-ui'
 import { buildAgentHubChatApiConfig } from '@/lib/agent-hub-chat-config'
 import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
-import { getApiBaseUrl } from '@/lib/api-config'
+import type { TaskType } from '@/lib/api/tasks-types'
 import { postJson } from '@/lib/api/utils'
+import { getApiBaseUrl } from '@/lib/api-config'
+import { useTaskMutationSync } from '@/lib/task-mutation-sync'
+import { getErrorMessage } from '@/lib/utils'
+import type {
+  Complexity,
+  IdeationTaskData,
+  IdeationTaskResponse,
+} from './taskIdeationTypes'
 import {
   CREATE_TASK_TOOL_NAME,
   DEFAULT_COMPLEXITY,
   DEFAULT_PRIORITY,
   DEFAULT_TASK_TYPE,
 } from './taskIdeationTypes'
-import type { Complexity, IdeationTaskData, IdeationTaskResponse } from './taskIdeationTypes'
-import type { TaskType } from '@/lib/api/tasks-types'
-import { useTaskMutationSync } from '@/lib/task-mutation-sync'
-import { getErrorMessage } from '@/lib/utils'
 
-function extractCreateTaskTool(messages: ChatMessage[]): IdeationTaskData | null {
+function extractCreateTaskTool(
+  messages: ChatMessage[],
+): IdeationTaskData | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]
     if (msg.role !== 'assistant' || !msg.toolExecutions) continue
@@ -27,7 +33,10 @@ function extractCreateTaskTool(messages: ChatMessage[]): IdeationTaskData | null
         return {
           title: (input.title as string) || '',
           description: (input.description as string) || '',
-          priority: typeof input.priority === 'number' ? input.priority : DEFAULT_PRIORITY,
+          priority:
+            typeof input.priority === 'number'
+              ? input.priority
+              : DEFAULT_PRIORITY,
           task_type: (input.task_type as TaskType) || DEFAULT_TASK_TYPE,
           labels: Array.isArray(input.labels) ? (input.labels as string[]) : [],
           complexity: (input.complexity as Complexity) || DEFAULT_COMPLEXITY,
@@ -38,7 +47,10 @@ function extractCreateTaskTool(messages: ChatMessage[]): IdeationTaskData | null
   return null
 }
 
-export function useTaskIdeation(projectId: string, onOpenChange: (open: boolean) => void) {
+export function useTaskIdeation(
+  projectId: string,
+  onOpenChange: (open: boolean) => void,
+) {
   const { invalidateTasks } = useTaskMutationSync(projectId)
   const [taskData, setTaskData] = useState<IdeationTaskData | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -115,7 +127,10 @@ export function useTaskIdeation(projectId: string, onOpenChange: (open: boolean)
   }, [invalidateTasks, onOpenChange, projectId, taskData])
 
   const updateField = useCallback(
-    <K extends keyof IdeationTaskData>(field: K, value: IdeationTaskData[K]) => {
+    <K extends keyof IdeationTaskData>(
+      field: K,
+      value: IdeationTaskData[K],
+    ) => {
       setTaskData((prev) => (prev ? { ...prev, [field]: value } : null))
     },
     [],
@@ -135,7 +150,10 @@ export function useTaskIdeation(projectId: string, onOpenChange: (open: boolean)
   const handleRemoveLabel = useCallback(
     (label: string) => {
       if (!taskData) return
-      updateField('labels', taskData.labels.filter((l) => l !== label))
+      updateField(
+        'labels',
+        taskData.labels.filter((l) => l !== label),
+      )
     },
     [taskData, updateField],
   )

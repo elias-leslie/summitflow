@@ -26,7 +26,8 @@ export function AgentHubSection({
           Agent Hub Access Bootstrap
         </div>
         <p className="text-xs text-slate-500">
-          Create the matching project permission row at the same time so the new project is immediately visible to Jenny and specialist agents.
+          Create the matching project permission row at the same time so the new
+          project is immediately visible to Jenny and specialist agents.
         </p>
       </div>
 

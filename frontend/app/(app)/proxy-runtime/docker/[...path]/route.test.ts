@@ -42,9 +42,12 @@ describe('runtime docker proxy route', () => {
     )
 
     const response = await GET(
-      new Request('http://localhost/proxy-runtime/docker/logs/monkey-fight?follow=true&tail=50', {
-        headers: { Accept: 'text/event-stream' },
-      }),
+      new Request(
+        'http://localhost/proxy-runtime/docker/logs/monkey-fight?follow=true&tail=50',
+        {
+          headers: { Accept: 'text/event-stream' },
+        },
+      ),
       { params: Promise.resolve({ path: ['logs', 'monkey-fight'] }) },
     )
 
@@ -52,7 +55,9 @@ describe('runtime docker proxy route', () => {
     const [url, init] = fetchMock.mock.calls[0] ?? []
     const headers = new Headers(init?.headers)
 
-    expect(url).toBe('http://localhost:8001/api/docker/logs/monkey-fight?follow=true&tail=50')
+    expect(url).toBe(
+      'http://localhost:8001/api/docker/logs/monkey-fight?follow=true&tail=50',
+    )
     expect(headers.get('x-internal-secret')).toBe('test-secret')
     expect(headers.get('accept')).toBe('text/event-stream')
     expect(response.status).toBe(200)
@@ -62,10 +67,13 @@ describe('runtime docker proxy route', () => {
 
   it('injects the internal secret for runtime service actions', async () => {
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ success: true, message: 'Stopped monkey-fight' }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+      new Response(
+        JSON.stringify({ success: true, message: 'Stopped monkey-fight' }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
     )
 
     const response = await POST(

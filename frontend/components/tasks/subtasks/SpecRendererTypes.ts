@@ -12,7 +12,9 @@ export interface SpecRecord {
 export function getSpecValue(spec: SpecRecord, candidates: string[]): string {
   const specKeys = Object.keys(spec)
   for (const candidate of candidates) {
-    const found = specKeys.find((k) => k.toLowerCase() === candidate.toLowerCase())
+    const found = specKeys.find(
+      (k) => k.toLowerCase() === candidate.toLowerCase(),
+    )
     if (found && typeof spec[found] === 'string') return spec[found] as string
   }
   return ''
@@ -22,7 +24,9 @@ export function getSpecValue(spec: SpecRecord, candidates: string[]): string {
 export function getSpecTruthy(spec: SpecRecord, candidates: string[]): boolean {
   const specKeys = Object.keys(spec)
   for (const candidate of candidates) {
-    const found = specKeys.find((k) => k.toLowerCase() === candidate.toLowerCase())
+    const found = specKeys.find(
+      (k) => k.toLowerCase() === candidate.toLowerCase(),
+    )
     if (found && spec[found]) return true
   }
   return false

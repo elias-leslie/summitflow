@@ -43,8 +43,7 @@ class TestTaskLaneOwnership:
                         "task_id": "task-999",
                         "session_id": "sess-ownership",
                         "branch": "task-999/main",
-                        "worktree_path": "/tmp/worktrees/task-999",
-                        "is_worktree": True,
+                        "checkout_path": "/tmp/lanes/task-999",
                         "session_status": "active",
                         "workstream_status": "authoritative",
                         "ownership_kind": "scoped",
@@ -58,7 +57,7 @@ class TestTaskLaneOwnership:
 
         assert result.issues
         assert result.conflicting_tasks == ["task-999"]
-        assert "worktree /tmp/worktrees/task-999" in result.suggestions[0]
+        assert "checkout /tmp/lanes/task-999" in result.suggestions[0]
         assert result.active_specialists == []
 
     def test_ownership_inventory_payload_summarizes_active_specialists(
@@ -120,7 +119,6 @@ class TestTaskLaneOwnership:
                         "external_id": "task-999",
                         "current_branch": "task-999/main",
                         "working_dir": "/home/testuser/summitflow",
-                        "is_worktree": False,
                     }
                 ]
             }

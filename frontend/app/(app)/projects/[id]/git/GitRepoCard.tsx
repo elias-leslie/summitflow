@@ -1,13 +1,7 @@
 'use client'
 
 import clsx from 'clsx'
-import {
-  AlertTriangle,
-  GitBranch,
-  Layers,
-  Scissors,
-  Unplug,
-} from 'lucide-react'
+import { AlertTriangle, GitBranch, Scissors, Unplug } from 'lucide-react'
 import type { RepoStatus } from '@/lib/api'
 import {
   getStateColor,
@@ -25,7 +19,7 @@ function WorkspacePill({
   label,
   tone,
 }: {
-  icon: typeof Layers
+  icon: typeof GitBranch
   label: string
   tone: 'cyan' | 'amber' | 'rose'
 }) {
@@ -54,8 +48,8 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
   const workspaceSummary = repo.workspace_summary
   const previewSections = [
     {
-      label: 'Worktrees',
-      values: workspaceSummary?.worktree_task_ids ?? [],
+      label: 'Checkpoints',
+      values: workspaceSummary?.checkpoint_task_ids ?? [],
       tone: 'text-cyan-300 border-cyan-500/20 bg-cyan-500/10',
     },
     {
@@ -113,7 +107,8 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
             stateColor === 'outrun' && 'bg-outrun-500/10 text-outrun-400',
             stateColor === 'amber' && 'bg-amber-500/10 text-amber-400',
             stateColor === 'sunset' && 'bg-sunset-orange/10 text-sunset-orange',
-            !['phosphor', 'outrun', 'amber', 'sunset'].includes(stateColor) && 'bg-slate-500/10 text-slate-400',
+            !['phosphor', 'outrun', 'amber', 'sunset'].includes(stateColor) &&
+              'bg-slate-500/10 text-slate-400',
           )}
         >
           {getStateIcon(repo.state)}
@@ -131,7 +126,10 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
       <div className="grid grid-cols-3 gap-3">
         <div className="text-center p-2 rounded bg-slate-800/50">
           <div
-            className={clsx('text-lg font-bold', repo.uncommitted > 0 ? 'text-outrun-400' : 'text-slate-500')}
+            className={clsx(
+              'text-lg font-bold',
+              repo.uncommitted > 0 ? 'text-outrun-400' : 'text-slate-500',
+            )}
           >
             {repo.uncommitted}
           </div>
@@ -141,7 +139,10 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
         </div>
         <div className="text-center p-2 rounded bg-slate-800/50">
           <div
-            className={clsx('text-lg font-bold', repo.ahead > 0 ? 'text-sunset-orange' : 'text-slate-500')}
+            className={clsx(
+              'text-lg font-bold',
+              repo.ahead > 0 ? 'text-sunset-orange' : 'text-slate-500',
+            )}
           >
             {repo.ahead}
           </div>
@@ -151,7 +152,10 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
         </div>
         <div className="text-center p-2 rounded bg-slate-800/50">
           <div
-            className={clsx('text-lg font-bold', repo.behind > 0 ? 'text-amber-400' : 'text-slate-500')}
+            className={clsx(
+              'text-lg font-bold',
+              repo.behind > 0 ? 'text-amber-400' : 'text-slate-500',
+            )}
           >
             {repo.behind}
           </div>
@@ -165,14 +169,14 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
         <div className="mt-4 space-y-3 border-t border-slate-800/60 pt-4">
           <div className="flex flex-wrap gap-2">
             <WorkspacePill
-              icon={Layers}
-              label={`${workspaceSummary.active_worktrees} worktree${workspaceSummary.active_worktrees === 1 ? '' : 's'}`}
+              icon={GitBranch}
+              label={`${workspaceSummary.active_checkpoints} checkpoint${workspaceSummary.active_checkpoints === 1 ? '' : 's'}`}
               tone="cyan"
             />
-            {workspaceSummary.dirty_worktrees > 0 && (
+            {workspaceSummary.dirty_checkpoints > 0 && (
               <WorkspacePill
                 icon={AlertTriangle}
-                label={`${workspaceSummary.dirty_worktrees} dirty`}
+                label={`${workspaceSummary.dirty_checkpoints} dirty`}
                 tone="rose"
               />
             )}

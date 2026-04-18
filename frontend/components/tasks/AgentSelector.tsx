@@ -1,8 +1,8 @@
 'use client'
 
 import clsx from 'clsx'
-import { useEffect, useState } from 'react'
 import { ChevronDown, Loader2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import type { CodingAgent } from '@/lib/api/tasks'
 import { fetchCodingAgents } from '@/lib/api/tasks'
@@ -64,7 +64,12 @@ export function AgentSelector({
     <div className="relative">
       <Button
         variant="outline"
-        className={clsx('gap-2 min-w-[140px] justify-between', agentOverride ? 'border-cyan-500/30 text-cyan-400' : 'border-slate-600 text-slate-400')}
+        className={clsx(
+          'gap-2 min-w-[140px] justify-between',
+          agentOverride
+            ? 'border-cyan-500/30 text-cyan-400'
+            : 'border-slate-600 text-slate-400',
+        )}
         onClick={() => setIsAgentDropdownOpen(!isAgentDropdownOpen)}
         disabled={isRunning || isLoadingAgents}
         title="Select which agent executes this task"
@@ -75,7 +80,9 @@ export function AgentSelector({
           <>
             <span className="truncate">
               {currentAgentName}
-              {!agentOverride && <span className="text-slate-500 ml-1">(auto)</span>}
+              {!agentOverride && (
+                <span className="text-slate-500 ml-1">(auto)</span>
+              )}
             </span>
             <ChevronDown className="h-4 w-4 shrink-0" />
           </>
@@ -94,7 +101,10 @@ export function AgentSelector({
             {/* Auto option */}
             <button
               type="button"
-              className={clsx('w-full px-3 py-2 text-left text-sm hover:bg-slate-700 flex items-center justify-between', !agentOverride ? 'text-cyan-400' : 'text-slate-300')}
+              className={clsx(
+                'w-full px-3 py-2 text-left text-sm hover:bg-slate-700 flex items-center justify-between',
+                !agentOverride ? 'text-cyan-400' : 'text-slate-300',
+              )}
               onClick={() => {
                 onAgentOverrideChange(null)
                 setIsAgentDropdownOpen(false)
@@ -113,7 +123,12 @@ export function AgentSelector({
               <button
                 type="button"
                 key={agent.slug}
-                className={clsx('w-full px-3 py-2 text-left text-sm hover:bg-slate-700', agentOverride === agent.slug ? 'text-cyan-400' : 'text-slate-300')}
+                className={clsx(
+                  'w-full px-3 py-2 text-left text-sm hover:bg-slate-700',
+                  agentOverride === agent.slug
+                    ? 'text-cyan-400'
+                    : 'text-slate-300',
+                )}
                 onClick={() => {
                   onAgentOverrideChange(agent.slug)
                   setIsAgentDropdownOpen(false)

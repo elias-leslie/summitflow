@@ -17,12 +17,17 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   infrastructure: 'system',
 }
 
-export function SourceTypeBadge({ type }: { type: BackupSource['source_type'] }) {
+export function SourceTypeBadge({
+  type,
+}: {
+  type: BackupSource['source_type']
+}) {
   return (
     <span
       className={clsx(
         'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border leading-none',
-        SOURCE_TYPE_STYLES[type] ?? 'bg-slate-600 text-slate-300 border-slate-500',
+        SOURCE_TYPE_STYLES[type] ??
+          'bg-slate-600 text-slate-300 border-slate-500',
       )}
     >
       {SOURCE_TYPE_LABELS[type] ?? type}

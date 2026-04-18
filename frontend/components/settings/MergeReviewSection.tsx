@@ -5,7 +5,11 @@ import { Label } from '../ui/label'
 
 const MERGE_TIERS = [
   { value: 1, label: 'Tier 1', description: 'Simple fixes, formatting' },
-  { value: 2, label: 'Tier 2', description: 'Standard changes, small features' },
+  {
+    value: 2,
+    label: 'Tier 2',
+    description: 'Standard changes, small features',
+  },
   { value: 3, label: 'Tier 3', description: 'Complex changes, refactors' },
   { value: 4, label: 'Tier 4', description: 'Architecture, critical changes' },
 ]
@@ -36,9 +40,7 @@ export function MergeReviewSection({
       <div>
         <div className="flex items-center justify-between">
           <div>
-            <Label className="text-slate-200 block">
-              Auto-Merge Enabled
-            </Label>
+            <Label className="text-slate-200 block">Auto-Merge Enabled</Label>
             <p className="text-xs text-slate-400 mt-1">
               Enable automatic merging of completed tasks
             </p>
@@ -47,7 +49,11 @@ export function MergeReviewSection({
             type="button"
             onClick={onAutoMergeToggle}
             disabled={isPending}
-            aria-label={settings.auto_merge_enabled ? 'Disable auto-merge' : 'Enable auto-merge'}
+            aria-label={
+              settings.auto_merge_enabled
+                ? 'Disable auto-merge'
+                : 'Enable auto-merge'
+            }
             className={clsx(
               'relative w-12 h-6 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900',
               settings.auto_merge_enabled ? 'bg-phosphor-500' : 'bg-slate-600',
@@ -67,9 +73,7 @@ export function MergeReviewSection({
       <div>
         <div className="flex items-center justify-between">
           <div>
-            <Label className="text-slate-200 block">
-              Require AI Review
-            </Label>
+            <Label className="text-slate-200 block">Require AI Review</Label>
             <p className="text-xs text-slate-400 mt-1">
               Always run AI review before merge (even if auto-merge enabled)
             </p>
@@ -78,7 +82,11 @@ export function MergeReviewSection({
             type="button"
             onClick={onRequireReviewToggle}
             disabled={isPending}
-            aria-label={settings.require_review ? 'Disable required review' : 'Enable required review'}
+            aria-label={
+              settings.require_review
+                ? 'Disable required review'
+                : 'Enable required review'
+            }
             className={clsx(
               'relative w-12 h-6 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900',
               settings.require_review ? 'bg-phosphor-500' : 'bg-slate-600',
@@ -101,17 +109,22 @@ export function MergeReviewSection({
             Auto-Merge Eligible Tiers
           </Label>
           <p className="text-xs text-slate-400 mb-3">
-            Select which task complexity tiers can auto-merge without human review
+            Select which task complexity tiers can auto-merge without human
+            review
           </p>
           <div className="space-y-2">
             {MERGE_TIERS.map((tier) => {
-              const isSelected = (settings.auto_merge_tiers ?? [1]).includes(tier.value)
+              const isSelected = (settings.auto_merge_tiers ?? [1]).includes(
+                tier.value,
+              )
               return (
                 <label
                   key={tier.value}
                   className={clsx(
                     'flex items-center gap-3 p-2 rounded-md cursor-pointer transition-colors',
-                    isSelected ? 'bg-phosphor-500/10' : 'bg-transparent hover:bg-slate-700/50',
+                    isSelected
+                      ? 'bg-phosphor-500/10'
+                      : 'bg-transparent hover:bg-slate-700/50',
                     isPending && 'opacity-50 cursor-not-allowed',
                   )}
                 >
@@ -130,7 +143,9 @@ export function MergeReviewSection({
                   />
                   <div>
                     <span className="text-sm text-slate-200">{tier.label}</span>
-                    <span className="text-xs text-slate-400 ml-2">{tier.description}</span>
+                    <span className="text-xs text-slate-400 ml-2">
+                      {tier.description}
+                    </span>
                   </div>
                 </label>
               )

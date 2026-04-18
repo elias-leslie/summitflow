@@ -14,7 +14,6 @@ from .task_response_models import (
     TaskListResponse,
     TaskResponse,
     ValidationResultResponse,
-    WorktreeResponse,
 )
 
 __all__ = [
@@ -27,5 +26,4 @@ __all__ = [
     "TaskStatusUpdate",
     "TaskUpdate",
     "ValidationResultResponse",
-    "WorktreeResponse",
 ]

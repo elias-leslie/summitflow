@@ -10,8 +10,8 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ..worktree_git import WorktreeError, get_repo_root
-from ..worktree_paths import (
+from ..repo_git import RepoGitError, get_repo_root
+from ..workspace_paths import (
     get_lanes_base_dir,
     get_projects_base_dir,
     workspaces_root_available,
@@ -91,7 +91,7 @@ def _parse_btrfs_du_raw(output: str, expected_path: Path) -> SnapshotUsage:
 def _resolve_repo_root(cwd: str | Path | None = None) -> Path:
     try:
         return get_repo_root(Path(cwd) if cwd is not None else None)
-    except WorktreeError as exc:
+    except RepoGitError as exc:
         raise SnapshotError(str(exc)) from exc
 
 
@@ -220,19 +220,19 @@ def _restore_lane_git_state(repo_root: Path, snapshot: QuickSnapshot) -> None:
 
 
 def _resolve_lane_repo_root(lane_path: Path) -> Path:
-    """Resolve the canonical repo root from a lane's git worktree metadata."""
+    """Resolve the canonical repo root from a legacy lane checkout metadata file."""
     git_file = lane_path / ".git"
     if not git_file.is_file():
         raise SnapshotError(
-            f"Expected git worktree metadata at {git_file}, but it was missing."
+            f"Expected legacy checkout metadata at {git_file}, but it was missing."
         )
 
     content = git_file.read_text(encoding="utf-8").strip()
     if not content.startswith("gitdir:"):
-        raise SnapshotError(f"Unexpected git worktree metadata format in {git_file}.")
+        raise SnapshotError(f"Unexpected git checkout metadata format in {git_file}.")
 
     gitdir = Path(content.split(":", 1)[1].strip())
-    common_dir = gitdir.parent.parent  # .git/worktrees → .git
+    common_dir = gitdir.parent.parent  # shared git admin dir -> .git
     if common_dir.name != ".git":
         raise SnapshotError(
             f"Could not resolve canonical repo root for lane {lane_path}."

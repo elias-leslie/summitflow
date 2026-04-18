@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from ..worktree_paths import get_workspace_snapshots_base_dir
+from ..workspace_paths import get_workspace_snapshots_base_dir
 from ._helpers import _sanitize_label
 from ._models import QuickSnapshot, SnapshotError, SnapshotScope
 

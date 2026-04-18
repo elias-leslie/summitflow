@@ -201,10 +201,11 @@ export function AssetFormFields({
               type="button"
               onClick={() => onModelChange(m.id)}
               disabled={isPending}
-              className={clsx('px-3 py-2 rounded-lg border text-sm transition-all',
+              className={clsx(
+                'px-3 py-2 rounded-lg border text-sm transition-all',
                 model === m.id
                   ? 'bg-outrun-500/20 border-outrun-500/50 text-outrun-400'
-                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-slate-100 hover:border-slate-600'
+                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-slate-100 hover:border-slate-600',
               )}
             >
               <div className="font-medium">{m.name}</div>
@@ -216,8 +217,7 @@ export function AssetFormFields({
 
       <div>
         <label className="block text-sm font-medium text-slate-300 mb-2">
-          Style{' '}
-          <span className="text-slate-500 font-normal">(optional)</span>
+          Style <span className="text-slate-500 font-normal">(optional)</span>
         </label>
         <input
           type="text"
@@ -275,7 +275,9 @@ export function AssetFormFields({
 
       {mockupType === 'sprite_sheet' && (
         <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4 space-y-4">
-          <p className="text-sm font-medium text-slate-100">Sprite Sheet Settings</p>
+          <p className="text-sm font-medium text-slate-100">
+            Sprite Sheet Settings
+          </p>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <input
               value={sheetColumns}

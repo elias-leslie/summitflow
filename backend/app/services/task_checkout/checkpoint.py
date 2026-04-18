@@ -1,4 +1,4 @@
-"""Checkpoint metadata management for worktrees.
+"""Checkpoint metadata management for task branches.
 
 Creates and manages .st/snapshots/<task_id>.meta.json files for
 unified tracking via `st checkpoints`.
@@ -27,7 +27,7 @@ def _get_main_repo_dirty_paths(project_root: str) -> list[str]:
     """Capture the current dirty file paths in the main repo.
 
     This becomes the baseline for detecting later writes that leaked out of a
-    task worktree into the main checkout.
+    task checkout into the shared project root.
     """
     try:
         result = subprocess.run(
@@ -66,18 +66,16 @@ def create_checkpoint_metadata(
     task_id: str,
     project_id: str,
     base_branch: str,
-    worktree_path: str,
 ) -> bool:
     """Create checkpoint metadata file for unified tracking.
 
     Creates .st/snapshots/<task_id>.meta.json in the project root.
-    This enables `st checkpoints` to show autonomous task worktrees.
+    This enables `st checkpoints` to show autonomous task branches.
 
     Args:
         task_id: Task identifier
         project_id: Project identifier
-        base_branch: Branch the worktree is based on
-        worktree_path: Path to the worktree
+        base_branch: Branch the task branch is based on
 
     Returns:
         True if metadata was created, False on error
@@ -105,9 +103,6 @@ def create_checkpoint_metadata(
             "base_branch": base_branch,
             "created_at": datetime.now(UTC).isoformat(),
             "claimed_by": _get_claimed_by(),
-            "worktree_path": worktree_path,
-            "backend_port": None,
-            "frontend_port": None,
             "main_repo_dirty_paths": _get_main_repo_dirty_paths(project_root),
         }
 

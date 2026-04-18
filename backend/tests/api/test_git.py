@@ -34,14 +34,14 @@ class TestGitStatus:
             behind=0,
             state="clean",
             workspace_summary=RepoWorkspaceSummary(
-                active_worktrees=1,
-                dirty_worktrees=1,
-                branches_with_worktrees=1,
+                active_checkpoints=1,
+                dirty_checkpoints=1,
+                branches_with_checkpoints=1,
                 task_branches=2,
                 orphan_branches=1,
                 prunable_branches=1,
                 needs_cleanup=True,
-                worktree_task_ids=["task-123"],
+                checkpoint_task_ids=["task-123"],
             ),
         )
 
@@ -52,8 +52,8 @@ class TestGitStatus:
         assert "total" in data
         assert isinstance(data["repositories"], list)
         assert data["repositories"][0]["project_id"] == "summitflow"
-        assert data["repositories"][0]["workspace_summary"]["active_worktrees"] == 1
-        assert data["repositories"][0]["workspace_summary"]["dirty_worktrees"] == 1
+        assert data["repositories"][0]["workspace_summary"]["active_checkpoints"] == 1
+        assert data["repositories"][0]["workspace_summary"]["dirty_checkpoints"] == 1
 
 
 class TestGitCleanupStatus:
@@ -64,15 +64,15 @@ class TestGitCleanupStatus:
             "summary": {
                 "repos": 1,
                 "repos_needing_cleanup": 1,
-                "active_worktrees": 1,
-                "dirty_worktrees": 0,
+                "active_checkpoints": 1,
+                "dirty_checkpoints": 0,
                 "stale_checkpoints": 0,
                 "snapshot_residue": 0,
                 "orphan_task_branches": 1,
                 "prunable_task_branches": 0,
             },
             "repositories": [],
-            "worktrees": [],
+            "checkpoints": [],
             "total": 0,
         }
         mock_build = mocker.patch(
@@ -98,15 +98,15 @@ class TestGitCleanupStatus:
             "summary": {
                 "repos": 1,
                 "repos_needing_cleanup": 0,
-                "active_worktrees": 0,
-                "dirty_worktrees": 0,
+                "active_checkpoints": 0,
+                "dirty_checkpoints": 0,
                 "stale_checkpoints": 0,
                 "snapshot_residue": 0,
                 "orphan_task_branches": 0,
                 "prunable_task_branches": 0,
             },
             "repositories": [{"project_id": "agent-hub"}],
-            "worktrees": [],
+            "checkpoints": [],
             "total": 0,
         }
         mock_build = mocker.patch(
@@ -146,7 +146,7 @@ class TestGitBranches:
                 BranchInfo(
                     name="main",
                     is_current=True,
-                    has_worktree=False,
+                    has_checkpoint=False,
                     repo_name="alpha",
                     project_id="project-alpha",
                 ),
@@ -155,7 +155,7 @@ class TestGitBranches:
                 BranchInfo(
                     name="task-123/main",
                     is_current=False,
-                    has_worktree=True,
+                    has_checkpoint=True,
                     repo_name="beta",
                     project_id="project-beta",
                     task_id="task-123",
@@ -183,29 +183,27 @@ class TestProjectDashboard:
 
         from app.api.models.git_models import (
             BranchInfo,
+            CheckpointInfo,
             CommitInfo,
             ConflictInfo,
             MergedTaskSummary,
             RecentMergesResponse,
             SnapshotInfo,
-            WorktreeInfo,
         )
 
         mocker.patch("app.api.git_helpers.endpoints.get_project_root_with_fallback", return_value=Path("/repos/custom-folder"))
         mocker.patch(
-            "app.api.git_helpers.endpoints.collect_worktrees",
+            "app.api.git_helpers.endpoints.collect_checkpoints",
             return_value=[
-                WorktreeInfo(
+                CheckpointInfo(
                     task_id="task-1",
-                    path="/wt/task-1",
                     branch="task-1/main",
                     base_branch="main",
                     is_active=True,
                     project_id="project-123",
                 ),
-                WorktreeInfo(
+                CheckpointInfo(
                     task_id="task-2",
-                    path="/wt/task-2",
                     branch="task-2/main",
                     base_branch="main",
                     is_active=True,
@@ -219,7 +217,7 @@ class TestProjectDashboard:
                 BranchInfo(
                     name="main",
                     is_current=True,
-                    has_worktree=False,
+                    has_checkpoint=False,
                     repo_name="custom-folder",
                     project_id="project-123",
                     last_commit_short="abc1234",
@@ -296,7 +294,7 @@ class TestProjectDashboard:
 
         assert response.status_code == 200
         body = response.json()
-        assert body["worktrees"][0]["project_id"] == "project-123"
+        assert body["checkpoints"][0]["project_id"] == "project-123"
         assert body["branches"][0]["project_id"] == "project-123"
         assert body["branches"][0]["repo_name"] == "custom-folder"
         assert body["conflicts"][0]["task_id"] == "task-9"
@@ -354,7 +352,7 @@ class TestFinalizeTaskEndpoint:
             "app.storage.subtasks.get_subtasks_for_task",
             return_value=[{"subtask_id": "1.1", "passes": True}],
         )
-        merge = mocker.patch("app.api.git_helpers.endpoints.merge_and_cleanup_task_worktree")
+        merge = mocker.patch("app.api.git_helpers.endpoints.merge_and_cleanup_task_checkpoint")
         merge.return_value = {"task_id": "task-1", "status": "merged"}
 
         response = client.post("/api/git/tasks/task-1/finalize")

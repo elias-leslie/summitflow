@@ -169,7 +169,6 @@ export interface FetchQualityResultsOptions {
   offset?: number
 }
 
-
 export interface AutonomousExecutionSettings {
   // Access control (enabled, hours) now managed by Agent Hub project permissions.
   // See: agent.summitflow.dev/access-control/permissions

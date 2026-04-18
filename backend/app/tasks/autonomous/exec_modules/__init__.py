@@ -8,7 +8,7 @@ This package contains the refactored execution logic split across focused module
 - prompts: Prompt template management
 - events: Event emission for timeline tracking
 - git_ops: Git operations (commit, status)
-- worktree: Worktree health checking
+- checkout: Shared-checkout health checking
 - agent_routing: Agent selection and supervisor utilities
 - session: Handoff and wind-down session management
 """

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { fetchTasks, type Task } from '@/lib/api'
 import { STALE_GIT } from '@/lib/polling'
 import { taskQueryKeys } from '@/lib/task-cache'
@@ -38,10 +38,7 @@ export function useTasksList(
       }
 
       // Status filter (direct match)
-      if (
-        filters.status !== 'all' &&
-        task.status !== filters.status
-      ) {
+      if (filters.status !== 'all' && task.status !== filters.status) {
         return false
       }
 

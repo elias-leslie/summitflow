@@ -1,5 +1,5 @@
 import { Database, HardDrive, ShieldCheck, ShieldX } from 'lucide-react'
-import { backupHasDatabase, type Backup } from '@/lib/api/backups'
+import { type Backup, backupHasDatabase } from '@/lib/api/backups'
 import { formatBytes, formatDate } from '@/lib/format'
 
 interface PreviewStepProps {
@@ -48,7 +48,9 @@ export function PreviewStep({ backup }: PreviewStepProps) {
             <ShieldX className="w-4 h-4 text-red-400" />
           )}
           <span className="text-slate-300">
-            {backup.verified ? 'Verified archive' : 'Archive verification unavailable'}
+            {backup.verified
+              ? 'Verified archive'
+              : 'Archive verification unavailable'}
           </span>
         </div>
       </div>
@@ -57,7 +59,9 @@ export function PreviewStep({ backup }: PreviewStepProps) {
         <div className="text-sm space-y-2">
           <div className="flex justify-between gap-4">
             <span className="text-slate-400">Archive</span>
-            <span className="font-mono text-slate-200 text-right break-all">{backup.name}</span>
+            <span className="font-mono text-slate-200 text-right break-all">
+              {backup.name}
+            </span>
           </div>
           <div className="flex justify-between">
             <span className="text-slate-400">Backup ID</span>
@@ -78,7 +82,9 @@ export function PreviewStep({ backup }: PreviewStepProps) {
           {backup.location && (
             <div className="flex justify-between gap-4">
               <span className="text-slate-400">Restore Source</span>
-              <span className="text-slate-200 text-right break-all">{backup.location}</span>
+              <span className="text-slate-200 text-right break-all">
+                {backup.location}
+              </span>
             </div>
           )}
           {backup.note && (
@@ -93,10 +99,8 @@ export function PreviewStep({ backup }: PreviewStepProps) {
       <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
         <p className="text-sm text-yellow-300">
           <strong>Warning:</strong> Restoring will overwrite your current
-          {hasDatabase
-            ? ' database and project files'
-            : ' project files'}
-          {' '}using this exact backup record. This action cannot be undone.
+          {hasDatabase ? ' database and project files' : ' project files'} using
+          this exact backup record. This action cannot be undone.
         </p>
       </div>
     </div>

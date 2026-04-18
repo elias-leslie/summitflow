@@ -42,8 +42,7 @@ class TestTaskLaneConflicts:
                         "id": "sess-1",
                         "external_id": "task-123",
                         "current_branch": "task-123/main",
-                        "working_dir": "/tmp/worktrees/task-123",
-                        "is_worktree": True,
+                        "working_dir": "/tmp/lanes/task-123",
                     }
                 ]
             }
@@ -53,7 +52,7 @@ class TestTaskLaneConflicts:
 
         assert result.issues
         assert "active lane" in result.issues[0]
-        assert "/tmp/worktrees/task-123" in result.issues[0]
+        assert "/tmp/lanes/task-123" in result.issues[0]
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_other_task_active_lane_blocks_parallel_dispatch(
@@ -70,7 +69,6 @@ class TestTaskLaneConflicts:
                         "external_id": "task-999",
                         "current_branch": "task-999/main",
                         "working_dir": "/home/testuser/summitflow",
-                        "is_worktree": False,
                     }
                 ]
             }
@@ -96,8 +94,7 @@ class TestTaskLaneConflicts:
                         "id": "sess-4",
                         "external_id": None,
                         "current_branch": "task-999/main",
-                        "working_dir": "/tmp/worktrees/task-999",
-                        "is_worktree": True,
+                        "working_dir": "/tmp/lanes/task-999",
                     }
                 ]
             }
@@ -107,7 +104,7 @@ class TestTaskLaneConflicts:
 
         assert result.issues
         assert result.conflicting_tasks == ["task-999"]
-        assert "worktree /tmp/worktrees/task-999" in result.suggestions[0]
+        assert "checkout /tmp/lanes/task-999" in result.suggestions[0]
 
     def test_retired_workstream_does_not_block_dispatch(
         self,
@@ -151,8 +148,7 @@ class TestTaskLaneConflicts:
                         "id": "sess-stale",
                         "external_id": "task-123",
                         "current_branch": "task-123/main",
-                        "working_dir": "/tmp/worktrees/task-123",
-                        "is_worktree": True,
+                        "working_dir": "/tmp/lanes/task-123",
                         "updated_at": stale_time,
                     }
                 ]
@@ -178,8 +174,7 @@ class TestTaskLaneConflicts:
                         "id": "sess-leftover",
                         "external_id": "task-123",
                         "current_branch": "task-123/main",
-                        "working_dir": "/tmp/worktrees/task-123",
-                        "is_worktree": True,
+                        "working_dir": "/tmp/lanes/task-123",
                     }
                 ]
             }
@@ -207,8 +202,7 @@ class TestTaskLaneConflicts:
                         "id": "sess-stale-other",
                         "external_id": "task-999",
                         "current_branch": "task-999/main",
-                        "working_dir": "/tmp/worktrees/task-999",
-                        "is_worktree": True,
+                        "working_dir": "/tmp/lanes/task-999",
                         "updated_at": stale_time,
                     }
                 ]

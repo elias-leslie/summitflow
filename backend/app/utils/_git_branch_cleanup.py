@@ -35,8 +35,8 @@ def _git_branches_module():
 
 
 def _orphan_task_branches(branches: list[BranchInfo]) -> list[BranchInfo]:
-    """Return task branches that no longer have an active worktree."""
-    return [branch for branch in branches if branch.task_id and not branch.has_worktree]
+    """Return task branches that no longer have active checkpoint metadata."""
+    return [branch for branch in branches if branch.task_id and not branch.has_checkpoint]
 
 
 def _has_node_modules_artifact(diff_paths: list[str]) -> bool:
@@ -86,22 +86,22 @@ def _resolve_workspace_inventory(
     project_id: str | None,
     *,
     branches: list[BranchInfo] | None,
-    active_worktrees: list | None,
+    active_checkpoints: list | None,
 ) -> tuple[str | None, list, list[BranchInfo], str]:
-    """Resolve worktrees, branches, and base branch for cleanup calculations."""
+    """Resolve checkpoints, branches, and base branch for cleanup calculations."""
     git_branches = _git_branches_module()
     resolved_project_id = git_branches._resolve_project_id(repo_path, project_id)
-    worktrees = (
-        active_worktrees
-        if active_worktrees is not None
-        else (git_branches._get_active_worktrees(resolved_project_id) if resolved_project_id else [])
+    checkpoints = (
+        active_checkpoints
+        if active_checkpoints is not None
+        else (git_branches._get_active_checkpoints(resolved_project_id) if resolved_project_id else [])
     )
     resolved_branches = branches or git_branches.get_all_branches(
         repo_path,
         resolved_project_id,
-        active_worktrees=worktrees,
+        active_checkpoints=checkpoints,
     )
-    return resolved_project_id, worktrees, resolved_branches, git_branches._detect_base_branch(repo_path)
+    return resolved_project_id, checkpoints, resolved_branches, git_branches._detect_base_branch(repo_path)
 
 
 def _prune_branch_list(repo_path: Path, branch_names: list[str], base_branch: str) -> list[str]:
@@ -218,20 +218,22 @@ def build_repo_workspace_summary(
     project_id: str | None = None,
     *,
     branches: list[BranchInfo] | None = None,
-    active_worktrees: list | None = None,
+    active_checkpoints: list | None = None,
 ) -> RepoWorkspaceSummary:
-    """Build per-repository branch/worktree cleanup counters."""
+    """Build per-repository branch/checkpoint cleanup counters."""
     from ..api.models.git_models import RepoWorkspaceSummary
 
     git_branches = _git_branches_module()
-    _resolved_project_id, worktrees, branches, base_branch = _resolve_workspace_inventory(
+    _resolved_project_id, checkpoints, branches, base_branch = _resolve_workspace_inventory(
         repo_path,
         project_id,
         branches=branches,
-        active_worktrees=active_worktrees,
+        active_checkpoints=active_checkpoints,
     )
     dirty_main_repo = git_core.has_uncommitted_changes(repo_path)
-    dirty_worktrees = sum(1 for worktree in worktrees if git_core.has_uncommitted_changes(worktree.path))
+    dirty_checkpoint = bool(
+        dirty_main_repo and any(branch.is_current and branch.task_id and branch.has_checkpoint for branch in branches)
+    )
     task_branches = [branch for branch in branches if branch.task_id]
     orphan_branches = _orphan_task_branches(branches)
     prunable_names = set(
@@ -248,15 +250,15 @@ def build_repo_workspace_summary(
         base_branch=base_branch,
     )
     return RepoWorkspaceSummary(
-        active_worktrees=len(worktrees),
-        dirty_worktrees=dirty_worktrees,
+        active_checkpoints=len(checkpoints),
+        dirty_checkpoints=1 if dirty_checkpoint else 0,
         dirty_main_repo=dirty_main_repo,
-        branches_with_worktrees=sum(1 for branch in task_branches if branch.has_worktree),
+        branches_with_checkpoints=sum(1 for branch in task_branches if branch.has_checkpoint),
         task_branches=len(task_branches),
         orphan_branches=len(orphan_branches),
         prunable_branches=len(prunable_branches),
-        needs_cleanup=bool(dirty_main_repo or dirty_worktrees or orphan_branches or prunable_branches),
-        worktree_task_ids=[worktree.task_id for worktree in worktrees[:2]],
+        needs_cleanup=bool(dirty_main_repo or checkpoints or orphan_branches or prunable_branches),
+        checkpoint_task_ids=[checkpoint.task_id for checkpoint in checkpoints[:2]],
         orphan_branch_names=[branch.name for branch in orphan_branches[:5]],
         prunable_branch_names=[branch.name for branch in prunable_branches[:5]],
         salvage_task_ids=[assessment.task_id for assessment in orphan_assessments if assessment.resolution == "salvage"][:5],

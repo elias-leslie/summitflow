@@ -122,10 +122,14 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
     switch (type) {
       case 'features':
-        router.push(`/projects/${project.id}?tab=tasks&status=active&taskType=feature`)
+        router.push(
+          `/projects/${project.id}?tab=tasks&status=active&taskType=feature`,
+        )
         break
       case 'tasks':
-        router.push(`/projects/${project.id}?tab=tasks&status=active&taskType=task`)
+        router.push(
+          `/projects/${project.id}?tab=tasks&status=active&taskType=task`,
+        )
         break
       case 'bugs':
         router.push(
@@ -141,9 +145,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
   return (
     <article
-      className={clsx(
-        'card-interactive p-5 group',
-      )}
+      className={clsx('card-interactive p-5 group')}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocusCapture={() => setHovered(true)}
@@ -222,10 +224,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
             )}
             {(health || qualityGate) && (
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                <span className={clsx(
-                  'text-slate-500',
-                  health?.healthy === false && 'text-rose-300',
-                )}>
+                <span
+                  className={clsx(
+                    'text-slate-500',
+                    health?.healthy === false && 'text-rose-300',
+                  )}
+                >
                   Service:{' '}
                   {health
                     ? health.healthy
@@ -235,10 +239,14 @@ export function ProjectCard({ project }: ProjectCardProps) {
                       : health.error || 'unhealthy'
                     : 'pending'}
                 </span>
-                <span className={clsx(
-                  'text-slate-500',
-                  qualityGate && !qualityGate.overall_pass && 'text-amber-300',
-                )}>
+                <span
+                  className={clsx(
+                    'text-slate-500',
+                    qualityGate &&
+                      !qualityGate.overall_pass &&
+                      'text-amber-300',
+                  )}
+                >
                   Quality:{' '}
                   {qualityGate
                     ? qualityGate.overall_pass
@@ -339,7 +347,9 @@ export function ProjectCard({ project }: ProjectCardProps) {
                   aria-label={`${metric.label}: ${metric.count}`}
                 >
                   <Icon className="w-3 h-3" />
-                  <span className="tabular-nums font-semibold">{metric.count}</span>
+                  <span className="tabular-nums font-semibold">
+                    {metric.count}
+                  </span>
                 </button>
               )
             })}
@@ -347,7 +357,10 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
           <span className="text-2xs text-slate-600 flex items-center gap-1 font-mono">
             <Clock className="w-3 h-3" />
-            {new Date(project.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            {new Date(project.created_at).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+            })}
           </span>
         </div>
       </div>

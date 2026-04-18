@@ -18,7 +18,6 @@ from ._lane_scope import (
     _UNKNOWN_TASK,
     classify_lane_scopes,
     find_scope_overlap,
-    load_task_scope,
 )
 
 logger = get_logger(__name__)
@@ -44,6 +43,7 @@ _STALE_SAME_TASK = "stale_same_task"
 _STALE_LANE = "stale_lane"
 _EXACT_FILE = "exact_file"
 _SHARED_PLUMBING = "shared_plumbing"
+_SHARED_CHECKOUT = "shared_checkout"
 _READ_OVERLAP = "read_overlap"
 _UNSCOPED_LANE = "unscoped_lane"
 _UNSCOPED_TARGET = "unscoped_target"
@@ -138,8 +138,7 @@ def _lane_summary(session: dict[str, object]) -> str:
     working_dir = session.get("working_dir")
     branch = session.get("current_branch")
     if isinstance(working_dir, str) and working_dir:
-        lane_kind = "worktree" if bool(session.get("is_worktree")) else "repo"
-        location = f"{lane_kind} {working_dir}"
+        location = f"checkout {working_dir}"
     elif isinstance(branch, str) and branch:
         location = f"branch {branch}"
     else:
@@ -379,16 +378,20 @@ def _apply_other_lane_conflict(
         _apply_stale_lane_conflict(result, project_id, lane_sessions, stale_sessions)
         return
 
-    target_scope = load_task_scope(task_id)
-    if target_scope is None:
-        _apply_unscoped_conflict(
-            result, _UNSCOPED_TARGET, task_id, project_id, lane_sessions,
-            "Target task scope unavailable",
-        )
-        return
-
-    _apply_scoped_conflict(result, task_id, project_id, lane_sessions, target_scope)
-
+    primary = lane_sessions[0]
+    _set_owner_from_session(result, primary)
+    owner_task = _lane_task_id(primary)
+    result.overlap_kind = _SHARED_CHECKOUT
+    result.disposition = _BLOCK
+    result.conflicting_tasks = [owner_task] if owner_task else []
+    result.issues.append(
+        f"Another active coding lane already owns the shared checkout for project {project_id}: {_lane_summary(primary)}"
+    )
+    result.suggestions.append(
+        "Shared-checkout mode does not allow parallel same-project coding lanes. "
+        "Finish, retire, or reconcile the active lane before dispatching another task."
+    )
+    return
 
 # -- Session partitioning --
 

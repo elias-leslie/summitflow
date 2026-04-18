@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .checkout import check_checkout_health
 from .events import emit_log
-from .worktree import check_worktree_health
 
 
 def validate_subtask_environment(
@@ -20,11 +20,11 @@ def validate_subtask_environment(
     Returns:
         Failure dict if validation fails, None if validation passes.
     """
-    if not check_worktree_health(project_path, task_id, project_id):
+    if not check_checkout_health(project_path, task_id, project_id):
         return {
             "subtask_id": subtask_short_id,
             "status": "failed",
-            "reason": "worktree_invalid",
+            "reason": "checkout_invalid",
         }
 
     steps = subtask.get("steps_from_table") or subtask.get("steps") or []

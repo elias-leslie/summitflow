@@ -1,4 +1,4 @@
-"""Worktree health checking and project path utilities."""
+"""Checkout health checking and project path utilities."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from json import JSONDecodeError, loads
 from pathlib import Path
 
 from ....logging_config import get_logger
-from ....services.worktree import get_execution_path
+from ....services.task_checkout import get_execution_path
 from ....storage.projects import get_project_root_path
 from .events import emit_log
 
@@ -30,7 +30,7 @@ def _parse_dirty_paths(status_output: str) -> list[str]:
 
 
 def _load_main_repo_dirty_baseline(task_id: str, project_id: str, main_root: str) -> list[str]:
-    """Load the dirty-file baseline captured when the worktree was created."""
+    """Load the dirty-file baseline captured when the checkpoint was created."""
     meta_path = Path(main_root) / ".st" / "snapshots" / f"{task_id}.meta.json"
     if not meta_path.exists():
         return []
@@ -53,20 +53,19 @@ def _load_main_repo_dirty_baseline(task_id: str, project_id: str, main_root: str
 
 
 def get_project_path(project_id: str, task_id: str | None = None) -> str:
-    """Get execution path for task, using worktree if available.
+    """Get execution path for task.
 
     Args:
         project_id: Project ID for fallback to root path
-        task_id: Task ID to check for worktree (optional)
+        task_id: Task ID to resolve branch checkout context (optional)
 
     Returns:
-        Worktree path if task has one, otherwise project root path
+        Project root path
 
     Raises:
         ValueError: If project has no root_path configured
     """
     if task_id:
-        # Use worktree-aware function that checks for task worktree first
         return get_execution_path(task_id, project_id)
 
     # Fallback for cases without task_id (e.g., pristine checks)
@@ -76,20 +75,20 @@ def get_project_path(project_id: str, task_id: str | None = None) -> str:
     return project_root
 
 
-def check_worktree_health(project_path: str, task_id: str, project_id: str) -> bool:
-    """Check worktree is still a valid git working directory."""
+def check_checkout_health(project_path: str, task_id: str, project_id: str) -> bool:
+    """Check the shared checkout is still a valid git working directory."""
     path = Path(project_path)
     if not path.is_dir():
         emit_log(
             task_id, "error",
-            f"WORKTREE GONE: {project_path} removed during execution",
+            f"CHECKOUT GONE: {project_path} removed during execution",
             source="orchestrator", project_id=project_id,
         )
         return False
     if not (path / ".git").exists():
         emit_log(
             task_id, "error",
-            f"WORKTREE CORRUPTED: {project_path} not a git worktree",
+            f"CHECKOUT CORRUPTED: {project_path} not a git checkout",
             source="orchestrator", project_id=project_id,
         )
         return False
@@ -99,12 +98,10 @@ def check_worktree_health(project_path: str, task_id: str, project_id: str) -> b
 def check_main_repo_leakage(
     task_id: str, project_id: str, project_path: str,
 ) -> bool:
-    """Detect if agent wrote files to main repo instead of worktree.
+    """Detect writes outside the starting dirty baseline.
 
-    Compares project_path (worktree) against project root. If they differ
-    and main repo has new uncommitted changes, the agent leaked files.
-
-    Returns True if leakage detected, False otherwise.
+    In the shared-checkout model this only matters when execution somehow runs
+    outside the canonical project root, which should not happen.
     """
     main_root = get_project_root_path(project_id)
     if not main_root or main_root == project_path:
@@ -131,7 +128,7 @@ def check_main_repo_leakage(
             emit_log(
                 task_id,
                 "warn",
-                f"WORKTREE LEAKAGE: Main repo dirt changed during worktree execution; {cause_hint}. "
+                f"CHECKOUT LEAKAGE: Main repo dirt changed during task-branch execution; {cause_hint}. "
                 f"Files: {leaked_preview[:200]}",
                 source="orchestrator",
                 project_id=project_id,

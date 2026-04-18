@@ -24,7 +24,7 @@ def _blocked_decision(repo_root: Path, path: str) -> GuardDecision:
                 session_id="sess-foreign",
                 task_id=None,
                 branch="main",
-                worktree_path=str(repo_root),
+                working_dir=str(repo_root),
                 reason="unknown_scope",
                 paths=(path,),
             ),

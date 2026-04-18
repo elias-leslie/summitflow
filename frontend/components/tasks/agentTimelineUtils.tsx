@@ -1,6 +1,12 @@
-export function highlightText(text: string, searchTerm?: string): React.ReactNode {
+export function highlightText(
+  text: string,
+  searchTerm?: string,
+): React.ReactNode {
   if (!searchTerm || !text) return text
-  const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+  const regex = new RegExp(
+    `(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`,
+    'gi',
+  )
   const parts = text.split(regex)
   return parts.map((part, i) =>
     regex.test(part) ? (

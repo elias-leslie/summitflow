@@ -23,7 +23,11 @@ function runtimeSummary(rt: RuntimeModeStatus): string {
 }
 
 export function RuntimeModeBanner() {
-  const { data: rt, error, isLoading } = useQuery({
+  const {
+    data: rt,
+    error,
+    isLoading,
+  } = useQuery({
     queryKey: ['runtime', 'mode'],
     queryFn: runtimeApi.getRuntime,
     refetchInterval: POLL_MONITOR,
@@ -61,8 +65,12 @@ export function RuntimeModeBanner() {
 
         {/* Inline metadata */}
         <div className="hidden md:flex items-center gap-3 text-xs text-slate-500">
-          <span>Apps: <span className="text-slate-300">{rt.apps_runtime}</span></span>
-          <span>Infra: <span className="text-slate-300">{rt.infra_runtime}</span></span>
+          <span>
+            Apps: <span className="text-slate-300">{rt.apps_runtime}</span>
+          </span>
+          <span>
+            Infra: <span className="text-slate-300">{rt.infra_runtime}</span>
+          </span>
         </div>
       </div>
     </div>

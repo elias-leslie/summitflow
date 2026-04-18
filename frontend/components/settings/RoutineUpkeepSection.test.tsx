@@ -32,7 +32,11 @@ describe('RoutineUpkeepSection', () => {
     render(
       <RoutineUpkeepSection
         settings={{ ...baseSettings, upkeep_enabled: false }}
-        status={{ settings: { enabled: false, frequency_minutes: 120, batch_limit: 5 }, latest: null, recent: [] }}
+        status={{
+          settings: { enabled: false, frequency_minutes: 120, batch_limit: 5 },
+          latest: null,
+          recent: [],
+        }}
         isPending={false}
         isRunning={false}
         onEnabledToggle={vi.fn()}
@@ -43,7 +47,9 @@ describe('RoutineUpkeepSection', () => {
     )
 
     expect(screen.getByText('Disabled')).toBeInTheDocument()
-    expect(screen.getByRole('switch', { name: 'Enable routine upkeep' })).toHaveAttribute('aria-checked', 'false')
+    expect(
+      screen.getByRole('switch', { name: 'Enable routine upkeep' }),
+    ).toHaveAttribute('aria-checked', 'false')
     expect(screen.getByRole('button', { name: 'Run now' })).toBeDisabled()
   })
 
@@ -84,7 +90,11 @@ describe('RoutineUpkeepSection', () => {
     render(
       <RoutineUpkeepSection
         settings={baseSettings}
-        status={{ settings: { enabled: true, frequency_minutes: 120, batch_limit: 5 }, latest: null, recent: [] }}
+        status={{
+          settings: { enabled: true, frequency_minutes: 120, batch_limit: 5 },
+          latest: null,
+          recent: [],
+        }}
         isPending={false}
         isRunning={false}
         onEnabledToggle={vi.fn()}

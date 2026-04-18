@@ -16,21 +16,21 @@ import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { useMutation } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import { useExecutionWebSocket } from '@/hooks/useExecutionWebSocket'
 import type { Task, TaskStatus } from '@/lib/api'
 import { deleteTask, executeTask } from '@/lib/api/tasks'
-import { DragOverlayTaskCard } from './TaskCard'
-import { KanbanRow } from './KanbanRow'
-import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
+import { useTaskMutationSync } from '@/lib/task-mutation-sync'
+import { getErrorMessage } from '@/lib/utils'
 import {
-  ROWS,
   columnToStatus,
+  ROWS,
   statusToColumn,
   type TaskKanbanColumn,
 } from './columnConfig'
 import { useRowCollapse } from './hooks/useRowCollapse'
-import { useTaskMutationSync } from '@/lib/task-mutation-sync'
-import { getErrorMessage } from '@/lib/utils'
+import { KanbanRow } from './KanbanRow'
+import { DragOverlayTaskCard } from './TaskCard'
 
 // ============================================================================
 // Types

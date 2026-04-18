@@ -5,14 +5,25 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..worktree_ops import get_worktree_branch
-from ..worktree_paths import (
+from ..workspace_paths import (
     get_lanes_base_dir,
     get_workspace_snapshots_base_dir,
 )
 from ._helpers import _require_workspaces, _resolve_repo_root, _resolve_scope, _sanitize_label
 from ._manifest import _load_manifest, _scope_key, _snapshot_manifest_root
 from ._models import LaneInspection, SnapshotScope
+
+
+def _get_lane_branch(lane_path: Path) -> str | None:
+    from ..repo_git import RepoGitError, run_git
+
+    try:
+        result = run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=lane_path, check=False)
+    except (RepoGitError, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
 
 
 @dataclass(frozen=True)
@@ -81,7 +92,7 @@ def find_orphaned_lane_manifest_dirs(project_id: str) -> list[SnapshotResidue]:
 
 
 def find_empty_lane_dirs(project_id: str) -> list[SnapshotResidue]:
-    """Find empty non-worktree lane directories left behind after lane cleanup."""
+    """Find empty lane directories left behind after cleanup."""
     lanes_base = get_lanes_base_dir(project_id)
     if not lanes_base.is_dir():
         return []
@@ -227,8 +238,8 @@ def inspect_lane(project_id: str, lane_name: str) -> LaneInspection:
 
         raise SnapshotError(f"Lane does not exist: {lane_path}")
 
-    is_worktree = (lane_path / ".git").exists()
-    branch = get_worktree_branch(lane_path) if is_worktree else None
+    has_checkout_metadata = (lane_path / ".git").exists()
+    branch = _get_lane_branch(lane_path) if has_checkout_metadata else None
 
     snap_base = get_workspace_snapshots_base_dir(project_id) / "lanes" / _sanitize_label(lane_name)
     snapshot_paths: list[Path] = []
@@ -245,7 +256,7 @@ def inspect_lane(project_id: str, lane_name: str) -> LaneInspection:
         project_id=project_id,
         lane_name=lane_name,
         lane_path=lane_path,
-        is_git_worktree=is_worktree,
+        has_checkout_metadata=has_checkout_metadata,
         branch=branch,
         snapshot_paths=snapshot_paths,
         snapshot_dir=snapshot_dir,

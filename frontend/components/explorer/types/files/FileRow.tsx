@@ -15,7 +15,6 @@ interface FileRowProps {
   entry: ExplorerEntry
 }
 
-
 // Comment density indicator - shows when >15% (excessive commenting)
 function CommentDensityBadge({
   density,

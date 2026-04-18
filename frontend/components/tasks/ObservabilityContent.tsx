@@ -62,10 +62,7 @@ export function ObservabilityContent({
         className="flex-1 overflow-y-auto bg-slate-950/40 rounded-b-lg border border-slate-800/50 border-t-0"
         style={heightStyle}
       >
-        <SpanTree
-          projectId={projectId}
-          traceId={taskId}
-        />
+        <SpanTree projectId={projectId} traceId={taskId} />
       </div>
     )
   }
@@ -74,7 +71,10 @@ export function ObservabilityContent({
     <div
       ref={scrollRef}
       onScroll={onScroll}
-      className={clsx('flex-1 overflow-y-auto bg-slate-950/40 border border-slate-800/50 border-t-0', viewMode !== 'replay' && 'rounded-b-lg')}
+      className={clsx(
+        'flex-1 overflow-y-auto bg-slate-950/40 border border-slate-800/50 border-t-0',
+        viewMode !== 'replay' && 'rounded-b-lg',
+      )}
       style={heightStyle}
     >
       {isLoading && events.length === 0 ? (
@@ -92,7 +92,9 @@ export function ObservabilityContent({
           {searchTerm || filterEventTypes ? (
             <span className="text-sm">No events match your filters</span>
           ) : sessionIds.length === 0 ? (
-            <span className="text-sm">No Agent Hub sessions linked to this task</span>
+            <span className="text-sm">
+              No Agent Hub sessions linked to this task
+            </span>
           ) : (
             <div className="text-center space-y-2">
               <span className="text-sm block">No events recorded yet</span>
@@ -102,7 +104,15 @@ export function ObservabilityContent({
                     const live = session.live_activity
                     return (
                       <div key={session.id}>
-                        {(session.effective_model || session.requested_model || session.id).split('/').pop()} · {live ? `${live.health}/${live.phase}` : session.status}
+                        {(
+                          session.effective_model ||
+                          session.requested_model ||
+                          session.id
+                        )
+                          .split('/')
+                          .pop()}{' '}
+                        ·{' '}
+                        {live ? `${live.health}/${live.phase}` : session.status}
                       </div>
                     )
                   })}
@@ -117,12 +127,12 @@ export function ObservabilityContent({
             <div
               key={event.id}
               data-event-index={idx}
-              className={clsx(idx === replayIndex && 'ring-1 ring-cyan-500/50 ring-inset', idx > replayIndex && 'opacity-30')}
+              className={clsx(
+                idx === replayIndex && 'ring-1 ring-cyan-500/50 ring-inset',
+                idx > replayIndex && 'opacity-30',
+              )}
             >
-              <AgentTimelineEvent
-                event={event}
-                searchTerm={searchTerm}
-              />
+              <AgentTimelineEvent event={event} searchTerm={searchTerm} />
             </div>
           ))}
         </div>

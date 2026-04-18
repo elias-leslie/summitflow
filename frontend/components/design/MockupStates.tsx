@@ -7,7 +7,9 @@ interface LoadingStateProps {
   className?: string
 }
 
-export function LoadingState({ className = '' }: LoadingStateProps): React.ReactElement {
+export function LoadingState({
+  className = '',
+}: LoadingStateProps): React.ReactElement {
   return (
     <div className={clsx('flex-1 flex items-center justify-center', className)}>
       <Loader2 className="w-8 h-8 text-outrun-500 animate-spin" />

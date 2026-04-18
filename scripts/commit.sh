@@ -141,7 +141,7 @@ scope_cached_names() {
     esac
 }
 
-scope_worktree_names() {
+scope_unstaged_names() {
     case "$COMMIT_SCOPE_MODE" in
         paths|staged)
             git diff --name-only -- "${COMMIT_SCOPE_PATHS[@]}" 2>/dev/null
@@ -155,7 +155,7 @@ scope_worktree_names() {
 scope_all_names() {
     {
         scope_cached_names
-        scope_worktree_names
+        scope_unstaged_names
     } | awk 'NF && !seen[$0]++'
 }
 
@@ -224,7 +224,7 @@ scope_stage_for_commit() {
         staged)
             # Preserve the user's staged selection as-is. Re-adding explicit
             # pathspecs can fail when a staged deletion leaves behind an
-            # ignored worktree copy (for example after `git rm --cached`).
+            # ignored local copy (for example after `git rm --cached`).
             :
             ;;
         *)
@@ -280,14 +280,6 @@ push_current_branch() {
 
 resolve_repo_name() {
     local repo=$1
-    if [[ "$repo" == *"/worktrees/"* ]]; then
-        local derived
-        derived=$(echo "$repo" | sed -E 's|.*/worktrees/([^/]+)/.*|\1|')
-        if [[ -n "$derived" && "$derived" != "$repo" ]]; then
-            echo "$derived"
-            return
-        fi
-    fi
     basename "$repo"
 }
 

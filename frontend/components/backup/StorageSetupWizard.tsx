@@ -1,9 +1,17 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { CheckCircle2, ChevronRight, HardDrive, Loader2, Server, Wifi, XCircle } from 'lucide-react'
 import { clsx } from 'clsx'
+import {
+  CheckCircle2,
+  ChevronRight,
+  HardDrive,
+  Loader2,
+  Server,
+  Wifi,
+  XCircle,
+} from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 import { createStorageBackend, testStorageBackend } from '@/lib/api/backups'
 
 type Step = 'type' | 'details' | 'test' | 'done'
@@ -29,10 +37,13 @@ export function StorageSetupWizard() {
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [backendId, setBackendId] = useState<string | null>(null)
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [testResult, setTestResult] = useState<{
+    success: boolean
+    message: string
+  } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const currentStepIdx = STEPS.findIndex(s => s.key === step)
+  const currentStepIdx = STEPS.findIndex((s) => s.key === step)
 
   const handleSave = async () => {
     setSaving(true)
@@ -86,7 +97,11 @@ export function StorageSetupWizard() {
                     : 'bg-slate-800 border-slate-600 text-slate-500',
               )}
             >
-              {i < currentStepIdx ? <CheckCircle2 className="w-4 h-4" /> : i + 1}
+              {i < currentStepIdx ? (
+                <CheckCircle2 className="w-4 h-4" />
+              ) : (
+                i + 1
+              )}
             </div>
             <span
               className={clsx(
@@ -110,12 +125,16 @@ export function StorageSetupWizard() {
             Where should we store your backups?
           </h2>
           <p className="text-sm text-slate-400">
-            Choose a storage type. Most setups use SMB (network share) to send backups to a NAS.
+            Choose a storage type. Most setups use SMB (network share) to send
+            backups to a NAS.
           </p>
           <div className="space-y-2">
             <button
               type="button"
-              onClick={() => { setBackendType('smb'); setStep('details') }}
+              onClick={() => {
+                setBackendType('smb')
+                setStep('details')
+              }}
               className={clsx(
                 'w-full p-4 rounded-lg border text-left flex items-center gap-4 transition-colors',
                 'bg-slate-800/50 border-slate-700 hover:border-phosphor-500/50',
@@ -123,8 +142,12 @@ export function StorageSetupWizard() {
             >
               <Server className="w-8 h-8 text-blue-400" />
               <div>
-                <p className="text-sm font-medium text-slate-200">Network Share (SMB)</p>
-                <p className="text-xs text-slate-400">Send backups to your NAS or file server</p>
+                <p className="text-sm font-medium text-slate-200">
+                  Network Share (SMB)
+                </p>
+                <p className="text-xs text-slate-400">
+                  Send backups to your NAS or file server
+                </p>
               </div>
             </button>
           </div>
@@ -143,23 +166,33 @@ export function StorageSetupWizard() {
 
           <div className="space-y-3">
             <div>
-              <label htmlFor="setup-name" className="block text-xs text-slate-400 mb-1">Name</label>
+              <label
+                htmlFor="setup-name"
+                className="block text-xs text-slate-400 mb-1"
+              >
+                Name
+              </label>
               <input
                 id="setup-name"
                 type="text"
                 value={name}
-                onChange={e => setName(e.target.value)}
+                onChange={(e) => setName(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
                            focus:outline-none focus:ring-2 focus:ring-phosphor-500"
               />
             </div>
             <div>
-              <label htmlFor="setup-host" className="block text-xs text-slate-400 mb-1">Host (IP or hostname)</label>
+              <label
+                htmlFor="setup-host"
+                className="block text-xs text-slate-400 mb-1"
+              >
+                Host (IP or hostname)
+              </label>
               <input
                 id="setup-host"
                 type="text"
                 value={host}
-                onChange={e => setHost(e.target.value)}
+                onChange={(e) => setHost(e.target.value)}
                 placeholder="192.168.1.100 or nas.local"
                 className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
                            placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-phosphor-500"
@@ -167,23 +200,33 @@ export function StorageSetupWizard() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="setup-share" className="block text-xs text-slate-400 mb-1">Share name</label>
+                <label
+                  htmlFor="setup-share"
+                  className="block text-xs text-slate-400 mb-1"
+                >
+                  Share name
+                </label>
                 <input
                   id="setup-share"
                   type="text"
                   value={share}
-                  onChange={e => setShare(e.target.value)}
+                  onChange={(e) => setShare(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
                              focus:outline-none focus:ring-2 focus:ring-phosphor-500"
                 />
               </div>
               <div>
-                <label htmlFor="setup-path" className="block text-xs text-slate-400 mb-1">Path prefix</label>
+                <label
+                  htmlFor="setup-path"
+                  className="block text-xs text-slate-400 mb-1"
+                >
+                  Path prefix
+                </label>
                 <input
                   id="setup-path"
                   type="text"
                   value={path}
-                  onChange={e => setPath(e.target.value)}
+                  onChange={(e) => setPath(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
                              focus:outline-none focus:ring-2 focus:ring-phosphor-500"
                 />
@@ -191,23 +234,33 @@ export function StorageSetupWizard() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="setup-user" className="block text-xs text-slate-400 mb-1">Username</label>
+                <label
+                  htmlFor="setup-user"
+                  className="block text-xs text-slate-400 mb-1"
+                >
+                  Username
+                </label>
                 <input
                   id="setup-user"
                   type="text"
                   value={user}
-                  onChange={e => setUser(e.target.value)}
+                  onChange={(e) => setUser(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
                              focus:outline-none focus:ring-2 focus:ring-phosphor-500"
                 />
               </div>
               <div>
-                <label htmlFor="setup-password" className="block text-xs text-slate-400 mb-1">Password</label>
+                <label
+                  htmlFor="setup-password"
+                  className="block text-xs text-slate-400 mb-1"
+                >
+                  Password
+                </label>
                 <input
                   id="setup-password"
                   type="password"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
                              focus:outline-none focus:ring-2 focus:ring-phosphor-500"
                 />
@@ -217,7 +270,7 @@ export function StorageSetupWizard() {
               <input
                 type="checkbox"
                 checked={isDefault}
-                onChange={e => setIsDefault(e.target.checked)}
+                onChange={(e) => setIsDefault(e.target.checked)}
                 className="rounded border-slate-500 bg-slate-600 text-phosphor-500 focus:ring-phosphor-500 focus:ring-offset-0"
               />
               Use as default storage backend
@@ -276,7 +329,12 @@ export function StorageSetupWizard() {
               ) : (
                 <XCircle className="w-8 h-8 text-red-400 mx-auto mb-2" />
               )}
-              <p className={clsx('text-sm', testResult.success ? 'text-green-400' : 'text-red-400')}>
+              <p
+                className={clsx(
+                  'text-sm',
+                  testResult.success ? 'text-green-400' : 'text-red-400',
+                )}
+              >
                 {testResult.message}
               </p>
             </div>
@@ -328,8 +386,9 @@ export function StorageSetupWizard() {
             Storage configured!
           </h2>
           <p className="text-sm text-slate-400">
-            Your backups will now be sent to <strong className="text-slate-300">{name}</strong>.
-            Scheduled backups run daily with 14-day retention by default.
+            Your backups will now be sent to{' '}
+            <strong className="text-slate-300">{name}</strong>. Scheduled
+            backups run daily with 14-day retention by default.
           </p>
           <button
             type="button"

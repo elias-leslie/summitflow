@@ -76,7 +76,10 @@ export function fetchSnapshots(
   )
 }
 
-export function fetchScopes(projectId?: string, includeArchived = false): Promise<BtrfsScope[]> {
+export function fetchScopes(
+  projectId?: string,
+  includeArchived = false,
+): Promise<BtrfsScope[]> {
   return fetchWithErrorHandling<BtrfsScope[]>(
     `/api/snapshots/scopes${buildQueryString({
       project_id: projectId,
@@ -86,14 +89,19 @@ export function fetchScopes(projectId?: string, includeArchived = false): Promis
   )
 }
 
-export function fetchSnapshotSummary(projectId?: string): Promise<BtrfsSummary> {
+export function fetchSnapshotSummary(
+  projectId?: string,
+): Promise<BtrfsSummary> {
   return fetchWithErrorHandling<BtrfsSummary>(
     `/api/snapshots/summary${buildQueryString({ project_id: projectId })}`,
     { errorMessage: 'Failed to fetch snapshot summary' },
   )
 }
 
-export function createSnapshot(projectId: string, name?: string): Promise<BtrfsSnapshot> {
+export function createSnapshot(
+  projectId: string,
+  name?: string,
+): Promise<BtrfsSnapshot> {
   return postJson<BtrfsSnapshot>(
     '/api/snapshots/snap',
     { project_id: projectId, name: name ?? null },
@@ -101,7 +109,11 @@ export function createSnapshot(projectId: string, name?: string): Promise<BtrfsS
   )
 }
 
-export function recoverSnapshot(snapshotId: string, projectId: string, name?: string): Promise<{ ok: boolean; recovery_path?: string; error?: string }> {
+export function recoverSnapshot(
+  snapshotId: string,
+  projectId: string,
+  name?: string,
+): Promise<{ ok: boolean; recovery_path?: string; error?: string }> {
   return postJson(
     `/api/snapshots/${snapshotId}/recover`,
     { project_id: projectId, name: name ?? null },
@@ -109,7 +121,9 @@ export function recoverSnapshot(snapshotId: string, projectId: string, name?: st
   )
 }
 
-export function pruneSnapshots(dryRun = true): Promise<{ ok: boolean; dry_run: boolean; pruned: number; error?: string }> {
+export function pruneSnapshots(
+  dryRun = true,
+): Promise<{ ok: boolean; dry_run: boolean; pruned: number; error?: string }> {
   return postJson(
     '/api/snapshots/prune',
     { dry_run: dryRun },

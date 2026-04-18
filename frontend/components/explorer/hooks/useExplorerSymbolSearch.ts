@@ -2,10 +2,10 @@
 
 import { useQuery } from '@tanstack/react-query'
 import {
-  fetchExplorerSymbolDetail,
-  searchExplorerSymbols,
   type ExplorerSymbolDetailResponse,
   type ExplorerSymbolSearchResponse,
+  fetchExplorerSymbolDetail,
+  searchExplorerSymbols,
 } from '@/lib/api/explorer'
 import { GC_EXPLORER, STALE_GIT } from '@/lib/polling'
 import { explorerKeys } from './useExplorerData'
@@ -28,7 +28,13 @@ export const explorerSymbolKeys = {
       limit,
     ] as const,
   detail: (projectId: string, symbolId: string, contextLines: number = 4) =>
-    [...explorerKeys.all, 'symbol-detail', projectId, symbolId, contextLines] as const,
+    [
+      ...explorerKeys.all,
+      'symbol-detail',
+      projectId,
+      symbolId,
+      contextLines,
+    ] as const,
 }
 
 export function useExplorerSymbolSearch(
@@ -76,7 +82,11 @@ export function useExplorerSymbolDetail(
 ) {
   const contextLines = options.contextLines ?? 4
   return useQuery<ExplorerSymbolDetailResponse>({
-    queryKey: explorerSymbolKeys.detail(projectId, symbolId ?? '', contextLines),
+    queryKey: explorerSymbolKeys.detail(
+      projectId,
+      symbolId ?? '',
+      contextLines,
+    ),
     queryFn: () =>
       fetchExplorerSymbolDetail(projectId, {
         symbolId: symbolId ?? '',

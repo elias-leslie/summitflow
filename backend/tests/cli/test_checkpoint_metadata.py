@@ -17,7 +17,6 @@ def test_load_snapshot_meta_finds_global_project_checkpoint(tmp_path: Path, monk
         base_branch="main",
         created_at="2026-03-07T06:00:00+00:00",
         claimed_by="tester",
-        worktree_path="/tmp/worktree",
     )
     global_meta_path = (
         tmp_path
@@ -35,4 +34,5 @@ def test_load_snapshot_meta_finds_global_project_checkpoint(tmp_path: Path, monk
 
     assert loaded is not None
     assert loaded.project_id == "summitflow"
-    assert loaded.worktree_path == "/tmp/worktree"
+    assert loaded.base_branch == "main"
+    assert loaded.claimed_by == "tester"

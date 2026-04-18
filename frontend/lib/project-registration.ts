@@ -83,7 +83,9 @@ export function validateProjectForm(
   const requireProjectId = options.requireProjectId ?? true
   const normalizedProjectId = normalizeProjectId(fields.projectId ?? '')
   const normalizedBaseUrl = normalizeBaseUrl(fields.baseUrl)
-  const normalizedHealthEndpoint = normalizeHealthEndpoint(fields.healthEndpoint)
+  const normalizedHealthEndpoint = normalizeHealthEndpoint(
+    fields.healthEndpoint,
+  )
   const normalizedRootPath = normalizeRootPath(fields.rootPath)
 
   if (!fields.name.trim()) {
@@ -94,7 +96,8 @@ export function validateProjectForm(
     if (!normalizedProjectId) {
       errors.projectId = 'Project ID is required'
     } else if (!/^[a-z0-9-]+$/.test(normalizedProjectId)) {
-      errors.projectId = 'Project ID must be lowercase alphanumeric with hyphens'
+      errors.projectId =
+        'Project ID must be lowercase alphanumeric with hyphens'
     }
   }
 
@@ -139,7 +142,9 @@ export function normalizeProjectFormValues(
 ): NormalizedProjectFormValues {
   return {
     name: fields.name.trim(),
-    projectId: fields.projectId ? normalizeProjectId(fields.projectId) : undefined,
+    projectId: fields.projectId
+      ? normalizeProjectId(fields.projectId)
+      : undefined,
     baseUrl: normalizeBaseUrl(fields.baseUrl),
     healthEndpoint:
       normalizeHealthEndpoint(fields.healthEndpoint) || DEFAULT_HEALTH_ENDPOINT,

@@ -166,7 +166,7 @@ class TestTaskObservability:
     def test_get_agent_events_falls_back_to_repo_root_linked_sessions_and_backfills(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
     ) -> None:
-        """Fallback should also recover task-linked sessions from worktree metadata."""
+        """Fallback should also recover task-linked sessions from checkout metadata."""
         response = client.post(
             f"/api/projects/{test_project_id}/tasks",
             json={"title": "Observed task", "task_type": "task"},

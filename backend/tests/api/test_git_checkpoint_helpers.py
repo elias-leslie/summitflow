@@ -1,10 +1,10 @@
-"""Tests for git worktree helper utilities."""
+"""Tests for git checkpoint helper utilities."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from app.api.git_helpers.worktree_helpers import enrich_snapshots
+from app.api.git_helpers.checkpoint_helpers import enrich_snapshots
 from app.api.models.git_models import SnapshotInfo
 
 
@@ -22,7 +22,7 @@ def _snapshot(task_id: str) -> SnapshotInfo:
     )
 
 
-@patch("app.api.git_helpers.worktree_helpers.get_cursor")
+@patch("app.api.git_helpers.checkpoint_helpers.get_cursor")
 def test_enrich_snapshots_updates_matching_task_metadata(mock_get_cursor: MagicMock) -> None:
     mock_cursor = MagicMock()
     mock_get_cursor.return_value.__enter__.return_value = mock_cursor
@@ -42,7 +42,7 @@ def test_enrich_snapshots_updates_matching_task_metadata(mock_get_cursor: MagicM
     assert second.project_id == ""
 
 
-@patch("app.api.git_helpers.worktree_helpers.get_cursor")
+@patch("app.api.git_helpers.checkpoint_helpers.get_cursor")
 def test_enrich_snapshots_skips_database_when_empty(mock_get_cursor: MagicMock) -> None:
     enrich_snapshots([])
 

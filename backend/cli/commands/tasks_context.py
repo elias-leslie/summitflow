@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import typer
@@ -17,7 +16,7 @@ from app.services.task_lane_preflight import check_task_lane_conflicts
 from app.storage import tasks as task_store
 
 from ..client import APIError, STClient
-from ..lib.worktree import get_worktree_info
+from ..lib.checkpoint import get_snapshot_info
 from ..output import handle_api_error, output_context, output_subtask_context
 from .tasks_helpers import fetch_phase_triggered_references, fetch_triggered_references
 from .tasks_progress import analyze_subtask_sync
@@ -84,18 +83,17 @@ def _get_blockers(
     return blockers
 
 
-def _display_worktree_info(task_id: str) -> None:
-    """Print worktree path and branch if a worktree exists for this task."""
-    worktree_info = get_worktree_info(task_id)
-    if not worktree_info:
+def _display_checkpoint_info(task_id: str) -> None:
+    """Print checkpoint branch if one exists for this task."""
+    snapshot = get_snapshot_info(task_id)
+    if not snapshot:
         return
-    worktree_path = str(worktree_info.path)
-    home = str(Path.home())
-    display_path = worktree_path.replace(home, "~")
+    branch = snapshot.get("branch")
+    if not isinstance(branch, str) or not branch:
+        return
     typer.echo("")
-    typer.echo(f"WORKTREE: {display_path}")
-    typer.echo(f"  branch: {worktree_info.branch}")
-    typer.echo(f"  cd {display_path}  # to work in isolation")
+    typer.echo(f"CHECKPOINT: {branch}")
+    typer.echo("  active on current checkout")
 
 
 def _handle_subtask_context(
@@ -202,7 +200,7 @@ def get_task_context(
         else:
             _handle_task_context(task, task_id, subtasks, summary, client)
 
-        _display_worktree_info(task_id)
+        _display_checkpoint_info(task_id)
 
     except APIError as e:
         if e.status_code == 404 and _try_output_archived_task_context(task_id, subtask):

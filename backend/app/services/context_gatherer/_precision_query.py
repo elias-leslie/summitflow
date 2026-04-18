@@ -108,7 +108,7 @@ _CODE_SIGNAL_TERMS = {
     "planner",
     "autocode",
     "file",
-    "worktree",
+    "checkout",
 }
 
 _EXPLICIT_CODE_MARKERS = ("backend/", "frontend/", ".py", ".ts", ".tsx", "`", "::", "()")

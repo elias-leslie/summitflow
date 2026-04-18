@@ -28,7 +28,7 @@ class QuickSnapshot:
     name: str | None
     project_id: str
     repo_root: str
-    worktree_path: str
+    scope_path: str
     scope_type: str
     scope_name: str
     snapshot_path: str
@@ -50,12 +50,15 @@ class QuickSnapshot:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> QuickSnapshot:
+        scope_path = data.get("scope_path") or data.get("path")
+        if not scope_path:
+            raise KeyError("scope_path")
         return cls(
             id=str(data["id"]),
             name=str(data["name"]) if data.get("name") else None,
             project_id=str(data["project_id"]),
             repo_root=str(data["repo_root"]),
-            worktree_path=str(data["worktree_path"]),
+            scope_path=str(scope_path),
             scope_type=str(data["scope_type"]),
             scope_name=str(data["scope_name"]),
             snapshot_path=str(data["snapshot_path"]),
@@ -105,7 +108,7 @@ class LaneInspection:
     project_id: str
     lane_name: str
     lane_path: Path
-    is_git_worktree: bool
+    has_checkout_metadata: bool
     branch: str | None
     snapshot_paths: list[Path]
     snapshot_dir: Path | None

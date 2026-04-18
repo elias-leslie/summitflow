@@ -2,13 +2,19 @@
  * Shared health/status color utilities for runtime components.
  */
 
-export type HealthTone = 'healthy' | 'unhealthy' | 'warning' | 'stopped' | 'unknown'
+export type HealthTone =
+  | 'healthy'
+  | 'unhealthy'
+  | 'warning'
+  | 'stopped'
+  | 'unknown'
 
 export function resolveHealthTone(state: string, health: string): HealthTone {
   if (health === 'healthy') return 'healthy'
   if (health === 'unhealthy') return 'unhealthy'
   if (state === 'running' || state === 'online') return 'warning'
-  if (state === 'exited' || state === 'stopped' || state === 'offline') return 'stopped'
+  if (state === 'exited' || state === 'stopped' || state === 'offline')
+    return 'stopped'
   return 'unknown'
 }
 

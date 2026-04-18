@@ -15,7 +15,10 @@ interface FileDetailProps {
 export function FileDetail({ entry }: FileDetailProps) {
   const meta = entry.metadata
   const isDir = meta.is_directory
-  const symbolKinds = Object.entries(meta.symbol_kinds ?? {}) as [string, number][]
+  const symbolKinds = Object.entries(meta.symbol_kinds ?? {}) as [
+    string,
+    number,
+  ][]
 
   return (
     <div className="space-y-4">

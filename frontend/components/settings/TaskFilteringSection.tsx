@@ -1,6 +1,6 @@
 import { Filter } from 'lucide-react'
-import { Label } from '../ui/label'
 import { Checkbox } from '../ui/checkbox'
+import { Label } from '../ui/label'
 import { TASK_TYPES } from './autonomous-utils'
 
 interface TaskFilteringSectionProps {
@@ -23,9 +23,7 @@ export function TaskFilteringSection({
 
       {/* Allowed Task Types */}
       <div>
-        <Label className="text-slate-200 mb-2 block">
-          Allowed Task Types
-        </Label>
+        <Label className="text-slate-200 mb-2 block">Allowed Task Types</Label>
         <p className="text-xs text-slate-400 mb-3">
           Select which task types can be executed autonomously
         </p>
@@ -49,7 +47,6 @@ export function TaskFilteringSection({
           </p>
         )}
       </div>
-
     </div>
   )
 }

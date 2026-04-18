@@ -53,27 +53,43 @@ export interface BackupHealthResponse {
 }
 
 export function fetchStorageBackends(): Promise<StorageBackend[]> {
-  return fetchWithErrorHandling<StorageBackend[]>('/api/backup-storage', { errorMessage: 'Failed to fetch storage backends' })
+  return fetchWithErrorHandling<StorageBackend[]>('/api/backup-storage', {
+    errorMessage: 'Failed to fetch storage backends',
+  })
 }
 
 export function fetchStorageStatus(): Promise<StorageStatus> {
-  return fetchWithErrorHandling<StorageStatus>('/api/backup-storage/status', { errorMessage: 'Failed to fetch storage status' })
+  return fetchWithErrorHandling<StorageStatus>('/api/backup-storage/status', {
+    errorMessage: 'Failed to fetch storage status',
+  })
 }
 
 export function createStorageBackend(data: {
-  name: string; backend_type?: string; config?: Record<string, unknown>; is_default?: boolean
+  name: string
+  backend_type?: string
+  config?: Record<string, unknown>
+  is_default?: boolean
 }): Promise<StorageBackend> {
-  return postJson<StorageBackend>('/api/backup-storage', data, 'Failed to create storage backend')
+  return postJson<StorageBackend>(
+    '/api/backup-storage',
+    data,
+    'Failed to create storage backend',
+  )
 }
 
-export function testStorageBackend(id: string): Promise<{ success: boolean; message: string }> {
+export function testStorageBackend(
+  id: string,
+): Promise<{ success: boolean; message: string }> {
   return fetchWithErrorHandling(`/api/backup-storage/${id}/test`, {
-    method: 'POST', errorMessage: 'Failed to test storage backend',
+    method: 'POST',
+    errorMessage: 'Failed to test storage backend',
   })
 }
 
 export function fetchBackupHealth(): Promise<BackupHealthResponse> {
-  return fetchWithErrorHandling<BackupHealthResponse>('/api/backups/health', { errorMessage: 'Failed to fetch backup health' })
+  return fetchWithErrorHandling<BackupHealthResponse>('/api/backups/health', {
+    errorMessage: 'Failed to fetch backup health',
+  })
 }
 
 // ─── Coverage Contract ──────────────────────────────────────────
@@ -110,7 +126,10 @@ export interface CoverageResponse {
 }
 
 export function fetchInfraCoverage(): Promise<CoverageResponse> {
-  return fetchWithErrorHandling<CoverageResponse>('/api/backups/infra/coverage', { errorMessage: 'Failed to fetch coverage' })
+  return fetchWithErrorHandling<CoverageResponse>(
+    '/api/backups/infra/coverage',
+    { errorMessage: 'Failed to fetch coverage' },
+  )
 }
 
 // ─── Restore Drill ──────────────────────────────────────────────
@@ -130,7 +149,11 @@ export interface RestoreDrillResult {
 }
 
 export function runRestoreDrill(): Promise<RestoreDrillResult> {
-  return fetchWithErrorHandling<RestoreDrillResult>('/api/backups/restore-drill/infra', {
-    method: 'POST', errorMessage: 'Failed to run restore drill',
-  })
+  return fetchWithErrorHandling<RestoreDrillResult>(
+    '/api/backups/restore-drill/infra',
+    {
+      method: 'POST',
+      errorMessage: 'Failed to run restore drill',
+    },
+  )
 }

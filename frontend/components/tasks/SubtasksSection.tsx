@@ -143,7 +143,12 @@ export function SubtasksSection({
                   {phase}
                 </span>
                 <span
-                  className={clsx('text-xs font-mono', completedCount === phaseSubtasks.length ? 'text-phosphor-400' : 'text-slate-500')}
+                  className={clsx(
+                    'text-xs font-mono',
+                    completedCount === phaseSubtasks.length
+                      ? 'text-phosphor-400'
+                      : 'text-slate-500',
+                  )}
                 >
                   {completedCount}/{phaseSubtasks.length}
                 </span>
@@ -196,7 +201,12 @@ export function SubtasksSection({
                                       {subtask.subtask_id}
                                     </span>
                                     <span
-                                      className={clsx('text-sm', subtask.passes ? 'text-slate-500 line-through' : 'text-slate-200')}
+                                      className={clsx(
+                                        'text-sm',
+                                        subtask.passes
+                                          ? 'text-slate-500 line-through'
+                                          : 'text-slate-200',
+                                      )}
                                     >
                                       {subtask.description}
                                     </span>
@@ -215,7 +225,12 @@ export function SubtasksSection({
                                         steps
                                       </span>
                                       <span
-                                        className={clsx('font-mono px-1.5 py-0.5 rounded', stepInfo.completed === stepInfo.total ? 'bg-phosphor-500/10 text-phosphor-400' : 'bg-slate-800 text-slate-500')}
+                                        className={clsx(
+                                          'font-mono px-1.5 py-0.5 rounded',
+                                          stepInfo.completed === stepInfo.total
+                                            ? 'bg-phosphor-500/10 text-phosphor-400'
+                                            : 'bg-slate-800 text-slate-500',
+                                        )}
                                       >
                                         {stepInfo.completed}/{stepInfo.total}
                                       </span>

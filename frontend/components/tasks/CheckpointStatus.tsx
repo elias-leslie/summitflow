@@ -1,7 +1,6 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { motion, AnimatePresence } from 'motion/react'
 import {
   AlertTriangle,
   ChevronDown,
@@ -11,6 +10,7 @@ import {
   Loader2,
   User,
 } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
 import { useState } from 'react'
 import { getCheckpoint } from '@/lib/api/checkpoints'
 import { STALE_GIT } from '@/lib/polling'
@@ -94,7 +94,7 @@ export function CheckpointStatus({
       <div className="mt-3 flex items-center gap-4 text-xs text-slate-400">
         <span className="flex items-center gap-1">
           <Database className="w-3 h-3" />
-          {checkpoint.size}
+          Branch checkpoint
         </span>
         <span className="flex items-center gap-1">
           <GitBranch className="w-3 h-3" />
@@ -161,11 +161,13 @@ export function CheckpointStatus({
                 </div>
               )}
 
-              {/* Snapshot info */}
+              {/* Checkpoint branch */}
               <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-500">Snapshot</span>
-                <span className="text-xs text-slate-300">
-                  {checkpoint.size}
+                <span className="text-xs text-slate-500">
+                  Checkpoint branch
+                </span>
+                <span className="text-xs text-slate-300 font-mono">
+                  {checkpoint.task_branch}
                 </span>
               </div>
 
@@ -173,8 +175,9 @@ export function CheckpointStatus({
               <div className="flex items-start gap-2 p-2 bg-amber-950/30 border border-amber-800/30 rounded">
                 <AlertTriangle className="w-3 h-3 text-amber-500 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-amber-400">
-                  If the task fails, use <code className="font-mono">st abandon</code> to
-                  rollback DB and discard branches.
+                  If the task fails, use{' '}
+                  <code className="font-mono">st abandon</code> to discard the
+                  checkpoint branch and close the task.
                 </p>
               </div>
             </div>

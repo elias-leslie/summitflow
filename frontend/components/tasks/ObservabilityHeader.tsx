@@ -39,16 +39,21 @@ export function ObservabilityHeader({
         )}
         {sessions.slice(0, 2).map((session) => {
           const live = session.live_activity
-          const label = live
-            ? `${live.health} · ${live.phase}`
-            : session.status
+          const label = live ? `${live.health} · ${live.phase}` : session.status
           return (
             <span
               key={session.id}
               className="text-2xs px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded font-mono"
               title={live?.summary || session.effective_model || session.id}
             >
-              {(session.effective_model || session.requested_model || session.id).split('/').pop()} {label}
+              {(
+                session.effective_model ||
+                session.requested_model ||
+                session.id
+              )
+                .split('/')
+                .pop()}{' '}
+              {label}
             </span>
           )
         })}
@@ -57,16 +62,21 @@ export function ObservabilityHeader({
       <div className="flex items-center gap-2">
         {/* View mode tabs */}
         <div className="flex items-center bg-slate-800/60 rounded-md p-0.5">
-          {([
+          {[
             { mode: 'timeline' as const, icon: List, label: 'Timeline' },
             { mode: 'spans' as const, icon: GitBranch, label: 'Spans' },
             { mode: 'replay' as const, icon: Play, label: 'Replay' },
-          ]).map(({ mode, icon: Icon, label }) => (
+          ].map(({ mode, icon: Icon, label }) => (
             <button
               type="button"
               key={mode}
               onClick={() => onViewModeChange(mode)}
-              className={clsx('flex items-center gap-1 px-2 py-1 rounded text-2xs font-medium transition-colors', viewMode === mode ? 'bg-slate-700 text-slate-200' : 'text-slate-500 hover:text-slate-400')}
+              className={clsx(
+                'flex items-center gap-1 px-2 py-1 rounded text-2xs font-medium transition-colors',
+                viewMode === mode
+                  ? 'bg-slate-700 text-slate-200'
+                  : 'text-slate-500 hover:text-slate-400',
+              )}
               title={label}
             >
               <Icon className="h-3 w-3" />

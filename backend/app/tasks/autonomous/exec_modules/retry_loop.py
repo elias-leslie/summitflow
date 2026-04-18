@@ -8,13 +8,13 @@ from ....constants import ESCALATION_MODEL, SELF_HEAL_MAX_ATTEMPTS, SUPERVISOR_G
 from ....logging_config import get_logger
 from ....storage import agent_configs
 from .agent_routing import EXTENSION_ATTEMPTS
+from .checkout import check_checkout_health
 from .interruption import assert_task_runnable
 from .quality_check import run_execution_quality_check
 from .retry_execution import execute_fix_attempt
 from .retry_extensions import check_and_request_extension
 from .retry_infra import handle_infrastructure_failures
 from .retry_phases import determine_fix_prompt
-from .worktree import check_worktree_health
 
 logger = get_logger(__name__)
 
@@ -73,10 +73,14 @@ def _run_fix_attempt(
     return response_content, agent_session_id, self_fix_attempts, supervisor_guided_attempts, guidance
 
 
-# Sentinel for worktree-destroyed abort
-_WORKTREE_DESTROYED = [{"step_number": 0, "passed": False,
-                         "output": "Worktree destroyed during execution",
-                         "reason": "worktree_destroyed", "returncode": -1}]
+# Sentinel for checkout-destroyed abort
+_CHECKOUT_DESTROYED = [{
+    "step_number": 0,
+    "passed": False,
+    "output": "Checkout became invalid during execution",
+    "reason": "checkout_destroyed",
+    "returncode": -1,
+}]
 
 
 def _healing_loop_body(
@@ -89,8 +93,18 @@ def _healing_loop_body(
 ) -> tuple[bool, list[dict[str, Any]], int, int, str | None, int, int, str | None, bool]:
     """One iteration of the healing loop; returns updated state plus should_break flag."""
     assert_task_runnable(task_id, project_id, f"self_heal_attempt_{heal_attempt}")
-    if not check_worktree_health(project_path, task_id, project_id):
-        return False, _WORKTREE_DESTROYED, self_fix_attempts, supervisor_guided_attempts, agent_session_id, total_max_attempts, extensions_granted, guidance, True
+    if not check_checkout_health(project_path, task_id, project_id):
+        return (
+            False,
+            _CHECKOUT_DESTROYED,
+            self_fix_attempts,
+            supervisor_guided_attempts,
+            agent_session_id,
+            total_max_attempts,
+            extensions_granted,
+            guidance,
+            True,
+        )
     all_passed, step_results = run_execution_quality_check(task_id, subtask_id, steps, project_path, project_id)
     if all_passed:
         return True, step_results, self_fix_attempts, supervisor_guided_attempts, agent_session_id, total_max_attempts, extensions_granted, guidance, True

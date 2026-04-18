@@ -75,7 +75,13 @@ describe('ActivityFeed', () => {
   })
 
   it('shows filter-specific empty messaging', async () => {
-    fetchActivityMock.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0, has_more: false })
+    fetchActivityMock.mockResolvedValue({
+      items: [],
+      total: 0,
+      limit: 50,
+      offset: 0,
+      has_more: false,
+    })
 
     renderFeed()
 
@@ -97,7 +103,9 @@ describe('ActivityFeed', () => {
     })
 
     expect(screen.getByText('upstream timeout')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /try again/i }),
+    ).toBeInTheDocument()
   })
 
   it('loads older activity pages and links events back to projects', async () => {
@@ -135,13 +143,17 @@ describe('ActivityFeed', () => {
 
     renderFeed()
 
-    expect(await screen.findByText('Initial task completed')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Initial task completed'),
+    ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'summitflow' })).toHaveAttribute(
       'href',
       '/projects/summitflow',
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /load older activity/i }))
+    fireEvent.click(
+      screen.getByRole('button', { name: /load older activity/i }),
+    )
 
     expect(await screen.findByText('Older commit recorded')).toBeInTheDocument()
     expect(fetchActivityMock).toHaveBeenNthCalledWith(2, {
@@ -171,7 +183,9 @@ describe('ActivityFeed', () => {
 
     renderFeed('summitflow')
 
-    expect(await screen.findByText('Task created: Restore recent activity')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Task created: Restore recent activity'),
+    ).toBeInTheDocument()
     expect(fetchActivityMock).toHaveBeenCalledWith({
       limit: 50,
       offset: 0,
@@ -179,6 +193,8 @@ describe('ActivityFeed', () => {
       types: undefined,
     })
     expect(screen.getByText('1 item for this project')).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'summitflow' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: 'summitflow' }),
+    ).not.toBeInTheDocument()
   })
 })

@@ -1,8 +1,8 @@
 'use client'
 
+import type { UseMutationResult } from '@tanstack/react-query'
 import { Check, Clock, Loader2, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import type { UseMutationResult } from '@tanstack/react-query'
 import type { FeedbackStatus } from '@/lib/api/feedback'
 
 type StatusMutationData = { status: FeedbackStatus; resolution_note?: string }
@@ -78,7 +78,8 @@ export function FeedbackDetailActions({
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              {(currentStatus === 'open' || currentStatus === 'acknowledged') && (
+              {(currentStatus === 'open' ||
+                currentStatus === 'acknowledged') && (
                 <>
                   {currentStatus === 'open' && (
                     <button
@@ -123,9 +124,7 @@ export function FeedbackDetailActions({
                 currentStatus === 'wont_fix') && (
                 <button
                   type="button"
-                  onClick={() =>
-                    statusMutation.mutate({ status: 'archived' })
-                  }
+                  onClick={() => statusMutation.mutate({ status: 'archived' })}
                   disabled={statusMutation.isPending}
                   className="flex items-center gap-1.5 text-2xs px-2 py-1 rounded
                              bg-slate-700/40 text-slate-400 hover:bg-slate-700/60

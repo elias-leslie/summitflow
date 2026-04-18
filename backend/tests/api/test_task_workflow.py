@@ -151,7 +151,7 @@ class TestContextEndpoint:
             overlap_paths=["backend/app/services/tools/catalog.py"],
             shared_plumbing=True,
             disposition="block",
-            owner_location="worktree /tmp/worktrees/task-999",
+            owner_location="checkout /tmp/lanes/task-999",
         )
 
         response = client.post(
@@ -172,7 +172,7 @@ class TestContextEndpoint:
         assert response.status_code == 200
         assert (
             "LANE:disp:block | kind:shared_plumbing | tasks:task-999 | "
-            "owner:worktree /tmp/worktrees/task-999 | "
+            "owner:checkout /tmp/lanes/task-999 | "
             "paths:backend/app/services/tools/catalog.py | shared:yes"
             in response.text
         )

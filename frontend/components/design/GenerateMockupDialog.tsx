@@ -90,7 +90,11 @@ export function GenerateMockupDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm" onClick={handleClose} role="presentation" />
+      <div
+        className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm"
+        onClick={handleClose}
+        role="presentation"
+      />
 
       {/* Dialog */}
       <div className="relative bg-slate-900 rounded-xl w-full max-w-2xl mx-4">

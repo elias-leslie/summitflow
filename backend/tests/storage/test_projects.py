@@ -45,13 +45,13 @@ class TestBuildProjectEnv:
     def test_build_project_env_with_working_dir_sets_pythonpath(
         self,
         mock_get_root: MagicMock,
-        tmp_path: pytest.TempPathFactory,
+        tmp_path: Path,
     ) -> None:
         """When working_dir has a backend/ subdirectory, PYTHONPATH includes it.
 
-        Arrange: a main repo with a .venv and a worktree dir with a backend/
+        Arrange: a main repo with a .venv and a checkout dir with a backend/
         subdirectory.
-        Act: call build_project_env() with the worktree as working_dir.
+        Act: call build_project_env() with the checkout as working_dir.
         Assert: PYTHONPATH is set to <working_dir>/backend.
         """
         from app.storage.projects import build_project_env
@@ -60,8 +60,8 @@ class TestBuildProjectEnv:
         main_repo = tmp_path / "main-repo"
         _make_venv(main_repo)
 
-        worktree = tmp_path / "worktrees" / "feature-branch"
-        backend_dir = worktree / "backend"
+        checkout = tmp_path / "checkouts" / "feature-branch"
+        backend_dir = checkout / "backend"
         backend_dir.mkdir(parents=True)
 
         mock_get_root.return_value = str(main_repo)
@@ -73,7 +73,7 @@ class TestBuildProjectEnv:
             # Act
             result = build_project_env(
                 project_id="proj-abc123",
-                working_dir=str(worktree),
+                working_dir=str(checkout),
             )
 
         # Assert
@@ -84,12 +84,12 @@ class TestBuildProjectEnv:
     def test_build_project_env_no_backend_dir_omits_pythonpath(
         self,
         mock_get_root: MagicMock,
-        tmp_path: pytest.TempPathFactory,
+        tmp_path: Path,
     ) -> None:
         """When working_dir has no backend/ subdirectory, PYTHONPATH is not set.
 
-        Arrange: a main repo with a .venv and a worktree dir without backend/.
-        Act: call build_project_env() with the bare worktree as working_dir.
+        Arrange: a main repo with a .venv and a checkout dir without backend/.
+        Act: call build_project_env() with the bare checkout as working_dir.
         Assert: PYTHONPATH is absent from the returned env dict.
         """
         from app.storage.projects import build_project_env
@@ -98,9 +98,9 @@ class TestBuildProjectEnv:
         main_repo = tmp_path / "main-repo"
         _make_venv(main_repo)
 
-        worktree = tmp_path / "worktrees" / "no-backend-branch"
-        worktree.mkdir(parents=True)
-        # Intentionally do NOT create worktree/backend/
+        checkout = tmp_path / "checkouts" / "no-backend-branch"
+        checkout.mkdir(parents=True)
+        # Intentionally do NOT create checkout/backend/
 
         mock_get_root.return_value = str(main_repo)
 
@@ -111,7 +111,7 @@ class TestBuildProjectEnv:
             # Act
             result = build_project_env(
                 project_id="proj-abc123",
-                working_dir=str(worktree),
+                working_dir=str(checkout),
             )
 
         # Assert
@@ -193,13 +193,13 @@ class TestFindProjectByCwd:
     def test_build_project_env_prepends_to_existing_pythonpath(
         self,
         mock_get_root: MagicMock,
-        tmp_path: pytest.TempPathFactory,
+        tmp_path: Path,
     ) -> None:
         """When PYTHONPATH already exists, the new backend path is prepended.
 
-        Arrange: a main repo with a .venv, a worktree with a backend/, and
+        Arrange: a main repo with a .venv, a checkout with a backend/, and
         PYTHONPATH already set to an existing value in the environment.
-        Act: call build_project_env() with the worktree as working_dir.
+        Act: call build_project_env() with the checkout as working_dir.
         Assert: PYTHONPATH starts with <working_dir>/backend and retains the
         pre-existing value after the colon separator.
         """
@@ -209,8 +209,8 @@ class TestFindProjectByCwd:
         main_repo = tmp_path / "main-repo"
         _make_venv(main_repo)
 
-        worktree = tmp_path / "worktrees" / "feature-branch"
-        backend_dir = worktree / "backend"
+        checkout = tmp_path / "checkouts" / "feature-branch"
+        backend_dir = checkout / "backend"
         backend_dir.mkdir(parents=True)
 
         existing_pythonpath = "/some/existing/lib:/another/lib"
@@ -224,7 +224,7 @@ class TestFindProjectByCwd:
             # Act
             result = build_project_env(
                 project_id="proj-abc123",
-                working_dir=str(worktree),
+                working_dir=str(checkout),
             )
 
         # Assert
@@ -239,7 +239,7 @@ class TestFindProjectByCwd:
     def test_build_project_env_without_working_dir_omits_pythonpath(
         self,
         mock_get_root: MagicMock,
-        tmp_path: pytest.TempPathFactory,
+        tmp_path: Path,
     ) -> None:
         """Backward compat: omitting working_dir does not inject PYTHONPATH.
 
@@ -270,7 +270,7 @@ class TestFindProjectByCwd:
     def test_build_project_env_strips_keys_declared_by_project_env_files(
         self,
         mock_get_root: MagicMock,
-        tmp_path: pytest.TempPathFactory,
+        tmp_path: Path,
     ) -> None:
         from app.storage.projects import build_project_env
 
@@ -300,18 +300,18 @@ class TestFindProjectByCwd:
         assert result["PATH"].startswith(str(main_repo / ".venv" / "bin"))
 
     @patch("app.storage.projects.get_project_root_path")
-    def test_build_project_env_strips_worktree_env_keys_when_working_dir_present(
+    def test_build_project_env_strips_checkout_env_keys_when_working_dir_present(
         self,
         mock_get_root: MagicMock,
-        tmp_path: pytest.TempPathFactory,
+        tmp_path: Path,
     ) -> None:
         from app.storage.projects import build_project_env
 
         main_repo = tmp_path / "main-repo"
         _make_venv(main_repo)
-        worktree = tmp_path / "worktrees" / "feature-branch"
-        worktree.mkdir(parents=True)
-        (worktree / ".env.local").write_text("FEATURE_FLAG=enabled\n")
+        checkout = tmp_path / "checkouts" / "feature-branch"
+        checkout.mkdir(parents=True)
+        (checkout / ".env.local").write_text("FEATURE_FLAG=enabled\n")
         mock_get_root.return_value = str(main_repo)
 
         env_before = os.environ.copy()
@@ -320,7 +320,7 @@ class TestFindProjectByCwd:
         with patch.dict(os.environ, env_before, clear=True):
             result = build_project_env(
                 project_id="proj-abc123",
-                working_dir=str(worktree),
+                working_dir=str(checkout),
             )
 
         assert "FEATURE_FLAG" not in result

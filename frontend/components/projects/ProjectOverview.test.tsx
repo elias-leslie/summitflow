@@ -65,7 +65,9 @@ describe('ProjectOverview', () => {
     expect(await screen.findByText('42ms response time')).toBeInTheDocument()
     expect(screen.getByText('Service Status')).toBeInTheDocument()
     expect(screen.getByText('Recent Activity')).toBeInTheDocument()
-    expect(screen.getByTestId('activity-feed')).toHaveTextContent('Activity feed for summitflow')
+    expect(screen.getByTestId('activity-feed')).toHaveTextContent(
+      'Activity feed for summitflow',
+    )
     expect(screen.queryByText('Quality Summary')).not.toBeInTheDocument()
     expect(screen.queryByText('Workspace')).not.toBeInTheDocument()
     expect(screen.queryByText('Open Findings')).not.toBeInTheDocument()
@@ -82,6 +84,8 @@ describe('ProjectOverview', () => {
     renderOverview()
 
     expect(await screen.findByText('connection refused')).toBeInTheDocument()
-    expect(screen.queryByText('/srv/workspaces/projects/summitflow')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('/srv/workspaces/projects/summitflow'),
+    ).not.toBeInTheDocument()
   })
 })

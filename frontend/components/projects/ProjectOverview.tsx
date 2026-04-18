@@ -1,10 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import {
-  fetchProjectHealth,
-  type Project,
-} from '@/lib/api'
+import { fetchProjectHealth, type Project } from '@/lib/api'
 import { formatTimeAgo } from '@/lib/format'
 import { POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
 import { ActivityFeed } from '../dashboard/ActivityFeed'
@@ -26,7 +23,11 @@ interface ProjectOverviewProps {
 }
 
 export function ProjectOverview({ project }: ProjectOverviewProps) {
-  const { data: health, isLoading: healthLoading, error: healthError } = useQuery({
+  const {
+    data: health,
+    isLoading: healthLoading,
+    error: healthError,
+  } = useQuery({
     queryKey: ['project-health', project.id],
     queryFn: () => fetchProjectHealth(project.id),
     staleTime: STALE_STANDARD,
@@ -45,14 +46,14 @@ export function ProjectOverview({ project }: ProjectOverviewProps) {
           </div>
           <Badge
             variant={
-              healthLoading
-                ? 'slate'
-                : health?.healthy
-                  ? 'emerald'
-                  : 'rose'
+              healthLoading ? 'slate' : health?.healthy ? 'emerald' : 'rose'
             }
           >
-            {healthLoading ? 'Checking' : health?.healthy ? 'Healthy' : 'Needs attention'}
+            {healthLoading
+              ? 'Checking'
+              : health?.healthy
+                ? 'Healthy'
+                : 'Needs attention'}
           </Badge>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -69,13 +70,17 @@ export function ProjectOverview({ project }: ProjectOverviewProps) {
           </div>
           <div className="space-y-1.5 text-xs text-slate-500">
             <div>Endpoint: {project.health_endpoint || '/health'}</div>
-            {health?.checked_at ? <div>Checked {formatTimeAgo(health.checked_at)}</div> : null}
+            {health?.checked_at ? (
+              <div>Checked {formatTimeAgo(health.checked_at)}</div>
+            ) : null}
           </div>
         </CardContent>
       </Card>
       <section className="space-y-3">
         <div className="space-y-1">
-          <h2 className="text-base font-semibold text-slate-100">Recent Activity</h2>
+          <h2 className="text-base font-semibold text-slate-100">
+            Recent Activity
+          </h2>
           <p className="text-sm text-slate-500">
             Project-scoped task, git, and backup activity.
           </p>

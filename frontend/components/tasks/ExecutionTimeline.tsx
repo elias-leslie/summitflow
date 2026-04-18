@@ -42,13 +42,17 @@ export function ExecutionTimeline({
   const getEventKey = useCallback((message: TimelineMessage) => {
     const eventId =
       message.event_id ||
-      (typeof message.data?.event_id === 'string' ? message.data.event_id : undefined)
+      (typeof message.data?.event_id === 'string'
+        ? message.data.event_id
+        : undefined)
     if (eventId) {
       return `event:${eventId}`
     }
 
-    const msg = typeof message.data?.message === 'string' ? message.data.message : ''
-    const src = typeof message.data?.source === 'string' ? message.data.source : ''
+    const msg =
+      typeof message.data?.message === 'string' ? message.data.message : ''
+    const src =
+      typeof message.data?.source === 'string' ? message.data.source : ''
     return `${message.type}:${message.timestamp}:${message.sequence}:${src}:${msg}`
   }, [])
 
@@ -128,9 +132,10 @@ export function ExecutionTimeline({
   }, [historicalEvents, messages, getEventKey])
 
   // Track height style
-  const heightStyle = maxHeight === 'none'
-    ? { minHeight: '200px' }
-    : { minHeight: '200px', maxHeight }
+  const heightStyle =
+    maxHeight === 'none'
+      ? { minHeight: '200px' }
+      : { minHeight: '200px', maxHeight }
 
   return (
     <div className={clsx('flex flex-col', className)}>
@@ -175,10 +180,7 @@ export function ExecutionTimeline({
         ) : (
           <div className="py-2">
             {allEvents.map((message) => (
-              <TimelineEvent
-                key={getEventKey(message)}
-                message={message}
-              />
+              <TimelineEvent key={getEventKey(message)} message={message} />
             ))}
           </div>
         )}

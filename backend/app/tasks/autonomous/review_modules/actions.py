@@ -32,7 +32,7 @@ def _string_list(value: object) -> list[str]:
 
 def auto_merge(task_id: str) -> MergeResult:
     """Auto-merge changes to main branch and return merge result."""
-    from ..cleanup import merge_and_cleanup_task_worktree
+    from ..cleanup import merge_and_cleanup_task_checkpoint
 
     task = task_store.get_task(task_id)
     if not task:
@@ -43,7 +43,7 @@ def auto_merge(task_id: str) -> MergeResult:
         logger.warning("Cannot auto-merge: no project_id", task_id=task_id)
         return cast(MergeResult, {"task_id": task_id, "status": "error", "error": "missing_project_id"})
     logger.info("Triggering auto-merge", task_id=task_id, project_id=project_id)
-    merge_result = merge_and_cleanup_task_worktree(task_id, project_id)
+    merge_result = merge_and_cleanup_task_checkpoint(task_id, project_id)
     if merge_result.get("status") == "merged" and merge_result.get("post_merge_valid"):
         _deploy_and_verify(task_id, project_id)
     return merge_result

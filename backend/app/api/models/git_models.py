@@ -20,17 +20,17 @@ class RepoStatus(BaseModel):
 
 
 class RepoWorkspaceSummary(BaseModel):
-    """At-a-glance branch/worktree cleanup summary for one repository."""
+    """At-a-glance branch/checkpoint cleanup summary for one repository."""
 
-    active_worktrees: int = 0
-    dirty_worktrees: int = 0
+    active_checkpoints: int = 0
+    dirty_checkpoints: int = 0
     dirty_main_repo: bool = False
-    branches_with_worktrees: int = 0
+    branches_with_checkpoints: int = 0
     task_branches: int = 0
     orphan_branches: int = 0
     prunable_branches: int = 0
     needs_cleanup: bool = False
-    worktree_task_ids: list[str] = Field(default_factory=list)
+    checkpoint_task_ids: list[str] = Field(default_factory=list)
     orphan_branch_names: list[str] = Field(default_factory=list)
     prunable_branch_names: list[str] = Field(default_factory=list)
     salvage_task_ids: list[str] = Field(default_factory=list)
@@ -64,21 +64,20 @@ class GitSyncResponse(BaseModel):
     skipped: int
 
 
-class WorktreeInfo(BaseModel):
-    """Information about a worktree."""
+class CheckpointInfo(BaseModel):
+    """Information about an active task checkpoint."""
 
     task_id: str
-    path: str
     branch: str
     base_branch: str
     is_active: bool
     project_id: str | None = None
 
 
-class WorktreesResponse(BaseModel):
-    """Response for worktrees list."""
+class CheckpointsResponse(BaseModel):
+    """Response for checkpoint list."""
 
-    worktrees: list[WorktreeInfo]
+    checkpoints: list[CheckpointInfo]
     count: int
 
 
@@ -87,10 +86,9 @@ class BranchInfo(BaseModel):
 
     name: str
     is_current: bool
-    has_worktree: bool
+    has_checkpoint: bool
     repo_name: str | None = None
     project_id: str | None = None
-    worktree_path: str | None = None
     task_id: str | None = None
     last_commit_short: str | None = None
     last_commit_date: str | None = None
@@ -229,7 +227,7 @@ class SnapshotsResponse(BaseModel):
 class ProjectDashboardResponse(BaseModel):
     """Combined dashboard data for a single project."""
 
-    worktrees: list[WorktreeInfo]
+    checkpoints: list[CheckpointInfo]
     branches: list[BranchInfo]
     recent_merges: list[MergedTaskSummary]
     recent_commits: list[CommitInfo]

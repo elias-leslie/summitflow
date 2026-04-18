@@ -93,7 +93,7 @@ class TestHandleApproved:
         mock_merge.assert_called_once_with("task-1")
         mock_store.update_task_status.assert_not_called()
 
-    @patch("app.tasks.autonomous.cleanup.worktree_cleanup.cleanup_task_worktree")
+    @patch("app.tasks.autonomous.cleanup.checkpoint_cleanup.cleanup_task_checkpoint")
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.auto_merge")
     @patch("app.tasks.autonomous.review_modules.routing.agent_configs")
@@ -104,7 +104,7 @@ class TestHandleApproved:
     ) -> None:
         mock_store.get_task.return_value = {"project_id": "test-project"}
         mock_configs.get_auto_merge_enabled.return_value = False
-        mock_cleanup.return_value = {"status": "cleaned", "worktree_path": "/tmp/wt"}
+        mock_cleanup.return_value = {"status": "cleaned", "checkout_path": "/tmp/wt"}
 
         _handle_approved("task-1", "STANDARD")
 
@@ -157,37 +157,37 @@ class TestHandleNeedsFix:
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.create_fix_subtask")
     @patch("app.tasks.autonomous.review_modules.routing.run_qa_loop")
-    @patch("app.services.worktree.get_task_worktree")
+    @patch("app.services.task_checkout.get_task_checkout")
     @patch("app.tasks.autonomous.review_modules.routing.task_store")
     def test_with_concerns_runs_qa_loop(
-        self, mock_store: MagicMock, mock_worktree: MagicMock,
+        self, mock_store: MagicMock, mock_checkout: MagicMock,
         mock_loop: MagicMock, mock_fix: MagicMock, mock_log: MagicMock,
     ) -> None:
         mock_store.get_task.return_value = {"project_id": "test-project", "complexity": "STANDARD"}
         mock_wt = MagicMock()
-        mock_wt.path = "/tmp/worktree"
-        mock_worktree.return_value = mock_wt
+        mock_wt.path = "/tmp/checkout"
+        mock_checkout.return_value = mock_wt
         mock_loop.return_value = "APPROVED"
 
         review = {"verdict": "NEEDS_FIX", "concerns": ["missing types"]}
         _handle_needs_fix("task-1", review)
 
-        mock_loop.assert_called_once_with("task-1", "test-project", review, "/tmp/worktree")
+        mock_loop.assert_called_once_with("task-1", "test-project", review, "/tmp/checkout")
         mock_fix.assert_not_called()
 
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.create_fix_subtask")
     @patch("app.tasks.autonomous.review_modules.routing.run_qa_loop")
-    @patch("app.services.worktree.get_task_worktree")
+    @patch("app.services.task_checkout.get_task_checkout")
     @patch("app.tasks.autonomous.review_modules.routing.task_store")
     def test_qa_loop_exhausted_creates_fix_subtask(
-        self, mock_store: MagicMock, mock_worktree: MagicMock,
+        self, mock_store: MagicMock, mock_checkout: MagicMock,
         mock_loop: MagicMock, mock_fix: MagicMock, mock_log: MagicMock,
     ) -> None:
         mock_store.get_task.return_value = {"project_id": "test-project"}
         mock_wt = MagicMock()
-        mock_wt.path = "/tmp/worktree"
-        mock_worktree.return_value = mock_wt
+        mock_wt.path = "/tmp/checkout"
+        mock_checkout.return_value = mock_wt
         mock_loop.return_value = "NEEDS_FIX"
 
         review = {"verdict": "NEEDS_FIX", "concerns": ["security issue"]}
@@ -199,16 +199,16 @@ class TestHandleNeedsFix:
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing._handle_escalation")
     @patch("app.tasks.autonomous.review_modules.routing.run_qa_loop")
-    @patch("app.services.worktree.get_task_worktree")
+    @patch("app.services.task_checkout.get_task_checkout")
     @patch("app.tasks.autonomous.review_modules.routing.task_store")
     def test_qa_loop_escalate_routes_to_escalation(
-        self, mock_store: MagicMock, mock_worktree: MagicMock,
+        self, mock_store: MagicMock, mock_checkout: MagicMock,
         mock_loop: MagicMock, mock_escalate: MagicMock, mock_log: MagicMock,
     ) -> None:
         mock_store.get_task.return_value = {"project_id": "test-project"}
         mock_wt = MagicMock()
-        mock_wt.path = "/tmp/worktree"
-        mock_worktree.return_value = mock_wt
+        mock_wt.path = "/tmp/checkout"
+        mock_checkout.return_value = mock_wt
         mock_loop.return_value = "ESCALATE"
 
         review = {"verdict": "NEEDS_FIX", "concerns": ["recurring issue"]}
@@ -218,14 +218,14 @@ class TestHandleNeedsFix:
 
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.create_fix_subtask")
-    @patch("app.services.worktree.get_task_worktree")
+    @patch("app.services.task_checkout.get_task_checkout")
     @patch("app.tasks.autonomous.review_modules.routing.task_store")
-    def test_no_worktree_falls_back_to_fix_subtask(
-        self, mock_store: MagicMock, mock_worktree: MagicMock,
+    def test_no_checkout_falls_back_to_fix_subtask(
+        self, mock_store: MagicMock, mock_checkout: MagicMock,
         mock_fix: MagicMock, mock_log: MagicMock,
     ) -> None:
         mock_store.get_task.return_value = {"project_id": "test-project"}
-        mock_worktree.return_value = None
+        mock_checkout.return_value = None
 
         review = {"verdict": "NEEDS_FIX", "concerns": ["type error"]}
         _handle_needs_fix("task-1", review)

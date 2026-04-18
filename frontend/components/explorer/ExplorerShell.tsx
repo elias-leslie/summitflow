@@ -15,15 +15,14 @@
 import { useEffect, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { CodeHealthPanel } from './CodeHealthPanel'
-import { typeIcons, typeTitles } from './explorerConstants'
 import { ExplorerPlaceholder } from './ExplorerPlaceholder'
+import { typeIcons, typeTitles, uiTypeToApiType } from './explorerConstants'
 import { useExplorerOverview } from './hooks/useExplorerOverview'
 import { useExplorerScan } from './hooks/useExplorerScan'
 import { useExplorerShellState } from './hooks/useExplorerShellState'
 import { ScanningOverlay, SummaryBar } from './SummaryBar'
 import { TypeNavigator } from './TypeNavigator'
 import type { ExplorerType, HealthStatus } from './types'
-import { uiTypeToApiType } from './explorerConstants'
 
 interface ExplorerShellProps {
   projectId: string
@@ -79,10 +78,7 @@ export function ExplorerShell({
     scanCompletedAt,
     handleScan,
     handleFullScan,
-  } = useExplorerScan(
-    projectId,
-    activeType,
-  )
+  } = useExplorerScan(projectId, activeType)
 
   useEffect(() => {
     if (scanCompletedAt) {

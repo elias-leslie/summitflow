@@ -9,6 +9,7 @@ from ....logging_config import get_logger
 from .agent_execution import execute_agent_initial
 from .agent_routing import get_agent_for_subtask
 from .ah_events import emit_prompt_harness_snapshot
+from .checkout import get_project_path
 from .git_work_product import ensure_committed_work_product
 from .interruption import ExecutionInterrupted
 from .prompts import build_subtask_prompt_payload
@@ -17,7 +18,6 @@ from .retry_loop import run_self_healing_loop
 from .subtask_fallback import execute_with_fallbacks
 from .subtask_helpers import handle_execution_error, initialize_subtask_logging
 from .subtask_validation import validate_subtask_environment
-from .worktree import get_project_path
 
 logger = get_logger(__name__)
 

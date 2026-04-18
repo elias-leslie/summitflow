@@ -57,9 +57,7 @@ export function ScanTooltip({ scan }: ScanTooltipProps) {
         </div>
         {scan.complexity !== null && (
           <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-slate-700/50 text-[9px] font-mono">
-            <span className="text-slate-400">
-              {scan.complexity.toFixed(0)}
-            </span>
+            <span className="text-slate-400">{scan.complexity.toFixed(0)}</span>
             <span
               className={cn(
                 scan.delta.startsWith('+') && 'text-rose-400',

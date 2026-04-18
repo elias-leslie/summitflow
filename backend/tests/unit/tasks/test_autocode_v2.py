@@ -376,7 +376,7 @@ class TestModelEscalation:
         "app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check"
     )
     @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.check_checkout_health")
     def test_model_override_none_during_self_heal(
         self,
         mock_health: MagicMock,
@@ -436,7 +436,7 @@ class TestModelEscalation:
         "app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check"
     )
     @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.check_worktree_health")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.check_checkout_health")
     def test_model_override_escalation_after_threshold(
         self,
         mock_health: MagicMock,

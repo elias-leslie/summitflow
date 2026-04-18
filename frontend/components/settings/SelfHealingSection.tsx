@@ -30,7 +30,10 @@ export function SelfHealingSection({
 
       {/* Self-Fix Attempts */}
       <div>
-        <Label htmlFor="self-fix-attempts" className="text-slate-200 mb-2 block">
+        <Label
+          htmlFor="self-fix-attempts"
+          className="text-slate-200 mb-2 block"
+        >
           Max Self-Fix Attempts
         </Label>
         <p className="text-xs text-slate-400 mb-3">
@@ -50,7 +53,10 @@ export function SelfHealingSection({
 
       {/* Supervisor Attempts */}
       <div>
-        <Label htmlFor="supervisor-attempts" className="text-slate-200 mb-2 block">
+        <Label
+          htmlFor="supervisor-attempts"
+          className="text-slate-200 mb-2 block"
+        >
           Max Supervisor Attempts
         </Label>
         <p className="text-xs text-slate-400 mb-3">

@@ -6,12 +6,10 @@ Supports two dispatch modes:
 
 The event-driven path is preferred for low-latency dispatch.
 
-Worktree Isolation:
-When dispatching tasks to execution, a worktree is created at
-`/srv/workspaces/lanes/<project-id>/<task-id>/` when the shared workspace is
-available, otherwise `~/.local/share/st/worktrees/<project-id>/<task-id>/`,
-with branch `<task-id>/main`. This ensures each task runs in isolation without
-affecting the main branch.
+Shared Checkout Model:
+When dispatching tasks to execution, SummitFlow now uses the project checkout
+directly and switches onto branch `<task-id>/main`. Coordination must prevent
+multiple same-project coding runs from fighting over the shared checkout.
 """
 
 from __future__ import annotations

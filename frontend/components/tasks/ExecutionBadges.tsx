@@ -149,7 +149,12 @@ export function ExecutionBadges({
     <div className={clsx('inline-flex items-center gap-2', className)}>
       {/* Status badge */}
       <span
-        className={clsx('inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs', statusConfig.bg, statusConfig.color, 'border border-current/20')}
+        className={clsx(
+          'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs',
+          statusConfig.bg,
+          statusConfig.color,
+          'border border-current/20',
+        )}
         title={`Status: ${task.status}`}
       >
         {statusConfig.icon}

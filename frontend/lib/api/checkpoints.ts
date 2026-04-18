@@ -15,11 +15,10 @@ export interface BranchInfo {
 export interface Checkpoint {
   task_id: string
   project_id: string
-  snapshot_path: string
+  task_branch: string
   base_branch: string
   created_at: string
   claimed_by: string
-  size: string
   age: string
   branches: BranchInfo[]
 }

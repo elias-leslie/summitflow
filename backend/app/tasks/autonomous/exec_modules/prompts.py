@@ -127,7 +127,7 @@ def build_conflict_context(task_id: str) -> str:
         lines = [
             "\n# Merge Conflict Context",
             "This task previously passed verification but failed to merge cleanly into the current main branch.",
-            "Resolve the conflict in this existing task worktree, preserve the task intent, and rerun the relevant verification.",
+            "Resolve the conflict in this existing task checkout, preserve the task intent, and rerun the relevant verification.",
         ]
         if files:
             lines.append("Conflicting files:")

@@ -107,7 +107,7 @@ def _infer_session_task_id(session: dict[str, Any]) -> str | None:
         if branch_prefix.startswith("task-"):
             return branch_prefix
 
-    for key in ("working_dir", "worktree_path", "repo_root"):
+    for key in ("working_dir", "repo_root"):
         task_id = _task_id_from_path(session.get(key))
         if task_id:
             return task_id

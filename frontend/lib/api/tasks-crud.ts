@@ -3,16 +3,21 @@
  */
 
 import { getApiBaseUrl } from '../api-config'
-import { buildQueryString, fetchWithErrorHandling, patchJson, postJson } from './utils'
 import type {
+  DeleteTaskResponse,
+  ExecuteTaskOptions,
+  ExecuteTaskResponse,
   Task,
   TaskListResponse,
   TaskStatus,
   TaskType,
-  ExecuteTaskOptions,
-  ExecuteTaskResponse,
-  DeleteTaskResponse,
 } from './tasks-types'
+import {
+  buildQueryString,
+  fetchWithErrorHandling,
+  patchJson,
+  postJson,
+} from './utils'
 
 // ============================================================================
 // Create & Update
@@ -32,7 +37,11 @@ export async function createTask(
     autonomous?: boolean
   },
 ): Promise<Task> {
-  return postJson(`/api/projects/${projectId}/tasks`, task, 'Failed to create task')
+  return postJson(
+    `/api/projects/${projectId}/tasks`,
+    task,
+    'Failed to create task',
+  )
 }
 
 export async function updateTask(
@@ -50,7 +59,11 @@ export async function updateTask(
     agent_override?: string | null
   },
 ): Promise<Task> {
-  return patchJson(`/api/projects/${projectId}/tasks/${taskId}`, updates, 'Failed to update task')
+  return patchJson(
+    `/api/projects/${projectId}/tasks/${taskId}`,
+    updates,
+    'Failed to update task',
+  )
 }
 
 // ============================================================================

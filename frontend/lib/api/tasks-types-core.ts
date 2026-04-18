@@ -63,12 +63,6 @@ export interface BlockerInfo {
   priority: number
 }
 
-export interface WorktreeInfo {
-  path: string
-  branch: string
-  is_active: boolean
-}
-
 export interface VerificationResult {
   execution_clean?: boolean
   subtask_count?: number
@@ -123,8 +117,6 @@ export interface Task {
   autonomous?: boolean
   // Agent override for autonomous execution
   agent_override?: string | null
-  // Worktree info (when task has an active worktree)
-  worktree?: WorktreeInfo | null
   // Agent Hub session IDs for full observability
   agent_hub_session_ids?: string[]
 }

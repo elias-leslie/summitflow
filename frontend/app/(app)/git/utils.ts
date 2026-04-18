@@ -20,14 +20,43 @@ export interface StateInfo {
 export function getStateInfo(state: RepoStatus['state']): StateInfo {
   switch (state) {
     case 'clean':
-      return { label: 'Clean', icon: Check, color: 'text-emerald-400', bg: 'bg-emerald-500/10', stripColor: 'bg-emerald-500/40' }
+      return {
+        label: 'Clean',
+        icon: Check,
+        color: 'text-emerald-400',
+        bg: 'bg-emerald-500/10',
+        stripColor: 'bg-emerald-500/40',
+      }
     case 'dirty':
-      return { label: 'Dirty', icon: AlertCircle, color: THEME.colors.accent.pink, bg: 'bg-pink-500/10', stripColor: 'bg-pink-500/40' }
+      return {
+        label: 'Dirty',
+        icon: AlertCircle,
+        color: THEME.colors.accent.pink,
+        bg: 'bg-pink-500/10',
+        stripColor: 'bg-pink-500/40',
+      }
     case 'behind':
-      return { label: 'Behind', icon: ArrowDown, color: THEME.colors.accent.amber, bg: 'bg-amber-500/10', stripColor: 'bg-amber-500/40' }
+      return {
+        label: 'Behind',
+        icon: ArrowDown,
+        color: THEME.colors.accent.amber,
+        bg: 'bg-amber-500/10',
+        stripColor: 'bg-amber-500/40',
+      }
     case 'ahead':
-      return { label: 'Ahead', icon: ArrowUp, color: THEME.colors.accent.cyan, bg: 'bg-cyan-500/10', stripColor: 'bg-cyan-500/40' }
+      return {
+        label: 'Ahead',
+        icon: ArrowUp,
+        color: THEME.colors.accent.cyan,
+        bg: 'bg-cyan-500/10',
+        stripColor: 'bg-cyan-500/40',
+      }
     default:
-      return { label: state, icon: GitBranch, color: 'text-slate-400', bg: 'bg-slate-500/10' }
+      return {
+        label: state,
+        icon: GitBranch,
+        color: 'text-slate-400',
+        bg: 'bg-slate-500/10',
+      }
   }
 }

@@ -10,7 +10,7 @@ from app.storage import tasks as task_store
 from app.utils._git_branches import assess_orphan_task_branches
 from app.utils._git_core import run_git
 
-from ..lib.worktree import create_worktree
+from ..lib.checkpoint_metadata import SnapshotMeta, get_claimed_by, save_snapshot_meta
 from ..output import output_error, output_success
 
 
@@ -54,7 +54,7 @@ def validate_salvage_candidate(item: object, task_id: str) -> bool:
 
 
 def recover_orphan_task(repo_path: Path, item: object, task_id: str) -> None:
-    """Create task record and worktree for a salvaged orphan branch."""
+    """Create task record and checkpoint metadata for a salvaged orphan branch."""
     branch_name = getattr(item, "branch_name", "")
     has_node_modules = getattr(item, "has_node_modules_artifact", False)
     title = get_branch_subject(repo_path, branch_name) or f"Recover orphan branch {task_id}"
@@ -68,15 +68,27 @@ def recover_orphan_task(repo_path: Path, item: object, task_id: str) -> None:
     )
     task_store.update_task(task_id, branch_name=branch_name)
     try:
-        worktree = create_worktree(task_id, project_id=repo_path.name)
+        result = run_git(["checkout", branch_name], repo_path)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or f"Failed to checkout {branch_name}")
+        save_snapshot_meta(
+            SnapshotMeta(
+                task_id=task_id,
+                project_id=repo_path.name,
+                base_branch="main",
+                created_at=created.get("created_at") or "",
+                claimed_by=get_claimed_by(),
+            )
+        )
     except Exception as exc:
         task_store.delete_task(task_id, deletion_source="cli:cleanup.salvage_rollback")
-        output_error(f"Recovered task record for {task_id}, but failed to create worktree: {exc}")
+        output_error(f"Recovered task record for {task_id}, but failed to restore the branch: {exc}")
         raise typer.Exit(1) from exc
 
     output_success(f"Recovered orphan branch {branch_name} into task {created['id']}")
     typer.echo(f"  project: {repo_path.name}")
     typer.echo(f"  title: {title}")
-    typer.echo(f"  worktree: {worktree.path}")
+    typer.echo(f"  branch: {branch_name}")
+    typer.echo(f"  cwd: {repo_path}")
     if has_node_modules:
         typer.echo("  note: branch includes node_modules artifact changes; inspect before merge")

@@ -43,7 +43,7 @@ def iter_archived_manifest_scopes(
                 continue
             latest = max(entries, key=lambda e: e.created_at)
             yield scope_dir, latest.project_id, SnapshotScope(
-                latest.scope_type, latest.scope_name, Path(latest.worktree_path)
+                latest.scope_type, latest.scope_name, Path(latest.scope_path)
             )
 
 

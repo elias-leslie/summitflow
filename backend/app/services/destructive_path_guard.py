@@ -51,7 +51,7 @@ class GuardConflict:
     session_id: str
     task_id: str | None
     branch: str | None
-    worktree_path: str | None
+    working_dir: str | None
     reason: str
     paths: tuple[str, ...]
 
@@ -103,18 +103,18 @@ def _build_session_conflict(
 ) -> GuardConflict | None:
     """Evaluate one foreign session and return a conflict if paths overlap, else None."""
     branch = _get_session_field_str(session, "current_branch")
-    worktree = _get_session_field_str(session, "worktree_path", "working_dir")
+    working_dir = _get_session_field_str(session, "working_dir")
     scope = load_live_lane_scope(session, task_id)
     if scope is None:
         return GuardConflict(
-            session_id=session_id, task_id=task_id, branch=branch, worktree_path=worktree,
+            session_id=session_id, task_id=task_id, branch=branch, working_dir=working_dir,
             reason="unknown_scope", paths=tuple(sorted(target_path_set)),
         )
     overlap_paths = tuple(sorted(target_path_set & (scope.write_paths | scope.read_paths)))
     if not overlap_paths:
         return None
     return GuardConflict(
-        session_id=session_id, task_id=task_id, branch=branch, worktree_path=worktree,
+        session_id=session_id, task_id=task_id, branch=branch, working_dir=working_dir,
         reason="scope_overlap", paths=overlap_paths,
     )
 
@@ -220,7 +220,7 @@ def format_guard_report(decision: GuardDecision) -> str:
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo-root", type=Path, default=Path.cwd(), help="Git/worktree root to inspect")
+    parser.add_argument("--repo-root", type=Path, default=Path.cwd(), help="Git checkout root to inspect")
     parser.add_argument("--project-id", help="Optional project id override")
     parser.add_argument("--current-session-id", help="Explicit current live session id")
     parser.add_argument("--staged-git", action="store_true", help="Inspect staged destructive git paths")

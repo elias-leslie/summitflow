@@ -62,7 +62,7 @@ def _copy_snapshot_entry(project_root: Path, snapshot_root: Path, relative_path:
 
 
 def create_snapshot(project_root: Path, snapshot_root: Path) -> None:
-    """Copy the current tracked + untracked worktree content into snapshot_root."""
+    """Copy the current tracked + untracked checkout content into snapshot_root."""
     for relative_path in _git_snapshot_paths(project_root):
         _copy_snapshot_entry(project_root, snapshot_root, relative_path)
 

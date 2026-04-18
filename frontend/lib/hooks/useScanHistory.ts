@@ -75,4 +75,3 @@ export function useScanHistory({
     refetch: () => query.refetch(),
   }
 }
-

@@ -1,6 +1,6 @@
 """Claim command for st CLI.
 
-Checkpoint-aware task and subtask claiming with git+database checkpoints.
+Checkpoint-aware task and subtask claiming with git+metadata checkpoints.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from ..lib.checkpoint import (
 )
 from ..output import output_error, output_success, output_warning
 from .claim_helpers import (
-    adopt_dirty_changes_to_worktree,
     handle_existing_checkpoint,
     is_subtask_id,
     print_claimed,
@@ -38,14 +37,13 @@ def _claim_task(
 ) -> dict[str, Any]:
     """Claim a task with checkpoint creation.
 
-    Creates DB snapshot, git branch, and sets task status to running.
+    Creates checkpoint metadata, a git branch, and sets task status to running.
     """
     task_id = canonicalize_task_id(task_id)
     task = client.get_task(task_id)
     task_id = str(task.get("id", task_id))
     project_id = task.get("project_id", "")
 
-    # Validate status before allocating worktree/ports
     status = task.get("status", "")
     claimable = ("pending", "failed")
     if status not in claimable and not force:
@@ -67,7 +65,7 @@ def _claim_task(
     try:
         meta = create_task_snapshot(task_id, project_id)
     except Exception as e:
-        remove_snapshot(task_id, remove_worktree=True, project_id=project_id)
+        remove_snapshot(task_id, project_id=project_id)
         try:
             client.release_task(task_id)
         except Exception as release_error:
@@ -80,9 +78,6 @@ def _claim_task(
         "action": "claimed",
         "branch": f"{task_id}/main",
         "base_branch": meta.base_branch,
-        "worktree_path": meta.worktree_path,
-        "backend_port": meta.backend_port,
-        "frontend_port": meta.frontend_port,
     }
 
 
@@ -131,7 +126,7 @@ def claim_command(
 ) -> None:
     """Claim a task or subtask to start work.
 
-    For tasks: Creates DB snapshot and git branch. Enforces one active task per project.
+    For tasks: Creates checkpoint metadata and a git branch.
     For subtasks: Creates git branch only (parent task must be claimed first).
 
     This creates a checkpoint that enables safe rollback via 'st abandon'.
@@ -156,33 +151,3 @@ def claim_command(
         print_resumed(id, result)
     else:
         print_claimed(id, result)
-
-
-@app.command(name="adopt")
-def adopt_command(
-    task_id: Annotated[str | None, typer.Argument(help="Task ID with an existing claimed worktree")] = None,
-) -> None:
-    """Adopt current dirty changes into an already-claimed task worktree."""
-    from ..context import require_task_id
-
-    resolved_task_id = require_task_id(task_id)
-    snapshot = get_snapshot_info(resolved_task_id)
-    if not snapshot:
-        output_error(f"No checkpoint found for {resolved_task_id}. Claim the task first.")
-        raise typer.Exit(1)
-
-    worktree_path = snapshot.get("worktree_path")
-    if not worktree_path or not isinstance(worktree_path, str):
-        output_error(f"Task {resolved_task_id} has no worktree to adopt into.")
-        raise typer.Exit(1)
-
-    try:
-        adopted = adopt_dirty_changes_to_worktree(worktree_path)
-    except Exception as e:
-        output_error(f"Failed to adopt current changes into worktree: {e}")
-        raise typer.Exit(1) from None
-
-    if adopted == 0:
-        output_warning("No current dirty paths needed adopting.")
-        return
-    output_success(f"Task {resolved_task_id} worktree updated from current repo state.")

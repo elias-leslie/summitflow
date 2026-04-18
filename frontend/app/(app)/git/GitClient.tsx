@@ -4,7 +4,6 @@ import clsx from 'clsx'
 import {
   AlertTriangle,
   GitBranch,
-  Layers,
   RefreshCw,
   Scissors,
   XCircle,
@@ -52,21 +51,24 @@ export function GitClient() {
   const dirtyRepos = repos.filter(
     (r) => r.state === 'dirty' || r.state === 'ahead',
   ).length
-  const worktreeCount = repos.reduce(
-    (s, r) => s + (r.workspace_summary?.active_worktrees ?? 0),
+  const checkpointCount = repos.reduce(
+    (s, r) => s + (r.workspace_summary?.active_checkpoints ?? 0),
     0,
   )
-  const dirtyWorktreeCount = repos.reduce(
-    (s, r) => s + (r.workspace_summary?.dirty_worktrees ?? 0),
+  const dirtyCheckpointCount = repos.reduce(
+    (s, r) => s + (r.workspace_summary?.dirty_checkpoints ?? 0),
     0,
   )
   const dirtyMainRepoCount = repos.reduce(
     (s, r) => s + (r.workspace_summary?.dirty_main_repo ? 1 : 0),
     0,
   )
-  const dirtyCount = dirtyWorktreeCount + dirtyMainRepoCount
-  const cleanupCount = repos.filter((r) => r.workspace_summary?.needs_cleanup).length
-  const hasSignals = dirtyCount + worktreeCount + cleanupCount + dirtyRepos > 0
+  const dirtyCount = dirtyCheckpointCount + dirtyMainRepoCount
+  const cleanupCount = repos.filter(
+    (r) => r.workspace_summary?.needs_cleanup,
+  ).length
+  const hasSignals =
+    dirtyCount + checkpointCount + cleanupCount + dirtyRepos > 0
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-3 px-4 py-3 md:px-5 lg:px-6">
@@ -83,7 +85,7 @@ export function GitClient() {
                 Git Control Surface
               </h1>
               <p className="text-sm text-slate-400">
-                Repo hygiene, worktrees, and branch cleanup
+                Repo hygiene, checkpoints, and branch cleanup
               </p>
             </div>
           </div>
@@ -103,9 +105,9 @@ export function GitClient() {
                   tone="bg-pink-500/8 text-pink-300 border-pink-500/20"
                 />
                 <StatPill
-                  icon={Layers}
-                  value={worktreeCount}
-                  label="worktrees"
+                  icon={GitBranch}
+                  value={checkpointCount}
+                  label="checkpoints"
                   tone="bg-phosphor-500/8 text-phosphor-300 border-phosphor-500/20"
                 />
                 <StatPill
@@ -122,7 +124,6 @@ export function GitClient() {
             )}
           </div>
         </div>
-
       </motion.section>
 
       <ConflictAlerts />
@@ -135,22 +136,27 @@ export function GitClient() {
                 Repositories
               </h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                {repos.length} workspace{repos.length !== 1 ? 's' : ''} with branch and cleanup context
+                {repos.length} workspace{repos.length !== 1 ? 's' : ''} with
+                branch and cleanup context
               </p>
             </div>
           </div>
 
           <div className="space-y-2">
-          {repos.map((repo, i) => (
-            <motion.div
-              key={repo.path}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 0.06 + i * 0.04, ease: [0.25, 0.46, 0.45, 0.94] }}
-            >
-              <ProjectRow repo={repo} />
-            </motion.div>
-          ))}
+            {repos.map((repo, i) => (
+              <motion.div
+                key={repo.path}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.3,
+                  delay: 0.06 + i * 0.04,
+                  ease: [0.25, 0.46, 0.45, 0.94],
+                }}
+              >
+                <ProjectRow repo={repo} />
+              </motion.div>
+            ))}
           </div>
         </section>
       )}
@@ -159,7 +165,7 @@ export function GitClient() {
         <div className="card-elevated flex items-center justify-center py-20">
           <div className="flex items-center gap-2.5 text-sm text-slate-500">
             <RefreshCw className="w-5 h-5 animate-spin text-phosphor-500" />
-            Scanning workspaces...
+            Scanning checkpoints...
           </div>
         </div>
       )}
@@ -168,7 +174,9 @@ export function GitClient() {
         <div className="card-elevated flex items-center gap-3 border-rose-500/20 bg-rose-500/8 p-4 text-sm text-rose-300">
           <XCircle className="w-5 h-5 text-rose-500 shrink-0" />
           <div>
-            <span className="font-medium text-slate-100">Connection failed.</span>{' '}
+            <span className="font-medium text-slate-100">
+              Connection failed.
+            </span>{' '}
             Verify the backend is running.
           </div>
         </div>
@@ -183,7 +191,7 @@ export function GitClient() {
             No repositories found
           </p>
           <p className="text-xs text-slate-500">
-            Register a project to start tracking its git workspace.
+            Register a project to start tracking its git state.
           </p>
         </div>
       )}

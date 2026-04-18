@@ -86,13 +86,16 @@ export function useTimelineHistory({
 
         const converted = events.map(eventToTimelineMessage)
         setHistoricalEvents(converted)
-        const lastSeq = converted.length > 0
-          ? Math.max(...converted.map((e) => e.sequence))
-          : 0
+        const lastSeq =
+          converted.length > 0
+            ? Math.max(...converted.map((e) => e.sequence))
+            : 0
         onLastSequenceRef.current?.(lastSeq)
       } catch (err) {
         setHistoricalEvents([])
-        setHistoryError(getErrorMessage(err, 'Failed to load execution history'))
+        setHistoryError(
+          getErrorMessage(err, 'Failed to load execution history'),
+        )
       } finally {
         setIsLoading(false)
       }

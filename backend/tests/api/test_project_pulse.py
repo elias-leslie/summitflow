@@ -16,8 +16,8 @@ def test_get_project_pulse_returns_aggregated_coordination_payload(client) -> No
             "active_sessions": 2,
             "stale_sessions": 1,
             "reapable_sessions": 1,
-            "active_worktrees": 1,
-            "dirty_worktrees": 0,
+            "active_checkpoints": 1,
+            "dirty_checkpoints": 0,
             "needs_cleanup": False,
         },
         "running_tasks": [{"id": "task-1", "title": "Refactor", "status": "running"}],
@@ -25,7 +25,7 @@ def test_get_project_pulse_returns_aggregated_coordination_payload(client) -> No
         "active_specialists": [],
         "active_sessions": [{"id": "sess-owner"}, {"id": "sess-observer"}],
         "stale_sessions": [{"id": "sess-stale"}],
-        "cleanup": {"project_id": "agent-hub", "active_worktrees": 1, "dirty_worktrees": 0, "needs_cleanup": False},
+        "cleanup": {"project_id": "agent-hub", "active_checkpoints": 1, "dirty_checkpoints": 0, "needs_cleanup": False},
     }
 
     with patch(

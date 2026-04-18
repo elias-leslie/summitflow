@@ -2,14 +2,14 @@
  * Tasks API - Enrichment & Refinement Workflow
  */
 
-import { fetchWithErrorHandling, patchJson, postJson } from './utils'
 import type {
-  Task,
   DiscussionResponse,
-  SubtasksResponse,
-  Subtask,
   Step,
+  Subtask,
+  SubtasksResponse,
+  Task,
 } from './tasks-types'
+import { fetchWithErrorHandling, patchJson, postJson } from './utils'
 
 // ============================================================================
 // Enrichment Workflow
@@ -136,5 +136,3 @@ export async function updateStep(
 // ============================================================================
 // Acceptance Criteria
 // ============================================================================
-
-

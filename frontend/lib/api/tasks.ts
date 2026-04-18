@@ -15,43 +15,42 @@
 // ============================================================================
 
 export type {
-  // Core task types
-  TaskStatus,
-  TaskType,
-  Task,
-  TaskListResponse,
-  TaskDependency,
-  // Acceptance criteria
-  TaskAcceptanceCriterion,
+  AgentEventType,
+  AgentHubEvent,
+  AgentHubEventsResponse,
+  AgentHubLiveActivity,
+  AgentHubSessionSummary,
+  BlockerInfo,
   // Capability & blocking
   CapabilityContext,
-  BlockerInfo,
-  WorktreeInfo,
-  VerificationResult,
-  // Enrichment types
-  EnrichmentStatus,
-  DiscussionMessage,
-  DiscussionResponse,
-  // Subtasks & steps
-  Subtask,
-  SubtasksResponse,
-  Step,
-  StepSummary,
-  // Execution types
-  ExecuteTaskOptions,
-  ExecuteTaskResponse,
-  DeleteTaskResponse,
   // Agent Hub types
   CodingAgent,
   CodingAgentsResponse,
-  AgentEventType,
-  AgentHubEvent,
-  AgentHubLiveActivity,
-  AgentHubSessionSummary,
-  AgentHubEventsResponse,
-  NarrationTagType,
+  DeleteTaskResponse,
+  DiscussionMessage,
+  DiscussionResponse,
+  // Enrichment types
+  EnrichmentStatus,
+  // Execution types
+  ExecuteTaskOptions,
+  ExecuteTaskResponse,
   NarrationTag,
+  NarrationTagType,
   NarrationTimelineResponse,
+  Step,
+  StepSummary,
+  // Subtasks & steps
+  Subtask,
+  SubtasksResponse,
+  Task,
+  // Acceptance criteria
+  TaskAcceptanceCriterion,
+  TaskDependency,
+  TaskListResponse,
+  // Core task types
+  TaskStatus,
+  TaskType,
+  VerificationResult,
 } from './tasks-types'
 
 // ============================================================================
@@ -61,16 +60,16 @@ export type {
 export {
   // Create & update
   createTask,
-  updateTask,
-  // Read operations
-  fetchTask,
-  fetchTasks,
-  // Execution control
-  executeTask,
-  updateTaskStatus,
   // Delete operations
   deleteTask,
   deleteTasks,
+  // Execution control
+  executeTask,
+  // Read operations
+  fetchTask,
+  fetchTasks,
+  updateTask,
+  updateTaskStatus,
 } from './tasks-crud'
 
 // ============================================================================
@@ -78,16 +77,16 @@ export {
 // ============================================================================
 
 export {
+  acceptTask,
   // Enrichment workflow
   discussTask,
-  acceptTask,
+  // Steps
+  getSteps,
   // Subtasks
   getSubtasks,
   getSubtasksWithSteps,
-  updateSubtask,
-  // Steps
-  getSteps,
   updateStep,
+  updateSubtask,
 } from './tasks-enrichment'
 
 // ============================================================================
@@ -97,8 +96,8 @@ export {
 export {
   // Coding agents
   fetchCodingAgents,
-  // Observability
-  fetchTaskAgentEvents,
   // Narration
   fetchNarrationTimeline,
+  // Observability
+  fetchTaskAgentEvents,
 } from './tasks-observability'

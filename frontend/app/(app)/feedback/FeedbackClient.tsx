@@ -24,14 +24,22 @@ export function FeedbackClient() {
   })
 
   // Fetch summary
-  const { data: summary, isLoading: summaryLoading, error: summaryError } = useQuery({
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    error: summaryError,
+  } = useQuery({
     queryKey: ['feedback-summary'],
     queryFn: () => fetchFeedbackSummary(),
     staleTime: STALE_GIT,
   })
 
   // Fetch items with filters
-  const { data: itemsData, isLoading: itemsLoading, error: itemsError } = useQuery({
+  const {
+    data: itemsData,
+    isLoading: itemsLoading,
+    error: itemsError,
+  } = useQuery({
     queryKey: ['feedback-items', filters],
     queryFn: () => fetchFeedbackItems(filters),
     staleTime: STALE_STANDARD,
@@ -80,9 +88,7 @@ export function FeedbackClient() {
           </div>
           {summary && (
             <div className="hidden sm:flex items-center gap-3 text-sm">
-              <span className="text-slate-500">
-                {summary.total} signals
-              </span>
+              <span className="text-slate-500">{summary.total} signals</span>
             </div>
           )}
         </motion.div>
@@ -116,8 +122,13 @@ export function FeedbackClient() {
         <motion.section
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
-          className="space-y-3">
+          transition={{
+            duration: 0.4,
+            delay: 0.08,
+            ease: [0.25, 0.46, 0.45, 0.94],
+          }}
+          className="space-y-3"
+        >
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
               Feedback

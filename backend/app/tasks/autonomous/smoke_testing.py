@@ -39,7 +39,7 @@ def smoke_test_module(
     'python' resolves to the project's interpreter.
 
     Args:
-        project_path: Project root (or worktree path)
+        project_path: Project root used for execution
         module_name: Dotted module name like 'cli.output'
         env: Pre-built environment dict from build_project_env()
 

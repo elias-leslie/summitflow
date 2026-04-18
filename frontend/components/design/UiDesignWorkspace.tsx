@@ -3,9 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { BulkActionBar } from '@/components/design/BulkActionBar'
-import { DesignFilters, type TypeFilter } from '@/components/design/DesignFilters'
-import { DesignHeader, type ViewMode } from '@/components/design/DesignHeader'
 import { CreateMockupDialog } from '@/components/design/CreateMockupDialog'
+import {
+  DesignFilters,
+  type TypeFilter,
+} from '@/components/design/DesignFilters'
+import { DesignHeader, type ViewMode } from '@/components/design/DesignHeader'
 import { GenerateMockupDialog } from '@/components/design/GenerateMockupDialog'
 import { MockupDetailModal } from '@/components/design/MockupDetailModal'
 import { MockupGrid } from '@/components/design/MockupGrid'
@@ -19,8 +22,8 @@ import {
   type StatusFilter,
 } from '@/components/design/MockupStatsGrid'
 import { DesignStandardsPanel } from '@/components/explorer/design-standards'
-import { useClampedPagination } from '@/hooks/useClampedPagination'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
+import { useClampedPagination } from '@/hooks/useClampedPagination'
 import {
   deleteMockup,
   fetchMockupStats,
@@ -47,7 +50,8 @@ export function UiDesignWorkspace({
   const [selectMode, setSelectMode] = useState(false)
   const [selectedMockups, setSelectedMockups] = useState<Set<string>>(new Set())
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [iterationParentMockup, setIterationParentMockup] = useState<Mockup | null>(null)
+  const [iterationParentMockup, setIterationParentMockup] =
+    useState<Mockup | null>(null)
   const pageSize = 24
   const queryClient = useQueryClient()
 
@@ -57,7 +61,14 @@ export function UiDesignWorkspace({
     error,
     refetch,
   } = useQuery({
-    queryKey: ['mockups', projectId, statusFilter, typeFilter, searchQuery, page],
+    queryKey: [
+      'mockups',
+      projectId,
+      statusFilter,
+      typeFilter,
+      searchQuery,
+      page,
+    ],
     queryFn: () =>
       fetchMockups(projectId, {
         limit: pageSize,
@@ -110,7 +121,9 @@ export function UiDesignWorkspace({
         <DesignHeader
           title="UI Design"
           subtitle="Analyze live pages, capture hand-authored concepts, and move mockups through the normal review flow."
-          totalLabel={stats?.total !== undefined ? `${stats.total} mockups` : undefined}
+          totalLabel={
+            stats?.total !== undefined ? `${stats.total} mockups` : undefined
+          }
           primaryActionLabel="Analyze Page"
           viewMode={viewMode}
           selectMode={selectMode}

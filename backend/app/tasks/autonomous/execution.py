@@ -22,6 +22,12 @@ from .exec_modules.agent_routing import (
 from .exec_modules.agent_routing import (
     supervisor_circuit_breaker_triage as _supervisor_circuit_breaker_triage,
 )
+from .exec_modules.checkout import (
+    check_checkout_health as _check_checkout_health,
+)
+from .exec_modules.checkout import (
+    check_main_repo_leakage as _check_main_repo_leakage,
+)
 from .exec_modules.quality import (
     PristineCheckError,
     check_pristine_codebase,
@@ -31,12 +37,6 @@ from .exec_modules.quality import (
     parse_error_count as _parse_error_count,
 )
 from .exec_modules.subtask_executor import execute_subtask as _execute_subtask
-from .exec_modules.worktree import (
-    check_main_repo_leakage as _check_main_repo_leakage,
-)
-from .exec_modules.worktree import (
-    check_worktree_health as _check_worktree_health,
-)
 
 _INFRASTRUCTURE_PATTERNS = [
     "command not found",
@@ -62,8 +62,8 @@ def _is_infrastructure_failure(output: str, reason: str, returncode: int) -> boo
 
 __all__ = [
     "PristineCheckError",
+    "_check_checkout_health",
     "_check_main_repo_leakage",
-    "_check_worktree_health",
     "_detect_progress",
     "_execute_subtask",
     "_is_infrastructure_failure",

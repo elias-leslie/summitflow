@@ -1,10 +1,5 @@
+import { ArrowDown, ArrowUp, CheckCircle2, FileEdit } from 'lucide-react'
 import type { ReactNode } from 'react'
-import {
-  ArrowDown,
-  ArrowUp,
-  CheckCircle2,
-  FileEdit,
-} from 'lucide-react'
 import type { RepoStatus } from '@/lib/api'
 
 export function getStateColor(state: RepoStatus['state']): string {

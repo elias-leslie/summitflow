@@ -21,7 +21,7 @@ def test_evaluate_destructive_paths_blocks_foreign_unknown_scope_same_checkout(t
             {
                 "id": "sess-foreign",
                 "current_branch": "main",
-                "worktree_path": str(repo_root),
+                "checkout_path": str(repo_root),
             }
         ],
         project_id="summitflow",
@@ -47,7 +47,7 @@ def test_evaluate_destructive_paths_blocks_foreign_scoped_path_same_checkout(tmp
                 "id": "sess-foreign",
                 "external_id": "task-123",
                 "current_branch": "main",
-                "worktree_path": str(repo_root),
+                "checkout_path": str(repo_root),
                 "observed_write_paths": ["docs/plans/vantage-rollout-plan.md"],
             }
         ],
@@ -73,7 +73,7 @@ def test_evaluate_destructive_paths_uses_observed_scope_without_task_id(tmp_path
             {
                 "id": "sess-foreign",
                 "current_branch": "main",
-                "worktree_path": str(repo_root),
+                "checkout_path": str(repo_root),
                 "observed_write_paths": ["docs/plans/vantage-rollout-plan.md"],
                 "scope_confidence": "observed_write",
             }
@@ -89,7 +89,7 @@ def test_evaluate_destructive_paths_uses_observed_scope_without_task_id(tmp_path
     assert decision.conflicts[0].paths == ("docs/plans/vantage-rollout-plan.md",)
 
 
-def test_evaluate_destructive_paths_ignores_foreign_session_in_other_worktree(tmp_path: Path) -> None:
+def test_evaluate_destructive_paths_ignores_foreign_session_in_other_checkout(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     other_root = tmp_path / "other"
     repo_root.mkdir()
@@ -103,7 +103,7 @@ def test_evaluate_destructive_paths_ignores_foreign_session_in_other_worktree(tm
                 "id": "sess-foreign",
                 "external_id": "task-123",
                 "current_branch": "task-123/main",
-                "worktree_path": str(other_root),
+                "checkout_path": str(other_root),
                 "observed_write_paths": ["docs/plans/vantage-rollout-plan.md"],
             }
         ],
@@ -127,7 +127,7 @@ def test_evaluate_destructive_paths_allows_self_owned_unknown_scope_same_checkou
             {
                 "id": "sess-self",
                 "current_branch": "main",
-                "worktree_path": str(repo_root),
+                "checkout_path": str(repo_root),
             }
         ],
         project_id="summitflow",

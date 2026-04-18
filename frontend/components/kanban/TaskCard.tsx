@@ -2,16 +2,15 @@
 
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import clsx from 'clsx'
 import { GripVertical } from 'lucide-react'
 import { AnimatePresence } from 'motion/react'
 import { useState } from 'react'
-
-import clsx from 'clsx'
 import type { Task } from '@/lib/api'
 import { ExecutionPanel, type ExecutionState } from './ExecutionPanel'
-import { TaskCardHeader } from './TaskCardHeader'
-import { TaskCardBody } from './TaskCardBody'
 import { TaskCardActions } from './TaskCardActions'
+import { TaskCardBody } from './TaskCardBody'
+import { TaskCardHeader } from './TaskCardHeader'
 import { isCrowdsourcedIdea } from './task-card-utils'
 
 // Re-export for backward compatibility

@@ -1,8 +1,15 @@
 'use client'
 
-import { useState } from 'react'
-import { CheckCircle2, XCircle, Loader2, HardDrive, Star, Wifi } from 'lucide-react'
 import { clsx } from 'clsx'
+import {
+  CheckCircle2,
+  HardDrive,
+  Loader2,
+  Star,
+  Wifi,
+  XCircle,
+} from 'lucide-react'
+import { useState } from 'react'
 import { type StorageBackend, testStorageBackend } from '@/lib/api/backups'
 import { formatDate } from '@/lib/format'
 
@@ -11,9 +18,15 @@ interface StorageBackendCardProps {
   onRefresh?: () => void
 }
 
-export function StorageBackendCard({ backend, onRefresh }: StorageBackendCardProps) {
+export function StorageBackendCard({
+  backend,
+  onRefresh,
+}: StorageBackendCardProps) {
   const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [testResult, setTestResult] = useState<{
+    success: boolean
+    message: string
+  } | null>(null)
 
   const handleTest = async () => {
     setTesting(true)
@@ -44,7 +57,9 @@ export function StorageBackendCard({ backend, onRefresh }: StorageBackendCardPro
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
           <HardDrive className="w-4 h-4 text-slate-400" />
-          <span className="text-sm font-medium text-slate-200">{backend.name}</span>
+          <span className="text-sm font-medium text-slate-200">
+            {backend.name}
+          </span>
           {backend.is_default && (
             <span className="flex items-center gap-1 text-[10px] text-amber-400 bg-amber-500/15 px-1.5 py-0.5 rounded border border-amber-500/25">
               <Star className="w-2.5 h-2.5" />
@@ -53,13 +68,12 @@ export function StorageBackendCard({ backend, onRefresh }: StorageBackendCardPro
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          {testStatus != null && (
-            testStatus ? (
+          {testStatus != null &&
+            (testStatus ? (
               <CheckCircle2 className="w-4 h-4 text-green-400" />
             ) : (
               <XCircle className="w-4 h-4 text-red-400" />
-            )
-          )}
+            ))}
           <span
             className={clsx(
               'text-xs px-2 py-0.5 rounded-full',
@@ -95,7 +109,9 @@ export function StorageBackendCard({ backend, onRefresh }: StorageBackendCardPro
         {backend.last_test_at && (
           <div>
             <span className="text-slate-500">Last tested: </span>
-            <span className="text-slate-300">{formatDate(backend.last_test_at)}</span>
+            <span className="text-slate-300">
+              {formatDate(backend.last_test_at)}
+            </span>
           </div>
         )}
       </div>

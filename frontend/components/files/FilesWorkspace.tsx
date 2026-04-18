@@ -1,12 +1,16 @@
-"use client"
+'use client'
 
 import { useQueryClient } from '@tanstack/react-query'
 import { FolderOpen, FolderTree, Upload } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { getErrorMessage } from '@/lib/utils'
-import { uploadFile, type FileBrowserScope, type FileTreeEntry } from '@/lib/api/files'
+import {
+  type FileBrowserScope,
+  type FileTreeEntry,
+  uploadFile,
+} from '@/lib/api/files'
 import { fileQueryKeys } from '@/lib/hooks/useFileExplorer'
+import { getErrorMessage } from '@/lib/utils'
 import { FileBreadcrumb } from './FileBreadcrumb'
 import { FileTree } from './FileTree'
 import { FileViewer } from './FileViewer'
@@ -37,7 +41,9 @@ function getParentDirectory(path: string): string {
 
 function getUploadDirectory(selection: FileSelection | null): string {
   if (!selection) return ''
-  return selection.isDirectory ? selection.path : getParentDirectory(selection.path)
+  return selection.isDirectory
+    ? selection.path
+    : getParentDirectory(selection.path)
 }
 
 function formatUploadTarget(directoryPath: string): string {
@@ -100,28 +106,33 @@ export function FilesWorkspace({
     fileInputRef.current?.click()
   }, [])
 
-  const handleUploadChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? [])
-    if (!files.length) return
+  const handleUploadChange = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? [])
+      if (!files.length) return
 
-    setIsUploading(true)
-    try {
-      for (const file of files) {
-        await uploadFile(scope, uploadDirectory, file)
+      setIsUploading(true)
+      try {
+        for (const file of files) {
+          await uploadFile(scope, uploadDirectory, file)
+        }
+        await queryClient.invalidateQueries({
+          queryKey: fileQueryKeys.scope(scope),
+        })
+        toast.success(
+          files.length === 1
+            ? `Uploaded ${files[0].name}`
+            : `Uploaded ${files.length} files`,
+        )
+      } catch (error) {
+        toast.error(getErrorMessage(error, 'Failed to upload file'))
+      } finally {
+        event.target.value = ''
+        setIsUploading(false)
       }
-      await queryClient.invalidateQueries({ queryKey: fileQueryKeys.scope(scope) })
-      toast.success(
-        files.length === 1
-          ? `Uploaded ${files[0].name}`
-          : `Uploaded ${files.length} files`,
-      )
-    } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to upload file'))
-    } finally {
-      event.target.value = ''
-      setIsUploading(false)
-    }
-  }, [queryClient, scope, uploadDirectory])
+    },
+    [queryClient, scope, uploadDirectory],
+  )
 
   const HeaderIcon = scope.kind === 'workspace' ? FolderTree : FolderOpen
   const isViewingFile = selectedEntry && !selectedEntry.isDirectory
@@ -140,7 +151,9 @@ export function FilesWorkspace({
         <HeaderIcon className="h-5 w-5 text-emerald-400" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
-            <h1 className="display text-lg font-semibold text-slate-100">{title}</h1>
+            <h1 className="display text-lg font-semibold text-slate-100">
+              {title}
+            </h1>
             {selectedEntry ? (
               <FileBreadcrumb
                 rootLabel={rootLabel}
@@ -151,7 +164,10 @@ export function FilesWorkspace({
             ) : null}
           </div>
           <p className="mt-1 text-xs text-slate-500">
-            Upload target: <span className="font-mono text-slate-400">{formatUploadTarget(uploadDirectory)}</span>
+            Upload target:{' '}
+            <span className="font-mono text-slate-400">
+              {formatUploadTarget(uploadDirectory)}
+            </span>
           </p>
         </div>
         <button
@@ -212,7 +228,9 @@ function BrowserEmptyState({ title, body }: { title: string; body: string }) {
         <p className="text-xs leading-relaxed text-slate-500">{body}</p>
         <div className="mt-5 flex items-center justify-center gap-4 text-2xs text-slate-600">
           <span className="flex items-center gap-1.5">
-            <kbd className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-slate-400">Click</kbd>
+            <kbd className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 font-mono text-slate-400">
+              Click
+            </kbd>
             to open
           </span>
           <span className="text-slate-700">|</span>
@@ -240,10 +258,15 @@ function DirectoryEmptyState({
         <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-500/15 bg-emerald-500/8">
           <FolderOpen className="h-7 w-7 text-emerald-400/70" />
         </div>
-        <h2 className="display text-lg font-semibold text-slate-100">{directoryName}</h2>
-        <p className="mt-2 break-all font-mono text-xs text-slate-500">{directoryPath || 'root'}</p>
+        <h2 className="display text-lg font-semibold text-slate-100">
+          {directoryName}
+        </h2>
+        <p className="mt-2 break-all font-mono text-xs text-slate-500">
+          {directoryPath || 'root'}
+        </p>
         <p className="mt-4 text-sm leading-relaxed text-slate-400">
-          Directory selected. Upload files here or pick a file from the tree to preview and download it.
+          Directory selected. Upload files here or pick a file from the tree to
+          preview and download it.
         </p>
         <button
           type="button"

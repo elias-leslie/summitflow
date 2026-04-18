@@ -4,8 +4,8 @@
  * Extracted from explorer.ts to reduce file size and improve modularity.
  */
 
-import { buildQueryString, fetchWithErrorHandling } from './utils'
 import type { ExplorerEntryType } from './explorer'
+import { buildQueryString, fetchWithErrorHandling } from './utils'
 
 // ============================================================================
 // Types
@@ -41,7 +41,12 @@ export interface ScanHistoryEntry {
   scan_type: string // 'file', 'page', 'endpoint', 'database', 'task', 'full'
 
   // Trigger metadata
-  triggered_by: 'manual' | 'scheduled' | 'project_create' | 'refactor_it' | 'audit_it'
+  triggered_by:
+    | 'manual'
+    | 'scheduled'
+    | 'project_create'
+    | 'refactor_it'
+    | 'audit_it'
   triggered_by_session: string | null
   triggered_by_user: string | null
   trigger_context: Record<string, unknown>
@@ -161,4 +166,3 @@ export async function fetchScanHistory(
     { errorMessage: 'Failed to fetch scan history' },
   )
 }
-

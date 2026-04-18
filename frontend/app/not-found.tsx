@@ -17,7 +17,10 @@ export default function NotFound() {
           <p className="text-sm text-slate-400 mb-8 leading-relaxed animate-in stagger-3">
             The page you are looking for does not exist or has been moved.
           </p>
-          <Link href="/" className="btn-primary inline-flex items-center gap-2 animate-in stagger-4">
+          <Link
+            href="/"
+            className="btn-primary inline-flex items-center gap-2 animate-in stagger-4"
+          >
             <Home className="w-4 h-4" />
             Back to Dashboard
           </Link>

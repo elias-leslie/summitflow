@@ -29,9 +29,12 @@ export function useTasksTabState({
   // Helper to update URL params
   const updateUrlParams = useCallback(
     (params: Record<string, string | null>) => {
-      router.replace(buildUrlWithUpdatedSearchParams(pathname, searchParams, params), {
-        scroll: false,
-      })
+      router.replace(
+        buildUrlWithUpdatedSearchParams(pathname, searchParams, params),
+        {
+          scroll: false,
+        },
+      )
     },
     [router, pathname, searchParams],
   )

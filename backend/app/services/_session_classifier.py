@@ -48,7 +48,6 @@ def _normalize_active_session(
         "external_id": session.get("external_id"),
         "current_branch": session.get("current_branch"),
         "working_dir": session.get("working_dir"),
-        "worktree_path": session.get("worktree_path"),
         "repo_root": session.get("repo_root"),
         "host": session.get("host"),
         "tmux_session_name": session.get("tmux_session_name"),
@@ -100,7 +99,7 @@ def _extract_task_ids_from_text(value: object) -> set[str]:
 
 
 def _session_linked_task_ids(session: dict[str, Any]) -> set[str]:
-    """Return task ids linked to a session via ids, branches, or live lane paths."""
+    """Return task ids linked to a session via ids, branches, or path evidence."""
     task_ids = {
         str(task_id).strip()
         for task_id in session.get("batch_task_ids", [])
@@ -116,7 +115,7 @@ def _session_linked_task_ids(session: dict[str, Any]) -> set[str]:
     if first_segment.startswith(_TASK_ID_PREFIX):
         task_ids.add(first_segment)
 
-    for key in ("working_dir", "worktree_path", "repo_root"):
+    for key in ("working_dir", "repo_root"):
         task_ids.update(_extract_task_ids_from_text(session.get(key)))
 
     live_activity = session.get("live_activity")

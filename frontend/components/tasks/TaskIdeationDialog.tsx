@@ -1,9 +1,8 @@
 'use client'
 
+import { ChatPanel } from '@agent-hub/chat-ui'
 import { MessageSquare } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { ChatPanel } from '@agent-hub/chat-ui'
-import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
 import {
   Dialog,
   DialogClose,
@@ -11,10 +10,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
 import { TaskSummaryCard } from './TaskSummaryCard'
-import { useTaskIdeation } from './useTaskIdeation'
 import type { TaskIdeationDialogProps } from './taskIdeationTypes'
 import { AGENT_SLUG, CHAT_TITLE } from './taskIdeationTypes'
+import { useTaskIdeation } from './useTaskIdeation'
 
 export type { TaskIdeationDialogProps }
 

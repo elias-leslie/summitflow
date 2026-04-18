@@ -2,7 +2,13 @@
  * Mockups API module
  */
 
-import { buildQueryString, deleteJson, fetchWithErrorHandling, postJson, putJson } from './utils'
+import {
+  buildQueryString,
+  deleteJson,
+  fetchWithErrorHandling,
+  postJson,
+  putJson,
+} from './utils'
 
 export interface Mockup {
   id: number

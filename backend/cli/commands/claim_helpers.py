@@ -1,11 +1,7 @@
-"""Helper functions for claim command.
-
-Internal helpers split out to keep claim.py under 150 lines.
-"""
+"""Helper functions for claim command."""
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,7 +9,6 @@ from typing import Any
 
 import typer
 
-from ..lib.worktree_git import get_repo_root
 from ..output import output_error, output_success, output_warning
 
 _UNMERGED_PREFIXES = {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}
@@ -26,26 +21,6 @@ _IN_PROGRESS_DIRS = (
     "rebase-merge",
     "rebase-apply",
 )
-_ADOPTION_SKIP_ROOTS = frozenset({".pnpm-store", "node_modules", ".next", "dist", "build"})
-
-
-def _copy_path(src: Path, dest: Path) -> None:
-    if src.is_dir():
-        shutil.copytree(src, dest, dirs_exist_ok=True)
-        return
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dest)
-
-
-def _remove_path(path: Path) -> None:
-    if not path.exists() and not path.is_symlink():
-        return
-    if path.is_dir() and not path.is_symlink():
-        shutil.rmtree(path)
-        return
-    path.unlink()
-
-
 def is_subtask_id(id_str: str) -> bool:
     """Check if the ID looks like a subtask (e.g., 1.1, 2.3)."""
     if "." not in id_str:
@@ -66,23 +41,6 @@ def _git_status_lines() -> list[str]:
         return [line for line in result.stdout.splitlines() if line.strip()]
     except subprocess.CalledProcessError:
         return []
-
-
-def _parse_status_paths(line: str) -> tuple[str | None, str | None]:
-    """Parse porcelain status line into (old_path, new_path)."""
-    path_field = line[3:].strip()
-    if " -> " in path_field:
-        old_path, new_path = path_field.split(" -> ", 1)
-        return old_path, new_path
-    return None, path_field
-
-
-def _should_skip_dirty_adoption(path_str: str | None) -> bool:
-    """Skip transient build/package-manager artifacts during dirty adoption."""
-    if not path_str:
-        return False
-    first_segment = Path(path_str).parts[0] if Path(path_str).parts else ""
-    return first_segment in _ADOPTION_SKIP_ROOTS
 
 
 def _find_claim_hazards() -> list[str]:
@@ -118,41 +76,8 @@ def require_claim_safe_tree() -> None:
     if _git_status_lines():
         output_warning(
             "Working tree has uncommitted changes, but no claim-blocking hazards were found. "
-            "Claim will proceed with a clean lane; run `st adopt <task-id>` afterward if you intentionally want to copy current dirty paths into the new worktree."
+            "Claim will proceed on the current checkout."
         )
-
-
-def adopt_dirty_changes_to_worktree(worktree_path: str) -> int:
-    """Copy current dirty tracked/untracked paths into a freshly claimed task worktree."""
-    status_lines = _git_status_lines()
-    if not status_lines:
-        return 0
-
-    repo_root = get_repo_root()
-    worktree_root = Path(worktree_path)
-    adopted: set[str] = set()
-
-    for line in status_lines:
-        old_path, new_path = _parse_status_paths(line)
-        if old_path and not _should_skip_dirty_adoption(old_path):
-            _remove_path(worktree_root / old_path)
-
-        if not new_path or _should_skip_dirty_adoption(new_path):
-            continue
-
-        src = repo_root / new_path
-        dest = worktree_root / new_path
-        if src.exists() or src.is_symlink():
-            _copy_path(src, dest)
-        else:
-            _remove_path(dest)
-        adopted.add(new_path)
-
-    if adopted:
-        output_success(
-            f"Adopted {len(adopted)} dirty path(s) into claimed task worktree."
-        )
-    return len(adopted)
 
 
 def require_clean_tree() -> None:
@@ -169,20 +94,8 @@ def _format_age(created_at: str) -> str:
     return f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
 
 
-def _resume_from_worktree(task_id: str, existing: dict[str, Any]) -> dict[str, Any]:
-    """Resume a task that already has a live worktree."""
-    return {
-        "task_id": task_id,
-        "action": "resumed",
-        "branch": f"{task_id}/main",
-        "worktree_path": existing.get("worktree_path"),
-        "backend_port": existing.get("backend_port"),
-        "frontend_port": existing.get("frontend_port"),
-    }
-
-
-def _resume_via_branch(task_id: str, worktree_path: str | None) -> dict[str, Any]:
-    """Resume a task by checking out its branch (legacy / missing worktree)."""
+def _resume_via_branch(task_id: str) -> dict[str, Any]:
+    """Resume a task by checking out its branch."""
     task_branch = f"{task_id}/main"
     try:
         subprocess.run(
@@ -194,44 +107,22 @@ def _resume_via_branch(task_id: str, worktree_path: str | None) -> dict[str, Any
     except subprocess.CalledProcessError as e:
         output_error(f"Failed to checkout branch: {e.stderr}")
         raise typer.Exit(1) from None
-    return {"task_id": task_id, "action": "resumed", "branch": task_branch, "worktree_path": worktree_path}
+    return {"task_id": task_id, "action": "resumed", "branch": task_branch}
 
 
 def handle_existing_checkpoint(task_id: str, existing: dict[str, Any]) -> dict[str, Any]:
     """Prompt user about an existing checkpoint and either resume or abort."""
     age_str = _format_age(str(existing["created_at"]))
     typer.echo(f"Existing checkpoint found for {task_id} (created {age_str} ago).")
-    typer.echo(f"Size: {existing.get('size', 'unknown')}")
-    if existing.get("worktree_path"):
-        typer.echo(f"Worktree: {existing['worktree_path']}")
-    worktree_path = existing.get("worktree_path")
-    if worktree_path and existing.get("worktree_exists") == "true":
-        return _resume_from_worktree(task_id, existing)
-    return _resume_via_branch(task_id, worktree_path)
-
-
-def print_worktree_info(task_id: str, result: dict[str, Any]) -> None:
-    """Print worktree path and optional isolated-service instructions."""
-    typer.echo(f"  Worktree: {result['worktree_path']}")
-    typer.echo("\nTo work in isolation:")
-    typer.echo(f"  cd {result['worktree_path']}")
-    if result.get("backend_port") and result.get("frontend_port"):
-        typer.echo("\nTo start isolated services:")
-        typer.echo(f"  worktree-services.sh start {task_id}")
-        typer.echo(f"  Backend:  http://localhost:{result['backend_port']}")
-        typer.echo(f"  Frontend: http://localhost:{result['frontend_port']}")
+    return _resume_via_branch(task_id)
 
 
 def print_resumed(task_id: str, result: dict[str, Any]) -> None:
     """Print output for a resumed task."""
     output_success(f"Task {task_id} resumed. Branch: {result['branch']}")
-    if result.get("worktree_path"):
-        print_worktree_info(task_id, result)
 
 
 def print_claimed(task_id: str, result: dict[str, Any]) -> None:
     """Print output for a newly claimed task."""
     output_success(f"Task {task_id} claimed. Checkpoint created.")
     typer.echo(f"  Branch: {result['branch']}")
-    if result.get("worktree_path"):
-        print_worktree_info(task_id, result)

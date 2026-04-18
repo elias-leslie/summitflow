@@ -1,8 +1,8 @@
 'use client'
 
+import clsx from 'clsx'
 import { ChevronRight, Home } from 'lucide-react'
 import Link from 'next/link'
-import clsx from 'clsx'
 
 // ============================================================================
 // Types

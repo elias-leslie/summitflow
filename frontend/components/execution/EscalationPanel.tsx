@@ -56,7 +56,10 @@ export function EscalationPanel({
 
   const handleSendMessage = () => {
     if (!message.trim()) return
-    setChatMessages((prev) => [...prev, { id: nextId.current++, role: 'user', content: message }])
+    setChatMessages((prev) => [
+      ...prev,
+      { id: nextId.current++, role: 'user', content: message },
+    ])
     setMessage('')
   }
 
@@ -182,7 +185,10 @@ export function EscalationPanel({
                 {chatMessages.map((msg) => (
                   <div
                     key={msg.id}
-                    className={clsx('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}
+                    className={clsx(
+                      'flex',
+                      msg.role === 'user' ? 'justify-end' : 'justify-start',
+                    )}
                   >
                     <div
                       className={clsx(

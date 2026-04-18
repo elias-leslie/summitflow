@@ -86,12 +86,13 @@ def format_details(out: OutputContext, task_id: str) -> None:
         return
 
     age = format_age(str(info.get("created_at", "")))
-    branches = get_task_branches(task_id, project_id=info.get("project_id"))
+    raw_project_id = info.get("project_id")
+    project_id = raw_project_id if isinstance(raw_project_id, str) and raw_project_id else None
+    branches = get_task_branches(task_id, project_id=project_id)
 
     if out.is_compact:
         print(f"CHECKPOINT:{task_id}")
         print(f"  Project: {info.get('project_id', '?')}")
-        print(f"  Worktree: {info.get('worktree_path', '?')}")
         print(f"  Base branch: {info.get('base_branch', '?')}")
         print(f"  Created: {info.get('created_at', '?')} ({age})")
         print(f"  Claimed by: {info.get('claimed_by', '?')}")

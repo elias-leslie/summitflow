@@ -14,13 +14,21 @@ import {
   ShieldX,
 } from 'lucide-react'
 import Link from 'next/link'
-import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { BackupExpandedRow } from '@/components/backup/BackupExpandedRow'
 import { CollapsibleSection } from '@/components/backup/CollapsibleSection'
 import { CreateBackupModal } from '@/components/backup/CreateBackupModal'
 import { SetupChecklist } from '@/components/backup/SetupChecklist'
-import { SourceTypeBadge } from '@/components/backup/SourceTypeBadge'
 import { SourcesManager } from '@/components/backup/SourcesManager'
+import { SourceTypeBadge } from '@/components/backup/SourceTypeBadge'
 import { StatusBadge } from '@/components/backup/StatusBadge'
 import { StatusRibbon } from '@/components/backup/StatusRibbon'
 import { StorageCard } from '@/components/backup/StorageCard'
@@ -33,12 +41,12 @@ import {
   fetchBackupHealth,
   fetchBackupSources,
   fetchStorageBackends,
-  fetchStorageSummary,
   fetchStorageStatus,
+  fetchStorageSummary,
 } from '@/lib/api/backups'
 import { fetchScopes, fetchSnapshotSummary } from '@/lib/api/snapshots'
-import { POLL_NOTIFICATIONS, STALE_GIT } from '@/lib/polling'
 import { formatBytes, formatDate, formatTimeAgo } from '@/lib/format'
+import { POLL_NOTIFICATIONS, STALE_GIT } from '@/lib/polling'
 
 type ViewMode = 'list' | 'grid'
 const STORAGE_KEY = 'backups-view-mode'
@@ -334,17 +342,24 @@ export function BackupsClient() {
     () => snapshotScopes.filter((scope) => scope.scope_state === 'archived'),
     [snapshotScopes],
   )
-  const healthySourceCount = healthData?.sources.filter((source) => source.health_status === 'green').length ?? 0
-  const failingSourceCount = healthData?.sources.filter((source) => source.health_status === 'red').length ?? 0
+  const healthySourceCount =
+    healthData?.sources.filter((source) => source.health_status === 'green')
+      .length ?? 0
+  const failingSourceCount =
+    healthData?.sources.filter((source) => source.health_status === 'red')
+      .length ?? 0
   const enabledSourceCount = sources.filter((source) => source.enabled).length
-  const overviewSummary = storageLoading || healthLoading
-    ? 'Loading backup health, storage, and retention metrics.'
-    : `${healthySourceCount} healthy, ${failingSourceCount} failing, ${storageSummary?.total_count ?? 0} backups, ${formatBytes(storageSummary?.total_bytes ?? 0)} stored`
-  const sourcesSummary = sources.length === 0
-    ? 'No sources configured yet.'
-    : `${sources.length} sources, ${enabledSourceCount} scheduled${failingSourceCount > 0 ? `, ${failingSourceCount} failing` : ''}`
+  const overviewSummary =
+    storageLoading || healthLoading
+      ? 'Loading backup health, storage, and retention metrics.'
+      : `${healthySourceCount} healthy, ${failingSourceCount} failing, ${storageSummary?.total_count ?? 0} backups, ${formatBytes(storageSummary?.total_bytes ?? 0)} stored`
+  const sourcesSummary =
+    sources.length === 0
+      ? 'No sources configured yet.'
+      : `${sources.length} sources, ${enabledSourceCount} scheduled${failingSourceCount > 0 ? `, ${failingSourceCount} failing` : ''}`
   const snapshotsSummary = `${activeSnapshotScopes.length} active scope${activeSnapshotScopes.length === 1 ? '' : 's'}, ${archivedSnapshotScopes.length} archived`
-  const protectionSummary = 'Current backup readiness, restore validation, and anything still blocking full protection.'
+  const protectionSummary =
+    'Current backup readiness, restore validation, and anything still blocking full protection.'
 
   // ─── Handlers ───────────────────────────────────────────────────
 
@@ -418,9 +433,8 @@ export function BackupsClient() {
                 .length > 0 && (
                 <span className="text-red-400">
                   {
-                    healthData.sources.filter(
-                      (s) => s.health_status === 'red',
-                    ).length
+                    healthData.sources.filter((s) => s.health_status === 'red')
+                      .length
                   }{' '}
                   failing
                 </span>
@@ -464,10 +478,7 @@ export function BackupsClient() {
         />
       </section>
 
-      <CollapsibleSection
-        title="Sources & Schedules"
-        summary={sourcesSummary}
-      >
+      <CollapsibleSection title="Sources & Schedules" summary={sourcesSummary}>
         <SourcesManager
           sources={sources}
           healthItems={healthData?.sources ?? []}
@@ -532,7 +543,7 @@ export function BackupsClient() {
         <SectionHeading
           title="Backup History"
           summary="All backups across sources"
-          actions={(
+          actions={
             <div className="flex items-center gap-3">
               <select
                 value={statusFilter}
@@ -547,7 +558,7 @@ export function BackupsClient() {
               </select>
               <ViewToggle view={viewRaw} onViewChange={setView} />
             </div>
-          )}
+          }
         />
 
         {backupsLoading ? (

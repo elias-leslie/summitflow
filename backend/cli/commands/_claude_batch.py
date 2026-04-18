@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from pathlib import Path
 
 import typer
 
@@ -62,19 +61,12 @@ def run_batch_workers(
 
 
 def commit_and_done_task(spec: WorkerDispatch, *, fetch_task_fn: _FetchFn, fatal: Callable) -> int:
-    """Commit/push the task worktree, then run canonical closeout."""
-    task = fetch_task_fn(spec.task_id)
-    worktree = task.get("worktree")
-    if not isinstance(worktree, dict):
-        fatal(f"Task {spec.task_id} has no active worktree to commit/close")
-    worktree_path_str = worktree.get("path")
-    if not isinstance(worktree_path_str, str) or not worktree_path_str.strip():
-        fatal(f"Task {spec.task_id} returned an invalid worktree path")
-    worktree_path = Path(worktree_path_str).resolve()
+    """Commit/push the task checkout, then run canonical closeout."""
+    fetch_task_fn(spec.task_id)
     commit_result = subprocess.run(
         [_COMMIT_SCRIPT, "--current", "--push", "--task", spec.task_id,
          "--msg", f"claude(batch): complete {spec.task_id}"],
-        cwd=worktree_path, check=False,
+        cwd=spec.project_root, check=False,
     )
     if commit_result.returncode != 0:
         return int(commit_result.returncode)

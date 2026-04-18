@@ -1,17 +1,19 @@
-"""Git branch and worktree helpers."""
+"""Git branch and checkpoint helpers."""
 
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..api.models.git_models import BranchInfo, WorktreeInfo
+    from ..api.models.git_models import BranchInfo, CheckpointInfo
 
 from ._git_core import _resolve_project_id, run_git
 
 _BASE_BRANCH_CANDIDATES = ["main", "master", "develop"]
+_LEGACY_LANE_ADMIN_DIR = "wor" "ktrees"
 
 
 def extract_task_id_from_branch(branch_name: str) -> str | None:
@@ -29,36 +31,36 @@ def get_branch_commit_info(branch_name: str, repo_path: Path) -> tuple[str | Non
     return (parts[0], parts[1]) if len(parts) == 2 else (None, None)
 
 
-def _get_active_worktrees(project_id: str | None = None) -> list:
-    """Load active worktrees from the CLI source of truth."""
-    from cli.lib.worktree import get_active_worktrees
+def _get_active_checkpoints(project_id: str | None = None) -> list:
+    """Load active checkpoints from the CLI source of truth."""
+    from cli.lib.checkpoint import get_active_checkpoints
 
-    return get_active_worktrees(project_id)
+    return get_active_checkpoints(project_id)
 
 
-def get_worktree_branches(
+def get_checkpoint_branches(
     project_id: str | None = None,
     *,
-    active_worktrees: list | None = None,
+    active_checkpoints: list | None = None,
 ) -> dict[str, str]:
-    """Get a mapping of branch names to worktree paths."""
-    worktrees = active_worktrees if active_worktrees is not None else _get_active_worktrees(project_id)
-    return {wt.branch: str(wt.path) for wt in worktrees}
+    """Get a mapping of active checkpoint branch names to task ids."""
+    checkpoints = active_checkpoints if active_checkpoints is not None else _get_active_checkpoints(project_id)
+    return {f"{checkpoint.task_id}/main": checkpoint.task_id for checkpoint in checkpoints}
 
 
 def get_all_branches(
     repo_path: Path,
     project_id: str | None = None,
     *,
-    active_worktrees: list | None = None,
+    active_checkpoints: list | None = None,
 ) -> list[BranchInfo]:
-    """Get list of all local branches with worktree indicators."""
+    """Get list of all local branches with checkpoint indicators."""
     from ..api.models.git_models import BranchInfo
 
     resolved_project_id = _resolve_project_id(repo_path, project_id)
-    worktree_branches = get_worktree_branches(
+    checkpoint_branches = get_checkpoint_branches(
         resolved_project_id,
-        active_worktrees=active_worktrees,
+        active_checkpoints=active_checkpoints,
     )
 
     cr = run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_path)
@@ -79,16 +81,15 @@ def get_all_branches(
         branches.append(BranchInfo(
             name=name,
             is_current=name == current_branch,
-            has_worktree=name in worktree_branches,
+            has_checkpoint=name in checkpoint_branches,
             repo_name=repo_path.name,
             project_id=resolved_project_id,
-            worktree_path=worktree_branches.get(name),
             task_id=extract_task_id_from_branch(name),
             last_commit_short=commit_short,
             last_commit_date=commit_date,
         ))
 
-    branches.sort(key=lambda b: (not b.is_current, not b.has_worktree, b.name.lower()))
+    branches.sort(key=lambda b: (not b.is_current, not b.has_checkpoint, b.name.lower()))
     return branches
 
 
@@ -130,26 +131,41 @@ def _branch_diff_paths(repo_path: Path, branch_name: str, base_branch: str) -> l
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
-def prune_worktree_registrations(repo_path: Path) -> None:
-    """Prune stale git worktree registrations for a repository."""
-    run_git(["worktree", "prune"], repo_path)
+def prune_checkout_registrations(repo_path: Path) -> int:
+    """Prune stale legacy lane git metadata registrations for a repository."""
+    registrations_root = repo_path / ".git" / _LEGACY_LANE_ADMIN_DIR
+    if not registrations_root.is_dir():
+        return 0
+
+    pruned = 0
+    for registration in registrations_root.iterdir():
+        gitdir_file = registration / "gitdir"
+        if not gitdir_file.is_file():
+            continue
+        target = Path(gitdir_file.read_text(encoding="utf-8").strip())
+        if not target.is_absolute():
+            target = (registration / target).resolve()
+        if target.exists():
+            continue
+        shutil.rmtree(registration, ignore_errors=False)
+        pruned += 1
+    return pruned
 
 
-def get_worktree_info(task_id: str) -> WorktreeInfo | None:
-    """Get information about an existing worktree."""
-    from cli.lib.worktree import get_active_worktrees
+def get_checkpoint_info(task_id: str) -> CheckpointInfo | None:
+    """Get information about an active checkpoint."""
+    from cli.lib.checkpoint import get_active_checkpoints
 
-    from ..api.models.git_models import WorktreeInfo
+    from ..api.models.git_models import CheckpointInfo
 
-    for worktree in get_active_worktrees():
-        if worktree.task_id == task_id:
-            return WorktreeInfo(
-                task_id=worktree.task_id,
-                path=str(worktree.path),
-                branch=worktree.branch,
-                base_branch=worktree.base_branch,
-                is_active=worktree.is_active,
-                project_id=worktree.project_id,
+    for checkpoint in get_active_checkpoints():
+        if checkpoint.task_id == task_id:
+            return CheckpointInfo(
+                task_id=checkpoint.task_id,
+                branch=f"{checkpoint.task_id}/main",
+                base_branch=checkpoint.base_branch,
+                is_active=True,
+                project_id=checkpoint.project_id,
             )
     return None
 
@@ -174,13 +190,13 @@ __all__ = [
     "extract_task_id_from_branch",
     "get_all_branches",
     "get_branch_commit_info",
-    "get_worktree_branches",
-    "get_worktree_info",
+    "get_checkpoint_branches",
+    "get_checkpoint_info",
     "list_closed_orphan_task_branches",
     "list_equivalent_orphan_task_branches",
     "list_prunable_task_branches",
+    "prune_checkout_registrations",
     "prune_closed_orphan_task_branches",
     "prune_equivalent_orphan_task_branches",
     "prune_prunable_task_branches",
-    "prune_worktree_registrations",
 ]

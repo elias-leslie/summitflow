@@ -5,11 +5,7 @@ import type { TaskStatus } from '@/lib/api'
 // ============================================================================
 
 // Kanban columns (5 columns: Ideas + Planning + Active + Done)
-export type TaskKanbanColumn =
-  | 'ideas'
-  | 'planning'
-  | 'active'
-  | 'done'
+export type TaskKanbanColumn = 'ideas' | 'planning' | 'active' | 'done'
 
 export interface KanbanColumn {
   id: TaskKanbanColumn

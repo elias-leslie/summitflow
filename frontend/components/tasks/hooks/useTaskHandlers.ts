@@ -1,8 +1,8 @@
 import { useMutation } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
-import { deleteTask, deleteTasks } from '@/lib/api/tasks'
 import type { Task } from '@/lib/api'
+import { deleteTask, deleteTasks } from '@/lib/api/tasks'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
 import { getErrorMessage } from '@/lib/utils'
 
@@ -32,7 +32,9 @@ export function useTaskHandlers(projectId: string) {
       }
       setBulkDeleteConfirm(false)
       toast.success(
-        taskIds.length === 1 ? 'Task deleted' : `${taskIds.length} tasks deleted`,
+        taskIds.length === 1
+          ? 'Task deleted'
+          : `${taskIds.length} tasks deleted`,
       )
     },
     onError: (error) => {

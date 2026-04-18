@@ -4,19 +4,12 @@
 # Service discovery is dynamic: compose file is the single source of truth.
 #
 export GREEN='\033[0;32m' YELLOW='\033[1;33m' RED='\033[0;31m' BLUE='\033[0;34m' NC='\033[0m'
-export IS_WORKTREE=false WORKTREE_TASK_ID=""
+export TASK_CONTEXT_ID=""
 if [ -z "${PROJECT_DIR:-}" ]; then
     PROJECT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-    if [[ "$PROJECT_DIR" == *"/worktrees/"* ]]; then
-        IS_WORKTREE=true
-        PROJECT_NAME=$(echo "$PROJECT_DIR" | sed -E 's|.*/worktrees/([^/]+)/.*|\1|')
-        WORKTREE_TASK_ID=$(echo "$PROJECT_DIR" | sed -E 's|.*/worktrees/[^/]+/([^/]+).*|\1|')
-        [ "$WORKTREE_TASK_ID" = "$PROJECT_DIR" ] && WORKTREE_TASK_ID=""
-    else
-        PROJECT_NAME=$(basename "$PROJECT_DIR")
-    fi
+    PROJECT_NAME=$(basename "$PROJECT_DIR")
 fi
-export PROJECT_DIR PROJECT_NAME IS_WORKTREE WORKTREE_TASK_ID
+export PROJECT_DIR PROJECT_NAME TASK_CONTEXT_ID
 
 # ─── Sanitize environment for Docker Compose ──────────────────
 # Unset vars that leak from .env.local / systemd and conflict with

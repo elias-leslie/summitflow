@@ -3,7 +3,11 @@
 import { clsx } from 'clsx'
 import { Search } from 'lucide-react'
 import type { FeedbackFilters, FeedbackStatusFilter } from '@/lib/api/feedback'
-import { TYPE_CONFIG, COMPONENT_GROUPS, SORT_OPTIONS } from './feedbackConstants'
+import {
+  COMPONENT_GROUPS,
+  SORT_OPTIONS,
+  TYPE_CONFIG,
+} from './feedbackConstants'
 
 // ─── Segmented Toggle ────────────────────────────────────────────
 
@@ -22,7 +26,9 @@ function SegmentedToggle<T extends string>({
         <button
           key={opt.value}
           type="button"
-          onClick={() => onChange(opt.value === '' ? undefined : (opt.value as T))}
+          onClick={() =>
+            onChange(opt.value === '' ? undefined : (opt.value as T))
+          }
           aria-pressed={(value ?? '') === opt.value}
           className={clsx(
             'px-2.5 py-1 text-2xs transition-all',
@@ -106,7 +112,9 @@ export function FeedbackFilterBar({
       <SegmentedToggle
         options={statusOptions}
         value={filters.status}
-        onChange={(v) => onFiltersChange({ status: v as FeedbackStatusFilter | undefined })}
+        onChange={(v) =>
+          onFiltersChange({ status: v as FeedbackStatusFilter | undefined })
+        }
       />
 
       {/* Component dropdown */}

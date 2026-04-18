@@ -52,7 +52,8 @@ function buildForwardHeaders(
 
   if (accept) headers.set('Accept', accept)
   if (bodyPresent && contentType) headers.set('Content-Type', contentType)
-  if (config.internalSecret) headers.set('X-Internal-Secret', config.internalSecret)
+  if (config.internalSecret)
+    headers.set('X-Internal-Secret', config.internalSecret)
   return headers
 }
 
@@ -75,11 +76,17 @@ async function proxyRequest(
 ): Promise<Response> {
   const { path } = await params
   const config = resolveConfig()
-  const url = buildUpstreamUrl(config, path, new URL(request.url).searchParams.toString())
+  const url = buildUpstreamUrl(
+    config,
+    path,
+    new URL(request.url).searchParams.toString(),
+  )
   const body = method === 'GET' ? '' : await request.text()
   const response = await fetch(url, {
     method,
-    headers: buildForwardHeaders(request, config, { bodyPresent: body.length > 0 }),
+    headers: buildForwardHeaders(request, config, {
+      bodyPresent: body.length > 0,
+    }),
     ...(body ? { body } : {}),
   })
   return proxyResponse(response)

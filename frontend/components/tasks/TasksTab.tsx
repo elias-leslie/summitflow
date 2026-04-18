@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { getErrorMessage } from '@/lib/utils'
 import { useTaskHandlers } from './hooks/useTaskHandlers'
 import { useTaskSelection } from './hooks/useTaskSelection'
 import { useTaskSort } from './hooks/useTaskSort'
@@ -11,7 +12,6 @@ import { loadFilters, saveFilters, type TaskFilterValues } from './TaskFilters'
 import { TasksTabHeader } from './TasksTabHeader'
 import { TasksTabModals } from './TasksTabModals'
 import { TasksTabTable } from './TasksTabTable'
-import { getErrorMessage } from '@/lib/utils'
 
 interface TasksTabProps {
   projectId: string

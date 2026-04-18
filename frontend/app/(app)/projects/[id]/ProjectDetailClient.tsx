@@ -3,7 +3,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { AlertCircle } from 'lucide-react'
 import Link from 'next/link'
-import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
+import {
+  useParams,
+  usePathname,
+  useRouter,
+  useSearchParams,
+} from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { EscalationPanel } from '@/components/execution/EscalationPanel'
@@ -11,12 +16,12 @@ import { ExplorerTab } from '@/components/explorer/ExplorerTab'
 import type { ExplorerType } from '@/components/explorer/types'
 import { TaskKanbanBoard } from '@/components/kanban/TaskKanbanBoard'
 import { ProjectOverview } from '@/components/projects/ProjectOverview'
-import { TaskIdeationDialog } from '@/components/tasks/TaskIdeationDialog'
+import { useViewMode } from '@/components/tasks/hooks/useViewMode'
 import type { TaskFilterValues } from '@/components/tasks/TaskFilters'
+import { TaskIdeationDialog } from '@/components/tasks/TaskIdeationDialog'
 import { TaskModal } from '@/components/tasks/TaskModal'
 import { TasksTab } from '@/components/tasks/TasksTab'
 import { TasksViewToolbar } from '@/components/tasks/TasksViewToolbar'
-import { useViewMode } from '@/components/tasks/hooks/useViewMode'
 import {
   fetchProject,
   fetchTasks,
@@ -25,16 +30,23 @@ import {
   updateTaskStatus,
 } from '@/lib/api'
 import { executeTask } from '@/lib/api/tasks'
-import { parseExplorerType, parseProjectTab, type ProjectTab } from '@/lib/project-tabs'
+import { STALE_GIT } from '@/lib/polling'
+import {
+  type ProjectTab,
+  parseExplorerType,
+  parseProjectTab,
+} from '@/lib/project-tabs'
 import { buildUrlWithUpdatedSearchParams } from '@/lib/search-params'
 import { taskQueryKeys } from '@/lib/task-cache'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
-import { STALE_GIT } from '@/lib/polling'
 import { getErrorMessage } from '@/lib/utils'
 
 type ProjectSection = ProjectTab | 'overview'
 
-const SECTION_COPY: Record<ProjectSection, { label: string; description: string }> = {
+const SECTION_COPY: Record<
+  ProjectSection,
+  { label: string; description: string }
+> = {
   overview: {
     label: 'Project overview',
     description:
@@ -66,9 +78,12 @@ export function ProjectDetailClient() {
   const urlTaskId = searchParams.get('task')
   const urlModal = searchParams.get('modal')
   const parsedTab = parseProjectTab(searchParams.get('tab'))
-  const activeTab = parsedTab ?? (urlTaskId || urlModal === 'create-task' ? 'tasks' : null)
+  const activeTab =
+    parsedTab ?? (urlTaskId || urlModal === 'create-task' ? 'tasks' : null)
   const activeSection: ProjectSection = activeTab ?? 'overview'
-  const explorerType = parseExplorerType(searchParams.get('type')) as ExplorerType
+  const explorerType = parseExplorerType(
+    searchParams.get('type'),
+  ) as ExplorerType
   const taskInitialFilters: Partial<TaskFilterValues> = {}
   if (
     urlTaskStatus &&
@@ -232,7 +247,10 @@ export function ProjectDetailClient() {
               The project you&apos;re looking for doesn&apos;t exist or
               couldn&apos;t be loaded.
             </p>
-            <Link href="/" className="btn-primary inline-flex items-center gap-2">
+            <Link
+              href="/"
+              className="btn-primary inline-flex items-center gap-2"
+            >
               Back to Dashboard
             </Link>
           </div>
@@ -257,9 +275,11 @@ export function ProjectDetailClient() {
                   {SECTION_COPY[activeSection].label}
                 </span>
                 <span
-                  className={project.health_status === 'healthy'
-                    ? 'rounded-full border border-emerald-500/18 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-emerald-300'
-                    : 'rounded-full border border-amber-500/18 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-amber-300'}
+                  className={
+                    project.health_status === 'healthy'
+                      ? 'rounded-full border border-emerald-500/18 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-emerald-300'
+                      : 'rounded-full border border-amber-500/18 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-amber-300'
+                  }
                 >
                   {project.health_status === 'healthy' ? 'healthy' : 'watch'}
                 </span>
@@ -277,7 +297,6 @@ export function ProjectDetailClient() {
                 </a>
               </div>
             </div>
-
           </div>
         </div>
       </div>

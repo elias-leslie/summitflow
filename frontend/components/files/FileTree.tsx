@@ -1,6 +1,5 @@
-"use client"
+'use client'
 
-import { useCallback, useState } from 'react'
 import {
   ChevronRight,
   File,
@@ -11,24 +10,56 @@ import {
   FolderOpen,
   Loader2,
 } from 'lucide-react'
+import { useCallback, useState } from 'react'
+import type { FileBrowserScope, FileTreeEntry } from '@/lib/api/files'
 import { useFileTree } from '@/lib/hooks/useFileExplorer'
 import { cn } from '@/lib/utils'
-import type { FileBrowserScope, FileTreeEntry } from '@/lib/api/files'
 import {
-  FileContextMenu,
   type ContextMenuPosition,
+  FileContextMenu,
   type FileContextMenuTarget,
 } from './FileContextMenu'
 
 const CODE_EXTENSIONS = new Set([
-  '.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.java',
-  '.cpp', '.c', '.h', '.hpp', '.php', '.rb', '.swift', '.kt',
-  '.sh', '.bash', '.zsh', '.css', '.scss', '.html', '.htm',
-  '.xml', '.sql',
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.py',
+  '.rs',
+  '.go',
+  '.java',
+  '.cpp',
+  '.c',
+  '.h',
+  '.hpp',
+  '.php',
+  '.rb',
+  '.swift',
+  '.kt',
+  '.sh',
+  '.bash',
+  '.zsh',
+  '.css',
+  '.scss',
+  '.html',
+  '.htm',
+  '.xml',
+  '.sql',
 ])
 
 const JSON_EXTENSIONS = new Set(['.json', '.jsonc', '.json5'])
-const TEXT_EXTENSIONS = new Set(['.md', '.mdx', '.yaml', '.yml', '.txt', '.toml', '.ini', '.cfg', '.env'])
+const TEXT_EXTENSIONS = new Set([
+  '.md',
+  '.mdx',
+  '.yaml',
+  '.yml',
+  '.txt',
+  '.toml',
+  '.ini',
+  '.cfg',
+  '.env',
+])
 
 function getFileIcon(entry: FileTreeEntry) {
   if (entry.is_directory) return null
@@ -68,20 +99,27 @@ function TreeNode({
     }
   }, [entry, onSelect])
 
-  const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault()
-      handleClick()
-    } else if (event.key === 'ArrowRight' && entry.is_directory && !expanded) {
-      event.preventDefault()
-      setExpanded(true)
-      onSelect(entry)
-    } else if (event.key === 'ArrowLeft' && entry.is_directory && expanded) {
-      event.preventDefault()
-      setExpanded(false)
-      onSelect(entry)
-    }
-  }, [entry, expanded, handleClick, onSelect])
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        handleClick()
+      } else if (
+        event.key === 'ArrowRight' &&
+        entry.is_directory &&
+        !expanded
+      ) {
+        event.preventDefault()
+        setExpanded(true)
+        onSelect(entry)
+      } else if (event.key === 'ArrowLeft' && entry.is_directory && expanded) {
+        event.preventDefault()
+        setExpanded(false)
+        onSelect(entry)
+      }
+    },
+    [entry, expanded, handleClick, onSelect],
+  )
 
   const paddingLeft = 12 + depth * 16
   const FileIcon = getFileIcon(entry)
@@ -123,16 +161,14 @@ function TreeNode({
           ) : (
             <Folder className="h-4 w-4 flex-shrink-0 text-slate-500" />
           )
-        ) : (
-          FileIcon ? (
-            <FileIcon
-              className={cn(
-                'h-4 w-4 flex-shrink-0',
-                isSelected ? 'text-emerald-400' : 'text-slate-500',
-              )}
-            />
-          ) : null
-        )}
+        ) : FileIcon ? (
+          <FileIcon
+            className={cn(
+              'h-4 w-4 flex-shrink-0',
+              isSelected ? 'text-emerald-400' : 'text-slate-500',
+            )}
+          />
+        ) : null}
 
         <span className="truncate">{entry.name}</span>
       </button>
@@ -174,19 +210,26 @@ interface FileTreeProps {
 
 export function FileTree({ scope, selectedPath, onSelect }: FileTreeProps) {
   const { data, isLoading, isError, error } = useFileTree(scope, '')
-  const [menuPosition, setMenuPosition] = useState<ContextMenuPosition | null>(null)
-  const [menuTarget, setMenuTarget] = useState<FileContextMenuTarget | null>(null)
+  const [menuPosition, setMenuPosition] = useState<ContextMenuPosition | null>(
+    null,
+  )
+  const [menuTarget, setMenuTarget] = useState<FileContextMenuTarget | null>(
+    null,
+  )
 
-  const handleContextMenu = useCallback((event: React.MouseEvent, entry: FileTreeEntry) => {
-    event.preventDefault()
-    setMenuPosition({ x: event.clientX, y: event.clientY })
-    setMenuTarget({
-      path: entry.path,
-      name: entry.name,
-      isDirectory: entry.is_directory,
-      scope,
-    })
-  }, [scope])
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent, entry: FileTreeEntry) => {
+      event.preventDefault()
+      setMenuPosition({ x: event.clientX, y: event.clientY })
+      setMenuTarget({
+        path: entry.path,
+        name: entry.name,
+        isDirectory: entry.is_directory,
+        scope,
+      })
+    },
+    [scope],
+  )
 
   const handleCloseMenu = useCallback(() => {
     setMenuPosition(null)

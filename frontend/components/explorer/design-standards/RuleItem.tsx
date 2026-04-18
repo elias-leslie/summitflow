@@ -4,7 +4,12 @@
 
 'use client'
 
-import { AlertCircle, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react'
+import {
+  AlertCircle,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+} from 'lucide-react'
 import { useState } from 'react'
 import { RequirementRow } from './RequirementRow'
 import type { DesignRule } from './types'

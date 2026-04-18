@@ -26,7 +26,10 @@ export const TableHeader = forwardRef<
 >(({ className, ...props }, ref) => (
   <thead
     ref={ref}
-    className={clsx('[&_tr]:border-b border-slate-700/60 bg-slate-900/50', className)}
+    className={clsx(
+      '[&_tr]:border-b border-slate-700/60 bg-slate-900/50',
+      className,
+    )}
     {...props}
   />
 ))

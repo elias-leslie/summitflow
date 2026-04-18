@@ -12,7 +12,9 @@ export function SnapshotEntry({ snapshot }: { snapshot: SnapshotInfo }) {
   const revertMut = useMutation({
     mutationFn: () => revertToSnapshot(snapshot.task_id),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project-dashboard', snapshot.project_id] })
+      queryClient.invalidateQueries({
+        queryKey: ['project-dashboard', snapshot.project_id],
+      })
       setConfirming(false)
     },
   })
@@ -35,12 +37,16 @@ export function SnapshotEntry({ snapshot }: { snapshot: SnapshotInfo }) {
         )}
       />
       <div className="flex-1 min-w-0">
-        <span className="text-sm text-slate-100 truncate block">{snapshot.task_title || snapshot.task_id}</span>
+        <span className="text-sm text-slate-100 truncate block">
+          {snapshot.task_title || snapshot.task_id}
+        </span>
         <div className="flex items-center gap-2 text-[10px] text-slate-500">
           <span className="font-mono">{snapshot.short_sha}</span>
           <span>{formatTimeAgo(snapshot.created_at)}</span>
           {snapshot.commits_ahead > 0 && (
-            <span className="text-amber-500/70">{snapshot.commits_ahead} behind</span>
+            <span className="text-amber-500/70">
+              {snapshot.commits_ahead} behind
+            </span>
           )}
         </div>
       </div>
@@ -59,7 +65,11 @@ export function SnapshotEntry({ snapshot }: { snapshot: SnapshotInfo }) {
                     : 'bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:bg-rose-500/30',
                 )}
               >
-                {revertMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Confirm'}
+                {revertMut.isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  'Confirm'
+                )}
               </button>
               <button
                 type="button"
@@ -82,8 +92,16 @@ export function SnapshotEntry({ snapshot }: { snapshot: SnapshotInfo }) {
           )}
         </div>
       )}
-      {revertMut.isSuccess && <span className="text-[9px] font-mono text-emerald-400 shrink-0">Reverted</span>}
-      {revertMut.isError && <span className="text-[9px] font-mono text-rose-400 shrink-0">Failed</span>}
+      {revertMut.isSuccess && (
+        <span className="text-[9px] font-mono text-emerald-400 shrink-0">
+          Reverted
+        </span>
+      )}
+      {revertMut.isError && (
+        <span className="text-[9px] font-mono text-rose-400 shrink-0">
+          Failed
+        </span>
+      )}
     </div>
   )
 }

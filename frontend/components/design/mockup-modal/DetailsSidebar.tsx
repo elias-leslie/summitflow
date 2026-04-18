@@ -58,7 +58,9 @@ export function DetailsSidebar({
         </div>
 
         <div>
-          <h3 className="text-sm font-medium text-slate-400 mb-2">Provenance</h3>
+          <h3 className="text-sm font-medium text-slate-400 mb-2">
+            Provenance
+          </h3>
           <div className="card p-3 space-y-2 text-sm">
             {mockup.generator && (
               <div className="flex justify-between">
@@ -69,7 +71,9 @@ export function DetailsSidebar({
             {mockup.generation_time_ms && (
               <div className="flex justify-between">
                 <span className="text-slate-400">Generation Time</span>
-                <span className="text-slate-100">{mockup.generation_time_ms}ms</span>
+                <span className="text-slate-100">
+                  {mockup.generation_time_ms}ms
+                </span>
               </div>
             )}
             {mockup.task_id && (
@@ -115,16 +119,18 @@ export function DetailsSidebar({
               {history.map((item) => (
                 <div
                   key={item.mockup_id}
-                  className={clsx('card p-2 flex items-center gap-3 text-sm',
-                    item.mockup_id === mockup.mockup_id && 'ring-1 ring-outrun-500'
+                  className={clsx(
+                    'card p-2 flex items-center gap-3 text-sm',
+                    item.mockup_id === mockup.mockup_id &&
+                      'ring-1 ring-outrun-500',
                   )}
                 >
                   <span className="text-slate-400">v{item.version}</span>
-                  <span className="text-slate-100 flex-1 truncate">{item.name}</span>
+                  <span className="text-slate-100 flex-1 truncate">
+                    {item.name}
+                  </span>
                   <span className="text-slate-500 text-xs">
-                    {item.created_at
-                      ? formatDate(item.created_at)
-                      : ''}
+                    {item.created_at ? formatDate(item.created_at) : ''}
                   </span>
                 </div>
               ))}

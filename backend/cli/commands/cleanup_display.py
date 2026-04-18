@@ -12,13 +12,14 @@ class RepoEntry(TypedDict):
 
     project_id: str
     path: str
-    active_worktrees: int
-    dirty_worktrees: int
+    active_checkpoints: int
+    dirty_checkpoints: int
+    dirty_main_repo: bool
     stale_checkpoints: int
     snapshot_residue: int
     orphan_task_branches: int
     prunable_task_branches: int
-    worktree_task_ids: list[str]
+    checkpoint_task_ids: list[str]
     orphan_branch_names: list[str]
     prunable_branch_names: list[str]
     salvage_task_ids: list[str]
@@ -59,15 +60,15 @@ def _build_branch_preview(repo: RepoEntry) -> str:
 
 def build_repo_compact_line(repo: RepoEntry) -> str:
     """Build compact status line for one repo entry."""
-    if not repo["needs_cleanup"] and not repo["active_worktrees"]:
+    if not repo["needs_cleanup"] and not repo["active_checkpoints"]:
         return f"{repo['project_id']} clean"
-    preview = f" tasks:{','.join(repo['worktree_task_ids'])}" if repo["worktree_task_ids"] else ""
+    preview = f" tasks:{','.join(repo['checkpoint_task_ids'])}" if repo["checkpoint_task_ids"] else ""
     stale = f" stale_cp:{repo['stale_checkpoints']}" if repo["stale_checkpoints"] else ""
     snap = f" snap:{repo['snapshot_residue']}" if repo["snapshot_residue"] else ""
     main_dirty = " main_dirty" if repo.get("dirty_main_repo") else ""
-    dirty_total = int(repo["dirty_worktrees"]) + int(bool(repo.get("dirty_main_repo")))
+    dirty_total = int(repo["dirty_checkpoints"]) + int(bool(repo.get("dirty_main_repo")))
     return (
-        f"{repo['project_id']} worktrees:{repo['active_worktrees']} "
+        f"{repo['project_id']} checkpoints:{repo['active_checkpoints']} "
         f"dirty:{dirty_total}{main_dirty}{stale}{snap} "
         f"orphan:{repo['orphan_task_branches']} "
         f"prunable:{repo['prunable_task_branches']}{preview}"
@@ -81,13 +82,13 @@ def render_cleanup_status_compact(data: dict[str, Any], all_projects: bool) -> s
     assert isinstance(summary, dict)
     scope = "all" if all_projects else "current"
     lines = [
-        "CLEANUP[{scope}]:repos={repos} needs_cleanup={needs} worktrees={worktrees} "
+        "CLEANUP[{scope}]:repos={repos} needs_cleanup={needs} checkpoints={checkpoints} "
         "dirty={dirty} stale_cp={stale_cp} snap={snap} orphan={orphan} prunable={prunable}".format(
             scope=scope,
             repos=summary["repos"],
             needs=summary["repos_needing_cleanup"],
-            worktrees=summary["active_worktrees"],
-            dirty=summary["dirty_worktrees"],
+            checkpoints=summary["active_checkpoints"],
+            dirty=summary["dirty_checkpoints"],
             stale_cp=summary["stale_checkpoints"],
             snap=summary["snapshot_residue"],
             orphan=summary["orphan_task_branches"],
@@ -118,7 +119,7 @@ def print_git_residue_report(
     pruned_closed: int,
 ) -> None:
     """Print pruned git residue counts."""
-    typer.echo(f"  Pruned git worktree registrations in {pruned_registrations} repo(s)")
+    typer.echo(f"  Pruned legacy lane git metadata registrations: {pruned_registrations}")
     typer.echo(f"  Pruned merged orphan task branches: {pruned_merged}")
     typer.echo(f"  Pruned equivalent orphan task branches: {pruned_equivalent}")
     typer.echo(f"  Pruned closed orphan task branches: {pruned_closed}")

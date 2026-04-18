@@ -2,9 +2,9 @@
  * Custom hook for managing refactor targets data and state
  */
 
-import { POLL_SLOW } from '@/lib/polling'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
+import { POLL_SLOW } from '@/lib/polling'
 import {
   fetchRefactorTargets,
   type RefactorTargetsResponse,
@@ -64,9 +64,14 @@ export function useRefactorTargets(projectId: string) {
   const mediumCount = data?.summary.medium_priority_count ?? 0
   const totalComplexity = data?.summary.total_complexity ?? 0
   const totalTargets = highCount + mediumCount
-  const actionableCount = data?.targets.filter((target) => target.should_create_task).length ?? 0
+  const actionableCount =
+    data?.targets.filter((target) => target.should_create_task).length ?? 0
   const observeOnlyCount =
-    data?.targets.filter((target) => !target.should_create_task && target.recommended_action === 'keep_in_explorer').length ?? 0
+    data?.targets.filter(
+      (target) =>
+        !target.should_create_task &&
+        target.recommended_action === 'keep_in_explorer',
+    ).length ?? 0
 
   return {
     // Data

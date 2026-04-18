@@ -15,7 +15,6 @@ from ...storage.connection import get_cursor
 from ...storage.project_identity_sync import (
     sync_project_identity as sync_registered_project_identity,
 )
-from ...worktree_service_config import load_project_worktree_services_dict
 from .agent_hub import (
     delete_agent_hub_project_permission,
     reconcile_agent_hub_project_identity,
@@ -249,15 +248,6 @@ async def get_project(project_id: str) -> ProjectResponse:
         )
     ).get(project.id)
     return project
-
-
-@router.get("/{project_id}/services")
-async def get_project_services(project_id: str) -> dict[str, object]:
-    """Return worktree service config derived from repo-local project metadata."""
-    try:
-        return load_project_worktree_services_dict(project_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/{project_id}/sync-identity", response_model=ProjectResponse)

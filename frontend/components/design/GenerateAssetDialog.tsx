@@ -4,18 +4,18 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Image as ImageIcon, X } from 'lucide-react'
 import { useState } from 'react'
 import {
-  generateDesignAssets,
   type DesignAsset,
   type GenerateDesignAssetResponse,
+  generateDesignAssets,
 } from '@/lib/api/design-assets'
 import { AssetFormFields } from './generate-asset-dialog/AssetFormFields'
 import { AssetSubmitButtons } from './generate-asset-dialog/AssetSubmitButtons'
-import { GenerateResult } from './generate-asset-dialog/GenerateResult'
 import {
-  DEFAULT_MODEL_ID,
   DEFAULT_MOCKUP_TYPE,
+  DEFAULT_MODEL_ID,
   DEFAULT_SIZE,
 } from './generate-asset-dialog/constants'
+import { GenerateResult } from './generate-asset-dialog/GenerateResult'
 
 interface GenerateAssetDialogProps {
   projectId: string
@@ -69,7 +69,8 @@ export function GenerateAssetDialog({
           .filter(Boolean),
         sheet_columns:
           mockupType === 'sprite_sheet' ? Number(sheetColumns) : undefined,
-        sheet_rows: mockupType === 'sprite_sheet' ? Number(sheetRows) : undefined,
+        sheet_rows:
+          mockupType === 'sprite_sheet' ? Number(sheetRows) : undefined,
         frame_width:
           mockupType === 'sprite_sheet' ? Number(frameWidth) : undefined,
         frame_height:
@@ -85,7 +86,9 @@ export function GenerateAssetDialog({
     onSuccess: async (data) => {
       setResult(data)
       if (data.success) {
-        queryClient.invalidateQueries({ queryKey: ['design-assets', projectId] })
+        queryClient.invalidateQueries({
+          queryKey: ['design-assets', projectId],
+        })
         queryClient.invalidateQueries({
           queryKey: ['design-assets-stats', projectId],
         })
@@ -127,7 +130,11 @@ export function GenerateAssetDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm" onClick={handleClose} role="presentation" />
+      <div
+        className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm"
+        onClick={handleClose}
+        role="presentation"
+      />
 
       <div className="relative bg-slate-900 rounded-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-slate-800">

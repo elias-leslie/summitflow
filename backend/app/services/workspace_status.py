@@ -8,7 +8,7 @@ from cli.commands.cleanup import build_cleanup_status_payload
 
 
 def build_project_cleanup_status(project_id: str) -> dict[str, Any]:
-    """Return cleanup/worktree summary for one managed repository."""
+    """Return cleanup/checkpoint summary for one managed repository."""
     payload = build_cleanup_status_payload(False, project_id_override=project_id)
     repositories = payload.get("repositories") or []
     repo_entry = repositories[0] if repositories else None
@@ -16,8 +16,8 @@ def build_project_cleanup_status(project_id: str) -> dict[str, Any]:
         return {
             "project_id": project_id,
             "path": None,
-            "active_worktrees": 0,
-            "dirty_worktrees": 0,
+            "active_checkpoints": 0,
+            "dirty_checkpoints": 0,
             "dirty_main_repo": False,
             "stale_checkpoints": 0,
             "snapshot_residue": 0,
@@ -26,18 +26,18 @@ def build_project_cleanup_status(project_id: str) -> dict[str, Any]:
             "needs_merge_count": 0,
             "conflict_count": 0,
             "review_count": 0,
-            "worktree_task_ids": [],
+            "checkpoint_task_ids": [],
             "needs_cleanup": False,
         }
 
-    dirty_total = int(repo_entry.get("dirty_worktrees") or 0) + int(
+    dirty_total = int(repo_entry.get("dirty_checkpoints") or 0) + int(
         bool(repo_entry.get("dirty_main_repo"))
     )
     return {
         "project_id": project_id,
         "path": repo_entry.get("path"),
-        "active_worktrees": int(repo_entry.get("active_worktrees") or 0),
-        "dirty_worktrees": dirty_total,
+        "active_checkpoints": int(repo_entry.get("active_checkpoints") or 0),
+        "dirty_checkpoints": dirty_total,
         "dirty_main_repo": bool(repo_entry.get("dirty_main_repo")),
         "stale_checkpoints": int(repo_entry.get("stale_checkpoints") or 0),
         "snapshot_residue": int(repo_entry.get("snapshot_residue") or 0),
@@ -46,6 +46,6 @@ def build_project_cleanup_status(project_id: str) -> dict[str, Any]:
         "needs_merge_count": int(repo_entry.get("needs_merge_count") or 0),
         "conflict_count": int(repo_entry.get("conflict_count") or 0),
         "review_count": int(repo_entry.get("review_count") or 0),
-        "worktree_task_ids": list(repo_entry.get("worktree_task_ids") or []),
+        "checkpoint_task_ids": list(repo_entry.get("checkpoint_task_ids") or []),
         "needs_cleanup": bool(repo_entry.get("needs_cleanup")),
     }

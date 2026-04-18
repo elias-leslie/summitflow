@@ -18,15 +18,20 @@ describe('runtimeApi', () => {
     await runtimeApi.getLogs('monkey-fight', 200)
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/docker/logs/monkey-fight?tail=200')
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      '/api/docker/logs/monkey-fight?tail=200',
+    )
   })
 
   it('uses same-origin proxy paths for runtime service actions and log streaming', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ success: true, message: 'Stopped monkey-fight' }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+      new Response(
+        JSON.stringify({ success: true, message: 'Stopped monkey-fight' }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
     )
     vi.stubGlobal('fetch', fetchMock)
 

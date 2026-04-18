@@ -45,7 +45,9 @@ describe('ConfirmDeleteDialog', () => {
   it('shows error message when isError is true', () => {
     render(<ConfirmDeleteDialog {...defaultProps} isError={true} />)
 
-    expect(screen.getByText('Failed to delete task. Please try again.')).toBeInTheDocument()
+    expect(
+      screen.getByText('Failed to delete task. Please try again.'),
+    ).toBeInTheDocument()
   })
 
   it('renders bulk task delete with count', () => {

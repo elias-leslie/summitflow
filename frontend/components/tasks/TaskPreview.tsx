@@ -126,7 +126,11 @@ export function TaskPreview({
                       <div className="flex items-center gap-2 mt-1">
                         {criterion.category && (
                           <span
-                            className={clsx('px-1.5 py-0.5 text-2xs rounded border', CATEGORY_COLORS[criterion.category] || 'text-slate-400 bg-slate-800')}
+                            className={clsx(
+                              'px-1.5 py-0.5 text-2xs rounded border',
+                              CATEGORY_COLORS[criterion.category] ||
+                                'text-slate-400 bg-slate-800',
+                            )}
                           >
                             {criterion.category}
                           </span>
@@ -209,7 +213,12 @@ export function TaskPreview({
                                 {subtask.subtask_id}
                               </span>
                               <span
-                                className={clsx('text-sm', subtask.passes ? 'text-slate-500 line-through' : 'text-slate-300')}
+                                className={clsx(
+                                  'text-sm',
+                                  subtask.passes
+                                    ? 'text-slate-500 line-through'
+                                    : 'text-slate-300',
+                                )}
                               >
                                 {subtask.description}
                               </span>

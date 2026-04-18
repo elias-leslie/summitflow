@@ -10,7 +10,7 @@ from typing import Annotated
 
 import typer
 
-from ..lib.checkpoint import get_active_checkpoints, get_snapshot_info
+from ..lib.checkpoint import SnapshotMeta, get_active_checkpoints, get_snapshot_info
 from ..lib.checkpoint_branches import get_task_branches
 from ..output import output_json
 from ..output_context import OutputContext
@@ -25,11 +25,11 @@ from .checkpoints_formatters import (
 app = typer.Typer(help="Checkpoint management - show active checkpoints, cleanup stale artifacts")
 
 
-def _checkpoint_to_dict(cp: object) -> dict:
+def _checkpoint_to_dict(cp: SnapshotMeta) -> dict:
     return {
         "task_id": cp.task_id,
         "project_id": cp.project_id,
-        "worktree_path": cp.worktree_path,
+        "task_branch": f"{cp.task_id}/main",
         "base_branch": cp.base_branch,
         "created_at": cp.created_at,
         "claimed_by": cp.claimed_by,

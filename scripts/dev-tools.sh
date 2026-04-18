@@ -81,7 +81,7 @@ detect_local_project_context() {
     return 1
 }
 
-# Project detection - handles both main repos and worktrees
+# Project detection
 PROJECT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 PROJECT_NAME=$(basename "$PROJECT_DIR")
 MAIN_REPO_DIR="$PROJECT_DIR"
@@ -92,32 +92,9 @@ if [[ -n "$DT_CONTEXT_PROJECT" ]]; then
     PROJECT_NAME="$DT_CONTEXT_PROJECT"
 fi
 
-# Detect ANY git worktree (Claude Code .claude/worktrees, SummitFlow st worktrees, etc.)
-# Use `git worktree list` to find the primary checkout — it's always listed first.
-# If we're in a linked worktree, use the primary checkout for venv (worktrees share it).
-_primary_worktree=$(git worktree list 2>/dev/null | head -1 | awk '{print $1}')
-if [[ -n "$_primary_worktree" && "$_primary_worktree" != "$PROJECT_DIR" ]]; then
-    if [[ -x "$PROJECT_DIR/backend/.venv/bin/python" || -x "$PROJECT_DIR/.venv/bin/python" ]]; then
-        MAIN_REPO_DIR="$PROJECT_DIR"
-    else
-        MAIN_REPO_DIR="$_primary_worktree"
-    fi
-fi
-
-# Claimed lanes/worktrees often omit a local .index.yaml even though the primary
-# checkout has the canonical project identity. Re-resolve from the primary
-# checkout before computing backend and venv paths so worktree wrappers remain
-# project-aware without lane-local symlink fixes.
-if [[ -z "$DT_CONTEXT_PROJECT" && -n "$_primary_worktree" && "$_primary_worktree" != "$PROJECT_DIR" ]]; then
-    detect_local_project_context "$_primary_worktree" || true
-    if [[ -n "$DT_CONTEXT_PROJECT" ]]; then
-        PROJECT_NAME="$DT_CONTEXT_PROJECT"
-    fi
-fi
-
 # Use main repo for venv (tools), but PROJECT_DIR for backend (code to lint)
 VENV_PATH=$(get_venv_path "$PROJECT_NAME" "$MAIN_REPO_DIR")
-# Backend path should be in the WORKTREE (or current dir) for linting
+# Backend path should be in the current checkout for linting
 BACKEND_PATH=$(get_backend_path "$PROJECT_NAME" "$PROJECT_DIR")
 
 # Output directory for TOON details

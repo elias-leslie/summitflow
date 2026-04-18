@@ -8,40 +8,43 @@
  *   - task-config-utils.ts     (phase & category config)
  */
 
-export type { PriorityColorConfig, PriorityDetailConfig } from './task-config-priority'
+export type {
+  PriorityColorConfig,
+  PriorityDetailConfig,
+} from './task-config-priority'
 export {
-  priorityColors,
-  priorityColorClasses,
-  getPriorityColors,
   getPriorityClasses,
-  priorityConfig,
-  PRIORITY_CONFIG,
+  getPriorityColors,
   getPriorityConfig,
+  PRIORITY_CONFIG,
+  priorityColorClasses,
+  priorityColors,
+  priorityConfig,
 } from './task-config-priority'
 
 export type {
+  TaskStatusCardConfig,
   TaskTypeConfig,
   TaskTypeConfigSmall,
-  TaskStatusCardConfig,
 } from './task-config-types'
 export {
-  taskTypeConfig,
-  taskTypeConfigSmall,
+  getTaskStatusCardConfig,
   getTaskTypeConfig,
   getTaskTypeConfigSmall,
-  taskStatusCardConfig,
-  getTaskStatusCardConfig,
-  typeConfig,
   statusIconConfig,
+  taskStatusCardConfig,
+  taskTypeConfig,
+  taskTypeConfigSmall,
+  typeConfig,
   typeIcons,
 } from './task-config-types'
 
 export type { PhaseConfig } from './task-config-utils'
 export {
-  PHASE_CONFIG,
-  PHASE_ICONS,
-  PHASE_COLORS,
-  getPhaseConfig,
   CATEGORY_COLORS,
   getCategoryColor,
+  getPhaseConfig,
+  PHASE_COLORS,
+  PHASE_CONFIG,
+  PHASE_ICONS,
 } from './task-config-utils'

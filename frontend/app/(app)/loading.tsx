@@ -10,7 +10,9 @@ export default function Loading() {
             style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}
           />
         </div>
-        <p className="text-sm text-slate-500 tracking-wide font-medium">Loading</p>
+        <p className="text-sm text-slate-500 tracking-wide font-medium">
+          Loading
+        </p>
       </div>
     </div>
   )

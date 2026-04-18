@@ -10,9 +10,9 @@ import {
   useSensors,
 } from '@dnd-kit/core'
 import {
-  verticalListSortingStrategy,
   SortableContext,
   sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -26,7 +26,11 @@ import {
   updateProject,
 } from '@/lib/api'
 import { useProjectNavigation } from './hooks/useProjectNavigation'
-import { groupProjectsForSidebar, reorderProjectsWithinCategory, sortProjectsForSidebar } from './projectOrdering'
+import {
+  groupProjectsForSidebar,
+  reorderProjectsWithinCategory,
+  sortProjectsForSidebar,
+} from './projectOrdering'
 import { SortableProjectAccordionItem } from './SortableProjectAccordionItem'
 
 interface ProjectsAccordionProps {
@@ -47,7 +51,8 @@ export function ProjectsAccordion({
 }: ProjectsAccordionProps) {
   const accordionRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
-  const { currentProjectId, activeTab, getProjectNavHref } = useProjectNavigation()
+  const { currentProjectId, activeTab, getProjectNavHref } =
+    useProjectNavigation()
 
   const { data: projects } = useQuery({
     queryKey: ['projects'],
@@ -65,9 +70,12 @@ export function ProjectsAccordion({
   )
 
   const reorderMutation = useMutation({
-    mutationFn: async ({ updates }: ReorderProjectsPayload) => Promise.all(
-      updates.map((update) => updateProject(update.id, { sidebar_rank: update.sidebar_rank })),
-    ),
+    mutationFn: async ({ updates }: ReorderProjectsPayload) =>
+      Promise.all(
+        updates.map((update) =>
+          updateProject(update.id, { sidebar_rank: update.sidebar_rank }),
+        ),
+      ),
     onMutate: async ({ projects: nextProjects }: ReorderProjectsPayload) => {
       await queryClient.cancelQueries({ queryKey: ['projects'] })
       const previousProjects = queryClient.getQueryData<Project[]>(['projects'])
@@ -95,10 +103,16 @@ export function ProjectsAccordion({
 
     if (!overId || activeId === overId) return
 
-    const activeProject = orderedProjects.find((project) => project.id === activeId)
+    const activeProject = orderedProjects.find(
+      (project) => project.id === activeId,
+    )
     const overProject = orderedProjects.find((project) => project.id === overId)
 
-    if (!activeProject || !overProject || activeProject.category !== overProject.category) {
+    if (
+      !activeProject ||
+      !overProject ||
+      activeProject.category !== overProject.category
+    ) {
       return
     }
 
@@ -166,7 +180,9 @@ export function ProjectsAccordion({
                 </div>
                 <div className="flex items-center gap-2">
                   {reorderMutation.isPending ? (
-                    <span className="text-[10px] text-slate-500">Saving order...</span>
+                    <span className="text-[10px] text-slate-500">
+                      Saving order...
+                    </span>
                   ) : null}
                   <span className="rounded-full border border-slate-800/70 bg-slate-950/60 px-1.5 py-0.5 text-[10px] text-slate-500">
                     {categoryProjects.length}
@@ -189,7 +205,9 @@ export function ProjectsAccordion({
                         isExpanded={isExpanded}
                         isActive={isActive}
                         activeTab={activeTab}
-                        onToggleExpand={() => onExpandProject(isExpanded ? null : project.id)}
+                        onToggleExpand={() =>
+                          onExpandProject(isExpanded ? null : project.id)
+                        }
                         getProjectNavHref={getProjectNavHref}
                         dragDisabled={reorderMutation.isPending}
                       />

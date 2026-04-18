@@ -42,7 +42,9 @@ describe('AutomationSchedulesSection', () => {
     expect(screen.getByText('Project')).toBeInTheDocument()
     expect(screen.getByText('System')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('switch', { name: 'Disable Autonomous work pickup' }))
+    fireEvent.click(
+      screen.getByRole('switch', { name: 'Disable Autonomous work pickup' }),
+    )
     expect(onToggle).toHaveBeenCalledWith(
       expect.objectContaining({ schedule_id: 'work_pickup' }),
     )

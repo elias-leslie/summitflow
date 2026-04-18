@@ -7,7 +7,7 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronRight,
-  Layers,
+  GitBranch,
   Loader2,
   Scissors,
   Sparkles,
@@ -37,7 +37,7 @@ export function ProjectRow({ repo }: ProjectRowProps) {
   const workspaceSummary = repo.workspace_summary
   const repoKey = repo.project_id ?? repo.name
   const dirtyWorkspaceCount =
-    (workspaceSummary?.dirty_worktrees ?? 0) +
+    (workspaceSummary?.dirty_checkpoints ?? 0) +
     (workspaceSummary?.dirty_main_repo ? 1 : 0)
 
   const syncMutation = useMutation({
@@ -59,22 +59,25 @@ export function ProjectRow({ repo }: ProjectRowProps) {
 
   useEffect(() => {
     if (!syncResult) return undefined
-    const id = window.setTimeout(() => setSyncResult(null), SYNC_RESULT_AUTO_DISMISS_MS)
+    const id = window.setTimeout(
+      () => setSyncResult(null),
+      SYNC_RESULT_AUTO_DISMISS_MS,
+    )
     return () => window.clearTimeout(id)
   }, [syncResult])
 
   const wsBadges: Array<{
-    icon: typeof Layers
+    icon: typeof GitBranch
     count: number
     label: string
     tone: string
   }> = []
   if (workspaceSummary) {
-    if (workspaceSummary.active_worktrees > 0)
+    if (workspaceSummary.active_checkpoints > 0)
       wsBadges.push({
-        icon: Layers,
-        count: workspaceSummary.active_worktrees,
-        label: 'wt',
+        icon: GitBranch,
+        count: workspaceSummary.active_checkpoints,
+        label: 'cp',
         tone: 'text-phosphor-400',
       })
     if (dirtyWorkspaceCount > 0)
@@ -233,7 +236,9 @@ export function ProjectRow({ repo }: ProjectRowProps) {
         ref={contentRef}
         className={clsx(
           'grid transition-all duration-200 ease-out',
-          expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+          expanded
+            ? 'grid-rows-[1fr] opacity-100'
+            : 'grid-rows-[0fr] opacity-0',
         )}
       >
         <div className="overflow-hidden">

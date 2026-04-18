@@ -1,9 +1,9 @@
-"use client"
+'use client'
 
+import { NotesButton, NotesProvider } from '@summitflow/notes-ui'
 import { useParams, usePathname } from 'next/navigation'
 import { useMemo, useState } from 'react'
 import { NotificationBell } from '@/components/notifications'
-import { NotesButton, NotesProvider } from '@summitflow/notes-ui'
 import { DEFAULT_PROJECT_ID, getProjectIdOrDefault } from '@/lib/project-config'
 
 import { AnimatedLogo } from './topbar/AnimatedLogo'
@@ -16,7 +16,8 @@ export function TopBar() {
   const pathname = usePathname()
   const params = useParams<{ id?: string }>()
   const [isSearchExpanded, setIsSearchExpanded] = useState(false)
-  const { compact, measureRef, slotRef } = useAdaptiveNavigation(isSearchExpanded)
+  const { compact, measureRef, slotRef } =
+    useAdaptiveNavigation(isSearchExpanded)
 
   const notificationProjectId = useMemo(() => {
     if (pathname?.startsWith('/projects/')) {
@@ -34,7 +35,10 @@ export function TopBar() {
             <div className="flex shrink-0 items-center rounded-[1.15rem] border border-slate-700/60 bg-slate-900/84 px-2.5 py-1.5 shadow-[0_14px_32px_-26px_rgba(0,0,0,0.92)]">
               <AnimatedLogo />
             </div>
-            <div ref={slotRef} className="relative flex min-w-0 flex-1 items-center">
+            <div
+              ref={slotRef}
+              className="relative flex min-w-0 flex-1 items-center"
+            >
               <div
                 ref={measureRef}
                 aria-hidden="true"

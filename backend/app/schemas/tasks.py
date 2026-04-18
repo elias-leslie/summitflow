@@ -17,7 +17,6 @@ from .task_base import (
     TaskStatusUpdate,
     TaskUpdate,
     ValidationResultResponse,
-    WorktreeResponse,
 )
 
 # Batch operations
@@ -134,6 +133,4 @@ __all__ = [
     "UpdateTaskCriterionRequest",
     "ValidationResultResponse",
     "VerifyTaskCriterionRequest",
-    # Worktree
-    "WorktreeResponse",
 ]

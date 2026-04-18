@@ -401,7 +401,6 @@ class TestReadyEndpoint:
             "plan_approved_at": None,
             "plan_approved_by": None,
             "context": None,
-            "worktree": None,
         }
         ready_live_task = {
             **ready_task,
@@ -445,7 +444,7 @@ class TestReadyEndpoint:
         assert payload["total"] == 1
         assert [task["id"] for task in payload["tasks"]] == ["task-ready"]
 
-    def test_ready_endpoint_excludes_tasks_with_worktree(
+    def test_ready_endpoint_excludes_tasks_with_checkpoint(
         self, client: Any, test_project_id: str
     ) -> None:
         ready_task = {
@@ -484,12 +483,11 @@ class TestReadyEndpoint:
             "plan_approved_at": None,
             "plan_approved_by": None,
             "context": None,
-            "worktree": None,
         }
-        ready_worktree_task = {
+        ready_checkpoint_task = {
             **ready_task,
-            "id": "task-ready-worktree",
-            "title": "Ready but already has worktree",
+            "id": "task-ready-checkpoint",
+            "title": "Ready but already has checkpoint",
         }
 
         def _fake_sync(task_id: str):
@@ -497,23 +495,21 @@ class TestReadyEndpoint:
                 def __init__(self, ready: bool):
                     self.ready = ready
 
-            return _Readiness(task_id in {"task-ready", "task-ready-worktree"})
+            return _Readiness(task_id in {"task-ready", "task-ready-checkpoint"})
 
         with (
             patch(
                 "app.api.tasks.list_endpoints.task_store.list_ready_tasks",
-                return_value=[ready_task, ready_worktree_task],
+                return_value=[ready_task, ready_checkpoint_task],
             ),
             patch(
                 "app.services.task_execution_readiness.sync_task_execution_readiness",
                 side_effect=_fake_sync,
             ),
             patch(
-                "app.api.tasks.list_endpoints.get_worktree_response",
+                "app.api.tasks.list_endpoints.has_active_checkpoint",
                 side_effect=lambda task_id, project_id=None: (
-                    {"path": "/tmp/lane"}
-                    if task_id == "task-ready-worktree" and project_id == test_project_id
-                    else None
+                    task_id == "task-ready-checkpoint" and project_id == test_project_id
                 ),
             ),
         ):
@@ -563,7 +559,6 @@ class TestReadyEndpoint:
             "plan_approved_at": None,
             "plan_approved_by": None,
             "context": None,
-            "worktree": None,
         }
 
         def _fake_sync(task_id: str):
@@ -633,7 +628,6 @@ class TestReadyEndpoint:
             "plan_approved_at": None,
             "plan_approved_by": None,
             "context": None,
-            "worktree": None,
         }
         ready_task = {
             **draft_task,
@@ -709,7 +703,6 @@ class TestReadyEndpoint:
             "plan_approved_at": None,
             "plan_approved_by": None,
             "context": None,
-            "worktree": None,
         }
         first_batch = [
             {
@@ -972,30 +965,30 @@ class TestReadyEndpoint:
         assert "READY-ALL[1 ready, 0 blocked, 0 active, 0 stale across 1 projects]" in payload["raw"]
         assert "* task-ready" in payload["raw"]
 
-    def test_ready_all_overview_treats_worktree_backed_tasks_as_active(
+    def test_ready_all_overview_treats_checkpoint_backed_tasks_as_active(
         self,
         client: Any,
         test_project_id: str,
     ) -> None:
-        ready_worktree_task = {
-            "id": "task-ready-worktree",
-            "title": "Ready but already has worktree",
+        ready_checkpoint_task = {
+            "id": "task-ready-checkpoint",
+            "title": "Ready but already has checkpoint",
             "priority": 1,
             "task_type": "task",
             "execution_mode": "autonomous",
             "status": "pending",
         }
-        pending_worktree_task = {
-            "id": "task-pending-worktree",
-            "title": "Pending with worktree",
+        pending_checkpoint_task = {
+            "id": "task-pending-checkpoint",
+            "title": "Pending with checkpoint",
             "priority": 2,
             "task_type": "task",
             "execution_mode": "manual",
             "status": "pending",
         }
-        running_worktree_task = {
-            "id": "task-running-worktree",
-            "title": "Running with worktree",
+        running_checkpoint_task = {
+            "id": "task-running-checkpoint",
+            "title": "Running with checkpoint",
             "priority": 1,
             "task_type": "task",
             "execution_mode": "manual",
@@ -1013,9 +1006,9 @@ class TestReadyEndpoint:
             assert limit in {100, 500}
             assert offset == 0
             if status_filter == "pending":
-                return [pending_worktree_task]
+                return [pending_checkpoint_task]
             if status_filter == "running":
-                return [running_worktree_task]
+                return [running_checkpoint_task]
             raise AssertionError(f"unexpected status_filter: {status_filter}")
 
         with (
@@ -1025,7 +1018,7 @@ class TestReadyEndpoint:
             ),
             patch(
                 "app.api.tasks.list_endpoints.task_store.list_ready_tasks",
-                return_value=[ready_worktree_task],
+                return_value=[ready_checkpoint_task],
             ),
             patch(
                 "app.services.task_execution_readiness.sync_task_execution_readiness",
@@ -1044,16 +1037,14 @@ class TestReadyEndpoint:
                 side_effect=_fake_list_tasks,
             ),
             patch(
-                "app.api.tasks.list_endpoints.get_worktree_response",
+                "app.api.tasks.list_endpoints.has_active_checkpoint",
                 side_effect=lambda task_id, project_id=None: (
-                    {"path": f"/tmp/{task_id}"}
-                    if project_id == test_project_id
+                    project_id == test_project_id
                     and task_id in {
-                        "task-ready-worktree",
-                        "task-pending-worktree",
-                        "task-running-worktree",
+                        "task-ready-checkpoint",
+                        "task-pending-checkpoint",
+                        "task-running-checkpoint",
                     }
-                    else None
                 ),
             ),
         ):
@@ -1068,9 +1059,9 @@ class TestReadyEndpoint:
             "stale": 0,
             "projects": 1,
         }
-        assert "task-ready-worktree" not in payload["raw"]
-        assert "~ task-pending-worktree" in payload["raw"]
-        assert "~ task-running-worktree" in payload["raw"]
+        assert "task-ready-checkpoint" not in payload["raw"]
+        assert "~ task-pending-checkpoint" in payload["raw"]
+        assert "~ task-running-checkpoint" in payload["raw"]
 
     def test_project_ready_all_overview_scopes_to_requested_project(
         self,

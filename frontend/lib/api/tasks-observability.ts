@@ -4,13 +4,13 @@
 
 import { getAgentHubProxyBase } from '../agent-hub-proxy'
 import { getApiBaseUrl } from '../api-config'
-import { buildQueryString, fetchWithErrorHandling } from './utils'
 import type {
-  CodingAgentsResponse,
   AgentEventType,
   AgentHubEventsResponse,
+  CodingAgentsResponse,
   NarrationTimelineResponse,
 } from './tasks-types'
+import { buildQueryString, fetchWithErrorHandling } from './utils'
 
 // ============================================================================
 // Coding Agents
@@ -21,7 +21,8 @@ import type {
  * These are agents that can execute autonomous tasks.
  */
 export async function fetchCodingAgents(): Promise<CodingAgentsResponse> {
-  const apiBase = typeof window === 'undefined' ? getApiBaseUrl() : getAgentHubProxyBase()
+  const apiBase =
+    typeof window === 'undefined' ? getApiBaseUrl() : getAgentHubProxyBase()
   return fetchWithErrorHandling<CodingAgentsResponse>(`${apiBase}/agents`, {
     errorMessage: 'Failed to fetch coding agents',
   })

@@ -58,15 +58,21 @@ function BackupExpandedRow({ backup }: { backup: Backup }) {
             </div>
             <div>
               <p className="text-slate-500 text-xs mb-0.5">Location</p>
-              <p className="text-slate-200 truncate">{backup.location || '-'}</p>
+              <p className="text-slate-200 truncate">
+                {backup.location || '-'}
+              </p>
             </div>
             <div>
               <p className="text-slate-500 text-xs mb-0.5">Name</p>
-              <p className="text-slate-200 font-mono text-xs truncate">{backup.name || '-'}</p>
+              <p className="text-slate-200 font-mono text-xs truncate">
+                {backup.name || '-'}
+              </p>
             </div>
             <div>
               <p className="text-slate-500 text-xs mb-0.5">Backup ID</p>
-              <p className="text-slate-200 font-mono text-xs truncate">{backup.id}</p>
+              <p className="text-slate-200 font-mono text-xs truncate">
+                {backup.id}
+              </p>
             </div>
           </div>
 
@@ -76,14 +82,18 @@ function BackupExpandedRow({ backup }: { backup: Backup }) {
                 <div className="flex items-center gap-2">
                   <Database className="w-3.5 h-3.5 text-blue-400" />
                   <span className="text-slate-400">Database:</span>
-                  <span className="text-slate-200">{formatBytes(backup.db_size_bytes)}</span>
+                  <span className="text-slate-200">
+                    {formatBytes(backup.db_size_bytes)}
+                  </span>
                 </div>
               )}
               {backup.files_size_bytes != null && (
                 <div className="flex items-center gap-2">
                   <HardDrive className="w-3.5 h-3.5 text-purple-400" />
                   <span className="text-slate-400">Files:</span>
-                  <span className="text-slate-200">{formatBytes(backup.files_size_bytes)}</span>
+                  <span className="text-slate-200">
+                    {formatBytes(backup.files_size_bytes)}
+                  </span>
                 </div>
               )}
               {!hasDatabase && (
@@ -100,13 +110,17 @@ function BackupExpandedRow({ backup }: { backup: Backup }) {
             {backup.started_at && (
               <div>
                 <span className="text-slate-500">Started: </span>
-                <span className="text-slate-300">{formatDate(backup.started_at)}</span>
+                <span className="text-slate-300">
+                  {formatDate(backup.started_at)}
+                </span>
               </div>
             )}
             {backup.completed_at && (
               <div>
                 <span className="text-slate-500">Completed: </span>
-                <span className="text-slate-300">{formatDate(backup.completed_at)}</span>
+                <span className="text-slate-300">
+                  {formatDate(backup.completed_at)}
+                </span>
               </div>
             )}
             {backup.started_at && backup.completed_at && (
@@ -157,7 +171,10 @@ function BackupExpandedRow({ backup }: { backup: Backup }) {
                 {backup.checksum && (
                   <div>
                     <p className="text-slate-500 text-xs mb-0.5">Checksum</p>
-                    <p className="text-slate-300 font-mono text-xs truncate" title={backup.checksum}>
+                    <p
+                      className="text-slate-300 font-mono text-xs truncate"
+                      title={backup.checksum}
+                    >
                       {backup.checksum}
                     </p>
                   </div>
@@ -172,35 +189,50 @@ function BackupExpandedRow({ backup }: { backup: Backup }) {
                   </div>
                 )}
               </div>
-              {backup.verification_json?.tree && Object.keys(backup.verification_json.tree).length > 0 && (
-                <div className="mt-2 pt-2 border-t border-slate-700/50">
-                  <p className="text-xs text-slate-500 mb-1">Archive Contents</p>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-0.5">
-                    {Object.entries(backup.verification_json.tree)
-                      .sort(([, a], [, b]) => b.count - a.count)
-                      .map(([name, info]) => (
-                        <div key={name} className="flex items-center justify-between text-xs">
-                          <span className="text-slate-400 truncate">{name}</span>
-                          <span className="text-slate-500 ml-2">{info.count}</span>
-                        </div>
-                      ))}
+              {backup.verification_json?.tree &&
+                Object.keys(backup.verification_json.tree).length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-slate-700/50">
+                    <p className="text-xs text-slate-500 mb-1">
+                      Archive Contents
+                    </p>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-0.5">
+                      {Object.entries(backup.verification_json.tree)
+                        .sort(([, a], [, b]) => b.count - a.count)
+                        .map(([name, info]) => (
+                          <div
+                            key={name}
+                            className="flex items-center justify-between text-xs"
+                          >
+                            <span className="text-slate-400 truncate">
+                              {name}
+                            </span>
+                            <span className="text-slate-500 ml-2">
+                              {info.count}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
                   </div>
-                </div>
-              )}
-              {backup.verification_json?.errors && backup.verification_json.errors.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-red-500/20">
-                  {backup.verification_json.errors.map((err) => (
-                    <p key={err} className="text-xs text-red-400">{err}</p>
-                  ))}
-                </div>
-              )}
+                )}
+              {backup.verification_json?.errors &&
+                backup.verification_json.errors.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-red-500/20">
+                    {backup.verification_json.errors.map((err) => (
+                      <p key={err} className="text-xs text-red-400">
+                        {err}
+                      </p>
+                    ))}
+                  </div>
+                )}
             </div>
           )}
 
           {backup.status === 'failed' && backup.error_message && (
             <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
               <p className="text-xs text-red-400 font-medium mb-1">Error</p>
-              <p className="text-sm text-red-300 whitespace-pre-wrap">{backup.error_message}</p>
+              <p className="text-sm text-red-300 whitespace-pre-wrap">
+                {backup.error_message}
+              </p>
             </div>
           )}
         </div>
@@ -358,7 +390,8 @@ export function ProjectBackupsClient() {
               No backups yet
             </h3>
             <p className="text-sm text-slate-500 mb-6 max-w-xs mx-auto">
-              Create your first backup to protect your project data. Scheduled backups can also be configured above.
+              Create your first backup to protect your project data. Scheduled
+              backups can also be configured above.
             </p>
             <button
               type="button"
@@ -419,7 +452,13 @@ export function ProjectBackupsClient() {
                           <div className="flex items-center gap-1.5">
                             <StatusBadge status={backup.status} />
                             {backup.verified != null && (
-                              <span title={backup.verified ? 'Verified' : 'Verification failed'}>
+                              <span
+                                title={
+                                  backup.verified
+                                    ? 'Verified'
+                                    : 'Verification failed'
+                                }
+                              >
                                 {backup.verified ? (
                                   <ShieldCheck className="w-3.5 h-3.5 text-green-400" />
                                 ) : (
@@ -466,9 +505,7 @@ export function ProjectBackupsClient() {
                           </div>
                         </td>
                       </tr>
-                      {isExpanded && (
-                        <BackupExpandedRow backup={backup} />
-                      )}
+                      {isExpanded && <BackupExpandedRow backup={backup} />}
                     </Fragment>
                   )
                 })}
@@ -568,7 +605,10 @@ export function ProjectBackupsClient() {
             <div className="flex justify-end gap-3">
               <button
                 type="button"
-                onClick={() => { setDeleteConfirmId(null); setDeleteError(null) }}
+                onClick={() => {
+                  setDeleteConfirmId(null)
+                  setDeleteError(null)
+                }}
                 className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
                 disabled={deleting}
               >

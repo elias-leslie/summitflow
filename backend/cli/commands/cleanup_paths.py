@@ -38,7 +38,7 @@ class CleanupTarget:
 
 
 def _get_project_root() -> Path:
-    """Resolve the active git/worktree root, falling back to configured project root."""
+    """Resolve the active git checkout root, falling back to configured project root."""
     repo_root = get_repo_root()
     if repo_root is None:
         config = get_config_optional()

@@ -20,8 +20,8 @@ from ...services.context_gatherer import (
     PRECISION_CODE_SEARCH_GUIDANCE,
     collect_precision_code_search_context,
 )
+from ...services.task_checkout import get_execution_path
 from ...services.task_harness import summarize_execution_contract
-from ...services.worktree import get_execution_path
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.notifications import create_task_failure_notification

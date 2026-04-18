@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import { clsx } from 'clsx'
 import {
   ArrowRight,
@@ -11,6 +10,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import Link from 'next/link'
+import { useState } from 'react'
 import {
   type StorageBackend,
   type StorageStatus,
@@ -37,11 +37,16 @@ export function StorageCard({
 
   const configured = storageStatus?.configured ?? false
   const defaultBackend = backends.find((b) => b.is_default) ?? backends[0]
-  const backendHost = (defaultBackend?.config as Record<string, string> | undefined)?.host
-  const backendShare = (defaultBackend?.config as Record<string, string> | undefined)?.share
-  const summary = configured && defaultBackend
-    ? `${defaultBackend.name} over ${defaultBackend.backend_type.toUpperCase()}${backendHost ? ` at ${backendHost}${backendShare ? `/${backendShare}` : ''}` : ''}`
-    : 'Remote storage is not configured yet, so backups stay local until a backend is connected.'
+  const backendHost = (
+    defaultBackend?.config as Record<string, string> | undefined
+  )?.host
+  const backendShare = (
+    defaultBackend?.config as Record<string, string> | undefined
+  )?.share
+  const summary =
+    configured && defaultBackend
+      ? `${defaultBackend.name} over ${defaultBackend.backend_type.toUpperCase()}${backendHost ? ` at ${backendHost}${backendShare ? `/${backendShare}` : ''}` : ''}`
+      : 'Remote storage is not configured yet, so backups stay local until a backend is connected.'
 
   const handleTest = async () => {
     if (!defaultBackend) return
@@ -98,9 +103,7 @@ export function StorageCard({
               {expanded ? 'Collapse' : 'Expand'}
             </span>
           </div>
-          <div className="mt-1 text-xs text-slate-500">
-            {summary}
-          </div>
+          <div className="mt-1 text-xs text-slate-500">{summary}</div>
         </div>
       </button>
 

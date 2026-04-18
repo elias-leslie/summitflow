@@ -2,10 +2,6 @@
 
 import { clsx } from 'clsx'
 import { useState } from 'react'
-import type {
-  RuntimeServiceMetrics,
-  RuntimeServiceStatus,
-} from '@/lib/api/runtime'
 import {
   Table,
   TableBody,
@@ -14,13 +10,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { LogViewer } from './LogViewer'
+import type {
+  RuntimeServiceMetrics,
+  RuntimeServiceStatus,
+} from '@/lib/api/runtime'
 import {
   healthDotClass,
   healthLabel,
   managerLabel,
   resolveHealthTone,
 } from './health-utils'
+import { LogViewer } from './LogViewer'
 import { useServiceAction } from './useServiceAction'
 
 function ActionCell({
@@ -105,7 +105,10 @@ export function ServiceListView({
                 >
                   <TableCell className="pr-0">
                     <div
-                      className={clsx('w-2 h-2 rounded-full', healthDotClass(tone))}
+                      className={clsx(
+                        'w-2 h-2 rounded-full',
+                        healthDotClass(tone),
+                      )}
                       title={healthLabel(s.state, s.health)}
                     />
                   </TableCell>
@@ -167,10 +170,7 @@ export function ServiceListView({
       </div>
 
       {logService && (
-        <LogViewer
-          service={logService}
-          onClose={() => setLogService(null)}
-        />
+        <LogViewer service={logService} onClose={() => setLogService(null)} />
       )}
     </>
   )

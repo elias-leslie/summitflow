@@ -1,8 +1,6 @@
 'use client'
 
 import clsx from 'clsx'
-import { useState } from 'react'
-import { motion } from 'motion/react'
 import {
   Activity,
   CheckCircle2,
@@ -13,6 +11,8 @@ import {
   Terminal,
   XCircle,
 } from 'lucide-react'
+import { motion } from 'motion/react'
+import { useState } from 'react'
 import { AgentObservabilityTimeline } from '@/components/tasks/AgentObservabilityTimeline'
 import { CheckpointStatus } from '@/components/tasks/CheckpointStatus'
 import { CriteriaProgress } from '@/components/tasks/CriteriaProgress'
@@ -22,9 +22,8 @@ import { NarrationTimeline } from '@/components/tasks/NarrationTimeline'
 import { SubtasksSection } from '@/components/tasks/SubtasksSection'
 import { TaskLabels } from '@/components/tasks/TaskLabels'
 import { TaskMetadata } from '@/components/tasks/TaskMetadata'
-import { WorktreeSection } from '@/components/tasks/WorktreeSection'
 import { Textarea } from '@/components/ui/textarea'
-import type { Task, Subtask, VerificationResult } from '@/lib/api/tasks'
+import type { Subtask, Task, VerificationResult } from '@/lib/api/tasks'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,8 +57,10 @@ const TAB_CONFIG = [
 
 /** Does this task have any execution data worth viewing? */
 function hasExecutionData(task: Task): boolean {
-  return (task.agent_hub_session_ids && task.agent_hub_session_ids.length > 0) ||
+  return (
+    (task.agent_hub_session_ids && task.agent_hub_session_ids.length > 0) ||
     task.status === 'running'
+  )
 }
 
 function getDefaultTab(task: Task): TaskModalTab {
@@ -72,7 +73,7 @@ function getVisibleTabs(task: Task): TaskModalTab[] {
   if (hasExecutionData(task)) {
     tabs.push('execution')
   }
-  if (task.worktree || task.status === 'running') {
+  if (task.branch_name || task.status === 'running') {
     tabs.push('git')
   }
   return tabs
@@ -107,7 +108,12 @@ function TabBar({
             key={tabId}
             type="button"
             onClick={() => onTabChange(tabId)}
-            className={clsx('relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-md transition-all duration-200', isActive ? 'text-slate-100 bg-slate-800/80' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/30')}
+            className={clsx(
+              'relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-md transition-all duration-200',
+              isActive
+                ? 'text-slate-100 bg-slate-800/80'
+                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/30',
+            )}
             data-testid={`tab-${tabId}`}
           >
             <Icon className="w-3.5 h-3.5" />
@@ -169,7 +175,16 @@ function VerificationResultSection({ result }: { result: VerificationResult }) {
       <h4 className="text-xs font-mono uppercase tracking-wider text-slate-500 mb-2">
         Completion Gate
       </h4>
-      <div className={clsx('p-3 rounded-lg border', isPartial ? 'bg-amber-950/20 border-amber-800/20' : isClean ? 'bg-emerald-950/20 border-emerald-800/20' : 'bg-slate-800/50 border-slate-700/30')}>
+      <div
+        className={clsx(
+          'p-3 rounded-lg border',
+          isPartial
+            ? 'bg-amber-950/20 border-amber-800/20'
+            : isClean
+              ? 'bg-emerald-950/20 border-emerald-800/20'
+              : 'bg-slate-800/50 border-slate-700/30',
+        )}
+      >
         {/* Summary line */}
         <div className="flex items-center gap-2 mb-2">
           {isPartial ? (
@@ -179,7 +194,16 @@ function VerificationResultSection({ result }: { result: VerificationResult }) {
           ) : (
             <CheckCircle2 className="w-4 h-4 text-slate-400" />
           )}
-          <span className={clsx('text-sm font-medium', isPartial ? 'text-amber-300' : isClean ? 'text-emerald-300' : 'text-slate-300')}>
+          <span
+            className={clsx(
+              'text-sm font-medium',
+              isPartial
+                ? 'text-amber-300'
+                : isClean
+                  ? 'text-emerald-300'
+                  : 'text-slate-300',
+            )}
+          >
             {isPartial
               ? `Partial merge — ${result.passed_count}/${result.subtask_count} subtasks passed`
               : isClean
@@ -190,28 +214,46 @@ function VerificationResultSection({ result }: { result: VerificationResult }) {
 
         {/* Stats */}
         <div className="flex gap-4 text-xs text-slate-500">
-          {result.total_self_fix_attempts != null && result.total_self_fix_attempts > 0 && (
-            <span>{result.total_self_fix_attempts} self-fix{result.total_self_fix_attempts === 1 ? '' : 'es'}</span>
-          )}
-          {result.total_supervisor_attempts != null && result.total_supervisor_attempts > 0 && (
-            <span>{result.total_supervisor_attempts} supervisor intervention{result.total_supervisor_attempts === 1 ? '' : 's'}</span>
-          )}
-          {result.total_extensions_granted != null && result.total_extensions_granted > 0 && (
-            <span>{result.total_extensions_granted} extension{result.total_extensions_granted === 1 ? '' : 's'}</span>
-          )}
+          {result.total_self_fix_attempts != null &&
+            result.total_self_fix_attempts > 0 && (
+              <span>
+                {result.total_self_fix_attempts} self-fix
+                {result.total_self_fix_attempts === 1 ? '' : 'es'}
+              </span>
+            )}
+          {result.total_supervisor_attempts != null &&
+            result.total_supervisor_attempts > 0 && (
+              <span>
+                {result.total_supervisor_attempts} supervisor intervention
+                {result.total_supervisor_attempts === 1 ? '' : 's'}
+              </span>
+            )}
+          {result.total_extensions_granted != null &&
+            result.total_extensions_granted > 0 && (
+              <span>
+                {result.total_extensions_granted} extension
+                {result.total_extensions_granted === 1 ? '' : 's'}
+              </span>
+            )}
         </div>
 
         {/* Failed subtask details */}
-        {isPartial && result.failed_details && result.failed_details.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-amber-800/20 space-y-2">
-            {result.failed_details.map((detail) => (
-              <div key={detail.subtask_id} className="text-xs">
-                <span className="font-mono text-amber-400">{detail.subtask_id}</span>
-                <span className="text-slate-500 ml-2">{detail.failure_reason}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        {isPartial &&
+          result.failed_details &&
+          result.failed_details.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-amber-800/20 space-y-2">
+              {result.failed_details.map((detail) => (
+                <div key={detail.subtask_id} className="text-xs">
+                  <span className="font-mono text-amber-400">
+                    {detail.subtask_id}
+                  </span>
+                  <span className="text-slate-500 ml-2">
+                    {detail.failure_reason}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
       </div>
     </section>
   )
@@ -289,7 +331,10 @@ function OverviewPanel({
 
       {/* Linked Capability */}
       {capability && (
-        <LinkedCapabilitySection capability={capability} projectId={projectId} />
+        <LinkedCapabilitySection
+          capability={capability}
+          projectId={projectId}
+        />
       )}
 
       {/* Subtasks */}
@@ -311,9 +356,7 @@ function OverviewPanel({
           />
         ) : (
           <div className="p-4 rounded-lg bg-slate-800/30 border border-slate-700/30 text-center">
-            <p className="text-sm text-slate-600">
-              No subtasks defined yet
-            </p>
+            <p className="text-sm text-slate-600">No subtasks defined yet</p>
           </div>
         )}
       </section>
@@ -332,11 +375,7 @@ function ActivityPanel({ task }: { task: Task }) {
 
   return (
     <div className="space-y-4">
-      <NarrationTimeline
-        taskId={task.id}
-        isLive={isLive}
-        pollInterval={5000}
-      />
+      <NarrationTimeline taskId={task.id} isLive={isLive} pollInterval={5000} />
     </div>
   )
 }
@@ -358,14 +397,24 @@ function ExecutionPanel({
         <button
           type="button"
           onClick={() => setDepth('events')}
-          className={clsx('px-3 py-1 text-xs rounded transition-all duration-150', depth === 'events' ? 'bg-slate-700 text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-300')}
+          className={clsx(
+            'px-3 py-1 text-xs rounded transition-all duration-150',
+            depth === 'events'
+              ? 'bg-slate-700 text-slate-100 shadow-sm'
+              : 'text-slate-500 hover:text-slate-300',
+          )}
         >
           Event Stream
         </button>
         <button
           type="button"
           onClick={() => setDepth('agent')}
-          className={clsx('px-3 py-1 text-xs rounded transition-all duration-150', depth === 'agent' ? 'bg-slate-700 text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-300')}
+          className={clsx(
+            'px-3 py-1 text-xs rounded transition-all duration-150',
+            depth === 'agent'
+              ? 'bg-slate-700 text-slate-100 shadow-sm'
+              : 'text-slate-500 hover:text-slate-300',
+          )}
         >
           Agent Detail
         </button>
@@ -394,22 +443,9 @@ function ExecutionPanel({
   )
 }
 
-function GitPanel({
-  task,
-  projectId,
-}: {
-  task: Task
-  projectId: string
-}) {
+function GitPanel({ task, projectId }: { task: Task; projectId: string }) {
   return (
     <div className="space-y-4">
-      {task.worktree ? (
-        <WorktreeSection worktree={task.worktree} />
-      ) : (
-        <div className="p-4 rounded-lg bg-slate-800/30 border border-slate-700/30 text-center">
-          <p className="text-sm text-slate-600">No worktree assigned</p>
-        </div>
-      )}
       <CheckpointStatus
         taskId={task.id}
         projectId={projectId}
@@ -425,10 +461,14 @@ function GitPanel({
 
 export function TaskModalContent(props: TaskModalContentProps) {
   const { task, projectId, executionError } = props
-  const [activeTab, setActiveTab] = useState<TaskModalTab>(() => getDefaultTab(task))
+  const [activeTab, setActiveTab] = useState<TaskModalTab>(() =>
+    getDefaultTab(task),
+  )
 
   const visibleTabs = getVisibleTabs(task)
-  const resolvedTab = visibleTabs.includes(activeTab) ? activeTab : visibleTabs[0]
+  const resolvedTab = visibleTabs.includes(activeTab)
+    ? activeTab
+    : visibleTabs[0]
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col">

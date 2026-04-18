@@ -2,19 +2,20 @@
 
 Covers:
 - Bug #1: Steps re-read from DB after heal attempts (st step defect picked up)
-- Bug #2: Worktree race condition protection (merge blocked, health check)
+- Bug #2: Checkout race condition protection (merge blocked, health check)
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
 # Module path constants for patching
 # ---------------------------------------------------------------------------
 _RETRY_LOOP = "app.tasks.autonomous.exec_modules.retry_loop"
-_WORKTREE = "app.tasks.autonomous.exec_modules.worktree"
+_CHECKOUT = "app.tasks.autonomous.exec_modules.checkout"
 _SUBTASK_VALIDATION = "app.tasks.autonomous.exec_modules.subtask_validation"
 _CLEANUP = "app.tasks.autonomous.cleanup.merge_operations"
 
@@ -23,24 +24,24 @@ class TestMergeBlockedWhenTaskRunning:
     """Bug #2, Layer A: Merge operations blocked when task is running."""
 
     @patch(f"{_CLEANUP}.get_project_root_path")
-    @patch(f"{_CLEANUP}.get_task_worktree")
+    @patch(f"{_CLEANUP}.get_task_checkout")
     @patch(f"{_CLEANUP}.task_store")
     def test_merge_blocked_when_task_running(
         self,
         mock_store: MagicMock,
-        mock_worktree: MagicMock,
+        mock_checkout: MagicMock,
         mock_root: MagicMock,
     ) -> None:
-        """merge_and_cleanup_task_worktree returns blocked when status=running."""
-        from app.tasks.autonomous.cleanup import merge_and_cleanup_task_worktree
+        """merge_and_cleanup_task_checkpoint returns blocked when status=running."""
+        from app.tasks.autonomous.cleanup import merge_and_cleanup_task_checkpoint
 
         mock_store.get_task.return_value = {"id": "task-1", "status": "running"}
 
-        result = merge_and_cleanup_task_worktree("task-1", "test-project")
+        result = cast(dict[str, object], merge_and_cleanup_task_checkpoint("task-1", "test-project"))
 
         assert result["status"] == "failed"
         assert result["reason"] == "task_still_running"
-        mock_worktree.assert_not_called()
+        mock_checkout.assert_not_called()
 
     @patch(f"{_CLEANUP}._git")
     @patch(f"{_CLEANUP}.update_task_fields")
@@ -49,36 +50,36 @@ class TestMergeBlockedWhenTaskRunning:
     @patch(f"{_CLEANUP}.merge_task_branch")
     @patch(f"{_CLEANUP}.checkout_base_branch")
     @patch(f"{_CLEANUP}.get_project_root_path")
-    @patch(f"{_CLEANUP}.remove_task_worktree")
-    @patch(f"{_CLEANUP}.get_task_worktree")
+    @patch(f"{_CLEANUP}.remove_task_checkout")
+    @patch(f"{_CLEANUP}.get_task_checkout")
     @patch(f"{_CLEANUP}.task_store")
     def test_merge_allowed_when_task_completed(
         self,
         mock_store: MagicMock,
-        mock_worktree: MagicMock,
+        mock_get_checkout: MagicMock,
         mock_remove: MagicMock,
         mock_root: MagicMock,
-        mock_checkout: MagicMock,
+        mock_checkout_base: MagicMock,
         mock_merge: MagicMock,
         mock_delete_branch: MagicMock,
         mock_validation: MagicMock,
         mock_fields: MagicMock,
         mock_git: MagicMock,
     ) -> None:
-        """merge_and_cleanup_task_worktree proceeds when status != running."""
-        from app.tasks.autonomous.cleanup import merge_and_cleanup_task_worktree
+        """merge_and_cleanup_task_checkpoint proceeds when status != running."""
+        from app.tasks.autonomous.cleanup import merge_and_cleanup_task_checkpoint
 
         mock_store.get_task.return_value = {"id": "task-1", "status": "completed"}
 
-        worktree_obj = MagicMock()
-        worktree_obj.branch = "task-1/main"
-        worktree_obj.base_branch = "main"
-        mock_worktree.return_value = worktree_obj
+        checkout_obj = MagicMock()
+        checkout_obj.branch = "task-1/main"
+        checkout_obj.base_branch = "main"
+        mock_get_checkout.return_value = checkout_obj
 
         mock_root.return_value = "/home/test/project"
 
         # All git operations succeed
-        mock_checkout.return_value = None
+        mock_checkout_base.return_value = None
         mock_merge.return_value = MagicMock(success=True, merge_sha="abc123", conflicting_files=None)
         mock_delete_branch.return_value = True
         mock_validation.return_value = {
@@ -89,98 +90,98 @@ class TestMergeBlockedWhenTaskRunning:
         }
         mock_git.return_value = MagicMock(returncode=0, stdout="")
 
-        result = merge_and_cleanup_task_worktree("task-1", "test-project")
+        result = merge_and_cleanup_task_checkpoint("task-1", "test-project")
 
         assert result["status"] == "merged"
 
 
-class TestWorktreeHealthCheck:
-    """Bug #2, Layer B: Worktree health check function."""
+class TestCheckoutHealthCheck:
+    """Bug #2, Layer B: Checkout health check function."""
 
-    @patch(f"{_WORKTREE}.emit_log")
-    def test_worktree_health_check_missing_dir(
+    @patch(f"{_CHECKOUT}.emit_log")
+    def test_checkout_health_check_missing_dir(
         self,
         mock_log: MagicMock,
         tmp_path: Path,
     ) -> None:
         """Returns False and logs error when directory doesn't exist."""
-        from app.tasks.autonomous.exec_modules.worktree import check_worktree_health
+        from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
 
         missing = str(tmp_path / "nonexistent")
-        result = check_worktree_health(missing, "task-1", "test-project")
+        result = check_checkout_health(missing, "task-1", "test-project")
 
         assert not result
         mock_log.assert_called_once()
-        assert "WORKTREE GONE" in mock_log.call_args[0][2]
+        assert "CHECKOUT GONE" in mock_log.call_args[0][2]
 
-    @patch(f"{_WORKTREE}.emit_log")
-    def test_worktree_health_check_no_git_marker(
+    @patch(f"{_CHECKOUT}.emit_log")
+    def test_checkout_health_check_no_git_marker(
         self,
         mock_log: MagicMock,
         tmp_path: Path,
     ) -> None:
         """Returns False when directory exists but has no .git marker."""
-        from app.tasks.autonomous.exec_modules.worktree import check_worktree_health
+        from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
 
-        result = check_worktree_health(str(tmp_path), "task-1", "test-project")
+        result = check_checkout_health(str(tmp_path), "task-1", "test-project")
 
         assert not result
         mock_log.assert_called_once()
-        assert "WORKTREE CORRUPTED" in mock_log.call_args[0][2]
+        assert "CHECKOUT CORRUPTED" in mock_log.call_args[0][2]
 
-    @patch(f"{_WORKTREE}.emit_log")
-    def test_worktree_health_check_valid(
+    @patch(f"{_CHECKOUT}.emit_log")
+    def test_checkout_health_check_valid(
         self,
         mock_log: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """Returns True for a valid worktree directory with .git marker."""
-        from app.tasks.autonomous.exec_modules.worktree import check_worktree_health
+        """Returns True for a valid checkout directory with .git marker."""
+        from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
 
         (tmp_path / ".git").mkdir()
-        result = check_worktree_health(str(tmp_path), "task-1", "test-project")
+        result = check_checkout_health(str(tmp_path), "task-1", "test-project")
 
         assert result
         mock_log.assert_not_called()
 
-    @patch(f"{_WORKTREE}.emit_log")
-    def test_worktree_health_check_valid_git_file(
+    @patch(f"{_CHECKOUT}.emit_log")
+    def test_checkout_health_check_valid_git_file(
         self,
         mock_log: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """Returns True when .git is a file (worktree gitlink)."""
-        from app.tasks.autonomous.exec_modules.worktree import check_worktree_health
+        """Returns True when .git is a file-backed checkout."""
+        from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
 
-        (tmp_path / ".git").write_text("gitdir: /path/to/main/.git/worktrees/task-1")
-        result = check_worktree_health(str(tmp_path), "task-1", "test-project")
+        (tmp_path / ".git").write_text("gitdir: /path/to/main/.git/checkouts/task-1")
+        result = check_checkout_health(str(tmp_path), "task-1", "test-project")
 
         assert result
         mock_log.assert_not_called()
 
 
-class TestHealLoopAbortsOnInvalidWorktree:
-    """Bug #2, Layer B: Heal loop breaks immediately on worktree destruction."""
+class TestHealLoopAbortsOnInvalidCheckout:
+    """Bug #2, Layer B: Heal loop breaks immediately on checkout destruction."""
 
     @patch(f"{_RETRY_LOOP}.agent_configs")
     @patch(f"{_RETRY_LOOP}.run_execution_quality_check")
-    @patch(f"{_RETRY_LOOP}.check_worktree_health")
+    @patch(f"{_RETRY_LOOP}.check_checkout_health")
     @patch(f"{_RETRY_LOOP}.assert_task_runnable")
-    def test_heal_loop_aborts_on_invalid_worktree(
+    def test_heal_loop_aborts_on_invalid_checkout(
         self,
         mock_assert_task_runnable: MagicMock,
-        mock_worktree_health: MagicMock,
+        mock_checkout_health: MagicMock,
         mock_verify: MagicMock,
         mock_agent_configs: MagicMock,
     ) -> None:
-        """Subtask fails immediately when worktree is destroyed."""
+        """Subtask fails immediately when checkout is destroyed."""
         from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
 
         mock_agent_configs.get_max_self_fix_attempts.return_value = 0
         mock_agent_configs.get_max_supervisor_attempts.return_value = 0
 
-        # Worktree check fails on first iteration (heal_attempt=0)
-        mock_worktree_health.return_value = False
+        # Checkout check fails on first iteration (heal_attempt=0)
+        mock_checkout_health.return_value = False
 
         subtask = {
             "id": "sub-1",
@@ -194,7 +195,7 @@ class TestHealLoopAbortsOnInvalidWorktree:
             subtask_short_id="1.1",
             subtask=subtask,
             steps=[{"step_number": 1, "description": "test"}],
-            project_path="/tmp/test-worktree",
+            project_path="/tmp/test-checkout",
             project_id="test-project",
             agent_slug="coder",
             agent_session_id="session-1",
@@ -204,25 +205,25 @@ class TestHealLoopAbortsOnInvalidWorktree:
         all_passed = result[0]
         step_results = result[1]
         assert not all_passed
-        assert step_results[0]["reason"] == "worktree_destroyed"
+        assert step_results[0]["reason"] == "checkout_destroyed"
 
 
-class TestInitialWorktreeGuard:
-    """Bug #2, Layer C: Initial worktree check before agent call."""
+class TestInitialCheckoutGuard:
+    """Bug #2, Layer C: Initial checkout check before agent call."""
 
     @patch(f"{_SUBTASK_VALIDATION}.emit_log")
-    @patch(f"{_SUBTASK_VALIDATION}.check_worktree_health")
-    def test_execute_subtask_fails_on_invalid_worktree(
+    @patch(f"{_SUBTASK_VALIDATION}.check_checkout_health")
+    def test_execute_subtask_fails_on_invalid_checkout(
         self,
-        mock_worktree_health: MagicMock,
+        mock_checkout_health: MagicMock,
         mock_log: MagicMock,
     ) -> None:
-        """validate_subtask_environment returns failed when worktree is invalid at start."""
+        """validate_subtask_environment returns failed when checkout is invalid at start."""
         from app.tasks.autonomous.exec_modules.subtask_validation import (
             validate_subtask_environment,
         )
 
-        mock_worktree_health.return_value = False
+        mock_checkout_health.return_value = False
 
         subtask = {
             "id": "sub-1",
@@ -237,16 +238,16 @@ class TestInitialWorktreeGuard:
 
         assert result is not None
         assert result["status"] == "failed"
-        assert result["reason"] == "worktree_invalid"
+        assert result["reason"] == "checkout_invalid"
 
 
 class TestMainRepoLeakageDetection:
-    """Detect when agent writes files to main repo instead of worktree."""
+    """Detect when agent writes files to main repo instead of checkout."""
 
-    @patch(f"{_WORKTREE}._load_main_repo_dirty_baseline")
-    @patch(f"{_WORKTREE}.emit_log")
-    @patch(f"{_WORKTREE}.subprocess")
-    @patch(f"{_WORKTREE}.get_project_root_path")
+    @patch(f"{_CHECKOUT}._load_main_repo_dirty_baseline")
+    @patch(f"{_CHECKOUT}.emit_log")
+    @patch(f"{_CHECKOUT}.subprocess")
+    @patch(f"{_CHECKOUT}.get_project_root_path")
     def test_leakage_detected_when_main_repo_dirty(
         self,
         mock_root: MagicMock,
@@ -255,7 +256,7 @@ class TestMainRepoLeakageDetection:
         mock_baseline: MagicMock,
     ) -> None:
         """Returns True and logs warning when main repo has uncommitted changes."""
-        from app.tasks.autonomous.exec_modules.worktree import check_main_repo_leakage
+        from app.tasks.autonomous.exec_modules.checkout import check_main_repo_leakage
 
         mock_root.return_value = "/home/test/project"
         mock_baseline.return_value = []
@@ -263,15 +264,15 @@ class TestMainRepoLeakageDetection:
         result_obj.stdout = " M leaked_file.py\n"
         mock_subprocess.run.return_value = result_obj
 
-        detected = check_main_repo_leakage("task-1", "test-project", "/tmp/worktree")
+        detected = check_main_repo_leakage("task-1", "test-project", "/tmp/checkout")
 
         assert detected
-        assert any("WORKTREE LEAKAGE" in str(c) for c in mock_log.call_args_list)
+        assert any("CHECKOUT LEAKAGE" in str(c) for c in mock_log.call_args_list)
 
-    @patch(f"{_WORKTREE}._load_main_repo_dirty_baseline")
-    @patch(f"{_WORKTREE}.emit_log")
-    @patch(f"{_WORKTREE}.subprocess")
-    @patch(f"{_WORKTREE}.get_project_root_path")
+    @patch(f"{_CHECKOUT}._load_main_repo_dirty_baseline")
+    @patch(f"{_CHECKOUT}.emit_log")
+    @patch(f"{_CHECKOUT}.subprocess")
+    @patch(f"{_CHECKOUT}.get_project_root_path")
     def test_no_leakage_when_only_preexisting_dirty_files_remain(
         self,
         mock_root: MagicMock,
@@ -280,7 +281,7 @@ class TestMainRepoLeakageDetection:
         mock_baseline: MagicMock,
     ) -> None:
         """Returns False when current dirt matches the recorded baseline."""
-        from app.tasks.autonomous.exec_modules.worktree import check_main_repo_leakage
+        from app.tasks.autonomous.exec_modules.checkout import check_main_repo_leakage
 
         mock_root.return_value = "/home/test/project"
         mock_baseline.return_value = ["existing_file.py"]
@@ -288,15 +289,15 @@ class TestMainRepoLeakageDetection:
         result_obj.stdout = " M existing_file.py\n"
         mock_subprocess.run.return_value = result_obj
 
-        detected = check_main_repo_leakage("task-1", "test-project", "/tmp/worktree")
+        detected = check_main_repo_leakage("task-1", "test-project", "/tmp/checkout")
 
         assert not detected
         mock_log.assert_not_called()
 
-    @patch(f"{_WORKTREE}._load_main_repo_dirty_baseline")
-    @patch(f"{_WORKTREE}.emit_log")
-    @patch(f"{_WORKTREE}.subprocess")
-    @patch(f"{_WORKTREE}.get_project_root_path")
+    @patch(f"{_CHECKOUT}._load_main_repo_dirty_baseline")
+    @patch(f"{_CHECKOUT}.emit_log")
+    @patch(f"{_CHECKOUT}.subprocess")
+    @patch(f"{_CHECKOUT}.get_project_root_path")
     def test_leakage_detected_when_new_dirty_file_added_beyond_baseline(
         self,
         mock_root: MagicMock,
@@ -305,7 +306,7 @@ class TestMainRepoLeakageDetection:
         mock_baseline: MagicMock,
     ) -> None:
         """Returns True when execution dirt exceeds the recorded baseline."""
-        from app.tasks.autonomous.exec_modules.worktree import check_main_repo_leakage
+        from app.tasks.autonomous.exec_modules.checkout import check_main_repo_leakage
 
         mock_root.return_value = "/home/test/project"
         mock_baseline.return_value = ["existing_file.py"]
@@ -313,14 +314,14 @@ class TestMainRepoLeakageDetection:
         result_obj.stdout = " M existing_file.py\n M leaked_file.py\n"
         mock_subprocess.run.return_value = result_obj
 
-        detected = check_main_repo_leakage("task-1", "test-project", "/tmp/worktree")
+        detected = check_main_repo_leakage("task-1", "test-project", "/tmp/checkout")
 
         assert detected
         assert any("leaked_file.py" in str(c) for c in mock_log.call_args_list)
 
-    @patch(f"{_WORKTREE}.emit_log")
-    @patch(f"{_WORKTREE}.subprocess")
-    @patch(f"{_WORKTREE}.get_project_root_path")
+    @patch(f"{_CHECKOUT}.emit_log")
+    @patch(f"{_CHECKOUT}.subprocess")
+    @patch(f"{_CHECKOUT}.get_project_root_path")
     def test_no_leakage_when_main_repo_clean(
         self,
         mock_root: MagicMock,
@@ -328,26 +329,26 @@ class TestMainRepoLeakageDetection:
         mock_log: MagicMock,
     ) -> None:
         """Returns False when main repo is clean."""
-        from app.tasks.autonomous.exec_modules.worktree import check_main_repo_leakage
+        from app.tasks.autonomous.exec_modules.checkout import check_main_repo_leakage
 
         mock_root.return_value = "/home/test/project"
         result_obj = MagicMock()
         result_obj.stdout = ""
         mock_subprocess.run.return_value = result_obj
 
-        detected = check_main_repo_leakage("task-1", "test-project", "/tmp/worktree")
+        detected = check_main_repo_leakage("task-1", "test-project", "/tmp/checkout")
 
         assert not detected
 
-    @patch(f"{_WORKTREE}.emit_log")
-    @patch(f"{_WORKTREE}.get_project_root_path")
+    @patch(f"{_CHECKOUT}.emit_log")
+    @patch(f"{_CHECKOUT}.get_project_root_path")
     def test_skipped_when_same_path(
         self,
         mock_root: MagicMock,
         mock_log: MagicMock,
     ) -> None:
         """Returns False immediately when project_path equals main root."""
-        from app.tasks.autonomous.exec_modules.worktree import check_main_repo_leakage
+        from app.tasks.autonomous.exec_modules.checkout import check_main_repo_leakage
 
         mock_root.return_value = "/home/test/project"
 
@@ -361,10 +362,10 @@ class TestZeroStepSubtask:
     """Zero-step subtask logs a warning but does not fail — uses smoke tests only."""
 
     @patch(f"{_SUBTASK_VALIDATION}.emit_log")
-    @patch(f"{_SUBTASK_VALIDATION}.check_worktree_health")
+    @patch(f"{_SUBTASK_VALIDATION}.check_checkout_health")
     def test_zero_steps_returns_none(
         self,
-        mock_worktree_health: MagicMock,
+        mock_checkout_health: MagicMock,
         mock_log: MagicMock,
     ) -> None:
         """Subtask with 0 steps returns None (passes env check) and logs an info message."""
@@ -372,7 +373,7 @@ class TestZeroStepSubtask:
             validate_subtask_environment,
         )
 
-        mock_worktree_health.return_value = True
+        mock_checkout_health.return_value = True
 
         subtask = {
             "id": "sub-1",
@@ -382,7 +383,7 @@ class TestZeroStepSubtask:
         }
 
         result = validate_subtask_environment(
-            "task-1", subtask, "1.1", "/tmp/test-worktree", "test-project"
+            "task-1", subtask, "1.1", "/tmp/test-checkout", "test-project"
         )
 
         # Zero steps is now valid — execution proceeds with smoke tests only
@@ -390,7 +391,7 @@ class TestZeroStepSubtask:
 
 
 class TestWorkProductDetection:
-    """Verification should treat dirty worktree edits as valid work product."""
+    """Verification should treat dirty checkout edits as valid work product."""
 
     @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
     def test_has_work_product_when_branch_has_commits(self, mock_run: MagicMock) -> None:
@@ -402,14 +403,14 @@ class TestWorkProductDetection:
             MagicMock(returncode=0, stdout="abc123 change\n"),  # git log main..HEAD
         ]
 
-        assert _has_work_product("/tmp/test-worktree")
+        assert _has_work_product("/tmp/test-checkout")
 
     @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
-    def test_has_work_product_when_worktree_has_uncommitted_changes(
+    def test_has_work_product_when_checkout_has_uncommitted_changes(
         self,
         mock_run: MagicMock,
     ) -> None:
-        """Dirty worktree edits should count even before a commit exists."""
+        """Dirty checkout edits should count even before a commit exists."""
         from app.tasks.autonomous.exec_modules.quality_check import _has_work_product
 
         mock_run.side_effect = [
@@ -418,7 +419,7 @@ class TestWorkProductDetection:
             MagicMock(stdout=" M a_term/api/handlers/websocket_resize.py\n"),  # git status
         ]
 
-        assert _has_work_product("/tmp/test-worktree")
+        assert _has_work_product("/tmp/test-checkout")
 
     @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
     def test_has_work_product_detects_master_branch(self, mock_run: MagicMock) -> None:
@@ -430,7 +431,7 @@ class TestWorkProductDetection:
             MagicMock(returncode=0, stdout="abc123 fix\n"),  # git log master..HEAD
         ]
 
-        assert _has_work_product("/tmp/test-worktree")
+        assert _has_work_product("/tmp/test-checkout")
         # Verify git log used "master" not "main"
         log_call = mock_run.call_args_list[1]
         assert "master..HEAD" in log_call[0][0]
@@ -455,12 +456,12 @@ class TestWorkProductDetection:
         mock_smart_commit.return_value = True
         mock_has_unpublished_commits.return_value = False
 
-        result = ensure_committed_work_product("task-1", "1.1", "/tmp/test-worktree", "agent-hub")
+        result = ensure_committed_work_product("task-1", "1.1", "/tmp/test-checkout", "agent-hub")
 
         assert result is None
         mock_emit_log.assert_called_once()
         mock_smart_commit.assert_called_once_with(
-            "/tmp/test-worktree",
+            "/tmp/test-checkout",
             "autocode(task-1): complete subtask 1.1",
             task_id="task-1",
             push=True,
@@ -478,10 +479,10 @@ class TestWorkProductDetection:
         mock_has_branch_commits.return_value = True
         mock_publish_existing_commits.return_value = True
 
-        result = ensure_committed_work_product("task-1", "1.1", "/tmp/test-worktree", "agent-hub")
+        result = ensure_committed_work_product("task-1", "1.1", "/tmp/test-checkout", "agent-hub")
 
         assert result is None
-        mock_publish_existing_commits.assert_called_once_with("/tmp/test-worktree")
+        mock_publish_existing_commits.assert_called_once_with("/tmp/test-checkout")
 
     @patch("app.tasks.autonomous.exec_modules.git_work_product.subprocess.run")
     def test_ensure_committed_work_product_fails_when_nothing_to_merge(
@@ -495,7 +496,7 @@ class TestWorkProductDetection:
             MagicMock(stdout="", returncode=0),  # git status --porcelain
         ]
 
-        result = ensure_committed_work_product("task-1", "1.1", "/tmp/test-worktree", "agent-hub")
+        result = ensure_committed_work_product("task-1", "1.1", "/tmp/test-checkout", "agent-hub")
 
         assert result == "No committed or dirty work product remains to merge"
 
@@ -513,7 +514,7 @@ class TestWorkProductDetection:
             MagicMock(stdout=""),  # git status (clean)
         ]
 
-        assert not _has_work_product("/tmp/test-worktree")
+        assert not _has_work_product("/tmp/test-checkout")
 
     @patch("app.tasks.autonomous.exec_modules.quality_check._run_smoke_and_targeted_tests")
     @patch("app.tasks.autonomous.exec_modules.quality_check.get_task_spirit")
@@ -549,7 +550,7 @@ class TestWorkProductDetection:
             "task-1",
             "sub-1",
             [],
-            "/tmp/test-worktree",
+            "/tmp/test-checkout",
             "summitflow",
         )
 

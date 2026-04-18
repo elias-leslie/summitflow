@@ -1,14 +1,14 @@
-"use client"
+'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
 import { ClipboardCopy, Copy, Download, FileText } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { cn, getErrorMessage } from '@/lib/utils'
 import {
+  type FileBrowserScope,
   fetchFileContent,
   getFileDownloadUrl,
-  type FileBrowserScope,
 } from '@/lib/api/files'
+import { cn, getErrorMessage } from '@/lib/utils'
 
 export interface ContextMenuPosition {
   x: number
@@ -46,7 +46,11 @@ function triggerDownload(url: string, filename: string) {
   document.body.removeChild(link)
 }
 
-export function FileContextMenu({ position, target, onClose }: FileContextMenuProps) {
+export function FileContextMenu({
+  position,
+  target,
+  onClose,
+}: FileContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const [copyingContents, setCopyingContents] = useState(false)
 
@@ -124,10 +128,18 @@ export function FileContextMenu({ position, target, onClose }: FileContextMenuPr
       role="menu"
     >
       <ContextMenuItem icon={Copy} label="Copy Path" onClick={handleCopyPath} />
-      <ContextMenuItem icon={FileText} label="Copy Name" onClick={handleCopyName} />
+      <ContextMenuItem
+        icon={FileText}
+        label="Copy Name"
+        onClick={handleCopyName}
+      />
       {!target.isDirectory ? (
         <>
-          <ContextMenuItem icon={Download} label="Download" onClick={handleDownload} />
+          <ContextMenuItem
+            icon={Download}
+            label="Download"
+            onClick={handleDownload}
+          />
           <ContextMenuItem
             icon={ClipboardCopy}
             label={copyingContents ? 'Copying...' : 'Copy Contents'}
@@ -147,7 +159,12 @@ interface ContextMenuItemProps {
   disabled?: boolean
 }
 
-function ContextMenuItem({ icon: Icon, label, onClick, disabled }: ContextMenuItemProps) {
+function ContextMenuItem({
+  icon: Icon,
+  label,
+  onClick,
+  disabled,
+}: ContextMenuItemProps) {
   return (
     <button
       type="button"
@@ -183,8 +200,10 @@ function useAdjustedPosition(
         return
       }
       const rect = element.getBoundingClientRect()
-      if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 8
-      if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 8
+      if (x + rect.width > window.innerWidth)
+        x = window.innerWidth - rect.width - 8
+      if (y + rect.height > window.innerHeight)
+        y = window.innerHeight - rect.height - 8
       setAdjusted({ x: Math.max(0, x), y: Math.max(0, y) })
     })
   }, [position, ref])

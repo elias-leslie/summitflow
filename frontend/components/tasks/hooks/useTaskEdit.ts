@@ -64,7 +64,15 @@ export function useTaskEdit({
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to save task details'))
     }
-  }, [editDescription, editTitle, onTaskUpdate, projectId, setTask, syncUpdatedTask, task])
+  }, [
+    editDescription,
+    editTitle,
+    onTaskUpdate,
+    projectId,
+    setTask,
+    syncUpdatedTask,
+    task,
+  ])
 
   const resetEditState = useCallback(() => {
     setIsEditing(false)

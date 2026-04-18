@@ -27,7 +27,7 @@ from app.storage.connection import get_connection
 from app.storage.events import get_events_by_trace
 from app.storage.subtasks import create_subtask, get_subtasks_for_task
 from app.storage.task_spirit import create_task_spirit, get_task_spirit
-from app.tasks.autonomous.cleanup import merge_and_cleanup_task_worktree
+from app.tasks.autonomous.cleanup import merge_and_cleanup_task_checkpoint
 from app.tasks.autonomous.escalation import check_escalation_needed
 from app.tasks.autonomous.exec_modules.completion_handler import handle_partial_completion
 from app.tasks.autonomous.execution import start_execution
@@ -475,7 +475,7 @@ class TestExecutionE2E:
                 "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
             ) as mock_client,
             patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.setup_worktree",
+                "app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout",
                 return_value="/tmp/e2e-test",
             ),
             patch(
@@ -549,7 +549,7 @@ class TestExecutionE2E:
                 "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
             ) as mock_client,
             patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.setup_worktree",
+                "app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout",
                 return_value="/tmp/e2e-test",
             ),
             patch(
@@ -850,7 +850,7 @@ class TestFullAutonomousPipeline:
                 "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
             ) as mock_client,
             patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.setup_worktree",
+                "app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout",
                 return_value="/tmp/e2e-test",
             ),
             patch(
@@ -1183,17 +1183,17 @@ class TestAutoRollbackE2E:
         task_store.update_task_status(task_id, "running")
         task_store.update_task_status(task_id, "completed")
 
-        mock_worktree = MagicMock()
-        mock_worktree.branch = f"{task_id}/main"
-        mock_worktree.base_branch = "main"
-        mock_worktree.path = f"/tmp/worktrees/{task_id}"
+        mock_checkout = MagicMock()
+        mock_checkout.branch = f"{task_id}/main"
+        mock_checkout.base_branch = "main"
+        mock_checkout.path = f"/tmp/lanes/{task_id}"
 
         mock_subprocess_success = MagicMock(returncode=0, stdout="", stderr="")
 
         with (
             patch(
-                "app.tasks.autonomous.cleanup.get_task_worktree",
-                return_value=mock_worktree,
+                "app.tasks.autonomous.cleanup.get_task_checkout",
+                return_value=mock_checkout,
             ),
             patch(
                 "app.tasks.autonomous.cleanup.get_project_root_path",
@@ -1204,7 +1204,7 @@ class TestAutoRollbackE2E:
                 return_value=mock_subprocess_success,
             ),
             patch(
-                "app.tasks.autonomous.cleanup.remove_task_worktree",
+                "app.tasks.autonomous.cleanup.remove_task_checkout",
             ),
             patch(
                 "app.tasks.autonomous.cleanup._run_post_merge_validation",
@@ -1216,7 +1216,7 @@ class TestAutoRollbackE2E:
                 },
             ),
         ):
-            result = merge_and_cleanup_task_worktree(task_id, test_project_id)
+            result = merge_and_cleanup_task_checkpoint(task_id, test_project_id)
 
         assert result["status"] == "merged"
         assert result["task_branch"] == f"{task_id}/main"
@@ -1238,17 +1238,17 @@ class TestAutoRollbackE2E:
         task_store.update_task_status(task_id, "running")
         task_store.update_task_status(task_id, "completed")
 
-        mock_worktree = MagicMock()
-        mock_worktree.branch = f"{task_id}/main"
-        mock_worktree.base_branch = "main"
-        mock_worktree.path = f"/tmp/worktrees/{task_id}"
+        mock_checkout = MagicMock()
+        mock_checkout.branch = f"{task_id}/main"
+        mock_checkout.base_branch = "main"
+        mock_checkout.path = f"/tmp/lanes/{task_id}"
 
         mock_subprocess_success = MagicMock(returncode=0, stdout="", stderr="")
 
         with (
             patch(
-                "app.tasks.autonomous.cleanup.get_task_worktree",
-                return_value=mock_worktree,
+                "app.tasks.autonomous.cleanup.get_task_checkout",
+                return_value=mock_checkout,
             ),
             patch(
                 "app.tasks.autonomous.cleanup.get_project_root_path",
@@ -1259,7 +1259,7 @@ class TestAutoRollbackE2E:
                 return_value=mock_subprocess_success,
             ),
             patch(
-                "app.tasks.autonomous.cleanup.remove_task_worktree",
+                "app.tasks.autonomous.cleanup.remove_task_checkout",
             ),
             patch(
                 "app.tasks.autonomous.cleanup._run_post_merge_validation",
@@ -1275,7 +1275,7 @@ class TestAutoRollbackE2E:
                 return_value=True,
             ) as mock_rollback,
         ):
-            result = merge_and_cleanup_task_worktree(task_id, test_project_id)
+            result = merge_and_cleanup_task_checkpoint(task_id, test_project_id)
 
         assert result["status"] == "rolled_back"
         assert result["reason"] == "post_merge_validation_failed"
@@ -1354,7 +1354,7 @@ class TestAutoRollbackE2E:
         cleanup_tasks.append(task_id)
         task_store.update_task_status(task_id, "running")
 
-        result = merge_and_cleanup_task_worktree(task_id, test_project_id)
+        result = merge_and_cleanup_task_checkpoint(task_id, test_project_id)
 
         assert result["status"] == "blocked"
         assert result["reason"] == "task_still_running"
@@ -1408,7 +1408,7 @@ class TestIntentOnlyAcceptanceE2E:
                 "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
             ) as mock_client,
             patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.setup_worktree",
+                "app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout",
                 return_value="/tmp/e2e-test",
             ),
             patch(
@@ -1478,7 +1478,7 @@ class TestIntentOnlyAcceptanceE2E:
                 "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
             ) as mock_client,
             patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.setup_worktree",
+                "app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout",
                 return_value="/tmp/e2e-test",
             ),
             patch(
@@ -1552,7 +1552,7 @@ class TestIntentOnlyAcceptanceE2E:
                 "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
             ) as mock_client,
             patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.setup_worktree",
+                "app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout",
                 return_value="/tmp/e2e-test",
             ),
             patch(
@@ -1638,7 +1638,7 @@ class TestIntentOnlyAcceptanceE2E:
                 "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
             ) as mock_exec_client,
             patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.setup_worktree",
+                "app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout",
                 return_value="/tmp/e2e-test",
             ),
             patch(

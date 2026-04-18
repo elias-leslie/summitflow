@@ -1,13 +1,8 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { STALE_GIT } from '@/lib/polling'
 import { clsx } from 'clsx'
-import {
-  ChevronRight,
-  Loader2,
-  RotateCcw,
-} from 'lucide-react'
+import { ChevronRight, Loader2, RotateCcw } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import {
   type BtrfsScope,
@@ -16,6 +11,7 @@ import {
   recoverSnapshot,
 } from '@/lib/api/snapshots'
 import { formatBytes, formatTimeAgo } from '@/lib/format'
+import { STALE_GIT } from '@/lib/polling'
 
 // ─── Source styling ─────────────────────────────────────────────
 
@@ -66,7 +62,7 @@ function SnapshotRow({ snap }: { snap: BtrfsSnapshot }) {
     setResult(null)
     try {
       const res = await recoverSnapshot(snap.id, snap.project_id)
-      setResult(res.ok ? 'Recovered' : res.error ?? 'Failed')
+      setResult(res.ok ? 'Recovered' : (res.error ?? 'Failed'))
     } catch {
       setResult('Failed')
     }
@@ -139,20 +135,31 @@ function ScopeCard({ scope }: { scope: BtrfsScope }) {
   const [expanded, setExpanded] = useState(false)
 
   const { data: snapshots, isLoading } = useQuery({
-    queryKey: ['snapshot-scope', scope.project_id, scope.scope_type, scope.scope_name, scope.scope_state],
-    queryFn: () => fetchSnapshots(
+    queryKey: [
+      'snapshot-scope',
       scope.project_id,
       scope.scope_type,
       scope.scope_name,
-      scope.scope_state === 'archived',
-    ),
+      scope.scope_state,
+    ],
+    queryFn: () =>
+      fetchSnapshots(
+        scope.project_id,
+        scope.scope_type,
+        scope.scope_name,
+        scope.scope_state === 'archived',
+      ),
     enabled: expanded,
     staleTime: STALE_GIT,
   })
 
   const accentClass = SCOPE_ACCENT[scope.scope_type] ?? 'border-l-slate-600'
-  const typeStyle = SCOPE_TYPE_STYLE[scope.scope_type] ?? 'bg-slate-600 text-slate-300 border-slate-500'
-  const stateStyle = STATE_BADGE[scope.scope_state] ?? 'bg-slate-700/50 text-slate-400 border-slate-600/40'
+  const typeStyle =
+    SCOPE_TYPE_STYLE[scope.scope_type] ??
+    'bg-slate-600 text-slate-300 border-slate-500'
+  const stateStyle =
+    STATE_BADGE[scope.scope_state] ??
+    'bg-slate-700/50 text-slate-400 border-slate-600/40'
 
   return (
     <div
@@ -204,9 +211,7 @@ function ScopeCard({ scope }: { scope: BtrfsScope }) {
           {scope.total_bytes != null && scope.total_bytes > 0 && (
             <span className="font-mono">{formatBytes(scope.total_bytes)}</span>
           )}
-          {scope.newest_at && (
-            <span>{formatTimeAgo(scope.newest_at)}</span>
-          )}
+          {scope.newest_at && <span>{formatTimeAgo(scope.newest_at)}</span>}
         </div>
       </div>
 
@@ -227,9 +232,7 @@ function ScopeCard({ scope }: { scope: BtrfsScope }) {
                 Loading snapshots...
               </div>
             ) : snapshots && snapshots.length > 0 ? (
-              snapshots.map((snap) => (
-                <SnapshotRow key={snap.id} snap={snap} />
-              ))
+              snapshots.map((snap) => <SnapshotRow key={snap.id} snap={snap} />)
             ) : (
               <div className="text-xs text-slate-600 py-1">
                 No snapshots in this scope

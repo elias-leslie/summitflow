@@ -1224,7 +1224,6 @@ CREATE TABLE public.session_summary_segments (
     summary_outcome character varying(20),
     summary_git_digest text,
     summary_branch character varying(200),
-    summary_is_worktree boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
@@ -1277,7 +1276,6 @@ CREATE TABLE public.sessions (
     summary_outcome character varying(20),
     summary_files_touched json,
     summary_branch character varying(200),
-    summary_is_worktree boolean DEFAULT false NOT NULL,
     summary_generated_at timestamp with time zone,
     summary_git_digest text,
     current_branch character varying(200),
@@ -2970,4 +2968,3 @@ ALTER TABLE ONLY public.truncation_events
 --
 
 \unrestrict vDbgLE1H1T4i660of1VpcSbuVAkJkW7cRGzQVdX4HhHLY5iSjmOqh1kk60UnTkS
-

@@ -27,7 +27,7 @@ def strip_venv_paths(cmd: str) -> str:
     """Strip .venv/bin/ prefixes from commands.
 
     Since build_project_env() puts the correct venv on PATH, relative
-    .venv/bin/X paths are unnecessary and fail in worktrees where .venv
+    .venv/bin/X paths are unnecessary and fail in sibling checkouts where .venv
     doesn't exist. This rewrites them to bare binary names.
 
     Handles:

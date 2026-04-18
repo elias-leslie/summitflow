@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { FeedbackItem, FeedbackFilters } from '@/lib/api/feedback'
+import type { FeedbackFilters, FeedbackItem } from '@/lib/api/feedback'
 import { FeedbackFilterBar } from './FeedbackFilterBar'
 import { FeedbackList } from './FeedbackList'
 

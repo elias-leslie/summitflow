@@ -1,9 +1,8 @@
 'use client'
 
+import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { runtimeApi } from '@/lib/api/runtime'
 import {
   Sheet,
   SheetBody,
@@ -13,6 +12,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { runtimeApi } from '@/lib/api/runtime'
 
 interface LogViewerProps {
   service: string

@@ -1,12 +1,17 @@
 'use client'
 
-import { useDeferredValue, useState } from 'react'
 import { Loader2, Search, Sparkles, X } from 'lucide-react'
-import { Sheet, SheetBody, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { useDeferredValue, useState } from 'react'
 import {
-  useExplorerSymbolDetail,
-  useExplorerSymbolSearch,
-} from './hooks'
+  Sheet,
+  SheetBody,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import { useExplorerSymbolDetail, useExplorerSymbolSearch } from './hooks'
 
 interface SymbolSearchPanelProps {
   projectId: string
@@ -91,7 +96,9 @@ export function SymbolSearchPanel({ projectId }: SymbolSearchPanelProps) {
                   </div>
                 ) : null}
 
-                {!searchQuery.isLoading && !isSearching && results.length > 0 ? (
+                {!searchQuery.isLoading &&
+                !isSearching &&
+                results.length > 0 ? (
                   <div className="divide-y divide-slate-800">
                     {results.map((symbol) => (
                       <button
@@ -109,7 +116,8 @@ export function SymbolSearchPanel({ projectId }: SymbolSearchPanelProps) {
                               {symbol.kind}
                             </span>
                             <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
-                              {languageLabels[symbol.language] ?? symbol.language}
+                              {languageLabels[symbol.language] ??
+                                symbol.language}
                             </span>
                           </div>
                           <p className="mt-1 truncate font-mono text-xs text-slate-400">
@@ -149,7 +157,10 @@ export function SymbolSearchPanel({ projectId }: SymbolSearchPanelProps) {
           }
         }}
       >
-        <SheetContent side="right" className="max-w-3xl border-l border-slate-700 bg-slate-950">
+        <SheetContent
+          side="right"
+          className="max-w-3xl border-l border-slate-700 bg-slate-950"
+        >
           <SheetHeader>
             <SheetClose onClose={() => setSelectedSymbolId(null)} />
             <SheetTitle>
@@ -179,7 +190,10 @@ export function SymbolSearchPanel({ projectId }: SymbolSearchPanelProps) {
             {detailQuery.data ? (
               <>
                 <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-4 md:grid-cols-3">
-                  <MetaBlock label="Kind" value={detailQuery.data.symbol.kind} />
+                  <MetaBlock
+                    label="Kind"
+                    value={detailQuery.data.symbol.kind}
+                  />
                   <MetaBlock
                     label="Language"
                     value={

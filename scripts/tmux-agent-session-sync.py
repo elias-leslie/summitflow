@@ -209,7 +209,7 @@ def main() -> int:
             "scope_confidence": "unknown",
             "provider_metadata": {
                 "repo_root": repo_root,
-                "worktree_path": working_dir,
+                "cwd": working_dir,
                 "host": os.uname().nodename,
                 "tmux_session_name": tmux_session_name,
                 "tmux_pane_id": session.get("tmux_pane_id"),
@@ -236,7 +236,7 @@ def main() -> int:
             "last_event_type": "heartbeat",
             "provider_metadata": {
                 "repo_root": repo_root,
-                "worktree_path": working_dir,
+                "cwd": working_dir,
                 "host": os.uname().nodename,
                 "tmux_session_name": tmux_session_name,
                 "tmux_pane_id": session.get("tmux_pane_id"),

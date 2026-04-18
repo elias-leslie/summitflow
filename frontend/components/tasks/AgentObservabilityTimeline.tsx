@@ -35,25 +35,36 @@ export function AgentObservabilityTimeline({
 }: AgentObservabilityTimelineProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('timeline')
   const [activeFilter, setActiveFilter] = useState<string>('all')
-  const [filterEventTypes, setFilterEventTypes] = useState<AgentEventType[] | undefined>(undefined)
+  const [filterEventTypes, setFilterEventTypes] = useState<
+    AgentEventType[] | undefined
+  >(undefined)
   const [searchTerm, setSearchTerm] = useState('')
   const [replayIndex, setReplayIndex] = useState(0)
 
-  const { events, sessionIds, sessions, total, maxTurn, isLoading, error, refetch } =
-    useAgentHubEvents({
-      taskId,
-      projectId,
-      enabled: !!projectId,
-      pollInterval: isLive ? pollInterval : 0,
-    })
+  const {
+    events,
+    sessionIds,
+    sessions,
+    total,
+    maxTurn,
+    isLoading,
+    error,
+    refetch,
+  } = useAgentHubEvents({
+    taskId,
+    projectId,
+    enabled: !!projectId,
+    pollInterval: isLive ? pollInterval : 0,
+  })
 
   const { scrollRef, handleScroll } = useAutoScroll(events.length)
 
-  const { filteredEvents, eventCounts, eventsByTurn, replayTimestamps } = useObservabilityData({
-    events,
-    filterEventTypes,
-    searchTerm,
-  })
+  const { filteredEvents, eventCounts, eventsByTurn, replayTimestamps } =
+    useObservabilityData({
+      events,
+      filterEventTypes,
+      searchTerm,
+    })
 
   const handleFilterChange = useCallback(
     (filterId: string, eventTypes: AgentEventType[] | undefined) => {
@@ -63,23 +74,23 @@ export function AgentObservabilityTimeline({
     [],
   )
 
-  const handleReplayIndexChange = useCallback(
-    (index: number) => {
-      setReplayIndex(index)
-      // Scroll the highlighted event into view
-      if (scrollRef.current) {
-        const eventElements = scrollRef.current.querySelectorAll('[data-event-index]')
-        const target = eventElements[index]
-        if (target) {
-          target.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-        }
+  const handleReplayIndexChange = useCallback((index: number) => {
+    setReplayIndex(index)
+    // Scroll the highlighted event into view
+    if (scrollRef.current) {
+      const eventElements =
+        scrollRef.current.querySelectorAll('[data-event-index]')
+      const target = eventElements[index]
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
       }
-    },
-    [],
-  )
+    }
+  }, [])
 
   const heightStyle =
-    maxHeight === 'none' ? { minHeight: '200px' } : { minHeight: '200px', maxHeight }
+    maxHeight === 'none'
+      ? { minHeight: '200px' }
+      : { minHeight: '200px', maxHeight }
 
   return (
     <div className={clsx('flex flex-col', className)}>

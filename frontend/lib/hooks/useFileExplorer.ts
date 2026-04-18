@@ -4,12 +4,12 @@
 
 import { useQuery } from '@tanstack/react-query'
 import {
-  fetchFileContent,
-  fetchFileTree,
-  getFileScopeKey,
   type FileBrowserScope,
   type FileContentResponse,
   type FileTreeResponse,
+  fetchFileContent,
+  fetchFileTree,
+  getFileScopeKey,
 } from '@/lib/api/files'
 import { POLL_SLOW, STALE_GIT } from '@/lib/polling'
 

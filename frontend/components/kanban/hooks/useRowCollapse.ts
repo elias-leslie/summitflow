@@ -1,11 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  ALWAYS_COLLAPSED,
-  ROWS,
-  type TaskKanbanColumn,
-} from '../columnConfig'
+import { ALWAYS_COLLAPSED, ROWS, type TaskKanbanColumn } from '../columnConfig'
 
 const STORAGE_KEY_PREFIX = 'kanban-collapsed-rows'
 
@@ -14,9 +10,7 @@ function getStorageKey(projectId: string): string {
 }
 
 // Returns null when no stored state exists (first visit)
-function loadStoredCollapsed(
-  projectId: string,
-): Set<TaskKanbanColumn> | null {
+function loadStoredCollapsed(projectId: string): Set<TaskKanbanColumn> | null {
   if (typeof window === 'undefined') return null
   try {
     const stored = localStorage.getItem(getStorageKey(projectId))
@@ -30,10 +24,7 @@ function loadStoredCollapsed(
 }
 
 // Persist collapsed state, excluding always-collapsed rows
-function saveCollapsed(
-  projectId: string,
-  collapsed: Set<TaskKanbanColumn>,
-) {
+function saveCollapsed(projectId: string, collapsed: Set<TaskKanbanColumn>) {
   const toStore = [...collapsed].filter(
     (id) => !(ALWAYS_COLLAPSED as readonly string[]).includes(id),
   )

@@ -33,8 +33,8 @@ def test_pulse_compact_renders_canonical_summary() -> None:
             "stranded_tasks": 0,
         },
         "cleanup": {
-            "active_worktrees": 1,
-            "dirty_worktrees": 0,
+            "active_checkpoints": 1,
+            "dirty_checkpoints": 0,
             "needs_cleanup": False,
         },
         "running_tasks": [
@@ -83,14 +83,14 @@ def test_pulse_compact_renders_canonical_summary() -> None:
         result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
 
     assert result.exit_code == 0
-    assert "PULSE:agent-hub|tasks=1|owners=1|specialists=0|sessions=2|stale=1|reapable=1|worktrees=1|dirty=0|cleanup=no|stranded=0" in result.output
+    assert "PULSE:agent-hub|tasks=1|owners=1|specialists=0|sessions=2|stale=1|reapable=1|checkpoints=1|dirty=0|cleanup=no|stranded=0" in result.output
     assert "RUN task-1 | running | P2 | Refactor timeline" in result.output
     assert "OWN task-1 | refactor | sess-own | kind=scoped | paths=frontend/src/app.tsx" in result.output
     assert "SES owner | refactor | sess-own | claude-sonnet-4-6 | active/reading_file" in result.output
     assert "STALE observer | summitflow/codex-session-sync | sess-sta | claude-sonnet-4-6 | reapable | reason=heartbeat_only+no_lane" in result.output
 
 
-def test_pulse_compact_labels_task_worktree_owner_more_usefully() -> None:
+def test_pulse_compact_labels_task_checkout_owner_more_usefully() -> None:
     mock_client = MagicMock()
     mock_client.get.return_value = {
         "project_id": "agent-hub",
@@ -104,8 +104,8 @@ def test_pulse_compact_labels_task_worktree_owner_more_usefully() -> None:
             "stranded_tasks": 0,
         },
         "cleanup": {
-            "active_worktrees": 1,
-            "dirty_worktrees": 0,
+            "active_checkpoints": 1,
+            "dirty_checkpoints": 0,
             "needs_cleanup": False,
         },
         "running_tasks": [
@@ -118,7 +118,6 @@ def test_pulse_compact_labels_task_worktree_owner_more_usefully() -> None:
                 "session_id": "sess-owner",
                 "ownership_kind": "unscoped",
                 "scope_paths": [],
-                "is_worktree": True,
             }
         ],
         "active_sessions": [],
@@ -130,7 +129,7 @@ def test_pulse_compact_labels_task_worktree_owner_more_usefully() -> None:
         result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
 
     assert result.exit_code == 0
-    assert "OWN task-2 | refactor | sess-own | kind=task_worktree" in result.output
+    assert "OWN task-2 | refactor | sess-own | kind=task_checkout" in result.output
 
 
 def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
@@ -147,8 +146,8 @@ def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
             "stranded_tasks": 1,
         },
         "cleanup": {
-            "active_worktrees": 1,
-            "dirty_worktrees": 1,
+            "active_checkpoints": 1,
+            "dirty_checkpoints": 1,
             "needs_cleanup": True,
         },
         "running_tasks": [],
@@ -175,11 +174,11 @@ def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
         result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
 
     assert result.exit_code == 0
-    assert "PULSE:agent-hub|tasks=0|owners=0|specialists=0|sessions=0|stale=1|reapable=1|worktrees=1|dirty=1|cleanup=yes|stranded=1" in result.output
+    assert "PULSE:agent-hub|tasks=0|owners=0|specialists=0|sessions=0|stale=1|reapable=1|checkpoints=1|dirty=1|cleanup=yes|stranded=1" in result.output
     assert "STRANDED task-3 | running | no_owner_session | Refactor tool handlers" in result.output
 
 
-def test_pulse_compact_counts_dirty_main_repo_without_worktrees() -> None:
+def test_pulse_compact_counts_dirty_main_repo_without_checkpoints() -> None:
     mock_client = MagicMock()
     mock_client.get.return_value = {
         "project_id": "test2",
@@ -193,8 +192,8 @@ def test_pulse_compact_counts_dirty_main_repo_without_worktrees() -> None:
             "stranded_tasks": 0,
         },
         "cleanup": {
-            "active_worktrees": 0,
-            "dirty_worktrees": 1,
+            "active_checkpoints": 0,
+            "dirty_checkpoints": 1,
             "dirty_main_repo": True,
             "needs_cleanup": True,
         },
@@ -209,7 +208,7 @@ def test_pulse_compact_counts_dirty_main_repo_without_worktrees() -> None:
         result = runner.invoke(app, ["pulse", "--project", "test2"])
 
     assert result.exit_code == 0
-    assert "PULSE:test2|tasks=0|owners=0|specialists=0|sessions=0|stale=0|reapable=0|worktrees=0|dirty=1|cleanup=yes|stranded=0" in result.output
+    assert "PULSE:test2|tasks=0|owners=0|specialists=0|sessions=0|stale=0|reapable=0|checkpoints=0|dirty=1|cleanup=yes|stranded=0" in result.output
 
 
 def test_pulse_prefers_source_client_for_observer_session_label() -> None:
@@ -226,8 +225,8 @@ def test_pulse_prefers_source_client_for_observer_session_label() -> None:
             "stranded_tasks": 0,
         },
         "cleanup": {
-            "active_worktrees": 0,
-            "dirty_worktrees": 0,
+            "active_checkpoints": 0,
+            "dirty_checkpoints": 0,
             "needs_cleanup": False,
         },
         "running_tasks": [],
@@ -271,8 +270,8 @@ def test_pulse_defaults_to_cross_project_overview() -> None:
                 "stranded_tasks": 0,
             },
             "cleanup": {
-                "active_worktrees": 0,
-                "dirty_worktrees": 0,
+                "active_checkpoints": 0,
+                "dirty_checkpoints": 0,
                 "needs_cleanup": False,
             },
             "running_tasks": [],
@@ -293,8 +292,8 @@ def test_pulse_defaults_to_cross_project_overview() -> None:
                 "stranded_tasks": 0,
             },
             "cleanup": {
-                "active_worktrees": 0,
-                "dirty_worktrees": 0,
+                "active_checkpoints": 0,
+                "dirty_checkpoints": 0,
                 "needs_cleanup": False,
             },
             "running_tasks": [],
@@ -309,8 +308,8 @@ def test_pulse_defaults_to_cross_project_overview() -> None:
         result = runner.invoke(app, ["pulse"])
 
     assert result.exit_code == 0
-    assert "PULSE:summitflow|tasks=0|owners=0|specialists=0|sessions=1|stale=2|reapable=1|worktrees=0|dirty=0|cleanup=no|stranded=0" in result.output
-    assert "PULSE:agent-hub|tasks=1|owners=1|specialists=0|sessions=2|stale=0|reapable=0|worktrees=0|dirty=0|cleanup=no|stranded=0" in result.output
+    assert "PULSE:summitflow|tasks=0|owners=0|specialists=0|sessions=1|stale=2|reapable=1|checkpoints=0|dirty=0|cleanup=no|stranded=0" in result.output
+    assert "PULSE:agent-hub|tasks=1|owners=1|specialists=0|sessions=2|stale=0|reapable=0|checkpoints=0|dirty=0|cleanup=no|stranded=0" in result.output
 
 
 def test_pulse_rejects_project_and_all_together() -> None:
@@ -334,8 +333,8 @@ def test_pulse_refreshes_observability_before_querying() -> None:
             "stranded_tasks": 0,
         },
         "cleanup": {
-            "active_worktrees": 0,
-            "dirty_worktrees": 0,
+            "active_checkpoints": 0,
+            "dirty_checkpoints": 0,
             "needs_cleanup": False,
         },
         "running_tasks": [],

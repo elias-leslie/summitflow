@@ -3,9 +3,9 @@ import clsx from 'clsx'
 import { GitMerge, Minus, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { fetchTaskDiff, type MergedTaskSummary } from '@/lib/api/git-enhanced'
-import { DiffPanel } from '../DiffPanel'
 import { formatTimeAgo } from '@/lib/format'
 import { POLL_RARE } from '@/lib/polling'
+import { DiffPanel } from '../DiffPanel'
 import { StatBar } from './StatBar'
 
 export function MergeRow({ merge }: { merge: MergedTaskSummary }) {
@@ -31,16 +31,22 @@ export function MergeRow({ merge }: { merge: MergedTaskSummary }) {
       >
         <GitMerge className="w-3.5 h-3.5 text-purple-400 shrink-0" />
         <div className="flex-1 min-w-0">
-          <span className="text-sm text-slate-100 truncate block">{merge.task_title}</span>
-          <span className="text-[10px] text-slate-500">{formatTimeAgo(merge.merged_at)}</span>
+          <span className="text-sm text-slate-100 truncate block">
+            {merge.task_title}
+          </span>
+          <span className="text-[10px] text-slate-500">
+            {formatTimeAgo(merge.merged_at)}
+          </span>
         </div>
         <div className="shrink-0 flex items-center gap-2.5">
           <StatBar additions={merge.additions} deletions={merge.deletions} />
           <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-0.5">
-            <Plus className="w-2.5 h-2.5" />{merge.additions}
+            <Plus className="w-2.5 h-2.5" />
+            {merge.additions}
           </span>
           <span className="text-[10px] font-mono text-rose-400 flex items-center gap-0.5">
-            <Minus className="w-2.5 h-2.5" />{merge.deletions}
+            <Minus className="w-2.5 h-2.5" />
+            {merge.deletions}
           </span>
         </div>
       </button>

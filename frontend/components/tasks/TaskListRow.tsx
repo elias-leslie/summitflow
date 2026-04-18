@@ -2,16 +2,12 @@ import clsx from 'clsx'
 import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react'
 import type { Task } from '@/lib/api'
 import type { Subtask } from '@/lib/api/tasks'
+import { formatTimeAgo } from '@/lib/format'
+import { priorityConfig, statusIconConfig, typeConfig } from '@/lib/task-config'
 import { cn } from '@/lib/utils'
 import { CriteriaProgress } from './CriteriaProgress'
 import { EnrichmentStatusBadge } from './EnrichmentStatusBadge'
 import { SubtaskProgress } from './SubtaskProgress'
-import { formatTimeAgo } from '@/lib/format'
-import {
-  priorityConfig,
-  statusIconConfig,
-  typeConfig,
-} from '@/lib/task-config'
 
 interface TaskListRowProps {
   task: Task
@@ -49,7 +45,12 @@ export function TaskListRow({
         isSelected && 'bg-phosphor-500/10',
       )}
       onClick={onToggle}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onToggle()
+        }
+      }}
       tabIndex={0}
     >
       {/* Checkbox */}
@@ -76,7 +77,10 @@ export function TaskListRow({
       {/* Priority */}
       <td className="px-3 py-3">
         <span
-          className={clsx('text-xs px-1.5 py-0.5 rounded border mono font-medium', priorityStyle.className)}
+          className={clsx(
+            'text-xs px-1.5 py-0.5 rounded border mono font-medium',
+            priorityStyle.className,
+          )}
         >
           {priorityStyle.label}
         </span>
@@ -84,7 +88,9 @@ export function TaskListRow({
 
       {/* Type */}
       <td className="px-3 py-3">
-        <span className={clsx('flex items-center gap-1.5', typeStyle.className)}>
+        <span
+          className={clsx('flex items-center gap-1.5', typeStyle.className)}
+        >
           <TypeIcon className="h-3.5 w-3.5" />
           <span className="text-xs">{typeStyle.label}</span>
         </span>
@@ -125,7 +131,9 @@ export function TaskListRow({
 
       {/* Status */}
       <td className="px-3 py-3">
-        <span className={clsx('flex items-center gap-1.5', statusStyle.className)}>
+        <span
+          className={clsx('flex items-center gap-1.5', statusStyle.className)}
+        >
           <StatusIcon className="h-3.5 w-3.5" />
           <span className="text-xs capitalize">{task.status}</span>
         </span>
@@ -134,7 +142,11 @@ export function TaskListRow({
       {/* Updated */}
       <td className="px-3 py-3">
         <span className="text-xs text-slate-500">
-          {task.updated_at ? formatTimeAgo(task.updated_at) : task.created_at ? formatTimeAgo(task.created_at) : '-'}
+          {task.updated_at
+            ? formatTimeAgo(task.updated_at)
+            : task.created_at
+              ? formatTimeAgo(task.created_at)
+              : '-'}
         </span>
       </td>
 

@@ -46,12 +46,15 @@ function getViolationSummary(counts: {
 
 export function ArchitectureRow({ entry }: ArchitectureRowProps) {
   const meta = entry.metadata
-  const scanScope = (meta.scan_scope as 'backend' | 'frontend' | 'both') || 'both'
-  const violationCounts = meta.violation_counts as {
-    parallel_implementation?: number
-    missing_infrastructure?: number
-    duplicate_utility?: number
-  } | undefined
+  const scanScope =
+    (meta.scan_scope as 'backend' | 'frontend' | 'both') || 'both'
+  const violationCounts = meta.violation_counts as
+    | {
+        parallel_implementation?: number
+        missing_infrastructure?: number
+        duplicate_utility?: number
+      }
+    | undefined
   const filesWithViolations = (meta.files_with_violations as number) ?? 0
   const healthStatus = (entry.healthStatus ?? 'unknown') as HealthStatus
 

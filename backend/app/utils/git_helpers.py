@@ -3,7 +3,7 @@
 All symbols importable from this module are preserved for backward compatibility.
 Implementation is split across:
   - _git_core.py    — run_git, repo status, sync operations
-  - _git_branches.py — branch, worktree helpers
+  - _git_branches.py — branch, checkpoint helpers
   - _git_diff.py    — diff, commit history, snapshot helpers
 """
 
@@ -14,12 +14,12 @@ from ._git_branches import (
     extract_task_id_from_branch,
     get_all_branches,
     get_branch_commit_info,
-    get_worktree_branches,
-    get_worktree_info,
+    get_checkpoint_branches,
+    get_checkpoint_info,
 )
 from ._git_core import (
     CONFIG_REPOS,
-    WORKTREES_BASE_DIR,
+    LANES_BASE_DIR,
     fetch_repository,
     get_managed_repos,
     get_repo_status,
@@ -38,19 +38,19 @@ from ._git_diff import (
 
 __all__ = [
     "CONFIG_REPOS",
-    "WORKTREES_BASE_DIR",
+    "LANES_BASE_DIR",
     "build_repo_workspace_summary",
     "extract_task_id_from_branch",
     "fetch_repository",
     "get_all_branches",
     "get_branch_commit_info",
+    "get_checkpoint_branches",
+    "get_checkpoint_info",
     "get_diff_stats",
     "get_managed_repos",
     "get_recent_commits",
     "get_repo_status",
     "get_task_diff",
-    "get_worktree_branches",
-    "get_worktree_info",
     "list_snapshots",
     "pull_repository",
     "push_repository",

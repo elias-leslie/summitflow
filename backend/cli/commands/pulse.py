@@ -33,8 +33,8 @@ def _format_owner(owner: dict[str, Any]) -> str:
     scope = owner.get("scope_paths") or []
     scope_preview = ",".join(str(path) for path in scope[:3]) if isinstance(scope, list) else ""
     kind = str(owner.get("ownership_kind") or "unknown")
-    if kind == "unscoped" and owner.get("task_id") and owner.get("is_worktree"):
-        kind = "task_worktree"
+    if kind == "unscoped" and owner.get("task_id"):
+        kind = "task_checkout"
     details = [
         str(owner.get("task_id") or "-"),
         str(owner.get("agent_slug") or "?"),
@@ -59,7 +59,8 @@ def _session_actor_label(session: dict[str, Any]) -> str:
 
 
 def _format_session(session: dict[str, Any]) -> str:
-    live = session.get("live_activity") if isinstance(session.get("live_activity"), dict) else {}
+    raw_live = session.get("live_activity")
+    live: dict[str, Any] = raw_live if isinstance(raw_live, dict) else {}
     touched = live.get("files_touched") if isinstance(live, dict) else []
     touched_preview = ",".join(str(path) for path in touched[:2]) if isinstance(touched, list) else ""
     observed_writes = session.get("observed_write_paths") if isinstance(session.get("observed_write_paths"), list) else []
@@ -82,7 +83,8 @@ def _format_session(session: dict[str, Any]) -> str:
 
 
 def _format_stale_session(session: dict[str, Any]) -> str:
-    live = session.get("live_activity") if isinstance(session.get("live_activity"), dict) else {}
+    raw_live = session.get("live_activity")
+    live: dict[str, Any] = raw_live if isinstance(raw_live, dict) else {}
     model = session.get("effective_model") or session.get("requested_model") or "unknown"
     state = live.get("lifecycle_state") or live.get("health") or session.get("status") or "unknown"
     details = [
@@ -127,7 +129,7 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
         project_id = payload.get("project_id", "?")
         print(
             "PULSE:{project}|tasks={tasks}|owners={owners}|specialists={specialists}|"
-            "sessions={sessions}|stale={stale}|reapable={reapable}|worktrees={worktrees}|dirty={dirty}|cleanup={cleanup_needed}|stranded={stranded}".format(
+            "sessions={sessions}|stale={stale}|reapable={reapable}|checkpoints={checkpoints}|dirty={dirty}|cleanup={cleanup_needed}|stranded={stranded}".format(
                 project=project_id,
                 tasks=summary.get("running_tasks", 0),
                 owners=summary.get("active_owners", 0),
@@ -135,8 +137,8 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
                 sessions=summary.get("active_sessions", 0),
                 stale=summary.get("stale_sessions", 0),
                 reapable=summary.get("reapable_sessions", 0),
-                worktrees=cleanup.get("active_worktrees", 0),
-                dirty=cleanup.get("dirty_worktrees", 0),
+                checkpoints=cleanup.get("active_checkpoints", 0),
+                dirty=cleanup.get("dirty_checkpoints", 0),
                 cleanup_needed="yes" if cleanup.get("needs_cleanup") else "no",
                 stranded=summary.get("stranded_tasks", 0),
             )

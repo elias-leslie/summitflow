@@ -113,7 +113,7 @@ def route_based_on_verdict(task_id: str, complexity: str, review_result: Mapping
 
 
 def _handle_approved(task_id: str, complexity: str) -> None:
-    from ..cleanup.worktree_cleanup import cleanup_task_worktree
+    from ..cleanup.checkpoint_cleanup import cleanup_task_checkpoint
     from ..exec_modules.completion_status import wake_persona
 
     project_id = _get_project_id(task_id)
@@ -121,9 +121,9 @@ def _handle_approved(task_id: str, complexity: str) -> None:
     label = _apply_auto_merge_status(task_id, merge_result)
     current_status = _task_status(task_id) or STATUS_COMPLETED
     if merge_result is None:
-        cleanup_result = cleanup_task_worktree(task_id, delete_branch=False, project_id=project_id)
+        cleanup_result = cleanup_task_checkpoint(task_id, delete_branch=False, project_id=project_id)
         if cleanup_result.get("status") == "cleaned":
-            label = "Ready for manual merge (worktree cleaned)"
+            label = "Ready for manual merge (checkout cleaned)"
         else:
             reason = str(cleanup_result.get("reason") or cleanup_result.get("error") or "unknown")
             log_task_event(task_id, f"Manual cleanup review needed: {reason}")
@@ -142,7 +142,7 @@ def _handle_approved(task_id: str, complexity: str) -> None:
 
 
 def _handle_needs_fix(task_id: str, review_result: Mapping[str, Any]) -> None:
-    from ..cleanup.worktree_cleanup import cleanup_task_worktree
+    from ..cleanup.checkpoint_cleanup import cleanup_task_checkpoint
     from ..exec_modules.completion_status import wake_persona
 
     concerns = [str(c) for c in review_result.get("concerns", [])]
@@ -153,7 +153,7 @@ def _handle_needs_fix(task_id: str, review_result: Mapping[str, Any]) -> None:
         merge_result = _maybe_auto_merge(task_id, project_id)
         merge_label = _apply_auto_merge_status(task_id, merge_result)
         if merge_result is None:
-            cleanup_result = cleanup_task_worktree(task_id, delete_branch=False, project_id=project_id)
+            cleanup_result = cleanup_task_checkpoint(task_id, delete_branch=False, project_id=project_id)
             if cleanup_result.get("status") != "cleaned":
                 reason = str(cleanup_result.get("reason") or cleanup_result.get("error") or "unknown")
                 log_task_event(task_id, f"Manual cleanup review needed: {reason}")
@@ -167,11 +167,11 @@ def _handle_needs_fix(task_id: str, review_result: Mapping[str, Any]) -> None:
         if _task_status(task_id) == STATUS_COMPLETED:
             _send_notification(task_id, project_id, create_task_completion_notification, detail=f"QA passed with no concerns ({merge_label}).")
         return
-    from app.services.worktree import get_task_worktree
-    worktree = get_task_worktree(task_id, project_id)
-    if worktree and worktree.path:
+    from app.services.task_checkout import get_task_checkout
+    checkout = get_task_checkout(task_id, project_id)
+    if checkout and checkout.path:
         log_task_event(task_id, f"AI Review: {verdict} - Starting QA loop")
-        loop_result = run_qa_loop(task_id, project_id, review_result, str(worktree.path))
+        loop_result = run_qa_loop(task_id, project_id, review_result, str(checkout.path))
         if loop_result == VERDICT_APPROVED:
             task = task_store.get_task(task_id)
             _handle_approved(task_id, str(task.get("complexity", "STANDARD")) if task else "STANDARD")

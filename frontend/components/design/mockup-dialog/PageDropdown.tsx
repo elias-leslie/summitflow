@@ -73,8 +73,9 @@ export function PageDropdown({
             )}
           </div>
           <ChevronDown
-            className={clsx('w-5 h-5 text-slate-400 ml-3 transition-transform duration-200',
-              isDropdownOpen && 'rotate-180 text-outrun-400'
+            className={clsx(
+              'w-5 h-5 text-slate-400 ml-3 transition-transform duration-200',
+              isDropdownOpen && 'rotate-180 text-outrun-400',
             )}
           />
         </div>
@@ -125,14 +126,15 @@ export function PageDropdown({
                           )}
                       </div>
                       <div
-                        className={clsx('px-2 py-0.5 rounded text-2xs font-medium shrink-0',
+                        className={clsx(
+                          'px-2 py-0.5 rounded text-2xs font-medium shrink-0',
                           page.healthStatus === 'healthy'
                             ? 'bg-emerald-950/50 text-emerald-400'
                             : page.healthStatus === 'warning'
                               ? 'bg-amber-950/50 text-amber-400'
                               : page.healthStatus === 'error'
                                 ? 'bg-rose-950/50 text-rose-400'
-                                : 'bg-slate-800 text-slate-500'
+                                : 'bg-slate-800 text-slate-500',
                         )}
                       >
                         {page.healthStatus}

@@ -35,7 +35,7 @@ def _run_git(project_path: str, *args: str, timeout: int = 30) -> subprocess.Com
     )
 
 def _resolve_commit_script(project_path: str) -> str | None:
-    """Resolve the canonical commit helper for this repo/worktree."""
+    """Resolve the canonical commit helper for this repo/checkout."""
     candidates: list[str] = []
     path_candidate = shutil.which("commit.sh")
     if path_candidate:
@@ -132,7 +132,7 @@ def smart_commit(
     """Preserve work via the canonical commit helper.
 
     Args:
-        project_path: Path to the project/worktree
+        project_path: Path to the project checkout
         message: Commit message
         task_id: Optional task ID to tag the commit
         push: Push immediately after commit

@@ -65,7 +65,6 @@ def build_project_context(cwd: Path) -> dict[str, object] | None:
         "project_id": project_id,
         "project_aliases": project_aliases,
         "branch": branch,
-        "is_worktree": (project_path / ".git").is_file(),
         "repo_root": str(project_path),
         "git_context": "\n".join(git_lines[:GIT_LOG_LIMIT]),
     }

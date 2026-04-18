@@ -28,7 +28,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
             background: '#150d20',
             border: '1px solid #2d1d42',
             color: '#e4e7eb',
-            boxShadow: '0 8px 24px -4px rgba(0,0,0,0.5), 0 0 0 1px rgba(45,29,66,0.3)',
+            boxShadow:
+              '0 8px 24px -4px rgba(0,0,0,0.5), 0 0 0 1px rgba(45,29,66,0.3)',
           },
           className: 'sonner-toast',
         }}

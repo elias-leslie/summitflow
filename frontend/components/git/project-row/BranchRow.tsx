@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { GitBranch, Layers } from 'lucide-react'
+import { GitBranch } from 'lucide-react'
 import type { BranchInfo } from '@/lib/api/git-enhanced'
 import { formatTimeAgo } from '@/lib/format'
 
@@ -29,27 +29,24 @@ function BranchBadge({
 }
 
 export function BranchRow({ branch }: { branch: BranchInfo }) {
-  const displayPath = branch.worktree_path?.replace(/^\/home\/[^/]+/, '~')
-  const isTaskOrphan = Boolean(branch.task_id && !branch.has_worktree)
+  const isTaskOrphan = Boolean(branch.task_id && !branch.has_checkpoint)
 
   return (
     <div className="rounded-md border border-slate-800/50 bg-slate-900/30 px-3 py-2">
       <div className="flex items-start gap-2.5">
         <div className="mt-0.5 shrink-0 rounded bg-cyan-500/10 p-1.5">
-          {branch.has_worktree ? (
-            <Layers className="h-3 w-3 text-cyan-300" />
-          ) : (
-            <GitBranch className="h-3 w-3 text-cyan-300" />
-          )}
+          <GitBranch className="h-3 w-3 text-cyan-300" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-sm text-slate-100">{branch.name}</span>
+            <span className="truncate text-sm text-slate-100">
+              {branch.name}
+            </span>
             {branch.is_current && (
               <BranchBadge label="Current" tone="emerald" />
             )}
-            {branch.has_worktree && (
-              <BranchBadge label="Worktree" tone="cyan" />
+            {branch.has_checkpoint && (
+              <BranchBadge label="Checkpoint" tone="cyan" />
             )}
             {isTaskOrphan && <BranchBadge label="Orphan" tone="amber" />}
           </div>
@@ -66,11 +63,6 @@ export function BranchRow({ branch }: { branch: BranchInfo }) {
               <span className="font-mono">{branch.task_id}</span>
             )}
           </div>
-          {displayPath && (
-            <div className="mt-1 truncate font-mono text-[10px] text-slate-600">
-              {displayPath}
-            </div>
-          )}
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { FolderOpen } from 'lucide-react'
 import { Breadcrumb, type BreadcrumbItem } from '@/components/ui/breadcrumb'
@@ -32,7 +32,9 @@ export function FileBreadcrumb({
 
     items.push({
       label: segment,
-      href: isLast ? undefined : `${rootHref}?path=${encodeURIComponent(segmentPath)}`,
+      href: isLast
+        ? undefined
+        : `${rootHref}?path=${encodeURIComponent(segmentPath)}`,
     })
   }
 

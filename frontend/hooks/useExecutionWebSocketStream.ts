@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TimelineMessage } from '@/components/tasks/TimelineEvent'
+import { getWebSocketUrl } from './useExecutionWebSocket'
 import {
   INITIAL_RECONNECT_DELAY,
   MAX_RECONNECT_DELAY,
   RECONNECT_MULTIPLIER,
 } from './websocketTypes'
-import { getWebSocketUrl } from './useExecutionWebSocket'
 
 interface UseExecutionWebSocketStreamOptions {
   taskId: string

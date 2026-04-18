@@ -56,7 +56,11 @@ export async function fetchWithErrorHandling<T>(
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const
 
 /** POST JSON body. */
-export function postJson<T>(url: string, data: unknown, errorMessage: string): Promise<T> {
+export function postJson<T>(
+  url: string,
+  data: unknown,
+  errorMessage: string,
+): Promise<T> {
   return fetchWithErrorHandling<T>(url, {
     method: 'POST',
     headers: JSON_HEADERS,
@@ -66,7 +70,11 @@ export function postJson<T>(url: string, data: unknown, errorMessage: string): P
 }
 
 /** PATCH JSON body. */
-export function patchJson<T>(url: string, data: unknown, errorMessage: string): Promise<T> {
+export function patchJson<T>(
+  url: string,
+  data: unknown,
+  errorMessage: string,
+): Promise<T> {
   return fetchWithErrorHandling<T>(url, {
     method: 'PATCH',
     headers: JSON_HEADERS,
@@ -76,7 +84,11 @@ export function patchJson<T>(url: string, data: unknown, errorMessage: string): 
 }
 
 /** PUT JSON body. */
-export function putJson<T>(url: string, data: unknown, errorMessage: string): Promise<T> {
+export function putJson<T>(
+  url: string,
+  data: unknown,
+  errorMessage: string,
+): Promise<T> {
   return fetchWithErrorHandling<T>(url, {
     method: 'PUT',
     headers: JSON_HEADERS,
@@ -86,7 +98,11 @@ export function putJson<T>(url: string, data: unknown, errorMessage: string): Pr
 }
 
 /** DELETE with optional JSON body. */
-export function deleteJson<T>(url: string, errorMessage: string, data?: unknown): Promise<T> {
+export function deleteJson<T>(
+  url: string,
+  errorMessage: string,
+  data?: unknown,
+): Promise<T> {
   const options: RequestInit & { errorMessage: string } = {
     method: 'DELETE',
     errorMessage,
@@ -97,4 +113,3 @@ export function deleteJson<T>(url: string, errorMessage: string, data?: unknown)
   }
   return fetchWithErrorHandling<T>(url, options)
 }
-

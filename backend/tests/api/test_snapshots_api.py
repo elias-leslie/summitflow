@@ -38,7 +38,7 @@ def _snapshot(
         name=source,
         project_id="summitflow",
         repo_root="/repo",
-        worktree_path=f"/workspaces/{scope_name}",
+        scope_path=f"/workspaces/{scope_name}",
         scope_type=scope_type,
         scope_name=scope_name,
         snapshot_path=f"/snaps/{scope_name}-{source}",

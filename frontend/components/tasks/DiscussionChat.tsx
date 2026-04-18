@@ -126,11 +126,19 @@ export function DiscussionChat({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
-              className={clsx('flex gap-3', message.role === 'user' && 'flex-row-reverse')}
+              className={clsx(
+                'flex gap-3',
+                message.role === 'user' && 'flex-row-reverse',
+              )}
             >
               {/* Avatar */}
               <div
-                className={clsx('w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0', message.role === 'user' ? 'bg-phosphor-500/20' : 'bg-slate-800')}
+                className={clsx(
+                  'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0',
+                  message.role === 'user'
+                    ? 'bg-phosphor-500/20'
+                    : 'bg-slate-800',
+                )}
               >
                 {message.role === 'user' ? (
                   <User className="w-3.5 h-3.5 text-phosphor-400" />
@@ -141,7 +149,12 @@ export function DiscussionChat({
 
               {/* Message Bubble */}
               <div
-                className={clsx('max-w-[85%] rounded-lg px-3 py-2', message.role === 'user' ? 'bg-phosphor-600/20 text-phosphor-100' : 'bg-slate-800 text-slate-200')}
+                className={clsx(
+                  'max-w-[85%] rounded-lg px-3 py-2',
+                  message.role === 'user'
+                    ? 'bg-phosphor-600/20 text-phosphor-100'
+                    : 'bg-slate-800 text-slate-200',
+                )}
               >
                 <p className="text-sm whitespace-pre-wrap leading-relaxed">
                   {message.content}

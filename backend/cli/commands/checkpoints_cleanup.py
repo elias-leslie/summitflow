@@ -10,7 +10,6 @@ from typing import Any
 
 from ..lib.checkpoint import get_stale_checkpoints, remove_snapshot
 from ..lib.checkpoint_branches import get_task_branches
-from ..lib.worktree import get_worktree_info
 from .checkpoints_branch_ops import (
     get_branch_unmerged_commits,
     get_orphaned_branches,
@@ -18,11 +17,11 @@ from .checkpoints_branch_ops import (
 
 
 def _is_stale_meta(meta_file: Path) -> bool:
-    """Return True if the meta file has no associated worktree or branch."""
+    """Return True if the meta file has no associated task branch."""
     meta = json.loads(meta_file.read_text())
     task_id = meta.get("task_id", "")
     project_id = meta.get("project_id")
-    return not get_worktree_info(task_id, project_id) and not get_task_branches(task_id, project_id=project_id)
+    return not get_task_branches(task_id, project_id=project_id)
 
 
 def _cleanup_snapshots_dir(snapshots_dir: Path) -> tuple[int, int]:
@@ -59,7 +58,7 @@ def _cleanup_global_stale_checkpoints(project_id: str | None = None) -> int:
     """Delete stale checkpoint metadata from the canonical global store."""
     cleaned = 0
     for checkpoint in get_stale_checkpoints(project_id):
-        remove_snapshot(checkpoint.task_id, remove_worktree=False, project_id=checkpoint.project_id)
+        remove_snapshot(checkpoint.task_id, project_id=checkpoint.project_id)
         cleaned += 1
     return cleaned
 

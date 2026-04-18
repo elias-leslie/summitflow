@@ -71,7 +71,11 @@ export function ProjectSettingsClient() {
     queryFn: () => fetchProject(projectId),
   })
 
-  const { data: health, refetch: refetchHealth, isFetching: healthRefreshing } = useQuery({
+  const {
+    data: health,
+    refetch: refetchHealth,
+    isFetching: healthRefreshing,
+  } = useQuery({
     queryKey: ['project-health', projectId],
     queryFn: () => fetchProjectHealth(projectId),
     enabled: Boolean(project),
@@ -106,7 +110,9 @@ export function ProjectSettingsClient() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['projects'] }),
         queryClient.invalidateQueries({ queryKey: ['projects-with-stats'] }),
-        queryClient.invalidateQueries({ queryKey: ['project-health', projectId] }),
+        queryClient.invalidateQueries({
+          queryKey: ['project-health', projectId],
+        }),
       ])
       setSaveState('Project registration details saved.')
     },
@@ -129,7 +135,12 @@ export function ProjectSettingsClient() {
     setSaveState(null)
   }
 
-  const currentValues = normalizeProjectFormValues({ name, baseUrl, healthEndpoint, rootPath })
+  const currentValues = normalizeProjectFormValues({
+    name,
+    baseUrl,
+    healthEndpoint,
+    rootPath,
+  })
   const persistedValues = normalizeProjectFormValues({
     name: project?.name ?? '',
     baseUrl: project?.base_url ?? '',
@@ -147,9 +158,11 @@ export function ProjectSettingsClient() {
     { name, baseUrl, healthEndpoint, rootPath },
     { requireProjectId: false },
   )
-  const canSave = hasChanges && Object.keys(fieldErrors).length === 0 && !mutation.isPending
+  const canSave =
+    hasChanges && Object.keys(fieldErrors).length === 0 && !mutation.isPending
   const healthPreview = buildHealthPreview(baseUrl, healthEndpoint)
-  const publicAppUrl = project?.public_url || currentValues.baseUrl || project?.base_url || ''
+  const publicAppUrl =
+    project?.public_url || currentValues.baseUrl || project?.base_url || ''
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()
@@ -202,10 +215,16 @@ export function ProjectSettingsClient() {
                 {getErrorMessage(error, 'The project settings request failed.')}
               </p>
               <div className="mt-4 flex items-center gap-3">
-                <Link href={`/projects/${projectId}`} className="text-sm text-phosphor-400 hover:text-phosphor-300">
+                <Link
+                  href={`/projects/${projectId}`}
+                  className="text-sm text-phosphor-400 hover:text-phosphor-300"
+                >
                   Back to project
                 </Link>
-                <Link href="/" className="text-sm text-slate-400 hover:text-slate-200">
+                <Link
+                  href="/"
+                  className="text-sm text-slate-400 hover:text-slate-200"
+                >
                   Dashboard
                 </Link>
               </div>
@@ -220,11 +239,16 @@ export function ProjectSettingsClient() {
     return (
       <main className="content-container py-8">
         <div className="card max-w-xl p-6">
-          <h1 className="text-lg font-semibold text-slate-100 display">Project not found</h1>
+          <h1 className="text-lg font-semibold text-slate-100 display">
+            Project not found
+          </h1>
           <p className="mt-1 text-sm text-slate-400">
             This project no longer exists or has not been registered yet.
           </p>
-          <Link href="/" className="mt-4 inline-flex text-sm text-phosphor-400 hover:text-phosphor-300">
+          <Link
+            href="/"
+            className="mt-4 inline-flex text-sm text-phosphor-400 hover:text-phosphor-300"
+          >
             Back to dashboard
           </Link>
         </div>
@@ -279,7 +303,9 @@ export function ProjectSettingsClient() {
           }
           helper={healthPreview}
           icon={HeartPulse}
-          tone={health?.healthy === false ? 'rose' : health ? 'emerald' : 'default'}
+          tone={
+            health?.healthy === false ? 'rose' : health ? 'emerald' : 'default'
+          }
           actionLabel="Refresh"
           onAction={() => refetchHealth()}
           pending={healthRefreshing}
@@ -293,9 +319,21 @@ export function ProjectSettingsClient() {
                 : `${qualityGate.total_unfixed} open`
               : 'Unavailable'
           }
-          helper={qualityGate ? (qualityGate.overall_pass ? 'No unfixed issues' : 'Needs attention') : 'Not loaded'}
+          helper={
+            qualityGate
+              ? qualityGate.overall_pass
+                ? 'No unfixed issues'
+                : 'Needs attention'
+              : 'Not loaded'
+          }
           icon={AlertCircle}
-          tone={qualityGate ? (qualityGate.overall_pass ? 'emerald' : 'amber') : 'default'}
+          tone={
+            qualityGate
+              ? qualityGate.overall_pass
+                ? 'emerald'
+                : 'amber'
+              : 'default'
+          }
         />
       </div>
 
@@ -315,7 +353,12 @@ export function ProjectSettingsClient() {
                   : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700',
               )}
             >
-              <Icon className={clsx('w-4 h-4', activeTab === tab.id && 'text-outrun-400')} />
+              <Icon
+                className={clsx(
+                  'w-4 h-4',
+                  activeTab === tab.id && 'text-outrun-400',
+                )}
+              />
               {tab.label}
             </button>
           )
@@ -328,9 +371,12 @@ export function ProjectSettingsClient() {
           {/* Registration Form */}
           <form onSubmit={handleSave} className="card space-y-5 rounded-xl p-6">
             <div>
-              <h2 className="text-base font-semibold text-slate-100">Registration Details</h2>
+              <h2 className="text-base font-semibold text-slate-100">
+                Registration Details
+              </h2>
               <p className="mt-1 text-sm text-slate-400">
-                Health checks, file surfaces, and operator links use these values.
+                Health checks, file surfaces, and operator links use these
+                values.
               </p>
             </div>
 
@@ -352,17 +398,29 @@ export function ProjectSettingsClient() {
                 <Input
                   id="project-name"
                   value={name}
-                  onChange={(e) => { clearError('name'); setName(e.target.value) }}
+                  onChange={(e) => {
+                    clearError('name')
+                    setName(e.target.value)
+                  }}
                   aria-invalid={Boolean(errors.name)}
                   className={errors.name ? 'border-red-500/50' : ''}
                 />
-                {errors.name && <p className="text-xs text-red-400">{errors.name}</p>}
+                {errors.name && (
+                  <p className="text-xs text-red-400">{errors.name}</p>
+                )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="project-id">Project ID</Label>
-                <Input id="project-id" value={project.id} disabled className="mono text-slate-400" />
-                <p className="text-xs text-slate-500">Stable identifier, not editable inline.</p>
+                <Input
+                  id="project-id"
+                  value={project.id}
+                  disabled
+                  className="mono text-slate-400"
+                />
+                <p className="text-xs text-slate-500">
+                  Stable identifier, not editable inline.
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -370,14 +428,20 @@ export function ProjectSettingsClient() {
                 <Input
                   id="project-base-url"
                   value={baseUrl}
-                  onChange={(e) => { clearError('baseUrl'); setBaseUrl(e.target.value) }}
+                  onChange={(e) => {
+                    clearError('baseUrl')
+                    setBaseUrl(e.target.value)
+                  }}
                   aria-invalid={Boolean(errors.baseUrl)}
                   className={errors.baseUrl ? 'border-red-500/50' : ''}
                 />
                 <p className="text-xs text-slate-500">
-                  Used for health checks and internal service probes. Public app links use the stored public URL when one is configured.
+                  Used for health checks and internal service probes. Public app
+                  links use the stored public URL when one is configured.
                 </p>
-                {errors.baseUrl && <p className="text-xs text-red-400">{errors.baseUrl}</p>}
+                {errors.baseUrl && (
+                  <p className="text-xs text-red-400">{errors.baseUrl}</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -385,11 +449,21 @@ export function ProjectSettingsClient() {
                 <Input
                   id="project-health-endpoint"
                   value={healthEndpoint}
-                  onChange={(e) => { clearError('healthEndpoint'); setHealthEndpoint(e.target.value) }}
+                  onChange={(e) => {
+                    clearError('healthEndpoint')
+                    setHealthEndpoint(e.target.value)
+                  }}
                   aria-invalid={Boolean(errors.healthEndpoint)}
-                  className={clsx('mono', errors.healthEndpoint && 'border-red-500/50')}
+                  className={clsx(
+                    'mono',
+                    errors.healthEndpoint && 'border-red-500/50',
+                  )}
                 />
-                {errors.healthEndpoint && <p className="text-xs text-red-400">{errors.healthEndpoint}</p>}
+                {errors.healthEndpoint && (
+                  <p className="text-xs text-red-400">
+                    {errors.healthEndpoint}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -398,15 +472,21 @@ export function ProjectSettingsClient() {
               <Input
                 id="project-root-path"
                 value={rootPath}
-                onChange={(e) => { clearError('rootPath'); setRootPath(e.target.value) }}
+                onChange={(e) => {
+                  clearError('rootPath')
+                  setRootPath(e.target.value)
+                }}
                 aria-invalid={Boolean(errors.rootPath)}
                 className={clsx('mono', errors.rootPath && 'border-red-500/50')}
                 placeholder="/home/user/projects/my-project"
               />
               <p className="text-xs text-slate-500">
-                Required for file browsing, service discovery, and path-aware automation.
+                Required for file browsing, service discovery, and path-aware
+                automation.
               </p>
-              {errors.rootPath && <p className="text-xs text-red-400">{errors.rootPath}</p>}
+              {errors.rootPath && (
+                <p className="text-xs text-red-400">{errors.rootPath}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -432,15 +512,20 @@ export function ProjectSettingsClient() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-slate-500">
-                Projects are grouped by category in the sidebar. Custom ordering within a group is managed by dragging in the sidebar.
+                Projects are grouped by category in the sidebar. Custom ordering
+                within a group is managed by dragging in the sidebar.
               </p>
             </div>
 
             <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-2xs font-medium uppercase tracking-wide text-slate-500">Effective health check</p>
-                  <p className="mt-0.5 break-all font-mono text-sm text-slate-200">{healthPreview}</p>
+                  <p className="text-2xs font-medium uppercase tracking-wide text-slate-500">
+                    Effective health check
+                  </p>
+                  <p className="mt-0.5 break-all font-mono text-sm text-slate-200">
+                    {healthPreview}
+                  </p>
                 </div>
                 <a
                   href={publicAppUrl}
@@ -460,9 +545,13 @@ export function ProjectSettingsClient() {
                 className="btn-primary inline-flex items-center gap-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {mutation.isPending ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Saving...
+                  </>
                 ) : (
-                  <><Save className="h-4 w-4" /> Save Changes</>
+                  <>
+                    <Save className="h-4 w-4" /> Save Changes
+                  </>
                 )}
               </button>
               <button
@@ -478,7 +567,6 @@ export function ProjectSettingsClient() {
               </span>
             </div>
           </form>
-
         </div>
       )}
 
@@ -520,12 +608,35 @@ function StatusCell({
   pending = false,
   mono = false,
 }: StatusCellProps) {
-  const toneClasses: Record<string, { text: string; icon: string; iconBg: string }> = {
-    default: { text: 'text-slate-100', icon: 'text-slate-400', iconBg: 'bg-slate-500/10' },
-    emerald: { text: 'text-emerald-300', icon: 'text-emerald-400', iconBg: 'bg-emerald-500/10' },
-    rose: { text: 'text-rose-300', icon: 'text-rose-400', iconBg: 'bg-rose-500/10' },
-    amber: { text: 'text-amber-300', icon: 'text-amber-400', iconBg: 'bg-amber-500/10' },
-    cyan: { text: 'text-cyan-300', icon: 'text-cyan-400', iconBg: 'bg-cyan-500/10' },
+  const toneClasses: Record<
+    string,
+    { text: string; icon: string; iconBg: string }
+  > = {
+    default: {
+      text: 'text-slate-100',
+      icon: 'text-slate-400',
+      iconBg: 'bg-slate-500/10',
+    },
+    emerald: {
+      text: 'text-emerald-300',
+      icon: 'text-emerald-400',
+      iconBg: 'bg-emerald-500/10',
+    },
+    rose: {
+      text: 'text-rose-300',
+      icon: 'text-rose-400',
+      iconBg: 'bg-rose-500/10',
+    },
+    amber: {
+      text: 'text-amber-300',
+      icon: 'text-amber-400',
+      iconBg: 'bg-amber-500/10',
+    },
+    cyan: {
+      text: 'text-cyan-300',
+      icon: 'text-cyan-400',
+      iconBg: 'bg-cyan-500/10',
+    },
   }
 
   const tc = toneClasses[tone]
@@ -549,7 +660,13 @@ function StatusCell({
           </button>
         ) : null}
       </div>
-      <div className={clsx('mt-2 text-sm truncate font-semibold', mono && 'font-mono', tc.text)}>
+      <div
+        className={clsx(
+          'mt-2 text-sm truncate font-semibold',
+          mono && 'font-mono',
+          tc.text,
+        )}
+      >
         {value}
       </div>
       <div className="mt-0.5 truncate text-2xs text-slate-500">{helper}</div>

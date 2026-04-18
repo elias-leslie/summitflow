@@ -227,7 +227,7 @@ def build_refactor_steps(
     is verified as resolved, not just line count.
 
     Args:
-        relative_path: Relative file path (commands run from worktree root)
+        relative_path: Relative file path (commands run from checkout root)
         file_path: Absolute file path (unused, kept for API compatibility)
         lines: Current line count
         target_lines: Target line count

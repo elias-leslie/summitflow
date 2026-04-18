@@ -7,40 +7,29 @@ from typing import Any
 from fastapi import HTTPException
 
 from ...logging_config import get_logger
-from ...schemas.task_response_models import WorktreeResponse
 from ...storage import tasks as task_store
 
 logger = get_logger(__name__)
 
 
-def _build_worktree_response(task_id: str, project_id: str | None = None) -> WorktreeResponse | None:
-    """Build WorktreeResponse from worktree info, or return None if not found."""
-    from cli.lib.worktree import get_worktree_info
+def get_checkpoint_branch(task_id: str, project_id: str | None = None) -> str | None:
+    """Return the active checkpoint branch for a task, if one exists."""
+    from cli.lib.checkpoint import get_snapshot_info
 
-    worktree_info = get_worktree_info(task_id, project_id)
-    if not worktree_info:
+    info = get_snapshot_info(task_id)
+    if not info:
         return None
-    return WorktreeResponse(
-        path=str(worktree_info.path),
-        branch=worktree_info.branch,
-        is_active=worktree_info.is_active,
-    )
+    if project_id and str(info.get("project_id") or "") != project_id:
+        return None
+    branch = info.get("branch")
+    if not isinstance(branch, str) or not branch.strip():
+        return None
+    return branch
 
 
-def get_worktree_response(task_id: str, project_id: str | None = None) -> WorktreeResponse | None:
-    """Get worktree info for a task if it exists, or None."""
-    try:
-        return _build_worktree_response(task_id, project_id)
-    except ImportError:
-        pass
-    except Exception as e:
-        logger.debug(
-            "Failed to get worktree info",
-            task_id=task_id,
-            project_id=project_id,
-            error=str(e),
-        )
-    return None
+def has_active_checkpoint(task_id: str, project_id: str | None = None) -> bool:
+    """Return True when a task has active checkpoint metadata and branch state."""
+    return get_checkpoint_branch(task_id, project_id) is not None
 
 
 def verify_task_project(task_id: str, project_id: str) -> dict[str, Any]:

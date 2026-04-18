@@ -3,8 +3,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { HardDrive, Loader2, Plus } from 'lucide-react'
 import Link from 'next/link'
-import { fetchStorageBackends } from '@/lib/api/backups'
 import { StorageBackendCard } from '@/components/backup/StorageBackendCard'
+import { fetchStorageBackends } from '@/lib/api/backups'
 
 export default function StorageBackendsPage() {
   const queryClient = useQueryClient()
@@ -45,8 +45,12 @@ export default function StorageBackendsPage() {
       ) : !backends?.length ? (
         <div className="p-12 bg-slate-800/50 rounded-lg border border-slate-700 text-center">
           <HardDrive className="w-12 h-12 text-slate-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-slate-300 mb-2">No storage backends</h3>
-          <p className="text-slate-400 mb-4">Set up a storage backend to start sending backups to your NAS.</p>
+          <h3 className="text-lg font-medium text-slate-300 mb-2">
+            No storage backends
+          </h3>
+          <p className="text-slate-400 mb-4">
+            Set up a storage backend to start sending backups to your NAS.
+          </p>
           <Link
             href="/backups/setup"
             className="btn-primary inline-flex items-center gap-2 text-sm"
@@ -57,8 +61,12 @@ export default function StorageBackendsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {backends.map(backend => (
-            <StorageBackendCard key={backend.id} backend={backend} onRefresh={handleRefresh} />
+          {backends.map((backend) => (
+            <StorageBackendCard
+              key={backend.id}
+              backend={backend}
+              onRefresh={handleRefresh}
+            />
           ))}
         </div>
       )}

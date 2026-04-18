@@ -44,7 +44,7 @@ def derive_task_id(session: dict[str, object]) -> str | None:
 
 def session_checkout_root(session: dict[str, object]) -> Path | None:
     """Return the normalized checkout root for a live owner session, if present."""
-    for path_key in ("worktree_path", "working_dir"):
+    for path_key in ("working_dir", "repo_root"):
         path_value = session.get(path_key)
         if not isinstance(path_value, str) or not path_value:
             continue
@@ -68,7 +68,7 @@ def resolve_project_id(repo_root: Path) -> str | None:
     parts = repo_root.parts
     if len(parts) >= 2 and parts[-2] == "projects":
         return repo_root.name
-    if len(parts) >= 3 and parts[-3] in {"worktrees", "lanes"}:
+    if len(parts) >= 3 and parts[-3] == "lanes":
         return parts[-2]
     return None
 

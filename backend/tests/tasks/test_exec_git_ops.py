@@ -27,7 +27,7 @@ def test_smart_commit_uses_canonical_commit_script_with_push_and_skip_checks(
     mock_has_uncommitted_changes.return_value = True
     mock_has_unpublished_commits.return_value = False
     mock_git.side_effect = [
-        MagicMock(stdout="/tmp/worktree\n", returncode=0),
+        MagicMock(stdout="/tmp/checkout\n", returncode=0),
     ]
     mock_run.return_value = MagicMock(returncode=0, stderr="")
 
@@ -36,7 +36,7 @@ def test_smart_commit_uses_canonical_commit_script_with_push_and_skip_checks(
         return_value=MagicMock(st_mode=0o100755),
     ):
         result = smart_commit(
-            "/tmp/worktree",
+            "/tmp/checkout",
             "fix: preserve work",
             task_id="task-1",
             push=True,
@@ -46,7 +46,7 @@ def test_smart_commit_uses_canonical_commit_script_with_push_and_skip_checks(
     assert result
     mock_run.assert_called_once_with(
         [
-            "/tmp/worktree/scripts/commit.sh",
+            "/tmp/checkout/scripts/commit.sh",
             "--json",
             "--current",
             "--msg",
@@ -56,7 +56,7 @@ def test_smart_commit_uses_canonical_commit_script_with_push_and_skip_checks(
             "--push",
             "--skip-checks",
         ],
-        cwd="/tmp/worktree",
+        cwd="/tmp/checkout",
         capture_output=True,
         text=True,
         timeout=300,
@@ -74,19 +74,19 @@ def test_publish_existing_commits_pushes_clean_ahead_branch(
     from app.tasks.autonomous.exec_modules.git_ops import publish_existing_commits
 
     mock_which.return_value = None
-    mock_resolve_commit_script.return_value = "/tmp/worktree/scripts/commit.sh"
+    mock_resolve_commit_script.return_value = "/tmp/checkout/scripts/commit.sh"
     mock_run.return_value = MagicMock(returncode=0, stderr="")
 
     with patch(
         "app.tasks.autonomous.exec_modules.git_ops.has_unpublished_commits",
         side_effect=[True, False],
     ):
-        result = publish_existing_commits("/tmp/worktree")
+        result = publish_existing_commits("/tmp/checkout")
 
     assert result
     mock_run.assert_called_once_with(
-        ["/tmp/worktree/scripts/commit.sh", "--json", "--current", "--push"],
-        cwd="/tmp/worktree",
+        ["/tmp/checkout/scripts/commit.sh", "--json", "--current", "--push"],
+        cwd="/tmp/checkout",
         capture_output=True,
         text=True,
         timeout=300,

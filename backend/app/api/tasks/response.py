@@ -149,5 +149,4 @@ def task_to_response(task: dict[str, Any]) -> TaskResponse:
         plan_approved_at=task.get("plan_approved_at"),
         plan_approved_by=task.get("plan_approved_by"),
         context=task.get("context"),
-        worktree=task.get("worktree"),
     )

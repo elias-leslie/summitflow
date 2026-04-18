@@ -1,12 +1,7 @@
 'use client'
 
 import { clsx } from 'clsx'
-import {
-  Camera,
-  Loader2,
-  Scissors,
-  Timer,
-} from 'lucide-react'
+import { Camera, Loader2, Scissors, Timer } from 'lucide-react'
 import { useState } from 'react'
 import {
   type BtrfsSummary,
@@ -56,7 +51,9 @@ export function SnapshotSummaryCard({
     setFeedback(null)
     try {
       const result = await pruneSnapshots(false)
-      setFeedback(result.ok ? `Pruned ${result.pruned} snapshot(s)` : 'Prune failed')
+      setFeedback(
+        result.ok ? `Pruned ${result.pruned} snapshot(s)` : 'Prune failed',
+      )
       onMutated()
       setTimeout(() => setFeedback(null), 3000)
     } catch {
@@ -121,7 +118,9 @@ export function SnapshotSummaryCard({
             </div>
             <div className="text-xs text-slate-200">
               {summary.active_scope_count} active
-              {summary.archived_scope_count > 0 ? ` / ${summary.archived_scope_count} archived` : ''}
+              {summary.archived_scope_count > 0
+                ? ` / ${summary.archived_scope_count} archived`
+                : ''}
             </div>
           </div>
           <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
@@ -142,9 +141,12 @@ export function SnapshotSummaryCard({
           {summary.policy.project_auto_keep_per_scope}
         </div>
         <div className="mt-1 text-[10px] text-slate-600 leading-relaxed">
-          Archived auto lanes: keep {summary.policy.archived_lane_keep_per_project}{' '}
-          recent scopes per project, {summary.policy.archived_lane_auto_keep_per_scope}{' '}
-          auto snapshot{summary.policy.archived_lane_auto_keep_per_scope === 1 ? '' : 's'} each
+          Archived auto lanes: keep{' '}
+          {summary.policy.archived_lane_keep_per_project} recent scopes per
+          project, {summary.policy.archived_lane_auto_keep_per_scope} auto
+          snapshot
+          {summary.policy.archived_lane_auto_keep_per_scope === 1 ? '' : 's'}{' '}
+          each
         </div>
 
         {/* Actions */}

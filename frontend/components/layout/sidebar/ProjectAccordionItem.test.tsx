@@ -62,7 +62,9 @@ function renderItem(
       isActive={false}
       activeTab={null}
       onToggleExpand={onToggleExpand}
-      getProjectNavHref={(projectId, item) => `/projects/${projectId}${item.href}`}
+      getProjectNavHref={(projectId, item) =>
+        `/projects/${projectId}${item.href}`
+      }
       dragHandleProps={{ onPointerDown: () => {} }}
     />,
   )

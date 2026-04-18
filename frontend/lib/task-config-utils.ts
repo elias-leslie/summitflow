@@ -2,6 +2,7 @@
  * Phase and category configuration for task subtask display.
  */
 
+import type { LucideIcon } from 'lucide-react'
 import {
   Database,
   FileCode,
@@ -10,7 +11,6 @@ import {
   Server,
   TestTube,
 } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
 
 // ============================================================================
 // Phase Configuration (subtask phases)

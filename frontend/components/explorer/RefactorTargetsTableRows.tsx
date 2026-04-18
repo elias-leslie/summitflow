@@ -110,7 +110,12 @@ export function TargetRow({
         tabIndex={0}
         className="grid grid-cols-[2rem_1fr_5rem_5rem_4rem_5rem] gap-2 px-3 py-2 items-center cursor-pointer hover:bg-slate-700/20 transition-colors"
         onClick={onToggle}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onToggle()
+          }
+        }}
       >
         <div>
           {isExpanded ? (
@@ -133,7 +138,10 @@ export function TargetRow({
                 return (
                   <span
                     key={issue}
-                    className={cn('px-1 py-0 text-[10px] rounded border', s.color)}
+                    className={cn(
+                      'px-1 py-0 text-[10px] rounded border',
+                      s.color,
+                    )}
                   >
                     {s.label}
                   </span>
@@ -147,7 +155,12 @@ export function TargetRow({
             </div>
           )}
         </div>
-        <div className={cn('text-right tabular-nums flex items-center justify-end gap-1', hotspotColor)}>
+        <div
+          className={cn(
+            'text-right tabular-nums flex items-center justify-end gap-1',
+            hotspotColor,
+          )}
+        >
           {target.hotspot_score >= 500 && <Flame className="w-3 h-3" />}
           {target.hotspot_score.toFixed(0)}
         </div>
@@ -201,7 +214,9 @@ export function TargetRow({
               <div>
                 <span className="text-slate-500">Complexity Method:</span>
                 <span className="ml-2 text-slate-300">
-                  {target.complexity_method === 'radon' ? 'Radon CC' : 'Heuristic'}
+                  {target.complexity_method === 'radon'
+                    ? 'Radon CC'
+                    : 'Heuristic'}
                 </span>
               </div>
             </div>
@@ -240,12 +255,15 @@ export function TargetRow({
                 <span>
                   <span className="text-slate-500">Signals:</span>
                   <span className="ml-2 text-slate-300">
-                    {target.structural_signals} structural / {target.impact_signals} impact
+                    {target.structural_signals} structural /{' '}
+                    {target.impact_signals} impact
                   </span>
                 </span>
                 <span>
                   <span className="text-slate-500">Score:</span>
-                  <span className="ml-2 text-slate-300">{target.promotion_score}</span>
+                  <span className="ml-2 text-slate-300">
+                    {target.promotion_score}
+                  </span>
                 </span>
               </div>
               {target.refactor_issues.length > 0 && (
@@ -257,7 +275,10 @@ export function TargetRow({
                       return (
                         <span
                           key={issue}
-                          className={cn('px-1.5 py-0.5 rounded border text-2xs', s.color)}
+                          className={cn(
+                            'px-1.5 py-0.5 rounded border text-2xs',
+                            s.color,
+                          )}
                         >
                           {s.label}
                         </span>
@@ -268,7 +289,9 @@ export function TargetRow({
               )}
               {target.promotion_reasons.length > 0 && (
                 <div>
-                  <span className="text-slate-500 block mb-1">Promotion Evidence:</span>
+                  <span className="text-slate-500 block mb-1">
+                    Promotion Evidence:
+                  </span>
                   <ul className="space-y-1 text-slate-300">
                     {target.promotion_reasons.map((reason) => (
                       <li key={reason}>- {reason}</li>
@@ -278,7 +301,9 @@ export function TargetRow({
               )}
               {target.suppression_reasons.length > 0 && (
                 <div>
-                  <span className="text-slate-500 block mb-1">Held Back Because:</span>
+                  <span className="text-slate-500 block mb-1">
+                    Held Back Because:
+                  </span>
                   <ul className="space-y-1 text-slate-300">
                     {target.suppression_reasons.map((reason) => (
                       <li key={reason}>- {reason}</li>

@@ -1,27 +1,26 @@
-"""Worktree and snapshot helper functions for git operations."""
+"""Checkpoint and snapshot helper functions for git operations."""
 
 from __future__ import annotations
 
 from psycopg import sql
 
 from ...storage.connection import get_cursor
-from ..models.git_models import SnapshotInfo, WorktreeInfo
+from ..models.git_models import CheckpointInfo, SnapshotInfo
 
 
-def collect_worktrees() -> list[WorktreeInfo]:
-    """Collect worktree info from the CLI worktree registry."""
-    from cli.lib.worktree import get_active_worktrees
+def collect_checkpoints() -> list[CheckpointInfo]:
+    """Collect active checkpoint branches from the CLI checkpoint registry."""
+    from cli.lib.checkpoint import get_active_checkpoints
 
     return [
-        WorktreeInfo(
-            task_id=worktree.task_id,
-            path=str(worktree.path),
-            branch=worktree.branch,
-            base_branch=worktree.base_branch,
-            is_active=worktree.is_active,
-            project_id=worktree.project_id,
+        CheckpointInfo(
+            task_id=checkpoint.task_id,
+            branch=f"{checkpoint.task_id}/main",
+            base_branch=checkpoint.base_branch,
+            is_active=True,
+            project_id=checkpoint.project_id,
         )
-        for worktree in get_active_worktrees()
+        for checkpoint in get_active_checkpoints()
     ]
 
 

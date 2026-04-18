@@ -28,12 +28,12 @@ def _reconstruct_snapshot_info(
     client: STClient,
     task_id: str,
 ) -> dict[str, str | int | None] | None:
-    """Attempt to reconstruct checkpoint metadata from task API and worktree.
+    """Attempt to reconstruct checkpoint metadata from task API and task branch.
 
-    When the .meta.json file is missing but the task is claimed and a worktree
-    still exists, rebuild the metadata so ``st done`` can proceed.
+    When the .meta.json file is missing but the task is still active and the
+    task branch exists, rebuild the metadata so ``st done`` can proceed.
     """
-    from ..lib.worktree import get_worktree_info
+    from ..lib.checkpoint_branches import get_task_branches
 
     try:
         task = client.get_task(task_id)
@@ -48,21 +48,21 @@ def _reconstruct_snapshot_info(
     if task.get("status") not in ("in_progress", "claimed"):
         return None
 
-    wt_info = get_worktree_info(task_id, project_id)
-    if not wt_info:
+    branches = get_task_branches(task_id, project_id=project_id)
+    task_branch = next((branch for branch in branches if branch.get("type") == "task"), None)
+    if not task_branch:
         return None
 
     # Rebuild and persist the metadata so future commands work too.
     meta = SnapshotMeta(
         task_id=task_id,
         project_id=project_id,
-        base_branch=wt_info.base_branch or "main",
+        base_branch=str(task.get("base_branch") or "main"),
         created_at=task.get("created_at", ""),
         claimed_by=task.get("claimed_by", "unknown"),
-        worktree_path=str(wt_info.path),
     )
     save_snapshot_meta(meta)
     output_warning(
-        f"Checkpoint metadata was missing for {task_id} — reconstructed from worktree."
+        f"Checkpoint metadata was missing for {task_id} — reconstructed from task branch."
     )
     return get_snapshot_info(task_id)

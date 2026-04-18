@@ -54,7 +54,13 @@ describe('CreateBackupModal', () => {
     const onCreated = vi.fn().mockResolvedValue(undefined)
     const onClose = vi.fn()
 
-    render(<CreateBackupModal sources={sources} onClose={onClose} onCreated={onCreated} />)
+    render(
+      <CreateBackupModal
+        sources={sources}
+        onClose={onClose}
+        onCreated={onCreated}
+      />,
+    )
 
     fireEvent.click(screen.getByRole('button', { name: /select all/i }))
     fireEvent.click(screen.getByTestId('backup-create-confirm'))
@@ -74,7 +80,13 @@ describe('CreateBackupModal', () => {
       .mockRejectedValueOnce(new Error('socket hang up'))
     const onCreated = vi.fn().mockResolvedValue(undefined)
 
-    render(<CreateBackupModal sources={sources} onClose={vi.fn()} onCreated={onCreated} />)
+    render(
+      <CreateBackupModal
+        sources={sources}
+        onClose={vi.fn()}
+        onCreated={onCreated}
+      />,
+    )
 
     fireEvent.click(screen.getByRole('button', { name: /select all/i }))
     fireEvent.click(screen.getByTestId('backup-create-confirm'))
@@ -96,7 +108,13 @@ describe('CreateBackupModal', () => {
     const onCreated = vi.fn().mockResolvedValue(undefined)
     const onClose = vi.fn()
 
-    render(<CreateBackupModal sources={sources} onClose={onClose} onCreated={onCreated} />)
+    render(
+      <CreateBackupModal
+        sources={sources}
+        onClose={onClose}
+        onCreated={onCreated}
+      />,
+    )
 
     fireEvent.click(screen.getByRole('button', { name: /select all/i }))
     fireEvent.click(screen.getByTestId('backup-create-confirm'))

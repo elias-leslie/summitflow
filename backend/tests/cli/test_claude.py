@@ -248,11 +248,7 @@ def test_claude_batch_help_mentions_batch_flags() -> None:
 def test_claude_orchestrator_invokes_single_worker_with_prompt_and_agents(tmp_path: Path) -> None:
     agent_hub_root = _prepare_agent_hub_root(tmp_path)
     project_root = tmp_path / "target-project"
-    worktree_a = tmp_path / "lanes" / "task-a"
-    worktree_b = tmp_path / "lanes" / "task-b"
     project_root.mkdir()
-    worktree_a.mkdir(parents=True)
-    worktree_b.mkdir(parents=True)
 
     with (
         patch("cli.commands.claude.STClient") as mock_client_cls,
@@ -278,12 +274,12 @@ def test_claude_orchestrator_invokes_single_worker_with_prompt_and_agents(tmp_pa
             {
                 "id": "task-a",
                 "project_id": "agent-hub",
-                "worktree": {"path": str(worktree_a), "branch": "task-a/main", "is_active": True},
+                "branch_name": "task-a/main",
             },
             {
                 "id": "task-b",
                 "project_id": "agent-hub",
-                "worktree": {"path": str(worktree_b), "branch": "task-b/main", "is_active": True},
+                "branch_name": "task-b/main",
             },
         ]
         mock_client.validate_ready.return_value = {"ready": True}
@@ -312,8 +308,8 @@ def test_claude_orchestrator_blocks_mixed_projects(tmp_path: Path) -> None:
     with patch("cli.commands.claude.STClient") as mock_client_cls:
         mock_client = mock_client_cls.return_value
         mock_client.get_task.side_effect = [
-            {"id": "task-a", "project_id": "agent-hub", "worktree": {"path": "/tmp/a", "branch": "task-a/main", "is_active": True}},
-            {"id": "task-b", "project_id": "summitflow", "worktree": {"path": "/tmp/b", "branch": "task-b/main", "is_active": True}},
+            {"id": "task-a", "project_id": "agent-hub", "branch_name": "task-a/main"},
+            {"id": "task-b", "project_id": "summitflow", "branch_name": "task-b/main"},
         ]
         mock_client.validate_ready.return_value = {"ready": True}
 
@@ -333,9 +329,7 @@ def test_claude_orchestrator_blocks_mixed_projects(tmp_path: Path) -> None:
 def test_claude_orchestrator_claims_missing_lane_before_dispatch(tmp_path: Path) -> None:
     agent_hub_root = _prepare_agent_hub_root(tmp_path)
     project_root = tmp_path / "target-project"
-    worktree = tmp_path / "lanes" / "task-a"
     project_root.mkdir()
-    worktree.mkdir(parents=True)
 
     with (
         patch("cli.commands.claude.STClient") as mock_client_cls,
@@ -355,7 +349,7 @@ def test_claude_orchestrator_claims_missing_lane_before_dispatch(tmp_path: Path)
             {
                 "id": "task-a",
                 "project_id": "agent-hub",
-                "worktree": {"path": str(worktree), "branch": "task-a/main", "is_active": True},
+                "branch_name": "task-a/main",
             },
         ]
         mock_client.validate_ready.return_value = {"ready": True}
@@ -372,12 +366,10 @@ def test_claude_orchestrator_claims_missing_lane_before_dispatch(tmp_path: Path)
     assert mock_text_command.call_args_list[1].kwargs["command"] == ["st", "context", "task-a"]
 
 
-def test_claude_orchestrator_accepts_running_task_with_active_worktree(tmp_path: Path) -> None:
+def test_claude_orchestrator_accepts_running_task_with_task_branch_context(tmp_path: Path) -> None:
     agent_hub_root = _prepare_agent_hub_root(tmp_path)
     project_root = tmp_path / "target-project"
-    worktree = tmp_path / "lanes" / "task-a"
     project_root.mkdir()
-    worktree.mkdir(parents=True)
 
     with (
         patch("cli.commands.claude.STClient") as mock_client_cls,
@@ -392,7 +384,7 @@ def test_claude_orchestrator_accepts_running_task_with_active_worktree(tmp_path:
             "cli.commands.claude._run_text_command",
             return_value=(
                 "TASK:task-a|running|P3|refactor|SIMPLE\n"
-                f"WORKTREE_PATH:{worktree}\n"
+                "TASK_BRANCH:task-a/main\n"
             ),
         ) as mock_text_command,
         patch("cli.commands.claude.subprocess.run") as mock_run,

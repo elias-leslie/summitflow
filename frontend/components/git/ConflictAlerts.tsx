@@ -186,7 +186,8 @@ export function ConflictAlerts({ projectId }: { projectId?: string }) {
               Merge Conflicts
             </h2>
             <p className="text-xs text-slate-400">
-              {data.count} conflict{data.count !== 1 ? 's' : ''} blocking merge completion
+              {data.count} conflict{data.count !== 1 ? 's' : ''} blocking merge
+              completion
             </p>
           </div>
           <span className="ml-auto rounded-full border border-rose-500/30 bg-rose-500/15 px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.14em] text-rose-300">

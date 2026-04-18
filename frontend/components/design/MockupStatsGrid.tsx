@@ -1,12 +1,6 @@
 'use client'
 
-import {
-  Box,
-  CheckCircle2,
-  Clock,
-  Sparkles,
-  XCircle,
-} from 'lucide-react'
+import { Box, CheckCircle2, Clock, Sparkles, XCircle } from 'lucide-react'
 
 export type StatusFilter =
   | 'all'

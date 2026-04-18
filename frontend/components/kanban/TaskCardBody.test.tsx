@@ -6,16 +6,17 @@ import { TaskCardBody } from './TaskCardBody'
 describe('TaskCardBody', () => {
   it('renders task title', () => {
     render(
-      <TaskCardBody task={makeTask({ title: 'Implement search feature' })} canExpand={false} />,
+      <TaskCardBody
+        task={makeTask({ title: 'Implement search feature' })}
+        canExpand={false}
+      />,
     )
 
     expect(screen.getByText('Implement search feature')).toBeInTheDocument()
   })
 
   it('shows Standalone label when no capability', () => {
-    render(
-      <TaskCardBody task={makeTask()} canExpand={false} />,
-    )
+    render(<TaskCardBody task={makeTask()} canExpand={false} />)
 
     expect(screen.getByText('Standalone')).toBeInTheDocument()
   })

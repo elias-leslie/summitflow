@@ -73,7 +73,7 @@ def find_project_by_cwd(cwd: str) -> dict[str, Any] | None:
 
 
 def _apply_working_dir_pythonpath(env: dict[str, str], working_dir: str) -> None:
-    """Inject worktree backend dir into PYTHONPATH if it exists."""
+    """Inject working-dir backend dir into PYTHONPATH if it exists."""
     backend_path = Path(working_dir) / "backend"
     if not backend_path.is_dir():
         return
@@ -98,16 +98,15 @@ def build_project_env(project_id: str | None, working_dir: str | None = None) ->
     """Build environment dict with the correct project venv on PATH.
 
     Single source of truth for subprocess environment in verification.
-    Resolves the main repo's venv from project_id (handles worktrees
-    since worktrees don't have their own .venv). Keys declared in the
+    Resolves the project venv from project_id. Keys declared in the
     project's env files are stripped first so stale shell exports cannot
     override the repo's canonical .env/.env.local/.env.example sources.
 
     Args:
         project_id: Project ID for resolving venv paths.
-        working_dir: Optional worktree path. When provided, injects it into
-                     PYTHONPATH so import checks resolve against the worktree
-                     rather than the main repo's editable install.
+        working_dir: Optional execution path. When provided, injects it into
+                     PYTHONPATH so import checks resolve against the active
+                     checkout rather than only the editable install.
     """
     env = os.environ.copy()
     if not project_id:

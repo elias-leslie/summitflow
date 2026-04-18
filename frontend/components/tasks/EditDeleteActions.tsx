@@ -22,16 +22,31 @@ export function EditDeleteActions({
     <div className="ml-auto flex items-center gap-2">
       {isEditing ? (
         <>
-          <Button variant="outline" size="sm" onClick={onEditCancel} aria-label="Cancel edit">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onEditCancel}
+            aria-label="Cancel edit"
+          >
             <X className="h-4 w-4" />
           </Button>
-          <Button variant="primary" size="sm" onClick={onEditSave} aria-label="Save changes">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onEditSave}
+            aria-label="Save changes"
+          >
             <Save className="h-4 w-4" />
           </Button>
         </>
       ) : (
         <>
-          <Button variant="outline" size="sm" onClick={onEditStart} aria-label="Edit task">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onEditStart}
+            aria-label="Edit task"
+          >
             <Edit2 className="h-4 w-4" />
           </Button>
           {onDelete && (

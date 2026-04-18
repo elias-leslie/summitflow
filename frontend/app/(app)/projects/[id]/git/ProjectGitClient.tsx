@@ -104,7 +104,7 @@ export function ProjectGitClient() {
         actionLabel="Pull Latest"
         busyLabel="Pulling..."
         title="Project Git Operations"
-        description="Inspect repository health, worktrees, branches, and recent git activity for this project."
+        description="Inspect repository health, checkpoints, branches, and recent git activity for this project."
       />
 
       {syncResults && <GitSyncToast results={syncResults} />}

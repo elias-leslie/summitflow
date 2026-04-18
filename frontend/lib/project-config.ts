@@ -10,7 +10,9 @@ export function getRouteProjectId(projectId?: string | null): string | null {
   return normalized
 }
 
-export function getProjectIdFromPathname(pathname?: string | null): string | null {
+export function getProjectIdFromPathname(
+  pathname?: string | null,
+): string | null {
   if (!pathname) {
     return null
   }

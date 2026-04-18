@@ -102,7 +102,7 @@ def upsert_session(
             "provider_metadata": {
                 "transcript_path": str(transcript_path),
                 "repo_root": project["repo_root"],
-                "worktree_path": str(cwd),
+                "cwd": str(cwd),
                 "host": os.uname().nodename,
             },
         },
@@ -192,7 +192,6 @@ def finalize_and_close(
         {
             "branch": project["branch"],
             "git_context": project["git_context"],
-            "is_worktree": project["is_worktree"],
         },
         client_id,
         client_secret,

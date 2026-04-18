@@ -10,15 +10,11 @@ Example:
       backend:
         command: "uvicorn app.main:app --host 0.0.0.0 --port {port}"
         port: 8001
-        worktree_port_base: 8100
-        worktree_port_range: 100
         cwd: "backend"
         env_file: ".env"
       frontend:
         command: "npm run start -- --hostname 0.0.0.0 --port {port}"
         port: 3001
-        worktree_port_base: 3100
-        worktree_port_range: 100
         cwd: "frontend"
         build_command: "npm run build"
 """
@@ -44,8 +40,6 @@ class ServiceConfig:
     name: str
     command: str
     port: int
-    worktree_port_base: int
-    worktree_port_range: int = 100
     cwd: str | None = None
     env_file: str | None = None
     build_command: str | None = None
@@ -68,8 +62,6 @@ class ServiceConfig:
             "name": self.name,
             "command": self.command,
             "port": self.port,
-            "worktree_port_base": self.worktree_port_base,
-            "worktree_port_range": self.worktree_port_range,
             "cwd": self.cwd,
             "env_file": self.env_file,
             "build_command": self.build_command,
@@ -90,8 +82,6 @@ class ServiceConfig:
             name=name,
             command=data.get("command", ""),
             port=data.get("port", 0),
-            worktree_port_base=data.get("worktree_port_base", 0),
-            worktree_port_range=data.get("worktree_port_range", 100),
             cwd=data.get("cwd"),
             env_file=data.get("env_file"),
             build_command=data.get("build_command"),
@@ -142,8 +132,6 @@ DEFAULT_BACKEND_CONFIG = ServiceConfig(
     name="backend",
     command="uvicorn app.main:app --host 0.0.0.0 --port {port}",
     port=SUMMITFLOW_BACKEND_PORT,
-    worktree_port_base=8100,
-    worktree_port_range=100,
     cwd="backend",
     env_file=".env",
 )
@@ -152,8 +140,6 @@ DEFAULT_FRONTEND_CONFIG = ServiceConfig(
     name="frontend",
     command="npm run start -- --hostname 0.0.0.0 --port {port}",
     port=SUMMITFLOW_FRONTEND_PORT,
-    worktree_port_base=3100,
-    worktree_port_range=100,
     cwd="frontend",
     build_command="npm run build",
 )

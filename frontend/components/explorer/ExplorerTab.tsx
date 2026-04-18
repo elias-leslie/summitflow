@@ -14,13 +14,13 @@ import type { ExplorerEntry } from '@/lib/api/explorer'
 import { DataList } from './DataList'
 import { DataRow } from './DataRow'
 import { ExplorerShell } from './ExplorerShell'
-import { SymbolSearchPanel } from './SymbolSearchPanel'
 import {
   useDedupedDependencies,
   useExplorerData,
   useExplorerFilters,
   useExplorerState,
 } from './hooks'
+import { SymbolSearchPanel } from './SymbolSearchPanel'
 import type { ExplorerType, HealthStatus } from './types'
 import { getTypeConfig, uiTypeToEntryType } from './types/index'
 

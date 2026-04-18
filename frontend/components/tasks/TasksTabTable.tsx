@@ -72,7 +72,9 @@ export function TasksTabTable({
             <th className="w-8 px-2 py-2">
               <input
                 type="checkbox"
-                checked={tasks.length > 0 && selectedTaskIds.size === tasks.length}
+                checked={
+                  tasks.length > 0 && selectedTaskIds.size === tasks.length
+                }
                 onChange={() => onToggleSelectAll(tasks)}
                 className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-phosphor-500 focus:ring-phosphor-500 focus:ring-offset-0 cursor-pointer"
               />

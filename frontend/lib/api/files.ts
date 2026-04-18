@@ -3,7 +3,11 @@
  */
 
 import { getApiBaseUrl } from '../api-config'
-import { buildQueryString, fetchWithErrorHandling, throwFromResponse } from './utils'
+import {
+  buildQueryString,
+  fetchWithErrorHandling,
+  throwFromResponse,
+} from './utils'
 
 export type FileBrowserScope =
   | { kind: 'project'; projectId: string }
@@ -77,7 +81,10 @@ export function fetchFileContent(
   )
 }
 
-export function getFileDownloadUrl(scope: FileBrowserScope, path: string): string {
+export function getFileDownloadUrl(
+  scope: FileBrowserScope,
+  path: string,
+): string {
   const qs = buildQueryString({ path })
   return `${getFilesApiBase(scope)}/download${qs}`
 }

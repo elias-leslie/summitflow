@@ -66,11 +66,13 @@ export function ArchitectureDetail({ entry }: ArchitectureDetailProps) {
   const meta = entry.metadata
   const scanScope = (meta.scan_scope as string) || 'both'
   const violations = (meta.violations as Violation[]) || []
-  const violationCounts = meta.violation_counts as {
-    parallel_implementation?: number
-    missing_infrastructure?: number
-    duplicate_utility?: number
-  } | undefined
+  const violationCounts = meta.violation_counts as
+    | {
+        parallel_implementation?: number
+        missing_infrastructure?: number
+        duplicate_utility?: number
+      }
+    | undefined
   const filesAnalyzed = (meta.files_with_violations as number) ?? 0
   const scanDurationMs = (meta.last_scan_duration_ms as number) ?? 0
 
@@ -204,7 +206,10 @@ export function ArchitectureDetail({ entry }: ArchitectureDetailProps) {
                 >
                   <div className="flex items-start gap-2">
                     <Icon
-                      className={cn('w-4 h-4 flex-shrink-0 mt-0.5', styles.text)}
+                      className={cn(
+                        'w-4 h-4 flex-shrink-0 mt-0.5',
+                        styles.text,
+                      )}
                     />
                     <div className="flex-1 min-w-0">
                       <p className={cn('text-sm font-medium', styles.text)}>

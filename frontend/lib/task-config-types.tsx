@@ -2,6 +2,7 @@
  * Task type and status configuration with React icon nodes.
  */
 
+import type { LucideIcon } from 'lucide-react'
 import {
   AlertTriangle,
   ArrowDownCircle,
@@ -18,7 +19,6 @@ import {
   X,
   XCircle,
 } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
 import type { TaskStatus, TaskType } from '@/lib/api'
 
 // ============================================================================

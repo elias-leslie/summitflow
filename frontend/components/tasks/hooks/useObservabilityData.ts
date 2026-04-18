@@ -42,14 +42,21 @@ export function useObservabilityData({
   }, [events])
 
   const eventsByTurn = useMemo(() => {
-    const grouped = new Map<string, { sessionIndex: number; turn: number; events: AgentHubEvent[] }>()
+    const grouped = new Map<
+      string,
+      { sessionIndex: number; turn: number; events: AgentHubEvent[] }
+    >()
     for (const event of filteredEvents) {
       const key = `${event.session_index ?? 0}-${event.turn}`
       const group = grouped.get(key)
       if (group) {
         group.events.push(event)
       } else {
-        grouped.set(key, { sessionIndex: event.session_index ?? 0, turn: event.turn, events: [event] })
+        grouped.set(key, {
+          sessionIndex: event.session_index ?? 0,
+          turn: event.turn,
+          events: [event],
+        })
       }
     }
     return Array.from(grouped.values())

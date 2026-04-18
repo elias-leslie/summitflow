@@ -49,11 +49,15 @@ export function CollapsibleSection({
       <div
         className={clsx(
           'grid transition-all duration-200 ease-out',
-          expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+          expanded
+            ? 'grid-rows-[1fr] opacity-100'
+            : 'grid-rows-[0fr] opacity-0',
         )}
       >
         <div className="overflow-hidden">
-          <div className="border-t border-slate-800/60 px-4 py-4">{children}</div>
+          <div className="border-t border-slate-800/60 px-4 py-4">
+            {children}
+          </div>
         </div>
       </div>
     </section>

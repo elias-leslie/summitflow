@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ProxmoxStatusCard } from './ProxmoxStatusCard'
 
@@ -71,7 +71,9 @@ describe('ProxmoxStatusCard', () => {
     render(<ProxmoxStatusCard />)
 
     // Summary visible in collapsed state
-    expect(screen.getByText('1/1 nodes online, 1/1 guests running')).toBeInTheDocument()
+    expect(
+      screen.getByText('1/1 nodes online, 1/1 guests running'),
+    ).toBeInTheDocument()
 
     // Expand by clicking
     fireEvent.click(screen.getByText('Proxmox'))

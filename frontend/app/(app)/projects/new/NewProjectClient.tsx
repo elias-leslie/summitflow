@@ -14,14 +14,16 @@ import {
 } from '@/components/ui/select'
 import { PROJECT_CATEGORY_LABELS, type ProjectCategory } from '@/lib/api'
 import { DEFAULT_HEALTH_ENDPOINT } from '@/lib/project-registration'
-import { ROUTE_HOME } from './constants'
 import { AgentHubSection } from './AgentHubSection'
+import { ROUTE_HOME } from './constants'
 import { ProjectPreviewPanel } from './ProjectPreviewPanel'
 import { useNewProjectForm } from './useNewProjectForm'
 
 export function NewProjectClient() {
-  const { fields, agentHub, errors, isPending, preview, handlers } = useNewProjectForm()
-  const { name, projectId, baseUrl, healthEndpoint, rootPath, category } = fields
+  const { fields, agentHub, errors, isPending, preview, handlers } =
+    useNewProjectForm()
+  const { name, projectId, baseUrl, healthEndpoint, rootPath, category } =
+    fields
   const { syncAgentHubPermission, permissionTier, autoExecEnabled } = agentHub
   const {
     handleNameChange,
@@ -80,7 +82,9 @@ export function NewProjectClient() {
               aria-invalid={Boolean(errors.name)}
               className={errors.name ? 'border-rose-500/50' : ''}
             />
-            {errors.name && <p className="text-xs text-rose-400">{errors.name}</p>}
+            {errors.name && (
+              <p className="text-xs text-rose-400">{errors.name}</p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -94,7 +98,8 @@ export function NewProjectClient() {
               className={clsx('mono', errors.projectId && 'border-rose-500/50')}
             />
             <p className="text-xs text-slate-500">
-              Stable slug used for APIs, tasks, and navigation. Auto-generated from the name until you override it.
+              Stable slug used for APIs, tasks, and navigation. Auto-generated
+              from the name until you override it.
             </p>
             {errors.projectId && (
               <p className="text-xs text-rose-400">{errors.projectId}</p>
@@ -113,7 +118,9 @@ export function NewProjectClient() {
               className={errors.baseUrl ? 'border-rose-500/50' : ''}
             />
             <p className="text-xs text-slate-500">
-              Used for health checks and internal service probes. Leave it blank for managed workspace projects and SummitFlow will derive the public app URL server-side.
+              Used for health checks and internal service probes. Leave it blank
+              for managed workspace projects and SummitFlow will derive the
+              public app URL server-side.
             </p>
             {errors.baseUrl && (
               <p className="text-xs text-rose-400">{errors.baseUrl}</p>
@@ -130,10 +137,14 @@ export function NewProjectClient() {
               onChange={(e) => handleHealthEndpointChange(e.target.value)}
               placeholder={DEFAULT_HEALTH_ENDPOINT}
               aria-invalid={Boolean(errors.healthEndpoint)}
-              className={clsx('mono', errors.healthEndpoint && 'border-rose-500/50')}
+              className={clsx(
+                'mono',
+                errors.healthEndpoint && 'border-rose-500/50',
+              )}
             />
             <p className="text-xs text-slate-500">
-              Relative path or full URL for service checks. Leave the default unless the app exposes a different route.
+              Relative path or full URL for service checks. Leave the default
+              unless the app exposes a different route.
             </p>
             {errors.healthEndpoint && (
               <p className="text-xs text-rose-400">{errors.healthEndpoint}</p>
@@ -151,7 +162,8 @@ export function NewProjectClient() {
               className={clsx('mono', errors.rootPath && 'border-rose-500/50')}
             />
             <p className="text-xs text-slate-500">
-              Strongly recommended. SummitFlow-hosted projects auto-fill to `/srv/workspaces/projects/&lt;project-id&gt;`.
+              Strongly recommended. SummitFlow-hosted projects auto-fill to
+              `/srv/workspaces/projects/&lt;project-id&gt;`.
             </p>
             {errors.rootPath && (
               <p className="text-xs text-rose-400">{errors.rootPath}</p>
@@ -162,7 +174,9 @@ export function NewProjectClient() {
             <Label htmlFor="project-category">Sidebar Category</Label>
             <Select
               value={category}
-              onValueChange={(value) => handleCategoryChange(value as ProjectCategory)}
+              onValueChange={(value) =>
+                handleCategoryChange(value as ProjectCategory)
+              }
               disabled={isPending}
             >
               <SelectTrigger
@@ -181,7 +195,8 @@ export function NewProjectClient() {
               </SelectContent>
             </Select>
             <p className="text-xs text-slate-500">
-              Controls which sidebar group the project appears in. Drag order is managed in the sidebar after creation.
+              Controls which sidebar group the project appears in. Drag order is
+              managed in the sidebar after creation.
             </p>
           </div>
 

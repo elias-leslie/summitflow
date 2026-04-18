@@ -16,7 +16,9 @@ describe('project-config', () => {
 
   it('extracts valid project ids from paths', () => {
     expect(getProjectIdFromPathname('/projects/summitflow')).toBe('summitflow')
-    expect(getProjectIdFromPathname('/projects/summitflow/files')).toBe('summitflow')
+    expect(getProjectIdFromPathname('/projects/summitflow/files')).toBe(
+      'summitflow',
+    )
     expect(getProjectIdFromPathname('/projects/new')).toBeNull()
     expect(getProjectIdFromPathname('/runtime')).toBeNull()
   })

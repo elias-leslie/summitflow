@@ -82,7 +82,10 @@ export function DialogContent({
       animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
       exit={{ opacity: 0, scale: 0.95, x: '-50%', y: 'calc(-50% + 10px)' }}
       transition={{ duration: 0.2, ease: 'easeOut' }}
-      className={clsx('fixed left-1/2 top-1/2 z-50 bg-[linear-gradient(180deg,rgba(18,12,28,0.99),rgba(9,7,16,0.98))] border border-slate-700/80 rounded-2xl shadow-[0_32px_80px_-16px_rgba(0,0,0,0.85),0_0_0_1px_rgba(255,0,102,0.06)]', className)}
+      className={clsx(
+        'fixed left-1/2 top-1/2 z-50 bg-[linear-gradient(180deg,rgba(18,12,28,0.99),rgba(9,7,16,0.98))] border border-slate-700/80 rounded-2xl shadow-[0_32px_80px_-16px_rgba(0,0,0,0.85),0_0_0_1px_rgba(255,0,102,0.06)]',
+        className,
+      )}
       onClick={(e) => e.stopPropagation()}
     >
       {children}
@@ -100,7 +103,12 @@ export function DialogHeader({ children, className = '' }: DialogHeaderProps) {
 
 export function DialogTitle({ children, className = '' }: DialogTitleProps) {
   return (
-    <h2 className={clsx('display text-lg font-semibold text-slate-100', className)}>
+    <h2
+      className={clsx(
+        'display text-lg font-semibold text-slate-100',
+        className,
+      )}
+    >
       {children}
     </h2>
   )
@@ -125,7 +133,10 @@ export function DialogClose({ onClose, className = '' }: DialogCloseProps) {
     <button
       onClick={onClose}
       aria-label="Close dialog"
-      className={clsx('absolute right-4 top-4 p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800/80 transition-all duration-150', className)}
+      className={clsx(
+        'absolute right-4 top-4 p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800/80 transition-all duration-150',
+        className,
+      )}
     >
       <X className="w-4 h-4" />
     </button>

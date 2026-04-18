@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_HEALTH_ENDPOINT,
   buildHealthPreview,
+  DEFAULT_HEALTH_ENDPOINT,
   normalizeProjectFormValues,
   normalizeProjectId,
   validateProjectForm,

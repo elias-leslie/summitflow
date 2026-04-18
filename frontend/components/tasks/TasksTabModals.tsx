@@ -1,7 +1,7 @@
 'use client'
 
-import type { Task } from '@/lib/api'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
+import type { Task } from '@/lib/api'
 import { EnrichmentModal } from './EnrichmentModal'
 import { TaskIdeationDialog } from './TaskIdeationDialog'
 import { TaskModal } from './TaskModal'

@@ -5,7 +5,9 @@ import { TaskCardHeader } from './TaskCardHeader'
 
 describe('TaskCardHeader', () => {
   it('renders task ID and priority', () => {
-    render(<TaskCardHeader task={makeTask({ id: 'task-abc123', priority: 2 })} />)
+    render(
+      <TaskCardHeader task={makeTask({ id: 'task-abc123', priority: 2 })} />,
+    )
 
     expect(screen.getByText('task-abc123')).toBeInTheDocument()
     expect(screen.getByText('P2')).toBeInTheDocument()

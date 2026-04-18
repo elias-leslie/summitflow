@@ -1,12 +1,12 @@
 'use client'
 
 import { useEffect } from 'react'
+import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import { hasScreenshot, type Mockup } from '@/lib/api/mockups'
-import { useMockupModal } from './mockup-modal/useMockupModal'
+import { DetailsSidebar } from './mockup-modal/DetailsSidebar'
 import { ModalHeader } from './mockup-modal/ModalHeader'
 import { PreviewArea } from './mockup-modal/PreviewArea'
-import { DetailsSidebar } from './mockup-modal/DetailsSidebar'
-import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
+import { useMockupModal } from './mockup-modal/useMockupModal'
 
 interface MockupDetailModalProps {
   mockup: Mockup

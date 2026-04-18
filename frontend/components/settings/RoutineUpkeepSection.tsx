@@ -25,7 +25,10 @@ interface RoutineUpkeepSectionProps {
   onRunNow: () => void
 }
 
-function summaryNumber(run: MaintenanceRun | null | undefined, key: string): number {
+function summaryNumber(
+  run: MaintenanceRun | null | undefined,
+  key: string,
+): number {
   const value = run?.summary?.[key]
   return typeof value === 'number' ? value : 0
 }
@@ -55,9 +58,12 @@ function statusLabel(
 }
 
 function statusTone(label: string): string {
-  if (label === 'Running') return 'border-amber-500/30 bg-amber-500/10 text-amber-200'
-  if (label === 'Failed') return 'border-rose-500/30 bg-rose-500/10 text-rose-200'
-  if (label.startsWith('Completed')) return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+  if (label === 'Running')
+    return 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+  if (label === 'Failed')
+    return 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+  if (label.startsWith('Completed'))
+    return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
   return 'border-slate-600 bg-slate-800/60 text-slate-300'
 }
 
@@ -93,10 +99,14 @@ function HistoryRows({ runs }: { runs: MaintenanceRun[] }) {
           className="flex items-center justify-between gap-3 rounded-lg border border-slate-700/60 bg-slate-900/35 px-3 py-2 text-xs"
         >
           <div className="min-w-0">
-            <span className={clsx('font-medium', historyStatusTone(run.status))}>
+            <span
+              className={clsx('font-medium', historyStatusTone(run.status))}
+            >
               {run.status}
             </span>
-            <span className="ml-2 text-slate-500">{formatRunTime(run.started_at)}</span>
+            <span className="ml-2 text-slate-500">
+              {formatRunTime(run.started_at)}
+            </span>
           </div>
           <div className="shrink-0 text-slate-400">
             {taskCountLabel(summaryNumber(run, 'tasks_created'))}
@@ -150,7 +160,11 @@ export function RoutineUpkeepSection({
           disabled={isPending}
           role="switch"
           aria-checked={settings.upkeep_enabled}
-          aria-label={settings.upkeep_enabled ? 'Disable routine upkeep' : 'Enable routine upkeep'}
+          aria-label={
+            settings.upkeep_enabled
+              ? 'Disable routine upkeep'
+              : 'Enable routine upkeep'
+          }
           className={clsx(
             'relative h-6 w-12 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900',
             settings.upkeep_enabled ? 'bg-amber-500' : 'bg-slate-600',
@@ -165,7 +179,12 @@ export function RoutineUpkeepSection({
         </button>
       </div>
 
-      <div className={clsx('rounded-lg border px-3 py-2 text-sm', statusTone(label))}>
+      <div
+        className={clsx(
+          'rounded-lg border px-3 py-2 text-sm',
+          statusTone(label),
+        )}
+      >
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium">{label}</span>
           {isRunning && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -182,7 +201,10 @@ export function RoutineUpkeepSection({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <Label htmlFor="upkeep-frequency" className="text-slate-200 mb-2 block">
+          <Label
+            htmlFor="upkeep-frequency"
+            className="text-slate-200 mb-2 block"
+          >
             Cadence
           </Label>
           <p className="text-xs text-slate-400 mb-3">
@@ -235,7 +257,11 @@ export function RoutineUpkeepSection({
                 : 'border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25',
             )}
           >
-            {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+            {isRunning ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Play className="h-3.5 w-3.5" />
+            )}
             Run now
           </button>
         </div>

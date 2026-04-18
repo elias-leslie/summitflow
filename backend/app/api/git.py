@@ -9,11 +9,11 @@ from fastapi import APIRouter, HTTPException, Query
 
 from cli.commands.cleanup import build_cleanup_status_payload
 from cli.commands.cleanup_display import render_cleanup_status_compact
-from cli.lib.worktree import get_active_worktrees
+from cli.lib.checkpoint import get_active_checkpoints
 
 from ..storage import tasks as task_store
 from ..storage.tasks.update import update_task_fields
-from ..tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_worktree
+from ..tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_checkpoint
 from ..utils.git_helpers import (
     get_all_branches,
     get_managed_repos,
@@ -22,6 +22,7 @@ from ..utils.git_helpers import (
     push_repository,
     sync_repository,
 )
+from .git_helpers.checkpoint_helpers import collect_checkpoints
 from .git_helpers.db_helpers import (
     get_project_path,
     get_project_root,
@@ -43,9 +44,9 @@ from .git_helpers.endpoints import (
     handle_revert_snapshot,
 )
 from .git_helpers.response_builders import aggregate_sync_results, build_sync_response_from_result
-from .git_helpers.worktree_helpers import collect_worktrees
 from .models.git_models import (
     BranchesResponse,
+    CheckpointsResponse,
     ConflictsResponse,
     GitStatusResponse,
     GitSyncResponse,
@@ -55,7 +56,6 @@ from .models.git_models import (
     RepoStatus,
     SnapshotsResponse,
     TaskDiffResponse,
-    WorktreesResponse,
 )
 
 router = APIRouter()
@@ -73,16 +73,16 @@ def _build_cleanup_status_response(*, all_projects: bool, project_id: str | None
 @router.get("/git/status", response_model=GitStatusResponse, tags=["git"])
 async def get_git_status() -> GitStatusResponse:
     """Get git status for all managed repositories."""
-    active_worktrees_by_project: dict[str, list] = defaultdict(list)
-    for worktree in get_active_worktrees():
-        if worktree.project_id:
-            active_worktrees_by_project[worktree.project_id].append(worktree)
+    active_checkpoints_by_project: dict[str, list] = defaultdict(list)
+    for checkpoint in get_active_checkpoints():
+        if checkpoint.project_id:
+            active_checkpoints_by_project[checkpoint.project_id].append(checkpoint)
 
     repos: list[RepoStatus] = []
     for repo_path in get_managed_repos():
         repo_status = get_repo_status(
             repo_path,
-            active_worktrees_by_project=active_worktrees_by_project,
+            active_checkpoints_by_project=active_checkpoints_by_project,
         )
         if repo_status:
             repos.append(repo_status)
@@ -123,15 +123,15 @@ async def sync_repositories() -> GitSyncResponse:
     return GitSyncResponse(results=results, **counts)
 
 
-@router.get("/git/worktrees", response_model=WorktreesResponse, tags=["git"])
-async def get_worktrees(
+@router.get("/git/checkpoints", response_model=CheckpointsResponse, tags=["git"])
+async def get_checkpoints(
     project_id: str | None = Query(default=None),
-) -> WorktreesResponse:
-    """Get list of active worktrees, optionally filtered by project."""
-    worktrees = collect_worktrees()
+) -> CheckpointsResponse:
+    """Get list of active task checkpoints, optionally filtered by project."""
+    checkpoints = collect_checkpoints()
     if project_id:
-        worktrees = [w for w in worktrees if w.project_id == project_id]
-    return WorktreesResponse(worktrees=worktrees, count=len(worktrees))
+        checkpoints = [c for c in checkpoints if c.project_id == project_id]
+    return CheckpointsResponse(checkpoints=checkpoints, count=len(checkpoints))
 
 
 @router.get("/git/branches", response_model=BranchesResponse, tags=["git"])
@@ -149,7 +149,7 @@ async def get_branches(
         for repo_path in get_managed_repos()
         for branch in get_all_branches(repo_path)
     ]
-    branches.sort(key=lambda b: ((b.repo_name or "").lower(), not b.is_current, not b.has_worktree, b.name.lower()))
+    branches.sort(key=lambda b: ((b.repo_name or "").lower(), not b.is_current, not b.has_checkpoint, b.name.lower()))
     return BranchesResponse(branches=branches, count=len(branches))
 
 
@@ -215,7 +215,7 @@ async def retry_merge(task_id: str) -> dict[str, object]:
     if task["status"] != "failed":
         raise HTTPException(status_code=400, detail="Task is not in failed state")
     update_task_fields(task_id, conflict_info=None)
-    return cast(dict[str, object], merge_and_cleanup_task_worktree(task_id, task["project_id"]))
+    return cast(dict[str, object], merge_and_cleanup_task_checkpoint(task_id, task["project_id"]))
 
 
 @router.post("/git/tasks/{task_id}/resolve-conflict", tags=["git"])

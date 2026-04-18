@@ -106,10 +106,9 @@ describe('ProjectSettingsClient', () => {
       ).toBeInTheDocument()
     })
     expect(screen.getByText('backend unavailable')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Back to project' })).toHaveAttribute(
-      'href',
-      '/projects/summitflow',
-    )
+    expect(
+      screen.getByRole('link', { name: 'Back to project' }),
+    ).toHaveAttribute('href', '/projects/summitflow')
   })
 
   it('shows live project trust signals and automation tab', async () => {

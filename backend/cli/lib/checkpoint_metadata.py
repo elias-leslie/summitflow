@@ -17,39 +17,26 @@ from app.storage.tasks import canonicalize_task_id
 
 @dataclass
 class SnapshotMeta:
-    """Metadata for a task checkpoint (worktree isolation)."""
+    """Metadata for a task checkpoint."""
 
     task_id: str
     project_id: str
     base_branch: str
     created_at: str  # ISO format
     claimed_by: str
-    worktree_path: str | None = None  # Path to isolated worktree
-    backend_port: int | None = None  # Allocated backend port for worktree
-    frontend_port: int | None = None  # Allocated frontend port for worktree
 
-    def to_dict(self) -> dict[str, str | int | None]:
+    def to_dict(self) -> dict[str, str]:
         """Convert to dictionary for JSON serialization."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SnapshotMeta:
         """Create from dictionary."""
-        # Ensure correct types for conversion
         d = data.copy()
-        # Handle older snapshots without worktree_path
-        if "worktree_path" not in d:
-            d["worktree_path"] = None
-        # Handle older snapshots without port info
-        if "backend_port" not in d:
-            d["backend_port"] = None
-        if "frontend_port" not in d:
-            d["frontend_port"] = None
-        # Handle older snapshots with snapshot_path (no longer used)
+        # Ignore legacy lane-era fields when loading old metadata.
         d.pop("snapshot_path", None)
-
-        bp = d.get("backend_port")
-        fp = d.get("frontend_port")
+        d.pop("backend_port", None)
+        d.pop("frontend_port", None)
 
         # Cast to required types to satisfy LSP
         return cls(
@@ -58,9 +45,6 @@ class SnapshotMeta:
             base_branch=str(d["base_branch"]),
             created_at=str(d["created_at"]),
             claimed_by=str(d["claimed_by"]),
-            worktree_path=str(d["worktree_path"]) if d.get("worktree_path") else None,
-            backend_port=int(bp) if bp is not None else None,
-            frontend_port=int(fp) if fp is not None else None,
         )
 
 

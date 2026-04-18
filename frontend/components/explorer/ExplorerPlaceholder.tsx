@@ -2,8 +2,8 @@
  * ExplorerPlaceholder - Placeholder content when no children provided
  */
 
-import type { ExplorerType } from './types'
 import { typeIcons, typeTitles } from './explorerConstants'
+import type { ExplorerType } from './types'
 
 interface ExplorerPlaceholderProps {
   type: ExplorerType

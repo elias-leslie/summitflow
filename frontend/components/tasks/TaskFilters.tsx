@@ -2,8 +2,8 @@
 
 import { Filter } from 'lucide-react'
 import type { TaskStatus, TaskType } from '@/lib/api'
-import { cn } from '@/lib/utils'
 import { statusIconConfig } from '@/lib/task-config'
+import { cn } from '@/lib/utils'
 
 export interface TaskFilterValues {
   type: TaskType | 'all'

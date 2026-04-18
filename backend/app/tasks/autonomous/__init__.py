@@ -11,7 +11,7 @@ Plain functions called by Hatchet workflow wrappers:
 
 from __future__ import annotations
 
-from .cleanup import merge_and_cleanup_task_worktree, reset_expired_task_claims
+from .cleanup import merge_and_cleanup_task_checkpoint, reset_expired_task_claims
 from .escalation import check_worker_stuck, supervisor_guidance
 from .execution import start_execution
 from .pickup import (
@@ -31,7 +31,7 @@ __all__ = [
     "create_plan",
     "dispatch_task_immediate",
     "generate_tasks_from_scan",
-    "merge_and_cleanup_task_worktree",
+    "merge_and_cleanup_task_checkpoint",
     "regenerate_refactor_tasks",
     "reset_expired_task_claims",
     "run_routine_upkeep",

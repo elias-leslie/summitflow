@@ -102,24 +102,25 @@ function buildSpanTree(events: Event[]): SpanNode[] {
   return roots
 }
 
-const SOURCE_CONFIG: Record<string, { color: string; icon: React.ReactNode }> = {
-  orchestrator: {
-    color: 'text-violet-400',
-    icon: <Zap className="h-3.5 w-3.5 text-violet-400" />,
-  },
-  worker: {
-    color: 'text-emerald-400',
-    icon: <Terminal className="h-3.5 w-3.5 text-emerald-400" />,
-  },
-  agent: {
-    color: 'text-cyan-400',
-    icon: <Terminal className="h-3.5 w-3.5 text-cyan-400" />,
-  },
-  system: {
-    color: 'text-slate-400',
-    icon: <GitBranch className="h-3.5 w-3.5 text-slate-400" />,
-  },
-}
+const SOURCE_CONFIG: Record<string, { color: string; icon: React.ReactNode }> =
+  {
+    orchestrator: {
+      color: 'text-violet-400',
+      icon: <Zap className="h-3.5 w-3.5 text-violet-400" />,
+    },
+    worker: {
+      color: 'text-emerald-400',
+      icon: <Terminal className="h-3.5 w-3.5 text-emerald-400" />,
+    },
+    agent: {
+      color: 'text-cyan-400',
+      icon: <Terminal className="h-3.5 w-3.5 text-cyan-400" />,
+    },
+    system: {
+      color: 'text-slate-400',
+      icon: <GitBranch className="h-3.5 w-3.5 text-slate-400" />,
+    },
+  }
 
 const LEVEL_BG: Record<string, string> = {
   error: 'bg-red-950/30 border-red-800/40',
@@ -164,7 +165,10 @@ function SpanNodeRow({
       <div
         role="button"
         tabIndex={0}
-        className={clsx('flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer hover:bg-slate-700/30 transition-colors border', levelBg)}
+        className={clsx(
+          'flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer hover:bg-slate-700/30 transition-colors border',
+          levelBg,
+        )}
         style={{ marginLeft: `${depth * 20}px` }}
         onClick={handleClick}
         onKeyDown={(e) => {
@@ -285,7 +289,12 @@ export function SpanTree({
 
   if (isLoading) {
     return (
-      <div className={clsx('flex items-center justify-center py-8 text-slate-600', className)}>
+      <div
+        className={clsx(
+          'flex items-center justify-center py-8 text-slate-600',
+          className,
+        )}
+      >
         <Loader2 className="h-5 w-5 animate-spin mr-2" />
         <span className="text-sm">Loading span tree...</span>
       </div>
@@ -303,7 +312,12 @@ export function SpanTree({
 
   if (tree.length === 0) {
     return (
-      <div className={clsx('flex items-center justify-center py-8 text-slate-600', className)}>
+      <div
+        className={clsx(
+          'flex items-center justify-center py-8 text-slate-600',
+          className,
+        )}
+      >
         <GitBranch className="h-5 w-5 mr-2" />
         <span className="text-sm">No span hierarchy data available</span>
       </div>

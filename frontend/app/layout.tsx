@@ -1,10 +1,6 @@
-import type { Metadata, Viewport } from 'next'
-import {
-  Outfit,
-  Bricolage_Grotesque,
-  JetBrains_Mono,
-} from 'next/font/google'
 import clsx from 'clsx'
+import type { Metadata, Viewport } from 'next'
+import { Bricolage_Grotesque, JetBrains_Mono, Outfit } from 'next/font/google'
 import './globals.css'
 
 // Primary body font — warm geometric sans
@@ -31,7 +27,6 @@ const jetbrainsMono = JetBrains_Mono({
   display: 'swap',
 })
 
-
 export const metadata: Metadata = {
   title: 'SummitFlow',
   description: 'AI-assisted software development platform',
@@ -51,7 +46,12 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={clsx('dark', outfit.variable, bricolageGrotesque.variable, jetbrainsMono.variable)}
+      className={clsx(
+        'dark',
+        outfit.variable,
+        bricolageGrotesque.variable,
+        jetbrainsMono.variable,
+      )}
     >
       <head>
         <link
@@ -69,9 +69,7 @@ export default function RootLayout({
         />
         <meta name="apple-mobile-web-app-title" content="SummitFlow" />
       </head>
-      <body className="antialiased">
-        {children}
-      </body>
+      <body className="antialiased">{children}</body>
     </html>
   )
 }

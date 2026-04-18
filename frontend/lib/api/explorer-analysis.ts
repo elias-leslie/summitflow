@@ -52,7 +52,6 @@ export interface RefactorTargetsResponse {
 // API Functions
 // ============================================================================
 
-
 /**
  * Fetch files that are refactoring candidates.
  *

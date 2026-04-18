@@ -1,10 +1,10 @@
-"""Worktree cleanup operations for completed/cancelled tasks."""
+"""Checkpoint cleanup operations for completed or cancelled tasks."""
 
 from __future__ import annotations
 
 from typing import Literal, TypedDict
 
-from app.services.worktree import get_task_worktree, remove_task_worktree
+from app.services.task_checkout import get_task_checkout, remove_task_checkout
 from app.utils._git_core import has_uncommitted_changes
 
 from ....logging_config import get_logger
@@ -12,26 +12,26 @@ from ....logging_config import get_logger
 logger = get_logger(__name__)
 
 
-class WorktreeCleanupSuccess(TypedDict):
-    """Successful worktree cleanup result."""
+class CheckpointCleanupSuccess(TypedDict):
+    """Successful checkpoint cleanup result."""
 
     task_id: str
     status: Literal["cleaned"]
-    worktree_path: str
+    checkout_path: str
     branch: str
     branch_deleted: bool
 
 
-class WorktreeCleanupSkipped(TypedDict):
-    """Skipped worktree cleanup result."""
+class CheckpointCleanupSkipped(TypedDict):
+    """Skipped checkpoint cleanup result."""
 
     task_id: str
     status: Literal["skipped"]
     reason: str
 
 
-class WorktreeCleanupFailed(TypedDict):
-    """Failed worktree cleanup result."""
+class CheckpointCleanupFailed(TypedDict):
+    """Failed checkpoint cleanup result."""
 
     task_id: str
     status: Literal["failed", "error"]
@@ -39,49 +39,48 @@ class WorktreeCleanupFailed(TypedDict):
     error: str | None
 
 
-WorktreeCleanupResult = (
-    WorktreeCleanupSuccess | WorktreeCleanupSkipped | WorktreeCleanupFailed
+CheckpointCleanupResult = (
+    CheckpointCleanupSuccess | CheckpointCleanupSkipped | CheckpointCleanupFailed
 )
 
 
-def cleanup_task_worktree(
+def cleanup_task_checkpoint(
     task_id: str,
     delete_branch: bool = False,
     project_id: str | None = None,
-) -> WorktreeCleanupResult:
-    """Clean up worktree for a completed or cancelled task.
+) -> CheckpointCleanupResult:
+    """Clean up checkpoint state for a completed or cancelled task.
 
     Called when a task reaches a terminal state (completed, cancelled, failed).
-    Removes the worktree directory but preserves the branch by default
-    (branch can be merged via PR or deleted manually).
+    Removes checkpoint metadata and preserves the branch by default.
 
     Args:
-        task_id: Task ID whose worktree should be cleaned up
+        task_id: Task ID whose checkpoint should be cleaned up
         delete_branch: Whether to also delete the task branch (default: False)
 
     Returns:
         Dict with cleanup result
     """
     try:
-        worktree = get_task_worktree(task_id, project_id)
-        if not worktree:
+        checkout = get_task_checkout(task_id, project_id)
+        if not checkout:
             return {
                 "task_id": task_id,
                 "status": "skipped",
-                "reason": "no_worktree",
+                "reason": "no_checkpoint",
             }
 
-        if has_uncommitted_changes(worktree.path):
+        if has_uncommitted_changes(checkout.path):
             return {
                 "task_id": task_id,
                 "status": "skipped",
-                "reason": "dirty_worktree",
+                "reason": "dirty_checkout",
             }
 
-        worktree_path = str(worktree.path)
-        branch = worktree.branch
+        checkout_path = str(checkout.path)
+        branch = checkout.branch
 
-        removed = remove_task_worktree(
+        removed = remove_task_checkout(
             task_id,
             delete_branch=delete_branch,
             project_id=project_id,
@@ -96,11 +95,11 @@ def cleanup_task_worktree(
             }
 
         logger.info(
-            "Cleaned up worktree for task %s",
+            "Cleaned up checkpoint for task %s",
             task_id,
             extra={
                 "task_id": task_id,
-                "worktree_path": worktree_path,
+                "checkout_path": checkout_path,
                 "branch": branch,
                 "branch_deleted": delete_branch,
             },
@@ -108,13 +107,13 @@ def cleanup_task_worktree(
         return {
             "task_id": task_id,
             "status": "cleaned",
-            "worktree_path": worktree_path,
+            "checkout_path": checkout_path,
             "branch": branch,
             "branch_deleted": delete_branch,
         }
 
     except Exception as e:
-        logger.error("Error cleaning up worktree for task %s: %s", task_id, e)
+        logger.error("Error cleaning up checkpoint for task %s: %s", task_id, e)
         return {
             "task_id": task_id,
             "status": "error",

@@ -94,7 +94,7 @@ def run_final_quality_gate(
 
     Args:
         task_id: Task ID for logging
-        project_path: Path to the project/worktree
+        project_path: Path to the project checkout
         project_id: Project ID for logging and config lookup
 
     Returns:
@@ -115,7 +115,7 @@ def auto_fix_quality(project_path: str, project_id: str) -> bool:
     Uses per-project config to determine if fix is allowed and which tools to fix.
 
     Args:
-        project_path: Path to the project/worktree
+        project_path: Path to the project checkout
         project_id: Project ID for config lookup
 
     Returns:

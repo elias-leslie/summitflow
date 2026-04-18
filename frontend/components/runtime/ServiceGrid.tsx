@@ -72,11 +72,12 @@ export function ServiceGrid() {
           id: 'docker-infra',
           title: 'Docker Infra',
           description: 'Shared infrastructure that stays containerized.',
-          items:
-            containers?.filter((s) => s.manager === 'docker') ?? [],
+          items: containers?.filter((s) => s.manager === 'docker') ?? [],
         },
       ].filter(
-        (section): section is {
+        (
+          section,
+        ): section is {
           id: string
           title: string
           description: string
@@ -116,9 +117,7 @@ export function ServiceGrid() {
         <p className="text-slate-400">No managed runtime services found.</p>
         <p className="text-sm text-slate-500 mt-1">
           Start or rebuild services with:{' '}
-          <code className="text-amber-400">
-            rebuild.sh summitflow
-          </code>
+          <code className="text-amber-400">rebuild.sh summitflow</code>
         </p>
       </div>
     )
@@ -139,11 +138,49 @@ export function ServiceGrid() {
             )}
             aria-label="Grid view"
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="inline-block">
-              <rect x="1" y="1" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.5" />
-              <rect x="9" y="1" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.5" />
-              <rect x="1" y="9" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.5" />
-              <rect x="9" y="9" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.5" />
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              className="inline-block"
+            >
+              <rect
+                x="1"
+                y="1"
+                width="6"
+                height="6"
+                rx="1"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              />
+              <rect
+                x="9"
+                y="1"
+                width="6"
+                height="6"
+                rx="1"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              />
+              <rect
+                x="1"
+                y="9"
+                width="6"
+                height="6"
+                rx="1"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              />
+              <rect
+                x="9"
+                y="9"
+                width="6"
+                height="6"
+                rx="1"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              />
             </svg>
             Grid
           </button>
@@ -157,10 +194,40 @@ export function ServiceGrid() {
             )}
             aria-label="List view"
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="inline-block">
-              <line x1="1" y1="3" x2="15" y2="3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              <line x1="1" y1="8" x2="15" y2="8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              <line x1="1" y1="13" x2="15" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              className="inline-block"
+            >
+              <line
+                x1="1"
+                y1="3"
+                x2="15"
+                y2="3"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+              <line
+                x1="1"
+                y1="8"
+                x2="15"
+                y2="8"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+              <line
+                x1="1"
+                y1="13"
+                x2="15"
+                y2="13"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
             </svg>
             List
           </button>
@@ -190,7 +257,11 @@ export function ServiceGrid() {
                   key={service.name}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: i * 0.04, ease: [0.25, 0.46, 0.45, 0.94] }}
+                  transition={{
+                    duration: 0.3,
+                    delay: i * 0.04,
+                    ease: [0.25, 0.46, 0.45, 0.94],
+                  }}
                 >
                   <ServiceCard
                     container={service}

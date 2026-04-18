@@ -6,15 +6,15 @@ import { getApiBaseUrl } from '../api-config'
 import { fetchWithErrorHandling } from './utils'
 
 export interface RepoWorkspaceSummary {
-  active_worktrees: number
-  dirty_worktrees: number
+  active_checkpoints: number
+  dirty_checkpoints: number
   dirty_main_repo?: boolean
-  branches_with_worktrees: number
+  branches_with_checkpoints: number
   task_branches: number
   orphan_branches: number
   prunable_branches: number
   needs_cleanup: boolean
-  worktree_task_ids: string[]
+  checkpoint_task_ids: string[]
   orphan_branch_names?: string[]
   prunable_branch_names?: string[]
   salvage_task_ids?: string[]
@@ -41,8 +41,8 @@ export interface GitStatusResponse {
 export interface GitCleanupSummary {
   repos: number
   repos_needing_cleanup: number
-  active_worktrees: number
-  dirty_worktrees: number
+  active_checkpoints: number
+  dirty_checkpoints: number
   stale_checkpoints: number
   snapshot_residue: number
   orphan_task_branches: number
@@ -52,8 +52,8 @@ export interface GitCleanupSummary {
 export interface GitCleanupRepository {
   project_id: string
   path: string
-  active_worktrees: number
-  dirty_worktrees: number
+  active_checkpoints: number
+  dirty_checkpoints: number
   dirty_main_repo?: boolean
   stale_checkpoints: number
   snapshot_residue: number
@@ -68,9 +68,8 @@ export interface GitCleanupRepository {
 export interface GitCleanupPayload {
   summary: GitCleanupSummary
   repositories: GitCleanupRepository[]
-  worktrees: Array<{
+  checkpoints: Array<{
     task_id: string
-    path: string
     branch: string
     base_branch: string
     project_id?: string | null

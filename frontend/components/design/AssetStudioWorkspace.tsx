@@ -1,21 +1,28 @@
 'use client'
 
-import clsx from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, Image as ImageIcon, Layers3, Package, Tags, X } from 'lucide-react'
+import clsx from 'clsx'
+import {
+  Download,
+  Image as ImageIcon,
+  Layers3,
+  Package,
+  Tags,
+  X,
+} from 'lucide-react'
 import Image from 'next/image'
 import { useState } from 'react'
-import { useClampedPagination } from '@/hooks/useClampedPagination'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
+import { useClampedPagination } from '@/hooks/useClampedPagination'
 import {
+  type DesignAsset,
+  type DesignAssetExport,
   deleteDesignAsset,
   exportSpriteFrames,
   fetchDesignAssetExports,
   fetchDesignAssetStats,
   fetchDesignAssets,
   getDesignAssetImageUrl,
-  type DesignAsset,
-  type DesignAssetExport,
   updateDesignAssetStatus,
 } from '@/lib/api/design-assets'
 import { DesignHeader, type ViewMode } from './DesignHeader'
@@ -103,23 +110,29 @@ export function AssetStudioWorkspace({
     }) => updateDesignAssetStatus(projectId, assetId, status, 'codex'),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['design-assets', projectId] })
-      queryClient.invalidateQueries({ queryKey: ['design-assets-stats', projectId] })
+      queryClient.invalidateQueries({
+        queryKey: ['design-assets-stats', projectId],
+      })
       refetch()
     },
   })
 
   const deleteMutation = useMutation({
-    mutationFn: async (assetId: string) => deleteDesignAsset(projectId, assetId),
+    mutationFn: async (assetId: string) =>
+      deleteDesignAsset(projectId, assetId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['design-assets', projectId] })
-      queryClient.invalidateQueries({ queryKey: ['design-assets-stats', projectId] })
+      queryClient.invalidateQueries({
+        queryKey: ['design-assets-stats', projectId],
+      })
       setShowDeleteConfirm(false)
       setSelectedAsset(null)
     },
   })
 
   const exportMutation = useMutation({
-    mutationFn: async (assetId: string) => exportSpriteFrames(projectId, assetId),
+    mutationFn: async (assetId: string) =>
+      exportSpriteFrames(projectId, assetId),
     onSuccess: () => {
       if (selectedAsset) {
         queryClient.invalidateQueries({
@@ -127,7 +140,9 @@ export function AssetStudioWorkspace({
         })
       }
       queryClient.invalidateQueries({ queryKey: ['design-assets', projectId] })
-      queryClient.invalidateQueries({ queryKey: ['design-assets-stats', projectId] })
+      queryClient.invalidateQueries({
+        queryKey: ['design-assets-stats', projectId],
+      })
     },
   })
 
@@ -145,7 +160,9 @@ export function AssetStudioWorkspace({
       <DesignHeader
         title="Asset Studio"
         subtitle="Generate production-oriented assets, review variants, and export sprite sheets into frame packs."
-        totalLabel={stats?.total !== undefined ? `${stats.total} assets` : undefined}
+        totalLabel={
+          stats?.total !== undefined ? `${stats.total} assets` : undefined
+        }
         primaryActionLabel="Generate Assets"
         viewMode={viewMode}
         selectMode={false}
@@ -242,12 +259,25 @@ export function AssetStudioWorkspace({
         </div>
 
         <aside className="card p-4">
-          <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">Production Playbook</p>
-          <h3 className="mt-2 text-lg font-semibold text-slate-100">Asset Direction</h3>
+          <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">
+            Production Playbook
+          </p>
+          <h3 className="mt-2 text-lg font-semibold text-slate-100">
+            Asset Direction
+          </h3>
           <div className="mt-4 space-y-4 text-sm text-slate-300">
-            <p>Use transparent backgrounds for sprites, icons, portraits, and UI textures.</p>
-            <p>Use `production` workflow for in-game art, `marketing` for promo mockups, and `ui` for product-facing visuals.</p>
-            <p>Sprite sheets become exportable once rows, columns, frame sizes, and animation labels are defined.</p>
+            <p>
+              Use transparent backgrounds for sprites, icons, portraits, and UI
+              textures.
+            </p>
+            <p>
+              Use `production` workflow for in-game art, `marketing` for promo
+              mockups, and `ui` for product-facing visuals.
+            </p>
+            <p>
+              Sprite sheets become exportable once rows, columns, frame sizes,
+              and animation labels are defined.
+            </p>
           </div>
         </aside>
       </div>
@@ -282,15 +312,17 @@ export function AssetStudioWorkspace({
                     type="button"
                     key={asset.asset_id}
                     onClick={() => setSelectedAsset(asset)}
-                    className={clsx('card overflow-hidden text-left transition hover:ring-1 hover:ring-cyan-400/30',
-                      viewMode === 'list' && 'flex items-center gap-4 p-3'
+                    className={clsx(
+                      'card overflow-hidden text-left transition hover:ring-1 hover:ring-cyan-400/30',
+                      viewMode === 'list' && 'flex items-center gap-4 p-3',
                     )}
                   >
                     <div
-                      className={clsx('relative overflow-hidden rounded-xl bg-slate-900',
+                      className={clsx(
+                        'relative overflow-hidden rounded-xl bg-slate-900',
                         viewMode === 'grid'
                           ? 'aspect-video'
-                          : 'h-24 w-40 flex-shrink-0'
+                          : 'h-24 w-40 flex-shrink-0',
                       )}
                     >
                       <Image
@@ -306,7 +338,9 @@ export function AssetStudioWorkspace({
                     </div>
                     <div className={viewMode === 'grid' ? 'p-4' : 'min-w-0'}>
                       <div className="flex items-center justify-between gap-3">
-                        <h3 className="truncate text-slate-100 font-medium">{asset.name}</h3>
+                        <h3 className="truncate text-slate-100 font-medium">
+                          {asset.name}
+                        </h3>
                         <span className="text-2xs uppercase tracking-[0.18em] text-slate-500">
                           {asset.asset_type.replace('_', ' ')}
                         </span>
@@ -317,7 +351,9 @@ export function AssetStudioWorkspace({
                         </p>
                       )}
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-                        <span>{asset.width}x{asset.height}</span>
+                        <span>
+                          {asset.width}x{asset.height}
+                        </span>
                         <span>{asset.model ?? 'default model'}</span>
                         <span className="capitalize">{asset.status}</span>
                       </div>
@@ -360,7 +396,9 @@ export function AssetStudioWorkspace({
           isUpdating={statusMutation.isPending}
           onClose={() => setSelectedAsset(null)}
           onDelete={() => setShowDeleteConfirm(true)}
-          onExport={() => selectedAsset && exportMutation.mutate(selectedAsset.asset_id)}
+          onExport={() =>
+            selectedAsset && exportMutation.mutate(selectedAsset.asset_id)
+          }
           onStatusChange={(status) =>
             selectedAsset &&
             statusMutation.mutate({ assetId: selectedAsset.asset_id, status })
@@ -373,8 +411,12 @@ export function AssetStudioWorkspace({
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onGenerated={async (createdAssets) => {
-          queryClient.invalidateQueries({ queryKey: ['design-assets', projectId] })
-          queryClient.invalidateQueries({ queryKey: ['design-assets-stats', projectId] })
+          queryClient.invalidateQueries({
+            queryKey: ['design-assets', projectId],
+          })
+          queryClient.invalidateQueries({
+            queryKey: ['design-assets-stats', projectId],
+          })
           if (createdAssets[0]) setSelectedAsset(createdAssets[0])
         }}
       />
@@ -406,7 +448,9 @@ function StudioStat({
       <div className="rounded-xl bg-slate-900 p-2">{icon}</div>
       <div>
         <div className="text-lg font-semibold text-slate-100">{value}</div>
-        <div className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</div>
+        <div className="text-xs uppercase tracking-[0.18em] text-slate-500">
+          {label}
+        </div>
       </div>
     </div>
   )
@@ -440,10 +484,15 @@ function AssetInspector({
   if (!asset) {
     return (
       <aside className="card p-5">
-        <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">Inspector</p>
-        <h3 className="mt-2 text-lg font-semibold text-slate-100">Select an asset</h3>
+        <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">
+          Inspector
+        </p>
+        <h3 className="mt-2 text-lg font-semibold text-slate-100">
+          Select an asset
+        </h3>
         <p className="mt-3 text-sm text-slate-400">
-          Review prompts, tags, export records, and production metadata from a persistent right-hand inspector.
+          Review prompts, tags, export records, and production metadata from a
+          persistent right-hand inspector.
         </p>
       </aside>
     )
@@ -453,10 +502,19 @@ function AssetInspector({
     <aside className="card overflow-auto p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">{asset.workflow}</p>
-          <h3 className="mt-1 text-xl font-semibold text-slate-100">{asset.name}</h3>
+          <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">
+            {asset.workflow}
+          </p>
+          <h3 className="mt-1 text-xl font-semibold text-slate-100">
+            {asset.name}
+          </h3>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-slate-100">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="text-slate-500 hover:text-slate-100"
+        >
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -471,18 +529,28 @@ function AssetInspector({
         />
       </div>
 
-      {asset.description && <p className="mt-4 text-sm text-slate-300">{asset.description}</p>}
+      {asset.description && (
+        <p className="mt-4 text-sm text-slate-300">{asset.description}</p>
+      )}
 
       <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-        <InspectorField label="Type" value={asset.asset_type.replace('_', ' ')} />
+        <InspectorField
+          label="Type"
+          value={asset.asset_type.replace('_', ' ')}
+        />
         <InspectorField label="Status" value={asset.status} />
-        <InspectorField label="Resolution" value={`${asset.width}x${asset.height}`} />
+        <InspectorField
+          label="Resolution"
+          value={`${asset.width}x${asset.height}`}
+        />
         <InspectorField label="Background" value={asset.background} />
       </div>
 
       {asset.tags.length > 0 && (
         <div className="mt-5">
-          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Tags</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+            Tags
+          </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {asset.tags.map((tag) => (
               <span
@@ -497,7 +565,9 @@ function AssetInspector({
       )}
 
       <div className="mt-5">
-        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Prompt</p>
+        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+          Prompt
+        </p>
         <div className="mt-2 rounded-xl bg-slate-900 p-3 text-sm text-slate-300 whitespace-pre-wrap">
           {asset.prompt}
         </div>
@@ -505,20 +575,41 @@ function AssetInspector({
 
       {asset.asset_type === 'sprite_sheet' && (
         <div className="mt-5 rounded-xl bg-slate-900 p-3 text-sm text-slate-300">
-          <p>Grid: {asset.sheet_columns} x {asset.sheet_rows}</p>
-          <p>Frame: {asset.frame_width} x {asset.frame_height}</p>
-          <p>Animations: {asset.animation_labels.join(', ') || 'Not labeled'}</p>
+          <p>
+            Grid: {asset.sheet_columns} x {asset.sheet_rows}
+          </p>
+          <p>
+            Frame: {asset.frame_width} x {asset.frame_height}
+          </p>
+          <p>
+            Animations: {asset.animation_labels.join(', ') || 'Not labeled'}
+          </p>
         </div>
       )}
 
       <div className="mt-5 flex flex-wrap gap-2">
-        <button type="button" onClick={() => onStatusChange('approved')} disabled={isUpdating} className="btn-primary">
+        <button
+          type="button"
+          onClick={() => onStatusChange('approved')}
+          disabled={isUpdating}
+          className="btn-primary"
+        >
           Approve
         </button>
-        <button type="button" onClick={() => onStatusChange('rejected')} disabled={isUpdating} className="btn-secondary">
+        <button
+          type="button"
+          onClick={() => onStatusChange('rejected')}
+          disabled={isUpdating}
+          className="btn-secondary"
+        >
           Reject
         </button>
-        <button type="button" onClick={() => onStatusChange('archived')} disabled={isUpdating} className="btn-secondary">
+        <button
+          type="button"
+          onClick={() => onStatusChange('archived')}
+          disabled={isUpdating}
+          className="btn-secondary"
+        >
           Archive
         </button>
         {asset.asset_type === 'sprite_sheet' && (
@@ -532,13 +623,19 @@ function AssetInspector({
             Export Frames
           </button>
         )}
-        <button type="button" onClick={onDelete} className="btn-secondary text-rose-300">
+        <button
+          type="button"
+          onClick={onDelete}
+          className="btn-secondary text-rose-300"
+        >
           Delete
         </button>
       </div>
 
       <div className="mt-6">
-        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Exports</p>
+        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+          Exports
+        </p>
         <div className="mt-2 space-y-2">
           {(exports ?? []).length === 0 && (
             <div className="rounded-xl border border-dashed border-slate-700 p-3 text-sm text-slate-500">
@@ -546,9 +643,14 @@ function AssetInspector({
             </div>
           )}
           {(exports ?? []).map((assetExport: DesignAssetExport) => (
-            <div key={assetExport.export_id} className="rounded-xl bg-slate-900 p-3 text-sm">
+            <div
+              key={assetExport.export_id}
+              className="rounded-xl bg-slate-900 p-3 text-sm"
+            >
               <div className="flex items-center justify-between gap-3">
-                <span className="text-slate-100">{assetExport.export_type}</span>
+                <span className="text-slate-100">
+                  {assetExport.export_type}
+                </span>
                 <span className="text-slate-500">{assetExport.file_path}</span>
               </div>
               {assetExport.manifest_path && (
@@ -573,7 +675,9 @@ function InspectorField({
 }): React.ReactElement {
   return (
     <div className="rounded-xl bg-slate-900 p-3">
-      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</p>
+      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+        {label}
+      </p>
       <p className="mt-1 text-slate-100 capitalize">{value}</p>
     </div>
   )

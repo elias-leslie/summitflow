@@ -12,7 +12,11 @@ import {
   User,
 } from 'lucide-react'
 import { useState } from 'react'
-import { fetchCommitDiff, type CommitInfo, type DiffFile } from '@/lib/api/git-enhanced'
+import {
+  type CommitInfo,
+  type DiffFile,
+  fetchCommitDiff,
+} from '@/lib/api/git-enhanced'
 import { formatTimeAgo } from '@/lib/format'
 import { POLL_RARE } from '@/lib/polling'
 import { StatBar } from './StatBar'
@@ -87,12 +91,14 @@ function FileRow({ file }: { file: DiffFile }) {
         <div className="flex items-center gap-1.5 shrink-0 text-[10px] font-mono opacity-50 group-hover/file:opacity-100 transition-opacity">
           {file.additions > 0 && (
             <span className="text-emerald-400 flex items-center gap-0.5">
-              <Plus className="w-2 h-2" />{file.additions}
+              <Plus className="w-2 h-2" />
+              {file.additions}
             </span>
           )}
           {file.deletions > 0 && (
             <span className="text-rose-400 flex items-center gap-0.5">
-              <Minus className="w-2 h-2" />{file.deletions}
+              <Minus className="w-2 h-2" />
+              {file.deletions}
             </span>
           )}
         </div>
@@ -106,11 +112,21 @@ function FileRow({ file }: { file: DiffFile }) {
   )
 }
 
-export function CommitEntry({ commit, projectId }: { commit: CommitInfo; projectId: string }) {
+export function CommitEntry({
+  commit,
+  projectId,
+}: {
+  commit: CommitInfo
+  projectId: string
+}) {
   const [expanded, setExpanded] = useState(false)
   const agent = commit.author_email.includes('anthropic.com')
 
-  const { data: diffData, refetch, isFetching } = useQuery({
+  const {
+    data: diffData,
+    refetch,
+    isFetching,
+  } = useQuery({
     queryKey: ['commit-diff', commit.sha],
     queryFn: () => fetchCommitDiff(commit.sha, projectId),
     enabled: false,
@@ -164,8 +180,12 @@ export function CommitEntry({ commit, projectId }: { commit: CommitInfo; project
         {/* Commit info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
-            <span className="text-2xs font-mono text-phosphor-500 shrink-0">{commit.short_sha}</span>
-            <span className="text-sm text-slate-300 truncate">{commit.message}</span>
+            <span className="text-2xs font-mono text-phosphor-500 shrink-0">
+              {commit.short_sha}
+            </span>
+            <span className="text-sm text-slate-300 truncate">
+              {commit.message}
+            </span>
           </div>
           <div className="flex items-center gap-2 text-[10px] text-slate-500">
             <span>{commit.author_name}</span>
@@ -178,12 +198,14 @@ export function CommitEntry({ commit, projectId }: { commit: CommitInfo; project
           <StatBar additions={commit.insertions} deletions={commit.deletions} />
           {commit.insertions > 0 && (
             <span className="text-emerald-400 flex items-center gap-0.5">
-              <Plus className="w-2.5 h-2.5" />{commit.insertions}
+              <Plus className="w-2.5 h-2.5" />
+              {commit.insertions}
             </span>
           )}
           {commit.deletions > 0 && (
             <span className="text-rose-400 flex items-center gap-0.5">
-              <Minus className="w-2.5 h-2.5" />{commit.deletions}
+              <Minus className="w-2.5 h-2.5" />
+              {commit.deletions}
             </span>
           )}
         </div>
@@ -193,7 +215,9 @@ export function CommitEntry({ commit, projectId }: { commit: CommitInfo; project
       <div
         className={clsx(
           'grid transition-all duration-200 ease-out',
-          expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+          expanded
+            ? 'grid-rows-[1fr] opacity-100'
+            : 'grid-rows-[0fr] opacity-0',
         )}
       >
         <div className="overflow-hidden">

@@ -87,11 +87,10 @@ export interface SnapshotInfo {
   commits_ahead: number
 }
 
-// --- Worktree Types ---
+// --- Checkpoint Types ---
 
-export interface WorktreeInfo {
+export interface CheckpointInfo {
   task_id: string
-  path: string
   branch: string
   base_branch: string
   is_active: boolean
@@ -101,10 +100,9 @@ export interface WorktreeInfo {
 export interface BranchInfo {
   name: string
   is_current: boolean
-  has_worktree: boolean
+  has_checkpoint: boolean
   repo_name?: string | null
   project_id?: string | null
-  worktree_path?: string | null
   task_id?: string | null
   last_commit_short?: string | null
   last_commit_date?: string | null
@@ -113,7 +111,7 @@ export interface BranchInfo {
 // --- Project Dashboard Types ---
 
 export interface ProjectDashboardResponse {
-  worktrees: WorktreeInfo[]
+  checkpoints: CheckpointInfo[]
   branches: BranchInfo[]
   recent_merges: MergedTaskSummary[]
   recent_commits: CommitInfo[]

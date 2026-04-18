@@ -4,7 +4,12 @@
  */
 
 import { getAgentHubProxyBase } from '../agent-hub-proxy'
-import { buildQueryString, deleteJson, fetchWithErrorHandling, patchJson } from './utils'
+import {
+  buildQueryString,
+  deleteJson,
+  fetchWithErrorHandling,
+  patchJson,
+} from './utils'
 
 // ============================================================================
 // Types
@@ -55,15 +60,30 @@ export interface FeedbackListResponse {
 /** Raw shape from Agent Hub API */
 interface FeedbackSummaryRaw {
   total_items: number
-  counts_by_type_status: { feedback_type: string; status: string; count: number }[]
+  counts_by_type_status: {
+    feedback_type: string
+    status: string
+    count: number
+  }[]
   top_unresolved: {
-    id: string; component_id: string; feedback_type: string;
-    title: string; vote_count: number; status: string; created_at: string;
+    id: string
+    component_id: string
+    feedback_type: string
+    title: string
+    vote_count: number
+    status: string
+    created_at: string
   }[]
   by_component: {
-    component_id: string; open_count: number; resolved_count: number;
-    wont_fix_count: number; archived_count: number;
-    friction_count: number; idea_count: number; praise_count: number; total_votes: number;
+    component_id: string
+    open_count: number
+    resolved_count: number
+    wont_fix_count: number
+    archived_count: number
+    friction_count: number
+    idea_count: number
+    praise_count: number
+    total_votes: number
   }[]
 }
 
@@ -96,7 +116,8 @@ function transformSummary(raw: FeedbackSummaryRaw): FeedbackSummary {
   const by_component: Record<string, ComponentBreakdown> = {}
   for (const c of raw.by_component) {
     by_component[c.component_id] = {
-      total: c.open_count + c.resolved_count + c.wont_fix_count + c.archived_count,
+      total:
+        c.open_count + c.resolved_count + c.wont_fix_count + c.archived_count,
       open: c.open_count,
       friction: c.friction_count ?? 0,
       idea: c.idea_count ?? 0,
@@ -137,7 +158,9 @@ function feedbackUrl(path: string): string {
 export async function fetchFeedbackItems(
   filters: FeedbackFilters = {},
 ): Promise<FeedbackListResponse> {
-  const query = buildQueryString(filters as Record<string, string | number | undefined>)
+  const query = buildQueryString(
+    filters as Record<string, string | number | undefined>,
+  )
   return fetchWithErrorHandling<FeedbackListResponse>(feedbackUrl(query), {
     errorMessage: 'Failed to fetch feedback items',
   })
@@ -146,7 +169,9 @@ export async function fetchFeedbackItems(
 /**
  * Get a single feedback item with votes.
  */
-export async function fetchFeedbackItem(id: string): Promise<FeedbackItemWithVotes> {
+export async function fetchFeedbackItem(
+  id: string,
+): Promise<FeedbackItemWithVotes> {
   return fetchWithErrorHandling<FeedbackItemWithVotes>(feedbackUrl(`/${id}`), {
     errorMessage: 'Failed to fetch feedback item',
   })
@@ -159,9 +184,12 @@ export async function fetchFeedbackSummary(
   projectId?: string,
 ): Promise<FeedbackSummary> {
   const query = buildQueryString({ project_id: projectId })
-  const raw = await fetchWithErrorHandling<FeedbackSummaryRaw>(feedbackUrl(`/summary${query}`), {
-    errorMessage: 'Failed to fetch feedback summary',
-  })
+  const raw = await fetchWithErrorHandling<FeedbackSummaryRaw>(
+    feedbackUrl(`/summary${query}`),
+    {
+      errorMessage: 'Failed to fetch feedback summary',
+    },
+  )
   return transformSummary(raw)
 }
 
@@ -176,7 +204,11 @@ export async function updateFeedbackStatus(
     linked_task_id?: string
   },
 ): Promise<FeedbackItem> {
-  return patchJson<FeedbackItem>(feedbackUrl(`/${id}`), data, 'Failed to update feedback status')
+  return patchJson<FeedbackItem>(
+    feedbackUrl(`/${id}`),
+    data,
+    'Failed to update feedback status',
+  )
 }
 
 /**
@@ -185,5 +217,8 @@ export async function updateFeedbackStatus(
 export async function deleteFeedbackItem(
   id: string,
 ): Promise<{ deleted: boolean; id: string }> {
-  return deleteJson<{ deleted: boolean; id: string }>(feedbackUrl(`/${id}`), 'Failed to delete feedback item')
+  return deleteJson<{ deleted: boolean; id: string }>(
+    feedbackUrl(`/${id}`),
+    'Failed to delete feedback item',
+  )
 }

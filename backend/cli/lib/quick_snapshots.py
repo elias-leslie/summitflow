@@ -5,9 +5,9 @@ These snapshots are designed for agentic use:
 - `recover` is the default restore path and creates a sibling recovery scope.
 - `rollback` is destructive and intentionally limited to the current lane scope.
 
-Lane snapshots capture the full Btrfs subvolume plus the worktree's Git index
-state. The index lives outside the lane subvolume in Git's shared worktree
-metadata, so Btrfs alone is not enough to recreate staged state.
+Legacy lane snapshots capture the full Btrfs subvolume plus the checkout's Git
+index state. The index lives outside the lane subvolume in Git admin metadata,
+so Btrfs alone is not enough to recreate staged state.
 """
 
 from __future__ import annotations
@@ -16,8 +16,10 @@ import contextlib
 import os
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
+from .repo_git import get_current_branch, run_git
 from .snapshots._cleanup import (
     OrphanedSnapshotDir,
     SnapshotResidue,
@@ -34,7 +36,6 @@ from .snapshots._helpers import (
     _absolute_git_dir,
     _canonical_repo_root,
     _find_snapshot,
-    _git,
     _head_oid,
     _head_ref,
     _now_iso,
@@ -64,9 +65,7 @@ from .snapshots._models import (
     SnapshotScope,
     SnapshotUsage,
 )
-from .worktree_git import WorktreeError, get_current_branch, run_git
-from .worktree_helpers import force_remove_worktree
-from .worktree_paths import get_lanes_base_dir, get_projects_base_dir
+from .workspace_paths import get_lanes_base_dir, get_projects_base_dir
 
 # ---------------------------------------------------------------------------
 # Btrfs I/O primitives (kept here — tests monkeypatch these by module path)
@@ -172,7 +171,7 @@ def capture_snapshot(
         name=name or None,
         project_id=project_id,
         repo_root=str(repo_root),
-        worktree_path=str(scope.path),
+        scope_path=str(scope.path),
         scope_type=scope.scope_type,
         scope_name=scope.scope_name,
         snapshot_path=str(snapshot_path),
@@ -213,7 +212,7 @@ def _atomic_subvolume_swap(
     scope: SnapshotScope,
     source_snapshot: Path,
     *,
-    post_swap_fn: object | None = None,
+    post_swap_fn: Callable[[], None] | None = None,
 ) -> None:
     """Replace *scope.path* with a writable snapshot of *source_snapshot*.
 
@@ -263,10 +262,10 @@ def restore_snapshot(
     entries = _load_manifest(project_id, scope)
     snapshot = _find_snapshot(target, entries)
 
-    if snapshot.worktree_path != str(scope.path):
+    if snapshot.scope_path != str(scope.path):
         raise SnapshotError(
             "Snapshot belongs to a different lane.\n"
-            f"  snapshot: {snapshot.worktree_path}\n"
+            f"  snapshot: {snapshot.scope_path}\n"
             f"  current:  {scope.path}"
         )
     if snapshot.scope_type != "lane":
@@ -305,10 +304,10 @@ def restore_project_snapshot(
     entries = _load_manifest(project_id, scope)
     snapshot = _find_snapshot(target, entries)
 
-    if snapshot.worktree_path != str(scope.path):
+    if snapshot.scope_path != str(scope.path):
         raise SnapshotError(
             "Snapshot belongs to a different project root.\n"
-            f"  snapshot: {snapshot.worktree_path}\n"
+            f"  snapshot: {snapshot.scope_path}\n"
             f"  current:  {scope.path}"
         )
     if snapshot.scope_type != "project":
@@ -330,16 +329,14 @@ def restore_project_snapshot(
 
 
 def _cleanup_failed_recovery(
-    canonical_root: Path, destination: Path, recovery_branch: str,
+    destination: Path,
 ) -> None:
     """Best-effort cleanup after a failed lane recovery attempt."""
     if destination.exists():
         with contextlib.suppress(SnapshotError):
-            _git(canonical_root, ["worktree", "remove", str(destination), "--force"])
-        if destination.exists():
             _delete_subvolume(destination)
-    with contextlib.suppress(SnapshotError):
-        _git(canonical_root, ["branch", "-D", recovery_branch])
+        if destination.exists():
+            shutil.rmtree(destination, ignore_errors=False)
 
 
 def _recover_lane(
@@ -349,7 +346,7 @@ def _recover_lane(
     repo_root: Path,
     project_id: str,
 ) -> tuple[Path, str]:
-    """Create a recovery lane worktree from a lane snapshot."""
+    """Create a legacy recovery lane clone from a lane snapshot."""
     destination = get_lanes_base_dir(project_id) / recovery_name
     if destination.exists():
         raise SnapshotError(f"Recovery destination already exists: {destination}")
@@ -358,16 +355,28 @@ def _recover_lane(
     recovery_branch = _recovery_branch_name(snapshot, recovery_name)
     _btrfs(["subvolume", "create", str(destination)])
     try:
-        _git(
-            canonical_root,
-            ["worktree", "add", str(destination), "-b", recovery_branch, snapshot.head_oid or "HEAD"],
+        subprocess.run(
+            ["git", "clone", "--no-checkout", str(canonical_root), str(destination)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(destination), "checkout", "-B", recovery_branch, snapshot.head_oid or "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
         )
         _rsync_snapshot_contents(snapshot_path, destination)
         recovered_git_dir = _absolute_git_dir(destination)
         if snapshot.index_artifact_path:
             shutil.copy2(snapshot.index_artifact_path, recovered_git_dir / "index")
+    except subprocess.CalledProcessError as exc:
+        _cleanup_failed_recovery(destination)
+        stderr = exc.stderr.strip() or str(exc)
+        raise SnapshotError(f"Failed to recover legacy lane clone:\n{stderr}") from exc
     except Exception:
-        _cleanup_failed_recovery(canonical_root, destination, recovery_branch)
+        _cleanup_failed_recovery(destination)
         raise
     return destination, recovery_branch
 
@@ -384,10 +393,10 @@ def recover_snapshot(
     entries = _load_manifest(project_id, scope)
     snapshot = _find_snapshot(target, entries)
 
-    if snapshot.worktree_path != str(scope.path):
+    if snapshot.scope_path != str(scope.path):
         raise SnapshotError(
             "Snapshot belongs to a different scope.\n"
-            f"  snapshot: {snapshot.worktree_path}\n"
+            f"  snapshot: {snapshot.scope_path}\n"
             f"  current:  {scope.path}"
         )
 
@@ -421,12 +430,40 @@ def recover_snapshot(
 # ---------------------------------------------------------------------------
 
 
-def _unregister_worktree(inspection: LaneInspection, repo_root: Path) -> None:
-    """Remove git worktree registration for a lane."""
-    try:
-        force_remove_worktree(inspection.lane_path, repo_root)
-    except WorktreeError as exc:
-        raise SnapshotError(f"Failed to remove git worktree registration: {exc}") from exc
+def _linked_git_admin_dir(checkout_path: Path) -> Path | None:
+    git_file = checkout_path / ".git"
+    if not git_file.is_file():
+        return None
+    content = git_file.read_text(encoding="utf-8").strip()
+    if not content.startswith("gitdir:"):
+        return None
+    git_dir = Path(content.split(":", 1)[1].strip())
+    if not git_dir.is_absolute():
+        git_dir = (checkout_path / git_dir).resolve()
+    return git_dir
+
+
+def _remove_checkout_metadata(checkout_path: Path) -> None:
+    """Remove legacy lane path plus detached git admin metadata."""
+    linked_git_dir = _linked_git_admin_dir(checkout_path)
+
+    if checkout_path.exists():
+        try:
+            _delete_subvolume(checkout_path)
+        except SnapshotError:
+            if checkout_path.is_dir():
+                shutil.rmtree(checkout_path, ignore_errors=False)
+            elif checkout_path.exists():
+                checkout_path.unlink()
+
+    if linked_git_dir and linked_git_dir.exists():
+        try:
+            if linked_git_dir.is_dir():
+                shutil.rmtree(linked_git_dir, ignore_errors=False)
+            else:
+                linked_git_dir.unlink()
+        except OSError as exc:
+            raise SnapshotError(f"Failed to remove legacy lane git metadata: {exc}") from exc
 
 
 def _delete_lane_branch(inspection: LaneInspection, repo_root: Path) -> None:
@@ -450,9 +487,9 @@ def delete_lane(inspection: LaneInspection) -> None:
 
     Must be called from outside the lane directory (caller responsibility).
     """
-    if inspection.is_git_worktree:
+    if inspection.has_checkout_metadata:
         repo_root = _resolve_lane_repo_root(inspection.lane_path)
-        _unregister_worktree(inspection, repo_root)
+        _remove_checkout_metadata(inspection.lane_path)
         _delete_lane_branch(inspection, repo_root)
 
     for snap_path in inspection.snapshot_paths:
@@ -477,9 +514,9 @@ def delete_lane(inspection: LaneInspection) -> None:
         shutil.rmtree(inspection.manifest_dir, ignore_errors=True)
 
     with contextlib.suppress(Exception):
-        from .checkpoint import remove_checkpoint_for_worktree_path
+        from .checkpoint import remove_checkpoint_for_scope_path
 
-        remove_checkpoint_for_worktree_path(
+        remove_checkpoint_for_scope_path(
             inspection.lane_path,
             project_id=inspection.project_id,
         )

@@ -13,8 +13,8 @@ import {
   Play,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { fetchNarrationTimeline } from '@/lib/api/tasks-observability'
 import type { NarrationTag, NarrationTagType } from '@/lib/api/tasks'
+import { fetchNarrationTimeline } from '@/lib/api/tasks-observability'
 
 interface NarrationTimelineProps {
   taskId: string
@@ -57,7 +57,10 @@ function ConfidenceBadge({ content }: { content: string }) {
         : 'text-rose-400 bg-rose-500/10 border-rose-500/20'
   return (
     <span
-      className={clsx('inline-flex items-center px-1.5 py-0.5 text-2xs font-mono rounded border', color)}
+      className={clsx(
+        'inline-flex items-center px-1.5 py-0.5 text-2xs font-mono rounded border',
+        color,
+      )}
     >
       {score}%
     </span>
@@ -131,9 +134,7 @@ export function NarrationTimeline({
   }
 
   if (error) {
-    return (
-      <p className="text-xs text-slate-600 italic py-2">{error}</p>
-    )
+    return <p className="text-xs text-slate-600 italic py-2">{error}</p>
   }
 
   if (tags.length === 0) {

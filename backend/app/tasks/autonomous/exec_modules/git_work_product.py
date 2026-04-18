@@ -16,7 +16,7 @@ _COMMIT_TIMEOUT_SECONDS = 30
 
 
 def _git(project_path: str, *args: str) -> subprocess.CompletedProcess[str]:
-    """Run a git command inside the task worktree."""
+    """Run a git command inside the shared task checkout."""
     return subprocess.run(
         ["git", *args],
         cwd=project_path,

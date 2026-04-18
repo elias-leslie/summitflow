@@ -2,7 +2,6 @@
 
 import { Loader2, Play } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { SourceCard } from './SourceCard'
 import {
   type Backup,
   type BackupHealthItem,
@@ -11,6 +10,7 @@ import {
   createSourceBackup,
   updateBackupSource,
 } from '@/lib/api/backups'
+import { SourceCard } from './SourceCard'
 
 // ─── Infrastructure Setup Card ───────────────────────────────────
 
@@ -76,9 +76,7 @@ export function SourcesManager({
   const [backingUpId, setBackingUpId] = useState<string | null>(null)
   const [creatingInfra, setCreatingInfra] = useState(false)
 
-  const hasInfraSource = sources.some(
-    (s) => s.source_type === 'infrastructure',
-  )
+  const hasInfraSource = sources.some((s) => s.source_type === 'infrastructure')
 
   const healthMap = useMemo(() => {
     const map: Record<string, BackupHealthItem> = {}

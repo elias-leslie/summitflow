@@ -1,6 +1,6 @@
 """Utility (on-demand) workflows for SummitFlow.
 
-10 workflows for backup/restore, enrichment, PR review, worktree cleanup,
+10 workflows for backup/restore, enrichment, PR review, checkout cleanup,
 and post-scan task generation.
 """
 
@@ -113,18 +113,18 @@ async def pr_review_wf(input: ReviewPRInput, ctx: Context) -> dict[str, Any]:
 
 
 @hatchet.task(
-    name="summitflow-worktree-cleanup",
+    name="summitflow-checkout-cleanup",
     input_validator=TaskInput,
     execution_timeout="180s",
     retries=3,
     backoff_factor=2.0,
 )
-async def worktree_cleanup_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
+async def checkpoint_cleanup_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
     from typing import cast
 
-    from ..tasks.autonomous.cleanup import cleanup_task_worktree
+    from ..tasks.autonomous.cleanup import cleanup_task_checkpoint
 
-    result = await asyncio.to_thread(cleanup_task_worktree, input.task_id)
+    result = await asyncio.to_thread(cleanup_task_checkpoint, input.task_id)
     return cast(dict[str, Any], result)
 
 

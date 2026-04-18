@@ -88,7 +88,10 @@ export function PreviewArea({
           <button
             type="button"
             onClick={onToggleComparison}
-            className={clsx('btn-secondary flex items-center gap-2', showComparison && 'bg-amber-500/20 text-amber-400')}
+            className={clsx(
+              'btn-secondary flex items-center gap-2',
+              showComparison && 'bg-amber-500/20 text-amber-400',
+            )}
           >
             <GitCompare className="w-4 h-4" />
             {showComparison ? 'Exit Compare' : 'Compare'}
@@ -118,7 +121,10 @@ export function PreviewArea({
         <button
           type="button"
           onClick={onToggleHistory}
-          className={clsx('btn-secondary flex items-center gap-2', showHistory && 'bg-outrun-500/20')}
+          className={clsx(
+            'btn-secondary flex items-center gap-2',
+            showHistory && 'bg-outrun-500/20',
+          )}
         >
           <History className="w-4 h-4" />
           History

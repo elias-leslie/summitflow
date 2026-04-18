@@ -5,11 +5,12 @@ import { runtimeApi } from '@/lib/api/runtime'
 
 type ServiceAction = 'restart' | 'stop' | 'start'
 
-const actionFns: Record<ServiceAction, (service: string) => Promise<unknown>> = {
-  restart: (s) => runtimeApi.restart(s),
-  stop: (s) => runtimeApi.stop(s),
-  start: (s) => runtimeApi.start(s),
-}
+const actionFns: Record<ServiceAction, (service: string) => Promise<unknown>> =
+  {
+    restart: (s) => runtimeApi.restart(s),
+    stop: (s) => runtimeApi.stop(s),
+    start: (s) => runtimeApi.start(s),
+  }
 
 export function useServiceAction(service: string, action: ServiceAction) {
   const queryClient = useQueryClient()

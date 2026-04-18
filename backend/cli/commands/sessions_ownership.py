@@ -42,7 +42,7 @@ def _format_ownership_line(project_id: str, owner: dict[str, object]) -> str:
     ]
     if branch := owner.get("branch"):
         parts.append(f"branch={branch}")
-    if location := owner.get("worktree_path"):
+    if location := owner.get("working_dir"):
         parts.append(f"cwd={location}")
     if isinstance(scope_paths := owner.get("scope_paths"), list) and scope_paths:
         parts.append(f"paths={','.join(str(path) for path in scope_paths[:3])}")

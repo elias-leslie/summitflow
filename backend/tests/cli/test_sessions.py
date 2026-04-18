@@ -553,7 +553,7 @@ class TestOwnershipCommand:
                         "agent_slug": "coder",
                         "ownership_kind": "scoped",
                         "branch": "task-1/main",
-                        "worktree_path": "/tmp/task-1",
+                        "checkout_path": "/tmp/task-1",
                         "scope_paths": ["backend/app/foo.py"],
                         "is_stale": False,
                     }

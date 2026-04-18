@@ -50,8 +50,8 @@ async def test_build_project_pulse_separates_stale_sessions_from_live_coordinati
             "app.services.project_pulse.build_project_cleanup_status",
             return_value={
                 "project_id": "agent-hub",
-                "active_worktrees": 0,
-                "dirty_worktrees": 0,
+                "active_checkpoints": 0,
+                "dirty_checkpoints": 0,
                 "needs_cleanup": False,
             },
         ),
@@ -82,7 +82,7 @@ async def test_build_project_pulse_prefers_richer_active_session_over_tmux_prese
                 "session_type": "agent",
                 "current_branch": "main",
                 "working_dir": "/home/kasadis/a-term",
-                "worktree_path": "/home/kasadis/a-term",
+                "checkout_path": "/home/kasadis/a-term",
                 "repo_root": "/home/kasadis/a-term",
                 "updated_at": fresh,
                 "live_activity": {"phase": "waiting_for_model", "health": "active", "lifecycle_state": "active"},
@@ -95,7 +95,7 @@ async def test_build_project_pulse_prefers_richer_active_session_over_tmux_prese
                 "session_type": "agent",
                 "current_branch": "main",
                 "working_dir": "/home/kasadis/a-term",
-                "worktree_path": "/home/kasadis/a-term",
+                "checkout_path": "/home/kasadis/a-term",
                 "repo_root": "/home/kasadis/a-term",
                 "updated_at": fresh,
                 "live_activity": {"phase": "waiting_for_model", "health": "active", "lifecycle_state": "active"},
@@ -108,7 +108,7 @@ async def test_build_project_pulse_prefers_richer_active_session_over_tmux_prese
                 "session_type": "claude_code",
                 "current_branch": "main",
                 "working_dir": "/home/kasadis/a-term",
-                "worktree_path": "/home/kasadis/a-term",
+                "checkout_path": "/home/kasadis/a-term",
                 "repo_root": "/home/kasadis/a-term",
                 "updated_at": fresh,
                 "live_activity": {"phase": "waiting_for_model", "health": "active", "lifecycle_state": "active"},
@@ -126,8 +126,8 @@ async def test_build_project_pulse_prefers_richer_active_session_over_tmux_prese
             "app.services.project_pulse.build_project_cleanup_status",
             return_value={
                 "project_id": "a-term",
-                "active_worktrees": 0,
-                "dirty_worktrees": 0,
+                "active_checkpoints": 0,
+                "dirty_checkpoints": 0,
                 "needs_cleanup": False,
             },
         ),
@@ -173,8 +173,8 @@ async def test_build_project_pulse_preserves_session_request_identity_fields() -
             "app.services.project_pulse.build_project_cleanup_status",
             return_value={
                 "project_id": "agent-hub",
-                "active_worktrees": 0,
-                "dirty_worktrees": 0,
+                "active_checkpoints": 0,
+                "dirty_checkpoints": 0,
                 "needs_cleanup": False,
             },
         ),
@@ -218,8 +218,8 @@ async def test_build_project_pulse_excludes_stranded_tasks_from_running_summary(
             "app.services.project_pulse.build_project_cleanup_status",
             return_value={
                 "project_id": "agent-hub",
-                "active_worktrees": 0,
-                "dirty_worktrees": 0,
+                "active_checkpoints": 0,
+                "dirty_checkpoints": 0,
                 "needs_cleanup": False,
             },
         ),
@@ -270,8 +270,8 @@ async def test_build_project_pulse_stranded_task_with_unrelated_active_owners() 
             "app.services.project_pulse.build_project_cleanup_status",
             return_value={
                 "project_id": "agent-hub",
-                "active_worktrees": 0,
-                "dirty_worktrees": 0,
+                "active_checkpoints": 0,
+                "dirty_checkpoints": 0,
                 "needs_cleanup": False,
             },
         ),
@@ -322,8 +322,8 @@ async def test_build_project_pulse_active_owner_prevents_stranded_classification
             "app.services.project_pulse.build_project_cleanup_status",
             return_value={
                 "project_id": "agent-hub",
-                "active_worktrees": 0,
-                "dirty_worktrees": 0,
+                "active_checkpoints": 0,
+                "dirty_checkpoints": 0,
                 "needs_cleanup": False,
             },
         ),
@@ -366,8 +366,8 @@ async def test_build_project_pulse_reapable_counts_lifecycle_state_without_boole
             "app.services.project_pulse.build_project_cleanup_status",
             return_value={
                 "project_id": "agent-hub",
-                "active_worktrees": 0,
-                "dirty_worktrees": 0,
+                "active_checkpoints": 0,
+                "dirty_checkpoints": 0,
                 "needs_cleanup": False,
             },
         ),
@@ -422,8 +422,8 @@ async def test_build_project_pulse_active_session_with_external_id_prevents_stra
             "app.services.project_pulse.build_project_cleanup_status",
             return_value={
                 "project_id": "summitflow",
-                "active_worktrees": 0,
-                "dirty_worktrees": 0,
+                "active_checkpoints": 0,
+                "dirty_checkpoints": 0,
                 "needs_cleanup": False,
             },
         ),
@@ -480,8 +480,8 @@ async def test_build_project_pulse_active_session_with_task_branch_prevents_stra
             "app.services.project_pulse.build_project_cleanup_status",
             return_value={
                 "project_id": "summitflow",
-                "active_worktrees": 0,
-                "dirty_worktrees": 0,
+                "active_checkpoints": 0,
+                "dirty_checkpoints": 0,
                 "needs_cleanup": False,
             },
         ),
@@ -498,7 +498,7 @@ async def test_build_project_pulse_active_session_with_task_branch_prevents_stra
 
 @pytest.mark.asyncio
 async def test_build_project_pulse_active_orchestrator_files_touched_prevents_stranded() -> None:
-    """An active orchestrator session touching task worktree paths protects those tasks from stranded classification."""
+    """An active orchestrator session touching task checkout paths protects those tasks from stranded classification."""
     stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
     fresh = (datetime.now(UTC) - timedelta(seconds=30)).isoformat().replace("+00:00", "Z")
 
@@ -556,8 +556,8 @@ async def test_build_project_pulse_active_orchestrator_files_touched_prevents_st
             "app.services.project_pulse.build_project_cleanup_status",
             return_value={
                 "project_id": "agent-hub",
-                "active_worktrees": 2,
-                "dirty_worktrees": 2,
+                "active_checkpoints": 2,
+                "dirty_checkpoints": 2,
                 "needs_cleanup": True,
             },
         ),
@@ -625,8 +625,8 @@ async def test_build_project_pulse_active_orchestrator_batch_task_ids_prevent_st
             "app.services.project_pulse.build_project_cleanup_status",
             return_value={
                 "project_id": "summitflow",
-                "active_worktrees": 2,
-                "dirty_worktrees": 2,
+                "active_checkpoints": 2,
+                "dirty_checkpoints": 2,
                 "needs_cleanup": True,
             },
         ),
@@ -683,8 +683,8 @@ async def test_build_project_pulse_stale_session_does_not_prevent_stranded() -> 
             "app.services.project_pulse.build_project_cleanup_status",
             return_value={
                 "project_id": "summitflow",
-                "active_worktrees": 0,
-                "dirty_worktrees": 0,
+                "active_checkpoints": 0,
+                "dirty_checkpoints": 0,
                 "needs_cleanup": False,
             },
         ),

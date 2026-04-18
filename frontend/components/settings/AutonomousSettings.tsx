@@ -10,13 +10,13 @@ import {
   updateAutonomousSchedule,
 } from '@/lib/api'
 import { AutomationSchedulesSection } from './AutomationSchedulesSection'
-import { ExecutionControlSection } from './ExecutionControlSection'
-import { RoutineUpkeepSection } from './RoutineUpkeepSection'
-import { TaskFilteringSection } from './TaskFilteringSection'
-import { SelfHealingSection } from './SelfHealingSection'
-import { QualityGateSection } from './QualityGateSection'
-import { MergeReviewSection } from './MergeReviewSection'
 import { TASK_TYPES } from './autonomous-utils'
+import { ExecutionControlSection } from './ExecutionControlSection'
+import { MergeReviewSection } from './MergeReviewSection'
+import { QualityGateSection } from './QualityGateSection'
+import { RoutineUpkeepSection } from './RoutineUpkeepSection'
+import { SelfHealingSection } from './SelfHealingSection'
+import { TaskFilteringSection } from './TaskFilteringSection'
 import { useAutonomousSettingsHandlers } from './useAutonomousSettingsHandlers'
 
 interface AutonomousSettingsPanelProps {
@@ -80,7 +80,7 @@ export function AutonomousSettingsPanel({
     )
   }
 
-  const selectedTypes = settings.allowed_types || TASK_TYPES.map(t => t.value)
+  const selectedTypes = settings.allowed_types || TASK_TYPES.map((t) => t.value)
 
   return (
     <div className="space-y-6">
@@ -121,7 +121,7 @@ export function AutonomousSettingsPanel({
         schedules={schedules}
         updatingScheduleId={
           scheduleMutation.isPending
-            ? scheduleMutation.variables?.scheduleId ?? null
+            ? (scheduleMutation.variables?.scheduleId ?? null)
             : null
         }
         onToggle={(schedule) =>

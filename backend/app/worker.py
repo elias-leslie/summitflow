@@ -36,12 +36,12 @@ from app.workflows.utility import (
     backup_create_wf,
     backup_restore_wf,
     check_resolved_wf,
+    checkpoint_cleanup_wf,
     enrich_wf,
     page_health_wf,
     pr_review_wf,
     refactor_regen_wf,
     schema_tasks_wf,
-    worktree_cleanup_wf,
 )
 
 
@@ -76,7 +76,7 @@ def main() -> None:
             backup_restore_wf,
             enrich_wf,
             pr_review_wf,
-            worktree_cleanup_wf,
+            checkpoint_cleanup_wf,
             refactor_regen_wf,
             schema_tasks_wf,
             arch_tasks_wf,

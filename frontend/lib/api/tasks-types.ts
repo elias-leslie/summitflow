@@ -13,17 +13,16 @@
 // ============================================================================
 
 export type {
+  BlockerInfo,
+  CapabilityContext,
+  EnrichmentStatus,
+  Task,
+  TaskAcceptanceCriterion,
+  TaskDependency,
+  TaskListResponse,
   TaskStatus,
   TaskType,
-  EnrichmentStatus,
-  TaskAcceptanceCriterion,
-  CapabilityContext,
-  BlockerInfo,
-  WorktreeInfo,
   VerificationResult,
-  Task,
-  TaskListResponse,
-  TaskDependency,
 } from './tasks-types-core'
 
 // ============================================================================
@@ -31,12 +30,12 @@ export type {
 // ============================================================================
 
 export type {
+  DiscussionMessage,
+  DiscussionResponse,
   Step,
   StepSummary,
   Subtask,
   SubtasksResponse,
-  DiscussionMessage,
-  DiscussionResponse,
 } from './tasks-types-enrichment'
 
 // ============================================================================
@@ -44,9 +43,9 @@ export type {
 // ============================================================================
 
 export type {
+  DeleteTaskResponse,
   ExecuteTaskOptions,
   ExecuteTaskResponse,
-  DeleteTaskResponse,
 } from './tasks-types-execution'
 
 // ============================================================================
@@ -54,14 +53,14 @@ export type {
 // ============================================================================
 
 export type {
-  CodingAgent,
-  CodingAgentsResponse,
   AgentEventType,
   AgentHubEvent,
+  AgentHubEventsResponse,
   AgentHubLiveActivity,
   AgentHubSessionSummary,
-  AgentHubEventsResponse,
-  NarrationTagType,
+  CodingAgent,
+  CodingAgentsResponse,
   NarrationTag,
+  NarrationTagType,
   NarrationTimelineResponse,
 } from './tasks-types-agenthub'

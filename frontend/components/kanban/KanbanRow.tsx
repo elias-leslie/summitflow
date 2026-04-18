@@ -1,8 +1,9 @@
 'use client'
 
 import { useDroppable } from '@dnd-kit/core'
+import { rectSortingStrategy, SortableContext } from '@dnd-kit/sortable'
 import clsx from 'clsx'
-import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
+import type { LucideIcon } from 'lucide-react'
 import {
   ChevronRight,
   CircleCheck,
@@ -13,15 +14,13 @@ import {
   Zap,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-
-import type { Task } from '@/lib/api'
 import type { useExecutionWebSocket } from '@/hooks/useExecutionWebSocket'
-import { TaskCard } from './TaskCard'
-import type { LucideIcon } from 'lucide-react'
+import type { Task } from '@/lib/api'
 import {
   columnColorClasses,
   type KanbanColumn as KanbanColumnType,
 } from './columnConfig'
+import { TaskCard } from './TaskCard'
 
 const COLUMN_ICONS: Record<string, LucideIcon> = {
   lightbulb: Lightbulb,
@@ -71,9 +70,7 @@ export function KanbanRow({
       ref={setNodeRef}
       className={clsx(
         'rounded-lg border transition-colors',
-        showDropHint
-          ? colors.dropIndicator
-          : [colors.border, colors.bg],
+        showDropHint ? colors.dropIndicator : [colors.border, colors.bg],
       )}
     >
       {/* Row Header — always visible, clickable */}
@@ -95,7 +92,11 @@ export function KanbanRow({
 
         {IconComponent && (
           <IconComponent
-            className={clsx('w-4 h-4', colors.header, column.icon === 'zap' && 'animate-pulse')}
+            className={clsx(
+              'w-4 h-4',
+              colors.header,
+              column.icon === 'zap' && 'animate-pulse',
+            )}
           />
         )}
 

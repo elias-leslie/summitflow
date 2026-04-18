@@ -25,9 +25,9 @@ from ._claude_constants import (
     _ORCHESTRATE_TMPDIR_PREFIX,
     _ORCHESTRATOR_AGENTS_FNAME,
     _ORCHESTRATOR_PROMPT_FNAME,
+    _TASK_BRANCH_PREFIX,
     _TASK_STATUS_RUNNING,
     _WORKER_SUBAGENT_PAYLOAD,
-    _WORKTREE_PATH_PREFIX,
     OrchestratorTask,
     WorkerDispatch,
 )
@@ -123,23 +123,20 @@ def run_worker(*, command: list[str], cwd: Path) -> int:
     return int(result.returncode)
 
 
-def extract_worktree_path(task: dict[str, object]) -> Path | None:
-    worktree = task.get("worktree")
-    if not isinstance(worktree, dict):
-        return None
-    raw_path = worktree.get("path")
-    if not isinstance(raw_path, str) or not raw_path.strip():
-        return None
-    return Path(raw_path).resolve()
+def extract_task_branch(task: dict[str, object]) -> str | None:
+    raw_branch = task.get("branch_name")
+    if isinstance(raw_branch, str) and raw_branch.strip():
+        return raw_branch.strip()
+    return None
 
 
-def worktree_from_context(context_text: str) -> Path | None:
-    """Extract a worktree path from context output lines."""
+def branch_from_context(context_text: str) -> str | None:
+    """Extract a task branch from context output lines."""
     for raw_line in context_text.splitlines():
-        if raw_line.startswith(_WORKTREE_PATH_PREFIX):
-            raw_path = raw_line.split(":", 1)[1].strip()
-            if raw_path:
-                return Path(raw_path).resolve()
+        if raw_line.startswith(_TASK_BRANCH_PREFIX):
+            raw_branch = raw_line.split(":", 1)[1].strip()
+            if raw_branch:
+                return raw_branch
     return None
 
 
@@ -205,24 +202,22 @@ def prepare_orchestrator_task(
     if not project_id:
         fatal(f"Task {resolved_task_id} has no project_id")
     project_root = resolve_root_fn(project_id)
-    worktree_path = extract_worktree_path(task)
+    task_branch = extract_task_branch(task)
     status = str(task.get("status") or "")
     if status != _TASK_STATUS_RUNNING:
         validate_readiness_fn(
             task_id=resolved_task_id, project_id=project_id, allow_unready=allow_unready,
         )
-    if worktree_path is None and claim_if_needed and status != _TASK_STATUS_RUNNING:
+    if task_branch is None and claim_if_needed and status != _TASK_STATUS_RUNNING:
         run_text_fn(command=["st", "claim", resolved_task_id], cwd=project_root)
         task = fetch_task_fn(resolved_task_id)
-        worktree_path = extract_worktree_path(task)
+        task_branch = extract_task_branch(task)
     context_text = run_text_fn(command=["st", "context", resolved_task_id], cwd=project_root)
-    if worktree_path is None:
-        worktree_path = worktree_from_context(context_text)
-    if worktree_path is None:
-        fatal(f"Task {resolved_task_id} has no active worktree for orchestration")
+    if task_branch is None:
+        task_branch = branch_from_context(context_text)
     return OrchestratorTask(
         index=index, task_id=resolved_task_id, project_id=project_id,
-        project_root=project_root, worktree_path=worktree_path, context_text=context_text.strip(),
+        project_root=project_root, task_branch=task_branch, context_text=context_text.strip(),
     )
 
 
@@ -252,6 +247,7 @@ def execute_orchestrator(
         fatal("All orchestrated tasks must have a project_id.")
     if len(project_ids) != 1:
         fatal("All orchestrated tasks must belong to the same project.")
+    effective_max_subagents = 1
     tasks = [
         prepare_task_fn(task=task, allow_unready=allow_unready, claim_if_needed=claim_if_needed, index=i)
         for i, task in enumerate(raw_tasks)
@@ -260,7 +256,7 @@ def execute_orchestrator(
     project_root = tasks[0].project_root
     python_bin, script_path = resolve_hub_fn()
     prompt = build_orchestrator_prompt(
-        project_id=project_id, project_root=project_root, max_subagents=max_subagents, tasks=tasks,
+        project_id=project_id, project_root=project_root, max_subagents=effective_max_subagents, tasks=tasks,
     )
     with tempfile.TemporaryDirectory(prefix=_ORCHESTRATE_TMPDIR_PREFIX) as temp_dir:
         temp_root = Path(temp_dir)

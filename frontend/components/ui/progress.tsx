@@ -1,9 +1,8 @@
 'use client'
 
 import * as ProgressPrimitive from '@radix-ui/react-progress'
-import type * as React from 'react'
-
 import clsx from 'clsx'
+import type * as React from 'react'
 
 function Progress({
   className,
@@ -24,7 +23,9 @@ function Progress({
         data-slot="progress-indicator"
         className={clsx(
           'h-full w-full flex-1 transition-all duration-500 ease-out',
-          hasValue ? 'bg-phosphor-500 shadow-[0_0_8px_rgba(0,245,255,0.3)]' : 'bg-phosphor-500',
+          hasValue
+            ? 'bg-phosphor-500 shadow-[0_0_8px_rgba(0,245,255,0.3)]'
+            : 'bg-phosphor-500',
         )}
         style={{ transform: `translateX(-${100 - (value || 0)}%)` }}
       />

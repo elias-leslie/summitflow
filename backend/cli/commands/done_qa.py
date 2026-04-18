@@ -12,12 +12,12 @@ from pathlib import Path
 
 from ..output import output_warning
 
-# Resolve dt path once — ~/bin/dt may not be on PATH in worktree subprocesses
+# Resolve dt path once — ~/bin/dt may not be on PATH in subprocesses
 _DT_PATH = shutil.which("dt") or str(Path.home() / "bin" / "dt")
 
 
-def run_qa_gate(worktree_path: str) -> tuple[bool, str]:
-    """Run dt -q -d + dt pytest in the worktree. Returns (passed, output)."""
+def run_qa_gate(checkout_path: str) -> tuple[bool, str]:
+    """Run dt -q -d + dt pytest in the checkout. Returns (passed, output)."""
     combined_output: list[str] = []
 
     for cmd, timeout in [
@@ -27,7 +27,7 @@ def run_qa_gate(worktree_path: str) -> tuple[bool, str]:
         try:
             result = subprocess.run(
                 cmd,
-                cwd=worktree_path,
+                cwd=checkout_path,
                 capture_output=True,
                 text=True,
                 timeout=timeout,

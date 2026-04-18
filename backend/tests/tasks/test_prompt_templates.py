@@ -111,7 +111,7 @@ class TestPromptTemplateFallbacks:
                 "steps_from_table": [{"step_number": 1, "description": "Keep output stable"}],
             },
             project_id="agent-hub",
-            project_path="/tmp/worktree",
+            project_path="/tmp/checkout",
         )
 
         assert "Reduce the component size while preserving behavior" in prompt
@@ -120,7 +120,7 @@ class TestPromptTemplateFallbacks:
         assert "Expected Scope" in prompt
         assert "frontend/components/ActivityTimeline.tsx" in prompt
         assert "Extract reusable ActivityTimeline helpers" in prompt
-        assert "/tmp/worktree" in prompt
+        assert "/tmp/checkout" in prompt
         assert "Precision Code Search: symbol-first" in prompt
         assert "Use the Precision Code Search block as the first code-navigation pass." in prompt
         mock_logger.warning.assert_called_once()
@@ -159,7 +159,7 @@ class TestPromptTemplateFallbacks:
                 "steps": [{"step_number": 1, "description": "Preserve behavior"}],
             },
             project_id="agent-hub",
-            project_path="/tmp/worktree",
+            project_path="/tmp/checkout",
         )
 
         assert "Preserve behavior" in prompt
@@ -243,7 +243,7 @@ class TestPromptTemplateFallbacks:
                 "steps_from_table": [{"step_number": 1, "description": "Update layout"}],
             },
             project_id="summitflow",
-            project_path="/tmp/worktree",
+            project_path="/tmp/checkout",
         )
 
         assert "Execution Contract" in prompt
@@ -300,7 +300,7 @@ class TestPromptTemplateFallbacks:
                 "steps_from_table": [{"step_number": 1, "description": "Keep lane-safe scope paths"}],
             },
             project_id="test2",
-            project_path="/home/kasadis/.local/share/st/worktrees/test2/task-1",
+            project_path="/home/kasadis//.local/share/st/checkpoints/test2/task-1",
         )
 
         assert "backend/app/main.py" in prompt

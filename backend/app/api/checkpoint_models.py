@@ -18,11 +18,10 @@ class CheckpointResponse(BaseModel):
 
     task_id: str
     project_id: str
-    snapshot_path: str
+    task_branch: str
     base_branch: str
     created_at: str
     claimed_by: str
-    size: str
     age: str
     branches: list[BranchInfo]
 

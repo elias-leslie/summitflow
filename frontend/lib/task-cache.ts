@@ -20,7 +20,9 @@ export function upsertTaskInList(
 ): TaskListResponse | undefined {
   if (!response) return response
 
-  const existingIndex = response.tasks.findIndex((candidate) => candidate.id === task.id)
+  const existingIndex = response.tasks.findIndex(
+    (candidate) => candidate.id === task.id,
+  )
   if (existingIndex === -1) {
     return {
       ...response,
@@ -100,5 +102,7 @@ export function invalidateTaskQueries(
   queryClient: QueryClient,
   projectId: string,
 ): Promise<void> {
-  return queryClient.invalidateQueries({ queryKey: taskQueryKeys.root(projectId) })
+  return queryClient.invalidateQueries({
+    queryKey: taskQueryKeys.root(projectId),
+  })
 }

@@ -192,14 +192,14 @@ def _do_review_transition(
 
 def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> str:
     """Set task to completed and send a completion notification."""
-    from ....tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_worktree
-    from ....tasks.autonomous.cleanup.worktree_cleanup import cleanup_task_worktree
+    from ....tasks.autonomous.cleanup.checkpoint_cleanup import cleanup_task_checkpoint
+    from ....tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_checkpoint
 
     if agent_configs.get_auto_merge_enabled(project_id):
         # Move out of running before merge orchestration so merge cleanup does not
         # self-block on the task's pre-merge status.
         task_store.update_task_status(task_id, "completed", validate_transition=False)
-        merge_result = merge_and_cleanup_task_worktree(task_id, project_id)
+        merge_result = merge_and_cleanup_task_checkpoint(task_id, project_id)
         merge_status = str(merge_result.get("status") or "failed")
         emit_log(
             task_id,
@@ -223,13 +223,13 @@ def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> 
     )
     _notify_completion(task_id, project_id)
 
-    cleanup_result = cleanup_task_worktree(task_id, delete_branch=False, project_id=project_id)
+    cleanup_result = cleanup_task_checkpoint(task_id, delete_branch=False, project_id=project_id)
     if cleanup_result.get("status") == "cleaned":
-        worktree_path = str(cleanup_result.get("worktree_path") or "unknown")
+        checkout_path = str(cleanup_result.get("checkout_path") or "unknown")
         emit_log(
             task_id,
             "info",
-            f"Cleaned task worktree: {worktree_path}",
+            f"Cleaned task checkpoint state in checkout: {checkout_path}",
             project_id=project_id,
         )
     else:
@@ -244,7 +244,7 @@ def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> 
             task_id,
             project_id,
             "cleanup_needed",
-            f"Completed task {task_id} needs cleanup review: {reason}. Reconcile lingering worktree/branch state.",
+            f"Completed task {task_id} needs cleanup review: {reason}. Reconcile lingering checkpoint or branch state.",
         )
     return "completed"
 

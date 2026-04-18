@@ -22,14 +22,6 @@ class ValidationResultResponse(BaseModel):
     suggestions: list[str]
 
 
-class WorktreeResponse(BaseModel):
-    """Response model for worktree info on a task."""
-
-    path: str
-    branch: str
-    is_active: bool
-
-
 class TaskResponse(BaseModel):
     """Response model for a task."""
 
@@ -89,8 +81,6 @@ class TaskResponse(BaseModel):
     plan_approved_by: str | None = None
     # Context for plan.json round-trip (from task_spirit)
     context: dict[str, Any] | None = None
-    # Worktree info (when task has an active worktree)
-    worktree: WorktreeResponse | None = None
 
 
 class TaskListResponse(BaseModel):

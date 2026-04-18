@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from datetime import UTC, datetime
 
-from app.services.worktree import get_task_worktree, remove_task_worktree
+from app.services.task_checkout import get_task_checkout, remove_task_checkout
 from app.storage import log_task_event
 from app.storage import tasks as task_store
 from app.storage.projects import get_project_root_path
@@ -35,11 +35,11 @@ def _git(args: list[str], cwd: str, text: bool = True) -> subprocess.CompletedPr
 
 
 def _clear_checkpoint_residue(task_id: str, project_id: str) -> None:
-    """Remove checkpoint metadata for a lane whose worktree is already gone."""
+    """Remove checkpoint metadata for a task branch whose checkout state is gone."""
     try:
         from cli.lib.checkpoint import remove_snapshot
 
-        remove_snapshot(task_id, remove_worktree=False, project_id=project_id)
+        remove_snapshot(task_id, project_id=project_id)
     except Exception as exc:
         logger.warning(
             "checkpoint_residue_cleanup_failed",
@@ -69,17 +69,13 @@ def _finalize_task_status(task_id: str, result: MergeResult) -> MergeResult:
     return result
 
 
-def _safe_finalize_branch_without_worktree(task_id: str, project_id: str) -> MergeResult:
-    """Best-effort branch cleanup when the worktree is already gone.
-
-    This closes the common leak where a task branch is safely deletable but the
-    worktree disappeared before finalize-task ran.
-    """
+def _safe_finalize_branch_without_checkout(task_id: str, project_id: str) -> MergeResult:
+    """Best-effort branch cleanup when checkpoint metadata exists without active checkout context."""
     task = task_store.get_task(task_id) or {}
     project_root = get_project_root_path(project_id)
     if not project_root:
         _clear_checkpoint_residue(task_id, project_id)
-        return {"task_id": task_id, "status": "skipped", "reason": "no_worktree"}
+        return {"task_id": task_id, "status": "skipped", "reason": "no_checkpoint"}
 
     task_branch = str(task.get("branch_name") or f"{task_id}/main")
     base_branch = "main"
@@ -87,12 +83,11 @@ def _safe_finalize_branch_without_worktree(task_id: str, project_id: str) -> Mer
     if checkout_error:
         return _err(task_id, checkout_error)
 
-    _git(["git", "worktree", "prune"], project_root)
     branch_deleted = delete_task_branch(project_root, task_branch, task_id)
     if branch_deleted:
         _clear_checkpoint_residue(task_id, project_id)
         logger.info(
-            "branch_deleted_without_worktree",
+            "branch_deleted_without_checkout",
             extra={"task_id": task_id, "task_branch": task_branch},
         )
         return {
@@ -108,30 +103,30 @@ def _safe_finalize_branch_without_worktree(task_id: str, project_id: str) -> Mer
     return {
         "task_id": task_id,
         "status": "skipped",
-        "reason": "no_worktree",
+        "reason": "no_checkpoint",
     }
 
 
-def merge_and_cleanup_task_worktree(task_id: str, project_id: str) -> MergeResult:
-    """Merge task branch to main and clean up worktree (auto-approved SIMPLE tasks)."""
+def merge_and_cleanup_task_checkpoint(task_id: str, project_id: str) -> MergeResult:
+    """Merge task branch to main and clear checkpoint state."""
     try:
         if is_task_running(task_id):
             return _finalize_task_status(
                 task_id,
                 _failed(task_id, "task_still_running"),
             )
-        worktree = get_task_worktree(task_id, project_id)
-        if not worktree:
+        checkout = get_task_checkout(task_id, project_id)
+        if not checkout:
             return _finalize_task_status(
                 task_id,
-                _safe_finalize_branch_without_worktree(task_id, project_id),
+                _safe_finalize_branch_without_checkout(task_id, project_id),
             )
         project_root = get_project_root_path(project_id)
         if not project_root:
             return _finalize_task_status(task_id, _err(task_id, f"No root path for project {project_id}"))
 
-        task_branch = worktree.branch
-        base_branch = worktree.base_branch or "main"
+        task_branch = checkout.branch
+        base_branch = checkout.base_branch or "main"
         checkout_error = checkout_base_branch(project_root, base_branch)
         if checkout_error:
             return _finalize_task_status(task_id, _err(task_id, checkout_error))
@@ -201,9 +196,8 @@ def _build_merge_failure_result(
 def _finalize_merge(
     task_id: str, project_root: str, project_id: str, task_branch: str, base_branch: str
 ) -> MergeResult:
-    """Remove worktree, delete branch, run post-merge validation, clean up snapshots."""
-    remove_task_worktree(task_id, delete_branch=False, project_id=project_id)
-    _git(["git", "worktree", "prune"], project_root)
+    """Clear checkpoint metadata, delete branch, run post-merge validation, clean up snapshots."""
+    remove_task_checkout(task_id, delete_branch=False, project_id=project_id)
     branch_deleted = delete_task_branch(project_root, task_branch, task_id)
     validation = run_post_merge_validation(task_id, project_root, project_id)
     if validation["should_rollback"] and auto_rollback(task_id, project_root, project_id, task_branch, validation.get("detail")):

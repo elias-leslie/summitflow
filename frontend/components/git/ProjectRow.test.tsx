@@ -38,15 +38,15 @@ function renderRow() {
           behind: 0,
           state: 'clean',
           workspace_summary: {
-            active_worktrees: 1,
-            dirty_worktrees: 0,
+            active_checkpoints: 1,
+            dirty_checkpoints: 0,
             dirty_main_repo: true,
-            branches_with_worktrees: 1,
+            branches_with_checkpoints: 1,
             task_branches: 1,
             orphan_branches: 0,
             prunable_branches: 0,
             needs_cleanup: false,
-            worktree_task_ids: ['task-123'],
+            checkpoint_task_ids: ['task-123'],
           },
         }}
       />
@@ -75,15 +75,15 @@ function renderConfigRow() {
           behind: 0,
           state: 'clean',
           workspace_summary: {
-            active_worktrees: 0,
-            dirty_worktrees: 0,
+            active_checkpoints: 0,
+            dirty_checkpoints: 0,
             dirty_main_repo: false,
-            branches_with_worktrees: 0,
+            branches_with_checkpoints: 0,
             task_branches: 0,
             orphan_branches: 0,
             prunable_branches: 0,
             needs_cleanup: false,
-            worktree_task_ids: [],
+            checkpoint_task_ids: [],
           },
         }}
       />
@@ -126,8 +126,6 @@ describe('ProjectRow', () => {
   it('offers sync for config repos', () => {
     renderConfigRow()
 
-    expect(
-      screen.getByRole('button', { name: 'Sync' }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sync' })).toBeInTheDocument()
   })
 })

@@ -1,6 +1,6 @@
-"use client"
+'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { Extension } from '@codemirror/state'
 import {
   AlertTriangle,
   Binary,
@@ -10,9 +10,9 @@ import {
   FileCode,
   Loader2,
 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import type { Extension } from '@codemirror/state'
-import { getFileDownloadUrl, type FileBrowserScope } from '@/lib/api/files'
+import { type FileBrowserScope, getFileDownloadUrl } from '@/lib/api/files'
 import { useFileContent } from '@/lib/hooks/useFileExplorer'
 import { FEEDBACK_TIMEOUT } from '@/lib/polling'
 import { cn, getErrorMessage } from '@/lib/utils'
@@ -32,7 +32,8 @@ function formatSize(bytes: number): string {
 export function FileViewer({ scope, filePath }: FileViewerProps) {
   const { data, isLoading, isError, error } = useFileContent(scope, filePath)
   const [langExtension, setLangExtension] = useState<Extension | null>(null)
-  const [CodeMirrorComponent, setCodeMirrorComponent] = useState<React.ComponentType<Record<string, unknown>> | null>(null)
+  const [CodeMirrorComponent, setCodeMirrorComponent] =
+    useState<React.ComponentType<Record<string, unknown>> | null>(null)
   const [oneDarkTheme, setOneDarkTheme] = useState<Extension | null>(null)
 
   useEffect(() => {
@@ -179,7 +180,12 @@ function FileInfoBar({ data, downloadUrl }: FileInfoBarProps) {
       {!data.is_binary ? <span>{data.lines} lines</span> : null}
       <span>{formatSize(data.size)}</span>
       {data.language ? (
-        <span className={cn('rounded-full px-2 py-0.5', 'bg-emerald-500/10 text-emerald-400')}>
+        <span
+          className={cn(
+            'rounded-full px-2 py-0.5',
+            'bg-emerald-500/10 text-emerald-400',
+          )}
+        >
           {data.language}
         </span>
       ) : null}

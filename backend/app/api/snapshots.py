@@ -242,7 +242,7 @@ async def create_snapshot(req: SnapshotRequest) -> SnapshotResponse:
     """Create a manual Btrfs snapshot."""
     from cli.lib.quick_snapshots import capture_snapshot as do_capture
     from cli.lib.quick_snapshots import get_snapshot_usage
-    from cli.lib.worktree_paths import get_projects_base_dir
+    from cli.lib.workspace_paths import get_projects_base_dir
 
     cwd = str(get_projects_base_dir(req.project_id))
     try:

@@ -8,14 +8,14 @@ from pathlib import Path
 import typer
 
 from ..lib.checkpoint import get_stale_checkpoints
-from ..lib.worktree_paths import get_workspaces_root
+from ..lib.workspace_paths import get_workspaces_root
 from ..output import output_error, output_success
 
 
 def collect_lane_inspections(project_ids: list[str], lane_name: str | None) -> list:
     """Enumerate and inspect lanes for each project."""
     from ..lib.quick_snapshots import SnapshotError, inspect_lane
-    from ..lib.worktree_paths import get_lanes_base_dir
+    from ..lib.workspace_paths import get_lanes_base_dir
 
     inspections = []
     for pid in project_ids:
@@ -48,8 +48,7 @@ def collect_stale_checkpoints_for_lanes(project_ids: list[str], lane_name: str |
     stale = []
     for pid in project_ids:
         for cp in get_stale_checkpoints(pid):
-            cp_lane = Path(cp.worktree_path).name if cp.worktree_path else None
-            if lane_name and cp.task_id != lane_name and cp_lane != lane_name:
+            if lane_name and cp.task_id != lane_name:
                 continue
             stale.append(cp)
     return stale
@@ -73,8 +72,8 @@ def build_lane_preview_lines(
     """Build the confirm-gate preview lines for lane cleanup."""
     lines: list[str] = []
     for insp in inspections:
-        wt_label = "git-worktree" if insp.is_git_worktree else "orphan"
-        lines.append(f"LANE {insp.project_id}/{insp.lane_name} [{wt_label}]")
+        state_label = "legacy-checkout" if insp.has_checkout_metadata else "orphan"
+        lines.append(f"LANE {insp.project_id}/{insp.lane_name} [{state_label}]")
         lines.append(f"  subvolume: {insp.lane_path}")
         if insp.branch:
             lines.append(f"  branch:   {insp.branch}")
@@ -93,7 +92,6 @@ def build_lane_preview_lines(
             lines.append(f"  manifest:  {orphan.manifest_dir}")
     for cp in stale_checkpoints:
         lines.append(f"STALE-CHECKPOINT {cp.project_id}/{cp.task_id}")
-        lines.append(f"  worktree: {cp.worktree_path or '-'}")
         lines.append(f"  created:  {cp.created_at}")
     total_subvols = (
         sum(i.total_items for i in inspections)
@@ -129,7 +127,7 @@ def execute_lane_deletions(inspections: list, orphaned_snap_dirs: list, stale_ch
             errors.append(f"orphan:{orphan.project_id}/{orphan.lane_name}: {exc}")
     for cp in stale_checkpoints:
         try:
-            remove_snapshot(cp.task_id, remove_worktree=False, project_id=cp.project_id)
+            remove_snapshot(cp.task_id, project_id=cp.project_id)
             typer.echo(f"  Deleted stale checkpoint: {cp.project_id}/{cp.task_id}")
             deleted += 1
         except Exception as exc:
@@ -159,7 +157,7 @@ def resolve_lanes_project_ids(all_projects: bool, project_id: str | None) -> lis
 def collect_lane_targets(project_ids: list[str], lane_name: str | None):
     """Collect lane inspections, orphaned snap dirs, and stale checkpoints."""
     all_inspections = collect_lane_inspections(project_ids, lane_name)
-    inspections = all_inspections if lane_name else [i for i in all_inspections if not i.is_git_worktree]
+    inspections = all_inspections if lane_name else [i for i in all_inspections if not i.has_checkout_metadata]
     return (
         inspections,
         collect_orphaned_snap_dirs(project_ids, lane_name),

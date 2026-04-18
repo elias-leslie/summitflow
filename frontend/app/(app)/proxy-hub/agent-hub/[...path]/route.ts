@@ -28,7 +28,8 @@ interface ProxyConfig {
 function resolveConfig(): ProxyConfig {
   const envKey = (key: string) => `${ENV_PREFIX}_${key}`
   return {
-    agentHubUrl: process.env.AGENT_HUB_URL ?? `http://localhost:${PORTS.agentHub}`,
+    agentHubUrl:
+      process.env.AGENT_HUB_URL ?? `http://localhost:${PORTS.agentHub}`,
     clientId: process.env[envKey('CLIENT_ID')] ?? '',
     requestSource: process.env[envKey('REQUEST_SOURCE')] ?? '',
   }
@@ -88,7 +89,10 @@ async function proxyWithBody(
   method: string,
 ): Promise<Response> {
   const { path } = await params
-  const qs = method === 'DELETE' ? new URL(request.url).searchParams.toString() : undefined
+  const qs =
+    method === 'DELETE'
+      ? new URL(request.url).searchParams.toString()
+      : undefined
   const url = buildUpstreamUrl(config, path, qs)
   const body = await request.text()
   const response = await fetch(url, {
@@ -101,7 +105,11 @@ async function proxyWithBody(
 
 export async function GET(request: Request, { params }: RouteContext) {
   const { path } = await params
-  const url = buildUpstreamUrl(config, path, new URL(request.url).searchParams.toString())
+  const url = buildUpstreamUrl(
+    config,
+    path,
+    new URL(request.url).searchParams.toString(),
+  )
   const response = await fetch(url, { headers: auth })
   return proxyResponse(response)
 }

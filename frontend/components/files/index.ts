@@ -1,5 +1,5 @@
-export { FileTree } from './FileTree'
-export { FileViewer } from './FileViewer'
 export { FileBreadcrumb } from './FileBreadcrumb'
 export { FileContextMenu } from './FileContextMenu'
 export { FilesWorkspace } from './FilesWorkspace'
+export { FileTree } from './FileTree'
+export { FileViewer } from './FileViewer'

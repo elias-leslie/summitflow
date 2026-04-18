@@ -3,16 +3,18 @@
 import clsx from 'clsx'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { usePathname } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { getProjectIdFromPathname } from '@/lib/project-config'
 import { useSidebarState } from './hooks/useSidebarState'
-import { SidebarHeader } from './SidebarHeader'
 import { ProjectsAccordion } from './ProjectsAccordion'
+import { SidebarHeader } from './SidebarHeader'
 
 export function SidebarContent() {
   const pathname = usePathname()
   const { isCollapsed, mounted, toggleCollapsed } = useSidebarState()
-  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null)
+  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(
+    null,
+  )
 
   const currentProjectId = getProjectIdFromPathname(pathname)
 
@@ -50,7 +52,10 @@ export function SidebarContent() {
 
       {/* Header */}
       <div
-        className={clsx('border-b border-slate-700/60 px-2 pt-2', isCollapsed && 'px-2')}
+        className={clsx(
+          'border-b border-slate-700/60 px-2 pt-2',
+          isCollapsed && 'px-2',
+        )}
       >
         <SidebarHeader isCollapsed={isCollapsed} />
       </div>

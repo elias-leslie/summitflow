@@ -1,8 +1,8 @@
 'use client'
 
-import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import { CheckSquare, Grid3X3, List, Palette, Sparkles, X } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 export type ViewMode = 'grid' | 'list'
 
@@ -43,14 +43,18 @@ export function DesignHeader({
         </div>
         <div>
           <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-bold text-slate-100 display tracking-tight">{title}</h2>
+            <h2 className="text-2xl font-bold text-slate-100 display tracking-tight">
+              {title}
+            </h2>
             {totalLabel && (
               <span className="rounded-full bg-slate-900 px-3 py-1 text-xs uppercase tracking-[0.18em] text-slate-400">
                 {totalLabel}
               </span>
             )}
           </div>
-          {subtitle && <p className="mt-2 max-w-2xl text-sm text-slate-400">{subtitle}</p>}
+          {subtitle && (
+            <p className="mt-2 max-w-2xl text-sm text-slate-400">{subtitle}</p>
+          )}
         </div>
       </div>
 
@@ -58,7 +62,11 @@ export function DesignHeader({
         {extraActions}
 
         {!selectMode && (
-          <button type="button" onClick={onPrimaryAction} className="btn-primary flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onPrimaryAction}
+            className="btn-primary flex items-center gap-2"
+          >
             <Sparkles className="h-4 w-4" />
             {primaryActionLabel}
           </button>
@@ -67,14 +75,21 @@ export function DesignHeader({
         {hasItems && (
           <button
             type="button"
-            onClick={() => (selectMode ? onCancelSelectMode() : onSelectModeToggle())}
-            className={clsx('flex items-center gap-2 rounded-lg border px-3 py-2 transition',
+            onClick={() =>
+              selectMode ? onCancelSelectMode() : onSelectModeToggle()
+            }
+            className={clsx(
+              'flex items-center gap-2 rounded-lg border px-3 py-2 transition',
               selectMode
                 ? 'border-cyan-400/40 bg-cyan-500/10 text-cyan-200'
-                : 'border-slate-700 bg-slate-900 text-slate-300 hover:text-slate-100'
+                : 'border-slate-700 bg-slate-900 text-slate-300 hover:text-slate-100',
             )}
           >
-            {selectMode ? <X className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
+            {selectMode ? (
+              <X className="h-4 w-4" />
+            ) : (
+              <CheckSquare className="h-4 w-4" />
+            )}
             {selectMode ? 'Cancel' : 'Select'}
           </button>
         )}
@@ -84,10 +99,11 @@ export function DesignHeader({
             <button
               type="button"
               onClick={() => onViewModeChange('grid')}
-              className={clsx('rounded-lg p-2',
+              className={clsx(
+                'rounded-lg p-2',
                 viewMode === 'grid'
                   ? 'bg-cyan-500/10 text-cyan-300'
-                  : 'text-slate-500 hover:text-slate-100'
+                  : 'text-slate-500 hover:text-slate-100',
               )}
             >
               <Grid3X3 className="h-4 w-4" />
@@ -95,10 +111,11 @@ export function DesignHeader({
             <button
               type="button"
               onClick={() => onViewModeChange('list')}
-              className={clsx('rounded-lg p-2',
+              className={clsx(
+                'rounded-lg p-2',
                 viewMode === 'list'
                   ? 'bg-cyan-500/10 text-cyan-300'
-                  : 'text-slate-500 hover:text-slate-100'
+                  : 'text-slate-500 hover:text-slate-100',
               )}
             >
               <List className="h-4 w-4" />

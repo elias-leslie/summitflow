@@ -1,6 +1,6 @@
+import { useQuery } from '@tanstack/react-query'
 import { fetchWithErrorHandling } from '@/lib/api/utils'
 import { POLL_SLOW } from '@/lib/polling'
-import { useQuery } from '@tanstack/react-query'
 
 /**
  * Fetches all project permission tiers from Agent Hub (via proxy)

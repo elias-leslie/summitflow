@@ -17,7 +17,8 @@ interface FeedbackState {
   message: string
 }
 
-const AMBIGUOUS_DISPATCH_PATTERN = /(fetch failed|failed to fetch|network|socket hang up|econnreset)/i
+const AMBIGUOUS_DISPATCH_PATTERN =
+  /(fetch failed|failed to fetch|network|socket hang up|econnreset)/i
 
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim()) {
@@ -30,15 +31,24 @@ function pluralize(count: number, singular: string): string {
   return count === 1 ? singular : `${singular}s`
 }
 
-function summarizeSourceNames(sourceIds: string[], sourceNames: Map<string, string>): string {
-  const names = sourceIds.map((sourceId) => sourceNames.get(sourceId) ?? sourceId)
+function summarizeSourceNames(
+  sourceIds: string[],
+  sourceNames: Map<string, string>,
+): string {
+  const names = sourceIds.map(
+    (sourceId) => sourceNames.get(sourceId) ?? sourceId,
+  )
   if (names.length <= 3) {
     return names.join(', ')
   }
   return `${names.slice(0, 3).join(', ')}, and ${names.length - 3} more`
 }
 
-export function CreateBackupModal({ sources, onClose, onCreated }: CreateBackupModalProps) {
+export function CreateBackupModal({
+  sources,
+  onClose,
+  onCreated,
+}: CreateBackupModalProps) {
   const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set())
   const [note, setNote] = useState('')
   const [isPending, setIsPending] = useState(false)
@@ -79,15 +89,26 @@ export function CreateBackupModal({ sources, onClose, onCreated }: CreateBackupM
 
     try {
       const results = await Promise.allSettled(
-        sourceIds.map((sourceId) => createSourceBackup(sourceId, { note: note || undefined })),
+        sourceIds.map((sourceId) =>
+          createSourceBackup(sourceId, { note: note || undefined }),
+        ),
       )
-      const queuedIds = sourceIds.filter((_, index) => results[index]?.status === 'fulfilled')
-      const failedIds = sourceIds.filter((_, index) => results[index]?.status === 'rejected')
+      const queuedIds = sourceIds.filter(
+        (_, index) => results[index]?.status === 'fulfilled',
+      )
+      const failedIds = sourceIds.filter(
+        (_, index) => results[index]?.status === 'rejected',
+      )
       const failureMessages = results.flatMap((result) =>
-        result.status === 'rejected' ? [getErrorMessage(result.reason, fallbackMessage)] : [],
+        result.status === 'rejected'
+          ? [getErrorMessage(result.reason, fallbackMessage)]
+          : [],
       )
       const allFailuresAreAmbiguous =
-        failureMessages.length > 0 && failureMessages.every((message) => AMBIGUOUS_DISPATCH_PATTERN.test(message))
+        failureMessages.length > 0 &&
+        failureMessages.every((message) =>
+          AMBIGUOUS_DISPATCH_PATTERN.test(message),
+        )
 
       if (failedIds.length === 0) {
         await refreshHistory()
@@ -109,14 +130,21 @@ export function CreateBackupModal({ sources, onClose, onCreated }: CreateBackupM
         await refreshHistory()
         setFeedback({
           tone: 'warning',
-          message: 'Queue confirmation was lost while creating backups. Some backups may still be starting. Check Backup History before retrying.',
+          message:
+            'Queue confirmation was lost while creating backups. Some backups may still be starting. Check Backup History before retrying.',
         })
         return
       }
 
-      setFeedback({ tone: 'error', message: failureMessages[0] ?? fallbackMessage })
+      setFeedback({
+        tone: 'error',
+        message: failureMessages[0] ?? fallbackMessage,
+      })
     } catch (err) {
-      setFeedback({ tone: 'error', message: getErrorMessage(err, fallbackMessage) })
+      setFeedback({
+        tone: 'error',
+        message: getErrorMessage(err, fallbackMessage),
+      })
     } finally {
       setIsPending(false)
     }
@@ -134,7 +162,9 @@ export function CreateBackupModal({ sources, onClose, onCreated }: CreateBackupM
         className="bg-slate-800 rounded-lg border border-slate-700 p-6 w-full max-w-md shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-semibold text-slate-100 display mb-4">Create Manual Backup</h2>
+        <h2 className="text-lg font-semibold text-slate-100 display mb-4">
+          Create Manual Backup
+        </h2>
 
         <div className="space-y-4">
           <div>
@@ -145,7 +175,9 @@ export function CreateBackupModal({ sources, onClose, onCreated }: CreateBackupM
                 onClick={toggleAll}
                 className="text-xs text-phosphor-400 hover:text-phosphor-300 transition-colors"
               >
-                {selectedSources.size === sources.length ? 'Deselect all' : 'Select all'}
+                {selectedSources.size === sources.length
+                  ? 'Deselect all'
+                  : 'Select all'}
               </button>
             </div>
             <div
@@ -173,7 +205,10 @@ export function CreateBackupModal({ sources, onClose, onCreated }: CreateBackupM
           </div>
 
           <div>
-            <label htmlFor="backup-note" className="block text-sm text-slate-300 mb-2">
+            <label
+              htmlFor="backup-note"
+              className="block text-sm text-slate-300 mb-2"
+            >
               Note (optional)
             </label>
             <input

@@ -5,7 +5,6 @@ import {
   GitBranch,
   GitCommitHorizontal,
   GitMerge,
-  Layers,
   Loader2,
   Shield,
 } from 'lucide-react'
@@ -13,11 +12,11 @@ import { useState } from 'react'
 import { fetchProjectDashboard } from '@/lib/api/git-enhanced'
 import { POLL_SLOW, STALE_GIT } from '@/lib/polling'
 import { BranchRow } from './BranchRow'
+import { CheckpointCompact } from './CheckpointCompact'
 import { CommitEntry } from './CommitEntry'
 import { MergeRow } from './MergeRow'
 import { SectionLabel } from './SectionLabel'
 import { SnapshotEntry } from './SnapshotEntry'
-import { WorktreeCompact } from './WorktreeCompact'
 
 export function DashboardContent({ projectId }: { projectId: string }) {
   const [snapshotsOpen, setSnapshotsOpen] = useState(false)
@@ -39,14 +38,14 @@ export function DashboardContent({ projectId }: { projectId: string }) {
 
   if (!data) return null
 
-  const hasWorktrees = data.worktrees.length > 0
+  const hasCheckpoints = data.checkpoints.length > 0
   const hasBranches = data.branches.length > 0
   const hasMerges = data.recent_merges.length > 0
   const hasCommits = data.recent_commits.length > 0
   const hasSnapshots = data.snapshots.length > 0
 
   if (
-    !hasWorktrees &&
+    !hasCheckpoints &&
     !hasBranches &&
     !hasMerges &&
     !hasCommits &&
@@ -61,19 +60,22 @@ export function DashboardContent({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
-      {hasWorktrees && (
+      {hasCheckpoints && (
         <div>
           <SectionLabel
-            icon={Layers}
-            label="Worktrees"
-            count={data.worktrees.length}
+            icon={GitBranch}
+            label="Checkpoints"
+            count={data.checkpoints.length}
             color="text-phosphor-400"
             badgeBg="bg-phosphor-500/10"
             badgeBorder="border-phosphor-500/20"
           />
           <div className="space-y-1">
-            {data.worktrees.map((wt) => (
-              <WorktreeCompact key={wt.task_id} worktree={wt} />
+            {data.checkpoints.map((checkpoint) => (
+              <CheckpointCompact
+                key={checkpoint.task_id}
+                checkpoint={checkpoint}
+              />
             ))}
           </div>
         </div>

@@ -5,9 +5,5 @@ export default function StandaloneLayout({
 }: {
   children: React.ReactNode
 }) {
-  return (
-    <Providers>
-      {children}
-    </Providers>
-  )
+  return <Providers>{children}</Providers>
 }

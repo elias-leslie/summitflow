@@ -1,8 +1,5 @@
 import clsx from 'clsx'
-import {
-  Link2,
-  Loader2,
-} from 'lucide-react'
+import { Link2, Loader2 } from 'lucide-react'
 import type { Task } from '@/lib/api'
 import { getTaskStatusCardConfig } from '@/lib/task-config'
 import { StepProgressIndicator } from './StepProgressIndicator'
@@ -13,7 +10,11 @@ interface TaskCardBodyProps {
   canExpand: boolean
 }
 
-export function TaskCardBody({ task, currentStep, canExpand }: TaskCardBodyProps) {
+export function TaskCardBody({
+  task,
+  currentStep,
+  canExpand,
+}: TaskCardBodyProps) {
   const _statusConfig = getTaskStatusCardConfig(task.status)
   const capability = task.capability
   const hasCriteria = capability && capability.criteria_total > 0
@@ -30,14 +31,11 @@ export function TaskCardBody({ task, currentStep, canExpand }: TaskCardBodyProps
       {isRunning && currentStep && (
         <div className="flex items-center gap-2 mb-2 py-1.5 px-2 -mx-1 rounded bg-blue-500/10 border border-blue-500/20">
           <Loader2 className="h-3 w-3 animate-spin text-blue-400 shrink-0" />
-          <span className="text-xs text-blue-300 truncate">
-            {currentStep}
-          </span>
+          <span className="text-xs text-blue-300 truncate">{currentStep}</span>
         </div>
       )}
 
       {canExpand && <StepProgressIndicator status={task.status} />}
-
 
       <div className="flex items-center justify-between">
         {capability ? (
@@ -48,7 +46,10 @@ export function TaskCardBody({ task, currentStep, canExpand }: TaskCardBodyProps
             </span>
             {hasCriteria && (
               <span
-                className={clsx('text-xs mono', allPassed ? 'text-phosphor-400' : 'text-slate-400')}
+                className={clsx(
+                  'text-xs mono',
+                  allPassed ? 'text-phosphor-400' : 'text-slate-400',
+                )}
               >
                 ({capability.criteria_passed}/{capability.criteria_total})
               </span>
@@ -60,17 +61,17 @@ export function TaskCardBody({ task, currentStep, canExpand }: TaskCardBodyProps
 
         {hasCriteria && (
           <div className="flex items-center gap-0.5">
-            {Array.from({ length: capability?.criteria_total }).map(
-              (_, i) => (
-                <div
-                  key={i}
-                  className={clsx(
-                    'h-1.5 w-1.5 rounded-full',
-                    i < capability?.criteria_passed ? 'bg-phosphor-500' : 'bg-slate-600',
-                  )}
-                />
-              ),
-            )}
+            {Array.from({ length: capability?.criteria_total }).map((_, i) => (
+              <div
+                key={i}
+                className={clsx(
+                  'h-1.5 w-1.5 rounded-full',
+                  i < capability?.criteria_passed
+                    ? 'bg-phosphor-500'
+                    : 'bg-slate-600',
+                )}
+              />
+            ))}
           </div>
         )}
       </div>

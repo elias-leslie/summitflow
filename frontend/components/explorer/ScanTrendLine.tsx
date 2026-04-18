@@ -10,10 +10,10 @@
 import { useMemo, useState } from 'react'
 import { useScanHistory } from '@/lib/hooks/useScanHistory'
 import { cn } from '@/lib/utils'
-import { calculateTimeWindow, getTimePosition } from './ScanTrendUtils'
 import { ScanEventMarker } from './ScanEventMarker'
 import { ScanTooltip } from './ScanTooltip'
 import { ScanTrendSvg } from './ScanTrendSvg'
+import { calculateTimeWindow, getTimePosition } from './ScanTrendUtils'
 
 interface ScanTrendLineProps {
   projectId: string

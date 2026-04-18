@@ -30,7 +30,7 @@ class TestTransitionToReviewOrComplete:
         mock_store.update_task_status.assert_called_with("t-1", "completed")
         dispatch.assert_called_once_with("review", "t-1", "proj")
 
-    @patch("app.tasks.autonomous.cleanup.worktree_cleanup.cleanup_task_worktree")
+    @patch("app.tasks.autonomous.cleanup.checkpoint_cleanup.cleanup_task_checkpoint")
     @patch(f"{MODULE}.agent_configs")
     @patch(f"{MODULE}.task_store")
     def test_review_disabled_completes(
@@ -39,7 +39,7 @@ class TestTransitionToReviewOrComplete:
         """When project does not require review, complete immediately."""
         mock_configs.get_require_review.return_value = False
         mock_configs.get_auto_merge_enabled.return_value = False
-        mock_cleanup.return_value = {"status": "cleaned", "worktree_path": "/tmp/wt"}
+        mock_cleanup.return_value = {"status": "cleaned", "checkout_path": "/tmp/wt"}
 
         result = transition_to_review_or_complete("t-1", "proj", "test")
 
@@ -47,7 +47,7 @@ class TestTransitionToReviewOrComplete:
         mock_store.update_task_status.assert_called_with("t-1", "completed")
         mock_cleanup.assert_called_once_with("t-1", delete_branch=False, project_id="proj")
 
-    @patch("app.tasks.autonomous.cleanup.worktree_cleanup.cleanup_task_worktree")
+    @patch("app.tasks.autonomous.cleanup.checkpoint_cleanup.cleanup_task_checkpoint")
     @patch(f"{MODULE}.agent_configs")
     @patch(f"{MODULE}.task_store")
     def test_task_ai_review_false_skips_review(
@@ -57,7 +57,7 @@ class TestTransitionToReviewOrComplete:
         mock_configs.get_require_review.return_value = True
         mock_configs.get_auto_merge_enabled.return_value = False
         mock_store.get_task.return_value = {"id": "t-1", "ai_review": False}
-        mock_cleanup.return_value = {"status": "cleaned", "worktree_path": "/tmp/wt"}
+        mock_cleanup.return_value = {"status": "cleaned", "checkout_path": "/tmp/wt"}
         dispatch = MagicMock()
 
         result = transition_to_review_or_complete("t-1", "proj", "test", dispatch)
@@ -67,7 +67,7 @@ class TestTransitionToReviewOrComplete:
         dispatch.assert_not_called()
         mock_cleanup.assert_called_once_with("t-1", delete_branch=False, project_id="proj")
 
-    @patch("app.tasks.autonomous.cleanup.merge_operations.merge_and_cleanup_task_worktree")
+    @patch("app.tasks.autonomous.cleanup.merge_operations.merge_and_cleanup_task_checkpoint")
     @patch(f"{MODULE}.agent_configs")
     @patch(f"{MODULE}.task_store")
     def test_review_disabled_dispatches_merge_cleanup_when_auto_merge_enabled(
@@ -89,7 +89,7 @@ class TestTransitionToReviewOrComplete:
         )
         mock_merge_cleanup.assert_called_once_with("t-1", "proj")
 
-    @patch("app.tasks.autonomous.cleanup.merge_operations.merge_and_cleanup_task_worktree")
+    @patch("app.tasks.autonomous.cleanup.merge_operations.merge_and_cleanup_task_checkpoint")
     @patch(f"{MODULE}.agent_configs")
     @patch(f"{MODULE}.task_store")
     def test_review_disabled_marks_task_complete_before_auto_merge(
@@ -109,7 +109,7 @@ class TestTransitionToReviewOrComplete:
         )
         mock_merge_cleanup.assert_called_once_with("t-1", "proj")
 
-    @patch("app.tasks.autonomous.cleanup.merge_operations.merge_and_cleanup_task_worktree")
+    @patch("app.tasks.autonomous.cleanup.merge_operations.merge_and_cleanup_task_checkpoint")
     @patch(f"{MODULE}.agent_configs")
     @patch(f"{MODULE}.task_store")
     def test_review_disabled_auto_merge_conflict_returns_failed(

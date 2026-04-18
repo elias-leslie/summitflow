@@ -68,7 +68,8 @@ export function TurnGroup({
           )}
           {toolEvents.length > 0 && (
             <span className="text-2xs px-1.5 py-0.5 bg-emerald-500/15 text-emerald-400 rounded">
-              {toolEvents.filter((e) => e.event_type === 'tool_use').length} tools
+              {toolEvents.filter((e) => e.event_type === 'tool_use').length}{' '}
+              tools
             </span>
           )}
           {errorEvents.length > 0 && (
@@ -78,12 +79,17 @@ export function TurnGroup({
           )}
           {totalTokens > 0 && (
             <span className="text-2xs text-slate-500 tabular-nums">
-              {totalTokens > 1000 ? `${(totalTokens / 1000).toFixed(1)}k` : totalTokens} tok
+              {totalTokens > 1000
+                ? `${(totalTokens / 1000).toFixed(1)}k`
+                : totalTokens}{' '}
+              tok
             </span>
           )}
           {totalDuration > 0 && (
             <span className="text-2xs text-slate-600 tabular-nums">
-              {totalDuration > 1000 ? `${(totalDuration / 1000).toFixed(1)}s` : `${totalDuration}ms`}
+              {totalDuration > 1000
+                ? `${(totalDuration / 1000).toFixed(1)}s`
+                : `${totalDuration}ms`}
             </span>
           )}
         </div>

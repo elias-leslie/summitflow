@@ -51,8 +51,18 @@ export function useAutonomousSettingsHandlers(
     }
   }
 
-  const handleCooldownChange = makeBoundedIntHandler(mutate, 'cooldown_minutes', 0, Infinity)
-  const handleFrequencyChange = makeBoundedIntHandler(mutate, 'frequency_minutes', 5, 1440)
+  const handleCooldownChange = makeBoundedIntHandler(
+    mutate,
+    'cooldown_minutes',
+    0,
+    Infinity,
+  )
+  const handleFrequencyChange = makeBoundedIntHandler(
+    mutate,
+    'frequency_minutes',
+    5,
+    1440,
+  )
   const handleUpkeepFrequencyChange = makeBoundedIntHandler(
     mutate,
     'upkeep_frequency_minutes',
@@ -70,25 +80,45 @@ export function useAutonomousSettingsHandlers(
 
   // --- Task filtering ---
   const handleTaskTypeToggle = (taskType: string) => {
-    const current = settings.allowed_types || TASK_TYPES.map(t => t.value)
+    const current = settings.allowed_types || TASK_TYPES.map((t) => t.value)
     const next = current.includes(taskType)
-      ? current.filter(t => t !== taskType)
+      ? current.filter((t) => t !== taskType)
       : [...current, taskType]
     mutate({ allowed_types: next.length === TASK_TYPES.length ? null : next })
   }
   // --- Self-healing ---
-  const handleSelfFixAttemptsChange = makeBoundedIntHandler(mutate, 'max_self_fix_attempts', 0, 10)
-  const handleSupervisorAttemptsChange = makeBoundedIntHandler(mutate, 'max_supervisor_attempts', 0, 10)
-  const handleExtensionsChange = makeBoundedIntHandler(mutate, 'max_extensions', 0, 10)
+  const handleSelfFixAttemptsChange = makeBoundedIntHandler(
+    mutate,
+    'max_self_fix_attempts',
+    0,
+    10,
+  )
+  const handleSupervisorAttemptsChange = makeBoundedIntHandler(
+    mutate,
+    'max_supervisor_attempts',
+    0,
+    10,
+  )
+  const handleExtensionsChange = makeBoundedIntHandler(
+    mutate,
+    'max_extensions',
+    0,
+    10,
+  )
 
   // --- Merge / review ---
-  const handleAutoMergeToggle = () => mutate({ auto_merge_enabled: !settings.auto_merge_enabled })
-  const handleRequireReviewToggle = () => mutate({ require_review: !settings.require_review })
-  const handleAutoMergeTiersChange = (tiers: number[]) => mutate({ auto_merge_tiers: tiers })
+  const handleAutoMergeToggle = () =>
+    mutate({ auto_merge_enabled: !settings.auto_merge_enabled })
+  const handleRequireReviewToggle = () =>
+    mutate({ require_review: !settings.require_review })
+  const handleAutoMergeTiersChange = (tiers: number[]) =>
+    mutate({ auto_merge_tiers: tiers })
 
   // --- Quality gate ---
-  const handleQualityToolsChange = (tools: string[]) => mutate({ quality_gate_tools: tools })
-  const handleQualityModeChange = (mode: string) => mutate({ quality_gate_mode: mode })
+  const handleQualityToolsChange = (tools: string[]) =>
+    mutate({ quality_gate_tools: tools })
+  const handleQualityModeChange = (mode: string) =>
+    mutate({ quality_gate_mode: mode })
   const handleQualityFixToggle = () =>
     mutate({ quality_gate_fix_enabled: !settings.quality_gate_fix_enabled })
 

@@ -1,4 +1,4 @@
-"""Tests for CLI project detection across worktrees and detached checkouts."""
+"""Tests for CLI project detection across checkouts and detached checkouts."""
 
 from __future__ import annotations
 
@@ -45,8 +45,8 @@ class TestProjectDetection:
         assert root_path == str(repo_root.resolve())
         fetch_projects.assert_not_called()
 
-    def test_detect_project_from_cwd_detached_worktree_returns_canonical_root(self) -> None:
-        """Detached helper worktrees should resolve to the canonical project root."""
+    def test_detect_project_from_cwd_detached_checkout_returns_canonical_root(self) -> None:
+        """Detached helper checkouts should resolve to the canonical project root."""
         fake_home = Path("/home/testuser")
         fake_root = str(fake_home / "summitflow")
         projects = [
@@ -94,7 +94,7 @@ class TestProjectDetection:
         assert root_path == fake_root
 
     def test_detect_project_from_cwd_returns_none_when_cwd_deleted(self) -> None:
-        """Deleted worktree dir must not crash — returns (None, None) without calling the API."""
+        """Deleted checkout dir must not crash — returns (None, None) without calling the API."""
         with (
             patch("cli.config.Path.cwd", side_effect=FileNotFoundError("deleted")),
             patch.object(config_mod, "_fetch_projects_with_retry") as fetch_projects,

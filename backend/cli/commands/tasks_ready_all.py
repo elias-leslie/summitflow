@@ -2,11 +2,30 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
 from .._output_formatters import truncate
-from ..client import APIError, STClient
-from ..lib.worktree import get_worktree_info
+from ..client import APIError
+from ..lib.checkpoint import get_snapshot_info
+
+
+class ReadyAllClient(Protocol):
+    base_url: str
+
+    def _global_url(self, path: str) -> str: ...
+
+    def get(self, url: str) -> Any: ...
+
+    def list_sessions(
+        self,
+        *,
+        status: str | None = None,
+        project_id: str | None = None,
+        limit: int = 20,
+        page: int = 1,
+        agent_slug: str | None = None,
+        parent_session_id: str | None = None,
+    ) -> list[dict[str, object]]: ...
 
 
 def task_sort_key(task: dict[str, Any]) -> tuple[int, int, str]:
@@ -39,7 +58,7 @@ def lane_task_id(session: dict[str, Any]) -> str | None:
     return branch_prefix if branch_prefix.startswith("task-") else None
 
 
-def _fetch_live_lane_task_ids(client: STClient, project_id: str) -> set[str]:
+def _fetch_live_lane_task_ids(client: ReadyAllClient, project_id: str) -> set[str]:
     try:
         sessions = client.list_sessions(status="active", project_id=project_id, limit=100, page=1)
     except APIError:
@@ -51,13 +70,14 @@ def _fetch_live_lane_task_ids(client: STClient, project_id: str) -> set[str]:
     }
 
 
-def _task_has_worktree(task_id: str | None, project_id: str) -> bool:
+def _task_has_checkpoint(task_id: str | None, project_id: str) -> bool:
     if not isinstance(task_id, str) or not task_id:
         return False
-    return get_worktree_info(task_id, project_id) is not None
+    info = get_snapshot_info(task_id)
+    return bool(info and str(info.get("project_id") or "") == project_id)
 
 
-def _fetch_ready_tasks(client: STClient, pid: str) -> tuple[list[dict[str, Any]], int]:
+def _fetch_ready_tasks(client: ReadyAllClient, pid: str) -> tuple[list[dict[str, Any]], int]:
     """Fetch ready tasks for a project, returning (tasks, total_count)."""
     try:
         resp = client.get(f"{client.base_url}/projects/{pid}/tasks/ready?limit=100")
@@ -67,7 +87,9 @@ def _fetch_ready_tasks(client: STClient, pid: str) -> tuple[list[dict[str, Any]]
         return [], 0
 
 
-def _fetch_blocked_tasks(client: STClient, pid: str, limit: int) -> tuple[list[dict[str, Any]], int]:
+def _fetch_blocked_tasks(
+    client: ReadyAllClient, pid: str, limit: int
+) -> tuple[list[dict[str, Any]], int]:
     """Fetch blocked tasks (status=blocked + dep-blocked) for a project."""
     tasks: list[dict[str, Any]] = []
     count = 0
@@ -92,7 +114,7 @@ def _fetch_blocked_tasks(client: STClient, pid: str, limit: int) -> tuple[list[d
 
 
 def _fetch_active_stale(
-    client: STClient,
+    client: ReadyAllClient,
     pid: str,
     live_lane_task_ids: set[str],
     limit: int,
@@ -115,14 +137,14 @@ def _fetch_active_stale(
                 task
                 for task in batch
                 if task.get("id") in live_lane_task_ids
-                or _task_has_worktree(task.get("id"), pid)
+                or _task_has_checkpoint(task.get("id"), pid)
             ]
             active.extend(live_pending)
             active_count += len(live_pending)
             continue
 
         for task in batch:
-            if task.get("id") in live_lane_task_ids or _task_has_worktree(task.get("id"), pid):
+            if task.get("id") in live_lane_task_ids or _task_has_checkpoint(task.get("id"), pid):
                 active.append(task)
                 active_count += 1
             else:
@@ -133,7 +155,7 @@ def _fetch_active_stale(
 
 
 def _collect_project_data(
-    client: STClient,
+    client: ReadyAllClient,
     pid: str,
     pname: str,
     limit: int,
@@ -145,7 +167,7 @@ def _collect_project_data(
         task
         for task in ready_tasks
         if task.get("id") not in live_lane_task_ids
-        and not _task_has_worktree(task.get("id"), pid)
+        and not _task_has_checkpoint(task.get("id"), pid)
     ]
     ready_count = len(ready_tasks)
     blocked_tasks, blocked_count = _fetch_blocked_tasks(client, pid, limit)
@@ -220,7 +242,7 @@ def render_ready_all_compact(results: list[dict[str, Any]], limit_per_project: i
 
 def list_ready_all(
     limit_per_project: int,
-    client: STClient,
+    client: ReadyAllClient,
 ) -> None:
     """List ready and blocked tasks across all projects."""
     try:

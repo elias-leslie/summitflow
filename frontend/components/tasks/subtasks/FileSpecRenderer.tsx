@@ -2,7 +2,11 @@
 
 import clsx from 'clsx'
 import { FileEdit, FileMinus, FilePlus, FileText } from 'lucide-react'
-import { getSpecTruthy, getSpecValue, type SpecRecord } from './SpecRendererTypes'
+import {
+  getSpecTruthy,
+  getSpecValue,
+  type SpecRecord,
+} from './SpecRendererTypes'
 
 /** Operation badge for file specs */
 function OperationBadge({ operation }: { operation: string }) {
@@ -49,7 +53,10 @@ function OperationBadge({ operation }: { operation: string }) {
 
   return (
     <span
-      className={clsx('flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-semibold', color)}
+      className={clsx(
+        'flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-semibold',
+        color,
+      )}
     >
       <Icon className="w-3 h-3" />
       {label}
@@ -59,12 +66,21 @@ function OperationBadge({ operation }: { operation: string }) {
 
 /** File spec renderer with clickable path and operation badge */
 export function FileSpecRenderer({ spec }: { spec: SpecRecord }) {
-  const filePath = getSpecValue(spec, ['file', 'filepath', 'file_path', 'path', 'filename'])
+  const filePath = getSpecValue(spec, [
+    'file',
+    'filepath',
+    'file_path',
+    'path',
+    'filename',
+  ])
   const operation =
     getSpecValue(spec, ['operation', 'action']) ||
-    (getSpecTruthy(spec, ['create']) ? 'create'
-      : getSpecTruthy(spec, ['modify']) ? 'modify'
-        : getSpecTruthy(spec, ['delete']) ? 'delete'
+    (getSpecTruthy(spec, ['create'])
+      ? 'create'
+      : getSpecTruthy(spec, ['modify'])
+        ? 'modify'
+        : getSpecTruthy(spec, ['delete'])
+          ? 'delete'
           : '')
 
   const otherFields = Object.entries(spec).filter(

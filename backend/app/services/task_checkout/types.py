@@ -1,4 +1,4 @@
-"""Worktree type definitions."""
+"""Task checkout type definitions."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 
 
 @dataclass
-class TaskWorktreeInfo:
-    """Information about a task's worktree."""
+class TaskCheckoutInfo:
+    """Information about a task's shared checkout branch."""
 
     path: Path
     branch: str
@@ -18,5 +18,5 @@ class TaskWorktreeInfo:
 
 
 __all__ = [
-    "TaskWorktreeInfo",
+    "TaskCheckoutInfo",
 ]

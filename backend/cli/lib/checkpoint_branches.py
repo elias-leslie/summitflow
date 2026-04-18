@@ -87,13 +87,10 @@ def create_subtask_branch(task_id: str, subtask_id: str) -> str:
 
 
 def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None = None) -> bool:
-    """Merge subtask branch to task branch. Worktree stays alive until task completes."""
-    from .worktree import get_worktree_info
-
+    """Merge subtask branch into the task branch in the shared checkout."""
     subtask_branch = f"{task_id}/{subtask_id}"
     task_branch = f"{task_id}/main"
-    worktree_info = get_worktree_info(task_id, project_id)
-    cwd = str(worktree_info.path) if worktree_info else None
+    cwd = _get_repo_cwd(project_id)
 
     if not _branch_exists(subtask_branch, cwd):
         print(f"No subtask branch {subtask_branch} found - work done on task branch")
@@ -117,10 +114,8 @@ def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None =
 
 
 def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
-    """Merge task branch to base branch. Order: checkout base, merge, remove worktree, delete branch."""
+    """Merge task branch to base branch, then delete the task branch."""
     from app.storage import tasks as task_store
-
-    from .worktree import get_worktree_info, remove_worktree
 
     task = task_store.get_task(task_id)
     if task and task.get("status") in ("completed", "cancelled"):
@@ -143,11 +138,6 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
         _abort_merge(repo_cwd)
         print(f"Error: Failed to merge {task_branch}: {e.stderr}", file=sys.stderr)
         sys.exit(1)
-
-    worktree_info = get_worktree_info(task_id, project_id)
-    if worktree_info:
-        print(f"Removing worktree: {worktree_info.path}")
-    remove_worktree(task_id, delete_branch=False, project_id=project_id)
 
     with contextlib.suppress(subprocess.CalledProcessError):
         _run_git(["git", "branch", "-d", task_branch], repo_cwd)

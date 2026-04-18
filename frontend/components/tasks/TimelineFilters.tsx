@@ -61,7 +61,10 @@ const FILTER_CHIPS: FilterChip[] = [
 interface TimelineFiltersProps {
   activeFilter: string
   searchTerm: string
-  onFilterChange: (filterId: string, eventTypes: AgentEventType[] | undefined) => void
+  onFilterChange: (
+    filterId: string,
+    eventTypes: AgentEventType[] | undefined,
+  ) => void
   onSearchChange: (term: string) => void
   eventCounts?: Record<string, number>
 }
@@ -79,7 +82,10 @@ export function TimelineFilters({
         {FILTER_CHIPS.map((chip) => {
           const isActive = activeFilter === chip.id
           const count = chip.eventTypes
-            ? chip.eventTypes.reduce((acc, et) => acc + (eventCounts?.[et] || 0), 0)
+            ? chip.eventTypes.reduce(
+                (acc, et) => acc + (eventCounts?.[et] || 0),
+                0,
+              )
             : eventCounts
               ? Object.values(eventCounts).reduce((a, b) => a + b, 0)
               : 0
@@ -89,13 +95,21 @@ export function TimelineFilters({
               type="button"
               key={chip.id}
               onClick={() => onFilterChange(chip.id, chip.eventTypes)}
-              className={clsx('flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all', isActive ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50 hover:bg-slate-700/50 hover:text-slate-300')}
+              className={clsx(
+                'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all',
+                isActive
+                  ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
+                  : 'bg-slate-800/50 text-slate-400 border border-slate-700/50 hover:bg-slate-700/50 hover:text-slate-300',
+              )}
             >
               {chip.icon}
               <span>{chip.label}</span>
               {count > 0 && (
                 <span
-                  className={clsx('text-2xs px-1 py-0.5 rounded', isActive ? 'bg-cyan-500/30' : 'bg-slate-700/70')}
+                  className={clsx(
+                    'text-2xs px-1 py-0.5 rounded',
+                    isActive ? 'bg-cyan-500/30' : 'bg-slate-700/70',
+                  )}
                 >
                   {count}
                 </span>

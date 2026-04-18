@@ -24,7 +24,7 @@ def _session_provider(session: dict[str, Any]) -> str:
 
 
 def _session_location(session: dict[str, Any]) -> str:
-    return _first_nonempty(session, ("worktree_path", "working_dir", "repo_root"))
+    return _first_nonempty(session, ("working_dir", "repo_root"))
 
 
 def _session_freshness(session: dict[str, Any]) -> datetime:

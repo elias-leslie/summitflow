@@ -5,21 +5,29 @@ import { Boxes } from 'lucide-react'
 import { motion } from 'motion/react'
 import { SystemHealthWidget } from '@/components/dashboard/SystemHealthWidget'
 import { HealthBar } from '@/components/runtime/HealthBar'
-import { RuntimeModeBanner } from '@/components/runtime/RuntimeModeBanner'
-import { ServiceGrid } from '@/components/runtime/ServiceGrid'
 import { MaintenanceStatusCard } from '@/components/runtime/MaintenanceStatusCard'
 import { ProxmoxStatusCard } from '@/components/runtime/ProxmoxStatusCard'
+import { RuntimeModeBanner } from '@/components/runtime/RuntimeModeBanner'
+import { ServiceGrid } from '@/components/runtime/ServiceGrid'
 import { runtimeApi } from '@/lib/api/runtime'
 import { POLL_MONITOR } from '@/lib/polling'
 
 export default function RuntimePage() {
-  const { data: health, isLoading: healthLoading, error: healthError } = useQuery({
+  const {
+    data: health,
+    isLoading: healthLoading,
+    error: healthError,
+  } = useQuery({
     queryKey: ['runtime', 'health'],
     queryFn: runtimeApi.getHealth,
     refetchInterval: POLL_MONITOR,
   })
 
-  const { data: services, isLoading: servicesLoading, error: servicesError } = useQuery({
+  const {
+    data: services,
+    isLoading: servicesLoading,
+    error: servicesError,
+  } = useQuery({
     queryKey: ['runtime', 'status'],
     queryFn: runtimeApi.getStatus,
     refetchInterval: POLL_MONITOR,

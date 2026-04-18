@@ -79,8 +79,7 @@ TASKS (create/capture REQUIRE -P <project>):
   exec-log <id> [-f] [-n N] [--debug]      # view execution log (subtasks, tool calls, events)
 
 CHECKPOINT (claim -> done | abandon):
-  claim <id> [--force]                     # claim task, create checkpoint (DB+git, auto-adopt dirty files)
-  adopt <id>                               # copy current dirty paths into an existing claimed worktree
+  claim <id> [--force]                     # claim task, create checkpoint (DB+git branch)
   claim <subtask> -t <task>                # claim subtask, create branch
   done <subtask> -t <task>                 # complete subtask, merge branch
   done <task>                              # complete task, merge to main, remove checkpoint
@@ -174,14 +173,14 @@ HEALTH (quality gate):
   health results [--type T] [--status S] [--unfixed] [--limit N]
   health sync <type> <status> [--errors N] [--warnings N] [--triggered-by commit|manual|ci|agent]
 
-CLEANUP (worktree maintenance):
-  cleanup worktrees                        # analyze worktrees; read-only by default
-  cleanup worktrees --auto                 # delete only SAFE/ALREADY_MERGED worktrees
-  cleanup worktrees --force                # destructive preview; rerun with --confirm TOKEN
-  cleanup worktrees --stale-days N         # configure stale threshold (default: 7)
-  cleanup status                           # quick cleanup-debt overview (main + worktrees + residue)
+CLEANUP (checkpoint maintenance):
+  cleanup checkpoints                      # analyze checkpoint/legacy residue; read-only by default
+  cleanup checkpoints --auto               # delete only safe legacy residue + stale checkpoints
+  cleanup checkpoints --force              # destructive preview; rerun with --confirm TOKEN
+  cleanup checkpoints --stale-days N       # configure stale threshold (default: 7)
+  cleanup status                           # quick cleanup-debt overview (main + checkpoints + residue)
   cleanup inspect-orphans                  # list orphan task branches needing salvage/review
-  cleanup salvage <task-id>                # restore a missing-task orphan branch into a lane
+  cleanup salvage <task-id>                # restore a missing-task orphan branch into a branch checkpoint
   pulse [--project P]                      # cross-project coordination summary (default); drill down with --project
   cleanup path <path> [<path>...]          # safe literal path cleanup
   cleanup path <dir> --recursive           # safe literal directory cleanup
@@ -295,7 +294,7 @@ def progress_alias(
 # Register checkpoint-aware commands (override old claim from tasks.py)
 # These are defined with @app.command() in their modules, so access via module.app
 for cmd in claim.app.registered_commands:
-    if cmd.callback is not None and cmd.name in {"claim", "adopt"}:
+    if cmd.callback is not None and cmd.name == "claim":
         app.command(name=cmd.name)(cmd.callback)
 app.add_typer(checkpoints.app, name="checkpoints")
 for cmd in snapshots.app.registered_commands:

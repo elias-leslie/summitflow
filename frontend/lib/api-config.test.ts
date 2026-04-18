@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getApiBaseUrl, getTtsBaseUrl, getVoiceWsUrl, getWsUrl } from './api-config'
+import {
+  getApiBaseUrl,
+  getTtsBaseUrl,
+  getVoiceWsUrl,
+  getWsUrl,
+} from './api-config'
 
 function mockBrowserLocation(url: string) {
   const parsed = new URL(url)
@@ -23,7 +28,9 @@ describe('api-config', () => {
     mockBrowserLocation('http://localhost:3001')
 
     expect(getApiBaseUrl()).toBe('http://localhost:8001')
-    expect(getWsUrl('/ws/execution/task-123')).toBe('ws://localhost:8001/ws/execution/task-123')
+    expect(getWsUrl('/ws/execution/task-123')).toBe(
+      'ws://localhost:8001/ws/execution/task-123',
+    )
     expect(getVoiceWsUrl()).toBe(
       'ws://localhost:8003/api/voice/ws?user_id=summitflow_user&app=summitflow&mode=transcribe',
     )

@@ -56,7 +56,9 @@ describe('StorageCard', () => {
     const toggle = screen.getByRole('button', { name: /storage/i })
 
     expect(screen.getByText('Storage')).toBeInTheDocument()
-    expect(screen.getByText(/Davion-Sidar over SMB at 192.168.8.128\/davion-gem/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Davion-Sidar over SMB at 192.168.8.128\/davion-gem/),
+    ).toBeInTheDocument()
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
   })
 

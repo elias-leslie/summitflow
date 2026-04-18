@@ -16,7 +16,11 @@ const QUALITY_TOOLS = [
 const QUALITY_MODES = [
   { value: 'quick', label: 'Quick', description: 'Fast subset of checks' },
   { value: 'check', label: 'Full Check', description: 'All checks, all files' },
-  { value: 'changed-only', label: 'Changed Only', description: 'Only changed files' },
+  {
+    value: 'changed-only',
+    label: 'Changed Only',
+    description: 'Only changed files',
+  },
 ]
 
 interface QualityGateSectionProps {
@@ -39,7 +43,7 @@ export function QualityGateSection({
 
   const handleToolToggle = (tool: string) => {
     const newTools = selectedTools.includes(tool)
-      ? selectedTools.filter(t => t !== tool)
+      ? selectedTools.filter((t) => t !== tool)
       : [...selectedTools, tool]
     onToolsChange(newTools)
   }
@@ -59,7 +63,7 @@ export function QualityGateSection({
         <div>
           <Label className="text-slate-200 mb-3 block">Gate Mode</Label>
           <div className="flex gap-2">
-            {QUALITY_MODES.map(mode => (
+            {QUALITY_MODES.map((mode) => (
               <button
                 type="button"
                 key={mode.value}
@@ -73,7 +77,9 @@ export function QualityGateSection({
                 )}
               >
                 <div>{mode.label}</div>
-                <div className="text-[10px] opacity-70 mt-0.5">{mode.description}</div>
+                <div className="text-[10px] opacity-70 mt-0.5">
+                  {mode.description}
+                </div>
               </button>
             ))}
           </div>
@@ -91,7 +97,7 @@ export function QualityGateSection({
             : 'Select specific tools to override the mode above.'}
         </p>
         <div className="flex flex-wrap gap-2">
-          {QUALITY_TOOLS.map(tool => (
+          {QUALITY_TOOLS.map((tool) => (
             <button
               type="button"
               key={tool.value}
@@ -124,16 +130,24 @@ export function QualityGateSection({
             type="button"
             onClick={onFixEnabledToggle}
             disabled={isPending}
-            aria-label={settings.quality_gate_fix_enabled ? 'Disable auto-fix' : 'Enable auto-fix'}
+            aria-label={
+              settings.quality_gate_fix_enabled
+                ? 'Disable auto-fix'
+                : 'Enable auto-fix'
+            }
             className={clsx(
               'relative w-12 h-6 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900',
-              settings.quality_gate_fix_enabled ? 'bg-phosphor-500' : 'bg-slate-600',
+              settings.quality_gate_fix_enabled
+                ? 'bg-phosphor-500'
+                : 'bg-slate-600',
             )}
           >
             <span
               className={clsx(
                 'absolute top-1 w-4 h-4 bg-slate-100 rounded-full transition-transform shadow-sm',
-                settings.quality_gate_fix_enabled ? 'translate-x-7' : 'translate-x-1',
+                settings.quality_gate_fix_enabled
+                  ? 'translate-x-7'
+                  : 'translate-x-1',
               )}
             />
           </button>

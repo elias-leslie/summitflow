@@ -47,7 +47,12 @@ export function SubtaskProgress({
         {displaySubtasks.map((subtask, index) => (
           <div
             key={subtask.id ?? `subtask-${index}`}
-            className={clsx('w-1.5 h-1.5 rounded-[1px] transition-all duration-200', subtask.passes ? 'bg-emerald-400 shadow-sm shadow-emerald-400/30' : 'bg-slate-700 group-hover:bg-slate-600')}
+            className={clsx(
+              'w-1.5 h-1.5 rounded-[1px] transition-all duration-200',
+              subtask.passes
+                ? 'bg-emerald-400 shadow-sm shadow-emerald-400/30'
+                : 'bg-slate-700 group-hover:bg-slate-600',
+            )}
           />
         ))}
         {hiddenCount > 0 && (
@@ -57,7 +62,14 @@ export function SubtaskProgress({
 
       {/* Count */}
       <span
-        className={clsx('text-2xs font-mono transition-colors', completed === total ? 'text-emerald-400' : completed > 0 ? 'text-slate-400' : 'text-slate-600')}
+        className={clsx(
+          'text-2xs font-mono transition-colors',
+          completed === total
+            ? 'text-emerald-400'
+            : completed > 0
+              ? 'text-slate-400'
+              : 'text-slate-600',
+        )}
       >
         {completed}/{total}
       </span>

@@ -29,7 +29,7 @@ from .quick_snapshots import (
     load_manifest,
     save_manifest,
 )
-from .worktree_paths import (
+from .workspace_paths import (
     get_workspaces_root,
     workspaces_root_available,
 )
@@ -103,7 +103,8 @@ def _latest_entry(entries: list[QuickSnapshot]) -> QuickSnapshot:
 
 def _scope_state_needs_snapshot(repo_root: Path, entries: list[QuickSnapshot]) -> bool:
     """Return True when a new automatic snapshot would capture new clean-state protection."""
-    from .quick_snapshots import _git, _head_oid
+    from .quick_snapshots import _head_oid
+    from .snapshots._helpers import _git
 
     current_head = _head_oid(repo_root)
     if current_head is None:
@@ -221,7 +222,7 @@ def enumerate_snapshot_scopes(
 ) -> list[tuple[str, SnapshotScope, str]]:
     """Return snapshot scopes as ``(project_id, scope, state)`` tuples.
 
-    Active scopes map to real current Btrfs-backed worktrees/projects. Archived
+    Active scopes map to real current Btrfs-backed lanes/projects. Archived
     scopes are retained recovery manifests for deleted or retired lanes.
     """
     scopes_by_key: dict[str, tuple[str, SnapshotScope, str]] = {}

@@ -1,9 +1,9 @@
 import {
   FolderSearch,
   Layers,
-  Target,
   ListChecks,
   ShieldCheck,
+  Target,
 } from 'lucide-react'
 import type { Task } from '@/lib/api/tasks'
 import type { ProgressStep, StepStatus } from './types'

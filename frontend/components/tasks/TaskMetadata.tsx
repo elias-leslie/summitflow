@@ -13,15 +13,9 @@ export function TaskMetadata({ task }: TaskMetadataProps) {
       <p>
         Status: <span className="text-slate-300">{task.status}</span>
       </p>
-      {task.created_at && (
-        <p>Created: {formatShortDate(task.created_at)}</p>
-      )}
-      {task.updated_at && (
-        <p>Updated: {formatShortDate(task.updated_at)}</p>
-      )}
-      {task.started_at && (
-        <p>Started: {formatShortDate(task.started_at)}</p>
-      )}
+      {task.created_at && <p>Created: {formatShortDate(task.created_at)}</p>}
+      {task.updated_at && <p>Updated: {formatShortDate(task.updated_at)}</p>}
+      {task.started_at && <p>Started: {formatShortDate(task.started_at)}</p>}
       {task.completed_at && (
         <p>Completed: {formatShortDate(task.completed_at)}</p>
       )}

@@ -23,7 +23,6 @@ from ...tasks.autonomous._project_resolution import resolve_task_project_id
 from .formatting import toon_format_task
 from .helpers import (
     get_task_or_404,
-    get_worktree_response,
     verify_task_project,
 )
 from .response import task_to_response
@@ -35,9 +34,8 @@ router = APIRouter()
 async def check_completion_readiness(task_id: str) -> dict[str, Any]:
     """Pre-validate completion gates without modifying state."""
     task = get_task_or_404(task_id)
-    canonical_task_id = str(task["id"])
 
-    subtasks = await asyncio.to_thread(get_subtasks_for_task, canonical_task_id, True)
+    subtasks = await asyncio.to_thread(get_subtasks_for_task, str(task["id"]), True)
     incomplete: list[str] = []
     synthetic_skips = {
         str(item).split(":", 1)[0]
@@ -73,12 +71,6 @@ async def get_task_global(
     task = await asyncio.to_thread(task_store.get_task, task_id)
     if not task:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-    canonical_task_id = str(task["id"])
-
-    # Add worktree info if exists
-    worktree_response = get_worktree_response(canonical_task_id)
-    if worktree_response:
-        task["worktree"] = worktree_response
 
     task_response = task_to_response(task)
 
@@ -99,12 +91,6 @@ async def get_task(
 ) -> TaskResponse | PlainTextResponse:
     """Get task by ID within project context."""
     task = await asyncio.to_thread(verify_task_project, task_id, project_id)
-    canonical_task_id = str(task["id"])
-
-    # Add worktree info if exists
-    worktree_response = get_worktree_response(canonical_task_id)
-    if worktree_response:
-        task["worktree"] = worktree_response
 
     task_response = task_to_response(task)
 

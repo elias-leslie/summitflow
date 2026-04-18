@@ -224,8 +224,7 @@ export function NotificationBell({
                       }}
                       className={clsx(
                         'group px-4 py-3 border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer transition-colors',
-                        notification.status === 'pending' &&
-                          'bg-slate-800/30',
+                        notification.status === 'pending' && 'bg-slate-800/30',
                       )}
                     >
                       <div className="flex items-start gap-3">
@@ -276,7 +275,6 @@ export function NotificationBell({
                 })
               )}
             </div>
-
           </div>
         </>
       )}

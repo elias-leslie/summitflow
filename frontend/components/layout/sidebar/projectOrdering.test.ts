@@ -39,7 +39,9 @@ describe('projectOrdering', () => {
       }),
     ]
 
-    expect(sortProjectsForSidebar(projects).map((project) => project.id)).toEqual([
+    expect(
+      sortProjectsForSidebar(projects).map((project) => project.id),
+    ).toEqual([
       'prod-bravo',
       'prod-alpha',
       'testing-charlie',
@@ -81,7 +83,9 @@ describe('projectOrdering', () => {
       { id: 'prod-a', sidebar_rank: 1 },
       { id: 'prod-b', sidebar_rank: 2 },
     ])
-    expect(result?.projects.map((project) => [project.id, project.sidebar_rank])).toEqual([
+    expect(
+      result?.projects.map((project) => [project.id, project.sidebar_rank]),
+    ).toEqual([
       ['prod-c', 0],
       ['prod-a', 1],
       ['prod-b', 2],

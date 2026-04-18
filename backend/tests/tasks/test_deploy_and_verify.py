@@ -131,7 +131,7 @@ class TestAutoMergeDeployIntegration:
     """Tests that auto_merge calls _deploy_and_verify on success."""
 
     @patch("app.tasks.autonomous.review_modules.actions._deploy_and_verify")
-    @patch("app.tasks.autonomous.cleanup.merge_and_cleanup_task_worktree")
+    @patch("app.tasks.autonomous.cleanup.merge_and_cleanup_task_checkpoint")
     @patch("app.tasks.autonomous.review_modules.actions.task_store")
     def test_deploy_called_on_successful_merge(
         self,
@@ -147,7 +147,7 @@ class TestAutoMergeDeployIntegration:
         mock_deploy.assert_called_once_with("task-1", "summitflow")
 
     @patch("app.tasks.autonomous.review_modules.actions._deploy_and_verify")
-    @patch("app.tasks.autonomous.cleanup.merge_and_cleanup_task_worktree")
+    @patch("app.tasks.autonomous.cleanup.merge_and_cleanup_task_checkpoint")
     @patch("app.tasks.autonomous.review_modules.actions.task_store")
     def test_deploy_not_called_on_failed_merge(
         self,
@@ -163,7 +163,7 @@ class TestAutoMergeDeployIntegration:
         mock_deploy.assert_not_called()
 
     @patch("app.tasks.autonomous.review_modules.actions._deploy_and_verify")
-    @patch("app.tasks.autonomous.cleanup.merge_and_cleanup_task_worktree")
+    @patch("app.tasks.autonomous.cleanup.merge_and_cleanup_task_checkpoint")
     @patch("app.tasks.autonomous.review_modules.actions.task_store")
     def test_deploy_not_called_on_validation_failure(
         self,
