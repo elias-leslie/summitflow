@@ -58,18 +58,40 @@ read_project_id_from_index() {
     ' "$index_path"
 }
 
+read_project_id_from_identity_manifest() {
+    local root="$1"
+    local manifest
+    manifest="$(project_identity_manifest_from_root "$root" 2>/dev/null || true)"
+    [[ -n "$manifest" ]] || return 1
+
+    python3 - "$manifest" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text())
+project = payload.get("project")
+if isinstance(project, dict):
+    project_id = project.get("id")
+    if isinstance(project_id, str) and project_id:
+        print(project_id)
+PY
+}
+
 detect_local_project_context() {
     local candidate="${1:-$PWD}"
 
     while [[ -n "$candidate" ]]; do
+        local project_id=""
         if [[ -f "$candidate/.index.yaml" ]]; then
-            local project_id
             project_id="$(read_project_id_from_index "$candidate")"
-            if [[ -n "$project_id" ]]; then
-                DT_CONTEXT_ROOT="$candidate"
-                DT_CONTEXT_PROJECT="$project_id"
-                return 0
-            fi
+        elif [[ -f "$candidate/$PROJECT_IDENTITY_FILE_NAME" ]]; then
+            project_id="$(read_project_id_from_identity_manifest "$candidate")"
+        fi
+        if [[ -n "$project_id" ]]; then
+            DT_CONTEXT_ROOT="$candidate"
+            DT_CONTEXT_PROJECT="$project_id"
+            return 0
         fi
 
         if [[ "$candidate" == "/" ]]; then
@@ -90,6 +112,10 @@ DT_CONTEXT_PROJECT=""
 detect_local_project_context "$PWD" || detect_local_project_context "$PROJECT_DIR" || true
 if [[ -n "$DT_CONTEXT_PROJECT" ]]; then
     PROJECT_NAME="$DT_CONTEXT_PROJECT"
+fi
+CANONICAL_PROJECT_DIR="$(resolve_project_root "$PROJECT_NAME" 2>/dev/null || true)"
+if [[ -n "$CANONICAL_PROJECT_DIR" ]]; then
+    MAIN_REPO_DIR="$CANONICAL_PROJECT_DIR"
 fi
 
 # Use main repo for venv (tools), but PROJECT_DIR for backend (code to lint)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -10,6 +11,18 @@ from pathlib import Path
 def _write_executable(path: Path, content: str) -> None:
     path.write_text(content)
     path.chmod(0o755)
+
+
+def _write_project_identity(path: Path, project_id: str) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "project": {"id": project_id, "repo_name": project_id, "display_name": project_id},
+                "runtime": {"backend_dir": "backend", "frontend_dir": "frontend"},
+            }
+        )
+    )
 
 
 def _init_git_repo(path: Path) -> None:
@@ -157,6 +170,69 @@ exit 0
     assert "app/only.py" in logged
     assert "backend/app/only.py" not in logged
     assert "/backend/app" not in logged
+
+
+def test_dev_tools_lane_checkout_uses_canonical_repo_venv(tmp_path: Path) -> None:
+    canonical_repo = tmp_path / "canonical"
+    lane_repo = tmp_path / "lane"
+    canonical_app = canonical_repo / "backend" / "app"
+    lane_app = lane_repo / "backend" / "app"
+    canonical_venv_bin = canonical_repo / "backend" / ".venv" / "bin"
+
+    canonical_app.mkdir(parents=True)
+    lane_app.mkdir(parents=True)
+    canonical_venv_bin.mkdir(parents=True)
+
+    for repo, app_dir in ((canonical_repo, canonical_app), (lane_repo, lane_app)):
+        _write_project_identity(repo / "project.identity.json", "summitflow")
+        (repo / "backend" / "pyproject.toml").write_text("[project]\nname = 'tmp'\nversion = '0.0.0'\n")
+        (app_dir / "only.py").write_text("def run() -> None:\n    return None\n")
+        _init_git_repo(repo)
+        _commit_all(repo, "initial")
+
+    _write_executable(
+        canonical_venv_bin / "python",
+        """#!/usr/bin/env bash
+exit 0
+""",
+    )
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_executable(
+        fake_bin / "ty",
+        """#!/usr/bin/env bash
+exit 0
+""",
+    )
+    _write_executable(
+        fake_bin / "st",
+        f"""#!/usr/bin/env bash
+if [[ "$1" == "projects" && "$2" == "root" && "$3" == "summitflow" ]]; then
+  printf '%s\\n' {str(canonical_repo)!r}
+  exit 0
+fi
+exit 1
+""",
+    )
+
+    script_path = Path(__file__).resolve().parents[3] / "scripts" / "dev-tools.sh"
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    env.pop("BASH_ENV", None)
+    env.pop("ENV", None)
+
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", str(script_path), "types", "backend/app/only.py"],
+        capture_output=True,
+        text=True,
+        cwd=lane_repo,
+        env=env,
+        check=True,
+    )
+
+    assert "TYPES:OK:0" in result.stdout
+    assert "skipped_no_python" not in result.stdout
 
 
 def test_dev_tools_changed_only_includes_modified_python_scripts(tmp_path: Path) -> None:
