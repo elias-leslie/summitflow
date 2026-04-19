@@ -398,6 +398,114 @@ def test_start_execution_reopens_passed_subtasks_for_conflict_resolution(
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
+@patch("app.tasks.autonomous.exec_modules.orchestrator._has_active_task_checkpoint", return_value=False)
+@patch("app.tasks.autonomous.exec_modules.orchestrator.get_task_checkout", return_value=object())
+@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.handle_early_completion", return_value={"status": "completed"})
+@patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.emit_progress")
+def test_execute_task_locked_ignores_preserved_branch_without_active_checkpoint(
+    mock_emit_progress: MagicMock,
+    mock_emit_log: MagicMock,
+    mock_early: MagicMock,
+    mock_setup: MagicMock,
+    mock_get_task_checkout: MagicMock,
+    mock_has_checkpoint: MagicMock,
+    mock_validate: MagicMock,
+    mock_get_subtasks: MagicMock,
+    mock_task_store: MagicMock,
+    _mock_lane_conflicts: MagicMock,
+) -> None:
+    task_id = "task-complete"
+    project_id = "summitflow"
+
+    mock_task_store.get_task.return_value = {
+        "id": task_id,
+        "task_type": "refactor",
+        "status": "completed",
+    }
+    mock_get_subtasks.return_value = [{"id": "s1", "subtask_id": "1.1", "passes": True}]
+
+    result = start_execution(task_id, project_id)
+
+    assert result == {"status": "completed"}
+    mock_validate.assert_called_once_with(task_id, project_id)
+    mock_has_checkpoint.assert_called_once_with(task_id, project_id)
+    mock_get_task_checkout.assert_not_called()
+    mock_setup.assert_not_called()
+    mock_early.assert_called_once_with(task_id, project_id, 1, None)
+    mock_emit_progress.assert_called_once_with(
+        task_id,
+        total_subtasks=1,
+        completed_subtasks=1,
+        project_id=project_id,
+    )
+    mock_emit_log.assert_any_call(
+        task_id,
+        "info",
+        "All subtasks already complete; skipping checkout setup",
+        project_id=project_id,
+    )
+
+
+@patch("app.tasks.autonomous.exec_modules.orchestrator.check_task_lane_conflicts", return_value=TaskLaneConflictCheck())
+@patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
+@patch("app.tasks.autonomous.exec_modules.orchestrator._has_active_task_checkpoint", return_value=True)
+@patch("app.tasks.autonomous.exec_modules.orchestrator.get_task_checkout", return_value=object())
+@patch("app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout", return_value="/tmp/checkout")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.handle_early_completion", return_value={"status": "completed"})
+@patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.emit_progress")
+def test_execute_task_locked_recovers_existing_checkout_before_early_completion(
+    mock_emit_progress: MagicMock,
+    mock_emit_log: MagicMock,
+    mock_early: MagicMock,
+    mock_setup: MagicMock,
+    mock_get_task_checkout: MagicMock,
+    mock_has_checkpoint: MagicMock,
+    mock_validate: MagicMock,
+    mock_get_subtasks: MagicMock,
+    mock_task_store: MagicMock,
+    _mock_lane_conflicts: MagicMock,
+) -> None:
+    task_id = "task-complete"
+    project_id = "summitflow"
+
+    mock_task_store.get_task.return_value = {
+        "id": task_id,
+        "task_type": "refactor",
+        "status": "completed",
+    }
+    mock_get_subtasks.return_value = [{"id": "s1", "subtask_id": "1.1", "passes": True}]
+
+    result = start_execution(task_id, project_id)
+
+    assert result == {"status": "completed"}
+    mock_validate.assert_called_once_with(task_id, project_id)
+    mock_has_checkpoint.assert_called_once_with(task_id, project_id)
+    mock_get_task_checkout.assert_called_once_with(task_id, project_id)
+    mock_setup.assert_called_once_with(task_id, project_id)
+    mock_early.assert_called_once_with(task_id, project_id, 1, None)
+    mock_emit_progress.assert_called_once_with(
+        task_id,
+        total_subtasks=1,
+        completed_subtasks=1,
+        project_id=project_id,
+    )
+    mock_emit_log.assert_any_call(
+        task_id,
+        "info",
+        "All subtasks already complete; reusing existing task branch to recover residue before closeout",
+        project_id=project_id,
+    )
+
+
+@patch("app.tasks.autonomous.exec_modules.orchestrator.check_task_lane_conflicts", return_value=TaskLaneConflictCheck())
+@patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase", return_value=True)
 @patch("app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout", return_value="/tmp/checkout")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.execute_subtask_loop")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")

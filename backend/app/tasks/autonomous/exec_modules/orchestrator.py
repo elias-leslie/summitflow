@@ -7,6 +7,7 @@ from typing import Any
 
 from ....core.debug import debug_section
 from ....logging_config import get_logger
+from ....services.task_checkout import get_task_checkout
 from ....services.task_lane_preflight import check_task_lane_conflicts
 from ....storage import tasks as task_store
 from ....storage.subtasks import get_subtasks_for_task
@@ -102,6 +103,56 @@ def _prepare_execution(
     return None, project_path, task_type, agent_override
 
 
+def _has_active_task_checkpoint(task_id: str, project_id: str) -> bool:
+    """Return whether the task still has active checkpoint metadata to clean up."""
+    from cli.lib.checkpoint_metadata import load_snapshot_meta
+
+    meta = load_snapshot_meta(task_id)
+    return meta is not None and meta.project_id == project_id
+
+
+def _prepare_completed_task_closeout(task_id: str, project_id: str) -> dict[str, Any] | None:
+    """Run safety checks before early-completing a task whose subtasks already passed."""
+    if not validate_pristine_codebase(task_id, project_id):
+        return {
+            "task_id": task_id,
+            "status": "failed",
+            "error": "Pristine validation failed",
+            "reason": "pristine_self_heal_failed",
+        }
+
+    if not _has_active_task_checkpoint(task_id, project_id):
+        emit_log(task_id, "info", "All subtasks already complete; skipping checkout setup", project_id=project_id)
+        return None
+
+    existing_checkout = get_task_checkout(task_id, project_id)
+    if not existing_checkout:
+        emit_log(
+            task_id,
+            "warning",
+            "All subtasks already complete; active checkpoint metadata remains but no task branch exists, skipping checkout recovery",
+            project_id=project_id,
+        )
+        return None
+
+    emit_log(
+        task_id,
+        "info",
+        "All subtasks already complete; reusing existing task branch to recover residue before closeout",
+        project_id=project_id,
+    )
+    project_path = setup_task_checkout(task_id, project_id)
+    if project_path:
+        return None
+
+    return {
+        "task_id": task_id,
+        "status": "failed",
+        "error": "Task branch setup failed",
+        "reason": "task_branch_setup_failed",
+    }
+
+
 def _load_subtasks(
     task_id: str,
     project_id: str,
@@ -143,6 +194,21 @@ def execute_task_locked(
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> dict[str, Any]:
     """Inner execution body. Concurrency handled by Hatchet."""
+    task = task_store.get_task(task_id)
+    if not task:
+        emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
+        return {"task_id": task_id, "status": "error", "message": "Task not found"}
+
+    error, incomplete, total, completed = _load_subtasks(task_id, project_id)
+    if error:
+        return error
+
+    if not incomplete:
+        completion_error = _prepare_completed_task_closeout(task_id, project_id)
+        if completion_error:
+            return completion_error
+        return handle_early_completion(task_id, project_id, total, dispatch)
+
     error, project_path, task_type, agent_override = _prepare_execution(task_id, project_id)
     if error:
         return error
@@ -151,13 +217,6 @@ def execute_task_locked(
     task = task_store.get_task(task_id)
     if task and task.get("status") != "running":
         task_store.update_task_status(task_id, "running")
-
-    error, incomplete, total, completed = _load_subtasks(task_id, project_id)
-    if error:
-        return error
-
-    if not incomplete:
-        return handle_early_completion(task_id, project_id, total, dispatch)
 
     results, completed = execute_subtask_loop(
         task_id, project_id, project_path, incomplete, total, completed,
