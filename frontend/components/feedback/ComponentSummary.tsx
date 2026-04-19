@@ -38,7 +38,6 @@ const COMPONENT_LABELS: Record<string, string> = {
   'xc.error_handling': 'Error Handling',
   'xc.documentation': 'Documentation',
   'xc.testing': 'Testing',
-  'coderabbit.suggestions': 'CodeRabbit',
 }
 
 // ─── Ratio Bar ───────────────────────────────────────────────────

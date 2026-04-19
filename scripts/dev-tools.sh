@@ -1179,8 +1179,8 @@ count_issues() {
             fi
             echo "$count"
             ;;
-        coderabbit_parse)
-            # CodeRabbit: count "Type:" lines (each = one finding)
+        type_line_count)
+            # Count tool findings that emit one "Type:" line per issue.
             local count
             count=$(echo "$output" | grep -c "^Type:") || count=0
             echo "$count"
@@ -1213,46 +1213,6 @@ count_issues() {
             fi
             ;;
     esac
-}
-
-run_coderabbit_with_progress() {
-    local tool_bin="$1"
-    shift
-
-    local output_file
-    output_file=$(mktemp)
-    local progress_interval=10
-    local start_ts
-    start_ts=$(date +%s)
-    local last_stage="starting"
-
-    "$tool_bin" "$@" >"$output_file" 2>&1 &
-    local cmd_pid=$!
-
-    echo "CODERABBIT:RUNNING:0s|stage:${last_stage}" >&2
-
-    while kill -0 "$cmd_pid" 2>/dev/null; do
-        sleep "$progress_interval"
-        if ! kill -0 "$cmd_pid" 2>/dev/null; then
-            break
-        fi
-
-        local elapsed
-        elapsed=$(( $(date +%s) - start_ts ))
-        local stage
-        stage=$(grep -v '^[[:space:]]*$' "$output_file" | tail -1 | cut -c1-120)
-        if [[ -z "$stage" ]]; then
-            stage="$last_stage"
-        fi
-        last_stage="$stage"
-        echo "CODERABBIT:RUNNING:${elapsed}s|stage:${stage}" >&2
-    done
-
-    wait "$cmd_pid"
-    local retval=$?
-    cat "$output_file"
-    rm -f "$output_file"
-    return "$retval"
 }
 
 NORMALIZED_TOOL_ARGS=()
@@ -1468,8 +1428,6 @@ EOF
         else
             output=$("$tool_bin" $args "${tool_args[@]}" 2>&1) || retval=$?
         fi
-    elif [[ "$count_method" == "coderabbit_parse" ]]; then
-        output=$(run_coderabbit_with_progress "$tool_bin" $args "${tool_args[@]}") || retval=$?
     else
         output=$("$tool_bin" $args "${tool_args[@]}" 2>&1) || retval=$?
     fi
@@ -1481,23 +1439,6 @@ EOF
     # Determine success based on method
     local is_success=0
     case "$count_method" in
-        coderabbit_parse)
-            # CodeRabbit exits 0 even with findings; success = no findings
-            # But non-zero exit (rate limit, network error) must NOT be treated as success
-            if [[ $retval -eq 0 && "$count" == "0" ]]; then
-                is_success=1
-            elif [[ $retval -ne 0 ]]; then
-                # Preserve error info in count for FAIL output
-                local cr_error_hint=""
-                if echo "$output" | grep -qi "rate limit"; then
-                    cr_error_hint="rate_limited"
-                elif echo "$output" | grep -qi "error"; then
-                    cr_error_hint="error"
-                fi
-                count="${cr_error_hint:-error}"
-            fi
-            ;;
-
         pytest_parse)
             # pytest: trust summary line over exit code.
             # Non-zero exit with "passed" but no "failed"/"error" = coverage/warnings issue, not test failure.
@@ -1592,7 +1533,6 @@ show_help() {
     echo "  vitest           Run Vitest with TOON output (frontend, when configured)"
     echo "  sqlfluff         Run sqlfluff lint with TOON output (migrations)"
     echo "  squawk           Run squawk migration safety with TOON output (migrations)"
-    echo "  coderabbit       Run CodeRabbit AI review with TOON output (not in --check/--quick)"
     echo ""
     echo "Options:"
     echo "  (no args)        Dashboard of all projects (default)"

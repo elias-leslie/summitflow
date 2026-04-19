@@ -130,7 +130,7 @@
         "label": "SQLFLUFF",
         "binary": "sqlfluff",
         "args": "lint --dialect postgres",
-        "count_method": "coderabbit_parse",
+        "count_method": "type_line_count",
         "working_dir": "migrations",
         "fallback_global": true,
         "pass_path": true
@@ -147,28 +147,10 @@
         "label": "SQUAWK",
         "binary": "squawk",
         "args": "",
-        "count_method": "coderabbit_parse",
+        "count_method": "type_line_count",
         "working_dir": "migrations",
         "fallback_global": true,
         "pass_path": true
-      }
-    },
-    {
-      "name": "coderabbit",
-      "component_id": "sf.dt",
-      "redirect_patterns": [
-        "coderabbit\\s+review\\b",
-        "\\bcr\\s+review\\b"
-      ],
-      "redirect_message": "Use 'dt coderabbit' — handles TOON output and project detection.",
-      "dt": {
-        "label": "CODERABBIT",
-        "binary": "coderabbit",
-        "args": "review --plain",
-        "count_method": "coderabbit_parse",
-        "working_dir": "project_root",
-        "fallback_global": true,
-        "pass_path": false
       }
     }
   ],

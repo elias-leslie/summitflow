@@ -22,7 +22,7 @@ GIT_ABORT_ACTIONS = frozenset({"--abort", "--continue", "--quit", "--skip"})
 SHELL_EXECUTABLES = frozenset({"bash", "sh", "zsh", "ksh"})
 BASH_INTERCEPT_WORDS: tuple[str, ...] = (
     "git", "python", "python3", "pytest", "mypy", "ty", "ruff", "biome",
-    "npx", "pnpm", "npm", "vitest", "sqlfluff", "squawk", "coderabbit", "cr",
+    "npx", "pnpm", "npm", "vitest", "sqlfluff", "squawk",
     "docker", "env", "nohup", "nice", "stdbuf", "timeout", "bash", "sh",
     "systemctl", "pkill", "killall", "uvicorn", "gunicorn", "next", "psql",
     "rm", "rmdir", "find",
