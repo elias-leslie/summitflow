@@ -144,6 +144,7 @@ def call_complete(
     max_turns: int,
     include_roles: list[str],
     model_override: str | None = None,
+    timeout_seconds: float | None = None,
 ) -> CompletionResponse:
     """Invoke client.complete with standard kwargs."""
     return client.complete(
@@ -157,7 +158,8 @@ def call_complete(
             max_turns=max_turns,
             model_override=model_override,
             include_roles=include_roles,
-        )
+        ),
+        timeout_seconds=timeout_seconds,
     )
 
 

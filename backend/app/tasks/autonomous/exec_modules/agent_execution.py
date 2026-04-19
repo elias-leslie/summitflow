@@ -20,6 +20,7 @@ from .events import emit_log
 logger = get_logger(__name__)
 
 AUTOCODE_ROLES = ["system", "autocode"]
+AUTOCODE_REQUEST_TIMEOUT_SECONDS = 1800.0
 
 
 def execute_agent_initial(
@@ -54,6 +55,7 @@ def execute_agent_initial(
         client, prompt, agent_slug, project_path, project_id,
         task_id, agent_session_id, max_turns=50,
         include_roles=AUTOCODE_ROLES,
+        timeout_seconds=AUTOCODE_REQUEST_TIMEOUT_SECONDS,
     )
     agent_session_id = update_session_if_changed(
         task_id, response.session_id, agent_session_id
@@ -96,6 +98,7 @@ def execute_agent_fix(
         client, fix_prompt, agent_slug, project_path, project_id,
         task_id, agent_session_id, max_turns=25, include_roles=AUTOCODE_ROLES,
         model_override=model_override,
+        timeout_seconds=AUTOCODE_REQUEST_TIMEOUT_SECONDS,
     )
     agent_session_id = update_session_if_changed(
         task_id, response.session_id, agent_session_id
