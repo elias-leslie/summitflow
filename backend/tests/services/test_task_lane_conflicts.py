@@ -51,8 +51,10 @@ class TestTaskLaneConflicts:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues
-        assert "active lane" in result.issues[0]
-        assert "/tmp/lanes/task-123" in result.issues[0]
+        assert result.overlap_kind == "same_task"
+        assert result.disposition == "block"
+        assert "Task already has an active session" in result.issues[0]
+        assert result.owner_location == "sess-1 in checkout /tmp/lanes/task-123 on task-123/main"
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_other_task_active_lane_blocks_parallel_dispatch(
@@ -77,8 +79,10 @@ class TestTaskLaneConflicts:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues
+        assert result.overlap_kind == "unscoped_target"
         assert result.conflicting_tasks == ["task-999"]
-        assert "repo /home/testuser/summitflow" in result.suggestions[0]
+        assert result.owner_location == "sess-2 in checkout /home/testuser/summitflow on task-999/main"
+        assert "Target task scope unavailable" in result.suggestions[-1]
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_branch_named_lane_blocks_when_external_id_missing(
@@ -103,8 +107,9 @@ class TestTaskLaneConflicts:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues
+        assert result.overlap_kind == "unscoped_target"
         assert result.conflicting_tasks == ["task-999"]
-        assert "checkout /tmp/lanes/task-999" in result.suggestions[0]
+        assert result.owner_location == "sess-4 in checkout /tmp/lanes/task-999 on task-999/main"
 
     def test_retired_workstream_does_not_block_dispatch(
         self,
@@ -211,6 +216,7 @@ class TestTaskLaneConflicts:
 
         result = check_task_lane_conflicts("task-123", "summitflow")
 
+        assert result.overlap_kind == "stale_lane"
         assert "likely stale active coding session" in result.issues[0]
         assert result.conflicting_tasks == ["task-999"]
         assert "retire or reconcile it" in result.suggestions[1]

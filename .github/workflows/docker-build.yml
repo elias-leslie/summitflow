@@ -33,7 +33,9 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: workspace-packages
-          path: /tmp/workspace-packages/*.tgz
+          path: |
+            /tmp/workspace-packages/*.tgz
+            /tmp/workspace-packages/*.whl
 
   build:
     needs: pack-workspace
@@ -44,7 +46,7 @@ jobs:
           - component: backend
             dockerfile: docker/backend.Dockerfile
             image-suffix: api
-            needs-packages: false
+            needs-packages: true
           - component: frontend
             dockerfile: docker/frontend.Dockerfile
             image-suffix: web

@@ -17,6 +17,17 @@ const SCRIPT_DIR = __dirname;
 const MANAGED_ROOT = process.env.AGENT_BROWSER_MANAGED_ROOT || path.join(process.env.HOME, '.local', 'share', 'agent-browser-managed');
 const REAL_AGENT_BROWSER = process.env.AGENT_BROWSER_REAL_BIN || path.join(MANAGED_ROOT, 'node_modules', '.bin', 'agent-browser');
 const REAPER = process.env.AGENT_BROWSER_REAPER_BIN || path.join(SCRIPT_DIR, 'agent-browser-idle-reaper.js');
+const LOCAL_LIB_ROOT = path.join(process.env.HOME || os.homedir(), '.agent-browser', 'linux-deps', 'root');
+const EXTRA_LIB_DIRS = [
+  path.join(LOCAL_LIB_ROOT, 'usr', 'lib', 'x86_64-linux-gnu'),
+  path.join(LOCAL_LIB_ROOT, 'lib', 'x86_64-linux-gnu'),
+].filter((libDir) => fs.existsSync(libDir));
+if (EXTRA_LIB_DIRS.length > 0) {
+  process.env.LD_LIBRARY_PATH = [...EXTRA_LIB_DIRS, process.env.LD_LIBRARY_PATH]
+    .filter(Boolean)
+    .join(':');
+}
+const COMMANDS_WITHOUT_BROWSER_LAUNCH = new Set(['help', '--help', '-h', 'skills', 'install', 'completion', 'version', '--version', '-V']);
 const DEFAULT_SESSION_NAME = 'default';
 
 function parseArgs(args) {
@@ -109,13 +120,23 @@ function removeHeadersArg(args) {
   return cleaned;
 }
 
+function withDefaultBrowserArgs(args) {
+  if (process.platform !== 'linux') return args;
+  if (process.env.AGENT_BROWSER_SKIP_NO_SANDBOX === '1') return args;
+  if (args.includes('--args')) return args;
+  const firstCommand = args.find((arg) => !arg.startsWith('-')) || '';
+  if (COMMANDS_WITHOUT_BROWSER_LAUNCH.has(firstCommand)) return args;
+  return [...args, '--args', '--no-sandbox'];
+}
+
 function runAgentBrowser(args) {
-  const sessionName = getSessionName(args);
-  const hasExplicitSession = args.includes('--session');
+  const effectiveArgs = withDefaultBrowserArgs(args);
+  const sessionName = getSessionName(effectiveArgs);
+  const hasExplicitSession = effectiveArgs.includes('--session');
   const socketRoot = getSocketRoot();
   const lockDir = path.join(socketRoot, 'locks');
   const lockPath = path.join(lockDir, `${sessionName}.wrapper.lock`);
-  const forwardedArgs = hasExplicitSession ? args : ['--session', sessionName, ...args];
+  const forwardedArgs = hasExplicitSession ? effectiveArgs : ['--session', sessionName, ...effectiveArgs];
 
   ensureDir(lockDir);
 

@@ -68,14 +68,11 @@ describe('DashboardContent', () => {
     renderContent()
 
     expect(
-      await screen.findByText('Checkouts', { selector: 'span' }),
+      await screen.findByText('Checkpoints', { selector: 'span' }),
     ).toBeInTheDocument()
     expect(
       screen.getByText('Branches', { selector: 'span' }),
     ).toBeInTheDocument()
     expect(screen.getAllByText('task-123/main')).toHaveLength(2)
-    expect(
-      screen.getByText('Checkout', { selector: 'span' }),
-    ).toBeInTheDocument()
   })
 })

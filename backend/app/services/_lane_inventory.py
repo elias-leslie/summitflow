@@ -41,7 +41,7 @@ def _owner_to_session(owner: dict[str, object]) -> dict[str, object]:
         "id": owner.get("session_id"),
         "external_id": owner.get("task_id"),
         "current_branch": owner.get("branch"),
-        "working_dir": owner.get("working_dir"),
+        "working_dir": owner.get("working_dir") or owner.get("checkout_path"),
         "status": owner.get("session_status"),
         "workstream_status": owner.get("workstream_status"),
         "workstream_note": owner.get("workstream_note"),

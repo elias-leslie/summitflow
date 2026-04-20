@@ -114,7 +114,8 @@ if [[ -n "$DT_CONTEXT_PROJECT" ]]; then
     PROJECT_NAME="$DT_CONTEXT_PROJECT"
 fi
 CANONICAL_PROJECT_DIR="$(resolve_project_root "$PROJECT_NAME" 2>/dev/null || true)"
-if [[ -n "$CANONICAL_PROJECT_DIR" ]]; then
+CURRENT_IDENTITY_MANIFEST="$(project_identity_manifest_from_root "${DT_CONTEXT_ROOT:-$PROJECT_DIR}" 2>/dev/null || true)"
+if [[ -n "$CANONICAL_PROJECT_DIR" && -n "$CURRENT_IDENTITY_MANIFEST" ]]; then
     MAIN_REPO_DIR="$CANONICAL_PROJECT_DIR"
 fi
 

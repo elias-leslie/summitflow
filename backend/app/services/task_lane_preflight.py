@@ -18,6 +18,7 @@ from ._lane_scope import (
     _UNKNOWN_TASK,
     classify_lane_scopes,
     find_scope_overlap,
+    load_task_scope,
 )
 
 logger = get_logger(__name__)
@@ -344,6 +345,7 @@ def _apply_scoped_conflict(
     target_scope,
 ) -> None:
     scoped, unscoped_ids = classify_lane_scopes(lane_sessions, _lane_task_id)
+    scoped = sorted(scoped, key=lambda item: item[0])
     overlap_id, overlap_paths, overlap_kind = find_scope_overlap(target_scope, scoped)
 
     if overlap_kind == "read":
@@ -433,6 +435,21 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
         _apply_same_task_conflict(result, task_id, project_id, same_task_sessions)
 
     if other_lane_sessions:
-        _apply_other_lane_conflict(result, task_id, project_id, other_lane_sessions)
+        stale_other_lane_sessions = [s for s in other_lane_sessions if _is_stale_lane_session(s)]
+        if stale_other_lane_sessions:
+            _apply_stale_lane_conflict(result, project_id, other_lane_sessions, stale_other_lane_sessions)
+            return result
+        target_scope = load_task_scope(task_id)
+        if target_scope is None:
+            _apply_unscoped_conflict(
+                result,
+                _UNSCOPED_TARGET,
+                task_id,
+                project_id,
+                other_lane_sessions,
+                "Target task scope unavailable",
+            )
+        else:
+            _apply_scoped_conflict(result, task_id, project_id, other_lane_sessions, target_scope)
 
     return result

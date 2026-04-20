@@ -56,8 +56,9 @@ class TestTaskLaneOwnership:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues
+        assert result.overlap_kind == "unscoped_target"
         assert result.conflicting_tasks == ["task-999"]
-        assert "checkout /tmp/lanes/task-999" in result.suggestions[0]
+        assert result.owner_location == "sess-ownership in checkout /tmp/lanes/task-999 on task-999/main"
         assert result.active_specialists == []
 
     def test_ownership_inventory_payload_summarizes_active_specialists(
@@ -128,5 +129,6 @@ class TestTaskLaneOwnership:
         result = check_task_lane_conflicts("task-123", "summitflow")
 
         assert result.issues
+        assert result.overlap_kind == "unscoped_target"
         assert result.conflicting_tasks == ["task-999"]
-        assert "repo /home/testuser/summitflow" in result.suggestions[0]
+        assert result.owner_location == "sess-legacy in checkout /home/testuser/summitflow on task-999/main"

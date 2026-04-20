@@ -123,7 +123,7 @@ class TestTaskLaneScopes:
         assert result.conflicting_tasks == ["task-999"]
         assert result.overlap_kind == "shared_plumbing"
         assert result.shared_plumbing
-        assert "Do not run parallel coding lanes" in result.suggestions[0]
+        assert "Do not run parallel coding sessions" in result.suggestions[0]
 
     @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")

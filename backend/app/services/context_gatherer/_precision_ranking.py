@@ -87,7 +87,11 @@ def search_and_rank_symbols(
     query_terms = extract_query_terms(queries)
 
     for query in query_terms:
-        for row in search_symbols(project_id, query, limit=_CANDIDATE_LIMIT, path_prefix=path_prefix):
+        if path_prefix is None:
+            rows = search_symbols(project_id, query, limit=_CANDIDATE_LIMIT)
+        else:
+            rows = search_symbols(project_id, query, limit=_CANDIDATE_LIMIT, path_prefix=path_prefix)
+        for row in rows:
             candidates.setdefault(str(row["symbol_id"]), row)
 
     if not candidates:

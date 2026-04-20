@@ -393,7 +393,6 @@ class TestMergeAndCleanup:
             ["git", "update-ref", "refs/summitflow/snapshots/pre-merge/task-1", "HEAD"],
             "/tmp/project",
         )
-        mock_git.assert_any_call(["git", "checkout", "prune"], "/tmp/project")
 
     @patch("app.tasks.autonomous.cleanup.merge_operations._git")
     @patch("app.tasks.autonomous.cleanup.merge_operations.update_task_fields")
@@ -549,7 +548,6 @@ class TestMergeAndCleanup:
         assert result["status"] == "merged"
         assert result["branch_deleted"]
         mock_checkout_base.assert_called_once_with("/tmp/project", "main")
-        mock_git.assert_called_once_with(["git", "checkout", "prune"], "/tmp/project")
         mock_delete.assert_called_once_with("/tmp/project", "task-1/main", "task-1")
         mock_clear_checkpoint.assert_called_once_with("task-1", "test-project")
 
@@ -575,7 +573,7 @@ class TestMergeAndCleanup:
         result = merge_and_cleanup_task_checkpoint("task-1", "test-project")
 
         assert result["status"] == "skipped"
-        assert result["reason"] == "no_checkout"
+        assert result["reason"] == "no_checkpoint"
         mock_clear_checkpoint.assert_called_once_with("task-1", "test-project")
 
     @patch("app.tasks.autonomous.cleanup.merge_operations._git")

@@ -235,7 +235,15 @@ def _search_symbols_for_queries(
         # Try symbol search with case-expanded variants from NL words
         nl_terms = nl_to_symbol_terms(normalized_queries)
         if nl_terms:
-            symbols = search_and_rank_symbols(project_id, nl_terms, symbol_limit=symbol_limit, path_prefix=path_prefix)
+            if path_prefix is None:
+                symbols = search_and_rank_symbols(project_id, nl_terms, symbol_limit=symbol_limit)
+            else:
+                symbols = search_and_rank_symbols(
+                    project_id,
+                    nl_terms,
+                    symbol_limit=symbol_limit,
+                    path_prefix=path_prefix,
+                )
             if symbols:
                 section = build_symbol_section(project_id, symbols)
                 return symbols, section
@@ -243,7 +251,15 @@ def _search_symbols_for_queries(
 
     _path_terms, symbol_terms = split_path_and_symbol_terms(normalized_queries)
     symbol_queries = symbol_terms if symbol_terms else normalized_queries
-    symbols = search_and_rank_symbols(project_id, symbol_queries, symbol_limit=symbol_limit, path_prefix=path_prefix)
+    if path_prefix is None:
+        symbols = search_and_rank_symbols(project_id, symbol_queries, symbol_limit=symbol_limit)
+    else:
+        symbols = search_and_rank_symbols(
+            project_id,
+            symbol_queries,
+            symbol_limit=symbol_limit,
+            path_prefix=path_prefix,
+        )
     section = build_symbol_section(project_id, symbols) if symbols else ""
     return symbols, section
 
@@ -267,7 +283,10 @@ def _text_fallback(
 
     path_terms, _symbol_terms = split_path_and_symbol_terms(normalized_queries)
     text_query = " ".join(path_terms) if path_terms else " ".join(normalized_queries)
-    text_results = search_text(project_id, text_query, limit=_ENTRY_LIMIT, path_prefix=path_prefix)
+    if path_prefix is None:
+        text_results = search_text(project_id, text_query, limit=_ENTRY_LIMIT)
+    else:
+        text_results = search_text(project_id, text_query, limit=_ENTRY_LIMIT, path_prefix=path_prefix)
 
     # If phrase search found nothing, try individual terms (longest first)
     if not text_results.get("items") and " " in text_query:
@@ -275,7 +294,10 @@ def _text_fallback(
         for term in terms:
             if len(term) < 3:
                 continue
-            term_results = search_text(project_id, term, limit=_ENTRY_LIMIT, path_prefix=path_prefix)
+            if path_prefix is None:
+                term_results = search_text(project_id, term, limit=_ENTRY_LIMIT)
+            else:
+                term_results = search_text(project_id, term, limit=_ENTRY_LIMIT, path_prefix=path_prefix)
             if term_results.get("items"):
                 text_results = term_results
                 break

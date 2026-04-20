@@ -518,8 +518,8 @@ async def test_build_project_pulse_active_orchestrator_files_touched_prevents_st
                     "last_command": "cd /srv/workspaces/projects/agent-hub && dt --quick --changed-only",
                     "last_write_path": "/srv/workspaces/projects/agent-hub/backend/app/services/example.py",
                     "files_touched": [
-                        "/srv/workspaces/projects/agent-hub/backend/app/services/alpha.py",
-                        "/srv/workspaces/projects/agent-hub/backend/app/services/beta.py",
+                        "/srv/workspaces/lanes/agent-hub/task-alpha123/backend/app/services/alpha.py",
+                        "/srv/workspaces/lanes/agent-hub/task-beta456/backend/app/services/beta.py",
                     ],
                 },
             }
