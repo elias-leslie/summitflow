@@ -8,6 +8,7 @@ Covers:
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 from app.tasks.autonomous import autonomous_work_pickup
@@ -25,7 +26,7 @@ class TestGuardChecks:
         result = autonomous_work_pickup("test-project")
 
         assert result["status"] == "disabled"
-        assert "autonomous_enabled" in result["reason"]
+        assert "autonomous_enabled" in cast(str, result["reason"])
 
     @patch(
         "app.tasks.autonomous.pickup.validate_autonomous_dispatch",
@@ -97,7 +98,7 @@ class TestTaskDispatching:
 
         mock_dispatch.assert_called_once_with("triage", "task-123", "test-project")
         assert result["dispatched"] == 1
-        assert result["breakdown"]["triage"] == 1
+        assert cast(dict[str, Any], result["breakdown"])["triage"] == 1
 
     @patch("app.tasks.autonomous.pickup.validate_autonomous_dispatch", return_value=None)
     @patch("app.tasks.autonomous.pickup.get_queued_autonomous_tasks")
@@ -146,7 +147,7 @@ class TestTaskDispatching:
         mock_stage.assert_not_called()
         assert result["dispatched"] == 0
         assert result["attempted"] == 1
-        assert result["breakdown"]["skipped"] == 1
+        assert cast(dict[str, Any], result["breakdown"])["skipped"] == 1
 
     @patch("app.tasks.autonomous.pickup.validate_autonomous_dispatch", return_value=None)
     @patch("app.tasks.autonomous.pickup.get_queued_autonomous_tasks")
@@ -182,4 +183,55 @@ class TestTaskDispatching:
         mock_dispatch.assert_not_called()
         assert result["dispatched"] == 0
         assert result["attempted"] == 1
-        assert result["breakdown"]["skipped"] == 1
+        assert cast(dict[str, Any], result["breakdown"])["skipped"] == 1
+
+    @patch("app.tasks.autonomous.pickup.check_concurrency_limit")
+    @patch("app.tasks.autonomous.pickup.dispatch_to_stage")
+    @patch("app.tasks.autonomous.pickup.validate_autonomous_dispatch", return_value=None)
+    @patch("app.tasks.autonomous.pickup.get_queued_autonomous_tasks")
+    @patch("app.tasks.autonomous.pickup._determine_next_stage", return_value="execution")
+    @patch("app.tasks.autonomous.pickup.validate_task_ready")
+    @patch("app.tasks.autonomous.pickup.is_blocked", return_value=False)
+    def test_batch_execution_rechecks_concurrency_between_tasks(
+        self,
+        _mock_blocked: MagicMock,
+        mock_validate_task_ready: MagicMock,
+        _mock_stage: MagicMock,
+        mock_get_tasks: MagicMock,
+        _mock_validate: MagicMock,
+        mock_dispatch_to_stage: MagicMock,
+        mock_check_concurrency_limit: MagicMock,
+    ) -> None:
+        mock_get_tasks.return_value = [
+            {
+                "id": "task-123",
+                "title": "First execution task",
+                "task_type": "feature",
+                "complexity": "STANDARD",
+                "status": "queue",
+            },
+            {
+                "id": "task-456",
+                "title": "Second execution task",
+                "task_type": "feature",
+                "complexity": "STANDARD",
+                "status": "queue",
+            },
+        ]
+        mock_validate_task_ready.return_value = MagicMock(ready=True, issues=[], suggestions=[])
+        mock_dispatch_to_stage.return_value = True
+        mock_check_concurrency_limit.side_effect = [
+            None,
+            {"status": "concurrency_limit", "running_count": 1, "max_concurrent": 1},
+        ]
+
+        mock_dispatch = MagicMock()
+        result = autonomous_work_pickup("test-project", dispatch=mock_dispatch)
+
+        mock_dispatch_to_stage.assert_called_once_with("execution", "task-123", "test-project", mock_dispatch)
+        assert mock_check_concurrency_limit.call_count == 2
+        assert result["dispatched"] == 1
+        assert result["attempted"] == 2
+        breakdown = cast(dict[str, Any], result["breakdown"])
+        assert breakdown["execution"] == 1
+        assert breakdown["skipped"] == 1
