@@ -24,6 +24,7 @@ from app.storage.task_dependencies import is_blocked
 from .pickup_dispatch import dispatch_to_stage
 from .pickup_guards import (
     check_allowed_task_type,
+    check_concurrency_limit,
     check_task_dispatchable,
     validate_autonomous_dispatch,
 )
@@ -58,6 +59,15 @@ def _dispatch_one(
         readiness = validate_task_ready(task_id, project_id)
         if not readiness.ready:
             logger.info("Task not execution-ready, skipping", task_id=task_id, issues=readiness.issues[:3])
+            dispatched["skipped"] += 1
+            return
+        if concurrency_error := check_concurrency_limit(project_id):
+            logger.info(
+                "Execution concurrency limit reached mid-batch, skipping",
+                task_id=task_id,
+                project_id=project_id,
+                concurrency_error=concurrency_error,
+            )
             dispatched["skipped"] += 1
             return
 
