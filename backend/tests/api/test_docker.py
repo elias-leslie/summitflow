@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Literal
 
 from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
@@ -17,8 +18,8 @@ def _status(
     *,
     name: str,
     service: str,
-    manager: str,
-    category: str,
+    manager: Literal["docker", "systemd"],
+    category: Literal["app", "worker", "infra"],
     state: str,
     health: str = "",
     status: str | None = None,
@@ -62,6 +63,8 @@ class TestDockerRuntime:
         assert docker_api._RUNTIME_SERVICE_MAP["test2-web"]["unit"] == "test2-frontend.service"
         assert docker_api._RUNTIME_SERVICE_MAP["test3-api"]["unit"] == "test3-backend.service"
         assert docker_api._RUNTIME_SERVICE_MAP["test3-web"]["unit"] == "test3-frontend.service"
+        assert docker_api._RUNTIME_SERVICE_MAP["sha-api"]["unit"] == "sha-backend.service"
+        assert docker_api._RUNTIME_SERVICE_MAP["sha-web"]["unit"] == "sha-frontend.service"
 
     def test_detect_repo_root_walks_up_container_layout(self, tmp_path) -> None:
         from app.api import docker as docker_api

@@ -59,6 +59,15 @@ Forwarded commands:
     sf-browser snapshot
     sf-browser click "#save"
     sf-browser eval "document.title"
+    sf-browser console --clear
+    sf-browser errors --clear
+    sf-browser close
+
+Troubleshooting:
+  If localhost fails from the remote browser VM, retry with the host IP or a
+  temporary port-forward that binds on a reachable address.
+  Run `sf-browser update` to inspect the managed package version, resolved
+  wrapper paths, and idle-reaper timer status.
 
 Flags:
   --chrome    Force Chrome
@@ -118,6 +127,19 @@ prune_agent_browser_helpers() {
     [[ "${SF_BROWSER_SKIP_PRUNE:-0}" != "1" ]] || return 0
     [[ -x "${AGENT_BROWSER_REAPER_BIN}" ]] || return 0
     node "${AGENT_BROWSER_REAPER_BIN}" >/dev/null 2>&1 || true
+}
+
+systemd_timer_status() {
+    local unit="agent-browser-idle-reaper.timer"
+    command -v systemctl >/dev/null 2>&1 || {
+        printf 'unavailable\n'
+        return 0
+    }
+
+    local enabled active
+    enabled=$(systemctl --user is-enabled "$unit" 2>/dev/null || echo "unknown")
+    active=$(systemctl --user is-active "$unit" 2>/dev/null || echo "unknown")
+    printf '%s (%s)\n' "$enabled" "$active"
 }
 
 prune_agent_browser_helpers
@@ -431,6 +453,11 @@ case "${1:-}" in
         current=$("$AGENT_BROWSER_BIN" --version 2>/dev/null | grep -oP '[\d.]+' | head -1)
         latest=$(npm view agent-browser version 2>/dev/null || echo "?")
         echo "agent-browser: installed=${current} latest=${latest}"
+        echo "Runtime:"
+        echo "  host: ${HOST}"
+        echo "  agent-browser-bin: ${AGENT_BROWSER_BIN}"
+        echo "  idle-reaper-bin: ${AGENT_BROWSER_REAPER_BIN}"
+        echo "  idle-reaper-timer: $(systemd_timer_status)"
         if [[ "$current" != "$latest" && "$latest" != "?" ]]; then
             echo "  UPDATE: bash ${SCRIPT_DIR}/setup-agent-browser.sh ${latest}"
         fi

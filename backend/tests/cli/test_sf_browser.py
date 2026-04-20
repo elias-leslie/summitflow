@@ -66,7 +66,9 @@ args = sys.argv[1:]
 with log_path.open("a", encoding="utf-8") as handle:
     handle.write(json.dumps(args) + "\\n")
 
-if "eval" in args:
+if "--version" in args:
+    print(os.environ.get("FAKE_AGENT_BROWSER_VERSION", "agent-browser 0.21.4"))
+elif "eval" in args:
     script = args[args.index("eval") + 1]
     submit_mode = os.environ.get("FAKE_SUBMIT_MODE", "submit")
     if "window.__sfErrors = []" in script and os.environ.get("FAKE_CAPTURE_FAIL") == "1":
@@ -96,6 +98,41 @@ elif "wait" in args:
 """
 
 
+def _fake_npm_script() -> str:
+    return """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "view" && "${2:-}" == "agent-browser" && "${3:-}" == "version" ]]; then
+  printf '%s\\n' "${FAKE_AGENT_BROWSER_LATEST:-0.26.0}"
+  exit 0
+fi
+exit 1
+"""
+
+
+def _fake_systemctl_script() -> str:
+    return """#!/usr/bin/env bash
+set -euo pipefail
+mode="${2:-}"
+case "${1:-}" in
+  --user)
+    shift
+    mode="${1:-}"
+    ;;
+esac
+case "$mode" in
+  is-enabled)
+    printf '%s\\n' "${FAKE_SYSTEMCTL_ENABLED:-enabled}"
+    ;;
+  is-active)
+    printf '%s\\n' "${FAKE_SYSTEMCTL_ACTIVE:-active}"
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+"""
+
+
 def _prepare_sf_browser_env(
     tmp_path: Path,
     *,
@@ -106,11 +143,15 @@ def _prepare_sf_browser_env(
     bin_dir.mkdir()
     fake_agent_browser = bin_dir / "agent-browser"
     fake_curl = bin_dir / "curl"
+    fake_npm = bin_dir / "npm"
+    fake_systemctl = bin_dir / "systemctl"
     agent_log_path = tmp_path / "agent-browser-log.jsonl"
     curl_log_path = tmp_path / "curl-log.txt"
 
     _write_executable(fake_agent_browser, _fake_agent_browser_script())
     _write_executable(fake_curl, _fake_curl_script())
+    _write_executable(fake_npm, _fake_npm_script())
+    _write_executable(fake_systemctl, _fake_systemctl_script())
 
     env = {
         **os.environ,
@@ -194,6 +235,29 @@ def _run_sf_browser_open(
     return result, _read_log(agent_log_path)
 
 
+def _run_sf_browser_update(
+    tmp_path: Path,
+    *,
+    extra_env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    env, _, _ = _prepare_sf_browser_env(
+        tmp_path,
+        submit_mode="submit",
+        extra_env=extra_env,
+    )
+    script_path = Path(__file__).resolve().parents[3] / "scripts" / "sf-browser"
+    result = subprocess.run(
+        [str(script_path), "update"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    return result
+
+
 def _session_names(calls: list[list[str]]) -> list[str]:
     sessions: list[str] = []
     for call in calls:
@@ -217,7 +281,20 @@ def test_sf_browser_help_describes_wrapper(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert "sf-browser - SummitFlow browser automation wrapper" in result.stdout
     assert "Usage: agent-browser" not in result.stdout
+    assert "sf-browser console --clear" in result.stdout
+    assert "sf-browser close" in result.stdout
+    assert "If localhost fails from the remote browser VM" in result.stdout
     assert _read_log(agent_log_path) == []
+
+
+def test_sf_browser_update_reports_runtime_diagnostics(tmp_path: Path) -> None:
+    result = _run_sf_browser_update(tmp_path)
+
+    assert "agent-browser: installed=0.21.4 latest=0.26.0" in result.stdout
+    assert "host: 192.0.2.10" in result.stdout
+    assert "agent-browser-bin:" in result.stdout
+    assert "idle-reaper-bin:" in result.stdout
+    assert "idle-reaper-timer: enabled (active)" in result.stdout
 
 
 def test_sf_browser_submit_button_uses_request_submit(tmp_path: Path) -> None:
