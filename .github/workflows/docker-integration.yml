@@ -18,7 +18,7 @@ jobs:
         with:
           repository: elias-leslie/agent-hub
           path: agent-hub-repo
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.AGENT_HUB_REPO_TOKEN }}
       - uses: pnpm/action-setup@b307475762933b98ed359c036b0e51f26b63b74b # v5.0.0
       - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
 
