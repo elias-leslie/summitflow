@@ -63,6 +63,50 @@ def test_smart_commit_uses_canonical_commit_script_with_push_and_skip_checks(
     )
 
 
+@patch("app.tasks.autonomous.exec_modules.git_ops.has_uncommitted_changes")
+@patch("app.tasks.autonomous.exec_modules.git_ops.shutil.which")
+@patch("app.tasks.autonomous.exec_modules.git_ops.resolve_script")
+@patch("app.tasks.autonomous.exec_modules.git_ops._run_git")
+@patch("app.tasks.autonomous.exec_modules.git_ops.subprocess.run")
+def test_smart_commit_result_surfaces_command_and_stderr_on_failure(
+    mock_run: MagicMock,
+    mock_git: MagicMock,
+    mock_resolve_script: MagicMock,
+    mock_which: MagicMock,
+    mock_has_uncommitted_changes: MagicMock,
+) -> None:
+    from app.tasks.autonomous.exec_modules.git_ops import smart_commit_result
+
+    mock_resolve_script.return_value = Path("/srv/workspaces/projects/summitflow/scripts/commit.sh")
+    mock_which.return_value = None
+    mock_has_uncommitted_changes.return_value = True
+    mock_git.side_effect = [MagicMock(stdout="/tmp/checkout\n", returncode=0)]
+    mock_run.return_value = MagicMock(
+        returncode=1,
+        stdout="checks:FAIL\n",
+        stderr="changed_only_types failed for backend/app/foo.py",
+    )
+
+    with patch("pathlib.Path.is_file", return_value=True), patch(
+        "pathlib.Path.stat",
+        return_value=MagicMock(st_mode=0o100755),
+    ):
+        result = smart_commit_result(
+            "/tmp/checkout",
+            "fix: preserve work",
+            task_id="task-1",
+            push=True,
+            skip_checks=True,
+        )
+
+    assert not result["success"]
+    assert result["returncode"] == 1
+    assert result["command"][0] == "/tmp/checkout/scripts/commit.sh"
+    assert "--task task-1" in result["detail"]
+    assert "changed_only_types failed for backend/app/foo.py" in result["detail"]
+    assert "checks:FAIL" in result["detail"]
+
+
 @patch("app.tasks.autonomous.exec_modules.git_ops.shutil.which")
 @patch("app.tasks.autonomous.exec_modules.git_ops._resolve_commit_script")
 @patch("app.tasks.autonomous.exec_modules.git_ops.subprocess.run")

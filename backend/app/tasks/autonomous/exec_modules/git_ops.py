@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from ....logging_config import get_logger
 from ....utils.shared_paths import resolve_script
@@ -122,6 +124,169 @@ def publish_existing_commits(project_path: str) -> bool:
         return False
 
 
+def _build_smart_commit_args(
+    project_path: str,
+    message: str,
+    task_id: str,
+    push: bool,
+    skip_checks: bool,
+) -> list[str] | None:
+    """Build the canonical commit helper argv for the checkout."""
+    commit_sh = _resolve_commit_script(project_path)
+    if not commit_sh:
+        return None
+
+    args = [commit_sh, "--json", "--current", "--msg", message]
+    if task_id:
+        args.extend(["--task", task_id])
+    if push:
+        args.append("--push")
+    else:
+        args.append("--no-push")
+    if skip_checks:
+        args.append("--skip-checks")
+    return args
+
+
+
+def _format_command(args: list[str]) -> str:
+    """Return a shell-safe human-readable command string."""
+    return " ".join(shlex.quote(arg) for arg in args)
+
+
+
+def _build_commit_failure_detail(
+    command_display: str,
+    *,
+    returncode: int | None = None,
+    stdout: str = "",
+    stderr: str = "",
+    note: str | None = None,
+) -> str:
+    """Build a concise operator-facing failure detail for commit helper failures."""
+    parts = [f"commit helper failed: {command_display}"]
+    if returncode is not None:
+        parts.append(f"returncode: {returncode}")
+    if note:
+        parts.append(note)
+    stdout_text = stdout.strip()
+    stderr_text = stderr.strip()
+    if stdout_text:
+        parts.append(f"stdout: {stdout_text[:400]}")
+    if stderr_text:
+        parts.append(f"stderr: {stderr_text[:400]}")
+    return "; ".join(parts)
+
+
+
+def smart_commit_result(
+    project_path: str,
+    message: str,
+    task_id: str = "",
+    push: bool = True,
+    skip_checks: bool = False,
+) -> dict[str, Any]:
+    """Run the canonical commit helper and preserve failure detail."""
+    if not has_uncommitted_changes(project_path):
+        return {
+            "success": True,
+            "command": [],
+            "command_display": "",
+            "returncode": 0,
+            "detail": "",
+            "stdout": "",
+            "stderr": "",
+        }
+
+    args = _build_smart_commit_args(project_path, message, task_id, push, skip_checks)
+    if not args:
+        logger.warning("smart_commit_missing_commit_sh")
+        return {
+            "success": False,
+            "command": [],
+            "command_display": "",
+            "returncode": None,
+            "detail": "commit helper failed: commit.sh could not be resolved",
+            "stdout": "",
+            "stderr": "",
+        }
+
+    command_display = _format_command(args)
+    try:
+        result = subprocess.run(
+            args,
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        published = True
+        if result.returncode == 0 and push:
+            published = not has_unpublished_commits(project_path)
+        if result.returncode == 0 and published:
+            logger.info("smart_commit_success", message=message[:80])
+            return {
+                "success": True,
+                "command": args,
+                "command_display": command_display,
+                "returncode": result.returncode,
+                "detail": "",
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }
+
+        detail = _build_commit_failure_detail(
+            command_display,
+            returncode=result.returncode,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            note=None if published else "branch still has unpublished commits after helper completed",
+        )
+        logger.warning(
+            "smart_commit_failed",
+            returncode=result.returncode,
+            stderr=result.stderr[:200],
+        )
+        return {
+            "success": False,
+            "command": args,
+            "command_display": command_display,
+            "returncode": result.returncode,
+            "detail": detail,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+    except subprocess.TimeoutExpired as exc:
+        logger.warning("smart_commit_timeout")
+        detail = _build_commit_failure_detail(
+            command_display,
+            note=f"timed out after {exc.timeout}s",
+            stdout=(exc.stdout or "") if isinstance(exc.stdout, str) else "",
+            stderr=(exc.stderr or "") if isinstance(exc.stderr, str) else "",
+        )
+        return {
+            "success": False,
+            "command": args,
+            "command_display": command_display,
+            "returncode": None,
+            "detail": detail,
+            "stdout": (exc.stdout or "") if isinstance(exc.stdout, str) else "",
+            "stderr": (exc.stderr or "") if isinstance(exc.stderr, str) else "",
+        }
+    except Exception as e:
+        logger.warning("smart_commit_exception", error=str(e))
+        return {
+            "success": False,
+            "command": args,
+            "command_display": command_display,
+            "returncode": None,
+            "detail": f"commit helper failed: {command_display}; exception: {e}",
+            "stdout": "",
+            "stderr": str(e),
+        }
+
+
+
 def smart_commit(
     project_path: str,
     message: str,
@@ -141,41 +306,12 @@ def smart_commit(
     Returns:
         True if work is preserved successfully, False otherwise
     """
-    if not has_uncommitted_changes(project_path):
-        return True
-
-    commit_sh = _resolve_commit_script(project_path)
-    if not commit_sh:
-        logger.warning("smart_commit_missing_commit_sh")
-        return False
-
-    args = [commit_sh, "--json", "--current", "--msg", message]
-    if task_id:
-        args.extend(["--task", task_id])
-    if push:
-        args.append("--push")
-    else:
-        args.append("--no-push")
-    if skip_checks:
-        args.append("--skip-checks")
-
-    try:
-        result = subprocess.run(
-            args, cwd=project_path, capture_output=True, text=True, timeout=300
-        )
-        if result.returncode == 0 and (not push or not has_unpublished_commits(project_path)):
-            logger.info("smart_commit_success", message=message[:80])
-            return True
-
-        logger.warning(
-            "smart_commit_failed",
-            returncode=result.returncode,
-            stderr=result.stderr[:200],
-        )
-        return False
-    except subprocess.TimeoutExpired:
-        logger.warning("smart_commit_timeout")
-        return False
-    except Exception as e:
-        logger.warning("smart_commit_exception", error=str(e))
-        return False
+    return bool(
+        smart_commit_result(
+            project_path,
+            message,
+            task_id=task_id,
+            push=push,
+            skip_checks=skip_checks,
+        ).get("success")
+    )

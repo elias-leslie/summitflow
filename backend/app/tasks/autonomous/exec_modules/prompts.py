@@ -27,6 +27,7 @@ from ._prompt_blocks import (
     classify_events,
 )
 from ._prompt_fetch import PromptFetchError, TransientPromptFetchError, get_prompt_template
+from .failure_summaries import summarize_failed_steps
 
 logger = get_logger(__name__)
 
@@ -440,14 +441,7 @@ def build_subtask_prompt(
 
 def _summarize_failure(step_results: list[dict[str, Any]]) -> str:
     """Extract a concise failure reason from step results."""
-    failed = [r for r in step_results if not r.get("passed")]
-    if not failed:
-        return "no failure details"
-    reasons = []
-    for f in failed[:3]:
-        reason = f.get("reason") or f.get("error") or "unknown"
-        reasons.append(str(reason)[:100])
-    return "; ".join(reasons)
+    return summarize_failed_steps(step_results, max_items=3)
 
 
 def _format_subtask_result_line(r: dict[str, Any]) -> str:

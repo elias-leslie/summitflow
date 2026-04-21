@@ -9,7 +9,7 @@ from .git_ops import (
     has_uncommitted_changes,
     has_unpublished_commits,
     publish_existing_commits,
-    smart_commit,
+    smart_commit_result,
 )
 
 _COMMIT_TIMEOUT_SECONDS = 30
@@ -51,8 +51,14 @@ def ensure_committed_work_product(
         return "No committed or dirty work product remains to merge"
 
     commit_message = f"autocode({task_id}): complete subtask {subtask_short_id}"
-    if not smart_commit(project_path, commit_message, task_id=task_id, push=True):
-        return "Failed to preserve verified work on remote"
+    commit_result = smart_commit_result(
+        project_path,
+        commit_message,
+        task_id=task_id,
+        push=True,
+    )
+    if not commit_result.get("success"):
+        return str(commit_result.get("detail") or "Failed to preserve verified work on remote")
 
     emit_log(
         task_id,

@@ -438,14 +438,14 @@ class TestWorkProductDetection:
 
     @patch("app.tasks.autonomous.exec_modules.git_work_product.emit_log")
     @patch("app.tasks.autonomous.exec_modules.git_work_product.has_unpublished_commits")
-    @patch("app.tasks.autonomous.exec_modules.git_work_product.smart_commit")
+    @patch("app.tasks.autonomous.exec_modules.git_work_product.smart_commit_result")
     @patch("app.tasks.autonomous.exec_modules.git_work_product.has_uncommitted_changes")
     @patch("app.tasks.autonomous.exec_modules.git_work_product._has_branch_commits")
     def test_ensure_committed_work_product_commits_dirty_changes(
         self,
         mock_has_branch_commits: MagicMock,
         mock_has_uncommitted_changes: MagicMock,
-        mock_smart_commit: MagicMock,
+        mock_smart_commit_result: MagicMock,
         mock_has_unpublished_commits: MagicMock,
         mock_emit_log: MagicMock,
     ) -> None:
@@ -453,19 +453,48 @@ class TestWorkProductDetection:
 
         mock_has_branch_commits.side_effect = [False, True]
         mock_has_uncommitted_changes.return_value = True
-        mock_smart_commit.return_value = True
+        mock_smart_commit_result.return_value = {"success": True}
         mock_has_unpublished_commits.return_value = False
 
         result = ensure_committed_work_product("task-1", "1.1", "/tmp/test-checkout", "agent-hub")
 
         assert result is None
         mock_emit_log.assert_called_once()
-        mock_smart_commit.assert_called_once_with(
+        mock_smart_commit_result.assert_called_once_with(
             "/tmp/test-checkout",
             "autocode(task-1): complete subtask 1.1",
             task_id="task-1",
             push=True,
         )
+
+    @patch("app.tasks.autonomous.exec_modules.git_work_product.smart_commit_result")
+    @patch("app.tasks.autonomous.exec_modules.git_work_product.has_uncommitted_changes")
+    @patch("app.tasks.autonomous.exec_modules.git_work_product._has_branch_commits")
+    def test_ensure_committed_work_product_surfaces_commit_failure_detail(
+        self,
+        mock_has_branch_commits: MagicMock,
+        mock_has_uncommitted_changes: MagicMock,
+        mock_smart_commit_result: MagicMock,
+    ) -> None:
+        from app.tasks.autonomous.exec_modules.git_work_product import ensure_committed_work_product
+
+        mock_has_branch_commits.return_value = False
+        mock_has_uncommitted_changes.return_value = True
+        mock_smart_commit_result.return_value = {
+            "success": False,
+            "detail": (
+                "commit helper failed: /tmp/test-checkout/scripts/commit.sh --json --current "
+                "--msg 'autocode(task-1): complete subtask 1.1' --task task-1 --push; "
+                "stderr: changed_only_types failed for backend/app/foo.py"
+            ),
+        }
+
+        result = ensure_committed_work_product("task-1", "1.1", "/tmp/test-checkout", "agent-hub")
+
+        assert result is not None
+        assert "/tmp/test-checkout/scripts/commit.sh" in result
+        assert "--task task-1" in result
+        assert "changed_only_types failed for backend/app/foo.py" in result
 
     @patch("app.tasks.autonomous.exec_modules.git_work_product.publish_existing_commits")
     @patch("app.tasks.autonomous.exec_modules.git_work_product._has_branch_commits")
