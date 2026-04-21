@@ -6,7 +6,7 @@ from pathlib import Path
 SYSTEMD_DIR = Path(__file__).resolve().parents[3] / "scripts" / "systemd"
 APP_SERVICE_KILLMODES = {
     "summitflow-backend.service": "control-group",
-    "summitflow-frontend.service": "mixed",
+    "summitflow-frontend.service": "control-group",
     "summitflow-hatchet-worker.service": "control-group",
 }
 SUMMITFLOW_ROOT_RENDERED_UNITS = [
