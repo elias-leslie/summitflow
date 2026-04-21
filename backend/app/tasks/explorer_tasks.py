@@ -7,8 +7,12 @@ Tasks:
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from ..logging_config import get_logger
@@ -21,6 +25,8 @@ logger = get_logger(__name__)
 
 # Rate limit delay between projects (seconds)
 INTER_PROJECT_DELAY = 5
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
+_ISOLATED_SCAN_SENTINEL = "RESULT_JSON:"
 
 
 def _fetch_projects(project_id: str | None) -> list[tuple]:
@@ -53,22 +59,109 @@ def dispatch_post_scan_tasks(dispatch: Callable[[str, str, str], None], proj_id:
     dispatch("check_resolved", "", proj_id)
 
 
+def _run_scan_job_isolated(project_id: str, entry_type: str | None) -> dict[str, Any]:
+    """Run one explorer scan in a short-lived child process."""
+
+    child_code = f"""
+import json
+from app.services import explorer
+
+payload = {{}}
+try:
+    result = explorer.run_scan_job(
+        {project_id!r},
+        {entry_type!r},
+        triggered_by='scheduled',
+    )
+    payload = {{
+        'status': 'success',
+        'scan_id': result.get('scan_id'),
+        'metrics': result.get('metrics', {{}}),
+        'results': result.get('results', []),
+        'error': result.get('error'),
+    }}
+except explorer.ScanAlreadyRunningError as exc:
+    payload = {{
+        'status': 'skipped_already_running',
+        'scan_status': exc.scan_status,
+    }}
+except Exception as exc:
+    payload = {{
+        'status': 'error',
+        'error': str(exc),
+    }}
+
+print({_ISOLATED_SCAN_SENTINEL!r} + json.dumps(payload))
+"""
+
+    proc = subprocess.run(
+        [sys.executable, "-c", child_code],
+        cwd=_BACKEND_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    stdout_lines = [line for line in (proc.stdout or "").splitlines() if line.strip()]
+    payload_line = next(
+        (line for line in reversed(stdout_lines) if line.startswith(_ISOLATED_SCAN_SENTINEL)),
+        None,
+    )
+    if payload_line is None:
+        stderr = (proc.stderr or "")[-400:]
+        raise RuntimeError(
+            "isolated explorer scan produced no result payload"
+            + (f" (rc={proc.returncode}, stderr={stderr!r})" if stderr or proc.returncode else "")
+        )
+
+    payload = json.loads(payload_line.removeprefix(_ISOLATED_SCAN_SENTINEL))
+    if proc.returncode != 0 and payload.get("status") != "error":
+        stderr = (proc.stderr or "")[-400:]
+        raise RuntimeError(
+            "isolated explorer scan exited unexpectedly"
+            + (f" (rc={proc.returncode}, stderr={stderr!r})" if stderr or proc.returncode else "")
+        )
+    return payload
+
+
 def _scan_single_project(
     proj_id: str,
     proj_name: str,
     entry_type: str | None,
     dispatch: Callable[[str, str, str], None] | None,
+    *,
+    isolate_process: bool,
 ) -> tuple[dict[str, Any], bool]:
     """Scan one project; return (detail_dict, success_flag)."""
     started_at = time.perf_counter()
     try:
-        result = explorer.run_scan_job(
-            proj_id,
-            entry_type,
-            triggered_by="scheduled",
-            enforce_exclusive=False,
+        result = (
+            _run_scan_job_isolated(proj_id, entry_type)
+            if isolate_process
+            else explorer.run_scan_job(
+                proj_id,
+                entry_type,
+                triggered_by="scheduled",
+                enforce_exclusive=False,
+            )
         )
         duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
+        if result.get("status") == "skipped_already_running":
+            logger.info(
+                "project_scan_skipped_already_running",
+                project_id=proj_id,
+                entry_type=entry_type or "all",
+                duration_ms=duration_ms,
+            )
+            detail = {
+                "project_id": proj_id,
+                "project_name": proj_name,
+                "status": "skipped_already_running",
+                "duration_ms": duration_ms,
+                "scan_status": result.get("scan_status"),
+            }
+            return detail, True
+        if result.get("status") == "error":
+            raise RuntimeError(str(result.get("error") or "isolated explorer scan failed"))
         logger.info(
             "project_scanned",
             project_id=proj_id,
@@ -115,6 +208,8 @@ def _process_projects(
     entry_type: str | None,
     dry_run: bool,
     dispatch: Callable[[str, str, str], None] | None,
+    *,
+    isolate_process: bool,
 ) -> tuple[int, int, list[dict[str, Any]]]:
     """Iterate projects and return (scanned, errors, details)."""
     scanned = 0
@@ -130,7 +225,13 @@ def _process_projects(
             scanned += 1
             continue
 
-        detail, success = _scan_single_project(proj_id, proj_name, entry_type, dispatch)
+        detail, success = _scan_single_project(
+            proj_id,
+            proj_name,
+            entry_type,
+            dispatch,
+            isolate_process=isolate_process,
+        )
         details.append(detail)
         if success:
             scanned += 1
@@ -145,6 +246,8 @@ def scan_all_projects(
     entry_type: str | None = None,
     dry_run: bool = False,
     dispatch: Callable[[str, str, str], None] | None = None,
+    *,
+    isolate_process: bool = False,
 ) -> dict[str, Any]:
     """Run Explorer scan for all registered projects.
 
@@ -155,6 +258,7 @@ def scan_all_projects(
         project_id: Optional specific project to scan (None = all projects)
         entry_type: Optional specific type to scan (None = all types)
         dry_run: If True, only report what would be scanned
+        isolate_process: If True, run each project scan in a short-lived subprocess
 
     Returns:
         Summary dict with scanned projects and results
@@ -165,6 +269,7 @@ def scan_all_projects(
         project_id=project_id or "all",
         entry_type=entry_type or "all",
         dry_run=dry_run,
+        isolate_process=isolate_process,
     )
 
     try:
@@ -174,7 +279,13 @@ def scan_all_projects(
             logger.info("no_projects_found")
             return {"status": "success", "message": "No projects to scan", "scanned": 0}
 
-        scanned, errors, details = _process_projects(projects, entry_type, dry_run, dispatch)
+        scanned, errors, details = _process_projects(
+            projects,
+            entry_type,
+            dry_run,
+            dispatch,
+            isolate_process=isolate_process,
+        )
         duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
 
         logger.info(
@@ -185,6 +296,7 @@ def scan_all_projects(
             errors=errors,
             duration_ms=duration_ms,
             project_count=len(projects),
+            isolate_process=isolate_process,
         )
         return {
             "status": "success" if errors == 0 else "partial",
@@ -203,6 +315,7 @@ def scan_all_projects(
             entry_type=entry_type or "all",
             duration_ms=duration_ms,
             error=str(e),
+            isolate_process=isolate_process,
         )
         return {"status": "error", "error": str(e)}
 

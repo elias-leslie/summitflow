@@ -1,7 +1,8 @@
 """Scheduled (cron) workflows for SummitFlow.
 
 12 active cron workflows on Hatchet schedule.
-All use ConcurrencyExpression with CANCEL_IN_PROGRESS to prevent overlapping runs.
+Most use ConcurrencyExpression with CANCEL_IN_PROGRESS; explorer maintenance shares
+CANCEL_NEWEST concurrency so scan/index jobs do not overlap.
 
 Schedule philosophy (2026-03-16 tuning):
   - Health/smoke: */5 to */30 min — enough for alerting, not so frequent it drains CPU
@@ -47,6 +48,16 @@ def _disabled_schedule_result(
     if project_id is not None:
         result["project_id"] = project_id
     return result
+
+
+def _explorer_schedule_concurrency() -> ConcurrencyExpression:
+    """Shared concurrency guard for memory-heavy explorer maintenance workflows."""
+
+    return ConcurrencyExpression(
+        expression="'summitflow-explorer-maintenance'",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_NEWEST,
+    )
 
 
 @hatchet.task(
@@ -105,11 +116,7 @@ async def reset_claims_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     retries=3,
     backoff_factor=2.0,
     on_crons=["0 */6 * * *"],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-scan-projects'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
+    concurrency=_explorer_schedule_concurrency(),
 )
 async def scan_projects_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.explorer_tasks import scan_all_projects
@@ -119,7 +126,12 @@ async def scan_projects_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
         return _disabled_schedule_result("scan_projects")
 
     dispatch = _make_dispatch_callback()
-    return await asyncio.to_thread(scan_all_projects, dry_run=False, dispatch=dispatch)
+    return await asyncio.to_thread(
+        scan_all_projects,
+        dry_run=False,
+        dispatch=dispatch,
+        isolate_process=True,
+    )
 
 
 @hatchet.task(
@@ -129,11 +141,7 @@ async def scan_projects_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     retries=3,
     backoff_factor=2.0,
     on_crons=["10 */2 * * *"],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-refresh-precision-indexes'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
+    concurrency=_explorer_schedule_concurrency(),
 )
 async def refresh_precision_indexes_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.explorer_tasks import scan_all_projects
@@ -146,6 +154,7 @@ async def refresh_precision_indexes_wf(input: EmptyInput, ctx: Context) -> dict[
         entry_type="file",
         dry_run=False,
         dispatch=None,
+        isolate_process=True,
     )
 
 
