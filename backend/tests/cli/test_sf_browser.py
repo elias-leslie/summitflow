@@ -396,7 +396,7 @@ def test_sf_browser_check_serializes_parallel_runs(tmp_path: Path) -> None:
         tmp_path,
         submit_mode="submit",
         extra_env={
-            "FAKE_WAIT_SECONDS": "0.75",
+            "FAKE_WAIT_SECONDS": "0.25",
             "XDG_RUNTIME_DIR": str(tmp_path / "runtime"),
         },
     )
