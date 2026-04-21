@@ -17,7 +17,7 @@ Environment="SUMMITFLOW_REQUEST_SOURCE=summitflow"
 ExecStart=/bin/bash -lc "pnpm start --hostname 0.0.0.0 --port 3001"
 # Faster shutdown - don't wait 90s for WebSocket connections to close
 TimeoutStopSec=10
-KillMode=mixed
+KillMode=control-group
 Restart=always
 RestartSec=3
 StandardOutput=journal
