@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+import pytest
 from pytest_mock import MockerFixture
 
-from app.tasks.explorer_tasks import scan_all_projects
+from app.tasks.explorer_tasks import _run_scan_job_isolated, scan_all_projects
 
 
 def test_scan_all_projects_reports_duration_and_project_details() -> None:
@@ -196,3 +197,40 @@ def test_scan_all_projects_keeps_non_isolated_scan_nonexclusive() -> None:
         triggered_by="scheduled",
         enforce_exclusive=False,
     )
+
+
+def test_run_scan_job_isolated_raises_when_child_omits_result_payload() -> None:
+    proc = Mock(returncode=0, stdout="scan output without payload\n", stderr="")
+
+    with (
+        patch("app.tasks.explorer_tasks.subprocess.run", return_value=proc),
+        pytest.raises(RuntimeError, match="isolated explorer scan produced no result payload"),
+    ):
+        _run_scan_job_isolated("project-1", "file")
+
+
+def test_run_scan_job_isolated_raises_on_unexpected_nonzero_success_payload() -> None:
+    proc = Mock(
+        returncode=2,
+        stdout='RESULT_JSON:{"status":"success","results":[],"metrics":{}}\n',
+        stderr="child boom",
+    )
+
+    with (
+        patch("app.tasks.explorer_tasks.subprocess.run", return_value=proc),
+        pytest.raises(RuntimeError, match="isolated explorer scan exited unexpectedly"),
+    ):
+        _run_scan_job_isolated("project-1", "file")
+
+
+def test_run_scan_job_isolated_returns_error_payload_from_nonzero_child() -> None:
+    proc = Mock(
+        returncode=3,
+        stdout='RESULT_JSON:{"status":"error","error":"child boom"}\n',
+        stderr="traceback",
+    )
+
+    with patch("app.tasks.explorer_tasks.subprocess.run", return_value=proc):
+        result = _run_scan_job_isolated("project-1", "file")
+
+    assert result == {"status": "error", "error": "child boom"}
