@@ -108,6 +108,10 @@ BACKUP_EXCLUDES=(
     # Redundant backups
     "./backups"
 
+    # Scratch/tmp artifacts (large, local-only, regenerable)
+    ".tmp"
+    ".tmp-*"
+
     # Claude transient data
     ".claude/backups"
     ".claude/plans"
