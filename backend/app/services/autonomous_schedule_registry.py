@@ -133,6 +133,15 @@ SCHEDULE_DEFINITIONS: tuple[AutonomousScheduleDefinition, ...] = (
         cron="0 6 * * 0",
         scope="system",
     ),
+    AutonomousScheduleDefinition(
+        schedule_id="runtime_hygiene",
+        config_key="runtime_hygiene_enabled",
+        label="Runtime hygiene audit",
+        description="Runs the daily backup-aware audit for SummitFlow + Agent Hub host pressure, DB bloat, and runtime issues.",
+        cron="10 16 * * *",
+        scope="system",
+        default_enabled=False,
+    ),
 )
 
 _SCHEDULE_INDEX = {definition.schedule_id: definition for definition in SCHEDULE_DEFINITIONS}

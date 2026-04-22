@@ -22,6 +22,7 @@ MONITORED_MAINTENANCE_WORKFLOWS = (
     "daily_maintenance",
     "scheduled_backups",
     "routine_upkeep",
+    "runtime_hygiene",
 )
 
 

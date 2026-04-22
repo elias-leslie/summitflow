@@ -360,3 +360,24 @@ async def restore_tests_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
         return _disabled_schedule_result("restore_tests")
 
     return await asyncio.to_thread(run_restore_tests)
+
+
+@hatchet.task(
+    name="summitflow-runtime-hygiene",
+    input_validator=EmptyInput,
+    execution_timeout="1800s",
+    retries=1,
+    on_crons=["10 16 * * *"],
+    concurrency=ConcurrencyExpression(
+        expression="'summitflow-runtime-hygiene'",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+    ),
+)
+async def runtime_hygiene_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from ..tasks.runtime_hygiene import run_runtime_hygiene
+
+    if not _system_schedule_enabled("runtime_hygiene"):
+        return _disabled_schedule_result("runtime_hygiene")
+
+    return await asyncio.to_thread(run_runtime_hygiene)

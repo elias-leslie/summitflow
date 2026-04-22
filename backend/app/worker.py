@@ -24,6 +24,7 @@ from app.workflows.scheduled import (
     refresh_precision_indexes_wf,
     reset_claims_wf,
     restore_tests_wf,
+    runtime_hygiene_wf,
     scan_projects_wf,
     scheduled_backups_wf,
     self_healing_wf,
@@ -58,7 +59,7 @@ def main() -> None:
             review_wf,
             merge_cleanup_wf,
             escalation_wf,
-            # Scheduled (12)
+            # Scheduled (13)
             work_pickup_wf,
             reset_claims_wf,
             scan_projects_wf,
@@ -71,6 +72,7 @@ def main() -> None:
             health_monitor_wf,
             pending_drain_wf,
             restore_tests_wf,
+            runtime_hygiene_wf,
             # Utility (10)
             backup_create_wf,
             backup_restore_wf,
