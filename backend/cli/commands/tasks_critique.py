@@ -15,7 +15,7 @@ from app.services.task_second_opinion import (
     parse_second_opinion_response,
     persist_second_opinion,
 )
-from app.storage import log_task_event
+from app.storage import get_events_by_trace, log_task_event
 from app.storage import tasks as task_store
 from app.storage.subtasks import get_subtasks_for_task
 from app.storage.task_spirit import get_task_spirit
@@ -59,12 +59,12 @@ def _normalize_stage(stage: str) -> str:
     return normalized
 
 
-def _serialize_step(step: dict[str, Any]) -> dict[str, Any]:
+def _serialize_step(step: dict[str, Any], *, guidance_only: bool = False) -> dict[str, Any]:
     serialized = {
         "step_number": step.get("step_number"),
         "description": step.get("description"),
         "depends_on": step.get("depends_on") or [],
-        "passes": step.get("passes"),
+        "passes": None if guidance_only else step.get("passes"),
         "spec": step.get("spec"),
     }
     return {key: value for key, value in serialized.items() if value not in (None, [], {})}
@@ -88,12 +88,88 @@ def _serialize_context(context: dict[str, Any] | None) -> dict[str, Any]:
     return serialized
 
 
+def _parse_evidence_message(message: Any) -> dict[str, str] | None:
+    if not isinstance(message, str) or not message.startswith("EVIDENCE:"):
+        return None
+    fields: dict[str, str] = {}
+    for segment in message[len("EVIDENCE:") :].split("|"):
+        key, sep, value = segment.partition(":")
+        if not sep:
+            continue
+        normalized_key = key.strip().lower()
+        normalized_value = value.strip()
+        if not normalized_key or not normalized_value:
+            continue
+        fields[normalized_key] = normalized_value
+    if not all(fields.get(key) for key in ("kind", "artifact", "state")):
+        return None
+    evidence = {
+        "kind": fields["kind"],
+        "artifact": fields["artifact"],
+        "state": fields["state"],
+    }
+    if fields.get("notes"):
+        evidence["notes"] = fields["notes"]
+    return evidence
+
+
+def _build_closeout_summary(task: dict[str, Any], subtasks: list[dict[str, Any]]) -> dict[str, Any]:
+    serialized_subtasks = [_serialize_subtask(st) for st in subtasks]
+    incomplete_subtasks = [
+        str(subtask.get("subtask_id") or "")
+        for subtask in serialized_subtasks
+        if subtask.get("passes") is not True and subtask.get("subtask_id")
+    ]
+    evidence = [
+        parsed
+        for event in get_events_by_trace(str(task["id"]), visibility="user", limit=500)
+        if (parsed := _parse_evidence_message(event.get("message"))) is not None
+    ]
+    return {
+        "task_status": task.get("status"),
+        "completion_ready": len(incomplete_subtasks) == 0,
+        "subtasks_completed": sum(1 for subtask in serialized_subtasks if subtask.get("passes") is True),
+        "subtasks_total": len(serialized_subtasks),
+        "incomplete_subtasks": incomplete_subtasks,
+        "evidence": evidence,
+        "artifact_flags": {
+            "has_evidence": bool(evidence),
+            "has_incomplete_subtasks": bool(incomplete_subtasks),
+        },
+    }
+
+
+def _serialize_subtask(st: dict[str, Any]) -> dict[str, Any]:
+    guidance_only = st.get("steps_source") == "plan_context"
+    serialized = {
+        "subtask_id": st.get("subtask_id"),
+        "phase": st.get("phase"),
+        "subtask_type": st.get("subtask_type"),
+        "status": st.get("status"),
+        "passes": st.get("passes"),
+        "depends_on": st.get("depends_on") or [],
+        "description": st.get("description"),
+        "steps": [
+            _serialize_step(step, guidance_only=guidance_only)
+            for step in (st.get("steps_from_table") or st.get("steps") or [])
+            if isinstance(step, dict)
+            and any(
+                step.get(key) not in (None, [], {})
+                for key in ("description", "step_number", "depends_on", "passes", "spec")
+            )
+        ],
+        "steps_guidance_only": True if guidance_only else None,
+    }
+    return {key: value for key, value in serialized.items() if value not in (None, [], {})}
+
+
 def _build_review_packet(
     task: dict[str, Any],
     spirit: dict[str, Any] | None,
     subtasks: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Build the compact task-shaping packet reviewed by Agent Hub."""
+    serialized_subtasks = [_serialize_subtask(st) for st in subtasks]
     return {
         "task": {
             "id": task["id"],
@@ -113,25 +189,8 @@ def _build_review_packet(
             "done_when": (spirit or {}).get("done_when") or task.get("done_when") or [],
             "context": _serialize_context((spirit or {}).get("context") or task.get("context")),
         },
-        "subtasks": [
-            {
-                "subtask_id": st.get("subtask_id"),
-                "phase": st.get("phase"),
-                "subtask_type": st.get("subtask_type"),
-                "status": st.get("status"),
-                "depends_on": st.get("depends_on") or [],
-                "description": st.get("description"),
-                "steps": [
-                    _serialize_step(step)
-                    for step in (st.get("steps_from_table") or st.get("steps") or [])
-                    if isinstance(step, dict) and any(
-                        step.get(key) not in (None, [], {})
-                        for key in ("description", "step_number", "depends_on", "passes", "spec")
-                    )
-                ],
-            }
-            for st in subtasks
-        ],
+        "subtasks": serialized_subtasks,
+        "closeout": _build_closeout_summary(task, subtasks),
     }
 
 
