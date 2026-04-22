@@ -629,6 +629,166 @@ class TestTaskCliErgonomics:
             }
         ]
 
+    def test_build_pre_close_review_packet_uses_passes_guidance_only_steps_and_evidence(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task(
+            "task-9c551975",
+            title="Closeout truth packet",
+            status="completed",
+        )
+        spirit = {
+            "objective": "Keep pre-close critique truthful",
+            "context": {"files_to_modify": ["backend/cli/commands/tasks_critique.py"]},
+        }
+        subtasks = [
+            {
+                "subtask_id": "2.1",
+                "phase": "cli",
+                "subtask_type": "implementation",
+                "status": None,
+                "passes": True,
+                "description": "Carry closeout truth",
+                "steps_source": "plan_context",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "description": "Old guidance step",
+                        "passes": False,
+                        "depends_on": [0],
+                        "spec": {"detail": "context only"},
+                    }
+                ],
+            },
+            {
+                "subtask_id": "2.2",
+                "phase": "cli",
+                "subtask_type": "verification",
+                "status": "completed",
+                "passes": True,
+                "description": "Parse evidence",
+                "steps_from_table": [
+                    {
+                        "step_number": 2,
+                        "description": "Check packet",
+                        "passes": True,
+                    }
+                ],
+            },
+        ]
+        events = [
+            {"message": "EVIDENCE:kind:test|artifact:dt -q -d|state:passed|notes:focused regression"},
+            {"message": "noise"},
+            {"message": "EVIDENCE:kind:canary|artifact:st critique|state:passed"},
+            {"message": "EVIDENCE:kind:test|artifact:missing-state"},
+        ]
+
+        with patch("cli.commands.tasks_critique.get_events_by_trace", return_value=events):
+            packet = _build_review_packet(task, spirit, subtasks, stage="pre_close")
+
+        assert packet["subtasks"][0]["passes"] is True
+        assert packet["subtasks"][0]["steps_guidance_only"] is True
+        assert packet["subtasks"][0]["steps"] == [
+            {
+                "step_number": 1,
+                "description": "Old guidance step",
+                "depends_on": [0],
+                "spec": {"detail": "context only"},
+            }
+        ]
+        assert packet["closeout"] == {
+            "task_status": "completed",
+            "completion_ready": True,
+            "subtasks_completed": 2,
+            "subtasks_total": 2,
+            "incomplete_subtasks": [],
+            "evidence": [
+                {
+                    "kind": "test",
+                    "artifact": "dt -q -d",
+                    "state": "passed",
+                    "notes": "focused regression",
+                },
+                {
+                    "kind": "canary",
+                    "artifact": "st critique",
+                    "state": "passed",
+                },
+            ],
+            "artifact_flags": {
+                "has_evidence": True,
+                "has_incomplete_subtasks": False,
+            },
+        }
+
+    def test_build_pre_close_review_packet_surfaces_incomplete_subtasks_and_zero_subtask_ready(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-mock-2", status="in_progress")
+
+        with patch("cli.commands.tasks_critique.get_events_by_trace", return_value=[]):
+            empty_packet = _build_review_packet(task, None, [], stage="pre_close")
+            incomplete_packet = _build_review_packet(
+                task,
+                None,
+                [
+                    {
+                        "subtask_id": "3.1",
+                        "status": "completed",
+                        "passes": False,
+                        "description": "Missing proof",
+                    }
+                ],
+                stage="pre_close",
+            )
+
+        assert empty_packet["closeout"] == {
+            "task_status": "in_progress",
+            "completion_ready": True,
+            "subtasks_completed": 0,
+            "subtasks_total": 0,
+            "incomplete_subtasks": [],
+            "evidence": [],
+            "artifact_flags": {
+                "has_evidence": False,
+                "has_incomplete_subtasks": False,
+            },
+        }
+        assert incomplete_packet["closeout"]["completion_ready"] is False
+        assert incomplete_packet["closeout"]["subtasks_completed"] == 0
+        assert incomplete_packet["closeout"]["subtasks_total"] == 1
+        assert incomplete_packet["closeout"]["incomplete_subtasks"] == ["3.1"]
+
+    def test_build_pre_close_review_packet_prefers_passes_over_status(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-mock-3", status="completed")
+        subtasks = [
+            {
+                "subtask_id": "4.1",
+                "status": "pending",
+                "passes": True,
+                "description": "Done despite stale status",
+            },
+            {
+                "subtask_id": "4.2",
+                "status": "completed",
+                "passes": False,
+                "description": "Not done despite status",
+            },
+        ]
+
+        with patch("cli.commands.tasks_critique.get_events_by_trace", return_value=[]):
+            packet = _build_review_packet(task, None, subtasks, stage="pre_close")
+
+        assert packet["subtasks"][0]["status"] == "pending"
+        assert packet["subtasks"][0]["passes"] is True
+        assert packet["subtasks"][1]["status"] == "completed"
+        assert packet["subtasks"][1]["passes"] is False
+        assert packet["closeout"]["subtasks_completed"] == 1
+        assert packet["closeout"]["incomplete_subtasks"] == ["4.2"]
+        assert packet["closeout"]["completion_ready"] is False
+
     def test_build_request_message_changes_with_stage(self) -> None:
         from cli.commands.tasks_critique import _build_request_message
 

@@ -113,8 +113,10 @@ def _parse_evidence_message(message: Any) -> dict[str, str] | None:
     return evidence
 
 
-def _build_closeout_summary(task: dict[str, Any], subtasks: list[dict[str, Any]]) -> dict[str, Any]:
-    serialized_subtasks = [_serialize_subtask(st) for st in subtasks]
+def _build_closeout_summary(
+    task: dict[str, Any],
+    serialized_subtasks: list[dict[str, Any]],
+) -> dict[str, Any]:
     incomplete_subtasks = [
         str(subtask.get("subtask_id") or "")
         for subtask in serialized_subtasks
@@ -139,8 +141,9 @@ def _build_closeout_summary(task: dict[str, Any], subtasks: list[dict[str, Any]]
     }
 
 
-def _serialize_subtask(st: dict[str, Any]) -> dict[str, Any]:
-    guidance_only = st.get("steps_source") == "plan_context"
+def _serialize_subtask(st: dict[str, Any], *, stage: str = "task_shape") -> dict[str, Any]:
+    normalized_stage = _normalize_stage(stage)
+    guidance_only = normalized_stage == "pre_close" and st.get("steps_source") == "plan_context"
     serialized = {
         "subtask_id": st.get("subtask_id"),
         "phase": st.get("phase"),
@@ -167,9 +170,12 @@ def _build_review_packet(
     task: dict[str, Any],
     spirit: dict[str, Any] | None,
     subtasks: list[dict[str, Any]],
+    *,
+    stage: str = "task_shape",
 ) -> dict[str, Any]:
     """Build the compact task-shaping packet reviewed by Agent Hub."""
-    serialized_subtasks = [_serialize_subtask(st) for st in subtasks]
+    normalized_stage = _normalize_stage(stage)
+    serialized_subtasks = [_serialize_subtask(st, stage=normalized_stage) for st in subtasks]
     return {
         "task": {
             "id": task["id"],
@@ -190,7 +196,7 @@ def _build_review_packet(
             "context": _serialize_context((spirit or {}).get("context") or task.get("context")),
         },
         "subtasks": serialized_subtasks,
-        "closeout": _build_closeout_summary(task, subtasks),
+        "closeout": _build_closeout_summary(task, serialized_subtasks),
     }
 
 
@@ -229,7 +235,7 @@ def _call_agent(
     normalized_stage = _normalize_stage(stage)
     spirit = get_task_spirit(task_id)
     subtasks = get_subtasks_for_task(task_id, include_steps=True)
-    packet = _build_review_packet(task, spirit, subtasks)
+    packet = _build_review_packet(task, spirit, subtasks, stage=normalized_stage)
     prompt = _build_request_message(packet, stage=normalized_stage)
 
     client = get_sync_client()
