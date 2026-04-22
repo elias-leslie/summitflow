@@ -23,6 +23,7 @@ from .completion_handler import (
 from .events import emit_error, emit_log, emit_progress
 from .execution_loop import execute_subtask_loop
 from .pristine_validation import validate_pristine_codebase
+from .session import WindDownState
 
 logger = get_logger(__name__)
 
@@ -173,8 +174,12 @@ def _load_subtasks(
 def _handle_completion(
     task_id: str, project_id: str, project_path: str,
     results: list, incomplete: list, dispatch: Callable[[str, str, str], None] | None,
+    wind_down_state: WindDownState | None,
 ) -> str | None:
     """Route to appropriate completion handler based on results."""
+    if wind_down_state and wind_down_state.paused:
+        return "paused"
+
     all_passed = all(r.get("status") == "passed" for r in results)
     any_passed = any(r.get("status") == "passed" for r in results)
     if all_passed and len(results) == len(incomplete):
@@ -218,14 +223,14 @@ def execute_task_locked(
     if task and task.get("status") != "running":
         task_store.update_task_status(task_id, "running")
 
-    results, completed = execute_subtask_loop(
+    results, completed, wind_down_state = execute_subtask_loop(
         task_id, project_id, project_path, incomplete, total, completed,
         task_type, agent_override,
     )
 
     check_main_repo_leakage(task_id, project_id, project_path)
 
-    _handle_completion(task_id, project_id, project_path, results, incomplete, dispatch)
+    _handle_completion(task_id, project_id, project_path, results, incomplete, dispatch, wind_down_state)
     if results:
         try:
             execute_agent_feedback(

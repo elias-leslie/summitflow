@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -9,6 +10,14 @@ from ....storage import log_task_event
 from ....storage import tasks as task_store
 from ....storage.subtasks import insert_subtask_summary
 from .events import emit_log
+
+
+@dataclass(frozen=True)
+class WindDownState:
+    """Outcome describing an execution pass that paused instead of terminating."""
+
+    paused: bool
+    reason: str | None = None
 
 
 def extract_handoff_summary(subtask_id: str, agent_response: str) -> None:
@@ -22,7 +31,7 @@ def wind_down(
     results: list[dict[str, Any]],
     incomplete: list[dict[str, Any]],
     reason: str,
-) -> None:
+) -> WindDownState:
     """Preserve session state when execution pauses."""
     completed_ids = [r["subtask_id"] for r in results if r.get("status") == "passed"]
     failed_ids = [r["subtask_id"] for r in results if r.get("status") == "failed"]
@@ -47,3 +56,4 @@ NEXT SESSION:
     log_task_event(task_id, wind_down_log)
     task_store.update_task_status(task_id, "pending")
     emit_log(task_id, "info", f"Session paused: {reason}")
+    return WindDownState(paused=True, reason=reason)
