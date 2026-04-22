@@ -89,12 +89,21 @@ def _serialize_context(context: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def _parse_evidence_message(message: Any) -> dict[str, str] | None:
-    if not isinstance(message, str) or not message.startswith("EVIDENCE:"):
+    if not isinstance(message, str):
+        return None
+    normalized_message = message.strip()
+    if normalized_message.startswith("[") and "]" in normalized_message:
+        _, _, remainder = normalized_message.partition("]")
+        if remainder.lstrip().startswith("EVIDENCE:"):
+            normalized_message = remainder.lstrip()
+    if not normalized_message.startswith("EVIDENCE:"):
         return None
     fields: dict[str, str] = {}
-    for segment in message[len("EVIDENCE:") :].split("|"):
+    for index, segment in enumerate(normalized_message[len("EVIDENCE:") :].split("|")):
         key, sep, value = segment.partition(":")
         if not sep:
+            if index == 0 and key.strip() and not fields.get("kind"):
+                fields["kind"] = key.strip()
             continue
         normalized_key = key.strip().lower()
         normalized_value = value.strip()
@@ -113,6 +122,27 @@ def _parse_evidence_message(message: Any) -> dict[str, str] | None:
     return evidence
 
 
+def _collect_closeout_evidence(task_id: str) -> list[dict[str, str]]:
+    try:
+        events = get_events_by_trace(task_id, visibility="user", limit=5000)
+    except Exception as exc:  # pragma: no cover - defensive logging path
+        logger.warning("Failed to load pre-close evidence", task_id=task_id, error=str(exc))
+        return []
+    return [
+        parsed
+        for event in events
+        if (parsed := _parse_evidence_message(event.get("message"))) is not None
+    ]
+
+
+def _build_artifact_flags(evidence: list[dict[str, str]]) -> dict[str, bool]:
+    kinds = {entry.get("kind") for entry in evidence}
+    return {
+        "opus_guidance_logged": "guidance" in kinds,
+        "migration_decision_logged": "decision" in kinds,
+    }
+
+
 def _build_closeout_summary(
     task: dict[str, Any],
     serialized_subtasks: list[dict[str, Any]],
@@ -122,11 +152,7 @@ def _build_closeout_summary(
         for subtask in serialized_subtasks
         if subtask.get("passes") is not True and subtask.get("subtask_id")
     ]
-    evidence = [
-        parsed
-        for event in get_events_by_trace(str(task["id"]), visibility="user", limit=500)
-        if (parsed := _parse_evidence_message(event.get("message"))) is not None
-    ]
+    evidence = _collect_closeout_evidence(str(task["id"]))
     return {
         "task_status": task.get("status"),
         "completion_ready": len(incomplete_subtasks) == 0,
@@ -134,22 +160,20 @@ def _build_closeout_summary(
         "subtasks_total": len(serialized_subtasks),
         "incomplete_subtasks": incomplete_subtasks,
         "evidence": evidence,
-        "artifact_flags": {
-            "has_evidence": bool(evidence),
-            "has_incomplete_subtasks": bool(incomplete_subtasks),
-        },
+        "artifact_flags": _build_artifact_flags(evidence),
     }
 
 
 def _serialize_subtask(st: dict[str, Any], *, stage: str = "task_shape") -> dict[str, Any]:
     normalized_stage = _normalize_stage(stage)
-    guidance_only = normalized_stage == "pre_close" and st.get("steps_source") == "plan_context"
+    include_closeout_fields = normalized_stage in {"pre_close", "both"}
+    guidance_only = include_closeout_fields and st.get("steps_source") == "plan_context"
     serialized = {
         "subtask_id": st.get("subtask_id"),
         "phase": st.get("phase"),
         "subtask_type": st.get("subtask_type"),
         "status": st.get("status"),
-        "passes": st.get("passes"),
+        "passes": st.get("passes") if include_closeout_fields else None,
         "depends_on": st.get("depends_on") or [],
         "description": st.get("description"),
         "steps": [
@@ -176,7 +200,7 @@ def _build_review_packet(
     """Build the compact task-shaping packet reviewed by Agent Hub."""
     normalized_stage = _normalize_stage(stage)
     serialized_subtasks = [_serialize_subtask(st, stage=normalized_stage) for st in subtasks]
-    return {
+    packet = {
         "task": {
             "id": task["id"],
             "project_id": task["project_id"],
@@ -196,8 +220,10 @@ def _build_review_packet(
             "context": _serialize_context((spirit or {}).get("context") or task.get("context")),
         },
         "subtasks": serialized_subtasks,
-        "closeout": _build_closeout_summary(task, serialized_subtasks),
     }
+    if normalized_stage in {"pre_close", "both"}:
+        packet["closeout"] = _build_closeout_summary(task, serialized_subtasks)
+    return packet
 
 
 def _build_request_message(packet: dict[str, Any], *, stage: str) -> str:

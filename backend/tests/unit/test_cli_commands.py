@@ -35,7 +35,7 @@ def _make_mock_task(task_id: str, **kwargs: Any) -> dict[str, Any]:
         "capability_id": None,
         "title": kwargs.get("title", "Mock Task"),
         "description": kwargs.get("description"),
-        "status": "pending",
+        "status": kwargs.get("status", "pending"),
         "progress_log": [],
         "error_message": None,
         "branch_name": None,
@@ -679,7 +679,8 @@ class TestTaskCliErgonomics:
         events = [
             {"message": "EVIDENCE:kind:test|artifact:dt -q -d|state:passed|notes:focused regression"},
             {"message": "noise"},
-            {"message": "EVIDENCE:kind:canary|artifact:st critique|state:passed"},
+            {"message": "EVIDENCE:kind:guidance|artifact:opus-review|state:logged"},
+            {"message": "EVIDENCE:kind:decision|artifact:migration-scope|state:not-needed"},
             {"message": "EVIDENCE:kind:test|artifact:missing-state"},
         ]
 
@@ -696,6 +697,15 @@ class TestTaskCliErgonomics:
                 "spec": {"detail": "context only"},
             }
         ]
+        assert packet["subtasks"][1]["passes"] is True
+        assert "steps_guidance_only" not in packet["subtasks"][1]
+        assert packet["subtasks"][1]["steps"] == [
+            {
+                "step_number": 2,
+                "description": "Check packet",
+                "passes": True,
+            }
+        ]
         assert packet["closeout"] == {
             "task_status": "completed",
             "completion_ready": True,
@@ -710,16 +720,128 @@ class TestTaskCliErgonomics:
                     "notes": "focused regression",
                 },
                 {
-                    "kind": "canary",
-                    "artifact": "st critique",
-                    "state": "passed",
+                    "kind": "guidance",
+                    "artifact": "opus-review",
+                    "state": "logged",
+                },
+                {
+                    "kind": "decision",
+                    "artifact": "migration-scope",
+                    "state": "not-needed",
                 },
             ],
             "artifact_flags": {
-                "has_evidence": True,
-                "has_incomplete_subtasks": False,
+                "opus_guidance_logged": True,
+                "migration_decision_logged": True,
             },
         }
+
+    def test_build_pre_close_review_packet_accepts_timestamped_evidence_entries(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-mock-timestamped", status="completed")
+        subtasks = [
+            {
+                "subtask_id": "5.1",
+                "status": "completed",
+                "passes": True,
+                "description": "Timestamped evidence should still count",
+            }
+        ]
+        events = [
+            {
+                "message": "[2026-04-22T06:00:50Z] EVIDENCE:kind:proof|artifact:artifacts/closeout.md|state:recorded"
+            }
+        ]
+
+        with patch("cli.commands.tasks_critique.get_events_by_trace", return_value=events):
+            packet = _build_review_packet(task, None, subtasks, stage="pre_close")
+
+        assert packet["closeout"]["evidence"] == [
+            {
+                "kind": "proof",
+                "artifact": "artifacts/closeout.md",
+                "state": "recorded",
+            }
+        ]
+        assert packet["closeout"]["artifact_flags"] == {
+            "opus_guidance_logged": False,
+            "migration_decision_logged": False,
+        }
+
+    def test_build_pre_close_review_packet_accepts_shorthand_kind_evidence_entries(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-mock-shorthand", status="completed")
+        subtasks = [
+            {
+                "subtask_id": "5.1b",
+                "status": "completed",
+                "passes": True,
+                "description": "Shorthand evidence kind should still parse",
+            }
+        ]
+        events = [
+            {
+                "message": "[2026-04-22T06:00:50Z] EVIDENCE:proof|artifact:artifacts/closeout.md|state:recorded"
+            }
+        ]
+
+        with patch("cli.commands.tasks_critique.get_events_by_trace", return_value=events):
+            packet = _build_review_packet(task, None, subtasks, stage="pre_close")
+
+        assert packet["closeout"]["evidence"] == [
+            {
+                "kind": "proof",
+                "artifact": "artifacts/closeout.md",
+                "state": "recorded",
+            }
+        ]
+
+    def test_build_pre_close_review_packet_reads_past_large_noise_history_for_evidence(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-mock-deep-history", status="completed")
+        subtasks = [
+            {
+                "subtask_id": "5.2",
+                "status": "completed",
+                "passes": True,
+                "description": "Evidence should survive long task history",
+            }
+        ]
+        all_events = [
+            {"message": f"noise-{idx}"}
+            for idx in range(600)
+        ] + [
+            {
+                "message": "[2026-04-22T06:01:00Z] EVIDENCE:kind:test|artifact:artifacts/full-check.txt|state:passed"
+            }
+        ]
+
+        def _mock_get_events_by_trace(
+            trace_id: str,
+            *,
+            visibility: str | None = None,
+            level: str | None = None,
+            after: object | None = None,
+            from_sequence: object | None = None,
+            limit: int = 1000,
+        ) -> list[dict[str, str]]:
+            assert trace_id == "task-mock-deep-history"
+            assert visibility == "user"
+            return all_events[:limit]
+
+        with patch("cli.commands.tasks_critique.get_events_by_trace", side_effect=_mock_get_events_by_trace):
+            packet = _build_review_packet(task, None, subtasks, stage="pre_close")
+
+        assert packet["closeout"]["evidence"] == [
+            {
+                "kind": "test",
+                "artifact": "artifacts/full-check.txt",
+                "state": "passed",
+            }
+        ]
 
     def test_build_pre_close_review_packet_surfaces_incomplete_subtasks_and_zero_subtask_ready(self) -> None:
         from cli.commands.tasks_critique import _build_review_packet
@@ -750,8 +872,8 @@ class TestTaskCliErgonomics:
             "incomplete_subtasks": [],
             "evidence": [],
             "artifact_flags": {
-                "has_evidence": False,
-                "has_incomplete_subtasks": False,
+                "opus_guidance_logged": False,
+                "migration_decision_logged": False,
             },
         }
         assert incomplete_packet["closeout"]["completion_ready"] is False
@@ -788,6 +910,151 @@ class TestTaskCliErgonomics:
         assert packet["closeout"]["subtasks_completed"] == 1
         assert packet["closeout"]["incomplete_subtasks"] == ["4.2"]
         assert packet["closeout"]["completion_ready"] is False
+
+    def test_build_task_shape_review_packet_keeps_legacy_shape_without_closeout_fields(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-shape-boundary")
+        subtasks = [
+            {
+                "subtask_id": "1.1",
+                "status": "pending",
+                "passes": True,
+                "description": "Legacy task-shape packet should stay narrow",
+                "steps_source": "plan_context",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "description": "Guidance stays guidance only in pre-close",
+                        "passes": False,
+                    }
+                ],
+            }
+        ]
+
+        packet = _build_review_packet(task, None, subtasks, stage="task_shape")
+
+        assert list(packet.keys()) == ["task", "spirit", "subtasks"]
+        assert "closeout" not in packet
+        assert packet["subtasks"][0] == {
+            "subtask_id": "1.1",
+            "status": "pending",
+            "description": "Legacy task-shape packet should stay narrow",
+            "steps": [
+                {
+                    "step_number": 1,
+                    "description": "Guidance stays guidance only in pre-close",
+                    "passes": False,
+                }
+            ],
+        }
+
+    def test_build_pre_close_review_packet_treats_null_and_missing_passes_as_incomplete(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-null-passes", status="completed")
+        subtasks = [
+            {
+                "subtask_id": "6.1",
+                "status": "completed",
+                "passes": None,
+                "description": "Null passes should remain incomplete",
+            },
+            {
+                "subtask_id": "6.2",
+                "status": "completed",
+                "description": "Missing passes should remain incomplete",
+            },
+            {
+                "subtask_id": "6.3",
+                "status": "pending",
+                "passes": True,
+                "description": "Explicit pass counts as complete",
+            },
+        ]
+
+        with patch("cli.commands.tasks_critique.get_events_by_trace", return_value=[]):
+            packet = _build_review_packet(task, None, subtasks, stage="pre_close")
+
+        assert packet["closeout"]["completion_ready"] is False
+        assert packet["closeout"]["subtasks_completed"] == 1
+        assert packet["closeout"]["subtasks_total"] == 3
+        assert packet["closeout"]["incomplete_subtasks"] == ["6.1", "6.2"]
+
+    def test_build_pre_close_review_packet_requests_only_user_visible_events(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-user-visible", status="completed")
+        subtasks = [{"subtask_id": "7.1", "status": "completed", "passes": True, "description": "Only user evidence counts"}]
+
+        def _mock_get_events_by_trace(
+            trace_id: str,
+            *,
+            visibility: str | None = None,
+            level: str | None = None,
+            after: object | None = None,
+            from_sequence: object | None = None,
+            limit: int = 1000,
+        ) -> list[dict[str, str]]:
+            assert trace_id == "task-user-visible"
+            assert visibility == "user"
+            return [{"message": "EVIDENCE:kind:test|artifact:user-proof|state:passed"}]
+
+        with patch("cli.commands.tasks_critique.get_events_by_trace", side_effect=_mock_get_events_by_trace):
+            packet = _build_review_packet(task, None, subtasks, stage="pre_close")
+
+        assert packet["closeout"]["evidence"] == [
+            {"kind": "test", "artifact": "user-proof", "state": "passed"}
+        ]
+
+    def test_build_pre_close_review_packet_keeps_conflicting_evidence_in_order_and_ignores_malformed_lines(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-evidence-parser", status="completed")
+        subtasks = [{"subtask_id": "8.1", "status": "completed", "passes": True, "description": "Evidence parser coverage"}]
+        events = [
+            {
+                "message": "EVIDENCE:kind:test|artifact:first-artifact|artifact:final-artifact|state:passed|unknown:drop-me"
+            },
+            {"message": "EVIDENCE:kind:test|artifact:final-artifact|state:failed|notes:conflict kept"},
+            {"message": "EVIDENCE:kind:test|artifact:missing-state"},
+            {"message": "EVIDENCE:kind:test|state:missing-artifact"},
+        ]
+
+        with patch("cli.commands.tasks_critique.get_events_by_trace", return_value=events):
+            packet = _build_review_packet(task, None, subtasks, stage="pre_close")
+
+        assert packet["closeout"]["evidence"] == [
+            {"kind": "test", "artifact": "final-artifact", "state": "passed"},
+            {
+                "kind": "test",
+                "artifact": "final-artifact",
+                "state": "failed",
+                "notes": "conflict kept",
+            },
+        ]
+
+    def test_build_pre_close_review_packet_returns_empty_evidence_and_false_flags_on_lookup_error(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-evidence-error", status="pending")
+        subtasks = [{"subtask_id": "9.1", "status": "completed", "passes": True, "description": "Evidence lookup failures should degrade cleanly"}]
+
+        with patch("cli.commands.tasks_critique.get_events_by_trace", side_effect=RuntimeError("boom")):
+            packet = _build_review_packet(task, None, subtasks, stage="pre_close")
+
+        assert packet["closeout"] == {
+            "task_status": "pending",
+            "completion_ready": True,
+            "subtasks_completed": 1,
+            "subtasks_total": 1,
+            "incomplete_subtasks": [],
+            "evidence": [],
+            "artifact_flags": {
+                "opus_guidance_logged": False,
+                "migration_decision_logged": False,
+            },
+        }
 
     def test_build_request_message_changes_with_stage(self) -> None:
         from cli.commands.tasks_critique import _build_request_message
