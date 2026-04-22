@@ -39,6 +39,9 @@ class HostRetentionPolicy:
     anonymous_volume_max_age_hours: int = 2 * 24
     npx_max_age_hours: int = 7 * 24
     playwright_max_age_hours: int = 14 * 24
+    tmp_backup_max_age_hours: int = 2 * 24
+    hermes_checkpoint_tmp_max_age_hours: int = 2 * 24
+    hermes_checkpoint_internal_max_age_hours: int = 3 * 24
     legacy_report_max_age_hours: int = 3 * 24
 
     @classmethod
@@ -60,6 +63,15 @@ class HostRetentionPolicy:
             npx_max_age_hours=_int_env("SF_HOST_RETENTION_NPX_MAX_AGE_HOURS", 7 * 24),
             playwright_max_age_hours=_int_env(
                 "SF_HOST_RETENTION_PLAYWRIGHT_MAX_AGE_HOURS", 14 * 24
+            ),
+            tmp_backup_max_age_hours=_int_env(
+                "SF_HOST_RETENTION_TMP_BACKUP_MAX_AGE_HOURS", 2 * 24
+            ),
+            hermes_checkpoint_tmp_max_age_hours=_int_env(
+                "SF_HOST_RETENTION_HERMES_CHECKPOINT_TMP_MAX_AGE_HOURS", 2 * 24
+            ),
+            hermes_checkpoint_internal_max_age_hours=_int_env(
+                "SF_HOST_RETENTION_HERMES_CHECKPOINT_INTERNAL_MAX_AGE_HOURS", 3 * 24
             ),
             legacy_report_max_age_hours=_int_env(
                 "SF_HOST_RETENTION_LEGACY_REPORT_MAX_AGE_HOURS", 3 * 24
