@@ -9,6 +9,7 @@ from app.services.task_second_opinion import (
     build_second_opinion_entry,
     parse_second_opinion_response,
     persist_second_opinion,
+    reset_second_opinion_for_replan,
 )
 
 
@@ -347,6 +348,41 @@ class TestSecondOpinionParsing:
         assert stored["reasons"] == ["complexity=COMPLEX", "priority=P1"]
         assert stored["reviews"]["task_shape"]["summary"] == "Shape reviewed."
         assert stored["reviews"]["pre_close"]["summary"] == "Need final verification."
+
+    def test_reset_second_opinion_for_replan_marks_task_shape_pending_again(self) -> None:
+        existing_spirit = {
+            "context": {
+                "second_opinion": {
+                    "required": True,
+                    "stage": "task_shape",
+                    "status": "needs_revision",
+                    "summary": "Package still has gaps.",
+                    "verdict": "NEEDS_REVISION",
+                    "reasons": ["complexity=COMPLEX", "priority=P1"],
+                    "reviews": {
+                        "task_shape": {
+                            "required": True,
+                            "stage": "task_shape",
+                            "status": "needs_revision",
+                            "summary": "Package still has gaps.",
+                        }
+                    },
+                }
+            }
+        }
+
+        with (
+            patch("app.services.task_second_opinion.get_task_spirit", return_value=existing_spirit),
+            patch("app.services.task_second_opinion.update_task_spirit", return_value={}) as mock_update,
+        ):
+            reset_second_opinion_for_replan("task-mock-1", source="planning")
+
+        stored = mock_update.call_args.kwargs["context"]["second_opinion"]
+        assert stored["status"] == "pending"
+        assert stored["stage"] == "task_shape"
+        assert stored["requested_by"] == "planning"
+        assert "summary" not in stored
+        assert stored["reviews"]["task_shape"]["status"] == "pending"
 
     def test_pending_second_opinion_tracks_requirement_without_missing_summary_noise(self) -> None:
         readiness = assess_task_execution_readiness(

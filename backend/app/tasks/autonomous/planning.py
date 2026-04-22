@@ -16,15 +16,62 @@ from ...services.context_gatherer import (
     collect_precision_code_search_context,
 )
 from ...services.task_harness import apply_execution_contract_defaults
+from ...services.task_plan_context import extract_task_plan_fields
+from ...services.task_second_opinion import get_second_opinion_entry
 from ...storage import log_task_event
 from ...storage import tasks as task_store
+from ...storage.task_spirit import get_task_spirit
 from .planning_routing import route_based_on_complexity, supervisor_validate_plan
 from .planning_storage import save_plan_to_database
 
 logger = get_logger(__name__)
 
 
-def _build_planning_prompt(title: str, description: str, precision_context: str = "") -> str:
+def _planning_feedback_payload(task_id: str) -> dict[str, Any]:
+    spirit = get_task_spirit(task_id) or {}
+    payload: dict[str, Any] = {}
+
+    plan_fields = extract_task_plan_fields(
+        {
+            "done_when": spirit.get("done_when"),
+            "context": spirit.get("context"),
+        }
+    )
+    for key in ("objective", "spirit_anti", "constraints", "decisions", "risks", "files_to_create", "files_to_modify", "references", "testing_strategy"):
+        value = plan_fields.get(key)
+        if value not in (None, "", [], {}):
+            payload[key] = value
+
+    second_opinion = get_second_opinion_entry(spirit)
+    if isinstance(second_opinion, dict) and second_opinion:
+        filtered_second_opinion = {
+            key: second_opinion.get(key)
+            for key in (
+                "required",
+                "stage",
+                "status",
+                "summary",
+                "findings",
+                "missing_requirements",
+                "edge_cases",
+                "test_gaps",
+                "rollout_gaps",
+                "simpler_alternative",
+            )
+            if second_opinion.get(key) not in (None, "", [], {})
+        }
+        if filtered_second_opinion:
+            payload["second_opinion"] = filtered_second_opinion
+
+    return payload
+
+
+def _build_planning_prompt(
+    title: str,
+    description: str,
+    precision_context: str = "",
+    planning_feedback: dict[str, Any] | None = None,
+) -> str:
     """Build the prompt for the planner agent.
 
     Args:
@@ -39,12 +86,20 @@ def _build_planning_prompt(title: str, description: str, precision_context: str 
         if precision_context
         else ""
     )
+    feedback_payload = planning_feedback or {}
+    feedback_block = ""
+    if feedback_payload:
+        feedback_block = (
+            "\n## Existing task-plan context and review feedback\n\n"
+            f"{json.dumps(feedback_payload, indent=2, sort_keys=True)}\n\n"
+            "If second_opinion.status is NEEDS_REVISION or pending, treat that feedback as a contract you must resolve in the revised plan.\n"
+            "Tighten the package so a fresh task-shape critique can approve it without additional operator repair.\n"
+        )
     return f"""Create an implementation plan for this task.
 
 Title: {title}
 Description: {description or "(no description)"}
-{precision_block}
-
+{precision_block}{feedback_block}
 Build a plan that is execution-ready for an autonomous coding agent.
 - Keep scope tight and explicit.
 - For any existing file you expect to touch, include it in context.files_to_modify when you can infer it.
@@ -203,7 +258,8 @@ def create_plan(task_id: str, project_id: str) -> dict[str, Any]:
         [title, description],
         budget_tokens=1200,
     ).prompt_context
-    prompt = _build_planning_prompt(title, description, precision_context)
+    planning_feedback = _planning_feedback_payload(task_id)
+    prompt = _build_planning_prompt(title, description, precision_context, planning_feedback)
 
     try:
         client = get_sync_client()

@@ -31,6 +31,7 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
         "ideate": ideate_wf,
         "triage": triage_wf,
         "plan": plan_wf,
+        "critique": critique_wf,
         "execute": execute_wf,
         "review": review_wf,
         "merge": merge_cleanup_wf,
@@ -137,11 +138,11 @@ async def triage_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 
     result = await asyncio.to_thread(triage_idea, input.task_id, input.project_id)
 
-    # Auto-advance on success: determine next stage (planning or execution)
+    # Auto-advance on success: determine next stage (planning, critique, or execution)
     if result.get("status") == "completed":
         from ..tasks.autonomous.pickup import _determine_next_stage
 
-        _STAGE_TO_WF = {"planning": "plan", "execution": "execute"}
+        _STAGE_TO_WF = {"planning": "plan", "critique": "critique", "execution": "execute"}
         next_stage = _determine_next_stage(input.task_id)
         wf_stage = _STAGE_TO_WF.get(next_stage)
         if wf_stage:
@@ -167,9 +168,42 @@ async def plan_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 
     result = await asyncio.to_thread(create_plan, input.task_id, input.project_id)
 
-    # Auto-advance to execution on success
+    # Auto-advance after planning based on the refreshed readiness state.
     if result.get("status") == "completed":
-        await _trigger_workflow("execute", input.task_id, input.project_id)
+        from ..tasks.autonomous.pickup import _determine_next_stage
+
+        _STAGE_TO_WF = {"critique": "critique", "execution": "execute"}
+        next_stage = _determine_next_stage(input.task_id)
+        wf_stage = _STAGE_TO_WF.get(next_stage)
+        if wf_stage:
+            await _trigger_workflow(wf_stage, input.task_id, input.project_id)
+
+    return result
+
+
+@hatchet.task(
+    name="summitflow-critique",
+    input_validator=TaskInput,
+    execution_timeout="600s",
+    retries=3,
+    backoff_factor=2.0,
+    concurrency=ConcurrencyExpression(
+        expression="input.task_id",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+    ),
+)
+async def critique_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
+    from ..tasks.autonomous.critique import run_task_shape_critique
+
+    result = await asyncio.to_thread(run_task_shape_critique, input.task_id, input.project_id)
+
+    if result.get("status") == "completed":
+        verdict = str(result.get("verdict") or "").upper()
+        if verdict == "APPROVED":
+            await _trigger_workflow("execute", input.task_id, input.project_id)
+        elif verdict == "NEEDS_REVISION":
+            await _trigger_workflow("plan", input.task_id, input.project_id)
 
     return result
 

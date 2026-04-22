@@ -202,18 +202,68 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
     @patch("app.tasks.autonomous.pickup_queries.task_store")
-    def test_incomplete_subtasks_with_nonplanning_readiness_gap_returns_unknown(
+    def test_incomplete_subtasks_with_pending_second_opinion_routes_to_critique(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:
         from app.tasks.autonomous.pickup import _determine_next_stage
 
         mock_store.get_task.return_value = {"labels": [], "description": "Add API endpoint"}
-        mock_spirit.return_value = {"done_when": ["Endpoint returns 200"]}
+        mock_spirit.return_value = {
+            "done_when": ["Endpoint returns 200"],
+            "context": {"second_opinion": {"status": "pending", "stage": "task_shape"}},
+        }
         mock_subtasks.return_value = [{"subtask_id": "1.1", "passes": False}]
 
         with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
             mock_ready.return_value = MagicMock(ready=False, missing_fields=["second_opinion"])
-            assert _determine_next_stage("task-1") == "unknown"
+            assert _determine_next_stage("task-1") == "critique"
+
+    @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
+    @patch("app.tasks.autonomous.pickup_queries.task_store")
+    def test_second_opinion_needs_revision_routes_back_to_planning(
+        self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
+    ) -> None:
+        from app.tasks.autonomous.pickup import _determine_next_stage
+
+        mock_store.get_task.return_value = {"labels": [], "description": "Add API endpoint"}
+        mock_spirit.return_value = {
+            "done_when": ["Endpoint returns 200"],
+            "context": {"second_opinion": {"status": "needs_revision", "stage": "task_shape"}},
+        }
+        mock_subtasks.return_value = [{"subtask_id": "1.1", "passes": False}]
+
+        with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
+            mock_ready.return_value = MagicMock(ready=False, missing_fields=["second_opinion"])
+            assert _determine_next_stage("task-1") == "planning"
+
+    @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
+    @patch("app.tasks.autonomous.pickup_queries.task_store")
+    def test_execution_contract_gap_routes_back_to_planning(
+        self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
+    ) -> None:
+        from app.tasks.autonomous.pickup import _determine_next_stage
+
+        mock_store.get_task.return_value = {
+            "labels": [],
+            "description": "Refresh dashboard layout",
+            "updated_at": datetime(2026, 3, 24, 12, 17, 6, tzinfo=UTC),
+            "created_at": datetime(2026, 3, 24, 12, 17, 4, tzinfo=UTC),
+        }
+        mock_spirit.return_value = {
+            "done_when": ["Dashboard loads"],
+            "context": {
+                "subtasks": [{"subtask_id": "1.1"}],
+                "planning_signature": "sig-old",
+            },
+            "updated_at": datetime(2026, 3, 24, 12, 17, 5, tzinfo=UTC).isoformat(),
+        }
+        mock_subtasks.return_value = [{"subtask_id": "1.1", "passes": False}]
+
+        with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
+            mock_ready.return_value = MagicMock(ready=False, missing_fields=["execution_contract"])
+            assert _determine_next_stage("task-1") == "planning"
 
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")

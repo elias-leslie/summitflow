@@ -8,7 +8,10 @@ from ...logging_config import get_logger
 from ...services.task_execution_readiness import sync_task_execution_readiness
 from ...services.task_plan_context import build_task_plan_context
 from ...services.task_planning_signature import build_task_planning_signature
-from ...services.task_second_opinion import ensure_second_opinion_tracking
+from ...services.task_second_opinion import (
+    ensure_second_opinion_tracking,
+    reset_second_opinion_for_replan,
+)
 from ...storage import tasks as task_store
 from ...storage.subtasks import bulk_add_subtask_dependencies, bulk_create_subtasks
 from ...storage.task_spirit import create_task_spirit, get_task_spirit, update_task_spirit
@@ -146,4 +149,5 @@ def save_plan_to_database(task_id: str, plan_data: dict[str, Any]) -> None:
 
     if task:
         ensure_second_opinion_tracking(task_id, task, source="planning")
+        reset_second_opinion_for_replan(task_id, source="planning")
         sync_task_execution_readiness(task_id, "planning")

@@ -11,12 +11,13 @@ from typing import Any
 
 from app.services.task_execution_readiness import load_task_execution_readiness
 from app.services.task_planning_signature import build_task_planning_signature
+from app.services.task_second_opinion import get_second_opinion_entry
 from app.storage import tasks as task_store
 from app.storage.connection import get_cursor
 from app.storage.subtasks import get_subtasks_for_task
 from app.storage.task_spirit import get_task_spirit
 
-_REPLANNING_FIELDS = frozenset({"description", "done_when", "subtasks", "context"})
+_REPLANNING_FIELDS = frozenset({"description", "done_when", "subtasks", "context", "execution_contract"})
 
 
 def _parse_timestamp(value: object) -> datetime | None:
@@ -74,6 +75,12 @@ def _stored_plan_signature(spirit: dict[str, Any] | None) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
+def _second_opinion_status(spirit: dict[str, Any] | None) -> str:
+    entry = get_second_opinion_entry(spirit)
+    status = str(entry.get("status") or "").strip().lower()
+    return status
+
+
 def _should_replan(
     task: dict[str, Any],
     spirit: dict[str, Any] | None,
@@ -126,8 +133,14 @@ def determine_next_stage(task_id: str) -> str:
 
     readiness = load_task_execution_readiness(task_id)
     if not readiness.ready:
+        second_opinion_status = _second_opinion_status(spirit)
         if _should_replan(task, spirit, subtasks, readiness.missing_fields):
             return "planning"
+        if "second_opinion" in readiness.missing_fields:
+            if second_opinion_status == "needs_revision":
+                return "planning"
+            if second_opinion_status in {"pending", ""}:
+                return "critique"
         return "unknown"
 
     if any(not s.get("passes") for s in subtasks):

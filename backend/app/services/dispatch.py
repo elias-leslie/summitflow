@@ -27,6 +27,7 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
     """Trigger the appropriate Hatchet workflow for the given stage."""
     from ..workflows.models import TaskInput
     from ..workflows.pipeline import (
+        critique_wf,
         execute_wf,
         ideate_wf,
         plan_wf,
@@ -39,6 +40,7 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
         "ideation": ideate_wf,
         "triage": triage_wf,
         "planning": plan_wf,
+        "critique": critique_wf,
         "execution": execute_wf,
     }
 

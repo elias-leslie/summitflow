@@ -1,6 +1,6 @@
 """Dispatch logic for autonomous task pipeline stages.
 
-Handles dispatching tasks to triage, planning, or execution stages.
+Handles dispatching tasks to ideation, triage, planning, critique, or execution stages.
 """
 
 from __future__ import annotations
@@ -76,6 +76,18 @@ def dispatch_to_planning(
     return True
 
 
+def dispatch_to_critique(
+    task_id: str,
+    project_id: str,
+    dispatch: Callable[[str, str, str], None] | None,
+) -> bool:
+    """Dispatch task to critique stage."""
+    if dispatch:
+        dispatch("critique", task_id, project_id)
+    logger.info("Dispatched to critique", task_id=task_id)
+    return True
+
+
 def dispatch_to_execution(
     task_id: str,
     project_id: str,
@@ -132,6 +144,9 @@ def dispatch_to_stage(
 
     if stage == "planning":
         return dispatch_to_planning(task_id, project_id, dispatch)
+
+    if stage == "critique":
+        return dispatch_to_critique(task_id, project_id, dispatch)
 
     if stage == "execution":
         return dispatch_to_execution(task_id, project_id, dispatch, worker_id_prefix)

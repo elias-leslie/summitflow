@@ -28,6 +28,19 @@ _COMPLETED_STATUSES = {"completed", "waived"}
 _SECOND_OPINION_CONTEXT_KEY = "second_opinion"
 _SECOND_OPINION_REVIEWS_KEY = "reviews"
 _VALID_REVIEW_STAGES = {"task_shape", "pre_close", "both"}
+_REVIEW_DETAIL_KEYS = {
+    "summary",
+    "verdict",
+    "findings",
+    "missing_requirements",
+    "edge_cases",
+    "test_gaps",
+    "rollout_gaps",
+    "simpler_alternative",
+    "confidence",
+    "reviewed_by_agent",
+    "reviewed_at",
+}
 
 
 @dataclass
@@ -175,6 +188,50 @@ def ensure_second_opinion_tracking(
 
     upsert_task_spirit(task_id=task_id, context={_SECOND_OPINION_CONTEXT_KEY: entry})
     return entry
+
+
+def reset_second_opinion_for_replan(
+    task_id: str,
+    *,
+    source: str = "planning",
+) -> dict[str, Any] | None:
+    """Reset task-shape review status to pending after the plan package changes."""
+    spirit = get_task_spirit(task_id)
+    existing = get_second_opinion_entry(spirit)
+    if not existing:
+        return None
+
+    current_review = _task_shape_review(existing) or (
+        _review_snapshot(existing) if isinstance(existing, dict) else {}
+    )
+    status = str(current_review.get("status") or existing.get("status") or "").strip().lower()
+    if status not in _COMPLETED_STATUSES | {"needs_revision"}:
+        return existing
+
+    pending_review = {
+        "required": True,
+        "stage": "task_shape",
+        "status": "pending",
+        "reasons": list(existing.get("reasons") or []),
+        "requested_by": source,
+        "requested_at": datetime.now(UTC).isoformat(),
+    }
+    history = _review_history(existing)
+    history["task_shape"] = pending_review
+
+    merged_primary = {
+        key: value
+        for key, value in dict(existing).items()
+        if key not in _REVIEW_DETAIL_KEYS and key != _SECOND_OPINION_REVIEWS_KEY
+    }
+    merged_primary.update(pending_review)
+    merged_primary[_SECOND_OPINION_REVIEWS_KEY] = history
+
+    context = merge_second_opinion_into_context((spirit or {}).get("context"), merged_primary)
+    updated = update_task_spirit(task_id, context=context)
+    if updated is not None:
+        return updated
+    raise ValueError(f"Failed to update task_spirit for {task_id}")
 
 
 def assess_second_opinion_readiness(

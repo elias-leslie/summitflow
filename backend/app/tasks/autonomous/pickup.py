@@ -108,12 +108,12 @@ def autonomous_work_pickup(
             "message": "No pending autonomous tasks",
         }
 
-    dispatched: dict[str, int] = {"triage": 0, "planning": 0, "execution": 0, "skipped": 0}
+    dispatched: dict[str, int] = {"triage": 0, "planning": 0, "critique": 0, "execution": 0, "skipped": 0}
 
     for task in tasks:
         _dispatch_one(task, project_id, dispatch, dispatched)
 
-    dispatched_total = sum(dispatched.get(stage, 0) for stage in ("triage", "planning", "execution"))
+    dispatched_total = sum(dispatched.get(stage, 0) for stage in ("triage", "planning", "critique", "execution"))
     attempted_total = sum(dispatched.values())
     logger.info("Work pickup complete", project_id=project_id, dispatched=dispatched)
 
