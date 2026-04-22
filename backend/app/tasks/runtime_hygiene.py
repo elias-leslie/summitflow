@@ -693,15 +693,21 @@ def _project_target(
     source_id = _TARGET_BACKUP_SOURCES[project_id]
     backup_state = _backup_state(backup_rows.get(source_id), now=now, source_type="project")
     journal = _journal_findings(project_id)
-    for error in list(journal.get("errors") or []):
+    if int(journal.get("issue_count") or 0) > 0:
         issues.append(
             _project_issue(
                 project_id,
-                "journal_error",
-                str(error["error_hash"]),
+                "journal",
+                "journal-errors",
                 "warning",
-                f"Investigate recent {project_id} journal error from {error['unit']}",
-                {"journal_error": error},
+                f"Investigate recent {project_id} runtime journal errors",
+                {
+                    "journal": {
+                        "pattern": journal.get("pattern"),
+                        "issue_count": journal.get("issue_count"),
+                        "errors": list(journal.get("errors") or []),
+                    }
+                },
             )
         )
 
@@ -835,7 +841,7 @@ def _project_target(
     journal_task_ids = [
         str(issue.get("task_id"))
         for issue in issues
-        if issue.get("issue_type") == "journal_error" and issue.get("task_id")
+        if issue.get("issue_type") == "journal" and issue.get("task_id")
     ]
     journal["created_task_ids"] = journal_task_ids
     for issue in issues:
