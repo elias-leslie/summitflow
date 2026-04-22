@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 
 def test_host_retention_policy_defaults_keep_docker_cache_minimal() -> None:
@@ -100,7 +101,7 @@ def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candi
 
     mocker.patch("app.tasks.host_retention._run_command", side_effect=_run_command)
 
-    result = cleanup_host_artifacts(home_dir=home_dir, tmp_dir=tmp_dir)
+    result = cast(dict[str, Any], cleanup_host_artifacts(home_dir=home_dir, tmp_dir=tmp_dir))
 
     assert result["status"] == "success"
     assert result["pressure_mode"] is False
@@ -177,7 +178,7 @@ def test_cleanup_host_artifacts_prunes_stale_tmp_backups_and_hermes_checkpoints(
     )
     mocker.patch("app.tasks.host_retention.shutil.which", return_value=None)
 
-    result = cleanup_host_artifacts(home_dir=home_dir, tmp_dir=tmp_dir)
+    result = cast(dict[str, Any], cleanup_host_artifacts(home_dir=home_dir, tmp_dir=tmp_dir))
 
     assert result["status"] == "success"
     assert result["temp_backups"]["deleted_paths"] == 2
