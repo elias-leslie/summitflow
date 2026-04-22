@@ -17,7 +17,12 @@ from ._retention_docker import (
     prune_builder_cache,
     prune_images,
 )
-from ._retention_fs import cleanup_old_children, collect_legacy_review_candidates
+from ._retention_fs import (
+    cleanup_old_children,
+    cleanup_stale_hermes_checkpoints,
+    cleanup_tmp_backups,
+    collect_legacy_review_candidates,
+)
 from ._retention_policy import HostRetentionPolicy
 
 logger = get_logger(__name__)
@@ -110,6 +115,7 @@ def _run_docker_cleanup(
 def cleanup_host_artifacts(
     *,
     home_dir: Path | None = None,
+    tmp_dir: Path | None = None,
     now: datetime | None = None,
     policy: HostRetentionPolicy | None = None,
 ) -> dict[str, object]:
@@ -117,6 +123,7 @@ def cleanup_host_artifacts(
     effective_policy = policy or HostRetentionPolicy.from_env()
     effective_now = now or datetime.now(UTC)
     effective_home = home_dir or Path.home()
+    effective_tmp = tmp_dir or Path("/tmp")
 
     before = _disk_snapshot("/")
     pressure_mode = _is_pressure_mode(before, effective_policy)
@@ -131,8 +138,29 @@ def cleanup_host_artifacts(
         max_age_hours=effective_policy.playwright_max_age_hours,
         now=effective_now,
     )
-    tool_cache_deleted = npx_result["deleted_paths"] + playwright_result["deleted_paths"]
-    tool_cache_reclaimed = npx_result["bytes_reclaimed"] + playwright_result["bytes_reclaimed"]
+    tmp_backups_result = cleanup_tmp_backups(
+        effective_tmp,
+        max_age_hours=effective_policy.tmp_backup_max_age_hours,
+        now=effective_now,
+    )
+    hermes_checkpoints_result = cleanup_stale_hermes_checkpoints(
+        effective_home / ".hermes",
+        tmp_workdir_max_age_hours=effective_policy.hermes_checkpoint_tmp_max_age_hours,
+        internal_workdir_max_age_hours=effective_policy.hermes_checkpoint_internal_max_age_hours,
+        now=effective_now,
+    )
+    tool_cache_deleted = (
+        npx_result["deleted_paths"]
+        + playwright_result["deleted_paths"]
+        + tmp_backups_result["deleted_paths"]
+        + hermes_checkpoints_result["deleted_paths"]
+    )
+    tool_cache_reclaimed = (
+        npx_result["bytes_reclaimed"]
+        + playwright_result["bytes_reclaimed"]
+        + tmp_backups_result["bytes_reclaimed"]
+        + hermes_checkpoints_result["bytes_reclaimed"]
+    )
 
     docker = _run_docker_cleanup(policy=effective_policy, pressure_mode=pressure_mode, now=effective_now)
 
@@ -166,6 +194,8 @@ def cleanup_host_artifacts(
             "npx": npx_result,
             "playwright": playwright_result,
         },
+        "temp_backups": tmp_backups_result,
+        "hermes_checkpoints": hermes_checkpoints_result,
         "docker_builder_cache": docker["builder_cache"],
         "docker_images": docker["images"],
         "docker_anonymous_volumes": docker["anonymous_volumes"],

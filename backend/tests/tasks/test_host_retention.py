@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 
 def test_host_retention_policy_defaults_keep_docker_cache_minimal() -> None:
@@ -46,6 +47,8 @@ def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candi
     from app.tasks.host_retention import cleanup_host_artifacts
 
     home_dir = tmp_path / "home"
+    tmp_dir = tmp_path / "tmp"
+    tmp_dir.mkdir()
     npx_old = home_dir / ".npm" / "_npx" / "old-run"
     playwright_old = home_dir / ".cache" / "ms-playwright" / "chromium-old"
     legacy_root = home_dir / "_legacy-project-roots" / "2026-03-01-btrfs-cutover"
@@ -98,7 +101,7 @@ def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candi
 
     mocker.patch("app.tasks.host_retention._run_command", side_effect=_run_command)
 
-    result = cleanup_host_artifacts(home_dir=home_dir)
+    result = cast(dict[str, Any], cleanup_host_artifacts(home_dir=home_dir, tmp_dir=tmp_dir))
 
     assert result["status"] == "success"
     assert result["pressure_mode"] is False
@@ -110,3 +113,78 @@ def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candi
     assert not playwright_old.exists()
     assert result["review_candidates"][0]["reason"] == "legacy_project_root"
     assert result["review_candidates"][0]["path"].endswith("2026-03-01-btrfs-cutover")
+
+
+
+def test_cleanup_host_artifacts_prunes_stale_tmp_backups_and_hermes_checkpoints(
+    mocker,
+    tmp_path: Path,
+) -> None:
+    from app.tasks.host_retention import cleanup_host_artifacts
+
+    home_dir = tmp_path / "home"
+    hermes_dir = home_dir / ".hermes"
+    checkpoints_dir = hermes_dir / "checkpoints"
+    tmp_dir = tmp_path / "tmp"
+
+    tmp_backup = tmp_dir / "agent-hub-backup-123456"
+    tmp_backup.mkdir(parents=True)
+    (tmp_backup / "agent-hub.tar.gz").write_text("backup", encoding="utf-8")
+
+    release_backup = tmp_dir / "terminal-release-backup"
+    release_backup.mkdir(parents=True)
+    (release_backup / "terminal.tar").write_text("release", encoding="utf-8")
+
+    tmp_checkpoint = checkpoints_dir / "tmp-shadow"
+    (tmp_checkpoint / "objects" / "pack").mkdir(parents=True)
+    (tmp_checkpoint / "HERMES_WORKDIR").write_text("/tmp\n", encoding="utf-8")
+    (tmp_checkpoint / "objects" / "pack" / "tmp_pack_dead").write_text("stale tmp checkpoint", encoding="utf-8")
+
+    internal_checkpoint = checkpoints_dir / "internal-shadow"
+    (internal_checkpoint / "objects" / "pack").mkdir(parents=True)
+    (internal_checkpoint / "HERMES_WORKDIR").write_text(str(hermes_dir), encoding="utf-8")
+    (internal_checkpoint / "objects" / "pack" / "pack-self").write_text("recursive hermes checkpoint", encoding="utf-8")
+
+    keep_checkpoint = checkpoints_dir / "keep-shadow"
+    (keep_checkpoint / "objects").mkdir(parents=True)
+    (keep_checkpoint / "HERMES_WORKDIR").write_text("/srv/workspaces/projects/summitflow\n", encoding="utf-8")
+    (keep_checkpoint / "objects" / "keep").write_text("keep", encoding="utf-8")
+
+    old_time = (datetime.now(UTC) - timedelta(days=10)).timestamp()
+    for path in (
+        tmp_backup,
+        tmp_backup / "agent-hub.tar.gz",
+        release_backup,
+        release_backup / "terminal.tar",
+        tmp_checkpoint,
+        tmp_checkpoint / "HERMES_WORKDIR",
+        tmp_checkpoint / "objects",
+        tmp_checkpoint / "objects" / "pack",
+        tmp_checkpoint / "objects" / "pack" / "tmp_pack_dead",
+        internal_checkpoint,
+        internal_checkpoint / "HERMES_WORKDIR",
+        internal_checkpoint / "objects",
+        internal_checkpoint / "objects" / "pack",
+        internal_checkpoint / "objects" / "pack" / "pack-self",
+    ):
+        os.utime(path, (old_time, old_time))
+
+    mocker.patch(
+        "app.tasks.host_retention.shutil.disk_usage",
+        side_effect=[
+            (100 * 1024**3, 90 * 1024**3, 10 * 1024**3),
+            (100 * 1024**3, 84 * 1024**3, 16 * 1024**3),
+        ],
+    )
+    mocker.patch("app.tasks.host_retention.shutil.which", return_value=None)
+
+    result = cast(dict[str, Any], cleanup_host_artifacts(home_dir=home_dir, tmp_dir=tmp_dir))
+
+    assert result["status"] == "success"
+    assert result["temp_backups"]["deleted_paths"] == 2
+    assert result["hermes_checkpoints"]["deleted_paths"] == 2
+    assert not tmp_backup.exists()
+    assert not release_backup.exists()
+    assert not tmp_checkpoint.exists()
+    assert not internal_checkpoint.exists()
+    assert keep_checkpoint.exists()

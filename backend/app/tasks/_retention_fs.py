@@ -1,7 +1,7 @@
 """Filesystem utilities for host retention cleanup."""
-
 from __future__ import annotations
 
+import fnmatch
 import os
 import shutil
 from datetime import UTC, datetime
@@ -81,6 +81,86 @@ def cleanup_old_children(
             continue
         reclaimed += delete_path(child)
         deleted.append(str(child))
+    return CleanupResult(deleted_paths=len(deleted), bytes_reclaimed=reclaimed, deleted=deleted)
+
+
+def cleanup_tmp_backups(
+    tmp_dir: Path,
+    *,
+    max_age_hours: int,
+    now: datetime,
+) -> CleanupResult:
+    """Delete stale backup artifacts from /tmp-style roots."""
+    if not tmp_dir.is_dir():
+        return CleanupResult(deleted_paths=0, bytes_reclaimed=0, deleted=[])
+
+    deleted: list[str] = []
+    reclaimed = 0
+    patterns = ("*-backup-*", "terminal-release-backup")
+    for child in tmp_dir.iterdir():
+        if not any(fnmatch.fnmatch(child.name, pattern) for pattern in patterns):
+            continue
+        if age_hours(child, now=now) < max_age_hours:
+            continue
+        reclaimed += delete_path(child)
+        deleted.append(str(child))
+    return CleanupResult(deleted_paths=len(deleted), bytes_reclaimed=reclaimed, deleted=deleted)
+
+
+def _read_checkpoint_workdir(checkpoint_dir: Path) -> Path | None:
+    workdir_file = checkpoint_dir / "HERMES_WORKDIR"
+    try:
+        raw = workdir_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not raw:
+        return None
+    return Path(raw).expanduser()
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except Exception:
+        return False
+
+
+def cleanup_stale_hermes_checkpoints(
+    hermes_dir: Path,
+    *,
+    tmp_workdir_max_age_hours: int,
+    internal_workdir_max_age_hours: int,
+    now: datetime,
+) -> CleanupResult:
+    """Delete stale Hermes checkpoint shadow repos for tmp/internal/broken workdirs."""
+    checkpoints_root = hermes_dir / "checkpoints"
+    if not checkpoints_root.is_dir():
+        return CleanupResult(deleted_paths=0, bytes_reclaimed=0, deleted=[])
+
+    deleted: list[str] = []
+    reclaimed = 0
+    for child in checkpoints_root.iterdir():
+        if not child.is_dir():
+            continue
+
+        repo_age = age_hours(child, now=now)
+        workdir = _read_checkpoint_workdir(child)
+        head_exists = (child / "HEAD").exists()
+        should_delete = False
+
+        if workdir is None or workdir == Path("/tmp"):
+            should_delete = repo_age >= tmp_workdir_max_age_hours
+        elif _is_relative_to(workdir, hermes_dir) or workdir == hermes_dir or not workdir.exists():
+            should_delete = repo_age >= internal_workdir_max_age_hours
+        elif not head_exists:
+            should_delete = repo_age >= tmp_workdir_max_age_hours
+
+        if not should_delete:
+            continue
+        reclaimed += delete_path(child)
+        deleted.append(str(child))
+
     return CleanupResult(deleted_paths=len(deleted), bytes_reclaimed=reclaimed, deleted=deleted)
 
 
