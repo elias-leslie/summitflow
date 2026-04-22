@@ -147,6 +147,42 @@ def test_project_target_creates_issues_when_backup_stays_stale(mocker) -> None:
 
 
 
+def test_host_pressure_runs_cleanup_even_when_recent_runtime_hygiene_exists(mocker) -> None:
+    from app.tasks.runtime_hygiene import _host_pressure
+
+    before = {
+        "disk": {"mount_path": "/", "percent_used": 89.0, "free_gb": 11.0, "status": "warning"},
+        "disks": [],
+        "memory": {"percent_used": 40.0, "status": "ok"},
+        "cpu": {"percent_used": 5.0, "status": "ok"},
+    }
+    after = {
+        "disk": {"mount_path": "/", "percent_used": 79.0, "free_gb": 17.0, "status": "ok"},
+        "disks": [],
+        "memory": {"percent_used": 40.0, "status": "ok"},
+        "cpu": {"percent_used": 5.0, "status": "ok"},
+    }
+    cleanup_result = {"status": "success", "bytes_reclaimed": 5 * 1024 * 1024 * 1024}
+    mocker.patch("app.tasks.runtime_hygiene._collect_host_snapshot", side_effect=[before, after])
+    mocker.patch("app.tasks.runtime_hygiene._run_started_within", return_value=False)
+    cleanup = mocker.patch("app.tasks.runtime_hygiene.cleanup_host_artifacts", return_value=cleanup_result)
+    mocker.patch("app.tasks.runtime_hygiene._create_or_refresh_issue_task", return_value=("task-host", False))
+
+    host, actions_taken, issues, created_task_ids, reused_task_ids = _host_pressure(
+        latest_runtime_hygiene={"started_at": datetime.now(UTC).isoformat()},
+        now=datetime.now(UTC),
+    )
+
+    cleanup.assert_called_once_with()
+    assert host["cleanup"] == cleanup_result
+    assert actions_taken[0]["type"] == "host_cleanup"
+    assert actions_taken[0]["status"] == "completed"
+    assert issues == []
+    assert created_task_ids == []
+    assert reused_task_ids == []
+
+
+
 def test_run_runtime_hygiene_records_summary(mocker) -> None:
     from app.tasks.runtime_hygiene import run_runtime_hygiene
 

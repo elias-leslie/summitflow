@@ -85,7 +85,6 @@ _BLOAT_CRIT_DEAD_BYTES = 128 * 1024 * 1024
 _MAX_VACUUM_TABLES_PER_DB = 3
 
 _ACTION_COOLDOWN_HOURS = {
-    "host_cleanup": 12.0,
     "backup_catchup": 12.0,
     "pending_drain": 6.0,
     "vacuum_analyze": 24.0,
@@ -960,17 +959,9 @@ def _host_pressure(
         or float(root_disk.get("free_gb") or 0.0) <= _DISK_REMEDIATE_FREE_GB
     )
     if root_pressure:
-        latest_hygiene_started = _coerce_datetime((latest_runtime_hygiene or {}).get("started_at"))
-        if latest_hygiene_started and now - latest_hygiene_started <= timedelta(hours=12):
-            _record_action(
-                actions_taken,
-                action_type="host_cleanup",
-                scope=_HOST_SCOPE,
-                fingerprint="host:root",
-                status="skipped",
-                detail="Skipped host cleanup because runtime_hygiene already ran within the last 12 hours",
-            )
-        elif _run_started_within("daily_maintenance", hours=6.0, now=now):
+        # When disk pressure is still present, rerun the bounded cleanup on each hygiene pass.
+        # The routine should not skip cleanup just because a previous runtime_hygiene run happened recently.
+        if _run_started_within("daily_maintenance", hours=6.0, now=now):
             _record_action(
                 actions_taken,
                 action_type="host_cleanup",
@@ -979,12 +970,7 @@ def _host_pressure(
                 status="skipped",
                 detail="Skipped host cleanup because daily_maintenance ran within the last 6 hours",
             )
-        elif not _recent_action_succeeded(
-            latest_runtime_hygiene,
-            action_type="host_cleanup",
-            fingerprint="host:root",
-            now=now,
-        ):
+        else:
             cleanup_result = cleanup_host_artifacts()
             _record_action(
                 actions_taken,
