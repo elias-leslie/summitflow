@@ -204,11 +204,28 @@ EOF
     fi
 }
 
-# Test SMB connectivity
+# Probe the stable parent directory for this source's backup path.
+# Some SMB shares deny listing the share root, while new per-project directories
+# under project-backups/ are created lazily during upload.
+smb_probe_dir() {
+    local probe_dir="${SMB_PATH%/*}"
+    if [ -z "$probe_dir" ] || [ "$probe_dir" = "$SMB_PATH" ]; then
+        printf '.\n'
+        return 0
+    fi
+    printf '%s\n' "$probe_dir"
+}
+
+# Test SMB share connectivity.
+# Check the parent directory, not the project-specific path: new project
+# directories are created lazily during upload, so a missing $SMB_PATH should
+# not be treated as an unavailable SMB destination.
 test_smb_connection() {
     log "Testing SMB connection to //$SMB_HOST/$SMB_SHARE..."
 
-    if smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" -c "ls $SMB_PATH" &>/dev/null; then
+    local probe_dir
+    probe_dir="$(smb_probe_dir)"
+    if smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" -c "cd $probe_dir; ls" &>/dev/null; then
         log_success "SMB connection OK"
         return 0
     else
@@ -217,9 +234,11 @@ test_smb_connection() {
     fi
 }
 
-# Test SMB connectivity (quiet version - no logging)
+# Test SMB share connectivity (quiet version - no logging)
 test_smb_connection_quiet() {
-    smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" -c "ls $SMB_PATH" &>/dev/null
+    local probe_dir
+    probe_dir="$(smb_probe_dir)"
+    smbclient "//$SMB_HOST/$SMB_SHARE" -A "$CREDENTIALS_FILE" -c "cd $probe_dir; ls" &>/dev/null
 }
 
 # Pending backups directory
@@ -903,7 +922,7 @@ EOF
 
 # Export functions for subshells
 export -f log log_success log_warn log_error log_info
-export -f backup_expects_database
+export -f backup_expects_database smb_probe_dir
 export -f ensure_smb_credentials test_smb_connection test_smb_connection_quiet
 export -f smb_upload smb_download smb_delete smb_list_backups
 export -f upload_with_retry save_to_pending upload_pending_backups
