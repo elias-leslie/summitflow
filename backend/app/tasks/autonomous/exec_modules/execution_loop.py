@@ -12,7 +12,7 @@ from .agent_routing import supervisor_circuit_breaker_triage
 from .events import emit_log, emit_progress
 from .git_ops import has_uncommitted_changes, smart_commit
 from .interruption import ExecutionInterrupted, assert_task_runnable
-from .session import wind_down
+from .session import WindDownState, wind_down
 from .subtask_executor import MAX_ITERATIONS, execute_subtask
 
 logger = get_logger(__name__)
@@ -132,8 +132,8 @@ def execute_subtask_loop(
     completed_count: int,
     task_type: str | None,
     agent_override: str | None,
-) -> tuple[list[dict[str, Any]], int]:
-    """Execute incomplete subtasks in order; returns (results, final completed count)."""
+) -> tuple[list[dict[str, Any]], int, WindDownState | None]:
+    """Execute incomplete subtasks in order; returns (results, final completed count, wind_down_state)."""
     results: list[dict[str, Any]] = []
     issue_counts: dict[str, int] = {}
     completed = completed_count
@@ -141,13 +141,11 @@ def execute_subtask_loop(
     for iteration, subtask in enumerate(incomplete_subtasks, 1):
         if iteration > MAX_ITERATIONS:
             emit_log(task_id, "warn", f"Max iterations ({MAX_ITERATIONS}) reached", project_id=project_id)
-            wind_down(task_id, results, incomplete_subtasks, "max_iterations")
-            break
+            return results, completed, wind_down(task_id, results, incomplete_subtasks, "max_iterations")
 
         if not _check_health_or_wait(task_id, project_id):
             emit_log(task_id, "error", "System unhealthy after retries, winding down", source="health", project_id=project_id)
-            wind_down(task_id, results, incomplete_subtasks, "system_unhealthy")
-            break
+            return results, completed, wind_down(task_id, results, incomplete_subtasks, "system_unhealthy")
 
         try:
             assert_task_runnable(
@@ -164,8 +162,7 @@ def execute_subtask_loop(
                 agent_override,
             )
         except ExecutionInterrupted as exc:
-            wind_down(task_id, results, incomplete_subtasks, exc.reason)
-            break
+            return results, completed, wind_down(task_id, results, incomplete_subtasks, exc.reason)
         results.append(result)
         completed += 1
         status = "passed" if result.get("status") == "passed" else "failed"
@@ -175,4 +172,4 @@ def execute_subtask_loop(
         if result.get("status") == "failed" and not _handle_subtask_failure(task_id, project_id, result, issue_counts, results):
             break
 
-    return results, completed
+    return results, completed, None
