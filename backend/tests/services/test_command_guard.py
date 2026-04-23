@@ -65,7 +65,7 @@ def test_blocks_raw_git_commit(tmp_path: Path) -> None:
 
     assert decision.blocked is True
     assert decision.code == "git_commit_redirect"
-    assert "commit.sh --push" in (decision.message or "")
+    assert "st git commit --push" in (decision.message or "")
 
 
 def test_blocks_nested_shell_git_reset(tmp_path: Path) -> None:

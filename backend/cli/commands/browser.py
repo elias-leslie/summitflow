@@ -7,7 +7,7 @@ import typer
 from .operator_forward import run_forwarded
 
 app = typer.Typer(
-    help="Remote browser automation. Forwards to the managed sf-browser runner.",
+    help="Remote browser automation. Uses the managed browser runner.",
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
 )
 

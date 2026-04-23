@@ -208,7 +208,7 @@ def _assemble_steps(
     if is_frontend:
         steps.append(_step(
             "Verify no console errors in browser",
-            ["~/.local/bin/sf-browser console"],
+            ["st browser console"],
         ))
     return steps
 

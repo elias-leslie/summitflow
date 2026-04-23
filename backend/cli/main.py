@@ -172,7 +172,7 @@ OPERATOR TOOLS (canonical wrapper surface):
   service rebuild <project> [--detach]     # build, migrate, restart, health-check
   check [dt args...]                       # quality gates and dt tool wrappers
   db [db args...]                          # database inspection and migrations
-  browser [sf-browser args...]             # browser health/check/screenshot/snapshot/eval
+  browser [browser args...]                # browser health/check/screenshot/snapshot/eval
   web [web-research args...]               # web search/research/fetch
   vm [proxmox-vm args...]                  # Proxmox test VM operations
 

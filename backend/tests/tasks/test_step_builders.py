@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from app.tasks.autonomous.step_builders import (
     build_refactor_steps,
     calculate_target_lines,
@@ -137,9 +139,12 @@ class TestGetTargetedTestCommand:
 class TestBuildRefactorSteps:
     """Tests for issue-aware build_refactor_steps."""
 
+    def _build_steps(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        return cast("list[dict[str, Any]]", build_refactor_steps(*args, **kwargs))
+
     def test_size_issue_includes_refactor_step(self) -> None:
         """Files with size issues get a refactor step."""
-        steps = build_refactor_steps(
+        steps = self._build_steps(
             "backend/app/services/foo.py", "/abs/path", 400, 200, False,
             refactor_issues=["large_file", "has_long_functions"],
         )
@@ -149,7 +154,7 @@ class TestBuildRefactorSteps:
 
     def test_no_size_issue_skips_refactor_step(self) -> None:
         """Files without size issues skip the refactor step."""
-        steps = build_refactor_steps(
+        steps = self._build_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["deep_nesting", "has_long_functions"],
         )
@@ -157,7 +162,7 @@ class TestBuildRefactorSteps:
 
     def test_structural_issues_get_structural_step(self) -> None:
         """Structural issues generate a structural verification step."""
-        steps = build_refactor_steps(
+        steps = self._build_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["has_long_functions", "deep_nesting"],
         )
@@ -168,7 +173,7 @@ class TestBuildRefactorSteps:
 
     def test_too_many_functions_gets_structural_step(self) -> None:
         """too_many_functions generates a structural step."""
-        steps = build_refactor_steps(
+        steps = self._build_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["too_many_functions"],
         )
@@ -177,7 +182,7 @@ class TestBuildRefactorSteps:
 
     def test_too_many_classes_gets_structural_step(self) -> None:
         """too_many_classes generates a structural step."""
-        steps = build_refactor_steps(
+        steps = self._build_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["too_many_classes"],
         )
@@ -186,7 +191,7 @@ class TestBuildRefactorSteps:
 
     def test_has_large_classes_gets_structural_step(self) -> None:
         """has_large_classes generates a structural step."""
-        steps = build_refactor_steps(
+        steps = self._build_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["has_large_classes"],
         )
@@ -195,7 +200,7 @@ class TestBuildRefactorSteps:
 
     def test_too_many_imports_gets_structural_step(self) -> None:
         """too_many_imports generates a structural step."""
-        steps = build_refactor_steps(
+        steps = self._build_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["too_many_imports"],
         )
@@ -204,7 +209,7 @@ class TestBuildRefactorSteps:
 
     def test_quality_gate_always_present(self) -> None:
         """Quality gate step is always included."""
-        steps = build_refactor_steps(
+        steps = self._build_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["deep_nesting"],
         )
@@ -216,18 +221,18 @@ class TestBuildRefactorSteps:
 
     def test_frontend_browser_check(self) -> None:
         """Frontend files get browser verification step."""
-        steps = build_refactor_steps(
+        steps = self._build_steps(
             "frontend/components/Foo.tsx", "/abs/path", 400, 200, True,
             refactor_issues=["large_file"],
         )
         browser_step = next(
             s for s in steps if "browser" in s["description"].lower() or "console" in s["description"].lower()
         )
-        assert browser_step["spec"]["verify_commands"] == ["~/.local/bin/sf-browser console"]
+        assert browser_step["spec"]["verify_commands"] == ["st browser console"]
 
     def test_no_issues_falls_back_to_refactor_step(self) -> None:
         """Empty issues list falls back to refactor step."""
-        steps = build_refactor_steps(
+        steps = self._build_steps(
             "backend/app/services/foo.py", "/abs/path", 400, 200, False,
             refactor_issues=[],
         )
@@ -235,7 +240,7 @@ class TestBuildRefactorSteps:
 
     def test_step_specs_store_verify_commands_separately_from_descriptions(self) -> None:
         """Generated steps should persist executable verification in spec."""
-        steps = build_refactor_steps(
+        steps = self._build_steps(
             "backend/app/services/foo.py", "/abs/path", 400, 200, False,
             refactor_issues=["large_file", "deep_nesting"],
         )

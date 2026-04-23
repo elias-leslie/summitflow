@@ -33,14 +33,14 @@ from .ah_events import emit_runtime_evaluator_result
 from .design_critic import run_design_critic
 
 _SLUG_RUNTIME_EXECUTION_EVALUATOR = "runtime-execution-evaluator"
-_BROWSER_HEALTH_COMMAND = ("sf-browser", "health")
+_BROWSER_HEALTH_COMMAND = ("st", "browser", "health")
 _BROWSER_ATTEMPTS = 3
 _BROWSER_RETRY_DELAYS_SECONDS = (0.5, 1.0)
 
 
 def _check_browser_health() -> tuple[bool, str]:
     result = subprocess.run(list(_BROWSER_HEALTH_COMMAND), capture_output=True, text=True, timeout=15, check=False)
-    output = result.stdout.strip() or result.stderr.strip() or "sf-browser health returned no output"
+    output = result.stdout.strip() or result.stderr.strip() or "st browser health returned no output"
     return result.returncode == 0, output
 
 
@@ -309,7 +309,20 @@ def run_runtime_evaluator(task_id: str, project_id: str) -> RuntimeEvaluationRes
 
     browser_ok, browser_detail = _check_browser_health()
     if not browser_ok:
-        result = RuntimeEvaluationResult(mode=decision.mode, passed=False, summary=f"sf-browser health failed: {browser_detail}", criteria=[{"criterion_id": "browser-health", "category": "runtime", "status": "failed", "summary": browser_detail, "evidence": [browser_detail]}])
+        result = RuntimeEvaluationResult(
+            mode=decision.mode,
+            passed=False,
+            summary=f"st browser health failed: {browser_detail}",
+            criteria=[
+                {
+                    "criterion_id": "browser-health",
+                    "category": "runtime",
+                    "status": "failed",
+                    "summary": browser_detail,
+                    "evidence": [browser_detail],
+                }
+            ],
+        )
         emit_runtime_evaluator_result(task_id, result.to_event_payload())
         return result
 
