@@ -130,10 +130,15 @@ class TestCreateFollowupTaskForFailures:
         assert "1.2: readiness key missing in context payload" in str(followup["description"])
         assert followup["parent_task_id"] == parent["id"]
         assert followup["labels"] == ["autocode-followup"]
-        assert spirit["done_when"] == ["Persist planner context on follow-up retry"]
+        assert spirit["done_when"] == [
+            f"Resolve unresolved work carried from {parent['id']}",
+            "1.2 Run focused backend validation",
+            "Focused validation passes for the follow-up changes",
+        ]
         assert spirit["plan_status"] == "approved"
         assert spirit["context"]["source_task_id"] == parent["id"]
         assert spirit["context"]["failed_subtask_ids"] == ["1.2"]
+        assert spirit["context"]["parent_done_when"] == ["Persist planner context on follow-up retry"]
         assert spirit["context"]["failure_summaries"] == {
             "1.2": "readiness key missing in context payload",
         }

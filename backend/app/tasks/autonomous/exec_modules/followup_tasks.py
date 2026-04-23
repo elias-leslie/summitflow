@@ -140,12 +140,8 @@ def _merge_labels(parent_task: Mapping[str, Any] | None) -> list[str]:
 
 def _build_done_when(
     parent_task_id: str,
-    parent_spirit: Mapping[str, Any] | None,
     followup_subtasks: list[dict[str, Any]],
 ) -> list[str]:
-    inherited = _list_of_strings((parent_spirit or {}).get("done_when"))
-    if inherited:
-        return inherited
     criteria = [f"Resolve unresolved work carried from {parent_task_id}"]
     criteria.extend(
         f"{subtask['subtask_id']} {subtask['description']}"
@@ -214,6 +210,9 @@ def _build_followup_context(
     if "objective" not in context:
         title = str((parent_task or {}).get("title") or parent_task_id).strip()
         context["objective"] = f"Finish unresolved work from {title}"
+    parent_done_when = _list_of_strings((parent_spirit or {}).get("done_when"))
+    if parent_done_when:
+        context["parent_done_when"] = parent_done_when
     failure_summaries = {
         subtask["subtask_id"]: subtask["failure_summary"]
         for subtask in followup_subtasks
@@ -248,7 +247,7 @@ def _sync_followup_package(
     parent_task = get_task(parent_task_id) or {}
     parent_spirit = get_task_spirit(parent_task_id) or {}
     followup_subtasks = _build_followup_subtasks(parent_task_id, parent_spirit, failed_results)
-    done_when = _build_done_when(parent_task_id, parent_spirit, followup_subtasks)
+    done_when = _build_done_when(parent_task_id, followup_subtasks)
     context = _build_followup_context(parent_task_id, parent_task, parent_spirit, followup_subtasks)
 
     subtask_store.delete_subtasks_for_task(followup_task_id)
