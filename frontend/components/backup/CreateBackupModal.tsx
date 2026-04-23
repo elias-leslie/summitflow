@@ -4,6 +4,7 @@ import { clsx } from 'clsx'
 import { Loader2, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { SourceTypeBadge } from '@/components/backup/SourceTypeBadge'
+import { isAmbiguousDispatchError } from '@/lib/api/backup-dispatch'
 import { type BackupSource, createSourceBackup } from '@/lib/api/backups'
 
 interface CreateBackupModalProps {
@@ -16,9 +17,6 @@ interface FeedbackState {
   tone: 'error' | 'warning'
   message: string
 }
-
-const AMBIGUOUS_DISPATCH_PATTERN =
-  /(fetch failed|failed to fetch|network|socket hang up|econnreset)/i
 
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim()) {
@@ -106,9 +104,7 @@ export function CreateBackupModal({
       )
       const allFailuresAreAmbiguous =
         failureMessages.length > 0 &&
-        failureMessages.every((message) =>
-          AMBIGUOUS_DISPATCH_PATTERN.test(message),
-        )
+        failureMessages.every((message) => isAmbiguousDispatchError(message))
 
       if (failedIds.length === 0) {
         await refreshHistory()

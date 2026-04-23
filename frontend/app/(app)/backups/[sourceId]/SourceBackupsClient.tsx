@@ -21,6 +21,7 @@ import Link from 'next/link'
 import { Fragment, useRef, useState } from 'react'
 import { BackupScheduleConfig } from '@/components/backup/BackupScheduleConfig'
 import { StatusBadge } from '@/components/backup/StatusBadge'
+import { isAmbiguousDispatchError } from '@/lib/api/backup-dispatch'
 import {
   type Backup,
   type BackupSource,
@@ -321,9 +322,23 @@ export function SourceBackupsClient({ sourceId }: { sourceId: string }) {
       setShowCreateForm(false)
       setCreateNote('')
     } catch (err) {
-      setCreateError(
-        err instanceof Error ? err.message : 'Failed to create backup',
-      )
+      const fallbackMessage = 'Failed to create backup'
+      const message = err instanceof Error ? err.message : fallbackMessage
+
+      if (isAmbiguousDispatchError(message)) {
+        dispatchedAtRef.current = Date.now()
+        await queryClient.invalidateQueries({
+          queryKey: ['source-backups', sourceId],
+        })
+        await queryClient.invalidateQueries({
+          queryKey: ['storage-summary', sourceId],
+        })
+        setCreateError(
+          'Queue confirmation was lost while creating backup. It may still be queued. Check Backup History before retrying.',
+        )
+      } else {
+        setCreateError(message)
+      }
     } finally {
       setCreating(false)
     }
