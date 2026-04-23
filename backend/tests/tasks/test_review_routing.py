@@ -105,7 +105,9 @@ class TestHandleApproved:
         _handle_approved("task-1", "SIMPLE")
 
         mock_merge.assert_called_once_with("task-1")
-        mock_store.update_task_status.assert_not_called()
+        mock_store.update_task_status.assert_called_once_with(
+            "task-1", "completed", validate_transition=False
+        )
 
     @patch("app.tasks.autonomous.cleanup.checkpoint_cleanup.cleanup_task_checkpoint")
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
@@ -140,7 +142,9 @@ class TestHandleApproved:
 
         _handle_approved("task-1", "SIMPLE")
 
-        mock_store.update_task_status.assert_not_called()
+        mock_store.update_task_status.assert_called_once_with(
+            "task-1", "completed", validate_transition=False
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -166,16 +170,20 @@ class TestHandleNeedsFix:
         _handle_needs_fix("task-1", {"verdict": "NEEDS_FIX", "concerns": []})
 
         mock_merge.assert_called_once_with("task-1")
-        mock_store.update_task_status.assert_not_called()
+        mock_store.update_task_status.assert_called_once_with(
+            "task-1", "completed", validate_transition=False
+        )
 
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.create_fix_subtask")
+    @patch("app.tasks.autonomous.review_modules.routing._handle_approved")
     @patch("app.tasks.autonomous.review_modules.routing.run_qa_loop")
     @patch("app.services.task_checkout.create_task_checkout")
     @patch("app.tasks.autonomous.review_modules.routing.task_store")
     def test_with_concerns_runs_qa_loop(
         self, mock_store: MagicMock, mock_checkout: MagicMock,
-        mock_loop: MagicMock, mock_fix: MagicMock, mock_log: MagicMock,
+        mock_loop: MagicMock, mock_approved: MagicMock,
+        mock_fix: MagicMock, mock_log: MagicMock,
     ) -> None:
         mock_store.get_task.return_value = {"project_id": "test-project", "complexity": "STANDARD"}
         mock_wt = MagicMock()
@@ -187,6 +195,7 @@ class TestHandleNeedsFix:
         _handle_needs_fix("task-1", review)
 
         mock_loop.assert_called_once_with("task-1", "test-project", review, "/tmp/checkout")
+        mock_approved.assert_called_once_with("task-1", "STANDARD")
         mock_fix.assert_not_called()
         mock_store.update_task_status.assert_called_once_with("task-1", "running")
 
@@ -604,7 +613,9 @@ class TestHandleEscalation:
         _handle_escalation("task-1", {"summary": "minor issue"})
 
         mock_merge.assert_called_once_with("task-1")
-        mock_store.update_task_status.assert_not_called()
+        mock_store.update_task_status.assert_called_once_with(
+            "task-1", "completed", validate_transition=False
+        )
 
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.create_fix_subtask")

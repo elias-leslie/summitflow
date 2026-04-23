@@ -78,6 +78,12 @@ def _apply_auto_merge_status(task_id: str, merge_result: MergeResult | None) -> 
     return "auto-merge failed"
 
 
+def _prepare_auto_merge_closeout(task_id: str, project_id: str) -> None:
+    """Move approved tasks out of running before merge cleanup."""
+    if agent_configs.get_auto_merge_enabled(project_id):
+        task_store.update_task_status(task_id, STATUS_COMPLETED, validate_transition=False)
+
+
 def _send_notification(task_id: str, project_id: str, fn: Callable[..., object], **kwargs: Any) -> None:
     try:
         task = task_store.get_task(task_id)
@@ -130,6 +136,7 @@ def _handle_approved(task_id: str, complexity: str) -> None:
     from ..exec_modules.completion_status import wake_persona
 
     project_id = _get_project_id(task_id)
+    _prepare_auto_merge_closeout(task_id, project_id)
     merge_result = _maybe_auto_merge(task_id, project_id)
     label = _apply_auto_merge_status(task_id, merge_result)
     current_status = _task_status(task_id) or STATUS_COMPLETED
@@ -163,6 +170,7 @@ def _handle_needs_fix(task_id: str, review_result: Mapping[str, Any]) -> None:
     project_id = _get_project_id(task_id)
     if not concerns:
         log_task_event(task_id, f"AI Review: {verdict} with no concerns - treating as APPROVED")
+        _prepare_auto_merge_closeout(task_id, project_id)
         merge_result = _maybe_auto_merge(task_id, project_id)
         merge_label = _apply_auto_merge_status(task_id, merge_result)
         if merge_result is None:
@@ -204,6 +212,7 @@ def _handle_escalation(task_id: str, review_result: Mapping[str, Any]) -> None:
     summary = str(review_result.get("summary", "Unknown issue"))
     decision = supervisor_resolve_escalation(task_id, summary, project_id)
     if decision == DECISION_APPROVE:
+        _prepare_auto_merge_closeout(task_id, project_id)
         merge_result = _maybe_auto_merge(task_id, project_id)
         merge_label = _apply_auto_merge_status(task_id, merge_result)
         log_task_event(task_id, f"AI Review: ESCALATE - Supervisor approved, {merge_label}")
