@@ -12,6 +12,7 @@ class TestDoneWhenInReviewPrompt:
     @patch("app.tasks.autonomous.review.get_sync_client")
     @patch("app.tasks.autonomous.review._build_snapshot_block", return_value="")
     @patch("app.tasks.autonomous.review._build_scope_block", return_value="")
+    @patch("app.tasks.autonomous.review.create_task_checkout")
     @patch("app.tasks.autonomous.review.get_task_spirit")
     @patch("app.tasks.autonomous.review.collect_precision_code_search_context")
     @patch("app.tasks.autonomous.review.get_git_diff")
@@ -22,6 +23,7 @@ class TestDoneWhenInReviewPrompt:
         mock_diff: MagicMock,
         mock_precision: MagicMock,
         mock_spirit: MagicMock,
+        mock_checkout: MagicMock,
         _mock_scope_block: MagicMock,
         _mock_snapshot_block: MagicMock,
         mock_client_fn: MagicMock,
@@ -37,6 +39,7 @@ class TestDoneWhenInReviewPrompt:
         mock_diff.return_value = "+ fix"
         mock_precision.return_value.prompt_context = ""
         mock_spirit.return_value = {"done_when": ["Tests pass"]}
+        mock_checkout.return_value = MagicMock()
 
         mock_client = MagicMock()
         mock_client.complete.return_value = MagicMock(
@@ -56,6 +59,7 @@ class TestDoneWhenInReviewPrompt:
     @patch("app.tasks.autonomous.review.get_sync_client")
     @patch("app.tasks.autonomous.review._build_snapshot_block", return_value="")
     @patch("app.tasks.autonomous.review._build_scope_block", return_value="")
+    @patch("app.tasks.autonomous.review.create_task_checkout")
     @patch("app.tasks.autonomous.review.get_task_spirit")
     @patch("app.tasks.autonomous.review.collect_precision_code_search_context")
     @patch("app.tasks.autonomous.review.get_git_diff")
@@ -66,6 +70,7 @@ class TestDoneWhenInReviewPrompt:
         mock_diff: MagicMock,
         mock_precision: MagicMock,
         mock_spirit: MagicMock,
+        mock_checkout: MagicMock,
         _mock_scope_block: MagicMock,
         _mock_snapshot_block: MagicMock,
         mock_client_fn: MagicMock,
@@ -83,6 +88,7 @@ class TestDoneWhenInReviewPrompt:
         mock_diff.return_value = "+ fix"
         mock_precision.return_value.prompt_context = ""
         mock_spirit.return_value = {"done_when": ["Tests pass"]}
+        mock_checkout.return_value = MagicMock()
 
         mock_client = MagicMock()
         mock_client.complete.side_effect = RuntimeError("agent hub unavailable")
@@ -102,6 +108,7 @@ class TestDoneWhenInReviewPrompt:
     @patch("app.tasks.autonomous.review.get_sync_client")
     @patch("app.tasks.autonomous.review._build_snapshot_block", return_value="")
     @patch("app.tasks.autonomous.review._build_scope_block", return_value="")
+    @patch("app.tasks.autonomous.review.create_task_checkout")
     @patch("app.tasks.autonomous.review.get_task_spirit")
     @patch("app.tasks.autonomous.review.collect_precision_code_search_context")
     @patch("app.tasks.autonomous.review.get_git_diff")
@@ -112,6 +119,7 @@ class TestDoneWhenInReviewPrompt:
         mock_diff: MagicMock,
         mock_precision: MagicMock,
         mock_spirit: MagicMock,
+        mock_checkout: MagicMock,
         _mock_scope_block: MagicMock,
         _mock_snapshot_block: MagicMock,
         mock_client_fn: MagicMock,
@@ -128,6 +136,7 @@ class TestDoneWhenInReviewPrompt:
         mock_diff.return_value = "+ fix"
         mock_precision.return_value.prompt_context = ""
         mock_spirit.return_value = {"done_when": ["Tests pass"]}
+        mock_checkout.return_value = MagicMock()
 
         mock_client = MagicMock()
         mock_client.complete.side_effect = RuntimeError("agent hub unavailable")
@@ -145,6 +154,7 @@ class TestDoneWhenInReviewPrompt:
     @patch("app.tasks.autonomous.review.get_sync_client")
     @patch("app.tasks.autonomous.review._build_snapshot_block", return_value="Touched File Snapshots:\nFile: backend/app/main.py")
     @patch("app.tasks.autonomous.review._build_scope_block", return_value="Touched Files:\n- backend/app/main.py\n\n")
+    @patch("app.tasks.autonomous.review.create_task_checkout")
     @patch("app.tasks.autonomous.review.get_task_spirit")
     @patch("app.tasks.autonomous.review.collect_precision_code_search_context")
     @patch("app.tasks.autonomous.review.get_git_diff")
@@ -155,6 +165,7 @@ class TestDoneWhenInReviewPrompt:
         mock_diff: MagicMock,
         mock_precision: MagicMock,
         mock_spirit: MagicMock,
+        mock_checkout: MagicMock,
         _mock_scope_block: MagicMock,
         _mock_snapshot_block: MagicMock,
         mock_client_fn: MagicMock,
@@ -171,6 +182,7 @@ class TestDoneWhenInReviewPrompt:
         mock_spirit.return_value = {
             "done_when": ["API returns 200 on /health", "Tests pass"],
         }
+        mock_checkout.return_value = MagicMock()
 
         mock_client = MagicMock()
         mock_client.complete.return_value = MagicMock(
@@ -200,6 +212,7 @@ class TestDoneWhenInReviewPrompt:
     @patch("app.tasks.autonomous.review.get_sync_client")
     @patch("app.tasks.autonomous.review._build_snapshot_block", return_value="")
     @patch("app.tasks.autonomous.review._build_scope_block", return_value="")
+    @patch("app.tasks.autonomous.review.create_task_checkout")
     @patch("app.tasks.autonomous.review.get_task_spirit")
     @patch("app.tasks.autonomous.review.collect_precision_code_search_context")
     @patch("app.tasks.autonomous.review.get_git_diff")
@@ -210,6 +223,7 @@ class TestDoneWhenInReviewPrompt:
         mock_diff: MagicMock,
         mock_precision: MagicMock,
         mock_spirit: MagicMock,
+        mock_checkout: MagicMock,
         _mock_scope_block: MagicMock,
         _mock_snapshot_block: MagicMock,
         mock_client_fn: MagicMock,
@@ -224,6 +238,7 @@ class TestDoneWhenInReviewPrompt:
         mock_diff.return_value = "+ fix"
         mock_precision.return_value.prompt_context = ""
         mock_spirit.return_value = None
+        mock_checkout.return_value = MagicMock()
 
         mock_client = MagicMock()
         mock_client.complete.return_value = MagicMock(
@@ -242,6 +257,7 @@ class TestDoneWhenInReviewPrompt:
     @patch("app.tasks.autonomous.review.get_sync_client")
     @patch("app.tasks.autonomous.review._build_snapshot_block", return_value="")
     @patch("app.tasks.autonomous.review._build_scope_block", return_value="")
+    @patch("app.tasks.autonomous.review.create_task_checkout")
     @patch("app.tasks.autonomous.review.get_task_spirit")
     @patch("app.tasks.autonomous.review.collect_precision_code_search_context")
     @patch("app.tasks.autonomous.review.get_git_diff")
@@ -252,6 +268,7 @@ class TestDoneWhenInReviewPrompt:
         mock_diff: MagicMock,
         mock_precision: MagicMock,
         mock_spirit: MagicMock,
+        mock_checkout: MagicMock,
         _mock_scope_block: MagicMock,
         _mock_snapshot_block: MagicMock,
         mock_client_fn: MagicMock,
@@ -266,6 +283,7 @@ class TestDoneWhenInReviewPrompt:
         mock_diff.return_value = "+ refactored"
         mock_precision.return_value.prompt_context = ""
         mock_spirit.return_value = {"done_when": []}
+        mock_checkout.return_value = MagicMock()
 
         mock_client = MagicMock()
         mock_client.complete.return_value = MagicMock(
@@ -279,3 +297,35 @@ class TestDoneWhenInReviewPrompt:
 
         prompt = mock_client.complete.call_args[1]["messages"][0]["content"]
         assert "(none defined)" in prompt
+
+    @patch("app.tasks.autonomous.review._notify_failure")
+    @patch("app.tasks.autonomous.review.route_based_on_verdict")
+    @patch("app.tasks.autonomous.review.get_sync_client")
+    @patch("app.tasks.autonomous.review.create_task_checkout", return_value=None)
+    @patch("app.tasks.autonomous.review.get_git_diff")
+    @patch("app.tasks.autonomous.review.task_store")
+    def test_review_fails_when_checkout_cannot_be_switched(
+        self,
+        mock_store: MagicMock,
+        mock_diff: MagicMock,
+        _mock_checkout: MagicMock,
+        mock_client_fn: MagicMock,
+        _mock_route: MagicMock,
+        mock_notify_failure: MagicMock,
+    ) -> None:
+        mock_store.get_task.return_value = {
+            "title": "Fix bug",
+            "project_id": "summitflow",
+            "complexity": "STANDARD",
+        }
+        mock_store.update_task_status = MagicMock()
+
+        from app.tasks.autonomous.review import ai_review
+
+        result = ai_review("task-1", "summitflow")
+
+        assert result["status"] == "error"
+        assert "could not switch" in result["message"]
+        mock_diff.assert_not_called()
+        mock_client_fn.assert_not_called()
+        mock_notify_failure.assert_called_once()

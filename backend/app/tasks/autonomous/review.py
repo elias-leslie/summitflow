@@ -20,7 +20,7 @@ from ...services.context_gatherer import (
     PRECISION_CODE_SEARCH_GUIDANCE,
     collect_precision_code_search_context,
 )
-from ...services.task_checkout import get_execution_path
+from ...services.task_checkout import create_task_checkout, get_execution_path
 from ...services.task_harness import summarize_execution_contract
 from ...storage import log_task_event
 from ...storage import tasks as task_store
@@ -172,6 +172,18 @@ def _notify_failure(project_id: str, task_id: str, task: dict, error_message: st
         logger.exception("Failed to create notification", task_id=task_id)
 
 
+def _ensure_review_checkout(task_id: str, project_id: str, task: dict[str, Any]) -> bool:
+    """Review must run against the task branch, not whatever branch was already checked out."""
+    base_branch = str(task.get("base_branch") or "main")
+    checkout = create_task_checkout(task_id, project_id, base_branch=base_branch)
+    if checkout:
+        return True
+    logger.warning("review_checkout_unavailable", task_id=task_id, project_id=project_id)
+    task_store.update_task_status(task_id, "failed")
+    _notify_failure(project_id, task_id, task, f"Review could not switch to {task_id}/main")
+    return False
+
+
 def _check_diff_issues(task_id: str, project_id: str, task: dict, git_diff: str) -> dict | None:
     """Return an early-exit result dict if the diff is empty or erroneous, else None."""
     if not git_diff or git_diff.strip() in ("(no changes)", ""):
@@ -239,6 +251,8 @@ def ai_review(
 
     if task.get("status") != "completed":
         task_store.update_task_status(task_id, "running")
+    if not _ensure_review_checkout(task_id, project_id, task):
+        return {"task_id": task_id, "status": "error", "message": f"Review could not switch to {task_id}/main"}
     git_diff = get_git_diff(task_id, project_id)
 
     early = _check_diff_issues(task_id, project_id, task, git_diff)

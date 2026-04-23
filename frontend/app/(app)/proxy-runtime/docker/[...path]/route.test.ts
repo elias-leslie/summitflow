@@ -95,4 +95,125 @@ describe('runtime docker proxy route', () => {
       message: 'Stopped monkey-fight',
     })
   })
+
+  it('forwards request bodies without text re-encoding', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ status: 'queued' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    const payload = JSON.stringify({ note: 'burst create', keep_local: false })
+    await POST(
+      new Request(
+        'http://localhost/proxy-runtime/docker/backup-sources/test/backups',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+        },
+      ),
+      {
+        params: Promise.resolve({
+          path: ['backup-sources', 'test', 'backups'],
+        }),
+      },
+    )
+
+    const [, init] = fetchMock.mock.calls[0] ?? []
+    expect(init?.body).toBeInstanceOf(ArrayBuffer)
+    expect(new TextDecoder().decode(init?.body as ArrayBuffer)).toBe(payload)
+  })
+
+  it('keeps concurrent queued POST bodies isolated', async () => {
+    fetchMock.mockImplementation(async (_url, init) => {
+      const body = init?.body as ArrayBuffer | undefined
+      return new Response(
+        JSON.stringify({
+          status: 'queued',
+          note: body ? new TextDecoder().decode(body) : null,
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      )
+    })
+
+    const requests = await Promise.all([
+      POST(
+        new Request(
+          'http://localhost/proxy-runtime/docker/backup-sources/a/backups',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note: 'one' }),
+          },
+        ),
+        {
+          params: Promise.resolve({ path: ['backup-sources', 'a', 'backups'] }),
+        },
+      ).then((response) => response.json()),
+      POST(
+        new Request(
+          'http://localhost/proxy-runtime/docker/backup-sources/b/backups',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note: 'two' }),
+          },
+        ),
+        {
+          params: Promise.resolve({ path: ['backup-sources', 'b', 'backups'] }),
+        },
+      ).then((response) => response.json()),
+      POST(
+        new Request(
+          'http://localhost/proxy-runtime/docker/backup-sources/c/backups',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note: 'three' }),
+          },
+        ),
+        {
+          params: Promise.resolve({ path: ['backup-sources', 'c', 'backups'] }),
+        },
+      ).then((response) => response.json()),
+    ])
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(requests).toEqual([
+      { status: 'queued', note: '{"note":"one"}' },
+      { status: 'queued', note: '{"note":"two"}' },
+      { status: 'queued', note: '{"note":"three"}' },
+    ])
+  })
+
+  it('returns stable 502 json when upstream resets during queued backup create burst', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('socket hang up'))
+
+    const response = await POST(
+      new Request(
+        'http://localhost/proxy-runtime/docker/backup-sources/test/backups',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note: 'queued create' }),
+        },
+      ),
+      {
+        params: Promise.resolve({
+          path: ['backup-sources', 'test', 'backups'],
+        }),
+      },
+    )
+
+    expect(response.status).toBe(502)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Runtime proxy upstream unavailable',
+      detail: 'socket hang up',
+    })
+  })
 })
