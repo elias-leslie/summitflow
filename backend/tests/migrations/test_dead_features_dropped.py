@@ -96,8 +96,8 @@ class TestEvidenceSystemDropped:
             exists = row[0]
             assert not exists, "project_evidence_config table should be dropped"
 
-    def test_no_evidence_tables_exist(self) -> None:
-        """No tables with 'evidence' in name should exist."""
+    def test_no_legacy_evidence_tables_exist(self) -> None:
+        """Legacy evidence tables stay dropped even though route_evidence is allowed."""
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -107,7 +107,18 @@ class TestEvidenceSystemDropped:
                 """
             )
             tables = [row[0] for row in cur.fetchall()]
-            assert not tables, f"Evidence tables should not exist: {tables}"
+            legacy_tables = sorted(
+                {
+                    'evidence',
+                    'evidence_regressions',
+                    'evidence_capture_jobs',
+                    'evidence_types',
+                    'project_evidence_config',
+                }.intersection(tables)
+            )
+            assert not legacy_tables, (
+                f"Legacy evidence tables should not exist: {legacy_tables}"
+            )
 
 
 class TestTestsSystemDropped:

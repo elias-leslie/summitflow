@@ -16,6 +16,7 @@ from .tables import (
     create_explorer_tables,
     create_notes_tables,
     create_notifications_tables,
+    create_route_evidence_tables,
 )
 
 logger = get_logger(__name__)
@@ -64,6 +65,7 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
     create_notes_tables(cur)
     create_design_tables(cur)
     create_explorer_tables(cur)
+    create_route_evidence_tables(cur)
 
     # Apply backward compatibility migrations
     apply_schema_migrations(conn, cur)

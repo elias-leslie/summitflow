@@ -25,6 +25,14 @@ export type ExplorerEntryType =
   | 'architecture'
 export type ExplorerHealthStatus = 'healthy' | 'warning' | 'error' | 'unknown'
 
+export interface ExplorerRouteEvidenceSummaryItem {
+  evidence_id: string
+  comment: string
+  selector: string | null
+  created_at: string | null
+  created_by_display: string | null
+}
+
 export interface ExplorerEntryMetadata {
   // File metadata
   is_directory?: boolean
@@ -85,6 +93,7 @@ export interface ExplorerEntryMetadata {
   // Page metadata
   route_params?: string[]
   url?: string
+  recent_route_evidence?: ExplorerRouteEvidenceSummaryItem[]
 
   // Dependency metadata
   package_type?: 'python' | 'nodejs'
