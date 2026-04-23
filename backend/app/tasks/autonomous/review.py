@@ -16,10 +16,6 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
-from ...services.context_gatherer import (
-    PRECISION_CODE_SEARCH_GUIDANCE,
-    collect_precision_code_search_context,
-)
 from ...services.task_checkout import create_task_checkout, get_execution_path
 from ...services.task_harness import summarize_execution_contract
 from ...storage import log_task_event
@@ -48,25 +44,6 @@ def _get_spirit_context(task_id: str) -> dict[str, Any]:
     spirit = get_task_spirit(task_id)
     context = spirit.get("context") if spirit else {}
     return context if isinstance(context, dict) else {}
-
-
-def _build_precision_context(task: dict[str, Any], task_id: str, project_id: str) -> str:
-    """Build shared Precision Code Search context for reviewer prompts."""
-    spirit = get_task_spirit(task_id)
-    done_when = spirit.get("done_when", []) if spirit else []
-    queries = [
-        str(task.get("title", "")),
-        str(task.get("description", "")),
-        *(str(item) for item in done_when),
-    ]
-    result = collect_precision_code_search_context(
-        project_id,
-        queries,
-        budget_tokens=1200,
-    )
-    if not result.prompt_context:
-        return ""
-    return f"Precision Code Search:\n{result.prompt_context}\n\n"
 
 
 def _collect_touched_files(task_id: str, project_id: str) -> list[str]:
@@ -211,20 +188,17 @@ def _build_prompt(task: dict, complexity: str, git_diff: str, task_id: str) -> s
     spirit = get_task_spirit(task_id)
     done_when = spirit.get("done_when", []) if spirit else []
     done_when_text = "\n".join(f"- {c}" for c in done_when) if done_when else "(none defined)"
-    precision_context = _build_precision_context(task, task_id, task.get("project_id", ""))
     scope_block = _build_scope_block(task_id, task.get("project_id", ""))
     snapshot_block = _build_snapshot_block(task_id, task.get("project_id", ""))
     contract_block = _build_execution_contract_block(task_id)
 
     return (
         f"Task: {task.get('title', '')}\nComplexity: {complexity}\n\n"
-        f"{precision_context}"
         f"Success Criteria (done_when):\n{done_when_text}\n\n"
         f"{contract_block}"
         f"{scope_block}"
         f"{snapshot_block}"
         f"Git Diff:\n```\n{git_diff[:50000]}\n```\n\n"
-        f"{PRECISION_CODE_SEARCH_GUIDANCE}\n"
         "If done_when criteria are defined, verify the diff addresses each one.\n"
         "Review the touched area, not just the patch. Reject code that leaves touched files structurally worse without justification.\n"
         "Flag new duplication, dead code, stale compatibility wrappers, broadened scope beyond the touched files, or maintainability regressions in touched files.\n\n"
