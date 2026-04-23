@@ -221,7 +221,7 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
     @patch("app.tasks.autonomous.pickup_queries.task_store")
-    def test_second_opinion_needs_revision_routes_back_to_planning(
+    def test_second_opinion_needs_revision_stays_parked_until_plan_inputs_change(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:
         from app.tasks.autonomous.pickup import _determine_next_stage
@@ -230,6 +230,41 @@ class TestDetermineNextStage:
         mock_spirit.return_value = {
             "done_when": ["Endpoint returns 200"],
             "context": {"second_opinion": {"status": "needs_revision", "stage": "task_shape"}},
+        }
+        mock_subtasks.return_value = [{"subtask_id": "1.1", "passes": False}]
+
+        with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
+            mock_ready.return_value = MagicMock(ready=False, missing_fields=["second_opinion"])
+            assert _determine_next_stage("task-1") == "unknown"
+
+    @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
+    @patch("app.tasks.autonomous.pickup_queries.task_store")
+    @patch("app.tasks.autonomous.pickup_queries.build_task_planning_signature", return_value="sig-new")
+    def test_second_opinion_needs_revision_replans_after_task_shape_changes(
+        self,
+        _mock_signature: MagicMock,
+        mock_store: MagicMock,
+        mock_spirit: MagicMock,
+        mock_subtasks: MagicMock,
+    ) -> None:
+        from app.tasks.autonomous.pickup import _determine_next_stage
+
+        task_updated_at = datetime(2026, 3, 24, 12, 18, 4, tzinfo=UTC)
+        plan_updated_at = datetime(2026, 3, 24, 12, 17, 5, tzinfo=UTC)
+        mock_store.get_task.return_value = {
+            "labels": [],
+            "description": "Add API endpoint",
+            "updated_at": task_updated_at,
+            "created_at": datetime(2026, 3, 24, 12, 17, 4, tzinfo=UTC),
+        }
+        mock_spirit.return_value = {
+            "done_when": ["Endpoint returns 200"],
+            "context": {
+                "planning_signature": "sig-old",
+                "second_opinion": {"status": "needs_revision", "stage": "task_shape"},
+            },
+            "updated_at": plan_updated_at.isoformat(),
         }
         mock_subtasks.return_value = [{"subtask_id": "1.1", "passes": False}]
 

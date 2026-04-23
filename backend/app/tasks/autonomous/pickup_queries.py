@@ -81,6 +81,27 @@ def _second_opinion_status(spirit: dict[str, Any] | None) -> str:
     return status
 
 
+def _needs_revision_replan_required(
+    task: dict[str, Any],
+    spirit: dict[str, Any] | None,
+    subtasks: list[dict[str, Any]],
+) -> bool:
+    """Return True only when a parked NEEDS_REVISION package has concrete evidence of change."""
+    if not _has_saved_plan_artifacts(spirit, subtasks):
+        return False
+
+    current_signature = build_task_planning_signature(task)
+    stored_signature = _stored_plan_signature(spirit)
+    if current_signature and stored_signature:
+        return current_signature != stored_signature
+
+    task_updated_at = _parse_timestamp(task.get("updated_at")) or _parse_timestamp(task.get("created_at"))
+    planned_at = _latest_plan_timestamp(spirit, subtasks)
+    if task_updated_at is None or planned_at is None:
+        return False
+    return task_updated_at > planned_at
+
+
 def _should_replan(
     task: dict[str, Any],
     spirit: dict[str, Any] | None,
@@ -138,7 +159,9 @@ def determine_next_stage(task_id: str) -> str:
             return "planning"
         if "second_opinion" in readiness.missing_fields:
             if second_opinion_status == "needs_revision":
-                return "planning"
+                if _needs_revision_replan_required(task, spirit, subtasks):
+                    return "planning"
+                return "unknown"
             if second_opinion_status in {"pending", ""}:
                 return "critique"
         return "unknown"
