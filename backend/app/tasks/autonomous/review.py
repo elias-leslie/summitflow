@@ -17,6 +17,7 @@ from typing import Any
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...services.task_checkout import create_task_checkout, get_execution_path
+from ...services.task_checkout.operations import _checkout
 from ...services.task_harness import summarize_execution_contract
 from ...storage import log_task_event
 from ...storage import tasks as task_store
@@ -150,15 +151,27 @@ def _notify_failure(project_id: str, task_id: str, task: dict, error_message: st
 
 
 def _ensure_review_checkout(task_id: str, project_id: str, task: dict[str, Any]) -> bool:
-    """Review must run against the task branch, not whatever branch was already checked out."""
+    """Prefer task branch for review, but fall back to merged/base state if branch is gone."""
     base_branch = str(task.get("base_branch") or "main")
     checkout = create_task_checkout(task_id, project_id, base_branch=base_branch)
     if checkout:
         return True
-    logger.warning("review_checkout_unavailable", task_id=task_id, project_id=project_id)
-    task_store.update_task_status(task_id, "failed")
-    _notify_failure(project_id, task_id, task, f"Review could not switch to {task_id}/main")
-    return False
+
+    try:
+        project_path = get_execution_path(task_id, project_id)
+        _checkout(base_branch, Path(project_path))
+        logger.warning(
+            "review_checkout_branch_missing_using_base",
+            task_id=task_id,
+            project_id=project_id,
+            base_branch=base_branch,
+        )
+        return True
+    except Exception:
+        logger.warning("review_checkout_unavailable", task_id=task_id, project_id=project_id, exc_info=True)
+        task_store.update_task_status(task_id, "failed")
+        _notify_failure(project_id, task_id, task, f"Review could not switch to {task_id}/main or {base_branch}")
+        return False
 
 
 def _check_diff_issues(task_id: str, project_id: str, task: dict, git_diff: str) -> dict | None:

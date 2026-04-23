@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from app.tasks.autonomous.review_modules.actions import (
     MAX_QA_LOOP_ITERATIONS,
@@ -345,6 +345,35 @@ class TestRunQALoop:
         assert result == "APPROVED"
         assert client.complete.call_count == 2  # debugger + reviewer
         mock_save.assert_called_once()
+
+    @patch("app.tasks.autonomous.review_modules.actions._run_reviewer")
+    @patch("app.tasks.autonomous.review_modules.actions._get_diff_text", return_value="diff")
+    @patch("app.tasks.autonomous.review_modules.actions._run_debugger", return_value=True)
+    @patch("app.tasks.autonomous.review_modules.actions.create_task_checkout")
+    def test_qa_loop_reacquires_task_checkout_before_debugger(
+        self,
+        mock_checkout: MagicMock,
+        mock_run_debugger: MagicMock,
+        mock_diff_text: MagicMock,
+        mock_run_reviewer: MagicMock,
+        tmp_path: Any,
+    ) -> None:
+        checkout = MagicMock()
+        checkout.path = "/tmp/task-checkout"
+        mock_checkout.return_value = checkout
+        mock_run_reviewer.return_value = ({"verdict": "APPROVED", "concerns": []}, "APPROVED")
+
+        result = run_qa_loop(
+            "task-1", "test-project",
+            {"concerns": ["bug"], "recommendation": "fix it"},
+            str(tmp_path),
+        )
+
+        assert result == "APPROVED"
+        mock_run_debugger.assert_called_once_with(
+            "task-1", "test-project", "/tmp/task-checkout", ANY, 1
+        )
+        mock_diff_text.assert_called_once_with("/tmp/task-checkout")
 
     @patch("app.tasks.autonomous.review_modules.actions.save_qa_fix_pattern")
     @patch("app.tasks.autonomous.review_modules.actions.log_task_event")

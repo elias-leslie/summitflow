@@ -250,37 +250,38 @@ def _sync_followup_package(
     done_when = _build_done_when(parent_task_id, followup_subtasks)
     context = _build_followup_context(parent_task_id, parent_task, parent_spirit, followup_subtasks)
 
-    subtask_store.delete_subtasks_for_task(followup_task_id)
-    for display_order, subtask in enumerate(followup_subtasks):
-        subtask_store.create_subtask(
-            followup_task_id,
-            str(subtask["subtask_id"]),
-            str(subtask["description"]),
-            display_order,
-            phase=subtask.get("phase"),
-            steps=subtask.get("steps"),
-            depends_on=subtask.get("depends_on"),
-            subtask_type=subtask.get("subtask_type"),
+    with get_connection() as conn, conn.transaction():
+        subtask_store.delete_subtasks_for_task(followup_task_id)
+        for display_order, subtask in enumerate(followup_subtasks):
+            subtask_store.create_subtask(
+                followup_task_id,
+                str(subtask["subtask_id"]),
+                str(subtask["description"]),
+                display_order,
+                phase=subtask.get("phase"),
+                steps=subtask.get("steps"),
+                depends_on=subtask.get("depends_on"),
+                subtask_type=subtask.get("subtask_type"),
+            )
+
+        dependencies = [
+            (str(subtask["subtask_id"]), dependency)
+            for subtask in followup_subtasks
+            for dependency in _list_of_strings(subtask.get("depends_on"))
+        ]
+        if dependencies:
+            subtask_store.bulk_add_subtask_dependencies(followup_task_id, dependencies)
+
+        upsert_task_spirit(
+            task_id=followup_task_id,
+            done_when=done_when,
+            context=context,
+            complexity=str(
+                (parent_spirit or {}).get("complexity")
+                or (parent_task or {}).get("complexity")
+                or "STANDARD"
+            ),
         )
-
-    dependencies = [
-        (str(subtask["subtask_id"]), dependency)
-        for subtask in followup_subtasks
-        for dependency in _list_of_strings(subtask.get("depends_on"))
-    ]
-    if dependencies:
-        subtask_store.bulk_add_subtask_dependencies(followup_task_id, dependencies)
-
-    upsert_task_spirit(
-        task_id=followup_task_id,
-        done_when=done_when,
-        context=context,
-        complexity=str(
-            (parent_spirit or {}).get("complexity")
-            or (parent_task or {}).get("complexity")
-            or "STANDARD"
-        ),
-    )
     readiness = sync_task_execution_readiness(
         followup_task_id,
         approved_by="autocode-followup",
