@@ -46,7 +46,21 @@ async def update_task(project_id: str, task_id: str, update: TaskUpdate) -> Task
 
     # Split into task fields and spirit fields.
     # Rich task-plan metadata now lives in task_spirit.context for round-trip fidelity.
-    spirit_fields = {"done_when", "objective", "spirit_anti", "decisions", "constraints"}
+    spirit_fields = {
+        "done_when",
+        "objective",
+        "spirit_anti",
+        "decisions",
+        "constraints",
+        "risks",
+        "files_to_create",
+        "files_to_modify",
+        "references",
+        "testing_strategy",
+        "second_opinion",
+        "execution_contract",
+        "subtasks",
+    }
     task_updates = {k: v for k, v in update_fields.items() if k not in spirit_fields}
     spirit_updates = {
         k: v for k, v in update_fields.items() if k in spirit_fields and k != "labels"
