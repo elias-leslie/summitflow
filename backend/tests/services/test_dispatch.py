@@ -126,6 +126,27 @@ class TestDispatchTaskClaiming:
         mock_trigger.assert_called_once_with("ideation", "task-1", "monkey-fight")
         assert result["status"] == "dispatched"
 
+    @pytest.mark.asyncio
+    @patch("app.services.dispatch._trigger_workflow", new_callable=AsyncMock)
+    @patch("app.services.dispatch.claim_task")
+    @patch("app.services.dispatch._determine_next_stage", return_value="review")
+    @patch("app.services.dispatch.task_store")
+    async def test_review_stage_skips_claim(
+        self,
+        mock_task_store: MagicMock,
+        mock_stage: MagicMock,
+        mock_claim: MagicMock,
+        mock_trigger: AsyncMock,
+    ) -> None:
+        """Review stage does not attempt to claim the task."""
+        mock_task_store.get_task.return_value = {"id": "task-1", "status": "pending"}
+
+        result = await dispatch_task("task-1", "monkey-fight")
+
+        mock_claim.assert_not_called()
+        mock_trigger.assert_called_once_with("review", "task-1", "monkey-fight")
+        assert result["status"] == "dispatched"
+
 
 class TestDispatchTaskBasics:
     """Tests for dispatch_task foundational behavior."""

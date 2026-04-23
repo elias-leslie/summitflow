@@ -31,6 +31,7 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
         execute_wf,
         ideate_wf,
         plan_wf,
+        review_wf,
         triage_wf,
     )
 
@@ -42,6 +43,7 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
         "planning": plan_wf,
         "critique": critique_wf,
         "execution": execute_wf,
+        "review": review_wf,
     }
 
     workflow = workflow_map.get(stage)

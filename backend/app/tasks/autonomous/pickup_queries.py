@@ -127,7 +127,7 @@ def determine_next_stage(task_id: str) -> str:
     """Determine which pipeline stage a queued task needs.
 
     Returns:
-        Stage name: 'ideation', 'triage', 'planning', 'execution', or 'unknown'
+        Stage name: 'ideation', 'triage', 'planning', 'execution', 'review', or 'unknown'
     """
     task = task_store.get_task(task_id)
     if not task:
@@ -160,6 +160,9 @@ def determine_next_stage(task_id: str) -> str:
 
     if any(not s.get("passes") for s in subtasks):
         return "execution"
+
+    if task.get("status") == "pending":
+        return "review"
 
     return "unknown"
 
