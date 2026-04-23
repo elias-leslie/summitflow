@@ -180,8 +180,8 @@ def _handle_needs_fix(task_id: str, review_result: Mapping[str, Any]) -> None:
         if _task_status(task_id) == STATUS_COMPLETED:
             _send_notification(task_id, project_id, create_task_completion_notification, detail=f"QA passed with no concerns ({merge_label}).")
         return
-    from app.services.task_checkout import get_task_checkout
-    checkout = get_task_checkout(task_id, project_id)
+    from app.services.task_checkout import create_task_checkout
+    checkout = create_task_checkout(task_id, project_id)
     if checkout and checkout.path:
         _set_followup_status(task_id, fallback=STATUS_RUNNING)
         log_task_event(task_id, f"AI Review: {verdict} - Starting QA loop")

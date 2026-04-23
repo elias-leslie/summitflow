@@ -171,7 +171,7 @@ class TestHandleNeedsFix:
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.create_fix_subtask")
     @patch("app.tasks.autonomous.review_modules.routing.run_qa_loop")
-    @patch("app.services.task_checkout.get_task_checkout")
+    @patch("app.services.task_checkout.create_task_checkout")
     @patch("app.tasks.autonomous.review_modules.routing.task_store")
     def test_with_concerns_runs_qa_loop(
         self, mock_store: MagicMock, mock_checkout: MagicMock,
@@ -193,7 +193,7 @@ class TestHandleNeedsFix:
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing._handle_approved")
     @patch("app.tasks.autonomous.review_modules.routing.run_qa_loop")
-    @patch("app.services.task_checkout.get_task_checkout")
+    @patch("app.services.task_checkout.create_task_checkout")
     @patch("app.tasks.autonomous.review_modules.routing.task_store")
     def test_completed_task_reopens_before_qa_loop_and_recloses_on_approval(
         self, mock_store: MagicMock, mock_checkout: MagicMock,
@@ -219,7 +219,7 @@ class TestHandleNeedsFix:
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.create_fix_subtask")
     @patch("app.tasks.autonomous.review_modules.routing.run_qa_loop")
-    @patch("app.services.task_checkout.get_task_checkout")
+    @patch("app.services.task_checkout.create_task_checkout")
     @patch("app.tasks.autonomous.review_modules.routing.task_store")
     def test_qa_loop_exhausted_creates_fix_subtask(
         self, mock_store: MagicMock, mock_checkout: MagicMock,
@@ -240,7 +240,7 @@ class TestHandleNeedsFix:
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.create_fix_subtask")
     @patch("app.tasks.autonomous.review_modules.routing.run_qa_loop")
-    @patch("app.services.task_checkout.get_task_checkout")
+    @patch("app.services.task_checkout.create_task_checkout")
     @patch("app.tasks.autonomous.review_modules.routing.task_store")
     def test_qa_loop_exhausted_reopens_completed_task_to_pending(
         self, mock_store: MagicMock, mock_checkout: MagicMock,
@@ -261,7 +261,7 @@ class TestHandleNeedsFix:
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing._handle_escalation")
     @patch("app.tasks.autonomous.review_modules.routing.run_qa_loop")
-    @patch("app.services.task_checkout.get_task_checkout")
+    @patch("app.services.task_checkout.create_task_checkout")
     @patch("app.tasks.autonomous.review_modules.routing.task_store")
     def test_qa_loop_escalate_routes_to_escalation(
         self, mock_store: MagicMock, mock_checkout: MagicMock,
@@ -280,7 +280,7 @@ class TestHandleNeedsFix:
 
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.create_fix_subtask")
-    @patch("app.services.task_checkout.get_task_checkout")
+    @patch("app.services.task_checkout.create_task_checkout")
     @patch("app.tasks.autonomous.review_modules.routing.task_store")
     def test_no_checkout_falls_back_to_fix_subtask(
         self, mock_store: MagicMock, mock_checkout: MagicMock,
