@@ -39,8 +39,8 @@ def handle_early_completion(
         return {
             "task_id": task_id,
             "status": final_status,
-            "message": "Triggered QA review for complete subtasks"
-            if final_status == "completed"
+            "message": "Queued AI review for complete subtasks"
+            if final_status == "running"
             else "Completed without review",
         }
     except Exception as e:
