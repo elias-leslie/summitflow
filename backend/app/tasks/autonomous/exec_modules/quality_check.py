@@ -27,7 +27,7 @@ _NO_CODE_MARKERS = (
     "temporary validation task only",
 )
 
-_NO_CODE_STEP_MARKERS = (
+_NO_CODE_STEP_PREFIXES = (
     "inspect",
     "confirm",
     "verify",
@@ -45,9 +45,11 @@ _NO_CODE_STEP_MARKERS = (
     "reproduce",
     "classify",
     "validate",
+    "run targeted validation",
+    "run validation",
 )
 
-_CODE_CHANGE_MARKERS = (
+_CODE_CHANGE_PREFIXES = (
     "implement",
     "fix",
     "update",
@@ -133,8 +135,8 @@ def _allows_no_code_steps(steps: list[dict[str, Any]]) -> bool:
     if not step_texts:
         return False
     return all(
-        any(marker in text for marker in _NO_CODE_STEP_MARKERS)
-        and not any(marker in text for marker in _CODE_CHANGE_MARKERS)
+        any(text.startswith(prefix) for prefix in _NO_CODE_STEP_PREFIXES)
+        and not any(text.startswith(prefix) for prefix in _CODE_CHANGE_PREFIXES)
         for text in step_texts
     )
 
