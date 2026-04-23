@@ -807,7 +807,7 @@ class TestTaskCliErgonomics:
         }
         assert spirit["context"]["second_opinion"]["stage"] == "task_shape"
 
-    def test_build_pre_close_review_packet_uses_primary_only_for_pre_close_stage(self) -> None:
+    def test_build_pre_close_review_packet_uses_primary_for_both_stage_when_history_missing(self) -> None:
         from cli.commands.tasks_critique import _build_review_packet
 
         task = _make_mock_task("task-mock-primary", status="completed")
@@ -815,7 +815,7 @@ class TestTaskCliErgonomics:
             "context": {
                 "second_opinion": {
                     "required": True,
-                    "stage": "pre_close",
+                    "stage": "both",
                     "status": "completed",
                     "summary": "Primary closeout review.",
                     "verdict": "APPROVED",
@@ -827,7 +827,7 @@ class TestTaskCliErgonomics:
             packet = _build_review_packet(task, spirit, [], stage="pre_close")
 
         assert packet["closeout"]["active_review"] == {
-            "stage": "pre_close",
+            "stage": "both",
             "status": "completed",
             "summary": "Primary closeout review.",
             "verdict": "APPROVED",
@@ -1706,3 +1706,25 @@ class TestVerifyPlanGates:
 
             assert result.exit_code == 1
             assert "1.99" in result.output
+
+
+    def test_build_pre_close_review_packet_falls_back_to_pending_for_legacy_primary_task_shape(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-mock-legacy", status="completed")
+        spirit = {
+            "context": {
+                "second_opinion": {
+                    "required": True,
+                    "stage": "task_shape",
+                    "status": "needs_revision",
+                    "summary": "Legacy shape note.",
+                }
+            }
+        }
+
+        with patch("cli.commands.tasks_critique.get_events_by_trace", return_value=[]):
+            packet = _build_review_packet(task, spirit, [], stage="pre_close")
+
+        assert packet["closeout"]["active_review"] == {"stage": "pre_close", "status": "pending"}
+

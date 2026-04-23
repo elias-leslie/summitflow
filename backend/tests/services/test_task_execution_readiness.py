@@ -530,6 +530,36 @@ class TestSecondOpinionParsing:
         assert review["status"] == "completed"
         assert review["summary"] == "Ready to close."
 
+
+    def test_active_closeout_review_uses_primary_pre_close_or_both_only(self) -> None:
+        pre_close_review = _active_closeout_review(
+            {
+                "required": True,
+                "stage": "pre_close",
+                "status": "completed",
+                "summary": "Ready to close.",
+                "verdict": "APPROVED",
+            }
+        )
+        both_review = _active_closeout_review(
+            {
+                "required": True,
+                "stage": "both",
+                "status": "completed",
+                "summary": "Ready at both gates.",
+                "verdict": "APPROVED",
+            }
+        )
+
+        assert pre_close_review["stage"] == "pre_close"
+        assert pre_close_review["status"] == "completed"
+        assert pre_close_review["summary"] == "Ready to close."
+        assert pre_close_review["verdict"] == "APPROVED"
+        assert both_review["stage"] == "both"
+        assert both_review["status"] == "completed"
+        assert both_review["summary"] == "Ready at both gates."
+        assert both_review["verdict"] == "APPROVED"
+
     def test_active_closeout_review_falls_back_to_pending_for_malformed_payload(self) -> None:
         review = _active_closeout_review(
             {
