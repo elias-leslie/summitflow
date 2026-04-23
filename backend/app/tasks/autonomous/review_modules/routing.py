@@ -183,6 +183,7 @@ def _handle_needs_fix(task_id: str, review_result: Mapping[str, Any]) -> None:
     from app.services.task_checkout import get_task_checkout
     checkout = get_task_checkout(task_id, project_id)
     if checkout and checkout.path:
+        _set_followup_status(task_id, fallback=STATUS_RUNNING)
         log_task_event(task_id, f"AI Review: {verdict} - Starting QA loop")
         loop_result = run_qa_loop(task_id, project_id, review_result, str(checkout.path))
         if loop_result == VERDICT_APPROVED:

@@ -188,6 +188,33 @@ class TestHandleNeedsFix:
 
         mock_loop.assert_called_once_with("task-1", "test-project", review, "/tmp/checkout")
         mock_fix.assert_not_called()
+        mock_store.update_task_status.assert_called_once_with("task-1", "running")
+
+    @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
+    @patch("app.tasks.autonomous.review_modules.routing._handle_approved")
+    @patch("app.tasks.autonomous.review_modules.routing.run_qa_loop")
+    @patch("app.services.task_checkout.get_task_checkout")
+    @patch("app.tasks.autonomous.review_modules.routing.task_store")
+    def test_completed_task_reopens_before_qa_loop_and_recloses_on_approval(
+        self, mock_store: MagicMock, mock_checkout: MagicMock,
+        mock_loop: MagicMock, mock_approved: MagicMock, mock_log: MagicMock,
+    ) -> None:
+        mock_store.get_task.return_value = {
+            "project_id": "test-project",
+            "status": "completed",
+            "complexity": "STANDARD",
+        }
+        mock_wt = MagicMock()
+        mock_wt.path = "/tmp/checkout"
+        mock_checkout.return_value = mock_wt
+        mock_loop.return_value = "APPROVED"
+
+        review = {"verdict": "NEEDS_FIX", "concerns": ["missing coverage"]}
+        _handle_needs_fix("task-1", review)
+
+        mock_store.update_task_status.assert_called_once_with("task-1", "pending")
+        mock_loop.assert_called_once_with("task-1", "test-project", review, "/tmp/checkout")
+        mock_approved.assert_called_once_with("task-1", "STANDARD")
 
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing.create_fix_subtask")
