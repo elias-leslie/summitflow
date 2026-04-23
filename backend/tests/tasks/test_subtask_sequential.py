@@ -253,6 +253,56 @@ def test_subtask_execution_winds_down_when_task_is_paused() -> None:
     )
 
 
+def test_subtask_execution_orders_incomplete_work_by_dependencies() -> None:
+    """Dependency order should win over incoming list order for incomplete subtasks."""
+    task_id = "test-dependency-order"
+    project_id = "test-project"
+    project_path = "/tmp/test-project"
+
+    subtasks = [
+        {"subtask_id": "1.3", "description": "Third", "depends_on": ["1.2"]},
+        {"subtask_id": "1.2", "description": "Second", "depends_on": ["1.1"]},
+        {"subtask_id": "1.1", "description": "First"},
+    ]
+    result_sequence = [
+        {"status": "passed", "subtask_id": "1.1"},
+        {"status": "passed", "subtask_id": "1.2"},
+        {"status": "passed", "subtask_id": "1.3"},
+    ]
+
+    with patch(
+        "app.tasks.autonomous.exec_modules.execution_loop.execute_subtask",
+        side_effect=result_sequence,
+    ) as mock_execute, patch(
+        "app.tasks.autonomous.exec_modules.execution_loop.emit_log"
+    ), patch(
+        "app.tasks.autonomous.exec_modules.execution_loop.emit_progress"
+    ), patch(
+        "app.tasks.autonomous.exec_modules.execution_loop.has_uncommitted_changes",
+        return_value=False,
+    ), patch(
+        "app.tasks.autonomous.exec_modules.execution_loop._check_health_or_wait",
+        return_value=True,
+    ), patch(
+        "app.tasks.autonomous.exec_modules.execution_loop.assert_task_runnable",
+    ):
+        results, completed_count, wind_down_state = execute_subtask_loop(
+            task_id=task_id,
+            project_id=project_id,
+            project_path=project_path,
+            incomplete_subtasks=subtasks,
+            total_subtasks=len(subtasks),
+            completed_count=0,
+            task_type=None,
+            agent_override=None,
+        )
+
+    assert [call.args[1]["subtask_id"] for call in mock_execute.call_args_list] == ["1.1", "1.2", "1.3"]
+    assert [result["subtask_id"] for result in results] == ["1.1", "1.2", "1.3"]
+    assert completed_count == 3
+    assert wind_down_state is None
+
+
 @patch("app.tasks.autonomous.exec_modules.orchestrator.check_task_lane_conflicts", return_value=TaskLaneConflictCheck())
 @patch("app.tasks.autonomous.exec_modules.orchestrator.task_store")
 @patch("app.tasks.autonomous.exec_modules.orchestrator.get_subtasks_for_task")
@@ -723,6 +773,88 @@ def test_start_execution_skips_duplicate_same_task_lane(
     }
     assert mock_emit_log.call_args_list[-1].args[2] == (
         "Execution skipped: active task session already owned by session sess-existing"
+    )
+
+
+@patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.execute_task_locked", return_value={"status": "executed"})
+@patch("app.tasks.autonomous.exec_modules.orchestrator._close_agent_hub_session", return_value=True)
+@patch(
+    "app.tasks.autonomous.exec_modules.orchestrator._fetch_agent_hub_session",
+    return_value={
+        "status": "completed",
+        "live_activity": {"health": "completed", "lifecycle_state": "reapable", "reapable": True},
+    },
+)
+@patch("app.tasks.autonomous.exec_modules.orchestrator.check_task_lane_conflicts")
+def test_start_execution_reclaims_stale_same_task_lane(
+    mock_lane_conflicts: MagicMock,
+    mock_fetch_session: MagicMock,
+    mock_close_session: MagicMock,
+    mock_execute_locked: MagicMock,
+    mock_emit_log: MagicMock,
+) -> None:
+    mock_lane_conflicts.side_effect = [
+        TaskLaneConflictCheck(
+            overlap_kind="stale_same_task",
+            disposition="reconcile",
+            owner_session_id="sess-stale",
+            owner_location="checkout /tmp/task-123",
+        ),
+        TaskLaneConflictCheck(),
+    ]
+
+    result = start_execution("task-123", "agent-hub")
+
+    assert result == {"status": "executed"}
+    mock_fetch_session.assert_called_once_with("sess-stale")
+    mock_close_session.assert_called_once_with("sess-stale")
+    mock_execute_locked.assert_called_once_with("task-123", "agent-hub", dispatch=None)
+    assert any(
+        call.args[2] == "Reclaiming stale same-task session sess-stale"
+        for call in mock_emit_log.call_args_list
+    )
+
+
+@patch("app.tasks.autonomous.exec_modules.orchestrator.emit_log")
+@patch("app.tasks.autonomous.exec_modules.orchestrator.execute_task_locked")
+@patch("app.tasks.autonomous.exec_modules.orchestrator._close_agent_hub_session", return_value=False)
+@patch(
+    "app.tasks.autonomous.exec_modules.orchestrator._fetch_agent_hub_session",
+    return_value={
+        "status": "completed",
+        "live_activity": {"health": "completed", "lifecycle_state": "reapable", "reapable": True},
+    },
+)
+@patch("app.tasks.autonomous.exec_modules.orchestrator.check_task_lane_conflicts")
+def test_start_execution_blocks_when_stale_same_task_reclaim_fails(
+    mock_lane_conflicts: MagicMock,
+    mock_fetch_session: MagicMock,
+    mock_close_session: MagicMock,
+    mock_execute_locked: MagicMock,
+    mock_emit_log: MagicMock,
+) -> None:
+    mock_lane_conflicts.return_value = TaskLaneConflictCheck(
+        overlap_kind="stale_same_task",
+        disposition="reconcile",
+        owner_session_id="sess-stale",
+        owner_location="checkout /tmp/task-123",
+    )
+
+    result = start_execution("task-123", "agent-hub")
+
+    mock_fetch_session.assert_called_once_with("sess-stale")
+    mock_close_session.assert_called_once_with("sess-stale")
+    mock_execute_locked.assert_not_called()
+    assert result == {
+        "task_id": "task-123",
+        "status": "already_running",
+        "message": "Stale task session requires reconciliation",
+        "owner_session_id": "sess-stale",
+    }
+    assert any(
+        call.args[2] == "Execution skipped: stale same-task session sess-stale could not be reclaimed"
+        for call in mock_emit_log.call_args_list
     )
 
 

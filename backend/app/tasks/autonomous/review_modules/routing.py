@@ -66,7 +66,7 @@ def _set_followup_status(task_id: str, *, fallback: str) -> str:
 def _apply_auto_merge_status(task_id: str, merge_result: MergeResult | None) -> str:
     if merge_result is None:
         task_store.update_task_status(task_id, STATUS_COMPLETED)
-        return "ready for manual merge"
+        return "manual merge pending"
 
     merge_status = str(merge_result.get("status") or "blocked")
     if merge_status in {"merged", "skipped"}:
@@ -136,7 +136,7 @@ def _handle_approved(task_id: str, complexity: str) -> None:
     if merge_result is None:
         cleanup_result = cleanup_task_checkpoint(task_id, delete_branch=False, project_id=project_id)
         if cleanup_result.get("status") == "cleaned":
-            label = "Ready for manual merge (checkout cleaned)"
+            label = "Manual merge pending (checkout cleaned)"
         else:
             reason = str(cleanup_result.get("reason") or cleanup_result.get("error") or "unknown")
             log_task_event(task_id, f"Manual cleanup review needed: {reason}")

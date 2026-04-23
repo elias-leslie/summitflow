@@ -21,6 +21,50 @@ logger = get_logger(__name__)
 _HEALTH_CHECK_DELAYS = [30, 60, 120]  # seconds
 
 
+def _dependency_ids(subtask: dict[str, Any]) -> list[str]:
+    deps = subtask.get("depends_on")
+    if not isinstance(deps, list):
+        return []
+    return [str(dep).strip() for dep in deps if str(dep).strip()]
+
+
+def _order_subtasks_by_dependencies(
+    incomplete_subtasks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return incomplete subtasks in dependency-first order."""
+    subtask_by_id = {
+        str(subtask.get("subtask_id") or "").strip(): subtask
+        for subtask in incomplete_subtasks
+        if str(subtask.get("subtask_id") or "").strip()
+    }
+    ordered: list[dict[str, Any]] = []
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(subtask: dict[str, Any]) -> None:
+        subtask_id = str(subtask.get("subtask_id") or "").strip()
+        if not subtask_id or subtask_id in visited:
+            return
+        if subtask_id in visiting:
+            ordered.append(subtask)
+            visited.add(subtask_id)
+            return
+        visiting.add(subtask_id)
+        for dependency_id in _dependency_ids(subtask):
+            dependency = subtask_by_id.get(dependency_id)
+            if dependency is not None:
+                visit(dependency)
+        visiting.discard(subtask_id)
+        if subtask_id not in visited:
+            ordered.append(subtask)
+            visited.add(subtask_id)
+
+    for subtask in incomplete_subtasks:
+        visit(subtask)
+
+    return ordered
+
+
 def _check_health_or_wait(
     task_id: str,
     project_id: str,
@@ -137,15 +181,16 @@ def execute_subtask_loop(
     results: list[dict[str, Any]] = []
     issue_counts: dict[str, int] = {}
     completed = completed_count
+    ordered_subtasks = _order_subtasks_by_dependencies(incomplete_subtasks)
 
-    for iteration, subtask in enumerate(incomplete_subtasks, 1):
+    for iteration, subtask in enumerate(ordered_subtasks, 1):
         if iteration > MAX_ITERATIONS:
             emit_log(task_id, "warn", f"Max iterations ({MAX_ITERATIONS}) reached", project_id=project_id)
-            return results, completed, wind_down(task_id, results, incomplete_subtasks, "max_iterations")
+            return results, completed, wind_down(task_id, results, ordered_subtasks, "max_iterations")
 
         if not _check_health_or_wait(task_id, project_id):
             emit_log(task_id, "error", "System unhealthy after retries, winding down", source="health", project_id=project_id)
-            return results, completed, wind_down(task_id, results, incomplete_subtasks, "system_unhealthy")
+            return results, completed, wind_down(task_id, results, ordered_subtasks, "system_unhealthy")
 
         try:
             assert_task_runnable(
@@ -162,7 +207,7 @@ def execute_subtask_loop(
                 agent_override,
             )
         except ExecutionInterrupted as exc:
-            return results, completed, wind_down(task_id, results, incomplete_subtasks, exc.reason)
+            return results, completed, wind_down(task_id, results, ordered_subtasks, exc.reason)
         results.append(result)
         completed += 1
         status = "passed" if result.get("status") == "passed" else "failed"
