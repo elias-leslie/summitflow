@@ -237,7 +237,8 @@ def ai_review(
     if not task:
         return {"task_id": task_id, "status": "error", "message": "Task not found"}
 
-    task_store.update_task_status(task_id, "running")
+    if task.get("status") != "completed":
+        task_store.update_task_status(task_id, "running")
     git_diff = get_git_diff(task_id, project_id)
 
     early = _check_diff_issues(task_id, project_id, task, git_diff)
