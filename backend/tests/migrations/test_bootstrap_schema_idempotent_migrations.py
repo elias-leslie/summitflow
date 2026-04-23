@@ -64,8 +64,7 @@ def test_retention_days_upgrade_skips_missing_legacy_backup_schedules(mocker) ->
     module.upgrade()
 
     inspector.get_columns.assert_not_called()
-    execute.assert_called_once()
-    assert "DELETE FROM backups" in execute.call_args.args[0]
+    execute.assert_not_called()
 
 
 def test_retention_days_downgrade_skips_missing_legacy_backup_schedules(mocker) -> None:
