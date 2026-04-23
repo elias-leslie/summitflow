@@ -16,6 +16,22 @@ class TestTransitionToReviewOrComplete:
 
     @patch(f"{MODULE}.agent_configs")
     @patch(f"{MODULE}.task_store")
+    def test_review_enabled_allows_pending_early_completion(
+        self, mock_store: MagicMock, mock_configs: MagicMock
+    ) -> None:
+        """Early-complete tasks can finish through review even if they never entered running."""
+        mock_configs.get_require_review.return_value = True
+        mock_store.get_task.return_value = {"id": "t-1", "ai_review": True, "status": "pending"}
+        dispatch = MagicMock()
+
+        result = transition_to_review_or_complete("t-1", "proj", "test", dispatch)
+
+        assert result == "completed"
+        mock_store.update_task_status.assert_called_with("t-1", "completed", validate_transition=False)
+        dispatch.assert_called_once_with("review", "t-1", "proj")
+
+    @patch(f"{MODULE}.agent_configs")
+    @patch(f"{MODULE}.task_store")
     def test_review_enabled_dispatches_review(
         self, mock_store: MagicMock, mock_configs: MagicMock
     ) -> None:
