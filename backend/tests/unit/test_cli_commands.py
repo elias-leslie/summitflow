@@ -758,7 +758,102 @@ class TestTaskCliErgonomics:
                 "opus_guidance_logged": True,
                 "migration_decision_logged": True,
             },
+            "active_review": {"stage": "pre_close", "status": "pending"},
         }
+
+
+    def test_build_pre_close_review_packet_prefers_review_history_over_stale_primary(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-mock-history", status="completed")
+        spirit = {
+            "context": {
+                "second_opinion": {
+                    "required": True,
+                    "stage": "task_shape",
+                    "status": "needs_revision",
+                    "summary": "Old shape block.",
+                    "reviews": {
+                        "task_shape": {
+                            "required": True,
+                            "stage": "task_shape",
+                            "status": "needs_revision",
+                            "summary": "Old shape block.",
+                        },
+                        "pre_close": {
+                            "required": True,
+                            "stage": "pre_close",
+                            "status": "completed",
+                            "summary": "Closeout proof is sufficient.",
+                            "verdict": "APPROVED",
+                            "reviewed_at": "2026-01-01T00:00:00+00:00",
+                            "reviewed_by_agent": "specifier",
+                        },
+                    },
+                }
+            }
+        }
+
+        with patch("cli.commands.tasks_critique.get_events_by_trace", return_value=[]):
+            packet = _build_review_packet(task, spirit, [], stage="pre_close")
+
+        assert packet["closeout"]["active_review"] == {
+            "stage": "pre_close",
+            "status": "completed",
+            "summary": "Closeout proof is sufficient.",
+            "verdict": "APPROVED",
+            "reviewed_at": "2026-01-01T00:00:00+00:00",
+            "reviewed_by_agent": "specifier",
+        }
+        assert spirit["context"]["second_opinion"]["stage"] == "task_shape"
+
+    def test_build_pre_close_review_packet_uses_primary_only_for_pre_close_stage(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-mock-primary", status="completed")
+        spirit = {
+            "context": {
+                "second_opinion": {
+                    "required": True,
+                    "stage": "pre_close",
+                    "status": "completed",
+                    "summary": "Primary closeout review.",
+                    "verdict": "APPROVED",
+                }
+            }
+        }
+
+        with patch("cli.commands.tasks_critique.get_events_by_trace", return_value=[]):
+            packet = _build_review_packet(task, spirit, [], stage="pre_close")
+
+        assert packet["closeout"]["active_review"] == {
+            "stage": "pre_close",
+            "status": "completed",
+            "summary": "Primary closeout review.",
+            "verdict": "APPROVED",
+        }
+
+    def test_build_pre_close_review_packet_ignores_malformed_or_task_shape_only_primary(self) -> None:
+        from cli.commands.tasks_critique import _build_review_packet
+
+        task = _make_mock_task("task-mock-malformed", status="completed")
+        spirit = {
+            "context": {
+                "second_opinion": {
+                    "required": True,
+                    "stage": "task_shape",
+                    "status": "needs_revision",
+                    "summary": "Shape still old.",
+                    "reviews": {"pre_close": "bad-payload"},
+                }
+            }
+        }
+
+        with patch("cli.commands.tasks_critique.get_events_by_trace", return_value=[]):
+            packet = _build_review_packet(task, spirit, [], stage="pre_close")
+
+        assert packet["closeout"]["active_review"] == {"stage": "pre_close", "status": "pending"}
+        assert spirit["context"]["second_opinion"]["reviews"]["pre_close"] == "bad-payload"
 
     def test_build_pre_close_review_packet_accepts_timestamped_evidence_entries(self) -> None:
         from cli.commands.tasks_critique import _build_review_packet
@@ -899,6 +994,7 @@ class TestTaskCliErgonomics:
                 "opus_guidance_logged": False,
                 "migration_decision_logged": False,
             },
+            "active_review": {"stage": "pre_close", "status": "pending"},
         }
         assert incomplete_packet["closeout"]["completion_ready"] is False
         assert incomplete_packet["closeout"]["subtasks_completed"] == 0
@@ -1078,6 +1174,7 @@ class TestTaskCliErgonomics:
                 "opus_guidance_logged": False,
                 "migration_decision_logged": False,
             },
+            "active_review": {"stage": "pre_close", "status": "pending"},
         }
 
     def test_build_request_message_changes_with_stage(self) -> None:

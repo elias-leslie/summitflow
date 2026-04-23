@@ -11,6 +11,8 @@ from app.logging_config import get_logger
 from app.services.agent_hub_client import get_sync_client
 from app.services.task_execution_readiness import sync_task_execution_readiness
 from app.services.task_second_opinion import (
+    _active_closeout_review,
+    get_second_opinion_entry,
     get_second_opinion_requirement,
     parse_second_opinion_response,
     persist_second_opinion,
@@ -145,6 +147,7 @@ def _build_artifact_flags(evidence: list[dict[str, str]]) -> dict[str, bool]:
 
 def _build_closeout_summary(
     task: dict[str, Any],
+    spirit: dict[str, Any] | None,
     serialized_subtasks: list[dict[str, Any]],
 ) -> dict[str, Any]:
     incomplete_subtasks = [
@@ -153,6 +156,7 @@ def _build_closeout_summary(
         if subtask.get("passes") is not True and subtask.get("subtask_id")
     ]
     evidence = _collect_closeout_evidence(str(task["id"]))
+    active_review = _active_closeout_review(get_second_opinion_entry(spirit))
     return {
         "task_status": task.get("status"),
         "completion_ready": len(incomplete_subtasks) == 0,
@@ -161,6 +165,11 @@ def _build_closeout_summary(
         "incomplete_subtasks": incomplete_subtasks,
         "evidence": evidence,
         "artifact_flags": _build_artifact_flags(evidence),
+        "active_review": {
+            key: active_review.get(key)
+            for key in ("stage", "status", "summary", "verdict", "reviewed_at", "reviewed_by_agent")
+            if active_review.get(key) not in (None, "", [], {})
+        },
     }
 
 
@@ -222,7 +231,7 @@ def _build_review_packet(
         "subtasks": serialized_subtasks,
     }
     if normalized_stage in {"pre_close", "both"}:
-        packet["closeout"] = _build_closeout_summary(task, serialized_subtasks)
+        packet["closeout"] = _build_closeout_summary(task, spirit, serialized_subtasks)
     return packet
 
 

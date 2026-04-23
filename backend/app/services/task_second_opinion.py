@@ -139,6 +139,24 @@ def _task_shape_review(entry: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _active_closeout_review(entry: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(entry, dict):
+        return {"stage": "pre_close", "status": "pending"}
+
+    history = _review_history(entry)
+    review = history.get("pre_close")
+    if isinstance(review, dict) and review:
+        return review
+
+    primary_stage = str(entry.get("stage") or "").strip().lower()
+    if primary_stage in {"pre_close", "both"}:
+        primary = _review_snapshot(entry)
+        if primary:
+            return primary
+
+    return {"stage": "pre_close", "status": "pending"}
+
+
 def build_second_opinion_entry(
     task: dict[str, Any],
     spirit: dict[str, Any] | None = None,

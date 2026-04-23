@@ -47,7 +47,7 @@ def _build_task_payload(task: dict[str, Any], spirit: dict[str, Any] | None) -> 
         "project_id": hydrated["project_id"],
         "title": hydrated["title"],
         "description": hydrated.get("description"),
-        "status": hydrated["status"],
+        "status": task.get("status"),
         "priority": hydrated.get("priority", 2),
         "task_type": hydrated.get("task_type", "task"),
         "complexity": hydrated.get("complexity"),

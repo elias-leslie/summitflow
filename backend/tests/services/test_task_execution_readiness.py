@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from app.services.task_execution_readiness import assess_task_execution_readiness
 from app.services.task_second_opinion import (
+    _active_closeout_review,
     build_second_opinion_entry,
     ensure_second_opinion_tracking,
     parse_second_opinion_response,
@@ -505,3 +506,38 @@ class TestSecondOpinionParsing:
         assert result is None
         mock_update.assert_not_called()
         mock_upsert.assert_not_called()
+
+    def test_active_closeout_review_prefers_history_and_ignores_task_shape_primary(self) -> None:
+        review = _active_closeout_review(
+            {
+                "required": True,
+                "stage": "task_shape",
+                "status": "needs_revision",
+                "summary": "Old shape review.",
+                "reviews": {
+                    "pre_close": {
+                        "required": True,
+                        "stage": "pre_close",
+                        "status": "completed",
+                        "summary": "Ready to close.",
+                        "verdict": "APPROVED",
+                    }
+                },
+            }
+        )
+
+        assert review["stage"] == "pre_close"
+        assert review["status"] == "completed"
+        assert review["summary"] == "Ready to close."
+
+    def test_active_closeout_review_falls_back_to_pending_for_malformed_payload(self) -> None:
+        review = _active_closeout_review(
+            {
+                "required": True,
+                "stage": "task_shape",
+                "status": "needs_revision",
+                "reviews": {"pre_close": "bad"},
+            }
+        )
+
+        assert review == {"stage": "pre_close", "status": "pending"}

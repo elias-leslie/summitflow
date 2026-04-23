@@ -744,3 +744,127 @@ class TestTaskStatusEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "completed"
+
+
+    def test_export_preserves_raw_task_status_and_second_opinion_shape(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Closeout truth export fixture",
+                "description": "Completed task should export raw lifecycle status.",
+                "task_type": "task",
+                "priority": 2,
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        raw_second_opinion = {
+            "required": True,
+            "stage": "task_shape",
+            "status": "needs_revision",
+            "summary": "Old shaping note.",
+            "reviews": {
+                "task_shape": {
+                    "required": True,
+                    "stage": "task_shape",
+                    "status": "needs_revision",
+                    "summary": "Old shaping note.",
+                },
+                "pre_close": {
+                    "required": True,
+                    "stage": "pre_close",
+                    "status": "completed",
+                    "summary": "Ready to close.",
+                    "verdict": "APPROVED",
+                    "reviewed_by_agent": "specifier",
+                    "reviewed_at": "2026-01-01T00:00:00+00:00",
+                },
+            },
+        }
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("UPDATE tasks SET status = %s WHERE id = %s", ("completed", task_id))
+            cur.execute(
+                """
+                INSERT INTO task_spirit (task_id, done_when, context, plan_status)
+                VALUES (%s, %s::jsonb, %s::jsonb, %s)
+                ON CONFLICT (task_id) DO UPDATE SET
+                    done_when = EXCLUDED.done_when,
+                    context = EXCLUDED.context,
+                    plan_status = EXCLUDED.plan_status
+                """,
+                (
+                    task_id,
+                    json.dumps(["All subtasks pass", "Closeout proof logged"]),
+                    json.dumps({
+                        "second_opinion": raw_second_opinion,
+                        "files_to_modify": ["backend/app/api/tasks/workflow_export.py"],
+                    }),
+                    "draft",
+                ),
+            )
+            conn.commit()
+
+        for subtask_id in ("1.1", "1.2"):
+            subtask_response = client.post(
+                f"/api/projects/{test_project_id}/tasks/{task_id}/subtasks",
+                json={"subtask_id": subtask_id, "description": f"Subtask {subtask_id}"},
+            )
+            assert subtask_response.status_code == 201
+            with get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE task_subtasks SET passes = TRUE WHERE task_id = %s AND subtask_id = %s",
+                    (task_id, subtask_id),
+                )
+                conn.commit()
+
+        response = client.get(f"/api/projects/{test_project_id}/tasks/{task_id}/export")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["task"]["status"] == "completed"
+        assert data["spirit"]["plan_status"] == "draft"
+        assert data["task"]["plan_status"] == "draft"
+        assert data["task"]["context"]["second_opinion"] == raw_second_opinion
+        assert data["spirit"]["context"]["second_opinion"] == raw_second_opinion
+
+    def test_export_keeps_null_task_status_when_storage_status_missing(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Null status export fixture",
+                "description": "Null task status should stay null.",
+                "task_type": "task",
+                "priority": 2,
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("UPDATE tasks SET status = NULL WHERE id = %s", (task_id,))
+            cur.execute(
+                """
+                INSERT INTO task_spirit (task_id, plan_status, context)
+                VALUES (%s, %s, %s::jsonb)
+                ON CONFLICT (task_id) DO UPDATE SET
+                    plan_status = EXCLUDED.plan_status,
+                    context = EXCLUDED.context
+                """,
+                (task_id, "draft", json.dumps({"second_opinion": {"stage": "task_shape", "status": "pending"}})),
+            )
+            conn.commit()
+
+        response = client.get(f"/api/projects/{test_project_id}/tasks/{task_id}/export")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["task"]["status"] is None
+        assert data["spirit"]["plan_status"] == "draft"
