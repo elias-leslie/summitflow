@@ -50,9 +50,6 @@ SUMMITFLOW_REQUEST_SOURCE = os.getenv("SUMMITFLOW_REQUEST_SOURCE") or _ENV_LOCAL
 HEADER_CLIENT_ID: Final = "X-Client-Id"
 HEADER_REQUEST_SOURCE: Final = "X-Request-Source"
 DEFAULT_REQUEST_SOURCE: Final = "summitflow"
-DEFAULT_AGENT_HUB_TIMEOUT: Final = 120.0
-
-
 def resolve_agent_hub_request_source(
     default_request_source: str = DEFAULT_REQUEST_SOURCE,
 ) -> str:
@@ -80,9 +77,15 @@ def build_agent_hub_headers(
     return headers
 
 
-def _resolve_timeout(timeout: float | None) -> float:
-    """Normalize optional timeout values to the client library's concrete float."""
-    return DEFAULT_AGENT_HUB_TIMEOUT if timeout is None else timeout
+def _resolve_timeout(timeout: float | None) -> float | None:
+    """Preserve optional timeout values for the client library.
+
+    ``None`` means "use the client library / httpx default with no local SummitFlow
+    cap" for open-ended agent turns. Fast control-plane callers should pass an
+    explicit short timeout at the call site instead of relying on a hidden shared
+    default here.
+    """
+    return timeout
 
 
 def get_sync_client(

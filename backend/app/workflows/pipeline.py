@@ -82,7 +82,6 @@ def _make_dispatch_callback() -> Any:
 @hatchet.task(
     name="summitflow-dispatch",
     input_validator=TaskInput,
-    execution_timeout="300s",
     retries=3,
     backoff_factor=2.0,
     concurrency=ConcurrencyExpression(
@@ -100,7 +99,6 @@ async def dispatch_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 @hatchet.task(
     name="summitflow-ideate",
     input_validator=TaskInput,
-    execution_timeout="300s",
     retries=3,
     backoff_factor=2.0,
     concurrency=ConcurrencyExpression(
@@ -124,7 +122,6 @@ async def ideate_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 @hatchet.task(
     name="summitflow-triage",
     input_validator=TaskInput,
-    execution_timeout="300s",
     retries=3,
     backoff_factor=2.0,
     concurrency=ConcurrencyExpression(
@@ -154,7 +151,6 @@ async def triage_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 @hatchet.task(
     name="summitflow-plan",
     input_validator=TaskInput,
-    execution_timeout="600s",
     retries=3,
     backoff_factor=2.0,
     concurrency=ConcurrencyExpression(
@@ -184,7 +180,6 @@ async def plan_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 @hatchet.task(
     name="summitflow-critique",
     input_validator=TaskInput,
-    execution_timeout="600s",
     retries=3,
     backoff_factor=2.0,
     concurrency=ConcurrencyExpression(
@@ -215,7 +210,6 @@ async def critique_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 @hatchet.task(
     name="summitflow-execute",
     input_validator=TaskInput,
-    execution_timeout="3600s",
     retries=2,
     backoff_factor=2.0,
     concurrency=ConcurrencyExpression(
@@ -234,7 +228,6 @@ async def execute_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 @hatchet.task(
     name="summitflow-review",
     input_validator=TaskInput,
-    execution_timeout="600s",
     retries=3,
     backoff_factor=2.0,
     concurrency=ConcurrencyExpression(
@@ -269,7 +262,6 @@ async def merge_cleanup_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 @hatchet.task(
     name="summitflow-escalation",
     input_validator=TaskInput,
-    execution_timeout="300s",
     retries=0,
 )
 async def escalation_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:

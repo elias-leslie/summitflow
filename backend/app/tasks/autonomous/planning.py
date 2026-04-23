@@ -26,9 +26,6 @@ from .planning_storage import save_plan_to_database
 
 logger = get_logger(__name__)
 
-PLANNING_AGENT_TIMEOUT_SECONDS = 480.0
-
-
 def _planning_feedback_payload(task_id: str) -> dict[str, Any]:
     spirit = get_task_spirit(task_id) or {}
     payload: dict[str, Any] = {}
@@ -271,7 +268,7 @@ def create_plan(task_id: str, project_id: str) -> dict[str, Any]:
     prompt = _build_planning_prompt(title, description, precision_context, planning_feedback)
 
     try:
-        client = get_sync_client(timeout=PLANNING_AGENT_TIMEOUT_SECONDS)
+        client = get_sync_client()
         response = client.complete(
             messages=[{"role": "user", "content": prompt}],
             project_id=project_id,
