@@ -91,7 +91,13 @@ def _handle_needs_clarification(task_id: str, result: dict[str, Any]) -> None:
     if questions:
         questions_text = "\n".join(f"- {q}" for q in questions)
         log_task_event(task_id, f"Triage: Needs clarification\n{questions_text}")
-    task_store.update_task_status(task_id, "failed")
+    reason = result.get("reasoning") or "Needs clarification"
+    task_store.update_task_status(
+        task_id,
+        "failed",
+        error_message=str(reason),
+        validate_transition=False,
+    )
     logger.info("Triage needs clarification", task_id=task_id, questions=len(questions))
 
 

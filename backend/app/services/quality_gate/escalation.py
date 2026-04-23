@@ -127,6 +127,8 @@ def escalate_to_supervisor(conn: psycopg.Connection[Any], result_id: int) -> str
             priority=1,  # P1 - high priority
             task_type="bug",
             complexity="STANDARD",
+            execution_mode="autonomous",
+            autonomous=True,
         )
         task_id: str = task["id"]
         qcr_store.mark_escalated(conn, result_id, task_id)

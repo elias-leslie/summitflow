@@ -109,6 +109,60 @@ class TestCreateTask:
         assert task["capability_id"] is None
 
 
+class TestExecutionModeDefaults:
+    """Regression tests for task creation execution-mode defaults."""
+
+    def test_bug_tasks_default_to_autonomous(
+        self,
+        project_id: str,
+        cleanup_task: Callable[[str], None],
+    ) -> None:
+        """Routine bug intake should enter the autonomous queue by default."""
+        task = task_store.create_task(
+            project_id=project_id,
+            title="Bug default execution mode",
+            task_type="bug",
+        )
+        cleanup_task(task["id"])
+
+        assert task["execution_mode"] == "autonomous"
+        assert task["autonomous"] is True
+
+    def test_generic_task_defaults_remain_manual(
+        self,
+        project_id: str,
+        cleanup_task: Callable[[str], None],
+    ) -> None:
+        """Generic tasks should stay manual unless a caller opts into autonomy."""
+        task = task_store.create_task(
+            project_id=project_id,
+            title="Generic task default execution mode",
+            task_type="task",
+        )
+        cleanup_task(task["id"])
+
+        assert task["execution_mode"] == "manual"
+        assert task["autonomous"] is False
+
+    def test_bug_tasks_respect_explicit_manual_override(
+        self,
+        project_id: str,
+        cleanup_task: Callable[[str], None],
+    ) -> None:
+        """Bug defaults should not prevent explicit manual routing."""
+        task = task_store.create_task(
+            project_id=project_id,
+            title="Manual bug override",
+            task_type="bug",
+            execution_mode="manual",
+            autonomous=False,
+        )
+        cleanup_task(task["id"])
+
+        assert task["execution_mode"] == "manual"
+        assert task["autonomous"] is False
+
+
 class TestUpdateTaskStatus:
     """Tests for update_task_status function."""
 

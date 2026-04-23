@@ -393,6 +393,29 @@ class TestTaskCliErgonomics:
         assert result.exit_code == 0
         mock_capture_bug.assert_called_once_with("Fix auth", None, 2, None, "task-123")
 
+    def test_capture_bug_marks_bug_autonomous(self) -> None:
+        mock_client = MagicMock()
+        mock_client.create_task.return_value = _make_mock_task(
+            "task-mock-bug",
+            title="Fix auth",
+            task_type="bug",
+            execution_mode="autonomous",
+            autonomous=True,
+        )
+
+        with (
+            patch("cli.commands.tasks.require_explicit_project"),
+            patch("cli.commands.tasks.STClient", return_value=mock_client),
+            patch("cli.commands.tasks_bug.output_task"),
+        ):
+            result = runner.invoke(tasks_app, ["capture", "bug", "Fix auth"])
+
+        assert result.exit_code == 0
+        payload = mock_client.create_task.call_args.args[0]
+        assert payload["task_type"] == "bug"
+        assert payload["execution_mode"] == "autonomous"
+        assert payload["autonomous"] is True
+
     def test_legacy_idea_redirects_to_capture(self) -> None:
         result = runner.invoke(tasks_app, ["idea", "Add dark mode"])
 
