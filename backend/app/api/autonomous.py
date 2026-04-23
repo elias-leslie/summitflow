@@ -14,6 +14,7 @@ from ..services.autonomous_schedule_registry import (
     set_autonomous_schedule_enabled,
 )
 from ..storage import maintenance_runs as maintenance_store
+from ..storage.projects import get_project_root_path
 from ..tasks.autonomous.upkeep import (
     ROUTINE_UPKEEP_WORKFLOW,
     get_routine_upkeep_settings,
@@ -33,6 +34,11 @@ from .autonomous_service import (
     update_autonomous_settings as _update_settings,
 )
 from .dependencies import validate_project_exists
+from .projects.agent_hub import (
+    _fetch_agent_hub_project_permission,
+    sync_agent_hub_project_permission,
+)
+from .projects.models import ProjectPermissionBootstrap
 
 router = APIRouter()
 
@@ -147,6 +153,23 @@ def _validate_update(update: AutonomousSettingsUpdate) -> None:
         )
 
 
+async def _sync_auto_exec_permission(project_id: str, enabled: bool) -> None:
+    """Keep Agent Hub project_permissions.auto_exec_enabled aligned with the CLI/API toggle."""
+    payload = await _fetch_agent_hub_project_permission(project_id)
+    root_path = str((payload or {}).get("root_path") or get_project_root_path(project_id) or "") or None
+    permission = ProjectPermissionBootstrap(
+        permission_tier=str((payload or {}).get("permission_tier") or "read"),
+        auto_exec_enabled=enabled,
+        execution_start_hour=int((payload or {}).get("execution_start_hour") or 0),
+        execution_end_hour=int((payload or {}).get("execution_end_hour") or 24),
+        root_path=root_path,
+        daily_cost_budget_usd=(payload or {}).get("daily_cost_budget_usd"),
+        monthly_cost_budget_usd=(payload or {}).get("monthly_cost_budget_usd"),
+        budget_alert_threshold=float((payload or {}).get("budget_alert_threshold") or 0.8),
+    )
+    await sync_agent_hub_project_permission(project_id, permission, root_path)
+
+
 @router.get("/{project_id}/autonomous/settings", response_model=AutonomousSettings)
 async def get_settings(project_id: str) -> AutonomousSettings:
     """Get autonomous execution settings for a project."""
@@ -159,7 +182,10 @@ async def update_settings(project_id: str, update: AutonomousSettingsUpdate) -> 
     """Update autonomous execution settings for a project."""
     validate_project_exists(project_id)
     _validate_update(update)
-    return _update_settings(project_id, update)
+    settings = _update_settings(project_id, update)
+    if update.enabled is not None:
+        await _sync_auto_exec_permission(project_id, update.enabled)
+    return settings
 
 
 @router.get("/{project_id}/autonomous/upkeep/status", response_model=RoutineUpkeepStatusResponse)

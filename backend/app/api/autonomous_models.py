@@ -101,6 +101,7 @@ VALID_QUALITY_GATE_TOOLS = ["pytest", "vitest", "ruff", "types", "biome", "tsc",
 class AutonomousSettingsUpdate(BaseModel):
     """Request model for updating autonomous execution behavior settings."""
 
+    enabled: bool | None = None
     frequency_minutes: int | None = Field(default=None, ge=5, le=1440)
     auto_merge_tiers: list[int] | None = None
     task_types: list[str] | None = None

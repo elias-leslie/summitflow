@@ -172,6 +172,19 @@ def _set_owner_from_session(result: TaskLaneConflictCheck, session: dict[str, ob
     result.owner_location = _lane_summary(session)
 
 
+def _lane_has_checkout_or_scope(session: dict[str, object]) -> bool:
+    """Return True when a session has a real checkout claim or observed repo scope."""
+    if isinstance(session.get("current_branch"), str) and str(session.get("current_branch")).strip():
+        return True
+    if isinstance(session.get("working_dir"), str) and str(session.get("working_dir")).strip():
+        return True
+    for key in ("observed_read_paths", "observed_write_paths", "files_touched"):
+        value = session.get(key)
+        if isinstance(value, list) and any(str(item).strip() for item in value):
+            return True
+    return False
+
+
 # -- Conflict detection --
 
 
@@ -412,7 +425,7 @@ def _partition_sessions(
         lane_id = _lane_task_id(session)
         if lane_id == task_id:
             same_task.append(session)
-        elif lane_id and _task_status(lane_id) not in _FINAL_TASK_STATUSES:
+        elif lane_id and _task_status(lane_id) not in _FINAL_TASK_STATUSES and _lane_has_checkout_or_scope(session):
             other_lanes.append(session)
     return same_task, other_lanes
 
