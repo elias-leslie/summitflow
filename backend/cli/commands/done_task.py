@@ -16,7 +16,11 @@ from ..lib.checkpoint import get_snapshot_info, remove_snapshot
 from ..lib.checkpoint_branches import merge_task_branch
 from ..output import output_error, output_success, output_warning
 from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
-from .done_lifecycle import _reconstruct_snapshot_info, _trigger_health_check
+from .done_lifecycle import (
+    _reconstruct_snapshot_info,
+    _task_branch_touched_frontend,
+    _trigger_health_check,
+)
 from .done_subtask import auto_close_subtasks
 from .tasks_progress import sync_completed_subtasks
 
@@ -169,6 +173,11 @@ def _perform_completion(
     strict: bool,
     skip_diff_gate: bool = False,
 ) -> None:
+    frontend_changed = _task_branch_touched_frontend(
+        task_id,
+        project_id,
+        base_branch=str(snapshot_info.get("base_branch") or "main"),
+    )
     if not skip_diff_gate:
         repo_root = _checkpoint_repo_root(
             str(snapshot_info.get("project_id")) if snapshot_info.get("project_id") else None
@@ -192,7 +201,8 @@ def _perform_completion(
             f"  Recovery: st done {task_id} --admin"
         )
     _capture_and_remove_snapshot(task_id, project_id)
-    _trigger_health_check(task_id, project_id)
+    if frontend_changed:
+        _trigger_health_check(task_id, project_id)
 
 
 def _load_snapshot_info(

@@ -203,7 +203,11 @@ async def critique_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
         if verdict == "APPROVED":
             await _trigger_workflow("execute", input.task_id, input.project_id)
         elif verdict == "NEEDS_REVISION":
-            await _trigger_workflow("plan", input.task_id, input.project_id)
+            logger.info(
+                "Task-shape critique parked for revision",
+                task_id=input.task_id,
+                project_id=input.project_id,
+            )
 
     return result
 
