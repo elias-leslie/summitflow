@@ -548,7 +548,7 @@ class TestTaskCliErgonomics:
             result = runner.invoke(tasks_app, ["create", "--plan", "plan.json"])
 
         assert result.exit_code == 0
-        assert "IMPORT:task-mock-1|COMPLEX|1 subtasks|2nd:task_shape:pending" in result.output
+        assert "IMPORT:task-mock-1|COMPLEX|1 subtasks|2nd:advisory:task_shape:pending" in result.output
 
     def test_critique_command_records_second_opinion(self) -> None:
         task = _make_mock_task(

@@ -67,7 +67,7 @@ def _handle_plan_import(
         if isinstance(second_opinion, dict) and second_opinion.get("required"):
             stage = second_opinion.get("stage", "task_shape")
             status = second_opinion.get("status", "pending")
-            second_opinion_suffix = f"|2nd:{stage}:{status}"
+            second_opinion_suffix = f"|2nd:advisory:{stage}:{status}"
         typer.echo(f"IMPORT:{tid}|{complexity}|{suffix}{second_opinion_suffix}")
 
 

@@ -18,6 +18,7 @@ from app.storage.subtasks import get_subtasks_for_task
 from app.storage.task_spirit import get_task_spirit
 
 _REPLANNING_FIELDS = frozenset({"description", "done_when", "subtasks", "context", "execution_contract"})
+_ADVISORY_MISSING_FIELDS = frozenset({"second_opinion"})
 
 
 def _parse_timestamp(value: object) -> datetime | None:
@@ -81,27 +82,6 @@ def _second_opinion_status(spirit: dict[str, Any] | None) -> str:
     return status
 
 
-def _needs_revision_replan_required(
-    task: dict[str, Any],
-    spirit: dict[str, Any] | None,
-    subtasks: list[dict[str, Any]],
-) -> bool:
-    """Return True only when a parked NEEDS_REVISION package has concrete evidence of change."""
-    if not _has_saved_plan_artifacts(spirit, subtasks):
-        return False
-
-    current_signature = build_task_planning_signature(task)
-    stored_signature = _stored_plan_signature(spirit)
-    if current_signature and stored_signature:
-        return current_signature != stored_signature
-
-    task_updated_at = _parse_timestamp(task.get("updated_at")) or _parse_timestamp(task.get("created_at"))
-    planned_at = _latest_plan_timestamp(spirit, subtasks)
-    if task_updated_at is None or planned_at is None:
-        return False
-    return task_updated_at > planned_at
-
-
 def _should_replan(
     task: dict[str, Any],
     spirit: dict[str, Any] | None,
@@ -155,15 +135,13 @@ def determine_next_stage(task_id: str) -> str:
     readiness = load_task_execution_readiness(task_id)
     if not readiness.ready:
         second_opinion_status = _second_opinion_status(spirit)
-        if _should_replan(task, spirit, subtasks, readiness.missing_fields):
+        blocking_missing_fields = [
+            field for field in readiness.missing_fields if field not in _ADVISORY_MISSING_FIELDS
+        ]
+        if _should_replan(task, spirit, subtasks, blocking_missing_fields):
             return "planning"
-        if "second_opinion" in readiness.missing_fields:
-            if second_opinion_status == "needs_revision":
-                if _needs_revision_replan_required(task, spirit, subtasks):
-                    return "planning"
-                return "unknown"
-            if second_opinion_status in {"pending", ""}:
-                return "critique"
+        if not blocking_missing_fields and second_opinion_status in {"pending", "needs_revision", ""}:
+            return "execution"
         return "unknown"
 
     if any(not s.get("passes") for s in subtasks):
