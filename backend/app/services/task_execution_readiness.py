@@ -86,8 +86,7 @@ def assess_task_execution_readiness(
     # Steps layer removed — subtask descriptions serve as guidance now
 
     if requires_nontrivial_plan and not _has_scope_context(context):
-        issues.append("Missing execution scope context (files_to_modify/files_to_create)")
-        missing_fields.append("context")
+        suggestions.append("Add scope context (files_to_modify/files_to_create) when it is obvious")
 
     if requires_nontrivial_plan and not task.get("description"):
         suggestions.append("Add a task description with scope and constraints")

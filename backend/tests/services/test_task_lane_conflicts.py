@@ -139,6 +139,33 @@ class TestTaskLaneConflicts:
         assert result.issues == []
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
+    def test_other_task_unscoped_planner_session_without_checkout_or_scope_does_not_block(
+        self,
+        mock_get_task: MagicMock,
+        mock_httpx_client: MagicMock,
+    ) -> None:
+        mock_get_task.return_value = {"id": "task-999", "status": "pending"}
+        mock_httpx_client.get.return_value = _mock_response(
+            {
+                "sessions": [
+                    {
+                        "id": "sess-planner",
+                        "agent_slug": "planner",
+                        "external_id": "task-999",
+                        "current_branch": None,
+                        "working_dir": None,
+                        "observed_read_paths": [],
+                        "observed_write_paths": [],
+                    }
+                ]
+            }
+        )
+
+        result = check_task_lane_conflicts("task-123", "summitflow")
+
+        assert result.issues == []
+
+    @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_same_task_stale_lane_points_to_reconcile_guidance(
         self,
         mock_get_task: MagicMock,

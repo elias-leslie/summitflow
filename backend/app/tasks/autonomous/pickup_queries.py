@@ -154,16 +154,8 @@ def determine_next_stage(task_id: str) -> str:
 
     readiness = load_task_execution_readiness(task_id)
     if not readiness.ready:
-        second_opinion_status = _second_opinion_status(spirit)
         if _should_replan(task, spirit, subtasks, readiness.missing_fields):
             return "planning"
-        if "second_opinion" in readiness.missing_fields:
-            if second_opinion_status == "needs_revision":
-                if _needs_revision_replan_required(task, spirit, subtasks):
-                    return "planning"
-                return "unknown"
-            if second_opinion_status in {"pending", ""}:
-                return "critique"
         return "unknown"
 
     if any(not s.get("passes") for s in subtasks):

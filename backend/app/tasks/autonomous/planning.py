@@ -26,6 +26,8 @@ from .planning_storage import save_plan_to_database
 
 logger = get_logger(__name__)
 
+PLANNING_AGENT_TIMEOUT_SECONDS = 480.0
+
 
 def _planning_feedback_payload(task_id: str) -> dict[str, Any]:
     spirit = get_task_spirit(task_id) or {}
@@ -60,7 +62,16 @@ def _planning_feedback_payload(task_id: str) -> dict[str, Any]:
             )
             if second_opinion.get(key) not in (None, "", [], {})
         }
-        if filtered_second_opinion:
+        substantive_keys = {
+            "summary",
+            "findings",
+            "missing_requirements",
+            "edge_cases",
+            "test_gaps",
+            "rollout_gaps",
+            "simpler_alternative",
+        }
+        if filtered_second_opinion and any(key in filtered_second_opinion for key in substantive_keys):
             payload["second_opinion"] = filtered_second_opinion
 
     return payload
@@ -92,8 +103,7 @@ def _build_planning_prompt(
         feedback_block = (
             "\n## Existing task-plan context and review feedback\n\n"
             f"{json.dumps(feedback_payload, indent=2, sort_keys=True)}\n\n"
-            "If second_opinion.status is NEEDS_REVISION or pending, treat that feedback as a contract you must resolve in the revised plan.\n"
-            "Tighten the package so a fresh task-shape critique can approve it without additional operator repair.\n"
+            "If second_opinion includes concrete findings, missing requirements, or edge cases, address that feedback in the revised plan.\n"
         )
     return f"""Create an implementation plan for this task.
 
@@ -212,7 +222,6 @@ def _process_plan_result(
     subtask_count = len(plan_data.get("subtasks", []))
     if subtask_count == 0:
         logger.warning("Planner produced 0 subtasks", task_id=task_id)
-        task_store.update_task_status(task_id, "failed")
         log_task_event(task_id, "Planning failed: planner produced no subtasks")
         return {
             "task_id": task_id,
@@ -262,11 +271,12 @@ def create_plan(task_id: str, project_id: str) -> dict[str, Any]:
     prompt = _build_planning_prompt(title, description, precision_context, planning_feedback)
 
     try:
-        client = get_sync_client()
+        client = get_sync_client(timeout=PLANNING_AGENT_TIMEOUT_SECONDS)
         response = client.complete(
             messages=[{"role": "user", "content": prompt}],
             project_id=project_id,
             agent_slug="planner",
+            external_id=task_id,
         )
 
         plan_data = apply_execution_contract_defaults(task, _parse_plan_response(response.content))
@@ -274,7 +284,6 @@ def create_plan(task_id: str, project_id: str) -> dict[str, Any]:
 
     except Exception as e:
         logger.warning("Planning failed", task_id=task_id, error=str(e))
-        task_store.update_task_status(task_id, "failed")
         log_task_event(task_id, f"Planning failed: {e}")
         return {"task_id": task_id, "status": "error", "message": str(e)}
 

@@ -169,14 +169,14 @@ def ensure_second_opinion_tracking(
     *,
     source: str = "system",
 ) -> dict[str, Any] | None:
-    """Persist pending second-opinion tracking for qualifying tasks when absent."""
+    """Preserve an existing second-opinion entry, but do not auto-create new task-shape gates."""
     spirit = spirit if spirit is not None else get_task_spirit(task_id)
-    entry = build_second_opinion_entry(task, spirit, source=source)
-    if entry is None:
+    existing = get_second_opinion_entry(spirit)
+    if not existing:
         return None
 
-    existing = get_second_opinion_entry(spirit)
-    if existing == entry:
+    entry = build_second_opinion_entry(task, spirit, source=source)
+    if entry is None or existing == entry:
         return entry
 
     context = merge_second_opinion_into_context((spirit or {}).get("context"), entry)
@@ -238,7 +238,11 @@ def assess_second_opinion_readiness(
     task: dict[str, Any],
     spirit: dict[str, Any] | None = None,
 ) -> tuple[list[str], list[str], list[str]]:
-    """Return (issues, suggestions, missing_fields) for second-opinion readiness."""
+    """Return advisory-only task-shape critique guidance.
+
+    Task-shape critique remains available for manual use, but it no longer blocks
+    autonomous execution readiness.
+    """
     spirit = spirit or {}
     requirement = get_second_opinion_requirement(task, spirit)
     if not requirement.required:
@@ -249,25 +253,14 @@ def assess_second_opinion_readiness(
         _review_snapshot(entry) if isinstance(entry, dict) else {}
     )
     status = str(review.get("status") or "").lower()
-    stage = str(review.get("stage") or requirement.recommended_stage)
-    summary = str(review.get("summary") or "").strip()
 
-    if status in _COMPLETED_STATUSES and stage in {"task_shape", "both"} and summary:
+    if status in _COMPLETED_STATUSES | {"needs_revision", "pending"}:
         return [], [], []
 
-    issues = [
-        "Missing completed task-shape second opinion for high-risk task "
-        f"({'; '.join(requirement.reasons)})"
-    ]
     suggestions = [
-        "Run `st critique <task-id>` to record a task-shape critique before autonomous execution"
+        "Optional: run `st critique <task-id>` to record a task-shape critique for a high-risk task"
     ]
-    missing_fields = ["second_opinion"]
-    if review and status in (_COMPLETED_STATUSES | {"needs_revision"}) and not summary:
-        issues.append("Second-opinion entry is present but missing a summary")
-    elif review and stage not in {"task_shape", "both"}:
-        issues.append(f"Second-opinion stage must include task_shape (found: {stage})")
-    return issues, suggestions, missing_fields
+    return [], suggestions, []
 
 
 def _parse_json_object(content: str) -> dict[str, Any]:
