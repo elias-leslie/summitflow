@@ -44,6 +44,7 @@ class TestMergeBlockedWhenTaskRunning:
         mock_checkout.assert_not_called()
 
     @patch(f"{_CLEANUP}._git")
+    @patch(f"{_CLEANUP}.publish_existing_commits")
     @patch(f"{_CLEANUP}.update_task_fields")
     @patch(f"{_CLEANUP}.run_post_merge_validation")
     @patch(f"{_CLEANUP}.delete_task_branch")
@@ -64,6 +65,7 @@ class TestMergeBlockedWhenTaskRunning:
         mock_delete_branch: MagicMock,
         mock_validation: MagicMock,
         mock_fields: MagicMock,
+        mock_publish: MagicMock,
         mock_git: MagicMock,
     ) -> None:
         """merge_and_cleanup_task_checkpoint proceeds when status != running."""
@@ -88,6 +90,7 @@ class TestMergeBlockedWhenTaskRunning:
             "should_rollback": False,
             "detail": None,
         }
+        mock_publish.return_value = True
         mock_git.return_value = MagicMock(returncode=0, stdout="")
 
         result = merge_and_cleanup_task_checkpoint("task-1", "test-project")

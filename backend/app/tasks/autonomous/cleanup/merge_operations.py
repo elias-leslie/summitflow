@@ -13,6 +13,7 @@ from app.storage.tasks.status import update_task_status
 from app.storage.tasks.update import update_task_fields
 
 from ....logging_config import get_logger
+from ..exec_modules.git_ops import publish_existing_commits
 from .git_operations import checkout_base_branch, delete_task_branch, merge_task_branch
 from .merge_types import MergeFailed, MergeResult
 from .validation import auto_rollback, run_post_merge_validation
@@ -45,6 +46,19 @@ def _clear_checkpoint_residue(task_id: str, project_id: str) -> None:
             "checkpoint_residue_cleanup_failed",
             extra={"task_id": task_id, "project_id": project_id, "error": str(exc)},
         )
+
+
+def _publish_mainline_result(task_id: str, project_root: str, *, phase: str) -> str | None:
+    """Publish merged or rolled-back mainline state before cleanup."""
+    if publish_existing_commits(project_root):
+        return None
+    message = f"Auto-merge {phase} not published; main still local-only"
+    log_task_event(task_id, message)
+    logger.error(
+        "auto_merge_publish_failed",
+        extra={"task_id": task_id, "project_root": project_root, "phase": phase},
+    )
+    return message
 
 
 def _finalize_task_status(task_id: str, result: MergeResult) -> MergeResult:
@@ -196,16 +210,25 @@ def _build_merge_failure_result(
 def _finalize_merge(
     task_id: str, project_root: str, project_id: str, task_branch: str, base_branch: str
 ) -> MergeResult:
-    """Clear checkpoint metadata, delete branch, run post-merge validation, clean up snapshots."""
-    remove_task_checkout(task_id, delete_branch=False, project_id=project_id)
-    branch_deleted = delete_task_branch(project_root, task_branch, task_id)
+    """Validate and publish mainline state before cleanup removes task residue."""
     validation = run_post_merge_validation(task_id, project_root, project_id)
     if validation["should_rollback"] and auto_rollback(task_id, project_root, project_id, task_branch, validation.get("detail")):
+        publish_error = _publish_mainline_result(task_id, project_root, phase="rollback")
+        if publish_error:
+            return _err(task_id, publish_error)
+        remove_task_checkout(task_id, delete_branch=False, project_id=project_id)
+        delete_task_branch(project_root, task_branch, task_id)
+        _cleanup_old_snapshots(project_root)
         return {
             "task_id": task_id, "status": "rolled_back",
             "task_branch": task_branch, "base_branch": base_branch,
             "reason": "post_merge_validation_failed",
         }
+    publish_error = _publish_mainline_result(task_id, project_root, phase="result")
+    if publish_error:
+        return _err(task_id, publish_error)
+    remove_task_checkout(task_id, delete_branch=False, project_id=project_id)
+    branch_deleted = delete_task_branch(project_root, task_branch, task_id)
     _cleanup_old_snapshots(project_root)
     return {
         "task_id": task_id, "status": "merged",
