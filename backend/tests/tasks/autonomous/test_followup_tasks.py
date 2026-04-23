@@ -197,6 +197,66 @@ class TestCreateFollowupTaskForFailures:
         assert newer_after["parent_task_id"] == parent["id"]
         assert any(f"Reused follow-up task {older['id']}" in message for message in logs)
 
+    def test_tie_breaker_uses_lowest_task_id_when_created_at_matches(
+        self,
+        test_project_id: str,
+        cleanup_tasks: list[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        parent = task_store.create_task(
+            project_id=test_project_id,
+            title="Parent task",
+            description="parent",
+            task_type="task",
+        )
+        cleanup_tasks.append(parent["id"])
+
+        title = _build_followup_title(parent["id"])
+        first = task_store.create_task(
+            project_id=test_project_id,
+            title=title,
+            description="first desc",
+            task_type="task",
+            parent_task_id=parent["id"],
+            priority=1,
+            autonomous=True,
+        )
+        second = task_store.create_task(
+            project_id=test_project_id,
+            title=title,
+            description="second desc",
+            task_type="task",
+            parent_task_id=parent["id"],
+            priority=1,
+            autonomous=True,
+        )
+        cleanup_tasks.extend([first["id"], second["id"]])
+
+        chosen_id = min(first["id"], second["id"])
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE tasks SET created_at = NOW() WHERE id IN (%s, %s)",
+                (first["id"], second["id"]),
+            )
+            conn.commit()
+
+        logs: list[str] = []
+        monkeypatch.setattr(
+            "app.tasks.autonomous.exec_modules.followup_tasks.emit_log",
+            lambda task_id, level, message, **kwargs: logs.append(message)
+            if level == "info" and task_id == parent["id"]
+            else None,
+        )
+
+        reused_id = create_followup_task_for_failures(
+            parent["id"],
+            test_project_id,
+            [{"subtask_id": "9.9"}],
+        )
+
+        assert reused_id == chosen_id
+        assert any(f"Reused follow-up task {chosen_id}" in message for message in logs)
+
     def test_completed_or_failed_matches_do_not_block_new_followup(
         self,
         test_project_id: str,
@@ -332,6 +392,53 @@ class TestCreateFollowupTaskForFailures:
             assert row is not None
             count = row[0]
         assert count == 0
+
+    def test_reuse_only_updates_description_field(
+        self,
+        test_project_id: str,
+        cleanup_tasks: list[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        parent = task_store.create_task(
+            project_id=test_project_id,
+            title="Parent task",
+            description="parent",
+            task_type="task",
+        )
+        cleanup_tasks.append(parent["id"])
+
+        followup_id = create_followup_task_for_failures(
+            parent["id"],
+            test_project_id,
+            [{"subtask_id": "1.0"}],
+        )
+        assert followup_id is not None
+        cleanup_tasks.append(followup_id)
+
+        import app.tasks.autonomous.exec_modules.followup_tasks as followup_module
+
+        updates: list[tuple[str, dict[str, object]]] = []
+        real_update = followup_module.update_task_fields
+
+        def tracking_update(task_id: str, **fields: object) -> None:
+            updates.append((task_id, fields))
+            real_update(task_id, **fields)
+
+        monkeypatch.setattr(followup_module, "update_task_fields", tracking_update)
+
+        reused_id = create_followup_task_for_failures(
+            parent["id"],
+            test_project_id,
+            [{"subtask_id": "2.0"}],
+        )
+
+        assert reused_id == followup_id
+        assert updates == [
+            (
+                followup_id,
+                {"description": _build_followup_description(parent["id"], [{"subtask_id": "2.0"}])},
+            )
+        ]
 
     def test_race_overlap_recheck_reuses_oldest_pending_after_competing_create(
         self,
