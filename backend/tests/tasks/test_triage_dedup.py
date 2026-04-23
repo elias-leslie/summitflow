@@ -125,3 +125,48 @@ class TestParseTriageResponse:
     def test_parse_invalid_json_returns_clarification(self) -> None:
         result = _parse_triage_response("This is not JSON at all")
         assert result["status"] == "NEEDS_CLARIFICATION"
+
+
+class TestTriageNeedsClarificationState:
+    """Regression tests for clarification-loop sinkhole handling."""
+
+    def test_needs_clarification_marks_task_failed_without_transition_error(self) -> None:
+        """Pending tasks should park in failed status without raising transition errors."""
+        mock_client = MagicMock()
+        mock_client.complete.return_value = MagicMock(
+            content=(
+                '{"status": "NEEDS_CLARIFICATION", '
+                '"clarifying_questions": ["What exactly should change?"], '
+                '"reasoning": "Need more detail"}'
+            )
+        )
+
+        with (
+            patch("app.tasks.autonomous.triage.get_sync_client", return_value=mock_client),
+            patch("app.tasks.autonomous.triage.get_task_spirit", return_value=None),
+            patch("app.tasks.autonomous.triage.duplicate_task_exists", return_value=None),
+            patch("app.tasks.autonomous.triage.task_store") as mock_store,
+            patch("app.tasks.autonomous.triage.log_task_event") as mock_log,
+        ):
+            mock_store.get_task.return_value = {
+                "title": "Need more detail",
+                "description": "",
+            }
+
+            def _update_task_status(task_id: str, status: str, **kwargs: object) -> dict[str, str]:
+                assert task_id == "task-needs-info"
+                assert status == "failed"
+                assert kwargs == {
+                    "error_message": "Need more detail",
+                    "validate_transition": False,
+                }
+                return {"id": task_id, "status": status}
+
+            mock_store.update_task_status.side_effect = _update_task_status
+
+            result = triage_idea("task-needs-info", "test-project")
+
+        assert result["status"] == "completed"
+        assert result["result"]["status"] == "NEEDS_CLARIFICATION"
+        mock_store.update_task_status.assert_called_once()
+        assert "What exactly should change?" in mock_log.call_args[0][1]

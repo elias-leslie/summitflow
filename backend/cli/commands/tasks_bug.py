@@ -78,6 +78,8 @@ def _build_bug_task_data(
         "title": title,
         "task_type": "bug",
         "priority": priority,
+        "execution_mode": "autonomous",
+        "autonomous": True,
     }
 
     if description:

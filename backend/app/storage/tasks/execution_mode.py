@@ -15,7 +15,7 @@ EXECUTION_MODE_VALUES = (
     EXECUTION_MODE_MANUAL_ONLY,
 )
 
-_AUTONOMOUS_TYPES = {"refactor", "debt", "regression"}
+_AUTONOMOUS_TYPES = {"bug", "refactor", "debt", "regression"}
 
 
 def resolve_execution_mode(
