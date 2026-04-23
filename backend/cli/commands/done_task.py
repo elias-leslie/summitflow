@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from typing import Any
 
 import typer
 
@@ -44,6 +45,16 @@ def _checkpoint_repo_root(project_id: str | None) -> str | None:
     if not project_id:
         return None
     return get_project_root_path(project_id)
+
+
+def _task_project_id(task: dict[str, Any]) -> str | None:
+    raw_project_id = task.get("project_id")
+    return str(raw_project_id) if isinstance(raw_project_id, str) and raw_project_id else None
+
+
+def _task_base_branch(task: dict[str, Any]) -> str:
+    raw_base_branch = task.get("base_branch")
+    return str(raw_base_branch) if isinstance(raw_base_branch, str) and raw_base_branch else "main"
 
 
 def ensure_checkpoint_clean(
@@ -205,6 +216,60 @@ def _perform_completion(
         _trigger_health_check(task_id, project_id)
 
 
+def _finalize_missing_snapshot_residue(
+    client: STClient,
+    task_id: str,
+    task: dict[str, Any],
+    *,
+    strict: bool,
+) -> dict[str, str | bool] | None:
+    """Use residue finalize path when checkpoint metadata is gone for a closed task."""
+    if strict:
+        return None
+
+    status = str(task.get("status") or "")
+    if status in {"running", "pending"}:
+        output_error(
+            f"Checkpoint metadata missing for active task {task_id} (status={status}).\n"
+            "  Restore/claim the task checkpoint first; residue finalize is only for closed tasks."
+        )
+        raise typer.Exit(1)
+    if status not in {"completed", "failed"}:
+        return None
+
+    project_id = _task_project_id(task)
+    base_branch = _task_base_branch(task)
+    stashed = _handle_dirty_main(strict=False)
+    try:
+        output_warning(
+            f"Checkpoint metadata missing for {task_id} — using residue finalize path. "
+            "Diff gate will not run in this recovery mode."
+        )
+        result = client.finalize_task_merge(task_id)
+        result_status = str(result.get("status") or "")
+        if result_status not in {"merged", "skipped"}:
+            detail = str(result.get("reason") or result.get("error") or result_status or "unknown")
+            output_error(f"Residue finalize failed for {task_id}: {detail}")
+            raise typer.Exit(1)
+        _publish_completed_work(task_id, project_id)
+        output_success(
+            f"Recovered closeout via residue finalize: status={result_status} "
+            f"base={result.get('base_branch') or base_branch}"
+        )
+        return _done_result(
+            task_id,
+            merged=result_status == "merged",
+            snapshot_removed=True,
+            base_branch=str(result.get("base_branch") or base_branch),
+        )
+    except APIError as e:
+        output_error(f"Residue finalize failed for {task_id}: {e.detail}")
+        raise typer.Exit(1) from None
+    finally:
+        if stashed:
+            git_stash_pop()
+
+
 def _load_snapshot_info(
     client: STClient,
     task_id: str,
@@ -222,12 +287,6 @@ def _load_snapshot_info(
     if admin:
         _close_task_safely(client, task_id, message)
         return None, _done_result(task_id)
-    try:
-        task = client.get_task(task_id)
-        if task.get("status") == "completed":
-            return None, _done_result(task_id)
-    except APIError:
-        pass
     return _reconstruct_snapshot_info(client, task_id), None
 
 
@@ -248,6 +307,20 @@ def complete_task(
     if early is not None:
         return early
     if not snapshot_info:
+        task: dict[str, Any] | None = None
+        try:
+            task = client.get_task(task_id)
+        except APIError:
+            task = None
+        if task is not None:
+            recovered = _finalize_missing_snapshot_residue(
+                client,
+                task_id,
+                task,
+                strict=strict,
+            )
+            if recovered is not None:
+                return recovered
         output_error(f"No checkpoint found for {task_id}. Was it claimed?")
         raise typer.Exit(1)
 
