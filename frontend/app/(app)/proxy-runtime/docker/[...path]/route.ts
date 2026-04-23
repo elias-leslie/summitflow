@@ -69,6 +69,17 @@ function proxyResponse(response: Response): Response {
   })
 }
 
+async function readForwardBody(
+  request: Request,
+  method: string,
+): Promise<ArrayBuffer | undefined> {
+  if (method === 'GET' || method === 'HEAD') return undefined
+
+  const clone = request.clone()
+  const body = await clone.arrayBuffer()
+  return body.byteLength > 0 ? body : undefined
+}
+
 async function proxyRequest(
   request: Request,
   { params }: RouteContext,
@@ -81,11 +92,11 @@ async function proxyRequest(
     path,
     new URL(request.url).searchParams.toString(),
   )
-  const body = method === 'GET' ? '' : await request.text()
+  const body = await readForwardBody(request, method)
   const response = await fetch(url, {
     method,
     headers: buildForwardHeaders(request, config, {
-      bodyPresent: body.length > 0,
+      bodyPresent: body !== undefined,
     }),
     ...(body ? { body } : {}),
   })
