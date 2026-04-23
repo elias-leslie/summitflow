@@ -89,6 +89,9 @@ importers:
       '@summitflow/notes-ui':
         specifier: workspace:*
         version: link:../packages/notes-ui
+      '@summitflow/review-overlay':
+        specifier: workspace:*
+        version: link:../packages/review-overlay
       '@tanstack/react-query':
         specifier: ^5.90.18
         version: 5.95.2(react@19.2.4)
@@ -206,27 +209,36 @@ importers:
         specifier: ^5.3.0
         version: 5.9.3
 
+  packages/review-overlay:
+    devDependencies:
+      tsup:
+        specifier: ^8.0.0
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
 packages:
 
   '@adobe/css-tools@4.4.4':
     resolution: {integrity: sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg==}
 
   '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz':
-    resolution: {integrity: sha512-WlaeHMjAlzI3nVbooxCc0BysyxcwzArvmqWRKuHqSJOtoZd9og3+dQQrXStBkHNXdcnfwxo70Hb1bpmNJyZbwg==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz}
+    resolution: {integrity: sha512-IZIPi0AgUPiHXESDmdc4sefT65t0SxwilBWW0v4E71Tre4gWz0oIx9gy/AWVVPCCB407auwv9FmUFiFAcZjc2A==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz}
     version: 0.1.0
     peerDependencies:
       react: '>=18 || ^19.0.0'
       react-dom: '>=18 || ^19.0.0'
 
   '@agent-hub/passport-client@file:docker/workspace-packages/agent-hub-passport-client-0.1.0.tgz':
-    resolution: {integrity: sha512-Z21ENYsB9rYbUXq2FPorU1CZwtp+WXGMJBoSHE/pBIWasAsltn6uYh/9B41OWnNJloaTH+QXF7c43Nbv3KS9zA==, tarball: file:docker/workspace-packages/agent-hub-passport-client-0.1.0.tgz}
+    resolution: {integrity: sha512-AgXiOjugEL9LSxWpy922TFhyZLK2Aj2SERduYQ6rxT/KnbEGMtyo7iW8EKa7sV1GCvZ/+Pm6zrkfXO41zHinWw==, tarball: file:docker/workspace-packages/agent-hub-passport-client-0.1.0.tgz}
     version: 0.1.0
     peerDependencies:
       react: '>=18 || ^19.0.0'
       react-dom: '>=18 || ^19.0.0'
 
   '@agent-hub/push-client@file:docker/workspace-packages/agent-hub-push-client-0.1.0.tgz':
-    resolution: {integrity: sha512-dzWUN233tWddcGfi5izIRdlEZhRC03FoIQHeBRZ9JeGGooHFgSJkb7xFnQtIJAS7Ez3IYL+Je1x4teRj8MvgCA==, tarball: file:docker/workspace-packages/agent-hub-push-client-0.1.0.tgz}
+    resolution: {integrity: sha512-fWHMj2ud/S8WOb214pVfZ1kx0UTjOr6Qjw+YfZ2pkAyDk4dpUxl+6T+GcgKM5JmP6rjDa0brgQ2yGOtGPwvyBg==, tarball: file:docker/workspace-packages/agent-hub-push-client-0.1.0.tgz}
     version: 0.1.0
 
   '@alloc/quick-lru@5.2.0':

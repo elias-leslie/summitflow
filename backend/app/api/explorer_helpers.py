@@ -106,6 +106,43 @@ def enrich_page_entries_with_sub_elements(
                 ]
 
 
+def enrich_page_entries_with_route_evidence(entries: list[dict[str, Any]]) -> None:
+    """Add route-evidence summaries and recent items to page entries in-place."""
+    page_entries = [entry for entry in entries if entry.get("entry_type") == "page"]
+    if not page_entries:
+        return
+
+    from ..storage import route_evidence as route_evidence_store
+
+    grouped_entries: dict[str, list[dict[str, Any]]] = {}
+    for entry in page_entries:
+        project_id = str(entry.get("project_id") or "").strip()
+        if not project_id:
+            continue
+        grouped_entries.setdefault(project_id, []).append(entry)
+
+    for project_id, project_entries in grouped_entries.items():
+        summaries = route_evidence_store.get_page_evidence_summaries(
+            project_id=project_id,
+            page_keys=[str(entry.get("path") or "") for entry in project_entries],
+            recent_limit=10,
+        )
+        for entry in project_entries:
+            summary = summaries.get(
+                str(entry.get("path") or ""),
+                {
+                    "evidence_count": 0,
+                    "last_evidence_at": None,
+                    "recent_items": [],
+                },
+            )
+            entry["evidence_count"] = summary["evidence_count"]
+            entry["last_evidence_at"] = summary["last_evidence_at"]
+            metadata = dict(entry.get("metadata") or {})
+            metadata["recent_route_evidence"] = summary["recent_items"]
+            entry["metadata"] = metadata
+
+
 def format_list_entries_response(
     entries: list[dict[str, Any]],
     stats: dict[str, Any],

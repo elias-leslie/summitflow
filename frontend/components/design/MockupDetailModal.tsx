@@ -15,6 +15,7 @@ interface MockupDetailModalProps {
   onOpenChange: (open: boolean) => void
   onStatusChange: () => void
   onCreateIteration: (mockup: Mockup) => void
+  onOpenReviewOverlay?: (mockup: Mockup) => void
 }
 
 export function MockupDetailModal({
@@ -24,6 +25,7 @@ export function MockupDetailModal({
   onOpenChange,
   onStatusChange,
   onCreateIteration,
+  onOpenReviewOverlay,
 }: MockupDetailModalProps) {
   const {
     updating,
@@ -72,6 +74,7 @@ export function MockupDetailModal({
             onToggleHistory={() => setShowHistory(!showHistory)}
             onCreateIteration={() => onCreateIteration(mockup)}
             onDelete={() => setShowDeleteConfirm(true)}
+            onOpenReviewOverlay={() => onOpenReviewOverlay?.(mockup)}
           />
 
           <DetailsSidebar

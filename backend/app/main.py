@@ -33,6 +33,7 @@ from .api import (
     projects,
     quality_gate,
     refactor_sessions,
+    route_evidence,
     schemas,
     snapshots,
     system,
@@ -110,6 +111,7 @@ app = FastAPI(
 # Include routers
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
+app.include_router(route_evidence.router, prefix="/api/projects", tags=["route-evidence"])
 app.include_router(files.project_router, prefix="/api/projects", tags=["files"])
 app.include_router(files.global_router, prefix="/api", tags=["files"])
 

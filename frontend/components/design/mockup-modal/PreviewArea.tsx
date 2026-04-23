@@ -8,6 +8,7 @@ import {
   History,
   Image as ImageIcon,
   Layers3,
+  MessageSquare,
   Trash2,
 } from 'lucide-react'
 import Image from 'next/image'
@@ -34,6 +35,7 @@ interface PreviewAreaProps {
   onToggleHistory: () => void
   onCreateIteration: () => void
   onDelete: () => void
+  onOpenReviewOverlay?: () => void
 }
 
 export function PreviewArea({
@@ -46,6 +48,7 @@ export function PreviewArea({
   onToggleHistory,
   onCreateIteration,
   onDelete,
+  onOpenReviewOverlay,
 }: PreviewAreaProps) {
   return (
     <div className="flex-1 p-4 flex flex-col min-h-0 min-w-0">
@@ -137,6 +140,16 @@ export function PreviewArea({
           <Layers3 className="w-4 h-4" />
           New Iteration
         </button>
+        {onOpenReviewOverlay && (
+          <button
+            type="button"
+            onClick={onOpenReviewOverlay}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <MessageSquare className="w-4 h-4" />
+            Review Overlay
+          </button>
+        )}
         <div className="flex-1" />
         <button
           type="button"

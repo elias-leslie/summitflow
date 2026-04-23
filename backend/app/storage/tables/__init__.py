@@ -10,6 +10,7 @@ from .explorer import create_explorer_tables
 from .migrations import apply_schema_migrations
 from .notes import create_notes_tables
 from .notifications import create_notifications_tables
+from .route_evidence import create_route_evidence_tables
 
 __all__ = [
     "apply_schema_migrations",
@@ -19,4 +20,5 @@ __all__ = [
     "create_explorer_tables",
     "create_notes_tables",
     "create_notifications_tables",
+    "create_route_evidence_tables",
 ]
