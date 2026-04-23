@@ -33,8 +33,6 @@ def upgrade() -> None:
         op.execute("UPDATE backup_schedules SET retention_days = 14")
         op.execute("ALTER TABLE backup_schedules DROP COLUMN IF EXISTS retention_count")
 
-
-
 def downgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
