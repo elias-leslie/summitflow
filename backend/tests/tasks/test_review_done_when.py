@@ -50,6 +50,97 @@ class TestDoneWhenInReviewPrompt:
 
         assert not any(call.args[:2] == ("task-1", "running") for call in mock_store.update_task_status.call_args_list)
 
+    @patch("app.tasks.autonomous.review._notify_failure")
+    @patch("app.tasks.autonomous.review.log_task_event")
+    @patch("app.tasks.autonomous.review.route_based_on_verdict")
+    @patch("app.tasks.autonomous.review.get_sync_client")
+    @patch("app.tasks.autonomous.review._build_snapshot_block", return_value="")
+    @patch("app.tasks.autonomous.review._build_scope_block", return_value="")
+    @patch("app.tasks.autonomous.review.get_task_spirit")
+    @patch("app.tasks.autonomous.review.collect_precision_code_search_context")
+    @patch("app.tasks.autonomous.review.get_git_diff")
+    @patch("app.tasks.autonomous.review.task_store")
+    def test_completed_task_review_exception_does_not_mark_failed(
+        self,
+        mock_store: MagicMock,
+        mock_diff: MagicMock,
+        mock_precision: MagicMock,
+        mock_spirit: MagicMock,
+        _mock_scope_block: MagicMock,
+        _mock_snapshot_block: MagicMock,
+        mock_client_fn: MagicMock,
+        _mock_route: MagicMock,
+        mock_log_task_event: MagicMock,
+        mock_notify_failure: MagicMock,
+    ) -> None:
+        mock_store.get_task.return_value = {
+            "id": "task-1",
+            "title": "Fix bug",
+            "project_id": "summitflow",
+            "complexity": "STANDARD",
+            "status": "completed",
+        }
+        mock_diff.return_value = "+ fix"
+        mock_precision.return_value.prompt_context = ""
+        mock_spirit.return_value = {"done_when": ["Tests pass"]}
+
+        mock_client = MagicMock()
+        mock_client.complete.side_effect = RuntimeError("agent hub unavailable")
+        mock_client_fn.return_value = mock_client
+
+        from app.tasks.autonomous.review import ai_review
+
+        result = ai_review("task-1", "summitflow")
+
+        assert result["status"] == "error"
+        assert not any(call.args[:2] == ("task-1", "failed") for call in mock_store.update_task_status.call_args_list)
+        mock_log_task_event.assert_called_once()
+        mock_notify_failure.assert_not_called()
+
+    @patch("app.tasks.autonomous.review._notify_failure")
+    @patch("app.tasks.autonomous.review.route_based_on_verdict")
+    @patch("app.tasks.autonomous.review.get_sync_client")
+    @patch("app.tasks.autonomous.review._build_snapshot_block", return_value="")
+    @patch("app.tasks.autonomous.review._build_scope_block", return_value="")
+    @patch("app.tasks.autonomous.review.get_task_spirit")
+    @patch("app.tasks.autonomous.review.collect_precision_code_search_context")
+    @patch("app.tasks.autonomous.review.get_git_diff")
+    @patch("app.tasks.autonomous.review.task_store")
+    def test_running_task_review_exception_marks_failed(
+        self,
+        mock_store: MagicMock,
+        mock_diff: MagicMock,
+        mock_precision: MagicMock,
+        mock_spirit: MagicMock,
+        _mock_scope_block: MagicMock,
+        _mock_snapshot_block: MagicMock,
+        mock_client_fn: MagicMock,
+        _mock_route: MagicMock,
+        mock_notify_failure: MagicMock,
+    ) -> None:
+        mock_store.get_task.return_value = {
+            "id": "task-1",
+            "title": "Fix bug",
+            "project_id": "summitflow",
+            "complexity": "STANDARD",
+            "status": "running",
+        }
+        mock_diff.return_value = "+ fix"
+        mock_precision.return_value.prompt_context = ""
+        mock_spirit.return_value = {"done_when": ["Tests pass"]}
+
+        mock_client = MagicMock()
+        mock_client.complete.side_effect = RuntimeError("agent hub unavailable")
+        mock_client_fn.return_value = mock_client
+
+        from app.tasks.autonomous.review import ai_review
+
+        result = ai_review("task-1", "summitflow")
+
+        assert result["status"] == "error"
+        assert any(call.args[:2] == ("task-1", "failed") for call in mock_store.update_task_status.call_args_list)
+        mock_notify_failure.assert_called_once()
+
     @patch("app.tasks.autonomous.review.route_based_on_verdict")
     @patch("app.tasks.autonomous.review.get_sync_client")
     @patch("app.tasks.autonomous.review._build_snapshot_block", return_value="Touched File Snapshots:\nFile: backend/app/main.py")

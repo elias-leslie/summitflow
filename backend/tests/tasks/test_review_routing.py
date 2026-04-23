@@ -55,6 +55,20 @@ class TestRouteBasedOnVerdict:
         route_based_on_verdict("task-1", "STANDARD", result)
         mock_handler.assert_called_once_with("task-1", result)
 
+    @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
+    @patch("app.tasks.autonomous.review_modules.routing.task_store")
+    @patch("app.tasks.autonomous.review_modules.routing.handle_plan_defect")
+    def test_plan_defect_reopens_completed_task_to_pending(
+        self, mock_handler: MagicMock, mock_store: MagicMock, mock_log: MagicMock
+    ) -> None:
+        mock_store.get_task.return_value = {"project_id": "test-project", "status": "completed"}
+
+        result = {"verdict": "PLAN_DEFECT"}
+        route_based_on_verdict("task-1", "STANDARD", result)
+
+        mock_handler.assert_called_once_with("task-1", result)
+        mock_store.update_task_status.assert_called_with("task-1", "pending")
+
     @patch("app.tasks.autonomous.review_modules.routing._handle_escalation")
     def test_unknown_verdict_routes_to_escalation(self, mock_handler: MagicMock) -> None:
         result = {"verdict": "UNKNOWN"}
@@ -195,6 +209,27 @@ class TestHandleNeedsFix:
 
         mock_fix.assert_called_once_with("task-1", review)
         mock_store.update_task_status.assert_called_with("task-1", "running")
+
+    @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
+    @patch("app.tasks.autonomous.review_modules.routing.create_fix_subtask")
+    @patch("app.tasks.autonomous.review_modules.routing.run_qa_loop")
+    @patch("app.services.task_checkout.get_task_checkout")
+    @patch("app.tasks.autonomous.review_modules.routing.task_store")
+    def test_qa_loop_exhausted_reopens_completed_task_to_pending(
+        self, mock_store: MagicMock, mock_checkout: MagicMock,
+        mock_loop: MagicMock, mock_fix: MagicMock, mock_log: MagicMock,
+    ) -> None:
+        mock_store.get_task.return_value = {"project_id": "test-project", "status": "completed"}
+        mock_wt = MagicMock()
+        mock_wt.path = "/tmp/checkout"
+        mock_checkout.return_value = mock_wt
+        mock_loop.return_value = "NEEDS_FIX"
+
+        review = {"verdict": "NEEDS_FIX", "concerns": ["security issue"]}
+        _handle_needs_fix("task-1", review)
+
+        mock_fix.assert_called_once_with("task-1", review)
+        mock_store.update_task_status.assert_called_with("task-1", "pending")
 
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
     @patch("app.tasks.autonomous.review_modules.routing._handle_escalation")
@@ -561,11 +596,28 @@ class TestHandleEscalation:
         mock_store.update_task_status.assert_called_with("task-1", "running")
 
     @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
+    @patch("app.tasks.autonomous.review_modules.routing.create_fix_subtask")
+    @patch("app.tasks.autonomous.review_modules.routing.supervisor_resolve_escalation")
+    @patch("app.tasks.autonomous.review_modules.routing.task_store")
+    def test_supervisor_fix_reopens_completed_task_to_pending(
+        self, mock_store: MagicMock, mock_resolve: MagicMock,
+        mock_fix: MagicMock, mock_log: MagicMock,
+    ) -> None:
+        mock_store.get_task.return_value = {"project_id": "test-project", "status": "completed"}
+        mock_resolve.return_value = "fix"
+
+        _handle_escalation("task-1", {"summary": "needs work"})
+
+        mock_fix.assert_called_once()
+        mock_store.update_task_status.assert_called_with("task-1", "pending")
+
+    @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
+    @patch("app.tasks.autonomous.review_modules.routing._send_notification")
     @patch("app.tasks.autonomous.review_modules.routing.supervisor_resolve_escalation")
     @patch("app.tasks.autonomous.review_modules.routing.task_store")
     def test_supervisor_block_sets_blocked_status(
         self, mock_store: MagicMock, mock_resolve: MagicMock,
-        mock_log: MagicMock,
+        mock_notify: MagicMock, mock_log: MagicMock,
     ) -> None:
         mock_store.get_task.return_value = {"project_id": "test-project"}
         mock_resolve.return_value = "block"
@@ -573,3 +625,19 @@ class TestHandleEscalation:
         _handle_escalation("task-1", {"summary": "critical issue"})
 
         mock_store.update_task_status.assert_called_once_with("task-1", "failed")
+
+    @patch("app.tasks.autonomous.review_modules.routing.log_task_event")
+    @patch("app.tasks.autonomous.review_modules.routing._send_notification")
+    @patch("app.tasks.autonomous.review_modules.routing.supervisor_resolve_escalation")
+    @patch("app.tasks.autonomous.review_modules.routing.task_store")
+    def test_supervisor_block_reopens_completed_task_to_pending(
+        self, mock_store: MagicMock, mock_resolve: MagicMock,
+        mock_notify: MagicMock, mock_log: MagicMock,
+    ) -> None:
+        mock_store.get_task.return_value = {"project_id": "test-project", "status": "completed"}
+        mock_resolve.return_value = "block"
+
+        _handle_escalation("task-1", {"summary": "critical issue"})
+
+        mock_store.update_task_status.assert_called_once_with("task-1", "pending")
+        mock_notify.assert_not_called()
