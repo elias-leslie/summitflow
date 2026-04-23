@@ -14,6 +14,29 @@ from .events import emit_log
 logger = get_logger(__name__)
 
 
+def _expected_task_branch(task_id: str) -> str:
+    """Return the canonical shared-checkout branch name for a task."""
+    return f"{task_id}/main"
+
+
+def _current_branch(project_path: str) -> str | None:
+    """Return current branch for the shared checkout."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    branch = result.stdout.strip()
+    return branch or None
+
+
 def _parse_dirty_paths(status_output: str) -> list[str]:
     """Parse `git status --porcelain` output into file paths."""
     paths: list[str] = []
@@ -90,6 +113,17 @@ def check_checkout_health(project_path: str, task_id: str, project_id: str) -> b
             task_id, "error",
             f"CHECKOUT CORRUPTED: {project_path} not a git checkout",
             source="orchestrator", project_id=project_id,
+        )
+        return False
+    current_branch = _current_branch(project_path)
+    expected_branch = _expected_task_branch(task_id)
+    if current_branch != expected_branch:
+        emit_log(
+            task_id,
+            "error",
+            f"CHECKOUT BRANCH MISMATCH: expected {expected_branch}, got {current_branch or 'unknown'}",
+            source="orchestrator",
+            project_id=project_id,
         )
         return False
     return True

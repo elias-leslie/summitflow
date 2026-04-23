@@ -129,35 +129,61 @@ class TestCheckoutHealthCheck:
         mock_log.assert_called_once()
         assert "CHECKOUT CORRUPTED" in mock_log.call_args[0][2]
 
+    @patch(f"{_CHECKOUT}.subprocess.run")
     @patch(f"{_CHECKOUT}.emit_log")
     def test_checkout_health_check_valid(
         self,
         mock_log: MagicMock,
+        mock_run: MagicMock,
         tmp_path: Path,
     ) -> None:
         """Returns True for a valid checkout directory with .git marker."""
         from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
 
         (tmp_path / ".git").mkdir()
+        mock_run.return_value = MagicMock(returncode=0, stdout="task-1/main\n")
         result = check_checkout_health(str(tmp_path), "task-1", "test-project")
 
         assert result
         mock_log.assert_not_called()
 
+    @patch(f"{_CHECKOUT}.subprocess.run")
     @patch(f"{_CHECKOUT}.emit_log")
     def test_checkout_health_check_valid_git_file(
         self,
         mock_log: MagicMock,
+        mock_run: MagicMock,
         tmp_path: Path,
     ) -> None:
         """Returns True when .git is a file-backed checkout."""
         from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
 
         (tmp_path / ".git").write_text("gitdir: /path/to/main/.git/checkouts/task-1")
+        mock_run.return_value = MagicMock(returncode=0, stdout="task-1/main\n")
         result = check_checkout_health(str(tmp_path), "task-1", "test-project")
 
         assert result
         mock_log.assert_not_called()
+
+    @patch(f"{_CHECKOUT}.subprocess.run")
+    @patch(f"{_CHECKOUT}.emit_log")
+    def test_checkout_health_check_branch_mismatch(
+        self,
+        mock_log: MagicMock,
+        mock_run: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Returns False when shared checkout drifts onto another task branch."""
+        from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
+
+        (tmp_path / ".git").mkdir()
+        mock_run.return_value = MagicMock(returncode=0, stdout="task-other/main\n")
+
+        result = check_checkout_health(str(tmp_path), "task-1", "test-project")
+
+        assert not result
+        mock_log.assert_called_once()
+        assert "CHECKOUT BRANCH MISMATCH" in mock_log.call_args[0][2]
 
 
 class TestHealLoopAbortsOnInvalidCheckout:
