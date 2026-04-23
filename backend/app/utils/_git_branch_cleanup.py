@@ -22,6 +22,7 @@ class OrphanBranchAssessment:
     task_id: str
     resolution: str
     task_status: str | None
+    task_token: str
     commits_ahead: int
     files_changed: int
     has_node_modules_artifact: bool
@@ -44,17 +45,32 @@ def _has_node_modules_artifact(diff_paths: list[str]) -> bool:
     return any(path == "node_modules" or path.startswith("node_modules/") for path in diff_paths)
 
 
-def _load_task_status(task_id: str) -> str | None:
-    """Return the persisted task status for an orphan branch, if available."""
+def _load_task_status(task_id: str) -> tuple[str | None, str]:
+    """Return persisted task status plus assessment token for an orphan branch."""
     from app.storage import tasks as task_store
 
-    task = task_store.get_task(task_id)
-    return task.get("status") if task else None
+    try:
+        task = task_store.get_task(task_id)
+    except Exception:
+        return None, "task:unreadable"
+
+    if task is None:
+        return None, "task:missing"
+
+    if not hasattr(task, "get"):
+        return None, "task:unreadable"
+
+    status = task.get("status")
+    if status is None:
+        return None, "task:unreadable"
+    if not isinstance(status, str):
+        return None, "task:unreadable"
+    return status, f"task:{status}"
 
 
-def _resolution_for_task_status(task_status: str | None) -> str:
+def _resolution_for_task_status(task_token: str) -> str:
     """Classify whether an orphan branch needs salvage or active review."""
-    return "salvage" if task_status is None or task_status in _CLOSED_TASK_STATUSES else "review"
+    return "salvage" if task_token == "task:missing" else "review"
 
 
 def _build_orphan_branch_assessment(
@@ -69,12 +85,13 @@ def _build_orphan_branch_assessment(
         raise ValueError(f"Expected orphan task branch with task_id: {branch.name}")
 
     diff_paths = git_branches._branch_diff_paths(repo_path, branch.name, base_branch)
-    task_status = _load_task_status(task_id)
+    task_status, task_token = _load_task_status(task_id)
     return OrphanBranchAssessment(
         branch_name=branch.name,
         task_id=task_id,
-        resolution=_resolution_for_task_status(task_status),
+        resolution=_resolution_for_task_status(task_token),
         task_status=task_status,
+        task_token=task_token,
         commits_ahead=git_branches._branch_commits_ahead(repo_path, branch.name, base_branch),
         files_changed=len(diff_paths),
         has_node_modules_artifact=_has_node_modules_artifact(diff_paths),
@@ -177,7 +194,7 @@ def list_closed_orphan_task_branches(repo_path: Path) -> list[str]:
         branch.name
         for branch in _orphan_task_branches(git_branches.get_all_branches(repo_path))
         if branch.task_id is not None
-        and _load_task_status(branch.task_id) in _CLOSED_TASK_STATUSES
+        and _load_task_status(branch.task_id)[0] in _CLOSED_TASK_STATUSES
     ]
 
 
