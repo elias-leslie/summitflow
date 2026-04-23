@@ -14,7 +14,7 @@ from .events import emit_log
 
 logger = get_logger(__name__)
 
-_PENDING_STATUSES = {"pending"}
+_PENDING_STATUS = "pending"
 
 
 def _normalize_failed_subtask_ids(failed_results: list[dict[str, Any]]) -> list[str]:
@@ -32,10 +32,12 @@ def _normalize_failed_subtask_ids(failed_results: list[dict[str, Any]]) -> list[
 
 
 def _build_followup_title(task_id: str) -> str:
+    """Return exact follow-up title for parent task."""
     return f"Follow-up: stuck subtasks from {task_id}"
 
 
 def _build_followup_description(task_id: str, failed_results: list[dict[str, Any]]) -> str:
+    """Return normalized follow-up description text."""
     subtask_ids = _normalize_failed_subtask_ids(failed_results)
     failed_desc = "\n".join(f"- {subtask_id}" for subtask_id in subtask_ids)
     if not failed_desc:
@@ -53,7 +55,7 @@ def _find_pending_followup_task(
     project_id: str,
     title: str,
 ) -> dict[str, Any] | None:
-    """Return oldest pending matching direct child follow-up task."""
+    """Return oldest pending direct child follow-up task."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
@@ -62,24 +64,38 @@ def _find_pending_followup_task(
             WHERE project_id = %s
               AND parent_task_id = %s
               AND title = %s
-              AND status = ANY(%s)
+              AND status = %s
             ORDER BY created_at ASC, id ASC
             LIMIT 1
             """,
-            (project_id, parent_task_id, title, list(_PENDING_STATUSES)),
+            (project_id, parent_task_id, title, _PENDING_STATUS),
         )
         row = cur.fetchone()
-    if row is None:
-        return None
-    return row_to_dict(row)
+    return row_to_dict(row) if row else None
+
+
+def _reuse_followup(
+    parent_task_id: str,
+    project_id: str,
+    followup_task: dict[str, Any],
+    description: str,
+) -> str:
+    update_task_fields(followup_task["id"], description=description)
+    emit_log(
+        parent_task_id,
+        "info",
+        f"Reused follow-up task {followup_task['id']} for failed subtasks",
+        project_id=project_id,
+    )
+    return str(followup_task["id"])
 
 
 def create_followup_task_for_failures(
-    task_id: str,
+    task_id: str | None,
     project_id: str,
     failed_results: list[dict[str, Any]],
 ) -> str | None:
-    """Create or reuse follow-up task for failed subtasks."""
+    """Create or reuse a follow-up task for failed subtasks."""
     if not isinstance(task_id, str) or not task_id.strip():
         emit_log(
             task_id if isinstance(task_id, str) else "",
@@ -91,30 +107,34 @@ def create_followup_task_for_failures(
 
     try:
         parent_task_id = canonicalize_task_id(task_id)
-        followup_title = _build_followup_title(parent_task_id)
-        followup_description = _build_followup_description(parent_task_id, failed_results)
-        existing_followup = _find_pending_followup_task(parent_task_id, project_id, followup_title)
+        title = _build_followup_title(parent_task_id)
+        description = _build_followup_description(parent_task_id, failed_results)
+        existing_followup = _find_pending_followup_task(parent_task_id, project_id, title)
         if existing_followup is not None:
-            update_task_fields(existing_followup["id"], description=followup_description)
-            emit_log(
-                parent_task_id,
-                "info",
-                f"Reused follow-up task {existing_followup['id']} for failed subtasks",
-                project_id=project_id,
-            )
-            return str(existing_followup["id"])
+            return _reuse_followup(parent_task_id, project_id, existing_followup, description)
 
-        follow_up = create_task(
+        created_followup = create_task(
             project_id=project_id,
-            title=followup_title,
-            description=followup_description,
+            title=title,
+            description=description,
             task_type="task",
             priority=1,
             parent_task_id=parent_task_id,
             autonomous=True,
         )
+        authoritative_followup = _find_pending_followup_task(parent_task_id, project_id, title)
+        if authoritative_followup is not None:
+            if authoritative_followup["id"] == created_followup["id"]:
+                emit_log(
+                    parent_task_id,
+                    "info",
+                    f"Created follow-up task {created_followup['id']} for failed subtasks",
+                    project_id=project_id,
+                )
+                return str(created_followup["id"])
+            return _reuse_followup(parent_task_id, project_id, authoritative_followup, description)
 
-        follow_up_id = str(follow_up.get("id", "unknown"))
+        follow_up_id = str(created_followup.get("id", "unknown"))
         emit_log(
             parent_task_id,
             "info",
@@ -122,7 +142,6 @@ def create_followup_task_for_failures(
             project_id=project_id,
         )
         return follow_up_id
-
     except Exception as e:
         emit_log(
             task_id,
