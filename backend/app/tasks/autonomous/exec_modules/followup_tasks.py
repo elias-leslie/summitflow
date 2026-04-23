@@ -7,7 +7,7 @@ from typing import Any
 from ....logging_config import get_logger
 from ....storage.connection import get_connection
 from ....storage.tasks.columns import TASK_COLUMNS
-from ....storage.tasks.core import canonicalize_task_id, create_task
+from ....storage.tasks.core import canonicalize_task_id, create_task, get_task
 from ....storage.tasks.mapping import row_to_dict
 from ....storage.tasks.update import update_task_fields
 from .events import emit_log
@@ -48,6 +48,16 @@ def _build_followup_description(task_id: str, failed_results: list[dict[str, Any
         f"{failed_desc}\n\n"
         f"These need to be re-attempted with a fresh approach."
     )
+
+
+def _resolve_parent_task_id(task_id: str | None) -> str | None:
+    """Return canonical parent task id when input is usable and exists."""
+    if not isinstance(task_id, str) or not task_id.strip():
+        return None
+    parent_task_id = canonicalize_task_id(task_id)
+    if get_task(parent_task_id) is None:
+        return None
+    return parent_task_id
 
 
 def _find_pending_followup_task(
@@ -96,7 +106,8 @@ def create_followup_task_for_failures(
     failed_results: list[dict[str, Any]],
 ) -> str | None:
     """Create or reuse a follow-up task for failed subtasks."""
-    if not isinstance(task_id, str) or not task_id.strip():
+    parent_task_id = _resolve_parent_task_id(task_id)
+    if parent_task_id is None:
         emit_log(
             task_id if isinstance(task_id, str) else "",
             "warn",
@@ -106,7 +117,6 @@ def create_followup_task_for_failures(
         return None
 
     try:
-        parent_task_id = canonicalize_task_id(task_id)
         title = _build_followup_title(parent_task_id)
         description = _build_followup_description(parent_task_id, failed_results)
         existing_followup = _find_pending_followup_task(parent_task_id, project_id, title)
@@ -144,7 +154,7 @@ def create_followup_task_for_failures(
         return follow_up_id
     except Exception as e:
         emit_log(
-            task_id,
+            parent_task_id,
             "warn",
             f"Failed to create follow-up task: {e}",
             project_id=project_id,

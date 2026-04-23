@@ -295,7 +295,7 @@ class TestCreateFollowupTaskForFailures:
         assert second_followup is not None
         assert second_followup["parent_task_id"] == second_parent["id"]
 
-    @pytest.mark.parametrize("bad_parent_id", [None, "", "   "])
+    @pytest.mark.parametrize("bad_parent_id", [None, "", "   ", "missing-parent", "task-missing-parent"])
     def test_invalid_parent_id_skips_creation_and_emits_warn(
         self,
         bad_parent_id: str | None,
