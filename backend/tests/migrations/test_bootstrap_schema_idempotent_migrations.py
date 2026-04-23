@@ -64,9 +64,33 @@ def test_retention_days_upgrade_skips_missing_legacy_backup_schedules(mocker) ->
     module.upgrade()
 
     inspector.get_columns.assert_not_called()
-    execute.assert_called_once()
-    assert "DELETE FROM backups" in execute.call_args.args[0]
+    execute.assert_not_called()
 
+
+
+
+def test_retention_days_upgrade_updates_legacy_backup_schedules_without_backup_deletes(mocker) -> None:
+    module = _load_migration_module(
+        "233ad1b1d50d_retention_count_to_retention_days.py",
+        "retention_count_to_retention_days_migration_normal_upgrade",
+    )
+    inspector = MagicMock()
+    inspector.has_table.side_effect = lambda table_name: table_name == "backup_schedules"
+    inspector.get_columns.return_value = [{"name": "id"}, {"name": "retention_count"}]
+    execute = mocker.patch.object(module.op, "execute")
+    mocker.patch.object(module.op, "get_bind", return_value=object())
+    mocker.patch.object(module.sa, "inspect", return_value=inspector)
+
+    module.upgrade()
+
+    inspector.get_columns.assert_called_once_with("backup_schedules")
+    executed_sql = [call.args[0] for call in execute.call_args_list]
+    assert executed_sql == [
+        "ALTER TABLE backup_schedules ADD COLUMN retention_days INTEGER NOT NULL DEFAULT 14",
+        "UPDATE backup_schedules SET retention_days = 14",
+        "ALTER TABLE backup_schedules DROP COLUMN IF EXISTS retention_count",
+    ]
+    assert all("DELETE FROM backups" not in sql for sql in executed_sql)
 
 def test_retention_days_downgrade_skips_missing_legacy_backup_schedules(mocker) -> None:
     module = _load_migration_module(
