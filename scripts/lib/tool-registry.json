@@ -2,6 +2,98 @@
   "version": 1,
   "description": "Centralized tool registry — single source of truth for tool enforcement and dt configuration.",
   "cmd_start": "(^|&&\\s*|;\\s*)",
+  "operator_tools": [
+    {
+      "id": "service",
+      "canonical": "st service",
+      "legacy": ["rebuild.sh", "status.sh", "start.sh", "restart.sh", "shutdown.sh"],
+      "summary": "Project service lifecycle, rebuild, migrations, systemd sync, and health checks.",
+      "safety": "mutating",
+      "commands": ["status", "rebuild"],
+      "examples": ["st service status summitflow", "st service rebuild summitflow"],
+      "verify": ["st service status summitflow"]
+    },
+    {
+      "id": "check",
+      "canonical": "st check",
+      "legacy": ["dt", "dev-tools.sh"],
+      "summary": "Quality gates and tool wrappers with TOON output.",
+      "safety": "read-mostly",
+      "commands": ["--check", "--quick", "pytest", "ruff", "types", "biome", "tsc", "vitest"],
+      "examples": ["st check --quick --changed-only", "st check pytest -- backend/tests/cli/test_tools_cli.py"],
+      "verify": ["dt --help", "st check --help"]
+    },
+    {
+      "id": "db",
+      "canonical": "st db",
+      "legacy": ["db"],
+      "summary": "Cross-project PostgreSQL inspection and Alembic migration operations.",
+      "safety": "mixed",
+      "commands": ["tables", "schema", "count", "sample", "query", "exec", "ddl", "migrate"],
+      "examples": ["st db tables", "st db migrate status"],
+      "verify": ["st db tables"]
+    },
+    {
+      "id": "git",
+      "canonical": "st git",
+      "legacy": ["commit.sh"],
+      "summary": "Managed repository status, sync, task finalization, and commit workflow.",
+      "safety": "mutating",
+      "commands": ["status", "sync", "finalize-task", "commit"],
+      "examples": ["st git status", "st git sync"],
+      "verify": ["st git status"]
+    },
+    {
+      "id": "browser",
+      "canonical": "st browser",
+      "legacy": ["sf-browser"],
+      "summary": "Remote browser health, responsive checks, screenshots, snapshots, and DOM evaluation.",
+      "safety": "external",
+      "commands": ["health", "check", "open", "screenshot", "snapshot", "eval"],
+      "examples": ["st browser health", "st browser check http://localhost:3001 /tmp/summitflow.png"],
+      "verify": ["st browser health"]
+    },
+    {
+      "id": "web",
+      "canonical": "st web",
+      "legacy": ["web-research"],
+      "summary": "Centralized public web search, research, and fetch through Agent Hub.",
+      "safety": "external",
+      "commands": ["search", "research", "fetch"],
+      "examples": ["st web search --query \"SummitFlow\" --limit 1"],
+      "verify": ["st web --help"]
+    },
+    {
+      "id": "backup",
+      "canonical": "st backup",
+      "legacy": ["backup.sh", "restore.sh", "backup-all.sh", "backup-pending-upload.sh"],
+      "summary": "Project/source backup creation, restore preview, schedules, pending drain, and infra backups.",
+      "safety": "destructive-with-confirmation",
+      "commands": ["list", "create", "restore", "status", "delete", "drain-pending", "infra", "storage", "testbed"],
+      "examples": ["st backup status", "st backup list --limit 5"],
+      "verify": ["st backup status"]
+    },
+    {
+      "id": "vm",
+      "canonical": "st vm",
+      "legacy": ["proxmox-vm.sh"],
+      "summary": "Proxmox test VM list/status/snapshot/rollback/clone/start/stop/destroy/ip.",
+      "safety": "destructive-with-confirmation",
+      "commands": ["list", "status", "snapshots", "snapshot", "rollback", "clone", "start", "stop", "destroy", "ip"],
+      "examples": ["st vm list", "st vm status 100"],
+      "verify": ["st vm --help"]
+    },
+    {
+      "id": "setup",
+      "canonical": "st setup",
+      "legacy": ["setup-services.sh", "setup-agent-browser.sh", "setup-agent-tooling.sh", "setup-test-dbs.sh"],
+      "summary": "Install, PATH, browser, agent tooling, and test database setup.",
+      "safety": "mutating",
+      "commands": ["services", "browser", "agent-tooling", "test-dbs"],
+      "examples": ["st setup services --dry-run"],
+      "verify": ["st tools catalog"]
+    }
+  ],
   "wrapper_allowlist": [
     "dt\\b",
     "dev-tools\\.sh\\b",

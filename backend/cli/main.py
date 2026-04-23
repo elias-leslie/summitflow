@@ -13,11 +13,14 @@ from .commands import (
     autonomous,
     autosnapshot,
     backup,
+    browser,
+    check,
     checkpoints,
     claim,
     claude,
     cleanup,
     complete,
+    db,
     deps,
     design,
     docker,
@@ -34,6 +37,7 @@ from .commands import (
     pulse,
     refactor,
     search,
+    service,
     session_events,
     sessions,
     snapshots,
@@ -41,6 +45,8 @@ from .commands import (
     tasks,
     tests,
     tools,
+    vm,
+    web,
 )
 from .commands.task_plan_contract import PLAN_SCHEMA_ENDPOINT, PLAN_VERIFY_EXAMPLE
 from .config import set_project_override
@@ -159,7 +165,16 @@ FEEDBACK: feedback report <component> <title> [--type T] [--severity S] [--sessi
           feedback get <id> | feedback vote <id> --session <sid> | feedback resolve <id> | feedback archive <id> | feedback merge <id> <target>
           feedback summary [--project P] [--days N]
 
-TOOLS: tools status [--hours N]
+TOOLS: tools [catalog|status] [--hours N]
+
+OPERATOR TOOLS (canonical wrapper surface):
+  service status [project]                 # managed service status
+  service rebuild <project> [--detach]     # build, migrate, restart, health-check
+  check [dt args...]                       # quality gates and dt tool wrappers
+  db [db args...]                          # database inspection and migrations
+  browser [sf-browser args...]             # browser health/check/screenshot/snapshot/eval
+  web [web-research args...]               # web search/research/fetch
+  vm [proxmox-vm args...]                  # Proxmox test VM operations
 
 LOGS (unified service logs):
   logs                                   # show recent logs (default: tail)
@@ -259,6 +274,7 @@ app.add_typer(sessions.app, name="sessions")
 app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
 app.add_typer(backup.app, name="backup")
+app.add_typer(service.app, name="service")
 app.add_typer(health.app, name="health")
 app.add_typer(logs.app, name="logs")
 app.add_typer(memory.app, name="memory")
@@ -275,6 +291,13 @@ app.add_typer(docker.app, name="docker")
 app.command("pulse")(pulse.pulse)
 app.command("search")(search.search)
 app.command("exec-log")(exec_monitor.exec_log_command)
+
+_FORWARD_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True}
+app.command("check", context_settings=_FORWARD_CONTEXT_SETTINGS, help=check.app.info.help)(check.check)
+app.command("db", context_settings=_FORWARD_CONTEXT_SETTINGS, help=db.app.info.help)(db.db)
+app.command("browser", context_settings=_FORWARD_CONTEXT_SETTINGS, help=browser.app.info.help)(browser.browser)
+app.command("web", context_settings=_FORWARD_CONTEXT_SETTINGS, help=web.app.info.help)(web.web)
+app.command("vm", context_settings=_FORWARD_CONTEXT_SETTINGS, help=vm.app.info.help)(vm.vm)
 
 
 @app.command("progress", hidden=True)

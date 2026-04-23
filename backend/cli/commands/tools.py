@@ -1,4 +1,4 @@
-"""Tools command - View tool/API usage metrics from Agent Hub."""
+"""Tools command - View operator catalog and Agent Hub usage metrics."""
 
 from __future__ import annotations
 
@@ -11,10 +11,11 @@ import typer
 from ..config import get_agent_hub_url
 from ..output import output_error, output_json
 from ..output_context import OutputContext
+from ..tool_registry import list_operator_tools, tool_registry_path
 from ._api_paths import ACCESS_CONTROL_METRICS_PATH
 from ._http_errors import parse_error_detail, raise_connect_error, raise_timeout_error
 
-app = typer.Typer(help="Tool usage metrics (Agent Hub)")
+app = typer.Typer(help="Operator tool catalog and Agent Hub usage metrics")
 
 
 def _build_internal_headers() -> dict[str, str]:
@@ -85,6 +86,27 @@ def _format_status_compact(data: dict[str, Any]) -> None:
             print(f"    {endpoint}  {count} reqs  {rate:.1f}%  {latency:.0f}ms")
 
 
+def _format_catalog_compact(tools: list[dict[str, Any]]) -> None:
+    """Format operator tools in compact TOON style."""
+    print(f"TOOLS_CATALOG[{len(tools)}]:source={tool_registry_path()}")
+    for tool in tools:
+        canonical = tool.get("canonical", "?")
+        legacy = ",".join(str(item) for item in tool.get("legacy", []) if item)
+        safety = tool.get("safety", "?")
+        summary = str(tool.get("summary", "")).strip()
+        print(f"  {canonical}|safety:{safety}|legacy:{legacy}|{summary}")
+
+
+@app.command()
+def catalog(ctx: typer.Context) -> None:
+    """Show canonical st operator tools from the shared registry."""
+    tools = list_operator_tools()
+    if ctx.obj.is_compact:
+        _format_catalog_compact(tools)
+    else:
+        output_json({"source": str(tool_registry_path()), "tools": tools})
+
+
 @app.command()
 def status(
     ctx: typer.Context,
@@ -116,8 +138,8 @@ def status(
 
 @app.callback(invoke_without_command=True)
 def tools_default(ctx: typer.Context) -> None:
-    """Show tool status (default command)."""
+    """Show operator catalog by default."""
     if ctx.obj is None:
         ctx.obj = OutputContext()
     if ctx.invoked_subcommand is None:
-        status(ctx)
+        catalog(ctx)
