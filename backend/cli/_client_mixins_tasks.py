@@ -68,6 +68,9 @@ class _TaskCrudMixin(_MixinBase):
     def validate_ready(self, task_id: str) -> dict[str, Any]:
         return tasks_ops.validate_ready(self._client, self._url, self._handle_response, task_id)
 
+    def execute_task(self, task_id: str) -> dict[str, Any]:
+        return tasks_ops.execute_task(self._client, self._url, self._handle_response, task_id)
+
 
 class _TaskWorkflowMixin(_MixinBase):
     """Task status, locking, and advanced workflow operations."""
