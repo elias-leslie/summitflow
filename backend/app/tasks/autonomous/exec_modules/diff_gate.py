@@ -25,14 +25,19 @@ class DiffGateResult:
     summary: str
 
 
-def check_diff_gate(project_path: str) -> DiffGateResult:
+def check_diff_gate(
+    project_path: str,
+    *,
+    head_ref: str = "HEAD",
+    base_ref: str = "main",
+) -> DiffGateResult:
     """Check whether the task branch has meaningful changes vs base (main).
 
-    Runs git diff --stat to compare HEAD against the merge-base with main.
+    Runs git diff --stat to compare a task ref against the merge-base with main.
     Returns a DiffGateResult indicating whether the gate passed.
     """
     try:
-        merge_base = _get_merge_base(project_path)
+        merge_base = _get_merge_base(project_path, head_ref, base_ref)
         if not merge_base:
             return DiffGateResult(
                 passed=True,
@@ -42,7 +47,7 @@ def check_diff_gate(project_path: str) -> DiffGateResult:
                 summary="Could not determine merge-base — skipping diff gate",
             )
 
-        stats = _get_diff_stats(project_path, merge_base)
+        stats = _get_diff_stats(project_path, merge_base, head_ref)
         if stats is None:
             return DiffGateResult(
                 passed=True,
@@ -82,10 +87,10 @@ def check_diff_gate(project_path: str) -> DiffGateResult:
         )
 
 
-def _get_merge_base(project_path: str) -> str | None:
-    """Get the merge-base between HEAD and main."""
+def _get_merge_base(project_path: str, head_ref: str = "HEAD", base_ref: str = "main") -> str | None:
+    """Get the merge-base between a head ref and base ref."""
     result = subprocess.run(
-        ["git", "merge-base", "HEAD", "main"],
+        ["git", "merge-base", head_ref, base_ref],
         cwd=project_path,
         capture_output=True,
         text=True,
@@ -96,10 +101,14 @@ def _get_merge_base(project_path: str) -> str | None:
     return result.stdout.strip() or None
 
 
-def _get_diff_stats(project_path: str, merge_base: str) -> tuple[int, int, int] | None:
+def _get_diff_stats(
+    project_path: str,
+    merge_base: str,
+    head_ref: str = "HEAD",
+) -> tuple[int, int, int] | None:
     """Get (files_changed, insertions, deletions) from git diff --numstat."""
     result = subprocess.run(
-        ["git", "diff", "--numstat", f"{merge_base}..HEAD"],
+        ["git", "diff", "--numstat", f"{merge_base}..{head_ref}"],
         cwd=project_path,
         capture_output=True,
         text=True,

@@ -196,7 +196,12 @@ def _perform_completion(
             str(snapshot_info.get("project_id")) if snapshot_info.get("project_id") else None
         )
         if repo_root:
-            diff_result = check_diff_gate(repo_root)
+            base_branch = str(snapshot_info.get("base_branch") or "main")
+            diff_result = check_diff_gate(
+                repo_root,
+                head_ref=f"{task_id}/main",
+                base_ref=base_branch,
+            )
             if not diff_result.passed:
                 output_error(
                     f"Diff gate blocked completion: {diff_result.summary}\n"
