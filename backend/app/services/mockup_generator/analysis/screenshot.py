@@ -9,7 +9,7 @@ from pathlib import Path
 from ....logging_config import get_logger
 
 logger = get_logger(__name__)
-_BROWSER_CMD = "sf-browser"
+_BROWSER_CMD = "st browser"
 
 
 def _build_screenshot_command(

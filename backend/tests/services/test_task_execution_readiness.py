@@ -202,7 +202,7 @@ class TestSecondOpinionParsing:
         assert entry["summary"] == "Already reviewed."
         assert entry["reviewed_by_agent"] == "specifier"
 
-    def test_complex_task_requires_completed_second_opinion(self) -> None:
+    def test_complex_task_treats_missing_second_opinion_as_advisory(self) -> None:
         readiness = assess_task_execution_readiness(
             {
                 "task_type": "feature",
@@ -227,11 +227,12 @@ class TestSecondOpinionParsing:
             ],
         )
 
-        assert not readiness.ready
-        assert "second_opinion" in readiness.missing_fields
-        assert any("second opinion" in issue.lower() for issue in readiness.issues)
+        assert readiness.ready
+        assert "second_opinion" not in readiness.missing_fields
+        assert not any("second opinion" in issue.lower() for issue in readiness.issues)
+        assert any("critique" in suggestion.lower() for suggestion in readiness.suggestions)
 
-    def test_pre_close_review_alone_does_not_satisfy_task_shape_gate(self) -> None:
+    def test_pre_close_review_alone_does_not_block_task_shape_readiness(self) -> None:
         readiness = assess_task_execution_readiness(
             {
                 "task_type": "feature",
@@ -263,8 +264,8 @@ class TestSecondOpinionParsing:
             ],
         )
 
-        assert not readiness.ready
-        assert "second_opinion" in readiness.missing_fields
+        assert readiness.ready
+        assert "second_opinion" not in readiness.missing_fields
 
     def test_task_shape_review_in_history_still_satisfies_readiness(self) -> None:
         readiness = assess_task_execution_readiness(
@@ -384,7 +385,7 @@ class TestSecondOpinionParsing:
         assert "summary" not in stored
         assert stored["reviews"]["task_shape"]["status"] == "pending"
 
-    def test_pending_second_opinion_tracks_requirement_without_missing_summary_noise(self) -> None:
+    def test_pending_second_opinion_is_advisory_without_missing_summary_noise(self) -> None:
         readiness = assess_task_execution_readiness(
             {
                 "task_type": "feature",
@@ -416,8 +417,10 @@ class TestSecondOpinionParsing:
             ],
         )
 
-        assert not readiness.ready
-        assert sum("second opinion" in issue.lower() for issue in readiness.issues) == 1
+        assert readiness.ready
+        assert "second_opinion" not in readiness.missing_fields
+        assert not any("second opinion" in issue.lower() for issue in readiness.issues)
+        assert any("critique" in suggestion.lower() for suggestion in readiness.suggestions)
 
     def test_completed_second_opinion_satisfies_complex_task_gate(self) -> None:
         readiness = assess_task_execution_readiness(

@@ -72,7 +72,7 @@ def get_targeted_test_command(relative_path: str) -> str:
         if path_match:
             rest = relative_path[len("backend/") : -len(".py")].replace("/", ".")
             fallback = nearby_test or f"python3 -c 'from {rest} import *'"
-            return f"test -f {test_path} && dt pytest {test_path} -q --tb=short || {fallback}"
+            return f"test -f {test_path} && st check pytest {test_path} -q --tb=short || {fallback}"
     # Frontend files - just check import/build
     if relative_path.startswith("frontend/"):
         return "cd frontend && npm run build --quiet"
@@ -106,7 +106,7 @@ def _build_nearby_test_search_command(relative_path: str) -> str | None:
     script = (
         f"tests=$(rg --files backend/tests | rg -i {pattern_q} | head -n 3); "
         'if [ -n "$tests" ]; then '
-        'dt pytest $tests -q --tb=short; '
+        'st check pytest $tests -q --tb=short; '
         "else "
         f"python3 -c {import_q}; "
         "fi"
@@ -203,12 +203,12 @@ def _assemble_steps(
     targeted_test = get_targeted_test_command(relative_path)
     steps.append(_step(
         "Quality gate: run fix, fast checks, then targeted verification",
-        ["dt --fix", "dt --quick", targeted_test],
+        ["st check --fix", "st check --quick", targeted_test],
     ))
     if is_frontend:
         steps.append(_step(
             "Verify no console errors in browser",
-            ["~/.local/bin/sf-browser console"],
+            ["st browser console"],
         ))
     return steps
 

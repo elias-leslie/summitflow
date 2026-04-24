@@ -3,6 +3,18 @@
 
 set -euo pipefail
 
+case "${1:-}" in
+  --help|-h|help)
+    cat <<'EOF'
+Usage: st setup agent-tooling [--dry-run] [--confirm TOKEN]
+
+Install shared Codex/Claude operator tooling. Run through st so
+preview/confirmation stays consistent.
+EOF
+    exit 0
+    ;;
+esac
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUMMITFLOW_DIR="$(dirname "$SCRIPT_DIR")"
 

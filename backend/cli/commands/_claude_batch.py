@@ -9,7 +9,7 @@ from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 import typer
 
 from ..output import output_error
-from ._claude_constants import _COMMIT_SCRIPT, WorkerDispatch
+from ._claude_constants import _COMMIT_COMMAND, WorkerDispatch
 
 _FetchFn = Callable[[str], dict[str, object]]
 _RunWorkerFn = Callable[..., int]
@@ -64,7 +64,7 @@ def commit_and_done_task(spec: WorkerDispatch, *, fetch_task_fn: _FetchFn, fatal
     """Commit/push the task checkout, then run canonical closeout."""
     fetch_task_fn(spec.task_id)
     commit_result = subprocess.run(
-        [_COMMIT_SCRIPT, "--current", "--push", "--task", spec.task_id,
+        [*_COMMIT_COMMAND, "--current", "--push", "--task", spec.task_id,
          "--msg", f"claude(batch): complete {spec.task_id}"],
         cwd=spec.project_root, check=False,
     )

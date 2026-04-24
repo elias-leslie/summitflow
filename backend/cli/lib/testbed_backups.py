@@ -12,6 +12,7 @@ from app.storage import backups as backup_store
 from app.storage.projects import get_project_root_path
 from app.tasks.backup import create_backup
 from app.tasks.backup_restore import restore_backup
+from app.utils.shared_paths import get_repo_root
 
 from .quick_snapshots import (
     SnapshotError,
@@ -167,7 +168,8 @@ def preview_testbed_reset(project_id: str, backup_id: str | None = None) -> dict
     """Return the baseline metadata used for reset preview/confirmation."""
     backup = _require_baseline_backup(project_id, backup_id)
     metadata = dict(backup["verification_json"]["testbed_baseline"])
-    git_meta = metadata.get("git") if isinstance(metadata.get("git"), dict) else {}
+    raw_git_meta = metadata.get("git")
+    git_meta: dict[str, Any] = raw_git_meta if isinstance(raw_git_meta, dict) else {}
     project_root = Path(str(metadata.get("project_root") or _project_root(project_id))).resolve()
     _ensure_reset_runs_outside_target(project_root)
 
@@ -283,11 +285,12 @@ def _run_project_rebuild(
         except OSError as exc:
             raise TestbedBackupError(f"Failed to run {' '.join(cmd)}: {exc}") from exc
 
-    result = _run(["rebuild.sh", project_id])
+    st_path = shutil.which("st") or str(get_repo_root() / "backend" / ".venv" / "bin" / "st")
+    result = _run([st_path, "service", "rebuild", project_id])
     if result.returncode == 0:
         return {
             "ran": True,
-            "method": "global-rebuild",
+            "method": "st-service-rebuild",
             "stdout_tail": (result.stdout or "").strip()[-2000:],
             "stderr_tail": (result.stderr or "").strip()[-2000:],
         }
@@ -318,7 +321,7 @@ def _run_project_rebuild(
         return {
             "ran": False,
             "method": "skipped",
-            "reason": f"Unknown project '{project_id}' for rebuild.sh and no local scripts/rebuild.sh or scripts/restart.sh exist",
+            "reason": f"Unknown project '{project_id}' for st service rebuild and no local scripts/rebuild.sh or scripts/restart.sh exist",
             "stdout_tail": (result.stdout or "").strip()[-2000:],
             "stderr_tail": (result.stderr or "").strip()[-2000:],
         }
@@ -326,7 +329,7 @@ def _run_project_rebuild(
     stdout = (result.stdout or "").strip()[-2000:]
     stderr = (result.stderr or "").strip()[-2000:]
     details = "\n".join(part for part in (stdout, stderr) if part)
-    raise TestbedBackupError(f"rebuild.sh {project_id} failed\n{details}".strip())
+    raise TestbedBackupError(f"st service rebuild {project_id} failed\n{details}".strip())
 
 
 def reset_testbed_to_baseline(

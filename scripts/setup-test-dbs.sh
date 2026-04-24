@@ -1,6 +1,18 @@
 #!/bin/bash
 set -e
 
+case "${1:-}" in
+    --help|-h|help)
+        cat <<'EOF'
+Usage: st setup test-dbs [--dry-run] [--confirm TOKEN]
+
+Create or refresh configured test databases. Run through st so
+preview/confirmation stays consistent.
+EOF
+        exit 0
+        ;;
+esac
+
 echo "=== Creating test databases ==="
 
 COMPOSE_PROJECT="summitflow-stack"
@@ -98,4 +110,4 @@ fi
 
 echo ""
 echo "=== Done ==="
-echo "Test databases ready. Run: dt pytest tests/"
+echo "Test databases ready. Run: st check pytest -- tests/"

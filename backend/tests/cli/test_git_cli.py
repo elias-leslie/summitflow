@@ -92,6 +92,24 @@ class TestGitSync:
         assert "skipped" in result.stdout.lower() or "uncommitted" in result.stdout.lower()
 
 
+class TestGitCommit:
+    """Tests for st git commit command."""
+
+    def test_commit_forwards_to_managed_commit_runner(self) -> None:
+        with patch("cli.commands.git.run_forwarded") as forwarded:
+            result = runner.invoke(
+                app,
+                ["commit", "--current", "--push", "--task", "task-1", "--msg", "test"],
+                obj=OutputContext(compact=True),
+            )
+
+        assert result.exit_code == 0
+        forwarded.assert_called_once_with(
+            "commit.sh",
+            ["--current", "--push", "--task", "task-1", "--msg", "test"],
+        )
+
+
 class TestFinalizeTask:
     """Tests for st git finalize-task."""
 
