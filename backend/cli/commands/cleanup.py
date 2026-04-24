@@ -16,6 +16,7 @@ from app.utils.git_helpers import build_repo_workspace_summary
 
 from ..config import get_config_optional
 from ..lib.checkpoint import get_active_checkpoints, get_stale_checkpoints
+from ..lib.checkpoint_branches import resolve_task_branch
 from ..lib.confirm_token import confirm_gate
 from ..lib.quick_snapshots import find_snapshot_residue
 from ..lib.workspace_paths import workspaces_root_available
@@ -80,6 +81,12 @@ def _task_display_token(item: object) -> str:
     task_status = getattr(item, "task_status", None)
     resolution = getattr(item, "resolution", None)
     return "unreadable" if resolution == "review" and task_status is None else (task_status or "missing")
+
+
+def _checkpoint_branch_name(checkpoint: Any) -> str:
+    task_id = str(checkpoint.task_id)
+    project_id = str(checkpoint.project_id)
+    return resolve_task_branch(task_id, project_id=project_id)
 
 
 @app.callback()
@@ -247,7 +254,7 @@ def build_cleanup_status_payload(
         "checkpoints": [
             {
                 "task_id": checkpoint.task_id,
-                "branch": f"{checkpoint.task_id}/main",
+                "branch": _checkpoint_branch_name(checkpoint),
                 "base_branch": checkpoint.base_branch,
                 "project_id": checkpoint.project_id,
             }

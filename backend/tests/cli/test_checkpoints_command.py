@@ -203,3 +203,22 @@ def test_task_branch_resolution_supports_recovered_short_branch(
 
     assert branches == [{"branch": "task-short", "subtask_id": "", "type": "task"}]
     assert resolve_task_branch("task-short", project_id="summitflow") == "task-short"
+
+
+def test_merge_task_branch_uses_recovered_short_branch(
+    repo_with_checkpoints: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.storage import tasks as task_store
+    from cli.lib import checkpoint_branches
+
+    _git(repo_with_checkpoints, "branch", "task-short")
+    monkeypatch.setattr(task_store, "get_task", lambda task_id: {"status": "running"})
+    monkeypatch.setattr(
+        checkpoint_branches,
+        "load_snapshot_meta",
+        lambda task_id: SimpleNamespace(project_id="summitflow", base_branch="main"),
+    )
+
+    assert checkpoint_branches.merge_task_branch("task-short", project_id="summitflow")
+    assert _git(repo_with_checkpoints, "branch", "--list", "task-short").stdout == ""

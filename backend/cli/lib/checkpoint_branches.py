@@ -247,7 +247,7 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
     project_id = project_id or (meta.project_id if meta else None)
     base_branch = meta.base_branch if meta else "main"
     repo_cwd = _get_repo_cwd(project_id)
-    task_branch = f"{task_id}/main"
+    task_branch = resolve_task_branch(task_id, project_id=project_id)
 
     if _get_current_branch(repo_cwd) != base_branch:
         _checkout_branch(base_branch, repo_cwd)

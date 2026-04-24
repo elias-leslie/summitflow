@@ -10,7 +10,7 @@ from app.storage import tasks as task_store
 from app.storage.projects import get_project_root_path
 
 from ..lib.checkpoint import SnapshotMeta, remove_snapshot
-from ..lib.checkpoint_branches import get_task_branches
+from ..lib.checkpoint_branches import get_task_branches, resolve_task_branch
 from .cleanup_git import (
     get_commits_ahead_behind,
     get_last_commit_age_days,
@@ -92,7 +92,7 @@ def _repo_path(project_id: str) -> Path | None:
 
 
 def _branch_name(checkpoint: SnapshotMeta) -> str:
-    return f"{checkpoint.task_id}/main"
+    return resolve_task_branch(checkpoint.task_id, project_id=checkpoint.project_id)
 
 
 def _branch_exists(repo_path: Path, branch: str) -> bool:
