@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import secrets
@@ -13,7 +14,7 @@ from urllib.parse import quote
 
 import httpx
 import websockets
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from ...utils.env import float_env
@@ -22,6 +23,7 @@ from .helpers import _require_auth
 LiveSessionKind = Literal["browser"]
 LiveSessionState = Literal["active", "expired", "closed"]
 LiveControlAction = Literal["click", "key", "text", "wheel", "navigate", "resize"]
+LiveAuditActor = Literal["internal", "operator"]
 
 _DEFAULT_BROWSER_HOST = "127.0.0.1"
 _DEFAULT_BROWSER_PORT = 9222
@@ -59,8 +61,30 @@ class LiveSessionStatus(BaseModel):
     expires_at: datetime
     viewport_width: int
     viewport_height: int
+    control_enabled: bool
+    control_owner: str | None = None
+    viewer_connected: bool
+    token_required: bool
+    last_viewed_at: datetime | None = None
+    last_controlled_at: datetime | None = None
+    audit_events: list[LiveSessionAuditEvent]
     control_policy: str
     capture_policy: str
+
+
+class LiveSessionCreated(LiveSessionStatus):
+    """Create response with the one-time operator token."""
+
+    operator_token: str
+
+
+class LiveSessionAuditEvent(BaseModel):
+    """Sanitized session audit event."""
+
+    at: datetime
+    actor: LiveAuditActor
+    action: str
+    detail: str | None = None
 
 
 class LiveSessionFrame(BaseModel):
@@ -95,6 +119,12 @@ class LiveSessionSensitiveUpdate(BaseModel):
     sensitive: bool
 
 
+class LiveSessionControlGrantUpdate(BaseModel):
+    """Toggle operator input control."""
+
+    enabled: bool
+
+
 @dataclass(slots=True)
 class _ManagedLiveSession:
     id: str
@@ -102,11 +132,17 @@ class _ManagedLiveSession:
     target_url: str
     target_id: str
     ws_url: str
+    operator_token_hash: str
     created_at: datetime
     expires_at: datetime
     viewport_width: int
     viewport_height: int
     sensitive: bool = True
+    control_enabled: bool = False
+    viewer_connected: bool = False
+    last_viewed_at: datetime | None = None
+    last_controlled_at: datetime | None = None
+    audit_events: list[LiveSessionAuditEvent] | None = None
     state: LiveSessionState = "active"
     current_url: str | None = None
     title: str | None = None
@@ -123,14 +159,15 @@ async def list_live_sessions() -> list[LiveSessionStatus]:
     return [_status_from_session(session) for session in _LIVE_SESSIONS.values()]
 
 
-@router.post("", response_model=LiveSessionStatus)
-async def create_live_session(payload: LiveSessionCreate) -> LiveSessionStatus:
+@router.post("", response_model=LiveSessionCreated)
+async def create_live_session(payload: LiveSessionCreate) -> LiveSessionCreated:
     """Create a browser co-driving session through the internal CDP broker."""
     _validate_target_url(payload.target_url)
     if payload.kind != "browser":
         raise HTTPException(status_code=400, detail="Only browser sessions are supported")
 
     session_id = secrets.token_urlsafe(10)
+    operator_token = secrets.token_urlsafe(32)
     target = await _create_browser_target(payload.target_url)
     session = _ManagedLiveSession(
         id=session_id,
@@ -138,17 +175,20 @@ async def create_live_session(payload: LiveSessionCreate) -> LiveSessionStatus:
         target_url=payload.target_url,
         target_id=target["id"],
         ws_url=target["webSocketDebuggerUrl"],
+        operator_token_hash=_token_hash(operator_token),
         created_at=_now(),
         expires_at=_now() + timedelta(seconds=_SESSION_TTL_SECONDS),
         viewport_width=payload.viewport_width,
         viewport_height=payload.viewport_height,
+        audit_events=[],
     )
+    _audit(session, actor="internal", action="created")
     await _configure_viewport(session)
 
     async with _LIVE_SESSION_LOCK:
         _LIVE_SESSIONS[session.id] = session
     await _refresh_page_metadata(session)
-    return _status_from_session(session)
+    return LiveSessionCreated(**_status_from_session(session).model_dump(), operator_token=operator_token)
 
 
 @router.get("/{session_id}", response_model=LiveSessionStatus)
@@ -160,9 +200,13 @@ async def get_live_session(session_id: str) -> LiveSessionStatus:
 
 
 @router.get("/{session_id}/frame", response_model=LiveSessionFrame)
-async def get_live_session_frame(session_id: str) -> LiveSessionFrame:
+async def get_live_session_frame(
+    session_id: str,
+    x_live_session_token: str = Header(default=""),
+) -> LiveSessionFrame:
     """Capture the current browser frame without exposing CDP to the frontend."""
     session = await _require_session(session_id)
+    actor = _require_view_authorization(session, x_live_session_token)
     await _cdp_call(session.ws_url, "Page.bringToFront")
     result = await _cdp_call(
         session.ws_url,
@@ -177,9 +221,13 @@ async def get_live_session_frame(session_id: str) -> LiveSessionFrame:
     image = result.get("data")
     if not isinstance(image, str) or not image:
         raise HTTPException(status_code=502, detail="Browser did not return a frame")
+    now = _now()
+    session.viewer_connected = True
+    session.last_viewed_at = now
+    _audit(session, actor=actor, action="viewed")
     return LiveSessionFrame(
         session_id=session.id,
-        captured_at=_now(),
+        captured_at=now,
         image_data_url=f"data:image/jpeg;base64,{image}",
         viewport_width=session.viewport_width,
         viewport_height=session.viewport_height,
@@ -191,10 +239,16 @@ async def get_live_session_frame(session_id: str) -> LiveSessionFrame:
 async def control_live_session(
     session_id: str,
     payload: LiveSessionControl,
+    x_live_session_token: str = Header(default=""),
 ) -> LiveSessionStatus:
     """Send an operator control command through the internal CDP broker."""
     session = await _require_session(session_id)
+    _require_operator_token(session, x_live_session_token)
+    if not session.control_enabled:
+        raise HTTPException(status_code=423, detail="Input control is not enabled")
     await _apply_control(session, payload)
+    session.last_controlled_at = _now()
+    _audit(session, actor="operator", action=f"control:{payload.action}")
     await _refresh_page_metadata(session)
     return _status_from_session(session)
 
@@ -203,10 +257,35 @@ async def control_live_session(
 async def update_live_session_sensitive(
     session_id: str,
     payload: LiveSessionSensitiveUpdate,
+    x_live_session_token: str = Header(default=""),
 ) -> LiveSessionStatus:
     """Toggle sensitive mode for auth or account views."""
     session = await _require_session(session_id)
+    _require_operator_token(session, x_live_session_token)
     session.sensitive = payload.sensitive
+    _audit(
+        session,
+        actor="operator",
+        action="sensitive-enabled" if payload.sensitive else "sensitive-disabled",
+    )
+    return _status_from_session(session)
+
+
+@router.post("/{session_id}/control-grant", response_model=LiveSessionStatus)
+async def update_live_session_control_grant(
+    session_id: str,
+    payload: LiveSessionControlGrantUpdate,
+    x_live_session_token: str = Header(default=""),
+) -> LiveSessionStatus:
+    """Toggle operator input control for a session."""
+    session = await _require_session(session_id)
+    _require_operator_token(session, x_live_session_token)
+    session.control_enabled = payload.enabled
+    _audit(
+        session,
+        actor="operator",
+        action="control-enabled" if payload.enabled else "control-disabled",
+    )
     return _status_from_session(session)
 
 
@@ -214,6 +293,7 @@ async def update_live_session_sensitive(
 async def teardown_live_session(session_id: str) -> LiveSessionStatus:
     """Close a live session and its browser target."""
     session = await _require_session(session_id)
+    _audit(session, actor="internal", action="teardown")
     await _close_session(session)
     async with _LIVE_SESSION_LOCK:
         _LIVE_SESSIONS.pop(session.id, None)
@@ -453,9 +533,78 @@ def _status_from_session(session: _ManagedLiveSession) -> LiveSessionStatus:
         expires_at=session.expires_at,
         viewport_width=session.viewport_width,
         viewport_height=session.viewport_height,
-        control_policy="operator input is relayed only to the active browser target",
-        capture_policy="frames are transient and not persisted",
+        control_enabled=session.control_enabled,
+        control_owner="operator" if session.control_enabled else None,
+        viewer_connected=session.viewer_connected,
+        token_required=session.sensitive,
+        last_viewed_at=session.last_viewed_at,
+        last_controlled_at=session.last_controlled_at,
+        audit_events=list(session.audit_events or []),
+        control_policy=(
+            "operator token required; input starts locked and must be enabled"
+        ),
+        capture_policy=(
+            "sensitive frames require the operator token and are not persisted"
+            if session.sensitive
+            else "frames are transient and not persisted"
+        ),
     )
+
+
+def _require_view_authorization(
+    session: _ManagedLiveSession,
+    operator_token: str,
+) -> LiveAuditActor:
+    if _operator_token_valid(session, operator_token):
+        return "operator"
+    if session.sensitive:
+        raise HTTPException(status_code=403, detail="Operator token required")
+    return "internal"
+
+
+def _require_operator_token(
+    session: _ManagedLiveSession,
+    operator_token: str,
+) -> None:
+    if not _operator_token_valid(session, operator_token):
+        raise HTTPException(status_code=403, detail="Operator token required")
+
+
+def _operator_token_valid(session: _ManagedLiveSession, operator_token: str) -> bool:
+    if not operator_token:
+        return False
+    return secrets.compare_digest(
+        session.operator_token_hash,
+        _token_hash(operator_token),
+    )
+
+
+def _token_hash(operator_token: str) -> str:
+    return hashlib.sha256(operator_token.encode("utf-8")).hexdigest()
+
+
+def _audit(
+    session: _ManagedLiveSession,
+    *,
+    actor: LiveAuditActor,
+    action: str,
+    detail: str | None = None,
+) -> None:
+    events = session.audit_events
+    if events is None:
+        events = []
+        session.audit_events = events
+    event = LiveSessionAuditEvent(
+        at=_now(),
+        actor=actor,
+        action=action,
+        detail=detail,
+    )
+    if action == "viewed" and events and events[-1].action == "viewed":
+        events[-1] = event
+    else:
+        events.append(event)
+    del events[:-30]
 
 
 def _browser_endpoint() -> tuple[str, int]:

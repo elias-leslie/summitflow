@@ -580,8 +580,48 @@ class TestDockerRuntime:
         assert body["state"] == "active"
         assert body["sensitive"] is True
         assert body["target_url"] == "https://www.amazon.com/photos/all"
+        assert body["control_enabled"] is False
+        assert body["token_required"] is True
+        assert isinstance(body["operator_token"], str)
+        assert len(body["operator_token"]) > 20
         assert "webSocketDebuggerUrl" not in body
         assert "ws://" not in response.text
+
+        list_response = client.get("/api/docker/live-sessions")
+        assert list_response.status_code == 200
+        assert "operator_token" not in list_response.text
+
+    def test_sensitive_live_session_frame_requires_operator_token(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api.docker import live_sessions
+
+        live_sessions._LIVE_SESSIONS.clear()
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        now = live_sessions._now()
+        live_sessions._LIVE_SESSIONS["session-1"] = live_sessions._ManagedLiveSession(
+            id="session-1",
+            kind="browser",
+            target_url="https://www.amazon.com/photos/all",
+            target_id="target-1",
+            ws_url="ws://browser/devtools/page/target-1",
+            operator_token_hash=live_sessions._token_hash("operator-token"),
+            created_at=now,
+            expires_at=now + live_sessions.timedelta(minutes=5),
+            viewport_width=1440,
+            viewport_height=900,
+            audit_events=[],
+        )
+        cdp_call = mocker.patch(
+            "app.api.docker.live_sessions._cdp_call",
+            new=mocker.AsyncMock(return_value={}),
+        )
+
+        response = client.get("/api/docker/live-sessions/session-1/frame")
+
+        assert response.status_code == 403
+        assert cdp_call.await_count == 0
 
     def test_live_session_text_control_does_not_echo_input(
         self,
@@ -598,10 +638,13 @@ class TestDockerRuntime:
             target_url="https://www.amazon.com/photos/all",
             target_id="target-1",
             ws_url="ws://browser/devtools/page/target-1",
+            operator_token_hash=live_sessions._token_hash("operator-token"),
             created_at=now,
             expires_at=now + live_sessions.timedelta(minutes=5),
             viewport_width=1440,
             viewport_height=900,
+            control_enabled=True,
+            audit_events=[],
         )
         cdp_call = mocker.patch(
             "app.api.docker.live_sessions._cdp_call",
@@ -614,9 +657,47 @@ class TestDockerRuntime:
 
         response = client.post(
             "/api/docker/live-sessions/session-1/control",
+            headers={"X-Live-Session-Token": "operator-token"},
             json={"action": "text", "text": "dont-echo-this"},
         )
 
         assert response.status_code == 200
         assert "dont-echo-this" not in response.text
         assert cdp_call.await_count == 2
+        assert response.json()["last_controlled_at"] is not None
+
+    def test_live_session_control_starts_locked(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api.docker import live_sessions
+
+        live_sessions._LIVE_SESSIONS.clear()
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        now = live_sessions._now()
+        live_sessions._LIVE_SESSIONS["session-1"] = live_sessions._ManagedLiveSession(
+            id="session-1",
+            kind="browser",
+            target_url="https://www.amazon.com/photos/all",
+            target_id="target-1",
+            ws_url="ws://browser/devtools/page/target-1",
+            operator_token_hash=live_sessions._token_hash("operator-token"),
+            created_at=now,
+            expires_at=now + live_sessions.timedelta(minutes=5),
+            viewport_width=1440,
+            viewport_height=900,
+            audit_events=[],
+        )
+        cdp_call = mocker.patch(
+            "app.api.docker.live_sessions._cdp_call",
+            new=mocker.AsyncMock(return_value={}),
+        )
+
+        response = client.post(
+            "/api/docker/live-sessions/session-1/control",
+            headers={"X-Live-Session-Token": "operator-token"},
+            json={"action": "key", "key": "Enter"},
+        )
+
+        assert response.status_code == 423
+        assert cdp_call.await_count == 0

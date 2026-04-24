@@ -6,6 +6,7 @@ import {
   Loader2,
   Lock,
   Monitor,
+  MousePointer2,
   Power,
   RefreshCw,
   ShieldCheck,
@@ -14,6 +15,7 @@ import {
 import {
   type KeyboardEvent,
   type MouseEvent,
+  useEffect,
   useRef,
   useState,
   type WheelEvent,
@@ -35,6 +37,29 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
   const viewportRef = useRef<HTMLButtonElement>(null)
   const lastWheelAt = useRef(0)
   const [targetUrl, setTargetUrl] = useState('')
+  const [operatorToken, setOperatorToken] = useState<string | null>(null)
+  const [tokenReady, setTokenReady] = useState(false)
+
+  useEffect(() => {
+    const storageKey = `summitflow-live-session-token:${sessionId}`
+    const hash = window.location.hash.replace(/^#/, '')
+    const params = new URLSearchParams(hash)
+    const fragmentToken = params.get('token')
+    const storedToken = window.sessionStorage.getItem(storageKey)
+    const token = fragmentToken || storedToken
+    if (token) {
+      window.sessionStorage.setItem(storageKey, token)
+      setOperatorToken(token)
+    }
+    if (fragmentToken) {
+      window.history.replaceState(
+        null,
+        '',
+        `${window.location.pathname}${window.location.search}`,
+      )
+    }
+    setTokenReady(true)
+  }, [sessionId])
 
   const sessionQuery = useQuery({
     queryKey: ['runtime', 'live-session', sessionId],
@@ -42,9 +67,12 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
     refetchInterval: 5000,
   })
   const frameQuery = useQuery({
-    queryKey: ['runtime', 'live-session-frame', sessionId],
-    queryFn: () => runtimeApi.getLiveSessionFrame(sessionId),
-    enabled: sessionQuery.data?.state === 'active',
+    queryKey: ['runtime', 'live-session-frame', sessionId, !!operatorToken],
+    queryFn: () => runtimeApi.getLiveSessionFrame(sessionId, operatorToken),
+    enabled:
+      tokenReady &&
+      sessionQuery.data?.state === 'active' &&
+      (!sessionQuery.data.token_required || !!operatorToken),
     refetchInterval: 900,
     staleTime: 0,
     gcTime: 0,
@@ -52,7 +80,7 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
   })
   const controlMutation = useMutation({
     mutationFn: (control: LiveSessionControl) =>
-      runtimeApi.controlLiveSession(sessionId, control),
+      runtimeApi.controlLiveSession(sessionId, control, operatorToken),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['runtime', 'live-session', sessionId],
@@ -61,7 +89,7 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
   })
   const sensitiveMutation = useMutation({
     mutationFn: (sensitive: boolean) =>
-      runtimeApi.setLiveSessionSensitive(sessionId, sensitive),
+      runtimeApi.setLiveSessionSensitive(sessionId, sensitive, operatorToken),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['runtime', 'live-session', sessionId],
@@ -77,12 +105,24 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
       queryClient.invalidateQueries({ queryKey: ['runtime', 'live-sessions'] })
     },
   })
+  const controlGrantMutation = useMutation({
+    mutationFn: (enabled: boolean) =>
+      runtimeApi.setLiveSessionControlGrant(sessionId, enabled, operatorToken),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['runtime', 'live-session', sessionId],
+      })
+    },
+  })
 
   const session = sessionQuery.data
   const frame = frameQuery.data
+  const tokenMissing = !!session?.token_required && !operatorToken
+  const canSendInput = !!operatorToken && !!session?.control_enabled
 
   function send(control: LiveSessionControl): void {
     if (session?.state !== 'active') return
+    if (!canSendInput) return
     controlMutation.mutate(control)
   }
 
@@ -133,8 +173,12 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
 
   function navigate(): void {
     const nextUrl = targetUrl.trim()
+    if (!canSendInput) return
     if (!nextUrl) return
-    send({ action: 'navigate', target_url: nextUrl })
+    controlMutation.mutate({
+      action: 'navigate',
+      target_url: nextUrl,
+    })
   }
 
   if (sessionQuery.isLoading) {
@@ -173,20 +217,23 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
           <button
             type="button"
             onClick={() => frameQuery.refetch()}
+            disabled={tokenMissing}
             title="Refresh frame"
-            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 bg-slate-900 text-slate-300 transition-colors hover:border-sky-500/40 hover:text-sky-200"
+            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 bg-slate-900 text-slate-300 transition-colors hover:border-sky-500/40 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <RefreshCw className="h-4 w-4" />
           </button>
           <button
             type="button"
             onClick={() => sensitiveMutation.mutate(!session.sensitive)}
+            disabled={!operatorToken || sensitiveMutation.isPending}
             title="Sensitive mode"
             className={clsx(
               'flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-medium transition-colors',
               session.sensitive
                 ? 'border-amber-500/30 bg-amber-500/10 text-amber-100'
                 : 'border-slate-700 bg-slate-900 text-slate-300',
+              !operatorToken && 'cursor-not-allowed opacity-50',
             )}
           >
             {session.sensitive ? (
@@ -195,6 +242,24 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
               <Unlock className="h-3.5 w-3.5" />
             )}
             {session.sensitive ? 'Sensitive' : 'Standard'}
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              controlGrantMutation.mutate(!session.control_enabled)
+            }
+            disabled={!operatorToken || controlGrantMutation.isPending}
+            title="Input control"
+            className={clsx(
+              'flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-medium transition-colors',
+              session.control_enabled
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+                : 'border-slate-700 bg-slate-900 text-slate-300',
+              !operatorToken && 'cursor-not-allowed opacity-50',
+            )}
+          >
+            <MousePointer2 className="h-3.5 w-3.5" />
+            {session.control_enabled ? 'Input On' : 'Input Locked'}
           </button>
           <button
             type="button"
@@ -227,6 +292,10 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
                 draggable={false}
                 className="block max-h-[calc(100vh-8rem)] w-full object-contain"
               />
+            ) : tokenMissing ? (
+              <div className="px-6 text-center text-sm text-amber-200">
+                Operator token required. Start a new session from Runtime.
+              </div>
             ) : (
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -256,7 +325,17 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
               <div className="flex justify-between gap-3">
                 <span>Capture</span>
                 <span className="text-slate-200">
-                  {frameQuery.isFetching ? 'updating' : 'ready'}
+                  {tokenMissing
+                    ? 'operator token required'
+                    : frameQuery.isFetching
+                      ? 'updating'
+                      : 'ready'}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>Control</span>
+                <span className="text-slate-200">
+                  {session.control_enabled ? 'operator' : 'locked'}
                 </span>
               </div>
             </div>
@@ -280,7 +359,8 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
               <button
                 type="button"
                 onClick={navigate}
-                className="h-9 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-xs font-medium text-sky-100 transition-colors hover:bg-sky-500/20"
+                disabled={!canSendInput}
+                className="h-9 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-xs font-medium text-sky-100 transition-colors hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Go
               </button>
@@ -303,8 +383,9 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
                       viewport_height: viewport.height,
                     })
                   }
+                  disabled={!canSendInput}
                   className={clsx(
-                    'h-9 rounded-md border text-xs font-medium transition-colors',
+                    'h-9 rounded-md border text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
                     session.viewport_width === viewport.width &&
                       session.viewport_height === viewport.height
                       ? 'border-sky-500/40 bg-sky-500/10 text-sky-100'

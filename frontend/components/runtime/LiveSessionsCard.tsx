@@ -22,9 +22,18 @@ function sessionSummary(sessions: LiveSessionStatus[] | undefined): string {
   return `${active}/${sessions.length} active`
 }
 
-function openSession(sessionId: string): void {
+function openSession(sessionId: string, operatorToken?: string): void {
+  if (operatorToken) {
+    window.sessionStorage.setItem(
+      `summitflow-live-session-token:${sessionId}`,
+      operatorToken,
+    )
+  }
+  const tokenFragment = operatorToken
+    ? `#token=${encodeURIComponent(operatorToken)}`
+    : ''
   window.open(
-    `/runtime-live/${sessionId}`,
+    `/runtime-live/${sessionId}${tokenFragment}`,
     `summitflow-live-${sessionId}`,
     'popup,width=1500,height=980,noopener,noreferrer',
   )
@@ -43,7 +52,7 @@ export function LiveSessionsCard() {
     mutationFn: () => runtimeApi.createLiveSession(targetUrl),
     onSuccess: (session) => {
       queryClient.invalidateQueries({ queryKey: ['runtime', 'live-sessions'] })
-      openSession(session.id)
+      openSession(session.id, session.operator_token)
     },
   })
 

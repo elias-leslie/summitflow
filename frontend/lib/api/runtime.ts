@@ -107,8 +107,26 @@ export interface LiveSessionStatus {
   expires_at: string
   viewport_width: number
   viewport_height: number
+  control_enabled: boolean
+  control_owner: string | null
+  viewer_connected: boolean
+  token_required: boolean
+  last_viewed_at: string | null
+  last_controlled_at: string | null
+  audit_events: LiveSessionAuditEvent[]
   control_policy: string
   capture_policy: string
+}
+
+export interface LiveSessionCreated extends LiveSessionStatus {
+  operator_token: string
+}
+
+export interface LiveSessionAuditEvent {
+  at: string
+  actor: 'internal' | 'operator'
+  action: string
+  detail: string | null
 }
 
 export interface LiveSessionFrame {
@@ -127,6 +145,12 @@ export type LiveSessionControl =
   | { action: 'wheel'; x: number; y: number; delta_x: number; delta_y: number }
   | { action: 'navigate'; target_url: string }
   | { action: 'resize'; viewport_width: number; viewport_height: number }
+
+function liveSessionHeaders(
+  operatorToken?: string | null,
+): Record<string, string> {
+  return operatorToken ? { 'X-Live-Session-Token': operatorToken } : {}
+}
 
 function apiUrl(path: string): string {
   // Keep runtime traffic same-origin so Next can proxy protected actions/logs
@@ -219,7 +243,7 @@ export const runtimeApi = {
     viewportWidth = 1440,
     viewportHeight = 900,
   ) =>
-    postJson<LiveSessionStatus>(
+    postJson<LiveSessionCreated>(
       apiUrl('/api/docker/live-sessions'),
       {
         kind: 'browser',
@@ -236,25 +260,47 @@ export const runtimeApi = {
         errorMessage: 'Failed to fetch live session',
       },
     ),
-  getLiveSessionFrame: (sessionId: string) =>
+  getLiveSessionFrame: (sessionId: string, operatorToken?: string | null) =>
     fetchWithErrorHandling<LiveSessionFrame>(
       apiUrl(`/api/docker/live-sessions/${sessionId}/frame`),
       {
+        headers: liveSessionHeaders(operatorToken),
         cache: 'no-store',
         errorMessage: 'Failed to fetch live session frame',
       },
     ),
-  controlLiveSession: (sessionId: string, control: LiveSessionControl) =>
+  controlLiveSession: (
+    sessionId: string,
+    control: LiveSessionControl,
+    operatorToken?: string | null,
+  ) =>
     postJson<LiveSessionStatus>(
       apiUrl(`/api/docker/live-sessions/${sessionId}/control`),
       control,
       'Failed to control live session',
+      liveSessionHeaders(operatorToken),
     ),
-  setLiveSessionSensitive: (sessionId: string, sensitive: boolean) =>
+  setLiveSessionSensitive: (
+    sessionId: string,
+    sensitive: boolean,
+    operatorToken?: string | null,
+  ) =>
     postJson<LiveSessionStatus>(
       apiUrl(`/api/docker/live-sessions/${sessionId}/sensitive`),
       { sensitive },
       'Failed to update live session sensitivity',
+      liveSessionHeaders(operatorToken),
+    ),
+  setLiveSessionControlGrant: (
+    sessionId: string,
+    enabled: boolean,
+    operatorToken?: string | null,
+  ) =>
+    postJson<LiveSessionStatus>(
+      apiUrl(`/api/docker/live-sessions/${sessionId}/control-grant`),
+      { enabled },
+      'Failed to update live session control',
+      liveSessionHeaders(operatorToken),
     ),
   teardownLiveSession: (sessionId: string) =>
     postJson<LiveSessionStatus>(

@@ -60,10 +60,11 @@ export function postJson<T>(
   url: string,
   data: unknown,
   errorMessage: string,
+  headers: Record<string, string> = {},
 ): Promise<T> {
   return fetchWithErrorHandling<T>(url, {
     method: 'POST',
-    headers: JSON_HEADERS,
+    headers: { ...JSON_HEADERS, ...headers },
     body: JSON.stringify(data),
     errorMessage,
   })
