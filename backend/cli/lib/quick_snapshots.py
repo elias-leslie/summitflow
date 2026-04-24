@@ -104,6 +104,30 @@ def _delete_subvolume(path: Path) -> None:
     _btrfs(["subvolume", "delete", str(path)])
 
 
+def _is_non_subvolume_error(error: SnapshotError) -> bool:
+    message = str(error)
+    return "Invalid argument" in message or "Not a Btrfs subvolume" in message
+
+
+def _try_delete_subvolume(path: Path) -> bool:
+    try:
+        _delete_subvolume(path)
+    except SnapshotError as exc:
+        if _is_non_subvolume_error(exc):
+            return False
+        raise
+    return True
+
+
+def _delete_nested_subvolumes(path: Path) -> None:
+    if not path.is_dir():
+        return
+    children = [child for child in path.rglob("*") if child.is_dir()]
+    for child in sorted(children, key=lambda item: len(item.parts), reverse=True):
+        if child.exists():
+            _try_delete_subvolume(child)
+
+
 # ---------------------------------------------------------------------------
 # Snapshot capture and usage
 # ---------------------------------------------------------------------------
@@ -340,12 +364,8 @@ def recover_snapshot(
 def delete_snapshot_residue(residue: SnapshotResidue) -> None:
     """Delete one legacy snapshot residue target."""
     if residue.residue_type == "legacy-snapshot-root":
-        try:
-            _delete_subvolume(residue.path)
-        except SnapshotError as exc:
-            message = str(exc)
-            if "Invalid argument" not in message and "Not a Btrfs subvolume" not in message:
-                raise
+        _delete_nested_subvolumes(residue.path)
+        _try_delete_subvolume(residue.path)
         if not residue.path.exists():
             return
 

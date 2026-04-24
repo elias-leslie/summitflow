@@ -167,9 +167,12 @@ def run_snapshot_deletions(residues, dry_run: bool) -> None:
             continue
 
     deleted, errors = _execute_snapshot_deletions(residues)
-    output_success(f"Deleted {deleted} target(s), {len(errors)} error(s)")
     for err in errors:
         typer.echo(f"  ERROR {err}", err=True)
+    if errors:
+        output_error(f"Deleted {deleted} target(s), {len(errors)} error(s)")
+        raise typer.Exit(1)
+    output_success(f"Deleted {deleted} target(s), 0 error(s)")
 
 
 def _categorize_analyses(analyses: list[CheckpointAnalysis]) -> tuple[list[str], list[str], list[str]]:
