@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -113,3 +114,49 @@ def test_checkpoints_command_omits_and_cleans_stale_metadata(repo_with_checkpoin
     assert "task-live" in result.output
     assert "task-stale" not in result.output
     assert not stale_meta.exists()
+
+
+def test_merge_task_branch_reports_conflict_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from app.storage import tasks as task_store
+    from cli.lib import checkpoint_branches
+
+    conflict_output = "\n".join(
+        [
+            "Auto-merging backend/app/example.py",
+            "CONFLICT (content): Merge conflict in backend/app/example.py",
+            "Automatic merge failed; fix conflicts and then commit the result.",
+        ]
+    )
+
+    def fake_run_git(
+        args: list[str],
+        cwd: str | None = None,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        if args[:2] == ["git", "merge"] and "--abort" not in args:
+            raise subprocess.CalledProcessError(1, args, output=conflict_output, stderr="")
+        if args == ["git", "diff", "--name-only", "--diff-filter=U"]:
+            return subprocess.CompletedProcess(args, 0, stdout="backend/app/example.py\n", stderr="")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(task_store, "get_task", lambda task_id: {"status": "running"})
+    monkeypatch.setattr(
+        checkpoint_branches,
+        "load_snapshot_meta",
+        lambda task_id: SimpleNamespace(project_id="summitflow", base_branch="main"),
+    )
+    monkeypatch.setattr(checkpoint_branches, "_get_repo_cwd", lambda project_id: "/repo")
+    monkeypatch.setattr(checkpoint_branches, "_get_current_branch", lambda cwd: "main")
+    monkeypatch.setattr(checkpoint_branches, "_run_git", fake_run_git)
+
+    with pytest.raises(SystemExit) as exc_info:
+        checkpoint_branches.merge_task_branch("task-1", project_id="summitflow")
+
+    assert exc_info.value.code == 1
+    stderr = capsys.readouterr().err
+    assert "Failed to merge task-1/main" in stderr
+    assert "backend/app/example.py" in stderr
+    assert "Recovery: st git resolve-conflict task-1" in stderr
