@@ -36,6 +36,44 @@ _MAX_VIEWPORT_WIDTH = 3840
 _MAX_VIEWPORT_HEIGHT = 2160
 _MAX_TEXT_INPUT_CHARS = 4096
 _MAX_SECURE_TEXT_INPUT_BYTES = 16 * 1024
+_EDITABLE_FOCUS_EXPRESSION = """
+(() => {
+  const blockedInputTypes = new Set([
+    'button',
+    'checkbox',
+    'color',
+    'file',
+    'hidden',
+    'image',
+    'radio',
+    'range',
+    'reset',
+    'submit',
+  ]);
+  function activeElement(root) {
+    const active = root && root.activeElement;
+    if (active && active.tagName === 'IFRAME') {
+      try {
+        return activeElement(active.contentDocument) || active;
+      } catch {
+        return active;
+      }
+    }
+    return active;
+  }
+  function isEditable(element) {
+    if (!element) return false;
+    if (element.isContentEditable) return true;
+    if (element.disabled || element.readOnly) return false;
+    const tagName = element.tagName;
+    if (tagName === 'TEXTAREA') return true;
+    if (tagName !== 'INPUT') return false;
+    const type = (element.getAttribute('type') || 'text').toLowerCase();
+    return !blockedInputTypes.has(type);
+  }
+  return isEditable(activeElement(document));
+})()
+"""
 
 router = APIRouter(dependencies=[Depends(_require_auth)])
 
@@ -267,7 +305,7 @@ async def secure_text_live_session(
     if not session.control_enabled:
         raise HTTPException(status_code=423, detail="Input control is not enabled")
     text = await _read_secure_text_body(request)
-    await _insert_text(session, text)
+    await _insert_text(session, text, require_editable=True)
     session.last_controlled_at = _now()
     _audit(session, actor="operator", action="control:text")
     await _refresh_page_metadata(session)
@@ -376,16 +414,31 @@ async def _insert_text(
     text: str,
     *,
     bring_to_front: bool = True,
+    require_editable: bool = False,
 ) -> None:
     _validate_text_input(text)
     if bring_to_front:
         await _cdp_call(session.ws_url, "Page.bringToFront")
+    if require_editable and not await _has_focused_editable(session):
+        raise HTTPException(status_code=409, detail="No focused text field")
     await _cdp_call(session.ws_url, "Input.insertText", {"text": text})
 
 
 def _validate_text_input(text: str) -> None:
     if len(text) > _MAX_TEXT_INPUT_CHARS:
         raise HTTPException(status_code=413, detail="Text input is too long")
+
+
+async def _has_focused_editable(session: _ManagedLiveSession) -> bool:
+    result = await _cdp_call(
+        session.ws_url,
+        "Runtime.evaluate",
+        {
+            "expression": _EDITABLE_FOCUS_EXPRESSION,
+            "returnByValue": True,
+        },
+    )
+    return result.get("result", {}).get("value") is True
 
 
 async def _dispatch_click(session: _ManagedLiveSession, payload: LiveSessionControl) -> None:

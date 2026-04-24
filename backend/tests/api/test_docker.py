@@ -689,9 +689,14 @@ class TestDockerRuntime:
             control_enabled=True,
             audit_events=[],
         )
+        async def fake_cdp_call(*args, **kwargs):
+            if args[1] == "Runtime.evaluate":
+                return {"result": {"value": True}}
+            return {}
+
         cdp_call = mocker.patch(
             "app.api.docker.live_sessions._cdp_call",
-            new=mocker.AsyncMock(return_value={}),
+            new=mocker.AsyncMock(side_effect=fake_cdp_call),
         )
         mocker.patch(
             "app.api.docker.live_sessions._refresh_page_metadata",
@@ -713,7 +718,63 @@ class TestDockerRuntime:
         assert response.json()["last_controlled_at"] is not None
         assert [call.args[1] for call in cdp_call.await_args_list] == [
             "Page.bringToFront",
+            "Runtime.evaluate",
             "Input.insertText",
+        ]
+
+    def test_live_session_secure_text_requires_focused_text_field(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api.docker import live_sessions
+
+        live_sessions._LIVE_SESSIONS.clear()
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        now = live_sessions._now()
+        live_sessions._LIVE_SESSIONS["session-1"] = live_sessions._ManagedLiveSession(
+            id="session-1",
+            kind="browser",
+            target_url="https://www.amazon.com/photos/all",
+            target_id="target-1",
+            ws_url="ws://browser/devtools/page/target-1",
+            operator_token_hash=live_sessions._token_hash("operator-token"),
+            created_at=now,
+            expires_at=now + live_sessions.timedelta(minutes=5),
+            viewport_width=1440,
+            viewport_height=900,
+            control_enabled=True,
+            audit_events=[],
+        )
+
+        async def fake_cdp_call(*args, **kwargs):
+            if args[1] == "Runtime.evaluate":
+                return {"result": {"value": False}}
+            return {}
+
+        cdp_call = mocker.patch(
+            "app.api.docker.live_sessions._cdp_call",
+            new=mocker.AsyncMock(side_effect=fake_cdp_call),
+        )
+        mocker.patch(
+            "app.api.docker.live_sessions._refresh_page_metadata",
+            new=mocker.AsyncMock(),
+        )
+        secret_text = "dont-cache-or-echo-this"
+
+        response = client.post(
+            "/api/docker/live-sessions/session-1/secure-text",
+            headers={
+                "Content-Type": "text/plain;charset=UTF-8",
+                "X-Live-Session-Token": "operator-token",
+            },
+            content=secret_text,
+        )
+
+        assert response.status_code == 409
+        assert secret_text not in response.text
+        assert [call.args[1] for call in cdp_call.await_args_list] == [
+            "Page.bringToFront",
+            "Runtime.evaluate",
         ]
 
     def test_live_session_text_limit_errors_do_not_echo_input(

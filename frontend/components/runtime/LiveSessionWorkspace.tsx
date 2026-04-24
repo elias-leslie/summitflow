@@ -30,15 +30,40 @@ interface LiveSessionWorkspaceProps {
   sessionId: string
 }
 
+interface LiveFrameRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 const VIEWPORTS = [
   { label: '720', width: 1280, height: 720 },
   { label: '900', width: 1440, height: 900 },
   { label: '1080', width: 1920, height: 1080 },
 ] as const
 
+export function mapLiveFramePoint(
+  clientX: number,
+  clientY: number,
+  rect: LiveFrameRect,
+  viewportWidth: number,
+  viewportHeight: number,
+): { x: number; y: number } | null {
+  if (rect.width <= 0 || rect.height <= 0) return null
+  const xRatio = (clientX - rect.left) / rect.width
+  const yRatio = (clientY - rect.top) / rect.height
+  if (xRatio < 0 || xRatio > 1 || yRatio < 0 || yRatio > 1) return null
+  return {
+    x: Math.round(xRatio * viewportWidth),
+    y: Math.round(yRatio * viewportHeight),
+  }
+}
+
 export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
   const queryClient = useQueryClient()
   const viewportRef = useRef<HTMLButtonElement>(null)
+  const frameImageRef = useRef<HTMLImageElement>(null)
   const secureTextRef = useRef<HTMLInputElement>(null)
   const lastWheelAt = useRef(0)
   const [targetUrl, setTargetUrl] = useState('')
@@ -194,15 +219,16 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
 
   function pointFromEvent(event: MouseEvent<HTMLElement>) {
     if (!frame) return null
-    const rect = event.currentTarget.getBoundingClientRect()
-    return {
-      x: Math.round(
-        ((event.clientX - rect.left) / rect.width) * frame.viewport_width,
-      ),
-      y: Math.round(
-        ((event.clientY - rect.top) / rect.height) * frame.viewport_height,
-      ),
-    }
+    const rect =
+      frameImageRef.current?.getBoundingClientRect() ??
+      event.currentTarget.getBoundingClientRect()
+    return mapLiveFramePoint(
+      event.clientX,
+      event.clientY,
+      rect,
+      frame.viewport_width,
+      frame.viewport_height,
+    )
   }
 
   function handleClick(event: MouseEvent<HTMLElement>): void {
@@ -353,6 +379,7 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
             {frame?.image_data_url ? (
               // biome-ignore lint/performance/noImgElement: Live JPEG data URL from local backend broker.
               <img
+                ref={frameImageRef}
                 src={frame.image_data_url}
                 alt="Live browser frame"
                 draggable={false}
@@ -465,6 +492,7 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
               />
               <div className="grid grid-cols-2 gap-2">
                 <button
+                  id="live-session-secure-send"
                   type="submit"
                   disabled={!canSendInput || secureTextSending}
                   className="flex h-9 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-xs font-medium text-sky-100 transition-colors hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
