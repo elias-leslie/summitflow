@@ -280,6 +280,24 @@ export const runtimeApi = {
       'Failed to control live session',
       liveSessionHeaders(operatorToken),
     ),
+  secureTextLiveSession: (
+    sessionId: string,
+    text: string,
+    operatorToken?: string | null,
+  ) =>
+    fetchWithErrorHandling<LiveSessionStatus>(
+      apiUrl(`/api/docker/live-sessions/${sessionId}/secure-text`),
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=UTF-8',
+          ...liveSessionHeaders(operatorToken),
+        },
+        body: text,
+        cache: 'no-store',
+        errorMessage: 'Failed to send secure text',
+      },
+    ),
   setLiveSessionSensitive: (
     sessionId: string,
     sensitive: boolean,

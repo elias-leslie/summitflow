@@ -3,16 +3,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import {
+  Clipboard,
+  Eraser,
   Loader2,
   Lock,
   Monitor,
   MousePointer2,
   Power,
   RefreshCw,
+  Send,
   ShieldCheck,
   Unlock,
 } from 'lucide-react'
 import {
+  type FormEvent,
   type KeyboardEvent,
   type MouseEvent,
   useEffect,
@@ -35,10 +39,14 @@ const VIEWPORTS = [
 export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
   const queryClient = useQueryClient()
   const viewportRef = useRef<HTMLButtonElement>(null)
+  const secureTextRef = useRef<HTMLInputElement>(null)
   const lastWheelAt = useRef(0)
   const [targetUrl, setTargetUrl] = useState('')
   const [operatorToken, setOperatorToken] = useState<string | null>(null)
   const [tokenReady, setTokenReady] = useState(false)
+  const [secureTextSending, setSecureTextSending] = useState(false)
+  const [secureTextError, setSecureTextError] = useState<string | null>(null)
+  const [secureTextStatus, setSecureTextStatus] = useState<string | null>(null)
 
   useEffect(() => {
     const storageKey = `summitflow-live-session-token:${sessionId}`
@@ -124,6 +132,64 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
     if (session?.state !== 'active') return
     if (!canSendInput) return
     controlMutation.mutate(control)
+  }
+
+  async function transmitSecureText(text: string): Promise<void> {
+    if (session?.state !== 'active') return
+    if (!canSendInput) return
+    if (!text) return
+    setSecureTextSending(true)
+    setSecureTextError(null)
+    setSecureTextStatus(null)
+    try {
+      await runtimeApi.secureTextLiveSession(sessionId, text, operatorToken)
+      if (secureTextRef.current) {
+        secureTextRef.current.value = ''
+        secureTextRef.current.blur()
+      }
+      setSecureTextStatus('Sent')
+      queryClient.invalidateQueries({
+        queryKey: ['runtime', 'live-session', sessionId],
+      })
+      viewportRef.current?.focus()
+    } catch (error) {
+      setSecureTextError(
+        error instanceof Error ? error.message : 'Failed to send secure text',
+      )
+    } finally {
+      setSecureTextSending(false)
+    }
+  }
+
+  function submitSecureText(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault()
+    void transmitSecureText(secureTextRef.current?.value ?? '')
+  }
+
+  async function pasteClipboardSecureText(): Promise<void> {
+    setSecureTextError(null)
+    setSecureTextStatus(null)
+    if (!navigator.clipboard?.readText) {
+      setSecureTextError('Clipboard unavailable')
+      return
+    }
+    try {
+      const clipboardText = await navigator.clipboard.readText()
+      await transmitSecureText(clipboardText)
+    } catch (error) {
+      setSecureTextError(
+        error instanceof Error ? error.message : 'Failed to read clipboard',
+      )
+    }
+  }
+
+  function clearSecureText(): void {
+    if (secureTextRef.current) {
+      secureTextRef.current.value = ''
+      secureTextRef.current.focus()
+    }
+    setSecureTextError(null)
+    setSecureTextStatus(null)
   }
 
   function pointFromEvent(event: MouseEvent<HTMLElement>) {
@@ -365,6 +431,72 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
                 Go
               </button>
             </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <label
+                htmlFor="live-session-secure-text"
+                className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400"
+              >
+                Secure Paste
+              </label>
+              <button
+                type="button"
+                onClick={() => void pasteClipboardSecureText()}
+                disabled={!canSendInput || secureTextSending}
+                title="Send clipboard"
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-700 bg-slate-950/60 text-slate-300 transition-colors hover:border-sky-500/40 hover:text-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Clipboard className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <form onSubmit={submitSecureText} className="mt-2 space-y-2">
+              <input
+                ref={secureTextRef}
+                id="live-session-secure-text"
+                type="password"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                disabled={!canSendInput || secureTextSending}
+                className="h-9 w-full rounded-md border border-slate-700 bg-slate-950/70 px-3 text-xs text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-sky-500/60 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="submit"
+                  disabled={!canSendInput || secureTextSending}
+                  className="flex h-9 items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 text-xs font-medium text-sky-100 transition-colors hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {secureTextSending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5" />
+                  )}
+                  Send
+                </button>
+                <button
+                  type="button"
+                  onClick={clearSecureText}
+                  disabled={secureTextSending}
+                  className="flex h-9 items-center justify-center gap-2 rounded-md border border-slate-700 bg-slate-950/50 px-3 text-xs font-medium text-slate-300 transition-colors hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Eraser className="h-3.5 w-3.5" />
+                  Clear
+                </button>
+              </div>
+            </form>
+            {secureTextStatus && (
+              <div className="mt-2 text-xs text-emerald-200">
+                {secureTextStatus}
+              </div>
+            )}
+            {secureTextError && (
+              <div className="mt-2 text-xs text-rose-200">
+                {secureTextError}
+              </div>
+            )}
           </div>
 
           <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">

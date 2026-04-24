@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 import httpx
 import websockets
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ...utils.env import float_env
@@ -34,6 +34,8 @@ _CDP_WS_TIMEOUT_SECONDS = float_env("SUMMITFLOW_LIVE_CDP_WS_TIMEOUT", 8.0)
 _SCREENSHOT_QUALITY = 68
 _MAX_VIEWPORT_WIDTH = 3840
 _MAX_VIEWPORT_HEIGHT = 2160
+_MAX_TEXT_INPUT_CHARS = 4096
+_MAX_SECURE_TEXT_INPUT_BYTES = 16 * 1024
 
 router = APIRouter(dependencies=[Depends(_require_auth)])
 
@@ -105,7 +107,7 @@ class LiveSessionControl(BaseModel):
     x: int | None = Field(default=None, ge=0, le=_MAX_VIEWPORT_WIDTH)
     y: int | None = Field(default=None, ge=0, le=_MAX_VIEWPORT_HEIGHT)
     key: str | None = Field(default=None, max_length=32)
-    text: str | None = Field(default=None, max_length=256)
+    text: str | None = None
     delta_x: int | None = Field(default=0, ge=-4000, le=4000)
     delta_y: int | None = Field(default=0, ge=-4000, le=4000)
     target_url: str | None = Field(default=None, max_length=2048)
@@ -253,6 +255,25 @@ async def control_live_session(
     return _status_from_session(session)
 
 
+@router.post("/{session_id}/secure-text", response_model=LiveSessionStatus)
+async def secure_text_live_session(
+    session_id: str,
+    request: Request,
+    x_live_session_token: str = Header(default=""),
+) -> LiveSessionStatus:
+    """Relay sensitive text without JSON validation echoes."""
+    session = await _require_session(session_id)
+    _require_operator_token(session, x_live_session_token)
+    if not session.control_enabled:
+        raise HTTPException(status_code=423, detail="Input control is not enabled")
+    text = await _read_secure_text_body(request)
+    await _insert_text(session, text)
+    session.last_controlled_at = _now()
+    _audit(session, actor="operator", action="control:text")
+    await _refresh_page_metadata(session)
+    return _status_from_session(session)
+
+
 @router.post("/{session_id}/sensitive", response_model=LiveSessionStatus)
 async def update_live_session_sensitive(
     session_id: str,
@@ -301,6 +322,10 @@ async def teardown_live_session(session_id: str) -> LiveSessionStatus:
 
 
 async def _apply_control(session: _ManagedLiveSession, payload: LiveSessionControl) -> None:
+    if payload.action == "text":
+        if payload.text is None:
+            raise HTTPException(status_code=400, detail="text is required")
+        _validate_text_input(payload.text)
     await _cdp_call(session.ws_url, "Page.bringToFront")
     if payload.action == "click":
         await _dispatch_click(session, payload)
@@ -309,9 +334,10 @@ async def _apply_control(session: _ManagedLiveSession, payload: LiveSessionContr
         await _dispatch_key(session, payload)
         return
     if payload.action == "text":
-        if payload.text is None:
+        text = payload.text
+        if text is None:
             raise HTTPException(status_code=400, detail="text is required")
-        await _cdp_call(session.ws_url, "Input.insertText", {"text": payload.text})
+        await _insert_text(session, text, bring_to_front=False)
         return
     if payload.action == "wheel":
         await _dispatch_wheel(session, payload)
@@ -329,6 +355,37 @@ async def _apply_control(session: _ManagedLiveSession, payload: LiveSessionContr
         session.viewport_width = payload.viewport_width
         session.viewport_height = payload.viewport_height
         await _configure_viewport(session)
+
+
+async def _read_secure_text_body(request: Request) -> str:
+    raw = await request.body()
+    if len(raw) > _MAX_SECURE_TEXT_INPUT_BYTES:
+        raise HTTPException(status_code=413, detail="Secure text is too long")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Secure text must be UTF-8") from exc
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+    _validate_text_input(text)
+    return text
+
+
+async def _insert_text(
+    session: _ManagedLiveSession,
+    text: str,
+    *,
+    bring_to_front: bool = True,
+) -> None:
+    _validate_text_input(text)
+    if bring_to_front:
+        await _cdp_call(session.ws_url, "Page.bringToFront")
+    await _cdp_call(session.ws_url, "Input.insertText", {"text": text})
+
+
+def _validate_text_input(text: str) -> None:
+    if len(text) > _MAX_TEXT_INPUT_CHARS:
+        raise HTTPException(status_code=413, detail="Text input is too long")
 
 
 async def _dispatch_click(session: _ManagedLiveSession, payload: LiveSessionControl) -> None:

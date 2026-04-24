@@ -666,6 +666,112 @@ class TestDockerRuntime:
         assert cdp_call.await_count == 2
         assert response.json()["last_controlled_at"] is not None
 
+    def test_live_session_secure_text_uses_non_echoing_plain_text_endpoint(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api.docker import live_sessions
+
+        live_sessions._LIVE_SESSIONS.clear()
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        now = live_sessions._now()
+        live_sessions._LIVE_SESSIONS["session-1"] = live_sessions._ManagedLiveSession(
+            id="session-1",
+            kind="browser",
+            target_url="https://www.amazon.com/photos/all",
+            target_id="target-1",
+            ws_url="ws://browser/devtools/page/target-1",
+            operator_token_hash=live_sessions._token_hash("operator-token"),
+            created_at=now,
+            expires_at=now + live_sessions.timedelta(minutes=5),
+            viewport_width=1440,
+            viewport_height=900,
+            control_enabled=True,
+            audit_events=[],
+        )
+        cdp_call = mocker.patch(
+            "app.api.docker.live_sessions._cdp_call",
+            new=mocker.AsyncMock(return_value={}),
+        )
+        mocker.patch(
+            "app.api.docker.live_sessions._refresh_page_metadata",
+            new=mocker.AsyncMock(),
+        )
+        secret_text = "dont-cache-or-echo-this-" * 32
+
+        response = client.post(
+            "/api/docker/live-sessions/session-1/secure-text",
+            headers={
+                "Content-Type": "text/plain;charset=UTF-8",
+                "X-Live-Session-Token": "operator-token",
+            },
+            content=secret_text,
+        )
+
+        assert response.status_code == 200
+        assert secret_text not in response.text
+        assert response.json()["last_controlled_at"] is not None
+        assert [call.args[1] for call in cdp_call.await_args_list] == [
+            "Page.bringToFront",
+            "Input.insertText",
+        ]
+
+    def test_live_session_text_limit_errors_do_not_echo_input(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api.docker import live_sessions
+
+        live_sessions._LIVE_SESSIONS.clear()
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        now = live_sessions._now()
+        live_sessions._LIVE_SESSIONS["session-1"] = live_sessions._ManagedLiveSession(
+            id="session-1",
+            kind="browser",
+            target_url="https://www.amazon.com/photos/all",
+            target_id="target-1",
+            ws_url="ws://browser/devtools/page/target-1",
+            operator_token_hash=live_sessions._token_hash("operator-token"),
+            created_at=now,
+            expires_at=now + live_sessions.timedelta(minutes=5),
+            viewport_width=1440,
+            viewport_height=900,
+            control_enabled=True,
+            audit_events=[],
+        )
+        cdp_call = mocker.patch(
+            "app.api.docker.live_sessions._cdp_call",
+            new=mocker.AsyncMock(return_value={}),
+        )
+        mocker.patch(
+            "app.api.docker.live_sessions._refresh_page_metadata",
+            new=mocker.AsyncMock(),
+        )
+        secret_text = "s" * (live_sessions._MAX_TEXT_INPUT_CHARS + 1)
+
+        response = client.post(
+            "/api/docker/live-sessions/session-1/secure-text",
+            headers={
+                "Content-Type": "text/plain;charset=UTF-8",
+                "X-Live-Session-Token": "operator-token",
+            },
+            content=secret_text,
+        )
+
+        assert response.status_code == 413
+        assert secret_text not in response.text
+        assert cdp_call.await_count == 0
+
+        json_response = client.post(
+            "/api/docker/live-sessions/session-1/control",
+            headers={"X-Live-Session-Token": "operator-token"},
+            json={"action": "text", "text": secret_text},
+        )
+
+        assert json_response.status_code == 413
+        assert secret_text not in json_response.text
+        assert cdp_call.await_count == 0
+
     def test_live_session_control_starts_locked(
         self,
         mocker: MockerFixture,
