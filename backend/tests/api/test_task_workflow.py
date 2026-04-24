@@ -469,6 +469,89 @@ class TestContextEndpoint:
         assert len(data["subtasks"]) == 1
         assert data["subtasks"][0]["subtask_id"] == "1.1"
 
+    def test_task_update_shape_persists_plan_context_subtask_steps_into_context(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        """Task updates should persist plan-context subtasks and unblock readiness rendering."""
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Task update plan context",
+                "description": "Verify rich update shape persists",
+                "task_type": "task",
+                "priority": 2,
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        update_response = client.patch(
+            f"/api/projects/{test_project_id}/tasks/{task_id}",
+            json={
+                "objective": "Carry planner context through task updates",
+                "constraints": ["Keep existing task ids stable"],
+                "done_when": ["Rendered context includes planned step verification"],
+                "files_to_modify": ["backend/app/api/tasks/update_endpoints.py"],
+                "testing_strategy": "Patch task, then read context JSON",
+                "subtasks": [
+                    {
+                        "subtask_id": "1.2",
+                        "description": "Persist update payload into context",
+                        "steps": [
+                            {
+                                "description": "Store normalized step shape",
+                                "spec": {"verify_command": "dt pytest backend/tests/api/test_task_workflow.py"},
+                            },
+                            "Confirm readiness no longer reports missing subtasks",
+                        ],
+                    }
+                ],
+            },
+        )
+        assert update_response.status_code == 200
+
+        toon_response = client.get(f"/api/projects/{test_project_id}/tasks/{task_id}/context")
+        assert toon_response.status_code == 200
+        assert "OBJECTIVE:Carry planner context through task updates" in toon_response.text
+        assert (
+            "CONTEXT:modify:backend/app/api/tasks/update_endpoints.py | "
+            "testing:Patch task, then read context JSON" in toon_response.text
+        )
+
+        response = client.get(
+            f"/api/projects/{test_project_id}/tasks/{task_id}/context",
+            params={"format": "json"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["continuity"]["objective"] == "Carry planner context through task updates"
+        assert data["spirit"]["done_when"] == ["Rendered context includes planned step verification"]
+        assert data["spirit"]["context"]["objective"] == "Carry planner context through task updates"
+        assert data["spirit"]["context"]["constraints"] == ["Keep existing task ids stable"]
+        assert data["spirit"]["context"]["subtasks"] == [
+            {
+                "subtask_id": "1.2",
+                "description": "Persist update payload into context",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "description": "Store normalized step shape",
+                        "passes": False,
+                        "spec": {"verify_command": "dt pytest backend/tests/api/test_task_workflow.py"},
+                    },
+                    {
+                        "step_number": 2,
+                        "description": "Confirm readiness no longer reports missing subtasks",
+                        "passes": False,
+                    },
+                ],
+            }
+        ]
+        assert data["spirit"]["context"]["files_to_modify"] == ["backend/app/api/tasks/update_endpoints.py"]
+        assert data["spirit"]["context"]["testing_strategy"] == "Patch task, then read context JSON"
+
 
 class TestExportEndpoint:
     """Test GET /export endpoint."""

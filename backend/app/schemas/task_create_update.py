@@ -27,6 +27,14 @@ class TaskCreate(BaseModel):
     spirit_anti: str | None = Field(default=None, description="Guardrails stored in task_spirit context")
     decisions: list[dict[str, Any]] | None = Field(default=None, description="Decision log stored in task_spirit context")
     constraints: list[str] | None = Field(default=None, description="Constraints stored in task_spirit context")
+    risks: list[str] | None = Field(default=None, description="Risks stored in task_spirit context")
+    files_to_create: list[str] | None = Field(default=None, description="Files to create stored in task_spirit context")
+    files_to_modify: list[str] | None = Field(default=None, description="Files to modify stored in task_spirit context")
+    references: list[str] | None = Field(default=None, description="References stored in task_spirit context")
+    testing_strategy: str | None = Field(default=None, description="Testing strategy stored in task_spirit context")
+    second_opinion: dict[str, Any] | None = Field(default=None, description="Second-opinion metadata stored in task_spirit context")
+    execution_contract: dict[str, Any] | None = Field(default=None, description="Execution contract stored in task_spirit context")
+    subtasks: list[dict[str, Any]] | None = Field(default=None, description="Plan subtasks with steps stored in task_spirit context")
     # Pipeline v2 fields
     done_when: list[str] | None = Field(
         default=None, description="Checklist of completion conditions"
@@ -72,6 +80,14 @@ class TaskUpdate(BaseModel):
     spirit_anti: str | None = Field(default=None, description="Guardrails stored in task_spirit context")
     decisions: list[dict[str, Any]] | None = Field(default=None, description="Decision log stored in task_spirit context")
     constraints: list[str] | None = Field(default=None, description="Constraints stored in task_spirit context")
+    risks: list[str] | None = Field(default=None, description="Risks stored in task_spirit context")
+    files_to_create: list[str] | None = Field(default=None, description="Files to create stored in task_spirit context")
+    files_to_modify: list[str] | None = Field(default=None, description="Files to modify stored in task_spirit context")
+    references: list[str] | None = Field(default=None, description="References stored in task_spirit context")
+    testing_strategy: str | None = Field(default=None, description="Testing strategy stored in task_spirit context")
+    second_opinion: dict[str, Any] | None = Field(default=None, description="Second-opinion metadata stored in task_spirit context")
+    execution_contract: dict[str, Any] | None = Field(default=None, description="Execution contract stored in task_spirit context")
+    subtasks: list[dict[str, Any]] | None = Field(default=None, description="Plan subtasks with steps stored in task_spirit context")
     # Pipeline v2 fields
     done_when: list[str] | None = None
     complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = None
