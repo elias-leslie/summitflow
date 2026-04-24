@@ -128,13 +128,18 @@ def determine_task_harness(
     has_design_signal = _has_design_signal(task, paths, subtasks, contract)
     has_runtime_signals = bool(
         contract.get("target_urls")
-        or contract.get("user_flows")
         or contract.get("api_checks")
-        or contract.get("negative_cases")
+        or (
+            has_frontend
+            and (
+                contract.get("user_flows")
+                or contract.get("negative_cases")
+            )
+        )
     )
 
     reasons: list[str] = []
-    if contract_mode in _VALID_HARNESS_MODES:
+    if contract_mode in _VALID_HARNESS_MODES and (has_frontend or has_runtime_signals):
         return _route_from_contract_mode(contract_mode, reasons)
 
     if has_frontend:

@@ -72,6 +72,16 @@ _NO_CLEANUP_FLAG_MSG = "Use --auto to cleanup safe cases or --force for all"
 _DRY_RUN_MSG = "DRY RUN - No changes will be made:"
 
 
+def _task_display_token(item: object) -> str:
+    """Return stable inspect-orphans task token from shared assessment truth."""
+    task_token = getattr(item, "task_token", None)
+    if isinstance(task_token, str) and task_token.startswith("task:"):
+        return task_token.removeprefix("task:")
+    task_status = getattr(item, "task_status", None)
+    resolution = getattr(item, "resolution", None)
+    return "unreadable" if resolution == "review" and task_status is None else (task_status or "missing")
+
+
 @app.callback()
 def cleanup_callback(ctx: typer.Context) -> None:
     """Initialize context when the cleanup sub-app is invoked directly."""
@@ -361,13 +371,15 @@ def inspect_orphans(
             else:
                 review_count += 1
             flags = []
-            if item.task_status is None:
+            if item.resolution == "salvage":
                 flags.append("task_missing")
+            elif _task_display_token(item) == "unreadable":
+                flags.append("task_unreadable")
             if item.has_node_modules_artifact:
                 flags.append("node_modules_artifact")
             lines.append(
                 f"{repo_path.name} {item.task_id} branch:{item.branch_name} "
-                f"resolution:{item.resolution} task:{item.task_status or 'missing'} "
+                f"resolution:{item.resolution} task:{_task_display_token(item)} "
                 f"ahead:{item.commits_ahead} files:{item.files_changed} "
                 f"flags:{','.join(flags) if flags else '-'}"
             )

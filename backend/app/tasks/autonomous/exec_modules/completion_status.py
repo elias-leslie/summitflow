@@ -182,7 +182,11 @@ def _do_review_transition(
     dispatch: Callable[[str, str, str], None] | None,
 ) -> str:
     """Set task to completed after passing review gate."""
-    task_store.update_task_status(task_id, "completed")
+    task = task_store.get_task(task_id) or {}
+    update_kwargs: dict[str, Any] = {}
+    if task.get("status") == "pending":
+        update_kwargs["validate_transition"] = False
+    task_store.update_task_status(task_id, "completed", **update_kwargs)
     emit_log(task_id, "info", f"{log_message}, completing after review gate", project_id=project_id)
     if dispatch:
         dispatch("review", task_id, project_id)

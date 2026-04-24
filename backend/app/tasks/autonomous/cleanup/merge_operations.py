@@ -78,7 +78,7 @@ def _safe_finalize_branch_without_checkout(task_id: str, project_id: str) -> Mer
         return {"task_id": task_id, "status": "skipped", "reason": "no_checkpoint"}
 
     task_branch = str(task.get("branch_name") or f"{task_id}/main")
-    base_branch = "main"
+    base_branch = str(task.get("base_branch") or "main")
     checkout_error = checkout_base_branch(project_root, base_branch)
     if checkout_error:
         return _err(task_id, checkout_error)

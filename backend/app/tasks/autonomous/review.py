@@ -237,7 +237,8 @@ def ai_review(
     if not task:
         return {"task_id": task_id, "status": "error", "message": "Task not found"}
 
-    task_store.update_task_status(task_id, "running")
+    if task.get("status") != "completed":
+        task_store.update_task_status(task_id, "running")
     git_diff = get_git_diff(task_id, project_id)
 
     early = _check_diff_issues(task_id, project_id, task, git_diff)
@@ -261,8 +262,17 @@ def ai_review(
                 "verdict": review_result.get("verdict"), "complexity": complexity}
     except Exception as e:
         logger.warning("AI review failed", task_id=task_id, error=str(e))
-        task_store.update_task_status(task_id, "failed")
-        _notify_failure(project_id, task_id, task, f"AI review failed: {e}")
+        current_status = str((task_store.get_task(task_id) or {}).get("status") or "")
+        if current_status == "completed":
+            log_task_event(
+                task_id,
+                f"AI review failed while task stayed completed: {e}",
+                source="review",
+                level="warning",
+            )
+        else:
+            task_store.update_task_status(task_id, "failed")
+            _notify_failure(project_id, task_id, task, f"AI review failed: {e}")
         return {"task_id": task_id, "status": "error", "message": str(e)}
 
 

@@ -169,14 +169,14 @@ def ensure_second_opinion_tracking(
     *,
     source: str = "system",
 ) -> dict[str, Any] | None:
-    """Persist pending second-opinion tracking for qualifying tasks when absent."""
+    """Preserve an existing second-opinion entry, but do not auto-create new task-shape gates."""
     spirit = spirit if spirit is not None else get_task_spirit(task_id)
-    entry = build_second_opinion_entry(task, spirit, source=source)
-    if entry is None:
+    existing = get_second_opinion_entry(spirit)
+    if not existing:
         return None
 
-    existing = get_second_opinion_entry(spirit)
-    if existing == entry:
+    entry = build_second_opinion_entry(task, spirit, source=source)
+    if entry is None or existing == entry:
         return entry
 
     context = merge_second_opinion_into_context((spirit or {}).get("context"), entry)
@@ -238,11 +238,10 @@ def assess_second_opinion_readiness(
     task: dict[str, Any],
     spirit: dict[str, Any] | None = None,
 ) -> tuple[list[str], list[str], list[str]]:
-    """Return advisory task-shape critique guidance.
+    """Return advisory-only task-shape critique guidance.
 
-    Task-shape critique findings are useful planning input, not an execution
-    gate. Hard readiness stays with description, done_when, scope context,
-    subtasks, and execution_contract.
+    Task-shape critique remains available for manual use, but it never blocks
+    autonomous execution readiness.
     """
     spirit = spirit or {}
     requirement = get_second_opinion_requirement(task, spirit)
@@ -254,31 +253,13 @@ def assess_second_opinion_readiness(
         _review_snapshot(entry) if isinstance(entry, dict) else {}
     )
     status = str(review.get("status") or "").lower()
-    stage = str(review.get("stage") or requirement.recommended_stage)
-    summary = str(review.get("summary") or "").strip()
 
-    if status in _COMPLETED_STATUSES and stage in {"task_shape", "both"} and summary:
+    if status in _COMPLETED_STATUSES | {"needs_revision", "pending"}:
         return [], [], []
 
-    suggestions = []
-    if status == "needs_revision" and summary:
-        suggestions.append(
-            "Review advisory task-shape critique findings when they are concrete"
-        )
-    elif status in {"pending", ""}:
-        suggestions.append(
-            "Optionally run `st critique <task-id>` for advisory task-shape review"
-        )
-    elif review and stage not in {"task_shape", "both"}:
-        suggestions.append(
-            f"Task-shape critique is advisory; current review stage is {stage}"
-        )
-    elif review and status in (_COMPLETED_STATUSES | {"needs_revision"}) and not summary:
-        suggestions.append("Task-shape critique entry lacks advisory summary")
-    else:
-        suggestions.append(
-            "Optionally use task-shape critique as advisory review input"
-        )
+    suggestions = [
+        "Optional: run `st critique <task-id>` to record a task-shape critique for a high-risk task"
+    ]
     return [], suggestions, []
 
 

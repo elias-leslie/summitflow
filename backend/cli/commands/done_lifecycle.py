@@ -93,11 +93,15 @@ def _reconstruct_snapshot_info(
     if not task_branch:
         return None
 
+    base_branch = task.get("base_branch")
+    if not isinstance(base_branch, str) or not base_branch:
+        return None
+
     # Rebuild and persist the metadata so future commands work too.
     meta = SnapshotMeta(
         task_id=task_id,
         project_id=project_id,
-        base_branch=str(task.get("base_branch") or "main"),
+        base_branch=base_branch,
         created_at=task.get("created_at", ""),
         claimed_by=task.get("claimed_by", "unknown"),
     )

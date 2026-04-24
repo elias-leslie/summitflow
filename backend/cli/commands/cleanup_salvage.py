@@ -42,13 +42,16 @@ def build_salvage_description(task_id: str, branch_name: str, repo_path: Path) -
 
 
 def validate_salvage_candidate(item: object, task_id: str) -> bool:
-    """Validate the orphan item is a salvage candidate; emit error and return False if not."""
+    """Validate orphan item is salvage candidate; emit stable operator guidance if not."""
     resolution = getattr(item, "resolution", None)
-    task_status = getattr(item, "task_status", None)
-    if resolution != "salvage" or task_status is not None:
+    if resolution != "salvage":
+        task_token = getattr(item, "task_token", None)
+        detail = "task record still exists"
+        if task_token == "task:unreadable":
+            detail = "task record still exists but is unreadable"
         output_error(
-            f"{task_id} is not a missing-task salvage candidate. "
-            "This command only restores orphan branches whose task record is gone."
+            f"{task_id} is not a missing-task salvage candidate: {detail}. "
+            "Open task context/manual reconcile instead."
         )
         return False
     return True

@@ -7,6 +7,7 @@ from unittest.mock import patch
 from app.services.task_execution_readiness import assess_task_execution_readiness
 from app.services.task_second_opinion import (
     build_second_opinion_entry,
+    ensure_second_opinion_tracking,
     parse_second_opinion_response,
     persist_second_opinion,
     reset_second_opinion_for_replan,
@@ -25,9 +26,9 @@ class TestAssessTaskExecutionReadiness:
 
         assert not readiness.ready
         assert "subtasks" in readiness.missing_fields
-        assert "context" in readiness.missing_fields
+        assert "context" not in readiness.missing_fields
 
-    def test_nontrivial_task_requires_scope_context(self) -> None:
+    def test_nontrivial_task_without_scope_context_is_still_execution_ready(self) -> None:
         readiness = assess_task_execution_readiness(
             {"task_type": "feature", "complexity": "STANDARD", "description": "Add endpoint"},
             {
@@ -44,9 +45,8 @@ class TestAssessTaskExecutionReadiness:
             ],
         )
 
-        assert not readiness.ready
-        assert "context" in readiness.missing_fields
-        assert any("scope context" in issue.lower() for issue in readiness.issues)
+        assert readiness.ready
+        assert "context" not in readiness.missing_fields
 
     def test_ready_task_is_execution_ready(self) -> None:
         readiness = assess_task_execution_readiness(
@@ -202,7 +202,7 @@ class TestSecondOpinionParsing:
         assert entry["summary"] == "Already reviewed."
         assert entry["reviewed_by_agent"] == "specifier"
 
-    def test_complex_task_treats_missing_second_opinion_as_advisory(self) -> None:
+    def test_complex_task_without_second_opinion_is_still_execution_ready(self) -> None:
         readiness = assess_task_execution_readiness(
             {
                 "task_type": "feature",
@@ -229,8 +229,7 @@ class TestSecondOpinionParsing:
 
         assert readiness.ready
         assert "second_opinion" not in readiness.missing_fields
-        assert not any("second opinion" in issue.lower() for issue in readiness.issues)
-        assert any("critique" in suggestion.lower() for suggestion in readiness.suggestions)
+        assert sum("second opinion" in issue.lower() for issue in readiness.issues) == 0
 
     def test_pre_close_review_alone_does_not_block_task_shape_readiness(self) -> None:
         readiness = assess_task_execution_readiness(
@@ -385,7 +384,7 @@ class TestSecondOpinionParsing:
         assert "summary" not in stored
         assert stored["reviews"]["task_shape"]["status"] == "pending"
 
-    def test_pending_second_opinion_is_advisory_without_missing_summary_noise(self) -> None:
+    def test_pending_second_opinion_is_advisory_only(self) -> None:
         readiness = assess_task_execution_readiness(
             {
                 "task_type": "feature",
@@ -419,8 +418,7 @@ class TestSecondOpinionParsing:
 
         assert readiness.ready
         assert "second_opinion" not in readiness.missing_fields
-        assert not any("second opinion" in issue.lower() for issue in readiness.issues)
-        assert any("critique" in suggestion.lower() for suggestion in readiness.suggestions)
+        assert sum("second opinion" in issue.lower() for issue in readiness.issues) == 0
 
     def test_completed_second_opinion_satisfies_complex_task_gate(self) -> None:
         readiness = assess_task_execution_readiness(
@@ -456,3 +454,54 @@ class TestSecondOpinionParsing:
         )
 
         assert readiness.ready
+
+    def test_nonfrontend_execution_contract_noise_does_not_force_runtime_eval_gate(self) -> None:
+        readiness = assess_task_execution_readiness(
+            {"task_type": "bug", "complexity": "SIMPLE", "description": "Diagnose worker memory pressure"},
+            {
+                "done_when": ["Root cause identified", "Mitigation written up"],
+                "context": {
+                    "execution_contract": {
+                        "mode": "runtime_eval",
+                        "user_flows": [
+                            {
+                                "title": "Collect diagnostics",
+                                "actions": ["Run journalctl and systemctl"],
+                                "expected_outcomes": ["Memory timeline captured"],
+                            }
+                        ],
+                        "negative_cases": [{"title": "No data", "status": 1}],
+                    }
+                },
+            },
+            [
+                {
+                    "subtask_id": "1.1",
+                    "description": "Collect diagnostics",
+                    "steps_from_table": [{"step_number": 1, "description": "Inspect logs"}],
+                }
+            ],
+        )
+
+        assert readiness.ready
+
+    def test_ensure_second_opinion_tracking_does_not_auto_create_new_entry(self) -> None:
+        with (
+            patch("app.services.task_second_opinion.get_task_spirit", return_value={}),
+            patch("app.services.task_second_opinion.update_task_spirit") as mock_update,
+            patch("app.services.task_second_opinion.upsert_task_spirit") as mock_upsert,
+        ):
+            result = ensure_second_opinion_tracking(
+                "task-mock-1",
+                {
+                    "task_type": "feature",
+                    "complexity": "COMPLEX",
+                    "priority": 1,
+                    "labels": ["auth"],
+                },
+                source="planning",
+            )
+
+        assert result is None
+        mock_update.assert_not_called()
+        mock_upsert.assert_not_called()

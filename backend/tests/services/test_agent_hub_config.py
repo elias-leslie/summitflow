@@ -96,3 +96,27 @@ def test_load_env_local_credentials_strips_quotes_and_export_prefix(tmp_path: Pa
         "SUMMITFLOW_CLIENT_ID": "quoted-client",
         "SUMMITFLOW_REQUEST_SOURCE": "quoted-source",
     }
+
+
+def test_resolve_timeout_preserves_none() -> None:
+    """Open-ended agent turns should not inherit a hidden shared timeout."""
+    assert config._resolve_timeout(None) is None
+    assert config._resolve_timeout(15.0) == 15.0
+
+
+def test_get_sync_client_uses_none_timeout_by_default() -> None:
+    """Default client construction should preserve an omitted timeout as None."""
+    with patch("app.services._agent_hub_config.AgentHubClient") as mock_client:
+        config.get_sync_client()
+
+    assert mock_client.call_args is not None
+    assert mock_client.call_args.kwargs["timeout"] is None
+
+
+def test_get_sync_client_explicit_timeout_wins_over_shared_default() -> None:
+    """Explicit timeout arguments must remain authoritative."""
+    with patch("app.services._agent_hub_config.AgentHubClient") as mock_client:
+        config.get_sync_client(timeout=15.0)
+
+    assert mock_client.call_args is not None
+    assert mock_client.call_args.kwargs["timeout"] == 15.0
