@@ -30,7 +30,7 @@ def get_violation_done_when(violation_type: str, table_name: str) -> list[str]:
     base = [
         "Migration created and applied successfully",
         "All existing queries still work",
-        "dt types passes",
+        "st check types passes",
     ]
 
     specific = {

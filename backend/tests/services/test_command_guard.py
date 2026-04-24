@@ -40,8 +40,8 @@ def test_registry_redirects_raw_pytest(tmp_path: Path) -> None:
     assert "st check pytest" in (decision.message or "")
 
 
-def test_wrapper_commands_are_allowed(tmp_path: Path) -> None:
-    decision = evaluate_shell_command("dt pytest backend/tests/", tmp_path)
+def test_st_check_commands_are_allowed(tmp_path: Path) -> None:
+    decision = evaluate_shell_command("st check pytest -- backend/tests/", tmp_path)
 
     assert decision.blocked is False
 
@@ -51,6 +51,8 @@ def test_wrapper_commands_are_allowed(tmp_path: Path) -> None:
     [
         ("rebuild.sh summitflow", "st service"),
         ("commit.sh --current", "st git commit"),
+        ("dt pytest backend/tests/", "st check"),
+        ("db tables", "st db"),
         ("sf-browser health", "st browser"),
         ("web-research search --query SummitFlow", "st web"),
         ("proxmox-vm.sh list", "st vm"),

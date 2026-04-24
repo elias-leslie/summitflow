@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import tarfile
+from pathlib import Path
 from typing import Annotated
 
 import typer
+
+from app.tasks.backup_native import restore_archive
 
 from ..client import APIError, STClient
 from ..config import get_config
@@ -25,7 +29,6 @@ from .backup_formatters import (
 from .backup_infra import app as infra_app
 from .backup_storage import app as storage_app
 from .backup_testbed import app as testbed_app
-from .operator_forward import run_forwarded
 
 app = typer.Typer(help="Backup management commands")
 
@@ -153,7 +156,7 @@ def _run_archive_restore(
     files_only: bool,
     confirm: str | None,
 ) -> None:
-    args = _restore_archive_args(
+    _restore_archive_args(
         latest=latest,
         archive_file=archive_file,
         archive_name=archive_name,
@@ -184,7 +187,72 @@ def _run_archive_restore(
                 "Use --dry-run first for archive restore preview output.",
             ],
         )
-    run_forwarded("restore.sh", args)
+    archive = _resolve_archive(latest=latest, archive_file=archive_file, archive_name=archive_name)
+    if dry_run:
+        _preview_archive(archive, db_only=db_only, files_only=files_only)
+        return
+    config = get_config()
+    project_root = Path(config.project_root or Path.cwd())
+    result = restore_archive(archive, project_root, dry_run=False, db_only=db_only, files_only=files_only)
+    output_json(result)
+
+
+def _archive_dirs() -> list[tuple[str, Path]]:
+    config = get_config()
+    project_root = Path(config.project_root or Path.cwd())
+    return [
+        ("LOCAL", project_root / "backups"),
+        ("PENDING", Path.home() / ".local" / "share" / "backup-pending"),
+    ]
+
+
+def _archive_paths() -> list[tuple[str, Path]]:
+    paths: list[tuple[str, Path]] = []
+    for label, directory in _archive_dirs():
+        if directory.exists():
+            paths.extend((label, path) for path in sorted(directory.glob("*.tar.gz")))
+    return paths
+
+
+def _resolve_archive(*, latest: bool, archive_file: str | None, archive_name: str | None) -> Path:
+    if archive_file:
+        path = Path(archive_file).expanduser()
+        if path.exists():
+            return path
+        output_error(f"Archive not found: {archive_file}")
+        raise typer.Exit(1) from None
+    matches = _archive_paths()
+    if archive_name:
+        for _, path in matches:
+            if path.name == archive_name:
+                return path
+        output_error(f"Archive not found: {archive_name}")
+        raise typer.Exit(1) from None
+    if latest and matches:
+        return max((path for _, path in matches), key=lambda item: item.stat().st_mtime)
+    output_error("No archive found")
+    raise typer.Exit(1) from None
+
+
+def _preview_archive(path: Path, *, db_only: bool, files_only: bool, limit: int = 30) -> None:
+    print(f"ARCHIVE {path}")
+    print(f"MODE db_only:{str(db_only).lower()} files_only:{str(files_only).lower()}")
+    shown = 0
+    omitted = 0
+    with tarfile.open(path, "r:gz") as archive:
+        for member in archive.getmembers():
+            name = member.name
+            if db_only and not name.endswith("database.sql.gz"):
+                continue
+            if files_only and name.endswith("database.sql.gz"):
+                continue
+            if shown < limit:
+                print(f"  {name}")
+                shown += 1
+            else:
+                omitted += 1
+    if omitted:
+        print(f"  ... ({omitted} more)")
 
 
 @app.command("restore")
@@ -270,7 +338,12 @@ def backup_status(
 ) -> None:
     """Show most recent backup status."""
     if local:
-        run_forwarded("backup.sh", ["--status"])
+        archives = _archive_paths()
+        if not archives:
+            print("NO_LOCAL_ARCHIVES")
+            return
+        _, latest = max(archives, key=lambda item: item[1].stat().st_mtime)
+        print(f"LOCAL_LATEST {latest.name}|{format_size(latest.stat().st_size)}|{latest}")
         return
 
     if task_id:
@@ -300,13 +373,31 @@ def backup_status(
 @app.command("archives")
 def list_archives() -> None:
     """List local, pending, and SMB archives."""
-    run_forwarded("restore.sh", ["--list"])
+    archives = _archive_paths()
+    print(f"ARCHIVES[{len(archives)}]")
+    for label, path in archives:
+        print(f"  {label} {path.name} {format_size(path.stat().st_size)} {path}")
 
 
 @app.command("all", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def backup_all(ctx: typer.Context) -> None:
     """Run all-source backup orchestration through the canonical st surface."""
-    run_forwarded("backup-all.sh", list(ctx.args))
+    if ctx.args:
+        output_error("st backup all does not accept legacy passthrough args; use st backup create/source flags.")
+        raise typer.Exit(2) from None
+    try:
+        sources = _get_source_api().list_sources()
+        queued = 0
+        for source in sources:
+            source_id = source.get("id")
+            if not source_id:
+                continue
+            result = _get_source_api().create_source_backup(str(source_id))
+            queued += 1
+            print(f"QUEUED {source_id}|{result.get('task_id') or result.get('message', 'queued')}")
+        print(f"BACKUP_ALL queued:{queued}")
+    except APIError as e:
+        handle_api_error(e)
 
 
 @app.command("schedule")

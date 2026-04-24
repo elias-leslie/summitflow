@@ -11,13 +11,13 @@ from agent_hub import CompletionResponse
 from ....constants import PRISTINE_SELF_HEAL_MAX_ATTEMPTS
 from ....logging_config import get_logger
 from ....services.agent_hub_client import get_sync_client
-from ....storage.agent_configs_quality import build_dt_command
+from ....storage.agent_configs_quality import build_st_check_command
 from ....storage.projects import get_project_root_path
 from ....storage.tasks.core import add_agent_hub_session
 from .events import emit_log, emit_progress_log
 from .git_ops import has_uncommitted_changes, smart_commit
 from .prompts import get_prompt_template
-from .quality_utils import find_dev_tools, parse_error_count
+from .quality_utils import find_check_tool, parse_error_count
 
 logger = get_logger(__name__)
 AUTOCODE_ROLES = ["system", "autocode"]
@@ -82,13 +82,10 @@ def check_pristine_codebase(project_id: str) -> None:
     if not root_path:
         raise PristineCheckError(f"Project {project_id} not found or has no root_path")
     repo_path = Path(root_path)
-    dt_cmd = find_dev_tools()
-    cmd: list[str] | None = build_dt_command(dt_cmd, project_id) if dt_cmd else None
+    st_cmd = find_check_tool()
+    cmd: list[str] | None = build_st_check_command(st_cmd, project_id) if st_cmd else None
     if not cmd:
-        script = repo_path / "scripts" / "dev-tools.sh"
-        cmd = [str(script), "--quick"] if script.exists() else None
-    if not cmd:
-        logger.warning("pristine_check_skipped", project_id=project_id, reason="dt command and scripts/dev-tools.sh not found")
+        logger.warning("pristine_check_skipped", project_id=project_id, reason="st command not found")
         return
     logger.info("pristine_check_started", project_id=project_id, cmd=cmd[0])
     try:
@@ -117,11 +114,11 @@ def pristine_self_heal(task_id: str, project_id: str) -> bool:
         _emit(task_id, "error", "Pristine self-heal failed: no project path", project_id)
         return False
     repo_path = Path(root_path)
-    dt_cmd = find_dev_tools()
-    if not dt_cmd:
-        logger.warning("pristine_self_heal_skipped", reason="dt not found")
+    st_cmd = find_check_tool()
+    if not st_cmd:
+        logger.warning("pristine_self_heal_skipped", reason="st not found")
         return True
-    cmd = build_dt_command(dt_cmd, project_id)
+    cmd = build_st_check_command(st_cmd, project_id)
     previous_error_count: int | None = None
     session_id: str | None = None
     _emit(task_id, "info", "Starting pristine self-heal: checking quality gates", project_id)

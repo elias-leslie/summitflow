@@ -297,31 +297,10 @@ def _run_project_rebuild(
 
     combined = "\n".join(part for part in ((result.stdout or "").strip(), (result.stderr or "").strip()) if part)
     if "Unknown project:" in combined and project_root is not None:
-        for script_name in ("rebuild.sh", "restart.sh"):
-            script_path = project_root / "scripts" / script_name
-            if not script_path.exists():
-                continue
-
-            local_result = _run(["bash", str(script_path)], cwd=project_root)
-            if local_result.returncode == 0:
-                return {
-                    "ran": True,
-                    "method": f"local-{script_name}",
-                    "stdout_tail": (local_result.stdout or "").strip()[-2000:],
-                    "stderr_tail": (local_result.stderr or "").strip()[-2000:],
-                }
-
-            local_stdout = (local_result.stdout or "").strip()[-2000:]
-            local_stderr = (local_result.stderr or "").strip()[-2000:]
-            local_details = "\n".join(part for part in (local_stdout, local_stderr) if part)
-            raise TestbedBackupError(
-                f"{script_name} failed for project '{project_id}'\n{local_details}".strip()
-            )
-
         return {
             "ran": False,
             "method": "skipped",
-            "reason": f"Unknown project '{project_id}' for st service rebuild and no local scripts/rebuild.sh or scripts/restart.sh exist",
+            "reason": f"Unknown project '{project_id}' for st service rebuild",
             "stdout_tail": (result.stdout or "").strip()[-2000:],
             "stderr_tail": (result.stderr or "").strip()[-2000:],
         }

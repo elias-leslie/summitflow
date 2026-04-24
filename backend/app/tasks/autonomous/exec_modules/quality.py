@@ -18,6 +18,7 @@ from .quality_gates import (
     run_final_quality_gate,
 )
 from .quality_utils import (
+    find_check_tool,
     find_dev_tools,
     parse_error_count,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "PristineCheckError",
     "auto_fix_quality",
     "check_pristine_codebase",
+    "find_check_tool",
     "find_dev_tools",
     "parse_error_count",
     "pristine_self_heal",

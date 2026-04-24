@@ -91,10 +91,10 @@ def _format_catalog_compact(tools: list[dict[str, Any]]) -> None:
     print(f"TOOLS_CATALOG[{len(tools)}]:source={tool_registry_path()}")
     for tool in tools:
         canonical = tool.get("canonical", "?")
-        legacy = ",".join(str(item) for item in tool.get("legacy", []) if item)
+        replaces = ",".join(str(item) for item in tool.get("replaces", []) if item)
         safety = tool.get("safety", "?")
         summary = str(tool.get("summary", "")).strip()
-        print(f"  {canonical}|safety:{safety}|legacy:{legacy}|{summary}")
+        print(f"  {canonical}|safety:{safety}|replaces:{replaces}|{summary}")
 
 
 @app.command()

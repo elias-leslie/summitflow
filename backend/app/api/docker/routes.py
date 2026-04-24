@@ -16,7 +16,6 @@ from .helpers import (
     _find_container_name,
     _get_runtime_status,
     _launch_runtime_switch,
-    _rebuild_script_path,
     _require_auth,
     _run_docker,
     _run_journalctl_user,
@@ -25,6 +24,7 @@ from .helpers import (
     _sanitize_note,
     _service_action,
     _service_definition,
+    _st_cli_path,
     _systemctl_user_env,
     _write_runtime_mode,
 )
@@ -65,14 +65,14 @@ async def update_runtime_mode(payload: RuntimeModeUpdate) -> ActionResult:
     if runtime.runtime != "docker":
         return _handle_non_docker_mode_update(runtime, payload.mode)
 
-    script_path = _rebuild_script_path()
-    if not script_path.exists():
-        raise HTTPException(status_code=500, detail="rebuild.sh not found")
+    st_path = _st_cli_path()
+    if not st_path.exists():
+        raise HTTPException(status_code=500, detail="st CLI not found")
 
     if runtime.current_mode == payload.mode and runtime.is_running:
         return ActionResult(success=True, message=f"Docker stack already running in {payload.mode} mode")
 
-    helper_name = await _launch_runtime_switch(payload.mode, script_path)
+    helper_name = await _launch_runtime_switch(payload.mode, st_path)
     return ActionResult(
         success=True,
         message=f"Queued Docker stack switch to {payload.mode} mode via {helper_name}",

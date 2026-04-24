@@ -95,19 +95,35 @@ class TestGitSync:
 class TestGitCommit:
     """Tests for st git commit command."""
 
-    def test_commit_forwards_to_managed_commit_runner(self) -> None:
-        with patch("cli.commands.git.run_forwarded") as forwarded:
-            result = runner.invoke(
-                app,
-                ["commit", "--current", "--push", "--task", "task-1", "--msg", "test"],
-                obj=OutputContext(compact=True),
-            )
+    @patch("cli.commands.git._commit_repo")
+    @patch("cli.commands.git._target_repos")
+    def test_commit_runs_native_managed_commit_workflow(
+        self,
+        mock_target_repos: MagicMock,
+        mock_commit_repo: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        mock_target_repos.return_value = [tmp_path]
+        mock_commit_repo.return_value = {
+            "repo": "repo",
+            "path": str(tmp_path),
+            "status": "SUCCESS",
+            "sha": "abc1234",
+            "pushed": True,
+        }
+        result = runner.invoke(
+            app,
+            ["commit", "--current", "--push", "--task", "task-1", "--msg", "test"],
+            obj=OutputContext(compact=True),
+        )
 
         assert result.exit_code == 0
-        forwarded.assert_called_once_with(
-            "commit.sh",
-            ["--current", "--push", "--task", "task-1", "--msg", "test"],
-        )
+        mock_target_repos.assert_called_once_with(False)
+        mock_commit_repo.assert_called_once()
+        opts = mock_commit_repo.call_args.args[1]
+        assert opts.task == "task-1"
+        assert opts.msg == "test"
+        assert "COMMIT[1]" in result.stdout
 
 
 class TestFinalizeTask:

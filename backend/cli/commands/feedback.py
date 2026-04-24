@@ -68,7 +68,7 @@ def report(
       st feedback report sf.cli "Error message unhelpful" --type friction --severity medium
       st feedback report ah.memory "Pre-load cross-project context" --type idea
       st feedback report sf.checkpoints "Checkpoint flow worked perfectly" --type praise
-      st feedback report sf.dt "Cache ruff results for unchanged files" --type improvement
+      st feedback report sf.check "Cache ruff results for unchanged files" --type improvement
       st feedback report sf.cli "Same failure again" --session sess-123 --vote-if-match
     """
     report_impl(

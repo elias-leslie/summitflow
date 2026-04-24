@@ -99,7 +99,7 @@ def get_network_info() -> dict[str, str]:
     """Get host network identity for cross-machine URL construction.
 
     Returns host_ip (first LAN address) and hostname so agents can build
-    URLs reachable from remote machines (e.g. sf-browser on a test VM).
+    URLs reachable from remote browser verification hosts.
     """
     info: dict[str, str] = {}
     try:

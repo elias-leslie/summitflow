@@ -72,7 +72,7 @@ class CreateCheckResultRequest(BaseModel):
 
 
 class SyncResultsRequest(BaseModel):
-    """Request to sync results from dt output."""
+    """Request to sync results from st check output."""
 
     check_type: QualityCheckType
     status: Literal["pass", "fail", "error", "skipped"]

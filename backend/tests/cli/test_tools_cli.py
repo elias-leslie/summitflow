@@ -61,7 +61,7 @@ def test_tools_default_shows_operator_catalog_without_internal_secret() -> None:
     assert result.exit_code == 0
     assert "TOOLS_CATALOG[" in result.output
     assert "st service" in result.output
-    assert "sf-browser" in result.output
+    assert "st browser" in result.output
 
 
 def test_tools_catalog_json_includes_registry_source() -> None:

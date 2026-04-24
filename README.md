@@ -61,13 +61,9 @@ summitflow/
 │   │   ├── execution/     # Task execution UI
 │   │   └── evidence/      # Evidence capture modal
 │   └── lib/               # API clients, hooks, utilities
-├── scripts/               # Shared scripts (canonical source)
-│   ├── rebuild.sh         # Build and restart services
-│   ├── backup.sh          # Database backup to NAS
-│   ├── restore.sh         # Database restore
-│   ├── dev-tools.sh       # Quality tool wrapper (dt CLI)
-│   ├── commit.sh          # Multi-repo commit handler
-│   └── systemd/           # Systemd service definitions
+├── scripts/               # Internal support assets; public operator surface is st
+│   ├── systemd/           # Systemd service definitions
+│   └── lib/               # Shared implementation helpers
 └── tasks/                 # Task specifications and state
 ```
 
@@ -172,7 +168,7 @@ overrides for local integrations and background services.
 To provision the shared local agent environment on a new machine, run:
 
 ```bash
-bash ~/summitflow/scripts/setup-agent-tooling.sh
+st setup agent-tooling
 ```
 
 That bootstrap installs the Codex CLI and Claude Code, clones or updates the
@@ -191,16 +187,17 @@ curl -X POST http://localhost:8001/api/projects \
 
 35+ tables including tasks, subtasks, steps, projects, events, explorer entries, backups, quality checks, notifications, and agent sessions. Schema managed via Alembic migrations.
 
-## Shared Scripts
+## Operator CLI
 
-SummitFlow `scripts/` is the canonical source for shared development scripts. Other projects (portfolio-ai, agent-hub, a-term) symlink to these:
+`st` is the canonical SummitFlow operator CLI. Do not add new public wrappers; add first-class `st` subcommands instead.
 
-- `rebuild.sh` - Build and restart services (auto-detects Docker vs native)
-- `backup.sh` - Database + files backup to SMB share
-- `restore.sh` - Restore from local or SMB backup
-- `dev-tools.sh` - Quality tool wrapper (`dt` CLI for ruff, types, pytest, biome)
-- `commit.sh` - Multi-repo commit handler
-- `setup-agent-tooling.sh` - Bootstrap Claude Code, Codex CLI, config repos, and observability services
+- `st service` - build, migrate, restart, and inspect services
+- `st check` - quality gates and named tool checks
+- `st db` - database inspection and migrations
+- `st git commit` - managed multi-repo commit/push workflow
+- `st backup` - source backups, restores, schedules, and pending drain
+- `st browser` - browser health, screenshots, DOM eval, and page checks
+- `st web` - Agent Hub-backed web search/research/fetch
 
 ## Services
 
@@ -211,25 +208,18 @@ Current default runtime is hybrid:
 - Full Docker app stacks remain available for parity and container checks
 
 ```bash
-scripts/rebuild.sh            # Full rebuild and restart (auto-detects Docker)
-scripts/rebuild.sh --restart  # Restart only (no rebuild)
-scripts/rebuild.sh --status   # Check service health
+st service rebuild summitflow  # Full rebuild, migrations, restart, health check
+st service restart summitflow  # Restart through managed rebuild path
+st service status summitflow   # Check service health
 ```
 
 ## Testing
 
 ```bash
-# Backend
-cd backend
-pytest tests/ -v --cov=app
-
-# Frontend
-cd frontend
-pnpm run test
-
 # Quality checks
-dt --check            # Full quality check (ruff, types, biome, pytest)
-dt -q -d              # Quick check on changed files
+st check --check                # Full quality check
+st check --quick --changed-only # Quick check on changed files
+st check pytest -- tests/cli    # Targeted backend test run
 ```
 
 ## License

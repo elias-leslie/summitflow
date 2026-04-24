@@ -37,7 +37,7 @@ from ...utils.env import float_env as _float_env
 def _detect_repo_root(start_path: Path | None = None) -> Path:
     current = (start_path or Path(__file__).resolve()).parent
     for candidate in (current, *current.parents):
-        if (candidate / "scripts" / "rebuild.sh").exists():
+        if (candidate / "backend" / "cli").exists() and (candidate / "backend" / "app").exists():
             return candidate
     return Path(__file__).resolve().parents[4]
 

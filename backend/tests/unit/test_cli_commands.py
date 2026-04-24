@@ -9,6 +9,7 @@ This file tests CLI behavior with mocked backends - it does NOT create real task
 from __future__ import annotations
 
 import json
+import tarfile
 import tempfile
 from collections.abc import Generator
 from datetime import UTC, datetime
@@ -1204,7 +1205,7 @@ class TestPlanSchemaConsistency:
             },
             "context": {
                 "files_to_modify": ["frontend/src/app/page.tsx"],
-                "testing_strategy": "Use sf-browser to verify the landing page route.",
+                "testing_strategy": "Use st browser to verify the landing page route.",
             },
         }
 
@@ -1520,15 +1521,20 @@ class TestBackupCommands:
         confirm_gate.assert_called_once()
         mock_api.restore_backup.assert_called_once_with("bkp-123", dry_run=False)
 
-    def test_backup_restore_archive_dry_run_forwards_to_restore_script(self) -> None:
-        """Archive restore dry-run should route through restore.sh safely."""
+    def test_backup_restore_archive_dry_run_previews_natively(self, tmp_path: Path) -> None:
+        """Archive restore dry-run should preview without legacy script delegation."""
         from cli.commands.backup import app as backup_app
 
-        with patch("cli.commands.backup.run_forwarded") as forwarded:
-            result = runner.invoke(backup_app, ["restore", "--name", "summitflow.tar.gz", "--dry-run", "--files-only"])
+        archive = tmp_path / "summitflow.tar.gz"
+        with tarfile.open(archive, "w:gz") as tar:
+            payload = tmp_path / "file.txt"
+            payload.write_text("ok")
+            tar.add(payload, arcname="summitflow/file.txt")
 
+        result = runner.invoke(backup_app, ["restore", "--file", str(archive), "--dry-run", "--files-only"])
         assert result.exit_code == 0
-        forwarded.assert_called_once_with("restore.sh", ["--name", "summitflow.tar.gz", "--dry-run", "--files-only"])
+        assert "ARCHIVE" in result.output
+        assert "summitflow/file.txt" in result.output
 
 
 class TestVerifyPlanGates:

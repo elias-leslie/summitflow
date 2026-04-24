@@ -13,14 +13,14 @@ from ...logging_config import get_logger
 
 logger = get_logger(__name__)
 
-_DT_CHECK_TYPES = frozenset({"ruff", "types", "biome", "tsc"})
+_ST_CHECK_TYPES = frozenset({"ruff", "types", "biome", "tsc"})
 
 
 def _build_verify_cmd(check_type: str, file_path: str) -> list[str] | None:
     """Return the command list for verifying a check type, or None if unknown."""
-    dt_cmd = shutil.which("dt")
-    if dt_cmd and check_type in _DT_CHECK_TYPES:
-        return [dt_cmd, check_type]
+    st_cmd = shutil.which("st")
+    if st_cmd and check_type in _ST_CHECK_TYPES:
+        return [st_cmd, "check", check_type]
     fallbacks: dict[str, list[str]] = {
         "ruff": ["ruff", "check", file_path, "--quiet"],
         "types": ["ty", "check", file_path],
@@ -54,8 +54,8 @@ def apply_fix(file_path: Path, new_content: str) -> bool:
 def verify_fix(project_path: Path, check_type: str, file_path: str) -> bool:
     """Re-run the check to verify the fix worked.
 
-    Uses dt wrapper for consistent tool execution. Falls back to raw tools
-    only if dt is not available.
+    Uses st check for consistent tool execution. Falls back to raw tools
+    only if st is not available.
 
     Args:
         project_path: Path to project root

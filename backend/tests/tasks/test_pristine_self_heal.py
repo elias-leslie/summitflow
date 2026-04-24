@@ -68,10 +68,10 @@ class TestPristineSelfHeal:
             yield mock
 
     @pytest.fixture
-    def mock_dt_found(self) -> Generator[MagicMock]:
-        """Mock find_dev_tools to return dt path."""
-        with patch(f"{_PRISTINE}.find_dev_tools") as mock:
-            mock.return_value = "/usr/local/bin/dt"
+    def mock_st_found(self) -> Generator[MagicMock]:
+        """Mock find_check_tool to return st path."""
+        with patch(f"{_PRISTINE}.find_check_tool") as mock:
+            mock.return_value = "/usr/local/bin/st"
             yield mock
 
     @pytest.fixture
@@ -101,10 +101,10 @@ class TestPristineSelfHeal:
             yield mock
 
     @pytest.fixture(autouse=True)
-    def mock_build_dt_command(self) -> Generator[MagicMock]:
-        """Mock build_dt_command to avoid hitting database."""
-        with patch(f"{_PRISTINE}.build_dt_command") as mock:
-            mock.return_value = ["/usr/local/bin/dt", "--quick"]
+    def mock_build_st_check_command(self) -> Generator[MagicMock]:
+        """Mock build_st_check_command to avoid hitting database."""
+        with patch(f"{_PRISTINE}.build_st_check_command") as mock:
+            mock.return_value = ["/usr/local/bin/st", "check", "--quick"]
             yield mock
 
     @pytest.fixture(autouse=True)
@@ -128,10 +128,10 @@ class TestPristineSelfHeal:
     def test_pristine_already_clean(
         self,
         mock_project_path: MagicMock,
-        mock_dt_found: MagicMock,
+        mock_st_found: MagicMock,
         mock_subprocess: MagicMock,
     ) -> None:
-        """If dt --check passes on first try, return True without agent call."""
+        """If st check passes on first try, return True without agent call."""
         from app.tasks.autonomous.execution import pristine_self_heal
 
         mock_subprocess.return_value = MagicMock(returncode=0)
@@ -144,7 +144,7 @@ class TestPristineSelfHeal:
     def test_pristine_fix_succeeds(
         self,
         mock_project_path: MagicMock,
-        mock_dt_found: MagicMock,
+        mock_st_found: MagicMock,
         mock_subprocess: MagicMock,
         mock_agent_client: MagicMock,
     ) -> None:
@@ -175,7 +175,7 @@ class TestPristineSelfHeal:
     def test_pristine_error_count_regression_reverts(
         self,
         mock_project_path: MagicMock,
-        mock_dt_found: MagicMock,
+        mock_st_found: MagicMock,
         mock_subprocess: MagicMock,
         mock_agent_client: MagicMock,
     ) -> None:
@@ -197,7 +197,7 @@ class TestPristineSelfHeal:
     def test_pristine_max_attempts_exhausted(
         self,
         mock_project_path: MagicMock,
-        mock_dt_found: MagicMock,
+        mock_st_found: MagicMock,
         mock_subprocess: MagicMock,
         mock_agent_client: MagicMock,
     ) -> None:
@@ -222,11 +222,11 @@ class TestPristineSelfHeal:
 
         assert not result
 
-    def test_pristine_no_dt_command(self, mock_project_path: MagicMock) -> None:
-        """If dt not found, return True (skip check)."""
+    def test_pristine_no_st_command(self, mock_project_path: MagicMock) -> None:
+        """If st not found, return True (skip check)."""
         from app.tasks.autonomous.execution import pristine_self_heal
 
-        with patch(f"{_PRISTINE}.find_dev_tools") as mock:
+        with patch(f"{_PRISTINE}.find_check_tool") as mock:
             mock.return_value = None
 
             result = pristine_self_heal("task-123", "test-project")
@@ -236,7 +236,7 @@ class TestPristineSelfHeal:
     def test_pristine_timeout(
         self,
         mock_project_path: MagicMock,
-        mock_dt_found: MagicMock,
+        mock_st_found: MagicMock,
         mock_subprocess: MagicMock,
     ) -> None:
         """Timeout returns False."""
@@ -244,7 +244,7 @@ class TestPristineSelfHeal:
 
         from app.tasks.autonomous.execution import pristine_self_heal
 
-        mock_subprocess.side_effect = subprocess.TimeoutExpired("dt", 600)
+        mock_subprocess.side_effect = subprocess.TimeoutExpired("st", 600)
 
         result = pristine_self_heal("task-123", "test-project")
 

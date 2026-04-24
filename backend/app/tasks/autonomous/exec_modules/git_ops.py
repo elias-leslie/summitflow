@@ -301,7 +301,7 @@ def smart_commit(
         message: Commit message
         task_id: Optional task ID to tag the commit
         push: Push immediately after commit
-        skip_checks: Skip dt checks for checkpoint/recovery commits
+        skip_checks: Skip st check gates for checkpoint/recovery commits
 
     Returns:
         True if work is preserved successfully, False otherwise

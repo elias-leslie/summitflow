@@ -91,7 +91,7 @@ async def sync_results(
     project_id: str,
     request: SyncResultsRequest,
 ) -> SyncResultsResponse:
-    """Sync quality check results from dt output."""
+    """Sync quality check results from st check output."""
     validate_project_exists(project_id)
     with get_connection() as conn:
         if request.status == "pass" or not request.errors:

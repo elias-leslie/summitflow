@@ -59,9 +59,9 @@ class AgentConfig(TypedDict, total=False):
     autonomous_require_review: bool  # Require review before merge
 
     # Quality gate configuration
-    quality_gate_tools: list[str]  # e.g. ["ruff", "types", "biome", "tsc"] — empty = dt --quick
+    quality_gate_tools: list[str]  # e.g. ["ruff", "types", "biome", "tsc"] - empty = st check --quick
     quality_gate_mode: str  # "quick", "check", or "changed-only"
-    quality_gate_fix_enabled: bool  # Allow dt --fix during self-heal
+    quality_gate_fix_enabled: bool  # Allow st check --fix during self-heal
 
 
 DEFAULT_AGENT_CONFIG: AgentConfig = {
@@ -105,7 +105,7 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "autonomous_auto_merge_enabled": True,
     "autonomous_require_review": True,
     # Quality gate defaults
-    "quality_gate_tools": [],  # Empty = use dt --quick (default behavior)
+    "quality_gate_tools": [],  # Empty = use st check --quick (default behavior)
     "quality_gate_mode": "quick",
     "quality_gate_fix_enabled": True,
 }
@@ -208,6 +208,7 @@ from .agent_configs_components import (  # noqa: E402
 )
 from .agent_configs_quality import (  # noqa: E402
     build_dt_command,
+    build_st_check_command,
     get_quality_gate_fix_enabled,
     get_quality_gate_mode,
     get_quality_gate_tools,
@@ -218,6 +219,7 @@ __all__ = [
     "DEFAULT_AGENT_CONFIG",
     "AgentConfig",
     "build_dt_command",
+    "build_st_check_command",
     "enable_agent",
     "get_agent_config",
     "get_allowed_task_types",
