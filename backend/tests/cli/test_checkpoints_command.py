@@ -7,6 +7,7 @@ import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -142,7 +143,31 @@ def test_merge_task_branch_reports_conflict_paths(
             return subprocess.CompletedProcess(args, 0, stdout="backend/app/example.py\n", stderr="")
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
+    recorded_fields: dict[str, Any] = {}
+    status_updates: list[tuple[str, str, str | None, bool]] = []
+    events: list[tuple[str, str]] = []
+
+    def record_status_update(
+        task_id: str,
+        status: str,
+        error_message: str | None = None,
+        validate_transition: bool = True,
+    ) -> None:
+        status_updates.append((task_id, status, error_message, validate_transition))
+
     monkeypatch.setattr(task_store, "get_task", lambda task_id: {"status": "running"})
+    monkeypatch.setattr(
+        "app.storage.tasks.update.update_task_fields",
+        lambda task_id, **fields: recorded_fields.update(fields),
+    )
+    monkeypatch.setattr(
+        "app.storage.tasks.status.update_task_status",
+        record_status_update,
+    )
+    monkeypatch.setattr(
+        "app.storage.log_task_event",
+        lambda task_id, message: events.append((task_id, message)),
+    )
     monkeypatch.setattr(
         checkpoint_branches,
         "load_snapshot_meta",
@@ -160,3 +185,8 @@ def test_merge_task_branch_reports_conflict_paths(
     assert "Failed to merge task-1/main" in stderr
     assert "backend/app/example.py" in stderr
     assert "Recovery: st git resolve-conflict task-1" in stderr
+    assert recorded_fields["conflict_info"]["conflicting_files"] == ["backend/app/example.py"]
+    assert status_updates == [("task-1", "failed", "Merge conflict in 1 file(s)", False)]
+    assert events == [
+        ("task-1", "Merge conflict detected in 1 file(s): backend/app/example.py")
+    ]

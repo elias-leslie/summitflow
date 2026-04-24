@@ -9,6 +9,7 @@ import contextlib
 import re
 import subprocess
 import sys
+from datetime import UTC, datetime
 
 from .checkpoint_metadata import load_snapshot_meta
 
@@ -67,15 +68,21 @@ def _conflict_paths_from_index(cwd: str | None = None) -> list[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
+def _merge_conflict_paths(error: subprocess.CalledProcessError, cwd: str | None) -> list[str]:
+    output = _merge_failure_output(error)
+    return _conflict_paths_from_output(output) or _conflict_paths_from_index(cwd)
+
+
 def _format_merge_failure(
     branch: str,
     error: subprocess.CalledProcessError,
     cwd: str | None,
     recovery: str,
+    conflicts: list[str] | None = None,
 ) -> str:
     output = _merge_failure_output(error)
     detail = output or f"git exited {error.returncode}"
-    conflicts = _conflict_paths_from_output(output) or _conflict_paths_from_index(cwd)
+    conflicts = conflicts if conflicts is not None else _merge_conflict_paths(error, cwd)
     lines = [f"Error: Failed to merge {branch}: {detail}"]
     if conflicts:
         shown = ", ".join(conflicts[:10])
@@ -84,6 +91,44 @@ def _format_merge_failure(
             lines.append(f"Conflicts omitted: {len(conflicts) - 10}")
     lines.append(f"Recovery: {recovery}")
     return "\n".join(lines)
+
+
+def _record_task_merge_conflict(
+    task_id: str,
+    task_branch: str,
+    base_branch: str,
+    conflicts: list[str],
+    error_output: str,
+) -> None:
+    if not conflicts:
+        return
+    try:
+        from app.storage import log_task_event
+        from app.storage.tasks.status import update_task_status
+        from app.storage.tasks.update import update_task_fields
+
+        update_task_fields(
+            task_id,
+            conflict_info={
+                "conflicting_files": conflicts,
+                "task_branch": task_branch,
+                "base_branch": base_branch,
+                "detected_at": datetime.now(UTC).isoformat(),
+                "error_output": error_output[:500],
+            },
+        )
+        update_task_status(
+            task_id,
+            "failed",
+            error_message=f"Merge conflict in {len(conflicts)} file(s)",
+            validate_transition=False,
+        )
+        log_task_event(
+            task_id,
+            f"Merge conflict detected in {len(conflicts)} file(s): {', '.join(conflicts[:5])}",
+        )
+    except Exception as exc:
+        print(f"Warning: Failed to record merge conflict metadata: {exc}", file=sys.stderr)
 
 
 def _get_current_branch(cwd: str | None = None) -> str:
@@ -149,11 +194,13 @@ def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None =
     try:
         _run_git(["git", "merge", "--no-ff", subtask_branch, "-m", f"Merge subtask {subtask_id}"], cwd)
     except subprocess.CalledProcessError as e:
+        conflicts = _merge_conflict_paths(e, cwd)
         message = _format_merge_failure(
             subtask_branch,
             e,
             cwd,
             f"resolve conflicts, then rerun st done {subtask_id} -t {task_id}",
+            conflicts=conflicts,
         )
         _abort_merge(cwd)
         print(message, file=sys.stderr)
@@ -188,11 +235,20 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
         _run_git(["git", "merge", "--no-ff", task_branch, "-m", f"Merge task {task_id}"], repo_cwd)
         print(f"Merged {task_branch} into {base_branch}")
     except subprocess.CalledProcessError as e:
+        conflicts = _merge_conflict_paths(e, repo_cwd)
+        _record_task_merge_conflict(
+            task_id,
+            task_branch,
+            base_branch,
+            conflicts,
+            _merge_failure_output(e),
+        )
         message = _format_merge_failure(
             task_branch,
             e,
             repo_cwd,
             f"st git resolve-conflict {task_id}",
+            conflicts=conflicts,
         )
         _abort_merge(repo_cwd)
         print(message, file=sys.stderr)
