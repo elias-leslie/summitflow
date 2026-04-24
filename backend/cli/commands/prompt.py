@@ -22,6 +22,7 @@ from .prompt_formatters import (
     format_prompt_measure,
     format_prompt_restored,
     format_prompt_revisions,
+    format_prompt_search,
     format_unassigned,
     format_updated,
 )
@@ -57,6 +58,76 @@ def get_prompt(
 ) -> None:
     p = prompt_api("GET", f"/{slug}")
     format_prompt_detail(p)
+
+
+def _contains(value: str | None, needle: str, *, case_sensitive: bool) -> bool:
+    if not value:
+        return False
+    haystack = value if case_sensitive else value.casefold()
+    return needle in haystack
+
+
+def _search_prompt(
+    prompt: dict[str, Any],
+    query: str,
+    *,
+    case_sensitive: bool,
+    max_lines: int,
+) -> dict[str, Any] | None:
+    needle = query if case_sensitive else query.casefold()
+    metadata_matches = [
+        field
+        for field in ("slug", "name", "description")
+        if _contains(prompt.get(field), needle, case_sensitive=case_sensitive)
+    ]
+
+    all_line_matches = [
+        {"line": line_number, "text": line}
+        for line_number, line in enumerate(prompt.get("content", "").splitlines(), start=1)
+        if _contains(line, needle, case_sensitive=case_sensitive)
+    ]
+
+    if not metadata_matches and not all_line_matches:
+        return None
+
+    return {
+        "slug": prompt["slug"],
+        "name": prompt.get("name", prompt["slug"]),
+        "is_global": prompt.get("is_global", False),
+        "enabled": prompt.get("enabled", True),
+        "metadata_matches": metadata_matches,
+        "line_match_count": len(all_line_matches),
+        "line_matches": all_line_matches[:max_lines],
+    }
+
+
+@app.command("search")
+def search_prompts(
+    query: Annotated[str, typer.Argument(help="Literal query to search in prompt metadata and content")],
+    is_global: Annotated[
+        bool | None,
+        typer.Option("--global/--no-global", help="Filter by global flag"),
+    ] = None,
+    case_sensitive: Annotated[bool, typer.Option("--case-sensitive", help="Use case-sensitive matching")] = False,
+    limit: Annotated[int, typer.Option("--limit", min=1, help="Maximum prompts to return")] = 50,
+    max_lines: Annotated[int, typer.Option("--max-lines", min=1, help="Maximum content line hits per prompt")] = 5,
+) -> None:
+    if not query.strip():
+        output_error("Query must not be blank")
+        raise typer.Exit(1)
+
+    params: dict[str, Any] = {}
+    if is_global is not None:
+        params["is_global"] = str(is_global).lower()
+    data = prompt_api("GET", "", params=params, tool_name="st prompt search")
+    matches = []
+    for prompt in data.get("prompts", []):
+        match = _search_prompt(prompt, query, case_sensitive=case_sensitive, max_lines=max_lines)
+        if match:
+            matches.append(match)
+        if len(matches) >= limit:
+            break
+    format_prompt_search(query, matches)
 
 
 @app.command("create")
