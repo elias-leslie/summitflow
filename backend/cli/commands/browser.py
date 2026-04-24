@@ -24,7 +24,15 @@ _ENGINE_PORTS = {"chrome": 9222, "lightpanda": 9223}
 
 
 def _host() -> str:
-    return os.environ.get("SF_BROWSER_HOST", "192.168.8.234").strip() or "192.168.8.234"
+    configured = os.environ.get("SF_BROWSER_HOST", "").strip()
+    if configured:
+        return configured
+    detected = subprocess.run(["hostname", "-I"], text=True, capture_output=True, check=False)
+    if detected.returncode == 0:
+        host = detected.stdout.split()
+        if host:
+            return host[0]
+    return "127.0.0.1"
 
 
 def _agent_browser_bin() -> str:

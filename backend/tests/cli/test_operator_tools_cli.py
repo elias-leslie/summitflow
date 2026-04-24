@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
 from typer.testing import CliRunner
 
-from cli.commands import check, service, setup, vm
+from cli.commands import browser, check, service, setup, vm
 from cli.lib.service_ops import ProjectServices
 from cli.main import app as main_app
 
@@ -130,6 +131,33 @@ def test_browser_health_uses_native_health() -> None:
 
     assert result.exit_code == 0
     health.assert_called_once()
+
+
+def test_browser_host_falls_back_to_detected_host(monkeypatch) -> None:
+    monkeypatch.setenv("SF_BROWSER_HOST", "")
+
+    def fake_run(
+        args: list[str],
+        *,
+        text: bool,
+        capture_output: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        assert args == ["hostname", "-I"]
+        assert text and capture_output and not check
+        return subprocess.CompletedProcess(args, 0, stdout="192.0.2.77 10.0.0.2\n", stderr="")
+
+    with patch("cli.commands.browser.subprocess.run", side_effect=fake_run):
+        assert browser._host() == "192.0.2.77"
+
+
+def test_browser_host_uses_env_without_probe(monkeypatch) -> None:
+    monkeypatch.setenv("SF_BROWSER_HOST", "192.0.2.10")
+
+    with patch("cli.commands.browser.subprocess.run") as run:
+        assert browser._host() == "192.0.2.10"
+
+    run.assert_not_called()
 
 
 def test_web_runs_agent_hub_service_code() -> None:
