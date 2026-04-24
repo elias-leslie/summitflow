@@ -55,7 +55,7 @@ async def create_project_backup(
     from ...workflows.models import BackupInput
     from ...workflows.utility import backup_create_wf
 
-    await backup_create_wf.aio_run_no_wait(
+    workflow_run = await backup_create_wf.aio_run_no_wait(
         BackupInput(
             project_id=project_id,
             source_id=project_id,
@@ -65,6 +65,7 @@ async def create_project_backup(
         )
     )
     return RestoreResponse(
+        task_id=workflow_run.workflow_run_id,
         status="queued",
         message=f"Backup task queued for project {project_id}",
     )
