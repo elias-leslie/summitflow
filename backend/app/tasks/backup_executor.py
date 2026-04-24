@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
-
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..storage.notifications import create_notification
-from ..utils.shared_paths import resolve_script
 from .backup_lock import acquire_backup_lock, release_backup_lock
+from .backup_native import BACKUP_TIMEOUT, run_project_backup
 from .backup_utils import (
     as_mapping,
-    build_script_error_message,
     build_storage_env,
     build_verification_kwargs,
     get_bool_field,
@@ -20,13 +16,9 @@ from .backup_utils import (
     get_project_root,
     get_source_path,
     get_str_field,
-    parse_backup_output,
 )
 
 logger = get_logger(__name__)
-
-BACKUP_SCRIPT = resolve_script("backup.sh")
-BACKUP_TIMEOUT = 600
 
 
 def create_backup(
@@ -38,7 +30,7 @@ def create_backup(
     retention_days: int | None = None,
     source_id: str | None = None,
 ) -> dict[str, object]:
-    """Create a backup for a source. Wraps the existing backup.sh script."""
+    """Create a backup for a source through the native backup engine."""
     resolved_source_id = source_id or project_id
     logger.info("create_backup_started", source_id=resolved_source_id, backup_type=backup_type)
 
@@ -101,33 +93,21 @@ def _run_backup(
     backup_id = backup_record["id"]
     backup_store.update_backup_status(backup_id, "running")
 
-    cmd = ["bash", str(BACKUP_SCRIPT)]
-    if local_only:
-        cmd.append("--local")
-    if keep_local:
-        cmd.append("--keep-local")
-    if retention_days is not None:
-        cmd.extend(["--retention-days", str(retention_days)])
-
-    # Resolve storage backend config and inject as env vars
-    env = {**os.environ, **build_storage_env(source_id or project_id)}
+    env = build_storage_env(source_id or project_id)
 
     try:
-        result = subprocess.run(
-            cmd, cwd=project_dir, capture_output=True, text=True, timeout=BACKUP_TIMEOUT, env=env
+        parsed_output = run_project_backup(
+            project_dir=project_dir,
+            source_id=source_id or project_id,
+            env=env,
+            keep_local=keep_local,
+            local_only=local_only,
+            retention_days=retention_days,
         )
-        parsed_output = parse_backup_output(result.stdout)
-        if result.returncode == 0:
-            if parsed_output.get("pending_path"):
-                return _handle_backup_pending(backup_id, project_id, parsed_output)
-            return _handle_backup_success(backup_id, project_id, parsed_output)
-        if parsed_output.get("pending_path") or "SMB unavailable" in result.stdout or "pending" in result.stdout.lower():
+        if parsed_output.get("pending_path"):
             return _handle_backup_pending(backup_id, project_id, parsed_output)
-        error_msg = build_script_error_message(result)
-        logger.error("create_backup_script_failed", backup_id=backup_id,
-                     returncode=result.returncode, error=error_msg[:200])
-        return _handle_backup_failure(backup_id, error_msg, project_id)
-    except subprocess.TimeoutExpired:
+        return _handle_backup_success(backup_id, project_id, parsed_output)
+    except TimeoutError:
         return _handle_backup_failure(
             backup_id, f"Backup timed out after {BACKUP_TIMEOUT // 60} minutes", project_id
         )

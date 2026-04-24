@@ -381,7 +381,7 @@ class TestVerifyGate:
         try:
             result = run_cli(["verify", str(plan_file)])
             assert result.returncode == 1, f"Expected failure, got: {result.stdout}"
-            assert "deploy" in result.stderr.lower() or "rebuild.sh" in result.stderr.lower(), (
+            assert "deploy" in result.stderr.lower() or "st service rebuild" in result.stderr.lower(), (
                 f"Expected deploy-related error, got: {result.stderr}"
             )
         finally:

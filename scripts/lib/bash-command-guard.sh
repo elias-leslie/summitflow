@@ -19,7 +19,7 @@ if [[ ! -x "${SF_COMMAND_GUARD_BIN}" ]]; then
 fi
 
 case "${0##*/}" in
-  dt|st|db|commit.sh|dev-tools.sh|rebuild.sh|restart.sh|shutdown.sh)
+  st)
     return 0
     ;;
 esac

@@ -1,6 +1,6 @@
 """Storage module for quality check results.
 
-Tracks results from dt quality gate checks (pytest, vitest, ruff, types, biome,
+Tracks results from st check quality gate checks (pytest, vitest, ruff, types, biome,
 tsc) and their fix status.
 """
 

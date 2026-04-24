@@ -125,7 +125,7 @@ async def create_source_backup(
     from ...workflows.models import BackupInput
     from ...workflows.utility import backup_create_wf
 
-    await backup_create_wf.aio_run_no_wait(
+    workflow_run = await backup_create_wf.aio_run_no_wait(
         BackupInput(
             project_id=str(source.get("project_id") or source_id),
             source_id=source_id,
@@ -135,6 +135,7 @@ async def create_source_backup(
         )
     )
     return RestoreResponse(
+        task_id=workflow_run.workflow_run_id,
         status="queued",
         message=f"Backup task queued for source {source_id}",
     )
@@ -166,7 +167,7 @@ async def restore_source_backup(
     from ...workflows.models import RestoreInput
     from ...workflows.utility import backup_restore_wf
 
-    await backup_restore_wf.aio_run_no_wait(
+    workflow_run = await backup_restore_wf.aio_run_no_wait(
         RestoreInput(
             project_id=str(source.get("project_id") or source_id),
             source_id=source_id,
@@ -177,6 +178,7 @@ async def restore_source_backup(
         )
     )
     return RestoreResponse(
+        task_id=workflow_run.workflow_run_id,
         status="queued",
         message=f"Restore task queued for backup {backup_id} (source {source_id})",
     )

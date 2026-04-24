@@ -54,6 +54,24 @@ def test_tools_status_requires_internal_secret() -> None:
     assert "INTERNAL_SERVICE_SECRET is not configured." in result.output
 
 
+def test_tools_default_shows_operator_catalog_without_internal_secret() -> None:
+    with patch.dict("cli.commands.tools.os.environ", {}, clear=True):
+        result = runner.invoke(app, [])
+
+    assert result.exit_code == 0
+    assert "TOOLS_CATALOG[" in result.output
+    assert "st service" in result.output
+    assert "st browser" in result.output
+
+
+def test_tools_catalog_json_includes_registry_source() -> None:
+    result = runner.invoke(app, ["catalog"], obj=None)
+
+    assert result.exit_code == 0
+    assert "tool-registry.json" in result.output
+    assert "st browser" in result.output
+
+
 def test_api_request_uses_env_backed_internal_header() -> None:
     dummy_client = _DummyClient(
         _json_response(

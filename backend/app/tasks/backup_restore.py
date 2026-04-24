@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
+import json
 from pathlib import Path
 from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
-from ..utils.shared_paths import resolve_script
-from .backup_utils import build_storage_env, get_project_root, get_source_path
+from .backup_native import locate_archive, restore_archive
+from .backup_utils import get_project_root, get_source_path
 
 logger = get_logger(__name__)
-
-RESTORE_SCRIPT = resolve_script("restore.sh")
 
 
 def restore_backup(
@@ -26,7 +23,7 @@ def restore_backup(
     files_only: bool = False,
     source_id: str | None = None,
 ) -> dict[str, Any]:
-    """Restore from a backup (wraps restore.sh).
+    """Restore from a backup through the native backup engine.
 
     Args:
         project_id: Project ID (fallback for path resolution)
@@ -57,74 +54,23 @@ def restore_backup(
         logger.error("restore_backup_failed", error=error_msg)
         return {"status": "failed", "error": error_msg}
 
-    backup_record = backup_store.get_backup(backup_id) if backup_id else None
-    cmd = _build_restore_command(backup_record, backup_file, dry_run, db_only, files_only)
-
-    # Resolve storage backend config and inject as env vars
-    env = {**os.environ, **build_storage_env(resolved_id)}
-
     try:
-        result = subprocess.run(
-            cmd,
-            cwd=restore_dir,
-            capture_output=True,
-            text=True,
-            timeout=1800,  # 30 minute timeout for restore
-            env=env,
+        backup_record = backup_store.get_backup(backup_id) if backup_id else None
+        archive = locate_archive(Path(restore_dir), backup_record, backup_file)
+        if archive is None:
+            archive_name = _resolve_archive_name(backup_record)
+            return _handle_restore_failure(resolved_id, f"Archive not found locally or pending: {archive_name or backup_file}")
+        result = restore_archive(
+            archive,
+            Path(restore_dir),
+            dry_run=dry_run,
+            db_only=db_only,
+            files_only=files_only,
         )
-
-        if result.returncode == 0:
-            return _handle_restore_success(resolved_id, dry_run, result.stdout)
-
-        error_msg = result.stderr or result.stdout or "Unknown error"
-        return _handle_restore_failure(resolved_id, error_msg)
-
-    except subprocess.TimeoutExpired:
-        logger.error("restore_backup_timeout", source_id=resolved_id)
-        return {"status": "failed", "error": "Restore timed out after 30 minutes"}
-
+        return _handle_restore_success(resolved_id, dry_run, result)
     except Exception as e:
         logger.error("restore_backup_exception", source_id=resolved_id)
         return {"status": "failed", "error": str(e)}
-
-
-def _build_restore_command(
-    backup: dict[str, Any] | None,
-    backup_file: str | None,
-    dry_run: bool,
-    db_only: bool,
-    files_only: bool,
-) -> list[str]:
-    """Build restore command with appropriate flags."""
-    cmd = ["bash", str(RESTORE_SCRIPT)]
-
-    if backup_file:
-        cmd.extend(["--file", backup_file])
-    else:
-        archive_name = _resolve_archive_name(backup)
-        location = str(backup.get("location") or "") if backup else ""
-
-        if location and not location.startswith("//") and Path(location).exists():
-            cmd.extend(["--file", location])
-        elif archive_name:
-            cmd.extend(["--name", archive_name])
-        else:
-            cmd.append("--latest")
-
-    if dry_run:
-        cmd.append("--dry-run")
-
-    # If the backup record shows no database, force files-only to avoid
-    # attempting DB restore on old archives with placeholder dumps.
-    if not db_only and backup and not _backup_has_database(backup):
-        files_only = True
-
-    if db_only:
-        cmd.append("--db-only")
-    if files_only:
-        cmd.append("--files-only")
-
-    return cmd
 
 
 def _backup_has_database(backup: dict[str, Any]) -> bool:
@@ -151,15 +97,21 @@ def _resolve_archive_name(backup: dict[str, Any] | None) -> str | None:
     return None
 
 
-def _handle_restore_success(source_id: str, dry_run: bool, stdout: str) -> dict[str, Any]:
+def _handle_restore_success(source_id: str, dry_run: bool, result: dict[str, Any]) -> dict[str, Any]:
     """Handle successful restore."""
     logger.info("restore_backup_completed", source_id=source_id, dry_run=dry_run)
     return {
         "status": "completed",
         "source_id": source_id,
         "dry_run": dry_run,
-        "output": stdout[-2000:] if stdout else None,
+        "output": jsonable_tail(result),
+        **result,
     }
+
+
+def jsonable_tail(result: dict[str, Any]) -> str:
+    """Return a compact restore output string for existing API clients."""
+    return json.dumps(result, default=str, sort_keys=True)[-2000:]
 
 
 def _handle_restore_failure(source_id: str, error_msg: str) -> dict[str, Any]:

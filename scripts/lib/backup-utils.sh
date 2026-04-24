@@ -690,8 +690,7 @@ backup_checkpoint() {
 
     log_info "Creating backup checkpoint: $description"
 
-    # Quick backup with existing DB dump
-    if bash "$PROJECT_DIR/scripts/backup.sh" --quick 2>&1 | tail -5; then
+    if st backup create --source "$PROJECT_NAME" --note "$description" 2>&1 | tail -5; then
         log_success "Checkpoint created"
         return 0
     else

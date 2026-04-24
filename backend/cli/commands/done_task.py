@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from typing import Any
 
@@ -8,7 +9,7 @@ import typer
 
 from app.storage.projects import get_project_root_path
 from app.tasks.autonomous.exec_modules.diff_gate import check_diff_gate
-from app.utils.shared_paths import resolve_script
+from app.utils.shared_paths import get_repo_root
 
 from .._client_base import APIError
 from ..client import STClient
@@ -140,7 +141,7 @@ def _warn_on_publish_failure(result: subprocess.CompletedProcess[str]) -> None:
     try:
         payload = json.loads(stdout) if stdout else {}
     except json.JSONDecodeError:
-        detail = stderr or stdout[:200] or "unknown commit.sh output"
+        detail = stderr or stdout[:200] or "unknown st git commit output"
         output_warning(f"Task merged but publish status was unreadable: {detail}")
         return
     repo_result = payload.get("repos", [{}])[0] if payload.get("repos") else {}
@@ -165,7 +166,8 @@ def _publish_completed_work(task_id: str, project_id: str | None) -> None:
     if not project_root:
         output_warning(f"Task merged but publish skipped: unknown project root for {project_id}")
         return
-    command = [str(resolve_script("commit.sh")), "--current", "--push", "--task", task_id, "--json"]
+    st_path = shutil.which("st") or str(get_repo_root() / "backend" / ".venv" / "bin" / "st")
+    command = [st_path, "git", "commit", "--current", "--push", "--task", task_id, "--json"]
     try:
         result = subprocess.run(
             command, cwd=project_root, capture_output=True, text=True, check=False, timeout=600

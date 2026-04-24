@@ -55,6 +55,28 @@ def format_prompt_detail(p: dict[str, Any]) -> None:
         output_json(p)
 
 
+def _clip(value: str, max_chars: int = 96) -> str:
+    text = " ".join(value.strip().split())
+    if len(text) <= max_chars:
+        return text
+    return f"{text[: max_chars - 3]}..."
+
+
+def format_prompt_search(query: str, matches: list[dict[str, Any]]) -> None:
+    """Format and print prompt search results."""
+    if is_compact():
+        print(f"PROMPT_SEARCH[{len(matches)}]:query={query}")
+        for match in matches:
+            metadata = ",".join(match.get("metadata_matches", [])) or "-"
+            total_lines = match.get("line_match_count", len(match.get("line_matches", [])))
+            print(f"  {match['slug']:<28s} meta={metadata}|lines={total_lines}")
+            for line_match in match.get("line_matches", []):
+                print(f"    L{line_match['line']}: {_clip(line_match['text'])}")
+        return
+
+    output_json({"query": query, "matches": matches})
+
+
 def format_created(slug: str, content: str, prompt_data: dict[str, Any]) -> None:
     """Format and print created prompt confirmation."""
     if is_compact():

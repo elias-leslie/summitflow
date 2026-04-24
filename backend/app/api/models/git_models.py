@@ -19,6 +19,18 @@ class RepoStatus(BaseModel):
     workspace_summary: RepoWorkspaceSummary | None = None
 
 
+class OrphanBranchSummary(BaseModel):
+    """Actionable cleanup detail for an orphan task branch."""
+
+    branch_name: str
+    task_id: str
+    resolution: str
+    task_status: str | None = None
+    commits_ahead: int = 0
+    files_changed: int = 0
+    has_node_modules_artifact: bool = False
+
+
 class RepoWorkspaceSummary(BaseModel):
     """At-a-glance branch/checkpoint cleanup summary for one repository."""
 
@@ -35,6 +47,7 @@ class RepoWorkspaceSummary(BaseModel):
     prunable_branch_names: list[str] = Field(default_factory=list)
     salvage_task_ids: list[str] = Field(default_factory=list)
     review_orphan_task_ids: list[str] = Field(default_factory=list)
+    orphan_details: list[OrphanBranchSummary] = Field(default_factory=list)
 
 
 class GitStatusResponse(BaseModel):
@@ -92,6 +105,11 @@ class BranchInfo(BaseModel):
     task_id: str | None = None
     last_commit_short: str | None = None
     last_commit_date: str | None = None
+    cleanup_resolution: str | None = None
+    task_status: str | None = None
+    commits_ahead: int | None = None
+    files_changed: int | None = None
+    has_node_modules_artifact: bool = False
 
 
 class BranchesResponse(BaseModel):

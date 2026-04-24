@@ -85,7 +85,7 @@ class TestStripVenvPaths:
     # --- Pattern 5: no .venv -- passthrough ---
 
     def test_no_venv_unchanged(self) -> None:
-        cmd = "dt --quick"
+        cmd = "st check --quick"
         assert strip_venv_paths(cmd) == cmd
 
     def test_echo_unchanged(self) -> None:

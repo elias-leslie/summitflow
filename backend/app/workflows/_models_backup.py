@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from typing import Self
+
+from pydantic import BaseModel, model_validator
 
 from ._model_constants import DEFAULT_BACKUP_TYPE
 
@@ -14,6 +16,13 @@ class BackupInput(BaseModel):
     backup_type: str = DEFAULT_BACKUP_TYPE
     keep_local: bool = False
     retention_days: int | None = None
+
+    @model_validator(mode="after")
+    def default_source_id(self) -> Self:
+        """Keep workflow concurrency and storage records source-scoped."""
+        if self.source_id is None:
+            self.source_id = self.project_id
+        return self
 
 
 class RestoreInput(BaseModel):

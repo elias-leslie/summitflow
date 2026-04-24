@@ -3,6 +3,18 @@
 
 set -euo pipefail
 
+case "${1:-}" in
+  --help|-h|help)
+    cat <<'EOF'
+Usage: st setup agent-tooling [--dry-run] [--confirm TOKEN]
+
+Install shared Codex/Claude operator tooling. Run through st so
+preview/confirmation stays consistent.
+EOF
+    exit 0
+    ;;
+esac
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUMMITFLOW_DIR="$(dirname "$SCRIPT_DIR")"
 
@@ -94,7 +106,7 @@ if [[ "$INSTALL_CODEX_CLI" == "1" ]]; then
   install_cli "@openai/codex" "codex"
 fi
 
-bash "$SUMMITFLOW_DIR/scripts/setup-services.sh"
+echo "Run 'st setup services' separately for systemd sync; it uses two-pass confirmation."
 
 if ! printf '%s' ":$PATH:" | grep -q ":$BIN_DIR:"; then
   echo "WARNING: $BIN_DIR is not in PATH; add it before using the Codex wrapper." >&2

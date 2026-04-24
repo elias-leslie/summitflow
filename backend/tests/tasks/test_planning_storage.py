@@ -85,7 +85,7 @@ class TestSavePlanToDatabase:
                     "steps": [
                         {
                             "description": "Wire the component",
-                            "spec": {"verify_commands": ["dt --quick"]},
+                            "spec": {"verify_commands": ["st check --quick"]},
                         }
                     ],
                 }
@@ -152,7 +152,7 @@ class TestSavePlanToDatabase:
                                 "step_number": 1,
                                 "description": "Wire the component",
                                 "passes": False,
-                                "spec": {"verify_commands": ["dt --quick"]},
+                                "spec": {"verify_commands": ["st check --quick"]},
                             }
                         ],
                     }
@@ -170,7 +170,7 @@ class TestSavePlanToDatabase:
                     "steps": [
                         {
                             "description": "Wire the component",
-                            "spec": {"verify_commands": ["dt --quick"]},
+                            "spec": {"verify_commands": ["st check --quick"]},
                         }
                     ],
                 }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import patch
 
 from app.services.context_gatherer.explorer_collector import gather_explorer_context
@@ -68,7 +69,7 @@ def test_collect_precision_code_search_context_tracks_token_savings() -> None:
     assert result.metadata["used_symbol_first"]
     assert result.metadata["symbol_count"] == 1
     assert result.metadata["naive_file_tokens"] == 2000
-    assert result.metadata["estimated_tokens_saved"] > 0
+    assert cast(int, result.metadata["estimated_tokens_saved"]) > 0
     assert "Exact Source Slices" in result.prompt_context
 
 
@@ -198,7 +199,7 @@ def test_collect_precision_code_search_context_ranks_multi_term_matches_by_cover
     def _search_side_effect(project_id: str, query: str, limit: int = 50) -> list[dict[str, object]]:
         assert project_id == "project-1"
         assert limit >= 5
-        quality_symbols = [
+        quality_symbols: list[dict[str, object]] = [
             {
                 "symbol_id": "backend/app/tasks/autonomous/exec_modules/quality_gates.py::auto_fix_quality#function",
                 "qualified_name": "auto_fix_quality",
@@ -208,7 +209,7 @@ def test_collect_precision_code_search_context_ranks_multi_term_matches_by_cover
                 "start_line": 112,
                 "end_line": 141,
                 "signature": "def auto_fix_quality(project_path: str, project_id: str) -> bool",
-                "summary": "Run dt --fix to attempt auto-fixing quality issues.",
+                "summary": "Run st check --fix to attempt auto-fixing quality issues.",
             },
             {
                 "symbol_id": "frontend/components/projects/ProjectOverview.tsx::formatCheckLabel#function",
@@ -255,7 +256,7 @@ def test_collect_precision_code_search_context_ranks_multi_term_matches_by_cover
                 "summary": "Check if auto-fix is enabled for quality gates.",
             },
         ]
-        health_symbols = [
+        health_symbols: list[dict[str, object]] = [
             {
                 "symbol_id": "backend/app/api/quality_gate.py::get_health_summary#function",
                 "qualified_name": "get_health_summary",

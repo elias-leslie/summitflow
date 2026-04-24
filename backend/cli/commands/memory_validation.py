@@ -38,7 +38,7 @@ SAVE_EXAMPLE = """
 Example:
   st memory save -s project --scope-id a-term -t guardrail -c 90 \\
     -S "Never bypass quality gates" \\
-    "**Quality Gates**: Use dt for all checks. Never run raw pytest. Why: hooks enforce dt path."
+    "**Quality Gates**: Use st check for all checks. Never run raw pytest. Why: hooks enforce st path."
 
 Limits:
   -S summary : 10-40 chars (hard)
@@ -49,16 +49,16 @@ Limits:
 FORMAT_EXAMPLE = """
 Generate a valid body first:
   st memory format --topic "Quality Gates" \\
-    --instruction "Use dt for all checks" \\
+    --instruction "Use st check for all checks" \\
     --prohibition "Never run raw pytest" \\
-    --why "hooks enforce dt path"
+    --why "hooks enforce st path"
 """
 
 SAVE_QUICKSTART = f"""
 Quickstart:
   st memory save -s project --scope-id a-term -t guardrail \\
     -S "Never bypass quality gates" \\
-    "**Quality Gates**: Use dt for all checks. Never run raw pytest. Why: hooks enforce dt path."
+    "**Quality Gates**: Use st check for all checks. Never run raw pytest. Why: hooks enforce st path."
 
 {FORMAT_EXAMPLE}
 """
@@ -80,10 +80,10 @@ FORMAT_STANDARD for memory episodes:
 | 8 | Summary | 10-40 chars |
 
 Example of GOOD format:
-  **Quality Checks**: Use dt for all quality checks. Never run raw pytest or ruff. Why: hooks enforce dt path.
+  **Quality Checks**: Use st check for all quality checks. Never run raw pytest or ruff. Why: hooks enforce st path.
 
 Example of BAD format:
-  **Mandate**: Use dt for all quality checks.
+  **Mandate**: Use st check for all quality checks.
   When working with git, you should remember to always commit first.
   Please don't use git stash because it might cause lost work.
 """ + SAVE_EXAMPLE

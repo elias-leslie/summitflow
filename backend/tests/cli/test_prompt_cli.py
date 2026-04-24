@@ -15,6 +15,7 @@ from cli.commands.prompt_formatters import (
     format_prompt_measure,
     format_prompt_restored,
     format_prompt_revisions,
+    format_prompt_search,
 )
 
 runner = CliRunner()
@@ -209,6 +210,62 @@ class TestPromptHistoryCommands:
         assert result.exit_code == 0
         mock_prompt_api.assert_called_once_with("GET", "/persona-heartbeat-instructions")
 
+    def test_search_finds_metadata_and_content_matches(self) -> None:
+        prompts = [
+            {
+                "slug": "platform-context",
+                "name": "Platform Context",
+                "is_global": True,
+                "content": "Use st for project development.\nNative tools come second.\n",
+            },
+            {
+                "slug": "other",
+                "name": "Other Prompt",
+                "is_global": False,
+                "description": "st wrapper policy",
+                "content": "No matching body.\n",
+            },
+            {
+                "slug": "quiet",
+                "name": "Quiet",
+                "is_global": False,
+                "content": "No match here.\n",
+            },
+        ]
+
+        set_compact_output(True)
+        try:
+            with patch("cli.commands.prompt.prompt_api", return_value={"prompts": prompts}) as mock_prompt_api:
+                result = runner.invoke(app, ["search", "st", "--max-lines", "1"])
+        finally:
+            set_compact_output(False)
+
+        assert result.exit_code == 0
+        mock_prompt_api.assert_called_once_with(
+            "GET",
+            "",
+            params={},
+            tool_name="st prompt search",
+        )
+        assert "PROMPT_SEARCH[2]:query=st" in result.output
+        assert "platform-context" in result.output
+        assert "L1: Use st for project development." in result.output
+        assert "other" in result.output
+        assert "meta=description|lines=0" in result.output
+        assert "quiet" not in result.output
+
+    def test_search_forwards_global_filter(self) -> None:
+        with patch("cli.commands.prompt.prompt_api", return_value={"prompts": []}) as mock_prompt_api:
+            result = runner.invoke(app, ["search", "st", "--global"])
+
+        assert result.exit_code == 0
+        mock_prompt_api.assert_called_once_with(
+            "GET",
+            "",
+            params={"is_global": "true"},
+            tool_name="st prompt search",
+        )
+
 
 class TestPromptHistoryFormatters:
     def test_format_prompt_list_compact_shows_enabled_state(self, capsys) -> None:
@@ -318,3 +375,28 @@ class TestPromptHistoryFormatters:
 
         captured = capsys.readouterr().out
         assert "PROMPT_RESTORED:persona-heartbeat-instructions:rev=rev-1234|1L|updated_at=2026-04-11T05:15:00Z" in captured
+
+    def test_format_prompt_search_compact(self, capsys) -> None:
+        set_compact_output(True)
+        try:
+            format_prompt_search(
+                "st",
+                [
+                    {
+                        "slug": "platform-context",
+                        "metadata_matches": ["slug"],
+                        "line_match_count": 2,
+                        "line_matches": [
+                            {"line": 1, "text": "Use st for project development."},
+                        ],
+                    }
+                ],
+            )
+        finally:
+            set_compact_output(False)
+
+        captured = capsys.readouterr().out
+        assert "PROMPT_SEARCH[1]:query=st" in captured
+        assert "platform-context" in captured
+        assert "meta=slug|lines=2" in captured
+        assert "L1: Use st for project development." in captured

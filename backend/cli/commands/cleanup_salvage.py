@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -56,6 +57,16 @@ def validate_salvage_candidate(item: object, task_id: str) -> bool:
     return True
 
 
+def coerce_created_at(value: Any) -> str:
+    """Return JSON-safe checkpoint creation timestamp."""
+    if value is None:
+        return ""
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        return str(isoformat())
+    return str(value)
+
+
 def recover_orphan_task(repo_path: Path, item: object, task_id: str) -> None:
     """Create task record and checkpoint metadata for a salvaged orphan branch."""
     branch_name = getattr(item, "branch_name", "")
@@ -70,7 +81,11 @@ def recover_orphan_task(repo_path: Path, item: object, task_id: str) -> None:
         labels=["cleanup:salvaged"],
     )
     task_store.update_task(task_id, branch_name=branch_name)
+    original_branch = ""
     try:
+        current = run_git(["branch", "--show-current"], repo_path)
+        if current.returncode == 0:
+            original_branch = current.stdout.strip()
         result = run_git(["checkout", branch_name], repo_path)
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or f"Failed to checkout {branch_name}")
@@ -79,11 +94,13 @@ def recover_orphan_task(repo_path: Path, item: object, task_id: str) -> None:
                 task_id=task_id,
                 project_id=repo_path.name,
                 base_branch="main",
-                created_at=created.get("created_at") or "",
+                created_at=coerce_created_at(created.get("created_at")),
                 claimed_by=get_claimed_by(),
             )
         )
     except Exception as exc:
+        if original_branch and original_branch != branch_name:
+            run_git(["checkout", original_branch], repo_path)
         task_store.delete_task(task_id, deletion_source="cli:cleanup.salvage_rollback")
         output_error(f"Recovered task record for {task_id}, but failed to restore the branch: {exc}")
         raise typer.Exit(1) from exc

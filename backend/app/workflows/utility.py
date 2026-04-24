@@ -30,9 +30,9 @@ from .models import (
     backoff_factor=2.0,
     concurrency=[
         ConcurrencyExpression(
-            expression="input.project_id",
+            expression="input.source_id",
             max_runs=1,
-            limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+            limit_strategy=ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN,
         ),
         ConcurrencyExpression(
             expression="'backup-smb'",

@@ -19,6 +19,17 @@ export interface RepoWorkspaceSummary {
   prunable_branch_names?: string[]
   salvage_task_ids?: string[]
   review_orphan_task_ids?: string[]
+  orphan_details?: OrphanBranchSummary[]
+}
+
+export interface OrphanBranchSummary {
+  branch_name: string
+  task_id: string
+  resolution: string
+  task_status?: string | null
+  commits_ahead: number
+  files_changed: number
+  has_node_modules_artifact: boolean
 }
 
 export interface RepoStatus {
@@ -62,6 +73,7 @@ export interface GitCleanupRepository {
   needs_merge_count: number
   conflict_count: number
   review_count: number
+  orphan_details?: OrphanBranchSummary[]
   needs_cleanup: boolean
 }
 

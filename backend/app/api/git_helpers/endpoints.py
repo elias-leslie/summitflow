@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, cast
@@ -16,6 +17,7 @@ from ...storage.tasks.update import update_task_fields
 from ...tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_checkpoint
 from ...tasks.autonomous.cleanup.merge_types import MergeResult
 from ...utils.git_helpers import (
+    enrich_branch_cleanup_details,
     get_all_branches,
     get_managed_repos,
     get_recent_commits,
@@ -23,7 +25,7 @@ from ...utils.git_helpers import (
     list_snapshots,
     revert_to_snapshot,
 )
-from ...utils.shared_paths import resolve_script
+from ...utils.shared_paths import get_repo_root
 from ..models.git_models import (
     CommitInfo,
     ConflictInfo,
@@ -45,12 +47,12 @@ from .db_helpers import (
 _logger = get_logger(__name__)
 
 
-def _smart_sync_env() -> tuple[Path, dict[str, str] | None]:
-    """Return (script_path, env) for the commit.sh smart-sync invocation."""
+def _smart_sync_env() -> tuple[list[str], dict[str, str] | None]:
+    """Return (command prefix, env) for the st git commit smart-sync invocation."""
     host_root = os.environ.get("BACKUP_HOST_ROOT")
-    script_path = resolve_script("commit.sh")
+    st_path = shutil.which("st") or str(get_repo_root() / "backend" / ".venv" / "bin" / "st")
     if not host_root:
-        return script_path, None
+        return [st_path, "git", "commit"], None
 
     env = os.environ.copy()
     env["HOME"] = host_root
@@ -60,11 +62,11 @@ def _smart_sync_env() -> tuple[Path, dict[str, str] | None]:
     env["GIT_SSH_COMMAND"] = (
         f"ssh -i {ssh_dir}/id_ed25519 -o UserKnownHostsFile={ssh_dir}/known_hosts"
     )
-    return script_path, env
+    return ["st", "git", "commit"], env
 
 
 def _parse_smart_sync_output(output: str, stderr_text: str, returncode: int) -> dict[str, Any]:
-    """Parse commit.sh JSON output into a normalized response dict."""
+    """Parse st git commit JSON output into a normalized response dict."""
     try:
         data = json.loads(output)
     except json.JSONDecodeError:
@@ -99,14 +101,14 @@ def _parse_smart_sync_output(output: str, stderr_text: str, returncode: int) -> 
 
 
 async def execute_smart_sync(project_root: Path) -> dict[str, Any]:
-    """Execute smart sync operation using commit.sh script."""
+    """Execute smart sync operation using st git commit."""
     import asyncio
     from asyncio import subprocess as aio_subprocess
 
-    script_path, env = _smart_sync_env()
+    command_prefix, env = _smart_sync_env()
     try:
         proc = await asyncio.create_subprocess_exec(
-            str(script_path), "--json", "--push", "--task", "smart-sync",
+            *command_prefix, "--json", "--push", "--task", "smart-sync",
             cwd=project_root, env=env,
             stdout=aio_subprocess.PIPE, stderr=aio_subprocess.PIPE,
         )
@@ -310,7 +312,10 @@ async def build_project_dashboard(
     """Build project dashboard response."""
     repo_path = get_project_root_with_fallback(project_id)
     checkpoints = [c for c in collect_checkpoints() if c.project_id == project_id]
-    branches = get_all_branches(repo_path, project_id=project_id)
+    branches = enrich_branch_cleanup_details(
+        repo_path,
+        get_all_branches(repo_path, project_id=project_id),
+    )
     merges_resp = build_recent_merges_response(limit=10, project_id=project_id)
     commits = get_recent_commits(repo_path, limit=commits_limit)
     snapshots = list_snapshots(repo_path)

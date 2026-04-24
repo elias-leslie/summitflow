@@ -49,7 +49,7 @@ describe('DashboardContent', () => {
         {
           name: 'task-123/main',
           is_current: false,
-          has_checkpoint: true,
+          has_checkpoint: false,
           repo_name: 'repo-folder',
           project_id: 'project-alpha',
           checkout_path:
@@ -57,6 +57,10 @@ describe('DashboardContent', () => {
           task_id: 'task-123',
           last_commit_short: 'abc1234',
           last_commit_date: '2026-03-17T10:00:00Z',
+          cleanup_resolution: 'review',
+          task_status: 'running',
+          commits_ahead: 2,
+          files_changed: 5,
         },
       ],
       recent_merges: [],
@@ -74,5 +78,9 @@ describe('DashboardContent', () => {
       screen.getByText('Branches', { selector: 'span' }),
     ).toBeInTheDocument()
     expect(screen.getAllByText('task-123/main')).toHaveLength(2)
+    expect(screen.getByText('Review')).toBeInTheDocument()
+    expect(
+      screen.getByText('task running / 2 ahead / 5 files'),
+    ).toBeInTheDocument()
   })
 })

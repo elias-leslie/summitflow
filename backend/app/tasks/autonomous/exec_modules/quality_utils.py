@@ -7,23 +7,28 @@ import shutil
 from pathlib import Path
 
 
-def find_dev_tools() -> str | None:
-    """Find the dt command, including the common user-local bin fallback.
+def find_check_tool() -> str | None:
+    """Find the st command, including the common user-local bin fallback.
 
     Returns:
-        Path to dt, or None if it is unavailable.
+        Path to st, or None if it is unavailable.
     """
-    dt_path = shutil.which("dt")
-    if dt_path:
-        return dt_path
-    fallback = Path.home() / "bin" / "dt"
+    st_path = shutil.which("st")
+    if st_path:
+        return st_path
+    fallback = Path.home() / "bin" / "st"
     if fallback.exists():
         return str(fallback)
     return None
 
 
+def find_dev_tools() -> str | None:
+    """Compatibility alias for older imports."""
+    return find_check_tool()
+
+
 def parse_error_count(output: str) -> int:
-    """Parse error count from dt --check output.
+    """Parse error count from st check output.
 
     Looks for patterns like:
     - "Found N errors" / "N errors"

@@ -5,9 +5,9 @@ from __future__ import annotations
 import subprocess
 
 from ....logging_config import get_logger
-from ....storage.agent_configs_quality import build_dt_command
+from ....storage.agent_configs_quality import build_st_check_command
 from .events import emit_log
-from .quality_utils import find_dev_tools
+from .quality_utils import find_check_tool
 
 logger = get_logger(__name__)
 
@@ -90,7 +90,7 @@ def run_final_quality_gate(
 ) -> bool:
     """Run quality gate as final check before AI review.
 
-    Uses per-project quality gate configuration to build the dt command.
+    Uses per-project quality gate configuration to build the st check command.
 
     Args:
         task_id: Task ID for logging
@@ -100,17 +100,17 @@ def run_final_quality_gate(
     Returns:
         True if quality gate passes, False otherwise
     """
-    dt_cmd = find_dev_tools()
-    if not dt_cmd:
+    st_cmd = find_check_tool()
+    if not st_cmd:
         return True
 
-    cmd = build_dt_command(dt_cmd, project_id)
+    cmd = build_st_check_command(st_cmd, project_id)
     _emit_gate_start(task_id, cmd, project_id)
     return _run_gate_subprocess(task_id, cmd, project_path, project_id)
 
 
 def auto_fix_quality(project_path: str, project_id: str) -> bool:
-    """Run dt --fix to attempt auto-fixing quality issues.
+    """Run st check --fix to attempt auto-fixing quality issues.
 
     Uses per-project config to determine if fix is allowed and which tools to fix.
 
@@ -119,13 +119,13 @@ def auto_fix_quality(project_path: str, project_id: str) -> bool:
         project_id: Project ID for config lookup
 
     Returns:
-        True if dt --fix ran successfully
+        True if st check --fix ran successfully
     """
-    dt_cmd = find_dev_tools()
-    if not dt_cmd:
+    st_cmd = find_check_tool()
+    if not st_cmd:
         return False
 
-    cmd = build_dt_command(dt_cmd, project_id, fix=True)
+    cmd = build_st_check_command(st_cmd, project_id, fix=True)
 
     try:
         result = subprocess.run(

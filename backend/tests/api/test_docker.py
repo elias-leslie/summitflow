@@ -70,9 +70,8 @@ class TestDockerRuntime:
         from app.api import docker as docker_api
 
         repo_root = tmp_path / "repo"
-        script_path = repo_root / "scripts" / "rebuild.sh"
-        script_path.parent.mkdir(parents=True)
-        script_path.write_text("#!/bin/bash\n")
+        (repo_root / "backend" / "cli").mkdir(parents=True)
+        (repo_root / "backend" / "app").mkdir(parents=True)
 
         module_path = repo_root / "app" / "api" / "docker.py"
         module_path.parent.mkdir(parents=True)
@@ -80,19 +79,19 @@ class TestDockerRuntime:
 
         assert docker_api._detect_repo_root(module_path) == repo_root
 
-    def test_rebuild_script_prefers_host_repo_root(self, mocker: MockerFixture, tmp_path) -> None:
+    def test_st_cli_prefers_host_repo_root(self, mocker: MockerFixture, tmp_path) -> None:
         from app.api import docker as docker_api
 
         host_repo_root = tmp_path / "summitflow"
-        script_path = host_repo_root / "scripts" / "rebuild.sh"
-        script_path.parent.mkdir(parents=True)
-        script_path.write_text("#!/bin/bash\n")
+        st_path = host_repo_root / "backend" / ".venv" / "bin" / "st"
+        st_path.parent.mkdir(parents=True)
+        st_path.write_text("#!/bin/bash\n")
 
         mocker.patch("app.api.docker.helpers._HOST_REPO_ROOT", host_repo_root)
         mocker.patch("app.api.docker.helpers._HOST_HOME_PATH", tmp_path)
         mocker.patch("app.api.docker.helpers._REPO_ROOT", Path("/app"))
 
-        assert docker_api._rebuild_script_path() == script_path
+        assert docker_api._st_cli_path() == st_path
 
     def test_launch_runtime_switch_adds_socket_group(
         self,
@@ -101,9 +100,9 @@ class TestDockerRuntime:
     ) -> None:
         from app.api import docker as docker_api
 
-        script_path = tmp_path / "summitflow" / "scripts" / "rebuild.sh"
-        script_path.parent.mkdir(parents=True)
-        script_path.write_text("#!/bin/bash\n")
+        st_path = tmp_path / "summitflow" / "backend" / ".venv" / "bin" / "st"
+        st_path.parent.mkdir(parents=True)
+        st_path.write_text("#!/bin/bash\n")
 
         docker_socket = tmp_path / "docker.sock"
         docker_socket.write_text("")
@@ -120,7 +119,7 @@ class TestDockerRuntime:
             new=mocker.AsyncMock(side_effect=[("", "", 0), ("helper-id\n", "", 0)]),
         )
 
-        helper_name = asyncio.run(docker_api._launch_runtime_switch("dev", script_path))
+        helper_name = asyncio.run(docker_api._launch_runtime_switch("dev", st_path))
 
         assert helper_name == "summitflow-stack-mode-switch"
         run_args = run_docker.await_args_list[1].args
@@ -129,6 +128,7 @@ class TestDockerRuntime:
         assert "--network" in run_args
         assert "host" in run_args
         assert str(docker_socket.stat().st_gid) in run_args
+        assert "docker up --dev --detach" in run_args[-1]
 
     def test_runtime_status_prefers_detected_running_mode(
         self,
@@ -233,10 +233,10 @@ class TestDockerRuntime:
     ) -> None:
         from app.api import docker as docker_api
 
-        script_path = tmp_path / "rebuild.sh"
-        script_path.write_text("#!/bin/bash\n")
+        st_path = tmp_path / "st"
+        st_path.write_text("#!/bin/bash\n")
 
-        mocker.patch("app.api.docker.routes._rebuild_script_path", return_value=script_path)
+        mocker.patch("app.api.docker.routes._st_cli_path", return_value=st_path)
         mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
         mocker.patch(
             "app.api.docker.routes._get_runtime_status",
@@ -265,7 +265,7 @@ class TestDockerRuntime:
             "success": True,
             "message": "Queued Docker stack switch to dev mode via summitflow-stack-mode-switch",
         }
-        launch_switch.assert_awaited_once_with("dev", script_path)
+        launch_switch.assert_awaited_once_with("dev", st_path)
 
     def test_runtime_mode_switch_persists_preference_for_hybrid_runtime(
         self,
@@ -332,6 +332,40 @@ class TestDockerRuntime:
             message="Restarted summitflow-api",
         )
         clear_ports.assert_awaited_once()
+
+    def test_stop_api_service_stops_native_siblings_to_prevent_restart(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api import docker as docker_api
+
+        run_systemctl = mocker.patch(
+            "app.api.docker.helpers._run_systemctl_user",
+            new=mocker.AsyncMock(return_value=("", "", 0)),
+        )
+        clear_ports = mocker.patch(
+            "app.api.docker.helpers._clear_service_ports",
+            new=mocker.AsyncMock(),
+        )
+
+        result = asyncio.run(docker_api._service_action("vantage-api", "stop"))
+
+        assert result == docker_api.ActionResult(
+            success=True,
+            message="Stopped vantage-api",
+        )
+        run_systemctl.assert_awaited_once_with(
+            "stop",
+            "vantage-frontend.service",
+            "vantage-hatchet-worker.service",
+            "vantage-backend.service",
+            timeout=docker_api._COMMAND_TIMEOUT_SECONDS,
+        )
+        assert [call.args[0]["service"] for call in clear_ports.await_args_list] == [
+            "vantage-web",
+            "vantage-worker",
+            "vantage-api",
+        ]
 
     def test_systemd_unit_state_marks_timeouts_as_unknown(
         self,

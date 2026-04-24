@@ -13,11 +13,14 @@ from .commands import (
     autonomous,
     autosnapshot,
     backup,
+    browser,
+    check,
     checkpoints,
     claim,
     claude,
     cleanup,
     complete,
+    db,
     deps,
     design,
     docker,
@@ -34,13 +37,17 @@ from .commands import (
     pulse,
     refactor,
     search,
+    service,
     session_events,
     sessions,
+    setup,
     snapshots,
     subtask,
     tasks,
     tests,
     tools,
+    vm,
+    web,
 )
 from .commands.task_plan_contract import PLAN_SCHEMA_ENDPOINT, PLAN_VERIFY_EXAMPLE
 from .config import set_project_override
@@ -124,13 +131,14 @@ REFACTOR: refactor regenerate [--json]
 BACKUP:
   backup list [--limit N] [--status S]
   backup create [--note 'message'] [--keep-local]
-  backup restore <id> [--dry-run] [--yes]
+  backup archives
+  backup restore [id] [--dry-run] [--confirm TOKEN] [--latest|--file PATH|--name ARCHIVE]
   backup testbed baseline [--note X] [--snapshot-name X] [--allow-dirty] [--local|--remote] [--keep-local]
   backup testbed reset [backup-id] [--rebuild|--no-rebuild] [--confirm TOKEN]
-  backup status [<task-id>]
+  backup status [<task-id>] [--local]
   backup schedule [--enable|--disable] [--frequency daily|weekly|monthly] [--retention N]
   backup show <id>
-  backup delete <id> [--yes]
+  backup delete <id> [--confirm TOKEN]
 
 PERSONA: persona status | persona set-active <slug> | persona clear
 
@@ -159,7 +167,24 @@ FEEDBACK: feedback report <component> <title> [--type T] [--severity S] [--sessi
           feedback get <id> | feedback vote <id> --session <sid> | feedback resolve <id> | feedback archive <id> | feedback merge <id> <target>
           feedback summary [--project P] [--days N]
 
-TOOLS: tools status [--hours N]
+TOOLS: tools [catalog|status] [--hours N]
+
+OPERATOR TOOLS (canonical wrapper surface):
+  service status [project]                 # managed service status
+  service rebuild <project> [--detach]     # build, migrate, restart, health-check
+  service restart <project> [--detach]     # restart through rebuild path
+  service start                            # start SummitFlow service set
+  service stop [--confirm TOKEN]           # stop SummitFlow service set
+  check [args...]                          # quality gates through st
+  db [args...]                             # database inspection and migrations through st
+  browser [browser args...]                # browser health/check/screenshot/snapshot/eval
+  web [args...]                            # web search/research/fetch
+  backup archives                          # list local/pending/SMB archive files
+  backup restore [id] [--dry-run] [--confirm TOKEN] [--latest|--file PATH|--name ARCHIVE]
+  vm list|status|snapshots|ip              # read-only Proxmox test VM operations
+  vm snapshot|clone|start                  # mutating Proxmox operations
+  vm stop|rollback|destroy --confirm TOKEN # destructive Proxmox operations
+  setup services|browser|agent-tooling|test-dbs [--dry-run] [--confirm TOKEN]
 
 LOGS (unified service logs):
   logs                                   # show recent logs (default: tail)
@@ -259,6 +284,7 @@ app.add_typer(sessions.app, name="sessions")
 app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
 app.add_typer(backup.app, name="backup")
+app.add_typer(service.app, name="service")
 app.add_typer(health.app, name="health")
 app.add_typer(logs.app, name="logs")
 app.add_typer(memory.app, name="memory")
@@ -272,9 +298,17 @@ app.add_typer(feedback.app, name="feedback")
 app.add_typer(persona.app, name="persona")
 app.add_typer(agents.app, name="agents")
 app.add_typer(docker.app, name="docker")
+app.add_typer(setup.app, name="setup")
+app.add_typer(vm.app, name="vm")
 app.command("pulse")(pulse.pulse)
 app.command("search")(search.search)
 app.command("exec-log")(exec_monitor.exec_log_command)
+
+_FORWARD_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True, "help_option_names": []}
+app.command("check", context_settings=_FORWARD_CONTEXT_SETTINGS, help=check.app.info.help, add_help_option=False)(check.check)
+app.command("db", context_settings=_FORWARD_CONTEXT_SETTINGS, help=db.app.info.help, add_help_option=False)(db.db)
+app.command("browser", context_settings=_FORWARD_CONTEXT_SETTINGS, help=browser.app.info.help, add_help_option=False)(browser.browser)
+app.command("web", context_settings=_FORWARD_CONTEXT_SETTINGS, help=web.app.info.help, add_help_option=False)(web.web)
 
 
 @app.command("progress", hidden=True)

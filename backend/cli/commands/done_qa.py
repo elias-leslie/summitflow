@@ -12,17 +12,17 @@ from pathlib import Path
 
 from ..output import output_warning
 
-# Resolve dt path once — ~/bin/dt may not be on PATH in subprocesses
-_DT_PATH = shutil.which("dt") or str(Path.home() / "bin" / "dt")
+# Resolve st path once — ~/bin/st may not be on PATH in subprocesses
+_ST_PATH = shutil.which("st") or str(Path.home() / "bin" / "st")
 
 
 def run_qa_gate(checkout_path: str) -> tuple[bool, str]:
-    """Run dt -q -d + dt pytest in the checkout. Returns (passed, output)."""
+    """Run st check -q -d + st check pytest in the checkout. Returns (passed, output)."""
     combined_output: list[str] = []
 
     for cmd, timeout in [
-        ([_DT_PATH, "-q", "-d"], 120),
-        ([_DT_PATH, "pytest"], 300),
+        ([_ST_PATH, "check", "-q", "-d"], 120),
+        ([_ST_PATH, "check", "pytest"], 300),
     ]:
         try:
             result = subprocess.run(
@@ -43,7 +43,7 @@ def run_qa_gate(checkout_path: str) -> tuple[bool, str]:
             return False, "\n".join(combined_output)
         except FileNotFoundError:
             output_warning(f"QA tool not found: {cmd[0]}")
-            # dt not installed — skip gate rather than block completion
+            # st not installed — skip gate rather than block completion
             return True, ""
 
     return True, "\n".join(combined_output)

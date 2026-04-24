@@ -12,7 +12,7 @@ def get_quality_gate_tools(project_id: str) -> list[str]:
         project_id: Project ID
 
     Returns:
-        List of tool names (e.g. ["ruff", "types"]), or empty for default dt mode
+        List of tool names (e.g. ["ruff", "types"]), or empty for default st check mode
     """
     config = get_agent_config(project_id)
     tools = config.get("quality_gate_tools", [])
@@ -44,41 +44,47 @@ def get_quality_gate_fix_enabled(project_id: str) -> bool:
         project_id: Project ID
 
     Returns:
-        True if dt --fix is allowed during self-heal (default: True)
+        True if st check --fix is allowed during self-heal (default: True)
     """
     config = get_agent_config(project_id)
     return bool(config.get("quality_gate_fix_enabled", True))
 
 
-def build_dt_command(
-    dt_cmd: str,
+def build_st_check_command(
+    st_cmd: str,
     project_id: str,
     *,
     fix: bool = False,
 ) -> list[str]:
-    """Build a dt command from per-project quality gate config.
+    """Build an st check command from per-project quality gate config.
 
     Args:
-        dt_cmd: Path to dt binary
+        st_cmd: Path to st binary
         project_id: Project ID to read config from
         fix: If True, build a --fix command instead of check
 
     Returns:
-        Command list, e.g. ["dt", "ruff", "types"] or ["dt", "--quick"]
+        Command list, e.g. ["st", "check", "ruff", "types"] or ["st", "check", "--quick"]
     """
+    base = [st_cmd, "check"]
     if fix:
         fix_enabled = get_quality_gate_fix_enabled(project_id)
         if not fix_enabled:
             # Fix disabled — run check-only instead
-            return build_dt_command(dt_cmd, project_id, fix=False)
+            return build_st_check_command(st_cmd, project_id, fix=False)
         tools = get_quality_gate_tools(project_id)
         if tools:
-            return [dt_cmd, *tools, "--fix"]
-        return [dt_cmd, "--fix"]
+            return [*base, *tools, "--fix"]
+        return [*base, "--fix"]
 
     tools = get_quality_gate_tools(project_id)
     if tools:
-        return [dt_cmd, *tools]
+        return [*base, *tools]
 
     mode = get_quality_gate_mode(project_id)
-    return [dt_cmd, f"--{mode}"]
+    return [*base, f"--{mode}"]
+
+
+def build_dt_command(dt_cmd: str, project_id: str, *, fix: bool = False) -> list[str]:
+    """Compatibility alias. New callers should use build_st_check_command."""
+    return build_st_check_command(dt_cmd, project_id, fix=fix)

@@ -515,7 +515,7 @@ async def test_build_project_pulse_active_orchestrator_files_touched_prevents_st
                 "live_activity": {
                     "lifecycle_state": "active",
                     "health": "active",
-                    "last_command": "cd /srv/workspaces/projects/agent-hub && dt --quick --changed-only",
+                    "last_command": "cd /srv/workspaces/projects/agent-hub && st check --quick --changed-only",
                     "last_write_path": "/srv/workspaces/projects/agent-hub/backend/app/services/example.py",
                     "files_touched": [
                         "/srv/workspaces/lanes/agent-hub/task-alpha123/backend/app/services/alpha.py",

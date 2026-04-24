@@ -46,6 +46,11 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
   const stateColor = getStateColor(repo.state)
   const hexColor = getStateHexColor(stateColor)
   const workspaceSummary = repo.workspace_summary
+  const orphanDetailLabels =
+    workspaceSummary?.orphan_details?.map((item) => {
+      const status = item.task_status ?? 'missing'
+      return `${item.task_id}:${item.resolution}:${status}:a${item.commits_ahead}:f${item.files_changed}`
+    }) ?? []
   const previewSections = [
     {
       label: 'Checkpoints',
@@ -69,7 +74,10 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
     },
     {
       label: 'Review',
-      values: workspaceSummary?.review_orphan_task_ids ?? [],
+      values:
+        orphanDetailLabels.length > 0
+          ? orphanDetailLabels
+          : (workspaceSummary?.review_orphan_task_ids ?? []),
       tone: 'text-amber-300 border-amber-500/20 bg-amber-500/10',
     },
   ].filter((section) => section.values.length > 0)

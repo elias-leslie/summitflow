@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import Any, cast
 
 from ....logging_config import get_logger
@@ -13,6 +13,7 @@ from ....services.smoke_test import HEALTH_URLS
 from ....storage import log_task_event
 from ....storage import tasks as task_store
 from ....storage.projects import get_project_root_path
+from ....utils.shared_paths import get_repo_root
 from ..cleanup.merge_types import MergeResult
 from ..exec_modules.memory_writes import save_qa_fix_pattern
 from ..verification_helpers import get_diff_range
@@ -50,14 +51,14 @@ def auto_merge(task_id: str) -> MergeResult:
 
 
 def _deploy_and_verify(task_id: str, project_id: str) -> None:
-    """Run rebuild.sh and verify production health via CF Access."""
+    """Run st service rebuild and verify production health via CF Access."""
     project_root = get_project_root_path(project_id)
     if not project_root:
         return
-    rebuild_script = str(Path(project_root) / "scripts" / "rebuild.sh")
+    st_path = shutil.which("st") or str(get_repo_root() / "backend" / ".venv" / "bin" / "st")
     try:
         result = subprocess.run(
-            [rebuild_script], cwd=project_root, capture_output=True, text=True, timeout=300
+            [st_path, "service", "rebuild", project_id], cwd=project_root, capture_output=True, text=True, timeout=300
         )
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
         log_task_event(task_id, f"Auto-deploy failed: {e}", level="error")
@@ -65,7 +66,7 @@ def _deploy_and_verify(task_id: str, project_id: str) -> None:
     if result.returncode != 0:
         log_task_event(task_id, f"Auto-deploy failed: {result.stderr[-200:]}", level="error")
         return
-    log_task_event(task_id, "Auto-deploy: rebuild.sh succeeded")
+    log_task_event(task_id, "Auto-deploy: st service rebuild succeeded")
     prod_url = HEALTH_URLS.get(project_id)
     if not prod_url:
         return

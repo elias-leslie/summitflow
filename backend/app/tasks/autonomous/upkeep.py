@@ -72,7 +72,7 @@ _QUALITY_DEFAULTS = {
 _EMPTY_KEY_PARTS = {"-", "unknown", "None", "null"}
 _DONE_WHEN = [
     "The underlying upkeep signal is resolved or explicitly marked obsolete with evidence",
-    "Relevant targeted checks pass through dt",
+    "Relevant targeted checks pass through st check",
     "No unrelated behavior changes are introduced",
 ]
 

@@ -7,7 +7,7 @@ from unittest.mock import patch
 from app.services.quality_gate.escalation import get_escalation_level
 from app.storage.agent_configs import DEFAULT_AGENT_CONFIG, AgentConfig
 from app.storage.agent_configs_quality import (
-    build_dt_command,
+    build_st_check_command,
     get_quality_gate_fix_enabled,
     get_quality_gate_mode,
     get_quality_gate_tools,
@@ -157,11 +157,11 @@ class TestGetQualityGateFixEnabled:
         assert not result
 
 
-class TestBuildDtCommand:
-    """Tests for build_dt_command function."""
+class TestBuildStCheckCommand:
+    """Tests for build_st_check_command function."""
 
-    def test_build_dt_command_with_empty_tools_returns_quick_mode(self) -> None:
-        """Test build_dt_command with empty tools list returns dt --quick (default mode)."""
+    def test_build_st_check_command_with_empty_tools_returns_quick_mode(self) -> None:
+        """Empty tool list returns st check --quick."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
         config["quality_gate_tools"] = []
@@ -169,26 +169,26 @@ class TestBuildDtCommand:
 
         # Act
         with patch("app.storage.agent_configs_quality.get_agent_config", return_value=config):
-            result = build_dt_command("dt", "test-project")
+            result = build_st_check_command("st", "test-project")
 
         # Assert
-        assert result == ["dt", "--quick"]
+        assert result == ["st", "check", "--quick"]
 
-    def test_build_dt_command_with_specific_tools_returns_tools(self) -> None:
-        """Test build_dt_command with specific tools returns dt ruff types."""
+    def test_build_st_check_command_with_specific_tools_returns_tools(self) -> None:
+        """Specific tools return st check tool args."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
         config["quality_gate_tools"] = ["ruff", "types"]
 
         # Act
         with patch("app.storage.agent_configs_quality.get_agent_config", return_value=config):
-            result = build_dt_command("dt", "test-project")
+            result = build_st_check_command("st", "test-project")
 
         # Assert
-        assert result == ["dt", "ruff", "types"]
+        assert result == ["st", "check", "ruff", "types"]
 
-    def test_build_dt_command_with_fix_true_and_fix_enabled_returns_fix_flag(self) -> None:
-        """Test build_dt_command with fix=True and fix enabled returns dt ruff --fix."""
+    def test_build_st_check_command_with_fix_true_and_fix_enabled_returns_fix_flag(self) -> None:
+        """Fix enabled returns st check tool --fix."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
         config["quality_gate_tools"] = ["ruff"]
@@ -196,13 +196,13 @@ class TestBuildDtCommand:
 
         # Act
         with patch("app.storage.agent_configs_quality.get_agent_config", return_value=config):
-            result = build_dt_command("dt", "test-project", fix=True)
+            result = build_st_check_command("st", "test-project", fix=True)
 
         # Assert
-        assert result == ["dt", "ruff", "--fix"]
+        assert result == ["st", "check", "ruff", "--fix"]
 
-    def test_build_dt_command_with_fix_true_and_fix_disabled_falls_back_to_check(self) -> None:
-        """Test build_dt_command with fix=True and fix disabled falls back to check mode."""
+    def test_build_st_check_command_with_fix_true_and_fix_disabled_falls_back_to_check(self) -> None:
+        """Fix disabled falls back to check mode."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
         config["quality_gate_tools"] = ["ruff"]
@@ -210,13 +210,13 @@ class TestBuildDtCommand:
 
         # Act
         with patch("app.storage.agent_configs_quality.get_agent_config", return_value=config):
-            result = build_dt_command("dt", "test-project", fix=True)
+            result = build_st_check_command("st", "test-project", fix=True)
 
         # Assert
-        assert result == ["dt", "ruff"]
+        assert result == ["st", "check", "ruff"]
 
-    def test_build_dt_command_with_mode_check_returns_check_flag(self) -> None:
-        """Test build_dt_command with mode='check' returns dt --check."""
+    def test_build_st_check_command_with_mode_check_returns_check_flag(self) -> None:
+        """Mode check returns st check --check."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
         config["quality_gate_tools"] = []
@@ -224,13 +224,13 @@ class TestBuildDtCommand:
 
         # Act
         with patch("app.storage.agent_configs_quality.get_agent_config", return_value=config):
-            result = build_dt_command("dt", "test-project")
+            result = build_st_check_command("st", "test-project")
 
         # Assert
-        assert result == ["dt", "--check"]
+        assert result == ["st", "check", "--check"]
 
-    def test_build_dt_command_with_mode_changed_only_returns_changed_only_flag(self) -> None:
-        """Test build_dt_command with mode='changed-only' returns dt --changed-only."""
+    def test_build_st_check_command_with_mode_changed_only_returns_changed_only_flag(self) -> None:
+        """Changed-only mode returns st check --changed-only."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
         config["quality_gate_tools"] = []
@@ -238,13 +238,13 @@ class TestBuildDtCommand:
 
         # Act
         with patch("app.storage.agent_configs_quality.get_agent_config", return_value=config):
-            result = build_dt_command("dt", "test-project")
+            result = build_st_check_command("st", "test-project")
 
         # Assert
-        assert result == ["dt", "--changed-only"]
+        assert result == ["st", "check", "--changed-only"]
 
-    def test_build_dt_command_with_fix_true_no_tools_returns_dt_fix(self) -> None:
-        """Test build_dt_command with fix=True and no tools returns dt --fix."""
+    def test_build_st_check_command_with_fix_true_no_tools_returns_st_fix(self) -> None:
+        """Fix with no tools returns st check --fix."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
         config["quality_gate_tools"] = []
@@ -252,36 +252,36 @@ class TestBuildDtCommand:
 
         # Act
         with patch("app.storage.agent_configs_quality.get_agent_config", return_value=config):
-            result = build_dt_command("dt", "test-project", fix=True)
+            result = build_st_check_command("st", "test-project", fix=True)
 
         # Assert
-        assert result == ["dt", "--fix"]
+        assert result == ["st", "check", "--fix"]
 
-    def test_build_dt_command_with_multiple_tools(self) -> None:
-        """Test build_dt_command with multiple tools returns all tools."""
+    def test_build_st_check_command_with_multiple_tools(self) -> None:
+        """Multiple tools return all tools."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
         config["quality_gate_tools"] = ["ruff", "types", "biome", "tsc", "vitest"]
 
         # Act
         with patch("app.storage.agent_configs_quality.get_agent_config", return_value=config):
-            result = build_dt_command("dt", "test-project")
+            result = build_st_check_command("st", "test-project")
 
         # Assert
-        assert result == ["dt", "ruff", "types", "biome", "tsc", "vitest"]
+        assert result == ["st", "check", "ruff", "types", "biome", "tsc", "vitest"]
 
-    def test_build_dt_command_with_custom_dt_path(self) -> None:
-        """Test build_dt_command uses provided dt path."""
+    def test_build_st_check_command_with_custom_st_path(self) -> None:
+        """Custom st path is preserved."""
         # Arrange
         config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
         config["quality_gate_tools"] = ["ruff"]
 
         # Act
         with patch("app.storage.agent_configs_quality.get_agent_config", return_value=config):
-            result = build_dt_command("/usr/local/bin/dt", "test-project")
+            result = build_st_check_command("/usr/local/bin/st", "test-project")
 
         # Assert
-        assert result == ["/usr/local/bin/dt", "ruff"]
+        assert result == ["/usr/local/bin/st", "check", "ruff"]
 
 
 class TestGetEscalationLevel:

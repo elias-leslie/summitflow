@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 # Late-bound access to helpers — ensures mocks at helpers.* take effect at runtime.
 from . import helpers as _h
-from .constants import _COMMAND_TIMEOUT_SECONDS, _INFRA_SERVICES
+from .constants import _COMMAND_TIMEOUT_SECONDS, _INFRA_SERVICES, _RUNTIME_SERVICE_DEFS
 from .models import ActionResult, RuntimeModeStatus
 
 __all__ = [
@@ -21,8 +21,8 @@ __all__ = [
     "_helper_image_ref",
     "_launch_runtime_switch",
     "_persisted_runtime_mode",
-    "_rebuild_script_path",
     "_service_action",
+    "_st_cli_path",
     "_systemd_service_action",
     "_write_runtime_mode",
 ]
@@ -63,15 +63,15 @@ def _write_runtime_mode(mode: RuntimeMode) -> None:
     _RUNTIME_MODE_FILE.write_text(f"{mode}\n")
 
 
-def _rebuild_script_path() -> Path:
+def _st_cli_path() -> Path:
     candidates = (
-        _h._HOST_REPO_ROOT / "scripts" / "rebuild.sh",
-        _h._HOST_HOME_PATH / _h._REPO_ROOT.name / "scripts" / "rebuild.sh",
-        _h._REPO_ROOT / "scripts" / "rebuild.sh",
+        _h._HOST_REPO_ROOT / "backend" / ".venv" / "bin" / "st",
+        _h._HOST_HOME_PATH / "bin" / "st",
+        _h._REPO_ROOT / "backend" / ".venv" / "bin" / "st",
     )
-    for script in candidates:
-        if script.exists():
-            return script
+    for cli in candidates:
+        if cli.exists():
+            return cli
     return candidates[0]
 
 
@@ -101,10 +101,10 @@ async def _helper_image_ref() -> str:
     raise HTTPException(status_code=503, detail="Unable to resolve helper image for Docker mode switch")
 
 
-async def _launch_runtime_switch(mode: RuntimeMode, script_path: Path) -> str:
+async def _launch_runtime_switch(mode: RuntimeMode, st_path: Path) -> str:
     helper_image = await _h._helper_image_ref()
     helper_name = f"{_h.COMPOSE_PROJECT}-mode-switch"
-    quoted_script = shlex.quote(str(script_path))
+    quoted_st = shlex.quote(str(st_path))
     docker_sock_gid = (
         _h._DOCKER_SOCKET.stat().st_gid if _h._DOCKER_SOCKET.exists()
         else _h._DOCKER_GID
@@ -122,9 +122,9 @@ async def _launch_runtime_switch(mode: RuntimeMode, script_path: Path) -> str:
     run_args.extend([
         "-v", "/var/run/docker.sock:/var/run/docker.sock",
         "-v", f"{_h._HOST_HOME_PATH}:{_h._HOST_HOME_PATH}",
-        "-w", str(script_path.parent.parent),
+        "-w", str(_h._HOST_REPO_ROOT),
         helper_image,
-        "-lc", f"sleep 2 && exec bash {quoted_script} --{mode} --restart",
+        "-lc", f"sleep 2 && exec {quoted_st} docker up --{mode} --detach",
     ])
     stdout, stderr, rc = await _h._run_docker(*run_args)
     if rc != 0 or not stdout.strip():
@@ -212,6 +212,26 @@ async def _service_action(service: str, action: Literal["start", "stop", "restar
     return ActionResult(success=True, message=f"{_h._past_tense(action)} {service}")
 
 
+def _systemd_stop_service_defs(svc: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return systemd services that must stop to keep an API service down."""
+    service = svc["service"]
+    if not service.endswith("-api"):
+        return [svc]
+
+    project_prefix = service.removesuffix("-api")
+    sibling_prefix = f"{project_prefix}-"
+    siblings = [
+        candidate
+        for candidate in _RUNTIME_SERVICE_DEFS
+        if (
+            candidate["manager"] == "systemd"
+            and candidate["service"] != service
+            and candidate["service"].startswith(sibling_prefix)
+        )
+    ]
+    return [*siblings, svc]
+
+
 async def _systemd_service_action(svc: dict[str, Any], action: Literal["start", "stop", "restart"]) -> ActionResult:
     """Execute a start/stop/restart action on a systemd service."""
     service = svc["service"]
@@ -222,8 +242,14 @@ async def _systemd_service_action(svc: dict[str, Any], action: Literal["start", 
         await _h._clear_service_ports(svc)
         _stdout, stderr, rc = await _h._run_systemctl_user("start", unit, timeout=_COMMAND_TIMEOUT_SECONDS)
     elif action == "stop":
-        _stdout, stderr, rc = await _h._run_systemctl_user("stop", unit, timeout=_COMMAND_TIMEOUT_SECONDS)
-        await _h._clear_service_ports(svc)
+        stop_services = _systemd_stop_service_defs(svc)
+        _stdout, stderr, rc = await _h._run_systemctl_user(
+            "stop",
+            *[stop_svc["unit"] for stop_svc in stop_services],
+            timeout=_COMMAND_TIMEOUT_SECONDS,
+        )
+        for stop_svc in stop_services:
+            await _h._clear_service_ports(stop_svc)
     elif action == "start":
         await _h._clear_service_ports(svc)
         _stdout, stderr, rc = await _h._run_systemctl_user("start", unit, timeout=_COMMAND_TIMEOUT_SECONDS)

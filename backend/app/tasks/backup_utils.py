@@ -102,7 +102,7 @@ def get_project_root(project_id: str) -> str | None:
 
 
 def _parse_backup_line(line: str, result: dict[str, Any]) -> None:
-    """Parse a single line of backup.sh output and update result in place."""
+    """Parse a single historical backup output line and update result in place."""
     line = line.strip()
 
     if line.startswith("Size:"):
@@ -136,7 +136,7 @@ def _parse_backup_line(line: str, result: dict[str, Any]) -> None:
 
 
 def parse_backup_output(output: str) -> dict[str, Any]:
-    """Parse backup.sh output for size, location, and verification info."""
+    """Parse historical backup output for size, location, and verification info."""
     result: dict[str, Any] = {}
     for line in output.split("\n"):
         _parse_backup_line(line, result)

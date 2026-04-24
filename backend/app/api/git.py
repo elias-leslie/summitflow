@@ -15,6 +15,7 @@ from ..storage import tasks as task_store
 from ..storage.tasks.update import update_task_fields
 from ..tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_checkpoint
 from ..utils.git_helpers import (
+    enrich_branch_cleanup_details,
     get_all_branches,
     get_managed_repos,
     get_repo_status,
@@ -141,13 +142,16 @@ async def get_branches(
     """Get list of branches across managed repos, optionally filtered by project."""
     if project_id:
         repo_path = get_project_root(project_id)
-        branches = get_all_branches(repo_path, project_id=project_id)
+        branches = enrich_branch_cleanup_details(
+            repo_path,
+            get_all_branches(repo_path, project_id=project_id),
+        )
         return BranchesResponse(branches=branches, count=len(branches))
 
     branches = [
         branch
         for repo_path in get_managed_repos()
-        for branch in get_all_branches(repo_path)
+        for branch in enrich_branch_cleanup_details(repo_path, get_all_branches(repo_path))
     ]
     branches.sort(key=lambda b: ((b.repo_name or "").lower(), not b.is_current, not b.has_checkpoint, b.name.lower()))
     return BranchesResponse(branches=branches, count=len(branches))

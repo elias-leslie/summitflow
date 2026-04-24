@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import tarfile
+from pathlib import Path
 from typing import Annotated
 
 import typer
 
+from app.tasks.backup_native import restore_archive
+
 from ..client import APIError, STClient
 from ..config import get_config
-from ..output import handle_api_error, output_json
+from ..lib.confirm_token import confirm_gate
+from ..output import handle_api_error, output_error, output_json
 from ..output_context import OutputContext
 from .backup_api import BackupProjectAPI, BackupSourceAPI
 from .backup_formatters import (
@@ -101,15 +106,204 @@ def create_backup(
         handle_api_error(e)
 
 
+def _restore_archive_args(
+    *,
+    latest: bool,
+    archive_file: str | None,
+    archive_name: str | None,
+    dry_run: bool,
+    db_only: bool,
+    files_only: bool,
+) -> list[str]:
+    targets = [latest, archive_file is not None, archive_name is not None]
+    if sum(1 for target in targets if target) != 1:
+        output_error("Use exactly one archive target: --latest, --file PATH, or --name ARCHIVE.")
+        raise typer.Exit(1) from None
+
+    args: list[str] = []
+    if latest:
+        args.append("--latest")
+    elif archive_file:
+        args.extend(["--file", archive_file])
+    elif archive_name:
+        args.extend(["--name", archive_name])
+
+    if dry_run:
+        args.append("--dry-run")
+    if db_only:
+        args.append("--db-only")
+    if files_only:
+        args.append("--files-only")
+    return args
+
+
+def _confirm_restore(
+    command_key: str,
+    confirm: str | None,
+    command_hint: str,
+    preview_lines: list[str],
+) -> None:
+    confirm_gate(command_key, confirm, preview_lines, command_hint)
+
+
+def _run_archive_restore(
+    *,
+    latest: bool,
+    archive_file: str | None,
+    archive_name: str | None,
+    dry_run: bool,
+    db_only: bool,
+    files_only: bool,
+    confirm: str | None,
+) -> None:
+    _restore_archive_args(
+        latest=latest,
+        archive_file=archive_file,
+        archive_name=archive_name,
+        dry_run=dry_run,
+        db_only=db_only,
+        files_only=files_only,
+    )
+    if not dry_run:
+        target = "latest" if latest else archive_file or archive_name or "unknown"
+        hint = "st backup restore"
+        if latest:
+            hint += " --latest"
+        elif archive_file:
+            hint += f" --file {archive_file}"
+        elif archive_name:
+            hint += f" --name {archive_name}"
+        if db_only:
+            hint += " --db-only"
+        if files_only:
+            hint += " --files-only"
+        _confirm_restore(
+            f"backup-archive-restore-{target}",
+            confirm,
+            hint,
+            [
+                f"RESTORE ARCHIVE: {target}",
+                "This can overwrite project files and/or database state.",
+                "Use --dry-run first for archive restore preview output.",
+            ],
+        )
+    archive = _resolve_archive(latest=latest, archive_file=archive_file, archive_name=archive_name)
+    if dry_run:
+        _preview_archive(archive, db_only=db_only, files_only=files_only)
+        return
+    config = get_config()
+    project_root = Path(config.project_root or Path.cwd())
+    result = restore_archive(archive, project_root, dry_run=False, db_only=db_only, files_only=files_only)
+    output_json(result)
+
+
+def _archive_dirs() -> list[tuple[str, Path]]:
+    config = get_config()
+    project_root = Path(config.project_root or Path.cwd())
+    return [
+        ("LOCAL", project_root / "backups"),
+        ("PENDING", Path.home() / ".local" / "share" / "backup-pending"),
+    ]
+
+
+def _archive_paths() -> list[tuple[str, Path]]:
+    paths: list[tuple[str, Path]] = []
+    for label, directory in _archive_dirs():
+        if directory.exists():
+            paths.extend((label, path) for path in sorted(directory.glob("*.tar.gz")))
+    return paths
+
+
+def _resolve_archive(*, latest: bool, archive_file: str | None, archive_name: str | None) -> Path:
+    if archive_file:
+        path = Path(archive_file).expanduser()
+        if path.exists():
+            return path
+        output_error(f"Archive not found: {archive_file}")
+        raise typer.Exit(1) from None
+    matches = _archive_paths()
+    if archive_name:
+        for _, path in matches:
+            if path.name == archive_name:
+                return path
+        output_error(f"Archive not found: {archive_name}")
+        raise typer.Exit(1) from None
+    if latest and matches:
+        return max((path for _, path in matches), key=lambda item: item.stat().st_mtime)
+    output_error("No archive found")
+    raise typer.Exit(1) from None
+
+
+def _preview_archive(path: Path, *, db_only: bool, files_only: bool, limit: int = 30) -> None:
+    print(f"ARCHIVE {path}")
+    print(f"MODE db_only:{str(db_only).lower()} files_only:{str(files_only).lower()}")
+    shown = 0
+    omitted = 0
+    with tarfile.open(path, "r:gz") as archive:
+        for member in archive.getmembers():
+            name = member.name
+            if db_only and not name.endswith("database.sql.gz"):
+                continue
+            if files_only and name.endswith("database.sql.gz"):
+                continue
+            if shown < limit:
+                print(f"  {name}")
+                shown += 1
+            else:
+                omitted += 1
+    if omitted:
+        print(f"  ... ({omitted} more)")
+
+
 @app.command("restore")
 def restore_backup(
     ctx: typer.Context,
-    backup_id: Annotated[str, typer.Argument(help="Backup ID to restore")],
+    backup_id: Annotated[str | None, typer.Argument(help="Backup ID to restore")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview without restoring")] = False,
     source: Annotated[str | None, typer.Option("--source", help="Source ID (for non-project restores)")] = None,
+    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
+    latest: Annotated[bool, typer.Option("--latest", help="Restore latest archive")] = False,
+    archive_file: Annotated[str | None, typer.Option("--file", help="Restore archive path")] = None,
+    archive_name: Annotated[str | None, typer.Option("--name", help="Restore named archive")] = None,
+    db_only: Annotated[bool, typer.Option("--db-only", help="Restore database only for archive restores")] = False,
+    files_only: Annotated[bool, typer.Option("--files-only", help="Restore files only for archive restores")] = False,
 ) -> None:
-    """Restore from a backup. Use --source for non-project sources."""
+    """Restore from a backup ID or local/pending/SMB archive."""
+    if latest or archive_file or archive_name:
+        _run_archive_restore(
+            latest=latest,
+            archive_file=archive_file,
+            archive_name=archive_name,
+            dry_run=dry_run,
+            db_only=db_only,
+            files_only=files_only,
+            confirm=confirm,
+        )
+        return
+
+    if db_only or files_only:
+        output_error("--db-only and --files-only are only valid with --latest, --file, or --name archive restores.")
+        raise typer.Exit(1) from None
+
+    if not backup_id:
+        output_error("Backup ID required, or use --latest, --file, or --name for archive restore.")
+        raise typer.Exit(1) from None
+
     try:
+        if not dry_run:
+            target = f"{source}:{backup_id}" if source else backup_id
+            _confirm_restore(
+                f"backup-restore-{target}",
+                confirm,
+                f"st backup restore {backup_id}{f' --source {source}' if source else ''}",
+                [
+                    f"RESTORE BACKUP: {backup_id}",
+                    f"Source: {source or get_config().project_id}",
+                    "This can overwrite project files and/or database state.",
+                    "Use --dry-run first for backend restore preview output.",
+                ],
+            )
+
         if source:
             result = _get_source_api().restore_source_backup(source, backup_id, dry_run=dry_run)
         else:
@@ -140,8 +334,18 @@ def restore_backup(
 def backup_status(
     ctx: typer.Context,
     task_id: Annotated[str | None, typer.Argument(help="Job ID")] = None,
+    local: Annotated[bool, typer.Option("--local", help="Show local/SMB archive status")] = False,
 ) -> None:
     """Show most recent backup status."""
+    if local:
+        archives = _archive_paths()
+        if not archives:
+            print("NO_LOCAL_ARCHIVES")
+            return
+        _, latest = max(archives, key=lambda item: item[1].stat().st_mtime)
+        print(f"LOCAL_LATEST {latest.name}|{format_size(latest.stat().st_size)}|{latest}")
+        return
+
     if task_id:
         from ..output import output_error
 
@@ -162,6 +366,36 @@ def backup_status(
                 print(f"LATEST {latest.get('id')}|{latest.get('status')}|{format_size(latest.get('size_bytes'))}")
             else:
                 output_json(latest)
+    except APIError as e:
+        handle_api_error(e)
+
+
+@app.command("archives")
+def list_archives() -> None:
+    """List local, pending, and SMB archives."""
+    archives = _archive_paths()
+    print(f"ARCHIVES[{len(archives)}]")
+    for label, path in archives:
+        print(f"  {label} {path.name} {format_size(path.stat().st_size)} {path}")
+
+
+@app.command("all", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def backup_all(ctx: typer.Context) -> None:
+    """Run all-source backup orchestration through the canonical st surface."""
+    if ctx.args:
+        output_error("st backup all does not accept legacy passthrough args; use st backup create/source flags.")
+        raise typer.Exit(2) from None
+    try:
+        sources = _get_source_api().list_sources()
+        queued = 0
+        for source in sources:
+            source_id = source.get("id")
+            if not source_id:
+                continue
+            result = _get_source_api().create_source_backup(str(source_id))
+            queued += 1
+            print(f"QUEUED {source_id}|{result.get('task_id') or result.get('message', 'queued')}")
+        print(f"BACKUP_ALL queued:{queued}")
     except APIError as e:
         handle_api_error(e)
 

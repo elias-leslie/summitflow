@@ -62,6 +62,26 @@ class TestGitStatus:
         assert result.exit_code == 0
         assert "GIT[" in result.stdout
 
+    @patch("cli.commands.git._get_repo_status")
+    @patch("cli.commands.git._get_managed_repos")
+    def test_status_short_alias(self, mock_managed: MagicMock, mock_status: MagicMock) -> None:
+        """Test --short format used by agents."""
+        mock_managed.return_value = [Path("/test/repo")]
+        mock_status.return_value = {
+            "path": "/test/repo",
+            "name": "repo",
+            "branch": "main",
+            "uncommitted": 0,
+            "ahead": 0,
+            "behind": 0,
+            "state": "clean",
+        }
+
+        result = runner.invoke(app, ["status", "--short"], obj=OutputContext(compact=False))
+        assert result.exit_code == 0
+        assert "GIT[" in result.stdout
+        assert "repo" in result.stdout
+
 
 class TestGitSync:
     """Tests for st git sync command."""
@@ -90,6 +110,40 @@ class TestGitSync:
         result = runner.invoke(app, ["sync"], obj=OutputContext(compact=False))
         assert result.exit_code == 0
         assert "skipped" in result.stdout.lower() or "uncommitted" in result.stdout.lower()
+
+
+class TestGitCommit:
+    """Tests for st git commit command."""
+
+    @patch("cli.commands.git._commit_repo")
+    @patch("cli.commands.git._target_repos")
+    def test_commit_runs_native_managed_commit_workflow(
+        self,
+        mock_target_repos: MagicMock,
+        mock_commit_repo: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        mock_target_repos.return_value = [tmp_path]
+        mock_commit_repo.return_value = {
+            "repo": "repo",
+            "path": str(tmp_path),
+            "status": "SUCCESS",
+            "sha": "abc1234",
+            "pushed": True,
+        }
+        result = runner.invoke(
+            app,
+            ["commit", "--current", "--push", "--task", "task-1", "--msg", "test"],
+            obj=OutputContext(compact=True),
+        )
+
+        assert result.exit_code == 0
+        mock_target_repos.assert_called_once_with(False)
+        mock_commit_repo.assert_called_once()
+        opts = mock_commit_repo.call_args.args[1]
+        assert opts.task == "task-1"
+        assert opts.msg == "test"
+        assert "COMMIT[1]" in result.stdout
 
 
 class TestFinalizeTask:

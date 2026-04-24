@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -85,7 +86,7 @@ class TestParseFunctions:
         assert _parse_size("") is None
 
     def test_parse_backup_output(self) -> None:
-        """Parse backup.sh output."""
+        """Parse historical backup output."""
         output = """
         Archive: summitflow-20260314-102435.tar.gz
         Size: 123M
@@ -132,17 +133,18 @@ class TestCreateBackupTask:
         )
 
         assert result["status"] == "failed"
-        assert "not found" in result["error"]
+        assert "not found" in str(result["error"])
 
     def test_create_backup_creates_record(self, cleanup_project: str) -> None:
         """Create backup creates a backup record."""
-        # Mock subprocess to avoid running actual backup
-        with patch("app.tasks.backup_executor.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout="Size: 100M\nDB Size: 50M\nLocation: /backup/test.tar.gz",
-                stderr="",
-            )
+        # Mock native engine to avoid creating an actual archive
+        with patch("app.tasks.backup_executor.run_project_backup") as mock_run:
+            mock_run.return_value = {
+                "total_bytes": 100 * 1024 * 1024,
+                "db_bytes": 50 * 1024 * 1024,
+                "location": "/backup/test.tar.gz",
+                "archive_name": "test.tar.gz",
+            }
 
             result = create_backup(
                 project_id=cleanup_project,
@@ -153,52 +155,51 @@ class TestCreateBackupTask:
         assert "backup_id" in result
 
         # Verify record was created
-        backup = backup_store.get_backup(result["backup_id"])
+        backup = backup_store.get_backup(str(result["backup_id"]))
         assert backup is not None
         assert backup["project_id"] == cleanup_project
         assert backup["status"] == "completed"
 
     def test_create_backup_handles_failure(self, cleanup_project: str) -> None:
         """Create backup handles script failure."""
-        with patch("app.tasks.backup_executor.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=1,
-                stdout="",
-                stderr="Disk full",
-            )
+        with patch("app.tasks.backup_executor.run_project_backup") as mock_run:
+            mock_run.side_effect = RuntimeError("Disk full")
 
             result = create_backup(project_id=cleanup_project)
 
         assert result["status"] == "failed"
-        assert "Disk full" in result["error"]
+        assert "Disk full" in str(result["error"])
 
         # Verify record was marked failed
-        backup = backup_store.get_backup(result["backup_id"])
+        backup = backup_store.get_backup(str(result["backup_id"]))
         assert backup is not None
         assert backup["status"] == "failed"
 
     def test_create_backup_handles_pending_upload(self, cleanup_project: str) -> None:
         """Create backup handles SMB unavailable case."""
-        with patch("app.tasks.backup_executor.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout="""
-                Archive: test-backup.tar.gz
-                Size: 100M
-                DB Size: 50M
-                Pending: /tmp/test-backup.tar.gz
-                Verification: {"verified": true, "verified_at": "2026-03-14T10:00:00Z", "errors": [], "tree": {}, "total_files": 1, "checksum": "sha256:test", "has_db": true}
-                Backup saved locally (SMB unavailable)
-                """,
-                stderr="",
-            )
+        with patch("app.tasks.backup_executor.run_project_backup") as mock_run:
+            mock_run.return_value = {
+                "archive_name": "test-backup.tar.gz",
+                "total_bytes": 100 * 1024 * 1024,
+                "db_bytes": 50 * 1024 * 1024,
+                "pending_path": "/tmp/test-backup.tar.gz",
+                "verification": {
+                    "verified": True,
+                    "verified_at": "2026-03-14T10:00:00Z",
+                    "errors": [],
+                    "tree": {},
+                    "total_files": 1,
+                    "checksum": "sha256:test",
+                    "has_db": True,
+                },
+            }
 
             result = create_backup(project_id=cleanup_project)
 
         assert result["status"] == "completed_pending_upload"
         assert result["location"] == "/tmp/test-backup.tar.gz"
 
-        backup = backup_store.get_backup(result["backup_id"])
+        backup = backup_store.get_backup(str(result["backup_id"]))
         assert backup is not None
         assert backup["location"] == "/tmp/test-backup.tar.gz"
         assert backup["status"] == "completed_pending_upload"
@@ -206,31 +207,34 @@ class TestCreateBackupTask:
 
     def test_create_backup_local_only_records_local_archive_location(self, cleanup_project: str) -> None:
         """Local-only backup mode records the local archive path and skips pending-upload state."""
-        with patch("app.tasks.backup_executor.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout="""
-                Archive: test-backup.tar.gz
-                Size: 100M
-                DB Size: 50M
-                Location: /tmp/test-project/backups/test-backup.tar.gz
-                Verification: {"verified": true, "verified_at": "2026-03-14T10:00:00Z", "errors": [], "tree": {}, "total_files": 1, "checksum": "sha256:test", "has_db": true}
-                """,
-                stderr="",
-            )
+        with patch("app.tasks.backup_executor.run_project_backup") as mock_run:
+            mock_run.return_value = {
+                "archive_name": "test-backup.tar.gz",
+                "total_bytes": 100 * 1024 * 1024,
+                "db_bytes": 50 * 1024 * 1024,
+                "location": "/tmp/test-project/backups/test-backup.tar.gz",
+                "verification": {
+                    "verified": True,
+                    "verified_at": "2026-03-14T10:00:00Z",
+                    "errors": [],
+                    "tree": {},
+                    "total_files": 1,
+                    "checksum": "sha256:test",
+                    "has_db": True,
+                },
+            }
 
             result = create_backup(project_id=cleanup_project, local_only=True)
 
         assert result["status"] == "completed"
-        backup = backup_store.get_backup(result["backup_id"])
+        backup = backup_store.get_backup(str(result["backup_id"]))
         assert backup is not None
         assert backup["status"] == "completed"
         assert backup["location"] == "/tmp/test-project/backups/test-backup.tar.gz"
         assert backup["name"] == "test-backup.tar.gz"
         assert backup["db_size_bytes"] == 50 * 1024 * 1024
 
-        called_cmd = mock_run.call_args.args[0]
-        assert "--local" in called_cmd
+        assert mock_run.call_args.kwargs["local_only"] is True
 
     @patch("app.tasks.backup_executor.create_notification")
     def test_create_backup_failure_notification_uses_backup_project(
@@ -239,12 +243,8 @@ class TestCreateBackupTask:
         cleanup_project: str,
     ) -> None:
         """Backup failure notification stays scoped to the failed backup's project."""
-        with patch("app.tasks.backup_executor.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=1,
-                stdout="",
-                stderr="Disk full",
-            )
+        with patch("app.tasks.backup_executor.run_project_backup") as mock_run:
+            mock_run.side_effect = RuntimeError("Disk full")
 
             result = create_backup(project_id=cleanup_project)
 
@@ -429,10 +429,10 @@ class TestScheduledBackups:
 
 
 class TestRestoreBackup:
-    """Tests for exact backup restore selection."""
+    """Tests for native backup restore selection."""
 
-    def test_restore_backup_uses_exact_remote_archive_name(self) -> None:
-        """A restore by backup ID should target the exact archive, not --latest."""
+    def test_restore_backup_fails_when_archive_is_not_local_or_pending(self) -> None:
+        """Remote-only backups fail explicitly instead of falling back to latest."""
         backup_record = {
             "id": "bkp-1",
             "project_id": "summitflow",
@@ -444,38 +444,31 @@ class TestRestoreBackup:
         with (
             patch("app.tasks.backup_restore.get_project_root", return_value="/tmp/test-project"),
             patch("app.tasks.backup_restore.backup_store.get_backup", return_value=backup_record),
-            patch("app.tasks.backup_restore.subprocess.run") as mock_run,
         ):
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
             result = restore_backup(project_id="summitflow", backup_id="bkp-1", dry_run=True)
 
-        assert result["status"] == "completed"
-        cmd = mock_run.call_args.kwargs["args"] if "args" in mock_run.call_args.kwargs else mock_run.call_args.args[0]
-        assert "--name" in cmd
-        assert "summitflow-20260314-102435.tar.gz" in cmd
-        assert "--latest" not in cmd
+        assert result["status"] == "failed"
+        assert "summitflow-20260314-102435.tar.gz" in result["error"]
 
-    def test_restore_backup_uses_exact_local_file_path(self) -> None:
-        """If the backup record already has a local path, restore should use --file."""
+    def test_restore_backup_uses_exact_local_file_path(self, tmp_path: Path) -> None:
+        """If the backup record already has a local path, restore uses that path."""
+        archive_path = tmp_path / "exact-backup.tar.gz"
         backup_record = {
             "id": "bkp-2",
             "project_id": "summitflow",
             "source_id": "summitflow",
-            "location": "/tmp/exact-backup.tar.gz",
+            "location": str(archive_path),
             "name": "exact-backup.tar.gz",
         }
 
         with (
-            patch("app.tasks.backup_restore.get_project_root", return_value="/tmp/test-project"),
+            patch("app.tasks.backup_restore.get_project_root", return_value=str(tmp_path)),
             patch("app.tasks.backup_restore.backup_store.get_backup", return_value=backup_record),
-            patch("app.tasks.backup_restore.Path.exists", return_value=True),
-            patch("app.tasks.backup_restore.subprocess.run") as mock_run,
+            patch("app.tasks.backup_restore.restore_archive") as mock_restore,
         ):
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            archive_path.write_bytes(b"archive")
+            mock_restore.return_value = {"status": "completed", "dry_run": True, "archive": str(archive_path)}
             result = restore_backup(project_id="summitflow", backup_id="bkp-2", dry_run=True)
 
         assert result["status"] == "completed"
-        cmd = mock_run.call_args.kwargs["args"] if "args" in mock_run.call_args.kwargs else mock_run.call_args.args[0]
-        assert "--file" in cmd
-        assert "/tmp/exact-backup.tar.gz" in cmd
-        assert "--latest" not in cmd
+        assert mock_restore.call_args.args[0] == archive_path

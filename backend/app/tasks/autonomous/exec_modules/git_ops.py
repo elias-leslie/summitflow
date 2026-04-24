@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ....logging_config import get_logger
-from ....utils.shared_paths import resolve_script
+from ....utils.shared_paths import get_repo_root
 
 logger = get_logger(__name__)
 
@@ -37,17 +37,17 @@ def _run_git(project_path: str, *args: str, timeout: int = 30) -> subprocess.Com
     )
 
 def _resolve_commit_script(project_path: str) -> str | None:
-    """Resolve the canonical commit helper for this repo/checkout."""
+    """Resolve the canonical st command for git commit workflow."""
     candidates: list[str] = []
-    path_candidate = shutil.which("commit.sh")
+    path_candidate = shutil.which("st")
     if path_candidate:
         candidates.append(path_candidate)
 
     repo_root = _run_git(project_path, "rev-parse", "--show-toplevel")
     if repo_root.returncode == 0 and repo_root.stdout.strip():
-        candidates.append(str(Path(repo_root.stdout.strip()) / "scripts" / "commit.sh"))
+        candidates.append(str(Path(repo_root.stdout.strip()) / "backend" / ".venv" / "bin" / "st"))
 
-    candidates.append(str(resolve_script("commit.sh")))
+    candidates.append(str(get_repo_root() / "backend" / ".venv" / "bin" / "st"))
 
     seen: set[str] = set()
     for candidate in candidates:
@@ -96,12 +96,12 @@ def publish_existing_commits(project_path: str) -> bool:
 
     commit_sh = _resolve_commit_script(project_path)
     if not commit_sh:
-        logger.warning("publish_existing_commits_missing_commit_sh")
+        logger.warning("publish_existing_commits_missing_st")
         return False
 
     try:
         result = subprocess.run(
-            [commit_sh, "--json", "--current", "--push"],
+            [commit_sh, "git", "commit", "--json", "--current", "--push"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -131,12 +131,12 @@ def _build_smart_commit_args(
     push: bool,
     skip_checks: bool,
 ) -> list[str] | None:
-    """Build the canonical commit helper argv for the checkout."""
+    """Build the canonical st git commit argv for the checkout."""
     commit_sh = _resolve_commit_script(project_path)
     if not commit_sh:
         return None
 
-    args = [commit_sh, "--json", "--current", "--msg", message]
+    args = [commit_sh, "git", "commit", "--json", "--current", "--msg", message]
     if task_id:
         args.extend(["--task", task_id])
     if push:
@@ -200,13 +200,13 @@ def smart_commit_result(
 
     args = _build_smart_commit_args(project_path, message, task_id, push, skip_checks)
     if not args:
-        logger.warning("smart_commit_missing_commit_sh")
+        logger.warning("smart_commit_missing_st")
         return {
             "success": False,
             "command": [],
             "command_display": "",
             "returncode": None,
-            "detail": "commit helper failed: commit.sh could not be resolved",
+            "detail": "commit helper failed: st could not be resolved",
             "stdout": "",
             "stderr": "",
         }
@@ -301,7 +301,7 @@ def smart_commit(
         message: Commit message
         task_id: Optional task ID to tag the commit
         push: Push immediately after commit
-        skip_checks: Skip dt checks for checkpoint/recovery commits
+        skip_checks: Skip st check gates for checkpoint/recovery commits
 
     Returns:
         True if work is preserved successfully, False otherwise

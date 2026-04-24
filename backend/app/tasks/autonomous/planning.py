@@ -100,7 +100,9 @@ def _build_planning_prompt(
         feedback_block = (
             "\n## Existing task-plan context and review feedback\n\n"
             f"{json.dumps(feedback_payload, indent=2, sort_keys=True)}\n\n"
-            "If second_opinion includes concrete findings, missing requirements, or edge cases, address that feedback in the revised plan.\n"
+            "Treat second_opinion findings as advisory input, not a blocking contract.\n"
+            "Use concrete critique points when valid; do not loop solely on NEEDS_REVISION or pending status.\n"
+            "Address concrete missing requirements or edge cases in the revised plan.\n"
         )
     return f"""Create an implementation plan for this task.
 

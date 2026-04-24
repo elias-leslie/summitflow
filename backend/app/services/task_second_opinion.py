@@ -240,7 +240,7 @@ def assess_second_opinion_readiness(
 ) -> tuple[list[str], list[str], list[str]]:
     """Return advisory-only task-shape critique guidance.
 
-    Task-shape critique remains available for manual use, but it no longer blocks
+    Task-shape critique remains available for manual use, but it never blocks
     autonomous execution readiness.
     """
     spirit = spirit or {}

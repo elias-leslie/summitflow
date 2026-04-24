@@ -229,8 +229,9 @@ class TestSecondOpinionParsing:
 
         assert readiness.ready
         assert "second_opinion" not in readiness.missing_fields
+        assert sum("second opinion" in issue.lower() for issue in readiness.issues) == 0
 
-    def test_pre_close_review_is_advisory_only_for_execution_readiness(self) -> None:
+    def test_pre_close_review_alone_does_not_block_task_shape_readiness(self) -> None:
         readiness = assess_task_execution_readiness(
             {
                 "task_type": "feature",
@@ -263,6 +264,7 @@ class TestSecondOpinionParsing:
         )
 
         assert readiness.ready
+        assert "second_opinion" not in readiness.missing_fields
 
     def test_task_shape_review_in_history_still_satisfies_readiness(self) -> None:
         readiness = assess_task_execution_readiness(
@@ -415,6 +417,7 @@ class TestSecondOpinionParsing:
         )
 
         assert readiness.ready
+        assert "second_opinion" not in readiness.missing_fields
         assert sum("second opinion" in issue.lower() for issue in readiness.issues) == 0
 
     def test_completed_second_opinion_satisfies_complex_task_gate(self) -> None:
