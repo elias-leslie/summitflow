@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
-from cli.commands import service, setup, vm
+from cli.commands import check, service, setup, vm
 from cli.lib.service_ops import ProjectServices
 from cli.main import app as main_app
 
@@ -82,6 +82,35 @@ def test_check_runs_native_tool() -> None:
 
     assert result.exit_code == 0
     run_tool.assert_called_once()
+
+
+def test_check_changed_only_skips_unrelated_tools() -> None:
+    configs = {
+        "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
+        "tsc": {"label": "TSC", "binary": "npx", "args": "tsc --noEmit", "pass_path": False},
+    }
+    with (
+        patch("cli.commands.check._tool_configs", return_value=configs),
+        patch("cli.commands.check._changed_files", return_value=["config.toml"]),
+        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
+    ):
+        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
+
+    assert result.exit_code == 0
+    assert "TEST:SKIP:pytest:no_relevant_changed_paths" in result.output
+    assert "TSC:SKIP:tsc:no_relevant_changed_paths" in result.output
+    run_tool.assert_not_called()
+
+
+def test_check_resolves_npx_tool_to_local_binary(tmp_path: Path) -> None:
+    local_bin = tmp_path / "frontend" / "node_modules" / ".bin"
+    local_bin.mkdir(parents=True)
+    tsc = local_bin / "tsc"
+    tsc.write_text("#!/bin/sh\n", encoding="utf-8")
+
+    command = check._resolve_command("npx", tmp_path, tmp_path / "frontend", ["tsc", "--noEmit"])
+
+    assert command == [str(tsc), "--noEmit"]
 
 
 def test_db_runs_native_migration_status() -> None:

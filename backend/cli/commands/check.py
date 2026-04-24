@@ -15,9 +15,60 @@ from ..lib.cleanroom import main as cleanroom_main
 from ..output import output_error
 from ..tool_registry import load_tool_registry
 
+_TOOL_FILE_SUFFIXES: dict[str, set[str]] = {
+    "pytest": {".py", ".pyi"},
+    "types": {".py", ".pyi"},
+    "ruff": {".py", ".pyi"},
+    "biome": {
+        ".css",
+        ".js",
+        ".json",
+        ".jsonc",
+        ".jsx",
+        ".md",
+        ".mdx",
+        ".scss",
+        ".ts",
+        ".tsx",
+    },
+    "tsc": {".js", ".jsx", ".ts", ".tsx"},
+    "vitest": {".js", ".jsx", ".ts", ".tsx"},
+    "sqlfluff": {".sql"},
+    "squawk": {".sql"},
+}
+
+_TOOL_CONFIG_PATHS: dict[str, set[str]] = {
+    "pytest": {"pyproject.toml", "pytest.ini", "setup.cfg", "tox.ini"},
+    "biome": {
+        "biome.json",
+        "biome.jsonc",
+        "package.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+    },
+    "tsc": {
+        "package.json",
+        "pnpm-lock.yaml",
+        "tsconfig.json",
+        "tsconfig.build.json",
+        "yarn.lock",
+    },
+    "vitest": {
+        "package.json",
+        "pnpm-lock.yaml",
+        "vite.config.ts",
+        "vitest.config.ts",
+        "yarn.lock",
+    },
+}
+
 app = typer.Typer(
     help="Quality checks through the managed st surface.",
-    context_settings={"allow_extra_args": True, "ignore_unknown_options": True, "help_option_names": []},
+    context_settings={
+        "allow_extra_args": True,
+        "ignore_unknown_options": True,
+        "help_option_names": [],
+    },
     add_help_option=False,
 )
 
@@ -72,7 +123,13 @@ def _changed_files(root: Path) -> list[str]:
         ["diff", "--cached", "--name-only"],
         ["ls-files", "--others", "--exclude-standard"],
     ):
-        result = subprocess.run(["git", *args], cwd=root, text=True, capture_output=True, check=False)
+        result = subprocess.run(
+            ["git", *args],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
         if result.returncode == 0:
             files.update(line.strip() for line in result.stdout.splitlines() if line.strip())
     return sorted(files)
@@ -86,7 +143,24 @@ def _path_allowed_for_tool(name: str, path: Path) -> bool:
     return True
 
 
-def _changed_args(name: str, root: Path, cwd: Path, config: dict[str, Any], changed_files: list[str]) -> list[str]:
+def _path_relevant_for_tool(name: str, rel_path: str) -> bool:
+    path = Path(rel_path)
+    if path.name in _TOOL_CONFIG_PATHS.get(name, set()):
+        return True
+    return path.suffix in _TOOL_FILE_SUFFIXES.get(name, set())
+
+
+def _has_relevant_changed_files(name: str, changed_files: list[str]) -> bool:
+    return any(_path_relevant_for_tool(name, rel_path) for rel_path in changed_files)
+
+
+def _changed_args(
+    name: str,
+    root: Path,
+    cwd: Path,
+    config: dict[str, Any],
+    changed_files: list[str],
+) -> list[str]:
     if not changed_files or not config.get("pass_path"):
         return []
     paths: list[str] = []
@@ -117,17 +191,33 @@ def _env(root: Path) -> dict[str, str]:
     return env
 
 
-def _resolve_binary(binary: str, cwd: Path) -> list[str]:
-    if binary == "npx" and shutil.which("npx"):
-        return ["npx"]
+def _local_node_binary(root: Path, cwd: Path, binary: str) -> Path | None:
+    for directory in (
+        cwd / "node_modules" / ".bin",
+        root / "frontend" / "node_modules" / ".bin",
+        root / "node_modules" / ".bin",
+    ):
+        candidate = directory / binary
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str]) -> list[str]:
+    if binary == "npx" and base_args:
+        local_binary = _local_node_binary(root, cwd, base_args[0])
+        if local_binary:
+            return [str(local_binary), *base_args[1:]]
+        npx = shutil.which("npx")
+        return [npx or "npx", "--no-install", *base_args]
     venv_binary = cwd / ".venv" / "bin" / binary
     if venv_binary.exists():
-        return [str(venv_binary)]
-    local = cwd / "node_modules" / ".bin" / binary
-    if local.exists():
-        return [str(local)]
+        return [str(venv_binary), *base_args]
+    local = _local_node_binary(root, cwd, binary)
+    if local:
+        return [str(local), *base_args]
     resolved = shutil.which(binary)
-    return [resolved or binary]
+    return [resolved or binary, *base_args]
 
 
 def _run_tool(name: str, config: dict[str, Any], extra_args: list[str]) -> int:
@@ -135,7 +225,7 @@ def _run_tool(name: str, config: dict[str, Any], extra_args: list[str]) -> int:
     cwd = _workdir(root, config)
     binary = str(config.get("binary") or name)
     base_args = shlex.split(str(config.get("args") or ""))
-    command = [*_resolve_binary(binary, cwd), *base_args, *extra_args]
+    command = [*_resolve_command(binary, root, cwd, base_args), *extra_args]
     label = str(config.get("label") or name.upper())
     print(f"{label}:{name}:start")
     result = subprocess.run(command, cwd=cwd, env=_env(root), check=False)
@@ -160,7 +250,17 @@ def _run_selected(
         if changed_only and config.get("pass_path") and not scoped_args:
             print(f"{config.get('label') or name.upper()!s}:SKIP:{name}:no_changed_paths")
             continue
-        failures += _run_tool(name, config, [*scoped_args, *(_fix_args(name) if fix else [])]) != 0
+        if (
+            changed_only
+            and not config.get("pass_path")
+            and not _has_relevant_changed_files(name, changed_files)
+        ):
+            label = config.get("label") or name.upper()
+            print(f"{label!s}:SKIP:{name}:no_relevant_changed_paths")
+            continue
+        failures += (
+            _run_tool(name, config, [*scoped_args, *(_fix_args(name) if fix else [])]) != 0
+        )
     return 1 if failures else 0
 
 
@@ -203,23 +303,45 @@ def check(ctx: typer.Context) -> None:
         raise typer.Exit(0)
 
     changed_only = False
-    args = [arg for arg in args if not (arg in {"--changed-only", "-d"} and (changed_only := True))]
-    _ = changed_only
+    args = [
+        arg
+        for arg in args
+        if not (arg in {"--changed-only", "-d"} and (changed_only := True))
+    ]
     fix = "--fix" in args
     args = ["--fix"] if args == ["--fix"] else [arg for arg in args if arg != "--fix"]
 
     first = args[0]
     if first == "cleanroom":
-        raise typer.Exit(cleanroom_main(["--project-root", str(_repo_root()), *_strip_separator(args[1:])]))
+        raise typer.Exit(
+            cleanroom_main(["--project-root", str(_repo_root()), *_strip_separator(args[1:])])
+        )
 
     if first in configs:
         root = _repo_root()
         config = configs[first]
         cwd = _workdir(root, config)
         explicit_args = _strip_separator(args[1:])
-        scoped_args = [] if explicit_args else _changed_args(first, root, cwd, config, _changed_files(root) if changed_only else [])
+        changed_files = _changed_files(root) if changed_only else []
+        scoped_args = [] if explicit_args else _changed_args(
+            first,
+            root,
+            cwd,
+            config,
+            changed_files,
+        )
         if changed_only and config.get("pass_path") and not explicit_args and not scoped_args:
-            print(f"{config.get('label') or first.upper()!s}:SKIP:{first}:no_changed_paths")
+            label = config.get("label") or first.upper()
+            print(f"{label!s}:SKIP:{first}:no_changed_paths")
+            raise typer.Exit(0)
+        if (
+            changed_only
+            and not config.get("pass_path")
+            and not explicit_args
+            and not _has_relevant_changed_files(first, changed_files)
+        ):
+            label = config.get("label") or first.upper()
+            print(f"{label!s}:SKIP:{first}:no_relevant_changed_paths")
             raise typer.Exit(0)
         extra_args = [*explicit_args, *scoped_args, *(_fix_args(first) if fix else [])]
         raise typer.Exit(_run_tool(first, configs[first], extra_args))

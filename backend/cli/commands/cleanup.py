@@ -198,6 +198,7 @@ def _build_repo_cleanup_entry(repo_path: Path) -> RepoEntry:
         checkpoint_task_ids=ws.checkpoint_task_ids, orphan_branch_names=ws.orphan_branch_names,
         prunable_branch_names=ws.prunable_branch_names, salvage_task_ids=ws.salvage_task_ids,
         review_orphan_task_ids=ws.review_orphan_task_ids,
+        orphan_details=[detail.model_dump() for detail in ws.orphan_details],
         needs_merge_count=len(needs_merge_tasks), conflict_count=len(conflict_tasks),
         review_count=len(review_tasks), needs_merge_tasks=needs_merge_tasks[:3],
         conflict_tasks=conflict_tasks[:3], review_tasks=review_tasks[:3],

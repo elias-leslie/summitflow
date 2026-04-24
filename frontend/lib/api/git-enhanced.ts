@@ -106,6 +106,11 @@ export interface BranchInfo {
   task_id?: string | null
   last_commit_short?: string | null
   last_commit_date?: string | null
+  cleanup_resolution?: string | null
+  task_status?: string | null
+  commits_ahead?: number | null
+  files_changed?: number | null
+  has_node_modules_artifact?: boolean
 }
 
 // --- Project Dashboard Types ---

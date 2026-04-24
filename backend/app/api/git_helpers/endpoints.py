@@ -17,6 +17,7 @@ from ...storage.tasks.update import update_task_fields
 from ...tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_checkpoint
 from ...tasks.autonomous.cleanup.merge_types import MergeResult
 from ...utils.git_helpers import (
+    enrich_branch_cleanup_details,
     get_all_branches,
     get_managed_repos,
     get_recent_commits,
@@ -311,7 +312,10 @@ async def build_project_dashboard(
     """Build project dashboard response."""
     repo_path = get_project_root_with_fallback(project_id)
     checkpoints = [c for c in collect_checkpoints() if c.project_id == project_id]
-    branches = get_all_branches(repo_path, project_id=project_id)
+    branches = enrich_branch_cleanup_details(
+        repo_path,
+        get_all_branches(repo_path, project_id=project_id),
+    )
     merges_resp = build_recent_merges_response(limit=10, project_id=project_id)
     commits = get_recent_commits(repo_path, limit=commits_limit)
     snapshots = list_snapshots(repo_path)

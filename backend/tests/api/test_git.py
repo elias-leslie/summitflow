@@ -20,7 +20,7 @@ class TestGitStatus:
         """Test that git status returns repository information."""
         from pathlib import Path
 
-        from app.api.models.git_models import RepoStatus, RepoWorkspaceSummary
+        from app.api.models.git_models import OrphanBranchSummary, RepoStatus, RepoWorkspaceSummary
 
         mocker.patch("app.api.git.get_managed_repos", return_value=[Path("/test/repo")])
         mock_status = mocker.patch("app.api.git.get_repo_status")
@@ -42,6 +42,16 @@ class TestGitStatus:
                 prunable_branches=1,
                 needs_cleanup=True,
                 checkpoint_task_ids=["task-123"],
+                orphan_details=[
+                    OrphanBranchSummary(
+                        branch_name="task-456/main",
+                        task_id="task-456",
+                        resolution="review",
+                        task_status="running",
+                        commits_ahead=2,
+                        files_changed=4,
+                    ),
+                ],
             ),
         )
 
@@ -54,6 +64,9 @@ class TestGitStatus:
         assert data["repositories"][0]["project_id"] == "summitflow"
         assert data["repositories"][0]["workspace_summary"]["active_checkpoints"] == 1
         assert data["repositories"][0]["workspace_summary"]["dirty_checkpoints"] == 1
+        detail = data["repositories"][0]["workspace_summary"]["orphan_details"][0]
+        assert detail["resolution"] == "review"
+        assert detail["commits_ahead"] == 2
 
 
 class TestGitCleanupStatus:
@@ -141,6 +154,7 @@ class TestGitBranches:
             return_value=[Path("/repos/alpha"), Path("/repos/beta")],
         )
         mock_branches = mocker.patch("app.api.git.get_all_branches")
+        mock_enrich = mocker.patch("app.api.git.enrich_branch_cleanup_details")
         mock_branches.side_effect = [
             [
                 BranchInfo(
@@ -162,6 +176,7 @@ class TestGitBranches:
                 ),
             ],
         ]
+        mock_enrich.side_effect = lambda _repo_path, branches: branches
 
         response = client.get("/api/git/branches")
 
@@ -173,6 +188,7 @@ class TestGitBranches:
             "project-alpha",
             "project-beta",
         }
+        assert mock_enrich.call_count == 2
 
 
 class TestProjectDashboard:
@@ -223,6 +239,10 @@ class TestProjectDashboard:
                     last_commit_short="abc1234",
                 ),
             ],
+        )
+        enrich_branches = mocker.patch(
+            "app.api.git_helpers.endpoints.enrich_branch_cleanup_details",
+            side_effect=lambda _repo_path, branches: branches,
         )
         mocker.patch(
             "app.api.git_helpers.endpoints.build_recent_merges_response",
@@ -298,6 +318,7 @@ class TestProjectDashboard:
         assert body["branches"][0]["project_id"] == "project-123"
         assert body["branches"][0]["repo_name"] == "custom-folder"
         assert body["conflicts"][0]["task_id"] == "task-9"
+        enrich_branches.assert_called_once()
         enrich_snapshots.assert_called_once()
 
 
