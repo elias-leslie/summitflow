@@ -171,7 +171,7 @@ def list_equivalent_orphan_task_branches(
     branches: list[BranchInfo] | None = None,
     base_branch: str | None = None,
 ) -> list[str]:
-    """Return orphan task branches whose tree matches the base branch exactly."""
+    """Return orphan task branches whose payload is already present on base."""
     git_branches = _git_branches_module()
     base_branch = base_branch or git_branches._detect_base_branch(repo_path)
     branches = branches or git_branches.get_all_branches(repo_path)
@@ -179,6 +179,7 @@ def list_equivalent_orphan_task_branches(
         branch.name
         for branch in _orphan_task_branches(branches)
         if not git_branches._branch_diff_paths(repo_path, branch.name, base_branch)
+        or not git_branches._branch_has_unapplied_patch(repo_path, branch.name, base_branch)
     ]
 
 
@@ -348,13 +349,20 @@ def build_repo_workspace_summary(
     )
     task_branches = [branch for branch in branches if branch.task_id]
     orphan_branches = _orphan_task_branches(branches)
+    equivalent_names = set(
+        git_branches.list_equivalent_orphan_task_branches(
+            repo_path,
+            branches=branches,
+            base_branch=base_branch,
+        )
+    )
     prunable_names = set(
         git_branches.list_prunable_task_branches(
             repo_path,
             branches=branches,
             base_branch=base_branch,
         )
-    )
+    ) | equivalent_names
     prunable_branches = [branch for branch in orphan_branches if branch.name in prunable_names]
     orphan_assessments = git_branches.assess_orphan_task_branches(
         repo_path,

@@ -156,6 +156,14 @@ def _branch_ahead_diff_paths(repo_path: Path, branch_name: str, base_branch: str
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
+def _branch_has_unapplied_patch(repo_path: Path, branch_name: str, base_branch: str) -> bool:
+    """Return True when branch has patch content not already present on base."""
+    result = run_git(["cherry", base_branch, branch_name], repo_path)
+    if result.returncode != 0:
+        return True
+    return any(line.startswith("+") for line in result.stdout.splitlines())
+
+
 def prune_checkout_registrations(repo_path: Path) -> int:
     """Prune stale legacy lane git metadata registrations for a repository."""
     registrations_root = repo_path / ".git" / _LEGACY_LANE_ADMIN_DIR

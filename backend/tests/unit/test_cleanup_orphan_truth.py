@@ -8,7 +8,11 @@ import pytest
 from typer.testing import CliRunner
 
 from app.api.models.git_models import BranchInfo
-from app.utils._git_branch_cleanup import OrphanBranchAssessment, assess_orphan_task_branches
+from app.utils._git_branch_cleanup import (
+    OrphanBranchAssessment,
+    assess_orphan_task_branches,
+    list_equivalent_orphan_task_branches,
+)
 from app.utils.git_helpers import build_repo_workspace_summary
 from cli.commands.cleanup import app as cleanup_app
 from cli.commands.cleanup import build_cleanup_status_payload
@@ -75,6 +79,7 @@ def patch_orphan_git(mocker, orphan_branches: list[BranchInfo]):
     git_branches._branch_commits_behind.return_value = 2
     git_branches._branch_ahead_diff_paths.return_value = ["backend/app.py"]
     git_branches._branch_diff_paths.return_value = ["backend/app.py"]
+    git_branches._branch_has_unapplied_patch.return_value = True
     mocker.patch("app.utils._git_branch_cleanup._git_branches_module", return_value=git_branches)
     return git_branches
 
@@ -112,6 +117,49 @@ def test_branch_ahead_diff_paths_exclude_base_only_drift(tmp_path: Path) -> None
     assert _branch_commits_behind(repo, EXISTING_BRANCH, "main") == 1
     assert sorted(_branch_diff_paths(repo, EXISTING_BRANCH, "main")) == ["main.txt", "task.txt"]
     assert sorted(_branch_ahead_diff_paths(repo, EXISTING_BRANCH, "main")) == ["task.txt"]
+
+
+def test_patch_equivalent_orphans_are_prunable_despite_base_drift(
+    tmp_path: Path,
+    mocker,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    (repo / "README.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "initial")
+
+    _git(repo, "checkout", "-b", EXISTING_BRANCH)
+    (repo / "shared.txt").write_text("same patch\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "branch patch")
+    branch_sha = _git(repo, "rev-parse", EXISTING_BRANCH).stdout.strip()
+
+    _git(repo, "checkout", "main")
+    _git(repo, "cherry-pick", branch_sha)
+    (repo / "main.txt").write_text("base drift\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base drift")
+
+    branch = BranchInfo(
+        name=EXISTING_BRANCH,
+        is_current=False,
+        has_checkpoint=False,
+        repo_name="repo",
+        project_id="repo",
+        task_id=EXISTING_TASK_ID,
+    )
+    mocker.patch("app.utils._git_branch_cleanup.git_core.has_uncommitted_changes", return_value=False)
+
+    assert list_equivalent_orphan_task_branches(repo, branches=[branch], base_branch="main") == [EXISTING_BRANCH]
+    summary = build_repo_workspace_summary(repo, branches=[branch], active_checkpoints=[])
+
+    assert summary.orphan_branches == 1
+    assert summary.prunable_branches == 1
+    assert summary.prunable_branch_names == [EXISTING_BRANCH]
+    assert summary.review_orphan_task_ids == []
+    assert summary.orphan_details == []
 
 
 def test_assess_orphan_task_branches_marks_existing_and_unreadable_tasks_for_review(
