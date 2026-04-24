@@ -8,7 +8,8 @@ import typer
 
 from ..client import APIError, STClient
 from ..config import get_config
-from ..output import handle_api_error, output_json
+from ..lib.confirm_token import confirm_gate
+from ..output import handle_api_error, output_error, output_json
 from ..output_context import OutputContext
 from .backup_api import BackupProjectAPI, BackupSourceAPI
 from .backup_formatters import (
@@ -24,6 +25,7 @@ from .backup_formatters import (
 from .backup_infra import app as infra_app
 from .backup_storage import app as storage_app
 from .backup_testbed import app as testbed_app
+from .operator_forward import run_forwarded
 
 app = typer.Typer(help="Backup management commands")
 
@@ -101,15 +103,139 @@ def create_backup(
         handle_api_error(e)
 
 
+def _restore_archive_args(
+    *,
+    latest: bool,
+    archive_file: str | None,
+    archive_name: str | None,
+    dry_run: bool,
+    db_only: bool,
+    files_only: bool,
+) -> list[str]:
+    targets = [latest, archive_file is not None, archive_name is not None]
+    if sum(1 for target in targets if target) != 1:
+        output_error("Use exactly one archive target: --latest, --file PATH, or --name ARCHIVE.")
+        raise typer.Exit(1) from None
+
+    args: list[str] = []
+    if latest:
+        args.append("--latest")
+    elif archive_file:
+        args.extend(["--file", archive_file])
+    elif archive_name:
+        args.extend(["--name", archive_name])
+
+    if dry_run:
+        args.append("--dry-run")
+    if db_only:
+        args.append("--db-only")
+    if files_only:
+        args.append("--files-only")
+    return args
+
+
+def _confirm_restore(
+    command_key: str,
+    confirm: str | None,
+    command_hint: str,
+    preview_lines: list[str],
+) -> None:
+    confirm_gate(command_key, confirm, preview_lines, command_hint)
+
+
+def _run_archive_restore(
+    *,
+    latest: bool,
+    archive_file: str | None,
+    archive_name: str | None,
+    dry_run: bool,
+    db_only: bool,
+    files_only: bool,
+    confirm: str | None,
+) -> None:
+    args = _restore_archive_args(
+        latest=latest,
+        archive_file=archive_file,
+        archive_name=archive_name,
+        dry_run=dry_run,
+        db_only=db_only,
+        files_only=files_only,
+    )
+    if not dry_run:
+        target = "latest" if latest else archive_file or archive_name or "unknown"
+        hint = "st backup restore"
+        if latest:
+            hint += " --latest"
+        elif archive_file:
+            hint += f" --file {archive_file}"
+        elif archive_name:
+            hint += f" --name {archive_name}"
+        if db_only:
+            hint += " --db-only"
+        if files_only:
+            hint += " --files-only"
+        _confirm_restore(
+            f"backup-archive-restore-{target}",
+            confirm,
+            hint,
+            [
+                f"RESTORE ARCHIVE: {target}",
+                "This can overwrite project files and/or database state.",
+                "Use --dry-run first for archive restore preview output.",
+            ],
+        )
+    run_forwarded("restore.sh", args)
+
+
 @app.command("restore")
 def restore_backup(
     ctx: typer.Context,
-    backup_id: Annotated[str, typer.Argument(help="Backup ID to restore")],
+    backup_id: Annotated[str | None, typer.Argument(help="Backup ID to restore")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview without restoring")] = False,
     source: Annotated[str | None, typer.Option("--source", help="Source ID (for non-project restores)")] = None,
+    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
+    latest: Annotated[bool, typer.Option("--latest", help="Restore latest archive")] = False,
+    archive_file: Annotated[str | None, typer.Option("--file", help="Restore archive path")] = None,
+    archive_name: Annotated[str | None, typer.Option("--name", help="Restore named archive")] = None,
+    db_only: Annotated[bool, typer.Option("--db-only", help="Restore database only for archive restores")] = False,
+    files_only: Annotated[bool, typer.Option("--files-only", help="Restore files only for archive restores")] = False,
 ) -> None:
-    """Restore from a backup. Use --source for non-project sources."""
+    """Restore from a backup ID or local/pending/SMB archive."""
+    if latest or archive_file or archive_name:
+        _run_archive_restore(
+            latest=latest,
+            archive_file=archive_file,
+            archive_name=archive_name,
+            dry_run=dry_run,
+            db_only=db_only,
+            files_only=files_only,
+            confirm=confirm,
+        )
+        return
+
+    if db_only or files_only:
+        output_error("--db-only and --files-only are only valid with --latest, --file, or --name archive restores.")
+        raise typer.Exit(1) from None
+
+    if not backup_id:
+        output_error("Backup ID required, or use --latest, --file, or --name for archive restore.")
+        raise typer.Exit(1) from None
+
     try:
+        if not dry_run:
+            target = f"{source}:{backup_id}" if source else backup_id
+            _confirm_restore(
+                f"backup-restore-{target}",
+                confirm,
+                f"st backup restore {backup_id}{f' --source {source}' if source else ''}",
+                [
+                    f"RESTORE BACKUP: {backup_id}",
+                    f"Source: {source or get_config().project_id}",
+                    "This can overwrite project files and/or database state.",
+                    "Use --dry-run first for backend restore preview output.",
+                ],
+            )
+
         if source:
             result = _get_source_api().restore_source_backup(source, backup_id, dry_run=dry_run)
         else:
@@ -140,8 +266,13 @@ def restore_backup(
 def backup_status(
     ctx: typer.Context,
     task_id: Annotated[str | None, typer.Argument(help="Job ID")] = None,
+    local: Annotated[bool, typer.Option("--local", help="Show local/SMB archive status")] = False,
 ) -> None:
     """Show most recent backup status."""
+    if local:
+        run_forwarded("backup.sh", ["--status"])
+        return
+
     if task_id:
         from ..output import output_error
 
@@ -164,6 +295,18 @@ def backup_status(
                 output_json(latest)
     except APIError as e:
         handle_api_error(e)
+
+
+@app.command("archives")
+def list_archives() -> None:
+    """List local, pending, and SMB archives."""
+    run_forwarded("restore.sh", ["--list"])
+
+
+@app.command("all", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def backup_all(ctx: typer.Context) -> None:
+    """Run all-source backup orchestration through the canonical st surface."""
+    run_forwarded("backup-all.sh", list(ctx.args))
 
 
 @app.command("schedule")

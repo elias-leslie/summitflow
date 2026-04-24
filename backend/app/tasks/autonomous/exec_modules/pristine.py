@@ -94,7 +94,7 @@ def check_pristine_codebase(project_id: str) -> None:
     try:
         result = subprocess.run(cmd, cwd=str(repo_path), capture_output=True, text=True, timeout=600)
     except subprocess.TimeoutExpired as e:
-        raise PristineCheckError("Pristine check timed out after 10 minutes. Run 'dt --check' manually to investigate.") from e
+        raise PristineCheckError("Pristine check timed out after 10 minutes. Run 'st check --check' manually to investigate.") from e
     except FileNotFoundError as e:
         logger.warning("pristine_check_skipped", project_id=project_id, reason=f"Command not found: {e}")
         return
@@ -104,7 +104,7 @@ def check_pristine_codebase(project_id: str) -> None:
         raise PristineCheckError(
             f"Codebase quality gates failed (exit code {result.returncode}). "
             "Fix lint/type/test errors before running automated execution. "
-            "Run 'dt --quick' to see details."
+            "Run 'st check --quick' to see details."
         )
     logger.info("pristine_check_passed", project_id=project_id)
 

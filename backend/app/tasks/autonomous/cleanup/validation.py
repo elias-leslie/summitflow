@@ -256,9 +256,9 @@ def _create_regression_subtasks(
         f": {failure_detail[:120].strip()}" if failure_detail else ""
     )
     subtasks = [
-        ("1.1", f"Reproduce failure: run `dt --quick` and confirm the same error{fail_hint}", 0, "backend"),
+        ("1.1", f"Reproduce failure: run `st check --quick` and confirm the same error{fail_hint}", 0, "backend"),
         ("1.2", f"Fix the root cause in {task_branch} that broke validation", 1, "backend"),
-        ("1.3", "Verify fix: run `dt --quick`, confirm exit 0, then re-dispatch via autocode", 2, "test"),
+        ("1.3", "Verify fix: run `st check --quick`, confirm exit 0, then re-dispatch via autocode", 2, "test"),
     ]
     for subtask_id, description, order, subtask_type in subtasks:
         try:
@@ -297,7 +297,7 @@ def _finalize_regression_task(new_task_id: str, task_branch: str, failure_detail
     from app.storage.task_spirit import update_task_spirit
 
     done_when = [
-        "Run `dt --quick` — all checks pass (exit 0)",
+        "Run `st check --quick` — all checks pass (exit 0)",
         "Root cause of the validation failure is identified and fixed",
         "Fix is re-merged to main without triggering another rollback",
     ]

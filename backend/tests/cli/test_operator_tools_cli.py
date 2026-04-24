@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
-from cli.commands import service
+from cli.commands import service, setup, vm
 from cli.main import app as main_app
 
 runner = CliRunner()
@@ -26,6 +26,18 @@ def test_service_rebuild_forwards_flags_in_script_order() -> None:
 
     assert result.exit_code == 0
     forwarded.assert_called_once_with("rebuild.sh", ["--detach", "--include-all-workers", "agent-hub"])
+
+
+def test_service_stop_uses_confirm_gate() -> None:
+    with (
+        patch("cli.commands.service.confirm_gate") as confirm_gate,
+        patch("cli.commands.service.run_forwarded") as forwarded,
+    ):
+        result = runner.invoke(service.app, ["stop", "--confirm", "abc12345"])
+
+    assert result.exit_code == 0
+    confirm_gate.assert_called_once()
+    forwarded.assert_called_once_with("shutdown.sh", [])
 
 
 def test_check_forwards_unknown_args_to_dt() -> None:
@@ -66,6 +78,39 @@ def test_vm_forwards_to_proxmox_vm() -> None:
 
     assert result.exit_code == 0
     forwarded.assert_called_once_with("proxmox-vm.sh", ["status", "100"])
+
+
+def test_vm_stop_uses_confirm_gate() -> None:
+    with (
+        patch("cli.commands.vm.confirm_gate") as confirm_gate,
+        patch("cli.commands.vm.run_forwarded") as forwarded,
+    ):
+        result = runner.invoke(vm.app, ["stop", "100", "--confirm", "abc12345"])
+
+    assert result.exit_code == 0
+    confirm_gate.assert_called_once()
+    forwarded.assert_called_once_with("proxmox-vm.sh", ["stop", "100"])
+
+
+def test_vm_destroy_confirms_then_answers_underlying_prompt() -> None:
+    with (
+        patch("cli.commands.vm.confirm_gate") as confirm_gate,
+        patch("cli.commands.vm.run_forwarded_with_input") as forwarded,
+    ):
+        result = runner.invoke(vm.app, ["destroy", "101", "--confirm", "abc12345"])
+
+    assert result.exit_code == 0
+    confirm_gate.assert_called_once()
+    forwarded.assert_called_once_with("proxmox-vm.sh", ["destroy", "101"], "y\n")
+
+
+def test_setup_services_dry_run_does_not_forward() -> None:
+    with patch("cli.commands.setup.run_forwarded") as forwarded:
+        result = runner.invoke(setup.app, ["services", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "SETUP SERVICES" in result.output
+    forwarded.assert_not_called()
 
 
 def test_forwarded_missing_command_exits_127() -> None:

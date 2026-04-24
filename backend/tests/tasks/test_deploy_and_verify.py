@@ -25,7 +25,7 @@ class TestDeployAndVerify:
     ) -> None:
         mock_root.return_value = "/home/user/summitflow"
         mock_run.side_effect = [
-            MagicMock(returncode=0),  # rebuild.sh
+            MagicMock(returncode=0),  # st service rebuild
             MagicMock(returncode=0),  # cf-curl
         ]
 
@@ -33,7 +33,7 @@ class TestDeployAndVerify:
 
         assert mock_run.call_count == 2
         assert mock_log.call_count == 2
-        mock_log.assert_any_call("task-1", "Auto-deploy: rebuild.sh succeeded")
+        mock_log.assert_any_call("task-1", "Auto-deploy: st service rebuild succeeded")
         mock_log.assert_any_call(
             "task-1", f"Production verified: {HEALTH_URLS['summitflow']}"
         )
@@ -96,7 +96,7 @@ class TestDeployAndVerify:
     ) -> None:
         mock_root.return_value = "/home/user/summitflow"
         mock_run.side_effect = [
-            MagicMock(returncode=0),  # rebuild.sh succeeds
+            MagicMock(returncode=0),  # st service rebuild succeeds
             MagicMock(returncode=1),  # cf-curl fails
         ]
 
@@ -124,7 +124,7 @@ class TestDeployAndVerify:
 
         # Only rebuild runs, no health check
         assert mock_run.call_count == 1
-        mock_log.assert_called_once_with("task-1", "Auto-deploy: rebuild.sh succeeded")
+        mock_log.assert_called_once_with("task-1", "Auto-deploy: st service rebuild succeeded")
 
 
 class TestAutoMergeDeployIntegration:

@@ -119,10 +119,10 @@ def build_orchestrator_prompt(
         "4. Review each subagent result yourself: changed files, verification output,"
         " and whether the task spirit was actually met.\n"
         "5. Require each subagent to run task-appropriate verification plus"
-        " `dt --quick --changed-only` before claiming success.\n"
+        " `st check --quick --changed-only` before claiming success.\n"
         "6. If a subagent misses task spirit, drifts scope, or fails verification,"
         " redrive or fix it within this same orchestrator session before closeout.\n"
-        '7. Require each successful subagent to run `commit.sh --current --push --task <task-id> --msg "..."`'
+        '7. Require each successful subagent to run `st git commit --current --push --task <task-id> --msg "..."`'
         " from the project root after confirming the correct task branch is checked out.\n"
         f"8. Before each `st done <task-id>` call from `{project_root}`, check `st cleanup status`"
         " and resolve any task-related git or checkpoint cleanup blockers.\n"
@@ -138,5 +138,5 @@ def build_orchestrator_prompt(
         "- task ids completed\n"
         "- files changed per task\n"
         "- verification commands run per task\n"
-        "- whether `commit.sh` and `st done` succeeded for each task"
+        "- whether `st git commit` and `st done` succeeded for each task"
     )

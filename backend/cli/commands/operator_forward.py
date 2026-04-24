@@ -34,3 +34,10 @@ def run_forwarded(command: str, args: Sequence[str]) -> None:
     resolved = resolve_command(command)
     result = subprocess.run([resolved, *args], check=False)
     raise typer.Exit(result.returncode) from None
+
+
+def run_forwarded_with_input(command: str, args: Sequence[str], input_text: str) -> None:
+    """Run a resolved command with stdin text and matching exit code."""
+    resolved = resolve_command(command)
+    result = subprocess.run([resolved, *args], input=input_text, text=True, check=False)
+    raise typer.Exit(result.returncode) from None

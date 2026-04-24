@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Centralized tool registry — single source of truth for tool enforcement and dt configuration.",
+  "description": "Centralized tool registry — single source of truth for operator tool discovery, redirects, and check-runner configuration.",
   "cmd_start": "(^|&&\\s*|;\\s*)",
   "operator_tools": [
     {
@@ -9,8 +9,8 @@
       "legacy": ["rebuild.sh", "status.sh", "start.sh", "restart.sh", "shutdown.sh"],
       "summary": "Project service lifecycle, rebuild, migrations, systemd sync, and health checks.",
       "safety": "mutating",
-      "commands": ["status", "rebuild"],
-      "examples": ["st service status summitflow", "st service rebuild summitflow"],
+      "commands": ["status", "rebuild", "restart", "start", "stop"],
+      "examples": ["st service status summitflow", "st service rebuild summitflow", "st service stop"],
       "verify": ["st service status summitflow"]
     },
     {
@@ -69,8 +69,8 @@
       "legacy": ["backup.sh", "restore.sh", "backup-all.sh", "backup-pending-upload.sh"],
       "summary": "Project/source backup creation, restore preview, schedules, pending drain, and infra backups.",
       "safety": "destructive-with-confirmation",
-      "commands": ["list", "create", "restore", "status", "delete", "drain-pending", "infra", "storage", "testbed"],
-      "examples": ["st backup status", "st backup list --limit 5"],
+      "commands": ["list", "create", "restore", "archives", "all", "status", "delete", "drain-pending", "infra", "storage", "testbed"],
+      "examples": ["st backup status", "st backup archives", "st backup restore bkp-123 --dry-run"],
       "verify": ["st backup status"]
     },
     {
@@ -90,8 +90,8 @@
       "summary": "Install, PATH, browser, agent tooling, and test database setup.",
       "safety": "mutating",
       "commands": ["services", "browser", "agent-tooling", "test-dbs"],
-      "examples": ["st setup services --dry-run"],
-      "verify": ["st tools catalog"]
+      "examples": ["st setup services --dry-run", "st setup browser --dry-run"],
+      "verify": ["st setup --help"]
     }
   ],
   "wrapper_allowlist": [
@@ -99,11 +99,7 @@
     "dev-tools\\.sh\\b",
     "st\\b",
     "db\\b",
-    "restart\\.sh\\b",
-    "rebuild\\.sh\\b",
-    "shutdown\\.sh\\b",
-    "st\\s+docker\\b",
-    "commit\\.sh\\b"
+    "st\\s+docker\\b"
   ],
   "tools": [
     {
@@ -114,7 +110,7 @@
         "python[0-9.]*\\s+-m\\s+pytest\\b",
         "\\.venv/bin/python.*-m\\s+pytest\\b"
       ],
-      "redirect_message": "Use 'dt pytest [args]' — handles venv, TOON output, and project resolution.",
+      "redirect_message": "Use 'st check pytest [args]' — handles venv, TOON output, and project resolution.",
       "dt": {
         "label": "TEST",
         "binary": "pytest",
@@ -132,7 +128,7 @@
         "(\\.venv/bin/)?mypy\\b",
         "(\\.venv/bin/)?\\bty\\b"
       ],
-      "redirect_message": "Use 'dt types [args]' — handles venv, TOON output, and project resolution.",
+      "redirect_message": "Use 'st check types [args]' — handles venv, TOON output, and project resolution.",
       "dt": {
         "label": "TYPES",
         "binary": "ty",
@@ -149,7 +145,7 @@
       "redirect_patterns": [
         "(\\.venv/bin/)?ruff\\b"
       ],
-      "redirect_message": "Use 'dt ruff [args]' — handles venv, TOON output, and project resolution.",
+      "redirect_message": "Use 'st check ruff [args]' — handles venv, TOON output, and project resolution.",
       "dt": {
         "label": "LINT",
         "binary": "ruff",
@@ -166,7 +162,7 @@
       "redirect_patterns": [
         "(npx\\s+)?biome\\b"
       ],
-      "redirect_message": "Use 'dt biome [args]' — handles TOON output and project detection.",
+      "redirect_message": "Use 'st check biome [args]' — handles TOON output and project detection.",
     "dt": {
       "label": "BIOME",
       "binary": "npx",
@@ -183,7 +179,7 @@
       "redirect_patterns": [
         "(npx\\s+)?tsc\\b"
       ],
-      "redirect_message": "Use 'dt tsc' — handles TOON output and project detection.",
+      "redirect_message": "Use 'st check tsc' — handles TOON output and project detection.",
     "dt": {
       "label": "TSC",
       "binary": "npx",
@@ -200,7 +196,7 @@
       "redirect_patterns": [
         "(npx\\s+|pnpm(?:\\s+exec)?\\s+)?vitest\\b"
       ],
-      "redirect_message": "Use 'dt vitest [args]' — handles project detection and TOON output.",
+      "redirect_message": "Use 'st check vitest [args]' — handles project detection and TOON output.",
     "dt": {
       "label": "VITEST",
       "binary": "vitest",
@@ -217,7 +213,7 @@
       "redirect_patterns": [
         "(\\.venv/bin/)?sqlfluff\\b"
       ],
-      "redirect_message": "Use 'dt sqlfluff' — handles venv, TOON output, project detection.",
+      "redirect_message": "Use 'st check sqlfluff' — handles venv, TOON output, project detection.",
       "dt": {
         "label": "SQLFLUFF",
         "binary": "sqlfluff",
@@ -234,7 +230,7 @@
       "redirect_patterns": [
         "squawk\\b"
       ],
-      "redirect_message": "Use 'dt squawk' — handles TOON output and project detection.",
+      "redirect_message": "Use 'st check squawk' — handles TOON output and project detection.",
       "dt": {
         "label": "SQUAWK",
         "binary": "squawk",
@@ -255,38 +251,73 @@
   ],
   "service_redirects": [
     {
+      "pattern": "(rebuild|restart|status|start|shutdown|stop)\\.sh\\b",
+      "message": "Use 'st service status|rebuild|restart|start|stop' instead of legacy service scripts.",
+      "component_id": "sf.scripts"
+    },
+    {
+      "pattern": "commit\\.sh\\b",
+      "message": "Use 'st git commit' instead of legacy commit.sh.",
+      "component_id": "sf.git"
+    },
+    {
+      "pattern": "(backup|backup-all|backup-pending-upload|restore)\\.sh\\b",
+      "message": "Use 'st backup' commands instead of legacy backup scripts. Start with 'st backup --help'.",
+      "component_id": "sf.backup"
+    },
+    {
+      "pattern": "sf-browser\\b",
+      "message": "Use 'st browser' instead of legacy sf-browser.",
+      "component_id": "sf.browser"
+    },
+    {
+      "pattern": "web-research\\b",
+      "message": "Use 'st web' instead of legacy web-research.",
+      "component_id": "sf.web"
+    },
+    {
+      "pattern": "proxmox-vm\\.sh\\b",
+      "message": "Use 'st vm' instead of legacy proxmox-vm.sh.",
+      "component_id": "sf.vm"
+    },
+    {
+      "pattern": "setup-(services|agent-browser|agent-tooling|test-dbs)\\.sh\\b",
+      "message": "Use 'st setup' instead of legacy setup scripts. Start with 'st setup --help'.",
+      "component_id": "sf.setup"
+    },
+    {
       "pattern": "systemctl\\s+(--user\\s+)?(restart|stop|start|kill|disable|enable)\\s+(summitflow|agent-hub|portfolio|sf-|ah-|hatchet)",
-      "message": "Use rebuild.sh <project> for service management. Never manage services via systemctl directly.",
+      "message": "Use 'st service rebuild <project>' or 'st service stop' for service management. Never manage services via systemctl directly.",
       "component_id": "sf.scripts"
     },
     {
       "pattern": "(pkill|killall)\\b.*(uvicorn|gunicorn|next|hatchet)",
-      "message": "Never kill service processes directly. Use rebuild.sh <project>.",
+      "message": "Never kill service processes directly. Use 'st service rebuild <project>' or 'st service stop'.",
       "component_id": "sf.scripts"
     },
     {
       "pattern": "(\\.venv/bin/)?(uvicorn|gunicorn)\\s+\\S+:\\S+",
-      "message": "Never start app servers directly. Use rebuild.sh <project>.",
+      "message": "Never start app servers directly. Use 'st service rebuild <project>'.",
       "component_id": "sf.scripts"
     },
     {
       "pattern": "python[0-9.]*\\s+-m\\s+(uvicorn|gunicorn)\\b",
-      "message": "Never start app servers directly. Use rebuild.sh <project>.",
+      "message": "Never start app servers directly. Use 'st service rebuild <project>'.",
       "component_id": "sf.scripts"
     },
     {
       "pattern": "(npm|pnpm)\\s+(run\\s+(dev|start)|start)\\b",
-      "message": "Never start dev servers directly. Use rebuild.sh <project>.",
+      "message": "Never start dev servers directly. Use 'st service rebuild <project>'.",
       "component_id": "sf.scripts"
     },
     {
       "pattern": "(npx\\s+)?next\\s+(dev|start)\\b",
-      "message": "Never start dev servers directly. Use rebuild.sh <project>.",
+      "message": "Never start dev servers directly. Use 'st service rebuild <project>'.",
       "component_id": "sf.scripts"
     },
     {
       "pattern": "psql\\b",
-      "message": "Use 'db' CLI instead of raw psql. Commands: db tables [--counts], db schema <table>, db sample <table> [n], db query \"SELECT...\", db exec \"UPDATE/DELETE...\", db ddl \"CREATE INDEX...\", db count <table>. Use db -P <project> to target a specific project (summitflow, agent-hub, portfolio-ai, hatchet).",
+      "message": "Use 'st db' instead of raw psql. Commands: st db tables, st db schema <table>, st db sample <table> [n], st db query \"SELECT...\", st db migrate status.",
       "component_id": "sf.storage"
     },
     {

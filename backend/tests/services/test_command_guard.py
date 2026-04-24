@@ -37,13 +37,33 @@ def test_registry_redirects_raw_pytest(tmp_path: Path) -> None:
 
     assert decision.blocked is True
     assert decision.code == "redirect"
-    assert "dt pytest" in (decision.message or "")
+    assert "st check pytest" in (decision.message or "")
 
 
 def test_wrapper_commands_are_allowed(tmp_path: Path) -> None:
     decision = evaluate_shell_command("dt pytest backend/tests/", tmp_path)
 
     assert decision.blocked is False
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("rebuild.sh summitflow", "st service"),
+        ("commit.sh --current", "st git commit"),
+        ("sf-browser health", "st browser"),
+        ("web-research search --query SummitFlow", "st web"),
+        ("proxmox-vm.sh list", "st vm"),
+        ("restore.sh --list", "st backup"),
+        ("setup-services.sh --help", "st setup"),
+    ],
+)
+def test_redirects_legacy_operator_wrappers(command: str, expected: str, tmp_path: Path) -> None:
+    decision = evaluate_shell_command(command, tmp_path)
+
+    assert decision.blocked is True
+    assert decision.code == "redirect"
+    assert expected in (decision.message or "")
 
 
 def test_allows_raw_docker_run(tmp_path: Path) -> None:

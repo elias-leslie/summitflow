@@ -1498,6 +1498,38 @@ class TestBackupCommands:
         assert "QUEUED | dry-run | backup:bkp-123 | project:summitflow" in result.output
         assert "None" not in result.output
 
+    def test_backup_restore_requires_confirm_for_non_dry_run(self, mock_backup_config) -> None:
+        """Backup restore should use two-pass confirmation before mutating."""
+        from cli.commands.backup import app as backup_app
+
+        mock_config = mock_backup_config
+
+        with (
+            patch("cli.commands.backup._get_project_api") as mock_api_factory,
+            patch("cli.commands.backup.get_config", return_value=mock_config),
+            patch("cli.commands.backup.confirm_gate") as confirm_gate,
+        ):
+            mock_api = MagicMock()
+            mock_api.get_backup.return_value = {"id": "bkp-123"}
+            mock_api.restore_backup.return_value = {"status": "queued", "message": "Restore queued"}
+            mock_api_factory.return_value = mock_api
+
+            result = runner.invoke(backup_app, ["restore", "bkp-123", "--confirm", "abc12345"])
+
+        assert result.exit_code == 0
+        confirm_gate.assert_called_once()
+        mock_api.restore_backup.assert_called_once_with("bkp-123", dry_run=False)
+
+    def test_backup_restore_archive_dry_run_forwards_to_restore_script(self) -> None:
+        """Archive restore dry-run should route through restore.sh safely."""
+        from cli.commands.backup import app as backup_app
+
+        with patch("cli.commands.backup.run_forwarded") as forwarded:
+            result = runner.invoke(backup_app, ["restore", "--name", "summitflow.tar.gz", "--dry-run", "--files-only"])
+
+        assert result.exit_code == 0
+        forwarded.assert_called_once_with("restore.sh", ["--name", "summitflow.tar.gz", "--dry-run", "--files-only"])
+
 
 class TestVerifyPlanGates:
     """Test st verify command validates plan structure.

@@ -132,7 +132,7 @@ class TestGetTargetedTestCommand:
         assert "rg --files backend/tests" in cmd
         assert "enrichment_service" in cmd
         assert "storage" in cmd
-        assert "dt pytest" in cmd
+        assert "st check pytest" in cmd
         assert "from backend.app.services.enrichment_service._storage import *" in cmd
 
 
@@ -215,9 +215,9 @@ class TestBuildRefactorSteps:
         )
         quality_step = next(s for s in steps if "quality gate" in s["description"].lower())
         verify_commands = quality_step["spec"]["verify_commands"]
-        assert "dt --quick" in verify_commands
-        assert "dt --fix" in verify_commands
-        assert any("dt pytest" in cmd or "python3 -c" in cmd for cmd in verify_commands)
+        assert "st check --quick" in verify_commands
+        assert "st check --fix" in verify_commands
+        assert any("st check pytest" in cmd or "python3 -c" in cmd for cmd in verify_commands)
 
     def test_frontend_browser_check(self) -> None:
         """Frontend files get browser verification step."""
@@ -248,6 +248,6 @@ class TestBuildRefactorSteps:
         quality_step = next(s for s in steps if "quality gate" in s["description"].lower())
         verify_commands = quality_step["spec"]["verify_commands"]
 
-        assert "dt --quick" not in quality_step["description"]
-        assert verify_commands[:2] == ["dt --fix", "dt --quick"]
+        assert "st check --quick" not in quality_step["description"]
+        assert verify_commands[:2] == ["st check --fix", "st check --quick"]
         assert len(verify_commands) == 3

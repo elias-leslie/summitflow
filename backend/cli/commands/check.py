@@ -7,14 +7,14 @@ import typer
 from .operator_forward import run_forwarded
 
 app = typer.Typer(
-    help="Quality checks and tool wrappers. Forwards to the managed dt runner.",
+    help="Quality checks through the managed st surface.",
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
 )
 
 
 @app.callback(invoke_without_command=True)
 def check(ctx: typer.Context) -> None:
-    """Run quality gates or dt tool subcommands.
+    """Run quality gates or named check subcommands.
 
     Examples:
       st check --quick --changed-only

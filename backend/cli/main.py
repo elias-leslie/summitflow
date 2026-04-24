@@ -40,6 +40,7 @@ from .commands import (
     service,
     session_events,
     sessions,
+    setup,
     snapshots,
     subtask,
     tasks,
@@ -130,13 +131,14 @@ REFACTOR: refactor regenerate [--json]
 BACKUP:
   backup list [--limit N] [--status S]
   backup create [--note 'message'] [--keep-local]
-  backup restore <id> [--dry-run] [--yes]
+  backup archives
+  backup restore [id] [--dry-run] [--confirm TOKEN] [--latest|--file PATH|--name ARCHIVE]
   backup testbed baseline [--note X] [--snapshot-name X] [--allow-dirty] [--local|--remote] [--keep-local]
   backup testbed reset [backup-id] [--rebuild|--no-rebuild] [--confirm TOKEN]
-  backup status [<task-id>]
+  backup status [<task-id>] [--local]
   backup schedule [--enable|--disable] [--frequency daily|weekly|monthly] [--retention N]
   backup show <id>
-  backup delete <id> [--yes]
+  backup delete <id> [--confirm TOKEN]
 
 PERSONA: persona status | persona set-active <slug> | persona clear
 
@@ -170,11 +172,19 @@ TOOLS: tools [catalog|status] [--hours N]
 OPERATOR TOOLS (canonical wrapper surface):
   service status [project]                 # managed service status
   service rebuild <project> [--detach]     # build, migrate, restart, health-check
-  check [dt args...]                       # quality gates and dt tool wrappers
-  db [db args...]                          # database inspection and migrations
+  service restart <project> [--detach]     # restart through rebuild path
+  service start                            # start SummitFlow service set
+  service stop [--confirm TOKEN]           # stop SummitFlow service set
+  check [args...]                          # quality gates through st
+  db [args...]                             # database inspection and migrations through st
   browser [browser args...]                # browser health/check/screenshot/snapshot/eval
-  web [web-research args...]               # web search/research/fetch
-  vm [proxmox-vm args...]                  # Proxmox test VM operations
+  web [args...]                            # web search/research/fetch
+  backup archives                          # list local/pending/SMB archive files
+  backup restore [id] [--dry-run] [--confirm TOKEN] [--latest|--file PATH|--name ARCHIVE]
+  vm list|status|snapshots|ip              # read-only Proxmox test VM operations
+  vm snapshot|clone|start                  # mutating Proxmox operations
+  vm stop|rollback|destroy --confirm TOKEN # destructive Proxmox operations
+  setup services|browser|agent-tooling|test-dbs [--dry-run] [--confirm TOKEN]
 
 LOGS (unified service logs):
   logs                                   # show recent logs (default: tail)
@@ -288,6 +298,8 @@ app.add_typer(feedback.app, name="feedback")
 app.add_typer(persona.app, name="persona")
 app.add_typer(agents.app, name="agents")
 app.add_typer(docker.app, name="docker")
+app.add_typer(setup.app, name="setup")
+app.add_typer(vm.app, name="vm")
 app.command("pulse")(pulse.pulse)
 app.command("search")(search.search)
 app.command("exec-log")(exec_monitor.exec_log_command)
@@ -297,7 +309,6 @@ app.command("check", context_settings=_FORWARD_CONTEXT_SETTINGS, help=check.app.
 app.command("db", context_settings=_FORWARD_CONTEXT_SETTINGS, help=db.app.info.help)(db.db)
 app.command("browser", context_settings=_FORWARD_CONTEXT_SETTINGS, help=browser.app.info.help)(browser.browser)
 app.command("web", context_settings=_FORWARD_CONTEXT_SETTINGS, help=web.app.info.help)(web.web)
-app.command("vm", context_settings=_FORWARD_CONTEXT_SETTINGS, help=vm.app.info.help)(vm.vm)
 
 
 @app.command("progress", hidden=True)

@@ -7,7 +7,7 @@ import typer
 from .operator_forward import run_forwarded
 
 app = typer.Typer(
-    help="Database inspection and migration commands. Forwards to the managed db runner.",
+    help="Database inspection and migration commands through the managed st surface.",
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
 )
 
