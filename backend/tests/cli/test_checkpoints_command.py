@@ -190,3 +190,16 @@ def test_merge_task_branch_reports_conflict_paths(
     assert events == [
         ("task-1", "Merge conflict detected in 1 file(s): backend/app/example.py")
     ]
+
+
+def test_task_branch_resolution_supports_recovered_short_branch(
+    repo_with_checkpoints: Path,
+) -> None:
+    from cli.lib.checkpoint_branches import get_task_branches, resolve_task_branch
+
+    _git(repo_with_checkpoints, "branch", "task-short")
+
+    branches = get_task_branches("task-short", project_id="summitflow")
+
+    assert branches == [{"branch": "task-short", "subtask_id": "", "type": "task"}]
+    assert resolve_task_branch("task-short", project_id="summitflow") == "task-short"

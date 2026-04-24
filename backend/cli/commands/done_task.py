@@ -15,7 +15,7 @@ from .._client_base import APIError
 from ..client import STClient
 from ..lib.autosnapshot import capture_lifecycle_baseline
 from ..lib.checkpoint import get_snapshot_info, remove_snapshot
-from ..lib.checkpoint_branches import merge_task_branch
+from ..lib.checkpoint_branches import merge_task_branch, resolve_task_branch
 from ..output import output_error, output_success, output_warning
 from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
 from .done_lifecycle import (
@@ -199,7 +199,7 @@ def _perform_completion(
             base_branch = str(snapshot_info.get("base_branch") or "main")
             diff_result = check_diff_gate(
                 repo_root,
-                head_ref=f"{task_id}/main",
+                head_ref=resolve_task_branch(task_id, project_id=project_id),
                 base_ref=base_branch,
             )
             if not diff_result.passed:

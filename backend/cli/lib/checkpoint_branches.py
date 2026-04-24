@@ -145,6 +145,9 @@ def _branch_exists(branch: str, cwd: str | None = None) -> bool:
 
 def _classify_branch(branch: str) -> dict[str, str]:
     """Classify a task-family branch as task or subtask type."""
+    task_id = branch.split("/", 1)[0]
+    if branch == task_id:
+        return {"branch": branch, "subtask_id": "", "type": "task"}
     suffix = branch.split("/")[-1] if "/" in branch else ""
     if suffix == "main":
         return {"branch": branch, "subtask_id": "", "type": "task"}
@@ -155,16 +158,34 @@ def get_task_branches(task_id: str, project_id: str | None = None) -> list[dict[
     """List task-family branches for a checkpoint in the project's canonical repo."""
     branches: list[dict[str, str]] = []
     cwd = _get_repo_cwd(project_id)
-    try:
-        result = _run_git(["git", "branch", "--list", f"{task_id}/*"], cwd=cwd)
-    except subprocess.CalledProcessError:
-        return branches
+    seen: set[str] = set()
+    for pattern in (task_id, f"{task_id}/*"):
+        try:
+            result = _run_git(["git", "branch", "--list", pattern], cwd=cwd)
+        except subprocess.CalledProcessError:
+            continue
 
-    for line in result.stdout.splitlines():
-        branch = line.strip().lstrip("* ")
-        if branch:
-            branches.append(_classify_branch(branch))
+        for line in result.stdout.splitlines():
+            branch = line.strip().lstrip("*+ ")
+            if branch and branch not in seen:
+                seen.add(branch)
+                branches.append(_classify_branch(branch))
     return branches
+
+
+def resolve_task_branch(task_id: str, project_id: str | None = None) -> str:
+    """Return the concrete task branch name for a task id."""
+    cwd = _get_repo_cwd(project_id)
+    preferred = f"{task_id}/main"
+    if _branch_exists(preferred, cwd):
+        return preferred
+    if _branch_exists(task_id, cwd):
+        return task_id
+    task_branch = next(
+        (branch["branch"] for branch in get_task_branches(task_id, project_id=project_id) if branch.get("type") == "task"),
+        None,
+    )
+    return task_branch or preferred
 
 
 def create_subtask_branch(task_id: str, subtask_id: str) -> str:
@@ -181,7 +202,7 @@ def create_subtask_branch(task_id: str, subtask_id: str) -> str:
 def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None = None) -> bool:
     """Merge subtask branch into the task branch in the shared checkout."""
     subtask_branch = f"{task_id}/{subtask_id}"
-    task_branch = f"{task_id}/main"
+    task_branch = resolve_task_branch(task_id, project_id=project_id)
     cwd = _get_repo_cwd(project_id)
 
     if not _branch_exists(subtask_branch, cwd):

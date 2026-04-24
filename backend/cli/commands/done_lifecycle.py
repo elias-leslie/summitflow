@@ -48,7 +48,9 @@ def _task_branch_touched_frontend(
     if not frontend_cwd:
         return False
 
-    task_branch = f"{task_id}/main"
+    from ..lib.checkpoint_branches import resolve_task_branch
+
+    task_branch = resolve_task_branch(task_id, project_id=project_id)
     result = subprocess.run(
         ["git", "diff", "--name-only", f"{base_branch}...{task_branch}"],
         cwd=project_root,
@@ -84,8 +86,8 @@ def _reconstruct_snapshot_info(
     if not isinstance(project_id, str) or not project_id:
         return None
 
-    # Only recover for tasks that are actually in progress.
-    if task.get("status") not in ("in_progress", "claimed"):
+    # Recovered orphan branches may still be pending but need closeout.
+    if task.get("status") not in ("in_progress", "claimed", "pending"):
         return None
 
     branches = get_task_branches(task_id, project_id=project_id)
@@ -95,7 +97,7 @@ def _reconstruct_snapshot_info(
 
     base_branch = task.get("base_branch")
     if not isinstance(base_branch, str) or not base_branch:
-        return None
+        base_branch = "main"
 
     # Rebuild and persist the metadata so future commands work too.
     meta = SnapshotMeta(
