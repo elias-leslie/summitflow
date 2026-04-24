@@ -29,7 +29,7 @@ def test_build_partial_completion_verification_surfaces_commit_failure_detail() 
     failed = [
         _failed_subtask_result(
             "commit_failed",
-            "commit helper failed: /tmp/test-checkout/scripts/commit.sh --json --current --msg 'autocode(task-1): complete subtask 1.2' --task task-1 --push; stderr: changed_only_types failed for backend/app/foo.py",
+            "commit helper failed: st git commit --json --current --msg 'autocode(task-1): complete subtask 1.2' --task task-1 --push; stderr: changed_only_types failed for backend/app/foo.py",
         )
     ]
 
@@ -37,7 +37,7 @@ def test_build_partial_completion_verification_surfaces_commit_failure_detail() 
 
     reason = verification["failed_details"][0]["failure_reason"]
     assert "commit_failed" in reason
-    assert "/tmp/test-checkout/scripts/commit.sh" in reason
+    assert "st git commit" in reason
     assert "changed_only_types failed for backend/app/foo.py" in reason
 
 
@@ -46,12 +46,12 @@ def test_build_feedback_prompt_surfaces_timeout_output_detail() -> None:
 
     result = _failed_subtask_result(
         "timed_out",
-        "Last command `dt --check` timed out after 600s while backend/tests/api/test_tasks.py was still running.",
+        "Last command `st check --check` timed out after 600s while backend/tests/api/test_tasks.py was still running.",
     )
 
     prompt = build_feedback_prompt([result], "sess-feedback-1")
 
     assert "Failure:" in prompt
-    assert "dt --check" in prompt
+    assert "st check --check" in prompt
     assert "600s" in prompt
     assert "Affected steps: 0" in prompt

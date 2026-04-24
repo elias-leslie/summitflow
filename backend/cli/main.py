@@ -304,11 +304,11 @@ app.command("pulse")(pulse.pulse)
 app.command("search")(search.search)
 app.command("exec-log")(exec_monitor.exec_log_command)
 
-_FORWARD_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True}
-app.command("check", context_settings=_FORWARD_CONTEXT_SETTINGS, help=check.app.info.help)(check.check)
-app.command("db", context_settings=_FORWARD_CONTEXT_SETTINGS, help=db.app.info.help)(db.db)
-app.command("browser", context_settings=_FORWARD_CONTEXT_SETTINGS, help=browser.app.info.help)(browser.browser)
-app.command("web", context_settings=_FORWARD_CONTEXT_SETTINGS, help=web.app.info.help)(web.web)
+_FORWARD_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True, "help_option_names": []}
+app.command("check", context_settings=_FORWARD_CONTEXT_SETTINGS, help=check.app.info.help, add_help_option=False)(check.check)
+app.command("db", context_settings=_FORWARD_CONTEXT_SETTINGS, help=db.app.info.help, add_help_option=False)(db.db)
+app.command("browser", context_settings=_FORWARD_CONTEXT_SETTINGS, help=browser.app.info.help, add_help_option=False)(browser.browser)
+app.command("web", context_settings=_FORWARD_CONTEXT_SETTINGS, help=web.app.info.help, add_help_option=False)(web.web)
 
 
 @app.command("progress", hidden=True)

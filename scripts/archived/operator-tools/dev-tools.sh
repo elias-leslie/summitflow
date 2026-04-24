@@ -139,7 +139,7 @@ TOOL_REGISTRY="$SCRIPT_DIR/lib/tool-registry.json"
 if [[ "${1:-}" == "cleanroom" ]]; then
     ACTION="cleanroom"; shift
 elif [ -n "${1:-}" ] && [ -f "$TOOL_REGISTRY" ]; then
-    REGISTRY_TOOL_NAMES=$(jq -r '.tools[] | select(.dt) | .name' "$TOOL_REGISTRY" 2>/dev/null | tr '\n' '|')
+    REGISTRY_TOOL_NAMES=$(jq -r '.tools[] | select(.check // .dt) | .name' "$TOOL_REGISTRY" 2>/dev/null | tr '\n' '|')
     REGISTRY_TOOL_NAMES="${REGISTRY_TOOL_NAMES%|}"  # strip trailing pipe
     if [ -n "$REGISTRY_TOOL_NAMES" ] && echo "$1" | grep -qE "^(${REGISTRY_TOOL_NAMES})$"; then
         ACTION="tool_toon"; TOOL_NAME="$1"; shift
@@ -1032,15 +1032,15 @@ if [ -f "$TOOL_REGISTRY" ]; then
             continue
         fi
         TOOL_DEFS[$name]="${label}|${binary}|${args}|${count_method}|${working_dir}|${fallback_global}|${pass_path}"
-    done < <(jq -r '.tools[] | select(.dt) | [
+    done < <(jq -r '.tools[] | select(.check // .dt) | [
         .name,
-        .dt.label,
-        .dt.binary,
-        .dt.args,
-        .dt.count_method,
-        .dt.working_dir,
-        (if .dt.fallback_global then "1" else "0" end),
-        (if .dt.pass_path then "1" else "0" end)
+        (.check // .dt).label,
+        (.check // .dt).binary,
+        (.check // .dt).args,
+        (.check // .dt).count_method,
+        (.check // .dt).working_dir,
+        (if (.check // .dt).fallback_global then "1" else "0" end),
+        (if (.check // .dt).pass_path then "1" else "0" end)
     ] | join("|")' "$TOOL_REGISTRY")
     if [[ ${#REGISTRY_DUPLICATES[@]} -gt 0 ]]; then
         mapfile -t _unique_registry_duplicates < <(printf '%s\n' "${REGISTRY_DUPLICATES[@]}" | sort -u)

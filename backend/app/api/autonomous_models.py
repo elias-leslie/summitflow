@@ -90,7 +90,7 @@ class AutonomousSettings(BaseModel):
         default="quick", description="Quality gate mode: quick, check, or changed-only"
     )
     quality_gate_fix_enabled: bool = Field(
-        default=True, description="Allow dt --fix during self-heal"
+        default=True, description="Allow st check --fix during self-heal"
     )
 
 

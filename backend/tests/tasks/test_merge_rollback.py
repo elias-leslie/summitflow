@@ -21,19 +21,19 @@ from app.tasks.autonomous.cleanup.validation import (
 class TestPostMergeValidation:
     """Tests for post-merge quality checks."""
 
-    @patch("app.tasks.autonomous.cleanup.validation.build_dt_command")
-    @patch("app.tasks.autonomous.cleanup.validation.find_dev_tools")
+    @patch("app.tasks.autonomous.cleanup.validation.build_st_check_command")
+    @patch("app.tasks.autonomous.cleanup.validation.find_check_tool")
     @patch("app.storage.log_task_event")
     @patch("subprocess.run")
     def test_passes_when_dt_succeeds(
         self,
         mock_run: MagicMock,
         mock_log: MagicMock,
-        mock_find_dt: MagicMock,
+        mock_find_st: MagicMock,
         mock_build_cmd: MagicMock,
     ) -> None:
-        mock_find_dt.return_value = "/mock/dt"
-        mock_build_cmd.return_value = ["/mock/dt", "--quick"]
+        mock_find_st.return_value = "/mock/st"
+        mock_build_cmd.return_value = ["/mock/st", "check", "--quick"]
         mock_run.return_value = MagicMock(returncode=0, stdout="OK", stderr="")
 
         result = run_post_merge_validation("task-1", "/tmp/project", "test-project")
@@ -45,23 +45,23 @@ class TestPostMergeValidation:
             "detail": None,
         }
         mock_run.assert_called_once_with(
-            ["/mock/dt", "--quick"],
+            ["/mock/st", "check", "--quick"],
             cwd="/tmp/project",
             capture_output=True,
             text=True,
             timeout=120,
         )
 
-    @patch("app.tasks.autonomous.cleanup.validation.find_dev_tools")
+    @patch("app.tasks.autonomous.cleanup.validation.find_check_tool")
     @patch("app.storage.log_task_event")
     @patch("subprocess.run")
     def test_skips_when_dt_is_unavailable(
         self,
         mock_run: MagicMock,
         mock_log: MagicMock,
-        mock_find_dt: MagicMock,
+        mock_find_st: MagicMock,
     ) -> None:
-        mock_find_dt.return_value = None
+        mock_find_st.return_value = None
 
         result = run_post_merge_validation("task-1", "/tmp/project", "test-project")
 
@@ -69,24 +69,24 @@ class TestPostMergeValidation:
             "status": "skipped",
             "passed": True,
             "should_rollback": False,
-            "detail": "dt not available",
+            "detail": "st check not available",
         }
         mock_run.assert_not_called()
-        mock_log.assert_called_once_with("task-1", "Post-merge validation: SKIPPED - dt not available")
+        mock_log.assert_called_once_with("task-1", "Post-merge validation: SKIPPED - st check not available")
 
-    @patch("app.tasks.autonomous.cleanup.validation.build_dt_command")
-    @patch("app.tasks.autonomous.cleanup.validation.find_dev_tools")
+    @patch("app.tasks.autonomous.cleanup.validation.build_st_check_command")
+    @patch("app.tasks.autonomous.cleanup.validation.find_check_tool")
     @patch("app.storage.log_task_event")
     @patch("subprocess.run")
     def test_fails_when_dt_fails(
         self,
         mock_run: MagicMock,
         mock_log: MagicMock,
-        mock_find_dt: MagicMock,
+        mock_find_st: MagicMock,
         mock_build_cmd: MagicMock,
     ) -> None:
-        mock_find_dt.return_value = "/mock/dt"
-        mock_build_cmd.return_value = ["/mock/dt", "--quick"]
+        mock_find_st.return_value = "/mock/st"
+        mock_build_cmd.return_value = ["/mock/st", "check", "--quick"]
         mock_run.return_value = MagicMock(returncode=1, stdout="FAIL", stderr="error")
 
         result = run_post_merge_validation("task-1", "/tmp/project", "test-project")
@@ -96,20 +96,20 @@ class TestPostMergeValidation:
         assert result["should_rollback"] is True
         mock_log.assert_called()
 
-    @patch("app.tasks.autonomous.cleanup.validation.build_dt_command")
-    @patch("app.tasks.autonomous.cleanup.validation.find_dev_tools")
+    @patch("app.tasks.autonomous.cleanup.validation.build_st_check_command")
+    @patch("app.tasks.autonomous.cleanup.validation.find_check_tool")
     @patch("app.storage.log_task_event")
     @patch("subprocess.run")
     def test_fails_on_timeout(
         self,
         mock_run: MagicMock,
         mock_log: MagicMock,
-        mock_find_dt: MagicMock,
+        mock_find_st: MagicMock,
         mock_build_cmd: MagicMock,
     ) -> None:
-        mock_find_dt.return_value = "/mock/dt"
-        mock_build_cmd.return_value = ["/mock/dt", "--quick"]
-        mock_run.side_effect = subprocess.TimeoutExpired("dt", 120)
+        mock_find_st.return_value = "/mock/st"
+        mock_build_cmd.return_value = ["/mock/st", "check", "--quick"]
+        mock_run.side_effect = subprocess.TimeoutExpired("st", 120)
 
         result = run_post_merge_validation("task-1", "/tmp/project", "test-project")
 
@@ -120,20 +120,20 @@ class TestPostMergeValidation:
             "detail": "validation timed out after 120s",
         }
 
-    @patch("app.tasks.autonomous.cleanup.validation.build_dt_command")
-    @patch("app.tasks.autonomous.cleanup.validation.find_dev_tools")
+    @patch("app.tasks.autonomous.cleanup.validation.build_st_check_command")
+    @patch("app.tasks.autonomous.cleanup.validation.find_check_tool")
     @patch("app.storage.log_task_event")
     @patch("subprocess.run")
     def test_skips_when_resolved_dt_disappears(
         self,
         mock_run: MagicMock,
         mock_log: MagicMock,
-        mock_find_dt: MagicMock,
+        mock_find_st: MagicMock,
         mock_build_cmd: MagicMock,
     ) -> None:
-        mock_find_dt.return_value = "/mock/dt"
-        mock_build_cmd.return_value = ["/mock/dt", "--quick"]
-        mock_run.side_effect = FileNotFoundError("dt not found")
+        mock_find_st.return_value = "/mock/st"
+        mock_build_cmd.return_value = ["/mock/st", "check", "--quick"]
+        mock_run.side_effect = FileNotFoundError("st not found")
 
         result = run_post_merge_validation("task-1", "/tmp/project", "test-project")
 

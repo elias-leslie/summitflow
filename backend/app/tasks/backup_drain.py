@@ -3,23 +3,18 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
-from ..utils.shared_paths import resolve_script
-from .backup_utils import build_storage_env
+from .backup_native import drain_pending_archives
 
 logger = get_logger(__name__)
 
-PENDING_UPLOAD_SCRIPT = resolve_script("backup-pending-upload.sh")
-DRAIN_TIMEOUT = 600
-
 
 def drain_pending_backups(dry_run: bool = False) -> dict[str, Any]:
-    """Upload pending backups via backup-pending-upload.sh, then reconcile DB records.
+    """Upload pending backups through the native backup engine, then reconcile DB records.
 
     Args:
         dry_run: If True, only report what would be drained without uploading.
@@ -57,56 +52,23 @@ def drain_pending_backups(dry_run: bool = False) -> dict[str, Any]:
             ],
         }
 
-    # Run the upload script
-    upload_result = _run_upload_script()
+    upload_result = drain_pending_archives(dry_run=False)
 
     # Reconcile: check which pending backups are no longer in the pending dir
     promoted = _reconcile_pending_records(pending_before)
 
     pending_after = backup_store.get_pending_upload_backups()
+    upload_status = str(upload_result.get("status") or "")
 
     return {
-        "status": "success" if upload_result["ok"] else "partial",
+        "status": "success" if upload_status == "success" else "partial",
         "message": upload_result.get("message", "Drain completed"),
         "pending_before": pending_count,
         "uploaded": upload_result.get("uploaded", 0),
         "promoted": promoted,
         "remaining": len(pending_after),
-        "script_output": upload_result.get("output", "")[-500:],
+        "script_output": "",
     }
-
-
-def _run_upload_script() -> dict[str, Any]:
-    """Execute backup-pending-upload.sh and return result."""
-    if not PENDING_UPLOAD_SCRIPT.exists():
-        logger.error("pending_upload_script_missing", path=str(PENDING_UPLOAD_SCRIPT))
-        return {"ok": False, "message": f"Script not found: {PENDING_UPLOAD_SCRIPT}"}
-
-    # Resolve default storage backend for pending uploads
-    env = {**os.environ, **build_storage_env("default")}
-
-    try:
-        result = subprocess.run(
-            ["bash", str(PENDING_UPLOAD_SCRIPT)],
-            capture_output=True,
-            text=True,
-            timeout=DRAIN_TIMEOUT,
-            env=env,
-        )
-        ok = result.returncode == 0
-        output = result.stdout + result.stderr
-        logger.info(
-            "pending_upload_script_result",
-            returncode=result.returncode,
-            output_len=len(output),
-        )
-        return {"ok": ok, "output": output, "message": "Upload script completed" if ok else "Upload script failed"}
-    except subprocess.TimeoutExpired:
-        logger.error("pending_upload_script_timeout")
-        return {"ok": False, "message": f"Upload script timed out after {DRAIN_TIMEOUT}s"}
-    except Exception as e:
-        logger.error("pending_upload_script_error", error=str(e))
-        return {"ok": False, "message": str(e)}
 
 
 def _reconcile_pending_records(pending_records: list[dict[str, Any]]) -> int:

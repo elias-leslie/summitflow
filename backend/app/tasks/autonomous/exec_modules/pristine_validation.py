@@ -23,7 +23,7 @@ def validate_pristine_codebase(task_id: str, project_id: str) -> bool:
         True if pristine or successfully healed, False if blocked
     """
     try:
-        emit_log(task_id, "info", "Running pristine check (dt --check)...", project_id=project_id)
+        emit_log(task_id, "info", "Running pristine check (st check --check)...", project_id=project_id)
         check_pristine_codebase(project_id)
         emit_log(task_id, "info", "Pristine check passed", project_id=project_id)
         return True

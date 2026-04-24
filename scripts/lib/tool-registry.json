@@ -6,7 +6,7 @@
     {
       "id": "service",
       "canonical": "st service",
-      "legacy": ["rebuild.sh", "status.sh", "start.sh", "restart.sh", "shutdown.sh"],
+      "replaces": ["rebuild.sh", "status.sh", "start.sh", "restart.sh", "shutdown.sh"],
       "summary": "Project service lifecycle, rebuild, migrations, systemd sync, and health checks.",
       "safety": "mutating",
       "commands": ["status", "rebuild", "restart", "start", "stop"],
@@ -16,17 +16,17 @@
     {
       "id": "check",
       "canonical": "st check",
-      "legacy": ["dt", "dev-tools.sh"],
+      "replaces": ["dt", "dev-tools.sh"],
       "summary": "Quality gates and tool wrappers with TOON output.",
       "safety": "read-mostly",
-      "commands": ["--check", "--quick", "pytest", "ruff", "types", "biome", "tsc", "vitest"],
-      "examples": ["st check --quick --changed-only", "st check pytest -- backend/tests/cli/test_tools_cli.py"],
-      "verify": ["dt --help", "st check --help"]
+      "commands": ["--check", "--quick", "cleanroom", "pytest", "ruff", "types", "biome", "tsc", "vitest"],
+      "examples": ["st check --quick --changed-only", "st check cleanroom -- bash scripts/install.sh --skip-systemd", "st check pytest -- backend/tests/cli/test_tools_cli.py"],
+      "verify": ["st check --help"]
     },
     {
       "id": "db",
       "canonical": "st db",
-      "legacy": ["db"],
+      "replaces": ["db"],
       "summary": "Cross-project PostgreSQL inspection and Alembic migration operations.",
       "safety": "mixed",
       "commands": ["tables", "schema", "count", "sample", "query", "exec", "ddl", "migrate"],
@@ -36,7 +36,7 @@
     {
       "id": "git",
       "canonical": "st git",
-      "legacy": ["commit.sh"],
+      "replaces": ["commit.sh"],
       "summary": "Managed repository status, sync, task finalization, and commit workflow.",
       "safety": "mutating",
       "commands": ["status", "sync", "finalize-task", "commit"],
@@ -46,7 +46,7 @@
     {
       "id": "browser",
       "canonical": "st browser",
-      "legacy": ["sf-browser"],
+      "replaces": ["sf-browser"],
       "summary": "Remote browser health, responsive checks, screenshots, snapshots, and DOM evaluation.",
       "safety": "external",
       "commands": ["health", "check", "open", "screenshot", "snapshot", "eval"],
@@ -56,7 +56,7 @@
     {
       "id": "web",
       "canonical": "st web",
-      "legacy": ["web-research"],
+      "replaces": ["web-research"],
       "summary": "Centralized public web search, research, and fetch through Agent Hub.",
       "safety": "external",
       "commands": ["search", "research", "fetch"],
@@ -66,7 +66,7 @@
     {
       "id": "backup",
       "canonical": "st backup",
-      "legacy": ["backup.sh", "restore.sh", "backup-all.sh", "backup-pending-upload.sh"],
+      "replaces": ["backup.sh", "restore.sh", "backup-all.sh", "backup-pending-upload.sh"],
       "summary": "Project/source backup creation, restore preview, schedules, pending drain, and infra backups.",
       "safety": "destructive-with-confirmation",
       "commands": ["list", "create", "restore", "archives", "all", "status", "delete", "drain-pending", "infra", "storage", "testbed"],
@@ -76,7 +76,7 @@
     {
       "id": "vm",
       "canonical": "st vm",
-      "legacy": ["proxmox-vm.sh"],
+      "replaces": ["proxmox-vm.sh"],
       "summary": "Proxmox test VM list/status/snapshot/rollback/clone/start/stop/destroy/ip.",
       "safety": "destructive-with-confirmation",
       "commands": ["list", "status", "snapshots", "snapshot", "rollback", "clone", "start", "stop", "destroy", "ip"],
@@ -86,7 +86,7 @@
     {
       "id": "setup",
       "canonical": "st setup",
-      "legacy": ["setup-services.sh", "setup-agent-browser.sh", "setup-agent-tooling.sh", "setup-test-dbs.sh"],
+      "replaces": ["setup-services.sh", "setup-agent-browser.sh", "setup-agent-tooling.sh", "setup-test-dbs.sh"],
       "summary": "Install, PATH, browser, agent tooling, and test database setup.",
       "safety": "mutating",
       "commands": ["services", "browser", "agent-tooling", "test-dbs"],
@@ -95,23 +95,20 @@
     }
   ],
   "wrapper_allowlist": [
-    "dt\\b",
-    "dev-tools\\.sh\\b",
     "st\\b",
-    "db\\b",
     "st\\s+docker\\b"
   ],
   "tools": [
     {
       "name": "pytest",
-      "component_id": "sf.dt",
+      "component_id": "sf.check",
       "redirect_patterns": [
         "(\\.venv/bin/)?pytest\\b",
         "python[0-9.]*\\s+-m\\s+pytest\\b",
         "\\.venv/bin/python.*-m\\s+pytest\\b"
       ],
       "redirect_message": "Use 'st check pytest [args]' — handles venv, TOON output, and project resolution.",
-      "dt": {
+      "check": {
         "label": "TEST",
         "binary": "pytest",
         "args": "--tb=short -q",
@@ -123,13 +120,13 @@
     },
     {
       "name": "types",
-      "component_id": "sf.dt",
+      "component_id": "sf.check",
       "redirect_patterns": [
         "(\\.venv/bin/)?mypy\\b",
         "(\\.venv/bin/)?\\bty\\b"
       ],
       "redirect_message": "Use 'st check types [args]' — handles venv, TOON output, and project resolution.",
-      "dt": {
+      "check": {
         "label": "TYPES",
         "binary": "ty",
         "args": "check --output-format concise",
@@ -141,12 +138,12 @@
     },
     {
       "name": "ruff",
-      "component_id": "sf.dt",
+      "component_id": "sf.check",
       "redirect_patterns": [
         "(\\.venv/bin/)?ruff\\b"
       ],
       "redirect_message": "Use 'st check ruff [args]' — handles venv, TOON output, and project resolution.",
-      "dt": {
+      "check": {
         "label": "LINT",
         "binary": "ruff",
         "args": "check --output-format=concise",
@@ -158,12 +155,12 @@
     },
   {
     "name": "biome",
-      "component_id": "sf.dt",
+      "component_id": "sf.check",
       "redirect_patterns": [
         "(npx\\s+)?biome\\b"
       ],
       "redirect_message": "Use 'st check biome [args]' — handles TOON output and project detection.",
-    "dt": {
+    "check": {
       "label": "BIOME",
       "binary": "npx",
       "args": "biome check . --max-diagnostics=100",
@@ -175,12 +172,12 @@
     },
   {
     "name": "tsc",
-      "component_id": "sf.dt",
+      "component_id": "sf.check",
       "redirect_patterns": [
         "(npx\\s+)?tsc\\b"
       ],
       "redirect_message": "Use 'st check tsc' — handles TOON output and project detection.",
-    "dt": {
+    "check": {
       "label": "TSC",
       "binary": "npx",
       "args": "tsc --noEmit",
@@ -192,12 +189,12 @@
     },
   {
     "name": "vitest",
-      "component_id": "sf.dt",
+      "component_id": "sf.check",
       "redirect_patterns": [
         "(npx\\s+|pnpm(?:\\s+exec)?\\s+)?vitest\\b"
       ],
       "redirect_message": "Use 'st check vitest [args]' — handles project detection and TOON output.",
-    "dt": {
+    "check": {
       "label": "VITEST",
       "binary": "vitest",
       "args": "run",
@@ -209,12 +206,12 @@
     },
     {
       "name": "sqlfluff",
-      "component_id": "sf.dt",
+      "component_id": "sf.check",
       "redirect_patterns": [
         "(\\.venv/bin/)?sqlfluff\\b"
       ],
       "redirect_message": "Use 'st check sqlfluff' — handles venv, TOON output, project detection.",
-      "dt": {
+      "check": {
         "label": "SQLFLUFF",
         "binary": "sqlfluff",
         "args": "lint --dialect postgres",
@@ -226,12 +223,12 @@
     },
     {
       "name": "squawk",
-      "component_id": "sf.dt",
+      "component_id": "sf.check",
       "redirect_patterns": [
         "squawk\\b"
       ],
       "redirect_message": "Use 'st check squawk' — handles TOON output and project detection.",
-      "dt": {
+      "check": {
         "label": "SQUAWK",
         "binary": "squawk",
         "args": "",
@@ -250,6 +247,16 @@
     }
   ],
   "service_redirects": [
+    {
+      "pattern": "dt\\b|dev-tools\\.sh\\b",
+      "message": "Use 'st check' instead of legacy dt/dev-tools.sh.",
+      "component_id": "sf.check"
+    },
+    {
+      "pattern": "db\\b",
+      "message": "Use 'st db' instead of legacy db.",
+      "component_id": "sf.storage"
+    },
     {
       "pattern": "(rebuild|restart|status|start|shutdown|stop)\\.sh\\b",
       "message": "Use 'st service status|rebuild|restart|start|stop' instead of legacy service scripts.",

@@ -6,10 +6,10 @@ import subprocess
 from typing import Literal, TypedDict
 
 from app.storage import tasks as task_store
-from app.storage.agent_configs_quality import build_dt_command
+from app.storage.agent_configs_quality import build_st_check_command
 
 from ....logging_config import get_logger
-from ..exec_modules.quality_utils import find_dev_tools
+from ..exec_modules.quality_utils import find_check_tool
 from .git_operations import revert_merge_commit
 
 logger = get_logger(__name__)
@@ -63,26 +63,26 @@ def _log_validation_skip(task_id: str, reason: str) -> None:
     )
 
 
-def _resolve_dt_command(project_id: str) -> list[str] | None:
-    """Return the configured dt command for post-merge validation."""
-    dt_cmd = find_dev_tools()
-    if not dt_cmd:
+def _resolve_check_command(project_id: str) -> list[str] | None:
+    """Return the configured st check command for post-merge validation."""
+    st_cmd = find_check_tool()
+    if not st_cmd:
         return None
-    return build_dt_command(dt_cmd, project_id)
+    return build_st_check_command(st_cmd, project_id)
 
 
-def _run_dt_quick(
+def _run_check_quick(
     project_root: str,
     task_id: str,
     project_id: str,
 ) -> PostMergeValidationResult:
-    """Run configured dt validation and classify the outcome."""
+    """Run configured st check validation and classify the outcome."""
     from app.storage import log_task_event
 
-    cmd = _resolve_dt_command(project_id)
+    cmd = _resolve_check_command(project_id)
     if not cmd:
-        _log_validation_skip(task_id, "dt not available")
-        return _skipped_result("dt not available")
+        _log_validation_skip(task_id, "st check not available")
+        return _skipped_result("st check not available")
 
     result = subprocess.run(
         cmd,
@@ -120,7 +120,7 @@ def run_post_merge_validation(
     from app.storage import log_task_event
 
     try:
-        return _run_dt_quick(project_root, task_id, project_id)
+        return _run_check_quick(project_root, task_id, project_id)
     except subprocess.TimeoutExpired:
         log_task_event(task_id, "Post-merge validation: TIMEOUT (120s)")
         logger.warning("Post-merge validation timed out", extra={"task_id": task_id})

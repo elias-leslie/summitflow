@@ -189,8 +189,8 @@ from ._runtime_control import (  # noqa: E402,F401
     _helper_image_ref,
     _launch_runtime_switch,
     _persisted_runtime_mode,
-    _rebuild_script_path,
     _service_action,
+    _st_cli_path,
     _systemd_service_action,
     _write_runtime_mode,
 )

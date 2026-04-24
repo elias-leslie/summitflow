@@ -78,7 +78,7 @@ class TestDeployAndVerify:
         import subprocess
 
         mock_root.return_value = "/home/user/summitflow"
-        mock_run.side_effect = subprocess.TimeoutExpired("rebuild.sh", 300)
+        mock_run.side_effect = subprocess.TimeoutExpired("st service rebuild", 300)
 
         _deploy_and_verify("task-1", "summitflow")
 

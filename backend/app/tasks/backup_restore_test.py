@@ -18,7 +18,7 @@ def test_restore_for_source(source_id: str) -> dict[str, Any]:
     """Run a dry-run restore of the latest backup for a source and record the result.
 
     For infrastructure sources (no project dir), verifies the archive is
-    accessible on SMB and passes integrity check instead of running restore.sh.
+    accessible on SMB and passes integrity check instead of running a file restore.
 
     Args:
         source_id: Backup source ID to test.

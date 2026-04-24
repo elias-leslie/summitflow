@@ -137,8 +137,6 @@ run_user_systemctl() {
 
 install_cli_links() {
     local summitflow_st="$SUMMITFLOW_DIR/backend/.venv/bin/st"
-    local summitflow_dt="$SUMMITFLOW_DIR/scripts/dev-tools.sh"
-    local agent_hub_root=""
     local a_term_root=""
     local script_name=""
     local link_path=""
@@ -149,17 +147,6 @@ install_cli_links() {
     if [ -x "$summitflow_st" ]; then
         ln -sfnT "$summitflow_st" "$BIN_DIR/st"
         echo "  Linked st -> $summitflow_st"
-    fi
-
-    if [ -f "$summitflow_dt" ]; then
-        ln -sfnT "$summitflow_dt" "$BIN_DIR/dt"
-        echo "  Linked dt -> $summitflow_dt"
-    fi
-
-    agent_hub_root="$(resolve_project_root agent-hub 2>/dev/null || true)"
-    if [ -n "$agent_hub_root" ] && [ -f "$agent_hub_root/scripts/db.sh" ]; then
-        ln -sfnT "$agent_hub_root/scripts/db.sh" "$BIN_DIR/db"
-        echo "  Linked db -> $agent_hub_root/scripts/db.sh"
     fi
 
     a_term_root="$(resolve_project_root a-term 2>/dev/null || true)"
@@ -176,7 +163,7 @@ install_cli_links() {
         echo "  Linked tsession -> $a_term_root/scripts/tsession"
     fi
 
-    for script_name in rebuild.sh commit.sh start.sh status.sh stop.sh shutdown.sh backup.sh backup-all.sh restore.sh setup-services.sh update-gh.sh; do
+    for script_name in rebuild.sh commit.sh start.sh status.sh stop.sh shutdown.sh backup.sh backup-all.sh restore.sh setup-services.sh update-gh.sh dt db web-research a-term-start.sh a-term-stop.sh; do
         link_path="$BIN_DIR/$script_name"
         if [ -L "$link_path" ]; then
             link_target="$(readlink -f "$link_path" 2>/dev/null || true)"

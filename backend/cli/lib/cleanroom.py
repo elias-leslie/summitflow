@@ -51,6 +51,8 @@ def _git_snapshot_paths(project_root: Path) -> list[Path]:
 
 def _copy_snapshot_entry(project_root: Path, snapshot_root: Path, relative_path: Path) -> None:
     source = project_root / relative_path
+    if not source.exists() and not source.is_symlink():
+        return
     destination = snapshot_root / relative_path
     destination.parent.mkdir(parents=True, exist_ok=True)
 
@@ -71,7 +73,7 @@ def initialize_snapshot_git(snapshot_root: Path) -> None:
     """Create a minimal git repo so repo-root-aware commands still work."""
     subprocess.run(["git", "init", "-q"], cwd=snapshot_root, check=True)
     subprocess.run(
-        ["git", "config", "user.name", "dt cleanroom"],
+        ["git", "config", "user.name", "st check cleanroom"],
         cwd=snapshot_root,
         check=True,
     )

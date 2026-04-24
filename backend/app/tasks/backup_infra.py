@@ -2,29 +2,19 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
-
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..storage.notifications import create_notification
-from ..utils.shared_paths import get_repo_root, resolve_script
 from .backup_lock import acquire_backup_lock, release_backup_lock
+from .backup_native import INFRA_BACKUP_TIMEOUT, run_infra_backup
 from .backup_utils import (
     as_mapping,
-    build_script_error_message,
     build_verification_kwargs,
     get_int_field,
     get_str_field,
-    parse_backup_output,
 )
 
 logger = get_logger(__name__)
-
-_HOST_ROOT = os.environ.get("BACKUP_HOST_ROOT")
-INFRA_BACKUP_SCRIPT = resolve_script("infra-backup.sh")
-INFRA_BACKUP_TIMEOUT = 900  # 15 minutes — pg_dumpall can be slow
-
 
 def create_infra_backup(
     source_id: str = "infrastructure",
@@ -33,10 +23,7 @@ def create_infra_backup(
     keep_local: bool = False,
     retention_days: int | None = None,
 ) -> dict[str, object]:
-    """Create an infrastructure backup (pg_dumpall + configs).
-
-    Same lock/record/subprocess/parse pattern as backup_executor.py.
-    """
+    """Create an infrastructure backup (pg_dumpall + configs)."""
     logger.info("create_infra_backup_started", source_id=source_id, backup_type=backup_type)
 
     if not acquire_backup_lock(source_id):
@@ -66,36 +53,15 @@ def _run_infra_backup(
     backup_id = backup_record["id"]
     backup_store.update_backup_status(backup_id, "running")
 
-    cmd = ["bash", str(INFRA_BACKUP_SCRIPT)]
-    if keep_local:
-        cmd.append("--keep-local")
-    if retention_days is not None:
-        cmd.extend(["--retention-days", str(retention_days)])
-
-    # Set env for Docker pg_dumpall
-    env = dict(os.environ)
-    if _HOST_ROOT:
-        env["PROJECT_DIR"] = str(get_repo_root())
-
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=INFRA_BACKUP_TIMEOUT, env=env
+        parsed_output = run_infra_backup(
+            keep_local=keep_local,
+            retention_days=retention_days,
         )
-        parsed_output = parse_backup_output(result.stdout)
-
-        if result.returncode == 0:
-            if parsed_output.get("pending_path"):
-                return _handle_pending(backup_id, parsed_output)
-            return _handle_success(backup_id, parsed_output)
-
-        if parsed_output.get("pending_path") or "SMB unavailable" in result.stdout:
+        if parsed_output.get("pending_path"):
             return _handle_pending(backup_id, parsed_output)
-
-        error_msg = build_script_error_message(result)
-        logger.error("create_infra_backup_script_failed", backup_id=backup_id, error=error_msg[:200])
-        return _handle_failure(backup_id, error_msg)
-
-    except subprocess.TimeoutExpired:
+        return _handle_success(backup_id, parsed_output)
+    except TimeoutError:
         return _handle_failure(backup_id, f"Infrastructure backup timed out after {INFRA_BACKUP_TIMEOUT // 60} minutes")
     except Exception as e:
         return _handle_failure(backup_id, str(e))

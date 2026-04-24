@@ -113,9 +113,9 @@ def sync(
         typer.Option("--triggered-by", "-b", help="What triggered the check (commit, manual, ci, agent)"),
     ] = "commit",
 ) -> None:
-    """Sync a quality check result from dt output.
+    """Sync a quality check result from st check output.
 
-    Typically called by dt (dev-tools.sh) after running checks. Records
+    Typically called by st check after running checks. Records
     results in the quality_check_results table.
 
     Examples:
