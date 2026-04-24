@@ -28,6 +28,7 @@ from .helpers import (
     _systemctl_user_env,
     _write_runtime_mode,
 )
+from .live_sessions import router as live_sessions_router
 from .models import (
     ActionResult,
     HealthSummary,
@@ -38,6 +39,7 @@ from .models import (
 )
 
 router = APIRouter()
+router.include_router(live_sessions_router, prefix="/live-sessions", tags=["live-sessions"])
 
 
 @router.get("/status", response_model=list[RuntimeServiceStatus])

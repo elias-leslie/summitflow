@@ -542,3 +542,81 @@ class TestDockerRuntime:
                 }
             ],
         }
+
+    def test_live_session_create_uses_internal_browser_target(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api.docker import live_sessions
+
+        live_sessions._LIVE_SESSIONS.clear()
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        mocker.patch(
+            "app.api.docker.live_sessions._create_browser_target",
+            new=mocker.AsyncMock(
+                return_value={
+                    "id": "target-1",
+                    "webSocketDebuggerUrl": "ws://browser/devtools/page/target-1",
+                }
+            ),
+        )
+        mocker.patch(
+            "app.api.docker.live_sessions._configure_viewport",
+            new=mocker.AsyncMock(),
+        )
+        mocker.patch(
+            "app.api.docker.live_sessions._refresh_page_metadata",
+            new=mocker.AsyncMock(),
+        )
+
+        response = client.post(
+            "/api/docker/live-sessions",
+            json={"target_url": "https://www.amazon.com/photos/all"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["kind"] == "browser"
+        assert body["state"] == "active"
+        assert body["sensitive"] is True
+        assert body["target_url"] == "https://www.amazon.com/photos/all"
+        assert "webSocketDebuggerUrl" not in body
+        assert "ws://" not in response.text
+
+    def test_live_session_text_control_does_not_echo_input(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api.docker import live_sessions
+
+        live_sessions._LIVE_SESSIONS.clear()
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        now = live_sessions._now()
+        live_sessions._LIVE_SESSIONS["session-1"] = live_sessions._ManagedLiveSession(
+            id="session-1",
+            kind="browser",
+            target_url="https://www.amazon.com/photos/all",
+            target_id="target-1",
+            ws_url="ws://browser/devtools/page/target-1",
+            created_at=now,
+            expires_at=now + live_sessions.timedelta(minutes=5),
+            viewport_width=1440,
+            viewport_height=900,
+        )
+        cdp_call = mocker.patch(
+            "app.api.docker.live_sessions._cdp_call",
+            new=mocker.AsyncMock(return_value={}),
+        )
+        mocker.patch(
+            "app.api.docker.live_sessions._refresh_page_metadata",
+            new=mocker.AsyncMock(),
+        )
+
+        response = client.post(
+            "/api/docker/live-sessions/session-1/control",
+            json={"action": "text", "text": "dont-echo-this"},
+        )
+
+        assert response.status_code == 200
+        assert "dont-echo-this" not in response.text
+        assert cdp_call.await_count == 2

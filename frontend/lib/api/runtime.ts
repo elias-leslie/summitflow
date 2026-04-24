@@ -95,6 +95,39 @@ export interface MaintenanceStatus {
   recent: MaintenanceRun[]
 }
 
+export interface LiveSessionStatus {
+  id: string
+  kind: 'browser'
+  state: 'active' | 'expired' | 'closed'
+  target_url: string
+  current_url: string | null
+  title: string | null
+  sensitive: boolean
+  created_at: string
+  expires_at: string
+  viewport_width: number
+  viewport_height: number
+  control_policy: string
+  capture_policy: string
+}
+
+export interface LiveSessionFrame {
+  session_id: string
+  captured_at: string
+  image_data_url: string
+  viewport_width: number
+  viewport_height: number
+  sensitive: boolean
+}
+
+export type LiveSessionControl =
+  | { action: 'click'; x: number; y: number }
+  | { action: 'key'; key: string }
+  | { action: 'text'; text: string }
+  | { action: 'wheel'; x: number; y: number; delta_x: number; delta_y: number }
+  | { action: 'navigate'; target_url: string }
+  | { action: 'resize'; viewport_width: number; viewport_height: number }
+
 function apiUrl(path: string): string {
   // Keep runtime traffic same-origin so Next can proxy protected actions/logs
   // and inject the internal service secret server-side, including SSE requests.
@@ -172,6 +205,62 @@ export const runtimeApi = {
       apiUrl('/api/docker/runtime'),
       { mode },
       'Failed to switch runtime mode',
+    ),
+
+  listLiveSessions: () =>
+    fetchWithErrorHandling<LiveSessionStatus[]>(
+      apiUrl('/api/docker/live-sessions'),
+      {
+        errorMessage: 'Failed to fetch live sessions',
+      },
+    ),
+  createLiveSession: (
+    targetUrl = 'https://www.amazon.com/photos/all',
+    viewportWidth = 1440,
+    viewportHeight = 900,
+  ) =>
+    postJson<LiveSessionStatus>(
+      apiUrl('/api/docker/live-sessions'),
+      {
+        kind: 'browser',
+        target_url: targetUrl,
+        viewport_width: viewportWidth,
+        viewport_height: viewportHeight,
+      },
+      'Failed to create live browser session',
+    ),
+  getLiveSession: (sessionId: string) =>
+    fetchWithErrorHandling<LiveSessionStatus>(
+      apiUrl(`/api/docker/live-sessions/${sessionId}`),
+      {
+        errorMessage: 'Failed to fetch live session',
+      },
+    ),
+  getLiveSessionFrame: (sessionId: string) =>
+    fetchWithErrorHandling<LiveSessionFrame>(
+      apiUrl(`/api/docker/live-sessions/${sessionId}/frame`),
+      {
+        cache: 'no-store',
+        errorMessage: 'Failed to fetch live session frame',
+      },
+    ),
+  controlLiveSession: (sessionId: string, control: LiveSessionControl) =>
+    postJson<LiveSessionStatus>(
+      apiUrl(`/api/docker/live-sessions/${sessionId}/control`),
+      control,
+      'Failed to control live session',
+    ),
+  setLiveSessionSensitive: (sessionId: string, sensitive: boolean) =>
+    postJson<LiveSessionStatus>(
+      apiUrl(`/api/docker/live-sessions/${sessionId}/sensitive`),
+      { sensitive },
+      'Failed to update live session sensitivity',
+    ),
+  teardownLiveSession: (sessionId: string) =>
+    postJson<LiveSessionStatus>(
+      apiUrl(`/api/docker/live-sessions/${sessionId}/teardown`),
+      {},
+      'Failed to close live session',
     ),
 
   logStreamUrl: (service: string, tail = 100) =>

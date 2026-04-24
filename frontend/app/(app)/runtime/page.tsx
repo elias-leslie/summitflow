@@ -5,6 +5,7 @@ import { Boxes } from 'lucide-react'
 import { motion } from 'motion/react'
 import { SystemHealthWidget } from '@/components/dashboard/SystemHealthWidget'
 import { HealthBar } from '@/components/runtime/HealthBar'
+import { LiveSessionsCard } from '@/components/runtime/LiveSessionsCard'
 import { MaintenanceStatusCard } from '@/components/runtime/MaintenanceStatusCard'
 import { ProxmoxStatusCard } from '@/components/runtime/ProxmoxStatusCard'
 import { RuntimeModeBanner } from '@/components/runtime/RuntimeModeBanner'
@@ -92,6 +93,9 @@ export default function RuntimePage() {
 
       {/* Maintenance — compact row */}
       <MaintenanceStatusCard />
+
+      {/* Operator-visible browser sessions */}
+      <LiveSessionsCard />
 
       {/* Service grid with list/grid toggle */}
       <ServiceGrid />
