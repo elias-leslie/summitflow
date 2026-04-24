@@ -20,6 +20,18 @@ SUMMITFLOW_ROOT_OVERRIDE="$SUMMITFLOW_DIR"
 . "$SCRIPT_DIR/lib/project-roots.sh"
 BIN_DIR="${BIN_DIR:-$HOME/bin}"
 
+case "${1:-}" in
+    --help|-h|help)
+        cat <<'EOF'
+Usage: st setup services [--dry-run] [--confirm TOKEN]
+
+Configure SummitFlow user systemd services and canonical CLI entrypoints.
+Run through st so preview/confirmation stays consistent.
+EOF
+        exit 0
+        ;;
+esac
+
 escape_sed_replacement() {
     printf '%s' "$1" | sed 's/[&|]/\\&/g'
 }
@@ -129,6 +141,8 @@ install_cli_links() {
     local agent_hub_root=""
     local a_term_root=""
     local script_name=""
+    local link_path=""
+    local link_target=""
 
     mkdir -p "$BIN_DIR"
 
@@ -162,10 +176,14 @@ install_cli_links() {
         echo "  Linked tsession -> $a_term_root/scripts/tsession"
     fi
 
-    for script_name in rebuild.sh commit.sh start.sh status.sh stop.sh backup.sh backup-all.sh restore.sh setup-services.sh update-gh.sh; do
-        if [ -f "$SUMMITFLOW_DIR/scripts/$script_name" ]; then
-            ln -sfnT "$SUMMITFLOW_DIR/scripts/$script_name" "$BIN_DIR/$script_name"
-            echo "  Linked $script_name -> $SUMMITFLOW_DIR/scripts/$script_name"
+    for script_name in rebuild.sh commit.sh start.sh status.sh stop.sh shutdown.sh backup.sh backup-all.sh restore.sh setup-services.sh update-gh.sh; do
+        link_path="$BIN_DIR/$script_name"
+        if [ -L "$link_path" ]; then
+            link_target="$(readlink -f "$link_path" 2>/dev/null || true)"
+            if [[ "$link_target" == "$SUMMITFLOW_DIR/scripts/"* ]]; then
+                rm -f "$link_path"
+                echo "  Removed legacy public link $script_name; use st tools catalog"
+            fi
         fi
     done
 }
@@ -290,46 +308,23 @@ sync_shared_caches
 echo "  ✓ Shared caches refreshed"
 echo ""
 
-# Step 7: Ensure the installed SummitFlow scripts directory is on PATH
+# Step 7: Remove old public scripts PATH guidance. st is the public surface.
 echo "Step 7: Checking PATH setup..."
 SHELL_RC="$HOME/.bashrc"
 [ -n "$ZSH_VERSION" ] && SHELL_RC="$HOME/.zshrc"
-PATH_EXPORT_LINE="export PATH=\"$SUMMITFLOW_SCRIPTS_PATH:\$PATH\""
-
-if ! grep -Fq "$SUMMITFLOW_SCRIPTS_PATH" "$SHELL_RC" 2>/dev/null; then
-    if grep -q 'summitflow/scripts' "$SHELL_RC" 2>/dev/null; then
-        tmp_rc="$(mktemp)"
-        awk -v replacement="$PATH_EXPORT_LINE" '
-            BEGIN { replaced = 0 }
-            /^# SummitFlow scripts / { next }
-            /export PATH=.*summitflow\/scripts/ {
-                if (!replaced) {
-                    print replacement
-                    replaced = 1
-                }
-                next
-            }
-            { print }
-            END {
-                if (!replaced) {
-                    print ""
-                    print "# SummitFlow scripts (rebuild.sh, sf-browser, etc.)"
-                    print replacement
-                }
-            }
-        ' "$SHELL_RC" > "$tmp_rc"
-        mv "$tmp_rc" "$SHELL_RC"
-        echo "  Updated SummitFlow scripts PATH in $SHELL_RC"
-    else
-    echo '' >> "$SHELL_RC"
-    echo '# SummitFlow scripts (rebuild.sh, sf-browser, etc.)' >> "$SHELL_RC"
-        echo "$PATH_EXPORT_LINE" >> "$SHELL_RC"
-        echo "  Added $SUMMITFLOW_SCRIPTS_PATH to PATH in $SHELL_RC"
-    fi
+if grep -q 'summitflow/scripts' "$SHELL_RC" 2>/dev/null; then
+    tmp_rc="$(mktemp)"
+    awk '
+        /^# SummitFlow scripts / { next }
+        /export PATH=.*summitflow\/scripts/ { next }
+        { print }
+    ' "$SHELL_RC" > "$tmp_rc"
+    mv "$tmp_rc" "$SHELL_RC"
+    echo "  Removed legacy SummitFlow scripts PATH from $SHELL_RC"
 else
-    echo "  $SUMMITFLOW_SCRIPTS_PATH already on PATH"
+    echo "  No legacy SummitFlow scripts PATH found in $SHELL_RC"
 fi
-echo "  ✓ PATH configured"
+echo "  ✓ PATH clean"
 echo ""
 
 echo "================================"
@@ -337,10 +332,10 @@ echo "✓ Setup complete!"
 echo "================================"
 echo ""
 echo "To start SummitFlow services:"
-echo "  start.sh"
+echo "  st service start"
 echo ""
 echo "To check status:"
-echo "  status.sh"
+echo "  st service status summitflow"
 echo ""
 echo "Access URLs:"
 echo "  - Local Backend:  http://localhost:8001"

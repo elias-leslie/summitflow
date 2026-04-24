@@ -202,7 +202,7 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
     @patch("app.tasks.autonomous.pickup_queries.task_store")
-    def test_incomplete_subtasks_with_pending_second_opinion_routes_to_critique(
+    def test_incomplete_subtasks_with_pending_second_opinion_routes_to_execution(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:
         from app.tasks.autonomous.pickup import _determine_next_stage
@@ -216,12 +216,12 @@ class TestDetermineNextStage:
 
         with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
             mock_ready.return_value = MagicMock(ready=False, missing_fields=["second_opinion"])
-            assert _determine_next_stage("task-1") == "critique"
+            assert _determine_next_stage("task-1") == "execution"
 
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
     @patch("app.tasks.autonomous.pickup_queries.task_store")
-    def test_second_opinion_needs_revision_stays_parked_until_plan_inputs_change(
+    def test_second_opinion_needs_revision_does_not_park_execution(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:
         from app.tasks.autonomous.pickup import _determine_next_stage
@@ -235,13 +235,13 @@ class TestDetermineNextStage:
 
         with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
             mock_ready.return_value = MagicMock(ready=False, missing_fields=["second_opinion"])
-            assert _determine_next_stage("task-1") == "unknown"
+            assert _determine_next_stage("task-1") == "execution"
 
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
     @patch("app.tasks.autonomous.pickup_queries.task_store")
     @patch("app.tasks.autonomous.pickup_queries.build_task_planning_signature", return_value="sig-new")
-    def test_second_opinion_needs_revision_replans_after_task_shape_changes(
+    def test_second_opinion_needs_revision_does_not_replan_after_task_shape_changes(
         self,
         _mock_signature: MagicMock,
         mock_store: MagicMock,
@@ -270,7 +270,7 @@ class TestDetermineNextStage:
 
         with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
             mock_ready.return_value = MagicMock(ready=False, missing_fields=["second_opinion"])
-            assert _determine_next_stage("task-1") == "planning"
+            assert _determine_next_stage("task-1") == "execution"
 
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")

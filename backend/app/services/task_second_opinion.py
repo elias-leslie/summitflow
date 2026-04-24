@@ -238,7 +238,12 @@ def assess_second_opinion_readiness(
     task: dict[str, Any],
     spirit: dict[str, Any] | None = None,
 ) -> tuple[list[str], list[str], list[str]]:
-    """Return (issues, suggestions, missing_fields) for second-opinion readiness."""
+    """Return advisory task-shape critique guidance.
+
+    Task-shape critique findings are useful planning input, not an execution
+    gate. Hard readiness stays with description, done_when, scope context,
+    subtasks, and execution_contract.
+    """
     spirit = spirit or {}
     requirement = get_second_opinion_requirement(task, spirit)
     if not requirement.required:
@@ -255,19 +260,26 @@ def assess_second_opinion_readiness(
     if status in _COMPLETED_STATUSES and stage in {"task_shape", "both"} and summary:
         return [], [], []
 
-    issues = [
-        "Missing completed task-shape second opinion for high-risk task "
-        f"({'; '.join(requirement.reasons)})"
-    ]
-    suggestions = [
-        "Run `st critique <task-id>` to record a task-shape critique before autonomous execution"
-    ]
-    missing_fields = ["second_opinion"]
-    if review and status in (_COMPLETED_STATUSES | {"needs_revision"}) and not summary:
-        issues.append("Second-opinion entry is present but missing a summary")
+    suggestions = []
+    if status == "needs_revision" and summary:
+        suggestions.append(
+            "Review advisory task-shape critique findings when they are concrete"
+        )
+    elif status in {"pending", ""}:
+        suggestions.append(
+            "Optionally run `st critique <task-id>` for advisory task-shape review"
+        )
     elif review and stage not in {"task_shape", "both"}:
-        issues.append(f"Second-opinion stage must include task_shape (found: {stage})")
-    return issues, suggestions, missing_fields
+        suggestions.append(
+            f"Task-shape critique is advisory; current review stage is {stage}"
+        )
+    elif review and status in (_COMPLETED_STATUSES | {"needs_revision"}) and not summary:
+        suggestions.append("Task-shape critique entry lacks advisory summary")
+    else:
+        suggestions.append(
+            "Optionally use task-shape critique as advisory review input"
+        )
+    return [], suggestions, []
 
 
 def _parse_json_object(content: str) -> dict[str, Any]:

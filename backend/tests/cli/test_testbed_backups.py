@@ -38,7 +38,7 @@ def test_reset_testbed_to_baseline_skips_unknown_global_rebuild(monkeypatch, tmp
 
     def _fake_run(cmd, cwd=None, capture_output=True, text=True, check=False):
         del cwd, capture_output, text, check
-        assert cmd == ["rebuild.sh", project_id]
+        assert cmd[-3:] == ["service", "rebuild", project_id]
         return subprocess.CompletedProcess(cmd, 1, "", f"Unknown project: {project_id}")
 
     monkeypatch.setattr("cli.lib.testbed_backups.subprocess.run", _fake_run)

@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+case "${1:-}" in
+  --help|-h|help)
+    cat <<'EOF'
+Usage: st setup browser [VERSION] [--dry-run] [--confirm TOKEN]
+
+Install or update the managed agent-browser runtime. Run through st so
+preview/confirmation stays consistent.
+EOF
+    exit 0
+    ;;
+esac
+
 VERSION="${1:-latest}"
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
@@ -61,7 +73,9 @@ cd "${MANAGED_ROOT}"
 npm install "agent-browser@${VERSION}"
 
 ln -sfnT "${WRAPPER_SRC}" "${BIN_DIR}/agent-browser"
-ln -sfnT "${CANONICAL_SF_BROWSER_SRC}" "${BIN_DIR}/sf-browser"
+if [[ -L "${BIN_DIR}/sf-browser" ]] && [[ "$(readlink -f "${BIN_DIR}/sf-browser" 2>/dev/null || true)" == "${CANONICAL_SF_BROWSER_SRC}" ]]; then
+  rm -f "${BIN_DIR}/sf-browser"
+fi
 rm -f "${BIN_DIR}/browse"
 chmod +x "${WRAPPER_SRC}" "${CANONICAL_SF_BROWSER_SRC}" "${REAPER_SRC}"
 
@@ -75,5 +89,5 @@ systemctl --user restart agent-browser-idle-reaper.timer
 prune_legacy_skill_bundle
 
 echo "agent-browser wrapper: ${BIN_DIR}/agent-browser"
-echo "sf-browser wrapper: ${BIN_DIR}/sf-browser"
+echo "browser command: st browser"
 echo "agent-browser package: $(node -p "require('${MANAGED_ROOT}/node_modules/agent-browser/package.json').version")"

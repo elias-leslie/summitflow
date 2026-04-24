@@ -33,7 +33,7 @@ def _format_context_lines(
     if include_execution_metadata and isinstance(second_opinion := context.get("second_opinion"), dict):
         stage = second_opinion.get("stage", "task_shape")
         status = second_opinion.get("status", "pending")
-        parts.append(f"2nd:{stage}:{status}")
+        parts.append(f"2nd:advisory:{stage}:{status}")
     return [f"CONTEXT:{' | '.join(parts)}"] if parts else []
 
 

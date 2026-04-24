@@ -92,8 +92,8 @@ def _build_planning_prompt(
         feedback_block = (
             "\n## Existing task-plan context and review feedback\n\n"
             f"{json.dumps(feedback_payload, indent=2, sort_keys=True)}\n\n"
-            "If second_opinion.status is NEEDS_REVISION or pending, treat that feedback as a contract you must resolve in the revised plan.\n"
-            "Tighten the package so a fresh task-shape critique can approve it without additional operator repair.\n"
+            "Treat second_opinion findings as advisory input, not a blocking contract.\n"
+            "Use concrete critique points when valid; do not loop solely on NEEDS_REVISION or pending status.\n"
         )
     return f"""Create an implementation plan for this task.
 

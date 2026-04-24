@@ -88,7 +88,7 @@ def reset_command(
     ] = None,
     rebuild: Annotated[
         bool,
-        typer.Option("--rebuild/--no-rebuild", help="Run rebuild.sh <project> after reset"),
+        typer.Option("--rebuild/--no-rebuild", help="Run st service rebuild <project> after reset"),
     ] = True,
     confirm: Annotated[
         str | None,

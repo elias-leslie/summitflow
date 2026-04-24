@@ -17,6 +17,7 @@ from ._git_helpers import (
     _print_sync_compact,
     _sync_repo,
 )
+from .operator_forward import run_forwarded
 
 app = typer.Typer(help="Git repository management")
 
@@ -71,6 +72,17 @@ def sync(
         _print_sync_compact(results)
     else:
         output_json({"results": results, "total": len(results)})
+
+
+@app.command("commit", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def commit(ctx: typer.Context) -> None:
+    """Run the managed commit workflow.
+
+    Examples:
+        st git commit --current --push --task task-abc --msg "..."
+        st git commit --sync-only
+    """
+    run_forwarded("commit.sh", list(ctx.args))
 
 
 @app.command("finalize-task")
