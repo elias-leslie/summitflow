@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -18,6 +20,23 @@ EXISTING_TASK_ID = "task-d530fc1f"
 MISSING_TASK_ID = "task-missing000"
 EXISTING_BRANCH = f"{EXISTING_TASK_ID}/main"
 MISSING_BRANCH = f"{MISSING_TASK_ID}/main"
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+        env={
+            **os.environ,
+            "GIT_AUTHOR_NAME": "Test",
+            "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "Test",
+            "GIT_COMMITTER_EMAIL": "t@t",
+        },
+    )
 
 
 @pytest.fixture
@@ -53,6 +72,8 @@ def patch_orphan_git(mocker, orphan_branches: list[BranchInfo]):
     git_branches.list_prunable_task_branches.return_value = []
     git_branches.assess_orphan_task_branches.side_effect = assess_orphan_task_branches
     git_branches._branch_commits_ahead.return_value = 1
+    git_branches._branch_commits_behind.return_value = 2
+    git_branches._branch_ahead_diff_paths.return_value = ["backend/app.py"]
     git_branches._branch_diff_paths.return_value = ["backend/app.py"]
     mocker.patch("app.utils._git_branch_cleanup._git_branches_module", return_value=git_branches)
     return git_branches
@@ -60,6 +81,37 @@ def patch_orphan_git(mocker, orphan_branches: list[BranchInfo]):
 
 def _assessment_by_task(items: list[OrphanBranchAssessment]) -> dict[str, OrphanBranchAssessment]:
     return {item.task_id: item for item in items}
+
+
+def test_branch_ahead_diff_paths_exclude_base_only_drift(tmp_path: Path) -> None:
+    from app.utils._git_branches import (
+        _branch_ahead_diff_paths,
+        _branch_commits_ahead,
+        _branch_commits_behind,
+        _branch_diff_paths,
+    )
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    (repo / "README.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "initial")
+
+    _git(repo, "checkout", "-b", EXISTING_BRANCH)
+    (repo / "task.txt").write_text("task\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "task work")
+
+    _git(repo, "checkout", "main")
+    (repo / "main.txt").write_text("main drift\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "main drift")
+
+    assert _branch_commits_ahead(repo, EXISTING_BRANCH, "main") == 1
+    assert _branch_commits_behind(repo, EXISTING_BRANCH, "main") == 1
+    assert sorted(_branch_diff_paths(repo, EXISTING_BRANCH, "main")) == ["main.txt", "task.txt"]
+    assert sorted(_branch_ahead_diff_paths(repo, EXISTING_BRANCH, "main")) == ["task.txt"]
 
 
 def test_assess_orphan_task_branches_marks_existing_and_unreadable_tasks_for_review(
@@ -115,6 +167,9 @@ def test_assess_orphan_task_branches_marks_existing_and_unreadable_tasks_for_rev
     assert assessments[EXISTING_TASK_ID].resolution == "review"
     assert assessments[EXISTING_TASK_ID].task_status == "in_progress"
     assert assessments[EXISTING_TASK_ID].task_token == "task:in_progress"
+    assert assessments[EXISTING_TASK_ID].commits_ahead == 1
+    assert assessments[EXISTING_TASK_ID].commits_behind == 2
+    assert assessments[EXISTING_TASK_ID].files_changed == 1
     assert assessments[MISSING_TASK_ID].resolution == "salvage"
     assert assessments[MISSING_TASK_ID].task_status is None
     assert assessments[MISSING_TASK_ID].task_token == "task:missing"
@@ -147,6 +202,9 @@ def test_build_repo_workspace_summary_uses_shared_orphan_assessment_truth(
     assert summary.review_orphan_task_ids == [EXISTING_TASK_ID]
     assert EXISTING_TASK_ID not in summary.salvage_task_ids
     assert set(summary.salvage_task_ids).isdisjoint(summary.review_orphan_task_ids)
+    assert summary.orphan_details[0].commits_ahead == 1
+    assert summary.orphan_details[0].commits_behind == 2
+    assert summary.orphan_details[0].files_changed == 1
 
 
 def test_build_cleanup_status_payload_keeps_existing_task_orphans_out_of_salvage(

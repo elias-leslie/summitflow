@@ -123,9 +123,34 @@ def _branch_commits_ahead(repo_path: Path, branch_name: str, base_branch: str) -
         return 0
 
 
+def _branch_commits_behind(repo_path: Path, branch_name: str, base_branch: str) -> int:
+    """Return commit count behind base for a branch."""
+    result = run_git(["rev-list", "--count", f"{branch_name}..{base_branch}"], repo_path)
+    if result.returncode != 0:
+        return 0
+    try:
+        return int(result.stdout.strip() or "0")
+    except ValueError:
+        return 0
+
+
 def _branch_diff_paths(repo_path: Path, branch_name: str, base_branch: str) -> list[str]:
     """Return changed paths between base and branch."""
     result = run_git(["diff", "--name-only", base_branch, branch_name], repo_path)
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def _branch_ahead_diff_paths(repo_path: Path, branch_name: str, base_branch: str) -> list[str]:
+    """Return paths changed by branch-only commits, excluding base drift."""
+    merge_base = run_git(["merge-base", base_branch, branch_name], repo_path)
+    if merge_base.returncode != 0:
+        return _branch_diff_paths(repo_path, branch_name, base_branch)
+    result = run_git(
+        ["diff", "--name-only", merge_base.stdout.strip(), branch_name],
+        repo_path,
+    )
     if result.returncode != 0:
         return []
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]

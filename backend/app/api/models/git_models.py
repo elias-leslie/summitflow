@@ -27,6 +27,7 @@ class OrphanBranchSummary(BaseModel):
     resolution: str
     task_status: str | None = None
     commits_ahead: int = 0
+    commits_behind: int = 0
     files_changed: int = 0
     has_node_modules_artifact: bool = False
 
@@ -108,6 +109,7 @@ class BranchInfo(BaseModel):
     cleanup_resolution: str | None = None
     task_status: str | None = None
     commits_ahead: int | None = None
+    commits_behind: int | None = None
     files_changed: int | None = None
     has_node_modules_artifact: bool = False
 

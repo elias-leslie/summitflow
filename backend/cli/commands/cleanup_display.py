@@ -67,8 +67,9 @@ def _build_orphan_detail_preview(repo: RepoEntry) -> str:
         resolution = str(item.get("resolution") or "?")
         status = str(item.get("task_status") or "missing")
         ahead = int(item.get("commits_ahead") or 0)
+        behind = int(item.get("commits_behind") or 0)
         files = int(item.get("files_changed") or 0)
-        details.append(f"{task_id}:{resolution}:{status}:ahead{ahead}:files{files}")
+        details.append(f"{task_id}:{resolution}:{status}:ahead{ahead}:behind{behind}:files{files}")
     return f" orphan_details:{','.join(details)}" if details else ""
 
 

@@ -28,6 +28,7 @@ export interface OrphanBranchSummary {
   resolution: string
   task_status?: string | null
   commits_ahead: number
+  commits_behind?: number
   files_changed: number
   has_node_modules_artifact: boolean
 }

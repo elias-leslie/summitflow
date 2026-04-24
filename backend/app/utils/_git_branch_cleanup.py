@@ -26,6 +26,7 @@ class OrphanBranchAssessment:
     commits_ahead: int
     files_changed: int
     has_node_modules_artifact: bool
+    commits_behind: int = 0
 
 
 def _git_branches_module():
@@ -84,7 +85,7 @@ def _build_orphan_branch_assessment(
     if task_id is None:
         raise ValueError(f"Expected orphan task branch with task_id: {branch.name}")
 
-    diff_paths = git_branches._branch_diff_paths(repo_path, branch.name, base_branch)
+    diff_paths = git_branches._branch_ahead_diff_paths(repo_path, branch.name, base_branch)
     task_status, task_token = _load_task_status(task_id)
     return OrphanBranchAssessment(
         branch_name=branch.name,
@@ -95,6 +96,7 @@ def _build_orphan_branch_assessment(
         commits_ahead=git_branches._branch_commits_ahead(repo_path, branch.name, base_branch),
         files_changed=len(diff_paths),
         has_node_modules_artifact=_has_node_modules_artifact(diff_paths),
+        commits_behind=git_branches._branch_commits_behind(repo_path, branch.name, base_branch),
     )
 
 
@@ -240,6 +242,7 @@ def _orphan_summary(assessment: OrphanBranchAssessment) -> OrphanBranchSummary:
         resolution=assessment.resolution,
         task_status=assessment.task_status,
         commits_ahead=assessment.commits_ahead,
+        commits_behind=assessment.commits_behind,
         files_changed=assessment.files_changed,
         has_node_modules_artifact=assessment.has_node_modules_artifact,
     )
@@ -287,13 +290,23 @@ def enrich_branch_cleanup_details(
                 branch.name,
                 base_branch,
             )
+            branch.commits_behind = git_branches._branch_commits_behind(
+                repo_path,
+                branch.name,
+                base_branch,
+            )
             branch.files_changed = len(
-                git_branches._branch_diff_paths(repo_path, branch.name, base_branch)
+                git_branches._branch_ahead_diff_paths(repo_path, branch.name, base_branch)
             )
             continue
         if branch.name in equivalent_names:
             branch.cleanup_resolution = "equivalent"
             branch.commits_ahead = git_branches._branch_commits_ahead(
+                repo_path,
+                branch.name,
+                base_branch,
+            )
+            branch.commits_behind = git_branches._branch_commits_behind(
                 repo_path,
                 branch.name,
                 base_branch,
@@ -305,6 +318,7 @@ def enrich_branch_cleanup_details(
             branch.cleanup_resolution = assessment.resolution
             branch.task_status = assessment.task_status
             branch.commits_ahead = assessment.commits_ahead
+            branch.commits_behind = assessment.commits_behind
             branch.files_changed = assessment.files_changed
             branch.has_node_modules_artifact = assessment.has_node_modules_artifact
     return branches

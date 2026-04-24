@@ -49,7 +49,7 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
   const orphanDetailLabels =
     workspaceSummary?.orphan_details?.map((item) => {
       const status = item.task_status ?? 'missing'
-      return `${item.task_id}:${item.resolution}:${status}:a${item.commits_ahead}:f${item.files_changed}`
+      return `${item.task_id}:${item.resolution}:${status}:a${item.commits_ahead}:b${item.commits_behind ?? 0}:f${item.files_changed}`
     }) ?? []
   const previewSections = [
     {

@@ -109,6 +109,7 @@ export interface BranchInfo {
   cleanup_resolution?: string | null
   task_status?: string | null
   commits_ahead?: number | null
+  commits_behind?: number | null
   files_changed?: number | null
   has_node_modules_artifact?: boolean
 }

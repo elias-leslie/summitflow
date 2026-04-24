@@ -380,7 +380,7 @@ def inspect_orphans(
             lines.append(
                 f"{repo_path.name} {item.task_id} branch:{item.branch_name} "
                 f"resolution:{item.resolution} task:{_task_display_token(item)} "
-                f"ahead:{item.commits_ahead} files:{item.files_changed} "
+                f"ahead:{item.commits_ahead} behind:{item.commits_behind} files:{item.files_changed} "
                 f"flags:{','.join(flags) if flags else '-'}"
             )
     scope = "all" if all_projects else "current"

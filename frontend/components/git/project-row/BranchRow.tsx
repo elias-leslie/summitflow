@@ -48,6 +48,9 @@ export function BranchRow({ branch }: { branch: BranchInfo }) {
   const orphanFacts = [
     branch.task_status ? `task ${branch.task_status}` : null,
     branch.commits_ahead != null ? `${branch.commits_ahead} ahead` : null,
+    branch.commits_behind != null && branch.commits_behind > 0
+      ? `${branch.commits_behind} behind`
+      : null,
     branch.files_changed != null ? `${branch.files_changed} files` : null,
     branch.has_node_modules_artifact ? 'node_modules residue' : null,
   ].filter(Boolean)
