@@ -36,6 +36,7 @@ def git_callback(ctx: typer.Context) -> None:
 def status(
     ctx: typer.Context,
     _all_repos: Annotated[bool, typer.Option("--all", "-a", help="Show all known managed repos")] = True,
+    short: Annotated[bool, typer.Option("--short", help="Alias for compact status output")] = False,
 ) -> None:
     """Show git status for managed repositories.
 
@@ -45,10 +46,11 @@ def status(
 
     Examples:
         st git status
+        st git status --short
         st --compact git status
     """
     repos: list[dict[str, Any]] = [s for p in _get_managed_repos() if (s := _get_repo_status(p))]
-    if ctx.obj.is_compact:
+    if short or ctx.obj.is_compact:
         print(f"GIT[{len(repos)}]")
         for repo in repos:
             print(_format_compact_repo(repo))
