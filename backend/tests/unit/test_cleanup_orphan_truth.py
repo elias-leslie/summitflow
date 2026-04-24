@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -86,6 +87,35 @@ def patch_orphan_git(mocker, orphan_branches: list[BranchInfo]):
 
 def _assessment_by_task(items: list[OrphanBranchAssessment]) -> dict[str, OrphanBranchAssessment]:
     return {item.task_id: item for item in items}
+
+
+def test_workspace_summary_lists_all_checkpoint_task_ids(mocker, patch_orphan_git) -> None:
+    mocker.patch("app.utils._git_branch_cleanup.git_core.has_uncommitted_changes", return_value=False)
+    checkpoints = [
+        SimpleNamespace(task_id="task-one"),
+        SimpleNamespace(task_id="task-two"),
+        SimpleNamespace(task_id="task-three"),
+    ]
+    branches = [
+        BranchInfo(
+            name=f"{checkpoint.task_id}/main",
+            is_current=checkpoint.task_id == "task-one",
+            has_checkpoint=True,
+            repo_name="test-project",
+            project_id="test-project",
+            task_id=checkpoint.task_id,
+        )
+        for checkpoint in checkpoints
+    ]
+
+    summary = build_repo_workspace_summary(
+        REPO_PATH,
+        branches=branches,
+        active_checkpoints=checkpoints,
+    )
+
+    assert summary.active_checkpoints == 3
+    assert summary.checkpoint_task_ids == ["task-one", "task-two", "task-three"]
 
 
 def test_branch_ahead_diff_paths_exclude_base_only_drift(tmp_path: Path) -> None:
