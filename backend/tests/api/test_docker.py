@@ -67,6 +67,10 @@ class TestDockerRuntime:
         assert docker_api._RUNTIME_SERVICE_MAP["test3-web"]["unit"] == "test3-frontend.service"
         assert docker_api._RUNTIME_SERVICE_MAP["sha-api"]["unit"] == "sha-backend.service"
         assert docker_api._RUNTIME_SERVICE_MAP["sha-web"]["unit"] == "sha-frontend.service"
+        assert docker_api._RUNTIME_SERVICE_MAP["hermes-dashboard"]["unit"] == (
+            "hermes-dashboard.service"
+        )
+        assert docker_api._RUNTIME_SERVICE_MAP["hermes-dashboard"]["ports"] == ["9119"]
 
     def test_detect_repo_root_walks_up_container_layout(self, tmp_path) -> None:
         from app.api import docker as docker_api

@@ -13,6 +13,7 @@ from ...config import (
     AGENT_HUB_FRONTEND_PORT,
     HATCHET_GRPC_PORT,
     HATCHET_HEALTH_PORT,
+    HERMES_DASHBOARD_PORT,
     MONKEY_FIGHT_PORT,
     PORTFOLIO_BACKEND_PORT,
     PORTFOLIO_FRONTEND_PORT,
@@ -148,6 +149,14 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
         "unit": "a-term-frontend.service",
         "ports": [str(A_TERM_FRONTEND_PORT)],
         "probe_url": f"http://localhost:{A_TERM_FRONTEND_PORT}/",
+    },
+    {
+        "service": "hermes-dashboard",
+        "display_name": "hermes-dashboard",
+        "manager": "systemd",
+        "category": "app",
+        "unit": "hermes-dashboard.service",
+        "ports": [str(HERMES_DASHBOARD_PORT)],
     },
     {
         "service": "portfolio-api",
