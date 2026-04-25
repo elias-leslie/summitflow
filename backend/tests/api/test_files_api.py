@@ -74,6 +74,81 @@ def test_project_file_upload_and_download(
     assert download_response.content == b'hello world'
     assert download_response.headers['content-disposition'].startswith('attachment;')
 
+    overwrite_response = client.post(
+        f'/api/projects/{project_id}/files/upload',
+        params={'path': 'docs'},
+        files={'upload': ('note.txt', b'new value', 'text/plain')},
+    )
+    assert overwrite_response.status_code == 200
+    assert (root_path / 'docs' / 'note.txt').read_text() == 'new value'
+
+
+def test_project_files_support_crud_and_server_root_paths(
+    client: TestClient,
+    file_api_project: tuple[str, Path],
+) -> None:
+    project_id, root_path = file_api_project
+    (root_path / 'docs').mkdir()
+    server_sibling = root_path.parent / 'server-sibling'
+    server_sibling.mkdir()
+    (server_sibling / 'outside.txt').write_text('outside')
+
+    tree_response = client.get(f'/api/projects/{project_id}/files/tree')
+    assert tree_response.status_code == 200
+    assert tree_response.json()['absolute_path'] == str(root_path)
+
+    server_tree_response = client.get(
+        f'/api/projects/{project_id}/files/tree',
+        params={'path': str(root_path.parent)},
+    )
+    assert server_tree_response.status_code == 200
+    assert server_tree_response.json()['path'] == str(root_path.parent)
+    assert str(server_sibling) in {
+        entry['path'] for entry in server_tree_response.json()['entries']
+    }
+
+    create_dir_response = client.post(
+        f'/api/projects/{project_id}/files/directory',
+        json={'directory': 'docs', 'name': 'new'},
+    )
+    assert create_dir_response.status_code == 200
+    assert create_dir_response.json()['path'] == 'docs/new'
+
+    create_file_response = client.post(
+        f'/api/projects/{project_id}/files/file',
+        json={'directory': 'docs/new', 'name': 'draft.txt', 'content': 'draft'},
+    )
+    assert create_file_response.status_code == 200
+    assert (root_path / 'docs' / 'new' / 'draft.txt').read_text() == 'draft'
+
+    write_response = client.put(
+        f'/api/projects/{project_id}/files/file',
+        json={'path': 'docs/new/draft.txt', 'content': 'final'},
+    )
+    assert write_response.status_code == 200
+    assert (root_path / 'docs' / 'new' / 'draft.txt').read_text() == 'final'
+
+    rename_response = client.patch(
+        f'/api/projects/{project_id}/files/path/rename',
+        json={'path': 'docs/new/draft.txt', 'name': 'final.txt'},
+    )
+    assert rename_response.status_code == 200
+    assert rename_response.json()['path'] == 'docs/new/final.txt'
+
+    delete_response = client.delete(
+        f'/api/projects/{project_id}/files/path',
+        params={'path': 'docs/new/final.txt'},
+    )
+    assert delete_response.status_code == 200
+    assert delete_response.json()['deleted'] is True
+
+    absolute_write = client.put(
+        f'/api/projects/{project_id}/files/file',
+        json={'path': str(server_sibling / 'outside.txt'), 'content': 'changed'},
+    )
+    assert absolute_write.status_code == 200
+    assert (server_sibling / 'outside.txt').read_text() == 'changed'
+
 
 def test_workspace_file_routes_use_global_root_helper(
     client: TestClient,

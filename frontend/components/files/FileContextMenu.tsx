@@ -1,13 +1,24 @@
 'use client'
 
-import { ClipboardCopy, Copy, Download, FileText } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  ClipboardCopy,
+  Copy,
+  Download,
+  Edit3,
+  FileText,
+  Trash2,
+} from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
+  deletePath,
   type FileBrowserScope,
   fetchFileContent,
   getFileDownloadUrl,
+  renamePath,
 } from '@/lib/api/files'
+import { fileQueryKeys } from '@/lib/hooks/useFileExplorer'
 import { cn, getErrorMessage } from '@/lib/utils'
 
 export interface ContextMenuPosition {
@@ -17,6 +28,7 @@ export interface ContextMenuPosition {
 
 export interface FileContextMenuTarget {
   path: string
+  absolutePath: string
   name: string
   isDirectory: boolean
   scope: FileBrowserScope
@@ -26,6 +38,7 @@ interface FileContextMenuProps {
   position: ContextMenuPosition | null
   target: FileContextMenuTarget | null
   onClose: () => void
+  onMutated?: () => void
 }
 
 async function copyText(text: string, label: string) {
@@ -50,9 +63,12 @@ export function FileContextMenu({
   position,
   target,
   onClose,
+  onMutated,
 }: FileContextMenuProps) {
+  const queryClient = useQueryClient()
   const menuRef = useRef<HTMLDivElement>(null)
   const [copyingContents, setCopyingContents] = useState(false)
+  const [mutating, setMutating] = useState(false)
 
   useEffect(() => {
     if (!position) return
@@ -79,7 +95,7 @@ export function FileContextMenu({
 
   const handleCopyPath = useCallback(async () => {
     if (!target) return
-    await copyText(target.path, 'path')
+    await copyText(target.absolutePath, 'path')
     onClose()
   }, [onClose, target])
 
@@ -115,6 +131,53 @@ export function FileContextMenu({
     onClose()
   }, [onClose, target])
 
+  const handleRename = useCallback(async () => {
+    if (!target || mutating) return
+    const nextName = window.prompt('Rename', target.name)?.trim()
+    if (!nextName || nextName === target.name) {
+      onClose()
+      return
+    }
+
+    setMutating(true)
+    try {
+      await renamePath(target.scope, target.path, nextName)
+      await queryClient.invalidateQueries({
+        queryKey: fileQueryKeys.scope(target.scope),
+      })
+      toast.success(`Renamed ${target.name}`)
+      onMutated?.()
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to rename path'))
+    } finally {
+      setMutating(false)
+      onClose()
+    }
+  }, [mutating, onClose, onMutated, queryClient, target])
+
+  const handleDelete = useCallback(async () => {
+    if (!target || mutating) return
+    if (!window.confirm(`Delete ${target.name}?`)) {
+      onClose()
+      return
+    }
+
+    setMutating(true)
+    try {
+      await deletePath(target.scope, target.path)
+      await queryClient.invalidateQueries({
+        queryKey: fileQueryKeys.scope(target.scope),
+      })
+      toast.success(`Deleted ${target.name}`)
+      onMutated?.()
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to delete path'))
+    } finally {
+      setMutating(false)
+      onClose()
+    }
+  }, [mutating, onClose, onMutated, queryClient, target])
+
   if (!position || !target) return null
 
   return (
@@ -148,6 +211,19 @@ export function FileContextMenu({
           />
         </>
       ) : null}
+      <ContextMenuItem
+        icon={Edit3}
+        label={mutating ? 'Working...' : 'Rename'}
+        onClick={handleRename}
+        disabled={mutating}
+      />
+      <ContextMenuItem
+        icon={Trash2}
+        label={mutating ? 'Working...' : 'Delete'}
+        onClick={handleDelete}
+        disabled={mutating}
+        danger
+      />
     </div>
   )
 }
@@ -157,6 +233,7 @@ interface ContextMenuItemProps {
   label: string
   onClick: () => void
   disabled?: boolean
+  danger?: boolean
 }
 
 function ContextMenuItem({
@@ -164,6 +241,7 @@ function ContextMenuItem({
   label,
   onClick,
   disabled,
+  danger,
 }: ContextMenuItemProps) {
   return (
     <button
@@ -172,12 +250,15 @@ function ContextMenuItem({
       className={cn(
         'flex w-full items-center gap-2.5 px-3 py-1.5 text-sm text-slate-300 transition-colors',
         'hover:bg-slate-800 hover:text-slate-100',
+        danger && 'text-rose-300 hover:text-rose-200',
         disabled && 'pointer-events-none opacity-50',
       )}
       onClick={onClick}
       disabled={disabled}
     >
-      <Icon className="h-3.5 w-3.5 text-slate-500" />
+      <Icon
+        className={cn('h-3.5 w-3.5 text-slate-500', danger && 'text-rose-400')}
+      />
       {label}
     </button>
   )

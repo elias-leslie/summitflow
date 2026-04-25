@@ -1,10 +1,18 @@
 'use client'
 
 import { useQueryClient } from '@tanstack/react-query'
-import { FolderOpen, FolderTree, Upload } from 'lucide-react'
+import {
+  FilePlus2,
+  FolderOpen,
+  FolderPlus,
+  FolderTree,
+  Upload,
+} from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
+  createDirectory,
+  createTextFile,
   type FileBrowserScope,
   type FileTreeEntry,
   uploadFile,
@@ -36,11 +44,16 @@ interface FileSelection {
 
 function getParentDirectory(path: string): string {
   const lastSlash = path.lastIndexOf('/')
-  return lastSlash === -1 ? '' : path.slice(0, lastSlash)
+  if (lastSlash === -1) return ''
+  if (lastSlash === 0) return path.startsWith('/') ? '/' : ''
+  return path.slice(0, lastSlash)
 }
 
-function getUploadDirectory(selection: FileSelection | null): string {
-  if (!selection) return ''
+function getUploadDirectory(
+  selection: FileSelection | null,
+  browsePath: string,
+): string {
+  if (!selection) return browsePath
   return selection.isDirectory
     ? selection.path
     : getParentDirectory(selection.path)
@@ -62,13 +75,14 @@ export function FilesWorkspace({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragState = useRef(false)
 
+  const [browsePath, setBrowsePath] = useState('')
   const [selectedEntry, setSelectedEntry] = useState<FileSelection | null>(null)
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
   const [isUploading, setIsUploading] = useState(false)
 
   const uploadDirectory = useMemo(
-    () => getUploadDirectory(selectedEntry),
-    [selectedEntry],
+    () => getUploadDirectory(selectedEntry, browsePath),
+    [browsePath, selectedEntry],
   )
 
   const handleMouseDown = useCallback((event: React.MouseEvent) => {
@@ -102,6 +116,15 @@ export function FilesWorkspace({
     })
   }, [])
 
+  const handleBrowsePathChange = useCallback((path: string) => {
+    setBrowsePath(path)
+    setSelectedEntry(null)
+  }, [])
+
+  const handleTreeMutated = useCallback(() => {
+    setSelectedEntry(null)
+  }, [])
+
   const handleStartUpload = useCallback(() => {
     fileInputRef.current?.click()
   }, [])
@@ -133,6 +156,36 @@ export function FilesWorkspace({
     },
     [queryClient, scope, uploadDirectory],
   )
+
+  const handleCreateDirectory = useCallback(async () => {
+    const name = window.prompt('Directory name')?.trim()
+    if (!name) return
+
+    try {
+      await createDirectory(scope, uploadDirectory, name)
+      await queryClient.invalidateQueries({
+        queryKey: fileQueryKeys.scope(scope),
+      })
+      toast.success(`Created ${name}`)
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to create directory'))
+    }
+  }, [queryClient, scope, uploadDirectory])
+
+  const handleCreateFile = useCallback(async () => {
+    const name = window.prompt('File name')?.trim()
+    if (!name) return
+
+    try {
+      await createTextFile(scope, uploadDirectory, name)
+      await queryClient.invalidateQueries({
+        queryKey: fileQueryKeys.scope(scope),
+      })
+      toast.success(`Created ${name}`)
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to create file'))
+    }
+  }, [queryClient, scope, uploadDirectory])
 
   const HeaderIcon = scope.kind === 'workspace' ? FolderTree : FolderOpen
   const isViewingFile = selectedEntry && !selectedEntry.isDirectory
@@ -172,6 +225,22 @@ export function FilesWorkspace({
         </div>
         <button
           type="button"
+          onClick={handleCreateFile}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:border-slate-600 hover:bg-slate-800"
+        >
+          <FilePlus2 className="h-3.5 w-3.5" />
+          New File
+        </button>
+        <button
+          type="button"
+          onClick={handleCreateDirectory}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:border-slate-600 hover:bg-slate-800"
+        >
+          <FolderPlus className="h-3.5 w-3.5" />
+          New Folder
+        </button>
+        <button
+          type="button"
           onClick={handleStartUpload}
           disabled={isUploading}
           className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-60"
@@ -188,8 +257,11 @@ export function FilesWorkspace({
         >
           <FileTree
             scope={scope}
+            rootPath={browsePath}
             selectedPath={selectedEntry?.path ?? null}
+            onRootPathChange={handleBrowsePathChange}
             onSelect={handleSelectEntry}
+            onMutated={handleTreeMutated}
           />
         </div>
 

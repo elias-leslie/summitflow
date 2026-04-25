@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from functools import lru_cache
 from pathlib import Path
 from typing import BinaryIO
@@ -25,12 +26,20 @@ def resolve_safe_path(root_path: str | Path, relative_path: str) -> Path:
     return target
 
 
-def _entry_info(entry: Path, root: Path) -> dict[str, object]:
+def _display_path(path: Path, root: Path, absolute_paths: bool) -> str:
+    if absolute_paths:
+        return str(path)
+    if path == root:
+        return ''
+    return str(path.relative_to(root))
+
+
+def _entry_info(entry: Path, root: Path, *, absolute_paths: bool = False) -> dict[str, object]:
     """Build one directory entry payload."""
-    rel_path = str(entry.relative_to(root))
     data: dict[str, object] = {
         'name': entry.name,
-        'path': rel_path,
+        'path': _display_path(entry, root, absolute_paths),
+        'absolute_path': str(entry),
         'is_directory': entry.is_dir(),
     }
     if entry.is_dir():
@@ -47,7 +56,12 @@ def _entry_info(entry: Path, root: Path) -> dict[str, object]:
     return data
 
 
-def list_directory(root_path: str | Path, relative_path: str = '') -> dict[str, object]:
+def list_directory(
+    root_path: str | Path,
+    relative_path: str = '',
+    *,
+    absolute_paths: bool = False,
+) -> dict[str, object]:
     """List directory entries under root_path without name-based hiding."""
     target = resolve_safe_path(root_path, relative_path)
     if not target.is_dir():
@@ -56,10 +70,18 @@ def list_directory(root_path: str | Path, relative_path: str = '') -> dict[str, 
 
     root = Path(root_path).resolve()
     entries = [
-        _entry_info(entry, root)
-        for entry in sorted(target.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
+        _entry_info(entry, root, absolute_paths=absolute_paths)
+        for entry in sorted(
+            target.iterdir(),
+            key=lambda item: (not item.is_dir(), item.name.lower()),
+        )
     ]
-    return {'entries': entries, 'path': relative_path or '', 'total': len(entries)}
+    return {
+        'entries': entries,
+        'path': _display_path(target, root, absolute_paths),
+        'absolute_path': str(target),
+        'total': len(entries),
+    }
 
 
 def _detect_language(name: str, extension: str) -> str | None:
@@ -140,6 +162,8 @@ def write_uploaded_file(
     relative_dir: str,
     filename: str | None,
     source: BinaryIO,
+    *,
+    absolute_paths: bool = False,
 ) -> dict[str, object]:
     """Write uploaded content into a validated directory."""
     directory = resolve_safe_path(root_path, relative_dir)
@@ -149,9 +173,9 @@ def write_uploaded_file(
 
     safe_name = _normalize_upload_name(filename)
     target = directory / safe_name
-    if target.exists():
-        msg = f'File already exists: {target.name}'
-        raise FileExistsError(msg)
+    if target.exists() and not target.is_file():
+        msg = f'Upload target is not a file: {target.name}'
+        raise IsADirectoryError(msg)
 
     with target.open('wb') as handle:
         while True:
@@ -160,13 +184,136 @@ def write_uploaded_file(
                 break
             handle.write(chunk)
 
-    rel_path = str(target.relative_to(Path(root_path).resolve()))
+    root = Path(root_path).resolve()
     return {
-        'path': rel_path,
-        'directory': relative_dir or '',
+        'path': _display_path(target, root, absolute_paths),
+        'directory': _display_path(directory, root, absolute_paths),
         'name': safe_name,
         'size': target.stat().st_size,
     }
+
+
+def create_directory(
+    root_path: str | Path,
+    relative_dir: str,
+    name: str,
+    *,
+    absolute_paths: bool = False,
+) -> dict[str, object]:
+    """Create a directory inside a validated directory."""
+    directory = resolve_safe_path(root_path, relative_dir)
+    if not directory.is_dir():
+        msg = f'Not a directory: {relative_dir}'
+        raise FileNotFoundError(msg)
+
+    safe_name = _normalize_upload_name(name)
+    target = directory / safe_name
+    target.mkdir()
+    return _entry_info(target, Path(root_path).resolve(), absolute_paths=absolute_paths)
+
+
+def write_text_file(
+    root_path: str | Path,
+    relative_path: str,
+    content: str,
+    *,
+    create: bool = False,
+    absolute_paths: bool = False,
+) -> dict[str, object]:
+    """Create or replace UTF-8 text content at a validated file path."""
+    target = resolve_safe_path(root_path, relative_path)
+    if create and target.exists():
+        msg = f'File already exists: {target.name}'
+        raise FileExistsError(msg)
+    if not create and not target.is_file():
+        msg = f'Not a file: {relative_path}'
+        raise FileNotFoundError(msg)
+    if target.exists() and not target.is_file():
+        msg = f'Not a file: {relative_path}'
+        raise IsADirectoryError(msg)
+    if not target.parent.is_dir():
+        msg = f'Not a directory: {target.parent}'
+        raise FileNotFoundError(msg)
+
+    target.write_text(content, encoding='utf-8')
+    stat = target.stat()
+    root = Path(root_path).resolve()
+    return {
+        'path': _display_path(target, root, absolute_paths),
+        'name': target.name,
+        'size': stat.st_size,
+        'extension': target.suffix.lower() if target.suffix else None,
+    }
+
+
+def create_text_file(
+    root_path: str | Path,
+    relative_dir: str,
+    name: str,
+    content: str,
+    *,
+    absolute_paths: bool = False,
+) -> dict[str, object]:
+    """Create a UTF-8 text file inside a validated directory."""
+    directory = resolve_safe_path(root_path, relative_dir)
+    if not directory.is_dir():
+        msg = f'Not a directory: {relative_dir}'
+        raise FileNotFoundError(msg)
+
+    safe_name = _normalize_upload_name(name)
+    root = Path(root_path).resolve()
+    path = _display_path(directory / safe_name, root, absolute_paths)
+    return write_text_file(
+        root_path,
+        path,
+        content,
+        create=True,
+        absolute_paths=absolute_paths,
+    )
+
+
+def delete_path(root_path: str | Path, relative_path: str) -> dict[str, object]:
+    """Delete a validated file or directory path."""
+    target = resolve_safe_path(root_path, relative_path)
+    root = Path(root_path).resolve()
+    if target == root:
+        raise ValueError('Cannot delete browse root')
+    if not target.exists():
+        msg = f'Path not found: {relative_path}'
+        raise FileNotFoundError(msg)
+
+    is_directory = target.is_dir()
+    if is_directory:
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+    return {'path': relative_path, 'deleted': True, 'is_directory': is_directory}
+
+
+def rename_path(
+    root_path: str | Path,
+    relative_path: str,
+    name: str,
+    *,
+    absolute_paths: bool = False,
+) -> dict[str, object]:
+    """Rename a validated path without moving it to another directory."""
+    target = resolve_safe_path(root_path, relative_path)
+    root = Path(root_path).resolve()
+    if target == root:
+        raise ValueError('Cannot rename browse root')
+    if not target.exists():
+        msg = f'Path not found: {relative_path}'
+        raise FileNotFoundError(msg)
+
+    safe_name = _normalize_upload_name(name)
+    destination = target.with_name(safe_name)
+    if destination.exists():
+        msg = f'Path already exists: {safe_name}'
+        raise FileExistsError(msg)
+
+    renamed = target.rename(destination)
+    return _entry_info(renamed, root, absolute_paths=absolute_paths)
 
 
 def _normalize_upload_name(filename: str | None) -> str:

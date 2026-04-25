@@ -16,10 +16,11 @@ export function FileBreadcrumb({
   filePath,
   className,
 }: FileBreadcrumbProps) {
-  const segments = filePath.split('/')
+  const isAbsolute = filePath.startsWith('/')
+  const segments = filePath.split('/').filter(Boolean)
   const items: BreadcrumbItem[] = [
     {
-      label: rootLabel,
+      label: isAbsolute ? '/' : rootLabel,
       href: rootHref,
       icon: <FolderOpen className="h-3.5 w-3.5" />,
     },
@@ -28,7 +29,9 @@ export function FileBreadcrumb({
   for (let index = 0; index < segments.length; index += 1) {
     const segment = segments[index]
     const isLast = index === segments.length - 1
-    const segmentPath = segments.slice(0, index + 1).join('/')
+    const segmentPath = `${isAbsolute ? '/' : ''}${segments
+      .slice(0, index + 1)
+      .join('/')}`
 
     items.push({
       label: segment,

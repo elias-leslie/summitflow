@@ -5,7 +5,11 @@
 import { getApiBaseUrl } from '../api-config'
 import {
   buildQueryString,
+  deleteJson,
   fetchWithErrorHandling,
+  patchJson,
+  postJson,
+  putJson,
   throwFromResponse,
 } from './utils'
 
@@ -16,6 +20,7 @@ export type FileBrowserScope =
 export interface FileTreeEntry {
   name: string
   path: string
+  absolute_path: string
   is_directory: boolean
   size?: number
   extension?: string | null
@@ -25,6 +30,7 @@ export interface FileTreeEntry {
 export interface FileTreeResponse {
   entries: FileTreeEntry[]
   path: string
+  absolute_path: string
   total: number
 }
 
@@ -45,6 +51,19 @@ export interface FileUploadResponse {
   directory: string
   name: string
   size: number
+}
+
+export interface FileWriteResponse {
+  path: string
+  name: string
+  size: number
+  extension?: string | null
+}
+
+export interface FileDeleteResponse {
+  path: string
+  deleted: boolean
+  is_directory: boolean
 }
 
 function getFilesApiBase(scope: FileBrowserScope): string {
@@ -106,4 +125,64 @@ export async function uploadFile(
     await throwFromResponse(response, 'Failed to upload file')
   }
   return response.json() as Promise<FileUploadResponse>
+}
+
+export function createDirectory(
+  scope: FileBrowserScope,
+  directoryPath: string,
+  name: string,
+): Promise<FileTreeEntry> {
+  return postJson<FileTreeEntry>(
+    `${getFilesApiBase(scope)}/directory`,
+    { directory: directoryPath, name },
+    'Failed to create directory',
+  )
+}
+
+export function createTextFile(
+  scope: FileBrowserScope,
+  directoryPath: string,
+  name: string,
+  content = '',
+): Promise<FileWriteResponse> {
+  return postJson<FileWriteResponse>(
+    `${getFilesApiBase(scope)}/file`,
+    { directory: directoryPath, name, content },
+    'Failed to create file',
+  )
+}
+
+export function saveFileContent(
+  scope: FileBrowserScope,
+  path: string,
+  content: string,
+): Promise<FileWriteResponse> {
+  return putJson<FileWriteResponse>(
+    `${getFilesApiBase(scope)}/file`,
+    { path, content },
+    'Failed to save file',
+  )
+}
+
+export function deletePath(
+  scope: FileBrowserScope,
+  path: string,
+): Promise<FileDeleteResponse> {
+  const qs = buildQueryString({ path })
+  return deleteJson<FileDeleteResponse>(
+    `${getFilesApiBase(scope)}/path${qs}`,
+    'Failed to delete path',
+  )
+}
+
+export function renamePath(
+  scope: FileBrowserScope,
+  path: string,
+  name: string,
+): Promise<FileTreeEntry> {
+  return patchJson<FileTreeEntry>(
+    `${getFilesApiBase(scope)}/path/rename`,
+    { path, name },
+    'Failed to rename path',
+  )
 }
