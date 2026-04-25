@@ -29,6 +29,7 @@ from .commands import (
     feedback,
     git,
     health,
+    hygiene,
     logs,
     memory,
     persona,
@@ -211,6 +212,10 @@ CLEANUP (checkpoint maintenance):
   cleanup path <dir> --recursive           # safe literal directory cleanup
   cleanup path <path> --dry-run            # preview cleanup without deleting
 
+HYGIENE (git residue gate):
+  hygiene gate [--fix]                     # self-heal safe residue, block new/closeout work if dirty
+  hygiene sweep [--all] [--fix]            # safe cleanup sweep; report remaining blockers
+
 DOCKER:
   docker status                              # container health grid (TOON format)
   docker up [--profile X] [--dev] [-d]       # start compose stack
@@ -292,6 +297,7 @@ app.add_typer(complete.app, name="complete")
 app.command("session-events", help="Agent Hub session events (observability)")(session_events.show_events)
 app.add_typer(tools.app, name="tools")
 app.add_typer(cleanup.app, name="cleanup")
+app.add_typer(hygiene.app, name="hygiene")
 app.add_typer(prompt.app, name="prompt")
 app.add_typer(refactor.app, name="refactor")
 app.add_typer(feedback.app, name="feedback")

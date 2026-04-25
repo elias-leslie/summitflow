@@ -18,6 +18,7 @@ from ..output import output_success
 from .done_subtask import complete_subtask
 from .done_task import complete_task
 from .done_validators import is_subtask_id
+from .hygiene import require_hygiene_gate
 
 app = typer.Typer(help="Complete task or subtask work")
 
@@ -59,6 +60,7 @@ def _handle_task_completion(
         typer.echo(f"  Merged to: {base_branch}")
     else:
         output_success(f"Task {id} completed without checkpoint merge.")
+    require_hygiene_gate(project_id=str(result.get("project_id") or "") or None)
     typer.echo(FEEDBACK_CLOSEOUT_HINT, err=True)
 
 

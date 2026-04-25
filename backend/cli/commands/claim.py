@@ -26,6 +26,7 @@ from .claim_helpers import (
     print_resumed,
     require_claim_safe_tree,
 )
+from .hygiene import require_hygiene_gate
 
 app = typer.Typer(help="Claim task or subtask to start work")
 
@@ -54,6 +55,7 @@ def _claim_task(
     if existing and not force:
         return handle_existing_checkpoint(task_id, existing)
 
+    require_hygiene_gate(project_id=str(project_id) if project_id else None)
     require_claim_safe_tree()
 
     try:
