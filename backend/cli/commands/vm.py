@@ -12,7 +12,12 @@ from ..lib.proxmox import ProxmoxClient, ProxmoxError, snapshot_name_default
 from ..output import output_error
 
 app = typer.Typer(
-    help="Proxmox test VM lifecycle commands with st confirmation gates.",
+    help=(
+        "Proxmox VM lifecycle through st. Use for browser/test VM status, IPs, "
+        "snapshots, start/stop, rollback, and clone. Destructive actions use "
+        "two-pass confirmation gates. For browser work, use st vm list/status/ip "
+        "to find the approved VM, then run st browser with SF_BROWSER_HOST."
+    ),
 )
 
 

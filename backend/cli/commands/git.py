@@ -22,7 +22,12 @@ from ._git_helpers import (
     _sync_repo,
 )
 
-app = typer.Typer(help="Git repository management")
+app = typer.Typer(
+    help=(
+        "Managed git workflow through st. Use st git commit for commits and "
+        "st done for task completion; do not bypass checkpoint/branch cleanup."
+    )
+)
 
 
 @app.callback()

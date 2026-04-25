@@ -409,6 +409,12 @@ def _browser_update() -> int:
 def _usage() -> str:
     return """Remote browser automation through st
 
+Required target:
+  Set SF_BROWSER_HOST to the approved isolated browser VM or connector endpoint.
+  Plain st browser commands fail closed when SF_BROWSER_HOST is missing.
+  Do not start Chrome, CDP proxies, or agent-browser on the project/server host.
+  Use st vm list/status/ip/start to inspect or start the approved browser VM.
+
 Usage:
   st browser health
   st browser check [--session <name>] <url> [screenshot-path]
@@ -418,6 +424,16 @@ Usage:
   st browser eval <js>
   st browser update
   st browser [--chrome|--lp|--engine <name>] <agent-browser command> [args...]
+
+Examples:
+  st vm list
+  st vm status <browser-vm-id>
+  st vm ip <browser-vm-id>
+  SF_BROWSER_HOST=<browser-vm-or-connector> st browser health
+  SF_BROWSER_HOST=<browser-vm-or-connector> st browser check http://localhost:3001 /tmp/page.png
+
+Debug local override:
+  SF_BROWSER_HOST=127.0.0.1 SF_BROWSER_ALLOW_LOCAL=1 st browser health
 """
 
 
@@ -433,6 +449,9 @@ def browser(ctx: typer.Context) -> None:
         return
     args = list(ctx.args)
     if not args or args[0] in {"-h", "--help", "help"}:
+        typer.echo(_usage())
+        raise typer.Exit(0)
+    if len(args) > 1 and args[1] in {"-h", "--help", "help"}:
         typer.echo(_usage())
         raise typer.Exit(0)
     engine, browser_args = _parse_engine_args(args)

@@ -16,7 +16,13 @@ from app.utils.shared_paths import get_repo_root
 from ..lib.confirm_token import confirm_gate
 from ..lib.service_ops import load_project, sync_systemd_units
 
-app = typer.Typer(help="Host, service, browser, tooling, and test database setup")
+app = typer.Typer(
+    help=(
+        "Host, service, browser, tooling, and test database setup through st. "
+        "Use dry-run/confirm gates for host changes. Browser setup defaults to "
+        "isolated SF_BROWSER_HOST targets; server-local installs are debug-only."
+    )
+)
 
 
 def _preview(command: str, lines: list[str], dry_run: bool, confirm: str | None) -> None:

@@ -11,7 +11,13 @@ from ..lib import service_ops
 from ..lib.confirm_token import confirm_gate
 from ..output import output_error
 
-app = typer.Typer(help="Project service lifecycle and rebuild commands")
+app = typer.Typer(
+    help=(
+        "Project service lifecycle through st. Use rebuild/restart instead of "
+        "raw systemctl or docker commands so build, migrations, unit sync, "
+        "health checks, and seed sync stay together."
+    )
+)
 
 
 def _load(project: str) -> service_ops.ProjectServices:

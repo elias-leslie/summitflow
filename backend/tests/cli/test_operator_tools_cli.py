@@ -135,6 +135,65 @@ def test_browser_health_uses_native_health() -> None:
     health.assert_called_once()
 
 
+def test_browser_help_explains_isolated_target() -> None:
+    result = runner.invoke(main_app, ["browser", "--help"])
+
+    assert result.exit_code == 0
+    assert "Set SF_BROWSER_HOST to the approved isolated browser VM" in result.output
+    assert "fail closed when SF_BROWSER_HOST is missing" in result.output
+    assert "Use st vm list/status/ip/start" in result.output
+    assert "SF_BROWSER_ALLOW_LOCAL=1" in result.output
+
+
+def test_browser_subcommand_help_does_not_run_health() -> None:
+    with patch("cli.commands.browser._print_health") as health:
+        result = runner.invoke(main_app, ["browser", "health", "--help"])
+
+    assert result.exit_code == 0
+    assert "Set SF_BROWSER_HOST to the approved isolated browser VM" in result.output
+    health.assert_not_called()
+
+
+def test_vm_help_points_to_browser_target_workflow() -> None:
+    result = runner.invoke(main_app, ["vm", "--help"])
+
+    assert result.exit_code == 0
+    assert "use st vm list/status/ip" in result.output
+    assert "st browser with SF_BROWSER_HOST" in result.output
+
+
+def test_service_help_explains_canonical_rebuild_path() -> None:
+    result = runner.invoke(main_app, ["service", "--help"])
+
+    assert result.exit_code == 0
+    assert "Use rebuild/restart instead of raw" in result.output
+    assert "health checks" in result.output
+
+
+def test_check_help_explains_managed_gate() -> None:
+    result = runner.invoke(main_app, ["check", "--help"])
+
+    assert result.exit_code == 0
+    assert "Use st check for repo gates" in result.output
+    assert "Never run raw pytest" in result.output
+
+
+def test_setup_help_explains_browser_isolation() -> None:
+    result = runner.invoke(main_app, ["setup", "--help"])
+
+    assert result.exit_code == 0
+    assert "Browser setup defaults to" in result.output
+    assert "server-local installs are debug-only" in result.output
+
+
+def test_git_help_explains_managed_workflow() -> None:
+    result = runner.invoke(main_app, ["git", "--help"])
+
+    assert result.exit_code == 0
+    assert "Use st git commit" in result.output
+    assert "st done" in result.output
+
+
 def test_browser_host_requires_configured_target(monkeypatch) -> None:
     monkeypatch.setenv("SF_BROWSER_HOST", "")
     monkeypatch.delenv("SF_BROWSER_ALLOW_LOCAL", raising=False)

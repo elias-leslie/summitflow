@@ -63,7 +63,10 @@ _TOOL_CONFIG_PATHS: dict[str, set[str]] = {
 }
 
 app = typer.Typer(
-    help="Quality checks through the managed st surface.",
+    help=(
+        "Quality checks through st. Use st check for repo gates; never run raw "
+        "pytest, Vitest, Biome, TSC, Ruff, SQLFluff, Squawk, or legacy dt first."
+    ),
     context_settings={
         "allow_extra_args": True,
         "ignore_unknown_options": True,
@@ -280,6 +283,10 @@ def _usage(configs: dict[str, dict[str, Any]]) -> None:
     names = "|".join(sorted(configs))
     print(
         f"""Quality checks through st
+
+Required path:
+  Use st check for repo gates.
+  Never run raw pytest, Vitest, Biome, TSC, Ruff, SQLFluff, Squawk, or legacy dt first.
 
 Usage:
   st check --check
