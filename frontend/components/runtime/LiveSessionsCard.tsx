@@ -22,6 +22,14 @@ function sessionSummary(sessions: LiveSessionStatus[] | undefined): string {
   return `${active}/${sessions.length} active`
 }
 
+function targetLabel(session: LiveSessionStatus): string {
+  if (!session.browser_target_host || !session.browser_target_port) {
+    return 'Browser target unavailable'
+  }
+  const mode = session.browser_target_debug_local ? 'debug-local' : 'isolated'
+  return `${mode} ${session.browser_target_host}:${session.browser_target_port}`
+}
+
 function openSession(sessionId: string, operatorToken?: string): void {
   if (operatorToken) {
     window.sessionStorage.setItem(
@@ -161,6 +169,23 @@ export function LiveSessionsCard() {
                         Protected
                       </span>
                     )}
+                    {session.control_enabled && (
+                      <span className="inline-flex items-center rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 uppercase tracking-[0.12em] text-emerald-200">
+                        Control
+                      </span>
+                    )}
+                    <span
+                      className={clsx(
+                        'inline-flex items-center rounded-full border px-2 py-0.5 uppercase tracking-[0.12em]',
+                        session.browser_target_debug_local
+                          ? 'border-rose-500/25 bg-rose-500/10 text-rose-200'
+                          : 'border-sky-500/25 bg-sky-500/10 text-sky-200',
+                      )}
+                    >
+                      {session.browser_target_debug_local
+                        ? 'Debug Local'
+                        : 'Isolated'}
+                    </span>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
@@ -185,6 +210,9 @@ export function LiveSessionsCard() {
               </div>
               <div className="mt-2 truncate text-2xs text-slate-600">
                 {session.current_url || session.target_url}
+              </div>
+              <div className="mt-1 truncate text-2xs text-slate-500">
+                {targetLabel(session)}
               </div>
             </div>
           ))}

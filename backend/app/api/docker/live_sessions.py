@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import os
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -17,6 +16,7 @@ import websockets
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from ...services.browser_targets import BrowserTargetError, resolve_browser_endpoint
 from ...utils.env import float_env
 from .helpers import _require_auth
 
@@ -25,10 +25,9 @@ LiveSessionState = Literal["active", "expired", "closed"]
 LiveControlAction = Literal["click", "key", "text", "wheel", "navigate", "resize"]
 LiveAuditActor = Literal["internal", "operator"]
 
-_DEFAULT_BROWSER_HOST = "127.0.0.1"
-_DEFAULT_BROWSER_PORT = 9222
 _DEFAULT_TARGET_URL = "https://www.amazon.com/photos/all"
 _SESSION_TTL_SECONDS = int(float_env("SUMMITFLOW_LIVE_SESSION_TTL_SECONDS", 30 * 60))
+_CONTROL_GRANT_TTL_SECONDS = int(float_env("SUMMITFLOW_LIVE_CONTROL_GRANT_TTL_SECONDS", 10 * 60))
 _CDP_HTTP_TIMEOUT_SECONDS = float_env("SUMMITFLOW_LIVE_CDP_HTTP_TIMEOUT", 5.0)
 _CDP_WS_TIMEOUT_SECONDS = float_env("SUMMITFLOW_LIVE_CDP_WS_TIMEOUT", 8.0)
 _SCREENSHOT_QUALITY = 68
@@ -103,6 +102,7 @@ class LiveSessionStatus(BaseModel):
     viewport_height: int
     control_enabled: bool
     control_owner: str | None = None
+    control_expires_at: datetime | None = None
     viewer_connected: bool
     token_required: bool
     last_viewed_at: datetime | None = None
@@ -110,6 +110,10 @@ class LiveSessionStatus(BaseModel):
     audit_events: list[LiveSessionAuditEvent]
     control_policy: str
     capture_policy: str
+    browser_target_host: str | None = None
+    browser_target_port: int | None = None
+    browser_target_source: str | None = None
+    browser_target_debug_local: bool = False
 
 
 class LiveSessionCreated(LiveSessionStatus):
@@ -182,10 +186,19 @@ class _ManagedLiveSession:
     viewer_connected: bool = False
     last_viewed_at: datetime | None = None
     last_controlled_at: datetime | None = None
+    control_expires_at: datetime | None = None
     audit_events: list[LiveSessionAuditEvent] | None = None
     state: LiveSessionState = "active"
     current_url: str | None = None
     title: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BrowserTargetStatus:
+    host: str | None = None
+    port: int | None = None
+    source: str | None = None
+    debug_local: bool = False
 
 
 _LIVE_SESSIONS: dict[str, _ManagedLiveSession] = {}
@@ -247,7 +260,6 @@ async def get_live_session_frame(
     """Capture the current browser frame without exposing CDP to the frontend."""
     session = await _require_session(session_id)
     actor = _require_view_authorization(session, x_live_session_token)
-    await _cdp_call(session.ws_url, "Page.bringToFront")
     result = await _cdp_call(
         session.ws_url,
         "Page.captureScreenshot",
@@ -284,6 +296,7 @@ async def control_live_session(
     """Send an operator control command through the internal CDP broker."""
     session = await _require_session(session_id)
     _require_operator_token(session, x_live_session_token)
+    _expire_control_grant(session)
     if not session.control_enabled:
         raise HTTPException(status_code=423, detail="Input control is not enabled")
     await _apply_control(session, payload)
@@ -302,6 +315,7 @@ async def secure_text_live_session(
     """Relay sensitive text without JSON validation echoes."""
     session = await _require_session(session_id)
     _require_operator_token(session, x_live_session_token)
+    _expire_control_grant(session)
     if not session.control_enabled:
         raise HTTPException(status_code=423, detail="Input control is not enabled")
     text = await _read_secure_text_body(request)
@@ -340,6 +354,11 @@ async def update_live_session_control_grant(
     session = await _require_session(session_id)
     _require_operator_token(session, x_live_session_token)
     session.control_enabled = payload.enabled
+    session.control_expires_at = (
+        _now() + timedelta(seconds=_CONTROL_GRANT_TTL_SECONDS)
+        if payload.enabled
+        else None
+    )
     _audit(
         session,
         actor="operator",
@@ -364,7 +383,6 @@ async def _apply_control(session: _ManagedLiveSession, payload: LiveSessionContr
         if payload.text is None:
             raise HTTPException(status_code=400, detail="text is required")
         _validate_text_input(payload.text)
-    await _cdp_call(session.ws_url, "Page.bringToFront")
     if payload.action == "click":
         await _dispatch_click(session, payload)
         return
@@ -375,7 +393,7 @@ async def _apply_control(session: _ManagedLiveSession, payload: LiveSessionContr
         text = payload.text
         if text is None:
             raise HTTPException(status_code=400, detail="text is required")
-        await _insert_text(session, text, bring_to_front=False)
+        await _insert_text(session, text)
         return
     if payload.action == "wheel":
         await _dispatch_wheel(session, payload)
@@ -413,12 +431,9 @@ async def _insert_text(
     session: _ManagedLiveSession,
     text: str,
     *,
-    bring_to_front: bool = True,
     require_editable: bool = False,
 ) -> None:
     _validate_text_input(text)
-    if bring_to_front:
-        await _cdp_call(session.ws_url, "Page.bringToFront")
     if require_editable and not await _has_focused_editable(session):
         raise HTTPException(status_code=409, detail="No focused text field")
     await _cdp_call(session.ws_url, "Input.insertText", {"text": text})
@@ -491,15 +506,25 @@ async def _dispatch_key(session: _ManagedLiveSession, payload: LiveSessionContro
     if key_code:
         params["windowsVirtualKeyCode"] = key_code
         params["nativeVirtualKeyCode"] = key_code
+    if code := _KEY_EVENT_CODES.get(key):
+        params["code"] = code
+    if key == "Enter":
+        params["text"] = "\r"
+        params["unmodifiedText"] = "\r"
+    key_up_params = {
+        name: value
+        for name, value in params.items()
+        if name not in {"text", "unmodifiedText"}
+    }
     await _cdp_call(
         session.ws_url,
         "Input.dispatchKeyEvent",
-        {"type": "rawKeyDown", **params},
+        {"type": "keyDown", **params},
     )
     await _cdp_call(
         session.ws_url,
         "Input.dispatchKeyEvent",
-        {"type": "keyUp", **params},
+        {"type": "keyUp", **key_up_params},
     )
 
 
@@ -631,6 +656,8 @@ async def _close_session(
 
 
 def _status_from_session(session: _ManagedLiveSession) -> LiveSessionStatus:
+    _expire_control_grant(session)
+    target = _browser_target_status()
     return LiveSessionStatus(
         id=session.id,
         kind=session.kind,
@@ -645,6 +672,7 @@ def _status_from_session(session: _ManagedLiveSession) -> LiveSessionStatus:
         viewport_height=session.viewport_height,
         control_enabled=session.control_enabled,
         control_owner="operator" if session.control_enabled else None,
+        control_expires_at=session.control_expires_at,
         viewer_connected=session.viewer_connected,
         token_required=session.sensitive,
         last_viewed_at=session.last_viewed_at,
@@ -658,6 +686,33 @@ def _status_from_session(session: _ManagedLiveSession) -> LiveSessionStatus:
             if session.sensitive
             else "frames are transient and not persisted"
         ),
+        browser_target_host=target.host,
+        browser_target_port=target.port,
+        browser_target_source=target.source,
+        browser_target_debug_local=target.debug_local,
+    )
+
+
+def _expire_control_grant(session: _ManagedLiveSession) -> None:
+    if not session.control_enabled or session.control_expires_at is None:
+        return
+    if session.control_expires_at > _now():
+        return
+    session.control_enabled = False
+    session.control_expires_at = None
+    _audit(session, actor="internal", action="control-expired")
+
+
+def _browser_target_status() -> BrowserTargetStatus:
+    try:
+        endpoint = resolve_browser_endpoint(live=True)
+    except BrowserTargetError:
+        return BrowserTargetStatus()
+    return BrowserTargetStatus(
+        host=endpoint.host,
+        port=endpoint.port,
+        source=endpoint.source,
+        debug_local=endpoint.debug_local,
     )
 
 
@@ -718,17 +773,11 @@ def _audit(
 
 
 def _browser_endpoint() -> tuple[str, int]:
-    host = (
-        os.environ.get("SUMMITFLOW_LIVE_BROWSER_HOST", "").strip()
-        or os.environ.get("SF_BROWSER_HOST", "").strip()
-        or _DEFAULT_BROWSER_HOST
-    )
-    raw_port = os.environ.get("SUMMITFLOW_LIVE_BROWSER_PORT", "").strip()
     try:
-        port = int(raw_port) if raw_port else _DEFAULT_BROWSER_PORT
-    except ValueError:
-        port = _DEFAULT_BROWSER_PORT
-    return host, port
+        endpoint = resolve_browser_endpoint(live=True)
+    except BrowserTargetError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return endpoint.host, endpoint.port
 
 
 def _normalize_ws_url(ws_url: str, host: str) -> str:
@@ -767,4 +816,20 @@ _KEY_CODES: dict[str, int] = {
     "End": 35,
     "PageUp": 33,
     "PageDown": 34,
+}
+
+_KEY_EVENT_CODES: dict[str, str] = {
+    "Backspace": "Backspace",
+    "Tab": "Tab",
+    "Enter": "Enter",
+    "Escape": "Escape",
+    "ArrowLeft": "ArrowLeft",
+    "ArrowUp": "ArrowUp",
+    "ArrowRight": "ArrowRight",
+    "ArrowDown": "ArrowDown",
+    "Delete": "Delete",
+    "Home": "Home",
+    "End": "End",
+    "PageUp": "PageUp",
+    "PageDown": "PageDown",
 }
