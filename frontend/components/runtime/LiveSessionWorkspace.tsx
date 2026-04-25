@@ -7,12 +7,15 @@ import {
   Eraser,
   Loader2,
   Lock,
+  MessageSquarePlus,
   Monitor,
   MousePointer2,
   Power,
   RefreshCw,
   Send,
   ShieldCheck,
+  SquareDashedMousePointer,
+  Trash2,
   Unlock,
 } from 'lucide-react'
 import {
@@ -37,11 +40,56 @@ interface LiveFrameRect {
   height: number
 }
 
+interface FrameAnnotation {
+  id: string
+  kind: 'pin' | 'box'
+  x: number
+  y: number
+  width?: number
+  height?: number
+}
+
+interface FrameDisplayRect {
+  leftPercent: number
+  topPercent: number
+  widthPercent: number
+  heightPercent: number
+}
+
+type InteractionMode = 'control' | 'pin' | 'box'
+
 const VIEWPORTS = [
   { label: '720', width: 1280, height: 720 },
   { label: '900', width: 1440, height: 900 },
   { label: '1080', width: 1920, height: 1080 },
 ] as const
+
+const EMPTY_FRAME_DISPLAY: FrameDisplayRect = {
+  leftPercent: 0,
+  topPercent: 0,
+  widthPercent: 100,
+  heightPercent: 100,
+}
+
+function browserTargetLabel(session: {
+  browser_target_host: string | null
+  browser_target_port: number | null
+  browser_target_debug_local: boolean
+}): string {
+  if (!session.browser_target_host || !session.browser_target_port) {
+    return 'unavailable'
+  }
+  const mode = session.browser_target_debug_local ? 'debug-local' : 'isolated'
+  return `${mode} ${session.browser_target_host}:${session.browser_target_port}`
+}
+
+function shortTime(value: string | null): string {
+  if (!value) return 'none'
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
 
 export function mapLiveFramePoint(
   clientX: number,
@@ -60,6 +108,18 @@ export function mapLiveFramePoint(
   }
 }
 
+export function normalizeAnnotationBox(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): Pick<FrameAnnotation, 'x' | 'y' | 'width' | 'height'> {
+  return {
+    x: Math.min(start.x, end.x),
+    y: Math.min(start.y, end.y),
+    width: Math.abs(end.x - start.x),
+    height: Math.abs(end.y - start.y),
+  }
+}
+
 export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
   const queryClient = useQueryClient()
   const viewportRef = useRef<HTMLButtonElement>(null)
@@ -69,6 +129,14 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
   const [targetUrl, setTargetUrl] = useState('')
   const [operatorToken, setOperatorToken] = useState<string | null>(null)
   const [tokenReady, setTokenReady] = useState(false)
+  const [interactionMode, setInteractionMode] =
+    useState<InteractionMode>('control')
+  const [annotations, setAnnotations] = useState<FrameAnnotation[]>([])
+  const [boxStart, setBoxStart] = useState<{ x: number; y: number } | null>(
+    null,
+  )
+  const [frameDisplay, setFrameDisplay] =
+    useState<FrameDisplayRect>(EMPTY_FRAME_DISPLAY)
   const [secureTextSending, setSecureTextSending] = useState(false)
   const [secureTextError, setSecureTextError] = useState<string | null>(null)
   const [secureTextStatus, setSecureTextStatus] = useState<string | null>(null)
@@ -153,6 +221,29 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
   const tokenMissing = !!session?.token_required && !operatorToken
   const canSendInput = !!operatorToken && !!session?.control_enabled
 
+  function updateFrameDisplay(): void {
+    const viewportRect = viewportRef.current?.getBoundingClientRect()
+    const imageRect = frameImageRef.current?.getBoundingClientRect()
+    if (!viewportRect || !imageRect || viewportRect.width <= 0) {
+      setFrameDisplay(EMPTY_FRAME_DISPLAY)
+      return
+    }
+    setFrameDisplay({
+      leftPercent:
+        ((imageRect.left - viewportRect.left) / viewportRect.width) * 100,
+      topPercent:
+        ((imageRect.top - viewportRect.top) / viewportRect.height) * 100,
+      widthPercent: (imageRect.width / viewportRect.width) * 100,
+      heightPercent: (imageRect.height / viewportRect.height) * 100,
+    })
+  }
+
+  useEffect(() => {
+    updateFrameDisplay()
+    window.addEventListener('resize', updateFrameDisplay)
+    return () => window.removeEventListener('resize', updateFrameDisplay)
+  }, [frame?.image_data_url])
+
   function send(control: LiveSessionControl): void {
     if (session?.state !== 'active') return
     if (!canSendInput) return
@@ -235,10 +326,24 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
     viewportRef.current?.focus()
     const point = pointFromEvent(event)
     if (!point) return
+    if (interactionMode === 'pin') {
+      setAnnotations((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          kind: 'pin',
+          x: point.x,
+          y: point.y,
+        },
+      ])
+      return
+    }
+    if (interactionMode !== 'control') return
     send({ action: 'click', x: point.x, y: point.y })
   }
 
   function handleWheel(event: WheelEvent<HTMLElement>): void {
+    if (interactionMode !== 'control') return
     const now = Date.now()
     if (now - lastWheelAt.current < 80) return
     lastWheelAt.current = now
@@ -254,6 +359,7 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
   }
 
   function handleKey(event: KeyboardEvent<HTMLButtonElement>): void {
+    if (interactionMode !== 'control') return
     if (event.metaKey || event.ctrlKey) return
     event.preventDefault()
     if (event.key.length === 1) {
@@ -271,6 +377,53 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
       action: 'navigate',
       target_url: nextUrl,
     })
+  }
+
+  function handleMouseDown(event: MouseEvent<HTMLElement>): void {
+    if (interactionMode !== 'box') return
+    const point = pointFromEvent(event)
+    if (!point) return
+    setBoxStart(point)
+  }
+
+  function handleMouseUp(event: MouseEvent<HTMLElement>): void {
+    if (interactionMode !== 'box' || !boxStart) return
+    const point = pointFromEvent(event)
+    setBoxStart(null)
+    if (!point) return
+    const box = normalizeAnnotationBox(boxStart, point)
+    if ((box.width ?? 0) < 8 || (box.height ?? 0) < 8) return
+    setAnnotations((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        kind: 'box',
+        ...box,
+      },
+    ])
+  }
+
+  function annotationStyle(annotation: FrameAnnotation) {
+    const viewportWidth = session?.viewport_width ?? 1
+    const viewportHeight = session?.viewport_height ?? 1
+    const left =
+      frameDisplay.leftPercent +
+      (annotation.x / viewportWidth) * frameDisplay.widthPercent
+    const top =
+      frameDisplay.topPercent +
+      (annotation.y / viewportHeight) * frameDisplay.heightPercent
+    if (annotation.kind === 'pin') {
+      return {
+        left: `${left}%`,
+        top: `${top}%`,
+      }
+    }
+    return {
+      left: `${left}%`,
+      top: `${top}%`,
+      width: `${((annotation.width ?? 0) / viewportWidth) * frameDisplay.widthPercent}%`,
+      height: `${((annotation.height ?? 0) / viewportHeight) * frameDisplay.heightPercent}%`,
+    }
   }
 
   if (sessionQuery.isLoading) {
@@ -372,15 +525,18 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
             ref={viewportRef}
             aria-label="Live browser viewport"
             onClick={handleClick}
+            onMouseDown={handleMouseDown}
+            onMouseUp={handleMouseUp}
             onKeyDown={handleKey}
             onWheel={handleWheel}
-            className="flex min-h-[50vh] w-full items-center justify-center overflow-hidden rounded-lg border border-slate-800 bg-black p-0 outline-none ring-0 focus:border-sky-500/60"
+            className="relative flex min-h-[50vh] w-full items-center justify-center overflow-hidden rounded-lg border border-slate-800 bg-black p-0 outline-none ring-0 focus:border-sky-500/60"
           >
             {frame?.image_data_url ? (
               // biome-ignore lint/performance/noImgElement: Live JPEG data URL from local backend broker.
               <img
                 ref={frameImageRef}
                 src={frame.image_data_url}
+                onLoad={updateFrameDisplay}
                 alt="Live browser frame"
                 draggable={false}
                 className="block max-h-[calc(100vh-8rem)] w-full object-contain"
@@ -395,10 +551,74 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
                 Loading frame
               </div>
             )}
+            {annotations.length > 0 && (
+              <div className="pointer-events-none absolute inset-0">
+                {annotations.map((annotation, index) =>
+                  annotation.kind === 'pin' ? (
+                    <div
+                      key={annotation.id}
+                      className="absolute -ml-3 -mt-3 flex h-6 w-6 items-center justify-center rounded-full border border-amber-200 bg-amber-400/90 text-[10px] font-semibold text-slate-950 shadow-lg shadow-black/40"
+                      style={annotationStyle(annotation)}
+                    >
+                      {index + 1}
+                    </div>
+                  ) : (
+                    <div
+                      key={annotation.id}
+                      className="absolute border-2 border-cyan-300 bg-cyan-300/10 shadow-lg shadow-black/40"
+                      style={annotationStyle(annotation)}
+                    />
+                  ),
+                )}
+              </div>
+            )}
           </button>
         </section>
 
         <aside className="space-y-3">
+          <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+              <MessageSquarePlus className="h-3.5 w-3.5 text-cyan-300" />
+              Annotate
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {(
+                [
+                  ['control', MousePointer2, 'Drive'],
+                  ['pin', MessageSquarePlus, 'Pin'],
+                  ['box', SquareDashedMousePointer, 'Box'],
+                ] as const
+              ).map(([mode, Icon, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setInteractionMode(mode)}
+                  className={clsx(
+                    'flex h-9 items-center justify-center gap-1 rounded-md border text-xs font-medium transition-colors',
+                    interactionMode === mode
+                      ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-100'
+                      : 'border-slate-700 bg-slate-950/50 text-slate-300 hover:border-slate-500',
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-2 text-2xs text-slate-500">
+              <span>{annotations.length} local marks</span>
+              <button
+                type="button"
+                onClick={() => setAnnotations([])}
+                disabled={annotations.length === 0}
+                className="flex h-8 items-center gap-1 rounded-md border border-slate-700 bg-slate-950/50 px-2 text-xs text-slate-300 transition-colors hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Clear
+              </button>
+            </div>
+          </div>
+
           <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
               <ShieldCheck className="h-3.5 w-3.5 text-amber-300" />
@@ -429,6 +649,18 @@ export function LiveSessionWorkspace({ sessionId }: LiveSessionWorkspaceProps) {
                 <span>Control</span>
                 <span className="text-slate-200">
                   {session.control_enabled ? 'operator' : 'locked'}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>Lease</span>
+                <span className="text-slate-200">
+                  {shortTime(session.control_expires_at)}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>Target</span>
+                <span className="max-w-[180px] truncate text-slate-200">
+                  {browserTargetLabel(session)}
                 </span>
               </div>
             </div>

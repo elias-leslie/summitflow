@@ -6,6 +6,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+import typer
 from typer.testing import CliRunner
 
 from cli.commands import browser, check, service, setup, vm
@@ -133,31 +135,109 @@ def test_browser_health_uses_native_health() -> None:
     health.assert_called_once()
 
 
-def test_browser_host_falls_back_to_detected_host(monkeypatch) -> None:
+def test_browser_host_requires_configured_target(monkeypatch) -> None:
     monkeypatch.setenv("SF_BROWSER_HOST", "")
+    monkeypatch.delenv("SF_BROWSER_ALLOW_LOCAL", raising=False)
 
-    def fake_run(
-        args: list[str],
-        *,
-        text: bool,
-        capture_output: bool,
-        check: bool,
-    ) -> subprocess.CompletedProcess[str]:
-        assert args == ["hostname", "-I"]
-        assert text and capture_output and not check
-        return subprocess.CompletedProcess(args, 0, stdout="192.0.2.77 10.0.0.2\n", stderr="")
-
-    with patch("cli.commands.browser.subprocess.run", side_effect=fake_run):
-        assert browser._host() == "192.0.2.77"
+    with pytest.raises(typer.Exit):
+        browser._host()
 
 
 def test_browser_host_uses_env_without_probe(monkeypatch) -> None:
     monkeypatch.setenv("SF_BROWSER_HOST", "192.0.2.10")
 
-    with patch("cli.commands.browser.subprocess.run") as run:
-        assert browser._host() == "192.0.2.10"
+    assert browser._host() == "192.0.2.10"
 
-    run.assert_not_called()
+
+def test_browser_open_uses_repo_scoped_session(monkeypatch) -> None:
+    monkeypatch.delenv("AGENT_BROWSER_SESSION", raising=False)
+    monkeypatch.delenv("ST_BROWSER_SESSION", raising=False)
+
+    with (
+        patch("cli.commands.browser._select_port", return_value=9222),
+        patch("cli.commands.browser._host_for_engine", return_value="browser"),
+        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
+        patch("cli.commands.browser._default_browser_session", return_value="st-repo-1234"),
+        patch("cli.commands.browser._run_browser_reaper"),
+        patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0)) as run_agent,
+    ):
+        result = runner.invoke(main_app, ["browser", "open", "https://example.com"])
+
+    assert result.exit_code == 0
+    assert run_agent.call_args_list[0].args[0] == [
+        "--session",
+        "st-repo-1234",
+        "set",
+        "viewport",
+        "1600",
+        "900",
+    ]
+    assert run_agent.call_args_list[1].args[0] == [
+        "--session",
+        "st-repo-1234",
+        "open",
+        "https://example.com",
+    ]
+
+
+def test_browser_open_preserves_explicit_session() -> None:
+    with (
+        patch("cli.commands.browser._select_port", return_value=9222),
+        patch("cli.commands.browser._host_for_engine", return_value="browser"),
+        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
+        patch("cli.commands.browser._run_browser_reaper"),
+        patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0)) as run_agent,
+    ):
+        result = runner.invoke(main_app, ["browser", "--session", "operator", "open", "https://example.com"])
+
+    assert result.exit_code == 0
+    assert run_agent.call_args_list[0].args[0] == [
+        "--session",
+        "operator",
+        "set",
+        "viewport",
+        "1600",
+        "900",
+    ]
+    assert run_agent.call_args_list[1].args[0] == [
+        "--session",
+        "operator",
+        "open",
+        "https://example.com",
+    ]
+
+
+def test_browser_check_closes_session_and_runs_reaper() -> None:
+    calls: list[list[str]] = []
+
+    def fake_run_agent(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        if args[-1].startswith("JSON.stringify"):
+            return subprocess.CompletedProcess(args, 0, stdout="{}", stderr="")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    with (
+        patch("cli.commands.browser._select_port", return_value=9222),
+        patch("cli.commands.browser._host_for_engine", return_value="browser"),
+        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
+        patch("cli.commands.browser._run_browser_reaper") as reaper,
+        patch("cli.commands.browser._run_agent", side_effect=fake_run_agent),
+    ):
+        result = runner.invoke(main_app, ["browser", "check", "https://example.com", "/tmp/check.png"])
+
+    assert result.exit_code == 0
+    assert calls[-1][2:] == ["close"]
+    reaper.assert_called_once()
+
+
+def test_setup_browser_refuses_server_local_install(monkeypatch) -> None:
+    monkeypatch.delenv("ST_SETUP_BROWSER_ALLOW_SERVER_INSTALL", raising=False)
+
+    with patch("cli.commands.setup.confirm_gate"):
+        result = runner.invoke(setup.app, ["browser", "--confirm", "abc12345"])
+
+    assert result.exit_code == 2
+    assert "Refusing server-local browser install" in result.output
 
 
 def test_web_runs_agent_hub_service_code() -> None:

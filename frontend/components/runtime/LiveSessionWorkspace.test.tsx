@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { mapLiveFramePoint } from './LiveSessionWorkspace'
+import {
+  mapLiveFramePoint,
+  normalizeAnnotationBox,
+} from './LiveSessionWorkspace'
 
 describe('mapLiveFramePoint', () => {
   it('maps operator clicks against the rendered frame image rect', () => {
@@ -24,5 +27,16 @@ describe('mapLiveFramePoint', () => {
     )
 
     expect(point).toBeNull()
+  })
+
+  it('normalizes annotation boxes drawn in any direction', () => {
+    expect(
+      normalizeAnnotationBox({ x: 900, y: 700 }, { x: 400, y: 300 }),
+    ).toEqual({
+      x: 400,
+      y: 300,
+      width: 500,
+      height: 400,
+    })
   })
 })

@@ -6,6 +6,8 @@ import asyncio
 from pathlib import Path
 from typing import Literal
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 
@@ -591,6 +593,20 @@ class TestDockerRuntime:
         assert list_response.status_code == 200
         assert "operator_token" not in list_response.text
 
+    def test_live_session_browser_endpoint_requires_configured_host(self, monkeypatch) -> None:
+        from app.api.docker import live_sessions
+
+        monkeypatch.delenv("SUMMITFLOW_LIVE_BROWSER_HOST", raising=False)
+        monkeypatch.delenv("SF_BROWSER_HOST", raising=False)
+        monkeypatch.delenv("SUMMITFLOW_LIVE_BROWSER_ALLOW_LOCAL", raising=False)
+        monkeypatch.delenv("SF_BROWSER_ALLOW_LOCAL", raising=False)
+
+        with pytest.raises(HTTPException) as exc:
+            live_sessions._browser_endpoint()
+
+        assert exc.value.status_code == 503
+        assert "Browser host is not configured" in exc.value.detail
+
     def test_sensitive_live_session_frame_requires_operator_token(
         self,
         mocker: MockerFixture,
@@ -663,8 +679,77 @@ class TestDockerRuntime:
 
         assert response.status_code == 200
         assert "dont-echo-this" not in response.text
-        assert cdp_call.await_count == 2
+        assert cdp_call.await_count == 1
         assert response.json()["last_controlled_at"] is not None
+
+    def test_live_session_control_grant_sets_expiring_lease(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api.docker import live_sessions
+
+        live_sessions._LIVE_SESSIONS.clear()
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        now = live_sessions._now()
+        live_sessions._LIVE_SESSIONS["session-1"] = live_sessions._ManagedLiveSession(
+            id="session-1",
+            kind="browser",
+            target_url="https://www.amazon.com/photos/all",
+            target_id="target-1",
+            ws_url="ws://browser/devtools/page/target-1",
+            operator_token_hash=live_sessions._token_hash("operator-token"),
+            created_at=now,
+            expires_at=now + live_sessions.timedelta(minutes=5),
+            viewport_width=1440,
+            viewport_height=900,
+            audit_events=[],
+        )
+
+        response = client.post(
+            "/api/docker/live-sessions/session-1/control-grant",
+            headers={"X-Live-Session-Token": "operator-token"},
+            json={"enabled": True},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["control_enabled"] is True
+        assert body["control_owner"] == "operator"
+        assert body["control_expires_at"] is not None
+
+    def test_live_session_expired_control_grant_blocks_input(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api.docker import live_sessions
+
+        live_sessions._LIVE_SESSIONS.clear()
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        now = live_sessions._now()
+        live_sessions._LIVE_SESSIONS["session-1"] = live_sessions._ManagedLiveSession(
+            id="session-1",
+            kind="browser",
+            target_url="https://www.amazon.com/photos/all",
+            target_id="target-1",
+            ws_url="ws://browser/devtools/page/target-1",
+            operator_token_hash=live_sessions._token_hash("operator-token"),
+            created_at=now,
+            expires_at=now + live_sessions.timedelta(minutes=5),
+            viewport_width=1440,
+            viewport_height=900,
+            control_enabled=True,
+            control_expires_at=now - live_sessions.timedelta(seconds=1),
+            audit_events=[],
+        )
+
+        response = client.post(
+            "/api/docker/live-sessions/session-1/control",
+            headers={"X-Live-Session-Token": "operator-token"},
+            json={"action": "text", "text": "blocked"},
+        )
+
+        assert response.status_code == 423
+        assert live_sessions._LIVE_SESSIONS["session-1"].control_enabled is False
 
     def test_live_session_secure_text_uses_non_echoing_plain_text_endpoint(
         self,
@@ -717,7 +802,6 @@ class TestDockerRuntime:
         assert secret_text not in response.text
         assert response.json()["last_controlled_at"] is not None
         assert [call.args[1] for call in cdp_call.await_args_list] == [
-            "Page.bringToFront",
             "Runtime.evaluate",
             "Input.insertText",
         ]
@@ -773,9 +857,69 @@ class TestDockerRuntime:
         assert response.status_code == 409
         assert secret_text not in response.text
         assert [call.args[1] for call in cdp_call.await_args_list] == [
-            "Page.bringToFront",
             "Runtime.evaluate",
         ]
+
+    def test_live_session_enter_key_dispatches_submit_key_event(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api.docker import live_sessions
+
+        live_sessions._LIVE_SESSIONS.clear()
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        now = live_sessions._now()
+        live_sessions._LIVE_SESSIONS["session-1"] = live_sessions._ManagedLiveSession(
+            id="session-1",
+            kind="browser",
+            target_url="https://www.amazon.com/photos/all",
+            target_id="target-1",
+            ws_url="ws://browser/devtools/page/target-1",
+            operator_token_hash=live_sessions._token_hash("operator-token"),
+            created_at=now,
+            expires_at=now + live_sessions.timedelta(minutes=5),
+            viewport_width=1440,
+            viewport_height=900,
+            control_enabled=True,
+            audit_events=[],
+        )
+        cdp_call = mocker.patch(
+            "app.api.docker.live_sessions._cdp_call",
+            new=mocker.AsyncMock(return_value={}),
+        )
+        mocker.patch(
+            "app.api.docker.live_sessions._refresh_page_metadata",
+            new=mocker.AsyncMock(),
+        )
+
+        response = client.post(
+            "/api/docker/live-sessions/session-1/control",
+            headers={"X-Live-Session-Token": "operator-token"},
+            json={"action": "key", "key": "Enter"},
+        )
+
+        assert response.status_code == 200
+        calls = cdp_call.await_args_list
+        assert [call.args[1] for call in calls] == [
+            "Input.dispatchKeyEvent",
+            "Input.dispatchKeyEvent",
+        ]
+        assert calls[0].args[2] == {
+            "type": "keyDown",
+            "key": "Enter",
+            "windowsVirtualKeyCode": 13,
+            "nativeVirtualKeyCode": 13,
+            "code": "Enter",
+            "text": "\r",
+            "unmodifiedText": "\r",
+        }
+        assert calls[1].args[2] == {
+            "type": "keyUp",
+            "key": "Enter",
+            "windowsVirtualKeyCode": 13,
+            "nativeVirtualKeyCode": 13,
+            "code": "Enter",
+        }
 
     def test_live_session_text_limit_errors_do_not_echo_input(
         self,

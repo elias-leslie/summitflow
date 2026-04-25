@@ -109,6 +109,7 @@ export interface LiveSessionStatus {
   viewport_height: number
   control_enabled: boolean
   control_owner: string | null
+  control_expires_at: string | null
   viewer_connected: boolean
   token_required: boolean
   last_viewed_at: string | null
@@ -116,6 +117,10 @@ export interface LiveSessionStatus {
   audit_events: LiveSessionAuditEvent[]
   control_policy: string
   capture_policy: string
+  browser_target_host: string | null
+  browser_target_port: number | null
+  browser_target_source: string | null
+  browser_target_debug_local: boolean
 }
 
 export interface LiveSessionCreated extends LiveSessionStatus {

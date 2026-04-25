@@ -10,6 +10,7 @@ import { MaintenanceStatusCard } from '@/components/runtime/MaintenanceStatusCar
 import { ProxmoxStatusCard } from '@/components/runtime/ProxmoxStatusCard'
 import { RuntimeModeBanner } from '@/components/runtime/RuntimeModeBanner'
 import { ServiceGrid } from '@/components/runtime/ServiceGrid'
+import { WindowsBrowserConnectorPanel } from '@/components/runtime/WindowsBrowserConnectorPanel'
 import { runtimeApi } from '@/lib/api/runtime'
 import { POLL_MONITOR } from '@/lib/polling'
 
@@ -96,6 +97,8 @@ export default function RuntimePage() {
 
       {/* Operator-visible browser sessions */}
       <LiveSessionsCard />
+
+      <WindowsBrowserConnectorPanel />
 
       {/* Service grid with list/grid toggle */}
       <ServiceGrid />

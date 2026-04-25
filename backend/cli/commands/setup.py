@@ -156,16 +156,28 @@ def browser(
     version: Annotated[str | None, typer.Argument(help="Optional agent-browser npm version")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview setup without running")] = False,
     confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
+    allow_server_install: Annotated[
+        bool,
+        typer.Option("--allow-server-install", help="Install local browser tooling on this server for explicit debug-only use"),
+    ] = False,
 ) -> None:
-    """Install or update the managed browser runner."""
+    """Configure browser tooling without silently installing server-local browsers."""
     lines = [
         "SETUP BROWSER",
         f"Version: {version or 'latest'}",
-        "Installs agent-browser and the managed browser wrapper.",
+        "Default path: configure SF_BROWSER_HOST to an isolated VM or connector endpoint.",
+        "Server-local agent-browser install is debug-only and requires --allow-server-install.",
     ]
     _preview("st setup browser", lines, dry_run, confirm)
     if dry_run:
         return
+    if not allow_server_install and os.environ.get("ST_SETUP_BROWSER_ALLOW_SERVER_INSTALL", "").strip() != "1":
+        typer.echo(
+            "Refusing server-local browser install. Set SF_BROWSER_HOST to an isolated browser VM/connector, "
+            "or rerun with --allow-server-install for explicit debug-only use.",
+            err=True,
+        )
+        raise typer.Exit(2)
     managed_dir = Path.home() / ".local" / "share" / "agent-browser-managed"
     managed_dir.mkdir(parents=True, exist_ok=True)
     package = f"agent-browser@{version}" if version else "agent-browser@latest"
