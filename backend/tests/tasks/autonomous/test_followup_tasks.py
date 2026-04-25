@@ -7,8 +7,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from app.services.task_execution_readiness import load_task_execution_readiness
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
+from app.storage.subtasks import create_subtask, get_subtasks_for_task
+from app.storage.task_spirit import get_task_spirit, upsert_task_spirit
 from app.tasks.autonomous.exec_modules.completion_handler import handle_partial_completion
 from app.tasks.autonomous.exec_modules.followup_tasks import (
     _build_followup_description,
@@ -66,6 +69,105 @@ class TestNormalizeFailedSubtaskIds:
 
 
 class TestCreateFollowupTaskForFailures:
+    def test_new_followup_inherits_runnable_package_and_syncs_ready(
+        self,
+        test_project_id: str,
+        cleanup_tasks: list[str],
+    ) -> None:
+        parent = task_store.create_task(
+            project_id=test_project_id,
+            title="Parent task",
+            description="Parent task description",
+            task_type="task",
+            priority=2,
+        )
+        cleanup_tasks.append(parent["id"])
+
+        upsert_task_spirit(
+            parent["id"],
+            done_when=["Persist planner context on follow-up retry"],
+            context={
+                "objective": "Finish the unresolved planner-path work",
+                "files_to_modify": ["backend/app/api/tasks/update_endpoints.py"],
+                "testing_strategy": "Run focused API tests",
+            },
+            complexity="STANDARD",
+        )
+        create_subtask(
+            parent["id"],
+            "1.1",
+            "Persist planner context",
+            display_order=0,
+            phase="backend",
+            steps=["Reproduce the failure", "Patch the update path"],
+        )
+        create_subtask(
+            parent["id"],
+            "1.2",
+            "Run focused backend validation",
+            display_order=1,
+            phase="backend",
+            depends_on=["1.1"],
+            steps=[{"description": "Run dt pytest backend/tests/api/test_task_workflow.py"}],
+        )
+
+        followup_id = create_followup_task_for_failures(
+            parent["id"],
+            test_project_id,
+            [{"subtask_id": "1.2", "error": "readiness key missing in context payload"}],
+        )
+
+        assert followup_id is not None
+        cleanup_tasks.append(followup_id)
+
+        followup = task_store.get_task(followup_id)
+        spirit = get_task_spirit(followup_id)
+        subtasks = get_subtasks_for_task(followup_id, include_steps=True)
+        readiness = load_task_execution_readiness(followup_id)
+
+        assert followup is not None
+        assert spirit is not None
+        assert "1.2: readiness key missing in context payload" in str(followup["description"])
+        assert followup["parent_task_id"] == parent["id"]
+        assert followup["labels"] == ["autocode-followup"]
+        assert spirit["done_when"] == [
+            f"Resolve unresolved work carried from {parent['id']}",
+            "1.2 Run focused backend validation",
+            "Focused validation passes for the follow-up changes",
+        ]
+        assert spirit["plan_status"] == "approved"
+        assert spirit["context"]["source_task_id"] == parent["id"]
+        assert spirit["context"]["failed_subtask_ids"] == ["1.2"]
+        assert spirit["context"]["parent_done_when"] == ["Persist planner context on follow-up retry"]
+        assert spirit["context"]["failure_summaries"] == {
+            "1.2": "readiness key missing in context payload",
+        }
+        assert spirit["context"]["files_to_modify"] == ["backend/app/api/tasks/update_endpoints.py"]
+        assert spirit["context"]["subtasks"] == [
+            {
+                "subtask_id": "1.2",
+                "description": "Run focused backend validation",
+                "phase": "backend",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "description": "Run dt pytest backend/tests/api/test_task_workflow.py",
+                        "passes": False,
+                    }
+                ],
+            }
+        ]
+        assert [subtask["subtask_id"] for subtask in subtasks] == ["1.2"]
+        assert subtasks[0]["depends_on"] == []
+        assert subtasks[0]["steps"] == [
+            {
+                "step_number": 1,
+                "description": "Run dt pytest backend/tests/api/test_task_workflow.py",
+                "passes": False,
+            }
+        ]
+        assert readiness.ready is True
+
     def test_repeated_same_input_reuses_existing_pending_followup_and_refreshes_description(
         self,
         test_project_id: str,

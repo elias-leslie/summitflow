@@ -66,7 +66,7 @@ def _set_followup_status(task_id: str, *, fallback: str) -> str:
 def _apply_auto_merge_status(task_id: str, merge_result: MergeResult | None) -> str:
     if merge_result is None:
         task_store.update_task_status(task_id, STATUS_COMPLETED)
-        return "ready for manual merge"
+        return "manual merge pending"
 
     merge_status = str(merge_result.get("status") or "blocked")
     if merge_status in {"merged", "skipped"}:
@@ -76,6 +76,12 @@ def _apply_auto_merge_status(task_id: str, merge_result: MergeResult | None) -> 
     if merge_status == "rolled_back":
         return "auto-merge rolled back"
     return "auto-merge failed"
+
+
+def _prepare_auto_merge_closeout(task_id: str, project_id: str) -> None:
+    """Move approved tasks out of running before merge cleanup."""
+    if agent_configs.get_auto_merge_enabled(project_id):
+        task_store.update_task_status(task_id, STATUS_COMPLETED, validate_transition=False)
 
 
 def _send_notification(task_id: str, project_id: str, fn: Callable[..., object], **kwargs: Any) -> None:
@@ -130,13 +136,14 @@ def _handle_approved(task_id: str, complexity: str) -> None:
     from ..exec_modules.completion_status import wake_persona
 
     project_id = _get_project_id(task_id)
+    _prepare_auto_merge_closeout(task_id, project_id)
     merge_result = _maybe_auto_merge(task_id, project_id)
     label = _apply_auto_merge_status(task_id, merge_result)
     current_status = _task_status(task_id) or STATUS_COMPLETED
     if merge_result is None:
         cleanup_result = cleanup_task_checkpoint(task_id, delete_branch=False, project_id=project_id)
         if cleanup_result.get("status") == "cleaned":
-            label = "Ready for manual merge (checkout cleaned)"
+            label = "Manual merge pending (checkout cleaned)"
         else:
             reason = str(cleanup_result.get("reason") or cleanup_result.get("error") or "unknown")
             log_task_event(task_id, f"Manual cleanup review needed: {reason}")
@@ -163,6 +170,7 @@ def _handle_needs_fix(task_id: str, review_result: Mapping[str, Any]) -> None:
     project_id = _get_project_id(task_id)
     if not concerns:
         log_task_event(task_id, f"AI Review: {verdict} with no concerns - treating as APPROVED")
+        _prepare_auto_merge_closeout(task_id, project_id)
         merge_result = _maybe_auto_merge(task_id, project_id)
         merge_label = _apply_auto_merge_status(task_id, merge_result)
         if merge_result is None:
@@ -180,9 +188,10 @@ def _handle_needs_fix(task_id: str, review_result: Mapping[str, Any]) -> None:
         if _task_status(task_id) == STATUS_COMPLETED:
             _send_notification(task_id, project_id, create_task_completion_notification, detail=f"QA passed with no concerns ({merge_label}).")
         return
-    from app.services.task_checkout import get_task_checkout
-    checkout = get_task_checkout(task_id, project_id)
+    from app.services.task_checkout import create_task_checkout
+    checkout = create_task_checkout(task_id, project_id)
     if checkout and checkout.path:
+        _set_followup_status(task_id, fallback=STATUS_RUNNING)
         log_task_event(task_id, f"AI Review: {verdict} - Starting QA loop")
         loop_result = run_qa_loop(task_id, project_id, review_result, str(checkout.path))
         if loop_result == VERDICT_APPROVED:
@@ -203,6 +212,7 @@ def _handle_escalation(task_id: str, review_result: Mapping[str, Any]) -> None:
     summary = str(review_result.get("summary", "Unknown issue"))
     decision = supervisor_resolve_escalation(task_id, summary, project_id)
     if decision == DECISION_APPROVE:
+        _prepare_auto_merge_closeout(task_id, project_id)
         merge_result = _maybe_auto_merge(task_id, project_id)
         merge_label = _apply_auto_merge_status(task_id, merge_result)
         log_task_event(task_id, f"AI Review: ESCALATE - Supervisor approved, {merge_label}")

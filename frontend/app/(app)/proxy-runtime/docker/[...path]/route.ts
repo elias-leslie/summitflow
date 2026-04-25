@@ -71,6 +71,18 @@ function proxyResponse(response: Response): Response {
   })
 }
 
+function proxyTransportErrorResponse(error: unknown): Response {
+  const message =
+    error instanceof Error ? error.message : 'Upstream proxy transport error'
+  return Response.json(
+    {
+      error: 'Runtime proxy upstream unavailable',
+      detail: message,
+    },
+    { status: 502 },
+  )
+}
+
 async function readForwardBody(
   request: Request,
   method: string,
@@ -95,14 +107,19 @@ async function proxyRequest(
     new URL(request.url).searchParams.toString(),
   )
   const body = await readForwardBody(request, method)
-  const response = await fetch(url, {
-    method,
-    headers: buildForwardHeaders(request, config, {
-      bodyPresent: body !== undefined,
-    }),
-    ...(body ? { body } : {}),
-  })
-  return proxyResponse(response)
+
+  try {
+    const response = await fetch(url, {
+      method,
+      headers: buildForwardHeaders(request, config, {
+        bodyPresent: body !== undefined,
+      }),
+      ...(body ? { body } : {}),
+    })
+    return proxyResponse(response)
+  } catch (error) {
+    return proxyTransportErrorResponse(error)
+  }
 }
 
 export async function GET(request: Request, context: RouteContext) {

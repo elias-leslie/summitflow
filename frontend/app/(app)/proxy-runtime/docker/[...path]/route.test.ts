@@ -190,4 +190,30 @@ describe('runtime docker proxy route', () => {
       { status: 'queued', note: '{"note":"three"}' },
     ])
   })
+
+  it('returns stable 502 json when upstream resets during queued backup create burst', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('socket hang up'))
+
+    const response = await POST(
+      new Request(
+        'http://localhost/proxy-runtime/docker/backup-sources/test/backups',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note: 'queued create' }),
+        },
+      ),
+      {
+        params: Promise.resolve({
+          path: ['backup-sources', 'test', 'backups'],
+        }),
+      },
+    )
+
+    expect(response.status).toBe(502)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Runtime proxy upstream unavailable',
+      detail: 'socket hang up',
+    })
+  })
 })

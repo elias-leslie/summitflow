@@ -26,8 +26,8 @@ class TestTransitionToReviewOrComplete:
 
         result = transition_to_review_or_complete("t-1", "proj", "test", dispatch)
 
-        assert result == "completed"
-        mock_store.update_task_status.assert_called_with("t-1", "completed", validate_transition=False)
+        assert result == "running"
+        mock_store.update_task_status.assert_called_with("t-1", "running")
         dispatch.assert_called_once_with("review", "t-1", "proj")
 
     @patch(f"{MODULE}.agent_configs")
@@ -37,13 +37,29 @@ class TestTransitionToReviewOrComplete:
     ) -> None:
         """When project requires review and task has ai_review=True, task completes via review gate."""
         mock_configs.get_require_review.return_value = True
-        mock_store.get_task.return_value = {"id": "t-1", "ai_review": True}
+        mock_store.get_task.return_value = {"id": "t-1", "ai_review": True, "status": "running"}
         dispatch = MagicMock()
 
         result = transition_to_review_or_complete("t-1", "proj", "test", dispatch)
 
-        assert result == "completed"
-        mock_store.update_task_status.assert_called_with("t-1", "completed")
+        assert result == "running"
+        mock_store.update_task_status.assert_not_called()
+        dispatch.assert_called_once_with("review", "t-1", "proj")
+
+    @patch(f"{MODULE}.agent_configs")
+    @patch(f"{MODULE}.task_store")
+    def test_review_enabled_reopens_completed_task_to_running(
+        self, mock_store: MagicMock, mock_configs: MagicMock
+    ) -> None:
+        """Completed tasks reopen to running before review dispatch."""
+        mock_configs.get_require_review.return_value = True
+        mock_store.get_task.return_value = {"id": "t-1", "ai_review": True, "status": "completed"}
+        dispatch = MagicMock()
+
+        result = transition_to_review_or_complete("t-1", "proj", "test", dispatch)
+
+        assert result == "running"
+        mock_store.update_task_status.assert_called_with("t-1", "running", validate_transition=False)
         dispatch.assert_called_once_with("review", "t-1", "proj")
 
     @patch("app.tasks.autonomous.cleanup.checkpoint_cleanup.cleanup_task_checkpoint")
@@ -146,12 +162,12 @@ class TestTransitionToReviewOrComplete:
     ) -> None:
         """When task has no ai_review field, default to project setting (completes via review gate)."""
         mock_configs.get_require_review.return_value = True
-        mock_store.get_task.return_value = {"id": "t-1"}
+        mock_store.get_task.return_value = {"id": "t-1", "status": "running"}
         dispatch = MagicMock()
 
         result = transition_to_review_or_complete("t-1", "proj", "test", dispatch)
 
-        assert result == "completed"
+        assert result == "running"
         dispatch.assert_called_once()
 
     @patch(f"{MODULE}.agent_configs")
@@ -166,5 +182,6 @@ class TestTransitionToReviewOrComplete:
 
         result = transition_to_review_or_complete("t-1", "proj", "test", dispatch)
 
-        assert result == "completed"
+        assert result == "running"
+        mock_store.update_task_status.assert_called_with("t-1", "running", validate_transition=False)
         dispatch.assert_called_once()

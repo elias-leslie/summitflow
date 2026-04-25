@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import typer
 
 from ..client import APIError, STClient
@@ -80,7 +82,7 @@ def _validate_task_for_autocode(
         raise typer.Exit(1)
 
 
-def _parse_schedule(at: str | None) -> object | None:
+def _parse_schedule(at: str | None) -> Any | None:
     """Parse schedule from --at parameter."""
     if not at:
         return None
@@ -98,7 +100,7 @@ def _parse_schedule(at: str | None) -> object | None:
 def _output_dry_run(
     task_id: str,
     subtasks: list[dict[str, object]],
-    schedule: object | None,
+    schedule: Any | None,
 ) -> None:
     """Output dry-run results."""
     incomplete = [s for s in subtasks if not s.get("passes")]
@@ -118,13 +120,13 @@ def _output_dry_run(
 def _queue_task_for_execution(task_id: str, client: STClient) -> None:
     """Update task status to queue for execution."""
     try:
-        client.update_status(task_id, status="pending")
+        client.execute_task(task_id)
     except APIError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None
 
 
-def _output_queue_result(task_id: str, schedule: object | None) -> None:
+def _output_queue_result(task_id: str, schedule: Any | None) -> None:
     """Output task queueing result."""
     if schedule and hasattr(schedule, "timestamp"):
         msg = f"Task scheduled for {schedule.timestamp.strftime('%Y-%m-%d %H:%M UTC')}"

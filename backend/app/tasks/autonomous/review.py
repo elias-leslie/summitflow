@@ -16,11 +16,8 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
-from ...services.context_gatherer import (
-    PRECISION_CODE_SEARCH_GUIDANCE,
-    collect_precision_code_search_context,
-)
-from ...services.task_checkout import get_execution_path
+from ...services.task_checkout import create_task_checkout, get_execution_path
+from ...services.task_checkout.operations import _checkout
 from ...services.task_harness import summarize_execution_contract
 from ...storage import log_task_event
 from ...storage import tasks as task_store
@@ -48,25 +45,6 @@ def _get_spirit_context(task_id: str) -> dict[str, Any]:
     spirit = get_task_spirit(task_id)
     context = spirit.get("context") if spirit else {}
     return context if isinstance(context, dict) else {}
-
-
-def _build_precision_context(task: dict[str, Any], task_id: str, project_id: str) -> str:
-    """Build shared Precision Code Search context for reviewer prompts."""
-    spirit = get_task_spirit(task_id)
-    done_when = spirit.get("done_when", []) if spirit else []
-    queries = [
-        str(task.get("title", "")),
-        str(task.get("description", "")),
-        *(str(item) for item in done_when),
-    ]
-    result = collect_precision_code_search_context(
-        project_id,
-        queries,
-        budget_tokens=1200,
-    )
-    if not result.prompt_context:
-        return ""
-    return f"Precision Code Search:\n{result.prompt_context}\n\n"
 
 
 def _collect_touched_files(task_id: str, project_id: str) -> list[str]:
@@ -172,6 +150,30 @@ def _notify_failure(project_id: str, task_id: str, task: dict, error_message: st
         logger.exception("Failed to create notification", task_id=task_id)
 
 
+def _ensure_review_checkout(task_id: str, project_id: str, task: dict[str, Any]) -> bool:
+    """Prefer task branch for review, but fall back to merged/base state if branch is gone."""
+    base_branch = str(task.get("base_branch") or "main")
+    checkout = create_task_checkout(task_id, project_id, base_branch=base_branch)
+    if checkout:
+        return True
+
+    try:
+        project_path = get_execution_path(task_id, project_id)
+        _checkout(base_branch, Path(project_path))
+        logger.warning(
+            "review_checkout_branch_missing_using_base",
+            task_id=task_id,
+            project_id=project_id,
+            base_branch=base_branch,
+        )
+        return True
+    except Exception:
+        logger.warning("review_checkout_unavailable", task_id=task_id, project_id=project_id, exc_info=True)
+        task_store.update_task_status(task_id, "failed")
+        _notify_failure(project_id, task_id, task, f"Review could not switch to {task_id}/main or {base_branch}")
+        return False
+
+
 def _check_diff_issues(task_id: str, project_id: str, task: dict, git_diff: str) -> dict | None:
     """Return an early-exit result dict if the diff is empty or erroneous, else None."""
     if not git_diff or git_diff.strip() in ("(no changes)", ""):
@@ -199,20 +201,17 @@ def _build_prompt(task: dict, complexity: str, git_diff: str, task_id: str) -> s
     spirit = get_task_spirit(task_id)
     done_when = spirit.get("done_when", []) if spirit else []
     done_when_text = "\n".join(f"- {c}" for c in done_when) if done_when else "(none defined)"
-    precision_context = _build_precision_context(task, task_id, task.get("project_id", ""))
     scope_block = _build_scope_block(task_id, task.get("project_id", ""))
     snapshot_block = _build_snapshot_block(task_id, task.get("project_id", ""))
     contract_block = _build_execution_contract_block(task_id)
 
     return (
         f"Task: {task.get('title', '')}\nComplexity: {complexity}\n\n"
-        f"{precision_context}"
         f"Success Criteria (done_when):\n{done_when_text}\n\n"
         f"{contract_block}"
         f"{scope_block}"
         f"{snapshot_block}"
         f"Git Diff:\n```\n{git_diff[:50000]}\n```\n\n"
-        f"{PRECISION_CODE_SEARCH_GUIDANCE}\n"
         "If done_when criteria are defined, verify the diff addresses each one.\n"
         "Review the touched area, not just the patch. Reject code that leaves touched files structurally worse without justification.\n"
         "Flag new duplication, dead code, stale compatibility wrappers, broadened scope beyond the touched files, or maintainability regressions in touched files.\n\n"
@@ -239,6 +238,8 @@ def ai_review(
 
     if task.get("status") != "completed":
         task_store.update_task_status(task_id, "running")
+    if not _ensure_review_checkout(task_id, project_id, task):
+        return {"task_id": task_id, "status": "error", "message": f"Review could not switch to {task_id}/main"}
     git_diff = get_git_diff(task_id, project_id)
 
     early = _check_diff_issues(task_id, project_id, task, git_diff)

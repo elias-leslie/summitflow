@@ -44,6 +44,7 @@ class TestMergeBlockedWhenTaskRunning:
         mock_checkout.assert_not_called()
 
     @patch(f"{_CLEANUP}._git")
+    @patch(f"{_CLEANUP}.publish_existing_commits")
     @patch(f"{_CLEANUP}.update_task_fields")
     @patch(f"{_CLEANUP}.run_post_merge_validation")
     @patch(f"{_CLEANUP}.delete_task_branch")
@@ -64,6 +65,7 @@ class TestMergeBlockedWhenTaskRunning:
         mock_delete_branch: MagicMock,
         mock_validation: MagicMock,
         mock_fields: MagicMock,
+        mock_publish: MagicMock,
         mock_git: MagicMock,
     ) -> None:
         """merge_and_cleanup_task_checkpoint proceeds when status != running."""
@@ -88,6 +90,7 @@ class TestMergeBlockedWhenTaskRunning:
             "should_rollback": False,
             "detail": None,
         }
+        mock_publish.return_value = True
         mock_git.return_value = MagicMock(returncode=0, stdout="")
 
         result = merge_and_cleanup_task_checkpoint("task-1", "test-project")
@@ -129,35 +132,61 @@ class TestCheckoutHealthCheck:
         mock_log.assert_called_once()
         assert "CHECKOUT CORRUPTED" in mock_log.call_args[0][2]
 
+    @patch(f"{_CHECKOUT}.subprocess.run")
     @patch(f"{_CHECKOUT}.emit_log")
     def test_checkout_health_check_valid(
         self,
         mock_log: MagicMock,
+        mock_run: MagicMock,
         tmp_path: Path,
     ) -> None:
         """Returns True for a valid checkout directory with .git marker."""
         from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
 
         (tmp_path / ".git").mkdir()
+        mock_run.return_value = MagicMock(returncode=0, stdout="task-1/main\n")
         result = check_checkout_health(str(tmp_path), "task-1", "test-project")
 
         assert result
         mock_log.assert_not_called()
 
+    @patch(f"{_CHECKOUT}.subprocess.run")
     @patch(f"{_CHECKOUT}.emit_log")
     def test_checkout_health_check_valid_git_file(
         self,
         mock_log: MagicMock,
+        mock_run: MagicMock,
         tmp_path: Path,
     ) -> None:
         """Returns True when .git is a file-backed checkout."""
         from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
 
         (tmp_path / ".git").write_text("gitdir: /path/to/main/.git/checkouts/task-1")
+        mock_run.return_value = MagicMock(returncode=0, stdout="task-1/main\n")
         result = check_checkout_health(str(tmp_path), "task-1", "test-project")
 
         assert result
         mock_log.assert_not_called()
+
+    @patch(f"{_CHECKOUT}.subprocess.run")
+    @patch(f"{_CHECKOUT}.emit_log")
+    def test_checkout_health_check_branch_mismatch(
+        self,
+        mock_log: MagicMock,
+        mock_run: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Returns False when shared checkout drifts onto another task branch."""
+        from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
+
+        (tmp_path / ".git").mkdir()
+        mock_run.return_value = MagicMock(returncode=0, stdout="task-other/main\n")
+
+        result = check_checkout_health(str(tmp_path), "task-1", "test-project")
+
+        assert not result
+        mock_log.assert_called_once()
+        assert "CHECKOUT BRANCH MISMATCH" in mock_log.call_args[0][2]
 
 
 class TestHealLoopAbortsOnInvalidCheckout:
@@ -585,3 +614,76 @@ class TestWorkProductDetection:
 
         assert all_passed
         mock_smoke.assert_called_once()
+
+    @patch("app.tasks.autonomous.exec_modules.quality_check._run_smoke_and_targeted_tests")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.get_task_spirit")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.get_task")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
+    def test_run_execution_quality_check_allows_inspect_only_steps_without_work_product(
+        self,
+        mock_run: MagicMock,
+        mock_get_task: MagicMock,
+        mock_get_spirit: MagicMock,
+        mock_smoke: MagicMock,
+    ) -> None:
+        """Inspect-only subtasks should not loop on missing commits."""
+        from app.tasks.autonomous.exec_modules.quality_check import run_execution_quality_check
+
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="refs/remotes/origin/main\n"),
+            MagicMock(returncode=0, stdout=""),
+            MagicMock(stdout=""),
+        ]
+        mock_get_task.return_value = {
+            "id": "task-1",
+            "title": "Investigate migration behavior",
+            "description": "Confirm the current behavior before deciding on a fix.",
+        }
+        mock_get_spirit.return_value = {}
+        mock_smoke.return_value = True
+
+        all_passed, _results = run_execution_quality_check(
+            "task-1",
+            "sub-1",
+            [{"step_number": 1, "description": "Inspect the migration and confirm whether DELETE runs"}],
+            "/tmp/test-checkout",
+            "summitflow",
+        )
+
+        assert all_passed
+        mock_smoke.assert_called_once()
+
+    @patch("app.tasks.autonomous.exec_modules.quality_check.get_task_spirit")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.get_task")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
+    def test_run_execution_quality_check_still_requires_work_product_for_change_steps(
+        self,
+        mock_run: MagicMock,
+        mock_get_task: MagicMock,
+        mock_get_spirit: MagicMock,
+    ) -> None:
+        """Implementation steps must still produce a diff or commit."""
+        from app.tasks.autonomous.exec_modules.quality_check import run_execution_quality_check
+
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="refs/remotes/origin/main\n"),
+            MagicMock(returncode=0, stdout=""),
+            MagicMock(stdout=""),
+        ]
+        mock_get_task.return_value = {
+            "id": "task-1",
+            "title": "Fix migration behavior",
+            "description": "Implement the smallest safe correction.",
+        }
+        mock_get_spirit.return_value = {}
+
+        all_passed, results = run_execution_quality_check(
+            "task-1",
+            "sub-1",
+            [{"step_number": 1, "description": "Implement the migration fix and update the downgrade"}],
+            "/tmp/test-checkout",
+            "summitflow",
+        )
+
+        assert not all_passed
+        assert results[0]["reason"] == "no_work_product"

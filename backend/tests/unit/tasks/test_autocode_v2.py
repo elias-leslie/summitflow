@@ -303,17 +303,41 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
     @patch("app.tasks.autonomous.pickup_queries.task_store")
-    def test_all_subtasks_passed_returns_unknown(
+    def test_all_subtasks_passed_pending_task_routes_to_review(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:
-        """Task with all subtasks passed → unknown (nothing left to do)."""
+        """Pending residue with all subtasks passed → review."""
         from app.tasks.autonomous.pickup import _determine_next_stage
 
-        mock_store.get_task.return_value = {"labels": [], "description": "Add API endpoint"}
+        mock_store.get_task.return_value = {
+            "labels": [],
+            "description": "Add API endpoint",
+            "status": "pending",
+        }
         mock_spirit.return_value = {"done_when": ["Endpoint returns 200"]}
         mock_subtasks.return_value = [
             {"subtask_id": "1.1", "passes": True},
         ]
+
+        with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
+            mock_ready.return_value = MagicMock(ready=True, missing_fields=[])
+            assert _determine_next_stage("task-1") == "review"
+
+    @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
+    @patch("app.tasks.autonomous.pickup_queries.task_store")
+    def test_all_subtasks_passed_completed_task_stays_unknown(
+        self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
+    ) -> None:
+        from app.tasks.autonomous.pickup import _determine_next_stage
+
+        mock_store.get_task.return_value = {
+            "labels": [],
+            "description": "Add API endpoint",
+            "status": "completed",
+        }
+        mock_spirit.return_value = {"done_when": ["Endpoint returns 200"]}
+        mock_subtasks.return_value = [{"subtask_id": "1.1", "passes": True}]
 
         with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
             mock_ready.return_value = MagicMock(ready=True, missing_fields=[])

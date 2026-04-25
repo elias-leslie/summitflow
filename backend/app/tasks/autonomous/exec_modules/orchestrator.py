@@ -5,8 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import httpx
+
+from ....config import AGENT_HUB_URL
 from ....core.debug import debug_section
 from ....logging_config import get_logger
+from ....services._agent_hub_config import build_agent_hub_headers
 from ....services.task_checkout import get_task_checkout
 from ....services.task_lane_preflight import check_task_lane_conflicts
 from ....storage import tasks as task_store
@@ -27,10 +31,117 @@ from .session import WindDownState
 
 logger = get_logger(__name__)
 
+_SESSION_TIMEOUT_SECONDS = 10.0
+_FINAL_SESSION_STATUSES = {"completed", "failed", "error", "closed", "cancelled"}
+_FINAL_SESSION_HEALTH = {"completed", "failed", "error"}
+_REAPABLE_LIFECYCLE_STATES = {"dead_candidate", "reapable"}
+
+
+def _fetch_agent_hub_session(session_id: str) -> dict[str, Any] | None:
+    headers = build_agent_hub_headers(request_source="sf-pipeline")
+    with httpx.Client(timeout=_SESSION_TIMEOUT_SECONDS) as client:
+        response = client.get(f"{AGENT_HUB_URL}/api/sessions/{session_id}", headers=headers)
+        response.raise_for_status()
+        payload = response.json()
+    return payload if isinstance(payload, dict) else None
+
+
+def _session_ready_for_reclaim(session: dict[str, Any] | None) -> bool:
+    if not isinstance(session, dict):
+        return False
+    if str(session.get("status") or "").strip().lower() in _FINAL_SESSION_STATUSES:
+        return True
+    live_activity = session.get("live_activity")
+    if not isinstance(live_activity, dict):
+        return False
+    if bool(live_activity.get("reapable")):
+        return True
+    lifecycle_state = str(live_activity.get("lifecycle_state") or "").strip().lower()
+    if lifecycle_state in _REAPABLE_LIFECYCLE_STATES:
+        return True
+    health = str(live_activity.get("health") or "").strip().lower()
+    return health in _FINAL_SESSION_HEALTH
+
+
+def _close_agent_hub_session(session_id: str) -> bool:
+    headers = build_agent_hub_headers(request_source="sf-pipeline")
+    with httpx.Client(timeout=_SESSION_TIMEOUT_SECONDS) as client:
+        response = client.post(f"{AGENT_HUB_URL}/api/sessions/{session_id}/close", headers=headers)
+        response.raise_for_status()
+    return True
+
+
+def _maybe_reclaim_same_task_lane(
+    task_id: str,
+    project_id: str,
+    lane_check: Any,
+) -> tuple[Any, bool]:
+    if lane_check.overlap_kind != "stale_same_task" or not lane_check.owner_session_id:
+        return lane_check, False
+
+    owner_session_id = str(lane_check.owner_session_id)
+    try:
+        session = _fetch_agent_hub_session(owner_session_id)
+    except Exception as exc:
+        emit_log(
+            task_id,
+            "warn",
+            f"Could not inspect stale same-task session {owner_session_id}: {type(exc).__name__}: {exc}",
+            source="orchestrator",
+            project_id=project_id,
+        )
+        return lane_check, False
+
+    if not _session_ready_for_reclaim(session):
+        emit_log(
+            task_id,
+            "warn",
+            f"Stale same-task session {owner_session_id} was not reclaimable on recheck",
+            source="orchestrator",
+            project_id=project_id,
+        )
+        return lane_check, False
+
+    emit_log(
+        task_id,
+        "info",
+        f"Reclaiming stale same-task session {owner_session_id}",
+        source="orchestrator",
+        project_id=project_id,
+    )
+    try:
+        _close_agent_hub_session(owner_session_id)
+    except Exception as exc:
+        emit_log(
+            task_id,
+            "warn",
+            f"Failed to close stale same-task session {owner_session_id}: {type(exc).__name__}: {exc}",
+            source="orchestrator",
+            project_id=project_id,
+        )
+        return lane_check, False
+
+    return check_task_lane_conflicts(task_id, project_id), True
+
 
 def _guard_existing_same_task_lane(task_id: str, project_id: str) -> dict[str, Any] | None:
     """Avoid replaying the same task when an active live session already exists."""
     lane_check = check_task_lane_conflicts(task_id, project_id)
+    lane_check, reclaimed = _maybe_reclaim_same_task_lane(task_id, project_id, lane_check)
+    if lane_check.overlap_kind == "stale_same_task":
+        owner = lane_check.owner_session_id or "unknown"
+        emit_log(
+            task_id,
+            "warn",
+            f"Execution skipped: stale same-task session {owner} could not be reclaimed",
+            project_id=project_id,
+        )
+        return {
+            "task_id": task_id,
+            "status": "already_running",
+            "message": "Stale task session requires reconciliation",
+            "owner_session_id": lane_check.owner_session_id,
+        }
     if lane_check.overlap_kind != "same_task" or lane_check.disposition != "block":
         return None
 
@@ -38,7 +149,11 @@ def _guard_existing_same_task_lane(task_id: str, project_id: str) -> dict[str, A
     emit_log(
         task_id,
         "info",
-        f"Execution skipped: active task session already owned by session {owner}",
+        (
+            f"Execution skipped: refreshed same-task session still active with owner {owner}"
+            if reclaimed
+            else f"Execution skipped: active task session already owned by session {owner}"
+        ),
         project_id=project_id,
     )
     logger.info(

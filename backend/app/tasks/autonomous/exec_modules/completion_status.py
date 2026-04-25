@@ -181,16 +181,18 @@ def _do_review_transition(
     log_message: str,
     dispatch: Callable[[str, str, str], None] | None,
 ) -> str:
-    """Set task to completed after passing review gate."""
+    """Keep task active while AI review runs."""
     task = task_store.get_task(task_id) or {}
-    update_kwargs: dict[str, Any] = {}
-    if task.get("status") == "pending":
-        update_kwargs["validate_transition"] = False
-    task_store.update_task_status(task_id, "completed", **update_kwargs)
-    emit_log(task_id, "info", f"{log_message}, completing after review gate", project_id=project_id)
+    current_status = str(task.get("status") or "")
+    if current_status != "running":
+        update_kwargs: dict[str, Any] = {}
+        if current_status in {"", "completed", "cancelled"}:
+            update_kwargs["validate_transition"] = False
+        task_store.update_task_status(task_id, "running", **update_kwargs)
+    emit_log(task_id, "info", f"{log_message}, queued for AI review", project_id=project_id)
     if dispatch:
         dispatch("review", task_id, project_id)
-    return "completed"
+    return "running"
 
 
 def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> str:
@@ -258,9 +260,9 @@ def transition_to_review_or_complete(
     log_message: str,
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> str:
-    """Transition task to completed or a merge-derived terminal state.
+    """Transition task to review handoff or a merge-derived terminal state.
 
-    Returns the final status: "completed" or "failed".
+    Returns the task status after handoff: "running", "completed", or "failed".
     """
     if _resolve_require_review(task_id, project_id):
         return _do_review_transition(task_id, project_id, log_message, dispatch)

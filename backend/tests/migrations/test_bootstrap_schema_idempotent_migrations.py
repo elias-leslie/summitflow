@@ -66,9 +66,6 @@ def test_retention_days_upgrade_skips_missing_legacy_backup_schedules(mocker) ->
     inspector.get_columns.assert_not_called()
     execute.assert_not_called()
 
-
-
-
 def test_retention_days_upgrade_updates_legacy_backup_schedules_without_backup_deletes(mocker) -> None:
     module = _load_migration_module(
         "233ad1b1d50d_retention_count_to_retention_days.py",
@@ -92,6 +89,7 @@ def test_retention_days_upgrade_updates_legacy_backup_schedules_without_backup_d
     ]
     assert all("DELETE FROM backups" not in sql for sql in executed_sql)
 
+
 def test_retention_days_downgrade_skips_missing_legacy_backup_schedules(mocker) -> None:
     module = _load_migration_module(
         "233ad1b1d50d_retention_count_to_retention_days.py",
@@ -107,6 +105,29 @@ def test_retention_days_downgrade_skips_missing_legacy_backup_schedules(mocker) 
 
     inspector.get_columns.assert_not_called()
     execute.assert_not_called()
+
+
+def test_retention_days_downgrade_restores_legacy_column_without_touching_backups(mocker) -> None:
+    module = _load_migration_module(
+        "233ad1b1d50d_retention_count_to_retention_days.py",
+        "retention_count_to_retention_days_migration",
+    )
+    inspector = MagicMock()
+    inspector.has_table.return_value = True
+    inspector.get_columns.return_value = [{"name": "retention_days"}]
+    execute = mocker.patch.object(module.op, "execute")
+    mocker.patch.object(module.op, "get_bind", return_value=object())
+    mocker.patch.object(module.sa, "inspect", return_value=inspector)
+
+    module.downgrade()
+
+    executed_sql = [call.args[0] for call in execute.call_args_list]
+    assert executed_sql == [
+        "ALTER TABLE backup_schedules ADD COLUMN retention_count INTEGER NOT NULL DEFAULT 5",
+        "UPDATE backup_schedules SET retention_count = 5",
+        "ALTER TABLE backup_schedules DROP COLUMN IF EXISTS retention_days",
+    ]
+    assert all("backups" not in sql.lower() for sql in executed_sql)
 
 
 def test_remove_pr_fields_upgrade_skips_absent_pull_request_url(mocker) -> None:

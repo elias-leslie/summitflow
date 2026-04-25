@@ -27,6 +27,44 @@ _NO_CODE_MARKERS = (
     "temporary validation task only",
 )
 
+_NO_CODE_STEP_PREFIXES = (
+    "inspect",
+    "confirm",
+    "verify",
+    "review",
+    "analyze",
+    "audit",
+    "document",
+    "summarize",
+    "report",
+    "identify",
+    "determine",
+    "check",
+    "investigate",
+    "diagnose",
+    "reproduce",
+    "classify",
+    "validate",
+    "run targeted validation",
+    "run validation",
+)
+
+_CODE_CHANGE_PREFIXES = (
+    "implement",
+    "fix",
+    "update",
+    "change",
+    "modify",
+    "edit",
+    "write",
+    "add",
+    "remove",
+    "delete",
+    "refactor",
+    "create",
+    "migrate",
+)
+
 
 def _detect_base_branch(project_path: str) -> str:
     """Detect the default branch (main, master, etc.) for a repository."""
@@ -74,6 +112,33 @@ def _allows_no_code_verification(task_id: str) -> bool:
     ]
     haystack = " ".join(str(field).lower() for field in fields if field)
     return any(marker in haystack for marker in _NO_CODE_MARKERS)
+
+
+def _step_text(step: Any) -> str:
+    """Extract comparable step text from dict-or-string step payloads."""
+    if isinstance(step, dict):
+        description = step.get("description")
+        if isinstance(description, str):
+            return description.lower()
+        spec = step.get("spec")
+        if isinstance(spec, str):
+            return spec.lower()
+        return ""
+    if isinstance(step, str):
+        return step.lower()
+    return ""
+
+
+def _allows_no_code_steps(steps: list[dict[str, Any]]) -> bool:
+    """Return True for inspect/verify/document-only steps with no change verbs."""
+    step_texts = [text for text in (_step_text(step) for step in steps) if text]
+    if not step_texts:
+        return False
+    return all(
+        any(text.startswith(prefix) for prefix in _NO_CODE_STEP_PREFIXES)
+        and not any(text.startswith(prefix) for prefix in _CODE_CHANGE_PREFIXES)
+        for text in step_texts
+    )
 
 
 def _append_smoke_failure(
@@ -208,7 +273,11 @@ def run_execution_quality_check(
     step_results: list[dict[str, Any]] = []
 
     # Fail if no work product exists unless the task is explicitly no-code validation.
-    if not _has_work_product(project_path) and not _allows_no_code_verification(task_id):
+    if (
+        not _has_work_product(project_path)
+        and not _allows_no_code_verification(task_id)
+        and not _allows_no_code_steps(steps)
+    ):
         logger.warning("No commits on branch - marking as failed",
                        task_id=task_id, subtask_id=subtask_id)
         step_results.append({

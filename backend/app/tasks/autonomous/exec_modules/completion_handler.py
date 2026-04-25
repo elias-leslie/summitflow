@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from ....logging_config import get_logger
 from ....storage import tasks as task_store
 from .ah_events import emit_task_transition
 from .completion_status import (
@@ -22,8 +21,6 @@ from .events import emit_error, emit_log
 from .followup_tasks import create_followup_task_for_failures
 from .quality_gate import run_quality_gate_with_autofix
 from .runtime_evaluator import run_runtime_evaluator
-
-logger = get_logger(__name__)
 
 
 def handle_early_completion(
@@ -42,8 +39,8 @@ def handle_early_completion(
         return {
             "task_id": task_id,
             "status": final_status,
-            "message": "Triggered QA review for complete subtasks"
-            if final_status == "completed"
+            "message": "Queued AI review for complete subtasks"
+            if final_status == "running"
             else "Completed without review",
         }
     except Exception as e:
@@ -60,7 +57,7 @@ def handle_successful_completion(
     results: list[dict[str, Any]],
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> bool:
-    """Handle successful task completion with diff gate + quality gate + intent verification."""
+    """Handle successful task completion with diff gate + quality gate + runtime verification."""
     # Diff gate: block completion if no meaningful changes
     diff_result = check_diff_gate(project_path)
     if not diff_result.passed:
@@ -79,17 +76,6 @@ def handle_successful_completion(
         notify_failure(task_id, project_id, "Quality gate failed after auto-fix attempt.")
         wake_persona(task_id, project_id, "quality_gate",
                      f"Task {task_id} quality gate failed after auto-fix. Investigate and advise.")
-        return False
-
-    # Intent verification: check done_when / objective / spirit_anti
-    intent_result = _run_intent_check(task_id, project_path, project_id)
-    if intent_result and not intent_result.passed:
-        task_store.update_task_status(task_id, "failed")
-        summary = intent_result.summary or "Intent check failed"
-        emit_error(task_id, f"Intent check failed: {summary}", project_id=project_id)
-        notify_failure(task_id, project_id, f"Intent verification failed: {summary}")
-        wake_persona(task_id, project_id, "intent_failed",
-                     f"Task {task_id} intent check failed: {summary}. Review done_when criteria.")
         return False
 
     runtime_result = run_runtime_evaluator(task_id, project_id)
@@ -118,24 +104,6 @@ def handle_successful_completion(
     except Exception as e:
         handle_status_transition_error(task_id, project_id, e, {"Results": results})
         return False
-
-
-def _run_intent_check(
-    task_id: str, project_path: str, project_id: str
-) -> Any:
-    """Run intent verification, returning result or None if not applicable."""
-    try:
-        from .intent_check import check_intent
-
-        result = check_intent(task_id, project_path, project_id)
-        if result.done_when_results:
-            emit_log(task_id, "info",
-                     f"Intent check: {'PASS' if result.passed else 'FAIL'} — {result.summary}",
-                     project_id=project_id)
-        return result
-    except Exception as e:
-        logger.warning("Intent check failed, proceeding", task_id=task_id, error=str(e))
-        return None
 
 
 def _handle_partial_merge_error(

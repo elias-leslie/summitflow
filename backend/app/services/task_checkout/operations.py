@@ -90,6 +90,12 @@ def create_task_checkout(
         if _branch_exists(branch, project_root):
             if _current_branch(project_root) != branch:
                 _checkout(branch, project_root)
+            base_branch = _resolve_base_branch(task_id, project_id)
+            create_checkpoint_metadata(
+                task_id=task_id,
+                project_id=project_id,
+                base_branch=base_branch,
+            )
             logger.info(
                 "task_branch_reused",
                 task_id=task_id,
@@ -97,7 +103,7 @@ def create_task_checkout(
                 branch=branch,
                 path=str(project_root),
             )
-            return _build_checkout_info(task_id, project_root, _resolve_base_branch(task_id, project_id))
+            return _build_checkout_info(task_id, project_root, base_branch)
 
         if _current_branch(project_root) != base_branch:
             _checkout(base_branch, project_root)
