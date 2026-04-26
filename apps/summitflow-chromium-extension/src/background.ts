@@ -44,8 +44,7 @@ async function handleRuntimeMessage(
     return handleExtensionCommand(message, sender)
   }
   if (isContentMessage(message)) {
-    await handleContentMessage(message, sender)
-    return { ok: true }
+    return handleContentMessage(message, sender)
   }
   return { ok: false, error: 'unsupported message' }
 }
@@ -92,14 +91,20 @@ async function handleExtensionCommand(
 async function handleContentMessage(
   message: ContentToBackgroundMessage,
   sender: chrome.MessageSender,
-): Promise<void> {
+): Promise<ExtensionCommandResponse> {
   if (message.type === 'summitflow.page_state') {
     queueHeartbeat(message.state)
-    return
+    return { ok: true }
   }
   if (message.type === 'summitflow.annotation_draft') {
     const session = await getSession()
-    if (!session) return
+    if (!session) {
+      return {
+        ok: false,
+        error:
+          'Co-Browser is not paired. Return to SummitFlow Design Review and click Pair.',
+      }
+    }
     const created = await createAnnotation(session, message.draft)
     annotations = [created, ...annotations].slice(0, 100)
     if (sender.tab?.id) {
@@ -108,11 +113,12 @@ async function handleContentMessage(
         annotations,
       })
     }
-    return
+    return { ok: true }
   }
   if (message.type === 'summitflow.pointer') {
-    return
+    return { ok: true }
   }
+  return { ok: false, error: 'unsupported content message' }
 }
 
 function queueHeartbeat(state: CompactPageState): void {

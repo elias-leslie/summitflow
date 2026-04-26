@@ -28,10 +28,12 @@ export class SummitFlowOverlay {
   private readonly layer: HTMLDivElement
   private readonly annotationLayer: HTMLDivElement
   private readonly toolbar: HTMLDivElement
+  private readonly notice: HTMLDivElement
   private tool: CollabAnnotationKind | 'idle' = 'idle'
   private sensitiveMode = true
   private pointerStart: PointerStart | null = null
   private draftBox: HTMLDivElement | null = null
+  private noticeTimer: number | null = null
   private lastPointerAt = 0
 
   constructor(callbacks: OverlayCallbacks) {
@@ -65,7 +67,10 @@ export class SummitFlowOverlay {
     this.layer.addEventListener('pointercancel', this.clearDraft)
 
     this.toolbar = this.buildToolbar()
-    this.shadow.append(this.annotationLayer, this.layer, this.toolbar)
+    this.notice = document.createElement('div')
+    this.notice.className = 'sf-notice'
+    this.notice.hidden = true
+    this.shadow.append(this.annotationLayer, this.layer, this.toolbar, this.notice)
     document.addEventListener('pointermove', this.handleDocumentPointerMove, { passive: true })
     this.renderToolbarState()
   }
@@ -88,8 +93,23 @@ export class SummitFlowOverlay {
     }
   }
 
+  showNotice(message: string): void {
+    if (this.noticeTimer !== null) {
+      window.clearTimeout(this.noticeTimer)
+    }
+    this.notice.textContent = message
+    this.notice.hidden = false
+    this.noticeTimer = window.setTimeout(() => {
+      this.notice.hidden = true
+      this.noticeTimer = null
+    }, 6000)
+  }
+
   destroy(): void {
     document.removeEventListener('pointermove', this.handleDocumentPointerMove)
+    if (this.noticeTimer !== null) {
+      window.clearTimeout(this.noticeTimer)
+    }
     this.host.remove()
   }
 
@@ -330,6 +350,21 @@ const styles = `
   position: fixed;
   right: 16px;
   top: 16px;
+}
+.sf-notice {
+  background: rgba(120, 53, 15, 0.94);
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  border-radius: 8px;
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.28);
+  box-sizing: border-box;
+  color: #fef3c7;
+  font: 600 12px/1.45 ui-sans-serif, system-ui, sans-serif;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 9px 10px;
+  pointer-events: none;
+  position: fixed;
+  right: 16px;
+  top: 62px;
 }
 .sf-status {
   border-radius: 999px;

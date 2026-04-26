@@ -5,6 +5,7 @@ import type {
   CollabAnnotation,
   CompactPageState,
   ContentToBackgroundMessage,
+  ExtensionCommandResponse,
 } from './protocol'
 
 class ContentBridge {
@@ -61,7 +62,7 @@ class ContentBridge {
   }
 
   private sendAnnotationDraft(draft: AnnotationDraft): void {
-    this.send({ type: 'summitflow.annotation_draft', draft })
+    this.sendWithNotice({ type: 'summitflow.annotation_draft', draft })
   }
 
   private collectPageState(): CompactPageState {
@@ -90,6 +91,28 @@ class ContentBridge {
       chrome.runtime.sendMessage(message)
     } catch {
       // Extension context can disappear during reload.
+    }
+  }
+
+  private sendWithNotice(message: ContentToBackgroundMessage): void {
+    try {
+      chrome.runtime.sendMessage(
+        message,
+        (response?: ExtensionCommandResponse) => {
+          const error =
+            chrome.runtime.lastError?.message ??
+            (response?.ok === false
+              ? response.error ?? 'Co-Browser request failed.'
+              : null)
+          if (error) {
+            this.overlay.showNotice(error)
+          }
+        },
+      )
+    } catch {
+      this.overlay.showNotice(
+        'Co-Browser extension reloaded. Return to SummitFlow Design Review and click Pair.',
+      )
     }
   }
 

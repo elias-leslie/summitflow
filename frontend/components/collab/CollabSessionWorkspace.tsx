@@ -854,6 +854,12 @@ function WindowsConnectorPanel({
             refresh this Design page, then click Pair again.
           </div>
         )}
+        {activePairing?.state === 'claimed' && (
+          <div className="mt-2 rounded border border-slate-700 bg-slate-950/60 px-2 py-1 text-[11px] text-slate-300">
+            If you reload or update the extension, click Pair again before
+            marking pages.
+          </div>
+        )}
       </div>
 
       {Boolean(createError) && (
