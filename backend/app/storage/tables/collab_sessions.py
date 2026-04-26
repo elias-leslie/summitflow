@@ -25,6 +25,7 @@ def _create_collab_sessions_table(cur: psycopg.Cursor) -> None:
             title TEXT NOT NULL,
             target_url TEXT,
             target_mode TEXT NOT NULL DEFAULT 'live_browser',
+            agent_hub_session_id TEXT,
             state TEXT NOT NULL DEFAULT 'active',
             sensitive BOOLEAN NOT NULL DEFAULT TRUE,
             control_owner TEXT,
@@ -54,6 +55,13 @@ def _create_collab_sessions_table(cur: psycopg.Cursor) -> None:
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_collab_sessions_state_created "
         "ON collab_sessions(state, created_at DESC)"
+    )
+    cur.execute(
+        "ALTER TABLE collab_sessions ADD COLUMN IF NOT EXISTS agent_hub_session_id TEXT"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_collab_sessions_agent_hub_session "
+        "ON collab_sessions(agent_hub_session_id)"
     )
 
 

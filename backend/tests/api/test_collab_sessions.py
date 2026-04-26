@@ -39,6 +39,7 @@ def test_project_design_review_session_create_annotate_grant_and_teardown(
             "title": "Homepage review",
             "target_url": "http://localhost:3001/projects/test-project/design",
             "target_mode": "live_browser",
+            "agent_hub_session_id": "agenthub-session-design-123",
             "sensitive": True,
         },
     )
@@ -48,6 +49,7 @@ def test_project_design_review_session_create_annotate_grant_and_teardown(
     assert session["session_id"].startswith("collab-")
     assert session["project_id"] == project_id
     assert session["target_mode"] == "live_browser"
+    assert session["agent_hub_session_id"] == "agenthub-session-design-123"
     assert session["media_strategy"] == "webrtc_staged"
     assert session["evidence_policy"] == "sensitive_blocked"
     assert session["created_by_display"] == "Elias Leslie"
@@ -116,6 +118,13 @@ def test_project_design_review_session_create_annotate_grant_and_teardown(
         "annotation-created",
         "control-granted",
     }
+    created_event = next(
+        event for event in body["audit_events"] if event["action"] == "created"
+    )
+    assert (
+        created_event["detail"]["agent_hub_session_id"]
+        == "agenthub-session-design-123"
+    )
 
     teardown = client.post(f"/api/collab/sessions/{session['session_id']}/teardown")
     assert teardown.status_code == 200
@@ -137,11 +146,14 @@ def test_non_sensitive_session_creates_compact_evidence_packet(
             "title": "Evidence packet smoke",
             "target_url": "http://localhost:3001",
             "target_mode": "manual",
+            "agent_hub_session_id": "agenthub-session-evidence-456",
             "sensitive": False,
         },
     )
     assert created.status_code == 201
-    session_id = created.json()["session_id"]
+    created_body = created.json()
+    session_id = created_body["session_id"]
+    assert created_body["agent_hub_session_id"] == "agenthub-session-evidence-456"
 
     evidence = client.post(
         f"/api/collab/sessions/{session_id}/evidence-packets",

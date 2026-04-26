@@ -510,6 +510,11 @@ export function CollabSessionWorkspace({
           <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-slate-400">
             {session.media_strategy}
           </span>
+          {session.agent_hub_session_id && (
+            <span className="max-w-[260px] truncate rounded-full border border-fuchsia-500/25 bg-fuchsia-500/10 px-2 py-1 font-mono text-[10px] text-fuchsia-200">
+              {session.agent_hub_session_id}
+            </span>
+          )}
           <span
             className={clsx(
               'rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.14em]',

@@ -147,6 +147,7 @@ class CollabSessionCreateRequest(BaseModel):
     title: str = Field(default="Design Review Session", max_length=160)
     target_url: str | None = Field(default=None, max_length=2048)
     target_mode: TargetMode = "live_browser"
+    agent_hub_session_id: str | None = Field(default=None, max_length=120)
     sensitive: bool = True
 
 
@@ -156,6 +157,7 @@ class CollabSessionResponse(BaseModel):
     title: str
     target_url: str | None
     target_mode: TargetMode
+    agent_hub_session_id: str | None
     state: SessionState
     sensitive: bool
     control_owner: str | None
@@ -498,13 +500,18 @@ async def create_collab_session(
         title=_normalize_title(payload.title),
         target_url=_validate_url(payload.target_url),
         target_mode=payload.target_mode,
+        agent_hub_session_id=_normalize_optional_text(payload.agent_hub_session_id),
         sensitive=payload.sensitive,
         created_by_display=_derive_created_by_display(request),
     )
     await _broadcast_collab_event(
         row["session_id"],
         "session-created",
-        {"target_mode": row["target_mode"], "sensitive": row["sensitive"]},
+        {
+            "target_mode": row["target_mode"],
+            "sensitive": row["sensitive"],
+            "agent_hub_session_id": row["agent_hub_session_id"],
+        },
     )
     return CollabSessionResponse(**row)
 
@@ -842,12 +849,17 @@ async def create_project_collab_session(
         title=_normalize_title(payload.title),
         target_url=_validate_url(payload.target_url),
         target_mode=payload.target_mode,
+        agent_hub_session_id=_normalize_optional_text(payload.agent_hub_session_id),
         sensitive=payload.sensitive,
         created_by_display=_derive_created_by_display(request),
     )
     await _broadcast_collab_event(
         row["session_id"],
         "session-created",
-        {"target_mode": row["target_mode"], "sensitive": row["sensitive"]},
+        {
+            "target_mode": row["target_mode"],
+            "sensitive": row["sensitive"],
+            "agent_hub_session_id": row["agent_hub_session_id"],
+        },
     )
     return CollabSessionResponse(**row)

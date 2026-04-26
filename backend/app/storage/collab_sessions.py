@@ -13,6 +13,7 @@ SESSION_COLUMNS = """
     title,
     target_url,
     target_mode,
+    agent_hub_session_id,
     state,
     sensitive,
     control_owner,
@@ -124,18 +125,19 @@ def _session_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
         "title": row[2],
         "target_url": row[3],
         "target_mode": row[4],
-        "state": row[5],
-        "sensitive": row[6],
-        "control_owner": row[7],
-        "control_expires_at": _iso(row[8]),
-        "browser_target_source": row[9],
-        "media_strategy": row[10],
-        "evidence_policy": row[11],
-        "created_by_kind": row[12],
-        "created_by_display": row[13],
-        "created_at": _iso(row[14]),
-        "updated_at": _iso(row[15]),
-        "closed_at": _iso(row[16]),
+        "agent_hub_session_id": row[5],
+        "state": row[6],
+        "sensitive": row[7],
+        "control_owner": row[8],
+        "control_expires_at": _iso(row[9]),
+        "browser_target_source": row[10],
+        "media_strategy": row[11],
+        "evidence_policy": row[12],
+        "created_by_kind": row[13],
+        "created_by_display": row[14],
+        "created_at": _iso(row[15]),
+        "updated_at": _iso(row[16]),
+        "closed_at": _iso(row[17]),
     }
 
 
@@ -224,6 +226,7 @@ def create_session(
     title: str,
     target_url: str | None,
     target_mode: str,
+    agent_hub_session_id: str | None,
     sensitive: bool,
     created_by_display: str | None,
 ) -> dict[str, Any]:
@@ -237,11 +240,12 @@ def create_session(
                 title,
                 target_url,
                 target_mode,
+                agent_hub_session_id,
                 sensitive,
                 evidence_policy,
                 created_by_display
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING {SESSION_COLUMNS}
             """,
             (
@@ -250,6 +254,7 @@ def create_session(
                 title,
                 target_url,
                 target_mode,
+                agent_hub_session_id,
                 sensitive,
                 "sensitive_blocked" if sensitive else "compact_only",
                 created_by_display,
@@ -268,7 +273,11 @@ def create_session(
             session_id=session_id,
             actor_kind="user",
             action="created",
-            detail={"target_mode": target_mode, "project_id": project_id},
+            detail={
+                "target_mode": target_mode,
+                "project_id": project_id,
+                "agent_hub_session_id": agent_hub_session_id,
+            },
         )
         conn.commit()
     assert row is not None

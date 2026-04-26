@@ -15,6 +15,7 @@ import { CollabSessionWorkspace } from './CollabSessionWorkspace'
 interface CollabSessionIndexProps {
   projectId?: string
   title?: string
+  agentHubSessionId?: string | null
 }
 
 const TARGET_MODES: Array<{
@@ -50,6 +51,7 @@ function defaultTargetUrl(): string {
 export function CollabSessionIndex({
   projectId,
   title = 'Design Review',
+  agentHubSessionId = null,
 }: CollabSessionIndexProps): React.ReactElement {
   const queryClient = useQueryClient()
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
@@ -93,6 +95,7 @@ export function CollabSessionIndex({
         title: sessionTitle,
         target_url: targetUrl.trim() || null,
         target_mode: overrideMode ?? targetMode,
+        agent_hub_session_id: agentHubSessionId,
         sensitive,
       }
       return projectId
@@ -231,6 +234,11 @@ export function CollabSessionIndex({
                   <MonitorUp className="h-3.5 w-3.5" />
                   {modeLabel(session.target_mode)}
                 </div>
+                {session.agent_hub_session_id && (
+                  <div className="mt-1 truncate font-mono text-[11px] text-fuchsia-300">
+                    {session.agent_hub_session_id}
+                  </div>
+                )}
                 {session.target_mode === 'windows_co_browser' &&
                   session.state !== 'active' && (
                     <div className="mt-2 rounded border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-200">

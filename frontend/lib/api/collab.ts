@@ -25,6 +25,7 @@ export interface CollabSession {
   title: string
   target_url: string | null
   target_mode: CollabTargetMode
+  agent_hub_session_id: string | null
   state: CollabSessionState
   sensitive: boolean
   control_owner: string | null
@@ -125,6 +126,7 @@ export interface CreateCollabSessionInput {
   title: string
   target_url?: string | null
   target_mode: CollabTargetMode
+  agent_hub_session_id?: string | null
   sensitive: boolean
 }
 
