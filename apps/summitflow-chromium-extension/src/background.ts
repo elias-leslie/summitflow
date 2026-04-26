@@ -10,6 +10,7 @@ import type {
 
 const SESSION_STORAGE_KEY = 'summitflow.connectorSession'
 const HEARTBEAT_MIN_INTERVAL_MS = 500
+const LOCAL_CONNECTOR_PORTS = Array.from({ length: 11 }, (_, index) => 47618 + index)
 
 let lastHeartbeatAt = 0
 let queuedState: CompactPageState | null = null
@@ -213,8 +214,8 @@ async function sendToTab(tabId: number, message: unknown): Promise<void> {
 async function getSession(): Promise<ConnectorSessionConfig | null> {
   const result = await chrome.storage.session.get(SESSION_STORAGE_KEY)
   const value = result[SESSION_STORAGE_KEY]
-  if (!isSessionConfig(value)) return null
-  return value
+  if (isSessionConfig(value)) return value
+  return discoverLocalConnectorSession()
 }
 
 async function setSession(config: ConnectorSessionConfig): Promise<void> {
@@ -223,6 +224,25 @@ async function setSession(config: ConnectorSessionConfig): Promise<void> {
 
 async function clearSession(): Promise<void> {
   await chrome.storage.session.remove(SESSION_STORAGE_KEY)
+}
+
+async function discoverLocalConnectorSession(): Promise<ConnectorSessionConfig | null> {
+  for (const port of LOCAL_CONNECTOR_PORTS) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/extension-session`, {
+        cache: 'no-store',
+        headers: { accept: 'application/json' },
+      })
+      if (!response.ok) continue
+      const value = await response.json()
+      if (!isSessionConfig(value)) continue
+      await setSession(value)
+      return value
+    } catch {
+      continue
+    }
+  }
+  return null
 }
 
 function apiUrl(apiBaseUrl: string, path: string): string {

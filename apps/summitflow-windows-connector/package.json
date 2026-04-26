@@ -1,0 +1,19 @@
+{
+  "name": "@summitflow/windows-connector",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "summitflow-windows-connector": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsup src/cli.ts --format esm --target node22 --out-dir dist --clean --splitting false",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.7",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0"
+  }
+}

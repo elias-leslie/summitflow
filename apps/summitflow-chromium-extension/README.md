@@ -30,6 +30,7 @@ Current implementation:
 
 - Manifest V3 extension with no persistent host permissions.
 - `activeTab` plus `scripting` injects the content overlay into the visible tab.
+- Localhost host permission is limited to the Windows connector bridge.
 - Background worker stores the connector token in `chrome.storage.session`.
 - Content script never receives the raw connector token.
 - Heartbeats send URL, title, viewport, scroll, and optional non-sensitive DOM hash only.
