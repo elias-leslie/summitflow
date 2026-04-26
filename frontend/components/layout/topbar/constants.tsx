@@ -9,6 +9,7 @@ import {
   LayoutGrid,
   MessageSquareWarning,
   Package,
+  Palette,
   RefreshCw,
 } from 'lucide-react'
 import type { TaskType } from '@/lib/api'
@@ -49,6 +50,13 @@ export const navItems = [
     href: '/backups',
     icon: Archive,
     activeColor: 'indigo',
+  },
+  {
+    id: 'design',
+    label: 'Design',
+    href: '/design',
+    icon: Palette,
+    activeColor: 'fuchsia',
   },
   {
     id: 'feedback',

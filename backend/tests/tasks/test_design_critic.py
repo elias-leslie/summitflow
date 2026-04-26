@@ -7,9 +7,11 @@ from unittest.mock import MagicMock, patch
 
 
 @patch("app.tasks.autonomous.exec_modules.design_critic.analyze_screenshot_with_prompt")
+@patch("app.tasks.autonomous.exec_modules.design_critic.get_prompt_template")
 @patch("app.tasks.autonomous.exec_modules.design_critic.gather_design_standards_context")
 def test_run_design_critic_uses_designer_agent_and_returns_structured_result(
     mock_design_context: MagicMock,
+    mock_get_prompt_template: MagicMock,
     mock_analyze: MagicMock,
     tmp_path: Path,
 ) -> None:
@@ -18,6 +20,9 @@ def test_run_design_critic_uses_designer_agent_and_returns_structured_result(
     screenshot_path = tmp_path / "ui.png"
     screenshot_path.write_bytes(b"png")
     mock_design_context.return_value = "# Design Standards\n\n- Keep hierarchy clear"
+    mock_get_prompt_template.return_value = (
+        "Review {page_url}\n{design_standards}\n{design_criteria}\n{risk_notes}"
+    )
     mock_analyze.return_value = (
         """
         {
@@ -58,4 +63,5 @@ def test_run_design_critic_uses_designer_agent_and_returns_structured_result(
         "overall_score": 8.4,
         "findings": ["Tighten spacing between the title and primary action."],
     }
+    mock_get_prompt_template.assert_called_once_with("frontend-design-critic")
     assert mock_analyze.call_args.kwargs["agent_slug"] == "designer"
