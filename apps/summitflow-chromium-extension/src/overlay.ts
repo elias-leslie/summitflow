@@ -168,7 +168,7 @@ export class SummitFlowOverlay {
       y: event.clientY,
       scrollX: window.scrollX,
       scrollY: window.scrollY,
-      target: document.elementFromPoint(event.clientX, event.clientY),
+      target: this.elementBelowOverlay(event.clientX, event.clientY),
     }
     this.layer.setPointerCapture(event.pointerId)
     if (this.tool === 'box' || this.tool === 'highlight') {
@@ -221,6 +221,16 @@ export class SummitFlowOverlay {
     this.draftBox.style.top = `${top}px`
     this.draftBox.style.width = `${width}px`
     this.draftBox.style.height = `${height}px`
+  }
+
+  private elementBelowOverlay(clientX: number, clientY: number): Element | null {
+    const previousVisibility = this.host.style.visibility
+    this.host.style.visibility = 'hidden'
+    try {
+      return document.elementFromPoint(clientX, clientY)
+    } finally {
+      this.host.style.visibility = previousVisibility
+    }
   }
 }
 
