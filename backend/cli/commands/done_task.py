@@ -32,6 +32,7 @@ def _done_result(
     merged: bool = False,
     snapshot_removed: bool = False,
     base_branch: str = "main",
+    project_id: str | None = None,
 ) -> dict[str, str | bool]:
     return {
         "task_id": task_id,
@@ -39,6 +40,7 @@ def _done_result(
         "merged": merged,
         "snapshot_removed": snapshot_removed,
         "base_branch": base_branch,
+        "project_id": project_id or "",
     }
 
 
@@ -268,6 +270,7 @@ def _finalize_missing_snapshot_residue(
             merged=result_status == "merged",
             snapshot_removed=True,
             base_branch=str(result.get("base_branch") or base_branch),
+            project_id=project_id,
         )
     except APIError as e:
         output_error(f"Residue finalize failed for {task_id}: {e.detail}")
@@ -337,7 +340,10 @@ def complete_task(
         _close_task_safely(client, task_id, message)
         _capture_and_remove_snapshot(task_id, project_id)
         return _done_result(
-            task_id, snapshot_removed=True, base_branch=str(snapshot_info.get("base_branch", "main"))
+            task_id,
+            snapshot_removed=True,
+            base_branch=str(snapshot_info.get("base_branch", "main")),
+            project_id=project_id,
         )
 
     ensure_checkpoint_clean(snapshot_info)
@@ -354,4 +360,4 @@ def complete_task(
     finally:
         if stashed:
             git_stash_pop()
-    return _done_result(task_id, merged=True, snapshot_removed=True, base_branch=base_branch)
+    return _done_result(task_id, merged=True, snapshot_removed=True, base_branch=base_branch, project_id=project_id)

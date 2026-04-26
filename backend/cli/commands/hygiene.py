@@ -210,6 +210,36 @@ def _print_compact(report: dict[str, Any], scope: str) -> None:
         print(f"{issue['project_id']} BLOCK {issue['code']}:{issue['detail']}")
 
 
+def _detail_parts(detail: str) -> list[str]:
+    return [part for part in detail.split(",") if part]
+
+
+def _filter_closeout_issue(issue: dict[str, str], task_id: str) -> dict[str, str] | None:
+    code = issue["code"]
+    detail = issue["detail"]
+    if code == "active_checkpoints":
+        remaining = [part for part in _detail_parts(detail) if part != task_id]
+        if not remaining:
+            return None
+        return {**issue, "detail": ",".join(remaining)}
+    if code == "extra_local_branches":
+        current_task_branch = f"{task_id}/main"
+        remaining = [part for part in _detail_parts(detail) if part != current_task_branch]
+        if not remaining:
+            return None
+        return {**issue, "detail": ",".join(remaining)}
+    return issue
+
+
+def _closeout_blocking_issues(report: dict[str, Any], task_id: str) -> list[dict[str, str]]:
+    issues: list[dict[str, str]] = []
+    for issue in report["issues"]:
+        filtered = _filter_closeout_issue(issue, task_id)
+        if filtered is not None:
+            issues.append(filtered)
+    return issues
+
+
 def require_hygiene_gate(
     *,
     project_id: str | None = None,
@@ -222,6 +252,22 @@ def require_hygiene_gate(
         return
     for issue in report["issues"][:10]:
         output_error(f"Hygiene blocked: {issue['project_id']} {issue['code']} {issue['detail']}")
+    raise typer.Exit(2)
+
+
+def require_closeout_hygiene_gate(
+    *,
+    task_id: str,
+    project_id: str | None = None,
+    fix: bool = True,
+) -> None:
+    """Block closeout on unrelated residue while allowing the current task lane."""
+    report = build_hygiene_report(project_id=project_id, fix=fix, require_main=False)
+    issues = _closeout_blocking_issues(report, task_id)
+    if not issues:
+        return
+    for issue in issues[:10]:
+        output_error(f"Closeout hygiene blocked: {issue['project_id']} {issue['code']} {issue['detail']}")
     raise typer.Exit(2)
 
 

@@ -13,6 +13,26 @@ from app.storage.tasks.claims import claim_task
 logger = get_logger(__name__)
 
 
+def _execution_hygiene_ok(task_id: str, project_id: str) -> bool:
+    """Return whether a project is clean enough for autonomous execution."""
+    try:
+        from cli.commands.hygiene import build_hygiene_report
+    except Exception as exc:
+        logger.warning("Autonomous hygiene gate unavailable", task_id=task_id, project_id=project_id, error=str(exc))
+        return False
+
+    report = build_hygiene_report(project_id=project_id, fix=True)
+    if report.get("ok"):
+        return True
+    logger.info(
+        "Autonomous execution blocked by git hygiene",
+        task_id=task_id,
+        project_id=project_id,
+        issues=report.get("issues", [])[:8],
+    )
+    return False
+
+
 def dispatch_to_ideation(
     task_id: str,
     project_id: str,
@@ -105,6 +125,9 @@ def dispatch_to_execution(
     Returns:
         True if dispatched, False if already claimed
     """
+    if not _execution_hygiene_ok(task_id, project_id):
+        return False
+
     worker_id = f"{worker_id_prefix}-{project_id}"
     claimed = claim_task(task_id, worker_id, lock_duration_minutes=60)
     if not claimed:

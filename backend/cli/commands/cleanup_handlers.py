@@ -9,7 +9,6 @@ import typer
 
 from app.utils._git_branches import (
     prune_checkout_registrations,
-    prune_closed_orphan_task_branches,
     prune_equivalent_orphan_task_branches,
     prune_prunable_task_branches,
 )
@@ -183,7 +182,7 @@ def build_force_checkpoint_preview(
 
 
 def cleanup_safe_git_residue(repos: list[Path], dry_run: bool) -> tuple[int, int, int, int]:
-    """Prune stale git admin registrations and safe orphan task branches."""
+    """Prune stale git admin registrations and provably safe orphan task branches."""
     if dry_run:
         return (0, 0, 0, 0)
     pruned_regs = pruned_branches = pruned_equiv = pruned_closed = 0
@@ -191,5 +190,4 @@ def cleanup_safe_git_residue(repos: list[Path], dry_run: bool) -> tuple[int, int
         pruned_regs += prune_checkout_registrations(repo_path)
         pruned_branches += len(prune_prunable_task_branches(repo_path))
         pruned_equiv += len(prune_equivalent_orphan_task_branches(repo_path))
-        pruned_closed += len(prune_closed_orphan_task_branches(repo_path))
     return pruned_regs, pruned_branches, pruned_equiv, pruned_closed

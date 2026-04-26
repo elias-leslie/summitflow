@@ -132,3 +132,68 @@ def test_claim_task_runs_hygiene_gate_before_checkpoint_creation() -> None:
     mock_gate.assert_called_once_with(project_id="summitflow")
     mock_safe.assert_called_once()
     assert result["action"] == "claimed"
+
+
+def test_closeout_hygiene_allows_only_current_task_lane() -> None:
+    from cli.commands.hygiene import _closeout_blocking_issues
+
+    report = {
+        "issues": [
+            {"project_id": "summitflow", "code": "active_checkpoints", "detail": "task-1,task-2"},
+            {"project_id": "summitflow", "code": "extra_local_branches", "detail": "task-1/main,work/old"},
+            {"project_id": "summitflow", "code": "stash_entries", "detail": "stash@{0}:On main: parked"},
+        ]
+    }
+
+    assert _closeout_blocking_issues(report, "task-1") == [
+        {"project_id": "summitflow", "code": "active_checkpoints", "detail": "task-2"},
+        {"project_id": "summitflow", "code": "extra_local_branches", "detail": "work/old"},
+        {"project_id": "summitflow", "code": "stash_entries", "detail": "stash@{0}:On main: parked"},
+    ]
+
+
+def test_done_task_runs_closeout_hygiene_before_completion() -> None:
+    from cli.commands import done
+
+    events: list[str] = []
+    client = MagicMock()
+    client.get_task.return_value = {"id": "task-1", "project_id": "summitflow"}
+
+    with (
+        patch.object(done, "require_closeout_hygiene_gate", side_effect=lambda **_: events.append("gate")) as mock_gate,
+        patch.object(
+            done,
+            "complete_task",
+            side_effect=lambda *_args, **_kwargs: events.append("complete")
+            or {"project_id": "summitflow", "merged": False},
+        ) as mock_complete,
+        patch.object(done, "require_hygiene_gate") as mock_final_gate,
+    ):
+        done._handle_task_completion(client, "task-1", None, strict=False, admin=False)
+
+    assert events == ["gate", "complete"]
+    mock_gate.assert_called_once_with(project_id="summitflow", task_id="task-1")
+    mock_complete.assert_called_once()
+    mock_final_gate.assert_called_once_with(project_id="summitflow")
+
+
+def test_safe_git_residue_cleanup_does_not_delete_closed_unique_orphans() -> None:
+    from cli.commands import cleanup_handlers
+
+    repo = Path("/tmp/repo")
+    with (
+        patch.object(cleanup_handlers, "prune_checkout_registrations", return_value=1),
+        patch.object(cleanup_handlers, "prune_prunable_task_branches", return_value=["task-merged/main"]),
+        patch.object(cleanup_handlers, "prune_equivalent_orphan_task_branches", return_value=["task-equivalent/main"]),
+    ):
+        assert cleanup_handlers.cleanup_safe_git_residue([repo], dry_run=False) == (1, 1, 1, 0)
+
+
+def test_autonomous_dispatch_blocks_before_claim_when_hygiene_fails(mocker) -> None:
+    from app.tasks.autonomous import pickup_dispatch
+
+    mocker.patch.object(pickup_dispatch, "_execution_hygiene_ok", return_value=False)
+    claim = mocker.patch.object(pickup_dispatch, "claim_task")
+
+    assert not pickup_dispatch.dispatch_to_execution("task-1", "summitflow", dispatch=None)
+    claim.assert_not_called()
