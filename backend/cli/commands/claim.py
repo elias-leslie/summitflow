@@ -128,6 +128,9 @@ def claim_command(
 ) -> None:
     """Claim a task or subtask to start work.
 
+    Check global lane truth before claiming:
+        st pulse
+
     For tasks: Creates checkpoint metadata and a git branch.
     For subtasks: Creates git branch only (parent task must be claimed first).
 

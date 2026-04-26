@@ -65,7 +65,9 @@ CLI_REFERENCE = f"""ST CLI - SummitFlow Tasks
 FLAGS: --compact/-c (TOON, default) | --no-compact (raw JSON) | --human (pretty JSON) | --project/-P <id> | --progress-only
        Default output: compact TOON format. Use --no-compact for raw JSON.
 
-WORKFLOW: ready → claim <id> → context <id> → [work] → done <subtask> → done <task>
+WORKFLOW: pulse → ready → claim <id> → context <id> → [work] → done <subtask> → done <task>
+          pulse is the lane preflight: it summarizes owners, sessions, dirty trees, checkpoints, and claim/edit blockers.
+          REVIEW lines mean ownerless residue: inspect context/status/logs, then commit/push/prune or leave explicit handoff. Do not auto-clean paused work.
           Alternative: abandon <id> --discard to rollback
 
 TASKS (create/capture REQUIRE -P <project>):
@@ -87,7 +89,7 @@ TASKS (create/capture REQUIRE -P <project>):
   exec-log <id> [-f] [-n N] [--debug]      # view execution log (subtasks, tool calls, events)
 
 CHECKPOINT (claim -> done | abandon):
-  claim <id> [--force]                     # claim task, create checkpoint (DB+git branch)
+  claim <id> [--force]                     # claim task after lane preflight, create checkpoint (DB+git branch)
   claim <subtask> -t <task>                # claim subtask, create branch
   done <subtask> -t <task>                 # complete subtask, merge branch
   done <task>                              # complete task, merge to main, remove checkpoint
@@ -207,7 +209,7 @@ CLEANUP (checkpoint maintenance):
   cleanup status                           # quick cleanup-debt overview (main + checkpoints + residue)
   cleanup inspect-orphans                  # list orphan task branches needing salvage/review
   cleanup salvage <task-id>                # restore a missing-task orphan branch into a branch checkpoint
-  pulse [--project P]                      # cross-project coordination summary (default); drill down with --project
+  pulse [--project P]                      # lane preflight + cross-project coordination summary
   cleanup path <path> [<path>...]          # safe literal path cleanup
   cleanup path <dir> --recursive           # safe literal directory cleanup
   cleanup path <path> --dry-run            # preview cleanup without deleting

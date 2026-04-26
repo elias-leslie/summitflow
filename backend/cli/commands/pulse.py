@@ -122,6 +122,76 @@ def _format_stranded_task(task: dict[str, Any]) -> str:
     )
 
 
+def _truthy_count(value: Any) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _dirty_residue_count(cleanup: dict[str, Any]) -> int:
+    dirty = _truthy_count(cleanup.get("dirty_checkpoints")) + _truthy_count(
+        cleanup.get("dirty_repositories")
+    )
+    if dirty == 0 and _truthy_count(cleanup.get("dirty_main_repo")):
+        dirty = 1
+    return dirty
+
+
+def _needs_ownerless_review(summary: dict[str, Any], cleanup: dict[str, Any]) -> bool:
+    active_agents = (
+        _truthy_count(summary.get("active_owners"))
+        + _truthy_count(summary.get("active_specialists"))
+        + _truthy_count(summary.get("active_sessions"))
+    )
+    if active_agents:
+        return False
+    return bool(
+        _truthy_count(cleanup.get("active_checkpoints"))
+        or _dirty_residue_count(cleanup)
+        or _truthy_count(summary.get("stranded_tasks"))
+    )
+
+
+def _format_ownerless_review(project_id: Any, summary: dict[str, Any], cleanup: dict[str, Any]) -> str | None:
+    if not _needs_ownerless_review(summary, cleanup):
+        return None
+    return (
+        f"REVIEW:{project_id}|ownerless=yes|dirty={_dirty_residue_count(cleanup)}|"
+        f"checkpoints={_truthy_count(cleanup.get('active_checkpoints'))}|"
+        f"stranded={_truthy_count(summary.get('stranded_tasks'))}|"
+        "action=agent-inspect-context-status-logs-then-commit-push-prune-or-leave-explicit-handoff"
+    )
+
+
+def _preflight_reasons(summary: dict[str, Any], cleanup: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    if _truthy_count(summary.get("active_owners")):
+        reasons.append("owners")
+    if _truthy_count(summary.get("active_sessions")):
+        reasons.append("sessions")
+    if _truthy_count(cleanup.get("active_checkpoints")):
+        reasons.append("checkpoints")
+    if (
+        _truthy_count(cleanup.get("dirty_checkpoints"))
+        or _truthy_count(cleanup.get("dirty_main_repo"))
+        or _truthy_count(cleanup.get("dirty_repositories"))
+    ):
+        reasons.append("dirty")
+    if _truthy_count(summary.get("stranded_tasks")):
+        reasons.append("stranded")
+    return reasons
+
+
+def _format_preflight(project_id: Any, summary: dict[str, Any], cleanup: dict[str, Any]) -> str:
+    reasons = _preflight_reasons(summary, cleanup)
+    state = "blocked" if reasons else "clear"
+    detail = ",".join(reasons) if reasons else "-"
+    return f"PREFLIGHT:{project_id}|claim={state}|edit={state}|reasons={detail}|source=st-pulse"
+
+
 def _print_compact(payloads: list[dict[str, Any]]) -> None:
     for payload in payloads:
         summary = payload.get("summary", {})
@@ -143,6 +213,10 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
                 stranded=summary.get("stranded_tasks", 0),
             )
         )
+        print(_format_preflight(project_id, summary, cleanup))
+        review_line = _format_ownerless_review(project_id, summary, cleanup)
+        if review_line:
+            print(review_line)
         for task in payload.get("running_tasks", [])[:4]:
             if isinstance(task, dict):
                 print(_format_task(task))

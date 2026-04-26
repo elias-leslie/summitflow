@@ -33,6 +33,23 @@ async def _agent_hub_get(path: str, params: dict[str, Any] | None = None) -> dic
         return payload if isinstance(payload, dict) else {}
 
 
+def _filter_ownership_by_active_sessions(
+    records: Any,
+    active_session_ids: set[str],
+) -> list[dict[str, Any]]:
+    """Keep ownership rows only when backed by an active session row."""
+    if not isinstance(records, list):
+        return []
+    filtered: list[dict[str, Any]] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        session_id = str(record.get("session_id") or "")
+        if session_id and session_id in active_session_ids:
+            filtered.append(record)
+    return filtered
+
+
 async def build_project_pulse(project_id: str) -> dict[str, Any]:
     """Return the canonical live coordination payload for one project."""
     ownership = await _agent_hub_get(f"/api/ownership/projects/{project_id}/live")
@@ -40,15 +57,23 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         _SESSIONS_API,
         params={"project_id": project_id, "status": "active", "page": 1, "page_size": _SESSION_LIMIT},
     )
-    active_owners = ownership.get("active_owners", [])
-    active_specialists = ownership.get("active_specialists", [])
+    raw_active_owners = ownership.get("active_owners", [])
+    raw_active_specialists = ownership.get("active_specialists", [])
     raw_sessions = sessions_payload.get("sessions", [])
 
     owner_session_ids, owner_task_ids, specialist_session_ids, specialist_task_ids = (
-        _extract_ownership_sets(active_owners, active_specialists)
+        _extract_ownership_sets(raw_active_owners, raw_active_specialists)
     )
     active_sessions, stale_sessions, session_linked_task_ids = _bucket_sessions(
         raw_sessions, owner_session_ids, specialist_session_ids
+    )
+    active_session_ids = {str(session.get("id") or "") for session in active_sessions}
+    active_owners = _filter_ownership_by_active_sessions(raw_active_owners, active_session_ids)
+    active_specialists = _filter_ownership_by_active_sessions(
+        raw_active_specialists, active_session_ids
+    )
+    _, owner_task_ids, _, specialist_task_ids = _extract_ownership_sets(
+        active_owners, active_specialists
     )
     raw_running_tasks = [
         _normalize_running_task(t)

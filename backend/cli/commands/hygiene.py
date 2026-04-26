@@ -25,6 +25,10 @@ app = typer.Typer(
 )
 
 _BASE_BRANCH_CANDIDATES = ("main", "master")
+_LANE_PREFLIGHT_HINT = (
+    "Lane preflight required: run st pulse before claim/edit; REVIEW ownerless residue by inspecting "
+    "context/status/logs, then commit/push/prune or leave explicit handoff; use sessions ownership/list only for drill-down"
+)
 
 
 @dataclass(frozen=True)
@@ -302,6 +306,8 @@ def _print_compact(report: dict[str, Any], scope: str) -> None:
     fixed = report["fixed"]
     fixed_total = sum(int(fixed[key]) for key in fixed)
     print(f"HYGIENE[{scope}]:ok={int(bool(report['ok']))} issues={len(issues)} fixed={fixed_total}")
+    if issues:
+        print(f"HINT:{_LANE_PREFLIGHT_HINT}")
     for issue in issues:
         print(f"{issue['project_id']} BLOCK {issue['code']}:{issue['detail']}")
 
@@ -368,6 +374,7 @@ def require_hygiene_gate(
     report = build_hygiene_report(project_id=project_id, fix=fix, require_main=require_main)
     if report["ok"]:
         return
+    output_error(_LANE_PREFLIGHT_HINT)
     for issue in report["issues"][:10]:
         output_error(f"Hygiene blocked: {issue['project_id']} {issue['code']} {issue['detail']}")
     raise typer.Exit(2)

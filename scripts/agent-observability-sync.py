@@ -39,6 +39,9 @@ def _commands(*, include_tmux: bool, include_codex: bool, verbose: bool) -> list
             "--recent-hours",
             recent_hours,
         ]
+        close_inactive = os.environ.get("AGENT_OBSERVABILITY_CODEX_CLOSE_INACTIVE", "1").strip().lower()
+        if close_inactive not in {"0", "false", "no", "off"}:
+            cmd.append("--close-inactive")
         if verbose:
             cmd.append("--verbose")
         commands.append(cmd)

@@ -41,6 +41,8 @@ save_state = _load_symbol("codex_sync_state", "save_state")
 should_sync = _load_symbol("codex_sync_state", "should_sync")
 update_state_entry = _load_symbol("codex_sync_state", "update_state_entry")
 iter_recent_transcripts = _load_symbol("codex_sync_transcripts", "iter_recent_transcripts")
+has_live_codex_process = _load_symbol("codex_sync_transcripts", "has_live_codex_process")
+iter_open_transcript_paths = _load_symbol("codex_sync_transcripts", "iter_open_transcript_paths")
 read_transcript_info = _load_symbol("codex_sync_transcripts", "read_transcript_info")
 
 # ---------------------------------------------------------------------------
@@ -145,6 +147,30 @@ def sync_transcript(
     return True, "ok", None
 
 
+def _resolve_transcript_path(path: Path) -> Path:
+    try:
+        return path.expanduser().resolve(strict=False)
+    except OSError:
+        return path.expanduser()
+
+
+def _close_inactive_session(
+    info: TranscriptInfoLike,
+    *,
+    close_all: bool,
+    close_inactive: bool,
+    live_transcript_paths: set[Path],
+    saw_live_codex_process: bool,
+) -> bool:
+    if close_all:
+        return True
+    if not close_inactive:
+        return False
+    if saw_live_codex_process and not live_transcript_paths:
+        return False
+    return _resolve_transcript_path(info.path) not in live_transcript_paths
+
+
 def _should_upsert(entry: dict[str, object] | None, session_id: str) -> bool:
     if entry is None:
         return True
@@ -203,6 +229,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--cwd", type=Path, help="Only scan transcripts from this working directory")
     parser.add_argument("--close", action="store_true",
                         help="Close the Agent Hub session after analysis")
+    parser.add_argument(
+        "--close-inactive",
+        action="store_true",
+        help="Close synced Codex sessions whose transcript is no longer open by a live Codex process",
+    )
     parser.add_argument("--force", action="store_true",
                         help="Sync even if transcript state is unchanged")
     parser.add_argument("--verbose", action="store_true",
@@ -230,20 +261,36 @@ def main(argv: list[str]) -> int:
         target_cwd = args.cwd.expanduser().resolve()
         infos = [info for info in infos if info.cwd.expanduser().resolve() == target_cwd]
 
+    live_transcript_paths: set[Path] = set()
+    saw_live_codex_process = False
+    if args.close_inactive:
+        live_transcript_paths = iter_open_transcript_paths()
+        saw_live_codex_process = has_live_codex_process()
+        if saw_live_codex_process and not live_transcript_paths:
+            log("[WARN] Live Codex process found but no open transcript files detected; "
+                "skipping inactive session close pass")
+
     for info in infos:
+        close_session = _close_inactive_session(
+            info,
+            close_all=args.close,
+            close_inactive=args.close_inactive,
+            live_transcript_paths=live_transcript_paths,
+            saw_live_codex_process=saw_live_codex_process,
+        )
         if not should_sync(
             info.path,
             info.mtime,
             info.size,
             state,
             args.force,
-            close_session=args.close,
+            close_session=close_session,
         ):
             continue
         ok, detail, status = sync_transcript(
             info=info, state=state, api_url=DEFAULT_API,
             client_id=client_id, client_secret=client_secret,
-            close_session=args.close, verbose=args.verbose,
+            close_session=close_session, verbose=args.verbose,
         )
         if not ok:
             update_state_entry(

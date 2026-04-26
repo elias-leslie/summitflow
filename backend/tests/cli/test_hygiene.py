@@ -113,6 +113,7 @@ def test_hygiene_gate_blocks_stashes_and_extra_local_branches(tmp_path: Path) ->
     assert result.exit_code == 2
     assert "extra_local_branches:backup/pnpm-store-pre-rewrite" in result.output
     assert "stash_entries:stash@{0}:On main: old work" in result.output
+    assert "Lane preflight required: run st pulse before claim/edit" in result.output
 
 
 def test_hygiene_triage_shows_stash_files(tmp_path: Path) -> None:

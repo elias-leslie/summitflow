@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 TRANSCRIPTS_ROOT = Path.home() / ".codex" / "sessions"
+PROC_ROOT = Path("/proc")
 DEFAULT_MODEL = "gpt-5.4"
 TRANSCRIPT_SCAN_LINES = 100
 
@@ -85,3 +87,65 @@ def iter_recent_transcripts(recent_hours: int, log_fn: object = None) -> list[Tr
             transcripts.append(info)
     transcripts.sort(key=lambda item: item.mtime)
     return transcripts
+
+
+def _proc_entries(proc_root: Path = PROC_ROOT) -> list[Path]:
+    try:
+        return [path for path in proc_root.iterdir() if path.name.isdigit()]
+    except OSError:
+        return []
+
+
+def _read_cmdline(proc_dir: Path) -> list[str]:
+    try:
+        raw = (proc_dir / "cmdline").read_bytes()
+    except OSError:
+        return []
+    return [part.decode("utf-8", "ignore") for part in raw.split(b"\0") if part]
+
+
+def has_live_codex_process(proc_root: Path = PROC_ROOT) -> bool:
+    """Return True when a live process looks like a Codex CLI wrapper or binary."""
+    for proc_dir in _proc_entries(proc_root):
+        parts = _read_cmdline(proc_dir)
+        if any(Path(part).name == "codex" for part in parts):
+            return True
+    return False
+
+
+def iter_open_transcript_paths(
+    *,
+    proc_root: Path = PROC_ROOT,
+    transcripts_root: Path = TRANSCRIPTS_ROOT,
+) -> set[Path]:
+    """Return Codex transcript files currently held open by live host processes."""
+    try:
+        root = transcripts_root.expanduser().resolve(strict=False)
+    except OSError:
+        root = transcripts_root.expanduser()
+
+    paths: set[Path] = set()
+    for proc_dir in _proc_entries(proc_root):
+        fd_dir = proc_dir / "fd"
+        try:
+            fds = list(fd_dir.iterdir())
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                target = os.readlink(fd)
+            except OSError:
+                continue
+            target = target.removesuffix(" (deleted)")
+            if not target.endswith(".jsonl"):
+                continue
+            target_path = Path(target)
+            if not target_path.is_absolute():
+                continue
+            try:
+                resolved = target_path.resolve(strict=False)
+            except OSError:
+                resolved = target_path
+            if resolved.is_relative_to(root):
+                paths.add(resolved)
+    return paths

@@ -17,14 +17,20 @@ except ImportError as e:
 runner = CliRunner()
 
 
+def _command_name(name: str | None, callback: object) -> str:
+    if name:
+        return name
+    value = getattr(callback, "__name__", "")
+    return value if isinstance(value, str) else ""
+
+
 def get_all_command_names() -> set[str]:
     """Extract all registered command names from the typer app."""
     commands = set()
 
     # Root level commands
     for cmd in app.registered_commands:
-        callback = cmd.callback
-        name = cmd.name or (callback.__name__ if callback is not None else "")
+        name = _command_name(cmd.name, cmd.callback)
         commands.add(name)
 
     # Subcommand groups
@@ -38,10 +44,7 @@ def get_all_command_names() -> set[str]:
                 typer_instance = group.typer_instance
                 if typer_instance is not None:
                     for subcmd in typer_instance.registered_commands:
-                        subcmd_callback = subcmd.callback
-                        subname = subcmd.name or (
-                            subcmd_callback.__name__ if subcmd_callback is not None else ""
-                        )
+                        subname = _command_name(subcmd.name, subcmd.callback)
                         commands.add(f"{group_name} {subname}")
 
     return commands
@@ -54,8 +57,7 @@ class TestCLIReferenceComplete:
         """Verify all root-level commands appear in CLI_REFERENCE."""
         missing = []
         for cmd in app.registered_commands:
-            callback = cmd.callback
-            name = cmd.name or (callback.__name__ if callback is not None else "")
+            name = _command_name(cmd.name, cmd.callback)
             # Skip hidden commands (deprecated/removed commands)
             if getattr(cmd, "hidden", False):
                 continue
@@ -136,9 +138,16 @@ class TestCLIReferenceComplete:
 
         assert result.exit_code == 0
         assert "[work]" in result.output
+        assert "WORKFLOW: pulse" in result.output
+        assert "pulse is the lane preflight" in result.output
         assert "projects [list|current|get|root|create|update|delete]" in result.output
 
     def test_cli_reference_includes_plan_validation_path(self) -> None:
         """The root help should point execution-ready task authors to schema validation."""
         assert "st verify plan.json" in CLI_REFERENCE
         assert "/schemas/plan" in CLI_REFERENCE
+
+    def test_cli_reference_documents_ownerless_residue_review(self) -> None:
+        """Ownerless git/checkpoint residue must be explicit manual-review work."""
+        assert "REVIEW lines mean ownerless residue" in CLI_REFERENCE
+        assert "Do not auto-clean paused work" in CLI_REFERENCE
