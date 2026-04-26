@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "SummitFlow Co-Browser",
+  "description": "Dedicated-profile Design Review overlay and page-state bridge.",
+  "version": "0.1.0",
+  "minimum_chrome_version": "120",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [],
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "SummitFlow Co-Browser"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["dist/content.js"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ]
+}

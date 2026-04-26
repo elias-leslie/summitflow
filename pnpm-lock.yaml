@@ -12,6 +12,15 @@ importers:
 
   .: {}
 
+  apps/summitflow-chromium-extension:
+    devDependencies:
+      tsup:
+        specifier: ^8.0.0
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   frontend:
     dependencies:
       '@agent-hub/chat-ui':

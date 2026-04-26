@@ -1,0 +1,15 @@
+{
+  "name": "@summitflow/chromium-extension",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsup src/background.ts src/content.ts --format esm --target chrome120 --out-dir dist --clean --splitting false",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0"
+  }
+}
