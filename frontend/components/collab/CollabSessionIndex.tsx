@@ -43,6 +43,11 @@ function modeLabel(mode: CollabTargetMode): string {
   return TARGET_MODES.find((item) => item.value === mode)?.label ?? mode
 }
 
+function defaultTargetUrl(): string {
+  if (typeof window === 'undefined') return 'http://127.0.0.1:3001'
+  return window.location.origin
+}
+
 export function CollabSessionIndex({
   projectId,
   title = 'Design Review',
@@ -51,9 +56,10 @@ export function CollabSessionIndex({
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
     null,
   )
-  const [targetUrl, setTargetUrl] = useState('http://localhost:3001')
-  const [sessionTitle, setSessionTitle] = useState('Design Review Session')
-  const [targetMode, setTargetMode] = useState<CollabTargetMode>('live_browser')
+  const [targetUrl, setTargetUrl] = useState(defaultTargetUrl)
+  const [sessionTitle, setSessionTitle] = useState('Windows Co-Browser Review')
+  const [targetMode, setTargetMode] =
+    useState<CollabTargetMode>('windows_co_browser')
   const [sensitive, setSensitive] = useState(true)
 
   const sessionsQuery = useQuery({
@@ -82,12 +88,12 @@ export function CollabSessionIndex({
   }, [selectedSession, selectedSessionId])
 
   const createMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (overrideMode?: CollabTargetMode) => {
       const input = {
         project_id: projectId,
         title: sessionTitle,
         target_url: targetUrl,
-        target_mode: targetMode,
+        target_mode: overrideMode ?? targetMode,
         sensitive,
       }
       return projectId
@@ -118,7 +124,7 @@ export function CollabSessionIndex({
           </div>
         </div>
 
-        <div className="grid gap-2 lg:grid-cols-[180px_240px_190px_auto_auto]">
+        <div className="grid gap-2 lg:grid-cols-[180px_240px_190px_auto_auto_auto]">
           <input
             value={sessionTitle}
             onChange={(event) => setSessionTitle(event.target.value)}
@@ -159,7 +165,7 @@ export function CollabSessionIndex({
           </button>
           <button
             type="button"
-            onClick={() => createMutation.mutate()}
+            onClick={() => createMutation.mutate(undefined)}
             disabled={createMutation.isPending}
             className="flex h-9 items-center justify-center gap-2 rounded-md border border-fuchsia-500/30 bg-fuchsia-500/10 px-3 text-xs font-medium text-fuchsia-100 transition-colors hover:bg-fuchsia-500/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -169,6 +175,15 @@ export function CollabSessionIndex({
               <Plus className="h-3.5 w-3.5" />
             )}
             Start
+          </button>
+          <button
+            type="button"
+            onClick={() => createMutation.mutate('windows_co_browser')}
+            disabled={createMutation.isPending}
+            className="flex h-9 items-center justify-center gap-2 rounded-md border border-teal-500/30 bg-teal-500/10 px-3 text-xs font-medium text-teal-100 transition-colors hover:bg-teal-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <ScreenShare className="h-3.5 w-3.5" />
+            New Windows
           </button>
         </div>
       </div>
@@ -216,6 +231,12 @@ export function CollabSessionIndex({
                   <MonitorUp className="h-3.5 w-3.5" />
                   {modeLabel(session.target_mode)}
                 </div>
+                {session.target_mode === 'windows_co_browser' &&
+                  session.state !== 'active' && (
+                    <div className="mt-2 rounded border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-200">
+                      Pair disabled: closed session
+                    </div>
+                  )}
                 <div className="mt-1 truncate font-mono text-[11px] text-slate-600">
                   {session.target_url || 'about:blank'}
                 </div>

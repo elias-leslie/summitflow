@@ -623,6 +623,12 @@ function WindowsConnectorPanel({
   const canRevoke =
     !!activePairing &&
     (activePairing.state === 'pending' || activePairing.state === 'claimed')
+  const pairDisabledReason =
+    session.state !== 'active'
+      ? 'Pair disabled: this Windows Co-Browser session is closed. Click New Windows above to start an active session.'
+      : createPending
+        ? 'Creating pairing...'
+        : null
 
   return (
     <div className="rounded-lg border border-teal-500/25 bg-teal-950/20 p-3">
@@ -721,12 +727,18 @@ function WindowsConnectorPanel({
             : 'Pairing failed'}
         </div>
       )}
+      {pairDisabledReason && (
+        <div className="mt-2 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-200">
+          {pairDisabledReason}
+        </div>
+      )}
 
       <div className="mt-3 grid grid-cols-2 gap-2">
         <button
           type="button"
           onClick={onCreatePairing}
           disabled={session.state !== 'active' || createPending}
+          title={pairDisabledReason ?? 'Create short-lived pairing token'}
           className="flex h-9 items-center justify-center gap-2 rounded-md border border-teal-500/30 bg-teal-500/10 text-xs font-medium text-teal-100 transition-colors hover:bg-teal-500/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {createPending ? (
