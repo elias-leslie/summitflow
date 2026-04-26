@@ -14,12 +14,16 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import {
+  type CollabAnnotation,
   type CollabAnnotationKind,
   type CollabSession,
   collabApi,
 } from '@/lib/api/collab'
 import { getWsUrl } from '@/lib/api-config'
-import { CollabAnnotationLayer } from './CollabAnnotationLayer'
+import {
+  type CollabAnchorSelection,
+  CollabAnnotationLayer,
+} from './CollabAnnotationLayer'
 import { CollabEvidencePacket } from './CollabEvidencePacket'
 
 interface CollabSessionWorkspaceProps {
@@ -28,12 +32,57 @@ interface CollabSessionWorkspaceProps {
 }
 
 const ANNOTATION_KINDS: CollabAnnotationKind[] = ['pin', 'box', 'highlight']
+const FALLBACK_ANCHOR: CollabAnchorSelection = {
+  x: 160,
+  y: 120,
+  width: 320,
+  height: 180,
+  viewport_width: 1440,
+  viewport_height: 900,
+  scroll_x: 0,
+  scroll_y: 0,
+}
 
 function targetModeLabel(mode: string): string {
   if (mode === 'windows_co_browser') return 'Windows Co-Browser'
   if (mode === 'st_browser') return 'st browser'
   if (mode === 'manual') return 'Manual Review'
   return 'Live Browser'
+}
+
+function annotationAnchor(
+  annotation?: CollabAnnotation,
+): CollabAnchorSelection {
+  if (!annotation) return FALLBACK_ANCHOR
+  return {
+    x: Number(annotation.anchor.x ?? FALLBACK_ANCHOR.x),
+    y: Number(annotation.anchor.y ?? FALLBACK_ANCHOR.y),
+    width:
+      annotation.anchor.width === undefined
+        ? undefined
+        : Number(annotation.anchor.width),
+    height:
+      annotation.anchor.height === undefined
+        ? undefined
+        : Number(annotation.anchor.height),
+    viewport_width: Number(
+      annotation.anchor.viewport_width ?? FALLBACK_ANCHOR.viewport_width,
+    ),
+    viewport_height: Number(
+      annotation.anchor.viewport_height ?? FALLBACK_ANCHOR.viewport_height,
+    ),
+    scroll_x: Number(annotation.anchor.scroll_x ?? 0),
+    scroll_y: Number(annotation.anchor.scroll_y ?? 0),
+  }
+}
+
+function bboxFromAnchor(anchor: CollabAnchorSelection) {
+  return {
+    x: Math.round(anchor.x),
+    y: Math.round(anchor.y),
+    width: Math.round(anchor.width ?? 8),
+    height: Math.round(anchor.height ?? 8),
+  }
 }
 
 export function CollabSessionWorkspace({
@@ -45,6 +94,9 @@ export function CollabSessionWorkspace({
   const [kind, setKind] = useState<CollabAnnotationKind>('box')
   const [evidenceError, setEvidenceError] = useState<string | null>(null)
   const [eventConnected, setEventConnected] = useState(false)
+  const [draftAnchor, setDraftAnchor] = useState<CollabAnchorSelection | null>(
+    null,
+  )
 
   const detailQuery = useQuery({
     queryKey: ['collab-session', sessionId],
@@ -63,6 +115,9 @@ export function CollabSessionWorkspace({
 
   const session = detailQuery.data
   const joinedSessionRef = useRef<string | null>(null)
+  const selectedAnchor =
+    draftAnchor ?? annotationAnchor(session?.annotations[0])
+  const selectedAnnotationId = session?.annotations[0]?.annotation_id ?? null
 
   const annotationMutation = useMutation({
     mutationFn: () =>
@@ -71,20 +126,19 @@ export function CollabSessionWorkspace({
         page_key: session?.target_url || '/design',
         page_url_snapshot: session?.target_url,
         selector: '[data-design-review-target]',
-        anchor: {
-          x: 160,
-          y: 120,
-          width: kind === 'pin' ? undefined : 320,
-          height: kind === 'pin' ? undefined : 180,
-          viewport_width: 1440,
-          viewport_height: 900,
-          scroll_x: 0,
-          scroll_y: 0,
-        },
+        anchor:
+          kind === 'pin'
+            ? {
+                ...selectedAnchor,
+                width: undefined,
+                height: undefined,
+              }
+            : { ...selectedAnchor },
         comment,
       }),
     onSuccess: () => {
       setComment('')
+      setDraftAnchor(null)
       queryClient.invalidateQueries({ queryKey: ['collab-session', sessionId] })
       queryClient.invalidateQueries({ queryKey: ['collab-sessions'] })
     },
@@ -94,11 +148,15 @@ export function CollabSessionWorkspace({
     mutationFn: () =>
       collabApi.createEvidencePacket(sessionId, {
         title: 'Selected review region',
+        annotation_id: selectedAnnotationId,
         url: session?.target_url,
         page_url_snapshot: session?.target_url,
-        viewport: { width: 1440, height: 900 },
+        viewport: {
+          width: selectedAnchor.viewport_width,
+          height: selectedAnchor.viewport_height,
+        },
         selector: '[data-design-review-target]',
-        bbox: { x: 160, y: 120, width: 320, height: 180 },
+        bbox: bboxFromAnchor(selectedAnchor),
         context_summary:
           'Design Review selection with target mode, viewport, selector, and bbox only. No DOM dump or screenshot stream attached.',
       }),
@@ -256,7 +314,13 @@ export function CollabSessionWorkspace({
           </div>
         </div>
 
-        <CollabAnnotationLayer annotations={session.annotations} />
+        <CollabAnnotationLayer
+          annotations={session.annotations}
+          disabled={session.state !== 'active'}
+          draftAnchor={draftAnchor ?? undefined}
+          markKind={kind}
+          onAnchorChange={setDraftAnchor}
+        />
       </section>
 
       <aside className="space-y-3">
