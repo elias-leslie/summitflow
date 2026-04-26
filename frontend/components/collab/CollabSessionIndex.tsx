@@ -44,8 +44,7 @@ function modeLabel(mode: CollabTargetMode): string {
 }
 
 function defaultTargetUrl(): string {
-  if (typeof window === 'undefined') return 'http://127.0.0.1:3001'
-  return window.location.origin
+  return ''
 }
 
 export function CollabSessionIndex({
@@ -92,7 +91,7 @@ export function CollabSessionIndex({
       const input = {
         project_id: projectId,
         title: sessionTitle,
-        target_url: targetUrl,
+        target_url: targetUrl.trim() || null,
         target_mode: overrideMode ?? targetMode,
         sensitive,
       }
@@ -134,6 +133,7 @@ export function CollabSessionIndex({
           <input
             value={targetUrl}
             onChange={(event) => setTargetUrl(event.target.value)}
+            placeholder="Target URL optional"
             className="h-9 rounded-md border border-slate-700 bg-slate-950/70 px-3 font-mono text-xs text-slate-200 outline-none transition-colors focus:border-fuchsia-500/60"
             aria-label="Target URL"
           />
