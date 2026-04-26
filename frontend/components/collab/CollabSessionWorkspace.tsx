@@ -842,6 +842,12 @@ function WindowsConnectorPanel({
           Extension Pairing
         </div>
         <div className="mt-2 leading-5">{extensionPairState.message}</div>
+        <a
+          href="/api/collab/chromium-extension.zip"
+          className="mt-2 inline-flex h-7 items-center rounded-md border border-teal-500/30 bg-teal-500/10 px-2 text-[11px] font-medium text-teal-100 transition-colors hover:bg-teal-500/20"
+        >
+          Download Extension ZIP
+        </a>
         {activePairing?.state === 'pending' && (
           <div className="mt-2 rounded border border-amber-500/20 bg-slate-950/60 px-2 py-1 text-[11px] text-amber-100">
             Pending token expires in minutes. Install/enable extension in the

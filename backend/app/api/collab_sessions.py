@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import math
+import zipfile
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -11,6 +13,7 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     WebSocket,
     WebSocketDisconnect,
 )
@@ -18,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from ..services.collab_connector_tokens import generate_connector_token, hash_connector_token
 from ..storage import collab_sessions as collab_store
+from ..utils.shared_paths import get_repo_root
 from .dependencies import validate_project_exists
 
 TargetMode = Literal["live_browser", "windows_co_browser", "st_browser", "manual"]
@@ -41,6 +45,12 @@ _DISPLAY_NAME_HEADERS = (
     "remote-user",
 )
 _MAX_COMPACT_CONTEXT_CHARS = 600
+_EXTENSION_PACKAGE_FILES = (
+    "manifest.json",
+    "dist/background.js",
+    "dist/content.js",
+    "dist/pairingBridge.js",
+)
 
 
 class _CollabEventHub:
@@ -97,6 +107,39 @@ class _CollabEventHub:
 
 
 _event_hub = _CollabEventHub()
+
+
+@global_router.get("/collab/chromium-extension.zip")
+def download_chromium_extension() -> Response:
+    """Return the built unpacked Chromium extension as a ZIP."""
+    extension_root = get_repo_root() / "apps" / "summitflow-chromium-extension"
+    missing = [
+        relative_path
+        for relative_path in _EXTENSION_PACKAGE_FILES
+        if not (extension_root / relative_path).is_file()
+    ]
+    if missing:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Chromium extension package is not built. "
+                "Build @summitflow/chromium-extension before downloading."
+            ),
+        )
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for relative_path in _EXTENSION_PACKAGE_FILES:
+            archive.write(extension_root / relative_path, arcname=relative_path)
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/zip",
+        headers={
+            "content-disposition": (
+                'attachment; filename="summitflow-cobrowser-extension.zip"'
+            )
+        },
+    )
 
 
 class CollabSessionCreateRequest(BaseModel):
