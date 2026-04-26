@@ -135,6 +135,7 @@ export interface CreateCollabAnnotationInput {
   selector?: string | null
   anchor: Record<string, unknown>
   comment: string
+  created_by_kind?: 'user' | 'agent' | 'system'
 }
 
 export interface JoinCollabParticipantInput {

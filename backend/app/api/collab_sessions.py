@@ -134,6 +134,7 @@ class CollabAnnotationCreateRequest(BaseModel):
     selector: str | None = Field(default=None, max_length=512)
     anchor: dict[str, Any]
     comment: str = Field(max_length=600)
+    created_by_kind: ActorKind = "user"
 
 
 class CollabParticipantCreateRequest(BaseModel):
@@ -687,6 +688,7 @@ async def create_collab_annotation(
         selector=_normalize_optional_text(payload.selector),
         anchor=_normalize_anchor(payload.anchor),
         comment=_normalize_comment(payload.comment),
+        created_by_kind=payload.created_by_kind,
         created_by_display=_derive_created_by_display(request),
     )
     await _broadcast_collab_event(

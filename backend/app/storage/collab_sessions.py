@@ -439,6 +439,7 @@ def create_annotation(
     selector: str | None,
     anchor: dict[str, Any],
     comment: str,
+    created_by_kind: str,
     created_by_display: str | None,
 ) -> dict[str, Any]:
     annotation_id = generate_prefixed_id("annotation")
@@ -454,9 +455,10 @@ def create_annotation(
                 selector,
                 anchor,
                 comment,
+                created_by_kind,
                 created_by_display
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING {ANNOTATION_COLUMNS}
             """,
             (
@@ -468,6 +470,7 @@ def create_annotation(
                 selector,
                 Jsonb(anchor),
                 comment,
+                created_by_kind,
                 created_by_display,
             ),
         )
@@ -476,7 +479,7 @@ def create_annotation(
         _insert_audit_event(
             cur,
             session_id=session_id,
-            actor_kind="user",
+            actor_kind=created_by_kind,
             action="annotation-created",
             detail={"annotation_id": annotation_id, "kind": kind},
         )

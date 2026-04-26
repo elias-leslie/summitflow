@@ -265,6 +265,21 @@ def test_connector_pairing_claim_heartbeat_and_teardown_revoke(
     assert "pairing_token" not in heartbeat_body
     assert "connector_token" not in heartbeat_body
 
+    agent_annotation = client.post(
+        f"/api/collab/sessions/{session_id}/annotations",
+        headers={"X-User-Name": "Codex"},
+        json={
+            "kind": "comment",
+            "page_url_snapshot": "http://localhost:3001/projects/test-project/design",
+            "anchor": _anchor(),
+            "comment": "Agent-side connector mark.",
+            "created_by_kind": "agent",
+        },
+    )
+    assert agent_annotation.status_code == 201
+    assert agent_annotation.json()["created_by_kind"] == "agent"
+    assert agent_annotation.json()["created_by_display"] == "Codex"
+
     teardown = client.post(f"/api/collab/sessions/{session_id}/teardown")
     assert teardown.status_code == 200
 
