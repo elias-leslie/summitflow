@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import math
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import (
@@ -16,6 +16,7 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field
 
+from ..services.collab_connector_tokens import generate_connector_token, hash_connector_token
 from ..storage import collab_sessions as collab_store
 from .dependencies import validate_project_exists
 
@@ -25,6 +26,7 @@ AnnotationKind = Literal["pin", "box", "highlight", "pointer", "comment"]
 ActorKind = Literal["user", "agent", "system"]
 ParticipantRole = Literal["viewer", "controller", "observer"]
 ParticipantStatus = Literal["active", "idle", "left"]
+ConnectorPairingState = Literal["pending", "claimed", "revoked", "expired"]
 
 global_router = APIRouter()
 project_router = APIRouter()
@@ -201,6 +203,56 @@ class CollabControlGrantRequest(BaseModel):
     ttl_seconds: int = Field(default=600, ge=1, le=3600)
 
 
+class CollabConnectorPairingCreateRequest(BaseModel):
+    expires_in_seconds: int = Field(default=600, ge=60, le=3600)
+    connector_host: str | None = Field(default=None, max_length=120)
+    profile_label: str | None = Field(default=None, max_length=120)
+
+
+class CollabConnectorPairingResponse(BaseModel):
+    pairing_id: str
+    session_id: str
+    state: ConnectorPairingState
+    connector_host: str | None
+    profile_label: str | None
+    connector_version: str | None
+    connector_state: dict[str, Any]
+    expires_at: str | None
+    claimed_at: str | None
+    connector_last_seen_at: str | None
+    revoked_at: str | None
+    created_at: str | None
+    updated_at: str | None
+
+
+class CollabConnectorPairingCreateResponse(CollabConnectorPairingResponse):
+    pairing_token: str
+
+
+class CollabConnectorPairingClaimRequest(BaseModel):
+    pairing_token: str = Field(min_length=16, max_length=200)
+    connector_host: str | None = Field(default=None, max_length=120)
+    profile_label: str | None = Field(default=None, max_length=120)
+    connector_version: str | None = Field(default=None, max_length=80)
+
+
+class CollabConnectorPairingClaimResponse(BaseModel):
+    pairing: CollabConnectorPairingResponse
+    connector_token: str
+    session: CollabSessionResponse
+
+
+class CollabConnectorHeartbeatRequest(BaseModel):
+    connector_token: str = Field(min_length=16, max_length=200)
+    url: str | None = Field(default=None, max_length=2048)
+    title: str | None = Field(default=None, max_length=200)
+    scroll_x: float | None = None
+    scroll_y: float | None = None
+    viewport_width: float | None = None
+    viewport_height: float | None = None
+    dom_state_hash: str | None = Field(default=None, max_length=128)
+
+
 class CollabAuditEventResponse(BaseModel):
     audit_id: str
     session_id: str
@@ -246,6 +298,13 @@ def _normalize_comment(comment: str) -> str:
 def _normalize_optional_text(value: str | None) -> str | None:
     normalized = value.strip() if isinstance(value, str) else None
     return normalized or None
+
+
+def _normalize_token(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise _bad_request("token is required")
+    return normalized
 
 
 def _validate_url(value: str | None) -> str | None:
@@ -296,6 +355,40 @@ def _normalize_anchor(anchor: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _normalize_connector_state(payload: CollabConnectorHeartbeatRequest) -> dict[str, Any]:
+    state: dict[str, Any] = {}
+    url = _validate_url(payload.url)
+    if url is not None:
+        state["url"] = url
+    title = _normalize_optional_text(payload.title)
+    if title is not None:
+        state["title"] = title
+    viewport: dict[str, float] = {}
+    if payload.viewport_width is not None:
+        viewport["width"] = _validate_finite_number(
+            payload.viewport_width,
+            field_name="viewport_width",
+        )
+    if payload.viewport_height is not None:
+        viewport["height"] = _validate_finite_number(
+            payload.viewport_height,
+            field_name="viewport_height",
+        )
+    if viewport:
+        state["viewport"] = viewport
+    scroll: dict[str, float] = {}
+    if payload.scroll_x is not None:
+        scroll["x"] = _validate_finite_number(payload.scroll_x, field_name="scroll_x")
+    if payload.scroll_y is not None:
+        scroll["y"] = _validate_finite_number(payload.scroll_y, field_name="scroll_y")
+    if scroll:
+        state["scroll"] = scroll
+    dom_state_hash = _normalize_optional_text(payload.dom_state_hash)
+    if dom_state_hash is not None:
+        state["dom_state_hash"] = dom_state_hash
+    return state
+
+
 def _require_session(session_id: str) -> dict[str, Any]:
     session = collab_store.get_session(session_id)
     if not session:
@@ -316,6 +409,26 @@ async def _broadcast_collab_event(
     data: dict[str, Any],
 ) -> None:
     await _event_hub.broadcast(session_id, action, data)
+
+
+def _raise_connector_pairing_error(error: str | None) -> None:
+    if error is None:
+        return
+    if error == "not_found":
+        raise HTTPException(status_code=404, detail="Connector pairing not found")
+    if error == "invalid_token":
+        raise HTTPException(status_code=403, detail="Connector token rejected")
+    if error == "session_closed":
+        raise HTTPException(status_code=409, detail="Collab session is closed")
+    if error == "expired":
+        raise HTTPException(status_code=409, detail="Connector pairing expired")
+    if error == "revoked":
+        raise HTTPException(status_code=409, detail="Connector pairing revoked")
+    if error == "claimed":
+        raise HTTPException(status_code=409, detail="Connector pairing already claimed")
+    if error == "pending":
+        raise HTTPException(status_code=409, detail="Connector pairing is not claimed")
+    raise HTTPException(status_code=409, detail=f"Connector pairing unavailable: {error}")
 
 
 @global_router.get("/collab/sessions", response_model=list[CollabSessionResponse])
@@ -400,6 +513,127 @@ async def collab_session_events(websocket: WebSocket, session_id: str) -> None:
         pass
     finally:
         await _event_hub.disconnect(websocket, session_id)
+
+
+@global_router.get(
+    "/collab/sessions/{session_id}/connector-pairings",
+    response_model=list[CollabConnectorPairingResponse],
+)
+async def list_collab_connector_pairings(
+    session_id: str,
+    limit: int = Query(50, ge=1, le=100),
+) -> list[CollabConnectorPairingResponse]:
+    _require_session(session_id)
+    rows = collab_store.list_connector_pairings(session_id=session_id, limit=limit)
+    return [CollabConnectorPairingResponse(**row) for row in rows]
+
+
+@global_router.post(
+    "/collab/sessions/{session_id}/connector-pairings",
+    response_model=CollabConnectorPairingCreateResponse,
+    status_code=201,
+)
+async def create_collab_connector_pairing(
+    session_id: str,
+    payload: CollabConnectorPairingCreateRequest,
+) -> CollabConnectorPairingCreateResponse:
+    _require_active_session(session_id)
+    pairing_token = generate_connector_token()
+    expires_at = datetime.now(UTC) + timedelta(seconds=payload.expires_in_seconds)
+    row = collab_store.create_connector_pairing(
+        session_id=session_id,
+        pairing_token_hash=hash_connector_token(pairing_token),
+        expires_at=expires_at,
+        connector_host=_normalize_optional_text(payload.connector_host),
+        profile_label=_normalize_optional_text(payload.profile_label),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Collab session not found")
+    await _broadcast_collab_event(
+        session_id,
+        "connector-pairing-created",
+        {"pairing_id": row["pairing_id"], "expires_at": row["expires_at"]},
+    )
+    return CollabConnectorPairingCreateResponse(**row, pairing_token=pairing_token)
+
+
+@global_router.post(
+    "/collab/connector-pairings/{pairing_id}/claim",
+    response_model=CollabConnectorPairingClaimResponse,
+)
+async def claim_collab_connector_pairing(
+    pairing_id: str,
+    payload: CollabConnectorPairingClaimRequest,
+) -> CollabConnectorPairingClaimResponse:
+    connector_token = generate_connector_token()
+    row, error = collab_store.claim_connector_pairing(
+        pairing_id=pairing_id,
+        pairing_token_hash=hash_connector_token(_normalize_token(payload.pairing_token)),
+        connector_token_hash=hash_connector_token(connector_token),
+        connector_host=_normalize_optional_text(payload.connector_host),
+        profile_label=_normalize_optional_text(payload.profile_label),
+        connector_version=_normalize_optional_text(payload.connector_version),
+    )
+    _raise_connector_pairing_error(error)
+    if not row:
+        raise HTTPException(status_code=404, detail="Connector pairing not found")
+    session = collab_store.get_session(row["session_id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="Collab session not found")
+    await _broadcast_collab_event(
+        row["session_id"],
+        "connector-paired",
+        {
+            "pairing_id": row["pairing_id"],
+            "connector_host": row["connector_host"],
+            "profile_label": row["profile_label"],
+        },
+    )
+    return CollabConnectorPairingClaimResponse(
+        pairing=CollabConnectorPairingResponse(**row),
+        connector_token=connector_token,
+        session=CollabSessionResponse(**session),
+    )
+
+
+@global_router.post(
+    "/collab/connector-pairings/{pairing_id}/heartbeat",
+    response_model=CollabConnectorPairingResponse,
+)
+async def heartbeat_collab_connector_pairing(
+    pairing_id: str,
+    payload: CollabConnectorHeartbeatRequest,
+) -> CollabConnectorPairingResponse:
+    row, error = collab_store.heartbeat_connector_pairing(
+        pairing_id=pairing_id,
+        connector_token_hash=hash_connector_token(_normalize_token(payload.connector_token)),
+        connector_state=_normalize_connector_state(payload),
+    )
+    _raise_connector_pairing_error(error)
+    if not row:
+        raise HTTPException(status_code=404, detail="Connector pairing not found")
+    await _broadcast_collab_event(
+        row["session_id"],
+        "connector-state-updated",
+        {"pairing_id": row["pairing_id"], "connector_state": row["connector_state"]},
+    )
+    return CollabConnectorPairingResponse(**row)
+
+
+@global_router.post(
+    "/collab/connector-pairings/{pairing_id}/revoke",
+    response_model=CollabConnectorPairingResponse,
+)
+async def revoke_collab_connector_pairing(pairing_id: str) -> CollabConnectorPairingResponse:
+    row = collab_store.revoke_connector_pairing(pairing_id=pairing_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Connector pairing not found")
+    await _broadcast_collab_event(
+        row["session_id"],
+        "connector-revoked",
+        {"pairing_id": row["pairing_id"], "state": row["state"]},
+    )
+    return CollabConnectorPairingResponse(**row)
 
 
 @global_router.post(

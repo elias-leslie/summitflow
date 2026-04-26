@@ -164,6 +164,121 @@ def test_non_sensitive_session_creates_compact_evidence_packet(
     assert "DOM" not in packet
 
 
+def test_connector_pairing_claim_heartbeat_and_teardown_revoke(
+    client,
+    ensure_test_project: str,
+) -> None:
+    project_id = ensure_test_project
+    _clear_collab_rows(project_id)
+
+    created = client.post(
+        "/api/collab/sessions",
+        json={
+            "project_id": project_id,
+            "title": "Windows co-browser pairing",
+            "target_url": "about:blank",
+            "target_mode": "windows_co_browser",
+            "sensitive": True,
+        },
+    )
+    assert created.status_code == 201
+    session_id = created.json()["session_id"]
+
+    pairing_created = client.post(
+        f"/api/collab/sessions/{session_id}/connector-pairings",
+        json={
+            "expires_in_seconds": 120,
+            "connector_host": "Davion-Sidar",
+            "profile_label": "SummitFlow Review",
+        },
+    )
+    assert pairing_created.status_code == 201
+    pairing = pairing_created.json()
+    pairing_id = pairing["pairing_id"]
+    pairing_token = pairing["pairing_token"]
+    assert pairing_id.startswith("pairing-")
+    assert len(pairing_token) > 30
+    assert pairing["state"] == "pending"
+
+    listed = client.get(f"/api/collab/sessions/{session_id}/connector-pairings")
+    assert listed.status_code == 200
+    assert listed.json()[0]["pairing_id"] == pairing_id
+    assert "pairing_token" not in listed.json()[0]
+
+    bad_claim = client.post(
+        f"/api/collab/connector-pairings/{pairing_id}/claim",
+        json={
+            "pairing_token": "wrong-token-value-long-enough",
+            "connector_host": "Davion-Sidar",
+        },
+    )
+    assert bad_claim.status_code == 403
+
+    claimed = client.post(
+        f"/api/collab/connector-pairings/{pairing_id}/claim",
+        json={
+            "pairing_token": pairing_token,
+            "connector_host": "Davion-Sidar",
+            "profile_label": "SummitFlow Review",
+            "connector_version": "0.1.0",
+        },
+    )
+    assert claimed.status_code == 200
+    claimed_body = claimed.json()
+    connector_token = claimed_body["connector_token"]
+    assert claimed_body["pairing"]["state"] == "claimed"
+    assert claimed_body["pairing"]["connector_host"] == "Davion-Sidar"
+    assert claimed_body["session"]["session_id"] == session_id
+
+    duplicate_claim = client.post(
+        f"/api/collab/connector-pairings/{pairing_id}/claim",
+        json={"pairing_token": pairing_token},
+    )
+    assert duplicate_claim.status_code == 409
+
+    bad_heartbeat = client.post(
+        f"/api/collab/connector-pairings/{pairing_id}/heartbeat",
+        json={"connector_token": "wrong-token-value-long-enough"},
+    )
+    assert bad_heartbeat.status_code == 403
+
+    heartbeat = client.post(
+        f"/api/collab/connector-pairings/{pairing_id}/heartbeat",
+        json={
+            "connector_token": connector_token,
+            "url": "http://localhost:3001/projects/test-project/design",
+            "title": "SummitFlow Design",
+            "scroll_y": 320,
+            "viewport_width": 1440,
+            "viewport_height": 900,
+            "dom_state_hash": "hash-visible-dom-state",
+        },
+    )
+    assert heartbeat.status_code == 200
+    heartbeat_body = heartbeat.json()
+    assert heartbeat_body["connector_state"]["url"].endswith("/projects/test-project/design")
+    assert heartbeat_body["connector_state"]["scroll"] == {"y": 320.0}
+    assert heartbeat_body["connector_state"]["viewport"] == {
+        "width": 1440.0,
+        "height": 900.0,
+    }
+    assert "pairing_token" not in heartbeat_body
+    assert "connector_token" not in heartbeat_body
+
+    teardown = client.post(f"/api/collab/sessions/{session_id}/teardown")
+    assert teardown.status_code == 200
+
+    listed_after_teardown = client.get(f"/api/collab/sessions/{session_id}/connector-pairings")
+    assert listed_after_teardown.status_code == 200
+    assert listed_after_teardown.json()[0]["state"] == "revoked"
+
+    heartbeat_after_teardown = client.post(
+        f"/api/collab/connector-pairings/{pairing_id}/heartbeat",
+        json={"connector_token": connector_token},
+    )
+    assert heartbeat_after_teardown.status_code == 409
+
+
 def test_collab_session_event_websocket_connects_and_pongs(
     client,
     ensure_test_project: str,

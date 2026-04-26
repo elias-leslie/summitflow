@@ -12,6 +12,7 @@ def create_collab_session_tables(cur: psycopg.Cursor) -> None:
     _create_collab_annotations_table(cur)
     _create_collab_evidence_packets_table(cur)
     _create_collab_audit_events_table(cur)
+    _create_collab_connector_pairings_table(cur)
 
 
 def _create_collab_sessions_table(cur: psycopg.Cursor) -> None:
@@ -163,4 +164,40 @@ def _create_collab_audit_events_table(cur: psycopg.Cursor) -> None:
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_collab_audit_events_session_created "
         "ON collab_audit_events(session_id, created_at DESC)"
+    )
+
+
+def _create_collab_connector_pairings_table(cur: psycopg.Cursor) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS collab_connector_pairings (
+            id BIGSERIAL PRIMARY KEY,
+            pairing_id TEXT NOT NULL UNIQUE,
+            session_id TEXT NOT NULL REFERENCES collab_sessions(session_id) ON DELETE CASCADE,
+            pairing_token_hash TEXT NOT NULL,
+            connector_token_hash TEXT,
+            state TEXT NOT NULL DEFAULT 'pending',
+            connector_host TEXT,
+            profile_label TEXT,
+            connector_version TEXT,
+            connector_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+            expires_at TIMESTAMPTZ NOT NULL,
+            claimed_at TIMESTAMPTZ,
+            connector_last_seen_at TIMESTAMPTZ,
+            revoked_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT ck_collab_connector_pairings_state CHECK (
+                state IN ('pending', 'claimed', 'revoked', 'expired')
+            )
+        )
+        """
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_collab_connector_pairings_session_created "
+        "ON collab_connector_pairings(session_id, created_at DESC)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_collab_connector_pairings_state_expires "
+        "ON collab_connector_pairings(state, expires_at)"
     )
