@@ -11,7 +11,6 @@ import {
   Power,
   RefreshCw,
   ShieldCheck,
-  Terminal,
   Unlock,
   Users,
   Wifi,
@@ -101,7 +100,13 @@ function formatTimestamp(value: string | null): string {
 
 function connectorApiBaseUrl(): string {
   if (typeof window === 'undefined') return 'http://127.0.0.1:8001/api'
-  return `${window.location.protocol}//${window.location.hostname}:8001/api`
+  if (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1'
+  ) {
+    return `${window.location.protocol}//${window.location.hostname}:8001/api`
+  }
+  return `${window.location.origin}/api`
 }
 
 function targetOrigin(targetUrl: string | null): string | null {
@@ -111,6 +116,88 @@ function targetOrigin(targetUrl: string | null): string | null {
   } catch {
     return null
   }
+}
+
+type ExtensionPairStatus = 'idle' | 'sending' | 'paired' | 'missing' | 'failed'
+
+interface ExtensionPairState {
+  status: ExtensionPairStatus
+  message: string
+}
+
+interface ExtensionBridgeResponse {
+  source?: string
+  requestId?: string
+  ok?: boolean
+  error?: string
+}
+
+interface ExtensionPairingConfig {
+  apiBaseUrl: string
+  sessionId: string
+  pairingId: string
+  pairingToken: string
+  sensitiveMode: boolean
+  targetUrl: string | null
+  profileLabel: string | null
+}
+
+function postPairingToExtension(
+  config: ExtensionPairingConfig,
+): Promise<ExtensionBridgeResponse> {
+  if (typeof window === 'undefined') {
+    return Promise.resolve({
+      ok: false,
+      error: 'Browser extension bridge unavailable during server render.',
+    })
+  }
+
+  const requestId =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(() => {
+      cleanup()
+      resolve({
+        ok: false,
+        error:
+          'SummitFlow Co-Browser extension not detected in this browser profile.',
+      })
+    }, 1_500)
+
+    const handleMessage = (event: MessageEvent<ExtensionBridgeResponse>) => {
+      const data = event.data
+      if (
+        event.source !== window ||
+        data?.source !== 'summitflow.extension' ||
+        data.requestId !== requestId
+      ) {
+        return
+      }
+      cleanup()
+      resolve(data)
+    }
+
+    function cleanup() {
+      window.clearTimeout(timeout)
+      window.removeEventListener('message', handleMessage)
+    }
+
+    window.addEventListener('message', handleMessage)
+    window.postMessage(
+      {
+        source: 'summitflow.design',
+        requestId,
+        message: {
+          type: 'summitflow.claim_pairing',
+          config,
+        },
+      },
+      window.location.origin,
+    )
+  })
 }
 
 function connectorValue(
@@ -140,7 +227,12 @@ export function CollabSessionWorkspace({
   const [kind, setKind] = useState<CollabAnnotationKind>('box')
   const [evidenceError, setEvidenceError] = useState<string | null>(null)
   const [eventConnected, setEventConnected] = useState(false)
-  const [pairingToken, setPairingToken] = useState<string | null>(null)
+  const [extensionPairState, setExtensionPairState] =
+    useState<ExtensionPairState>({
+      status: 'idle',
+      message:
+        'Pair from the dedicated Windows browser profile after the SummitFlow Co-Browser extension is installed.',
+    })
   const [draftAnchor, setDraftAnchor] = useState<CollabAnchorSelection | null>(
     null,
   )
@@ -247,11 +339,42 @@ export function CollabSessionWorkspace({
         profile_label: 'SummitFlow Review',
       }),
     onSuccess: (pairing) => {
-      setPairingToken(pairing.pairing_token)
+      setExtensionPairState({
+        status: 'sending',
+        message: 'Sending one-time pairing token to browser extension...',
+      })
       queryClient.invalidateQueries({
         queryKey: ['collab-connector-pairings', sessionId],
       })
       queryClient.invalidateQueries({ queryKey: ['collab-session', sessionId] })
+
+      void postPairingToExtension({
+        apiBaseUrl: connectorApiBaseUrl(),
+        sessionId,
+        pairingId: pairing.pairing_id,
+        pairingToken: pairing.pairing_token,
+        sensitiveMode: Boolean(session?.sensitive),
+        targetUrl: session?.target_url ?? null,
+        profileLabel: pairing.profile_label,
+      }).then((response) => {
+        if (response.ok) {
+          setExtensionPairState({
+            status: 'paired',
+            message:
+              'Extension paired. It can open the target tab; click the extension icon on that tab to show the overlay if needed.',
+          })
+        } else {
+          setExtensionPairState({
+            status: 'missing',
+            message:
+              response.error ??
+              'Extension not detected. Open this page in the dedicated Windows browser profile with the SummitFlow Co-Browser extension installed, then click Pair again.',
+          })
+        }
+        queryClient.invalidateQueries({
+          queryKey: ['collab-connector-pairings', sessionId],
+        })
+      })
     },
   })
 
@@ -259,7 +382,11 @@ export function CollabSessionWorkspace({
     mutationFn: (pairingId: string) =>
       collabApi.revokeConnectorPairing(pairingId),
     onSuccess: () => {
-      setPairingToken(null)
+      setExtensionPairState({
+        status: 'idle',
+        message:
+          'Pair from the dedicated Windows browser profile after the SummitFlow Co-Browser extension is installed.',
+      })
       queryClient.invalidateQueries({
         queryKey: ['collab-connector-pairings', sessionId],
       })
@@ -419,7 +546,7 @@ export function CollabSessionWorkspace({
             session={session}
             pairings={connectorPairings}
             activePairing={activeConnectorPairing}
-            pairingToken={pairingToken}
+            extensionPairState={extensionPairState}
             createPending={createConnectorPairingMutation.isPending}
             createError={createConnectorPairingMutation.error}
             revokePending={revokeConnectorPairingMutation.isPending}
@@ -587,7 +714,7 @@ interface WindowsConnectorPanelProps {
   session: CollabSession
   pairings: CollabConnectorPairing[]
   activePairing: CollabConnectorPairing | null
-  pairingToken: string | null
+  extensionPairState: ExtensionPairState
   createPending: boolean
   createError: unknown
   revokePending: boolean
@@ -599,7 +726,7 @@ function WindowsConnectorPanel({
   session,
   pairings,
   activePairing,
-  pairingToken,
+  extensionPairState,
   createPending,
   createError,
   revokePending,
@@ -612,13 +739,6 @@ function WindowsConnectorPanel({
   const title = connectorValue(activePairing, 'title')
   const viewport = connectorRecord(activePairing, 'viewport')
   const scroll = connectorRecord(activePairing, 'scroll')
-  const command =
-    activePairing && pairingToken && activePairing.state === 'pending'
-      ? [
-          'pnpm --filter @summitflow/windows-connector build',
-          `pnpm --filter @summitflow/windows-connector start -- --api ${apiBaseUrl} --pairing-id ${activePairing.pairing_id} --pairing-token ${pairingToken} --yes`,
-        ].join('\n')
-      : null
   const connected = activePairing?.state === 'claimed'
   const canRevoke =
     !!activePairing &&
@@ -635,7 +755,7 @@ function WindowsConnectorPanel({
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-teal-100">
           <Cable className="h-3.5 w-3.5 text-teal-300" />
-          Windows Connector
+          Windows Co-Browser Extension
         </div>
         <span
           className={clsx(
@@ -703,28 +823,32 @@ function WindowsConnectorPanel({
         </div>
         <div className="mt-2 space-y-1 font-mono text-[11px] text-slate-400">
           <div>{new URL(apiBaseUrl).origin}</div>
-          <div>http://127.0.0.1:47618</div>
           {target && <div>{target}</div>}
         </div>
       </div>
 
-      {command && (
-        <div className="mt-3 rounded-md border border-amber-500/25 bg-amber-950/20 p-2">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-200">
-            <Terminal className="h-3.5 w-3.5" />
-            Pair Once
-          </div>
-          <div className="mt-2 rounded border border-amber-500/20 bg-slate-950/60 px-2 py-1.5 text-[11px] leading-5 text-amber-100">
-            Run both lines on Davion-Sidar in Windows Terminal from the
-            SummitFlow repo root. That folder contains package.json and
-            apps/summitflow-windows-connector. Do not run this on Proxmox or in
-            the browser.
-          </div>
-          <pre className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap break-words rounded bg-slate-950/80 p-2 font-mono text-[11px] leading-5 text-slate-200">
-            {command}
-          </pre>
+      <div
+        className={clsx(
+          'mt-3 rounded-md border p-2 text-xs',
+          extensionPairState.status === 'paired'
+            ? 'border-emerald-500/25 bg-emerald-950/20 text-emerald-100'
+            : extensionPairState.status === 'missing' ||
+                extensionPairState.status === 'failed'
+              ? 'border-amber-500/25 bg-amber-950/20 text-amber-100'
+              : 'border-slate-800 bg-slate-950/60 text-slate-300',
+        )}
+      >
+        <div className="font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Extension Pairing
         </div>
-      )}
+        <div className="mt-2 leading-5">{extensionPairState.message}</div>
+        {activePairing?.state === 'pending' && (
+          <div className="mt-2 rounded border border-amber-500/20 bg-slate-950/60 px-2 py-1 text-[11px] text-amber-100">
+            Pending token expires in minutes. Install/enable extension in the
+            dedicated Windows browser profile, then click Pair again.
+          </div>
+        )}
+      </div>
 
       {Boolean(createError) && (
         <div className="mt-2 text-xs text-rose-200">
@@ -744,7 +868,7 @@ function WindowsConnectorPanel({
           type="button"
           onClick={onCreatePairing}
           disabled={session.state !== 'active' || createPending}
-          title={pairDisabledReason ?? 'Create short-lived pairing token'}
+          title={pairDisabledReason ?? 'Pair installed browser extension'}
           className="flex h-9 items-center justify-center gap-2 rounded-md border border-teal-500/30 bg-teal-500/10 text-xs font-medium text-teal-100 transition-colors hover:bg-teal-500/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {createPending ? (

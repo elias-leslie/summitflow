@@ -39,6 +39,16 @@ export interface ConnectorSessionConfig {
   sensitiveMode: boolean
 }
 
+export interface PairingClaimConfig {
+  apiBaseUrl: string
+  sessionId: string
+  pairingId: string
+  pairingToken: string
+  sensitiveMode: boolean
+  targetUrl?: string | null
+  profileLabel?: string | null
+}
+
 export interface OverlayToolConfig {
   tool: CollabAnnotationKind | 'idle'
 }
@@ -63,6 +73,7 @@ export type BackgroundToContentMessage =
   | { type: 'summitflow.destroy' }
 
 export type ExtensionCommandMessage =
+  | { type: 'summitflow.claim_pairing'; config: PairingClaimConfig }
   | { type: 'summitflow.configure_session'; config: ConnectorSessionConfig }
   | { type: 'summitflow.revoke_session' }
   | { type: 'summitflow.inject_overlay' }
@@ -70,4 +81,15 @@ export type ExtensionCommandMessage =
 export interface ExtensionCommandResponse {
   ok: boolean
   error?: string
+}
+
+export interface ExtensionBridgeRequest {
+  source: 'summitflow.design'
+  requestId: string
+  message: ExtensionCommandMessage
+}
+
+export interface ExtensionBridgeResponse extends ExtensionCommandResponse {
+  source: 'summitflow.extension'
+  requestId: string
 }

@@ -1,7 +1,12 @@
 # SummitFlow Windows Connector
 
-Dedicated-profile launcher and local bridge for Davion-Sidar Windows
+Optional dedicated-profile launcher and local bridge for Davion-Sidar Windows
 Co-Browser sessions.
+
+Primary pairing path is the SummitFlow Chromium extension installed in the
+dedicated Windows browser profile. This companion is for later one-click profile
+launch, local revoke, egress preview UI, WebRTC/DataChannel, or CDP-level
+control.
 
 Scope:
 
@@ -38,20 +43,20 @@ Current implementation:
 - keeps the connector token in process memory; stdout never prints it
 - exposes local `/revoke`, `/health`, and `/egress` endpoints on `127.0.0.1`
 
-Build:
+Developer build only:
 
 ```bash
 pnpm --filter @summitflow/windows-connector build
 ```
 
-Dry run:
+Developer dry run:
 
 ```bash
 pnpm --filter @summitflow/windows-connector build
 node apps/summitflow-windows-connector/dist/cli.js --dry-run --yes
 ```
 
-Launch shape:
+Developer launch shape:
 
 ```bash
 summitflow-windows-connector \

@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "build": "tsup src/background.ts src/content.ts --format esm --target chrome120 --out-dir dist --clean --splitting false",
+    "build": "tsup src/background.ts src/content.ts src/pairingBridge.ts --format esm --target chrome120 --out-dir dist --clean --splitting false",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

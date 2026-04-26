@@ -6,6 +6,7 @@ import type {
   ContentToBackgroundMessage,
   ExtensionCommandMessage,
   ExtensionCommandResponse,
+  PairingClaimConfig,
 } from './protocol'
 
 const SESSION_STORAGE_KEY = 'summitflow.connectorSession'
@@ -53,6 +54,13 @@ async function handleExtensionCommand(
   message: ExtensionCommandMessage,
   sender: chrome.MessageSender,
 ): Promise<ExtensionCommandResponse> {
+  if (message.type === 'summitflow.claim_pairing') {
+    const session = await claimPairing(message.config)
+    await setSession(session)
+    annotations = []
+    await openTargetUrl(message.config.targetUrl)
+    return { ok: true }
+  }
   if (message.type === 'summitflow.configure_session') {
     await setSession(message.config)
     annotations = []
@@ -145,6 +153,50 @@ async function heartbeat(session: ConnectorSessionConfig, state: CompactPageStat
       dom_state_hash: session.sensitiveMode ? undefined : state.dom_state_hash,
     }),
   })
+}
+
+async function claimPairing(config: PairingClaimConfig): Promise<ConnectorSessionConfig> {
+  const response = await fetch(apiUrl(config.apiBaseUrl, `/collab/connector-pairings/${config.pairingId}/claim`), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      pairing_token: config.pairingToken,
+      connector_host: 'dedicated-browser-extension',
+      profile_label: config.profileLabel ?? 'SummitFlow Review',
+      connector_version: chrome.runtime.getManifest().version,
+    }),
+  })
+  if (!response.ok) {
+    throw new Error(`pairing claim failed: ${response.status}`)
+  }
+  const body = (await response.json()) as { connector_token?: unknown }
+  if (typeof body.connector_token !== 'string') {
+    throw new Error('pairing claim missing connector token')
+  }
+  return {
+    apiBaseUrl: config.apiBaseUrl,
+    sessionId: config.sessionId,
+    pairingId: config.pairingId,
+    connectorToken: body.connector_token,
+    sensitiveMode: config.sensitiveMode,
+  }
+}
+
+async function openTargetUrl(targetUrl?: string | null): Promise<void> {
+  const url = normalizeTargetUrl(targetUrl)
+  if (!url) return
+  await chrome.tabs.create({ url })
+}
+
+function normalizeTargetUrl(targetUrl?: string | null): string | null {
+  if (!targetUrl) return null
+  try {
+    const parsed = new URL(targetUrl)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    return parsed.toString()
+  } catch {
+    return null
+  }
 }
 
 async function createAnnotation(
@@ -253,6 +305,7 @@ function apiUrl(apiBaseUrl: string, path: string): string {
 function isExtensionCommand(message: unknown): message is ExtensionCommandMessage {
   if (!isRecord(message) || typeof message.type !== 'string') return false
   return (
+    message.type === 'summitflow.claim_pairing' ||
     message.type === 'summitflow.configure_session' ||
     message.type === 'summitflow.revoke_session' ||
     message.type === 'summitflow.inject_overlay'
