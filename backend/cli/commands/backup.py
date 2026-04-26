@@ -491,9 +491,19 @@ def drain_pending(
         result = drain_pending_backups(dry_run=dry_run)
         if ctx.obj.is_compact:
             status = result.get("status", "unknown")
+            uploaded = result.get("uploaded", 0)
+            failed = result.get("failed", 0)
             promoted = result.get("promoted", 0)
             remaining = result.get("remaining", 0)
-            print(f"DRAIN {status}|promoted:{promoted}|remaining:{remaining}")
+            db_remaining = result.get("db_remaining", remaining)
+            file_remaining = result.get("file_remaining", remaining)
+            print(
+                f"DRAIN {status}|uploaded:{uploaded}|failed:{failed}|promoted:{promoted}|"
+                f"remaining:{remaining}|db_remaining:{db_remaining}|file_remaining:{file_remaining}"
+            )
+            detail = str(result.get("script_output") or "").strip()
+            if detail:
+                print(f"DETAIL {detail.splitlines()[0]}")
         else:
             output_json(result)
     except Exception as e:

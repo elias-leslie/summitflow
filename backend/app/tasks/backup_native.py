@@ -18,7 +18,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
+from ..logging_config import get_logger
 from ..utils.shared_paths import get_repo_root
+
+logger = get_logger(__name__)
 
 BACKUP_TIMEOUT = 600
 INFRA_BACKUP_TIMEOUT = 900
@@ -60,6 +63,18 @@ class StorageConfig:
     @property
     def location_prefix(self) -> str:
         return f"//{self.host}/{self.share}/{self.remote_path}"
+
+
+@dataclass(frozen=True)
+class SmbUploadResult:
+    ok: bool
+    archive_name: str
+    remote_path: str
+    location: str
+    returncode: int | None = None
+    error: str | None = None
+    stdout: str = ""
+    stderr: str = ""
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -112,13 +127,25 @@ def _load_db_config(project_name: str, env: dict[str, str]) -> dict[str, str]:
 def _storage_config(project_name: str, env: dict[str, str]) -> StorageConfig:
     env_file = _read_env_file(Path.home() / ".env.local")
     merged = {**env_file, **env}
+    remote_path = _source_remote_path(project_name, merged.get("SMB_PATH"))
     return StorageConfig(
         host=merged.get("SMB_HOST", "nas.local"),
         share=merged.get("SMB_SHARE", "backups"),
-        remote_path=merged.get("SMB_PATH", f"project-backups/{project_name}"),
+        remote_path=remote_path,
         user=merged.get("SMB_USER", "backup-svc"),
         credentials_file=Path(merged.get("CREDENTIALS_FILE", str(Path.home() / ".smbcredentials"))).expanduser(),
     )
+
+
+def _source_remote_path(source_id: str, configured_path: object = None) -> str:
+    base = str(configured_path or "").strip().strip("/")
+    if not base:
+        return f"project-backups/{source_id}"
+    if "{source}" in base or "{project}" in base:
+        return base.replace("{source}", source_id).replace("{project}", source_id)
+    if base.rsplit("/", 1)[-1] == source_id:
+        return base
+    return f"{base}/{source_id}"
 
 
 def _backup_state_root() -> Path:
@@ -291,16 +318,112 @@ def _smb_available(storage: StorageConfig) -> bool:
     return result.returncode == 0
 
 
-def _smb_upload(path: Path, archive_name: str, storage: StorageConfig) -> bool:
-    mkdir_cmd = f"mkdir {storage.remote_path}; cd {storage.remote_path}; put {path} {archive_name}; ls {archive_name}"
-    result = subprocess.run(
-        ["smbclient", f"//{storage.host}/{storage.share}", "-A", str(storage.credentials_file), "-c", mkdir_cmd],
+def _smb_output(stdout: str, stderr: str, limit: int = 1200) -> str:
+    detail = "\n".join(part.strip() for part in (stdout, stderr) if part.strip())
+    return detail[-limit:]
+
+
+def _smb_command(storage: StorageConfig, command: str, *, timeout: int) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["smbclient", f"//{storage.host}/{storage.share}", "-A", str(storage.credentials_file), "-c", command],
         capture_output=True,
         text=True,
-        timeout=300,
+        timeout=timeout,
         check=False,
     )
-    return result.returncode == 0 and archive_name in result.stdout + result.stderr
+
+
+def _smb_cd_ok(storage: StorageConfig, remote_path: str) -> bool:
+    result = _smb_command(storage, f"cd {remote_path}; ls", timeout=30)
+    return result.returncode == 0
+
+
+def _ensure_smb_dir(storage: StorageConfig) -> SmbUploadResult:
+    if _smb_cd_ok(storage, storage.remote_path):
+        return SmbUploadResult(
+            ok=True,
+            archive_name="",
+            remote_path=storage.remote_path,
+            location=storage.location_prefix,
+        )
+
+    parts = [part for part in storage.remote_path.split("/") if part]
+    current = ""
+    last_result: subprocess.CompletedProcess[str] | None = None
+    for part in parts:
+        current = f"{current}/{part}" if current else part
+        last_result = _smb_command(storage, f"mkdir {current}", timeout=30)
+
+    check = _smb_command(storage, f"cd {storage.remote_path}; ls", timeout=30)
+    if check.returncode == 0:
+        return SmbUploadResult(
+            ok=True,
+            archive_name="",
+            remote_path=storage.remote_path,
+            location=storage.location_prefix,
+        )
+
+    detail_source = check if check.stdout or check.stderr else last_result
+    stdout = detail_source.stdout if detail_source else ""
+    stderr = detail_source.stderr if detail_source else ""
+    return SmbUploadResult(
+        ok=False,
+        archive_name="",
+        remote_path=storage.remote_path,
+        location=storage.location_prefix,
+        returncode=check.returncode,
+        error=f"remote directory unavailable: {_smb_output(stdout, stderr)}",
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+def _smb_upload(path: Path, archive_name: str, storage: StorageConfig) -> SmbUploadResult:
+    if not storage.credentials_file.exists():
+        return SmbUploadResult(
+            ok=False,
+            archive_name=archive_name,
+            remote_path=storage.remote_path,
+            location=f"{storage.location_prefix}/{archive_name}",
+            error=f"credentials file missing: {storage.credentials_file}",
+        )
+    if not shutil.which("smbclient"):
+        return SmbUploadResult(
+            ok=False,
+            archive_name=archive_name,
+            remote_path=storage.remote_path,
+            location=f"{storage.location_prefix}/{archive_name}",
+            error="smbclient not found",
+        )
+
+    directory = _ensure_smb_dir(storage)
+    if not directory.ok:
+        return SmbUploadResult(
+            ok=False,
+            archive_name=archive_name,
+            remote_path=storage.remote_path,
+            location=f"{storage.location_prefix}/{archive_name}",
+            returncode=directory.returncode,
+            error=directory.error,
+            stdout=directory.stdout,
+            stderr=directory.stderr,
+        )
+
+    command = f'cd {storage.remote_path}; put "{path}" "{archive_name}"; ls "{archive_name}"'
+    result = _smb_command(storage, command, timeout=300)
+    output = result.stdout + result.stderr
+    ok = result.returncode == 0 and archive_name in output
+    error = None if ok else f"upload failed rc={result.returncode}: {_smb_output(result.stdout, result.stderr)}"
+    return SmbUploadResult(
+        ok=ok,
+        archive_name=archive_name,
+        remote_path=storage.remote_path,
+        location=f"{storage.location_prefix}/{archive_name}",
+        returncode=result.returncode,
+        error=error,
+        stdout=result.stdout,
+        stderr=result.stderr,
+    )
 
 
 def _save_pending(path: Path, archive_name: str, project_name: str, storage: StorageConfig) -> Path:
@@ -394,23 +517,39 @@ def run_project_backup(
             location = str(final_path)
             _update_backup_index(source_id, result, "ok", location, retention)
             return {**result, "archive_path": final_path, "location": location}
-        if _smb_available(storage):
-            for attempt in range(int(run_env.get("SMB_MAX_RETRIES", "5"))):
-                if _smb_upload(archive_path, archive_name, storage):
-                    location = f"{storage.location_prefix}/{archive_name}"
-                    if keep_local:
-                        local_dir = project_path / "backups"
-                        local_dir.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(archive_path, local_dir / archive_name)
-                        _apply_local_retention(local_dir)
-                    _update_backup_index(source_id, result, "ok", location, retention)
-                    return {**result, "location": location}
-                if attempt < 4:
-                    time.sleep(min(60, 5 * (2**attempt)))
+        max_retries = int(run_env.get("SMB_MAX_RETRIES", "5"))
+        last_upload: SmbUploadResult | None = None
+        for attempt in range(max_retries):
+            last_upload = _smb_upload(archive_path, archive_name, storage)
+            if last_upload.ok:
+                location = last_upload.location
+                if keep_local:
+                    local_dir = project_path / "backups"
+                    local_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(archive_path, local_dir / archive_name)
+                    _apply_local_retention(local_dir)
+                _update_backup_index(source_id, result, "ok", location, retention)
+                return {**result, "location": location}
+            logger.warning(
+                "backup_smb_upload_failed",
+                archive=archive_name,
+                source_id=source_id,
+                attempt=attempt + 1,
+                attempts=max_retries,
+                remote_path=storage.remote_path,
+                error=last_upload.error,
+            )
+            if attempt < max_retries - 1:
+                time.sleep(min(60, 5 * (2**attempt)))
         pending = _save_pending(archive_path, archive_name, source_id, storage)
         location = str(pending)
         _update_backup_index(source_id, result, "pending", location, retention)
-        return {**result, "location": location, "pending_path": location}
+        return {
+            **result,
+            "location": location,
+            "pending_path": location,
+            "upload_error": last_upload.error if last_upload else "SMB upload not attempted",
+        }
 
 
 def _find_compose_container(service: str) -> str | None:
@@ -508,18 +647,37 @@ def run_infra_backup(
             "files_bytes": max(archive_path.stat().st_size - db_size, 0),
             "verification": verification,
         }
-        if _smb_available(storage) and _smb_upload(archive_path, archive_name, storage):
-            location = f"{storage.location_prefix}/{archive_name}"
+        upload = _smb_upload(archive_path, archive_name, storage)
+        if upload.ok:
+            location = upload.location
             if keep_local:
                 local_dir = project_dir / "backups" / "infrastructure"
                 local_dir.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(archive_path, local_dir / archive_name)
             _update_backup_index(source_id, result, "ok", location, retention)
             return {**result, "location": location}
+        logger.warning(
+            "infra_backup_smb_upload_failed",
+            archive=archive_name,
+            remote_path=storage.remote_path,
+            error=upload.error,
+        )
         pending = _save_pending(archive_path, archive_name, source_id, storage)
         location = str(pending)
         _update_backup_index(source_id, result, "pending", location, retention)
-        return {**result, "location": location, "pending_path": location}
+        return {**result, "location": location, "pending_path": location, "upload_error": upload.error}
+
+
+def _storage_from_pending_meta(meta: dict[str, Any], archive: Path) -> StorageConfig:
+    source_id = str(meta.get("project") or archive.stem.rsplit("-", 2)[0] or archive.stem)
+    remote_path = _source_remote_path(source_id, meta.get("smb_path"))
+    return StorageConfig(
+        host=str(meta.get("smb_host") or "nas.local"),
+        share=str(meta.get("smb_share") or "backups"),
+        remote_path=remote_path,
+        user=os.environ.get("SMB_USER", "backup-svc"),
+        credentials_file=Path.home() / ".smbcredentials",
+    )
 
 
 def drain_pending_archives(*, dry_run: bool = False) -> dict[str, Any]:
@@ -536,28 +694,71 @@ def drain_pending_archives(*, dry_run: bool = False) -> dict[str, Any]:
             "backups": [{"name": path.name, "location": str(path), "size_bytes": path.stat().st_size} for path in archives],
         }
     uploaded = 0
+    failures: list[dict[str, Any]] = []
+    uploaded_archives: dict[str, str] = {}
     for archive in archives:
         meta_path = archive.with_suffix(archive.suffix + ".meta")
         if not meta_path.exists():
+            failures.append(
+                {
+                    "name": archive.name,
+                    "location": str(archive),
+                    "error": "missing metadata file",
+                }
+            )
+            logger.warning("backup_pending_missing_metadata", archive=archive.name, path=str(archive))
             continue
-        meta = json.loads(meta_path.read_text())
-        storage = StorageConfig(
-            host=str(meta.get("smb_host") or "nas.local"),
-            share=str(meta.get("smb_share") or "backups"),
-            remote_path=str(meta.get("smb_path") or f"project-backups/{meta.get('project') or archive.stem}"),
-            user=os.environ.get("SMB_USER", "backup-svc"),
-            credentials_file=Path.home() / ".smbcredentials",
-        )
-        if _smb_available(storage) and _smb_upload(archive, archive.name, storage):
+        try:
+            meta = json.loads(meta_path.read_text())
+        except json.JSONDecodeError as exc:
+            failures.append(
+                {
+                    "name": archive.name,
+                    "location": str(archive),
+                    "error": f"invalid metadata JSON: {exc}",
+                }
+            )
+            logger.warning("backup_pending_invalid_metadata", archive=archive.name, error=str(exc))
+            continue
+        storage = _storage_from_pending_meta(meta, archive)
+        upload = _smb_upload(archive, archive.name, storage)
+        if upload.ok:
             archive.unlink(missing_ok=True)
             meta_path.unlink(missing_ok=True)
             uploaded += 1
+            uploaded_archives[archive.name] = upload.location
         else:
             meta["retry_count"] = int(meta.get("retry_count") or 0) + 1
             meta["last_retry"] = datetime.now(UTC).isoformat()
+            meta["last_error"] = upload.error or "unknown SMB upload failure"
+            meta["smb_path"] = storage.remote_path
             meta_path.write_text(json.dumps(meta, indent=2, sort_keys=True))
+            failures.append(
+                {
+                    "name": archive.name,
+                    "location": str(archive),
+                    "remote_path": storage.remote_path,
+                    "returncode": upload.returncode,
+                    "error": upload.error,
+                }
+            )
+            logger.warning(
+                "backup_pending_upload_failed",
+                archive=archive.name,
+                remote_path=storage.remote_path,
+                returncode=upload.returncode,
+                error=upload.error,
+            )
     remaining = len(list(pending_dir.glob("*.tar.gz"))) if pending_dir.exists() else 0
-    return {"status": "success" if remaining == 0 else "partial", "uploaded": uploaded, "remaining": remaining}
+    return {
+        "status": "success" if remaining == 0 else "partial",
+        "uploaded": uploaded,
+        "failed": len(failures),
+        "remaining": remaining,
+        "uploaded_archives": uploaded_archives,
+        "failures": failures[:20],
+        "message": "Pending uploads drained" if remaining == 0 else f"{remaining} pending upload(s) remain",
+    }
 
 
 def locate_archive(project_dir: Path, backup: dict[str, Any] | None = None, backup_file: str | None = None) -> Path | None:

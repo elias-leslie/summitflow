@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,8 @@ from app.tasks.backup import (
     _parse_size,
     create_backup,
 )
+from app.tasks.backup_drain import drain_pending_backups
+from app.tasks.backup_native import SmbUploadResult, drain_pending_archives
 from app.tasks.backup_restore import restore_backup
 
 
@@ -235,6 +238,118 @@ class TestCreateBackupTask:
         assert backup["db_size_bytes"] == 50 * 1024 * 1024
 
         assert mock_run.call_args.kwargs["local_only"] is True
+
+
+class TestPendingBackupDrain:
+    """Tests for pending SMB upload drain behavior."""
+
+    def test_drain_pending_archives_uploads_files_and_records_locations(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        pending_dir = tmp_path / ".local" / "share" / "backup-pending"
+        pending_dir.mkdir(parents=True)
+        archive = pending_dir / "summitflow-20260426-204113.tar.gz"
+        archive.write_bytes(b"backup")
+        archive.with_suffix(archive.suffix + ".meta").write_text(
+            """
+            {
+              "archive": "summitflow-20260426-204113.tar.gz",
+              "project": "summitflow",
+              "smb_host": "backup.example.invalid",
+              "smb_path": "project-backups",
+              "smb_share": "backups"
+            }
+            """
+        )
+
+        def fake_upload(path: Path, archive_name: str, storage: Any) -> SmbUploadResult:
+            assert path == archive
+            assert archive_name == archive.name
+            assert storage.remote_path == "project-backups/summitflow"
+            return SmbUploadResult(
+                ok=True,
+                archive_name=archive_name,
+                remote_path=storage.remote_path,
+                location=f"{storage.location_prefix}/{archive_name}",
+            )
+
+        with (
+            patch("app.tasks.backup_native.Path.home", return_value=tmp_path),
+            patch("app.tasks.backup_native._smb_upload", side_effect=fake_upload),
+        ):
+            result = drain_pending_archives()
+
+        assert result["status"] == "success"
+        assert result["uploaded"] == 1
+        assert result["uploaded_archives"] == {
+            archive.name: "//backup.example.invalid/backups/project-backups/summitflow/"
+            "summitflow-20260426-204113.tar.gz"
+        }
+        assert not archive.exists()
+        assert not archive.with_suffix(archive.suffix + ".meta").exists()
+
+    def test_drain_pending_archives_preserves_failure_detail(self, tmp_path: Path) -> None:
+        pending_dir = tmp_path / ".local" / "share" / "backup-pending"
+        pending_dir.mkdir(parents=True)
+        archive = pending_dir / "summitflow-20260426-204113.tar.gz"
+        archive.write_bytes(b"backup")
+        meta_path = archive.with_suffix(archive.suffix + ".meta")
+        meta_path.write_text(
+            """
+            {
+              "archive": "summitflow-20260426-204113.tar.gz",
+              "project": "summitflow",
+              "retry_count": 2,
+              "smb_host": "backup.example.invalid",
+              "smb_path": "project-backups",
+              "smb_share": "backups"
+            }
+            """
+        )
+
+        failed = SmbUploadResult(
+            ok=False,
+            archive_name=archive.name,
+            remote_path="project-backups/summitflow",
+            location="//backup.example.invalid/backups/project-backups/summitflow/"
+            "summitflow-20260426-204113.tar.gz",
+            returncode=1,
+            error="upload failed rc=1: NT_STATUS_ACCESS_DENIED",
+        )
+        with (
+            patch("app.tasks.backup_native.Path.home", return_value=tmp_path),
+            patch("app.tasks.backup_native._smb_upload", return_value=failed),
+        ):
+            result = drain_pending_archives()
+
+        assert result["status"] == "partial"
+        assert result["failed"] == 1
+        assert result["remaining"] == 1
+        assert result["failures"][0]["error"] == "upload failed rc=1: NT_STATUS_ACCESS_DENIED"
+        meta = json.loads(meta_path.read_text())
+        assert meta["retry_count"] == 3
+        assert meta["last_error"] == "upload failed rc=1: NT_STATUS_ACCESS_DENIED"
+        assert meta["smb_path"] == "project-backups/summitflow"
+
+    def test_drain_pending_backups_reports_file_pending_without_db_rows(self) -> None:
+        with (
+            patch("app.tasks.backup_drain.backup_store.get_pending_upload_backups", return_value=[]),
+            patch(
+                "app.tasks.backup_drain.drain_pending_archives",
+                return_value={
+                    "status": "dry_run",
+                    "pending_before": 2,
+                    "backups": [{"name": "a.tar.gz"}, {"name": "b.tar.gz"}],
+                },
+            ),
+        ):
+            result = drain_pending_backups(dry_run=True)
+
+        assert result["status"] == "dry_run"
+        assert result["pending_before"] == 0
+        assert result["file_pending"] == 2
+        assert result["archives"] == [{"name": "a.tar.gz"}, {"name": "b.tar.gz"}]
 
     @patch("app.tasks.backup_executor.create_notification")
     def test_create_backup_failure_notification_uses_backup_project(
