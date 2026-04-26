@@ -93,6 +93,32 @@ def _stash_entries(repo_path: Path) -> list[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
+def _stash_triage(repo_path: Path, project_id: str) -> list[dict[str, Any]]:
+    result = _git(repo_path, ["stash", "list", "--format=%gd%x00%cr%x00%s"])
+    if result.returncode != 0:
+        return []
+
+    items: list[dict[str, Any]] = []
+    for line in result.stdout.splitlines():
+        parts = line.split("\x00", 2)
+        if len(parts) != 3:
+            continue
+        ref, age, summary = parts
+        files_result = _git(repo_path, ["stash", "show", "--name-only", "--format=", ref])
+        files = [path.strip() for path in files_result.stdout.splitlines() if path.strip()]
+        items.append({
+            "project_id": project_id,
+            "kind": "stash",
+            "ref": ref,
+            "age": age,
+            "summary": summary,
+            "file_count": len(files),
+            "files": files[:8],
+            "action": "inspect-apply-or-archive-before-drop",
+        })
+    return items
+
+
 def _remote_task_refs(repo_path: Path) -> list[str]:
     result = _git(repo_path, ["for-each-ref", "--format=%(refname:short)", "refs/remotes"])
     if result.returncode != 0:
@@ -106,6 +132,45 @@ def _remote_task_refs(repo_path: Path) -> list[str]:
         if branch.startswith("task-"):
             refs.append(ref)
     return refs
+
+
+def _base_ref(repo_path: Path) -> str:
+    base = _base_branch(repo_path)
+    if _git(repo_path, ["show-ref", "--verify", f"refs/remotes/origin/{base}"]).returncode == 0:
+        return f"origin/{base}"
+    return base
+
+
+def _rev_count(repo_path: Path, range_spec: str) -> int:
+    result = _git(repo_path, ["rev-list", "--count", range_spec])
+    if result.returncode != 0:
+        return 0
+    try:
+        return int(result.stdout.strip() or "0")
+    except ValueError:
+        return 0
+
+
+def _remote_ref_triage(repo_path: Path, project_id: str) -> list[dict[str, Any]]:
+    base_ref = _base_ref(repo_path)
+    items: list[dict[str, Any]] = []
+    for ref in _remote_task_refs(repo_path):
+        remote, _, branch = ref.partition("/")
+        ahead = _rev_count(repo_path, f"{base_ref}..{ref}")
+        merged = _git(repo_path, ["merge-base", "--is-ancestor", ref, base_ref]).returncode == 0
+        action = "delete-after-owner-check" if merged else "archive-before-delete"
+        items.append({
+            "project_id": project_id,
+            "kind": "remote_ref",
+            "ref": ref,
+            "branch": branch,
+            "remote": remote,
+            "base": base_ref,
+            "ahead": ahead,
+            "merged": merged,
+            "action": action,
+        })
+    return items
 
 
 def _repo_cleanup_entry(payload: dict[str, Any], repo_path: Path) -> RepoEntry | None:
@@ -201,6 +266,37 @@ def build_hygiene_report(
     }
 
 
+def build_hygiene_triage(
+    *,
+    all_projects: bool = False,
+    project_id: str | None = None,
+) -> dict[str, Any]:
+    """Build read-only triage details for stashes and remote task refs."""
+    repos = _target_repos(all_projects, project_id)
+    payload = build_cleanup_status_payload(all_projects, project_id_override=project_id)
+    items: list[dict[str, Any]] = []
+    for repo_path in repos:
+        repo_entry = _repo_cleanup_entry(payload, repo_path)
+        resolved_project_id = str(repo_entry["project_id"]) if repo_entry else repo_path.name
+        items.extend(_stash_triage(repo_path, resolved_project_id))
+        items.extend(_remote_ref_triage(repo_path, resolved_project_id))
+
+    stashes = sum(1 for item in items if item["kind"] == "stash")
+    remote_refs = sum(1 for item in items if item["kind"] == "remote_ref")
+    merged_remote_refs = sum(1 for item in items if item["kind"] == "remote_ref" and item["merged"])
+    return {
+        "summary": {
+            "repos": len(repos),
+            "items": len(items),
+            "stashes": stashes,
+            "remote_refs": remote_refs,
+            "merged_remote_refs": merged_remote_refs,
+            "unique_remote_refs": remote_refs - merged_remote_refs,
+        },
+        "items": items,
+    }
+
+
 def _print_compact(report: dict[str, Any], scope: str) -> None:
     issues = report["issues"]
     fixed = report["fixed"]
@@ -208,6 +304,28 @@ def _print_compact(report: dict[str, Any], scope: str) -> None:
     print(f"HYGIENE[{scope}]:ok={int(bool(report['ok']))} issues={len(issues)} fixed={fixed_total}")
     for issue in issues:
         print(f"{issue['project_id']} BLOCK {issue['code']}:{issue['detail']}")
+
+
+def _print_triage_compact(report: dict[str, Any], scope: str) -> None:
+    summary = report["summary"]
+    print(
+        f"TRIAGE[{scope}]:items={summary['items']} "
+        f"stashes={summary['stashes']} remote_refs={summary['remote_refs']} "
+        f"merged_remote_refs={summary['merged_remote_refs']} unique_remote_refs={summary['unique_remote_refs']}"
+    )
+    for item in report["items"]:
+        if item["kind"] == "stash":
+            sample = ",".join(item["files"][:3]) or "-"
+            print(
+                f"{item['project_id']} REVIEW stash {item['ref']} files={item['file_count']} "
+                f"action={item['action']} sample={sample} msg={item['summary']}"
+            )
+            continue
+        state = "merged" if item["merged"] else f"unique:{item['ahead']}"
+        print(
+            f"{item['project_id']} REVIEW remote_ref {item['ref']} {state} "
+            f"action={item['action']}"
+        )
 
 
 def _detail_parts(detail: str) -> list[str]:
@@ -348,3 +466,24 @@ def hygiene_sweep(
         output_json(report)
     if fail_on_residue and not report["ok"]:
         raise typer.Exit(2)
+
+
+@app.command("triage")
+def hygiene_triage(
+    ctx: typer.Context,
+    all_projects: Annotated[
+        bool,
+        typer.Option("--all/--current", help="Triage all managed projects instead of the current project only."),
+    ] = False,
+    project_id: Annotated[
+        str | None,
+        typer.Option("--project", help="Project id to triage when --all is not used."),
+    ] = None,
+) -> None:
+    """Show read-only details for stash and remote task-ref cleanup decisions."""
+    resolved_project = get_project_id(all_projects, project_id)
+    report = build_hygiene_triage(all_projects=all_projects, project_id=resolved_project)
+    if ctx.obj.is_compact:
+        _print_triage_compact(report, "all" if all_projects else "current")
+    else:
+        output_json(report)

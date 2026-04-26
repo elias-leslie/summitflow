@@ -115,6 +115,49 @@ def test_hygiene_gate_blocks_stashes_and_extra_local_branches(tmp_path: Path) ->
     assert "stash_entries:stash@{0}:On main: old work" in result.output
 
 
+def test_hygiene_triage_shows_stash_files(tmp_path: Path) -> None:
+    repo = tmp_path / "summitflow"
+    _init_repo(repo)
+    (repo / "README.md").write_text("changed\n", encoding="utf-8")
+    _git(repo, "stash", "push", "-m", "old work")
+
+    with (
+        patch("cli.commands.hygiene._iter_target_repos", return_value=[repo]),
+        patch("cli.commands.hygiene.build_cleanup_status_payload", return_value=_clean_payload(repo)),
+    ):
+        result = runner.invoke(app, ["triage"], obj=OutputContext(compact=True))
+
+    assert result.exit_code == 0
+    assert "TRIAGE[current]:items=1 stashes=1 remote_refs=0" in result.output
+    assert "summitflow REVIEW stash stash@{0} files=1" in result.output
+    assert "action=inspect-apply-or-archive-before-drop" in result.output
+    assert "sample=README.md" in result.output
+
+
+def test_hygiene_triage_shows_remote_ref_state(tmp_path: Path) -> None:
+    repo = tmp_path / "summitflow"
+    _init_repo(repo)
+    _git(repo, "update-ref", "refs/remotes/origin/task-merged/main", "HEAD")
+    _git(repo, "checkout", "-b", "task-unique/main")
+    (repo / "feature.txt").write_text("feature\n", encoding="utf-8")
+    _git(repo, "add", "feature.txt")
+    _git(repo, "commit", "-m", "feature")
+    unique_sha = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    _git(repo, "checkout", "main")
+    _git(repo, "update-ref", "refs/remotes/origin/task-unique/main", unique_sha)
+
+    with (
+        patch("cli.commands.hygiene._iter_target_repos", return_value=[repo]),
+        patch("cli.commands.hygiene.build_cleanup_status_payload", return_value=_clean_payload(repo)),
+    ):
+        result = runner.invoke(app, ["triage"], obj=OutputContext(compact=True))
+
+    assert result.exit_code == 0
+    assert "TRIAGE[current]:items=2 stashes=0 remote_refs=2 merged_remote_refs=1 unique_remote_refs=1" in result.output
+    assert "summitflow REVIEW remote_ref origin/task-merged/main merged action=delete-after-owner-check" in result.output
+    assert "summitflow REVIEW remote_ref origin/task-unique/main unique:1 action=archive-before-delete" in result.output
+
+
 def test_claim_task_runs_hygiene_gate_before_checkpoint_creation() -> None:
     from cli.commands import claim
 
