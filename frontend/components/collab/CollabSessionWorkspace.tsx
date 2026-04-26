@@ -163,7 +163,7 @@ function postPairingToExtension(
       resolve({
         ok: false,
         error:
-          'SummitFlow Co-Browser extension not detected in this browser profile.',
+          'Extension not detected on this tab. After loading the extension, refresh this Design page, then click Pair again.',
       })
     }, 1_500)
 
@@ -231,7 +231,7 @@ export function CollabSessionWorkspace({
     useState<ExtensionPairState>({
       status: 'idle',
       message:
-        'Pair from the dedicated Windows browser profile after the SummitFlow Co-Browser extension is installed.',
+        'Install/enable the extension in the dedicated Windows profile, refresh this Design page, then click Pair.',
     })
   const [draftAnchor, setDraftAnchor] = useState<CollabAnchorSelection | null>(
     null,
@@ -368,7 +368,7 @@ export function CollabSessionWorkspace({
             status: 'missing',
             message:
               response.error ??
-              'Extension not detected. Open this page in the dedicated Windows browser profile with the SummitFlow Co-Browser extension installed, then click Pair again.',
+              'Extension not detected on this tab. Refresh this Design page after loading the extension, then click Pair again.',
           })
         }
         queryClient.invalidateQueries({
@@ -385,7 +385,7 @@ export function CollabSessionWorkspace({
       setExtensionPairState({
         status: 'idle',
         message:
-          'Pair from the dedicated Windows browser profile after the SummitFlow Co-Browser extension is installed.',
+          'Install/enable the extension in the dedicated Windows profile, refresh this Design page, then click Pair.',
       })
       queryClient.invalidateQueries({
         queryKey: ['collab-connector-pairings', sessionId],
@@ -850,8 +850,8 @@ function WindowsConnectorPanel({
         </a>
         {activePairing?.state === 'pending' && (
           <div className="mt-2 rounded border border-amber-500/20 bg-slate-950/60 px-2 py-1 text-[11px] text-amber-100">
-            Pending token expires in minutes. Install/enable extension in the
-            dedicated Windows browser profile, then click Pair again.
+            Pending token expires in minutes. If the extension was just loaded,
+            refresh this Design page, then click Pair again.
           </div>
         )}
       </div>
