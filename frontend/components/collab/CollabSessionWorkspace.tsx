@@ -714,6 +714,12 @@ function WindowsConnectorPanel({
             <Terminal className="h-3.5 w-3.5" />
             Pair Once
           </div>
+          <div className="mt-2 rounded border border-amber-500/20 bg-slate-950/60 px-2 py-1.5 text-[11px] leading-5 text-amber-100">
+            Run both lines on Davion-Sidar in Windows Terminal from the
+            SummitFlow repo root. That folder contains package.json and
+            apps/summitflow-windows-connector. Do not run this on Proxmox or in
+            the browser.
+          </div>
           <pre className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap break-words rounded bg-slate-950/80 p-2 font-mono text-[11px] leading-5 text-slate-200">
             {command}
           </pre>
