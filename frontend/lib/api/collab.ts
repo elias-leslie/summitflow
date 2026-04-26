@@ -7,6 +7,11 @@ export type CollabTargetMode =
   | 'manual'
 
 export type CollabSessionState = 'active' | 'closed'
+export type CollabConnectorPairingState =
+  | 'pending'
+  | 'claimed'
+  | 'revoked'
+  | 'expired'
 export type CollabAnnotationKind =
   | 'pin'
   | 'box'
@@ -87,6 +92,27 @@ export interface CollabAuditEvent {
   created_at: string | null
 }
 
+export interface CollabConnectorPairing {
+  pairing_id: string
+  session_id: string
+  state: CollabConnectorPairingState
+  connector_host: string | null
+  profile_label: string | null
+  connector_version: string | null
+  connector_state: Record<string, unknown>
+  expires_at: string | null
+  claimed_at: string | null
+  connector_last_seen_at: string | null
+  revoked_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface CollabConnectorPairingCreateResponse
+  extends CollabConnectorPairing {
+  pairing_token: string
+}
+
 export interface CollabSessionDetail extends CollabSession {
   participants: CollabParticipant[]
   annotations: CollabAnnotation[]
@@ -127,6 +153,12 @@ export interface CreateCollabEvidencePacketInput {
   bbox?: Record<string, unknown> | null
   context_summary: string
   artifact_id?: string | null
+}
+
+export interface CreateConnectorPairingInput {
+  expires_in_seconds?: number
+  connector_host?: string | null
+  profile_label?: string | null
 }
 
 export const collabApi = {
@@ -184,6 +216,29 @@ export const collabApi = {
       `/api/collab/sessions/${sessionId}/evidence-packets`,
       input,
       'Failed to create evidence packet',
+    ),
+
+  listConnectorPairings: (sessionId: string) =>
+    fetchWithErrorHandling<CollabConnectorPairing[]>(
+      `/api/collab/sessions/${sessionId}/connector-pairings`,
+      { errorMessage: 'Failed to fetch connector pairings' },
+    ),
+
+  createConnectorPairing: (
+    sessionId: string,
+    input: CreateConnectorPairingInput,
+  ) =>
+    postJson<CollabConnectorPairingCreateResponse>(
+      `/api/collab/sessions/${sessionId}/connector-pairings`,
+      input,
+      'Failed to create connector pairing',
+    ),
+
+  revokeConnectorPairing: (pairingId: string) =>
+    postJson<CollabConnectorPairing>(
+      `/api/collab/connector-pairings/${pairingId}/revoke`,
+      {},
+      'Failed to revoke connector pairing',
     ),
 
   setControlGrant: (

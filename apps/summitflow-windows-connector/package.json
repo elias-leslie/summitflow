@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "tsup src/cli.ts --format esm --target node22 --out-dir dist --clean --splitting false",
+    "start": "node dist/cli.js",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

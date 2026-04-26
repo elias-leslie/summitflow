@@ -3,19 +3,26 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import {
+  Cable,
   CircleDot,
   Loader2,
   Lock,
   MousePointer2,
   Power,
+  RefreshCw,
   ShieldCheck,
+  Terminal,
   Unlock,
   Users,
+  Wifi,
+  WifiOff,
+  XCircle,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import {
   type CollabAnnotation,
   type CollabAnnotationKind,
+  type CollabConnectorPairing,
   type CollabSession,
   collabApi,
 } from '@/lib/api/collab'
@@ -85,6 +92,45 @@ function bboxFromAnchor(anchor: CollabAnchorSelection) {
   }
 }
 
+function formatTimestamp(value: string | null): string {
+  if (!value) return 'never'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleString()
+}
+
+function connectorApiBaseUrl(): string {
+  if (typeof window === 'undefined') return 'http://127.0.0.1:8001/api'
+  return `${window.location.protocol}//${window.location.hostname}:8001/api`
+}
+
+function targetOrigin(targetUrl: string | null): string | null {
+  if (!targetUrl || targetUrl === 'about:blank') return null
+  try {
+    return new URL(targetUrl).origin
+  } catch {
+    return null
+  }
+}
+
+function connectorValue(
+  pairing: CollabConnectorPairing | null,
+  key: string,
+): string | null {
+  const value = pairing?.connector_state[key]
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+function connectorRecord(
+  pairing: CollabConnectorPairing | null,
+  key: string,
+): Record<string, unknown> | null {
+  const value = pairing?.connector_state[key]
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : null
+}
+
 export function CollabSessionWorkspace({
   sessionId,
   initialSession,
@@ -94,6 +140,7 @@ export function CollabSessionWorkspace({
   const [kind, setKind] = useState<CollabAnnotationKind>('box')
   const [evidenceError, setEvidenceError] = useState<string | null>(null)
   const [eventConnected, setEventConnected] = useState(false)
+  const [pairingToken, setPairingToken] = useState<string | null>(null)
   const [draftAnchor, setDraftAnchor] = useState<CollabAnchorSelection | null>(
     null,
   )
@@ -114,10 +161,23 @@ export function CollabSessionWorkspace({
   })
 
   const session = detailQuery.data
+  const connectorPairingsQuery = useQuery({
+    queryKey: ['collab-connector-pairings', sessionId],
+    queryFn: () => collabApi.listConnectorPairings(sessionId),
+    enabled: session?.target_mode === 'windows_co_browser',
+    refetchInterval:
+      session?.target_mode === 'windows_co_browser' ? 5_000 : false,
+  })
   const joinedSessionRef = useRef<string | null>(null)
   const selectedAnchor =
     draftAnchor ?? annotationAnchor(session?.annotations[0])
   const selectedAnnotationId = session?.annotations[0]?.annotation_id ?? null
+  const connectorPairings = connectorPairingsQuery.data ?? []
+  const activeConnectorPairing =
+    connectorPairings.find((pairing) => pairing.state === 'claimed') ??
+    connectorPairings.find((pairing) => pairing.state === 'pending') ??
+    connectorPairings[0] ??
+    null
 
   const annotationMutation = useMutation({
     mutationFn: () =>
@@ -180,6 +240,33 @@ export function CollabSessionWorkspace({
     },
   })
 
+  const createConnectorPairingMutation = useMutation({
+    mutationFn: () =>
+      collabApi.createConnectorPairing(sessionId, {
+        expires_in_seconds: 600,
+        profile_label: 'SummitFlow Review',
+      }),
+    onSuccess: (pairing) => {
+      setPairingToken(pairing.pairing_token)
+      queryClient.invalidateQueries({
+        queryKey: ['collab-connector-pairings', sessionId],
+      })
+      queryClient.invalidateQueries({ queryKey: ['collab-session', sessionId] })
+    },
+  })
+
+  const revokeConnectorPairingMutation = useMutation({
+    mutationFn: (pairingId: string) =>
+      collabApi.revokeConnectorPairing(pairingId),
+    onSuccess: () => {
+      setPairingToken(null)
+      queryClient.invalidateQueries({
+        queryKey: ['collab-connector-pairings', sessionId],
+      })
+      queryClient.invalidateQueries({ queryKey: ['collab-session', sessionId] })
+    },
+  })
+
   const participantMutation = useMutation({
     mutationFn: (input: {
       actor_kind: 'user' | 'agent'
@@ -231,6 +318,9 @@ export function CollabSessionWorkspace({
             queryKey: ['collab-session', sessionId],
           })
           queryClient.invalidateQueries({ queryKey: ['collab-sessions'] })
+          queryClient.invalidateQueries({
+            queryKey: ['collab-connector-pairings', sessionId],
+          })
         }
       } catch {
         setEventConnected(false)
@@ -324,6 +414,22 @@ export function CollabSessionWorkspace({
       </section>
 
       <aside className="space-y-3">
+        {session.target_mode === 'windows_co_browser' && (
+          <WindowsConnectorPanel
+            session={session}
+            pairings={connectorPairings}
+            activePairing={activeConnectorPairing}
+            pairingToken={pairingToken}
+            createPending={createConnectorPairingMutation.isPending}
+            createError={createConnectorPairingMutation.error}
+            revokePending={revokeConnectorPairingMutation.isPending}
+            onCreatePairing={() => createConnectorPairingMutation.mutate()}
+            onRevokePairing={(pairingId) =>
+              revokeConnectorPairingMutation.mutate(pairingId)
+            }
+          />
+        )}
+
         <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
@@ -473,6 +579,190 @@ export function CollabSessionWorkspace({
           Close Session
         </button>
       </aside>
+    </div>
+  )
+}
+
+interface WindowsConnectorPanelProps {
+  session: CollabSession
+  pairings: CollabConnectorPairing[]
+  activePairing: CollabConnectorPairing | null
+  pairingToken: string | null
+  createPending: boolean
+  createError: unknown
+  revokePending: boolean
+  onCreatePairing: () => void
+  onRevokePairing: (pairingId: string) => void
+}
+
+function WindowsConnectorPanel({
+  session,
+  pairings,
+  activePairing,
+  pairingToken,
+  createPending,
+  createError,
+  revokePending,
+  onCreatePairing,
+  onRevokePairing,
+}: WindowsConnectorPanelProps): React.ReactElement {
+  const apiBaseUrl = connectorApiBaseUrl()
+  const target = targetOrigin(session.target_url)
+  const currentUrl = connectorValue(activePairing, 'url')
+  const title = connectorValue(activePairing, 'title')
+  const viewport = connectorRecord(activePairing, 'viewport')
+  const scroll = connectorRecord(activePairing, 'scroll')
+  const command =
+    activePairing && pairingToken && activePairing.state === 'pending'
+      ? [
+          'pnpm --filter @summitflow/windows-connector build',
+          `pnpm --filter @summitflow/windows-connector start -- --api ${apiBaseUrl} --pairing-id ${activePairing.pairing_id} --pairing-token ${pairingToken} --yes`,
+        ].join('\n')
+      : null
+  const connected = activePairing?.state === 'claimed'
+  const canRevoke =
+    !!activePairing &&
+    (activePairing.state === 'pending' || activePairing.state === 'claimed')
+
+  return (
+    <div className="rounded-lg border border-teal-500/25 bg-teal-950/20 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-teal-100">
+          <Cable className="h-3.5 w-3.5 text-teal-300" />
+          Windows Connector
+        </div>
+        <span
+          className={clsx(
+            'inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.14em]',
+            connected
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+              : 'border-slate-700 bg-slate-950/60 text-slate-400',
+          )}
+        >
+          {connected ? (
+            <Wifi className="h-3 w-3" />
+          ) : (
+            <WifiOff className="h-3 w-3" />
+          )}
+          {activePairing?.state ?? 'none'}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <ConnectorFact
+          label="Profile"
+          value={activePairing?.profile_label ?? 'SummitFlow Review'}
+        />
+        <ConnectorFact
+          label="Host"
+          value={activePairing?.connector_host ?? 'unpaired'}
+        />
+        <ConnectorFact
+          label="Sensitive"
+          value={session.sensitive ? 'blocked' : 'standard'}
+        />
+        <ConnectorFact
+          label="Control"
+          value={session.control_owner ?? 'locked'}
+        />
+        <ConnectorFact
+          label="Last seen"
+          value={formatTimestamp(activePairing?.connector_last_seen_at ?? null)}
+        />
+        <ConnectorFact label="Pairings" value={String(pairings.length)} />
+      </div>
+
+      <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/60 p-2 text-xs">
+        <div className="font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Capture
+        </div>
+        <div className="mt-2 space-y-1 text-slate-300">
+          <div className="truncate">
+            {title || currentUrl || 'waiting for page state'}
+          </div>
+          {viewport && (
+            <div className="text-slate-500">
+              {String(viewport.width ?? '?')}x{String(viewport.height ?? '?')}
+              {scroll
+                ? ` scroll ${String(scroll.x ?? 0)},${String(scroll.y ?? 0)}`
+                : ''}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/60 p-2 text-xs">
+        <div className="font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Egress
+        </div>
+        <div className="mt-2 space-y-1 font-mono text-[11px] text-slate-400">
+          <div>{new URL(apiBaseUrl).origin}</div>
+          <div>http://127.0.0.1:47618</div>
+          {target && <div>{target}</div>}
+        </div>
+      </div>
+
+      {command && (
+        <div className="mt-3 rounded-md border border-amber-500/25 bg-amber-950/20 p-2">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-200">
+            <Terminal className="h-3.5 w-3.5" />
+            Pair Once
+          </div>
+          <pre className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap break-words rounded bg-slate-950/80 p-2 font-mono text-[11px] leading-5 text-slate-200">
+            {command}
+          </pre>
+        </div>
+      )}
+
+      {Boolean(createError) && (
+        <div className="mt-2 text-xs text-rose-200">
+          {createError instanceof Error
+            ? createError.message
+            : 'Pairing failed'}
+        </div>
+      )}
+
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onCreatePairing}
+          disabled={session.state !== 'active' || createPending}
+          className="flex h-9 items-center justify-center gap-2 rounded-md border border-teal-500/30 bg-teal-500/10 text-xs font-medium text-teal-100 transition-colors hover:bg-teal-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {createPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          Pair
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            activePairing && onRevokePairing(activePairing.pairing_id)
+          }
+          disabled={!canRevoke || revokePending}
+          className="flex h-9 items-center justify-center gap-2 rounded-md border border-rose-500/30 bg-rose-500/10 text-xs font-medium text-rose-100 transition-colors hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <XCircle className="h-3.5 w-3.5" />
+          Revoke
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ConnectorFact({
+  label,
+  value,
+}: {
+  label: string
+  value: string
+}): React.ReactElement {
+  return (
+    <div className="rounded-md border border-slate-800 bg-slate-950/50 px-2 py-1.5">
+      <div className="uppercase tracking-[0.12em] text-slate-600">{label}</div>
+      <div className="mt-1 truncate text-slate-200">{value}</div>
     </div>
   )
 }
