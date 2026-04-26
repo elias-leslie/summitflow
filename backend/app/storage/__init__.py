@@ -2,6 +2,7 @@
 
 from . import (
     agent_configs,
+    collab_sessions,
     design_assets,
     events,
     explorer,
@@ -19,6 +20,7 @@ from .events import (
 
 __all__ = [
     "agent_configs",
+    "collab_sessions",
     "create_event",
     "design_assets",
     "events",

@@ -45,6 +45,7 @@ export function Navigation({
           rose: { bg: 'bg-rose-500/15', text: 'text-rose-400' },
           indigo: { bg: 'bg-indigo-500/15', text: 'text-indigo-400' },
           cyan: { bg: 'bg-cyan-500/15', text: 'text-cyan-400' },
+          fuchsia: { bg: 'bg-fuchsia-500/15', text: 'text-fuchsia-400' },
         }
         const ac = activeStyles[item.activeColor] ?? activeStyles.indigo
 

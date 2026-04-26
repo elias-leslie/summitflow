@@ -3,6 +3,7 @@
 import clsx from 'clsx'
 import { useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { CollabSessionIndex } from '@/components/collab/CollabSessionIndex'
 import { AssetStudioWorkspace } from '@/components/design/AssetStudioWorkspace'
 import {
   ReviewOverlayReferenceHost,
@@ -10,12 +11,12 @@ import {
 } from '@/components/design/live-review/ReviewOverlayReferenceHost'
 import { UiDesignWorkspace } from '@/components/design/UiDesignWorkspace'
 
-type DesignView = 'ui-design' | 'asset-studio'
+type DesignView = 'live-review' | 'ui-design' | 'asset-studio'
 
 export function DesignClient(): React.ReactElement {
   const params = useParams()
   const projectId = params.id as string
-  const [activeView, setActiveView] = useState<DesignView>('ui-design')
+  const [activeView, setActiveView] = useState<DesignView>('live-review')
   const [reviewOverlayRequest, setReviewOverlayRequest] =
     useState<ReviewOverlayReferenceRequest | null>(null)
 
@@ -46,6 +47,18 @@ export function DesignClient(): React.ReactElement {
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
+                onClick={() => setActiveView('live-review')}
+                className={clsx(
+                  'rounded-full px-4 py-2 text-sm font-medium transition-all duration-200',
+                  activeView === 'live-review'
+                    ? 'bg-phosphor-500/20 text-phosphor-400 border border-phosphor-500/30 shadow-[0_0_12px_rgba(0,245,255,0.15)]'
+                    : 'bg-slate-900/70 text-slate-400 border border-slate-700 hover:text-slate-200 hover:border-slate-600',
+                )}
+              >
+                Live Review
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveView('ui-design')}
                 className={clsx(
                   'rounded-full px-4 py-2 text-sm font-medium transition-all duration-200',
@@ -72,7 +85,12 @@ export function DesignClient(): React.ReactElement {
           </div>
         </section>
 
-        {activeView === 'ui-design' ? (
+        {activeView === 'live-review' ? (
+          <CollabSessionIndex
+            projectId={projectId}
+            title="Project Design Review"
+          />
+        ) : activeView === 'ui-design' ? (
           <UiDesignWorkspace
             projectId={projectId}
             onRequestReviewOverlay={setReviewOverlayRequest}

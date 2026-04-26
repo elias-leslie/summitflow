@@ -19,6 +19,7 @@ from .api import (
     autonomous,
     backups,
     checkpoints,
+    collab_sessions,
     console_errors,
     design_assets,
     design_standards,
@@ -112,6 +113,8 @@ app = FastAPI(
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
 app.include_router(route_evidence.router, prefix="/api/projects", tags=["route-evidence"])
+app.include_router(collab_sessions.project_router, prefix="/api/projects", tags=["collab-sessions"])
+app.include_router(collab_sessions.global_router, prefix="/api", tags=["collab-sessions"])
 app.include_router(files.project_router, prefix="/api/projects", tags=["files"])
 app.include_router(files.global_router, prefix="/api", tags=["files"])
 

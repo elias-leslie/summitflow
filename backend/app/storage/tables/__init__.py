@@ -4,6 +4,7 @@ This package contains modular table definitions organized by functional domain.
 """
 
 from .agent import create_agent_tables
+from .collab_sessions import create_collab_session_tables
 from .core import create_core_tables
 from .design import create_design_tables
 from .explorer import create_explorer_tables
@@ -15,6 +16,7 @@ from .route_evidence import create_route_evidence_tables
 __all__ = [
     "apply_schema_migrations",
     "create_agent_tables",
+    "create_collab_session_tables",
     "create_core_tables",
     "create_design_tables",
     "create_explorer_tables",
