@@ -745,6 +745,36 @@ class TestTaskStatusEndpoint:
         data = response.json()
         assert data["status"] == "completed"
 
+    def test_status_patch_pauses_and_resumes_task(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Pausable task",
+                "description": "Can be tabled without completion",
+                "task_type": "task",
+                "priority": 2,
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        response = client.patch(
+            f"/api/projects/{test_project_id}/tasks/{task_id}/status",
+            json={"status": "paused", "reason": "waiting"},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "paused"
+
+        response = client.patch(
+            f"/api/projects/{test_project_id}/tasks/{task_id}/status",
+            json={"status": "pending", "reason": "ready"},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "pending"
+
 
     def test_export_preserves_raw_task_status_and_second_opinion_shape(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]

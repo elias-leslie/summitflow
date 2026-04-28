@@ -51,7 +51,7 @@ def test_task(project_id: str, cleanup_task: Callable[[str], None]) -> dict[str,
 class TestValidTransitions:
     """Unit tests for VALID_TRANSITIONS state machine (no DB needed)."""
 
-    @pytest.mark.parametrize("state", ["pending", "running", "failed", "cancelled"])
+    @pytest.mark.parametrize("state", ["pending", "running", "paused", "failed", "cancelled"])
     def test_all_non_terminal_states_exist_in_valid_transitions(self, state: str) -> None:
         """Every valid status must have an entry in VALID_TRANSITIONS."""
         assert state in VALID_TRANSITIONS, (
@@ -60,6 +60,7 @@ class TestValidTransitions:
 
     def test_final_states_keep_truthful_recovery_paths(self) -> None:
         """Final states should support the recovery paths the CLI relies on."""
+        assert VALID_TRANSITIONS["paused"] == {"pending", "running", "cancelled"}
         assert VALID_TRANSITIONS["completed"] == {"pending", "cancelled"}
         assert VALID_TRANSITIONS["failed"] == {"pending", "running", "cancelled", "completed"}
         assert VALID_TRANSITIONS["cancelled"] == {"pending"}
@@ -218,6 +219,31 @@ class TestUpdateTaskStatus:
         assert result is not None
         assert result["status"] == "running"
         assert result["completed_at"] is None
+
+    def test_status_running_to_paused_releases_claim(self, test_task: dict[str, Any]) -> None:
+        """Pausing should table active work and release the worker lock."""
+        claimed = task_store.claim_task(test_task["id"], "test-worker")
+        assert claimed is not None
+        assert claimed["status"] == "running"
+        assert claimed["claimed_by"] == "test-worker"
+
+        result = task_store.update_task_status(test_task["id"], "paused")
+
+        assert result is not None
+        assert result["status"] == "paused"
+        assert result["completed_at"] is None
+        assert result["claimed_by"] is None
+        assert result["claimed_at"] is None
+        assert result["lock_expires_at"] is None
+
+    def test_status_paused_to_pending_resumes_task(self, test_task: dict[str, Any]) -> None:
+        """Paused tasks should become claimable again through pending."""
+        task_store.update_task_status(test_task["id"], "paused")
+
+        result = task_store.update_task_status(test_task["id"], "pending")
+
+        assert result is not None
+        assert result["status"] == "pending"
 
     def test_status_failed_to_cancelled_allowed(self, test_task: dict[str, Any]) -> None:
         """Failed tasks should be abandonable without lying about the final state."""

@@ -52,6 +52,7 @@ export const ROWS: KanbanColumn[] = [...COLUMNS].sort(
 export const statusToColumn: Record<TaskStatus, TaskKanbanColumn> = {
   // Planning column
   pending: 'planning',
+  paused: 'planning',
   // Active column
   running: 'active',
   // Done column

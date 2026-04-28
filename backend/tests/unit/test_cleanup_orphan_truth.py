@@ -118,6 +118,38 @@ def test_workspace_summary_lists_all_checkpoint_task_ids(mocker, patch_orphan_gi
     assert summary.checkpoint_task_ids == ["task-one", "task-two", "task-three"]
 
 
+def test_workspace_summary_excludes_paused_checkpoints_from_active_lanes(
+    mocker,
+    patch_orphan_git,
+) -> None:
+    mocker.patch("app.utils._git_branch_cleanup.git_core.has_uncommitted_changes", return_value=False)
+    mocker.patch(
+        "app.utils._git_branch_cleanup._load_task_status",
+        return_value=("paused", "task:paused"),
+    )
+    checkpoints = [SimpleNamespace(task_id="task-paused")]
+    branches = [
+        BranchInfo(
+            name="task-paused/main",
+            is_current=False,
+            has_checkpoint=True,
+            repo_name="test-project",
+            project_id="test-project",
+            task_id="task-paused",
+        )
+    ]
+
+    summary = build_repo_workspace_summary(
+        REPO_PATH,
+        branches=branches,
+        active_checkpoints=checkpoints,
+    )
+
+    assert summary.active_checkpoints == 0
+    assert summary.checkpoint_task_ids == []
+    assert summary.needs_cleanup is False
+
+
 def test_branch_ahead_diff_paths_exclude_base_only_drift(tmp_path: Path) -> None:
     from app.utils._git_branches import (
         _branch_ahead_diff_paths,

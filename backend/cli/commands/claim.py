@@ -46,13 +46,20 @@ def _claim_task(
     project_id = task.get("project_id", "")
 
     status = task.get("status", "")
-    claimable = ("pending", "failed")
+    claimable = ("pending", "paused", "failed")
     if status not in claimable and not force:
         output_error(f"Task {task_id} cannot be claimed (status={status}). Expected one of: {', '.join(claimable)}")
         raise typer.Exit(1)
 
     existing = get_snapshot_info(task_id)
     if existing and not force:
+        require_pulse_gate(str(project_id) if project_id else None)
+        require_claim_safe_tree()
+        try:
+            client.claim_task(task_id)
+        except APIError as e:
+            output_error(f"Failed to claim task: {e.detail}")
+            raise typer.Exit(1) from None
         return handle_existing_checkpoint(task_id, existing)
 
     require_pulse_gate(str(project_id) if project_id else None)

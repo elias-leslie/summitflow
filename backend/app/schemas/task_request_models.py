@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class TaskStatusUpdate(BaseModel):
     """Request model for updating task status."""
 
-    status: str  # pending, running, paused, blocked, ai_reviewing, completed, failed, cancelled
+    status: str  # pending, running, paused, completed, failed, cancelled
     error_message: str | None = None
     reason: str | None = None  # Completion reason (logged to events table)
     skip_gates: bool = Field(

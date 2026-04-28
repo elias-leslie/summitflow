@@ -1,4 +1,4 @@
-"""Task lifecycle management commands (cancel, reopen, delete)."""
+"""Task lifecycle management commands."""
 
 from __future__ import annotations
 
@@ -26,12 +26,50 @@ def cancel_task_command(
     client = STClient()
 
     try:
-        task = client.cancel_task(task_id)
+        task = client.cancel_task(task_id, reason=reason or None)
     except APIError as e:
         handle_api_error(e)
         return
 
     task["cancel_reason"] = reason
+    output_task(task)
+
+
+def pause_task_command(
+    task_id: str | None,
+    reason: str,
+) -> None:
+    """Pause a task and release any active claim while preserving task state."""
+    task_id = require_task_id(task_id)
+    client = STClient()
+
+    try:
+        task = client.pause_task(task_id, reason=reason or None)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    if reason:
+        task["pause_reason"] = reason
+    output_task(task)
+
+
+def resume_task_command(
+    task_id: str | None,
+    reason: str,
+) -> None:
+    """Resume a paused task by moving it back to pending."""
+    task_id = require_task_id(task_id)
+    client = STClient()
+
+    try:
+        task = client.resume_task(task_id, reason=reason or None)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    if reason:
+        task["resume_reason"] = reason
     output_task(task)
 
 

@@ -123,6 +123,15 @@ def _resolve_workspace_inventory(
     return resolved_project_id, checkpoints, resolved_branches, git_branches._detect_base_branch(repo_path)
 
 
+def _lane_active_checkpoints(checkpoints: list) -> list:
+    """Return checkpoint metadata for tasks that still occupy an active work lane."""
+    return [
+        checkpoint
+        for checkpoint in checkpoints
+        if _load_task_status(str(checkpoint.task_id))[0] != "paused"
+    ]
+
+
 def _prune_branch_list(repo_path: Path, branch_names: list[str], base_branch: str) -> list[str]:
     """Force-delete a list of branches, checking out base first if any is current."""
     git_branches = _git_branches_module()
@@ -342,6 +351,7 @@ def build_repo_workspace_summary(
         branches=branches,
         active_checkpoints=active_checkpoints,
     )
+    lane_checkpoints = _lane_active_checkpoints(checkpoints)
     dirty_main_repo = git_core.has_uncommitted_changes(repo_path)
     dirty_checkpoint = bool(
         dirty_main_repo
@@ -370,15 +380,15 @@ def build_repo_workspace_summary(
         base_branch=base_branch,
     )
     return RepoWorkspaceSummary(
-        active_checkpoints=len(checkpoints),
+        active_checkpoints=len(lane_checkpoints),
         dirty_checkpoints=1 if dirty_checkpoint else 0,
         dirty_main_repo=dirty_main_repo,
         branches_with_checkpoints=sum(1 for branch in task_branches if branch.has_checkpoint),
         task_branches=len(task_branches),
         orphan_branches=len(orphan_branches),
         prunable_branches=len(prunable_branches),
-        needs_cleanup=bool(dirty_main_repo or checkpoints or orphan_branches or prunable_branches),
-        checkpoint_task_ids=[checkpoint.task_id for checkpoint in checkpoints],
+        needs_cleanup=bool(dirty_main_repo or lane_checkpoints or orphan_branches or prunable_branches),
+        checkpoint_task_ids=[checkpoint.task_id for checkpoint in lane_checkpoints],
         orphan_branch_names=[branch.name for branch in orphan_branches[:5]],
         prunable_branch_names=[branch.name for branch in prunable_branches[:5]],
         salvage_task_ids=[

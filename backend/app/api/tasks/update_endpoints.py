@@ -163,9 +163,10 @@ async def update_task_status(
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update task status")
 
-    # Log completion reason to events if provided
-    if update.reason and update.status in ("completed", "cancelled"):
-        await asyncio.to_thread(log_task_event, task_id, f"Closed: {update.reason}")
+    # Log explicit lifecycle reasons to events when provided.
+    if update.reason and update.status in ("completed", "cancelled", "paused", "pending"):
+        verb = {"paused": "Paused", "pending": "Reopened"}.get(update.status, "Closed")
+        await asyncio.to_thread(log_task_event, task_id, f"{verb}: {update.reason}")
 
     # Dispatch autonomous execution tasks on status transitions
     await dispatch_autonomous_task(task_id, update.status, project_id)

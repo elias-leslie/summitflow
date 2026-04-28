@@ -83,6 +83,8 @@ TASKS (create/capture REQUIRE -P <project>):
   context <id> [--subtask X.Y]             # full task/subtask context (TOON format)
   export <id> [-o file.json]               # full JSON export (everything)
   log <id> <message>
+  pause <id> [-r reason]                   # pause a task, release claim, keep checkpoint handoff
+  resume <id> [-r reason]                  # move paused task back to pending
   cancel <id> [-r reason]                  # cancel a task (from any state)
   reopen <id> [-r reason]                  # reopen a task (move back to pending)
   sync-progress <id> [--none]              # sync passed subtasks
@@ -245,6 +247,8 @@ EXAMPLES:
   st -P monkey-fight design asset generate "Kiki attack sheet" "Capuchin fighter combo sheet" --type sprite_sheet --workflow production --sheet-columns 4 --sheet-rows 2 --frame-width 128 --frame-height 128 --animations idle,attack
   st ready                                 # find work (compact by default)
   st claim task-abc                        # claim task, create checkpoint
+  st pause task-abc -r "Waiting on review" # table active work without deleting state
+  st resume task-abc                       # make paused task claimable again
   st context task-abc                      # view full context
   st context task-abc --subtask 1.1        # view subtask context
   st done 1.1 -t task-abc                  # complete subtask, merge branch

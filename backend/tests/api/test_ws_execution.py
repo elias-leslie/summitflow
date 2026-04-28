@@ -233,7 +233,7 @@ class TestHelperFunctions:
         await _handle_stop_signal("task-1")
 
         mock_get_task.assert_called_once_with("task-1")
-        mock_update_task_status.assert_called_once_with("task-1", "pending")
+        mock_update_task_status.assert_called_once_with("task-1", "paused")
         mock_log_task_event.assert_called_once_with(
             "task-1",
             "User requested stop via execution timeline",
@@ -256,6 +256,7 @@ class TestHelperFunctions:
         await _forward_redis_events("task-1")
 
         mock_broadcast.assert_called_once()
+        assert mock_broadcast.await_args is not None
         message = mock_broadcast.await_args.args[1]
         assert message.type == MessageType.LOG
         assert message.data == {}

@@ -93,8 +93,14 @@ class _TaskWorkflowMixin(_MixinBase):
     ) -> dict[str, Any]:
         return self.update_status(task_id, "completed", reason=reason, skip_gates=skip_gates)
 
-    def cancel_task(self, task_id: str) -> dict[str, Any]:
-        return self.update_status(task_id, "cancelled")
+    def pause_task(self, task_id: str, reason: str | None = None) -> dict[str, Any]:
+        return self.update_status(task_id, "paused", reason=reason)
+
+    def resume_task(self, task_id: str, reason: str | None = None) -> dict[str, Any]:
+        return self.update_status(task_id, "pending", reason=reason)
+
+    def cancel_task(self, task_id: str, reason: str | None = None) -> dict[str, Any]:
+        return self.update_status(task_id, "cancelled", reason=reason)
 
     def reopen_task(self, task_id: str, reason: str | None = None) -> dict[str, Any]:
         return self.update_status(task_id, "pending", reason=reason)

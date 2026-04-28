@@ -119,6 +119,11 @@ export interface TaskStatusCardConfig {
 
 export const taskStatusCardConfig: Record<TaskStatus, TaskStatusCardConfig> = {
   pending: { icon: null, className: '', title: '' },
+  paused: {
+    icon: <Clock className="h-3.5 w-3.5" />,
+    className: 'text-amber-400',
+    title: 'Task paused',
+  },
   running: {
     icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
     className: 'text-blue-400',
@@ -199,6 +204,11 @@ export const statusIconConfig: Record<
     icon: Clock,
     className: 'text-slate-400',
     label: 'Pending',
+  },
+  paused: {
+    icon: Clock,
+    className: 'text-amber-400',
+    label: 'Paused',
   },
   running: {
     icon: Play,

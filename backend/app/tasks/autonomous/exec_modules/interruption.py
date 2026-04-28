@@ -15,7 +15,7 @@ class ExecutionInterrupted(Exception):
         super().__init__(reason)
 
 
-_INTERRUPT_STATUSES = {"cancelled", "completed", "failed"}
+_INTERRUPT_STATUSES = {"paused", "cancelled", "completed", "failed"}
 
 
 def assert_task_runnable(task_id: str, project_id: str, checkpoint: str) -> None:

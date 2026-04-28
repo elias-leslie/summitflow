@@ -1,8 +1,8 @@
 """Tasks storage - Status transitions and state machine.
 
-Status values: pending, running, completed, failed, cancelled.
+Status values: pending, running, paused, completed, failed, cancelled.
 
-Simplified from 11 statuses to 5.
+Simplified from legacy multi-stage statuses to the lifecycle states used by st.
 """
 
 from __future__ import annotations
@@ -14,8 +14,9 @@ from .core import TASK_COLUMNS, _row_to_dict, canonicalize_task_id, get_task
 
 # Valid task status transitions (simplified)
 VALID_TRANSITIONS: dict[str, set[str]] = {
-    "pending": {"running", "cancelled"},
-    "running": {"completed", "failed", "cancelled", "pending"},
+    "pending": {"running", "paused", "cancelled"},
+    "running": {"completed", "failed", "cancelled", "pending", "paused"},
+    "paused": {"pending", "running", "cancelled"},
     "completed": {"pending", "cancelled"},
     "failed": {"pending", "running", "cancelled", "completed"},
     "cancelled": {"pending"},
@@ -30,14 +31,14 @@ _UPDATE_SQL = f"""
         started_at = CASE WHEN %s = 'running' THEN COALESCE(started_at, NOW()) ELSE started_at END,
         completed_at = CASE
             WHEN %s IN ('completed','failed','cancelled') THEN NOW()
-            WHEN %s IN ('pending','running') THEN NULL
+            WHEN %s IN ('pending','running','paused') THEN NULL
             ELSE completed_at
         END,
-        error_message = CASE WHEN %s = 'running' THEN NULL WHEN %s IN ('completed','failed') THEN %s ELSE error_message END,
+        error_message = CASE WHEN %s IN ('pending','running','paused') THEN NULL WHEN %s IN ('completed','failed','cancelled') THEN %s ELSE error_message END,
         current_phase = CASE WHEN %s = 'completed' THEN 'complete' ELSE current_phase END,
-        claimed_by = CASE WHEN %s IN ('completed','failed','cancelled') THEN NULL ELSE claimed_by END,
-        claimed_at = CASE WHEN %s IN ('completed','failed','cancelled') THEN NULL ELSE claimed_at END,
-        lock_expires_at = CASE WHEN %s IN ('completed','failed','cancelled') THEN NULL ELSE lock_expires_at END,
+        claimed_by = CASE WHEN %s IN ('completed','failed','cancelled','paused') THEN NULL ELSE claimed_by END,
+        claimed_at = CASE WHEN %s IN ('completed','failed','cancelled','paused') THEN NULL ELSE claimed_at END,
+        lock_expires_at = CASE WHEN %s IN ('completed','failed','cancelled','paused') THEN NULL ELSE lock_expires_at END,
         updated_at = NOW()
     WHERE id = %s RETURNING {TASK_COLUMNS}
 """
@@ -91,7 +92,7 @@ def update_task_status(
 
     Args:
         task_id: Task ID
-        status: New status (pending, running, completed, failed, cancelled)
+        status: New status (pending, running, paused, completed, failed, cancelled)
         error_message: Optional error message (for failed status)
         validate_transition: Whether to validate status transition (default True)
 

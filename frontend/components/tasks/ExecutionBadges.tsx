@@ -46,6 +46,11 @@ const statusIcons: Record<
     color: 'text-slate-400',
     bg: 'bg-slate-500/20',
   },
+  paused: {
+    icon: <Clock className="h-3 w-3" />,
+    color: 'text-amber-400',
+    bg: 'bg-amber-500/20',
+  },
   running: {
     icon: <Loader2 className="h-3 w-3 animate-spin" />,
     color: 'text-blue-400',
