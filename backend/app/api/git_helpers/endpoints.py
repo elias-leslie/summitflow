@@ -409,10 +409,11 @@ def handle_finalize_task_merge(task_id: str, task: dict[str, Any]) -> MergeResul
         )
     if status not in {"completed", "failed", "paused"}:
         raise HTTPException(status_code=400, detail=f"Task status {status!r} is not eligible for finalize")
-    # Block merge when subtasks have failures — prevents merging incomplete work
+    # Block terminal finalize on failed subtasks. Paused finalize only clears residue
+    # after an operator-reviewed slice merge and leaves the parent task paused.
     subtasks = get_subtasks_for_task(task_id)
     failed = [s for s in subtasks if s.get("passes") is False]
-    if failed:
+    if status != "paused" and failed:
         failed_ids = [s.get("subtask_id", "?") for s in failed]
         raise HTTPException(
             status_code=400,

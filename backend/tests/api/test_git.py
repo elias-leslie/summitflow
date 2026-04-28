@@ -400,6 +400,24 @@ class TestFinalizeTaskEndpoint:
         assert response.json()["status"] == "merged"
         merge.assert_called_once_with("task-1", "agent-hub", complete_task=False)
 
+    def test_finalize_paused_task_ignores_failed_future_subtasks(self, mocker: MockerFixture) -> None:
+        mocker.patch(
+            "app.api.git.task_store.get_task",
+            return_value={"id": "task-1", "project_id": "agent-hub", "status": "paused"},
+        )
+        mocker.patch(
+            "app.storage.subtasks.get_subtasks_for_task",
+            return_value=[{"subtask_id": "3.1", "passes": False}],
+        )
+        merge = mocker.patch("app.api.git_helpers.endpoints.merge_and_cleanup_task_checkpoint")
+        merge.return_value = {"task_id": "task-1", "status": "merged"}
+
+        response = client.post("/api/git/tasks/task-1/finalize")
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "merged"
+        merge.assert_called_once_with("task-1", "agent-hub", complete_task=False)
+
     def test_finalize_rejects_failed_subtasks(self, mocker: MockerFixture) -> None:
         mocker.patch(
             "app.api.git.task_store.get_task",
