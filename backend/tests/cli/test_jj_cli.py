@@ -42,6 +42,22 @@ def test_run_jj_uses_global_noninteractive_args(_mock_which: MagicMock, mock_run
     assert mock_run.call_args.kwargs["cwd"] == Path("/repo")
 
 
+@patch("cli.lib.jj.run_jj")
+def test_display_branch_uses_parent_bookmark_for_detached_empty_working_copy(
+    mock_run_jj: MagicMock,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".jj").mkdir()
+    mock_run_jj.side_effect = [
+        subprocess.CompletedProcess(args=[], returncode=0, stdout="\n", stderr=""),
+        subprocess.CompletedProcess(args=[], returncode=0, stdout="\n", stderr=""),
+        subprocess.CompletedProcess(args=[], returncode=0, stdout="main\n", stderr=""),
+    ]
+
+    assert jj_lib.display_branch(tmp_path, "HEAD") == "main"
+
+
 @patch("cli.commands.jj.status_summary")
 @patch("cli.commands.jj._get_managed_repos")
 def test_status_prints_compact_jj_state(
@@ -172,6 +188,35 @@ def test_publish_rejects_failed_quality_gate(tmp_path: Path) -> None:
     mock_run_jj.assert_not_called()
 
 
+def test_publish_without_task_uses_current_bookmark(tmp_path: Path) -> None:
+    (tmp_path / ".jj").mkdir()
+    (tmp_path / ".git").mkdir()
+    revision = JJRevisionInfo(
+        change_id="chg",
+        commit_id="commit",
+        empty=False,
+        conflict=False,
+        description="ready",
+    )
+    with (
+        patch("cli.lib.jj.current_revision_info", return_value=revision),
+        patch("cli.lib.jj.run_checks", return_value=(True, "ok")),
+        patch("cli.lib.jj.display_branch", return_value="main"),
+        patch("cli.lib.jj.latest_operation_id", return_value="op"),
+        patch("cli.lib.jj.run_jj") as mock_run_jj,
+    ):
+        mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        result = jj_lib.publish_current_revision(tmp_path)
+
+    assert result["bookmark"] == "main"
+    assert call(tmp_path, ["bookmark", "set", "main", "-r", "@"]) in mock_run_jj.call_args_list
+    assert call(
+        tmp_path,
+        ["git", "push", "--remote", "origin", "--bookmark", "main", "--allow-empty-description"],
+    ) in mock_run_jj.call_args_list
+
+
 def test_commit_rejects_skip_checks_when_publishing(tmp_path: Path) -> None:
     (tmp_path / ".jj").mkdir()
     (tmp_path / ".git").mkdir()
@@ -198,6 +243,27 @@ def test_recovery_commands_log_task_events(
     assert restore.exit_code == 0
     assert call("task-1", "st jj undo executed") in mock_log.call_args_list
     assert call("task-1", "st jj op-restore op123 executed") in mock_log.call_args_list
+
+
+@patch("cli.commands.jj.run_jj")
+@patch("cli.commands.jj.current_git_repo")
+def test_remote_bookmarks_lists_remote_refs_through_st_surface(
+    mock_repo: MagicMock,
+    mock_run_jj: MagicMock,
+) -> None:
+    mock_repo.return_value = Path("/repo")
+    mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+    result = runner.invoke(jj.app, ["remote-bookmarks", "jj-smoke/repo", "--fetch"])
+
+    assert result.exit_code == 0
+    assert mock_run_jj.call_args_list == [
+        call(Path("/repo"), ["git", "fetch", "--remote", "origin"]),
+        call(
+            Path("/repo"),
+            ["bookmark", "list", "--all-remotes", "--remote", "origin", "jj-smoke/repo"],
+        ),
+    ]
 
 
 @patch("cli.commands.jj.run_jj")

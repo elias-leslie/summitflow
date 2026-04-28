@@ -30,6 +30,7 @@ LOG_TEMPLATE = (
     'description.first_line() ++ "\\n"'
 )
 OP_LOG_TEMPLATE = 'id.short() ++ "\\t" ++ description.first_line() ++ "\\n"'
+BOOKMARK_TEMPLATE = 'bookmarks ++ "\\n"'
 
 
 class JJError(RuntimeError):
@@ -117,6 +118,34 @@ def is_colocated(repo: Path) -> bool:
     return (repo / ".jj").is_dir() and (repo / ".git").exists()
 
 
+def _git_branch(repo: Path) -> str:
+    branch = run_git(repo, ["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    return branch or "HEAD"
+
+
+def _first_local_bookmark(repo: Path, revset: str) -> str:
+    result = run_jj(repo, ["log", "--no-graph", "-r", revset, "-T", BOOKMARK_TEMPLATE])
+    if result.returncode != 0:
+        return ""
+    for token in result.stdout.split():
+        if "@" not in token:
+            return token
+    return ""
+
+
+def display_branch(repo: Path, git_branch: str | None = None) -> str:
+    """Return a useful branch/bookmark label for colocated jj workspaces."""
+    branch = git_branch or _git_branch(repo)
+    if branch != "HEAD" or not is_colocated(repo):
+        return branch
+    return (
+        _first_local_bookmark(repo, "@")
+        or _first_local_bookmark(repo, "@-")
+        or _first_local_bookmark(repo, "heads(ancestors(@) & bookmarks())")
+        or "HEAD"
+    )
+
+
 def _require_success(result: subprocess.CompletedProcess[str], action: str) -> None:
     if result.returncode == 0:
         return
@@ -151,7 +180,8 @@ def unpublished_count(repo: Path) -> int:
 
 
 def status_summary(repo: Path) -> JJRepoStatus:
-    branch = run_git(repo, ["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip() or "HEAD"
+    git_branch = _git_branch(repo)
+    branch = display_branch(repo, git_branch)
     if not is_colocated(repo):
         return JJRepoStatus(
             repo=repo.name,
@@ -254,11 +284,21 @@ def publish_current_revision(
         if not ok:
             raise JJError(f"quality gates failed before jj push: {detail[-1200:]}")
 
-    resolved_bookmark = task_bookmark(task_id, bookmark) or f"st/{info.change_id}"
+    resolved_bookmark = task_bookmark(task_id, bookmark) or display_branch(repo)
+    if resolved_bookmark == "HEAD":
+        raise JJError("bookmark or task id is required when no current bookmark is available")
     set_result = run_jj(repo, ["bookmark", "set", resolved_bookmark, "-r", "@"])
     _require_success(set_result, "jj bookmark set")
 
-    push_args = ["git", "push", "--remote", remote, "--bookmark", resolved_bookmark]
+    push_args = [
+        "git",
+        "push",
+        "--remote",
+        remote,
+        "--bookmark",
+        resolved_bookmark,
+        "--allow-empty-description",
+    ]
     if dry_run:
         push_args.append("--dry-run")
     push_result = run_jj(repo, push_args)

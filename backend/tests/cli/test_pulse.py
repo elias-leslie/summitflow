@@ -18,6 +18,7 @@ def _stub_observability_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     from cli.commands import pulse as pulse_cmd
 
     monkeypatch.setattr(pulse_cmd, "refresh_agent_observability", lambda: None)
+    monkeypatch.setattr(pulse_cmd, "_jj_status_for_project", lambda _project_id: None)
 
 
 def test_pulse_compact_renders_canonical_summary() -> None:

@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from cli.commands._git_helpers import _get_managed_repos
 from cli.commands.git import _format_compact_repo, _get_repo_status, app
+from cli.lib.jj import JJRepoStatus
 from cli.output_context import OutputContext
 
 runner = CliRunner()
@@ -81,6 +82,67 @@ class TestGitStatus:
         assert result.exit_code == 0
         assert "GIT[" in result.stdout
         assert "repo" in result.stdout
+
+    @patch("cli.commands._git_helpers._get_ahead_behind", return_value=(0, 0))
+    @patch("cli.commands._git_helpers.status_summary")
+    def test_repo_status_uses_jj_branch_for_colocated_repo(
+        self,
+        mock_status: MagicMock,
+        _mock_ahead: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Detached Git HEAD should not leak into agent status for clean jj repos."""
+        (tmp_path / ".git").mkdir()
+        (tmp_path / ".jj").mkdir()
+        mock_status.return_value = JJRepoStatus(
+            repo="repo",
+            path=str(tmp_path),
+            branch="main",
+            colocated=True,
+            state="clean",
+            described=False,
+            conflicted=False,
+            unpublished=0,
+            change_id="chg",
+            commit_id="commit",
+        )
+
+        status = _get_repo_status(tmp_path)
+
+        assert status is not None
+        assert status["branch"] == "main"
+        assert status["state"] == "clean"
+        assert status["uncommitted"] == 0
+
+    @patch("cli.commands._git_helpers._get_ahead_behind", return_value=(0, 0))
+    @patch("cli.commands._git_helpers.status_summary")
+    def test_repo_status_prefers_dirty_over_unpublished_for_jj_repo(
+        self,
+        mock_status: MagicMock,
+        _mock_ahead: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        (tmp_path / ".git").mkdir()
+        (tmp_path / ".jj").mkdir()
+        mock_status.return_value = JJRepoStatus(
+            repo="repo",
+            path=str(tmp_path),
+            branch="main",
+            colocated=True,
+            state="undescribed",
+            described=False,
+            conflicted=False,
+            unpublished=1,
+            change_id="chg",
+            commit_id="commit",
+        )
+
+        status = _get_repo_status(tmp_path)
+
+        assert status is not None
+        assert status["state"] == "dirty"
+        assert status["uncommitted"] == 1
+        assert status["ahead"] == 1
 
 
 class TestGitSync:

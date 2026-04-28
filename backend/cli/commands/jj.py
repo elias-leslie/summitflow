@@ -39,6 +39,7 @@ Common workflows:
   st commit -m "fix: concise result" --push --task task-abc
   st jj log --limit 20
   st jj op-log --limit 20
+  st jj remote-bookmarks <name>
   st jj undo --task task-abc
   st jj op-restore <op-id> --task task-abc
   st jj conflicts
@@ -149,6 +150,20 @@ def sync(
         output_json({"repos": results})
     if any(item["status"] == "ERROR" for item in results):
         raise typer.Exit(1)
+
+
+@app.command("remote-bookmarks")
+def remote_bookmarks(
+    names: Annotated[list[str] | None, typer.Argument(help="Optional bookmark names or patterns.")] = None,
+    repo: Annotated[Path | None, typer.Option("--repo", "-R", help="Repository path.")] = None,
+    remote: Annotated[str, typer.Option("--remote", help="Remote name.")] = "origin",
+    fetch: Annotated[bool, typer.Option("--fetch/--no-fetch", help="Fetch before listing.")] = False,
+) -> None:
+    """List remote bookmarks through the st jj surface."""
+    path = _repo_or_current(repo)
+    if fetch:
+        _run_or_exit(path, ["git", "fetch", "--remote", remote])
+    _run_or_exit(path, ["bookmark", "list", "--all-remotes", "--remote", remote, *(names or [])])
 
 
 @app.command("new")

@@ -8,6 +8,8 @@ from typing import Any
 from app.utils._git_core import get_managed_repos as _get_managed_repos_from_db
 from app.utils._git_core import run_git as _run_git
 
+from ..lib.jj import JJError, is_colocated, status_summary
+
 REMOTE_REF_TEMPLATE = "{branch}...origin/{branch}"
 ALREADY_UP_TO_DATE = "Already up to date"
 
@@ -43,6 +45,24 @@ def _get_repo_status(repo_path: Path) -> dict[str, Any] | None:
     """Get status dict for a git repo, or None if not a valid repo."""
     if not _is_valid_git_path(repo_path):
         return None
+    if is_colocated(repo_path):
+        try:
+            jj_status = status_summary(repo_path)
+        except JJError:
+            pass
+        else:
+            git_ahead, behind = _get_ahead_behind(repo_path, jj_status.branch)
+            uncommitted = 0 if jj_status.state in {"clean", "unpublished"} else 1
+            ahead = max(git_ahead, jj_status.unpublished)
+            return {
+                "path": str(repo_path),
+                "name": repo_path.name,
+                "branch": jj_status.branch,
+                "uncommitted": uncommitted,
+                "ahead": ahead,
+                "behind": behind,
+                "state": _determine_state(uncommitted, behind, ahead),
+            }
     branch_result = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_path)
     if branch_result.returncode != 0:
         return None
