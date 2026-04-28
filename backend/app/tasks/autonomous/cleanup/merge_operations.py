@@ -61,11 +61,17 @@ def _publish_mainline_result(task_id: str, project_root: str, *, phase: str) -> 
     return message
 
 
-def _finalize_task_status(task_id: str, result: MergeResult) -> MergeResult:
+def _finalize_task_status(
+    task_id: str,
+    result: MergeResult,
+    *,
+    complete_task: bool = True,
+) -> MergeResult:
     """Persist authoritative task status from merge outcome."""
     status = result.get("status")
     if status in {"merged", "skipped"}:
-        update_task_status(task_id, "completed", validate_transition=False)
+        if complete_task:
+            update_task_status(task_id, "completed", validate_transition=False)
         return result
     if status == "rolled_back":
         # auto_rollback() owns the terminal task status update so it can
@@ -121,29 +127,44 @@ def _safe_finalize_branch_without_checkout(task_id: str, project_id: str) -> Mer
     }
 
 
-def merge_and_cleanup_task_checkpoint(task_id: str, project_id: str) -> MergeResult:
+def merge_and_cleanup_task_checkpoint(
+    task_id: str,
+    project_id: str,
+    *,
+    complete_task: bool = True,
+) -> MergeResult:
     """Merge task branch to main and clear checkpoint state."""
     try:
         if is_task_running(task_id):
             return _finalize_task_status(
                 task_id,
                 _failed(task_id, "task_still_running"),
+                complete_task=complete_task,
             )
         checkout = get_task_checkout(task_id, project_id)
         if not checkout:
             return _finalize_task_status(
                 task_id,
                 _safe_finalize_branch_without_checkout(task_id, project_id),
+                complete_task=complete_task,
             )
         project_root = get_project_root_path(project_id)
         if not project_root:
-            return _finalize_task_status(task_id, _err(task_id, f"No root path for project {project_id}"))
+            return _finalize_task_status(
+                task_id,
+                _err(task_id, f"No root path for project {project_id}"),
+                complete_task=complete_task,
+            )
 
         task_branch = checkout.branch
         base_branch = checkout.base_branch or "main"
         checkout_error = checkout_base_branch(project_root, base_branch)
         if checkout_error:
-            return _finalize_task_status(task_id, _err(task_id, checkout_error))
+            return _finalize_task_status(
+                task_id,
+                _err(task_id, checkout_error),
+                complete_task=complete_task,
+            )
 
         _capture_pre_merge_snapshot(task_id, project_root)
         merge_outcome = merge_task_branch(project_root, task_branch, task_id)
@@ -151,6 +172,7 @@ def merge_and_cleanup_task_checkpoint(task_id: str, project_id: str) -> MergeRes
             return _finalize_task_status(
                 task_id,
                 _build_merge_failure_result(task_id, task_branch, base_branch, merge_outcome),
+                complete_task=complete_task,
             )
 
         if merge_outcome.merge_sha:
@@ -159,14 +181,19 @@ def merge_and_cleanup_task_checkpoint(task_id: str, project_id: str) -> MergeRes
         return _finalize_task_status(
             task_id,
             _finalize_merge(task_id, project_root, project_id, task_branch, base_branch),
+            complete_task=complete_task,
         )
 
     except subprocess.TimeoutExpired:
         logger.error("Timeout during merge/cleanup for task %s", task_id)
-        return _finalize_task_status(task_id, _err(task_id, "Git operation timed out"))
+        return _finalize_task_status(
+            task_id,
+            _err(task_id, "Git operation timed out"),
+            complete_task=complete_task,
+        )
     except Exception as e:
         logger.error("Error merging/cleaning up task %s: %s", task_id, e)
-        return _finalize_task_status(task_id, _err(task_id, str(e)))
+        return _finalize_task_status(task_id, _err(task_id, str(e)), complete_task=complete_task)
 
 
 def _capture_pre_merge_snapshot(task_id: str, project_root: str) -> None:

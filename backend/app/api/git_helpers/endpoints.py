@@ -407,7 +407,7 @@ def handle_finalize_task_merge(task_id: str, task: dict[str, Any]) -> MergeResul
             status_code=400,
             detail=f"Task is still active ({status}); use the normal execution/done path instead",
         )
-    if status not in {"completed", "failed"}:
+    if status not in {"completed", "failed", "paused"}:
         raise HTTPException(status_code=400, detail=f"Task status {status!r} is not eligible for finalize")
     # Block merge when subtasks have failures — prevents merging incomplete work
     subtasks = get_subtasks_for_task(task_id)
@@ -420,7 +420,11 @@ def handle_finalize_task_merge(task_id: str, task: dict[str, Any]) -> MergeResul
         )
     if status == "failed":
         update_task_fields(task_id, conflict_info=None)
-    return merge_and_cleanup_task_checkpoint(task_id, task["project_id"])
+    return merge_and_cleanup_task_checkpoint(
+        task_id,
+        task["project_id"],
+        complete_task=status != "paused",
+    )
 
 
 # --- Collection helpers ---
