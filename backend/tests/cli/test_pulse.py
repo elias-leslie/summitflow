@@ -85,11 +85,10 @@ def test_pulse_compact_renders_canonical_summary() -> None:
         result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
 
     assert result.exit_code == 0
-    assert "PULSE:agent-hub|tasks=1|owners=1|specialists=0|sessions=2|stale=1|reapable=1|checkpoints=1|dirty=0|cleanup=no|stranded=0" in result.output
-    assert "PREFLIGHT:agent-hub|claim=blocked|edit=blocked|reasons=owners,sessions,checkpoints|source=st-pulse" in result.output
+    assert "PULSE:agent-hub|tasks=1|writers=1|readers=0|specialists=0|sessions=2|stale=1|reapable=1|checkpoints=1|dirty=0|cleanup=no|stranded=0" in result.output
+    assert "PREFLIGHT:agent-hub|claim=blocked|edit=blocked|reasons=checkpoints|source=st-pulse" in result.output
     assert "RUN task-1 | running | P2 | Refactor timeline" in result.output
-    assert "OWN task-1 | refactor | sess-own | kind=scoped | paths=frontend/src/app.tsx" in result.output
-    assert "SES owner | refactor | sess-own | claude-sonnet-4-6 | active/reading_file" in result.output
+    assert "WRITE task-1 | refactor | sess-own | kind=scoped | paths=frontend/src/app.tsx" in result.output
     assert "STALE observer | summitflow/codex-session-sync | sess-sta | claude-sonnet-4-6 | reapable | reason=heartbeat_only+no_lane" in result.output
 
 
@@ -132,7 +131,7 @@ def test_pulse_compact_labels_task_checkout_owner_more_usefully() -> None:
         result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
 
     assert result.exit_code == 0
-    assert "OWN task-2 | refactor | sess-own | kind=task_checkout" in result.output
+    assert "WRITE task-2 | refactor | sess-own | kind=task_checkout" in result.output
 
 
 def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
@@ -177,7 +176,7 @@ def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
         result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
 
     assert result.exit_code == 0
-    assert "PULSE:agent-hub|tasks=0|owners=0|specialists=0|sessions=0|stale=1|reapable=1|checkpoints=1|dirty=1|cleanup=yes|stranded=1" in result.output
+    assert "PULSE:agent-hub|tasks=0|writers=0|readers=0|specialists=0|sessions=0|stale=1|reapable=1|checkpoints=1|dirty=1|cleanup=yes|stranded=1" in result.output
     assert "REVIEW:agent-hub|ownerless=yes|dirty=1|checkpoints=1|stranded=1|" in result.output
     assert "STRANDED task-3 | running | no_owner_session | Refactor tool handlers" in result.output
 
@@ -260,7 +259,7 @@ def test_pulse_compact_counts_dirty_main_repo_without_checkpoints() -> None:
         result = runner.invoke(app, ["pulse", "--project", "test2"])
 
     assert result.exit_code == 0
-    assert "PULSE:test2|tasks=0|owners=0|specialists=0|sessions=0|stale=0|reapable=0|checkpoints=0|dirty=1|cleanup=yes|stranded=0" in result.output
+    assert "PULSE:test2|tasks=0|writers=0|readers=0|specialists=0|sessions=0|stale=0|reapable=0|checkpoints=0|dirty=1|cleanup=yes|stranded=0" in result.output
     assert "PREFLIGHT:test2|claim=blocked|edit=blocked|reasons=dirty|source=st-pulse" in result.output
     assert "REVIEW:test2|ownerless=yes|dirty=1|checkpoints=0|stranded=0|" in result.output
 
@@ -343,6 +342,50 @@ def test_pulse_prefers_source_client_for_observer_session_label() -> None:
     assert "SES observer | summitflow/codex-session-sync | sess-obs | gpt-5.4 | quiet/waiting_for_model" in result.output
 
 
+def test_pulse_compact_renders_readers_as_nonblocking() -> None:
+    mock_client = MagicMock()
+    mock_client.get.return_value = {
+        "project_id": "agent-hub",
+        "summary": {
+            "running_tasks": 0,
+            "active_owners": 0,
+            "active_readers": 1,
+            "active_specialists": 0,
+            "active_sessions": 1,
+            "stale_sessions": 0,
+            "reapable_sessions": 0,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {
+            "active_checkpoints": 0,
+            "dirty_checkpoints": 0,
+            "needs_cleanup": False,
+        },
+        "running_tasks": [],
+        "active_owners": [],
+        "active_readers": [
+            {
+                "session_id": "sess-reader",
+                "agent_slug": None,
+                "observed_read_paths": ["backend/app/api/tasks.py"],
+                "scope_confidence": "observed_read",
+            }
+        ],
+        "active_sessions": [{"id": "sess-reader"}],
+        "stale_sessions": [],
+        "stranded_tasks": [],
+    }
+
+    with patch("cli.commands.pulse.STClient", return_value=mock_client):
+        result = runner.invoke(app, ["pulse", "--project", "agent-hub", "--gate"])
+
+    assert result.exit_code == 0
+    assert "PULSE:agent-hub|tasks=0|writers=0|readers=1|" in result.output
+    assert "PREFLIGHT:agent-hub|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
+    assert "READ - | ? | sess-rea | paths=backend/app/api/tasks.py | scope=observed_read" in result.output
+    assert "SES observer" not in result.output
+
+
 def test_pulse_defaults_to_cross_project_overview() -> None:
     mock_client = MagicMock()
     mock_client.get.side_effect = [
@@ -397,10 +440,10 @@ def test_pulse_defaults_to_cross_project_overview() -> None:
         result = runner.invoke(app, ["pulse"])
 
     assert result.exit_code == 0
-    assert "PULSE:summitflow|tasks=0|owners=0|specialists=0|sessions=1|stale=2|reapable=1|checkpoints=0|dirty=0|cleanup=no|stranded=0" in result.output
-    assert "PREFLIGHT:summitflow|claim=blocked|edit=blocked|reasons=sessions|source=st-pulse" in result.output
-    assert "PULSE:agent-hub|tasks=1|owners=1|specialists=0|sessions=2|stale=0|reapable=0|checkpoints=0|dirty=0|cleanup=no|stranded=0" in result.output
-    assert "PREFLIGHT:agent-hub|claim=blocked|edit=blocked|reasons=owners,sessions|source=st-pulse" in result.output
+    assert "PULSE:summitflow|tasks=0|writers=0|readers=0|specialists=0|sessions=1|stale=2|reapable=1|checkpoints=0|dirty=0|cleanup=no|stranded=0" in result.output
+    assert "PREFLIGHT:summitflow|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
+    assert "PULSE:agent-hub|tasks=1|writers=1|readers=0|specialists=0|sessions=2|stale=0|reapable=0|checkpoints=0|dirty=0|cleanup=no|stranded=0" in result.output
+    assert "PREFLIGHT:agent-hub|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
 
 
 def test_pulse_rejects_project_and_all_together() -> None:
@@ -498,12 +541,13 @@ def test_pulse_gate_exits_nonzero_when_blocked() -> None:
         "stale_sessions": [],
         "stranded_tasks": [],
     }
+    mock_client.get.return_value["cleanup"]["dirty_main_repo"] = True
 
     with patch("cli.commands.pulse.STClient", return_value=mock_client):
         result = runner.invoke(app, ["pulse", "--project", "summitflow", "--gate"])
 
     assert result.exit_code == 2
-    assert "PREFLIGHT:summitflow|claim=blocked|edit=blocked|reasons=owners,sessions" in result.output
+    assert "PREFLIGHT:summitflow|claim=blocked|edit=blocked|reasons=dirty" in result.output
 
 
 def test_require_pulse_gate_allows_current_task_owner() -> None:
@@ -567,6 +611,7 @@ def test_claim_task_runs_pulse_gate_before_checkpoint_creation() -> None:
     with (
         patch.object(claim, "get_snapshot_info", return_value=None),
         patch.object(claim, "require_pulse_gate") as mock_gate,
+        patch.object(claim, "_require_task_lane_clear") as mock_lane,
         patch.object(claim, "require_claim_safe_tree") as mock_safe,
         patch.object(claim, "create_task_snapshot") as mock_snapshot,
     ):
@@ -574,6 +619,7 @@ def test_claim_task_runs_pulse_gate_before_checkpoint_creation() -> None:
         result = claim._claim_task(client, "task-1")
 
     mock_gate.assert_called_once_with("summitflow")
+    mock_lane.assert_called_once_with("task-1", "summitflow")
     mock_safe.assert_called_once()
     assert result["action"] == "claimed"
 

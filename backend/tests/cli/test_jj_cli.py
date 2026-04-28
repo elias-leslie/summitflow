@@ -337,6 +337,44 @@ def test_commit_rejects_skip_checks_when_publishing(tmp_path: Path) -> None:
         jj_lib.commit_current_revision(tmp_path, message="test", push=True, skip_checks=True)
 
 
+def test_commit_advances_to_clean_working_copy_after_publish(tmp_path: Path) -> None:
+    (tmp_path / ".jj").mkdir()
+    (tmp_path / ".git").mkdir()
+    status = jj_lib.JJRepoStatus(
+        repo="repo",
+        path=str(tmp_path),
+        branch="main",
+        colocated=True,
+        state="dirty",
+        described=False,
+        conflicted=False,
+        unpublished=0,
+        change_id="old",
+        commit_id="oldcommit",
+    )
+    revision = JJRevisionInfo(
+        change_id="chg",
+        commit_id="commit",
+        empty=False,
+        conflict=False,
+        description="ready",
+    )
+
+    with (
+        patch("cli.lib.jj.status_summary", return_value=status),
+        patch("cli.lib.jj.current_revision_info", return_value=revision),
+        patch("cli.lib.jj.publish_current_revision", return_value={"status": "SUCCESS", "pushed": True}),
+        patch("cli.lib.jj.run_jj") as mock_run_jj,
+    ):
+        mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        result = jj_lib.commit_current_revision(tmp_path, message="test", push=True)
+
+    assert result["working_copy"] == "advanced"
+    assert call(tmp_path, ["describe", "-m", "test"]) in mock_run_jj.call_args_list
+    assert call(tmp_path, ["new"]) in mock_run_jj.call_args_list
+
+
 @patch("cli.commands.jj.log_task_event")
 @patch("cli.commands.jj.run_jj")
 @patch("cli.commands.jj.current_git_repo")

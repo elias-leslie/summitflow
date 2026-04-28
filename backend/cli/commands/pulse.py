@@ -30,9 +30,13 @@ def _resolve_project_ids(client: STClient, project_id: str | None) -> list[str]:
     ]
 
 
-def _format_owner(owner: dict[str, Any]) -> str:
+def _scope_preview(owner: dict[str, Any]) -> str:
     scope = owner.get("scope_paths") or []
-    scope_preview = ",".join(str(path) for path in scope[:3]) if isinstance(scope, list) else ""
+    return ",".join(str(path) for path in scope[:3]) if isinstance(scope, list) else ""
+
+
+def _format_owner(owner: dict[str, Any]) -> str:
+    scope_preview = _scope_preview(owner)
     kind = str(owner.get("ownership_kind") or "unknown")
     if kind == "unscoped" and owner.get("task_id"):
         kind = "task_checkout"
@@ -48,7 +52,22 @@ def _format_owner(owner: dict[str, Any]) -> str:
         details.append(f"scope={owner['scope_confidence']}")
     if owner.get("is_stale"):
         details.append("stale=yes")
-    return "OWN " + " | ".join(details)
+    return "WRITE " + " | ".join(details)
+
+
+def _format_reader(reader: dict[str, Any]) -> str:
+    paths = reader.get("observed_read_paths") or reader.get("scope_paths") or []
+    path_preview = ",".join(str(path) for path in paths[:3]) if isinstance(paths, list) else ""
+    details = [
+        str(reader.get("task_id") or "-"),
+        str(reader.get("agent_slug") or reader.get("source_client") or "?"),
+        str(reader.get("session_id") or "?")[:8],
+    ]
+    if path_preview:
+        details.append(f"paths={path_preview}")
+    if reader.get("scope_confidence"):
+        details.append(f"scope={reader['scope_confidence']}")
+    return "READ " + " | ".join(details)
 
 
 def _session_actor_label(session: dict[str, Any]) -> str:
@@ -145,7 +164,6 @@ def _needs_ownerless_review(summary: dict[str, Any], cleanup: dict[str, Any]) ->
     active_agents = (
         _truthy_count(summary.get("active_owners"))
         + _truthy_count(summary.get("active_specialists"))
-        + _truthy_count(summary.get("active_sessions"))
     )
     if active_agents:
         return False
@@ -195,10 +213,6 @@ def _preflight_reasons(
     jj_status: JJRepoStatus | None = None,
 ) -> list[str]:
     reasons: list[str] = []
-    if _truthy_count(summary.get("active_owners")):
-        reasons.append("owners")
-    if _truthy_count(summary.get("active_sessions")):
-        reasons.append("sessions")
     if _truthy_count(cleanup.get("active_checkpoints")) and not (jj_status and jj_status.colocated):
         reasons.append("checkpoints")
     if (
@@ -291,11 +305,12 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
         project_id = payload.get("project_id", "?")
         jj_status = _jj_status_for_project(project_id)
         print(
-            "PULSE:{project}|tasks={tasks}|owners={owners}|specialists={specialists}|"
+            "PULSE:{project}|tasks={tasks}|writers={writers}|readers={readers}|specialists={specialists}|"
             "sessions={sessions}|stale={stale}|reapable={reapable}|checkpoints={checkpoints}|dirty={dirty}|cleanup={cleanup_needed}|stranded={stranded}".format(
                 project=project_id,
                 tasks=summary.get("running_tasks", 0),
-                owners=summary.get("active_owners", 0),
+                writers=summary.get("active_owners", 0),
+                readers=summary.get("active_readers", 0),
                 specialists=summary.get("active_specialists", 0),
                 sessions=summary.get("active_sessions", 0),
                 stale=summary.get("stale_sessions", 0),
@@ -321,7 +336,21 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
         for owner in payload.get("active_owners", [])[:4]:
             if isinstance(owner, dict):
                 print(_format_owner(owner))
-        for session in payload.get("active_sessions", [])[:4]:
+        for reader in payload.get("active_readers", [])[:4]:
+            if isinstance(reader, dict):
+                print(_format_reader(reader))
+        summarized_session_ids = {
+            str(row.get("session_id") or "")
+            for key in ("active_owners", "active_readers", "active_specialists")
+            for row in payload.get(key, [])
+            if isinstance(row, dict)
+        }
+        visible_sessions = [
+            session for session in payload.get("active_sessions", [])
+            if isinstance(session, dict)
+            and str(session.get("id") or "") not in summarized_session_ids
+        ]
+        for session in visible_sessions[:4]:
             if isinstance(session, dict):
                 print(_format_session(session))
         for session in payload.get("stale_sessions", [])[:4]:

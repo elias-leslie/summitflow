@@ -15,7 +15,6 @@ from ._lane_inventory import (
 )
 from ._lane_scope import (
     _SHARED_PLUMBING_PREFIXES,
-    _UNKNOWN_TASK,
     classify_lane_scopes,
     find_scope_overlap,
     load_task_scope,
@@ -35,19 +34,13 @@ _SESSIONS_INSPECT_CMD = "st sessions list --status active --project {project_id}
 # Disposition values
 _ALLOW = "allow"
 _BLOCK = "block"
-_WARN = "warn"
 _RECONCILE = "reconcile"
 
 # Overlap kind values
 _SAME_TASK = "same_task"
 _STALE_SAME_TASK = "stale_same_task"
-_STALE_LANE = "stale_lane"
 _EXACT_FILE = "exact_file"
 _SHARED_PLUMBING = "shared_plumbing"
-_SHARED_CHECKOUT = "shared_checkout"
-_READ_OVERLAP = "read_overlap"
-_UNSCOPED_LANE = "unscoped_lane"
-_UNSCOPED_TARGET = "unscoped_target"
 
 # Ownership
 _OWNERSHIP_KIND_STALE = "stale"
@@ -55,7 +48,6 @@ _OWNERSHIP_KIND_STALE = "stale"
 
 # -- Public result types --
 
-# Re-export for backward compatibility
 _SpecialistSummary = SpecialistSummary
 
 
@@ -172,19 +164,6 @@ def _set_owner_from_session(result: TaskLaneConflictCheck, session: dict[str, ob
     result.owner_location = _lane_summary(session)
 
 
-def _lane_has_checkout_or_scope(session: dict[str, object]) -> bool:
-    """Return True when a session has a real checkout claim or observed repo scope."""
-    if isinstance(session.get("current_branch"), str) and str(session.get("current_branch")).strip():
-        return True
-    if isinstance(session.get("working_dir"), str) and str(session.get("working_dir")).strip():
-        return True
-    for key in ("observed_read_paths", "observed_write_paths", "files_touched"):
-        value = session.get(key)
-        if isinstance(value, list) and any(str(item).strip() for item in value):
-            return True
-    return False
-
-
 # -- Conflict detection --
 
 
@@ -220,33 +199,6 @@ def _apply_same_task_conflict(
         result.suggestions.append(
             "Wait for the active session to finish or reconcile it before queueing another execution."
         )
-
-
-def _apply_unscoped_conflict(
-    result: TaskLaneConflictCheck,
-    overlap_kind: str,
-    display_id: str,
-    project_id: str,
-    lane_sessions: list[dict[str, object]],
-    suggestion_prefix: str,
-) -> None:
-    """Handle both unscoped-target and unscoped-session conflicts."""
-    chosen = lane_sessions[0]
-    chosen_task_id = _lane_task_id(chosen)
-    _set_owner_from_session(result, chosen)
-    lane_preview = "; ".join(_lane_summary(s) for s in lane_sessions[:2])
-    result.conflicting_tasks = [chosen_task_id] if chosen_task_id else []
-    result.overlap_kind = overlap_kind
-    result.disposition = _WARN
-    result.issues.append(
-        f"Another active coding session exists in project {project_id} but lacks usable file scope: {display_id}"
-    )
-    if lane_preview:
-        result.suggestions.append(f"Active session details: {lane_preview}")
-    result.suggestions.append(
-        f"{suggestion_prefix}; keep the current project-level guard and finish, retire, "
-        "or scope the active session before dispatching another coding task."
-    )
 
 
 def _apply_write_overlap_conflict(
@@ -301,55 +253,6 @@ def _apply_write_overlap_conflict(
     )
 
 
-def _apply_read_overlap_conflict(
-    result: TaskLaneConflictCheck,
-    project_id: str,
-    lane_sessions: list[dict[str, object]],
-    overlap_id: str,
-    overlap_paths: list[str],
-) -> None:
-    """Handle read-only scope overlap (warn, not block)."""
-    chosen = next(s for s in lane_sessions if _lane_task_id(s) == overlap_id)
-    _set_owner_from_session(result, chosen)
-    result.conflicting_tasks = [overlap_id]
-    result.overlap_kind = _READ_OVERLAP
-    result.overlap_paths = overlap_paths
-    result.disposition = _WARN
-    preview = ", ".join(overlap_paths[:3])
-    result.issues.append(
-        f"Another active coding session is reading files in the target scope in project {project_id}: "
-        f"{overlap_id} ({preview})"
-    )
-    result.suggestions.append(
-        f"Read-scope overlap with {overlap_id}: {preview}. Coordinate before editing if that session "
-        "may promote into writes, but safe parallel work can continue."
-    )
-
-
-def _apply_stale_lane_conflict(
-    result: TaskLaneConflictCheck,
-    project_id: str,
-    lane_sessions: list[dict[str, object]],
-    stale_sessions: list[dict[str, object]],
-) -> None:
-    """Handle stale active task sessions."""
-    _set_owner_from_session(result, stale_sessions[0])
-    result.overlap_kind = _STALE_LANE
-    result.disposition = _RECONCILE
-    result.conflicting_tasks = [t for s in stale_sessions if (t := _lane_task_id(s))]
-    preview = ", ".join(result.conflicting_tasks[:3])
-    lane_preview = "; ".join(_lane_summary(s) for s in lane_sessions[:2])
-    result.issues.append(
-        f"Another likely stale active coding session exists in project {project_id}: {preview}"
-    )
-    if lane_preview:
-        result.suggestions.append(f"Active session details: {lane_preview}")
-    result.suggestions.append(
-        f"Inspect the active session with `{_SESSIONS_INSPECT_CMD.format(project_id=project_id)}` "
-        "and retire or reconcile it if the session is no longer truly live."
-    )
-
-
 def _apply_scoped_conflict(
     result: TaskLaneConflictCheck,
     task_id: str,
@@ -357,56 +260,14 @@ def _apply_scoped_conflict(
     lane_sessions: list[dict[str, object]],
     target_scope,
 ) -> None:
-    scoped, unscoped_ids = classify_lane_scopes(lane_sessions, _lane_task_id)
+    scoped, _ = classify_lane_scopes(lane_sessions, _lane_task_id)
     scoped = sorted(scoped, key=lambda item: item[0])
     overlap_id, overlap_paths, overlap_kind = find_scope_overlap(target_scope, scoped)
 
-    if overlap_kind == "read":
-        assert overlap_id is not None
-        _apply_read_overlap_conflict(result, project_id, lane_sessions, overlap_id, overlap_paths)
-    elif overlap_id is not None:
+    if overlap_id is not None:
         _apply_write_overlap_conflict(
             result, project_id, lane_sessions, overlap_id, overlap_paths, overlap_kind == "plumbing"
         )
-    elif not scoped and unscoped_ids:
-        chosen_id = sorted(unscoped_ids)[0]
-        chosen_sessions = [s for s in lane_sessions if (_lane_task_id(s) or _UNKNOWN_TASK) == chosen_id]
-        _apply_unscoped_conflict(
-            result, _UNSCOPED_LANE, chosen_id, project_id, chosen_sessions or lane_sessions,
-            "Active session scope unavailable",
-        )
-
-
-def _apply_other_lane_conflict(
-    result: TaskLaneConflictCheck,
-    task_id: str,
-    project_id: str,
-    sessions: list[dict[str, object]],
-) -> None:
-    lane_sessions = sorted(
-        sessions,
-        key=lambda s: (_is_stale_lane_session(s), str(_lane_task_id(s) or ""), str(s.get("id") or "")),
-    )
-    stale_sessions = [s for s in lane_sessions if _is_stale_lane_session(s)]
-
-    if stale_sessions:
-        _apply_stale_lane_conflict(result, project_id, lane_sessions, stale_sessions)
-        return
-
-    primary = lane_sessions[0]
-    _set_owner_from_session(result, primary)
-    owner_task = _lane_task_id(primary)
-    result.overlap_kind = _SHARED_CHECKOUT
-    result.disposition = _BLOCK
-    result.conflicting_tasks = [owner_task] if owner_task else []
-    result.issues.append(
-        f"Another active coding session already owns the shared checkout for project {project_id}: {_lane_summary(primary)}"
-    )
-    result.suggestions.append(
-        "Shared-checkout mode does not allow parallel same-project coding sessions. "
-        "Finish, retire, or reconcile the active session before dispatching another task."
-    )
-    return
 
 # -- Session partitioning --
 
@@ -425,7 +286,7 @@ def _partition_sessions(
         lane_id = _lane_task_id(session)
         if lane_id == task_id:
             same_task.append(session)
-        elif lane_id and _task_status(lane_id) not in _FINAL_TASK_STATUSES and _lane_has_checkout_or_scope(session):
+        elif lane_id and _task_status(lane_id) not in _FINAL_TASK_STATUSES:
             other_lanes.append(session)
     return same_task, other_lanes
 
@@ -448,21 +309,8 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
         _apply_same_task_conflict(result, task_id, project_id, same_task_sessions)
 
     if other_lane_sessions:
-        stale_other_lane_sessions = [s for s in other_lane_sessions if _is_stale_lane_session(s)]
-        if stale_other_lane_sessions:
-            _apply_stale_lane_conflict(result, project_id, other_lane_sessions, stale_other_lane_sessions)
-            return result
         target_scope = load_task_scope(task_id)
-        if target_scope is None:
-            _apply_unscoped_conflict(
-                result,
-                _UNSCOPED_TARGET,
-                task_id,
-                project_id,
-                other_lane_sessions,
-                "Target task scope unavailable",
-            )
-        else:
+        if target_scope is not None:
             _apply_scoped_conflict(result, task_id, project_id, other_lane_sessions, target_scope)
 
     return result

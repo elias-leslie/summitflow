@@ -253,7 +253,7 @@ class TestSessionsCommandAliases:
 class TestSessionCommands:
     """Tests for helper behavior in session listing."""
 
-    def test_list_command_hides_unassigned_sessions_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_list_command_shows_unassigned_sessions_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from cli.commands import sessions as sessions_cmd
 
         captured: dict[str, object] = {}
@@ -278,7 +278,8 @@ class TestSessionCommands:
         sessions_cmd.list_sessions(limit=10)
 
         assert captured["payload"] == [
-            {"id": "sess-1", "status": "completed", "agent_slug": "coder"}
+            {"id": "sess-1", "status": "completed", "agent_slug": "coder"},
+            {"id": "sess-2", "status": "active", "agent_slug": None},
         ]
 
     def test_list_command_can_include_unassigned_sessions(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -566,8 +567,8 @@ class TestOwnershipCommand:
             result = runner.invoke(app, ["sessions", "ownership"])
 
         assert result.exit_code == 0
-        assert "OWNERSHIP[1]" in result.output
-        assert "OWN summitflow | task-1 | coder | sess-1 | kind=scoped" in result.output
+        assert "OWNERSHIP[writers=1|readers=0]" in result.output
+        assert "WRITE summitflow | task-1 | coder | sess-1 | kind=scoped" in result.output
         assert "branch=task-1/main" in result.output
         assert "cwd=/tmp/task-1" in result.output
         assert "paths=backend/app/foo.py" in result.output
@@ -600,14 +601,41 @@ class TestOwnershipCommand:
 
         assert result.exit_code == 0
         assert '"total": 1' in result.output
+        assert '"readers": []' in result.output
         assert '"project_id": "agent-hub"' in result.output
         assert '"task_id": "task-2"' in result.output
+
+    def test_ownership_labels_read_only_rows_as_readers(self) -> None:
+        mock_client = MagicMock()
+        mock_client.get.return_value = {
+            "active_owners": [
+                {
+                    "task_id": None,
+                    "session_id": "sess-reader",
+                    "agent_slug": None,
+                    "ownership_kind": "scoped",
+                    "scope_paths": ["backend/app/api/tasks.py"],
+                    "observed_read_paths": ["backend/app/api/tasks.py"],
+                    "observed_write_paths": [],
+                    "declared_scope_paths": [],
+                    "scope_confidence": "observed_read",
+                }
+            ]
+        }
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["sessions", "ownership", "--project", "agent-hub"])
+
+        assert result.exit_code == 0
+        assert "OWNERSHIP[writers=0|readers=1]" in result.output
+        assert "READ agent-hub | - | ? | sess-reader | paths=backend/app/api/tasks.py | scope=observed_read" in result.output
+        assert "WRITE" not in result.output
 
 
 class TestOverlapCommand:
     """Tests for `st sessions overlap`."""
 
-    def test_overlap_lists_exact_write_and_read_overlap_rows(self) -> None:
+    def test_overlap_lists_only_write_overlap_rows(self) -> None:
         mock_client = MagicMock()
         mock_client.get.side_effect = [
             {
@@ -641,6 +669,6 @@ class TestOverlapCommand:
             result = runner.invoke(app, ["sessions", "overlap", "--project", "summitflow"])
 
         assert result.exit_code == 0
-        assert "OVERLAPS[2]" in result.output
+        assert "OVERLAPS[1]" in result.output
         assert "OVR summitflow | block | exact_write | task-1 | task-2 | paths=backend/app/foo.py" in result.output
-        assert "OVR summitflow | warn | read_overlap | task-2 | task-3 | paths=backend/app/bar.py" in result.output
+        assert "warn" not in result.output

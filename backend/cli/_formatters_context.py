@@ -86,7 +86,7 @@ def _format_lane_lines(lane_preflight: dict[str, Any] | None) -> list[str]:
     if not isinstance(lane_preflight, dict):
         return []
     lines: list[str] = []
-    if lane_preflight.get("issues"):
+    if lane_preflight.get("issues") and lane_preflight.get("disposition") != "warn":
         lines.append(_format_lane_conflict(lane_preflight))
     specialist_groups = lane_preflight.get("active_specialists") or []
     if isinstance(specialist_groups, list) and specialist_groups:
@@ -97,7 +97,7 @@ def _format_lane_lines(lane_preflight: dict[str, Any] | None) -> list[str]:
 
 
 def _format_lane_conflict(lane_preflight: dict[str, Any]) -> str:
-    """Build the LANE or LANE_ADVISORY line from lane_preflight issues."""
+    """Build the LANE line from lane_preflight issues."""
     parts: list[str] = []
     disposition = lane_preflight.get("disposition")
     if disposition:
@@ -106,8 +106,7 @@ def _format_lane_conflict(lane_preflight: dict[str, Any]) -> str:
         parts.append(f"kind:{overlap_kind}")
     conflicting_tasks = lane_preflight.get("conflicting_tasks") or []
     if conflicting_tasks:
-        key = "active_tasks" if disposition == "warn" else "tasks"
-        parts.append(f"{key}:{','.join(conflicting_tasks[:3])}")
+        parts.append(f"tasks:{','.join(conflicting_tasks[:3])}")
     if owner_location := lane_preflight.get("owner_location"):
         parts.append(f"owner:{owner_location}")
     overlap_paths = lane_preflight.get("overlap_paths") or []
@@ -115,8 +114,7 @@ def _format_lane_conflict(lane_preflight: dict[str, Any]) -> str:
         parts.append(f"paths:{','.join(overlap_paths[:3])}")
     if lane_preflight.get("shared_plumbing"):
         parts.append("shared:yes")
-    label = "LANE_ADVISORY" if disposition == "warn" else "LANE"
-    return f"{label}:{' | '.join(parts) if parts else 'conflict'}"
+    return f"LANE:{' | '.join(parts) if parts else 'conflict'}"
 
 
 def _visible_sync_skips(task: dict[str, Any]) -> list[str]:

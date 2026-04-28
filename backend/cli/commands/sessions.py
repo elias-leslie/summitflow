@@ -75,7 +75,7 @@ def sessions_callback(
         agent_slug,
         parent_session_id,
         project_id,
-        include_unassigned=False,
+        include_unassigned=True,
     )
 
 
@@ -88,7 +88,7 @@ def list_sessions(
             "--include-unassigned",
             help="Include imported/unassigned sessions without an agent slug",
         ),
-    ] = False,
+    ] = True,
     limit: Annotated[int, typer.Option("--limit")] = 20,
     agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
     parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,

@@ -50,6 +50,8 @@ def _format_lane_line(lane_check: TaskLaneConflictCheck | dict[str, Any] | None)
         return []
     parts: list[str] = []
     disposition = data.get("disposition")
+    if disposition == "warn":
+        return []
     if disposition:
         parts.append(f"disp:{disposition}")
     overlap_kind = data.get("overlap_kind")

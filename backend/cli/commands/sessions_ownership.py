@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.services._ownership_roles import is_read_only_owner
+
 from .._output_state import is_compact
 from ..client import APIError, STClient
 from ..output import handle_api_error, output_json
@@ -50,7 +52,35 @@ def _format_ownership_line(project_id: str, owner: dict[str, object]) -> str:
         parts.append(f"scope={scope_confidence}")
     if owner.get("is_stale"):
         parts.append("stale=yes")
-    return "OWN " + " | ".join(parts)
+    return "WRITE " + " | ".join(parts)
+
+
+def _format_reader_line(project_id: str, owner: dict[str, object]) -> str:
+    paths = owner.get("observed_read_paths") or owner.get("scope_paths")
+    parts = [
+        project_id,
+        str(owner.get("task_id") or "-"),
+        str(owner.get("agent_slug") or "?"),
+        str(owner.get("session_id") or "?"),
+    ]
+    if isinstance(paths, list) and paths:
+        parts.append(f"paths={','.join(str(path) for path in paths[:3])}")
+    if scope_confidence := owner.get("scope_confidence"):
+        parts.append(f"scope={scope_confidence}")
+    return "READ " + " | ".join(parts)
+
+
+def _partition_owner_rows(
+    rows: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    writers: list[dict[str, object]] = []
+    readers: list[dict[str, object]] = []
+    for row in rows:
+        if is_read_only_owner(row):
+            readers.append(row)
+        else:
+            writers.append(row)
+    return writers, readers
 
 
 def render_ownership_list(client: STClient, project_id: str | None) -> None:
@@ -72,10 +102,14 @@ def render_ownership_list(client: STClient, project_id: str | None) -> None:
         )
     )
 
+    writers, readers = _partition_owner_rows(rows)
+
     if not is_compact():
-        output_json({"owners": rows, "total": len(rows)})
+        output_json({"owners": writers, "readers": readers, "total": len(rows)})
         return
 
-    print(f"OWNERSHIP[{len(rows)}]")
-    for row in rows:
+    print(f"OWNERSHIP[writers={len(writers)}|readers={len(readers)}]")
+    for row in writers:
         print(_format_ownership_line(str(row.get("project_id") or "?"), row))
+    for row in readers:
+        print(_format_reader_line(str(row.get("project_id") or "?"), row))

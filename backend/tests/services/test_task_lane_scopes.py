@@ -154,7 +154,7 @@ class TestTaskLaneScopes:
 
     @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
-    def test_unscoped_active_lane_falls_back_to_project_block(
+    def test_unscoped_active_lane_does_not_block_without_write_scope(
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
@@ -171,15 +171,13 @@ class TestTaskLaneScopes:
 
         result = check_task_lane_conflicts("task-123", "summitflow")
 
-        assert result.issues == [
-            "Another active coding session exists in project summitflow but lacks usable file scope: task-999"
-        ]
-        assert result.conflicting_tasks == ["task-999"]
-        assert any("scope unavailable" in suggestion for suggestion in result.suggestions)
+        assert result.issues == []
+        assert result.conflicting_tasks == []
+        assert result.suggestions == []
 
     @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
-    def test_malformed_scope_falls_back_to_project_block(
+    def test_malformed_scope_is_ignored_without_write_overlap(
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
@@ -201,10 +199,8 @@ class TestTaskLaneScopes:
 
         result = check_task_lane_conflicts("task-123", "summitflow")
 
-        assert result.issues == [
-            "Another active coding session exists in project summitflow but lacks usable file scope: task-999"
-        ]
-        assert result.conflicting_tasks == ["task-999"]
+        assert result.issues == []
+        assert result.conflicting_tasks == []
 
     @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
@@ -316,7 +312,7 @@ class TestTaskLaneScopes:
 
     @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
-    def test_live_read_overlap_warns_without_blocking(
+    def test_live_read_only_scope_is_ignored(
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
@@ -353,12 +349,10 @@ class TestTaskLaneScopes:
 
         result = check_task_lane_conflicts("task-123", "summitflow")
 
-        assert result.disposition == "warn"
-        assert result.overlap_kind == "read_overlap"
-        assert result.overlap_paths == ["backend/app/foo.py"]
-        assert result.issues == [
-            "Another active coding session is reading files in the target scope in project summitflow: task-999 (backend/app/foo.py)"
-        ]
+        assert result.disposition == "allow"
+        assert result.overlap_kind is None
+        assert result.overlap_paths == []
+        assert result.issues == []
 
     @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
@@ -384,9 +378,7 @@ class TestTaskLaneScopes:
 
         result = check_task_lane_conflicts("task-123", "summitflow")
 
-        assert result.issues == [
-            "Another active coding session exists in project summitflow but lacks usable file scope: task-123"
-        ]
+        assert result.issues == []
 
     @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")
@@ -412,9 +404,7 @@ class TestTaskLaneScopes:
 
         result = check_task_lane_conflicts("task-123", "summitflow")
 
-        assert result.issues == [
-            "Another active coding session exists in project summitflow but lacks usable file scope: task-123"
-        ]
+        assert result.issues == []
 
     @patch("app.services._lane_scope.get_task_spirit")
     @patch("app.services.task_lane_preflight.task_store.get_task")

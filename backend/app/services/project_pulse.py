@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from app.services._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
+from app.services._ownership_roles import is_read_only_owner
 from app.services._session_classifier import _bucket_sessions, _count_reapable
 from app.services._task_stranding import (
     _extract_ownership_sets,
@@ -50,6 +51,22 @@ def _filter_ownership_by_active_sessions(
     return filtered
 
 
+def _partition_active_ownership(
+    records: Any,
+    active_session_ids: set[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split live ownership rows into write owners and read-only telemetry."""
+    active = _filter_ownership_by_active_sessions(records, active_session_ids)
+    writers: list[dict[str, Any]] = []
+    readers: list[dict[str, Any]] = []
+    for record in active:
+        if is_read_only_owner(record):
+            readers.append(record)
+        else:
+            writers.append(record)
+    return writers, readers
+
+
 async def build_project_pulse(project_id: str) -> dict[str, Any]:
     """Return the canonical live coordination payload for one project."""
     ownership = await _agent_hub_get(f"/api/ownership/projects/{project_id}/live")
@@ -61,19 +78,19 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
     raw_active_specialists = ownership.get("active_specialists", [])
     raw_sessions = sessions_payload.get("sessions", [])
 
-    owner_session_ids, owner_task_ids, specialist_session_ids, specialist_task_ids = (
-        _extract_ownership_sets(raw_active_owners, raw_active_specialists)
+    preliminary_sessions, _, _ = _bucket_sessions(raw_sessions, set(), set())
+    active_session_ids = {str(session.get("id") or "") for session in preliminary_sessions}
+    active_owners, active_readers = _partition_active_ownership(
+        raw_active_owners, active_session_ids
     )
-    active_sessions, stale_sessions, session_linked_task_ids = _bucket_sessions(
-        raw_sessions, owner_session_ids, specialist_session_ids
-    )
-    active_session_ids = {str(session.get("id") or "") for session in active_sessions}
-    active_owners = _filter_ownership_by_active_sessions(raw_active_owners, active_session_ids)
     active_specialists = _filter_ownership_by_active_sessions(
         raw_active_specialists, active_session_ids
     )
-    _, owner_task_ids, _, specialist_task_ids = _extract_ownership_sets(
+    owner_session_ids, owner_task_ids, specialist_session_ids, specialist_task_ids = _extract_ownership_sets(
         active_owners, active_specialists
+    )
+    active_sessions, stale_sessions, session_linked_task_ids = _bucket_sessions(
+        raw_sessions, owner_session_ids, specialist_session_ids
     )
     raw_running_tasks = [
         _normalize_running_task(t)
@@ -89,6 +106,7 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         "summary": {
             "running_tasks": len(running_tasks),
             "active_owners": len(active_owners),
+            "active_readers": len(active_readers),
             "active_specialists": len(active_specialists),
             "active_sessions": len(active_sessions),
             "stale_sessions": len(stale_sessions),
@@ -101,6 +119,7 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         "running_tasks": running_tasks,
         "stranded_tasks": stranded_tasks,
         "active_owners": active_owners,
+        "active_readers": active_readers,
         "active_specialists": active_specialists,
         "active_sessions": active_sessions,
         "stale_sessions": stale_sessions,

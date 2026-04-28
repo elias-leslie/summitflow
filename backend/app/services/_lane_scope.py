@@ -100,12 +100,10 @@ def find_scope_overlap(
     target_scope: TaskScope,
     scoped: list[tuple[str, LaneScope]],
 ) -> tuple[str | None, list[str], str | None]:
-    """Return (overlap_id, overlap_paths, kind) for highest-priority overlap: write > plumbing > read."""
+    """Return (overlap_id, overlap_paths, kind) for write overlap only."""
     target_shared = sorted(
         p for p in target_scope.paths if any(p.startswith(pfx) for pfx in _SHARED_PLUMBING_PREFIXES)
     )
-    read_id: str | None = None
-    read_paths: list[str] = []
 
     for lane_id, scope in scoped:
         write_overlaps = sorted(target_scope.paths & scope.write_paths)
@@ -117,9 +115,5 @@ def find_scope_overlap(
             )
             if active_shared:
                 return lane_id, sorted(set(target_shared) | set(active_shared)), "plumbing"
-        if not read_paths:
-            read_overlaps = sorted(target_scope.paths & scope.read_paths)
-            if read_overlaps:
-                read_id, read_paths = lane_id, read_overlaps
 
-    return (read_id, read_paths, "read") if read_id else (None, [], None)
+    return None, [], None

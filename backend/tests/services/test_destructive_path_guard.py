@@ -89,6 +89,32 @@ def test_evaluate_destructive_paths_uses_observed_scope_without_task_id(tmp_path
     assert decision.conflicts[0].paths == ("docs/plans/vantage-rollout-plan.md",)
 
 
+def test_evaluate_destructive_paths_ignores_read_only_scope(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    decision = evaluate_destructive_paths(
+        repo_root,
+        ["docs/plans/vantage-rollout-plan.md"],
+        [
+            {
+                "id": "sess-reader",
+                "current_branch": "main",
+                "checkout_path": str(repo_root),
+                "observed_read_paths": ["docs/plans/vantage-rollout-plan.md"],
+                "observed_write_paths": [],
+                "scope_confidence": "observed_read",
+            }
+        ],
+        project_id="summitflow",
+        current_session_id="sess-self",
+        current_branch="main",
+    )
+
+    assert decision.blocked is False
+    assert decision.conflicts == ()
+
+
 def test_evaluate_destructive_paths_ignores_foreign_session_in_other_checkout(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     other_root = tmp_path / "other"

@@ -101,7 +101,7 @@ class TestFormatContextTask:
             in output
         )
 
-    def test_formats_warn_lane_as_advisory_overlap(self) -> None:
+    def test_ignores_warn_lane_overlap(self) -> None:
         task = {
             "id": "task-790",
             "status": "pending",
@@ -110,21 +110,15 @@ class TestFormatContextTask:
             "complexity": "STANDARD",
             "title": "Assess adjacent validation lane",
             "lane_preflight": {
-                "issues": ["Another active coding session exists in project summitflow but lacks usable file scope"],
+                "issues": ["Read-only observer is nonblocking"],
                 "disposition": "warn",
-                "overlap_kind": "unscoped_target",
-                "conflicting_tasks": ["task-42f6700b"],
-                "owner_location": "checkout /tmp/lanes/task-42f6700b",
+                "overlap_kind": "read_observer",
             },
         }
 
         output = format_context_task(task)
 
-        assert (
-            "LANE_ADVISORY:disp:warn | kind:unscoped_target | active_tasks:task-42f6700b | "
-            "owner:checkout /tmp/lanes/task-42f6700b"
-            in output
-        )
+        assert "LANE:" not in output
 
     def test_includes_active_specialist_summary_when_present(self) -> None:
         task = {

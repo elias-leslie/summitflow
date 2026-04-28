@@ -441,4 +441,7 @@ def commit_current_revision(
             run_quality_gate=not skip_checks,
         )
         result.update(publish)
+        new_working_copy = run_jj(repo, ["new"])
+        _require_success(new_working_copy, "jj new")
+        result["working_copy"] = "advanced"
     return result

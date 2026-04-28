@@ -9,6 +9,7 @@ from typing import Annotated, Any
 
 import typer
 
+from app.services.task_lane_preflight import check_task_lane_conflicts
 from app.storage.tasks import canonicalize_task_id
 
 from ..client import APIError, STClient
@@ -29,6 +30,18 @@ from .claim_helpers import (
 from .pulse import require_pulse_gate
 
 app = typer.Typer(help="Claim task or subtask to start work")
+
+
+def _require_task_lane_clear(task_id: str, project_id: str | None) -> None:
+    """Block only exact task-lane conflicts, not project-level session presence."""
+    if not project_id:
+        return
+    lane_check = check_task_lane_conflicts(task_id, project_id)
+    if lane_check.disposition != "block":
+        return
+    for issue in lane_check.issues:
+        output_error(issue)
+    raise typer.Exit(2)
 
 
 def _claim_task(
@@ -54,6 +67,7 @@ def _claim_task(
     existing = get_snapshot_info(task_id)
     if existing and not force:
         require_pulse_gate(str(project_id) if project_id else None)
+        _require_task_lane_clear(task_id, str(project_id) if project_id else None)
         require_claim_safe_tree()
         try:
             client.claim_task(task_id)
@@ -63,6 +77,7 @@ def _claim_task(
         return handle_existing_checkpoint(task_id, existing)
 
     require_pulse_gate(str(project_id) if project_id else None)
+    _require_task_lane_clear(task_id, str(project_id) if project_id else None)
     require_claim_safe_tree()
 
     try:

@@ -190,6 +190,78 @@ async def test_build_project_pulse_preserves_session_request_identity_fields() -
 
 
 @pytest.mark.asyncio
+async def test_build_project_pulse_splits_read_only_ownership_from_writers() -> None:
+    fresh = (datetime.now(UTC) - timedelta(seconds=30)).isoformat().replace("+00:00", "Z")
+
+    ownership_payload = {
+        "active_owners": [
+            {
+                "session_id": "sess-reader",
+                "task_id": None,
+                "scope_paths": ["backend/app/api/tasks.py"],
+                "observed_read_paths": ["backend/app/api/tasks.py"],
+                "observed_write_paths": [],
+                "declared_scope_paths": [],
+                "scope_confidence": "observed_read",
+            },
+            {
+                "session_id": "sess-writer",
+                "task_id": "task-owned",
+                "declared_scope_paths": ["backend/app/api/projects.py"],
+                "observed_write_paths": [],
+                "scope_confidence": "declared",
+            },
+        ],
+        "active_specialists": [],
+    }
+    sessions_payload = {
+        "sessions": [
+            {
+                "id": "sess-reader",
+                "status": "active",
+                "session_type": "agent",
+                "updated_at": fresh,
+                "live_activity": {"lifecycle_state": "quiet", "health": "quiet"},
+            },
+            {
+                "id": "sess-writer",
+                "status": "active",
+                "session_type": "agent",
+                "updated_at": fresh,
+                "live_activity": {"lifecycle_state": "active", "health": "active"},
+            },
+        ]
+    }
+
+    with (
+        patch(
+            "app.services.project_pulse._agent_hub_get",
+            new=AsyncMock(side_effect=[ownership_payload, sessions_payload]),
+        ),
+        patch("app.services.project_pulse.list_tasks", return_value=[]),
+        patch(
+            "app.services.project_pulse.build_project_cleanup_status",
+            return_value={
+                "project_id": "agent-hub",
+                "active_checkpoints": 0,
+                "dirty_checkpoints": 0,
+                "needs_cleanup": False,
+            },
+        ),
+    ):
+        from app.services.project_pulse import build_project_pulse
+
+        payload = await build_project_pulse("agent-hub")
+
+    assert payload["summary"]["active_owners"] == 1
+    assert payload["summary"]["active_readers"] == 1
+    assert [owner["session_id"] for owner in payload["active_owners"]] == ["sess-writer"]
+    assert [reader["session_id"] for reader in payload["active_readers"]] == ["sess-reader"]
+    roles = {session["id"]: session["lane_role"] for session in payload["active_sessions"]}
+    assert roles == {"sess-reader": "observer", "sess-writer": "owner"}
+
+
+@pytest.mark.asyncio
 async def test_build_project_pulse_excludes_stranded_tasks_from_running_summary() -> None:
     stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
 
@@ -424,7 +496,7 @@ async def test_build_project_pulse_ignores_owner_not_backed_by_active_session() 
 
     assert payload["summary"]["active_owners"] == 0
     assert payload["summary"]["stale_sessions"] == 1
-    assert payload["stale_sessions"][0]["lane_role"] == "owner"
+    assert payload["stale_sessions"][0]["lane_role"] == "observer"
     assert payload["running_tasks"] == []
     assert [task["id"] for task in payload["stranded_tasks"]] == ["task-owned"]
 

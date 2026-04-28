@@ -69,7 +69,7 @@ FLAGS: --compact/-c (TOON, default) | --no-compact (raw JSON) | --human (pretty 
        Default output: compact TOON format. Use --no-compact for raw JSON.
 
 WORKFLOW: pulse --gate → ready → claim <id> → context <id> → [work] → done <subtask> → done <task>
-          pulse is the lane preflight: it summarizes owners, sessions, dirty trees, checkpoints, jj state, and claim/edit blockers.
+          pulse is the lane preflight: it summarizes writers, readers, dirty trees, checkpoints, jj state, and claim/edit blockers.
           REVIEW lines mean ownerless residue: inspect context/status/logs, then commit/push/prune or leave explicit handoff. Do not auto-clean paused work.
           Alternative: abandon <id> --discard to rollback
 

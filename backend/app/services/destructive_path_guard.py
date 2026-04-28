@@ -110,7 +110,7 @@ def _build_session_conflict(
             session_id=session_id, task_id=task_id, branch=branch, working_dir=working_dir,
             reason="unknown_scope", paths=tuple(sorted(target_path_set)),
         )
-    overlap_paths = tuple(sorted(target_path_set & (scope.write_paths | scope.read_paths)))
+    overlap_paths = tuple(sorted(target_path_set & scope.write_paths))
     if not overlap_paths:
         return None
     return GuardConflict(

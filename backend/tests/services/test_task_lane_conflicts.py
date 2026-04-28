@@ -57,7 +57,7 @@ class TestTaskLaneConflicts:
         assert result.owner_location == "sess-1 in checkout /tmp/lanes/task-123 on task-123/main"
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
-    def test_other_task_active_lane_blocks_parallel_dispatch(
+    def test_other_task_active_lane_without_target_scope_does_not_block(
         self,
         mock_get_task: MagicMock,
         mock_httpx_client: MagicMock,
@@ -78,14 +78,12 @@ class TestTaskLaneConflicts:
 
         result = check_task_lane_conflicts("task-123", "summitflow")
 
-        assert result.issues
-        assert result.overlap_kind == "unscoped_target"
-        assert result.conflicting_tasks == ["task-999"]
-        assert result.owner_location == "sess-2 in checkout /home/testuser/summitflow on task-999/main"
-        assert "Target task scope unavailable" in result.suggestions[-1]
+        assert result.issues == []
+        assert result.conflicting_tasks == []
+        assert result.owner_location is None
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
-    def test_branch_named_lane_blocks_when_external_id_missing(
+    def test_branch_named_lane_without_target_scope_does_not_block(
         self,
         mock_get_task: MagicMock,
         mock_httpx_client: MagicMock,
@@ -106,10 +104,9 @@ class TestTaskLaneConflicts:
 
         result = check_task_lane_conflicts("task-123", "summitflow")
 
-        assert result.issues
-        assert result.overlap_kind == "unscoped_target"
-        assert result.conflicting_tasks == ["task-999"]
-        assert result.owner_location == "sess-4 in checkout /tmp/lanes/task-999 on task-999/main"
+        assert result.issues == []
+        assert result.conflicting_tasks == []
+        assert result.owner_location is None
 
     def test_retired_workstream_does_not_block_dispatch(
         self,
@@ -220,7 +217,7 @@ class TestTaskLaneConflicts:
         assert "Reconcile or retire the leftover same-task session" in result.suggestions[0]
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
-    def test_other_task_stale_lane_updates_project_guidance(
+    def test_other_task_stale_lane_does_not_block_without_write_overlap(
         self,
         mock_get_task: MagicMock,
         mock_httpx_client: MagicMock,
@@ -243,7 +240,5 @@ class TestTaskLaneConflicts:
 
         result = check_task_lane_conflicts("task-123", "summitflow")
 
-        assert result.overlap_kind == "stale_lane"
-        assert "likely stale active coding session" in result.issues[0]
-        assert result.conflicting_tasks == ["task-999"]
-        assert "retire or reconcile it" in result.suggestions[1]
+        assert result.issues == []
+        assert result.conflicting_tasks == []
