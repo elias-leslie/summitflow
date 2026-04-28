@@ -180,7 +180,7 @@ def merge_and_cleanup_task_checkpoint(
         logger.info("Merged %s into %s", task_branch, base_branch, extra={"task_id": task_id})
         return _finalize_task_status(
             task_id,
-            _finalize_merge(task_id, project_root, project_id, task_branch, base_branch),
+            _complete_merge_cleanup(task_id, project_root, project_id, task_branch, base_branch),
             complete_task=complete_task,
         )
 
@@ -234,7 +234,7 @@ def _build_merge_failure_result(
     }
 
 
-def _finalize_merge(
+def _complete_merge_cleanup(
     task_id: str, project_root: str, project_id: str, task_branch: str, base_branch: str
 ) -> MergeResult:
     """Validate and publish mainline state before cleanup removes task residue."""
