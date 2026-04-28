@@ -22,6 +22,7 @@ def test_jj_help_lists_agent_workflows() -> None:
 
     assert result.exit_code == 0
     assert "Agents call st jj or st commit" in result.stdout
+    assert "init" in result.stdout
     assert "op-restore" in result.stdout
     assert "revert" in result.stdout
 
@@ -56,6 +57,71 @@ def test_display_branch_uses_parent_bookmark_for_detached_empty_working_copy(
     ]
 
     assert jj_lib.display_branch(tmp_path, "HEAD") == "main"
+
+
+@patch("cli.lib.jj.latest_operation_id", return_value="op")
+@patch("cli.lib.jj.status_summary")
+@patch("cli.lib.jj.run_jj")
+@patch("cli.lib.jj.run_git")
+def test_init_colocated_requires_clean_git_repo(
+    mock_git: MagicMock,
+    mock_run_jj: MagicMock,
+    mock_summary: MagicMock,
+    _mock_op: MagicMock,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    mock_git.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="created", stderr="")
+    mock_summary.return_value = JJRepoStatus(
+        repo="repo",
+        path=str(tmp_path),
+        branch="main",
+        colocated=True,
+        state="clean",
+        described=False,
+        conflicted=False,
+        unpublished=0,
+        change_id="chg",
+        commit_id="commit",
+    )
+
+    result = jj_lib.init_colocated(tmp_path)
+
+    assert result["status"] == "SUCCESS"
+    mock_git.assert_called_once_with(tmp_path, ["status", "--short"])
+    mock_run_jj.assert_called_once_with(tmp_path, ["git", "init", "--colocate", "."])
+
+
+@patch("cli.lib.jj.run_git")
+def test_init_colocated_rejects_dirty_repo(mock_git: MagicMock, tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    mock_git.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout=" M file.py\n", stderr="")
+
+    with pytest.raises(jj_lib.JJError, match="dirty repository"):
+        jj_lib.init_colocated(tmp_path)
+
+
+@patch("cli.commands.jj.init_colocated")
+@patch("cli.commands.jj.current_git_repo")
+def test_init_command_uses_canonical_colocation_helper(
+    mock_repo: MagicMock,
+    mock_init: MagicMock,
+) -> None:
+    mock_repo.return_value = Path("/repo")
+    mock_init.return_value = {
+        "repo": "repo",
+        "path": "/repo",
+        "status": "SUCCESS",
+        "state": "clean",
+    }
+
+    result = runner.invoke(jj.app, ["init"], obj=OutputContext(compact=True))
+
+    assert result.exit_code == 0
+    mock_init.assert_called_once_with(Path("/repo"))
+    assert "JJINIT[1]" in result.stdout
+    assert "SUCCESS:repo:state=clean" in result.stdout
 
 
 @patch("cli.commands.jj.status_summary")

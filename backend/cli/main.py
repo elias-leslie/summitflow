@@ -133,7 +133,7 @@ DESIGN:
 TEST: test list [--type T] | import --framework pytest|vitest
 
 VCS: commit -m "message" [--push/--no-push] [--task task-id]  # high-level st-owned VCS flow
-     jj status | jj log | jj diff | jj show | jj sync | jj new -m X | jj describe -m X | jj push --task T | jj undo | jj op-log | jj op-restore OP | jj recover | jj abandon | jj restore | jj conflicts | jj revert REV
+     jj init [-R repo|--all] | jj status | jj log | jj diff | jj show | jj sync | jj new -m X | jj describe -m X | jj push --task T | jj undo | jj op-log | jj op-restore OP | jj recover | jj abandon | jj restore | jj conflicts | jj revert REV
      git status | git sync | git finalize-task <task-id> | git resolve-conflict <task-id>  # git inspection/residue repair only
 
 REFACTOR: refactor regenerate [--json]

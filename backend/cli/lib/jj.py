@@ -153,6 +153,41 @@ def _require_success(result: subprocess.CompletedProcess[str], action: str) -> N
     raise JJError(f"{action} failed: {detail}")
 
 
+def init_colocated(repo: Path) -> dict[str, Any]:
+    """Initialize jj colocation for an existing clean Git repository."""
+    if is_colocated(repo):
+        return {
+            "repo": repo.name,
+            "path": str(repo),
+            "status": "SKIP",
+            "reason": "already_colocated",
+        }
+    if not (repo / ".git").exists():
+        raise JJError(f"{repo} is not a git repository")
+    if (repo / ".jj").exists():
+        raise JJError(f"{repo} has .jj but is not colocated")
+
+    status = run_git(repo, ["status", "--short"])
+    _require_success(status, "git status")
+    if status.stdout.strip():
+        raise JJError(f"refusing to initialize jj in dirty repository {repo}")
+
+    result = run_jj(repo, ["git", "init", "--colocate", "."])
+    _require_success(result, "jj git init --colocate")
+    summary = status_summary(repo)
+    return {
+        "repo": repo.name,
+        "path": str(repo),
+        "status": "SUCCESS",
+        "state": summary.state,
+        "change_id": summary.change_id,
+        "commit_id": summary.commit_id,
+        "operation_id": latest_operation_id(repo),
+        "stdout": result.stdout.strip(),
+        "stderr": result.stderr.strip(),
+    }
+
+
 def revision_info(repo: Path, revision: str = "@") -> JJRevisionInfo:
     result = run_jj(repo, ["log", "--no-graph", "-r", revision, "-T", CURRENT_REV_TEMPLATE])
     _require_success(result, f"jj revision {revision}")

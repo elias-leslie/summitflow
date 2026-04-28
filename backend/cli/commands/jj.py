@@ -16,6 +16,7 @@ from ..lib.jj import (
     current_git_repo,
     delete_task_bookmark,
     format_status_line,
+    init_colocated,
     is_colocated,
     publish_current_revision,
     run_jj,
@@ -34,6 +35,7 @@ Principles:
 
 Common workflows:
   st jj status
+  st jj init --repo /path/to/repo
   st jj new -m "start task"
   st jj describe -m "better description"
   st commit -m "fix: concise result" --push --task task-abc
@@ -76,6 +78,33 @@ def _run_or_exit(repo: Path, args: list[str]):
         output_error(str(exc))
         raise typer.Exit(1) from None
     _echo_result(result)
+
+
+@app.command()
+def init(
+    ctx: typer.Context,
+    repo: Annotated[Path | None, typer.Option("--repo", "-R", help="Repository path.")] = None,
+    all_repos: Annotated[bool, typer.Option("--all", help="Initialize every managed repo missing jj colocation.")] = False,
+) -> None:
+    """Initialize jj colocation for clean Git repositories."""
+    if repo and all_repos:
+        output_error("choose either --repo or --all")
+        raise typer.Exit(2)
+    repos = _get_managed_repos() if all_repos else [_repo_or_current(repo)]
+    results = []
+    try:
+        for path in repos:
+            results.append(init_colocated(path))
+    except JJError as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
+    if ctx.obj.is_compact:
+        print(f"JJINIT[{len(results)}]")
+        for item in results:
+            detail = item.get("reason") or f"state={item.get('state', '-')}"
+            print(f"{item['status']}:{item['repo']}:{detail}")
+        return
+    output_json({"repos": results})
 
 
 @app.command()
