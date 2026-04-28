@@ -15,7 +15,7 @@ from app.utils._git_branches import assess_orphan_task_branches
 from app.utils.git_helpers import build_repo_workspace_summary
 
 from ..config import get_config_optional
-from ..lib.checkpoint import get_active_checkpoints, get_stale_checkpoints
+from ..lib.checkpoint import get_active_checkpoints, get_stale_checkpoints, remove_snapshot
 from ..lib.checkpoint_branches import resolve_task_branch
 from ..lib.confirm_token import confirm_gate
 from ..lib.quick_snapshots import find_snapshot_residue
@@ -87,6 +87,21 @@ def _checkpoint_branch_name(checkpoint: Any) -> str:
     task_id = str(checkpoint.task_id)
     project_id = str(checkpoint.project_id)
     return resolve_task_branch(task_id, project_id=project_id)
+
+
+def _cleanup_stale_checkpoint_metadata(project_id: str | None, dry_run: bool) -> int:
+    """Prune checkpoint metadata whose branch has already gone away."""
+    stale = get_stale_checkpoints(project_id)
+    if dry_run:
+        return len(stale)
+    for checkpoint in stale:
+        remove_snapshot(checkpoint.task_id, project_id=checkpoint.project_id)
+    return len(stale)
+
+
+def _print_stale_checkpoint_report(count: int, dry_run: bool) -> None:
+    verb = "Would prune" if dry_run else "Pruned"
+    typer.echo(f"  {verb} stale checkpoint metadata: {count}")
 
 
 @app.callback()
@@ -316,6 +331,7 @@ def cleanup_checkpoints(
     """
     project_id = get_project_id(all_projects)
     checkpoints = get_active_checkpoints(project_id)
+    stale_metadata = _cleanup_stale_checkpoint_metadata(project_id, dry_run) if auto and not force else 0
 
     if not checkpoints:
         counts = cleanup_safe_git_residue(_iter_target_repos(all_projects), dry_run) if auto else (0, 0, 0, 0)
@@ -323,6 +339,7 @@ def cleanup_checkpoints(
             typer.echo(_DRY_RUN_MSG)
         output_success("No checkpoint residue found")
         if auto:
+            _print_stale_checkpoint_report(stale_metadata, dry_run)
             print_git_residue_report(*counts)
         return
 
@@ -341,6 +358,7 @@ def cleanup_checkpoints(
         if dry_run:
             typer.echo(_DRY_RUN_MSG)
         run_checkpoint_cleanup(categorization.safe_to_delete, force=False, dry_run=dry_run, repos=repos)
+        _print_stale_checkpoint_report(stale_metadata, dry_run)
         return
 
     # --force requires two-pass confirmation

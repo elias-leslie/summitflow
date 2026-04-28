@@ -376,7 +376,7 @@ def delete_task_bookmark(
     delete_result = run_jj(repo, ["bookmark", "delete", resolved_bookmark])
     _require_success(delete_result, "jj bookmark delete")
 
-    push_args = ["git", "push", "--remote", remote, "--deleted"]
+    push_args = ["git", "push", "--remote", remote, "--bookmark", resolved_bookmark, "--deleted"]
     if dry_run:
         push_args.append("--dry-run")
     push_result = run_jj(repo, push_args)

@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
+from cli.commands import cleanup as cleanup_cmd
 from cli.commands.checkpoints import app
 from cli.commands.checkpoints_cleanup import auto_cleanup_safe_items
 from cli.lib.checkpoint import get_active_checkpoints, get_stale_checkpoints
@@ -114,6 +115,22 @@ def test_checkpoints_command_omits_and_cleans_stale_metadata(repo_with_checkpoin
     assert result.exit_code == 0
     assert "task-live" in result.output
     assert "task-stale" not in result.output
+    assert not stale_meta.exists()
+
+
+def test_cleanup_checkpoints_auto_deletes_stale_metadata_when_no_active(
+    repo_with_checkpoints: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = Path(os.environ["HOME"])
+    stale_meta = _write_checkpoint(home, "summitflow", "task-stale")
+    monkeypatch.setattr(cleanup_cmd, "get_project_id", lambda all_projects: "summitflow")
+    monkeypatch.setattr(cleanup_cmd, "_iter_target_repos", lambda all_projects: [repo_with_checkpoints])
+
+    result = runner.invoke(cleanup_cmd.app, ["checkpoints", "--auto"])
+
+    assert result.exit_code == 0
+    assert "Pruned stale checkpoint metadata: 1" in result.output
     assert not stale_meta.exists()
 
 
