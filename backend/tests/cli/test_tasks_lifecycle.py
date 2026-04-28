@@ -23,6 +23,33 @@ class TestPauseTaskCommand:
         assert rendered["status"] == "paused"
         assert rendered["pause_reason"] == "Waiting on review"
 
+    def test_pause_task_cleans_safe_residue(self) -> None:
+        from cli.commands.tasks_lifecycle import pause_task_command
+
+        client = MagicMock()
+        client.pause_task.return_value = {
+            "id": "task-123",
+            "project_id": "summitflow",
+            "status": "paused",
+        }
+        checkpoint = MagicMock(task_id="task-123")
+        from cli.commands.cleanup_analysis import CleanupAction
+
+        analysis = MagicMock()
+        analysis.action = CleanupAction.ALREADY_MERGED
+
+        with (
+            patch("cli.commands.tasks_lifecycle.STClient", return_value=client),
+            patch("cli.commands.tasks_lifecycle.output_task"),
+            patch("cli.commands.tasks_lifecycle.output_success") as mock_success,
+            patch("cli.lib.checkpoint.get_active_checkpoints", return_value=[checkpoint]),
+            patch("cli.commands.cleanup_analysis.analyze_checkpoint", return_value=analysis),
+            patch("cli.commands.cleanup_analysis.cleanup_checkpoint", return_value=(True, "Removed")),
+        ):
+            pause_task_command("task-123", "")
+
+        mock_success.assert_called_once_with("checkpoint_cleaned")
+
 
 class TestResumeTaskCommand:
     def test_resume_task_updates_status_to_pending_with_reason(self) -> None:

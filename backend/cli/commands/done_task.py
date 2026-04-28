@@ -276,36 +276,16 @@ def _finalize_missing_snapshot_residue(
 
     project_id = _task_project_id(task)
     base_branch = _task_base_branch(task)
-    stashed = _handle_dirty_main(strict=False)
-    try:
-        output_warning(
-            f"Checkpoint metadata missing for {task_id} — using residue finalize path. "
-            "Diff gate will not run in this recovery mode."
-        )
-        result = client.finalize_task_merge(task_id)
-        result_status = str(result.get("status") or "")
-        if result_status not in {"merged", "skipped"}:
-            detail = str(result.get("reason") or result.get("error") or result_status or "unknown")
-            output_error(f"Residue finalize failed for {task_id}: {detail}")
-            raise typer.Exit(1)
+    output_success(f"No checkpoint residue for {task_id}; task already {status}.")
+    if status == "completed":
         _publish_completed_work(task_id, project_id)
-        output_success(
-            f"Recovered closeout via residue finalize: status={result_status} "
-            f"base={result.get('base_branch') or base_branch}"
-        )
-        return _done_result(
-            task_id,
-            merged=result_status == "merged",
-            snapshot_removed=True,
-            base_branch=str(result.get("base_branch") or base_branch),
-            project_id=project_id,
-        )
-    except APIError as e:
-        output_error(f"Residue finalize failed for {task_id}: {e.detail}")
-        raise typer.Exit(1) from None
-    finally:
-        if stashed:
-            git_stash_pop()
+    return _done_result(
+        task_id,
+        merged=False,
+        snapshot_removed=True,
+        base_branch=base_branch,
+        project_id=project_id,
+    )
 
 
 def _load_snapshot_info(

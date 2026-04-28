@@ -7,6 +7,24 @@ from ..context import require_task_id
 from ..output import handle_api_error, output_success, output_task
 
 
+def _cleanup_safe_pause_residue(task_id: str, project_id: str | None) -> str | None:
+    """Remove already-merged checkpoint residue after pausing a task."""
+    if not project_id:
+        return None
+    from ..lib.checkpoint import get_active_checkpoints
+    from .cleanup_analysis import CleanupAction, analyze_checkpoint, cleanup_checkpoint
+
+    for checkpoint in get_active_checkpoints(project_id):
+        if checkpoint.task_id != task_id:
+            continue
+        analysis = analyze_checkpoint(checkpoint)
+        if analysis.action not in {CleanupAction.SAFE_DELETE, CleanupAction.ALREADY_MERGED}:
+            return f"checkpoint_kept:{analysis.action.value}"
+        cleaned, message = cleanup_checkpoint(analysis, force=False)
+        return "checkpoint_cleaned" if cleaned else f"checkpoint_kept:{message}"
+    return None
+
+
 def cancel_task_command(
     task_id: str | None,
     reason: str,
@@ -49,9 +67,12 @@ def pause_task_command(
         handle_api_error(e)
         return
 
+    cleanup_result = _cleanup_safe_pause_residue(task_id, task.get("project_id"))
     if reason:
         task["pause_reason"] = reason
     output_task(task)
+    if cleanup_result:
+        output_success(cleanup_result)
 
 
 def resume_task_command(

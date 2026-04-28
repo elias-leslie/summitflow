@@ -9,15 +9,11 @@ from cli.commands.done_lifecycle import _reconstruct_snapshot_info
 from cli.commands.done_task import complete_task
 
 
-def test_complete_task_missing_checkpoint_completed_task_uses_finalize_and_publish() -> None:
+def test_complete_task_missing_checkpoint_completed_task_is_idempotent_and_publishes() -> None:
     client = MagicMock()
     client.get_task.return_value = {
         "status": "completed",
         "project_id": "summitflow",
-        "base_branch": "main",
-    }
-    client.finalize_task_merge.return_value = {
-        "status": "merged",
         "base_branch": "main",
     }
 
@@ -29,36 +25,28 @@ def test_complete_task_missing_checkpoint_completed_task_uses_finalize_and_publi
     ):
         result = complete_task(client, "task-123")
 
-    client.finalize_task_merge.assert_called_once_with("task-123")
     mock_publish.assert_called_once_with("task-123", "summitflow")
-    assert result["merged"] is True
+    assert result["merged"] is False
     assert result["snapshot_removed"] is True
 
 
-def test_complete_task_missing_checkpoint_failed_task_finalize_failure_exits() -> None:
+def test_complete_task_missing_checkpoint_failed_task_is_idempotent() -> None:
     client = MagicMock()
     client.get_task.return_value = {
         "status": "failed",
         "project_id": "summitflow",
         "base_branch": "main",
     }
-    client.finalize_task_merge.return_value = {
-        "status": "failed",
-        "reason": "merge_conflict",
-    }
 
     with (
         patch("cli.commands.done_task.get_snapshot_info", return_value=None),
         patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None),
         patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-        patch("cli.commands.done_task.output_error") as mock_output,
-        pytest.raises(Exit) as exc_info,
     ):
-        complete_task(client, "task-456")
+        result = complete_task(client, "task-456")
 
-    assert exc_info.value.exit_code == 1
-    client.finalize_task_merge.assert_called_once_with("task-456")
-    assert "Residue finalize failed" in mock_output.call_args.args[0]
+    assert result["merged"] is False
+    assert result["snapshot_removed"] is True
 
 
 def test_complete_task_missing_checkpoint_pending_task_exits_with_guidance() -> None:
@@ -78,7 +66,6 @@ def test_complete_task_missing_checkpoint_pending_task_exits_with_guidance() -> 
         complete_task(client, "task-789")
 
     assert exc_info.value.exit_code == 1
-    client.finalize_task_merge.assert_not_called()
     assert "active task" in mock_output.call_args.args[0]
 
 

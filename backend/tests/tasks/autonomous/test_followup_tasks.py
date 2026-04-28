@@ -470,6 +470,18 @@ class TestCreateFollowupTaskForFailures:
             lambda task_id, level, message, **kwargs: logs.append((task_id, level, message)),
         )
 
+        def followup_count() -> int:
+            with get_connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM tasks WHERE project_id = %s AND title LIKE %s",
+                    (test_project_id, "Follow-up: stuck subtasks from %"),
+                )
+                row = cur.fetchone()
+                assert row is not None
+                return int(row[0])
+
+        before_count = followup_count()
+
         result = create_followup_task_for_failures(
             bad_parent_id,
             test_project_id,
@@ -485,15 +497,7 @@ class TestCreateFollowupTaskForFailures:
             )
         ]
 
-        with get_connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT COUNT(*) FROM tasks WHERE project_id = %s AND title LIKE %s",
-                (test_project_id, "Follow-up: stuck subtasks from %"),
-            )
-            row = cur.fetchone()
-            assert row is not None
-            count = row[0]
-        assert count == 0
+        assert followup_count() == before_count
 
     def test_reuse_only_updates_description_field(
         self,

@@ -40,7 +40,6 @@ from .git_helpers.endpoints import (
     execute_project_publish,
     find_repo_for_sha,
     handle_dismiss_conflict,
-    handle_finalize_task_merge,
     handle_resolve_conflict,
     handle_revert_snapshot,
 )
@@ -226,15 +225,6 @@ async def retry_merge(task_id: str) -> dict[str, object]:
 async def resolve_conflict(task_id: str) -> dict[str, object]:
     """Reopen a residue task and dispatch execution to resolve its merge conflict."""
     return await handle_resolve_conflict(task_id)
-
-
-@router.post("/git/tasks/{task_id}/finalize", tags=["git"])
-async def finalize_task_merge(task_id: str) -> dict[str, object]:
-    """Finalize merge/cleanup for a residue task checkpoint that is no longer actively executing."""
-    task = task_store.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return cast(dict[str, object], handle_finalize_task_merge(task_id, task))
 
 
 @router.post("/git/tasks/{task_id}/dismiss-conflict", tags=["git"])

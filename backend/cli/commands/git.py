@@ -77,18 +77,6 @@ def sync(
         output_json({"results": results, "total": len(results)})
 
 
-@app.command("finalize-task")
-def finalize_task(task_id: str) -> None:
-    """Finalize merge/cleanup for a completed or conflicted residue task checkpoint."""
-    client = STClient(require_project=False)
-    try:
-        result = client.finalize_task_merge(task_id)
-    except APIError as e:
-        output_error(f"Failed to finalize task merge: {e.detail}")
-        raise typer.Exit(1) from None
-    output_json(result)
-
-
 @app.command("resolve-conflict")
 def resolve_conflict(task_id: str) -> None:
     """Reopen a residue task for conflict-resolution autocode in its shared task checkout."""

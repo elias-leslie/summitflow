@@ -14,7 +14,6 @@ from fastapi import HTTPException
 from ...logging_config import get_logger
 from ...storage import tasks as task_store
 from ...storage.tasks.update import update_task_fields
-from ...tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_checkpoint
 from ...tasks.autonomous.cleanup.merge_types import MergeResult
 from ...utils.git_helpers import (
     enrich_branch_cleanup_details,
@@ -395,37 +394,6 @@ async def handle_resolve_conflict(task_id: str) -> dict[str, object]:
         return _resolve_conflict_response(task_id, project_id, checkout, files, "already_claimed")
     await execute_wf.aio_run_no_wait(TaskInput(task_id=task_id, project_id=project_id))
     return _resolve_conflict_response(task_id, project_id, checkout, files, "dispatched_for_conflict_resolution")
-
-
-def handle_finalize_task_merge(task_id: str, task: dict[str, Any]) -> MergeResult:
-    """Validate status and execute finalize merge/cleanup for a residue task."""
-    from ...storage.subtasks import get_subtasks_for_task
-
-    status = str(task.get("status") or "")
-    if status in {"running", "pending"}:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Task is still active ({status}); use the normal execution/done path instead",
-        )
-    if status not in {"completed", "failed", "paused"}:
-        raise HTTPException(status_code=400, detail=f"Task status {status!r} is not eligible for finalize")
-    # Block terminal finalize on failed subtasks. Paused finalize only clears residue
-    # after an operator-reviewed slice merge and leaves the parent task paused.
-    subtasks = get_subtasks_for_task(task_id)
-    failed = [s for s in subtasks if s.get("passes") is False]
-    if status != "paused" and failed:
-        failed_ids = [s.get("subtask_id", "?") for s in failed]
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot finalize: {len(failed)} subtask(s) failed ({', '.join(failed_ids)}). Fix or skip them first.",
-        )
-    if status == "failed":
-        update_task_fields(task_id, conflict_info=None)
-    return merge_and_cleanup_task_checkpoint(
-        task_id,
-        task["project_id"],
-        complete_task=status != "paused",
-    )
 
 
 # --- Collection helpers ---
