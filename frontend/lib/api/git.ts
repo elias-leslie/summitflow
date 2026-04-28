@@ -148,7 +148,7 @@ export async function pullRepository(
   )
 }
 
-export interface SmartSyncResponse {
+export interface ProjectPublishResponse {
   success: boolean
   status: string
   gates: string
@@ -159,14 +159,14 @@ export interface SmartSyncResponse {
   raw_output: string
 }
 
-export async function smartSyncProject(
+export async function publishProjectChanges(
   projectId: string,
-): Promise<SmartSyncResponse> {
-  return fetchWithErrorHandling<SmartSyncResponse>(
-    `${getApiBaseUrl()}/api/projects/${projectId}/git/smart-sync`,
+): Promise<ProjectPublishResponse> {
+  return fetchWithErrorHandling<ProjectPublishResponse>(
+    `${getApiBaseUrl()}/api/projects/${projectId}/git/publish`,
     {
       method: 'POST',
-      errorMessage: 'Failed to smart sync project',
+      errorMessage: 'Failed to publish project changes',
     },
   )
 }

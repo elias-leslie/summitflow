@@ -29,7 +29,7 @@ def test_build_partial_completion_verification_surfaces_commit_failure_detail() 
     failed = [
         _failed_subtask_result(
             "commit_failed",
-            "commit helper failed: st git commit --json --current --msg 'autocode(task-1): complete subtask 1.2' --task task-1 --push; stderr: changed_only_types failed for backend/app/foo.py",
+            "commit helper failed: st commit --message 'autocode(task-1): complete subtask 1.2' --task task-1 --push; stderr: changed_only_types failed for backend/app/foo.py",
         )
     ]
 
@@ -37,7 +37,7 @@ def test_build_partial_completion_verification_surfaces_commit_failure_detail() 
 
     reason = verification["failed_details"][0]["failure_reason"]
     assert "commit_failed" in reason
-    assert "st git commit" in reason
+    assert "st commit" in reason
     assert "changed_only_types failed for backend/app/foo.py" in reason
 
 

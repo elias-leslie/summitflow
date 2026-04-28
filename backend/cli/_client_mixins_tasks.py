@@ -124,11 +124,6 @@ class _TaskWorkflowMixin(_MixinBase):
             self._client, self._global_url, self._handle_response, task_id,
         )
 
-    def smart_sync_project(self, project_id: str) -> dict[str, Any]:
-        return tasks_ops.smart_sync_project(
-            self._client, self._global_url, self._handle_response, project_id,
-        )
-
 
 class TaskOperationsMixin(_TaskCrudMixin, _TaskWorkflowMixin):
     """Mixin providing task-related operations."""

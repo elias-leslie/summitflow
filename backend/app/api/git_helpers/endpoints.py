@@ -47,12 +47,12 @@ from .db_helpers import (
 _logger = get_logger(__name__)
 
 
-def _smart_sync_env() -> tuple[list[str], dict[str, str] | None]:
-    """Return (command prefix, env) for the st git commit smart-sync invocation."""
+def _project_publish_env() -> tuple[list[str], dict[str, str] | None]:
+    """Return (command prefix, env) for the st commit project publish invocation."""
     host_root = os.environ.get("BACKUP_HOST_ROOT")
     st_path = shutil.which("st") or str(get_repo_root() / "backend" / ".venv" / "bin" / "st")
     if not host_root:
-        return [st_path, "git", "commit"], None
+        return [st_path, "--no-compact", "commit"], None
 
     env = os.environ.copy()
     env["HOME"] = host_root
@@ -62,11 +62,11 @@ def _smart_sync_env() -> tuple[list[str], dict[str, str] | None]:
     env["GIT_SSH_COMMAND"] = (
         f"ssh -i {ssh_dir}/id_ed25519 -o UserKnownHostsFile={ssh_dir}/known_hosts"
     )
-    return ["st", "git", "commit"], env
+    return ["st", "--no-compact", "commit"], env
 
 
-def _parse_smart_sync_output(output: str, stderr_text: str, returncode: int) -> dict[str, Any]:
-    """Parse st git commit JSON output into a normalized response dict."""
+def _parse_project_publish_output(output: str, stderr_text: str, returncode: int) -> dict[str, Any]:
+    """Parse st commit JSON output into a normalized response dict."""
     try:
         data = json.loads(output)
     except json.JSONDecodeError:
@@ -81,7 +81,7 @@ def _parse_smart_sync_output(output: str, stderr_text: str, returncode: int) -> 
             "pushed": False,
             "raw_output": output + stderr_text,
         }
-    repo_data = data.get("repos", [{}])[0] if data.get("repos") else {}
+    repo_data = data.get("repos", [{}])[0] if data.get("repos") else data
     detail = str(repo_data.get("detail", "") or stderr_text or "")
     error_text = detail or str(repo_data.get("reason", "") or "")
     return {
@@ -100,20 +100,20 @@ def _parse_smart_sync_output(output: str, stderr_text: str, returncode: int) -> 
     }
 
 
-async def execute_smart_sync(project_root: Path) -> dict[str, Any]:
-    """Execute smart sync operation using st git commit."""
+async def execute_project_publish(project_root: Path) -> dict[str, Any]:
+    """Publish project work using st commit."""
     import asyncio
     from asyncio import subprocess as aio_subprocess
 
-    command_prefix, env = _smart_sync_env()
+    command_prefix, env = _project_publish_env()
     try:
         proc = await asyncio.create_subprocess_exec(
-            *command_prefix, "--json", "--push", "--task", "smart-sync",
+            *command_prefix, "--push", "--task", "project-publish", "--message", "publish project work",
             cwd=project_root, env=env,
             stdout=aio_subprocess.PIPE, stderr=aio_subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
-        return _parse_smart_sync_output(stdout.decode(), stderr.decode(), proc.returncode or 0)
+        return _parse_project_publish_output(stdout.decode(), stderr.decode(), proc.returncode or 0)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 

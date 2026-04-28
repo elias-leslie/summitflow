@@ -8,7 +8,7 @@ Canonical surface:
 - `st service` replaces service lifecycle wrappers.
 - `st check` replaces quality-check wrappers.
 - `st db` replaces database wrappers.
-- `st git commit` replaces commit wrappers.
+- `st commit` replaces commit wrappers.
 - `st browser` replaces browser wrappers.
 - `st web` replaces web research wrappers.
 - `st backup` replaces backup and restore wrappers.

@@ -18,7 +18,7 @@ from ..output import output_success
 from .done_subtask import complete_subtask
 from .done_task import complete_task
 from .done_validators import is_subtask_id
-from .hygiene import require_closeout_hygiene_gate, require_hygiene_gate
+from .pulse import require_pulse_gate
 
 app = typer.Typer(help="Complete task or subtask work")
 
@@ -55,7 +55,7 @@ def _handle_task_completion(
     """Handle task completion."""
     task = client.get_task(id)
     project_id = str(task.get("project_id") or "") or None
-    require_closeout_hygiene_gate(project_id=project_id, task_id=id)
+    require_pulse_gate(project_id, allow_task_id=id)
     result = complete_task(client, id, message, strict=strict, admin=admin, skip_diff_gate=skip_diff_gate)
     if result.get("merged"):
         base_branch = result.get("base_branch", "main")
@@ -63,7 +63,7 @@ def _handle_task_completion(
         typer.echo(f"  Merged to: {base_branch}")
     else:
         output_success(f"Task {id} completed without checkpoint merge.")
-    require_hygiene_gate(project_id=str(result.get("project_id") or project_id or "") or None)
+    require_pulse_gate(str(result.get("project_id") or project_id or "") or None, allow_task_id=id)
     typer.echo(FEEDBACK_CLOSEOUT_HINT, err=True)
 
 

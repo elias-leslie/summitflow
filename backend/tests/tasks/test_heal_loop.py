@@ -512,8 +512,8 @@ class TestWorkProductDetection:
         mock_smart_commit_result.return_value = {
             "success": False,
             "detail": (
-                "commit helper failed: st git commit --json --current "
-                "--msg 'autocode(task-1): complete subtask 1.1' --task task-1 --push; "
+                "commit helper failed: st commit "
+                "--message 'autocode(task-1): complete subtask 1.1' --task task-1 --push; "
                 "stderr: changed_only_types failed for backend/app/foo.py"
             ),
         }
@@ -521,7 +521,7 @@ class TestWorkProductDetection:
         result = ensure_committed_work_product("task-1", "1.1", "/tmp/test-checkout", "agent-hub")
 
         assert result is not None
-        assert "st git commit" in result
+        assert "st commit" in result
         assert "--task task-1" in result
         assert "changed_only_types failed for backend/app/foo.py" in result
 

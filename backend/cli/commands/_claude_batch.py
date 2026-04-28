@@ -64,8 +64,8 @@ def commit_and_done_task(spec: WorkerDispatch, *, fetch_task_fn: _FetchFn, fatal
     """Commit/push the task checkout, then run canonical closeout."""
     fetch_task_fn(spec.task_id)
     commit_result = subprocess.run(
-        [*_COMMIT_COMMAND, "--current", "--push", "--task", spec.task_id,
-         "--msg", f"claude(batch): complete {spec.task_id}"],
+        [*_COMMIT_COMMAND, "--push", "--task", spec.task_id,
+         "--message", f"claude(batch): complete {spec.task_id}"],
         cwd=spec.project_root, check=False,
     )
     if commit_result.returncode != 0:

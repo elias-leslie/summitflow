@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import typer
@@ -143,7 +144,7 @@ def _warn_on_publish_failure(result: subprocess.CompletedProcess[str]) -> None:
     try:
         payload = json.loads(stdout) if stdout else {}
     except json.JSONDecodeError:
-        detail = stderr or stdout[:200] or "unknown st git commit output"
+        detail = stderr or stdout[:200] or "unknown st commit output"
         output_warning(f"Task merged but publish status was unreadable: {detail}")
         return
     repo_result = payload.get("repos", [{}])[0] if payload.get("repos") else {}
@@ -154,6 +155,31 @@ def _warn_on_publish_failure(result: subprocess.CompletedProcess[str]) -> None:
         return
     detail = detail_text or reason or stderr or stdout[:200] or "unknown publish failure"
     output_warning(f"Task merged but publish did not complete cleanly: {status} ({detail})")
+
+
+def _cleanup_completed_bookmark(st_path: str, project_root: str, task_id: str) -> None:
+    if not (Path(project_root) / ".jj").is_dir():
+        return
+    command = [
+        st_path,
+        "jj",
+        "push",
+        "--delete-bookmark",
+        "--task",
+        task_id,
+        "--repo",
+        project_root,
+    ]
+    try:
+        result = subprocess.run(
+            command, cwd=project_root, capture_output=True, text=True, check=False, timeout=300
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        output_warning(f"Task merged but bookmark cleanup failed to start: {exc}")
+        return
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "unknown bookmark cleanup failure"
+        output_warning(f"Task merged but bookmark cleanup failed: {detail[:200]}")
 
 
 def _publish_completed_work(task_id: str, project_id: str | None) -> None:
@@ -169,7 +195,7 @@ def _publish_completed_work(task_id: str, project_id: str | None) -> None:
         output_warning(f"Task merged but publish skipped: unknown project root for {project_id}")
         return
     st_path = shutil.which("st") or str(get_repo_root() / "backend" / ".venv" / "bin" / "st")
-    command = [st_path, "git", "commit", "--current", "--push", "--task", task_id, "--json"]
+    command = [st_path, "--no-compact", "commit", "--push", "--task", task_id, "--message", f"complete {task_id}"]
     try:
         result = subprocess.run(
             command, cwd=project_root, capture_output=True, text=True, check=False, timeout=600
@@ -178,6 +204,8 @@ def _publish_completed_work(task_id: str, project_id: str | None) -> None:
         output_warning(f"Task merged but publish failed to start: {exc}")
         return
     _warn_on_publish_failure(result)
+    if result.returncode == 0:
+        _cleanup_completed_bookmark(st_path, project_root, task_id)
 
 
 def _perform_completion(

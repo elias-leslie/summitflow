@@ -233,7 +233,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """CLI entrypoint for shell callers such as st git commit."""
+    """CLI entrypoint for shell callers such as st commit."""
     args = _parse_args(argv)
     repo_root = args.repo_root.resolve()
     try:

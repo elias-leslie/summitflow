@@ -10,25 +10,25 @@ import {
   GitBranch,
   Loader2,
   Scissors,
-  Sparkles,
   Unplug,
+  Upload,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { getStateInfo } from '@/app/(app)/git/utils'
-import { type RepoStatus, smartSyncProject } from '@/lib/api'
+import { publishProjectChanges, type RepoStatus } from '@/lib/api'
 import { DashboardContent } from './project-row/DashboardContent'
-import { SyncResultBlock } from './project-row/SyncResultBlock'
+import { PublishResultBlock } from './project-row/PublishResultBlock'
 
 interface ProjectRowProps {
   repo: RepoStatus
 }
 
-const SYNC_RESULT_AUTO_DISMISS_MS = 12000
+const PUBLISH_RESULT_AUTO_DISMISS_MS = 12000
 
 export function ProjectRow({ repo }: ProjectRowProps) {
   const [expanded, setExpanded] = useState(false)
-  const [syncResult, setSyncResult] = useState<Awaited<
-    ReturnType<typeof smartSyncProject>
+  const [publishResult, setPublishResult] = useState<Awaited<
+    ReturnType<typeof publishProjectChanges>
   > | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const stateInfo = getStateInfo(repo.state)
@@ -40,31 +40,31 @@ export function ProjectRow({ repo }: ProjectRowProps) {
     (workspaceSummary?.dirty_checkpoints ?? 0) +
     (workspaceSummary?.dirty_main_repo ? 1 : 0)
 
-  const syncMutation = useMutation({
-    mutationFn: () => smartSyncProject(repoKey),
+  const publishMutation = useMutation({
+    mutationFn: () => publishProjectChanges(repoKey),
     onMutate: () => {
-      setSyncResult(null)
+      setPublishResult(null)
     },
     onSuccess: (result) => {
-      setSyncResult(result)
+      setPublishResult(result)
       queryClient.invalidateQueries({ queryKey: ['git-status'] })
       queryClient.invalidateQueries({
         queryKey: ['project-dashboard', repoKey],
       })
     },
     onError: () => {
-      setSyncResult(null)
+      setPublishResult(null)
     },
   })
 
   useEffect(() => {
-    if (!syncResult) return undefined
+    if (!publishResult) return undefined
     const id = window.setTimeout(
-      () => setSyncResult(null),
-      SYNC_RESULT_AUTO_DISMISS_MS,
+      () => setPublishResult(null),
+      PUBLISH_RESULT_AUTO_DISMISS_MS,
     )
     return () => window.clearTimeout(id)
-  }, [syncResult])
+  }, [publishResult])
 
   const wsBadges: Array<{
     icon: typeof GitBranch
@@ -199,35 +199,35 @@ export function ProjectRow({ repo }: ProjectRowProps) {
             </span>
           )}
 
-          {/* Sync button — stops propagation so it doesn't toggle expand */}
+          {/* Publish button — stops propagation so it doesn't toggle expand */}
           <button
             type="button"
-            disabled={syncMutation.isPending}
+            disabled={publishMutation.isPending}
             onClick={(e) => {
               e.stopPropagation()
-              syncMutation.mutate()
+              publishMutation.mutate()
             }}
             className={clsx(
               'flex items-center gap-1 px-2.5 py-1 rounded-md text-2xs font-medium transition-all',
-              syncMutation.isPending
+              publishMutation.isPending
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                 : 'bg-outrun-500/12 text-outrun-400 border border-outrun-500/20 hover:bg-outrun-500/20 hover:border-outrun-500/40',
             )}
           >
-            {syncMutation.isPending ? (
+            {publishMutation.isPending ? (
               <Loader2 className="w-3 h-3 animate-spin" />
             ) : (
-              <Sparkles className="w-3 h-3" />
+              <Upload className="w-3 h-3" />
             )}
-            {syncMutation.isPending ? 'Syncing' : 'Sync'}
+            {publishMutation.isPending ? 'Publishing' : 'Publish'}
           </button>
         </div>
       </div>
 
-      {/* Sync result */}
-      {syncResult && (
+      {/* Publish result */}
+      {publishResult && (
         <div className="px-4 pb-2.5">
-          <SyncResultBlock result={syncResult} />
+          <PublishResultBlock result={publishResult} />
         </div>
       )}
 

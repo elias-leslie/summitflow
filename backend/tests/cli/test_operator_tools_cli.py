@@ -190,8 +190,8 @@ def test_git_help_explains_managed_workflow() -> None:
     result = runner.invoke(main_app, ["git", "--help"])
 
     assert result.exit_code == 0
-    assert "Use st git commit" in result.output
-    assert "st done" in result.output
+    assert "Use st commit" in result.output
+    assert "st jj" in result.output
 
 
 def test_browser_host_requires_configured_target(monkeypatch) -> None:

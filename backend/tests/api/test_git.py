@@ -426,18 +426,18 @@ class TestPREndpoints:
         assert "not found" in response.json()["detail"].lower()
 
 
-class TestSmartSyncParsing:
-    """Tests for smart-sync output parsing."""
+class TestProjectPublishParsing:
+    """Tests for project publish output parsing."""
 
-    def test_parse_smart_sync_output_prefers_detail_for_errors(self) -> None:
-        from app.api.git_helpers.endpoints import _parse_smart_sync_output
+    def test_parse_project_publish_output_prefers_detail_for_errors(self) -> None:
+        from app.api.git_helpers.endpoints import _parse_project_publish_output
 
         payload = (
             '{"status":"FAILED","repos":[{"status":"ERROR","reason":"push_failed",'
             '"detail":"remote rejected the push","message":"Publish change","pushed":false}]}'
         )
 
-        result = _parse_smart_sync_output(payload, "", 1)
+        result = _parse_project_publish_output(payload, "", 1)
 
         assert result["success"] is False
         assert result["reason"] == "push_failed"
@@ -445,19 +445,19 @@ class TestSmartSyncParsing:
         assert result["errors"] == ["remote rejected the push"]
         assert result["message"] == "Publish change"
 
-    def test_parse_smart_sync_output_uses_stderr_when_json_missing_detail(self) -> None:
-        from app.api.git_helpers.endpoints import _parse_smart_sync_output
+    def test_parse_project_publish_output_uses_stderr_when_json_missing_detail(self) -> None:
+        from app.api.git_helpers.endpoints import _parse_project_publish_output
 
         payload = '{"status":"FAILED","repos":[{"status":"ERROR","reason":"push_failed","pushed":false}]}'
 
-        result = _parse_smart_sync_output(payload, "ssh: connect to host github.com timed out", 1)
+        result = _parse_project_publish_output(payload, "ssh: connect to host github.com timed out", 1)
 
         assert result["detail"] == "ssh: connect to host github.com timed out"
         assert result["errors"] == ["ssh: connect to host github.com timed out"]
         assert result["raw_output"].endswith("ssh: connect to host github.com timed out")
 
-    def test_parse_smart_sync_output_preserves_workflow_metadata(self) -> None:
-        from app.api.git_helpers.endpoints import _parse_smart_sync_output
+    def test_parse_project_publish_output_preserves_workflow_metadata(self) -> None:
+        from app.api.git_helpers.endpoints import _parse_project_publish_output
 
         payload = (
             '{"status":"SUCCESS","repos":[{"status":"SUCCESS","message":"Publish change",'
@@ -466,7 +466,7 @@ class TestSmartSyncParsing:
             '"workflow_runs":[{"workflow":"CI","state":"success","ref":"main","number":107,"url":"https://example.invalid/ci"}]}]}'
         )
 
-        result = _parse_smart_sync_output(payload, "", 0)
+        result = _parse_project_publish_output(payload, "", 0)
 
         assert result["success"] is True
         assert result["workflow_summary"] == "CI=success@main#107 | release=success@v0.2.1#2"

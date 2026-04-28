@@ -199,7 +199,7 @@ def _git_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | N
     if subcommand == "commit":
         return CommandGuardDecision(
             blocked=True, code="git_commit_redirect",
-            message="BLOCKED:git commit:Use 'st git commit --push --msg \"...\"' instead of raw git commit.",
+            message="BLOCKED:git commit:Use 'st commit --push --message \"...\"' instead of raw git commit.",
             source="git", command=segment_text,
         )
     if subcommand == "checkout":

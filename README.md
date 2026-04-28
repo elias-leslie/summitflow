@@ -194,7 +194,7 @@ curl -X POST http://localhost:8001/api/projects \
 - `st service` - build, migrate, restart, and inspect services
 - `st check` - quality gates and named tool checks
 - `st db` - database inspection and migrations
-- `st git commit` - managed multi-repo commit/push workflow
+- `st commit` - managed repo commit/push workflow
 - `st backup` - source backups, restores, schedules, and pending drain
 - `st browser` - browser health, screenshots, DOM eval, and page checks
 - `st web` - Agent Hub-backed web search/research/fetch

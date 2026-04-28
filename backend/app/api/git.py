@@ -37,7 +37,7 @@ from .git_helpers.endpoints import (
     build_task_diff_response,
     collect_recent_commits,
     collect_snapshots,
-    execute_smart_sync,
+    execute_project_publish,
     find_repo_for_sha,
     handle_dismiss_conflict,
     handle_finalize_task_merge,
@@ -192,10 +192,10 @@ async def fetch_project_repository(project_id: str) -> GitSyncResponse:
     return GitSyncResponse(results=[result], **build_sync_response_from_result(result))
 
 
-@router.post("/projects/{project_id}/git/smart-sync", tags=["git"])
-async def smart_sync_project(project_id: str) -> dict[str, object]:
-    """Smart Sync: Check gates -> AI Commit -> Pull -> Push."""
-    return await execute_smart_sync(get_project_root_with_fallback(project_id))
+@router.post("/projects/{project_id}/git/publish", tags=["git"])
+async def publish_project_changes(project_id: str) -> dict[str, object]:
+    """Run st commit for a project and publish if checks pass."""
+    return await execute_project_publish(get_project_root_with_fallback(project_id))
 
 
 # --- Conflict Endpoints ---

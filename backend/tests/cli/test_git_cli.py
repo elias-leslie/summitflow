@@ -112,40 +112,6 @@ class TestGitSync:
         assert "skipped" in result.stdout.lower() or "uncommitted" in result.stdout.lower()
 
 
-class TestGitCommit:
-    """Tests for st git commit command."""
-
-    @patch("cli.commands.git._commit_repo")
-    @patch("cli.commands.git._target_repos")
-    def test_commit_runs_native_managed_commit_workflow(
-        self,
-        mock_target_repos: MagicMock,
-        mock_commit_repo: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        mock_target_repos.return_value = [tmp_path]
-        mock_commit_repo.return_value = {
-            "repo": "repo",
-            "path": str(tmp_path),
-            "status": "SUCCESS",
-            "sha": "abc1234",
-            "pushed": True,
-        }
-        result = runner.invoke(
-            app,
-            ["commit", "--current", "--push", "--task", "task-1", "--msg", "test"],
-            obj=OutputContext(compact=True),
-        )
-
-        assert result.exit_code == 0
-        mock_target_repos.assert_called_once_with(False)
-        mock_commit_repo.assert_called_once()
-        opts = mock_commit_repo.call_args.args[1]
-        assert opts.task == "task-1"
-        assert opts.msg == "test"
-        assert "COMMIT[1]" in result.stdout
-
-
 class TestFinalizeTask:
     """Tests for st git finalize-task."""
 
@@ -179,25 +145,6 @@ class TestResolveConflict:
         assert result.exit_code == 0
         mock_client.resolve_task_conflict.assert_called_once_with("task-1")
         assert '"status": "dispatched_for_conflict_resolution"' in result.stdout
-
-
-class TestSmartSync:
-    """Tests for st git smart-sync."""
-
-    @patch("cli.commands.git.STClient")
-    def test_smart_sync_calls_client(self, mock_client_cls: MagicMock) -> None:
-        mock_client = MagicMock()
-        mock_client.smart_sync_project.return_value = {
-            "status": "success",
-            "project_id": "agent-hub",
-        }
-        mock_client_cls.return_value = mock_client
-
-        result = runner.invoke(app, ["smart-sync", "agent-hub"], obj=OutputContext(compact=False))
-
-        assert result.exit_code == 0
-        mock_client.smart_sync_project.assert_called_once_with("agent-hub")
-        assert '"status": "success"' in result.stdout
 
 
 class TestFormatCompactRepo:

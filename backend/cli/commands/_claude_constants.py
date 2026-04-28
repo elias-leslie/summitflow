@@ -17,7 +17,7 @@ _BACKEND_SUBDIR = "backend"
 _TASK_STATUS_RUNNING = "running"
 _WORKER_SUBAGENT_NAME = "task-worker"
 _WORKER_SUBAGENT_MODEL = "sonnet"
-_COMMIT_COMMAND = ("st", "git", "commit")
+_COMMIT_COMMAND = ("st", "commit")
 _TASK_BRANCH_PREFIX = "TASK_BRANCH:"
 _ORCHESTRATE_TMPDIR_PREFIX = "st-claude-orchestrate-"
 _ORCHESTRATOR_PROMPT_FNAME = "orchestrator_prompt.md"
@@ -36,7 +36,7 @@ _WORKER_SUBAGENT_PAYLOAD: dict[str, Any] = {
             "project checkout and only on files required for that task. Preserve behavior unless "
             "the task explicitly changes it. Run task-appropriate verification and `st check --quick "
             "--changed-only` before reporting success. If everything passes, run "
-            '`st git commit --current --push --task <task-id> --msg "..."` from the assigned '
+            '`st commit --push --task <task-id> --message "..."` from the assigned '
             "project root. Do not run `st done`; report back to the orchestrator."
         ),
         "tools": ["Read", "Edit", "MultiEdit", "Write", "Bash", "Glob", "Grep", "LS"],

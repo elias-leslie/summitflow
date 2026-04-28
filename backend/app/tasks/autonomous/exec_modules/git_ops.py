@@ -37,7 +37,7 @@ def _run_git(project_path: str, *args: str, timeout: int = 30) -> subprocess.Com
     )
 
 def _resolve_commit_script(project_path: str) -> str | None:
-    """Resolve the canonical st command for git commit workflow."""
+    """Resolve the canonical st commit command."""
     candidates: list[str] = []
     path_candidate = shutil.which("st")
     if path_candidate:
@@ -101,7 +101,7 @@ def publish_existing_commits(project_path: str) -> bool:
 
     try:
         result = subprocess.run(
-            [commit_sh, "git", "commit", "--json", "--current", "--push"],
+            [commit_sh, "commit", "--push", "--message", "publish existing work"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -131,19 +131,19 @@ def _build_smart_commit_args(
     push: bool,
     skip_checks: bool,
 ) -> list[str] | None:
-    """Build the canonical st git commit argv for the checkout."""
+    """Build the canonical st commit argv for the checkout."""
     commit_sh = _resolve_commit_script(project_path)
     if not commit_sh:
         return None
 
-    args = [commit_sh, "git", "commit", "--json", "--current", "--msg", message]
+    args = [commit_sh, "commit", "--message", message]
     if task_id:
         args.extend(["--task", task_id])
     if push:
         args.append("--push")
     else:
         args.append("--no-push")
-    if skip_checks:
+    if skip_checks and not push:
         args.append("--skip-checks")
     return args
 

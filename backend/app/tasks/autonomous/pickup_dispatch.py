@@ -13,22 +13,22 @@ from app.storage.tasks.claims import claim_task
 logger = get_logger(__name__)
 
 
-def _execution_hygiene_ok(task_id: str, project_id: str) -> bool:
+def _execution_preflight_ok(task_id: str, project_id: str) -> bool:
     """Return whether a project is clean enough for autonomous execution."""
     try:
-        from cli.commands.hygiene import build_hygiene_report
+        from cli.commands.pulse import fetch_pulse_payload, preflight_reasons_for_payload
     except Exception as exc:
-        logger.warning("Autonomous hygiene gate unavailable", task_id=task_id, project_id=project_id, error=str(exc))
+        logger.warning("Autonomous pulse gate unavailable", task_id=task_id, project_id=project_id, error=str(exc))
         return False
 
-    report = build_hygiene_report(project_id=project_id, fix=True)
-    if report.get("ok"):
+    reasons = preflight_reasons_for_payload(fetch_pulse_payload(project_id))
+    if not reasons:
         return True
     logger.info(
-        "Autonomous execution blocked by git hygiene",
+        "Autonomous execution blocked by pulse gate",
         task_id=task_id,
         project_id=project_id,
-        issues=report.get("issues", [])[:8],
+        reasons=reasons[:8],
     )
     return False
 
@@ -125,7 +125,7 @@ def dispatch_to_execution(
     Returns:
         True if dispatched, False if already claimed
     """
-    if not _execution_hygiene_ok(task_id, project_id):
+    if not _execution_preflight_ok(task_id, project_id):
         return False
 
     worker_id = f"{worker_id_prefix}-{project_id}"

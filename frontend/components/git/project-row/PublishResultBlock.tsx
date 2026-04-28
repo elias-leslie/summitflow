@@ -3,12 +3,12 @@
 import clsx from 'clsx'
 import { CheckCircle2, ChevronDown, ChevronRight, XCircle } from 'lucide-react'
 import { useState } from 'react'
-import type { smartSyncProject } from '@/lib/api'
+import type { publishProjectChanges } from '@/lib/api'
 
-type SyncResult =
-  ReturnType<typeof smartSyncProject> extends Promise<infer T> ? T : never
+type PublishResult =
+  ReturnType<typeof publishProjectChanges> extends Promise<infer T> ? T : never
 
-export function SyncResultBlock({ result }: { result: SyncResult }) {
+export function PublishResultBlock({ result }: { result: PublishResult }) {
   const [showLog, setShowLog] = useState(false)
 
   return (

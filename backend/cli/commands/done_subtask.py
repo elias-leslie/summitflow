@@ -86,7 +86,7 @@ def _validate_working_tree_clean() -> None:
     """Ensure working tree has no uncommitted changes."""
     if not is_working_tree_clean():
         output_error(
-            "Working tree has uncommitted changes.\nCommit first: git commit -m 'message'"
+            "Working tree has uncommitted changes.\nCommit first: st commit --message 'message'"
         )
         raise typer.Exit(1)
 

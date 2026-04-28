@@ -50,7 +50,7 @@ def test_st_check_commands_are_allowed(tmp_path: Path) -> None:
     ("command", "expected"),
     [
         ("rebuild.sh summitflow", "st service"),
-        ("commit.sh --current", "st git commit"),
+        ("commit.sh --current", "st commit"),
         ("dt pytest backend/tests/", "st check"),
         ("db tables", "st db"),
         ("sf-browser health", "st browser"),
@@ -87,7 +87,7 @@ def test_blocks_raw_git_commit(tmp_path: Path) -> None:
 
     assert decision.blocked is True
     assert decision.code == "git_commit_redirect"
-    assert "st git commit --push" in (decision.message or "")
+    assert "st commit --push" in (decision.message or "")
 
 
 def test_blocks_nested_shell_git_reset(tmp_path: Path) -> None:

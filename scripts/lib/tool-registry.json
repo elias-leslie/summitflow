@@ -34,13 +34,13 @@
       "verify": ["st db tables"]
     },
     {
-      "id": "git",
-      "canonical": "st git",
+      "id": "vcs",
+      "canonical": "st commit / st jj / st git",
       "replaces": ["commit.sh"],
-      "summary": "Managed repository status, sync, task finalization, and commit workflow.",
+      "summary": "Version-control workflow: st commit and st jj for normal work; st git only for inspection and residue repair.",
       "safety": "mutating",
-      "commands": ["status", "sync", "finalize-task", "commit"],
-      "examples": ["st git status", "st git sync"],
+      "commands": ["commit", "jj", "git status", "git sync", "git finalize-task", "git resolve-conflict"],
+      "examples": ["st commit --message \"describe work\" --push", "st jj status", "st git status"],
       "verify": ["st git status"]
     },
     {
@@ -264,7 +264,7 @@
     },
     {
       "pattern": "commit\\.sh\\b",
-      "message": "Use 'st git commit' instead of legacy commit.sh.",
+      "message": "Use 'st commit' instead of legacy commit.sh.",
       "component_id": "sf.git"
     },
     {

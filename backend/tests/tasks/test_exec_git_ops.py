@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 @patch("app.tasks.autonomous.exec_modules.git_ops.get_repo_root")
 @patch("app.tasks.autonomous.exec_modules.git_ops._run_git")
 @patch("app.tasks.autonomous.exec_modules.git_ops.subprocess.run")
-def test_smart_commit_uses_canonical_st_git_commit_with_push_and_skip_checks(
+def test_smart_commit_uses_canonical_st_commit_with_push(
     mock_run: MagicMock,
     mock_git: MagicMock,
     mock_get_repo_root: MagicMock,
@@ -47,16 +47,12 @@ def test_smart_commit_uses_canonical_st_git_commit_with_push_and_skip_checks(
     mock_run.assert_called_once_with(
         [
             "/tmp/checkout/backend/.venv/bin/st",
-            "git",
             "commit",
-            "--json",
-            "--current",
-            "--msg",
+            "--message",
             "fix: preserve work",
             "--task",
             "task-1",
             "--push",
-            "--skip-checks",
         ],
         cwd="/tmp/checkout",
         capture_output=True,
@@ -103,7 +99,7 @@ def test_smart_commit_result_surfaces_command_and_stderr_on_failure(
 
     assert not result["success"]
     assert result["returncode"] == 1
-    assert result["command"][:3] == ["/tmp/checkout/backend/.venv/bin/st", "git", "commit"]
+    assert result["command"][:2] == ["/tmp/checkout/backend/.venv/bin/st", "commit"]
     assert "--task task-1" in result["detail"]
     assert "changed_only_types failed for backend/app/foo.py" in result["detail"]
     assert "checks:FAIL" in result["detail"]
@@ -131,7 +127,7 @@ def test_publish_existing_commits_pushes_clean_ahead_branch(
 
     assert result
     mock_run.assert_called_once_with(
-        ["/tmp/checkout/backend/.venv/bin/st", "git", "commit", "--json", "--current", "--push"],
+        ["/tmp/checkout/backend/.venv/bin/st", "commit", "--push", "--message", "publish existing work"],
         cwd="/tmp/checkout",
         capture_output=True,
         text=True,

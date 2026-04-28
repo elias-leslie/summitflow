@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
+from cli.lib.jj import JJRepoStatus
 from cli.main import app
 
 runner = CliRunner()
@@ -178,6 +179,54 @@ def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
     assert "PULSE:agent-hub|tasks=0|owners=0|specialists=0|sessions=0|stale=1|reapable=1|checkpoints=1|dirty=1|cleanup=yes|stranded=1" in result.output
     assert "REVIEW:agent-hub|ownerless=yes|dirty=1|checkpoints=1|stranded=1|" in result.output
     assert "STRANDED task-3 | running | no_owner_session | Refactor tool handlers" in result.output
+
+
+def test_pulse_compact_reports_jj_state_without_checkpoint_preflight_block() -> None:
+    mock_client = MagicMock()
+    mock_client.get.return_value = {
+        "project_id": "monkey-fight",
+        "summary": {
+            "running_tasks": 0,
+            "active_owners": 0,
+            "active_specialists": 0,
+            "active_sessions": 0,
+            "stale_sessions": 0,
+            "reapable_sessions": 0,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {
+            "active_checkpoints": 1,
+            "dirty_checkpoints": 0,
+            "needs_cleanup": True,
+        },
+        "running_tasks": [],
+        "active_owners": [],
+        "active_sessions": [],
+        "stale_sessions": [],
+        "stranded_tasks": [],
+    }
+    jj_status = JJRepoStatus(
+        repo="monkey-fight",
+        path="/srv/workspaces/projects/monkey-fight",
+        branch="main",
+        colocated=True,
+        state="described",
+        described=True,
+        conflicted=False,
+        unpublished=1,
+        change_id="chg",
+        commit_id="commit",
+    )
+
+    with (
+        patch("cli.commands.pulse.STClient", return_value=mock_client),
+        patch("cli.commands.pulse._jj_status_for_project", return_value=jj_status),
+    ):
+        result = runner.invoke(app, ["pulse", "--project", "monkey-fight"])
+
+    assert result.exit_code == 0
+    assert "JJSTATE:monkey-fight|state=described|described=true|conflicts=false|unpublished=1|change=chg|commit=commit" in result.output
+    assert "PREFLIGHT:monkey-fight|claim=blocked|edit=blocked|reasons=jj_unpublished|source=st-pulse" in result.output
 
 
 def test_pulse_compact_counts_dirty_main_repo_without_checkpoints() -> None:
@@ -426,3 +475,127 @@ def test_pulse_compact_surfaces_clear_lane_preflight() -> None:
 
     assert result.exit_code == 0
     assert "PREFLIGHT:sha|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
+
+
+def test_pulse_gate_exits_nonzero_when_blocked() -> None:
+    mock_client = MagicMock()
+    mock_client.get.return_value = {
+        "project_id": "summitflow",
+        "summary": {
+            "running_tasks": 0,
+            "active_owners": 1,
+            "active_specialists": 0,
+            "active_sessions": 1,
+            "stale_sessions": 0,
+            "reapable_sessions": 0,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {"active_checkpoints": 0, "dirty_checkpoints": 0, "needs_cleanup": False},
+        "running_tasks": [],
+        "active_owners": [{"task_id": "task-2", "session_id": "sess-2"}],
+        "active_sessions": [{"id": "sess-2"}],
+        "stale_sessions": [],
+        "stranded_tasks": [],
+    }
+
+    with patch("cli.commands.pulse.STClient", return_value=mock_client):
+        result = runner.invoke(app, ["pulse", "--project", "summitflow", "--gate"])
+
+    assert result.exit_code == 2
+    assert "PREFLIGHT:summitflow|claim=blocked|edit=blocked|reasons=owners,sessions" in result.output
+
+
+def test_require_pulse_gate_allows_current_task_owner() -> None:
+    from cli.commands import pulse
+
+    payload = {
+        "project_id": "summitflow",
+        "summary": {
+            "running_tasks": 1,
+            "active_owners": 1,
+            "active_specialists": 0,
+            "active_sessions": 1,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {"active_checkpoints": 0, "dirty_checkpoints": 0, "needs_cleanup": False},
+        "running_tasks": [{"id": "task-1"}],
+        "active_owners": [{"task_id": "task-1", "session_id": "sess-1"}],
+        "active_specialists": [],
+        "active_sessions": [{"id": "sess-1"}],
+        "stranded_tasks": [],
+    }
+
+    with patch.object(pulse, "fetch_pulse_payload", return_value=payload):
+        pulse.require_pulse_gate("summitflow", allow_task_id="task-1")
+
+
+def test_require_pulse_gate_allows_current_task_checkpoint() -> None:
+    from cli.commands import pulse
+
+    payload = {
+        "project_id": "summitflow",
+        "summary": {
+            "running_tasks": 0,
+            "active_owners": 0,
+            "active_specialists": 0,
+            "active_sessions": 0,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {
+            "active_checkpoints": 1,
+            "dirty_checkpoints": 0,
+            "needs_cleanup": True,
+            "checkpoint_task_ids": ["task-1"],
+        },
+        "running_tasks": [],
+        "active_owners": [],
+        "active_specialists": [],
+        "active_sessions": [],
+        "stranded_tasks": [],
+    }
+
+    with patch.object(pulse, "fetch_pulse_payload", return_value=payload):
+        pulse.require_pulse_gate("summitflow", allow_task_id="task-1")
+
+
+def test_claim_task_runs_pulse_gate_before_checkpoint_creation() -> None:
+    from cli.commands import claim
+
+    client = MagicMock()
+    client.get_task.return_value = {"id": "task-1", "status": "pending", "project_id": "summitflow"}
+    with (
+        patch.object(claim, "get_snapshot_info", return_value=None),
+        patch.object(claim, "require_pulse_gate") as mock_gate,
+        patch.object(claim, "require_claim_safe_tree") as mock_safe,
+        patch.object(claim, "create_task_snapshot") as mock_snapshot,
+    ):
+        mock_snapshot.return_value = MagicMock(base_branch="main")
+        result = claim._claim_task(client, "task-1")
+
+    mock_gate.assert_called_once_with("summitflow")
+    mock_safe.assert_called_once()
+    assert result["action"] == "claimed"
+
+
+def test_done_task_runs_pulse_gate_before_completion() -> None:
+    from cli.commands import done
+
+    events: list[str] = []
+    client = MagicMock()
+    client.get_task.return_value = {"id": "task-1", "project_id": "summitflow"}
+
+    with (
+        patch.object(done, "require_pulse_gate", side_effect=lambda *_args, **_kwargs: events.append("gate")) as mock_gate,
+        patch.object(
+            done,
+            "complete_task",
+            side_effect=lambda *_args, **_kwargs: events.append("complete")
+            or {"project_id": "summitflow", "merged": False},
+        ) as mock_complete,
+    ):
+        done._handle_task_completion(client, "task-1", None, strict=False, admin=False)
+
+    assert events == ["gate", "complete", "gate"]
+    assert mock_gate.call_args_list[0].args == ("summitflow",)
+    assert mock_gate.call_args_list[0].kwargs == {"allow_task_id": "task-1"}
+    mock_complete.assert_called_once()

@@ -9,7 +9,8 @@ import typer
 from .._observability import refresh_agent_observability
 from .._output_state import is_compact
 from ..client import APIError, STClient
-from ..output import handle_api_error, output_json
+from ..lib.jj import JJRepoStatus
+from ..output import handle_api_error, output_error, output_json
 
 app = typer.Typer(help="Cross-agent coordination pulse")
 
@@ -166,13 +167,39 @@ def _format_ownerless_review(project_id: Any, summary: dict[str, Any], cleanup: 
     )
 
 
-def _preflight_reasons(summary: dict[str, Any], cleanup: dict[str, Any]) -> list[str]:
+def _jj_status_for_project(project_id: Any) -> JJRepoStatus | None:
+    try:
+        from ..lib.jj import status_summary
+        from .cleanup import _iter_target_repos
+
+        repos = _iter_target_repos(False, str(project_id))
+        repo = next((path for path in repos if path.name == str(project_id)), None)
+        if repo is None or not (repo / ".jj").is_dir():
+            return None
+        return status_summary(repo)
+    except Exception:
+        return None
+
+
+def _format_jj_state(project_id: Any, status: JJRepoStatus) -> str:
+    return (
+        f"JJSTATE:{project_id}|state={status.state}|described={str(status.described).lower()}|"
+        f"conflicts={str(status.conflicted).lower()}|unpublished={status.unpublished}|"
+        f"change={status.change_id}|commit={status.commit_id}"
+    )
+
+
+def _preflight_reasons(
+    summary: dict[str, Any],
+    cleanup: dict[str, Any],
+    jj_status: JJRepoStatus | None = None,
+) -> list[str]:
     reasons: list[str] = []
     if _truthy_count(summary.get("active_owners")):
         reasons.append("owners")
     if _truthy_count(summary.get("active_sessions")):
         reasons.append("sessions")
-    if _truthy_count(cleanup.get("active_checkpoints")):
+    if _truthy_count(cleanup.get("active_checkpoints")) and not (jj_status and jj_status.colocated):
         reasons.append("checkpoints")
     if (
         _truthy_count(cleanup.get("dirty_checkpoints"))
@@ -182,14 +209,79 @@ def _preflight_reasons(summary: dict[str, Any], cleanup: dict[str, Any]) -> list
         reasons.append("dirty")
     if _truthy_count(summary.get("stranded_tasks")):
         reasons.append("stranded")
+    if jj_status and jj_status.colocated:
+        if jj_status.conflicted:
+            reasons.append("jj_conflicts")
+        elif jj_status.state in {"dirty", "undescribed"}:
+            reasons.append("jj_undescribed")
+        elif jj_status.unpublished:
+            reasons.append("jj_unpublished")
     return reasons
 
 
-def _format_preflight(project_id: Any, summary: dict[str, Any], cleanup: dict[str, Any]) -> str:
-    reasons = _preflight_reasons(summary, cleanup)
+def _format_preflight(
+    project_id: Any,
+    summary: dict[str, Any],
+    cleanup: dict[str, Any],
+    jj_status: JJRepoStatus | None = None,
+) -> str:
+    reasons = _preflight_reasons(summary, cleanup, jj_status)
     state = "blocked" if reasons else "clear"
     detail = ",".join(reasons) if reasons else "-"
     return f"PREFLIGHT:{project_id}|claim={state}|edit={state}|reasons={detail}|source=st-pulse"
+
+
+def _payload_for_allowed_task(payload: dict[str, Any], task_id: str | None) -> dict[str, Any]:
+    if not task_id:
+        return payload
+    allowed_session_ids = {
+        str(owner.get("session_id") or "")
+        for owner in [*payload.get("active_owners", []), *payload.get("active_specialists", [])]
+        if isinstance(owner, dict) and owner.get("task_id") == task_id
+    }
+    filtered = dict(payload)
+    filtered["active_owners"] = [
+        owner for owner in payload.get("active_owners", [])
+        if not (isinstance(owner, dict) and owner.get("task_id") == task_id)
+    ]
+    filtered["active_specialists"] = [
+        owner for owner in payload.get("active_specialists", [])
+        if not (isinstance(owner, dict) and owner.get("task_id") == task_id)
+    ]
+    filtered["active_sessions"] = [
+        session for session in payload.get("active_sessions", [])
+        if not (isinstance(session, dict) and str(session.get("id") or "") in allowed_session_ids)
+    ]
+    filtered["running_tasks"] = [
+        task for task in payload.get("running_tasks", [])
+        if not (isinstance(task, dict) and task.get("id") == task_id)
+    ]
+    filtered["stranded_tasks"] = [
+        task for task in payload.get("stranded_tasks", [])
+        if not (isinstance(task, dict) and task.get("id") == task_id)
+    ]
+    summary = dict(payload.get("summary", {}))
+    summary["active_owners"] = len(filtered["active_owners"])
+    summary["active_specialists"] = len(filtered["active_specialists"])
+    summary["active_sessions"] = len(filtered["active_sessions"])
+    summary["running_tasks"] = len(filtered["running_tasks"])
+    summary["stranded_tasks"] = len(filtered["stranded_tasks"])
+    filtered["summary"] = summary
+    cleanup = dict(payload.get("cleanup", {}))
+    checkpoint_ids = cleanup.get("checkpoint_task_ids")
+    if isinstance(checkpoint_ids, list) and task_id in {str(item) for item in checkpoint_ids}:
+        cleanup["checkpoint_task_ids"] = [item for item in checkpoint_ids if str(item) != task_id]
+        cleanup["active_checkpoints"] = max(0, _truthy_count(cleanup.get("active_checkpoints")) - 1)
+    filtered["cleanup"] = cleanup
+    return filtered
+
+
+def preflight_reasons_for_payload(payload: dict[str, Any], *, allow_task_id: str | None = None) -> list[str]:
+    filtered = _payload_for_allowed_task(payload, allow_task_id)
+    summary = filtered.get("summary", {})
+    cleanup = filtered.get("cleanup", {})
+    project_id = filtered.get("project_id", "?")
+    return _preflight_reasons(summary, cleanup, _jj_status_for_project(project_id))
 
 
 def _print_compact(payloads: list[dict[str, Any]]) -> None:
@@ -197,6 +289,7 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
         summary = payload.get("summary", {})
         cleanup = payload.get("cleanup", {})
         project_id = payload.get("project_id", "?")
+        jj_status = _jj_status_for_project(project_id)
         print(
             "PULSE:{project}|tasks={tasks}|owners={owners}|specialists={specialists}|"
             "sessions={sessions}|stale={stale}|reapable={reapable}|checkpoints={checkpoints}|dirty={dirty}|cleanup={cleanup_needed}|stranded={stranded}".format(
@@ -208,12 +301,14 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
                 stale=summary.get("stale_sessions", 0),
                 reapable=summary.get("reapable_sessions", 0),
                 checkpoints=cleanup.get("active_checkpoints", 0),
-                dirty=cleanup.get("dirty_checkpoints", 0),
+                dirty=_dirty_residue_count(cleanup),
                 cleanup_needed="yes" if cleanup.get("needs_cleanup") else "no",
                 stranded=summary.get("stranded_tasks", 0),
             )
         )
-        print(_format_preflight(project_id, summary, cleanup))
+        if jj_status is not None:
+            print(_format_jj_state(project_id, jj_status))
+        print(_format_preflight(project_id, summary, cleanup, jj_status))
         review_line = _format_ownerless_review(project_id, summary, cleanup)
         if review_line:
             print(review_line)
@@ -234,6 +329,31 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
                 print(_format_stale_session(session))
 
 
+def _payload_blocked(payload: dict[str, Any]) -> bool:
+    return bool(preflight_reasons_for_payload(payload))
+
+
+def fetch_pulse_payload(project_id: str) -> dict[str, Any]:
+    client = STClient(require_project=False)
+    payload = client.get(client._global_url(f"/projects/{project_id}/pulse"))
+    return payload if isinstance(payload, dict) else {}
+
+
+def require_pulse_gate(project_id: str | None, *, allow_task_id: str | None = None) -> None:
+    if not project_id:
+        return
+    try:
+        payload = fetch_pulse_payload(project_id)
+    except APIError as exc:
+        output_error(f"Pulse gate unavailable: {exc.detail}")
+        raise typer.Exit(2) from None
+    reasons = preflight_reasons_for_payload(payload, allow_task_id=allow_task_id)
+    if not reasons:
+        return
+    output_error(f"Pulse gate blocked: {project_id} {','.join(reasons)}")
+    raise typer.Exit(2)
+
+
 @app.command()
 def pulse(
     project_id: Annotated[
@@ -242,10 +362,14 @@ def pulse(
     ] = None,
     all_projects: Annotated[
         bool,
-        typer.Option("--all", help="Show pulse for all managed projects (default; compatibility alias)"),
+        typer.Option("--all", help="Show pulse for all managed projects (default)."),
+    ] = False,
+    gate: Annotated[
+        bool,
+        typer.Option("--gate", help="Exit 2 if any lane preflight is blocked."),
     ] = False,
 ) -> None:
-    """Show the canonical live coordination pulse."""
+    """Show the canonical live coordination pulse and optional preflight gate."""
     if project_id and all_projects:
         raise typer.BadParameter("Use either --project or --all, not both.")
 
@@ -262,6 +386,10 @@ def pulse(
 
     if is_compact():
         _print_compact(payloads)
+        if gate and any(_payload_blocked(payload) for payload in payloads):
+            raise typer.Exit(2)
         return
 
     output_json(payloads[0] if len(payloads) == 1 else {"projects": payloads, "total": len(payloads)})
+    if gate and any(_payload_blocked(payload) for payload in payloads):
+        raise typer.Exit(2)

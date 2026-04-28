@@ -1,11 +1,13 @@
 """SummitFlow Tasks CLI entry point."""
 
 import atexit
+from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from app.storage.connection import close_pool
+from app.storage.events import log_task_event
 
 from .commands import (
     abandon,
@@ -29,7 +31,7 @@ from .commands import (
     feedback,
     git,
     health,
-    hygiene,
+    jj,
     logs,
     memory,
     persona,
@@ -52,6 +54,7 @@ from .commands import (
 )
 from .commands.task_plan_contract import PLAN_SCHEMA_ENDPOINT, PLAN_VERIFY_EXAMPLE
 from .config import set_project_override
+from .lib.commit_workflow import CommitError, commit_repo, current_repo
 from .output import set_compact_output, set_human_output, set_progress_only
 from .output_context import OutputContext
 
@@ -65,8 +68,8 @@ CLI_REFERENCE = f"""ST CLI - SummitFlow Tasks
 FLAGS: --compact/-c (TOON, default) | --no-compact (raw JSON) | --human (pretty JSON) | --project/-P <id> | --progress-only
        Default output: compact TOON format. Use --no-compact for raw JSON.
 
-WORKFLOW: pulse → ready → claim <id> → context <id> → [work] → done <subtask> → done <task>
-          pulse is the lane preflight: it summarizes owners, sessions, dirty trees, checkpoints, and claim/edit blockers.
+WORKFLOW: pulse --gate → ready → claim <id> → context <id> → [work] → done <subtask> → done <task>
+          pulse is the lane preflight: it summarizes owners, sessions, dirty trees, checkpoints, jj state, and claim/edit blockers.
           REVIEW lines mean ownerless residue: inspect context/status/logs, then commit/push/prune or leave explicit handoff. Do not auto-clean paused work.
           Alternative: abandon <id> --discard to rollback
 
@@ -127,7 +130,9 @@ DESIGN:
 
 TEST: test list [--type T] | import --framework pytest|vitest
 
-GIT: git status | git sync | git finalize-task <task-id>
+VCS: commit -m "message" [--push/--no-push] [--task task-id]  # high-level st-owned VCS flow
+     jj status | jj log | jj diff | jj show | jj sync | jj new -m X | jj describe -m X | jj push --task T | jj undo | jj op-log | jj op-restore OP | jj recover | jj abandon | jj restore | jj conflicts | jj revert REV
+     git status | git sync | git finalize-task <task-id> | git resolve-conflict <task-id>  # git inspection/residue repair only
 
 REFACTOR: refactor regenerate [--json]
 
@@ -209,14 +214,10 @@ CLEANUP (checkpoint maintenance):
   cleanup status                           # quick cleanup-debt overview (main + checkpoints + residue)
   cleanup inspect-orphans                  # list orphan task branches needing salvage/review
   cleanup salvage <task-id>                # restore a missing-task orphan branch into a branch checkpoint
-  pulse [--project P]                      # lane preflight + cross-project coordination summary
+  pulse [--project P] [--gate]             # lane preflight + cross-project coordination gate
   cleanup path <path> [<path>...]          # safe literal path cleanup
   cleanup path <dir> --recursive           # safe literal directory cleanup
   cleanup path <path> --dry-run            # preview cleanup without deleting
-
-HYGIENE (git residue gate):
-  hygiene gate [--fix]                     # self-heal safe residue, block new/closeout work if dirty
-  hygiene sweep [--all] [--fix]            # safe cleanup sweep; report remaining blockers
 
 DOCKER:
   docker status                              # container health grid (TOON format)
@@ -290,6 +291,7 @@ app.add_typer(claude.app, name="claude")
 app.add_typer(sessions.app, name="sessions")
 app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
+app.add_typer(jj.app, name="jj")
 app.add_typer(backup.app, name="backup")
 app.add_typer(service.app, name="service")
 app.add_typer(health.app, name="health")
@@ -299,7 +301,6 @@ app.add_typer(complete.app, name="complete")
 app.command("session-events", help="Agent Hub session events (observability)")(session_events.show_events)
 app.add_typer(tools.app, name="tools")
 app.add_typer(cleanup.app, name="cleanup")
-app.add_typer(hygiene.app, name="hygiene")
 app.add_typer(prompt.app, name="prompt")
 app.add_typer(refactor.app, name="refactor")
 app.add_typer(feedback.app, name="feedback")
@@ -311,6 +312,51 @@ app.add_typer(vm.app, name="vm")
 app.command("pulse")(pulse.pulse)
 app.command("search")(search.search)
 app.command("exec-log")(exec_monitor.exec_log_command)
+
+
+@app.command("commit")
+def commit_command(
+    ctx: typer.Context,
+    message: Annotated[str, typer.Option("--message", "--msg", "-m", help="Required commit/change description.")],
+    push: Annotated[bool, typer.Option("--push/--no-push", help="Publish after describing the change.")] = True,
+    task_id: Annotated[str, typer.Option("--task", help="Task id for bookmark and audit log.")] = "",
+    repo: Annotated[str | None, typer.Option("--repo", "-R", help="Repository path. Defaults to current repo.")] = None,
+    skip_checks: Annotated[bool, typer.Option("--skip-checks", help="Skip local check gate for local-only recovery commits.")] = False,
+) -> None:
+    """High-level st-owned commit workflow."""
+    try:
+        repo_path = current_repo() if repo is None else Path(repo).expanduser().resolve()
+        result = commit_repo(
+            repo_path,
+            message=message,
+            task_id=task_id,
+            push=push,
+            skip_checks=skip_checks,
+        )
+    except CommitError as exc:
+        typer.echo(f"ERROR:{exc}", err=True)
+        raise typer.Exit(1) from None
+    if task_id and result.get("status") == "SUCCESS":
+        detail_parts = [
+            f"change={result.get('change_id', '')}",
+            f"commit={result.get('commit_id') or result.get('sha') or ''}",
+            f"bookmark={result.get('bookmark', '')}",
+            f"op={result.get('operation_id', '')}",
+            f"pushed={str(result.get('pushed', False)).lower()}",
+        ]
+        log_task_event(task_id, "st commit " + " ".join(part for part in detail_parts if not part.endswith("=")))
+    if ctx.obj.is_compact:
+        detail = result.get("commit_id") or result.get("sha") or result.get("reason") or ""
+        print(
+            f"COMMIT[1]:status={result['status']} "
+            f"pushed={str(result.get('pushed', False)).lower()} detail={detail}"
+        )
+    else:
+        from .output import output_json
+
+        output_json(result)
+    if result.get("status") == "BLOCKED":
+        raise typer.Exit(2)
 
 _FORWARD_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True, "help_option_names": []}
 app.command("check", context_settings=_FORWARD_CONTEXT_SETTINGS, help=check.app.info.help, add_help_option=False)(check.check)

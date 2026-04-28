@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 
-def test_publish_completed_work_uses_st_git_commit(monkeypatch) -> None:
+def test_publish_completed_work_uses_st_commit_and_cleans_jj_bookmark(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     from cli.commands import done_task
 
     commands: list[list[str]] = []
+    project_root = tmp_path / "repo"
+    (project_root / ".jj").mkdir(parents=True)
 
     monkeypatch.setattr(done_task.shutil, "which", lambda name: "/usr/bin/st")
     monkeypatch.setattr(
         "app.storage.projects.get_project_root_path",
-        lambda project_id: "/repo",
+        lambda project_id: str(project_root),
     )
 
     def fake_run(
@@ -26,7 +32,7 @@ def test_publish_completed_work_uses_st_git_commit(monkeypatch) -> None:
         return subprocess.CompletedProcess(
             command,
             0,
-            stdout='{"repos":[{"status":"SUCCESS"}]}',
+            stdout='{"status":"SUCCESS"}',
             stderr="",
         )
 
@@ -37,12 +43,22 @@ def test_publish_completed_work_uses_st_git_commit(monkeypatch) -> None:
     assert commands == [
         [
             "/usr/bin/st",
-            "git",
+            "--no-compact",
             "commit",
-            "--current",
             "--push",
             "--task",
             "task-1",
-            "--json",
-        ]
+            "--message",
+            "complete task-1",
+        ],
+        [
+            "/usr/bin/st",
+            "jj",
+            "push",
+            "--delete-bookmark",
+            "--task",
+            "task-1",
+            "--repo",
+            str(project_root),
+        ],
     ]

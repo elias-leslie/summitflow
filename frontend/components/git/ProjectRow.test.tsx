@@ -4,11 +4,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { ProjectRow } from './ProjectRow'
 
 const apiMocks = vi.hoisted(() => ({
-  smartSyncProject: vi.fn(),
+  publishProjectChanges: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
-  smartSyncProject: apiMocks.smartSyncProject,
+  publishProjectChanges: apiMocks.publishProjectChanges,
 }))
 
 vi.mock('./project-row/DashboardContent', () => ({
@@ -92,8 +92,8 @@ function renderConfigRow() {
 }
 
 describe('ProjectRow', () => {
-  it('uses project_id for sync and dashboard expansion', async () => {
-    apiMocks.smartSyncProject.mockResolvedValue({
+  it('uses project_id for publish and dashboard expansion', async () => {
+    apiMocks.publishProjectChanges.mockResolvedValue({
       success: true,
       status: 'updated',
       gates: '',
@@ -115,17 +115,19 @@ describe('ProjectRow', () => {
       'project-alpha',
     )
 
-    // Click sync button (exact text match to avoid matching the row header)
-    fireEvent.click(screen.getByRole('button', { name: 'Sync' }))
+    // Click publish button (exact text match to avoid matching the row header)
+    fireEvent.click(screen.getByRole('button', { name: 'Publish' }))
 
     await waitFor(() => {
-      expect(apiMocks.smartSyncProject).toHaveBeenCalledWith('project-alpha')
+      expect(apiMocks.publishProjectChanges).toHaveBeenCalledWith(
+        'project-alpha',
+      )
     })
   })
 
-  it('offers sync for config repos', () => {
+  it('offers publish for config repos', () => {
     renderConfigRow()
 
-    expect(screen.getByRole('button', { name: 'Sync' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Publish' })).toBeInTheDocument()
   })
 })
