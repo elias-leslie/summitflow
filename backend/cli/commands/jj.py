@@ -163,7 +163,7 @@ def remote_bookmarks(
     path = _repo_or_current(repo)
     if fetch:
         _run_or_exit(path, ["git", "fetch", "--remote", remote])
-    _run_or_exit(path, ["bookmark", "list", "--all-remotes", "--remote", remote, *(names or [])])
+    _run_or_exit(path, ["bookmark", "list", "--remote", remote, *(names or [])])
 
 
 @app.command("new")

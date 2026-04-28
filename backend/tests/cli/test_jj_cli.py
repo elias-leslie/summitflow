@@ -261,7 +261,7 @@ def test_remote_bookmarks_lists_remote_refs_through_st_surface(
         call(Path("/repo"), ["git", "fetch", "--remote", "origin"]),
         call(
             Path("/repo"),
-            ["bookmark", "list", "--all-remotes", "--remote", "origin", "jj-smoke/repo"],
+            ["bookmark", "list", "--remote", "origin", "jj-smoke/repo"],
         ),
     ]
 
