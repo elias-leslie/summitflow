@@ -20,6 +20,8 @@ from app.project_identity import (
 )
 from app.utils.shared_paths import get_repo_root
 
+from ..details import display_path, emit_result_or_details, summary_hint, write_details
+
 
 class ServiceError(RuntimeError):
     """Raised for service lifecycle failures."""
@@ -105,8 +107,25 @@ def project_ids() -> list[str]:
     return sorted(set(ids))
 
 
+def _detail_name(command: list[str]) -> str:
+    parts = [Path(part).name for part in command[:3] if part and not part.startswith("-")]
+    raw = "-".join(parts) or "command"
+    return "service-" + "".join(char if char.isalnum() or char in "-_" else "-" for char in raw).strip("-")
+
+
 def run(command: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> int:
-    return subprocess.run(command, cwd=cwd, env=env, check=False).returncode
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    emit_result_or_details(cwd or get_repo_root(), _detail_name(command), "SERVICE", result)
+    return result.returncode
 
 
 def capture(command: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -385,5 +404,11 @@ def queue_detached(project: str, include_all_workers: bool) -> int:
             *command,
         ]
     )
-    print(result.stdout or result.stderr)
+    output = result.stdout or result.stderr
+    if output:
+        details = write_details(get_repo_root(), f"service-detached-{project}", output)
+        print(
+            f"[service] detached rebuild queued rc={result.returncode}|"
+            f"details:{display_path(get_repo_root(), details)}|hint:{summary_hint(output)}"
+        )
     return result.returncode

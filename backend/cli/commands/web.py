@@ -9,6 +9,7 @@ from pathlib import Path
 
 import typer
 
+from ..details import current_root, display_path, summary_hint, write_details
 from ..output import output_error
 
 app = typer.Typer(
@@ -30,6 +31,7 @@ def _parser() -> argparse.ArgumentParser:
     search.add_argument("--max-results", "--limit", dest="max_results", type=int, default=5)
     search.add_argument("--search-type", choices=("text", "news"), default="text")
     search.add_argument("--timelimit", choices=("d", "w", "m", "y"))
+    search.add_argument("--raw", action="store_true")
 
     research = subparsers.add_parser("research", help="Search first, then fetch one result.")
     research.add_argument("query_arg", nargs="?")
@@ -40,12 +42,14 @@ def _parser() -> argparse.ArgumentParser:
     research.add_argument("--timelimit", choices=("d", "w", "m", "y"))
     research.add_argument("--max-chars", type=int, default=12000)
     research.add_argument("--focus-query")
+    research.add_argument("--raw", action="store_true")
 
     fetch = subparsers.add_parser("fetch", help="Fetch and extract a webpage.")
     fetch.add_argument("url_arg", nargs="?")
     fetch.add_argument("--url")
     fetch.add_argument("--max-chars", type=int, default=12000)
     fetch.add_argument("--focus-query")
+    fetch.add_argument("--raw", action="store_true")
     return parser
 
 
@@ -64,6 +68,7 @@ def _payload(args: argparse.Namespace) -> dict[str, object]:
             "max_results": args.max_results,
             "search_type": args.search_type,
             "timelimit": args.timelimit,
+            "raw": args.raw,
         }
     if args.command == "research":
         return {
@@ -75,6 +80,7 @@ def _payload(args: argparse.Namespace) -> dict[str, object]:
             "timelimit": args.timelimit,
             "max_chars": args.max_chars,
             "focus_query": args.focus_query,
+            "raw": args.raw,
         }
     if args.command == "fetch":
         return {
@@ -82,6 +88,7 @@ def _payload(args: argparse.Namespace) -> dict[str, object]:
             "url": _required(args.url, args.url_arg, "--url"),
             "max_chars": args.max_chars,
             "focus_query": args.focus_query,
+            "raw": args.raw,
         }
     raise ValueError(f"Unknown command: {args.command}")
 
@@ -140,13 +147,27 @@ try:
 except json.JSONDecodeError:
     print(result)
     raise SystemExit(1)
-print(json.dumps(parsed, indent=2, sort_keys=True))
+print(json.dumps(parsed, sort_keys=True))
 raise SystemExit(0 if "error" not in parsed else 1)
 """
     result = subprocess.run(
         [_agent_hub_python(), "-c", code, json.dumps(payload)],
         cwd=_AGENT_HUB_BACKEND,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
+    )
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    if payload.get("raw"):
+        print(output)
+        return result.returncode
+    root = current_root()
+    details = write_details(root, f"web-{payload['command']}", output)
+    print(
+        f"WEB:{payload['command']}:{'OK' if result.returncode == 0 else 'FAIL'}:{result.returncode}|"
+        f"details:{display_path(root, details)}|hint:{summary_hint(output)}"
     )
     return result.returncode
 

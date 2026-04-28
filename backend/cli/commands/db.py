@@ -11,6 +11,7 @@ import typer
 
 from app.storage.projects import find_project_by_cwd, get_project_root_path
 
+from ..details import emit_result_or_details
 from ..output import output_error
 
 app = typer.Typer(
@@ -80,7 +81,16 @@ def _run_psql(project: str, sql: str, *, tuples_only: bool = False) -> int:
     if tuples_only:
         args.extend(["-t", "-A"])
     args.extend(["-c", sql])
-    return subprocess.run(args, check=False).returncode
+    result = subprocess.run(
+        args,
+        text=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    emit_result_or_details(_details_root(project), f"db-{project}-psql", "DB", result)
+    return result.returncode
 
 
 def _strip_literals(sql: str) -> str:
@@ -110,6 +120,11 @@ def _project_root(project: str) -> Path:
     return Path(root)
 
 
+def _details_root(project: str) -> Path:
+    root = get_project_root_path(project)
+    return Path(root) if root else Path.cwd()
+
+
 def _migration_dir(project: str) -> Path:
     root = _project_root(project)
     for candidate in (root / "backend", root):
@@ -129,7 +144,18 @@ def _alembic(project: str, args: list[str]) -> int:
     env = os.environ.copy()
     for key in ("DATABASE_URL", "REDIS_URL", "AGENT_HUB_DB_URL", "AGENT_HUB_REDIS_URL", "PORTFOLIO_DB_URL", "PORTFOLIO_AI_DB_URL", "HATCHET_CLIENT_TOKEN"):
         env.pop(key, None)
-    return subprocess.run(command, cwd=cwd, env=env, check=False).returncode
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    emit_result_or_details(cwd, f"db-{project}-alembic", "DB", result)
+    return result.returncode
 
 
 def _parse_project_arg(args: list[str]) -> tuple[str | None, list[str]]:

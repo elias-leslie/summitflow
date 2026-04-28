@@ -9,9 +9,6 @@ import psycopg
 from psycopg_pool import ConnectionPool
 
 from ..config import DATABASE_URL
-from ..logging_config import get_logger
-
-logger = get_logger(__name__)
 
 # Module-level connection pool (lazy-initialized)
 _pool: ConnectionPool | None = None
@@ -45,7 +42,6 @@ def get_pool() -> ConnectionPool:
             timeout=30.0,
             open=True,
         )
-        logger.info("Connection pool initialized (min=%d, max=%d)", POOL_MIN_SIZE, POOL_MAX_SIZE)
     return _pool
 
 
@@ -54,7 +50,6 @@ def open_pool() -> None:
     pool = get_pool()
     if pool.closed:
         pool.open()
-        logger.info("Connection pool opened")
 
 
 def close_pool() -> None:

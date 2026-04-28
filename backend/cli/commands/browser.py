@@ -16,6 +16,7 @@ import typer
 
 from app.services.browser_targets import BrowserTargetError, resolve_browser_endpoint
 
+from ..details import current_root, display_path, emit_result_or_details, write_details
 from ..output import output_error
 
 app = typer.Typer(
@@ -367,26 +368,33 @@ def _browser_check(args: list[str]) -> int:
     warning_items: list[object] = [item for item in raw_warnings] if isinstance(raw_warnings, list) else []
     network_items: list[object] = list(network) if isinstance(network, list) else []
 
-    print(f"Screenshot: {screenshot_path}")
-    print("Responsive set: " + ", ".join(f"{label} {width}x{height}" for label, width, height, _ in viewports))
+    detail_lines = [
+        f"Screenshot: {screenshot_path}",
+        "Responsive set: " + ", ".join(f"{label} {width}x{height}" for label, width, height, _ in viewports),
+    ]
     if len(viewports) > 1:
-        print("Additional screenshots:")
+        detail_lines.append("Additional screenshots:")
         for label, _, _, path in viewports[1:]:
-            print(f"  {label}: {path}")
+            detail_lines.append(f"  {label}: {path}")
     if isinstance(errors, dict):
-        print(f"Page: {errors.get('url', 'unknown')}")
-        print(f"Title: {errors.get('title', 'unknown')}")
+        detail_lines.append(f"Page: {errors.get('url', 'unknown')}")
+        detail_lines.append(f"Title: {errors.get('title', 'unknown')}")
     if error_items:
-        print(f"\nConsole errors ({len(error_items)}):")
-        print("\n".join(str(item) for item in error_items[:20]))
+        detail_lines.append(f"\nConsole errors ({len(error_items)}):")
+        detail_lines.extend(str(item) for item in error_items)
     if warning_items:
-        print(f"\nConsole warnings ({len(warning_items)}):")
-        print("\n".join(str(item) for item in warning_items[:10]))
+        detail_lines.append(f"\nConsole warnings ({len(warning_items)}):")
+        detail_lines.extend(str(item) for item in warning_items)
     if network_items:
-        print(f"\nFailed network requests ({len(network_items)}):")
-        print("\n".join(str(item) for item in network_items[:20]))
-    if not error_items and not warning_items and not network_items:
-        print("No console errors, warnings, or failed network requests.")
+        detail_lines.append(f"\nFailed network requests ({len(network_items)}):")
+        detail_lines.extend(str(item) for item in network_items)
+    root = current_root()
+    details = write_details(root, "browser-check", "\n".join(detail_lines))
+    status = "OK" if not error_items and not warning_items and not network_items else "ISSUES"
+    print(
+        f"BROWSER_CHECK:{status}|errors={len(error_items)}|warnings={len(warning_items)}|"
+        f"network={len(network_items)}|screenshot={screenshot_path}|details:{display_path(root, details)}"
+    )
     return 0
 
 
@@ -482,6 +490,7 @@ def browser(ctx: typer.Context) -> None:
             ],
             cdp=ws,
         )
-    result = _run_agent(scoped_browser_args, cdp=ws)
+    result = _run_agent(scoped_browser_args, cdp=ws, capture=True)
+    emit_result_or_details(current_root(), f"browser-{command or 'command'}", "BROWSER", result)
     _run_browser_reaper()
     raise typer.Exit(result.returncode)

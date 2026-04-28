@@ -9,6 +9,7 @@ import typer
 
 from app.storage.events import log_task_event
 
+from ..details import display_path, summary_hint, write_details
 from ..lib.jj import (
     LOG_TEMPLATE,
     OP_LOG_TEMPLATE,
@@ -80,6 +81,18 @@ def _run_or_exit(repo: Path, args: list[str]):
     _echo_result(result)
 
 
+def _write_jj_result(repo: Path, name: str, result, label: str) -> None:
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    details = write_details(repo, name, output)
+    line_count = len(output.splitlines())
+    print(
+        f"{label}:{'OK' if result.returncode == 0 else 'FAIL'}:{result.returncode}|"
+        f"lines={line_count}|details:{display_path(repo, details)}|hint:{summary_hint(output)}"
+    )
+    if result.returncode != 0:
+        raise typer.Exit(result.returncode)
+
+
 @app.command()
 def init(
     ctx: typer.Context,
@@ -141,18 +154,30 @@ def log(
 def diff(
     repo: Annotated[Path | None, typer.Option("--repo", "-R", help="Repository path.")] = None,
     revision: Annotated[str, typer.Option("--revision", "-r", help="Revision to diff.")] = "@",
+    stdout: Annotated[bool, typer.Option("--stdout", help="Print raw diff instead of details path.")] = False,
 ) -> None:
     """Show a git-format jj diff."""
-    _run_or_exit(_repo_or_current(repo), ["diff", "-r", revision, "--git"])
+    path = _repo_or_current(repo)
+    if stdout:
+        _run_or_exit(path, ["diff", "-r", revision, "--git"])
+        return
+    result = run_jj(path, ["diff", "-r", revision, "--git"])
+    _write_jj_result(path, "jj-diff", result, f"JJDIFF:rev={revision}")
 
 
 @app.command()
 def show(
     revision: Annotated[str, typer.Argument(help="Revision to show.")] = "@",
     repo: Annotated[Path | None, typer.Option("--repo", "-R", help="Repository path.")] = None,
+    stdout: Annotated[bool, typer.Option("--stdout", help="Print raw revision patch instead of details path.")] = False,
 ) -> None:
     """Show one revision."""
-    _run_or_exit(_repo_or_current(repo), ["show", "-r", revision, "--git"])
+    path = _repo_or_current(repo)
+    if stdout:
+        _run_or_exit(path, ["show", "-r", revision, "--git"])
+        return
+    result = run_jj(path, ["show", "-r", revision, "--git"])
+    _write_jj_result(path, "jj-show", result, f"JJSHOW:rev={revision}")
 
 
 @app.command()

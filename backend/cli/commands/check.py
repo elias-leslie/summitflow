@@ -11,6 +11,7 @@ from typing import Any
 
 import typer
 
+from ..details import display_path, summary_hint, write_details
 from ..lib.cleanroom import main as cleanroom_main
 from ..output import output_error
 from ..tool_registry import load_tool_registry
@@ -194,6 +195,10 @@ def _env(root: Path) -> dict[str, str]:
     return env
 
 
+def _tool_output(result: subprocess.CompletedProcess[str]) -> str:
+    return "\n".join(part for part in (result.stdout, result.stderr) if part)
+
+
 def _local_node_binary(root: Path, cwd: Path, binary: str) -> Path | None:
     for directory in (
         cwd / "node_modules" / ".bin",
@@ -231,8 +236,30 @@ def _run_tool(name: str, config: dict[str, Any], extra_args: list[str]) -> int:
     command = [*_resolve_command(binary, root, cwd, base_args), *extra_args]
     label = str(config.get("label") or name.upper())
     print(f"{label}:{name}:start")
-    result = subprocess.run(command, cwd=cwd, env=_env(root), check=False)
-    print(f"{label}:{'OK' if result.returncode == 0 else 'FAIL'}:{result.returncode}")
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            env=_env(root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except OSError as exc:
+        output = f"{type(exc).__name__}: {exc}"
+        details = write_details(root, name, output)
+        print(
+            f"{label}:FAIL:127|details:{display_path(root, details)}|hint:{summary_hint(output)}"
+        )
+        return 127
+    output = _tool_output(result)
+    details = write_details(root, name, output)
+    print(
+        f"{label}:{'OK' if result.returncode == 0 else 'FAIL'}:{result.returncode}|"
+        f"details:{display_path(root, details)}|hint:{summary_hint(output)}"
+    )
     return result.returncode
 
 

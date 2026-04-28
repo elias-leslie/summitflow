@@ -10,7 +10,8 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from cli.commands import browser, check, service, setup, vm
+from cli.commands import browser, check, docker, service, setup, vm
+from cli.lib import service_ops
 from cli.lib.service_ops import ProjectServices
 from cli.main import app as main_app
 
@@ -61,6 +62,20 @@ def test_service_rebuild_uses_native_steps() -> None:
 
     assert result.exit_code == 0
     assert restart.call_count == 3
+
+
+def test_service_run_large_output_goes_to_details_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    output = "\n".join(f"line {index}" for index in range(45))
+    result = subprocess.CompletedProcess(["pnpm", "build"], 0, stdout=output, stderr="")
+    with patch("cli.lib.service_ops.subprocess.run", return_value=result):
+        exit_code = service_ops.run(["pnpm", "build"], cwd=tmp_path)
+
+    captured = capsys.readouterr()
+    details = tmp_path / ".dev-tools" / "service-pnpm-build-details.txt"
+    assert exit_code == 0
+    assert details.read_text(encoding="utf-8") == output
+    assert "line 0" not in captured.out
+    assert "SERVICE:OK:0|lines=45|details:.dev-tools/service-pnpm-build-details.txt" in captured.out
 
 
 def test_service_stop_uses_confirm_gate() -> None:
@@ -114,6 +129,51 @@ def test_check_resolves_npx_tool_to_local_binary(tmp_path: Path) -> None:
     command = check._resolve_command("npx", tmp_path, tmp_path / "frontend", ["tsc", "--noEmit"])
 
     assert command == [str(tsc), "--noEmit"]
+
+
+def test_check_tool_output_goes_to_details_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    result = subprocess.CompletedProcess(
+        args=["pytest"],
+        returncode=0,
+        stdout="line 1\n2187 passed in 19.87s\n",
+        stderr="",
+    )
+    with (
+        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check.subprocess.run", return_value=result),
+    ):
+        exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
+
+    captured = capsys.readouterr()
+    details = tmp_path / ".dev-tools" / "pytest-details.txt"
+    assert exit_code == 0
+    assert details.read_text(encoding="utf-8") == "line 1\n2187 passed in 19.87s\n"
+    assert "line 1" not in captured.out
+    assert "TEST:OK:0|details:.dev-tools/pytest-details.txt|hint:2187 passed in 19.87s" in captured.out
+
+
+def test_check_tool_failure_prints_only_hint_and_details_path(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = subprocess.CompletedProcess(
+        args=["pytest"],
+        returncode=1,
+        stdout="very long output\nFAILED tests/test_x.py::test_y\n",
+        stderr="traceback details\n",
+    )
+    with (
+        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check.subprocess.run", return_value=result),
+    ):
+        exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
+
+    captured = capsys.readouterr()
+    details = tmp_path / ".dev-tools" / "pytest-details.txt"
+    assert exit_code == 1
+    assert "very long output" in details.read_text(encoding="utf-8")
+    assert "very long output" not in captured.out
+    assert "TEST:FAIL:1|details:.dev-tools/pytest-details.txt|hint:traceback details" in captured.out
 
 
 def test_db_runs_native_migration_status() -> None:
@@ -287,6 +347,40 @@ def test_browser_check_closes_session_and_runs_reaper() -> None:
     assert result.exit_code == 0
     assert calls[-1][2:] == ["close"]
     reaper.assert_called_once()
+
+
+def test_browser_large_forwarded_output_goes_to_details_file(tmp_path: Path) -> None:
+    output = "\n".join(f"node {index}" for index in range(45))
+    with (
+        patch("cli.commands.browser.current_root", return_value=tmp_path),
+        patch("cli.commands.browser._select_port", return_value=9222),
+        patch("cli.commands.browser._host_for_engine", return_value="browser"),
+        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
+        patch("cli.commands.browser._run_browser_reaper"),
+        patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0, stdout=output, stderr="")),
+    ):
+        result = runner.invoke(main_app, ["browser", "snapshot"])
+
+    details = tmp_path / ".dev-tools" / "browser-snapshot-details.txt"
+    assert result.exit_code == 0
+    assert details.read_text(encoding="utf-8") == output
+    assert "node 0" not in result.output
+    assert "BROWSER:OK:0|lines=45|details:.dev-tools/browser-snapshot-details.txt" in result.output
+
+
+def test_docker_large_output_goes_to_details_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.chdir(tmp_path)
+    output = "\n".join(f"layer {index}" for index in range(45))
+    result = subprocess.CompletedProcess(["docker", "compose", "pull"], 0, stdout=output, stderr="")
+    with patch("cli.commands.docker.subprocess.run", return_value=result):
+        returned = docker._run(["docker", "compose", "pull"])
+
+    captured = capsys.readouterr()
+    details = tmp_path / ".dev-tools" / "docker-docker-compose-pull-details.txt"
+    assert returned is result
+    assert details.read_text(encoding="utf-8") == output
+    assert "layer 0" not in captured.out
+    assert "DOCKER:OK:0|lines=45|details:.dev-tools/docker-docker-compose-pull-details.txt" in captured.out
 
 
 def test_setup_browser_refuses_server_local_install(monkeypatch) -> None:

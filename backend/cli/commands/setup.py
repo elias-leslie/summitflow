@@ -13,6 +13,7 @@ import typer
 from app.project_identity import list_project_identities
 from app.utils.shared_paths import get_repo_root
 
+from ..details import emit_result_or_details
 from ..lib.confirm_token import confirm_gate
 from ..lib.service_ops import load_project, sync_systemd_units
 
@@ -108,7 +109,18 @@ def _project_ids() -> list[str]:
 
 
 def _run(command: list[str], *, cwd: Path | None = None) -> int:
-    return subprocess.run(command, cwd=cwd, check=False).returncode
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    name = "setup-" + "-".join(Path(part).name for part in command[:3] if part and not part.startswith("-"))
+    emit_result_or_details(cwd or get_repo_root(), name, "SETUP", result)
+    return result.returncode
 
 
 def _ensure_repo(repo_url: str, target_dir: Path, *, update_existing: bool) -> None:

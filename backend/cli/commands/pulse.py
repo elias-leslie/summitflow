@@ -9,16 +9,21 @@ import typer
 from .._observability import refresh_agent_observability
 from .._output_state import is_compact
 from ..client import APIError, STClient
+from ..config import get_config_optional
 from ..lib.jj import JJRepoStatus
 from ..output import handle_api_error, output_error, output_json
 
 app = typer.Typer(help="Cross-agent coordination pulse")
 
 
-def _resolve_project_ids(client: STClient, project_id: str | None) -> list[str]:
+def _resolve_project_ids(client: STClient, project_id: str | None, *, all_projects: bool = False) -> list[str]:
     """Return the project ids to query for pulse data."""
     if project_id:
         return [project_id]
+    if not all_projects:
+        detected = get_config_optional().project_id
+        if detected:
+            return [detected]
 
     payload = client.get(client._global_url("/projects"))
     if not isinstance(payload, list):
@@ -213,23 +218,8 @@ def _preflight_reasons(
     jj_status: JJRepoStatus | None = None,
 ) -> list[str]:
     reasons: list[str] = []
-    if _truthy_count(cleanup.get("active_checkpoints")) and not (jj_status and jj_status.colocated):
-        reasons.append("checkpoints")
-    if (
-        _truthy_count(cleanup.get("dirty_checkpoints"))
-        or _truthy_count(cleanup.get("dirty_main_repo"))
-        or _truthy_count(cleanup.get("dirty_repositories"))
-    ):
-        reasons.append("dirty")
-    if _truthy_count(summary.get("stranded_tasks")):
-        reasons.append("stranded")
-    if jj_status and jj_status.colocated:
-        if jj_status.conflicted:
-            reasons.append("jj_conflicts")
-        elif jj_status.state in {"dirty", "undescribed"}:
-            reasons.append("jj_undescribed")
-        elif jj_status.unpublished:
-            reasons.append("jj_unpublished")
+    if jj_status and jj_status.colocated and jj_status.conflicted:
+        reasons.append("jj_conflicts")
     return reasons
 
 
@@ -298,7 +288,7 @@ def preflight_reasons_for_payload(payload: dict[str, Any], *, allow_task_id: str
     return _preflight_reasons(summary, cleanup, _jj_status_for_project(project_id))
 
 
-def _print_compact(payloads: list[dict[str, Any]]) -> None:
+def _print_compact(payloads: list[dict[str, Any]], *, details: bool = False) -> None:
     for payload in payloads:
         summary = payload.get("summary", {})
         cleanup = payload.get("cleanup", {})
@@ -327,6 +317,13 @@ def _print_compact(payloads: list[dict[str, Any]]) -> None:
         review_line = _format_ownerless_review(project_id, summary, cleanup)
         if review_line:
             print(review_line)
+        if review_line or (jj_status is not None and jj_status.state != "clean"):
+            print(
+                f"ACTION:{project_id}|if_dirty=inspect-diff-once-then-commit-or-continue-narrow|"
+                "ownership=diagnostic-only"
+            )
+        if not details:
+            continue
         for task in payload.get("running_tasks", [])[:4]:
             if isinstance(task, dict):
                 print(_format_task(task))
@@ -391,11 +388,15 @@ def pulse(
     ] = None,
     all_projects: Annotated[
         bool,
-        typer.Option("--all", help="Show pulse for all managed projects (default)."),
+        typer.Option("--all", help="Show pulse for all managed projects."),
     ] = False,
     gate: Annotated[
         bool,
         typer.Option("--gate", help="Exit 2 if any lane preflight is blocked."),
+    ] = False,
+    details: Annotated[
+        bool,
+        typer.Option("--details", help="Show diagnostic task, ownership, and session rows."),
     ] = False,
 ) -> None:
     """Show the canonical live coordination pulse and optional preflight gate."""
@@ -407,14 +408,14 @@ def pulse(
     try:
         payloads = [
             client.get(client._global_url(f"/projects/{resolved_project_id}/pulse"))
-            for resolved_project_id in _resolve_project_ids(client, project_id)
+            for resolved_project_id in _resolve_project_ids(client, project_id, all_projects=all_projects)
         ]
     except APIError as e:
         handle_api_error(e)
         return
 
     if is_compact():
-        _print_compact(payloads)
+        _print_compact(payloads, details=details)
         if gate and any(_payload_blocked(payload) for payload in payloads):
             raise typer.Exit(2)
         return

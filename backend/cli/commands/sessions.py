@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any, cast
 
 import typer
 
 from .._observability import refresh_agent_observability
 from ..client import APIError, STClient
-from ..output import handle_api_error, output_json
+from ..details import current_root, display_path, write_details
+from ..output import handle_api_error, is_compact, output_json
 from .sessions_overlap import render_overlap_list
 from .sessions_ownership import render_ownership_list
 
@@ -54,7 +56,40 @@ def _render_session_list(
     if not include_unassigned:
         sessions = [session for session in sessions if session.get("agent_slug")]
 
+    if is_compact():
+        _output_session_list_compact(sessions)
+        return
     output_json(sessions)
+
+
+def _session_live_state(session: dict[str, Any]) -> str:
+    live = session.get("live_activity")
+    if isinstance(live, dict):
+        raw = live.get("lifecycle_state") or live.get("status") or live.get("state")
+        if raw:
+            return str(raw)
+    return str(session.get("status") or "-")
+
+
+def _session_line(session: dict[str, Any]) -> str:
+    session_id = str(session.get("id") or "-")
+    short_id = session_id[:8]
+    project_id = str(session.get("project_id") or "-")
+    status = str(session.get("status") or "-")
+    agent = str(session.get("agent_slug") or "-")
+    task_id = str(session.get("task_id") or "-")
+    live_state = _session_live_state(session)
+    updated = str(session.get("updated_at") or "-")
+    return (
+        f"SES {project_id} | {status} | {agent} | {short_id} | "
+        f"task={task_id} state={live_state} updated={updated}"
+    )
+
+
+def _output_session_list_compact(sessions: list[dict[str, Any]]) -> None:
+    print(f"SESSIONS[{len(sessions)}]")
+    for session in sessions:
+        print(_session_line(session))
 
 
 @app.callback()
@@ -117,6 +152,7 @@ def list_sessions(
 @app.command("show")
 def show_session(
     session_id: str,
+    raw: Annotated[bool, typer.Option("--raw", help="Print full raw session JSON.")] = False,
 ) -> None:
     """Show details of a specific session.
 
@@ -133,7 +169,12 @@ def show_session(
         handle_api_error(e)
         return
 
-    output_json(session)
+    if raw or not is_compact():
+        output_json(session)
+        return
+    root = current_root()
+    details = write_details(root, f"session-{session_id[:8]}", json.dumps(session, default=str, indent=2))
+    print(f"SESSION:{session.get('id', session_id)}|project={session.get('project_id', '-')}|status={session.get('status', '-')}|details:{display_path(root, details)}")
 
 
 @app.command("close")

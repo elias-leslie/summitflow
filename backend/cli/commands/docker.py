@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from typer.main import get_command
 
+from ..details import emit_result_or_details
 from ..runtime import (
     COMPOSE_ENV_FILE,
     COMPOSE_FILE,
@@ -69,7 +71,18 @@ def _run(
             raise typer.Exit(proc.returncode)
         return None
 
-    result = subprocess.run(args, capture_output=capture, text=True, env=env)
+    result = subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        check=False,
+    )
+    if not capture:
+        name = "docker-" + "-".join(Path(part).name for part in args[:4] if part and not part.startswith("-"))
+        emit_result_or_details(Path.cwd(), name, "DOCKER", result)
     if check and result.returncode != 0:
         if capture and result.stderr:
             typer.echo(result.stderr, err=True)
@@ -190,7 +203,7 @@ def up(
     args.extend(["up"])
     if detach:
         args.append("-d")
-    _run(args, stream=True, env=compose_env())
+    _run(args, env=compose_env())
 
 
 @app.command()
@@ -223,7 +236,7 @@ def down(
             "st docker down --volumes",
         )
         args.append("--volumes")
-    _run(args, stream=True, env=compose_env())
+    _run(args, env=compose_env())
 
 
 @app.command()
@@ -243,7 +256,7 @@ def restart(
     args = compose_cmd("up", "-d", "--force-recreate", "--build") if recreate else compose_cmd("restart")
     if service:
         args.append(service)
-    _run(args, stream=True, env=compose_env())
+    _run(args, env=compose_env())
 
 
 # ─── Logs ────────────────────────────────────────────────────────
@@ -260,7 +273,7 @@ def logs(
     if follow:
         args.append("-f")
     args.append(service)
-    _run(args, stream=True, env=compose_env())
+    _run(args, stream=follow, env=compose_env())
 
 
 # ─── Build & Pull ───────────────────────────────────────────────
@@ -284,16 +297,16 @@ def build(
             typer.echo(f"  SKIP {image} (Dockerfile not found)")
             continue
         typer.echo(f"  BUILD {image}")
-        _run(["docker", "build", "-f", str(df_path), "-t", image, str(context)], stream=True)
+        _run(["docker", "build", "-f", str(df_path), "-t", image, str(context)])
         if push:
             typer.echo(f"  PUSH {image}")
-            _run(["docker", "push", image], stream=True)
+            _run(["docker", "push", image])
 
 
 @app.command()
 def pull() -> None:
     """Pull latest images for all services."""
-    _run(compose_cmd("pull"), stream=True, env=compose_env())
+    _run(compose_cmd("pull"), env=compose_env())
 
 
 # ─── Shell ───────────────────────────────────────────────────────
@@ -324,7 +337,7 @@ def backup(
     from ..output_context import OutputContext
     from .backup_infra import create_infra_backup as _create
 
-    ctx = typer.Context(app, obj=OutputContext())
+    ctx = typer.Context(get_command(app), obj=OutputContext())
     _create(ctx, note=note or None, keep_local=False)
 
 
@@ -344,7 +357,7 @@ def restore(
     from ..output_context import OutputContext
     from .backup import restore_backup as _restore
 
-    ctx = typer.Context(app, obj=OutputContext())
+    ctx = typer.Context(get_command(app), obj=OutputContext())
     _restore(ctx, backup_id=backup_id, dry_run=False, source="infrastructure")
 
 
@@ -366,7 +379,7 @@ def env_create(
         args.extend(["--profile", "browser"])
     args.extend(["up", "-d"])
     typer.echo(f"Creating test environment: {name} (profile: {profile})")
-    _run(args, stream=True, env=compose_env())
+    _run(args, env=compose_env())
 
 
 @app.command("env-list")
@@ -400,7 +413,6 @@ def env_destroy(
         typer.echo(f"Destroying: {project_name}")
         _run(
             _env_compose_cmd(project_name, "down", "--volumes"),
-            stream=True,
             check=False,
             env=compose_env(),
         )

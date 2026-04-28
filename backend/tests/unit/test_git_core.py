@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.api.models.git_models import RepoWorkspaceSummary
 from app.utils import _git_core
 
 
@@ -43,3 +44,40 @@ def test_get_managed_repos_skips_shadowed_project_entries_from_fallback(mocker, 
     repos = _git_core.get_managed_repos()
 
     assert repos == [canonical_a_term, config_repo]
+
+
+def test_get_repo_status_uses_jj_bookmark_instead_of_detached_head(mocker, tmp_path: Path) -> None:
+    from cli.lib.jj import JJRepoStatus
+
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".jj").mkdir()
+    mocker.patch(
+        "app.utils._git_core._get_jj_status",
+        return_value=JJRepoStatus(
+            repo="repo",
+            path=str(tmp_path),
+            branch="main",
+            colocated=True,
+            state="undescribed",
+            described=False,
+            conflicted=False,
+            unpublished=1,
+            change_id="chg",
+            commit_id="commit",
+        ),
+    )
+    mocker.patch("app.utils._git_core._get_ahead_behind", return_value=(0, 0))
+    mocker.patch("app.utils._git_core._resolve_project_id", return_value="summitflow")
+    mocker.patch("app.utils._git_branches.get_all_branches", return_value=[])
+    mocker.patch(
+        "app.utils._git_branches.build_repo_workspace_summary",
+        return_value=RepoWorkspaceSummary(dirty_main_repo=True, needs_cleanup=True),
+    )
+
+    status = _git_core.get_repo_status(tmp_path)
+
+    assert status is not None
+    assert status.branch == "main"
+    assert status.state == "dirty"
+    assert status.uncommitted == 1
+    assert status.ahead == 1

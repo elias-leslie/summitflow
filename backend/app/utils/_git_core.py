@@ -151,6 +151,20 @@ def _get_ahead_behind(repo_path: Path, branch: str) -> tuple[int, int]:
     return int(parts[0]), int(parts[1])
 
 
+def _get_jj_status(repo_path: Path):
+    """Return jj status for colocated repos, falling back to Git on jj errors."""
+    try:
+        from cli.lib.jj import JJError, is_colocated, status_summary
+    except ImportError:
+        return None
+    if not is_colocated(repo_path):
+        return None
+    try:
+        return status_summary(repo_path)
+    except JJError:
+        return None
+
+
 def _classify_state(uncommitted: int, behind: int, ahead: int) -> str:
     """Return a state label based on repo counters."""
     if uncommitted > 0:
@@ -175,12 +189,18 @@ def get_repo_status(
     if not is_valid_git_repo(repo_path):
         return None
 
-    branch = _get_current_branch(repo_path)
-    if branch is None:
-        return None
-
-    uncommitted = _count_uncommitted(repo_path)
+    jj_status = _get_jj_status(repo_path)
+    if jj_status is not None:
+        branch = jj_status.branch
+        uncommitted = 0 if jj_status.state in {_STATE_CLEAN, "unpublished"} else 1
+    else:
+        branch = _get_current_branch(repo_path)
+        if branch is None:
+            return None
+        uncommitted = _count_uncommitted(repo_path)
     ahead, behind = _get_ahead_behind(repo_path, branch)
+    if jj_status is not None:
+        ahead = max(ahead, jj_status.unpublished)
     state = _classify_state(uncommitted, behind, ahead)
     resolved_project_id = _resolve_project_id(repo_path, project_id)
     active_checkpoints = (

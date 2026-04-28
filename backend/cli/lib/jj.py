@@ -374,9 +374,11 @@ def delete_task_bookmark(
         raise JJError("task id or bookmark is required for bookmark cleanup")
 
     delete_result = run_jj(repo, ["bookmark", "delete", resolved_bookmark])
-    _require_success(delete_result, "jj bookmark delete")
+    delete_detail = (delete_result.stdout + delete_result.stderr).strip()
+    if delete_result.returncode != 0 and "No such bookmark" not in delete_detail:
+        _require_success(delete_result, "jj bookmark delete")
 
-    push_args = ["git", "push", "--remote", remote, "--bookmark", resolved_bookmark, "--deleted"]
+    push_args = ["git", "push", "--remote", remote, "--deleted"]
     if dry_run:
         push_args.append("--dry-run")
     push_result = run_jj(repo, push_args)

@@ -184,6 +184,28 @@ class TestSessionsListCommand:
         assert result.exit_code == 0
         mock_refresh.assert_called_once_with()
 
+    def test_list_defaults_to_compact_output_for_agents(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = [
+            {
+                "id": "sess-1234567890",
+                "project_id": "agent-hub",
+                "status": "active",
+                "agent_slug": None,
+                "task_id": None,
+                "live_activity": {"lifecycle_state": "waiting_for_model"},
+                "updated_at": "2026-04-28T21:28:30Z",
+            }
+        ]
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["sessions", "list", "--status", "active"])
+
+        assert result.exit_code == 0
+        assert "SESSIONS[1]" in result.output
+        assert "SES agent-hub | active | - | sess-123 | task=- state=waiting_for_model" in result.output
+        assert '"live_activity"' not in result.output
+
 
 class TestSessionsCommandAliases:
     """Tests for root-level `st sessions` aliases."""
@@ -198,7 +220,7 @@ class TestSessionsCommandAliases:
             result = runner.invoke(app, ["sessions"])
 
         assert result.exit_code == 0
-        assert "sess-root" in result.output
+        assert "sess-roo" in result.output
         mock_client.list_sessions.assert_called_once_with(
             status=None,
             limit=20,
@@ -233,7 +255,7 @@ class TestSessionsCommandAliases:
             result = runner.invoke(app, ["sessions", "show", "sess-show"])
 
         assert result.exit_code == 0
-        assert '"id": "sess-show"' in result.output
+        assert "SESSION:sess-show|project=-|status=-|details:.dev-tools/session-sess-sho-details.txt" in result.output
         mock_client_ctor.assert_called_once_with(require_project=False)
         mock_client.get_session.assert_called_once_with("sess-show")
 
@@ -528,7 +550,7 @@ class TestRequireProjectFalse:
             result = runner.invoke(app, ["sessions", "list", "-s", "active"])
 
         assert result.exit_code == 0
-        assert "sess-in-project" in result.output
+        assert "sess-in-" in result.output
         mock_client.list_sessions.assert_called_once_with(
             status="active",
             limit=20,
