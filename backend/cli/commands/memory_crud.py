@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import typer
 
 from ..output import output_error, output_json
@@ -45,7 +47,7 @@ from .memory_formatters import (
 from .memory_validation import validate_content_format, validate_episode_content_present
 
 
-def _emit(out: OutputContext, result: dict[str, object], compact_fn) -> None:  # type: ignore[type-arg]
+def _emit(out: OutputContext, result: dict[str, object], compact_fn: Callable[[dict[str, object]], None]) -> None:
     if out.is_compact:
         compact_fn(result)
     else:
@@ -229,7 +231,7 @@ def _apply_properties_patch(
     target_uuid: str, existing: dict[str, object] | None, uuid: str,
     normalized_summary: str | None, trigger_types: str | None, trigger_phases: str | None,
     pinned: bool | None, context_kind: str | None, app_fields: tuple[str | None, ...],
-    clear_applicability: bool, cr_kwargs: dict[str, object],
+    clear_applicability: bool, change_reason: str | None,
 ) -> bool:
     consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs, audience_tags, exclude_audience_tags = app_fields
     applicability_changed = any(f is not None for f in app_fields) or clear_applicability
@@ -248,10 +250,16 @@ def _apply_properties_patch(
             audience_tags=audience_tags, exclude_audience_tags=exclude_audience_tags,
             clear_applicability=clear_applicability,
         )
-    patch_episode_properties(
-        target_uuid, normalized_summary, trigger_types, trigger_phases,
-        pinned, context_kind, applicability, **cr_kwargs,
-    )
+    if change_reason:
+        patch_episode_properties(
+            target_uuid, normalized_summary, trigger_types, trigger_phases,
+            pinned, context_kind, applicability, change_reason=change_reason,
+        )
+    else:
+        patch_episode_properties(
+            target_uuid, normalized_summary, trigger_types, trigger_phases,
+            pinned, context_kind, applicability,
+        )
     return True
 
 
@@ -272,17 +280,22 @@ def update_impl(
         uuid, content, normalized_tier, replacement_tags
     )
     if content is not None:
-        validate_content_format(content, normalized_summary or str(existing.get("summary", "")), effective_tier)  # type: ignore[union-attr]
+        existing_summary = str(existing.get("summary", "")) if existing is not None else ""
+        validate_content_format(content, normalized_summary or existing_summary, effective_tier or "reference")
     content_or_tier_changed = content is not None or normalized_tier is not None
     tags_changed = replacement_tags is not None or clear_tags
-    cr_kwargs: dict[str, object] = {"change_reason": change_reason} if change_reason else {}
     if content_or_tier_changed:
-        update_episode_content_or_tier(target_uuid, content=content, tier=effective_tier, **cr_kwargs)  # type: ignore[union-attr]
+        if change_reason:
+            update_episode_content_or_tier(
+                target_uuid, content=content, tier=effective_tier, change_reason=change_reason,
+            )
+        else:
+            update_episode_content_or_tier(target_uuid, content=content, tier=effective_tier)
         replace_episode_tags(target_uuid, replacement_tags if replacement_tags is not None else existing_tags)
     _app = (consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs, audience_tags, exclude_audience_tags)
     properties_patched = _apply_properties_patch(
         target_uuid, existing, uuid, normalized_summary, trigger_types, trigger_phases,
-        pinned, context_kind, _app, clear_applicability, cr_kwargs,
+        pinned, context_kind, _app, clear_applicability, change_reason,
     )
     if not content_or_tier_changed and tags_changed:
         replace_episode_tags(target_uuid, replacement_tags or [])

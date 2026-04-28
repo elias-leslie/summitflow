@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 import typer
 
@@ -14,24 +15,26 @@ from .subtask_validation import is_step_resolved
 
 
 def _incomplete_step_numbers(steps: list[dict[str, object]]) -> list[int]:
-    step_passes = {int(step["step_number"]): bool(step.get("passes", False)) for step in steps}
+    step_passes = {int(str(step["step_number"])): bool(step.get("passes", False)) for step in steps}
     return [
-        int(step["step_number"])
+        int(str(step["step_number"]))
         for step in steps
         if not is_step_resolved(step, step_passes)
     ]
 
 
+def _dict_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [cast(dict[str, object], item) for item in value if isinstance(item, dict)]
+
+
 def _subtask_steps(subtask: dict[str, object]) -> list[dict[str, object]]:
-    steps_from_table = subtask.get("steps_from_table")
-    if isinstance(steps_from_table, list) and steps_from_table:
+    steps_from_table = _dict_list(subtask.get("steps_from_table"))
+    if steps_from_table:
         return steps_from_table
-    steps = subtask.get("steps")
-    if isinstance(steps, list):
-        return steps
-    if isinstance(steps_from_table, list):
-        return steps_from_table
-    return []
+    steps = _dict_list(subtask.get("steps"))
+    return steps or steps_from_table
 
 
 def _uses_plan_context_steps(subtask: dict[str, object]) -> bool:

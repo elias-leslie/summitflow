@@ -27,7 +27,12 @@ def _existing_task_columns() -> set[str]:
 def _existing_task_constraints() -> set[str]:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
-    return {constraint["name"] for constraint in inspector.get_check_constraints("tasks")}
+    names: set[str] = set()
+    for constraint in inspector.get_check_constraints("tasks"):
+        name = constraint["name"]
+        if isinstance(name, str):
+            names.add(name)
+    return names
 
 
 def upgrade() -> None:

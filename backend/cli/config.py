@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Any, cast
 
 import httpx
 import yaml
@@ -61,13 +62,15 @@ def _resolve_project_from_list(projects: list[object], cwd: Path) -> tuple[str |
     for project in projects:
         if not isinstance(project, dict):
             continue
-        root_path = project.get("root_path")
+        project_data = cast(dict[str, Any], project)
+        root_path = project_data.get("root_path")
         if not root_path:
             continue
         root = Path(str(root_path)).resolve()
         try:
             cwd.relative_to(root)
-            return project.get("id"), str(root)
+            project_id = project_data.get("id")
+            return (project_id if isinstance(project_id, str) else None), str(root)
         except ValueError:
             continue
     return None, None
@@ -234,4 +237,8 @@ def get_available_projects() -> list[str]:
     projects = _fetch_projects_with_retry(api_base, max_retries=2)
     if not projects:
         return []
-    return [p.get("id") for p in projects if isinstance(p, dict) and p.get("id")]
+    return [
+        project_id
+        for p in projects
+        if isinstance(p, dict) and isinstance((project_id := cast(dict[str, Any], p).get("id")), str)
+    ]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -188,7 +188,7 @@ def test_create_project_queues_standard_onboarding_when_requested(client, monkey
         assert len(onboarding_calls) == 1
         args, kwargs = onboarding_calls[0]
         assert args[0] == project_id
-        request = cast(Any, args[1])
+        request = args[1]
         assert request.backup_frequency == "daily"
         assert request.backup_retention_days == 30
         assert kwargs["triggered_by"] == "project_create"
@@ -374,7 +374,7 @@ def test_onboard_project_queues_standard_onboarding(client, monkeypatch) -> None
         assert len(onboarding_calls) == 1
         args, kwargs = onboarding_calls[0]
         assert args[0] == project_id
-        request = cast(Any, args[1])
+        request = args[1]
         assert request.backup_frequency == "daily"
         assert request.backup_retention_days == 30
         assert kwargs["triggered_by"] == "project_onboard"

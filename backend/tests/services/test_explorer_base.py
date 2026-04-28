@@ -157,7 +157,7 @@ class TestBaseScanner:
     def test_abstract_scan_method(self) -> None:
         """Cannot instantiate BaseScanner directly."""
         with pytest.raises(TypeError):
-            BaseScanner("test-project")  # type: ignore
+            BaseScanner("test-project")
 
     def test_concrete_scanner_works(self) -> None:
         """Concrete scanner implementation works."""

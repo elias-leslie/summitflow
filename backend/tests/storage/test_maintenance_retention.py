@@ -379,7 +379,9 @@ class TestScanHistoryRetention:
                 """,
                 (project_id,),
             )
-            scan_id = cur.fetchone()[0]
+            row = cur.fetchone()
+            assert row is not None
+            scan_id = row[0]
             conn.commit()
 
         updated = fail_stale_running_scans(max_age_hours=6)
@@ -388,7 +390,9 @@ class TestScanHistoryRetention:
 
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT status, completed_at FROM scan_history WHERE id = %s", (scan_id,))
-            status, completed_at = cur.fetchone()
+            row = cur.fetchone()
+            assert row is not None
+            status, completed_at = row
             cur.execute("DELETE FROM scan_history WHERE id = %s", (scan_id,))
             conn.commit()
 

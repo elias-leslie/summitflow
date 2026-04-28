@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from importlib import import_module
+from types import ModuleType
+
 import typer
 
 from ..output import output_error
@@ -12,41 +15,43 @@ MAX_FALLBACK_COMPONENTS = 10
 MAX_FEEDBACK_LIMIT = 200
 
 
+def _component_map_module() -> ModuleType | None:
+    try:
+        return import_module("app.services.memory.scorecard_component_map")
+    except Exception:
+        return None
+
+
 def _get_component_suggestions(bad_id: str) -> list[str]:
     """Get component ID suggestions for fuzzy matching."""
-    try:
-        from app.services.memory.scorecard_component_map import get_all_component_ids
-
-        all_ids = get_all_component_ids()
-    except Exception:
+    module = _component_map_module()
+    get_all_component_ids = getattr(module, "get_all_component_ids", None) if module else None
+    if not callable(get_all_component_ids):
         return []
 
+    all_ids = get_all_component_ids()
     prefix = bad_id.split(".")[0] + "."
     return [cid for cid in all_ids if cid.startswith(prefix)]
 
 
 def validate_component_id(component_id: str) -> None:
     """Validate component ID, show suggestions on failure."""
-    try:
-        from app.services.memory.scorecard_component_map import is_valid_component_id
-
-        if is_valid_component_id(component_id):
-            return
-    except Exception:
+    module = _component_map_module()
+    is_valid_component_id = getattr(module, "is_valid_component_id", None) if module else None
+    if not callable(is_valid_component_id):
         return  # Can't validate, let server handle it
+    if is_valid_component_id(component_id):
+        return
 
     suggestions = _get_component_suggestions(component_id)
     msg = f'Unknown component "{component_id}".'
     if suggestions:
         msg += f' Did you mean: {", ".join(suggestions[:MAX_SUGGESTIONS])}?'
     else:
-        try:
-            from app.services.memory.scorecard_component_map import get_all_component_ids
-
+        get_all_component_ids = getattr(module, "get_all_component_ids", None)
+        if callable(get_all_component_ids):
             all_ids = get_all_component_ids()
             msg += f'\nValid components: {", ".join(all_ids[:MAX_FALLBACK_COMPONENTS])}...'
-        except Exception:
-            pass
     output_error(msg)
     raise typer.Exit(1)
 

@@ -106,6 +106,12 @@ def _build_seed_spec(skill_tag: str, content: str, fm: dict[str, Any]) -> tuple[
     return payload, tags
 
 
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if item]
+
+
 def _results_bucket(action: str) -> str:
     """Map action labels to results summary buckets."""
     if action == "would_create":
@@ -156,16 +162,19 @@ def _upsert_skill_episode(
     episode_uuid = str(existing["uuid"])
     existing_full = fetch_existing_episode(episode_uuid)
     existing_tags = fetch_episode_tags(episode_uuid)
-    desired_trigger_types = list(payload.get("trigger_task_types", []))
-    desired_trigger_phases = list(payload.get("trigger_phases", []))
+    raw_trigger_types = payload.get("trigger_task_types")
+    raw_trigger_phases = payload.get("trigger_phases")
+    desired_trigger_types = [str(item) for item in raw_trigger_types if item] if isinstance(raw_trigger_types, list) else []
+    desired_trigger_phases = [str(item) for item in raw_trigger_phases if item] if isinstance(raw_trigger_phases, list) else []
     desired_pinned = bool(payload.get("pinned", False))
     desired_context_kind = payload.get("context_kind") or "reference"
-    desired_applicability = payload.get("applicability")
+    raw_applicability = payload.get("applicability")
+    desired_applicability = raw_applicability if isinstance(raw_applicability, dict) else None
     content_changed = str(existing_full.get("content", "")).strip() != content.strip()
     tier_changed = str(existing_full.get("injection_tier", "reference")) != str(payload["injection_tier"])
     summary_changed = str(existing_full.get("summary", "")) != str(payload["summary"])
-    trigger_types_changed = list(existing_full.get("trigger_task_types") or []) != desired_trigger_types
-    trigger_phases_changed = list(existing_full.get("trigger_phases") or []) != desired_trigger_phases
+    trigger_types_changed = _string_list(existing_full.get("trigger_task_types")) != desired_trigger_types
+    trigger_phases_changed = _string_list(existing_full.get("trigger_phases")) != desired_trigger_phases
     pinned_changed = bool(existing_full.get("pinned", False)) != desired_pinned
     context_kind_changed = (existing_full.get("context_kind") or "reference") != desired_context_kind
     applicability_changed = (existing_full.get("applicability") or {}) != (desired_applicability or {})

@@ -127,7 +127,7 @@ def search(
     scope_id: str | None,
 ) -> None:
     """Search memory episodes."""
-    search_impl(out, query, limit, min_score, scope, scope_id)
+    search_impl(out, query, limit, min_score, None, scope, scope_id)
 
 
 def get(out: OutputContext, uuids: list[str]) -> None:

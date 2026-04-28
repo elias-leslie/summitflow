@@ -15,14 +15,18 @@ The script will:
 
 """
 
+import importlib.util
 import logging
 import sys
 from pathlib import Path
 from typing import Any
 
 # Auto-detect and re-exec into the backend venv if needed
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-import lib.ensure_backend_venv  # noqa: F401
+venv_helper = Path(__file__).resolve().parents[2] / "scripts" / "lib" / "ensure_backend_venv.py"
+spec = importlib.util.spec_from_file_location("ensure_backend_venv", venv_helper)
+if spec is not None and spec.loader is not None:
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
 
 from app.storage.connection import get_connection, get_cursor
 

@@ -13,6 +13,7 @@ class TestOperationsMixin:
 
     _client: Any
     _url: Any
+    _global_url: Any
     _handle_response: Any
 
     def list_tests(self, test_type: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
@@ -32,6 +33,9 @@ class ExecutionOperationsMixin:
     _handle_response: Any
     base_url: str
     get_task: Any
+
+    def _global_url(self, path: str) -> str:
+        raise NotImplementedError
 
     def get_autonomous_settings(self) -> dict[str, Any]:
         return exec_ops.get_autonomous_settings(self._client, self._url, self._handle_response)

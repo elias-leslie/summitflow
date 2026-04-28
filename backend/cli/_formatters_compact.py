@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 
 def truncate(s: str, length: int) -> str:
     """Truncate string to length, adding ... if truncated."""
@@ -10,7 +12,7 @@ def truncate(s: str, length: int) -> str:
     return s[: length - 3] + "..."
 
 
-def _safe_int(value: int | float | str | None) -> int:
+def _safe_int(value: object) -> int:
     """Convert value to int safely; returns 0 for non-numeric or invalid values."""
     if isinstance(value, (int, float)):
         return int(value)
@@ -39,7 +41,8 @@ def format_compact_subtask(subtask: dict[str, object]) -> str:
     subtask_id = subtask.get("subtask_id", "?")
     passes = "PASS" if subtask.get("passes") else "____"
     description = truncate(str(subtask.get("description") or ""), 40)
-    step_summary = subtask.get("step_summary") or {}
+    raw_step_summary = subtask.get("step_summary")
+    step_summary = cast(dict[str, object], raw_step_summary) if isinstance(raw_step_summary, dict) else {}
     done = _safe_int(step_summary.get("completed", 0))
     total = _safe_int(step_summary.get("total", 0))
     return f"{subtask_id:5} {passes} {description:40} [{done}/{total}]"

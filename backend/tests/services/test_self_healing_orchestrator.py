@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -262,12 +262,14 @@ class TestSelfHealingOrchestrator:
 
         orch = SelfHealingOrchestrator(mock_conn)
         summary = orch.get_health_summary()
+        by_project = cast(dict[str, int], summary["by_project"])
+        assert isinstance(by_project, dict)
 
         assert summary["should_run"]
         assert summary["total_unfixed"] == 8
         assert summary["projects_needing_fixes"] == 2
-        assert summary["by_project"]["proj-1"] == 5
-        assert summary["by_project"]["proj-2"] == 3
+        assert by_project["proj-1"] == 5
+        assert by_project["proj-2"] == 3
 
     @patch("app.services.quality_gate.fix_agent.fix_unfixed_errors")
     @patch("app.services.self_healing.project_scanner.list_projects")

@@ -305,7 +305,8 @@ class TestRunTargetedTests:
 
         # Mock the Path instances
         # First call: Path(project_path) / "backend" -> for cwd check
-        mock_backend_path = MagicMock(**{"__str__": lambda self: "/home/user/project/backend"})
+        mock_backend_path = MagicMock()
+        mock_backend_path.__str__.return_value = "/home/user/project/backend"
         mock_backend_path.is_dir.return_value = True
         mock_backend_path.__truediv__ = MagicMock(return_value=mock_backend_path)
 

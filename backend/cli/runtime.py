@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from app.utils.env_files import scrub_env_keys_from_files
 
@@ -15,12 +15,11 @@ COMPOSE_FILE = COMPOSE_DIR / "docker-compose.yml"
 COMPOSE_DEV_FILE = COMPOSE_DIR / "docker-compose.dev.yml"
 COMPOSE_ENV_FILE = COMPOSE_DIR / ".env"
 RUNTIME_MODE_FILE = COMPOSE_DIR / ".runtime-mode"
-DEFAULT_DOCKER_MODE = os.environ.get("SUMMITFLOW_DOCKER_DEFAULT_MODE", "prod")
-if DEFAULT_DOCKER_MODE not in {"dev", "prod"}:
-    DEFAULT_DOCKER_MODE = "prod"
 
 RuntimeMode = Literal["native", "docker", "container"]
 DockerMode = Literal["dev", "prod"]
+_DEFAULT_DOCKER_MODE = os.environ.get("SUMMITFLOW_DOCKER_DEFAULT_MODE", "prod")
+DEFAULT_DOCKER_MODE: DockerMode = cast(DockerMode, _DEFAULT_DOCKER_MODE) if _DEFAULT_DOCKER_MODE in {"dev", "prod"} else "prod"
 
 
 def compose_env() -> dict[str, str]:
@@ -78,7 +77,7 @@ def read_docker_mode() -> DockerMode:
     if RUNTIME_MODE_FILE.exists():
         raw = RUNTIME_MODE_FILE.read_text().strip()
         if raw in {"dev", "prod"}:
-            return raw
+            return cast(DockerMode, raw)
     return DEFAULT_DOCKER_MODE
 
 

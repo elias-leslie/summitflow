@@ -345,7 +345,7 @@ class TestOrchestrateTask:
 
         assert result["enabled"]
         assert result["projects_processed"] == 0
-        assert "No unfixed errors" in result.get("message", "")
+        assert "No unfixed errors" in str(result.get("message", ""))
         mock_orch.poll_and_fix.assert_not_called()
 
     @patch("app.tasks.self_healing.get_connection")
@@ -402,5 +402,5 @@ class TestOrchestrateTask:
 
         assert result["enabled"]
         assert "error" in result
-        assert "DB connection failed" in result["error"]
+        assert "DB connection failed" in str(result["error"])
         assert result["projects_processed"] == 0

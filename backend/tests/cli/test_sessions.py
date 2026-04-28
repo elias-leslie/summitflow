@@ -62,8 +62,7 @@ class TestSessionClientContract:
                 self._client = MagicMock()
                 self._handle_response = lambda response: response
 
-            @staticmethod
-            def _global_url(path: str) -> str:
+            def _global_url(self, path: str) -> str:
                 return f"http://test{path}"
 
         dummy = _Dummy()
@@ -81,8 +80,7 @@ class TestSessionClientContract:
                 self._client = MagicMock()
                 self._handle_response = lambda response: response
 
-            @staticmethod
-            def _global_url(path: str) -> str:
+            def _global_url(self, path: str) -> str:
                 return f"http://test{path}"
 
         dummy = _Dummy()

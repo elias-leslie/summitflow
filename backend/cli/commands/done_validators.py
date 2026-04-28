@@ -5,6 +5,8 @@ Handles subtask ID parsing and error message processing.
 
 from __future__ import annotations
 
+from typing import cast
+
 # Error messages returned to the user when DB triggers block completion.
 _ERR_DEPENDENCIES = (
     "Cannot complete: Blocking dependencies incomplete. Complete them first."
@@ -30,7 +32,7 @@ def _extract_detail_text(detail: str | dict[str, str] | object) -> str:
     if isinstance(detail, str):
         return detail.lower()
     if isinstance(detail, dict):
-        return str(detail.get("detail", "")).lower()
+        return str(cast(dict[str, object], detail).get("detail", "")).lower()
     return ""
 
 

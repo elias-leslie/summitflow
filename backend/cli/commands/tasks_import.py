@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import typer
 
@@ -114,7 +114,8 @@ def _refresh_imported_task(
     if subtasks:
         task["subtasks"] = subtasks
     if second_opinion:
-        context = task.get("context") if isinstance(task.get("context"), dict) else {}
+        raw_context = task.get("context")
+        context = cast(dict[str, Any], raw_context) if isinstance(raw_context, dict) else {}
         task["context"] = {**context, "second_opinion": second_opinion}
     return task
 

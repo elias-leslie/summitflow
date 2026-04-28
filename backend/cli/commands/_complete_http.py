@@ -173,7 +173,7 @@ def _post_with_retry(
                 continue
             raise_connect_error("Agent Hub", url, e)
         except httpx.TimeoutException as e:
-            raise_timeout_error("Agent Hub", url, read_timeout, e)
+            raise_timeout_error("Agent Hub", url, read_timeout if read_timeout is not None else 0.0, e)
         except typer.Exit:
             raise
         except Exception as e:
