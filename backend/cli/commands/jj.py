@@ -37,6 +37,7 @@ Common workflows:
   st jj new -m "start task"
   st jj describe -m "better description"
   st commit -m "fix: concise result" --push --task task-abc
+  st jj push --bookmark main --revision main
   st jj log --limit 20
   st jj op-log --limit 20
   st jj remote-bookmarks <name>
@@ -196,6 +197,7 @@ def push(
     repo: Annotated[Path | None, typer.Option("--repo", "-R", help="Repository path.")] = None,
     task_id: Annotated[str, typer.Option("--task", help="Task id for deterministic bookmark and audit log.")] = "",
     bookmark: Annotated[str, typer.Option("--bookmark", help="Explicit bookmark name.")] = "",
+    revision: Annotated[str, typer.Option("--revision", "-r", help="Revision to publish.")] = "@",
     remote: Annotated[str, typer.Option("--remote", help="Remote name.")] = "origin",
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Show push result without publishing.")] = False,
     delete_bookmark: Annotated[bool, typer.Option("--delete-bookmark", help="Delete the task bookmark locally and remotely.")] = False,
@@ -206,7 +208,14 @@ def push(
         if delete_bookmark:
             result = delete_task_bookmark(path, task_id=task_id, bookmark=bookmark, remote=remote, dry_run=dry_run)
         else:
-            result = publish_current_revision(path, task_id=task_id, bookmark=bookmark, remote=remote, dry_run=dry_run)
+            result = publish_current_revision(
+                path,
+                task_id=task_id,
+                bookmark=bookmark,
+                revision=revision,
+                remote=remote,
+                dry_run=dry_run,
+            )
     except JJError as exc:
         output_error(str(exc))
         raise typer.Exit(1) from None

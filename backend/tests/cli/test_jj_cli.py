@@ -125,6 +125,7 @@ def test_push_uses_task_bookmark_and_logs(
         Path("/repo"),
         task_id="task-1",
         bookmark="",
+        revision="@",
         remote="origin",
         dry_run=False,
     )
@@ -178,7 +179,7 @@ def test_publish_rejects_failed_quality_gate(tmp_path: Path) -> None:
         description="ready",
     )
     with (
-        patch("cli.lib.jj.current_revision_info", return_value=revision),
+        patch("cli.lib.jj.revision_info", return_value=revision),
         patch("cli.lib.jj.run_checks", return_value=(False, "boom")),
         patch("cli.lib.jj.run_jj") as mock_run_jj,
         pytest.raises(jj_lib.JJError, match="quality gates failed before jj push"),
@@ -199,7 +200,7 @@ def test_publish_without_task_uses_current_bookmark(tmp_path: Path) -> None:
         description="ready",
     )
     with (
-        patch("cli.lib.jj.current_revision_info", return_value=revision),
+        patch("cli.lib.jj.revision_info", return_value=revision),
         patch("cli.lib.jj.run_checks", return_value=(True, "ok")),
         patch("cli.lib.jj.display_branch", return_value="main"),
         patch("cli.lib.jj.latest_operation_id", return_value="op"),
@@ -215,6 +216,30 @@ def test_publish_without_task_uses_current_bookmark(tmp_path: Path) -> None:
         tmp_path,
         ["git", "push", "--remote", "origin", "--bookmark", "main", "--allow-empty-description"],
     ) in mock_run_jj.call_args_list
+
+
+def test_publish_can_target_named_revision(tmp_path: Path) -> None:
+    (tmp_path / ".jj").mkdir()
+    (tmp_path / ".git").mkdir()
+    revision = JJRevisionInfo(
+        change_id="chg",
+        commit_id="commit",
+        empty=False,
+        conflict=False,
+        description="ready",
+    )
+    with (
+        patch("cli.lib.jj.revision_info", return_value=revision),
+        patch("cli.lib.jj.run_checks", return_value=(True, "ok")),
+        patch("cli.lib.jj.latest_operation_id", return_value="op"),
+        patch("cli.lib.jj.run_jj") as mock_run_jj,
+    ):
+        mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        result = jj_lib.publish_current_revision(tmp_path, bookmark="task/main", revision="main")
+
+    assert result["bookmark"] == "task/main"
+    assert call(tmp_path, ["bookmark", "set", "task/main", "-r", "main"]) in mock_run_jj.call_args_list
 
 
 def test_commit_rejects_skip_checks_when_publishing(tmp_path: Path) -> None:

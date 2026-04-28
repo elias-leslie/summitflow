@@ -153,9 +153,9 @@ def _require_success(result: subprocess.CompletedProcess[str], action: str) -> N
     raise JJError(f"{action} failed: {detail}")
 
 
-def current_revision_info(repo: Path) -> JJRevisionInfo:
-    result = run_jj(repo, ["log", "--no-graph", "-r", "@", "-T", CURRENT_REV_TEMPLATE])
-    _require_success(result, "jj current revision")
+def revision_info(repo: Path, revision: str = "@") -> JJRevisionInfo:
+    result = run_jj(repo, ["log", "--no-graph", "-r", revision, "-T", CURRENT_REV_TEMPLATE])
+    _require_success(result, f"jj revision {revision}")
     line = result.stdout.strip("\n")
     parts = line.split("\t", 4)
     if len(parts) != 5:
@@ -167,6 +167,10 @@ def current_revision_info(repo: Path) -> JJRevisionInfo:
         conflict=parts[3] == "conflict",
         description=parts[4],
     )
+
+
+def current_revision_info(repo: Path) -> JJRevisionInfo:
+    return revision_info(repo, "@")
 
 
 def unpublished_count(repo: Path) -> int:
@@ -266,6 +270,7 @@ def publish_current_revision(
     *,
     task_id: str = "",
     bookmark: str = "",
+    revision: str = "@",
     remote: str = "origin",
     run_quality_gate: bool = True,
     dry_run: bool = False,
@@ -273,11 +278,11 @@ def publish_current_revision(
     """Publish the current jj revision under a deterministic bookmark."""
     if not is_colocated(repo):
         raise JJError(f"{repo} is not a jj-colocated repository")
-    info = current_revision_info(repo)
+    info = revision_info(repo, revision)
     if not info.description.strip():
-        raise JJError("refusing to publish current revision without a description")
+        raise JJError(f"refusing to publish {revision} without a description")
     if info.conflict:
-        raise JJError("refusing to publish a conflicted revision")
+        raise JJError(f"refusing to publish conflicted revision {revision}")
 
     if run_quality_gate:
         ok, detail = run_checks(repo)
@@ -287,7 +292,7 @@ def publish_current_revision(
     resolved_bookmark = task_bookmark(task_id, bookmark) or display_branch(repo)
     if resolved_bookmark == "HEAD":
         raise JJError("bookmark or task id is required when no current bookmark is available")
-    set_result = run_jj(repo, ["bookmark", "set", resolved_bookmark, "-r", "@"])
+    set_result = run_jj(repo, ["bookmark", "set", resolved_bookmark, "-r", revision])
     _require_success(set_result, "jj bookmark set")
 
     push_args = [
