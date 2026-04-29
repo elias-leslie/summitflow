@@ -126,6 +126,10 @@ def commit_command(
     task_id: Annotated[str, typer.Option("--task", help="Task id for bookmark and audit log.")] = "",
     repo: Annotated[str | None, typer.Option("--repo", "-R", help="Repository path. Defaults to current repo.")] = None,
     skip_checks: Annotated[bool, typer.Option("--skip-checks", help="Skip local check gate for local-only recovery commits.")] = False,
+    paths: Annotated[
+        list[str] | None,
+        typer.Option("--path", "--paths", help="Only commit/publish selected path(s) in jj repositories."),
+    ] = None,
 ) -> None:
     """High-level st-owned commit workflow."""
     try:
@@ -136,6 +140,7 @@ def commit_command(
             task_id=task_id,
             push=push,
             skip_checks=skip_checks,
+            paths=tuple(paths or ()),
         )
     except CommitError as exc:
         typer.echo(f"ERROR:{exc}", err=True)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -115,6 +116,7 @@ def commit_repo(
     push: bool = True,
     skip_checks: bool = False,
     bookmark: str = "",
+    paths: Sequence[str] = (),
 ) -> dict[str, Any]:
     if push and skip_checks:
         raise CommitError("refusing to publish with --skip-checks")
@@ -127,9 +129,12 @@ def commit_repo(
                 push=push,
                 skip_checks=skip_checks,
                 bookmark=bookmark,
+                paths=paths,
             )
         except JJError as exc:
             raise CommitError(str(exc)) from exc
+    if paths:
+        raise CommitError("selective commit requires a jj-colocated repository")
     return commit_git_revision(
         repo,
         message=message,

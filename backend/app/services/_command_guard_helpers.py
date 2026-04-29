@@ -21,7 +21,7 @@ _GIT_REPO_CHECK = ["git", "rev-parse", "--is-inside-work-tree"]
 GIT_ABORT_ACTIONS = frozenset({"--abort", "--continue", "--quit", "--skip"})
 SHELL_EXECUTABLES = frozenset({"bash", "sh", "zsh", "ksh"})
 BASH_INTERCEPT_WORDS: tuple[str, ...] = (
-    "git", "python", "python3", "pytest", "mypy", "ty", "ruff", "biome",
+    "git", "jj", "python", "python3", "pytest", "mypy", "ty", "ruff", "biome",
     "npx", "pnpm", "npm", "vitest", "sqlfluff", "squawk",
     "docker", "env", "nohup", "nice", "stdbuf", "timeout", "bash", "sh",
     "systemctl", "pkill", "killall", "uvicorn", "gunicorn", "next", "psql",

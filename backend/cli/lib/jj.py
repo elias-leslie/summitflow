@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -358,6 +359,72 @@ def publish_current_revision(
     }
 
 
+def _normalize_selected_paths(repo: Path, paths: Sequence[str]) -> list[str]:
+    selected: list[str] = []
+    repo_root = repo.resolve()
+    for raw in paths:
+        value = raw.strip()
+        if not value:
+            continue
+        path = Path(value).expanduser()
+        if path.is_absolute():
+            try:
+                value = path.resolve().relative_to(repo_root).as_posix()
+            except ValueError as exc:
+                raise JJError(f"path is outside repository: {raw}") from exc
+        selected.append(value)
+    if not selected:
+        raise JJError("at least one path is required for selective commit")
+    return selected
+
+
+def commit_selected_paths(
+    repo: Path,
+    *,
+    message: str,
+    paths: Sequence[str],
+    task_id: str = "",
+    push: bool = True,
+    skip_checks: bool = False,
+    bookmark: str = "",
+) -> dict[str, Any]:
+    """Split selected paths from @, describe that revision, and optionally publish it."""
+    if not is_colocated(repo):
+        raise JJError(f"{repo} is not a jj-colocated repository")
+    if not message.strip():
+        raise JJError("commit message is required for jj-backed commit")
+    if push and skip_checks:
+        raise JJError("refusing to publish jj revision with --skip-checks")
+
+    selected_paths = _normalize_selected_paths(repo, paths)
+    split = run_jj(repo, ["split", "-m", message, "--", *selected_paths])
+    _require_success(split, "jj split")
+    info = revision_info(repo, "@-")
+    result: dict[str, Any] = {
+        "repo": repo.name,
+        "path": str(repo),
+        "status": "SUCCESS",
+        "change_id": info.change_id,
+        "commit_id": info.commit_id,
+        "message": message,
+        "pushed": False,
+        "selected_paths": selected_paths,
+        "working_copy": "remaining",
+    }
+    if push:
+        publish = publish_current_revision(
+            repo,
+            task_id=task_id,
+            bookmark=bookmark,
+            revision="@-",
+            run_quality_gate=not skip_checks,
+        )
+        result.update(publish)
+        result["selected_paths"] = selected_paths
+        result["working_copy"] = "remaining"
+    return result
+
+
 def delete_task_bookmark(
     repo: Path,
     *,
@@ -404,6 +471,7 @@ def commit_current_revision(
     push: bool = True,
     skip_checks: bool = False,
     bookmark: str = "",
+    paths: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Describe the current jj revision and optionally publish it."""
     if not is_colocated(repo):
@@ -412,6 +480,16 @@ def commit_current_revision(
         raise JJError("commit message is required for jj-backed commit")
     if push and skip_checks:
         raise JJError("refusing to publish jj revision with --skip-checks")
+    if paths:
+        return commit_selected_paths(
+            repo,
+            message=message,
+            paths=paths,
+            task_id=task_id,
+            push=push,
+            skip_checks=skip_checks,
+            bookmark=bookmark,
+        )
 
     before = status_summary(repo)
     if before.state == "clean" and before.unpublished == 0:

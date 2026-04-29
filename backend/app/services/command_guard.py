@@ -29,6 +29,7 @@ from ._command_guard_helpers import (
     git_restore_decision,
     git_revert_decision,
     is_inside_git_repo,
+    is_managed_repo_root,
     normalize_repo_paths,
     normalize_segment,
     shell_exec_args,
@@ -47,6 +48,34 @@ from .destructive_path_guard import (
 
 _ROOT = Path(__file__).resolve().parents[3]
 _REGISTRY_PATH = _ROOT / "scripts" / "lib" / "tool-registry.json"
+_GIT_GLOBAL_OPTIONS_WITH_VALUE = {
+    "-c",
+    "--config-env",
+    "--exec-path",
+    "--git-dir",
+    "--namespace",
+    "--super-prefix",
+    "--work-tree",
+}
+_GIT_GLOBAL_FLAGS = {
+    "--bare",
+    "--glob-pathspecs",
+    "--icase-pathspecs",
+    "--literal-pathspecs",
+    "--no-optional-locks",
+    "--no-pager",
+    "--noglob-pathspecs",
+    "--paginate",
+    "-p",
+}
+_GIT_MANAGED_REDIRECTS = {
+    "status": ("git_status_redirect", "BLOCKED:git status:Use 'st jj status' or 'st vcs doctor'."),
+    "diff": ("git_diff_redirect", "BLOCKED:git diff:Use 'st jj diff'."),
+    "log": ("git_log_redirect", "BLOCKED:git log:Use 'st jj log'."),
+    "fetch": ("git_fetch_redirect", "BLOCKED:git fetch:Use 'st vcs reconcile' or 'st jj sync'."),
+    "pull": ("git_pull_redirect", "BLOCKED:git pull:Use 'st vcs reconcile'."),
+    "push": ("git_push_redirect", "BLOCKED:git push:Use 'st commit --push' or 'st jj push'."),
+}
 
 
 class CommandGuardError(RuntimeError):
@@ -166,12 +195,48 @@ def _make_path_conflict_fn(root: Path | None) -> Any:
     return check
 
 
-def _git_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | None:
+def _git_invocation(segment: Sequence[str], cwd: Path) -> tuple[str, list[str], Path] | None:
     unwrapped = unwrap_segment(segment)
     if len(unwrapped) < 2 or unwrapped[0] != "git":
         return None
-    subcommand, args, segment_text = unwrapped[1], unwrapped[2:], normalize_segment(segment)
-    root = _repo_root(cwd)
+
+    index = 1
+    git_cwd = cwd
+    while index < len(unwrapped):
+        token = unwrapped[index]
+        if token == "-C" and index + 1 < len(unwrapped):
+            target = Path(unwrapped[index + 1]).expanduser()
+            git_cwd = (target if target.is_absolute() else git_cwd / target).resolve()
+            index += 2
+            continue
+        if token.startswith("-C") and token != "-C":
+            target = Path(token[2:]).expanduser()
+            git_cwd = (target if target.is_absolute() else git_cwd / target).resolve()
+            index += 1
+            continue
+        if token in _GIT_GLOBAL_OPTIONS_WITH_VALUE and index + 1 < len(unwrapped):
+            index += 2
+            continue
+        if any(token.startswith(f"{option}=") for option in _GIT_GLOBAL_OPTIONS_WITH_VALUE):
+            index += 1
+            continue
+        if token in _GIT_GLOBAL_FLAGS:
+            index += 1
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        return token, unwrapped[index + 1 :], git_cwd
+    return None
+
+
+def _git_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | None:
+    parsed = _git_invocation(segment, cwd)
+    if parsed is None:
+        return None
+    subcommand, args, git_cwd = parsed
+    segment_text = normalize_segment(segment)
+    root = _repo_root(git_cwd)
     check_fn = _make_path_conflict_fn(root)
 
     if subcommand == "reset" and git_has_flag(args, "--hard"):
@@ -202,6 +267,12 @@ def _git_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | N
             message="BLOCKED:git commit:Use 'st commit --push --message \"...\"' instead of raw git commit.",
             source="git", command=segment_text,
         )
+    if is_managed_repo_root(root) and subcommand in _GIT_MANAGED_REDIRECTS:
+        code, message = _GIT_MANAGED_REDIRECTS[subcommand]
+        return CommandGuardDecision(
+            blocked=True, code=code, message=message,
+            source="git", command=segment_text,
+        )
     if subcommand == "checkout":
         return git_checkout_decision(args, segment_text, root, check_fn)
     if subcommand == "restore":
@@ -213,6 +284,22 @@ def _git_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | N
     if subcommand == "revert":
         return git_revert_decision(args, segment_text, root, check_fn, CommandGuardError)
     return None
+
+
+def _jj_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | None:
+    unwrapped = unwrap_segment(segment)
+    if not unwrapped or unwrapped[0] != "jj":
+        return None
+    root = _repo_root(cwd)
+    if not is_managed_repo_root(root):
+        return None
+    return CommandGuardDecision(
+        blocked=True,
+        code="jj_redirect",
+        message="BLOCKED:jj:Use 'st jj ...' so no-pager, check, and publish policy applies.",
+        source="jj",
+        command=normalize_segment(segment),
+    )
 
 
 def evaluate_shell_command(command: str, cwd: str | Path | None = None) -> CommandGuardDecision:
@@ -229,6 +316,9 @@ def evaluate_shell_command(command: str, cwd: str | Path | None = None) -> Comma
         if decision and decision.blocked:
             return decision
         decision = _git_decision(segment, working_dir)
+        if decision:
+            return decision
+        decision = _jj_decision(segment, working_dir)
         if decision:
             return decision
     return CommandGuardDecision(blocked=False, code=None, message=None, source=None, command=command)

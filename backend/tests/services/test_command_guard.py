@@ -46,6 +46,10 @@ def test_st_check_commands_are_allowed(tmp_path: Path) -> None:
     assert decision.blocked is False
 
 
+def test_intercepts_raw_jj() -> None:
+    assert "jj" in get_bash_intercept_words()
+
+
 @pytest.mark.parametrize(
     ("command", "expected"),
     [
@@ -88,6 +92,64 @@ def test_blocks_raw_git_commit(tmp_path: Path) -> None:
     assert decision.blocked is True
     assert decision.code == "git_commit_redirect"
     assert "st commit --push" in (decision.message or "")
+
+
+@pytest.mark.parametrize(
+    ("command", "code", "expected"),
+    [
+        ("git status --short", "git_status_redirect", "st jj status"),
+        ("git diff --stat", "git_diff_redirect", "st jj diff"),
+        ("git -C repo log -1", "git_log_redirect", "st jj log"),
+        ("git fetch origin", "git_fetch_redirect", "st vcs reconcile"),
+        ("git pull --ff-only", "git_pull_redirect", "st vcs reconcile"),
+        ("git push origin main", "git_push_redirect", "st commit --push"),
+    ],
+)
+def test_redirects_raw_git_vcs_in_managed_repo(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    command: str,
+    code: str,
+    expected: str,
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    monkeypatch.setattr("app.services.command_guard._repo_root", lambda cwd: repo_root)
+    monkeypatch.setattr(
+        "app.services._command_guard_helpers.get_managed_repos",
+        lambda: [repo_root.resolve()],
+    )
+
+    decision = evaluate_shell_command(command, tmp_path)
+
+    assert decision.blocked is True
+    assert decision.code == code
+    assert expected in (decision.message or "")
+
+
+def test_allows_raw_git_status_in_unmanaged_repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("app.services.command_guard._repo_root", lambda cwd: tmp_path)
+    monkeypatch.setattr("app.services._command_guard_helpers.get_managed_repos", lambda: [])
+
+    decision = evaluate_shell_command("git status --short", tmp_path)
+
+    assert decision.blocked is False
+
+
+def test_redirects_raw_jj_in_managed_repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    monkeypatch.setattr("app.services.command_guard._repo_root", lambda cwd: repo_root)
+    monkeypatch.setattr(
+        "app.services._command_guard_helpers.get_managed_repos",
+        lambda: [repo_root.resolve()],
+    )
+
+    decision = evaluate_shell_command("jj status", repo_root)
+
+    assert decision.blocked is True
+    assert decision.code == "jj_redirect"
+    assert "st jj" in (decision.message or "")
 
 
 def test_blocks_nested_shell_git_reset(tmp_path: Path) -> None:
