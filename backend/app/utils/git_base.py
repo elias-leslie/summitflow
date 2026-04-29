@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
 _BASE_BRANCH_CANDIDATES = ("main", "master", "develop")
 _INVALID_BASE_BRANCHES = {"", "HEAD"}
+_TASK_BRANCH_RE = re.compile(r"^(?:task/)?task-[0-9a-f]{8}(?:/main)?$")
 
 
 def _run_git(args: list[str], repo_path: str | Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -50,9 +52,9 @@ def detect_base_branch(repo_path: str | Path | None = None) -> str:
 def normalize_base_branch(base_branch: str | None, repo_path: str | Path | None = None) -> str:
     """Replace invalid task base refs like HEAD with the repo's real base branch."""
     branch = str(base_branch or "").strip()
-    return detect_base_branch(repo_path) if branch in _INVALID_BASE_BRANCHES else branch
+    return detect_base_branch(repo_path) if branch in _INVALID_BASE_BRANCHES or _TASK_BRANCH_RE.match(branch) else branch
 
 
 def current_branch_or_base(repo_path: str | Path | None = None) -> str:
     """Return current symbolic branch, falling back to the detected base branch."""
-    return current_branch(repo_path) or detect_base_branch(repo_path)
+    return normalize_base_branch(current_branch(repo_path), repo_path)
