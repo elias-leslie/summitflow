@@ -212,15 +212,14 @@ def _build_repo_cleanup_entry(repo_path: Path) -> RepoEntry:
     dirty_main_repo = bool(getattr(ws, "dirty_main_repo", False))
     stale_checkpoints = len(get_stale_checkpoints(project_id))
     snapshot_residue = len(find_snapshot_residue([project_id], project_id=project_id))
+    workspace_needs_cleanup = bool(getattr(ws, "needs_cleanup", False))
     needs_merge_tasks: list[str] = []
     conflict_tasks: list[str] = []
     review_tasks: list[str] = []
     needs_cleanup = any((
-        dirty_main_repo,
+        workspace_needs_cleanup,
         stale_checkpoints,
         snapshot_residue,
-        ws.orphan_branches,
-        ws.prunable_branches,
         needs_merge_tasks, conflict_tasks, review_tasks,
     ))
     return RepoEntry(

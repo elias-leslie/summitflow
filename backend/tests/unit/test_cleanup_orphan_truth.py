@@ -366,6 +366,7 @@ def test_cleanup_status_does_not_count_active_checkpoint_as_residue(mocker) -> N
             active_checkpoints=1,
             dirty_checkpoints=0,
             dirty_main_repo=False,
+            needs_cleanup=False,
             orphan_branches=0,
             prunable_branches=0,
             checkpoint_task_ids=["task-active"],
@@ -382,6 +383,38 @@ def test_cleanup_status_does_not_count_active_checkpoint_as_residue(mocker) -> N
     assert payload["summary"]["active_checkpoints"] == 1
     assert payload["summary"]["repos_needing_cleanup"] == 0
     assert payload["repositories"][0]["needs_cleanup"] is False
+
+
+def test_workspace_summary_does_not_count_running_dirty_checkpoint_as_main_dirty(
+    mocker,
+    patch_orphan_git,
+) -> None:
+    mocker.patch("app.utils._git_branch_cleanup.git_core.has_uncommitted_changes", return_value=True)
+    mocker.patch(
+        "app.utils._git_branch_cleanup._load_task_status",
+        return_value=("running", "task:running"),
+    )
+    checkpoints = [SimpleNamespace(task_id="task-active")]
+    branches = [
+        BranchInfo(
+            name="task-active/main",
+            is_current=True,
+            has_checkpoint=True,
+            repo_name="test-project",
+            project_id="test-project",
+            task_id="task-active",
+        )
+    ]
+
+    summary = build_repo_workspace_summary(
+        REPO_PATH,
+        branches=branches,
+        active_checkpoints=checkpoints,
+    )
+
+    assert summary.dirty_checkpoints == 1
+    assert summary.dirty_main_repo is False
+    assert summary.needs_cleanup is False
 
 
 def test_cleanup_inspect_orphans_and_salvage_follow_shared_assessment_truth(mocker) -> None:

@@ -352,10 +352,22 @@ def build_repo_workspace_summary(
         active_checkpoints=active_checkpoints,
     )
     lane_checkpoints = _lane_active_checkpoints(checkpoints)
-    dirty_main_repo = git_core.has_uncommitted_changes(repo_path)
-    dirty_checkpoint = bool(
-        dirty_main_repo
-        and any(branch.is_current and branch.task_id and branch.has_checkpoint for branch in branches)
+    dirty_repo = git_core.has_uncommitted_changes(repo_path)
+    current_checkpoint_task_id = next(
+        (
+            branch.task_id
+            for branch in branches
+            if branch.is_current and branch.task_id and branch.has_checkpoint
+        ),
+        None,
+    )
+    dirty_checkpoint = bool(dirty_repo and current_checkpoint_task_id)
+    dirty_checkpoint_status = (
+        _load_task_status(current_checkpoint_task_id)[0] if current_checkpoint_task_id else None
+    )
+    dirty_main_repo = bool(dirty_repo and not dirty_checkpoint)
+    dirty_checkpoint_needs_cleanup = bool(
+        dirty_checkpoint and dirty_checkpoint_status != "running"
     )
     task_branches = [branch for branch in branches if branch.task_id]
     orphan_branches = _orphan_task_branches(branches)
@@ -387,7 +399,12 @@ def build_repo_workspace_summary(
         task_branches=len(task_branches),
         orphan_branches=len(orphan_branches),
         prunable_branches=len(prunable_branches),
-        needs_cleanup=bool(dirty_main_repo or orphan_branches or prunable_branches),
+        needs_cleanup=bool(
+            dirty_main_repo
+            or dirty_checkpoint_needs_cleanup
+            or orphan_branches
+            or prunable_branches
+        ),
         checkpoint_task_ids=[checkpoint.task_id for checkpoint in lane_checkpoints],
         orphan_branch_names=[branch.name for branch in orphan_branches[:5]],
         prunable_branch_names=[branch.name for branch in prunable_branches[:5]],
