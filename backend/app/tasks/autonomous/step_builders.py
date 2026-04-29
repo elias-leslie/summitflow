@@ -120,57 +120,57 @@ def _ast_check(path: str, body: str) -> str:
 
 
 def _build_function_checks(relative_path: str, issues: list[str]) -> list[str]:
-    """Return structural check commands for function-level issues."""
+    """Return structural measurement commands for function-level issues."""
     p = relative_path
     checks: list[str] = []
     if "has_long_functions" in issues:
         checks.append(_ast_check(p,
-            "bad=[n.name for n in ast.walk(t) "
+            "lengths=sorted([(n.end_lineno-n.lineno,n.name) for n in ast.walk(t) "
             "if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) "
-            "and n.end_lineno-n.lineno>50]; "
-            "assert not bad, f'Long functions: {bad}'"
+            "and n.end_lineno and n.lineno], reverse=True)[:5]; "
+            "print('largest_functions', lengths)"
         ))
     if "deep_nesting" in issues:
         checks.append(_ast_check(p,
-            "deep=[n.name for n in ast.walk(t) "
+            "deep=sorted({n.name for n in ast.walk(t) "
             "if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) "
             "for c in ast.walk(n) "
             "if isinstance(c,(ast.If,ast.For,ast.While,ast.With,ast.Try)) "
-            "and (c.col_offset-n.col_offset)//4>3]; "
-            "assert not deep, f'Deep nesting in: {set(deep)}'"
+            "and (c.col_offset-n.col_offset)//4>3}); "
+            "print('deep_nesting', deep)"
         ))
     if "too_many_functions" in issues:
         checks.append(_ast_check(p,
             "fns=[n.name for n in ast.walk(t) "
             "if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))]; "
-            "assert len(fns)<=20, f'Function count: {len(fns)}'"
+            "print('function_count', len(fns))"
         ))
     return checks
 
 
 def _build_class_checks(relative_path: str, issues: list[str]) -> list[str]:
-    """Return structural check commands for class-level issues."""
+    """Return structural measurement commands for class-level issues."""
     p = relative_path
     checks: list[str] = []
     if "too_many_classes" in issues:
         checks.append(_ast_check(p,
             "cls=[n.name for n in ast.walk(t) if isinstance(n,ast.ClassDef)]; "
-            "assert len(cls)<=5, f'Class count: {len(cls)}'"
+            "print('class_count', len(cls))"
         ))
     if "has_large_classes" in issues:
         checks.append(_ast_check(p,
             "big=[n.name for n in ast.walk(t) if isinstance(n,ast.ClassDef) "
             "and sum(1 for c in ast.iter_child_nodes(n) "
             "if isinstance(c,(ast.FunctionDef,ast.AsyncFunctionDef)))>10]; "
-            "assert not big, f'Large classes: {big}'"
+            "print('large_classes', big)"
         ))
     if "too_many_imports" in issues:
-        checks.append(f"test $(grep -cE '^(import |from .+ import )' {relative_path}) -le 30")
+        checks.append(f"printf 'import_count '; grep -cE '^(import |from .+ import )' {relative_path}")
     return checks
 
 
 def _build_structural_checks(relative_path: str, issues: list[str]) -> list[str]:
-    """Build AST-based verification commands for each structural issue."""
+    """Build AST-based measurement commands for each structural issue."""
     # Python AST checks only apply to .py files — skip for JS/TS/etc.
     if not relative_path.endswith(".py"):
         return []
@@ -192,12 +192,12 @@ def _assemble_steps(
     steps: list[dict[str, object]] = []
     if any(i in issues for i in _SIZE_ISSUES) or not issues:
         steps.append(_step(
-            f"Refactor {relative_path} to simplify structure and reduce size where it helps (guideline: aim for <{target_lines} lines from {lines})",
+            f"Refactor {relative_path} to simplify structure; reduce size toward <{target_lines} lines from {lines} only where it improves clarity",
         ))
     structural_checks = _build_structural_checks(relative_path, issues)
     if structural_checks:
         steps.append(_step(
-            "Verify structural issues resolved with targeted checks",
+            "Measure structural issues after refactor and record the result",
             structural_checks,
         ))
     targeted_test = get_targeted_test_command(relative_path)

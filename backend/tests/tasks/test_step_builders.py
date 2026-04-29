@@ -149,8 +149,8 @@ class TestBuildRefactorSteps:
             refactor_issues=["large_file", "has_long_functions"],
         )
         refactor_step = next(s for s in steps if "refactor" in s["description"].lower())
-        assert "guideline" in refactor_step["description"].lower()
-        assert "aim for <200" in refactor_step["description"].lower()
+        assert "only where it improves clarity" in refactor_step["description"].lower()
+        assert "<200" in refactor_step["description"].lower()
 
     def test_no_size_issue_skips_refactor_step(self) -> None:
         """Files without size issues skip the refactor step."""
@@ -161,7 +161,7 @@ class TestBuildRefactorSteps:
         assert not any("refactor" in s["description"].lower() and "lines" in s["description"].lower() for s in steps)
 
     def test_structural_issues_get_structural_step(self) -> None:
-        """Structural issues generate a structural verification step."""
+        """Structural issues generate a structural measurement step."""
         steps = self._build_steps(
             "backend/app/services/foo.py", "/abs/path", 200, 150, False,
             refactor_issues=["has_long_functions", "deep_nesting"],
@@ -170,6 +170,7 @@ class TestBuildRefactorSteps:
         assert len(structural_step) == 1
         assert structural_step[0]["spec"]["verify_commands"]
         assert any("python3 -c" in cmd for cmd in structural_step[0]["spec"]["verify_commands"])
+        assert any("print(" in cmd for cmd in structural_step[0]["spec"]["verify_commands"])
 
     def test_too_many_functions_gets_structural_step(self) -> None:
         """too_many_functions generates a structural step."""

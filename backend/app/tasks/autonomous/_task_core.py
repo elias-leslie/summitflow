@@ -35,13 +35,13 @@ _ISSUE_LABELS: dict[str, str] = {
 _SIZE_ISSUES = frozenset({"oversized", "large_file", "bloat_critical", "bloat_warning"})
 
 _STRUCTURAL_CRITERIA: dict[str, str] = {
-    "has_long_functions": "No functions exceed 50 lines",
-    "deep_nesting": "No nesting deeper than 3 levels",
-    "too_many_functions": "Functions per file reduced to <=20",
-    "too_many_classes": "Classes per file reduced to <=5",
-    "has_large_classes": "No class has more than 10 methods",
-    "magic_strings": "Magic strings extracted to constants or config",
-    "too_many_imports": "Imports reduced to <=30",
+    "has_long_functions": "Largest functions are measured and split where that reduces complexity",
+    "deep_nesting": "Deep nesting is measured and flattened where that improves clarity",
+    "too_many_functions": "Function count is measured and grouped or extracted where that improves cohesion",
+    "too_many_classes": "Class count is measured and simplified where that improves cohesion",
+    "has_large_classes": "Large classes are measured and split where that reduces responsibility",
+    "magic_strings": "Repeated magic strings are extracted when it improves readability",
+    "too_many_imports": "Imports are measured and reduced where unused or overly broad",
 }
 
 
@@ -77,7 +77,7 @@ def _build_issue_aware_done_when(
 
     if any(i in _SIZE_ISSUES for i in refactor_issues):
         criteria.append(
-            f"File structure is meaningfully simplified, with size reduced toward the guideline target of <{target_lines} lines from {lines} where appropriate"
+            f"File structure is meaningfully simplified; reduce size toward <{target_lines} lines from {lines} only where it improves clarity"
         )
 
     criteria.extend(

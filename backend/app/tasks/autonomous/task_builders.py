@@ -80,7 +80,7 @@ def create_refactor_task(
     link_task_to_issue(task_id, issue_id)
     create_single_subtask_with_steps(
         task_id=task_id, subtask_id="1.1", phase=category,
-        description=f"Refactor {relative_path} - simplify structure and aim for <{target_lines} lines where it helps", steps=steps,
+        description=f"Refactor {relative_path} - simplify structure; reduce size toward <{target_lines} lines only if it improves clarity", steps=steps,
         subtask_type="refactor",
     )
     logger.info("Created refactor task %s with line verification: %s", task_id, title)

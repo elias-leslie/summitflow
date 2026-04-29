@@ -62,7 +62,7 @@ class TestBuildIssueAwareDoneWhen:
     def test_size_issue_includes_line_count_criterion(self) -> None:
         criteria = _build_issue_aware_done_when(400, 200, ["large_file"], False)
         assert any("200" in c for c in criteria)
-        assert any("guideline target" in c.lower() for c in criteria)
+        assert any("only where it improves clarity" in c.lower() for c in criteria)
 
     def test_no_size_issue_omits_line_count_criterion(self) -> None:
         criteria = _build_issue_aware_done_when(200, 150, ["deep_nesting"], False)
@@ -70,23 +70,23 @@ class TestBuildIssueAwareDoneWhen:
 
     def test_long_functions_criterion(self) -> None:
         criteria = _build_issue_aware_done_when(200, 150, ["has_long_functions"], False)
-        assert any("50 lines" in c for c in criteria)
+        assert any("largest functions" in c.lower() for c in criteria)
 
     def test_deep_nesting_criterion(self) -> None:
         criteria = _build_issue_aware_done_when(200, 150, ["deep_nesting"], False)
-        assert any("3 levels" in c for c in criteria)
+        assert any("deep nesting" in c.lower() for c in criteria)
 
     def test_too_many_functions_criterion(self) -> None:
         criteria = _build_issue_aware_done_when(200, 150, ["too_many_functions"], False)
-        assert any("20" in c for c in criteria)
+        assert any("function count" in c.lower() for c in criteria)
 
     def test_too_many_classes_criterion(self) -> None:
         criteria = _build_issue_aware_done_when(200, 150, ["too_many_classes"], False)
-        assert any("5" in c for c in criteria)
+        assert any("class count" in c.lower() for c in criteria)
 
     def test_large_classes_criterion(self) -> None:
         criteria = _build_issue_aware_done_when(200, 150, ["has_large_classes"], False)
-        assert any("10 methods" in c for c in criteria)
+        assert any("large classes" in c.lower() for c in criteria)
 
     def test_magic_strings_criterion(self) -> None:
         criteria = _build_issue_aware_done_when(200, 150, ["magic_strings"], False)
@@ -94,7 +94,7 @@ class TestBuildIssueAwareDoneWhen:
 
     def test_too_many_imports_criterion(self) -> None:
         criteria = _build_issue_aware_done_when(200, 150, ["too_many_imports"], False)
-        assert any("30" in c for c in criteria)
+        assert any("imports" in c.lower() and "measured" in c.lower() for c in criteria)
 
     def test_frontend_includes_browser_check(self) -> None:
         criteria = _build_issue_aware_done_when(400, 200, ["large_file"], True)
@@ -112,9 +112,9 @@ class TestBuildIssueAwareDoneWhen:
             False,
         )
         assert any("200" in c for c in criteria)  # line count
-        assert any("50 lines" in c for c in criteria)  # long functions
-        assert any("3 levels" in c for c in criteria)  # nesting
-        assert any("20" in c for c in criteria)  # function count
+        assert any("largest functions" in c.lower() for c in criteria)
+        assert any("deep nesting" in c.lower() for c in criteria)
+        assert any("function count" in c.lower() for c in criteria)
 
 
 class TestBuildRefactorDescription:
@@ -181,7 +181,7 @@ class TestCreateRefactorTask:
             "files_to_modify": ["backend/app/tasks/autonomous/task_generation.py"]
         }
         assert mock_create_subtask.call_args.kwargs["subtask_type"] == "refactor"
-        assert "aim for <200 lines" in mock_create_subtask.call_args.kwargs["description"]
+        assert "reduce size toward <200 lines only if it improves clarity" in mock_create_subtask.call_args.kwargs["description"]
         assert "preserving all existing behavior" in mock_create_task.call_args.kwargs["description"]
         mock_link.assert_called_once_with("task-123", 42)
 
