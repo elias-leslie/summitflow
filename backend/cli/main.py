@@ -49,6 +49,7 @@ from .commands import (
     tasks,
     tests,
     tools,
+    vcs,
     vm,
     web,
 )
@@ -64,7 +65,7 @@ CLI_REFERENCE = """ST CLI - SummitFlow Tasks.
 
 Core loop: pulse --gate | ready | claim <id> | context <id> | done <id>.
 Pause/resume: pause <id> [-r reason] | resume <id> [-r reason].
-VCS: commit -m MSG [--task T] | jj status | jj diff | jj show | git status.
+VCS: vcs doctor | vcs reconcile | commit -m MSG [--task T] | jj diff | jj show.
 Tools: check | service | db | browser | web | sessions | cleanup | logs.
 Use `<command> --help` for command-specific syntax."""
 
@@ -94,6 +95,7 @@ app.add_typer(sessions.app, name="sessions")
 app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
 app.add_typer(jj.app, name="jj")
+app.add_typer(vcs.app, name="vcs")
 app.add_typer(backup.app, name="backup")
 app.add_typer(service.app, name="service")
 app.add_typer(health.app, name="health")

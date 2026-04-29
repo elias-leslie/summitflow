@@ -19,7 +19,10 @@ from ._git_helpers import (
 )
 
 app = typer.Typer(
-    help=("Git inspection and residue repair. Use st commit for commits and st jj for normal VCS work.")
+    help=(
+        "Low-level Git inspection and residue repair. "
+        "Prefer st vcs doctor/reconcile for cross-repo hygiene."
+    )
 )
 
 

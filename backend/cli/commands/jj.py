@@ -30,6 +30,7 @@ from ._git_helpers import _get_managed_repos
 HELP_TEXT = """Jujutsu workflow through st.
 
 Principles:
+  - Use st vcs doctor/reconcile for cross-repo hygiene.
   - Agents call st jj or st commit, not raw jj, for normal VCS work.
   - All commands run with --no-pager and non-interactive editor config.
   - Publication runs st check first; jj-backed publish rejects --skip-checks.

@@ -16,7 +16,7 @@ runner = CliRunner()
 class TestCLIReferenceCompact:
     def test_cli_reference_is_short_and_agent_focused(self) -> None:
         assert len(CLI_REFERENCE) < 500
-        for text in ("pulse --gate", "pause <id>", "jj status", "check", "browser"):
+        for text in ("pulse --gate", "pause <id>", "vcs doctor", "check", "browser"):
             assert text in CLI_REFERENCE
 
     def test_root_help_is_bounded(self) -> None:

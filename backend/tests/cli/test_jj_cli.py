@@ -21,7 +21,7 @@ def test_jj_help_lists_agent_workflows() -> None:
     result = runner.invoke(jj.app, ["--help"])
 
     assert result.exit_code == 0
-    assert "Agents call st jj or st commit" in result.stdout
+    assert "st vcs doctor/reconcile" in result.stdout
     assert "init" in result.stdout
     assert "op-restore" in result.stdout
     assert "revert" in result.stdout
