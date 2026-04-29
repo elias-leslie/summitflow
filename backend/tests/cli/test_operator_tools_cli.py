@@ -162,6 +162,28 @@ def test_check_normalizes_repo_relative_explicit_paths(tmp_path: Path) -> None:
     run_tool.assert_called_once_with("biome", configs["biome"], ["src/app.ts"])
 
 
+def test_check_normalizes_repo_root_explicit_paths_outside_tool_cwd(tmp_path: Path) -> None:
+    (tmp_path / "frontend").mkdir()
+    (tmp_path / "README.md").write_text("", encoding="utf-8")
+    configs = {
+        "biome": {
+            "label": "BIOME",
+            "binary": "biome",
+            "working_dir": "frontend",
+        }
+    }
+
+    with (
+        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._tool_configs", return_value=configs),
+        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
+    ):
+        result = runner.invoke(main_app, ["check", "biome", "--", "README.md"])
+
+    assert result.exit_code == 0
+    run_tool.assert_called_once_with("biome", configs["biome"], [str(tmp_path / "README.md")])
+
+
 def test_check_resolves_npx_tool_to_local_binary(tmp_path: Path) -> None:
     local_bin = tmp_path / "frontend" / "node_modules" / ".bin"
     local_bin.mkdir(parents=True)

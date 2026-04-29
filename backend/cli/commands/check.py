@@ -314,8 +314,12 @@ def _normalize_explicit_args(root: Path, cwd: Path, args: list[str]) -> list[str
             normalized.append(arg)
             continue
         candidate = (root / arg).resolve()
-        if candidate.exists() and candidate.is_relative_to(cwd_resolved):
-            normalized.append(candidate.relative_to(cwd_resolved).as_posix())
+        if candidate.exists():
+            normalized.append(
+                candidate.relative_to(cwd_resolved).as_posix()
+                if candidate.is_relative_to(cwd_resolved)
+                else str(candidate)
+            )
             continue
         normalized.append(arg)
     return normalized
