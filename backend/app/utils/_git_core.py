@@ -181,7 +181,7 @@ def _pull_jj_repository(repo_path: Path, repo_status: RepoStatus) -> SyncResult 
     from ..api.models.git_models import SyncResult
 
     try:
-        from cli.lib.jj import current_revision_info, is_colocated, revision_info, run_jj
+        from cli.lib.jj import JJError, current_revision_info, is_colocated, revision_info, run_jj
     except ImportError:
         return None
     if not is_colocated(repo_path):
@@ -207,7 +207,7 @@ def _pull_jj_repository(repo_path: Path, repo_status: RepoStatus) -> SyncResult 
             current = current_revision_info(repo_path)
             parent = revision_info(repo_path, "@-")
             target = revision_info(repo_path, branch)
-        except Exception:
+        except JJError:
             current = parent = target = None
         if (
             status.returncode == 0
