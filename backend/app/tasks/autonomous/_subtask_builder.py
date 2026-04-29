@@ -22,7 +22,7 @@ def create_single_subtask_with_steps(
         subtask_id: Subtask ID (e.g., "1.1")
         phase: Phase name (e.g., "backend", "frontend")
         description: Subtask description
-        steps: Ignored (steps layer removed)
+        steps: Optional rich step guidance mirrored into task_spirit.context
         subtask_type: Optional subtask type
 
     Returns:
@@ -34,6 +34,7 @@ def create_single_subtask_with_steps(
             "phase": phase,
             "description": description,
             "subtask_type": subtask_type,
+            "steps": steps,
         }
     ]
     created_subtasks = bulk_create_subtasks(task_id, subtask_data)

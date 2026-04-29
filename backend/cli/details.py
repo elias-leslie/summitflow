@@ -8,6 +8,10 @@ import sys
 from pathlib import Path
 
 _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_RESULT_LINE_RE = re.compile(
+    r"(?i)(\b\d+\s+(passed|failed|skipped|deselected|error|errors|warning|warnings)\b|"
+    r"\b(all checks passed|no fixes applied)\b)"
+)
 
 
 def current_root() -> Path:
@@ -40,7 +44,11 @@ def display_path(root: Path, path: Path) -> str:
 
 
 def summary_hint(output: str, *, limit: int = 180) -> str:
-    for line in reversed(strip_ansi(output).splitlines()):
+    lines = [line.strip() for line in strip_ansi(output).splitlines() if line.strip()]
+    for line in reversed(lines):
+        if _RESULT_LINE_RE.search(line) and "RuntimeWarning:" not in line:
+            return line[:limit]
+    for line in reversed(lines):
         stripped = line.strip()
         if stripped:
             return stripped[:limit]

@@ -22,14 +22,6 @@ from .pulse import require_pulse_gate
 
 app = typer.Typer(help="Complete task or subtask work")
 
-FEEDBACK_CLOSEOUT_HINT = (
-    "💡 Feedback: st feedback search \"keyword\" then st feedback report "
-    "<component> \"title\" --type friction|idea|improvement|praise "
-    "--session <sid> --vote-if-match; "
-    "fallback in final reply: [[F:friction:sf.cli:short issue]]"
-)
-
-
 def _handle_subtask_completion(
     client: STClient,
     id: str,
@@ -64,7 +56,6 @@ def _handle_task_completion(
     else:
         output_success(f"Task {id} completed without checkpoint merge.")
     require_pulse_gate(str(result.get("project_id") or project_id or "") or None, allow_task_id=id)
-    typer.echo(FEEDBACK_CLOSEOUT_HINT, err=True)
 
 
 @app.command(name="done")

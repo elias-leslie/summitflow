@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from app.tasks.autonomous._subtask_builder import create_single_subtask_with_steps
 from app.tasks.autonomous.task_builders import (
     _build_issue_aware_done_when,
     _build_issue_aware_objective,
@@ -183,3 +184,67 @@ class TestCreateRefactorTask:
         assert "aim for <200 lines" in mock_create_subtask.call_args.kwargs["description"]
         assert "preserving all existing behavior" in mock_create_task.call_args.kwargs["description"]
         mock_link.assert_called_once_with("task-123", 42)
+
+    @patch("app.tasks.autonomous.task_builders.create_single_subtask_with_steps")
+    @patch("app.tasks.autonomous.task_builders.link_task_to_issue")
+    @patch("app.tasks.autonomous.task_builders.create_task_with_spirit")
+    @patch("app.tasks.autonomous.task_builders.create_refactor_issue")
+    def test_passes_generated_steps_to_subtask_creation(
+        self,
+        mock_issue: MagicMock,
+        mock_create_task: MagicMock,
+        _mock_link: MagicMock,
+        mock_create_subtask: MagicMock,
+    ) -> None:
+        mock_issue.return_value = 42
+        mock_create_task.return_value = "task-123"
+        steps = [
+            {"description": "Refactor safely"},
+            {
+                "description": "Verify structure",
+                "spec": {"verify_commands": ["st check --quick"]},
+            },
+        ]
+
+        create_refactor_task(
+            project_id="summitflow",
+            relative_path="backend/app/tasks/autonomous/task_generation.py",
+            file_path="/tmp/summitflow/backend/app/tasks/autonomous/task_generation.py",
+            reason="High complexity score",
+            complexity=18.0,
+            lines=420,
+            target_lines=200,
+            priority="high",
+            tier=2,
+            steps=steps,
+            refactor_issues=["large_file"],
+        )
+
+        assert mock_create_subtask.call_args.kwargs["steps"] == steps
+
+
+class TestCreateSingleSubtaskWithSteps:
+    """Tests for subtask generation preserving plan-context steps."""
+
+    @patch("app.tasks.autonomous._subtask_builder.bulk_create_subtasks")
+    def test_preserves_steps_for_plan_context_sync(self, mock_bulk_create: MagicMock) -> None:
+        steps = [
+            {"description": "Keep behavior stable"},
+            {
+                "description": "Run checks",
+                "spec": {"verify_commands": ["st check --quick --changed-only"]},
+            },
+        ]
+        mock_bulk_create.return_value = [{"id": "task-123-1.1"}]
+
+        result = create_single_subtask_with_steps(
+            task_id="task-123",
+            subtask_id="1.1",
+            phase="backend",
+            description="Refactor target file",
+            steps=steps,
+            subtask_type="refactor",
+        )
+
+        assert result == "task-123-1.1"
+        assert mock_bulk_create.call_args.args[1][0]["steps"] == steps

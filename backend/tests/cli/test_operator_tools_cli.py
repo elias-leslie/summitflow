@@ -98,6 +98,19 @@ def test_service_run_quiet_success_keeps_failure_output(tmp_path: Path, capsys: 
     assert "failed" in captured.err
 
 
+def test_build_frontend_suppresses_successful_build_output() -> None:
+    project = _project()
+
+    with (
+        patch.object(Path, "exists", return_value=True),
+        patch("cli.lib.service_ops.shutil.rmtree"),
+        patch("cli.lib.service_ops.run", return_value=0) as run,
+    ):
+        assert service_ops.build_frontend(project) == 0
+
+    run.assert_called_once_with(["pnpm", "build"], cwd=project.frontend_dir, quiet_success=True)
+
+
 def test_service_stop_uses_confirm_gate() -> None:
     with (
         patch("cli.commands.service._load", return_value=_project()),
@@ -214,6 +227,30 @@ def test_check_tool_output_goes_to_details_file(tmp_path: Path, capsys: pytest.C
     assert details.read_text(encoding="utf-8") == "line 1\n2187 passed in 19.87s\n"
     assert "line 1" not in captured.out
     assert "TEST:OK:0|details:.dev-tools/pytest-details.txt|hint:2187 passed in 19.87s" in captured.out
+
+
+def test_check_tool_hint_prefers_result_summary_over_late_runtime_warning(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = subprocess.CompletedProcess(
+        args=["pytest"],
+        returncode=0,
+        stdout=(
+            "===================== 2198 passed, 97 deselected in 41.52s =====================\n"
+            "RuntimeWarning: Enable tracemalloc to get the object allocation traceback\n"
+        ),
+        stderr="",
+    )
+    with (
+        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check.subprocess.run", return_value=result),
+    ):
+        exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "hint:===================== 2198 passed, 97 deselected in 41.52s" in captured.out
 
 
 def test_check_tool_failure_prints_only_hint_and_details_path(

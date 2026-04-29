@@ -318,10 +318,10 @@ def build_frontend(project: ProjectServices) -> int:
         if path.exists():
             shutil.rmtree(path)
     if not (project.frontend_dir / "node_modules").exists():
-        install = run(["pnpm", "install"], cwd=project.frontend_dir)
+        install = run(["pnpm", "install"], cwd=project.frontend_dir, quiet_success=True)
         if install != 0:
             return install
-    return run(["pnpm", "build"], cwd=project.frontend_dir)
+    return run(["pnpm", "build"], cwd=project.frontend_dir, quiet_success=True)
 
 
 def run_migrations(project: ProjectServices) -> int:
