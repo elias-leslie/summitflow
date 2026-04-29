@@ -22,7 +22,9 @@ from ...services.task_harness import summarize_execution_contract
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.notifications import create_task_failure_notification
+from ...storage.projects import get_project_root_path
 from ...storage.task_spirit import get_task_spirit
+from ...utils.git_base import normalize_base_branch
 from .review_modules.actions import (
     auto_merge,
     create_fix_subtask,
@@ -152,7 +154,8 @@ def _notify_failure(project_id: str, task_id: str, task: dict, error_message: st
 
 def _ensure_review_checkout(task_id: str, project_id: str, task: dict[str, Any]) -> bool:
     """Prefer task branch for review, but fall back to merged/base state if branch is gone."""
-    base_branch = str(task.get("base_branch") or "main")
+    project_root = get_project_root_path(project_id)
+    base_branch = normalize_base_branch(str(task.get("base_branch") or "main"), project_root)
     checkout = create_task_checkout(task_id, project_id, base_branch=base_branch)
     if checkout:
         return True

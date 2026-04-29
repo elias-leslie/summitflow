@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from app.storage.tasks import canonicalize_task_id
+from app.utils.git_base import current_branch_or_base, normalize_base_branch
 
 
 @dataclass
@@ -42,7 +43,7 @@ class SnapshotMeta:
         return cls(
             task_id=str(d["task_id"]),
             project_id=str(d["project_id"]),
-            base_branch=str(d["base_branch"]),
+            base_branch=normalize_base_branch(str(d["base_branch"])),
             created_at=str(d["created_at"]),
             claimed_by=str(d["claimed_by"]),
         )
@@ -166,16 +167,7 @@ def get_claimed_by() -> str:
 
 def get_current_branch() -> str:
     """Get current git branch name."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return result.stdout.strip()
-    except subprocess.CalledProcessError:
-        return "main"
+    return current_branch_or_base()
 
 
 def is_working_tree_clean() -> bool:

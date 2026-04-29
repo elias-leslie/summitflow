@@ -11,6 +11,8 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 
+from app.utils.git_base import current_branch, normalize_base_branch
+
 from .checkpoint_metadata import load_snapshot_meta
 
 _CONFLICT_RE = re.compile(r"CONFLICT \([^)]*\): Merge conflict in (.+)")
@@ -133,8 +135,7 @@ def _record_task_merge_conflict(
 
 def _get_current_branch(cwd: str | None = None) -> str:
     """Get current branch name."""
-    result = _run_git(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd, check=False)
-    return result.stdout.strip() if result.returncode == 0 else ""
+    return current_branch(cwd) or ""
 
 
 def _branch_exists(branch: str, cwd: str | None = None) -> bool:
@@ -245,8 +246,8 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
 
     meta = load_snapshot_meta(task_id)
     project_id = project_id or (meta.project_id if meta else None)
-    base_branch = meta.base_branch if meta else "main"
     repo_cwd = _get_repo_cwd(project_id)
+    base_branch = normalize_base_branch(meta.base_branch if meta else "main", repo_cwd)
     task_branch = resolve_task_branch(task_id, project_id=project_id)
 
     if _get_current_branch(repo_cwd) != base_branch:
@@ -305,18 +306,19 @@ def delete_subtask_branch(task_id: str, subtask_id: str) -> bool:
 def delete_task_branches(task_id: str) -> bool:
     """Delete task branch and all subtask branches (used when abandoning task)."""
     meta = load_snapshot_meta(task_id)
-    base_branch = meta.base_branch if meta else "main"
+    repo_cwd = _get_repo_cwd(meta.project_id if meta else None)
+    base_branch = normalize_base_branch(meta.base_branch if meta else "main", repo_cwd)
 
     with contextlib.suppress(subprocess.CalledProcessError):
-        _run_git(["git", "checkout", base_branch])
-        _run_git(["git", "checkout", "."])
+        _run_git(["git", "checkout", base_branch], repo_cwd)
+        _run_git(["git", "checkout", "."], repo_cwd)
 
     try:
-        result = _run_git(["git", "branch", "--list", f"{task_id}*"])
+        result = _run_git(["git", "branch", "--list", f"{task_id}*"], repo_cwd)
         branches = [b.strip().lstrip("*+ ") for b in result.stdout.splitlines() if b.strip()]
         for branch in branches:
             with contextlib.suppress(subprocess.CalledProcessError):
-                _run_git(["git", "branch", "-D", branch])
+                _run_git(["git", "branch", "-D", branch], repo_cwd)
                 print(f"Deleted branch: {branch}")
     except subprocess.CalledProcessError as e:
         print(f"Warning: Failed to list branches: {e.stderr}", file=sys.stderr)

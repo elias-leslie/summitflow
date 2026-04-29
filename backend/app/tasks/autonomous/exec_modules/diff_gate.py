@@ -10,6 +10,7 @@ import subprocess
 from dataclasses import dataclass
 
 from ....logging_config import get_logger
+from ....utils.git_base import normalize_base_branch
 
 logger = get_logger(__name__)
 
@@ -37,6 +38,7 @@ def check_diff_gate(
     Returns a DiffGateResult indicating whether the gate passed.
     """
     try:
+        base_ref = normalize_base_branch(base_ref, project_path)
         merge_base = _get_merge_base(project_path, head_ref, base_ref)
         if not merge_base:
             return DiffGateResult(

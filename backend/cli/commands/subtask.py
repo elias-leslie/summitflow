@@ -2,17 +2,30 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 
 import typer
 
 from ..client import APIError, STClient
-from ..output import handle_api_error, output_error, output_success
+from ..output import handle_api_error, output_error, output_subtasks, output_success
 
 # Re-export for backward compatibility
 from .subtask_citations import log_citations_cmd
 
 app = typer.Typer(help="Subtask management commands")
+
+_CITATION_TOKEN_RE = re.compile(r"[MG]:[a-f0-9]{8}[+-]?")
+
+
+def _normalize_inline_citations(citations: list[str]) -> list[str]:
+    if not citations:
+        return []
+    normalized: list[str] = []
+    for citation in citations:
+        matches = _CITATION_TOKEN_RE.findall(citation)
+        normalized.extend(matches or [citation.strip()])
+    return list(dict.fromkeys(item for item in normalized if item))
 
 
 @app.command("create")
@@ -67,7 +80,7 @@ def pass_subtask(
 
     try:
         if citations:
-            client.log_citations(task_id, subtask_id, citations)
+            client.log_citations(task_id, subtask_id, _normalize_inline_citations(citations))
         elif acknowledge_none:
             client.acknowledge_no_citations(task_id, subtask_id)
     except APIError as e:
@@ -123,18 +136,31 @@ def delete_subtask(
     print(f"DEL {subtask_id}")
 
 
+@app.command("list")
+def list_subtasks(
+    task_id: Annotated[str | None, typer.Argument(help="Task ID")] = None,
+    include_steps: Annotated[
+        bool,
+        typer.Option("--steps/--no-steps", help="Include step data in JSON output."),
+    ] = True,
+) -> None:
+    """List subtasks for a task. Uses active context if no task ID is given."""
+    from ..context import require_task_id
+
+    task_id = require_task_id(task_id)
+    client = STClient()
+    try:
+        response = client.get_subtasks(task_id, include_steps=include_steps)
+    except APIError as e:
+        handle_api_error(e)
+        return
+    subtasks = response.get("subtasks") or []
+    summary = response.get("summary")
+    output_subtasks(subtasks, summary if isinstance(summary, dict) else None)
+
+
 # Register citations command
 app.command("citations")(log_citations_cmd)
-
-
-# Error stubs for removed commands - provide helpful redirects
-@app.command("list", hidden=True)
-def list_removed() -> None:
-    """Removed: use st context instead."""
-    typer.echo("Command 'subtask list' has been removed.\n", err=True)
-    typer.echo("Use instead:", err=True)
-    typer.echo("  st context <task-id>    - Shows all subtasks", err=True)
-    raise typer.Exit(1)
 
 
 @app.command("show", hidden=True)

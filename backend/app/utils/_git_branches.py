@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from ..api.models.git_models import BranchInfo, CheckpointInfo
 
 from ._git_core import _resolve_project_id, run_git
+from .git_base import detect_base_branch
 
-_BASE_BRANCH_CANDIDATES = ["main", "master", "develop"]
 _LEGACY_LANE_ADMIN_DIR = "wor" "ktrees"
 
 
@@ -95,13 +95,7 @@ def get_all_branches(
 
 def _detect_base_branch(repo_path: Path) -> str:
     """Return the most likely base branch for a repository."""
-    for candidate in _BASE_BRANCH_CANDIDATES:
-        if run_git(["show-ref", "--verify", f"refs/heads/{candidate}"], repo_path).returncode == 0:
-            return candidate
-        if run_git(["show-ref", "--verify", f"refs/remotes/origin/{candidate}"], repo_path).returncode == 0:
-            return candidate
-    result = run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_path)
-    return result.stdout.strip() if result.returncode == 0 else "main"
+    return detect_base_branch(repo_path)
 
 
 def _get_merged_branches(repo_path: Path, base_branch: str) -> set[str]:

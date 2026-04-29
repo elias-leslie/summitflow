@@ -7,6 +7,7 @@ import subprocess
 from dataclasses import dataclass
 
 from ....logging_config import get_logger
+from ....utils.git_base import normalize_base_branch
 
 logger = get_logger(__name__)
 
@@ -39,6 +40,7 @@ def checkout_base_branch(project_root: str, base_branch: str) -> str | None:
     Returns:
         Error message if checkout failed, None if successful
     """
+    base_branch = normalize_base_branch(base_branch, project_root)
     result = subprocess.run(
         ["git", "checkout", base_branch],
         cwd=project_root,

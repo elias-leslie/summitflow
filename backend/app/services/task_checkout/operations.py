@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from ...logging_config import get_logger
+from ...utils.git_base import current_branch, normalize_base_branch
 from .checkpoint import create_checkpoint_metadata, remove_checkpoint_metadata
 from .types import TaskCheckoutInfo
 
@@ -39,11 +40,7 @@ def _branch_exists(branch: str, cwd: Path) -> bool:
 
 
 def _current_branch(cwd: Path) -> str | None:
-    result = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd, check=False)
-    if result.returncode != 0:
-        return None
-    branch = result.stdout.strip()
-    return branch or None
+    return current_branch(cwd)
 
 
 def _checkout(branch: str, cwd: Path, create_from: str | None = None) -> None:
@@ -60,7 +57,7 @@ def _resolve_base_branch(task_id: str, project_id: str) -> str:
 
     meta = load_snapshot_meta(task_id)
     if meta and meta.project_id == project_id and meta.base_branch:
-        return meta.base_branch
+        return normalize_base_branch(meta.base_branch, _project_root(project_id))
     return "main"
 
 
@@ -87,6 +84,7 @@ def create_task_checkout(
             return None
 
         branch = _task_branch(task_id)
+        base_branch = normalize_base_branch(base_branch, project_root)
         if _branch_exists(branch, project_root):
             if _current_branch(project_root) != branch:
                 _checkout(branch, project_root)
@@ -160,7 +158,7 @@ def remove_task_checkout(
         project_root = _project_root(project_id) if project_id else None
         branch = _task_branch(task_id)
         if project_root and delete_branch and _branch_exists(branch, project_root):
-            base_branch = _resolve_base_branch(task_id, project_id or "")
+            base_branch = normalize_base_branch(_resolve_base_branch(task_id, project_id or ""), project_root)
             if _current_branch(project_root) == branch and base_branch:
                 _checkout(base_branch, project_root)
             _run_git(["branch", "-D", branch], project_root, check=False)

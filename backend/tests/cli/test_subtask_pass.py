@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import typer
 
-from cli.commands.subtask import clear_subtask, pass_subtask
+from cli.commands.subtask import clear_subtask, list_subtasks, pass_subtask
 from cli.commands.subtask_validation import is_step_resolved
 
 
@@ -68,11 +68,51 @@ class TestPassSubtaskCommand:
         client.log_citations.assert_called_once_with("task-1", "1.1", ["M:abc12345+"])
         client.update_subtask.assert_called_once_with("task-1", "1.1", passes=True)
 
+    def test_pass_subtask_extracts_citations_from_applied_text(self) -> None:
+        client = MagicMock()
+
+        with (
+            patch("cli.commands.subtask.STClient", return_value=client),
+            patch("cli.commands.subtask.output_success"),
+        ):
+            pass_subtask(
+                "1.1",
+                "task-1",
+                ["Verified refactor. Applied: [M:42dae24e] [M:c918f298]."],
+                False,
+            )
+
+        client.log_citations.assert_called_once_with(
+            "task-1",
+            "1.1",
+            ["M:42dae24e", "M:c918f298"],
+        )
+        client.update_subtask.assert_called_once_with("task-1", "1.1", passes=True)
+
     def test_pass_subtask_rejects_conflicting_citation_flags(self) -> None:
         with pytest.raises(typer.Exit) as exc_info:
             pass_subtask("1.1", "task-1", ["M:abc12345+"], True)
 
         assert exc_info.value.exit_code == 1
+
+    def test_subtask_list_accepts_task_id_argument(self) -> None:
+        client = MagicMock()
+        client.get_subtasks.return_value = {
+            "subtasks": [{"subtask_id": "1.1", "passes": False}],
+            "summary": {"completed": 0, "total": 1, "progress_percent": 0},
+        }
+
+        with (
+            patch("cli.commands.subtask.STClient", return_value=client),
+            patch("cli.commands.subtask.output_subtasks") as mock_output,
+        ):
+            list_subtasks("task-1", include_steps=False)
+
+        client.get_subtasks.assert_called_once_with("task-1", include_steps=False)
+        mock_output.assert_called_once_with(
+            [{"subtask_id": "1.1", "passes": False}],
+            {"completed": 0, "total": 1, "progress_percent": 0},
+        )
 
 
 class TestClearSubtaskCommand:

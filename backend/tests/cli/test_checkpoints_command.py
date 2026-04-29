@@ -209,6 +209,39 @@ def test_merge_task_branch_reports_conflict_paths(
     ]
 
 
+def test_merge_task_branch_normalizes_head_base_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.storage import tasks as task_store
+    from cli.lib import checkpoint_branches
+
+    commands: list[list[str]] = []
+
+    def fake_run_git(
+        args: list[str],
+        cwd: str | None = None,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(task_store, "get_task", lambda task_id: {"status": "running"})
+    monkeypatch.setattr(
+        checkpoint_branches,
+        "load_snapshot_meta",
+        lambda task_id: SimpleNamespace(project_id="summitflow", base_branch="HEAD"),
+    )
+    monkeypatch.setattr(checkpoint_branches, "_get_repo_cwd", lambda project_id: "/repo")
+    monkeypatch.setattr(checkpoint_branches, "_get_current_branch", lambda cwd: "")
+    monkeypatch.setattr(checkpoint_branches, "resolve_task_branch", lambda task_id, project_id=None: "task-1/main")
+    monkeypatch.setattr(checkpoint_branches, "normalize_base_branch", lambda branch, repo_path=None: "main")
+    monkeypatch.setattr(checkpoint_branches, "_run_git", fake_run_git)
+
+    assert checkpoint_branches.merge_task_branch("task-1", project_id="summitflow")
+    assert ["git", "checkout", "main"] in commands
+    assert ["git", "merge", "--no-ff", "task-1/main", "-m", "Merge task task-1"] in commands
+
+
 def test_task_branch_resolution_supports_recovered_short_branch(
     repo_with_checkpoints: Path,
 ) -> None:

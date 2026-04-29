@@ -11,6 +11,7 @@ from app.storage import tasks as task_store
 from app.storage.projects import get_project_root_path
 from app.storage.tasks.status import update_task_status
 from app.storage.tasks.update import update_task_fields
+from app.utils.git_base import normalize_base_branch
 
 from ....logging_config import get_logger
 from ..exec_modules.git_ops import publish_existing_commits
@@ -98,7 +99,7 @@ def _safe_finalize_branch_without_checkout(task_id: str, project_id: str) -> Mer
         return {"task_id": task_id, "status": "skipped", "reason": "no_checkpoint"}
 
     task_branch = str(task.get("branch_name") or f"{task_id}/main")
-    base_branch = str(task.get("base_branch") or "main")
+    base_branch = normalize_base_branch(str(task.get("base_branch") or "main"), project_root)
     checkout_error = checkout_base_branch(project_root, base_branch)
     if checkout_error:
         return _err(task_id, checkout_error)
@@ -157,7 +158,7 @@ def merge_and_cleanup_task_checkpoint(
             )
 
         task_branch = checkout.branch
-        base_branch = checkout.base_branch or "main"
+        base_branch = normalize_base_branch(checkout.base_branch or "main", project_root)
         checkout_error = checkout_base_branch(project_root, base_branch)
         if checkout_error:
             return _finalize_task_status(

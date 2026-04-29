@@ -14,6 +14,7 @@ from pathlib import Path
 
 from ...logging_config import get_logger
 from ...storage.projects import get_project_root_path
+from ...utils.git_base import normalize_base_branch
 
 logger = get_logger(__name__)
 
@@ -100,7 +101,7 @@ def create_checkpoint_metadata(
         metadata = {
             "task_id": task_id,
             "project_id": project_id,
-            "base_branch": base_branch,
+            "base_branch": normalize_base_branch(base_branch, project_root),
             "created_at": datetime.now(UTC).isoformat(),
             "claimed_by": _get_claimed_by(),
             "main_repo_dirty_paths": _get_main_repo_dirty_paths(project_root),

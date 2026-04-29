@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 
 from app.storage.projects import get_project_root_path
+from app.utils.git_base import normalize_base_branch
 
 from .._client_base import APIError
 from ..client import STClient
@@ -42,6 +43,7 @@ def _task_branch_touched_frontend(
     project_root = get_project_root_path(project_id)
     if not project_root:
         return False
+    base_branch = normalize_base_branch(base_branch, project_root)
 
     frontend_service = load_services_config(project_root).get_service("frontend")
     frontend_cwd = str(getattr(frontend_service, "cwd", "") or "").strip().strip("/")
@@ -95,9 +97,11 @@ def _reconstruct_snapshot_info(
     if not task_branch:
         return None
 
+    project_root = get_project_root_path(project_id)
     base_branch = task.get("base_branch")
     if not isinstance(base_branch, str) or not base_branch:
         base_branch = "main"
+    base_branch = normalize_base_branch(base_branch, project_root)
 
     # Rebuild and persist the metadata so future commands work too.
     meta = SnapshotMeta(

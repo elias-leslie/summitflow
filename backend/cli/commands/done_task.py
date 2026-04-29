@@ -10,6 +10,7 @@ import typer
 
 from app.storage.projects import get_project_root_path
 from app.tasks.autonomous.exec_modules.diff_gate import check_diff_gate
+from app.utils.git_base import normalize_base_branch
 from app.utils.shared_paths import get_repo_root
 
 from .._client_base import APIError
@@ -58,7 +59,10 @@ def _task_project_id(task: dict[str, Any]) -> str | None:
 
 def _task_base_branch(task: dict[str, Any]) -> str:
     raw_base_branch = task.get("base_branch")
-    return str(raw_base_branch) if isinstance(raw_base_branch, str) and raw_base_branch else "main"
+    branch = str(raw_base_branch) if isinstance(raw_base_branch, str) and raw_base_branch else "main"
+    project_id = _task_project_id(task)
+    repo_root = _checkpoint_repo_root(project_id)
+    return normalize_base_branch(branch, repo_root)
 
 
 def ensure_checkpoint_clean(
@@ -118,6 +122,21 @@ def _completion_skip_gates(client: STClient, task_id: str) -> bool:
     except APIError:
         return False
     return task.get("status") in {"pending", "failed"}
+
+
+def _run_diff_gate(repo_root: str, task_id: str, project_id: str | None, base_branch: str) -> None:
+    diff_result = check_diff_gate(
+        repo_root,
+        head_ref=resolve_task_branch(task_id, project_id=project_id),
+        base_ref=base_branch,
+    )
+    if diff_result.passed:
+        return
+    output_error(
+        f"Diff gate blocked completion: {diff_result.summary}\n"
+        "  Use --skip-diff-gate for non-code tasks (docs, config)."
+    )
+    raise typer.Exit(1)
 
 
 def _close_task_safely(client: STClient, task_id: str, message: str | None) -> None:
@@ -216,28 +235,14 @@ def _perform_completion(
     strict: bool,
     skip_diff_gate: bool = False,
 ) -> None:
-    frontend_changed = _task_branch_touched_frontend(
-        task_id,
-        project_id,
-        base_branch=str(snapshot_info.get("base_branch") or "main"),
+    repo_root = _checkpoint_repo_root(
+        str(snapshot_info.get("project_id")) if snapshot_info.get("project_id") else None
     )
-    if not skip_diff_gate:
-        repo_root = _checkpoint_repo_root(
-            str(snapshot_info.get("project_id")) if snapshot_info.get("project_id") else None
-        )
-        if repo_root:
-            base_branch = str(snapshot_info.get("base_branch") or "main")
-            diff_result = check_diff_gate(
-                repo_root,
-                head_ref=resolve_task_branch(task_id, project_id=project_id),
-                base_ref=base_branch,
-            )
-            if not diff_result.passed:
-                output_error(
-                    f"Diff gate blocked completion: {diff_result.summary}\n"
-                    "  Use --skip-diff-gate for non-code tasks (docs, config)."
-                )
-                raise typer.Exit(1)
+    base_branch = normalize_base_branch(str(snapshot_info.get("base_branch") or "main"), repo_root)
+    snapshot_info["base_branch"] = base_branch
+    frontend_changed = _task_branch_touched_frontend(task_id, project_id, base_branch=base_branch)
+    if repo_root and not skip_diff_gate:
+        _run_diff_gate(repo_root, task_id, project_id, base_branch)
     if not strict:
         _run_smart_prereqs(client, task_id, project_id)
     merge_task_branch(task_id, project_id=project_id)
@@ -357,7 +362,10 @@ def complete_task(
     ensure_checkpoint_clean(snapshot_info)
     pid = snapshot_info.get("project_id")
     project_id = str(pid) if isinstance(pid, str) and pid else None
-    base_branch = str(snapshot_info.get("base_branch", "main"))
+    base_branch = normalize_base_branch(
+        str(snapshot_info.get("base_branch", "main")),
+        _checkpoint_repo_root(project_id),
+    )
     stashed = _handle_dirty_main(strict)
 
     try:
@@ -368,4 +376,10 @@ def complete_task(
     finally:
         if stashed:
             git_stash_pop()
-    return _done_result(task_id, merged=True, snapshot_removed=True, base_branch=base_branch, project_id=project_id)
+    return _done_result(
+        task_id,
+        merged=True,
+        snapshot_removed=True,
+        base_branch=base_branch,
+        project_id=project_id,
+    )

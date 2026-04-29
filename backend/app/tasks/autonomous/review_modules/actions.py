@@ -14,6 +14,7 @@ from ....services.task_checkout import create_task_checkout
 from ....storage import log_task_event
 from ....storage import tasks as task_store
 from ....storage.projects import get_project_root_path
+from ....utils.git_base import normalize_base_branch
 from ....utils.shared_paths import get_repo_root
 from ..cleanup.merge_types import MergeResult
 from ..exec_modules.memory_writes import save_qa_fix_pattern
@@ -172,7 +173,7 @@ def _run_debugger(
 def _ensure_qa_checkout(task_id: str, project_id: str, fallback_path: str) -> str:
     """Run QA fixes from the task branch, not whichever branch is currently checked out."""
     task = task_store.get_task(task_id) or {}
-    base_branch = str(task.get("base_branch") or "main")
+    base_branch = normalize_base_branch(str(task.get("base_branch") or "main"), get_project_root_path(project_id))
     checkout = create_task_checkout(task_id, project_id, base_branch=base_branch)
     if checkout and checkout.path:
         return str(checkout.path)
