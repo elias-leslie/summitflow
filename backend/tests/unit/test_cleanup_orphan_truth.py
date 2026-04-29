@@ -116,6 +116,7 @@ def test_workspace_summary_lists_all_checkpoint_task_ids(mocker, patch_orphan_gi
 
     assert summary.active_checkpoints == 3
     assert summary.checkpoint_task_ids == ["task-one", "task-two", "task-three"]
+    assert summary.needs_cleanup is False
 
 
 def test_workspace_summary_excludes_paused_checkpoints_from_active_lanes(
@@ -351,6 +352,36 @@ def test_build_cleanup_status_payload_keeps_existing_task_orphans_out_of_salvage
     assert repo["review_orphan_task_ids"] == [EXISTING_TASK_ID]
     assert EXISTING_TASK_ID not in repo["salvage_task_ids"]
     assert set(repo["salvage_task_ids"]).isdisjoint(repo["review_orphan_task_ids"])
+
+
+def test_cleanup_status_does_not_count_active_checkpoint_as_residue(mocker) -> None:
+    mocker.patch("cli.commands.cleanup.get_project_id", return_value="test-project")
+    mocker.patch("cli.commands.cleanup._iter_target_repos", return_value=[REPO_PATH])
+    mocker.patch("cli.commands.cleanup.get_active_checkpoints", return_value=[])
+    mocker.patch("cli.commands.cleanup.get_stale_checkpoints", return_value=[])
+    mocker.patch("cli.commands.cleanup.find_snapshot_residue", return_value=[])
+    mocker.patch(
+        "cli.commands.cleanup.build_repo_workspace_summary",
+        return_value=SimpleNamespace(
+            active_checkpoints=1,
+            dirty_checkpoints=0,
+            dirty_main_repo=False,
+            orphan_branches=0,
+            prunable_branches=0,
+            checkpoint_task_ids=["task-active"],
+            orphan_branch_names=[],
+            prunable_branch_names=[],
+            salvage_task_ids=[],
+            review_orphan_task_ids=[],
+            orphan_details=[],
+        ),
+    )
+
+    payload = build_cleanup_status_payload(False, project_id_override="test-project")
+
+    assert payload["summary"]["active_checkpoints"] == 1
+    assert payload["summary"]["repos_needing_cleanup"] == 0
+    assert payload["repositories"][0]["needs_cleanup"] is False
 
 
 def test_cleanup_inspect_orphans_and_salvage_follow_shared_assessment_truth(mocker) -> None:

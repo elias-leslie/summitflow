@@ -387,7 +387,7 @@ def build_repo_workspace_summary(
         task_branches=len(task_branches),
         orphan_branches=len(orphan_branches),
         prunable_branches=len(prunable_branches),
-        needs_cleanup=bool(dirty_main_repo or lane_checkpoints or orphan_branches or prunable_branches),
+        needs_cleanup=bool(dirty_main_repo or orphan_branches or prunable_branches),
         checkpoint_task_ids=[checkpoint.task_id for checkpoint in lane_checkpoints],
         orphan_branch_names=[branch.name for branch in orphan_branches[:5]],
         prunable_branch_names=[branch.name for branch in prunable_branches[:5]],

@@ -217,7 +217,6 @@ def _build_repo_cleanup_entry(repo_path: Path) -> RepoEntry:
     review_tasks: list[str] = []
     needs_cleanup = any((
         dirty_main_repo,
-        ws.active_checkpoints,
         stale_checkpoints,
         snapshot_residue,
         ws.orphan_branches,
