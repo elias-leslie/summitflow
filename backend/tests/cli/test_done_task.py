@@ -84,16 +84,28 @@ def test_complete_task_missing_checkpoint_active_task_closes_after_pushed_commit
         patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
         patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
         patch("cli.commands.done_task._task_has_published_commit_event", return_value=True),
+        patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
+        patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
+        patch("cli.commands.done_task.merge_task_branch") as mock_merge,
+        patch("cli.commands.done_task._publish_completed_work") as mock_publish,
         patch("cli.commands.done_task._run_smart_prereqs") as mock_prereqs,
         patch("cli.commands.done_task.output_success"),
     ):
+        mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
         result = complete_task(client, "task-789")
 
+    mock_diff_gate.assert_called_once_with(
+        "/repo",
+        head_ref="task/task-789",
+        base_ref="main",
+    )
     mock_prereqs.assert_called_once_with(
         client, "task-789", "summitflow", merge_subtask_branches=False
     )
+    mock_merge.assert_called_once_with("task-789", project_id="summitflow")
+    mock_publish.assert_called_once_with("task-789", "summitflow")
     client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
-    assert result["merged"] is False
+    assert result["merged"] is True
     assert result["snapshot_removed"] is True
 
 

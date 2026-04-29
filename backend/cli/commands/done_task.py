@@ -289,6 +289,7 @@ def _finalize_missing_snapshot_residue(
     task: dict[str, Any],
     *,
     strict: bool,
+    skip_diff_gate: bool = False,
 ) -> dict[str, str | bool] | None:
     """Use residue finalize path when checkpoint metadata is gone for a closed task."""
     if strict:
@@ -299,18 +300,23 @@ def _finalize_missing_snapshot_residue(
         project_id = _task_project_id(task)
         repo_root = _checkpoint_repo_root(project_id)
         if repo_root and is_working_tree_clean(repo_root) and _task_has_published_commit_event(task_id):
+            base_branch = _task_base_branch(task)
+            if not skip_diff_gate:
+                _run_diff_gate(repo_root, task_id, project_id, base_branch)
             _run_smart_prereqs(client, task_id, project_id, merge_subtask_branches=False)
+            merge_task_branch(task_id, project_id=project_id)
             try:
                 client.update_status(task_id, "completed", skip_gates=_completion_skip_gates(client, task_id))
             except APIError as e:
                 output_error(f"Failed to close task after published commit: {e.detail}")
                 raise typer.Exit(1) from None
-            output_success(f"No checkpoint for {task_id}; closed from pushed st commit event.")
+            _publish_completed_work(task_id, project_id)
+            output_success(f"No checkpoint for {task_id}; merged and closed from pushed st commit event.")
             return _done_result(
                 task_id,
-                merged=False,
+                merged=True,
                 snapshot_removed=True,
-                base_branch=_task_base_branch(task),
+                base_branch=base_branch,
                 project_id=project_id,
             )
         output_error(
@@ -383,6 +389,7 @@ def complete_task(
                 task_id,
                 task,
                 strict=strict,
+                skip_diff_gate=skip_diff_gate,
             )
             if recovered is not None:
                 return recovered
