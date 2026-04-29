@@ -100,8 +100,11 @@ def detect_current_project() -> str | None:
     raw = projects_api("GET") or []
     if not isinstance(raw, list):
         return None
+    return _detect_current_project_from_list(raw, cwd)
 
-    for project in raw:
+
+def _detect_current_project_from_list(projects: list[dict[str, Any]], cwd: Path) -> str | None:
+    for project in projects:
         root_path = project.get("root_path")
         if not root_path:
             continue
@@ -126,7 +129,11 @@ def run_list(*, verbose: bool) -> None:
         output_error(UNEXPECTED_RESPONSE_MSG)
         raise typer.Exit(1)
 
-    current_id = detect_current_project()
+    try:
+        cwd = Path.cwd().resolve()
+    except OSError:
+        cwd = None
+    current_id = _detect_current_project_from_list(projects, cwd) if cwd is not None else None
     for p in projects:
         p["current"] = p.get("id") == current_id
 

@@ -7,9 +7,7 @@ from typing import Any
 
 from app.utils._git_core import get_managed_repos as _get_managed_repos_from_db
 from app.utils._git_core import get_repo_status as _get_repo_status_model
-from app.utils._git_core import run_git as _run_git
-
-ALREADY_UP_TO_DATE = "Already up to date"
+from app.utils._git_core import pull_repository as _pull_repository_model
 
 
 def _get_managed_repos() -> list[Path]:
@@ -38,15 +36,7 @@ def _sync_repo(repo_path: Path, repo_status: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {"path": str(repo_path), "name": repo_path.name, "branch": repo_status.get("branch", "unknown")}
     if repo_status.get("uncommitted", 0) > 0:
         return {**result, "status": "skipped", "reason": "uncommitted changes"}
-    git_result = _run_git(["pull", "--ff-only"], repo_path)
-    if git_result.returncode == 0:
-        result["status"] = "up_to_date" if ALREADY_UP_TO_DATE in git_result.stdout else "updated"
-        if result["status"] == "updated":
-            result["output"] = git_result.stdout.strip()
-    else:
-        result["status"] = "failed"
-        result["error"] = git_result.stderr.strip()
-    return result
+    return _pull_repository_model(repo_path).model_dump(exclude_none=True)
 
 
 def _print_sync_compact(results: list[dict[str, Any]]) -> None:

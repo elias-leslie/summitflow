@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 from typer.testing import CliRunner
@@ -100,6 +101,30 @@ def test_detect_current_project_returns_none_when_cwd_deleted() -> None:
         result = detect_current_project()
 
     assert result is None
+
+
+def test_projects_list_detects_current_project_without_second_api_call() -> None:
+    with (
+        patch(
+            "cli.commands._projects_helpers.Path.cwd",
+            return_value=Path("/srv/workspaces/projects/summitflow"),
+        ),
+        patch(
+            "cli.commands._projects_helpers.projects_api",
+            return_value=[
+                {
+                    "id": "summitflow",
+                    "name": "SummitFlow",
+                    "root_path": "/srv/workspaces/projects/summitflow",
+                }
+            ],
+        ) as mock_projects_api,
+    ):
+        result = runner.invoke(app, ["list"])
+
+    assert result.exit_code == 0
+    mock_projects_api.assert_called_once_with("GET")
+    assert '"current": true' in result.output
 
 
 def test_projects_create_derives_hosted_defaults() -> None:

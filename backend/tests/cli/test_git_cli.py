@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
+from app.api.models.git_models import SyncResult
 from cli.commands._git_helpers import _get_managed_repos
 from cli.commands.git import _format_compact_repo, _get_repo_status, app
 from cli.output_context import OutputContext
@@ -137,6 +138,37 @@ class TestGitSync:
         result = runner.invoke(app, ["sync"], obj=OutputContext(compact=False))
         assert result.exit_code == 0
         assert "skipped" in result.stdout.lower() or "uncommitted" in result.stdout.lower()
+
+    @patch("cli.commands._git_helpers._pull_repository_model")
+    @patch("cli.commands.git._get_repo_status")
+    @patch("cli.commands.git._get_managed_repos")
+    def test_sync_uses_shared_core_pull(
+        self,
+        mock_managed: MagicMock,
+        mock_status: MagicMock,
+        mock_pull: MagicMock,
+    ) -> None:
+        mock_managed.return_value = [Path("/test/repo")]
+        mock_status.return_value = {
+            "path": "/test/repo",
+            "name": "repo",
+            "branch": "main",
+            "uncommitted": 0,
+            "ahead": 0,
+            "behind": 0,
+            "state": "clean",
+        }
+        mock_pull.return_value = SyncResult(
+            path="/test/repo",
+            name="repo",
+            branch="main",
+            status="up_to_date",
+        )
+
+        result = runner.invoke(app, ["sync"], obj=OutputContext(compact=False))
+
+        assert result.exit_code == 0
+        mock_pull.assert_called_once_with(Path("/test/repo"))
 
 
 class TestResolveConflict:
