@@ -20,6 +20,7 @@ export function useMockupModal(
   const [showHistory, setShowHistory] = useState(false)
   const [showComparison, setShowComparison] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showRerunDialog, setShowRerunDialog] = useState(false)
 
   const queryClient = useQueryClient()
 
@@ -68,11 +69,13 @@ export function useMockupModal(
     showHistory,
     showComparison,
     showDeleteConfirm,
+    showRerunDialog,
     history,
     deleteMutation,
     setShowHistory,
     setShowComparison,
     setShowDeleteConfirm,
+    setShowRerunDialog,
     handleStatusChange,
   }
 }

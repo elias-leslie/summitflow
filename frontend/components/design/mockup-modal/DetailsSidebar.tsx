@@ -11,6 +11,7 @@ interface DetailsSidebarProps {
   showHistory: boolean
   history?: Mockup[]
   onStatusChange: (status: string) => void
+  onSelectHistoryMockup: (mockup: Mockup) => void
 }
 
 export function DetailsSidebar({
@@ -19,6 +20,7 @@ export function DetailsSidebar({
   showHistory,
   history,
   onStatusChange,
+  onSelectHistoryMockup,
 }: DetailsSidebarProps) {
   const formattedDate = mockup.created_at
     ? formatDate(mockup.created_at)
@@ -117,10 +119,12 @@ export function DetailsSidebar({
             </h3>
             <div className="space-y-2">
               {history.map((item) => (
-                <div
+                <button
+                  type="button"
                   key={item.mockup_id}
+                  onClick={() => onSelectHistoryMockup(item)}
                   className={clsx(
-                    'card p-2 flex items-center gap-3 text-sm',
+                    'card p-2 flex w-full items-center gap-3 text-left text-sm transition-colors hover:bg-slate-700/50',
                     item.mockup_id === mockup.mockup_id &&
                       'ring-1 ring-outrun-500',
                   )}
@@ -132,7 +136,7 @@ export function DetailsSidebar({
                   <span className="text-slate-500 text-xs">
                     {item.created_at ? formatDate(item.created_at) : ''}
                   </span>
-                </div>
+                </button>
               ))}
             </div>
           </div>

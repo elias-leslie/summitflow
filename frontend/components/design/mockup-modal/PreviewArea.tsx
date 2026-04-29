@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
   Layers3,
   MessageSquare,
+  RefreshCw,
   Trash2,
 } from 'lucide-react'
 import Image from 'next/image'
@@ -34,6 +35,7 @@ interface PreviewAreaProps {
   onToggleComparison: () => void
   onToggleHistory: () => void
   onCreateIteration: () => void
+  onRerun: () => void
   onDelete: () => void
   onOpenReviewOverlay?: () => void
 }
@@ -47,6 +49,7 @@ export function PreviewArea({
   onToggleComparison,
   onToggleHistory,
   onCreateIteration,
+  onRerun,
   onDelete,
   onOpenReviewOverlay,
 }: PreviewAreaProps) {
@@ -131,6 +134,14 @@ export function PreviewArea({
         >
           <History className="w-4 h-4" />
           History
+        </button>
+        <button
+          type="button"
+          onClick={onRerun}
+          className="btn-secondary flex items-center gap-2"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Rerun
         </button>
         <button
           type="button"

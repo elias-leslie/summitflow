@@ -19,6 +19,7 @@ export function useProjectNavigation(): UseProjectNavigationReturn {
     if (!currentProjectId) return null
     if (pathname.includes('/files')) return 'files'
     if (pathname.includes('/design')) return 'design'
+    if (pathname.includes('/graph')) return 'graph'
     return parseProjectTab(searchParams.get('tab'))
   }
 

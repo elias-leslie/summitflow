@@ -156,3 +156,36 @@ def test_design_ui_analyze_posts_to_mockups_endpoint() -> None:
     called_json = mock_client.post.call_args.kwargs["json"]
     assert called_url.endswith("/mockups/analyze-page")
     assert called_json["page_path"] == "/projects/summitflow"
+
+
+def test_design_ui_rerun_posts_notes_to_mockup_endpoint() -> None:
+    """CLI should route mockup reruns to the project mockup revision endpoint."""
+    mock_client = MagicMock()
+    mock_client._url.side_effect = lambda path: f"http://localhost:8001/api/projects/summitflow{path}"
+    mock_client.post.return_value = {"success": True, "mockup": {"mockup_id": "mk-child"}}
+
+    with (
+        patch("cli.commands.design.require_explicit_project"),
+        patch("cli.commands.design.get_config"),
+        patch("cli.commands.design.STClient", return_value=mock_client),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "-P",
+                "summitflow",
+                "design",
+                "ui",
+                "rerun",
+                "mk-parent",
+                "--notes",
+                "Tighten spacing and keep current color palette",
+            ],
+        )
+
+    assert result.exit_code == 0
+    mock_client.post.assert_called_once()
+    called_url = mock_client.post.call_args.args[0]
+    called_json = mock_client.post.call_args.kwargs["json"]
+    assert called_url.endswith("/mockups/mk-parent/rerun")
+    assert called_json["notes"] == "Tighten spacing and keep current color palette"

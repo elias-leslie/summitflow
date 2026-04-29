@@ -21,6 +21,8 @@ from .mockups_models import (
     MockupStatsResponse,
     MockupStatusUpdate,
     MockupUpdate,
+    RerunMockupRequest,
+    RerunMockupResponse,
 )
 
 # Create main router and include sub-routers
@@ -40,5 +42,7 @@ __all__ = [
     "MockupStatsResponse",
     "MockupStatusUpdate",
     "MockupUpdate",
+    "RerunMockupRequest",
+    "RerunMockupResponse",
     "router",
 ]

@@ -147,6 +147,35 @@ def analyze_ui(
     output_json(result)
 
 
+@ui_app.command("rerun")
+def rerun_ui_mockup(
+    mockup_id: Annotated[str, typer.Argument(help="Mockup id to rerun")],
+    notes: Annotated[
+        str | None,
+        typer.Option("--notes", "-n", help="Revision notes for the UI mockup agent"),
+    ] = None,
+    notes_file: Annotated[
+        Path | None,
+        typer.Option("--notes-file", help="Path to a file containing revision notes"),
+    ] = None,
+) -> None:
+    """Rerun a stored UI mockup through Agent Hub and save the next version."""
+    require_explicit_project(get_config())
+    revision_notes = _resolve_notes(notes, notes_file)
+    client = STClient()
+
+    try:
+        result = client.post(
+            client._url(f"/mockups/{mockup_id}/rerun"),
+            json={"notes": revision_notes},
+        )
+    except APIError as exc:
+        handle_api_error(exc)
+        raise typer.Exit(1) from None
+
+    output_json(result)
+
+
 def _build_asset_payload(
     *,
     name: str,
@@ -259,6 +288,16 @@ def _split_csv(value: str | None) -> list[str]:
     if not value:
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _resolve_notes(notes: str | None, notes_file: Path | None) -> str:
+    """Resolve revision notes from an option or file."""
+    if notes and notes_file:
+        raise typer.BadParameter("Use either --notes or --notes-file, not both")
+    value = notes_file.read_text(encoding="utf-8").strip() if notes_file else (notes or "").strip()
+    if not value:
+        raise typer.BadParameter("Revision notes are required")
+    return value
 
 
 def _guess_mime_type(path: Path) -> str:

@@ -63,6 +63,20 @@ export interface CreateMockupRequest {
   generation_time_ms?: number
 }
 
+export interface RerunMockupRequest {
+  notes: string
+}
+
+export interface RerunMockupResponse {
+  success: boolean
+  mockup: Mockup
+  agent_slug: string
+  model_used: string | null
+  provider: string | null
+  session_id: string | null
+  generation_time_ms: number
+}
+
 export interface MockupFilters {
   limit?: number
   offset?: number
@@ -121,6 +135,21 @@ export async function createMockup(
     `/api/projects/${projectId}/mockups`,
     payload,
     'Failed to create mockup',
+  )
+}
+
+/**
+ * Rerun an existing mockup through Agent Hub to create a new revision.
+ */
+export async function rerunMockup(
+  projectId: string,
+  mockupId: string,
+  payload: RerunMockupRequest,
+): Promise<RerunMockupResponse> {
+  return postJson<RerunMockupResponse>(
+    `/api/projects/${projectId}/mockups/${mockupId}/rerun`,
+    payload,
+    'Failed to rerun mockup',
   )
 }
 

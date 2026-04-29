@@ -71,6 +71,40 @@ const typeIcons = {
   illustration: ImageIcon,
 }
 
+function buildThumbnailSrcDoc(content: string): string {
+  const previewCss = `
+    <style>
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+        scrollbar-width: none !important;
+      }
+      body {
+        margin: 0 !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+      }
+      ::-webkit-scrollbar {
+        display: none !important;
+      }
+    </style>
+  `
+  const sanitized = content
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/<link\b[^>]*>/gi, '')
+    .replace(/<iframe\b[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<(object|embed|video|audio|source)\b[\s\S]*?<\/\1>/gi, '')
+    .replace(/\s(?:src|href)=["']https?:\/\/[^"']*["']/gi, '')
+    .replace(/url\(["']?https?:\/\/[^)"']+["']?\)/gi, 'none')
+    .replace(/@import\s+[^;]+;/gi, '')
+
+  if (/<head[^>]*>/i.test(sanitized)) {
+    return sanitized.replace(/<head([^>]*)>/i, `<head$1>${previewCss}`)
+  }
+
+  return `<!doctype html><html><head>${previewCss}</head><body>${sanitized}</body></html>`
+}
+
 export function MockupCard({
   mockup,
   viewMode,
@@ -226,9 +260,10 @@ export function MockupCard({
         ) : hasHtmlContent ? (
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
             <iframe
-              srcDoc={mockup.content!}
+              srcDoc={buildThumbnailSrcDoc(mockup.content!)}
               title={mockup.name}
               sandbox=""
+              loading="lazy"
               className="border-0 origin-top-left"
               style={{
                 width: '1280px',

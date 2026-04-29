@@ -1,7 +1,8 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BulkActionBar } from '@/components/design/BulkActionBar'
 import { CreateMockupDialog } from '@/components/design/CreateMockupDialog'
 import {
@@ -76,6 +77,9 @@ export function UiDesignWorkspace({
   const [page, setPage] = useState(0)
   const [selectedMockup, setSelectedMockup] = useState<Mockup | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [pendingModalNavigation, setPendingModalNavigation] = useState<
+    'previous' | 'next' | null
+  >(null)
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
@@ -89,6 +93,7 @@ export function UiDesignWorkspace({
   const {
     data: mockupsData,
     isLoading,
+    isFetching,
     error,
     refetch,
   } = useQuery({
@@ -110,7 +115,7 @@ export function UiDesignWorkspace({
       }),
   })
 
-  const { data: stats } = useQuery({
+  const { data: stats, refetch: refetchStats } = useQuery({
     queryKey: ['mockup-stats', projectId],
     queryFn: () => fetchMockupStats(projectId),
   })
@@ -130,6 +135,14 @@ export function UiDesignWorkspace({
 
   const mockups = mockupsData?.items ?? []
   const totalCount = mockupsData?.total ?? 0
+  const selectedMockupIndex = selectedMockup
+    ? mockups.findIndex(
+        (mockup) => mockup.mockup_id === selectedMockup.mockup_id,
+      )
+    : -1
+  const selectedMockupPosition =
+    selectedMockupIndex >= 0 ? page * pageSize + selectedMockupIndex + 1 : 0
+
   useClampedPagination({
     page,
     setPage,
@@ -145,6 +158,74 @@ export function UiDesignWorkspace({
       return next
     })
   }
+
+  useEffect(() => {
+    if (
+      !modalOpen ||
+      !pendingModalNavigation ||
+      isFetching ||
+      mockups.length === 0
+    ) {
+      return
+    }
+
+    setSelectedMockup(
+      pendingModalNavigation === 'next'
+        ? mockups[0]
+        : mockups[mockups.length - 1],
+    )
+    setPendingModalNavigation(null)
+  }, [isFetching, mockups, modalOpen, pendingModalNavigation])
+
+  const handleRefresh = useCallback(async (): Promise<void> => {
+    await Promise.all([refetch(), refetchStats()])
+  }, [refetch, refetchStats])
+
+  const handlePreviousMockup = useCallback((): void => {
+    if (selectedMockupIndex > 0) {
+      setSelectedMockup(mockups[selectedMockupIndex - 1])
+      return
+    }
+
+    if (page > 0) {
+      setPendingModalNavigation('previous')
+      setPage(page - 1)
+    }
+  }, [mockups, page, selectedMockupIndex])
+
+  const handleNextMockup = useCallback((): void => {
+    if (selectedMockupIndex >= 0 && selectedMockupIndex < mockups.length - 1) {
+      setSelectedMockup(mockups[selectedMockupIndex + 1])
+      return
+    }
+
+    if ((page + 1) * pageSize < totalCount) {
+      setPendingModalNavigation('next')
+      setPage(page + 1)
+    }
+  }, [mockups, page, pageSize, selectedMockupIndex, totalCount])
+
+  const modalNavigation = useMemo(() => {
+    if (!selectedMockup || totalCount <= 1 || selectedMockupPosition <= 0) {
+      return undefined
+    }
+
+    return {
+      currentIndex: selectedMockupPosition,
+      totalCount,
+      canGoPrevious: selectedMockupPosition > 1,
+      canGoNext:
+        selectedMockupPosition > 0 && selectedMockupPosition < totalCount,
+      onPrevious: handlePreviousMockup,
+      onNext: handleNextMockup,
+    }
+  }, [
+    handleNextMockup,
+    handlePreviousMockup,
+    selectedMockup,
+    selectedMockupPosition,
+    totalCount,
+  ])
 
   const openReviewOverlay = (mockup: Mockup): void => {
     onRequestReviewOverlay?.({
@@ -180,16 +261,31 @@ export function UiDesignWorkspace({
           onPrimaryAction={() => setGenerateDialogOpen(true)}
           extraActions={
             !selectMode ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setIterationParentMockup(null)
-                  setCreateDialogOpen(true)
-                }}
-                className="btn-secondary"
-              >
-                New Concept
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => void handleRefresh()}
+                  disabled={isFetching}
+                  aria-label="Refresh mockups"
+                  title="Refresh mockups"
+                  className="btn-secondary flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`}
+                  />
+                  Refresh
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIterationParentMockup(null)
+                    setCreateDialogOpen(true)
+                  }}
+                  className="btn-secondary"
+                >
+                  New Concept
+                </button>
+              </>
             ) : null
           }
         />
@@ -272,12 +368,14 @@ export function UiDesignWorkspace({
             projectId={projectId}
             open={modalOpen}
             onOpenChange={setModalOpen}
-            onStatusChange={() => refetch()}
+            onStatusChange={() => void handleRefresh()}
             onCreateIteration={(mockup) => {
               setIterationParentMockup(mockup)
               setCreateDialogOpen(true)
             }}
+            onSelectMockup={setSelectedMockup}
             onOpenReviewOverlay={openReviewOverlay}
+            navigation={modalNavigation}
           />
         )}
 

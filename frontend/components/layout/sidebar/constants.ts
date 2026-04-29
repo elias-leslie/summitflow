@@ -1,4 +1,4 @@
-import { Compass, FolderOpen, ListTodo, Palette } from 'lucide-react'
+import { Compass, FolderOpen, GitFork, ListTodo, Palette } from 'lucide-react'
 import type { NavItemConfig } from './types'
 
 // Project-specific navigation items (shown when project expanded)
@@ -23,6 +23,16 @@ export const projectNavItems: NavItemConfig[] = [
     inactiveClasses: 'text-slate-400 hover:bg-teal-500/10 hover:text-teal-400',
     iconActiveClasses: 'text-teal-400',
     iconInactiveClasses: 'text-slate-500 group-hover:text-teal-400',
+  },
+  {
+    id: 'graph',
+    label: 'Graph',
+    href: '/graph',
+    icon: GitFork,
+    activeClasses: 'bg-cyan-500/15 text-cyan-400',
+    inactiveClasses: 'text-slate-400 hover:bg-cyan-500/10 hover:text-cyan-400',
+    iconActiveClasses: 'text-cyan-400',
+    iconInactiveClasses: 'text-slate-500 group-hover:text-cyan-400',
   },
   {
     id: 'files',

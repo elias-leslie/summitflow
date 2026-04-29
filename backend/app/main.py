@@ -28,6 +28,7 @@ from .api import (
     explorer,
     files,
     git,
+    graphify,
     mockups,
     notes,
     notifications,
@@ -117,6 +118,7 @@ app.include_router(collab_sessions.project_router, prefix="/api/projects", tags=
 app.include_router(collab_sessions.global_router, prefix="/api", tags=["collab-sessions"])
 app.include_router(files.project_router, prefix="/api/projects", tags=["files"])
 app.include_router(files.global_router, prefix="/api", tags=["files"])
+app.include_router(graphify.router, prefix="/api/projects", tags=["graphify"])
 
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])

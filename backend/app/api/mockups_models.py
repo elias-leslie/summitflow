@@ -99,3 +99,21 @@ class AnalyzePageResponse(BaseModel):
     issues_found: int = 0
     error: str | None = None
     generation_time_ms: int = 0
+
+
+class RerunMockupRequest(BaseModel):
+    """Request to create an Agent Hub-generated mockup revision."""
+
+    notes: str
+
+
+class RerunMockupResponse(BaseModel):
+    """Response from Agent Hub mockup revision generation."""
+
+    success: bool
+    mockup: MockupResponse
+    agent_slug: str
+    model_used: str | None = None
+    provider: str | None = None
+    session_id: str | None = None
+    generation_time_ms: int = 0

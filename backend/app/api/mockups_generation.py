@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from ..constants import GEMINI_IMAGE
 from ..logging_config import get_logger
 from ..services.agent_hub_client import get_sync_client
+from ..services.mockup_generator.revisions import rerun_mockup
 from ..services.mockup_generator.sprite_prompts import (
     build_environment_prompt,
     build_sheet_prompt,
@@ -25,6 +26,8 @@ from ..services.mockup_generator.storage_helpers import (
     get_mockup_directory,
 )
 from ..storage import mockups as mockups_storage
+from .mockups_models import RerunMockupRequest, RerunMockupResponse
+from .mockups_utils import to_response
 
 logger = get_logger(__name__)
 
@@ -201,3 +204,42 @@ async def generate_asset(
             status_code=502,
             detail=f"Image generation failed: {e}",
         ) from e
+
+
+@router.post(
+    "/projects/{project_id}/mockups/{mockup_id}/rerun",
+    response_model=RerunMockupResponse,
+)
+async def rerun_mockup_endpoint(
+    project_id: str,
+    mockup_id: str,
+    request: RerunMockupRequest,
+) -> RerunMockupResponse:
+    """Create a new Agent Hub-generated revision for an existing mockup."""
+    try:
+        result = rerun_mockup(project_id, mockup_id, request.notes)
+    except ValueError as e:
+        message = str(e)
+        status_code = 404 if message == "Mockup not found" else 400
+        raise HTTPException(status_code=status_code, detail=message) from e
+    except Exception as e:
+        logger.error(
+            "mockup_revision_failed",
+            project_id=project_id,
+            mockup_id=mockup_id,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Mockup revision generation failed: {e}",
+        ) from e
+
+    return RerunMockupResponse(
+        success=True,
+        mockup=to_response(result.mockup),
+        agent_slug=result.agent_slug,
+        model_used=result.model_used,
+        provider=result.provider,
+        session_id=result.session_id,
+        generation_time_ms=result.generation_time_ms,
+    )
