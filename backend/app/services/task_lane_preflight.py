@@ -305,7 +305,7 @@ def check_task_lane_conflicts(task_id: str, project_id: str) -> TaskLaneConflict
     same_task_sessions, other_lane_sessions = _partition_sessions(sessions, task_id)
     result = TaskLaneConflictCheck(active_specialists=summarize_active_specialists(specialists))
 
-    if same_task_sessions:
+    if same_task_sessions and _task_status(task_id) in _FINAL_TASK_STATUSES:
         _apply_same_task_conflict(result, task_id, project_id, same_task_sessions)
 
     if other_lane_sessions:

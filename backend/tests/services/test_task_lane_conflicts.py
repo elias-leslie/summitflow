@@ -29,7 +29,7 @@ class TestTaskLaneConflicts:
     """Active lane blocking and stale lane conflict detection."""
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
-    def test_same_task_active_lane_blocks_dispatch(
+    def test_same_task_active_lane_does_not_block_current_work(
         self,
         mock_get_task: MagicMock,
         mock_httpx_client: MagicMock,
@@ -50,11 +50,10 @@ class TestTaskLaneConflicts:
 
         result = check_task_lane_conflicts("task-123", "summitflow")
 
-        assert result.issues
-        assert result.overlap_kind == "same_task"
-        assert result.disposition == "block"
-        assert "Task already has an active session" in result.issues[0]
-        assert result.owner_location == "sess-1 in checkout /tmp/lanes/task-123 on task-123/main"
+        assert result.issues == []
+        assert result.overlap_kind is None
+        assert result.disposition == "allow"
+        assert result.owner_location is None
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_other_task_active_lane_without_target_scope_does_not_block(
@@ -163,7 +162,7 @@ class TestTaskLaneConflicts:
         assert result.issues == []
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
-    def test_same_task_stale_lane_points_to_reconcile_guidance(
+    def test_same_task_stale_lane_does_not_block_current_work(
         self,
         mock_get_task: MagicMock,
         mock_httpx_client: MagicMock,
@@ -186,8 +185,9 @@ class TestTaskLaneConflicts:
 
         result = check_task_lane_conflicts("task-123", "summitflow")
 
-        assert "likely stale active session" in result.issues[0]
-        assert "st sessions list --status active --project summitflow" in result.suggestions[0]
+        assert result.issues == []
+        assert result.suggestions == []
+        assert result.disposition == "allow"
 
     @patch("app.services.task_lane_preflight.task_store.get_task")
     def test_same_task_terminal_status_surfaces_leftover_lane_for_reconcile(
