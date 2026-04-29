@@ -414,8 +414,22 @@ class TestTaskCliErgonomics:
         assert result.exit_code == 0
         payload = mock_client.create_task.call_args.args[0]
         assert payload["task_type"] == "bug"
+        assert payload["description"] == "Fix auth"
+        assert len(payload["done_when"]) == 3
         assert payload["execution_mode"] == "autonomous"
         assert payload["autonomous"] is True
+        mock_client.create_subtask.assert_called_once_with(
+            task_id="task-mock-bug",
+            subtask_id="1.1",
+            description="Reproduce, fix, and verify bug.",
+            phase="debugging",
+            steps=[
+                "Confirm reproduction or recorded failure evidence.",
+                "Implement the smallest root-cause fix.",
+                "Verify the original symptom and run st check --quick --changed-only.",
+            ],
+            subtask_type="bug-fix",
+        )
 
     def test_legacy_idea_redirects_to_capture(self) -> None:
         result = runner.invoke(tasks_app, ["idea", "Add dark mode"])
@@ -1727,4 +1741,3 @@ class TestVerifyPlanGates:
             packet = _build_review_packet(task, spirit, [], stage="pre_close")
 
         assert packet["closeout"]["active_review"] == {"stage": "pre_close", "status": "pending"}
-

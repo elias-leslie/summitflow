@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -122,6 +123,24 @@ def _completion_skip_gates(client: STClient, task_id: str) -> bool:
     except APIError:
         return False
     return task.get("status") in {"pending", "failed"}
+
+
+def _task_has_published_commit_event(task_id: str) -> bool:
+    """Return True when st commit recorded a pushed task commit."""
+    try:
+        from app.storage.events import get_events_by_trace
+    except Exception:
+        return False
+    commit_event_re = re.compile(r"\bst commit\b.*\bcommit=[0-9a-f]+\b.*\bpushed=true\b")
+    try:
+        events = get_events_by_trace(task_id, limit=50)
+    except Exception:
+        return False
+    return any(
+        message and commit_event_re.search(message)
+        for event in reversed(events)
+        if (message := event.get("message"))
+    )
 
 
 def _run_diff_gate(repo_root: str, task_id: str, project_id: str | None, base_branch: str) -> None:
@@ -271,6 +290,23 @@ def _finalize_missing_snapshot_residue(
 
     status = str(task.get("status") or "")
     if status in {"running", "pending"}:
+        project_id = _task_project_id(task)
+        repo_root = _checkpoint_repo_root(project_id)
+        if repo_root and is_working_tree_clean(repo_root) and _task_has_published_commit_event(task_id):
+            _run_smart_prereqs(client, task_id, project_id)
+            try:
+                client.update_status(task_id, "completed", skip_gates=_completion_skip_gates(client, task_id))
+            except APIError as e:
+                output_error(f"Failed to close task after published commit: {e.detail}")
+                raise typer.Exit(1) from None
+            output_success(f"No checkpoint for {task_id}; closed from pushed st commit event.")
+            return _done_result(
+                task_id,
+                merged=False,
+                snapshot_removed=True,
+                base_branch=_task_base_branch(task),
+                project_id=project_id,
+            )
         output_error(
             f"Checkpoint metadata missing for active task {task_id} (status={status}).\n"
             "  Restore/claim the task checkpoint first; residue finalize is only for closed tasks."

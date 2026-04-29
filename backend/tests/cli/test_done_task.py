@@ -69,6 +69,31 @@ def test_complete_task_missing_checkpoint_pending_task_exits_with_guidance() -> 
     assert "active task" in mock_output.call_args.args[0]
 
 
+def test_complete_task_missing_checkpoint_active_task_closes_after_pushed_commit_event() -> None:
+    client = MagicMock()
+    client.get_task.return_value = {
+        "status": "pending",
+        "project_id": "summitflow",
+        "base_branch": "main",
+    }
+
+    with (
+        patch("cli.commands.done_task.get_snapshot_info", return_value=None),
+        patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None),
+        patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
+        patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
+        patch("cli.commands.done_task._task_has_published_commit_event", return_value=True),
+        patch("cli.commands.done_task._run_smart_prereqs") as mock_prereqs,
+        patch("cli.commands.done_task.output_success"),
+    ):
+        result = complete_task(client, "task-789")
+
+    mock_prereqs.assert_called_once_with(client, "task-789", "summitflow")
+    client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
+    assert result["merged"] is False
+    assert result["snapshot_removed"] is True
+
+
 def test_reconstruct_snapshot_info_defaults_missing_base_branch_to_main() -> None:
     client = MagicMock()
     client.get_task.return_value = {

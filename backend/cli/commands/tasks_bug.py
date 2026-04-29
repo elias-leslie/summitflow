@@ -7,6 +7,17 @@ import typer
 from ..client import APIError, STClient
 from ..output import handle_api_error, output_task
 
+_BUG_DONE_WHEN = [
+    "Bug is reproduced or existing failure evidence is confirmed.",
+    "Root cause is fixed with the smallest scoped code change.",
+    "Original symptom no longer reproduces and relevant st check gates pass.",
+]
+_BUG_SUBTASK_STEPS = [
+    "Confirm reproduction or recorded failure evidence.",
+    "Implement the smallest root-cause fix.",
+    "Verify the original symptom and run st check --quick --changed-only.",
+]
+
 
 def create_bug_task(
     title: str,
@@ -22,6 +33,7 @@ def create_bug_task(
     task_data = _build_bug_task_data(title, description, priority, all_labels)
 
     task = _create_task(task_data, client)
+    task = _add_bug_fix_subtask(task, client)
     task = _add_discovered_from_link(task, from_task, client)
 
     output_task(task)
@@ -76,14 +88,13 @@ def _build_bug_task_data(
     """Build task creation data dictionary."""
     data: dict[str, object] = {
         "title": title,
+        "description": description or title,
         "task_type": "bug",
         "priority": priority,
         "execution_mode": "autonomous",
         "autonomous": True,
+        "done_when": _BUG_DONE_WHEN,
     }
-
-    if description:
-        data["description"] = description
 
     if labels:
         data["labels"] = labels
@@ -101,6 +112,26 @@ def _create_task(
     except APIError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None
+
+
+def _add_bug_fix_subtask(task: dict[str, object], client: STClient) -> dict[str, object]:
+    """Attach one focused bug-fix subtask to manual bug captures."""
+    task_id = task.get("id")
+    if not isinstance(task_id, str):
+        return task
+    try:
+        client.create_subtask(
+            task_id=task_id,
+            subtask_id="1.1",
+            description="Reproduce, fix, and verify bug.",
+            phase="debugging",
+            steps=_BUG_SUBTASK_STEPS,
+            subtask_type="bug-fix",
+        )
+        task["subtasks_created"] = 1
+    except APIError as e:
+        task["subtask_error"] = e.detail
+    return task
 
 
 def _add_discovered_from_link(
