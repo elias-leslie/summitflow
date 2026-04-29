@@ -34,6 +34,8 @@ def _close_subtask(
     task_id: str,
     subtask_id: str,
     project_id: str | None,
+    *,
+    merge_branch: bool = True,
 ) -> None:
     """Close subtask and merge its branch."""
     try:
@@ -49,6 +51,9 @@ def _close_subtask(
             output_error(f"Failed to close subtask {subtask_id}: {e.detail}")
         raise typer.Exit(1) from None
 
+    if not merge_branch:
+        return
+
     try:
         merge_subtask_branch(task_id, subtask_id, project_id=project_id)
     except SystemExit:
@@ -60,6 +65,8 @@ def auto_close_subtasks(
     client: STClient,
     task_id: str,
     project_id: str | None,
+    *,
+    merge_branches: bool = True,
 ) -> None:
     """Auto-close all unpassed subtasks and merge their branches.
 
@@ -79,7 +86,7 @@ def auto_close_subtasks(
             "citations_acknowledged"
         )
         _acknowledge_citations(client, task_id, subtask_id, citations_status)
-        _close_subtask(client, task_id, subtask_id, project_id)
+        _close_subtask(client, task_id, subtask_id, project_id, merge_branch=merge_branches)
 
 
 def _validate_working_tree_clean() -> None:

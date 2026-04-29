@@ -88,10 +88,34 @@ def test_complete_task_missing_checkpoint_active_task_closes_after_pushed_commit
     ):
         result = complete_task(client, "task-789")
 
-    mock_prereqs.assert_called_once_with(client, "task-789", "summitflow")
+    mock_prereqs.assert_called_once_with(
+        client, "task-789", "summitflow", merge_subtask_branches=False
+    )
     client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
     assert result["merged"] is False
     assert result["snapshot_removed"] is True
+
+
+def test_run_smart_prereqs_can_pass_subtasks_without_branch_merge() -> None:
+    client = MagicMock()
+    client.get_subtasks.return_value = {
+        "subtasks": [{"subtask_id": "1.1", "passes": False, "citations_status": "acknowledged"}]
+    }
+    client.get_task_completion_readiness.return_value = {"ready": True}
+
+    with (
+        patch("cli.commands.done_task.sync_completed_subtasks") as mock_sync,
+        patch("cli.commands.done_subtask.merge_subtask_branch") as mock_merge,
+    ):
+        mock_sync.return_value.synced = []
+        from cli.commands.done_task import _run_smart_prereqs
+
+        _run_smart_prereqs(
+            client, "task-789", "summitflow", merge_subtask_branches=False
+        )
+
+    client.update_subtask.assert_called_once_with("task-789", "1.1", passes=True)
+    mock_merge.assert_not_called()
 
 
 def test_reconstruct_snapshot_info_defaults_missing_base_branch_to_main() -> None:

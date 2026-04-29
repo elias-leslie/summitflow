@@ -106,14 +106,20 @@ def _auto_verify_readiness(client: STClient, task_id: str) -> None:
     raise typer.Exit(1)
 
 
-def _run_smart_prereqs(client: STClient, task_id: str, project_id: str | None) -> None:
+def _run_smart_prereqs(
+    client: STClient,
+    task_id: str,
+    project_id: str | None,
+    *,
+    merge_subtask_branches: bool = True,
+) -> None:
     subtasks_resp = client.get_subtasks(task_id)
     sync_analysis = sync_completed_subtasks(
         client, task_id, subtasks_resp.get("subtasks", []), acknowledge_none=True,
     )
     if sync_analysis.synced:
         output_success(f"Pre-synced subtasks before completion: {', '.join(sync_analysis.synced)}")
-    auto_close_subtasks(client, task_id, project_id)
+    auto_close_subtasks(client, task_id, project_id, merge_branches=merge_subtask_branches)
     _auto_verify_readiness(client, task_id)
 
 
@@ -293,7 +299,7 @@ def _finalize_missing_snapshot_residue(
         project_id = _task_project_id(task)
         repo_root = _checkpoint_repo_root(project_id)
         if repo_root and is_working_tree_clean(repo_root) and _task_has_published_commit_event(task_id):
-            _run_smart_prereqs(client, task_id, project_id)
+            _run_smart_prereqs(client, task_id, project_id, merge_subtask_branches=False)
             try:
                 client.update_status(task_id, "completed", skip_gates=_completion_skip_gates(client, task_id))
             except APIError as e:
