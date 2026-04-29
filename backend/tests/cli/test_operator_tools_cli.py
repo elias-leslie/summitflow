@@ -78,6 +78,26 @@ def test_service_run_large_output_goes_to_details_file(tmp_path: Path, capsys: p
     assert "SERVICE:OK:0|lines=45|details:.dev-tools/service-pnpm-build-details.txt" in captured.out
 
 
+def test_service_run_quiet_success_suppresses_success_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    result = subprocess.CompletedProcess(["alembic", "upgrade", "head"], 0, stdout="INFO ok\n", stderr="")
+    with patch("cli.lib.service_ops.subprocess.run", return_value=result):
+        exit_code = service_ops.run(["alembic", "upgrade", "head"], cwd=tmp_path, quiet_success=True)
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out == ""
+
+
+def test_service_run_quiet_success_keeps_failure_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    result = subprocess.CompletedProcess(["alembic", "upgrade", "head"], 1, stdout="", stderr="failed\n")
+    with patch("cli.lib.service_ops.subprocess.run", return_value=result):
+        exit_code = service_ops.run(["alembic", "upgrade", "head"], cwd=tmp_path, quiet_success=True)
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "failed" in captured.err
+
+
 def test_service_stop_uses_confirm_gate() -> None:
     with (
         patch("cli.commands.service._load", return_value=_project()),
@@ -118,6 +138,28 @@ def test_check_changed_only_skips_unrelated_tools() -> None:
     assert "TEST:SKIP:pytest:no_relevant_changed_paths" in result.output
     assert "TSC:SKIP:tsc:no_relevant_changed_paths" in result.output
     run_tool.assert_not_called()
+
+
+def test_check_normalizes_repo_relative_explicit_paths(tmp_path: Path) -> None:
+    (tmp_path / "frontend" / "src").mkdir(parents=True)
+    (tmp_path / "frontend" / "src" / "app.ts").write_text("", encoding="utf-8")
+    configs = {
+        "biome": {
+            "label": "BIOME",
+            "binary": "biome",
+            "working_dir": "frontend",
+        }
+    }
+
+    with (
+        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._tool_configs", return_value=configs),
+        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
+    ):
+        result = runner.invoke(main_app, ["check", "biome", "--", "frontend/src/app.ts"])
+
+    assert result.exit_code == 0
+    run_tool.assert_called_once_with("biome", configs["biome"], ["src/app.ts"])
 
 
 def test_check_resolves_npx_tool_to_local_binary(tmp_path: Path) -> None:
@@ -347,6 +389,32 @@ def test_browser_check_closes_session_and_runs_reaper() -> None:
     assert result.exit_code == 0
     assert calls[-1][2:] == ["close"]
     reaper.assert_called_once()
+
+
+def test_browser_check_treats_screenshot_timeout_as_warning(tmp_path: Path) -> None:
+    def fake_run_agent(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+        if "screenshot" in args:
+            return subprocess.CompletedProcess(args, 124, stdout="", stderr="Operation timed out")
+        if args[-1].startswith("JSON.stringify(performance"):
+            return subprocess.CompletedProcess(args, 0, stdout="[]", stderr="")
+        if args[-1].startswith("JSON.stringify"):
+            return subprocess.CompletedProcess(args, 0, stdout="{}", stderr="")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    with (
+        patch("cli.commands.browser.current_root", return_value=tmp_path),
+        patch("cli.commands.browser._select_port", return_value=9222),
+        patch("cli.commands.browser._host_for_engine", return_value="browser"),
+        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
+        patch("cli.commands.browser._run_browser_reaper"),
+        patch("cli.commands.browser._run_agent", side_effect=fake_run_agent),
+    ):
+        result = runner.invoke(main_app, ["browser", "check", "https://example.com", "/tmp/check.png"])
+
+    assert result.exit_code == 0
+    assert "BROWSER_CHECK:OK|errors=0|warnings=0|network=0|command_warnings=3" in result.output
+    details = tmp_path / ".dev-tools" / "browser-check-details.txt"
+    assert "Browser command warnings (3):" in details.read_text(encoding="utf-8")
 
 
 def test_browser_large_forwarded_output_goes_to_details_file(tmp_path: Path) -> None:

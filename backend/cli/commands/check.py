@@ -306,6 +306,21 @@ def _strip_separator(args: list[str]) -> list[str]:
     return args[1:] if args[:1] == ["--"] else args
 
 
+def _normalize_explicit_args(root: Path, cwd: Path, args: list[str]) -> list[str]:
+    normalized: list[str] = []
+    cwd_resolved = cwd.resolve()
+    for arg in args:
+        if arg.startswith("-"):
+            normalized.append(arg)
+            continue
+        candidate = (root / arg).resolve()
+        if candidate.exists() and candidate.is_relative_to(cwd_resolved):
+            normalized.append(candidate.relative_to(cwd_resolved).as_posix())
+            continue
+        normalized.append(arg)
+    return normalized
+
+
 def _usage(configs: dict[str, dict[str, Any]]) -> None:
     names = "|".join(sorted(configs))
     print(
@@ -355,7 +370,7 @@ def check(ctx: typer.Context) -> None:
         root = _repo_root()
         config = configs[first]
         cwd = _workdir(root, config)
-        explicit_args = _strip_separator(args[1:])
+        explicit_args = _normalize_explicit_args(root, cwd, _strip_separator(args[1:]))
         changed_files = _changed_files(root) if changed_only else []
         scoped_args = [] if explicit_args else _changed_args(
             first,

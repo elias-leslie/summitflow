@@ -16,7 +16,13 @@ import typer
 
 from app.services.browser_targets import BrowserTargetError, resolve_browser_endpoint
 
-from ..details import current_root, display_path, emit_result_or_details, write_details
+from ..details import (
+    current_root,
+    display_path,
+    emit_result_or_details,
+    summary_hint,
+    write_details,
+)
 from ..output import output_error
 
 app = typer.Typer(
@@ -141,6 +147,13 @@ def _run_agent(args: list[str], *, cdp: str | None = None, capture: bool = False
         command.extend(["--cdp", cdp])
     command.extend(args)
     return subprocess.run(command, text=True, capture_output=capture, check=False)
+
+
+def _agent_failure(label: str, result: subprocess.CompletedProcess[str]) -> str | None:
+    if result.returncode == 0:
+        return None
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    return f"{label}: rc={result.returncode} hint={summary_hint(output) if output else '-'}"
 
 
 def _agent_browser_reaper() -> str:
@@ -306,6 +319,9 @@ def _browser_check(args: list[str]) -> int:
         output_error(f"Unable to resolve Chrome CDP endpoint on {host}:{port}")
         return 1
 
+    command_warnings: list[str] = []
+    error_result = subprocess.CompletedProcess([], 0, stdout="{}", stderr="")
+    network_result = subprocess.CompletedProcess([], 0, stdout="[]", stderr="")
     try:
         viewports = [
             ("desktop", int(os.environ.get("SF_BROWSER_CHECK_DESKTOP_WIDTH", "1600")), int(os.environ.get("SF_BROWSER_CHECK_DESKTOP_HEIGHT", "900")), screenshot_path),
@@ -315,12 +331,18 @@ def _browser_check(args: list[str]) -> int:
         if os.environ.get("SF_BROWSER_CHECK_RESPONSIVE") == "0":
             viewports = viewports[:1]
 
-        _run_agent([*session_args, "set", "viewport", str(viewports[0][1]), str(viewports[0][2])], cdp=ws)
-        open_result = _run_agent([*session_args, "open", url], cdp=ws)
+        first_viewport = _run_agent([*session_args, "set", "viewport", str(viewports[0][1]), str(viewports[0][2])], cdp=ws, capture=True)
+        if warning := _agent_failure("initial viewport", first_viewport):
+            command_warnings.append(warning)
+        open_result = _run_agent([*session_args, "open", url], cdp=ws, capture=True)
         if open_result.returncode != 0:
+            if warning := _agent_failure("open", open_result):
+                output_error(warning)
             return open_result.returncode
-        _run_agent([*session_args, "wait", os.environ.get("SF_BROWSER_CHECK_WAIT", "5000")], cdp=ws)
-        _run_agent(
+        load_wait = _run_agent([*session_args, "wait", os.environ.get("SF_BROWSER_CHECK_WAIT", "5000")], cdp=ws, capture=True)
+        if warning := _agent_failure("load wait", load_wait):
+            command_warnings.append(warning)
+        hook_result = _run_agent(
             [
                 *session_args,
                 "eval",
@@ -329,15 +351,24 @@ def _browser_check(args: list[str]) -> int:
                 "const ow=console.warn;console.warn=(...a)=>{window.__sfWarnings.push(a.map(String).join(' '));ow.apply(console,a)};'capturing'",
             ],
             cdp=ws,
+            capture=True,
         )
-        _run_agent([*session_args, "wait", "2000"], cdp=ws)
+        if warning := _agent_failure("console hook", hook_result):
+            command_warnings.append(warning)
+        settle = _run_agent([*session_args, "wait", "2000"], cdp=ws, capture=True)
+        if warning := _agent_failure("settle wait", settle):
+            command_warnings.append(warning)
 
-        for _, width, height, path in viewports:
-            _run_agent([*session_args, "set", "viewport", str(width), str(height)], cdp=ws)
-            _run_agent([*session_args, "wait", os.environ.get("SF_BROWSER_CHECK_VIEWPORT_SETTLE_MS", "350")], cdp=ws)
-            screenshot = _run_agent([*session_args, "screenshot", path], cdp=ws)
-            if screenshot.returncode != 0:
-                return screenshot.returncode
+        for label, width, height, path in viewports:
+            viewport = _run_agent([*session_args, "set", "viewport", str(width), str(height)], cdp=ws, capture=True)
+            if warning := _agent_failure(f"{label} viewport", viewport):
+                command_warnings.append(warning)
+            viewport_wait = _run_agent([*session_args, "wait", os.environ.get("SF_BROWSER_CHECK_VIEWPORT_SETTLE_MS", "350")], cdp=ws, capture=True)
+            if warning := _agent_failure(f"{label} wait", viewport_wait):
+                command_warnings.append(warning)
+            screenshot = _run_agent([*session_args, "screenshot", path], cdp=ws, capture=True)
+            if warning := _agent_failure(f"{label} screenshot", screenshot):
+                command_warnings.append(warning)
 
         error_result = _run_agent(
             [
@@ -348,6 +379,8 @@ def _browser_check(args: list[str]) -> int:
             cdp=ws,
             capture=True,
         )
+        if warning := _agent_failure("console read", error_result):
+            command_warnings.append(warning)
         network_result = _run_agent(
             [
                 *session_args,
@@ -357,8 +390,12 @@ def _browser_check(args: list[str]) -> int:
             cdp=ws,
             capture=True,
         )
+        if warning := _agent_failure("network read", network_result):
+            command_warnings.append(warning)
     finally:
-        _run_agent([*session_args, "close"], cdp=ws)
+        close_result = _run_agent([*session_args, "close"], cdp=ws, capture=True)
+        if warning := _agent_failure("close", close_result):
+            command_warnings.append(warning)
         _run_browser_reaper()
     errors = _json_from_agent_eval(error_result.stdout)
     network = _json_from_agent_eval(network_result.stdout)
@@ -388,12 +425,16 @@ def _browser_check(args: list[str]) -> int:
     if network_items:
         detail_lines.append(f"\nFailed network requests ({len(network_items)}):")
         detail_lines.extend(str(item) for item in network_items)
+    if command_warnings:
+        detail_lines.append(f"\nBrowser command warnings ({len(command_warnings)}):")
+        detail_lines.extend(command_warnings)
     root = current_root()
     details = write_details(root, "browser-check", "\n".join(detail_lines))
     status = "OK" if not error_items and not warning_items and not network_items else "ISSUES"
     print(
         f"BROWSER_CHECK:{status}|errors={len(error_items)}|warnings={len(warning_items)}|"
-        f"network={len(network_items)}|screenshot={screenshot_path}|details:{display_path(root, details)}"
+        f"network={len(network_items)}|command_warnings={len(command_warnings)}|"
+        f"screenshot={screenshot_path}|details:{display_path(root, details)}"
     )
     return 0
 

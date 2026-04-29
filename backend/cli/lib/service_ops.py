@@ -113,7 +113,13 @@ def _detail_name(command: list[str]) -> str:
     return "service-" + "".join(char if char.isalnum() or char in "-_" else "-" for char in raw).strip("-")
 
 
-def run(command: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> int:
+def run(
+    command: list[str],
+    *,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+    quiet_success: bool = False,
+) -> int:
     result = subprocess.run(
         command,
         cwd=cwd,
@@ -124,7 +130,8 @@ def run(command: list[str], *, cwd: Path | None = None, env: dict[str, str] | No
         errors="replace",
         check=False,
     )
-    emit_result_or_details(cwd or get_repo_root(), _detail_name(command), "SERVICE", result)
+    if result.returncode != 0 or not quiet_success:
+        emit_result_or_details(cwd or get_repo_root(), _detail_name(command), "SERVICE", result)
     return result.returncode
 
 
@@ -338,14 +345,14 @@ def run_migrations(project: ProjectServices) -> int:
     ):
         env.pop(key, None)
     print("[service] running migrations")
-    return run([str(alembic), "upgrade", "head"], cwd=project.backend_dir, env=env)
+    return run([str(alembic), "upgrade", "head"], cwd=project.backend_dir, env=env, quiet_success=True)
 
 
 def sync_seeds(project: ProjectServices) -> None:
     export_script = project.backend_dir / "scripts" / "export_seeds.py"
     python = project.backend_dir / ".venv" / "bin" / "python"
     if export_script.exists() and python.exists():
-        run([str(python), "-m", "scripts.export_seeds"], cwd=project.backend_dir)
+        run([str(python), "-m", "scripts.export_seeds"], cwd=project.backend_dir, quiet_success=True)
 
 
 def verify_health(project: ProjectServices) -> int:

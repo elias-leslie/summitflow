@@ -169,6 +169,79 @@ class TestSessionsListCommand:
             project_id=None,
         )
 
+    def test_list_filters_stale_alias_from_active_sessions(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = [
+            {
+                "id": "sess-active",
+                "project_id": "agent-hub",
+                "status": "active",
+                "live_activity": {"lifecycle_state": "waiting_for_model"},
+            },
+            {
+                "id": "sess-stale",
+                "project_id": "agent-hub",
+                "status": "active",
+                "live_activity": {"lifecycle_state": "stalled"},
+            },
+            {
+                "id": "sess-reapable",
+                "project_id": "agent-hub",
+                "status": "active",
+                "live_activity": {"lifecycle_state": "reapable", "reapable": True},
+            },
+        ]
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["sessions", "list", "--status", "stale"])
+
+        assert result.exit_code == 0
+        assert "SESSIONS[2]" in result.output
+        assert "sess-sta" in result.output
+        assert "sess-rea" in result.output
+        assert "sess-act" not in result.output
+        mock_client.list_sessions.assert_called_once_with(
+            status="active",
+            limit=20,
+            page=1,
+            agent_slug=None,
+            parent_session_id=None,
+            project_id=None,
+        )
+
+    def test_list_filters_reapable_alias_from_active_sessions(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = [
+            {
+                "id": "sess-stale",
+                "project_id": "agent-hub",
+                "status": "active",
+                "live_activity": {"lifecycle_state": "stalled"},
+            },
+            {
+                "id": "sess-reapable",
+                "project_id": "agent-hub",
+                "status": "active",
+                "live_activity": {"lifecycle_state": "reapable", "reapable": True},
+            },
+        ]
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["sessions", "list", "--status", "reapable"])
+
+        assert result.exit_code == 0
+        assert "SESSIONS[1]" in result.output
+        assert "sess-rea" in result.output
+        assert "sess-sta" not in result.output
+        mock_client.list_sessions.assert_called_once_with(
+            status="active",
+            limit=20,
+            page=1,
+            agent_slug=None,
+            parent_session_id=None,
+            project_id=None,
+        )
+
     def test_list_refreshes_observability_before_querying(self) -> None:
         mock_client = MagicMock()
         mock_client.list_sessions.return_value = []

@@ -21,11 +21,39 @@ app = typer.Typer(
 )
 
 
+_ACTIVE_STATUS_ALIASES = {"running", "stale", "reapable"}
+_LIVE_STATUS_ALIASES = {"stale", "reapable"}
+
+
 def _normalize_status_filter(status_filter: str | None) -> str | None:
     """Normalize CLI-friendly session status aliases to Agent Hub values."""
-    if status_filter == "running":
+    if not status_filter:
+        return None
+    normalized = status_filter.strip().lower()
+    if normalized in _ACTIVE_STATUS_ALIASES:
         return "active"
-    return status_filter
+    return normalized
+
+
+def _session_matches_status_alias(session: dict[str, Any], status_filter: str | None) -> bool:
+    if not status_filter:
+        return True
+    normalized = status_filter.strip().lower()
+    if normalized not in _LIVE_STATUS_ALIASES:
+        return True
+
+    live = session.get("live_activity")
+    if not isinstance(live, dict):
+        return False
+
+    state = _session_live_state(session).strip().lower()
+    if normalized == "reapable":
+        return bool(live.get("reapable")) or state == "reapable"
+    return bool(live.get("is_stale")) or bool(live.get("reapable")) or state in {
+        "reapable",
+        "stale",
+        "stalled",
+    }
 
 
 def _render_session_list(
@@ -52,6 +80,12 @@ def _render_session_list(
     except APIError as e:
         handle_api_error(e)
         return
+
+    sessions = [
+        session
+        for session in sessions
+        if _session_matches_status_alias(session, status_filter)
+    ]
 
     if not include_unassigned:
         sessions = [session for session in sessions if session.get("agent_slug")]
