@@ -177,6 +177,9 @@ def get_task_branches(task_id: str, project_id: str | None = None) -> list[dict[
 def resolve_task_branch(task_id: str, project_id: str | None = None) -> str:
     """Return the concrete task branch name for a task id."""
     cwd = _get_repo_cwd(project_id)
+    committed_task_branch = f"task/{task_id}"
+    if _branch_exists(committed_task_branch, cwd):
+        return committed_task_branch
     preferred = f"{task_id}/main"
     if _branch_exists(preferred, cwd):
         return preferred

@@ -154,6 +154,13 @@ def test_merge_task_branch_reports_conflict_paths(
         cwd: str | None = None,
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
+        if args[:3] == ["git", "rev-parse", "--verify"]:
+            return subprocess.CompletedProcess(
+                args,
+                0 if args[3] == "task-1/main" else 1,
+                stdout="",
+                stderr="",
+            )
         if args[:2] == ["git", "merge"] and "--abort" not in args:
             raise subprocess.CalledProcessError(1, args, output=conflict_output, stderr="")
         if args == ["git", "diff", "--name-only", "--diff-filter=U"]:
