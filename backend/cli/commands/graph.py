@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,7 @@ from app.services.graphify_tools import (
 )
 
 from ..config import get_config
+from ..details import display_path, strip_ansi, summary_hint, write_details
 from ..output import output_json
 from ._projects_helpers import projects_api
 
@@ -30,6 +32,7 @@ app = typer.Typer(help="Graphify topology and profiling helpers")
 _GITNEXUS_PACKAGE = "gitnexus"
 _GITNEXUS_NPX_SPEC = "gitnexus@latest"
 _FALLOW_PACKAGE = "fallow"
+_FALLOW_MODES = {"audit", "changed", "health", "plugins", "flags", "dead-code", "dupes"}
 
 
 def _project_payload(project_id: str) -> dict[str, Any]:
@@ -152,6 +155,29 @@ def explain(
     output_json(_command_payload(result))
 
 
+@app.command("fallow")
+def fallow(
+    mode: Annotated[
+        str,
+        typer.Argument(help="Fallow mode: audit, changed, health, plugins, flags, dead-code, dupes."),
+    ] = "audit",
+    project: Annotated[str | None, typer.Option("--project", "-p", help="Project id. Defaults to current project.")] = None,
+    changed_since: Annotated[str, typer.Option("--changed-since", help="Git ref for changed mode.")] = "main",
+    top: Annotated[int, typer.Option("--top", min=1, max=100, help="Clone groups for dupes mode.")] = 10,
+    timeout: Annotated[int, typer.Option("--timeout", min=5, max=600, help="Command timeout in seconds.")] = 120,
+) -> None:
+    """Run Fallow with compact stdout and full details in .dev-tools."""
+    raise typer.Exit(
+        _run_fallow_compact(
+            _root_for_project(_project_id(project)),
+            mode,
+            changed_since=changed_since,
+            top=top,
+            timeout=timeout,
+        )
+    )
+
+
 def _run_measured(command: list[str], *, cwd: Path, timeout: int = 180) -> dict[str, Any]:
     start = time.perf_counter()
     try:
@@ -179,6 +205,134 @@ def _run_measured(command: list[str], *, cwd: Path, timeout: int = 180) -> dict[
         "estimated_tokens": (len(output) + 3) // 4 if output else 0,
         "output_preview": output[:1200],
     }
+
+
+def _extract_json_payload(output: str) -> dict[str, Any] | None:
+    text = strip_ansi(output)
+    decoder = json.JSONDecoder()
+    index = text.find("{")
+    while index >= 0:
+        try:
+            payload, _ = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            index = text.find("{", index + 1)
+            continue
+        return payload if isinstance(payload, dict) else None
+    return None
+
+
+def _fallow_command(mode: str, *, changed_since: str, top: int) -> list[str]:
+    fallow_bin = shutil.which("fallow") or "fallow"
+    if mode == "audit":
+        return [fallow_bin, "audit", "--format", "json", "--quiet"]
+    if mode == "changed":
+        return [
+            fallow_bin,
+            "dead-code",
+            "--changed-since",
+            changed_since,
+            "--format",
+            "json",
+            "--quiet",
+            "--summary",
+        ]
+    if mode == "health":
+        return [fallow_bin, "health", "--format", "json", "--quiet", "--score"]
+    if mode == "plugins":
+        return [fallow_bin, "list", "--format", "json", "--plugins"]
+    if mode == "flags":
+        return [fallow_bin, "flags", "--format", "json", "--quiet"]
+    if mode == "dead-code":
+        return [fallow_bin, "dead-code", "--format", "json", "--quiet"]
+    return [fallow_bin, "dupes", "--format", "json", "--quiet", "--top", str(top)]
+
+
+def _dict_field(payload: dict[str, Any], key: str) -> dict[str, Any]:
+    value = payload.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _list_field(payload: dict[str, Any], key: str) -> list[Any]:
+    value = payload.get(key)
+    return value if isinstance(value, list) else []
+
+
+def _fallow_hint(mode: str, payload: dict[str, Any] | None, output: str) -> str:
+    if not payload:
+        return summary_hint(output)
+    if mode == "audit":
+        summary = _dict_field(payload, "summary")
+        attribution = _dict_field(payload, "attribution")
+        return (
+            f"verdict={payload.get('verdict', '-')}"
+            f" changed={payload.get('changed_files_count', 0)}"
+            f" dead={summary.get('dead_code_issues', 0)}"
+            f" complexity={summary.get('complexity_findings', 0)}"
+            f" dupes={summary.get('duplication_clone_groups', 0)}"
+            f" introduced={attribution.get('dead_code_introduced', 0)}"
+        )
+    if mode in {"changed", "dead-code"}:
+        summary = _dict_field(payload, "summary")
+        return (
+            f"issues={payload.get('total_issues', summary.get('total_issues', 0))}"
+            f" files={summary.get('unused_files', 0)}"
+            f" exports={summary.get('unused_exports', 0)}"
+            f" deps={summary.get('unused_dependencies', 0)}"
+            f" circular={summary.get('circular_dependencies', 0)}"
+        )
+    if mode == "health":
+        score = _dict_field(payload, "health_score")
+        summary = _dict_field(payload, "summary")
+        return (
+            f"score={score.get('score', '-')}"
+            f" grade={score.get('grade', '-')}"
+            f" functions={summary.get('functions_analyzed', 0)}"
+            f" above={summary.get('functions_above_threshold', 0)}"
+        )
+    if mode == "plugins":
+        plugins = _list_field(payload, "plugins")
+        names = [str(item.get("name")) for item in plugins if isinstance(item, dict) and item.get("name")]
+        return f"plugins={','.join(names) if names else '-'}"
+    if mode == "flags":
+        return f"flags={payload.get('total_flags', 0)}"
+    stats = _dict_field(payload, "stats")
+    groups = _list_field(payload, "clone_groups")
+    group_count = len(groups) if isinstance(groups, list) else stats.get("clone_groups", 0)
+    return f"clone_groups={group_count} duplicated_pct={stats.get('duplication_percentage', 0)}"
+
+
+def _run_fallow_compact(root: Path, mode: str, *, changed_since: str, top: int, timeout: int) -> int:
+    if mode not in _FALLOW_MODES:
+        print(f"FALLOW:ERROR:unknown_mode:{mode}|valid={','.join(sorted(_FALLOW_MODES))}")
+        return 2
+    command = _fallow_command(mode, changed_since=changed_since, top=top)
+    start = time.perf_counter()
+    try:
+        result = subprocess.run(
+            command,
+            cwd=root,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+        output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+        exit_code = result.returncode
+    except (OSError, subprocess.SubprocessError) as exc:
+        output = f"{type(exc).__name__}: {exc}"
+        exit_code = 127
+    elapsed_ms = round((time.perf_counter() - start) * 1000)
+    details = write_details(root, f"fallow-{mode}", output)
+    clean_output = strip_ansi(output)
+    payload = _extract_json_payload(output)
+    byte_count = len(clean_output.encode("utf-8"))
+    token_count = (len(clean_output) + 3) // 4 if clean_output else 0
+    print(
+        f"FALLOW:{mode}:{'OK' if exit_code == 0 else 'FAIL'}:{exit_code}|"
+        f"elapsed_ms={elapsed_ms}|bytes={byte_count}|tokens={token_count}|"
+        f"details:{display_path(root, details)}|hint:{_fallow_hint(mode, payload, output)}"
+    )
+    return exit_code
 
 
 def _gitnexus_profile(root: Path) -> dict[str, Any]:

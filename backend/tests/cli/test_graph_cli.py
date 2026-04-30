@@ -275,3 +275,59 @@ def test_profile_compares_search_graph_and_agent_tool_shapes(
         "--summary",
     ]
     assert measured_commands[0][:4] == ["/bin/st", "-P", "summitflow", "search"]
+
+
+def test_fallow_command_emits_compact_details_pointer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_projects_api(method: str, path: str = "") -> object:
+        assert method == "GET"
+        if path == "/summitflow":
+            return {"id": "summitflow", "root_path": str(tmp_path)}
+        return [{"id": "summitflow", "root_path": str(tmp_path)}]
+
+    def fake_run(
+        command: list[str],
+        *,
+        cwd: Path,
+        text: bool,
+        capture_output: bool,
+        timeout: int,
+        check: bool,
+    ) -> graph.subprocess.CompletedProcess[str]:
+        assert command == ["/bin/fallow", "audit", "--format", "json", "--quiet"]
+        assert cwd == tmp_path
+        assert text is True
+        assert capture_output is True
+        assert timeout == 120
+        assert check is False
+        return graph.subprocess.CompletedProcess(
+            command,
+            1,
+            stdout=(
+                '{"verdict":"fail","changed_files_count":2,'
+                '"summary":{"dead_code_issues":1,"complexity_findings":0,'
+                '"duplication_clone_groups":0},'
+                '"attribution":{"dead_code_introduced":1}}'
+            ),
+            stderr="full review details",
+        )
+
+    monkeypatch.setattr(graph, "projects_api", fake_projects_api)
+    monkeypatch.setattr(graph.shutil, "which", lambda name: "/bin/fallow" if name == "fallow" else None)
+    monkeypatch.setattr(graph.subprocess, "run", fake_run)
+
+    result = runner.invoke(graph.app, ["fallow", "audit", "--project", "summitflow"])
+
+    assert result.exit_code == 1
+    assert result.output.startswith("FALLOW:audit:FAIL:1|")
+    assert "details:.dev-tools/fallow-audit-details.txt" in result.output
+    assert "hint:verdict=fail changed=2 dead=1 complexity=0 dupes=0 introduced=1" in result.output
+    assert "full review details" not in result.output
+    assert (tmp_path / ".dev-tools" / "fallow-audit-details.txt").read_text() == (
+        '{"verdict":"fail","changed_files_count":2,'
+        '"summary":{"dead_code_issues":1,"complexity_findings":0,'
+        '"duplication_clone_groups":0},'
+        '"attribution":{"dead_code_introduced":1}}\nfull review details'
+    )
