@@ -156,7 +156,12 @@ def test_profile_compares_search_graph_and_agent_tool_shapes(
     measured_commands: list[list[str]] = []
 
     def fake_which(name: str) -> str | None:
-        return {"st": "/bin/st", "codex": "/bin/codex"}.get(name)
+        return {
+            "st": "/bin/st",
+            "codex": "/bin/codex",
+            "npm": "/bin/npm",
+            "npx": "/bin/npx",
+        }.get(name)
 
     def fake_run_measured(command: list[str], *, cwd: Path, timeout: int = 180) -> dict[str, Any]:
         measured_commands.append(command)
@@ -175,7 +180,16 @@ def test_profile_compares_search_graph_and_agent_tool_shapes(
 
     result = runner.invoke(
         graph.app,
-        ["profile", "--project", "summitflow", "--codex", "--agent-hub", "--budget", "900"],
+        [
+            "profile",
+            "--project",
+            "summitflow",
+            "--codex",
+            "--agent-hub",
+            "--gitnexus",
+            "--budget",
+            "900",
+        ],
     )
 
     assert result.exit_code == 0
@@ -191,5 +205,16 @@ def test_profile_compares_search_graph_and_agent_tool_shapes(
         "agents",
         "preview",
         "explorer",
+    ]
+    assert payload["tool_probes"][3]["tool"] == "gitnexus"
+    assert payload["tool_probes"][3]["worth"] == "optional"
+    assert payload["tool_probes"][3]["npx_available"] is True
+    assert payload["tool_probes"][3]["metadata"]["command"][:3] == ["/bin/npm", "view", "gitnexus"]
+    assert payload["tool_probes"][3]["manual_commands"]["codex_mcp"][:5] == [
+        "codex",
+        "mcp",
+        "add",
+        "gitnexus",
+        "--",
     ]
     assert measured_commands[0][:4] == ["/bin/st", "-P", "summitflow", "search"]

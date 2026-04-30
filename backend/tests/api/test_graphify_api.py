@@ -79,7 +79,8 @@ def _write_graphify_outputs(root: Path) -> None:
     old_timestamp = time.time() - 60
     for artifact in (out / "graph.json", out / "graph.html", out / "GRAPH_REPORT.md"):
         os.utime(artifact, (old_timestamp, old_timestamp))
-    os.utime(code_source, (old_timestamp, old_timestamp))
+    older_source_timestamp = old_timestamp - 60
+    os.utime(code_source, (older_source_timestamp, older_source_timestamp))
     os.utime(doc_source, None)
 
 

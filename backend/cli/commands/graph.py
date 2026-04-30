@@ -27,6 +27,9 @@ from ._projects_helpers import projects_api
 
 app = typer.Typer(help="Graphify topology and profiling helpers")
 
+_GITNEXUS_PACKAGE = "gitnexus"
+_GITNEXUS_NPX_SPEC = "gitnexus@latest"
+
 
 def _project_payload(project_id: str) -> dict[str, Any]:
     project = projects_api("GET", f"/{project_id}")
@@ -177,6 +180,49 @@ def _run_measured(command: list[str], *, cwd: Path, timeout: int = 180) -> dict[
     }
 
 
+def _gitnexus_profile(root: Path) -> dict[str, Any]:
+    gitnexus_bin = shutil.which("gitnexus")
+    npm_bin = shutil.which("npm")
+    npx_bin = shutil.which("npx")
+    metadata = (
+        _run_measured(
+            [npm_bin, "view", _GITNEXUS_PACKAGE, "version", "description", "license", "--json"],
+            cwd=root,
+            timeout=30,
+        )
+        if npm_bin
+        else {"tool": "npm", "available": False}
+    )
+    local_status: dict[str, Any] | None = None
+    if gitnexus_bin:
+        local_status = _run_measured([gitnexus_bin, "status"], cwd=root, timeout=60)
+    return {
+        "tool": "gitnexus",
+        "worth": "optional",
+        "available": bool(gitnexus_bin),
+        "npx_available": bool(npx_bin),
+        "metadata": metadata,
+        "local_status": local_status,
+        "fills_real_gaps": [
+            "MCP tools for Codex/editor agents",
+            "impact and detect_changes blast-radius analysis",
+            "multi-repo groups and contract queries",
+        ],
+        "not_default_reasons": [
+            "overlaps Graphify topology/search",
+            "not installed locally by default",
+            "PolyForm Noncommercial license requires explicit fit check",
+            "npx on-demand startup can be slow and should not run implicitly",
+        ],
+        "recommended_use": "Use after st search/st graph when work needs diff impact, MCP-fed agent context, or multi-repo contract queries.",
+        "manual_commands": {
+            "index_current_repo": ["npx", "-y", _GITNEXUS_NPX_SPEC, "analyze"],
+            "codex_mcp": ["codex", "mcp", "add", "gitnexus", "--", "npx", "-y", _GITNEXUS_NPX_SPEC, "mcp"],
+            "status_after_install": ["gitnexus", "status"],
+        },
+    }
+
+
 @app.command("profile")
 def profile(
     question: Annotated[
@@ -187,6 +233,10 @@ def profile(
     budget: Annotated[int, typer.Option("--budget", min=100, max=8000, help="Graphify token budget.")] = 1200,
     codex: Annotated[bool, typer.Option("--codex", help="Probe Codex CLI availability and startup cost.")] = False,
     agent_hub: Annotated[bool, typer.Option("--agent-hub", help="Probe Agent Hub completion CLI availability.")] = False,
+    gitnexus: Annotated[
+        bool,
+        typer.Option("--gitnexus", help="Evaluate optional GitNexus fit without installing or mutating MCP config."),
+    ] = False,
 ) -> None:
     """Profile st search vs Graphify command shapes for agent work."""
     project_id = _project_id(project)
@@ -224,6 +274,8 @@ def profile(
                 timeout=90,
             )
         )
+    if gitnexus:
+        tool_probes.append(_gitnexus_profile(root))
     output_json(
         {
             "project_id": project_id,
