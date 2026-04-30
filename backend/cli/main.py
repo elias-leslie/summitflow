@@ -30,6 +30,7 @@ from .commands import (
     exec_monitor,
     feedback,
     git,
+    graph,
     health,
     jj,
     logs,
@@ -66,7 +67,7 @@ CLI_REFERENCE = """ST CLI - SummitFlow Tasks.
 Core loop: pulse --gate | ready | claim <id> | context <id> | done <id>.
 Pause/resume: pause <id> [-r reason] | resume <id> [-r reason].
 VCS: vcs doctor | vcs reconcile | commit -m MSG [--task T] | jj diff | jj show.
-Tools: check | service | db | browser | web | sessions | cleanup | logs.
+Tools: check | graph | service | db | browser | web | sessions | cleanup | logs.
 Use `<command> --help` for command-specific syntax."""
 
 app = typer.Typer(
@@ -94,6 +95,7 @@ app.add_typer(claude.app, name="claude")
 app.add_typer(sessions.app, name="sessions")
 app.add_typer(projects.app, name="projects")
 app.add_typer(git.app, name="git")
+app.add_typer(graph.app, name="graph")
 app.add_typer(jj.app, name="jj")
 app.add_typer(vcs.app, name="vcs")
 app.add_typer(backup.app, name="backup")
