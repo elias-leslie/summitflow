@@ -81,6 +81,10 @@ docker/compose/migration-dumps/
 # Reference repos
 references/
 
+# Local code-intelligence indexes
+.gitnexus/
+.claude/skills/gitnexus/
+
 # Checkpoint data
 .st/
 .summitflow/

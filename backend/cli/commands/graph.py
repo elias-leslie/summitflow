@@ -193,16 +193,29 @@ def _gitnexus_profile(root: Path) -> dict[str, Any]:
         if npm_bin
         else {"tool": "npm", "available": False}
     )
+    startup: dict[str, Any] | None = None
     local_status: dict[str, Any] | None = None
+    context_probe: dict[str, Any] | None = None
+    impact_probe: dict[str, Any] | None = None
     if gitnexus_bin:
+        startup = _run_measured([gitnexus_bin, "--version"], cwd=root, timeout=30)
         local_status = _run_measured([gitnexus_bin, "status"], cwd=root, timeout=60)
+        context_probe = _run_measured([gitnexus_bin, "context", "graphify_status"], cwd=root, timeout=60)
+        impact_probe = _run_measured(
+            [gitnexus_bin, "impact", "graphify_status", "--depth", "2"],
+            cwd=root,
+            timeout=60,
+        )
     return {
         "tool": "gitnexus",
         "worth": "optional",
         "available": bool(gitnexus_bin),
         "npx_available": bool(npx_bin),
         "metadata": metadata,
+        "startup": startup,
         "local_status": local_status,
+        "context_probe": context_probe,
+        "impact_probe": impact_probe,
         "fills_real_gaps": [
             "MCP tools for Codex/editor agents",
             "impact and detect_changes blast-radius analysis",
@@ -210,14 +223,23 @@ def _gitnexus_profile(root: Path) -> dict[str, Any]:
         ],
         "not_default_reasons": [
             "overlaps Graphify topology/search",
-            "not installed locally by default",
             "PolyForm Noncommercial license requires explicit fit check",
-            "npx on-demand startup can be slow and should not run implicitly",
+            "first install is heavy enough to keep explicit",
+            "query/detect_changes need local validation before relying on them",
         ],
-        "recommended_use": "Use after st search/st graph when work needs diff impact, MCP-fed agent context, or multi-repo contract queries.",
+        "recommended_use": "Use after st search/st graph when work needs symbol context, impact radius, MCP-fed agent context, or multi-repo contract queries.",
         "manual_commands": {
-            "index_current_repo": ["npx", "-y", _GITNEXUS_NPX_SPEC, "analyze"],
-            "codex_mcp": ["codex", "mcp", "add", "gitnexus", "--", "npx", "-y", _GITNEXUS_NPX_SPEC, "mcp"],
+            "install_user_prefix": ["npm", "install", "--global", "--prefix", "~/.local", "gitnexus@1.6.3"],
+            "index_current_repo": [
+                "gitnexus",
+                "analyze",
+                ".",
+                "--skip-agents-md",
+                "--no-stats",
+                "--max-file-size",
+                "1024",
+            ],
+            "codex_mcp": ["codex", "mcp", "add", "gitnexus", "--", "gitnexus", "mcp"],
             "status_after_install": ["gitnexus", "status"],
         },
     }
