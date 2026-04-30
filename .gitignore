@@ -84,6 +84,7 @@ references/
 # Local code-intelligence indexes
 .gitnexus/
 .claude/skills/gitnexus/
+.fallow/
 
 # Checkpoint data
 .st/
