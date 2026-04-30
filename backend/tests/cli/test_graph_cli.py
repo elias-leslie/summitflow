@@ -159,6 +159,7 @@ def test_profile_compares_search_graph_and_agent_tool_shapes(
         return {
             "st": "/bin/st",
             "codex": "/bin/codex",
+            "gitnexus": "/bin/gitnexus",
             "npm": "/bin/npm",
             "npx": "/bin/npx",
         }.get(name)
@@ -208,8 +209,23 @@ def test_profile_compares_search_graph_and_agent_tool_shapes(
     ]
     assert payload["tool_probes"][3]["tool"] == "gitnexus"
     assert payload["tool_probes"][3]["worth"] == "optional"
+    assert payload["tool_probes"][3]["available"] is True
     assert payload["tool_probes"][3]["npx_available"] is True
     assert payload["tool_probes"][3]["metadata"]["command"][:3] == ["/bin/npm", "view", "gitnexus"]
+    assert payload["tool_probes"][3]["startup"]["command"] == ["/bin/gitnexus", "--version"]
+    assert payload["tool_probes"][3]["local_status"]["command"] == ["/bin/gitnexus", "status"]
+    assert payload["tool_probes"][3]["context_probe"]["command"] == [
+        "/bin/gitnexus",
+        "context",
+        "graphify_status",
+    ]
+    assert payload["tool_probes"][3]["impact_probe"]["command"] == [
+        "/bin/gitnexus",
+        "impact",
+        "graphify_status",
+        "--depth",
+        "2",
+    ]
     assert payload["tool_probes"][3]["manual_commands"]["codex_mcp"][:5] == [
         "codex",
         "mcp",
