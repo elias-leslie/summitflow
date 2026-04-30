@@ -160,6 +160,8 @@ def test_profile_compares_search_graph_and_agent_tool_shapes(
             "st": "/bin/st",
             "codex": "/bin/codex",
             "gitnexus": "/bin/gitnexus",
+            "fallow": "/bin/fallow",
+            "fallow-mcp": "/bin/fallow-mcp",
             "npm": "/bin/npm",
             "npx": "/bin/npx",
         }.get(name)
@@ -188,6 +190,7 @@ def test_profile_compares_search_graph_and_agent_tool_shapes(
             "--codex",
             "--agent-hub",
             "--gitnexus",
+            "--fallow",
             "--budget",
             "900",
         ],
@@ -232,5 +235,43 @@ def test_profile_compares_search_graph_and_agent_tool_shapes(
         "add",
         "gitnexus",
         "--",
+    ]
+    assert payload["tool_probes"][4]["tool"] == "fallow"
+    assert payload["tool_probes"][4]["worth"] == "recommended_optional"
+    assert payload["tool_probes"][4]["available"] is True
+    assert payload["tool_probes"][4]["mcp_available"] is True
+    assert payload["tool_probes"][4]["metadata"]["command"][:3] == ["/bin/npm", "view", "fallow"]
+    assert payload["tool_probes"][4]["startup"]["command"] == ["/bin/fallow", "--version"]
+    assert payload["tool_probes"][4]["plugins_probe"]["command"] == [
+        "/bin/fallow",
+        "list",
+        "--format",
+        "json",
+        "--plugins",
+    ]
+    assert payload["tool_probes"][4]["audit_probe"]["command"] == [
+        "/bin/fallow",
+        "audit",
+        "--format",
+        "json",
+        "--quiet",
+    ]
+    assert payload["tool_probes"][4]["health_score_probe"]["command"] == [
+        "/bin/fallow",
+        "health",
+        "--format",
+        "json",
+        "--quiet",
+        "--score",
+    ]
+    assert payload["tool_probes"][4]["changed_dead_code_probe"]["command"] == [
+        "/bin/fallow",
+        "dead-code",
+        "--changed-since",
+        "main",
+        "--format",
+        "json",
+        "--quiet",
+        "--summary",
     ]
     assert measured_commands[0][:4] == ["/bin/st", "-P", "summitflow", "search"]

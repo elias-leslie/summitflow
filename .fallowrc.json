@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "frontend/app/**/page.tsx",
+    "frontend/app/**/route.ts",
+    "frontend/app/**/layout.tsx",
+    "frontend/app/**/error.tsx",
+    "frontend/app/**/not-found.tsx",
+    "frontend/app/**/loading.tsx",
+    "frontend/app/providers.tsx"
+  ],
+  "ignoreDependencies": ["@summitflow/notes-ui"],
+  "audit": {
+    "gate": "new-only"
+  }
+}

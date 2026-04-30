@@ -29,6 +29,7 @@ app = typer.Typer(help="Graphify topology and profiling helpers")
 
 _GITNEXUS_PACKAGE = "gitnexus"
 _GITNEXUS_NPX_SPEC = "gitnexus@latest"
+_FALLOW_PACKAGE = "fallow"
 
 
 def _project_payload(project_id: str) -> dict[str, Any]:
@@ -245,6 +246,73 @@ def _gitnexus_profile(root: Path) -> dict[str, Any]:
     }
 
 
+def _fallow_profile(root: Path) -> dict[str, Any]:
+    fallow_bin = shutil.which("fallow")
+    fallow_mcp_bin = shutil.which("fallow-mcp")
+    npm_bin = shutil.which("npm")
+    metadata = (
+        _run_measured(
+            [npm_bin, "view", _FALLOW_PACKAGE, "version", "description", "license", "bin", "--json"],
+            cwd=root,
+            timeout=30,
+        )
+        if npm_bin
+        else {"tool": "npm", "available": False}
+    )
+    startup: dict[str, Any] | None = None
+    plugins_probe: dict[str, Any] | None = None
+    audit_probe: dict[str, Any] | None = None
+    health_score_probe: dict[str, Any] | None = None
+    changed_dead_code_probe: dict[str, Any] | None = None
+    if fallow_bin:
+        startup = _run_measured([fallow_bin, "--version"], cwd=root, timeout=30)
+        plugins_probe = _run_measured([fallow_bin, "list", "--format", "json", "--plugins"], cwd=root, timeout=60)
+        audit_probe = _run_measured([fallow_bin, "audit", "--format", "json", "--quiet"], cwd=root, timeout=120)
+        health_score_probe = _run_measured(
+            [fallow_bin, "health", "--format", "json", "--quiet", "--score"],
+            cwd=root,
+            timeout=120,
+        )
+        changed_dead_code_probe = _run_measured(
+            [fallow_bin, "dead-code", "--changed-since", "main", "--format", "json", "--quiet", "--summary"],
+            cwd=root,
+            timeout=120,
+        )
+    return {
+        "tool": "fallow",
+        "worth": "recommended_optional",
+        "available": bool(fallow_bin),
+        "mcp_available": bool(fallow_mcp_bin),
+        "metadata": metadata,
+        "startup": startup,
+        "plugins_probe": plugins_probe,
+        "audit_probe": audit_probe,
+        "health_score_probe": health_score_probe,
+        "changed_dead_code_probe": changed_dead_code_probe,
+        "fills_real_gaps": [
+            "TypeScript/JavaScript dead-code analysis across the module graph",
+            "changed-file audit for AI-generated frontend code",
+            "duplication, complexity, feature-flag, and dependency-use evidence",
+            "typed MCP tools for agents that should not parse large CLI output manually",
+        ],
+        "not_default_reasons": [
+            "full dead-code, duplication, and health output can be very large",
+            "static findings need trace commands or tests before deletion",
+            "does not analyze Python backend code",
+            "overlaps lint/type/test gates only as codebase-level evidence, not replacement",
+        ],
+        "recommended_use": "Use `fallow audit --format json --quiet` after frontend JS/TS changes; use targeted trace commands before deleting exports, files, or dependencies.",
+        "manual_commands": {
+            "install_user_prefix": ["npm", "install", "--global", "--prefix", "~/.local", "fallow@2.57.0"],
+            "codex_mcp": ["codex", "mcp", "add", "fallow", "--", "fallow-mcp"],
+            "audit_changed": ["fallow", "audit", "--format", "json", "--quiet"],
+            "health_score": ["fallow", "health", "--format", "json", "--quiet", "--score"],
+            "project_plugins": ["fallow", "list", "--format", "json", "--plugins"],
+            "trace_dependency": ["fallow", "dead-code", "--trace-dependency", "<package>", "--format", "json"],
+        },
+    }
+
+
 @app.command("profile")
 def profile(
     question: Annotated[
@@ -258,6 +326,10 @@ def profile(
     gitnexus: Annotated[
         bool,
         typer.Option("--gitnexus", help="Evaluate optional GitNexus fit without installing or mutating MCP config."),
+    ] = False,
+    fallow: Annotated[
+        bool,
+        typer.Option("--fallow", help="Evaluate optional Fallow JS/TS codebase-intelligence fit."),
     ] = False,
 ) -> None:
     """Profile st search vs Graphify command shapes for agent work."""
@@ -298,12 +370,14 @@ def profile(
         )
     if gitnexus:
         tool_probes.append(_gitnexus_profile(root))
+    if fallow:
+        tool_probes.append(_fallow_profile(root))
     output_json(
         {
             "project_id": project_id,
             "question": question,
             "runs": runs,
             "tool_probes": tool_probes,
-            "recommendation": "Use st search for exact symbols/files; use st graph query/path/explain for topology and impact-radius questions.",
+            "recommendation": "Use st search for exact symbols/files; use st graph query/path/explain for topology; use Fallow for JS/TS changed-code health; use GitNexus for indexed symbol impact.",
         }
     )
