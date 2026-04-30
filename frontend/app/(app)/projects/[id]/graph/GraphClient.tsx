@@ -3,10 +3,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ExternalLink, RefreshCw } from 'lucide-react'
 import { useParams } from 'next/navigation'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import {
   fetchGraphifyStatus,
+  type GraphifyCommandMode,
+  type GraphifyCommandResponse,
   type GraphifyStatus,
+  runGraphifyExplain,
+  runGraphifyPath,
+  runGraphifyQuery,
   updateGraphify,
 } from '@/lib/api/graphify'
 import { getErrorMessage } from '@/lib/utils'
@@ -40,6 +46,10 @@ export function GraphClient(): React.ReactElement {
   const params = useParams<{ id: string }>()
   const projectId = params.id
   const queryClient = useQueryClient()
+  const [mode, setMode] = useState<GraphifyCommandMode>('query')
+  const [primary, setPrimary] = useState('')
+  const [secondary, setSecondary] = useState('')
+  const [budget, setBudget] = useState(1200)
 
   const { data: status, isLoading } = useQuery({
     queryKey: ['graphify-status', projectId],
@@ -59,6 +69,21 @@ export function GraphClient(): React.ReactElement {
     },
   })
 
+  const commandMutation = useMutation<GraphifyCommandResponse>({
+    mutationFn: () => {
+      if (mode === 'path') {
+        return runGraphifyPath(projectId, primary, secondary)
+      }
+      if (mode === 'explain') {
+        return runGraphifyExplain(projectId, primary)
+      }
+      return runGraphifyQuery(projectId, primary, budget)
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, 'Graph command failed'))
+    },
+  })
+
   if (isLoading || !status) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -68,6 +93,10 @@ export function GraphClient(): React.ReactElement {
   }
 
   const url = graphUrl(status)
+  const commandDisabled =
+    commandMutation.isPending ||
+    !primary.trim() ||
+    (mode === 'path' && !secondary.trim())
 
   return (
     <div className="flex h-full flex-col bg-slate-950">
@@ -113,13 +142,108 @@ export function GraphClient(): React.ReactElement {
             </button>
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-5">
+        <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-7">
           {stat('Nodes', status.node_count.toLocaleString())}
           {stat('Edges', status.edge_count.toLocaleString())}
           {stat('Communities', status.community_count.toLocaleString())}
+          {stat(
+            'Semantic',
+            `${status.semantic_node_count.toLocaleString()}/${status.semantic_source_count.toLocaleString()}`,
+          )}
+          {stat(
+            'Stale',
+            status.graph_stale
+              ? `${status.changed_files_since_graph.toLocaleString()} files`
+              : 'No',
+          )}
           {stat('Graph', formatDate(status.graph_updated_at))}
           {stat('HTML', formatDate(status.html_updated_at))}
         </div>
+        {status.diagnostics.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {status.diagnostics.map((diagnostic) => (
+              <span
+                key={diagnostic}
+                className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 font-mono text-[11px] text-amber-200"
+              >
+                {diagnostic}
+              </span>
+            ))}
+          </div>
+        )}
+        <form
+          className="mt-3 grid gap-2 lg:grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)_96px_112px]"
+          onSubmit={(event) => {
+            event.preventDefault()
+            commandMutation.mutate()
+          }}
+        >
+          <select
+            value={mode}
+            onChange={(event) => {
+              setMode(event.target.value as GraphifyCommandMode)
+              commandMutation.reset()
+            }}
+            className="h-9 rounded-md border border-slate-700/80 bg-slate-950 px-2 text-sm text-slate-200 outline-none"
+          >
+            <option value="query">Query</option>
+            <option value="path">Path</option>
+            <option value="explain">Explain</option>
+          </select>
+          <input
+            value={primary}
+            onChange={(event) => setPrimary(event.target.value)}
+            placeholder={
+              mode === 'query'
+                ? 'Question'
+                : mode === 'path'
+                  ? 'Source node'
+                  : 'Node'
+            }
+            className="h-9 min-w-0 rounded-md border border-slate-700/80 bg-slate-950 px-3 text-sm text-slate-200 outline-none placeholder:text-slate-600"
+          />
+          <input
+            value={secondary}
+            onChange={(event) => setSecondary(event.target.value)}
+            disabled={mode !== 'path'}
+            placeholder="Target node"
+            className="h-9 min-w-0 rounded-md border border-slate-700/80 bg-slate-950 px-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 disabled:opacity-40"
+          />
+          <input
+            type="number"
+            min={100}
+            max={8000}
+            step={100}
+            value={budget}
+            onChange={(event) => setBudget(Number(event.target.value))}
+            disabled={mode !== 'query'}
+            className="h-9 rounded-md border border-slate-700/80 bg-slate-950 px-2 text-sm text-slate-200 outline-none disabled:opacity-40"
+          />
+          <button
+            type="submit"
+            disabled={commandDisabled}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 text-sm font-medium text-cyan-200 transition-colors hover:bg-cyan-500/18 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {commandMutation.isPending ? 'Running' : 'Run'}
+          </button>
+        </form>
+        {commandMutation.data && (
+          <div className="mt-3 rounded-md border border-slate-800/80 bg-slate-950/80">
+            <div className="flex flex-wrap gap-3 border-b border-slate-800/80 px-3 py-2 font-mono text-[11px] text-slate-500">
+              <span>{commandMutation.data.elapsed_ms}ms</span>
+              <span>
+                {commandMutation.data.output_chars.toLocaleString()} chars
+              </span>
+              <span>
+                {commandMutation.data.estimated_tokens.toLocaleString()} est
+                tokens
+              </span>
+            </div>
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs leading-relaxed text-slate-300">
+              {commandMutation.data.output}
+            </pre>
+          </div>
+        )}
       </header>
 
       <main className="min-h-0 flex-1">
