@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-_DEFAULT_TIMEOUT_SECONDS = 8.0
+_DEFAULT_TIMEOUT_SECONDS = 1.0
 _SYNC_DONE = False
 
 
@@ -53,12 +53,13 @@ def refresh_agent_observability() -> None:
         return
 
     try:
+        timeout = _sync_timeout_seconds()
         subprocess.run(
-            [sys.executable, str(script_path), "--best-effort"],
+            [sys.executable, str(script_path), "--best-effort", "--timeout", str(timeout)],
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=_sync_timeout_seconds(),
+            timeout=timeout,
             env=os.environ.copy(),
         )
     except (OSError, subprocess.TimeoutExpired):
