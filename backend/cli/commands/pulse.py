@@ -16,7 +16,13 @@ from ..output import handle_api_error, output_error, output_json
 app = typer.Typer(help="Cross-agent coordination pulse")
 
 
-def _resolve_project_ids(client: STClient, project_id: str | None, *, all_projects: bool = False) -> list[str]:
+def _resolve_project_ids(
+    client: STClient,
+    project_id: str | None,
+    *,
+    all_projects: bool = False,
+    require_current: bool = False,
+) -> list[str]:
     """Return the project ids to query for pulse data."""
     if project_id:
         return [project_id]
@@ -24,6 +30,11 @@ def _resolve_project_ids(client: STClient, project_id: str | None, *, all_projec
         detected = get_config_optional().project_id
         if detected:
             return [detected]
+        if require_current:
+            raise typer.BadParameter(
+                "Pulse gate requires a current project. Run inside a registered project, "
+                "set ST_PROJECT_ID, pass --project / -P, or pass --all for a global gate."
+            )
 
     payload = client.get(client._global_url("/projects"))
     if not isinstance(payload, list):
@@ -408,7 +419,12 @@ def pulse(
     try:
         payloads = [
             client.get(client._global_url(f"/projects/{resolved_project_id}/pulse"))
-            for resolved_project_id in _resolve_project_ids(client, project_id, all_projects=all_projects)
+            for resolved_project_id in _resolve_project_ids(
+                client,
+                project_id,
+                all_projects=all_projects,
+                require_current=gate and not all_projects,
+            )
         ]
     except APIError as e:
         handle_api_error(e)
