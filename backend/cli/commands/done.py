@@ -48,7 +48,8 @@ def _handle_task_completion(
     task = client.get_task(id)
     project_id = str(task.get("project_id") or "") or None
     require_pulse_gate(project_id, allow_task_id=id)
-    result = complete_task(client, id, message, strict=strict, admin=admin, skip_diff_gate=skip_diff_gate)
+    task_client = STClient(project_id=project_id) if project_id else client
+    result = complete_task(task_client, id, message, strict=strict, admin=admin, skip_diff_gate=skip_diff_gate)
     if result.get("merged"):
         base_branch = result.get("base_branch", "main")
         output_success(f"Task {id} completed. Checkpoint removed.")
@@ -93,9 +94,9 @@ def done_command(
     Smart mode (default): auto-verifies steps, auto-closes subtasks, stashes dirty main.
     Strict mode (--strict): fails if gates not pre-passed or main dirty.
     """
-    client = STClient()
-
     if is_subtask_id(id):
+        client = STClient()
         _handle_subtask_completion(client, id, task_id, message)
     else:
+        client = STClient(require_project=False)
         _handle_task_completion(client, id, message, strict, admin, skip_diff_gate)
