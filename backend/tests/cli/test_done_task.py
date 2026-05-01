@@ -50,6 +50,36 @@ def test_complete_task_missing_checkpoint_failed_task_is_idempotent() -> None:
     assert result["snapshot_removed"] is True
 
 
+def test_complete_task_admin_requires_completion_readiness() -> None:
+    client = MagicMock()
+    client.get_task_completion_readiness.return_value = {
+        "ready": False,
+        "gates": [{"gate": "subtasks"}],
+    }
+
+    with (
+        patch("cli.commands.done_task.get_snapshot_info", return_value=None),
+        patch("cli.commands.done_task.output_error") as mock_output,
+        pytest.raises(Exit) as exc_info,
+    ):
+        complete_task(client, "task-123", admin=True)
+
+    assert exc_info.value.exit_code == 1
+    client.close_task.assert_not_called()
+    assert "Task not ready to complete: subtasks" in mock_output.call_args.args[0]
+
+
+def test_complete_task_admin_closes_when_completion_ready() -> None:
+    client = MagicMock()
+    client.get_task_completion_readiness.return_value = {"ready": True, "gates": []}
+
+    with patch("cli.commands.done_task.get_snapshot_info", return_value=None):
+        result = complete_task(client, "task-123", admin=True)
+
+    client.close_task.assert_called_once_with("task-123", reason=None, skip_gates=True)
+    assert result["merged"] is False
+
+
 def test_complete_task_missing_checkpoint_pending_task_exits_with_guidance() -> None:
     client = MagicMock()
     client.get_task.return_value = {

@@ -165,6 +165,7 @@ def _run_diff_gate(repo_root: str, task_id: str, project_id: str | None, base_br
 
 
 def _close_task_safely(client: STClient, task_id: str, message: str | None) -> None:
+    _auto_verify_readiness(client, task_id)
     try:
         client.close_task(task_id, reason=message, skip_gates=True)
     except APIError as e:
