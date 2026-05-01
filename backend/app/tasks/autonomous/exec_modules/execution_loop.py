@@ -10,7 +10,7 @@ from ....storage import tasks as task_store
 from ..pickup_guards import check_system_health
 from .agent_routing import supervisor_circuit_breaker_triage
 from .events import emit_log, emit_progress
-from .git_ops import has_uncommitted_changes, smart_commit
+from .git_ops import has_uncommitted_changes, smart_commit_result
 from .interruption import ExecutionInterrupted, assert_task_runnable
 from .session import WindDownState, wind_down
 from .subtask_executor import MAX_ITERATIONS, execute_subtask
@@ -108,20 +108,29 @@ def _commit_subtask_changes(
     subtask_desc = subtask.get("description", "")[:50]
     commit_msg = f"Subtask {subtask_short_id}: {subtask_desc}"
     if status == "failed":
-        if smart_commit(
+        commit_result = smart_commit_result(
             project_path,
             f"[FAILED] {commit_msg}",
             task_id=task_id,
             push=True,
             skip_checks=True,
-        ):
+        )
+        if commit_result.get("success"):
             emit_log(task_id, "info", f"Preserved failing changes for subtask {subtask_short_id}", project_id=project_id)
             return
-    elif smart_commit(project_path, commit_msg, task_id=task_id, push=True):
-        emit_log(task_id, "info", f"Published changes for subtask {subtask_short_id}", project_id=project_id)
-        return
+    else:
+        commit_result = smart_commit_result(project_path, commit_msg, task_id=task_id, push=True)
+        if commit_result.get("success"):
+            emit_log(task_id, "info", f"Published changes for subtask {subtask_short_id}", project_id=project_id)
+            return
 
-    emit_log(task_id, "warn", f"Failed to preserve changes for subtask {subtask_short_id}", project_id=project_id)
+    detail = str(commit_result.get("detail") or "unknown preservation failure")
+    emit_log(
+        task_id,
+        "warn",
+        f"Failed to preserve changes for subtask {subtask_short_id}: {detail}",
+        project_id=project_id,
+    )
 
 
 def _handle_subtask_failure(

@@ -7,7 +7,7 @@ from ....services.task_checkout import create_task_checkout
 from ....storage import tasks as task_store
 from .checkout import get_project_path
 from .events import emit_error, emit_log
-from .git_ops import has_uncommitted_changes, smart_commit
+from .git_ops import has_uncommitted_changes, smart_commit_result
 
 logger = get_logger(__name__)
 
@@ -43,15 +43,22 @@ def setup_task_checkout(task_id: str, project_id: str) -> str | None:
             "Found uncommitted changes from previous session, preserving them on remote",
             project_id=project_id,
         )
-        if smart_commit(
+        commit_result = smart_commit_result(
             project_path,
             f"wip({task_id}): recover prior shared-checkout changes",
             task_id=task_id,
             push=True,
             skip_checks=True,
-        ):
+        )
+        if commit_result.get("success"):
             emit_log(task_id, "info", "Recovered orphaned changes published", project_id=project_id)
         else:
-            emit_log(task_id, "warn", "Failed to preserve orphaned shared-checkout changes", project_id=project_id)
+            detail = str(commit_result.get("detail") or "unknown preservation failure")
+            emit_log(
+                task_id,
+                "warn",
+                f"Failed to preserve orphaned shared-checkout changes: {detail}",
+                project_id=project_id,
+            )
 
     return project_path
