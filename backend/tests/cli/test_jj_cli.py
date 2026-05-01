@@ -27,8 +27,8 @@ def test_jj_help_lists_agent_workflows() -> None:
     assert "revert" in result.stdout
 
 
-@patch("cli.lib.jj.subprocess.run")
-@patch("cli.lib.jj.shutil.which", return_value="/bin/jj")
+@patch("cli.lib.jj_common.subprocess.run")
+@patch("cli.lib.jj_common.shutil.which", return_value="/bin/jj")
 def test_run_jj_uses_global_noninteractive_args(_mock_which: MagicMock, mock_run: MagicMock) -> None:
     mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
@@ -43,7 +43,7 @@ def test_run_jj_uses_global_noninteractive_args(_mock_which: MagicMock, mock_run
     assert mock_run.call_args.kwargs["cwd"] == Path("/repo")
 
 
-@patch("cli.lib.jj.run_jj")
+@patch("cli.lib.jj_status.run_jj")
 def test_display_branch_uses_parent_bookmark_for_detached_empty_working_copy(
     mock_run_jj: MagicMock,
     tmp_path: Path,
@@ -59,10 +59,10 @@ def test_display_branch_uses_parent_bookmark_for_detached_empty_working_copy(
     assert jj_lib.display_branch(tmp_path, "HEAD") == "main"
 
 
-@patch("cli.lib.jj.latest_operation_id", return_value="op")
-@patch("cli.lib.jj.status_summary")
-@patch("cli.lib.jj.run_jj")
-@patch("cli.lib.jj.run_git")
+@patch("cli.lib.jj_status.latest_operation_id", return_value="op")
+@patch("cli.lib.jj_status.status_summary")
+@patch("cli.lib.jj_status.run_jj")
+@patch("cli.lib.jj_status.run_git")
 def test_init_colocated_requires_clean_git_repo(
     mock_git: MagicMock,
     mock_run_jj: MagicMock,
@@ -93,7 +93,7 @@ def test_init_colocated_requires_clean_git_repo(
     mock_run_jj.assert_called_once_with(tmp_path, ["git", "init", "--colocate", "."])
 
 
-@patch("cli.lib.jj.run_git")
+@patch("cli.lib.jj_status.run_git")
 def test_init_colocated_rejects_dirty_repo(mock_git: MagicMock, tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
     mock_git.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout=" M file.py\n", stderr="")
@@ -245,9 +245,9 @@ def test_publish_rejects_failed_quality_gate(tmp_path: Path) -> None:
         description="ready",
     )
     with (
-        patch("cli.lib.jj.revision_info", return_value=revision),
-        patch("cli.lib.jj.run_checks", return_value=(False, "boom")),
-        patch("cli.lib.jj.run_jj") as mock_run_jj,
+        patch("cli.lib.jj_publish.revision_info", return_value=revision),
+        patch("cli.lib.jj_publish.run_checks", return_value=(False, "boom")),
+        patch("cli.lib.jj_publish.run_jj") as mock_run_jj,
         pytest.raises(jj_lib.JJError, match="quality gates failed before jj push"),
     ):
         jj_lib.publish_current_revision(tmp_path, task_id="task-1")
@@ -266,11 +266,11 @@ def test_publish_without_task_uses_current_bookmark(tmp_path: Path) -> None:
         description="ready",
     )
     with (
-        patch("cli.lib.jj.revision_info", return_value=revision),
-        patch("cli.lib.jj.run_checks", return_value=(True, "ok")),
-        patch("cli.lib.jj.display_branch", return_value="main"),
-        patch("cli.lib.jj.latest_operation_id", return_value="op"),
-        patch("cli.lib.jj.run_jj") as mock_run_jj,
+        patch("cli.lib.jj_publish.revision_info", return_value=revision),
+        patch("cli.lib.jj_publish.run_checks", return_value=(True, "ok")),
+        patch("cli.lib.jj_publish.display_branch", return_value="main"),
+        patch("cli.lib.jj_publish.latest_operation_id", return_value="op"),
+        patch("cli.lib.jj_publish.run_jj") as mock_run_jj,
     ):
         mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
@@ -295,10 +295,10 @@ def test_publish_can_target_named_revision(tmp_path: Path) -> None:
         description="ready",
     )
     with (
-        patch("cli.lib.jj.revision_info", return_value=revision),
-        patch("cli.lib.jj.run_checks", return_value=(True, "ok")),
-        patch("cli.lib.jj.latest_operation_id", return_value="op"),
-        patch("cli.lib.jj.run_jj") as mock_run_jj,
+        patch("cli.lib.jj_publish.revision_info", return_value=revision),
+        patch("cli.lib.jj_publish.run_checks", return_value=(True, "ok")),
+        patch("cli.lib.jj_publish.latest_operation_id", return_value="op"),
+        patch("cli.lib.jj_publish.run_jj") as mock_run_jj,
     ):
         mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
@@ -312,8 +312,8 @@ def test_delete_task_bookmark_pushes_deleted_bookmarks(tmp_path: Path) -> None:
     (tmp_path / ".jj").mkdir()
     (tmp_path / ".git").mkdir()
     with (
-        patch("cli.lib.jj.latest_operation_id", return_value="op"),
-        patch("cli.lib.jj.run_jj") as mock_run_jj,
+        patch("cli.lib.jj_publish.latest_operation_id", return_value="op"),
+        patch("cli.lib.jj_publish.run_jj") as mock_run_jj,
     ):
         mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
@@ -340,8 +340,8 @@ def test_delete_task_bookmark_tolerates_already_deleted_local_bookmark(tmp_path:
     )
     ok = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
     with (
-        patch("cli.lib.jj.latest_operation_id", return_value="op"),
-        patch("cli.lib.jj.run_jj", side_effect=[missing, ok]) as mock_run_jj,
+        patch("cli.lib.jj_publish.latest_operation_id", return_value="op"),
+        patch("cli.lib.jj_publish.run_jj", side_effect=[missing, ok]) as mock_run_jj,
     ):
         result = jj_lib.delete_task_bookmark(tmp_path, bookmark="task/old/main")
 
@@ -384,10 +384,10 @@ def test_commit_advances_to_clean_working_copy_after_publish(tmp_path: Path) -> 
     )
 
     with (
-        patch("cli.lib.jj.status_summary", return_value=status),
-        patch("cli.lib.jj.current_revision_info", return_value=revision),
-        patch("cli.lib.jj.publish_current_revision", return_value={"status": "SUCCESS", "pushed": True}),
-        patch("cli.lib.jj.run_jj") as mock_run_jj,
+        patch("cli.lib.jj_publish.status_summary", return_value=status),
+        patch("cli.lib.jj_publish.current_revision_info", return_value=revision),
+        patch("cli.lib.jj_publish.publish_current_revision", return_value={"status": "SUCCESS", "pushed": True}),
+        patch("cli.lib.jj_publish.run_jj") as mock_run_jj,
     ):
         mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
