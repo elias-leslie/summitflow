@@ -31,6 +31,11 @@ describe('ServiceGrid', () => {
         error: undefined,
         isLoading: false,
       })
+      .mockReturnValueOnce({
+        data: undefined,
+        error: undefined,
+        isLoading: false,
+      })
 
     render(<ServiceGrid />)
 

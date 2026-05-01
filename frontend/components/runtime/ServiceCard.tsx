@@ -3,6 +3,7 @@
 import { clsx } from 'clsx'
 import { useState } from 'react'
 import type {
+  RuntimeMetricSeries,
   RuntimeServiceMetrics,
   RuntimeServiceStatus,
 } from '@/lib/api/runtime'
@@ -14,6 +15,7 @@ import {
   resolveHealthTone,
 } from './health-utils'
 import { LogViewer } from './LogViewer'
+import { ServiceMetricTimeline } from './ServiceMetricTimeline'
 import { useServiceAction } from './useServiceAction'
 
 function MetricStat({ label, value }: { label: string; value: string }) {
@@ -35,12 +37,14 @@ function MetricStat({ label, value }: { label: string; value: string }) {
 interface ServiceCardProps {
   container: RuntimeServiceStatus
   metric?: RuntimeServiceMetrics
+  metricSeries?: RuntimeMetricSeries
   metricsLoading?: boolean
 }
 
 export function ServiceCard({
   container,
   metric,
+  metricSeries,
   metricsLoading = false,
 }: ServiceCardProps) {
   const [showLogs, setShowLogs] = useState(false)
@@ -110,6 +114,14 @@ export function ServiceCard({
             )}
           </div>
         )}
+
+        <div className="mb-3">
+          <ServiceMetricTimeline
+            service={container}
+            latestMetric={metric}
+            series={metricSeries}
+          />
+        </div>
 
         {/* Actions */}
         <div className="flex gap-1.5">

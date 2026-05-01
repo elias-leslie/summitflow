@@ -439,6 +439,62 @@ class TestDockerRuntime:
             ports=["8001"],
         )
 
+    def test_metrics_history_returns_persisted_series(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from datetime import UTC, datetime
+
+        list_series = mocker.patch(
+            "app.api.docker.routes.runtime_metric_store.list_runtime_metric_series",
+            return_value=[
+                {
+                    "service": "summitflow-api",
+                    "display_name": "summitflow-api",
+                    "manager": "systemd",
+                    "category": "app",
+                    "samples": [
+                        {
+                            "sampled_at": datetime(2026, 5, 1, 12, 0, tzinfo=UTC),
+                            "sample_count": 1,
+                            "state": "running",
+                            "status": "active",
+                            "cpu_percent": 3.5,
+                            "cpu_percent_max": 3.5,
+                            "memory_percent": 5.8,
+                            "memory_percent_max": 5.8,
+                            "memory_used_bytes": 125829120,
+                            "memory_used_bytes_max": 125829120,
+                            "memory_limit_bytes": None,
+                            "raw_mem_usage": "120MiB",
+                            "net_io": "n/a",
+                            "block_io": "n/a",
+                        }
+                    ],
+                }
+            ],
+        )
+
+        response = client.get(
+            "/api/docker/metrics/history",
+            params={
+                "service": "summitflow-api",
+                "since_minutes": 60,
+                "bucket_seconds": 60,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()[0]["samples"][0]["cpu_percent"] == 3.5
+        list_series.assert_called_once_with(
+            service="summitflow-api",
+            manager=None,
+            category=None,
+            since_minutes=60,
+            bucket_seconds=60,
+            limit=20000,
+        )
+
     def test_proxmox_status_returns_unconfigured_when_env_is_missing(
         self,
         mocker: MockerFixture,

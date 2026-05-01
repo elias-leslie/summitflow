@@ -22,6 +22,47 @@ export interface RuntimeServiceMetrics {
   block_io: string
 }
 
+export interface RuntimeMetricSample {
+  sampled_at: string
+  sample_count: number
+  state: string | null
+  status: string | null
+  cpu_percent: number | null
+  cpu_percent_max: number | null
+  memory_percent: number | null
+  memory_percent_max: number | null
+  memory_used_bytes: number | null
+  memory_used_bytes_max: number | null
+  memory_limit_bytes: number | null
+  raw_mem_usage: string | null
+  net_io: string | null
+  block_io: string | null
+}
+
+export interface RuntimeMetricSeries {
+  service: string
+  display_name: string
+  manager: string
+  category: string
+  samples: RuntimeMetricSample[]
+}
+
+export interface RuntimeMetricSummary {
+  service: string
+  display_name: string | null
+  manager: string | null
+  category: string | null
+  sample_count: number
+  cpu_percent_avg: number | null
+  cpu_percent_max: number | null
+  memory_percent_avg: number | null
+  memory_percent_max: number | null
+  memory_used_bytes_avg: number | null
+  memory_used_bytes_max: number | null
+  last_sampled_at: string | null
+  state: string | null
+}
+
 export interface HealthSummary {
   total: number
   healthy: number
@@ -163,6 +204,17 @@ function apiUrl(path: string): string {
   return path
 }
 
+function queryString(
+  params: Record<string, string | number | undefined>,
+): string {
+  const search = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined) search.set(key, String(value))
+  })
+  const value = search.toString()
+  return value ? `?${value}` : ''
+}
+
 export const runtimeApi = {
   getStatus: () =>
     fetchWithErrorHandling<RuntimeServiceStatus[]>(
@@ -176,6 +228,46 @@ export const runtimeApi = {
       apiUrl('/api/docker/metrics'),
       {
         errorMessage: 'Failed to fetch runtime metrics',
+      },
+    ),
+  getMetricHistory: (params?: {
+    service?: string
+    manager?: string
+    category?: string
+    sinceMinutes?: number
+    bucketSeconds?: number
+    limit?: number
+  }) =>
+    fetchWithErrorHandling<RuntimeMetricSeries[]>(
+      apiUrl(
+        `/api/docker/metrics/history${queryString({
+          service: params?.service,
+          manager: params?.manager,
+          category: params?.category,
+          since_minutes: params?.sinceMinutes,
+          bucket_seconds: params?.bucketSeconds,
+          limit: params?.limit,
+        })}`,
+      ),
+      {
+        errorMessage: 'Failed to fetch runtime metric history',
+      },
+    ),
+  getMetricSummary: (params?: {
+    service?: string
+    sinceMinutes?: number
+    limit?: number
+  }) =>
+    fetchWithErrorHandling<RuntimeMetricSummary[]>(
+      apiUrl(
+        `/api/docker/metrics/summary${queryString({
+          service: params?.service,
+          since_minutes: params?.sinceMinutes,
+          limit: params?.limit,
+        })}`,
+      ),
+      {
+        errorMessage: 'Failed to fetch runtime metric summary',
       },
     ),
   getHealth: () =>

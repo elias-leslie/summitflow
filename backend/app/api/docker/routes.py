@@ -9,6 +9,8 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
+from ...logging_config import get_logger
+from ...storage import runtime_metrics as runtime_metric_store
 from .._runtime_proxmox import ProxmoxStatus
 from .._runtime_proxmox import get_proxmox_status as _get_proxmox_status
 from .constants import BACKUP_DIR
@@ -32,6 +34,8 @@ from .live_sessions import router as live_sessions_router
 from .models import (
     ActionResult,
     HealthSummary,
+    RuntimeMetricSeries,
+    RuntimeMetricSummary,
     RuntimeModeStatus,
     RuntimeModeUpdate,
     RuntimeServiceMetrics,
@@ -40,6 +44,7 @@ from .models import (
 
 router = APIRouter()
 router.include_router(live_sessions_router, prefix="/live-sessions", tags=["live-sessions"])
+logger = get_logger(__name__)
 
 
 @router.get("/status", response_model=list[RuntimeServiceStatus])
@@ -107,7 +112,55 @@ def _handle_non_docker_mode_update(
 @router.get("/metrics", response_model=list[RuntimeServiceMetrics])
 async def get_metrics() -> list[RuntimeServiceMetrics]:
     """Get CPU/memory metrics for managed runtime services."""
-    return await _runtime_metrics()
+    statuses, metrics = await asyncio.gather(
+        _runtime_service_statuses(),
+        _runtime_metrics(),
+    )
+    try:
+        await asyncio.to_thread(
+            runtime_metric_store.record_runtime_metric_samples,
+            statuses,
+            metrics,
+        )
+    except Exception as exc:
+        logger.warning("Failed to persist runtime metric sample: %s", exc)
+    return metrics
+
+
+@router.get("/metrics/history", response_model=list[RuntimeMetricSeries])
+async def get_metrics_history(
+    service: str | None = Query(default=None),
+    manager: str | None = Query(default=None),
+    category: str | None = Query(default=None),
+    since_minutes: int = Query(default=360, ge=1, le=43200),
+    bucket_seconds: int = Query(default=60, ge=15, le=3600),
+    limit: int = Query(default=20000, ge=1, le=50000),
+) -> list[RuntimeMetricSeries]:
+    """Get persisted CPU/memory timelines for runtime services."""
+    rows = runtime_metric_store.list_runtime_metric_series(
+        service=service,
+        manager=manager,
+        category=category,
+        since_minutes=since_minutes,
+        bucket_seconds=bucket_seconds,
+        limit=limit,
+    )
+    return [RuntimeMetricSeries.model_validate(row) for row in rows]
+
+
+@router.get("/metrics/summary", response_model=list[RuntimeMetricSummary])
+async def get_metrics_summary(
+    service: str | None = Query(default=None),
+    since_minutes: int = Query(default=360, ge=1, le=43200),
+    limit: int = Query(default=40, ge=1, le=200),
+) -> list[RuntimeMetricSummary]:
+    """Get compact persisted runtime metric aggregates."""
+    rows = runtime_metric_store.summarize_runtime_metric_samples(
+        service=service,
+        since_minutes=since_minutes,
+        limit=limit,
+    )
+    return [RuntimeMetricSummary.model_validate(row) for row in rows]
 
 
 @router.get("/logs/{service}", response_model=None, dependencies=[Depends(_require_auth)])

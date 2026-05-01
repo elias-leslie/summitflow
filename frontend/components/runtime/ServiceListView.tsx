@@ -11,6 +11,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import type {
+  RuntimeMetricSeries,
   RuntimeServiceMetrics,
   RuntimeServiceStatus,
 } from '@/lib/api/runtime'
@@ -21,6 +22,7 @@ import {
   resolveHealthTone,
 } from './health-utils'
 import { LogViewer } from './LogViewer'
+import { ServiceMetricTimeline } from './ServiceMetricTimeline'
 import { useServiceAction } from './useServiceAction'
 
 function ActionCell({
@@ -69,11 +71,13 @@ function ActionCell({
 interface ServiceListViewProps {
   services: RuntimeServiceStatus[]
   metricsByService: Map<string, RuntimeServiceMetrics>
+  metricSeriesByService: Map<string, RuntimeMetricSeries>
 }
 
 export function ServiceListView({
   services,
   metricsByService,
+  metricSeriesByService,
 }: ServiceListViewProps) {
   const [logService, setLogService] = useState<string | null>(null)
 
@@ -89,6 +93,7 @@ export function ServiceListView({
               <TableHead className="hidden md:table-cell">Port</TableHead>
               <TableHead className="hidden lg:table-cell">CPU</TableHead>
               <TableHead className="hidden lg:table-cell">Memory</TableHead>
+              <TableHead className="hidden xl:table-cell">Trend</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -150,6 +155,14 @@ export function ServiceListView({
                     <span className="text-xs text-slate-300 font-mono">
                       {metric?.mem_usage ?? '-'}
                     </span>
+                  </TableCell>
+                  <TableCell className="hidden xl:table-cell w-48">
+                    <ServiceMetricTimeline
+                      service={s}
+                      latestMetric={metric}
+                      series={metricSeriesByService.get(s.service)}
+                      compact
+                    />
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">

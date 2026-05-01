@@ -41,10 +41,23 @@ export function ServiceGrid() {
     queryFn: runtimeApi.getMetrics,
     refetchInterval: POLL_STANDARD,
   })
+  const { data: metricHistory } = useQuery({
+    queryKey: ['runtime', 'metrics', 'history'],
+    queryFn: () =>
+      runtimeApi.getMetricHistory({
+        sinceMinutes: 360,
+        bucketSeconds: 60,
+      }),
+    refetchInterval: POLL_STANDARD,
+  })
 
   const metricsByService = useMemo(
     () => new Map((metrics ?? []).map((m) => [m.service, m])),
     [metrics],
+  )
+  const metricSeriesByService = useMemo(
+    () => new Map((metricHistory ?? []).map((m) => [m.service, m])),
+    [metricHistory],
   )
 
   const sections = useMemo(
@@ -249,6 +262,7 @@ export function ServiceGrid() {
             <ServiceListView
               services={section.items}
               metricsByService={metricsByService}
+              metricSeriesByService={metricSeriesByService}
             />
           ) : (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -266,6 +280,7 @@ export function ServiceGrid() {
                   <ServiceCard
                     container={service}
                     metric={metricsByService.get(service.service)}
+                    metricSeries={metricSeriesByService.get(service.service)}
                     metricsLoading={isMetricsLoading}
                   />
                 </motion.div>

@@ -79,6 +79,9 @@ from .helpers import (  # noqa: F401
 from .models import (  # noqa: F401
     ActionResult,
     HealthSummary,
+    RuntimeMetricSample,
+    RuntimeMetricSeries,
+    RuntimeMetricSummary,
     RuntimeModeStatus,
     RuntimeModeUpdate,
     RuntimeServiceMetrics,

@@ -40,6 +40,7 @@ from .commands import (
     prompt,
     pulse,
     refactor,
+    runtime,
     search,
     service,
     session_events,
@@ -67,7 +68,7 @@ CLI_REFERENCE = """ST CLI - SummitFlow Tasks.
 Core loop: pulse --gate | ready | claim <id> | context <id> | done <id>.
 Pause/resume: pause <id> [-r reason] | resume <id> [-r reason].
 VCS: vcs doctor | vcs reconcile | commit -m MSG [--task T] | jj diff | jj show.
-Tools: check | graph | service | db | browser | web | sessions | cleanup | logs.
+Tools: check | graph | service | runtime | db | browser | web | sessions | cleanup | logs.
 Use `<command> --help` for command-specific syntax."""
 
 app = typer.Typer(
@@ -100,6 +101,7 @@ app.add_typer(jj.app, name="jj")
 app.add_typer(vcs.app, name="vcs")
 app.add_typer(backup.app, name="backup")
 app.add_typer(service.app, name="service")
+app.add_typer(runtime.app, name="runtime")
 app.add_typer(health.app, name="health")
 app.add_typer(logs.app, name="logs")
 app.add_typer(memory.app, name="memory")

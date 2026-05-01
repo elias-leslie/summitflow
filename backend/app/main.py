@@ -79,16 +79,26 @@ _app_start_time = time.time()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Initialize database, connection pool, and services on startup."""
+    from .services.runtime_metrics_sampler import (
+        start_runtime_metrics_sampler,
+        stop_runtime_metrics_sampler,
+    )
     from .storage.connection import close_pool, open_pool
 
     # Skip heavy DB init during pytest (tests mock the DB anyway)
+    runtime_metrics_task = None
     if not os.environ.get("PYTEST_CURRENT_TEST"):
         open_pool()  # Initialize connection pool
         init_schema()
-    yield
-    # Cleanup on shutdown
-    if not os.environ.get("PYTEST_CURRENT_TEST"):
-        close_pool()
+        runtime_metrics_task = start_runtime_metrics_sampler()
+    try:
+        yield
+    finally:
+        # Cleanup on shutdown
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            if runtime_metrics_task is not None:
+                await stop_runtime_metrics_sampler()
+            close_pool()
 
 
 _cors_middleware = [

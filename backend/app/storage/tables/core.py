@@ -11,6 +11,7 @@ def create_core_tables(cur: psycopg.Cursor) -> None:
     _create_task_deletions_table(cur)
     _create_task_dependencies_table(cur)
     _create_maintenance_runs_table(cur)
+    _create_runtime_metric_samples_table(cur)
 
 
 def _create_projects_table(cur: psycopg.Cursor) -> None:
@@ -233,4 +234,46 @@ def _create_maintenance_runs_table(cur: psycopg.Cursor) -> None:
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_maintenance_runs_status_started"
         " ON maintenance_runs(status, started_at DESC)"
+    )
+
+
+def _create_runtime_metric_samples_table(cur: psycopg.Cursor) -> None:
+    """Create runtime service resource metric samples."""
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS runtime_metric_samples (
+            id BIGSERIAL PRIMARY KEY,
+            sampled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            sample_bucket TIMESTAMPTZ NOT NULL,
+            service TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            manager TEXT NOT NULL,
+            category TEXT NOT NULL,
+            state TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT '',
+            source_name TEXT NOT NULL DEFAULT '',
+            cpu_percent DOUBLE PRECISION,
+            memory_percent DOUBLE PRECISION,
+            memory_used_bytes BIGINT,
+            memory_limit_bytes BIGINT,
+            raw_mem_usage TEXT,
+            net_io TEXT,
+            block_io TEXT,
+            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(service, sample_bucket)
+        )
+        """
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_runtime_metric_samples_service_sampled"
+        " ON runtime_metric_samples(service, sampled_at DESC)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_runtime_metric_samples_sampled"
+        " ON runtime_metric_samples(sampled_at DESC)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_runtime_metric_samples_manager_category"
+        " ON runtime_metric_samples(manager, category, sampled_at DESC)"
     )
