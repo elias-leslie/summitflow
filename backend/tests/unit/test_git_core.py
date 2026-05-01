@@ -134,6 +134,7 @@ def test_pull_jj_repository_rebases_clean_head_to_remote_default(mocker, tmp_pat
         return subprocess.CompletedProcess(args, 1, "", msg)
 
     mocker.patch("cli.lib.jj.run_jj", side_effect=fake_run_jj)
+    mocker.patch("cli.lib.jj_status.run_jj", side_effect=fake_run_jj)
 
     result = _git_core.pull_repository(tmp_path)
 
