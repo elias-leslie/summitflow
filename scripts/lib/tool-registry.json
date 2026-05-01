@@ -177,7 +177,7 @@
       "count_method": "biome_parse",
       "working_dir": "frontend",
       "fallback_global": true,
-      "pass_path": false
+      "pass_path": true
       }
     },
   {

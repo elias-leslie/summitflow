@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from collections.abc import Sequence
@@ -274,10 +275,17 @@ def format_status_line(status: JJRepoStatus) -> str:
     )
 
 
-def run_checks(repo: Path) -> tuple[bool, str]:
+def run_checks(repo: Path, *, paths: Sequence[str] = ()) -> tuple[bool, str]:
+    env = None
+    if paths:
+        env = {
+            **dict(os.environ),
+            "ST_CHECK_CHANGED_FILES": "\n".join(paths),
+        }
     result = subprocess.run(
         ["st", "check", "--quick", "--changed-only"],
         cwd=repo,
+        env=env,
         capture_output=True,
         text=True,
         timeout=JJ_TIMEOUT_SECONDS,
@@ -309,6 +317,7 @@ def publish_current_revision(
     revision: str = "@",
     remote: str = "origin",
     run_quality_gate: bool = True,
+    check_paths: Sequence[str] = (),
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Publish the current jj revision under a deterministic bookmark."""
@@ -321,7 +330,7 @@ def publish_current_revision(
         raise JJError(f"refusing to publish conflicted revision {revision}")
 
     if run_quality_gate:
-        ok, detail = run_checks(repo)
+        ok, detail = run_checks(repo, paths=check_paths)
         if not ok:
             raise JJError(f"quality gates failed before jj push: {detail[-1200:]}")
 
@@ -418,6 +427,7 @@ def commit_selected_paths(
             bookmark=bookmark,
             revision="@-",
             run_quality_gate=not skip_checks,
+            check_paths=selected_paths,
         )
         result.update(publish)
         result["selected_paths"] = selected_paths

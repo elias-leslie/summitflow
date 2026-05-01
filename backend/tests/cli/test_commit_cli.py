@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
+from cli.lib import jj
 from cli.lib.commit_workflow import CommitError, commit_repo
 from cli.main import app
 
@@ -85,3 +86,17 @@ def test_st_commit_forwards_selected_paths(
 def test_commit_repo_rejects_selected_paths_without_jj(tmp_path: Path) -> None:
     with pytest.raises(CommitError, match="selective commit requires"):
         commit_repo(tmp_path, message="test", paths=("a.py",))
+
+
+def test_jj_run_checks_scopes_changed_files_for_selected_paths(tmp_path: Path) -> None:
+    with patch("cli.lib.jj.subprocess.run") as run:
+        run.return_value.returncode = 0
+        run.return_value.stdout = "ok"
+        run.return_value.stderr = ""
+
+        ok, detail = jj.run_checks(tmp_path, paths=("frontend/a.tsx", "backend/b.py"))
+
+    assert ok is True
+    assert detail == "ok"
+    env = run.call_args.kwargs["env"]
+    assert env["ST_CHECK_CHANGED_FILES"] == "frontend/a.tsx\nbackend/b.py"

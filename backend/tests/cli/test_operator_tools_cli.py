@@ -192,6 +192,47 @@ def test_check_changed_only_targets_changed_pytest_files() -> None:
     run_tool.assert_called_once_with("pytest", configs["pytest"], ["tests/cli/test_check.py"])
 
 
+def test_check_changed_only_uses_changed_files_override(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "ST_CHECK_CHANGED_FILES",
+        "frontend/components/runtime/ServiceCard.tsx\nbackend/app/main.py",
+    )
+
+    assert check._changed_files(Path("/repo")) == [
+        "backend/app/main.py",
+        "frontend/components/runtime/ServiceCard.tsx",
+    ]
+
+
+def test_check_changed_only_targets_biome_override_paths(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "frontend" / "components" / "runtime" / "ServiceCard.tsx"
+    target.parent.mkdir(parents=True)
+    target.write_text("", encoding="utf-8")
+    configs = {
+        "biome": {
+            "label": "BIOME",
+            "binary": "npx",
+            "args": "biome check . --max-diagnostics=100",
+            "working_dir": "frontend",
+            "pass_path": True,
+        },
+    }
+    monkeypatch.setenv("ST_CHECK_CHANGED_FILES", "frontend/components/runtime/ServiceCard.tsx")
+    with (
+        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._tool_configs", return_value=configs),
+        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
+    ):
+        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
+
+    assert result.exit_code == 0
+    run_tool.assert_called_once_with(
+        "biome",
+        configs["biome"],
+        ["components/runtime/ServiceCard.tsx"],
+    )
+
+
 def test_check_changed_only_runs_broad_pytest_for_config_changes() -> None:
     configs = {
         "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
@@ -260,6 +301,47 @@ def test_check_resolves_npx_tool_to_local_binary(tmp_path: Path) -> None:
     command = check._resolve_command("npx", tmp_path, tmp_path / "frontend", ["tsc", "--noEmit"])
 
     assert command == [str(tsc), "--noEmit"]
+
+
+def test_check_biome_explicit_paths_replace_default_dot(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    biome = frontend / "node_modules" / ".bin" / "biome"
+    biome.parent.mkdir(parents=True)
+    biome.write_text("#!/bin/sh\n", encoding="utf-8")
+    completed = subprocess.CompletedProcess(
+        args=[],
+        returncode=0,
+        stdout="",
+        stderr="",
+    )
+    with (
+        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check.subprocess.run", return_value=completed) as run,
+    ):
+        exit_code = check._run_tool(
+            "biome",
+            {
+                "label": "BIOME",
+                "binary": "npx",
+                "args": "biome check . --max-diagnostics=100",
+                "working_dir": "frontend",
+            },
+            ["components/runtime/ServiceCard.tsx"],
+        )
+
+    assert exit_code == 0
+    command = run.call_args.args[0]
+    assert command == [
+        str(biome),
+        "check",
+        "--max-diagnostics=100",
+        "components/runtime/ServiceCard.tsx",
+    ]
+    assert "BIOME:OK:0" in capsys.readouterr().out
 
 
 def test_check_tool_output_goes_to_details_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

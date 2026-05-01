@@ -132,6 +132,16 @@ def _workdir(root: Path, config: dict[str, Any]) -> Path:
 
 
 def _changed_files(root: Path) -> list[str]:
+    override = os.environ.get("ST_CHECK_CHANGED_FILES", "").strip()
+    if override:
+        return sorted(
+            {
+                item.strip()
+                for line in override.splitlines()
+                for item in line.split(os.pathsep)
+                if item.strip()
+            }
+        )
     files: set[str] = set()
     for args in (
         ["diff", "--name-only", "HEAD"],
@@ -250,6 +260,8 @@ def _run_tool(name: str, config: dict[str, Any], extra_args: list[str]) -> int:
     cwd = _workdir(root, config)
     binary = str(config.get("binary") or name)
     base_args = shlex.split(str(config.get("args") or ""))
+    if name == "biome" and any(not arg.startswith("-") for arg in extra_args):
+        base_args = [arg for arg in base_args if arg != "."]
     command = [*_resolve_command(binary, root, cwd, base_args), *extra_args]
     label = str(config.get("label") or name.upper())
     print(f"{label}:{name}:start")
