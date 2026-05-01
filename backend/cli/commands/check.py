@@ -63,6 +63,17 @@ _TOOL_CONFIG_PATHS: dict[str, set[str]] = {
     },
 }
 
+
+def _is_pytest_test_path(path: Path) -> bool:
+    return (
+        path.suffix in {".py", ".pyi"}
+        and (
+            "tests" in path.parts
+            or path.name.startswith("test_")
+            or path.name.endswith("_test.py")
+        )
+    )
+
 app = typer.Typer(
     help=(
         "Quality checks through st. Use st check for repo gates; never run raw "
@@ -151,6 +162,8 @@ def _path_relevant_for_tool(name: str, rel_path: str) -> bool:
     path = Path(rel_path)
     if path.name in _TOOL_CONFIG_PATHS.get(name, set()):
         return True
+    if name == "pytest":
+        return _is_pytest_test_path(path)
     return path.suffix in _TOOL_FILE_SUFFIXES.get(name, set())
 
 
@@ -165,12 +178,16 @@ def _changed_args(
     config: dict[str, Any],
     changed_files: list[str],
 ) -> list[str]:
-    if not changed_files or not config.get("pass_path"):
+    if not changed_files:
+        return []
+    if name != "pytest" and not config.get("pass_path"):
         return []
     paths: list[str] = []
     for rel_path in changed_files:
         absolute = (root / rel_path).resolve()
         if not absolute.exists() or not absolute.is_file():
+            continue
+        if name == "pytest" and not _is_pytest_test_path(Path(rel_path)):
             continue
         if absolute.is_relative_to(cwd.resolve()):
             relative = absolute.relative_to(cwd)
