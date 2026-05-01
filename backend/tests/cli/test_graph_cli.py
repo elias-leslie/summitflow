@@ -113,6 +113,31 @@ def test_doctor_exits_nonzero_when_graph_has_agent_issues(
     assert payload["warnings"][0]["diagnostics"] == ["html_uses_external_cdn"]
 
 
+def test_doctor_all_uses_project_list_payload_without_per_project_fetch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    calls: list[tuple[str, str]] = []
+
+    def fake_projects_api(method: str, path: str = "") -> object:
+        calls.append((method, path))
+        assert method == "GET"
+        if path:
+            raise AssertionError("doctor should not refetch each project payload")
+        return [{"id": "summitflow", "root_path": str(root)}]
+
+    monkeypatch.setattr(graph, "projects_api", fake_projects_api)
+    monkeypatch.setattr(graph, "graphify_status", lambda project_id, root: _status(project_id))
+
+    result = runner.invoke(graph.app, ["doctor", "--no-refresh"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["projects"] == 1
+    assert calls == [("GET", "")]
+
+
 def test_status_auto_refreshes_stale_code_graph(
     graph_cli_project: Path,
     monkeypatch: pytest.MonkeyPatch,

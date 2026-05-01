@@ -59,6 +59,10 @@ def _project_id(value: str | None) -> str:
 
 def _root_for_project(project_id: str) -> Path:
     project = _project_payload(project_id)
+    return _root_from_project_payload(project_id, project)
+
+
+def _root_from_project_payload(project_id: str, project: dict[str, Any]) -> Path:
     root_path = project.get("root_path")
     if not root_path:
         raise typer.BadParameter(f"Project '{project_id}' has no root_path configured")
@@ -83,7 +87,23 @@ def _status_for_project(
     action: str = "status",
     create_missing: bool = True,
 ) -> dict[str, Any]:
-    root = _root_for_project(project_id)
+    return _status_for_project_root(
+        project_id,
+        _root_for_project(project_id),
+        auto_refresh=auto_refresh,
+        action=action,
+        create_missing=create_missing,
+    )
+
+
+def _status_for_project_root(
+    project_id: str,
+    root: Path,
+    *,
+    auto_refresh: bool = True,
+    action: str = "status",
+    create_missing: bool = True,
+) -> dict[str, Any]:
     status = graphify_status(project_id, root)
     if not create_missing and not status.get("graph_exists"):
         return status
@@ -148,9 +168,15 @@ def status(
 ) -> None:
     """Show Graphify status and diagnostics."""
     if all_projects:
+        projects = _all_projects()
         output_json([
-            _status_for_project(str(item["id"]), auto_refresh=refresh, create_missing=False)
-            for item in _all_projects()
+            _status_for_project_root(
+                str(item["id"]),
+                _root_from_project_payload(str(item["id"]), item),
+                auto_refresh=refresh,
+                create_missing=False,
+            )
+            for item in projects
             if item.get("id")
         ])
         return
@@ -163,11 +189,24 @@ def doctor(
     refresh: Annotated[bool, typer.Option("--refresh/--no-refresh", help="Refresh stale code graphs before diagnosis.")] = True,
 ) -> None:
     """Report Graphify issues that affect agent usefulness."""
-    project_ids = [_project_id(project)] if project else [str(item["id"]) for item in _all_projects() if item.get("id")]
-    statuses = [
-        _status_for_project(project_id, auto_refresh=refresh, action="doctor", create_missing=bool(project))
-        for project_id in project_ids
-    ]
+    if project:
+        project_id = _project_id(project)
+        statuses = [
+            _status_for_project(project_id, auto_refresh=refresh, action="doctor", create_missing=True)
+        ]
+    else:
+        projects = _all_projects()
+        statuses = [
+            _status_for_project_root(
+                str(item["id"]),
+                _root_from_project_payload(str(item["id"]), item),
+                auto_refresh=refresh,
+                action="doctor",
+                create_missing=False,
+            )
+            for item in projects
+            if item.get("id")
+        ]
     issues = [
         {
             "project_id": item["project_id"],
@@ -213,8 +252,9 @@ def refresh(
 ) -> None:
     """Refresh a project's code-only Graphify graph."""
     project_id = _project_id(project)
-    result = refresh_graph(_root_for_project(project_id))
-    output_json({"project_id": project_id, **_command_payload(result), "status": _status_for_project(project_id)})
+    root = _root_for_project(project_id)
+    result = refresh_graph(root)
+    output_json({"project_id": project_id, **_command_payload(result), "status": _status_for_project_root(project_id, root)})
 
 
 @app.command("query")

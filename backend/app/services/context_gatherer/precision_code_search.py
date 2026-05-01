@@ -32,6 +32,12 @@ logger = get_logger(__name__)
 _SEARCH_LIMIT = 5
 _ENTRY_LIMIT = 12
 _PRECISION_INDEX_MAX_AGE = timedelta(minutes=30)
+_INLINE_REFRESH_REASONS = {
+    "missing_file_index",
+    "missing_symbol_index",
+    "missing_file_scan_timestamp",
+    "missing_symbol_timestamp",
+}
 
 PRECISION_CODE_SEARCH_GUIDANCE = (
     "Use the Precision Code Search block as the first code-navigation pass. "
@@ -209,9 +215,12 @@ def _log_result(project_id: str, metadata: dict[str, object], mode: str) -> None
 
 
 def _ensure_index(project_id: str) -> tuple[dict[str, object], bool]:
-    """Check precision index freshness and refresh if stale."""
+    """Check precision index freshness and refresh only when indexes are unusable."""
     index_status = _get_precision_index_status(project_id)
-    refreshed = _refresh_precision_index(project_id) if index_status["should_refresh"] else False
+    raw_reasons = index_status.get("refresh_reasons", [])
+    refresh_reasons = {str(reason) for reason in raw_reasons} if isinstance(raw_reasons, list) else set()
+    should_refresh_inline = bool(refresh_reasons & _INLINE_REFRESH_REASONS)
+    refreshed = _refresh_precision_index(project_id) if should_refresh_inline else False
     return index_status, refreshed
 
 

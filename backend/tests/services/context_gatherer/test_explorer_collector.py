@@ -328,7 +328,7 @@ def test_collect_precision_code_search_context_ranks_multi_term_matches_by_cover
     assert "/projects/{project_id}/quality/health" in result.prompt_context
 
 
-def test_collect_precision_code_search_context_refreshes_stale_file_index() -> None:
+def test_collect_precision_code_search_context_defers_stale_only_refresh() -> None:
     with (
         patch(
             "app.services.context_gatherer.precision_code_search.explorer_service.get_stats",
@@ -357,12 +357,52 @@ def test_collect_precision_code_search_context_refreshes_stale_file_index() -> N
 
         result = collect_precision_code_search_context("project-1", ["get_file_tree"])
 
-    mock_scan.assert_called_once_with("project-1", "file")
-    assert result.metadata["refreshed_index"]
+    mock_scan.assert_not_called()
+    assert not result.metadata["refreshed_index"]
     assert result.metadata["stale_hit"]
     assert result.metadata["refresh_reasons"] == ["stale_file_index", "stale_symbol_index"]
     assert result.metadata["file_index_age_minutes"] is not None
     assert result.metadata["symbol_index_age_minutes"] is not None
+
+
+def test_collect_precision_code_search_context_refreshes_missing_index() -> None:
+    with (
+        patch(
+            "app.services.context_gatherer.precision_code_search.explorer_service.get_stats",
+            return_value={"total": 0, "last_scanned": None},
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.get_symbol_stats",
+            return_value={"count": 0, "last_updated": None},
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.explorer_service.scan"
+        ) as mock_scan,
+        patch(
+            "app.services.context_gatherer._precision_ranking.search_symbols",
+            return_value=[],
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_text",
+            return_value={"items": [], "count": 0, "files_searched": 0, "truncated": False},
+        ),
+    ):
+        mock_scan.return_value.success = True
+        mock_scan.return_value.entries_found = 12
+        mock_scan.return_value.entries_saved = 12
+        mock_scan.return_value.duration_ms = 100
+
+        result = collect_precision_code_search_context("project-1", ["get_file_tree"])
+
+    mock_scan.assert_called_once_with("project-1", "file")
+    assert result.metadata["refreshed_index"]
+    assert result.metadata["stale_hit"]
+    assert result.metadata["refresh_reasons"] == [
+        "missing_file_index",
+        "missing_symbol_index",
+        "missing_file_scan_timestamp",
+        "missing_symbol_timestamp",
+    ]
 
 
 def test_collect_precision_code_search_context_skips_refresh_for_workflow_meta_queries() -> None:
