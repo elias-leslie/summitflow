@@ -5,7 +5,6 @@ import clsx from 'clsx'
 import {
   AlertTriangle,
   ArrowDown,
-  ArrowUp,
   ChevronRight,
   GitBranch,
   Loader2,
@@ -15,17 +14,23 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { getStateInfo } from '@/app/(app)/git/utils'
-import { publishProjectChanges, type RepoStatus } from '@/lib/api'
+import {
+  publishProjectChanges,
+  pullRepository,
+  type RepoStatus,
+} from '@/lib/api'
 import { DashboardContent } from './project-row/DashboardContent'
 import { PublishResultBlock } from './project-row/PublishResultBlock'
+import { RemoteStatusBadge } from './RemoteStatusBadge'
 
 interface ProjectRowProps {
   repo: RepoStatus
+  remoteCheckedAt?: Date | null
 }
 
 const PUBLISH_RESULT_AUTO_DISMISS_MS = 12000
 
-export function ProjectRow({ repo }: ProjectRowProps) {
+export function ProjectRow({ repo, remoteCheckedAt }: ProjectRowProps) {
   const [expanded, setExpanded] = useState(false)
   const [publishResult, setPublishResult] = useState<Awaited<
     ReturnType<typeof publishProjectChanges>
@@ -39,6 +44,18 @@ export function ProjectRow({ repo }: ProjectRowProps) {
   const dirtyWorkspaceCount =
     (workspaceSummary?.dirty_checkpoints ?? 0) +
     (workspaceSummary?.dirty_main_repo ? 1 : 0)
+  const canPublish = repo.uncommitted > 0 || repo.ahead > 0
+
+  const syncMutation = useMutation({
+    mutationFn: () => pullRepository(repoKey),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['git-status'] })
+      queryClient.invalidateQueries({
+        queryKey: ['project-dashboard', repoKey],
+      })
+      queryClient.invalidateQueries({ queryKey: ['git-conflicts'] })
+    },
+  })
 
   const publishMutation = useMutation({
     mutationFn: () => publishProjectChanges(repoKey),
@@ -186,41 +203,62 @@ export function ProjectRow({ repo }: ProjectRowProps) {
           </span>
 
           {/* Ahead / behind */}
-          {repo.ahead > 0 && (
-            <span className="text-phosphor-400 flex items-center gap-0.5 text-2xs font-mono">
-              <ArrowUp className="w-3 h-3" />
-              {repo.ahead}
-            </span>
-          )}
-          {repo.behind > 0 && (
-            <span className="text-amber-400 flex items-center gap-0.5 text-2xs font-mono">
-              <ArrowDown className="w-3 h-3" />
-              {repo.behind}
-            </span>
-          )}
+          <RemoteStatusBadge
+            ahead={repo.ahead}
+            behind={repo.behind}
+            branch={repo.branch}
+            checkedAt={remoteCheckedAt}
+            compact
+          />
 
-          {/* Publish button — stops propagation so it doesn't toggle expand */}
+          {/* Sync button — stops propagation so it doesn't toggle expand */}
           <button
             type="button"
-            disabled={publishMutation.isPending}
+            disabled={syncMutation.isPending}
             onClick={(e) => {
               e.stopPropagation()
-              publishMutation.mutate()
+              syncMutation.mutate()
             }}
+            title="Pull latest remote changes with fast-forward only."
             className={clsx(
               'flex items-center gap-1 px-2.5 py-1 rounded-md text-2xs font-medium transition-all',
-              publishMutation.isPending
+              syncMutation.isPending
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                : 'bg-outrun-500/12 text-outrun-400 border border-outrun-500/20 hover:bg-outrun-500/20 hover:border-outrun-500/40',
+                : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 hover:bg-cyan-500/15 hover:border-cyan-500/40',
             )}
           >
-            {publishMutation.isPending ? (
+            {syncMutation.isPending ? (
               <Loader2 className="w-3 h-3 animate-spin" />
             ) : (
-              <Upload className="w-3 h-3" />
+              <ArrowDown className="w-3 h-3" />
             )}
-            {publishMutation.isPending ? 'Publishing' : 'Publish'}
+            {syncMutation.isPending ? 'Syncing' : 'Sync'}
           </button>
+
+          {canPublish && (
+            <button
+              type="button"
+              disabled={publishMutation.isPending}
+              onClick={(e) => {
+                e.stopPropagation()
+                publishMutation.mutate()
+              }}
+              title="Run st commit for this project, then push published work."
+              className={clsx(
+                'flex items-center gap-1 px-2.5 py-1 rounded-md text-2xs font-medium transition-all',
+                publishMutation.isPending
+                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  : 'bg-outrun-500/12 text-outrun-400 border border-outrun-500/20 hover:bg-outrun-500/20 hover:border-outrun-500/40',
+              )}
+            >
+              {publishMutation.isPending ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Upload className="w-3 h-3" />
+              )}
+              {publishMutation.isPending ? 'Publishing' : 'Commit + Push'}
+            </button>
+          )}
         </div>
       </div>
 

@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { ConflictAlerts } from '@/components/git/ConflictAlerts'
 import { DashboardContent } from '@/components/git/project-row/DashboardContent'
 import {
+  checkProjectGitRemote,
   fetchProjectGitStatus,
   pullRepository,
   type SyncResult,
@@ -21,6 +22,8 @@ export function ProjectGitClient() {
   const projectId = params.id as string
   const queryClient = useQueryClient()
   const [syncResults, setSyncResults] = useState<SyncResult[] | null>(null)
+  const [syncToastTitle, setSyncToastTitle] = useState('Git Operation Complete')
+  const [remoteCheckedAt, setRemoteCheckedAt] = useState<Date | null>(null)
 
   const {
     data: gitStatus,
@@ -37,12 +40,24 @@ export function ProjectGitClient() {
   const syncMutation = useMutation({
     mutationFn: () => pullRepository(projectId),
     onSuccess: (data) => {
+      setSyncToastTitle('Sync Complete')
       setSyncResults(data.results)
       queryClient.invalidateQueries({ queryKey: ['git-status', projectId] })
       queryClient.invalidateQueries({
         queryKey: ['project-dashboard', projectId],
       })
       queryClient.invalidateQueries({ queryKey: ['git-conflicts'] })
+      setTimeout(() => setSyncResults(null), TOAST_DISMISS_MS)
+    },
+  })
+
+  const checkRemoteMutation = useMutation({
+    mutationFn: () => checkProjectGitRemote(projectId),
+    onSuccess: (data) => {
+      setSyncToastTitle('Remote Check Complete')
+      setSyncResults(data.results)
+      setRemoteCheckedAt(new Date())
+      queryClient.invalidateQueries({ queryKey: ['git-status', projectId] })
       setTimeout(() => setSyncResults(null), TOAST_DISMISS_MS)
     },
   })
@@ -99,22 +114,30 @@ export function ProjectGitClient() {
         dirtyCount={attentionCount}
         isSyncing={syncMutation.isPending}
         onSync={handleSync}
+        onCheckRemote={() => checkRemoteMutation.mutate()}
+        isCheckingRemote={checkRemoteMutation.isPending}
         cleanLabel="Synced"
         dirtyLabel="Attention"
-        actionLabel="Pull Latest"
-        busyLabel="Pulling..."
+        actionLabel="Sync"
+        busyLabel="Syncing..."
         title="Project Git Operations"
         description="Inspect repository health, checkpoints, branches, and recent git activity for this project."
       />
 
-      {syncResults && <GitSyncToast results={syncResults} />}
+      {syncResults && (
+        <GitSyncToast results={syncResults} title={syncToastTitle} />
+      )}
 
       <ConflictAlerts projectId={projectId} />
 
       <section>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {repos.map((repo) => (
-            <GitRepoCard key={repo.path} repo={repo} />
+            <GitRepoCard
+              key={repo.path}
+              repo={repo}
+              remoteCheckedAt={remoteCheckedAt}
+            />
           ))}
         </div>
       </section>

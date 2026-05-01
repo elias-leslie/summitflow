@@ -1,5 +1,6 @@
 'use client'
 
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   AlertTriangle,
@@ -9,8 +10,10 @@ import {
   XCircle,
 } from 'lucide-react'
 import { motion } from 'motion/react'
+import { useState } from 'react'
 import { ConflictAlerts } from '@/components/git/ConflictAlerts'
 import { ProjectRow } from '@/components/git/ProjectRow'
+import { checkGitRemotes } from '@/lib/api'
 import { useGitStatus } from './useGitStatus'
 
 const fadeUp = {
@@ -45,12 +48,23 @@ function StatPill({
 }
 
 export function GitClient() {
+  const queryClient = useQueryClient()
+  const [remoteCheckedAt, setRemoteCheckedAt] = useState<Date | null>(null)
   const { data: gitStatus, isLoading, isError } = useGitStatus()
   const repos = gitStatus?.repositories ?? []
+  const checkRemoteMutation = useMutation({
+    mutationFn: checkGitRemotes,
+    onSuccess: () => {
+      setRemoteCheckedAt(new Date())
+      queryClient.invalidateQueries({ queryKey: ['git-status'] })
+    },
+  })
 
   const dirtyRepos = repos.filter(
     (r) => r.state === 'dirty' || r.state === 'ahead',
   ).length
+  const behindRepos = repos.filter((r) => r.behind > 0).length
+  const aheadRepos = repos.filter((r) => r.ahead > 0).length
   const checkpointCount = repos.reduce(
     (s, r) => s + (r.workspace_summary?.active_checkpoints ?? 0),
     0,
@@ -91,6 +105,26 @@ export function GitClient() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => checkRemoteMutation.mutate()}
+              disabled={checkRemoteMutation.isPending}
+              title="Fetch remote refs without merging so ahead/behind badges use current origin state."
+              className={clsx(
+                'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+                checkRemoteMutation.isPending
+                  ? 'border-slate-700 bg-slate-800 text-slate-500'
+                  : 'border-cyan-500/20 bg-cyan-500/10 text-cyan-200 hover:border-cyan-400/40 hover:bg-cyan-500/15',
+              )}
+            >
+              <RefreshCw
+                className={clsx(
+                  'h-3 w-3',
+                  checkRemoteMutation.isPending && 'animate-spin',
+                )}
+              />
+              Check Remote
+            </button>
             {isLoading ? (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-phosphor-500/18 bg-phosphor-500/10 px-2.5 py-1 text-xs text-phosphor-200">
                 <RefreshCw className="h-3 w-3 animate-spin" />
@@ -115,6 +149,12 @@ export function GitClient() {
                   value={cleanupCount}
                   label="cleanup"
                   tone="bg-amber-500/8 text-amber-300 border-amber-500/20"
+                />
+                <StatPill
+                  icon={RefreshCw}
+                  value={aheadRepos + behindRepos}
+                  label="remote"
+                  tone="bg-cyan-500/8 text-cyan-300 border-cyan-500/20"
                 />
               </>
             ) : (
@@ -154,7 +194,7 @@ export function GitClient() {
                   ease: [0.25, 0.46, 0.45, 0.94],
                 }}
               >
-                <ProjectRow repo={repo} />
+                <ProjectRow repo={repo} remoteCheckedAt={remoteCheckedAt} />
               </motion.div>
             ))}
           </div>

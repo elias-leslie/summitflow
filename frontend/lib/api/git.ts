@@ -122,6 +122,19 @@ export async function fetchGitStatus(): Promise<GitStatusResponse> {
 }
 
 /**
+ * Fetch remote refs for all managed repositories without merging.
+ */
+export async function checkGitRemotes(): Promise<GitSyncResponse> {
+  return fetchWithErrorHandling<GitSyncResponse>(
+    `${getApiBaseUrl()}/api/git/fetch`,
+    {
+      method: 'POST',
+      errorMessage: 'Failed to check remote git status',
+    },
+  )
+}
+
+/**
  * Get git status for a specific project.
  */
 export async function fetchProjectGitStatus(
@@ -144,6 +157,21 @@ export async function pullRepository(
     {
       method: 'POST',
       errorMessage: 'Failed to pull repository',
+    },
+  )
+}
+
+/**
+ * Fetch remote refs for a specific project's repository without merging.
+ */
+export async function checkProjectGitRemote(
+  projectId: string,
+): Promise<GitSyncResponse> {
+  return fetchWithErrorHandling<GitSyncResponse>(
+    `${getApiBaseUrl()}/api/projects/${projectId}/git/fetch`,
+    {
+      method: 'POST',
+      errorMessage: 'Failed to check project git remote',
     },
   )
 }

@@ -123,6 +123,16 @@ async def sync_repositories() -> GitSyncResponse:
     return GitSyncResponse(results=results, **counts)
 
 
+@router.post("/git/fetch", response_model=GitSyncResponse, tags=["git"])
+async def fetch_repositories() -> GitSyncResponse:
+    """Fetch remote refs for all managed repositories without merging."""
+    from ..utils.git_helpers import fetch_repository
+
+    results = [fetch_repository(repo_path) for repo_path in get_managed_repos()]
+    counts = aggregate_sync_results(results)
+    return GitSyncResponse(results=results, **counts)
+
+
 @router.get("/git/checkpoints", response_model=CheckpointsResponse, tags=["git"])
 async def get_checkpoints(
     project_id: str | None = Query(default=None),

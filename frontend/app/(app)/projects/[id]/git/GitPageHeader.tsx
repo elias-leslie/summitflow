@@ -7,6 +7,8 @@ interface GitPageHeaderProps {
   dirtyCount: number
   isSyncing: boolean
   onSync: () => void
+  isCheckingRemote?: boolean
+  onCheckRemote?: () => void
   cleanLabel?: string
   dirtyLabel?: string
   actionLabel?: string
@@ -20,6 +22,8 @@ export function GitPageHeader({
   dirtyCount,
   isSyncing,
   onSync,
+  isCheckingRemote = false,
+  onCheckRemote,
   cleanLabel = 'Clean',
   dirtyLabel = 'Modified',
   actionLabel = 'Sync All',
@@ -43,29 +47,47 @@ export function GitPageHeader({
           <p className="text-slate-400 mt-1">{description}</p>
         </div>
 
-        {/* Sync All Button */}
-        <button
-          type="button"
-          onClick={onSync}
-          disabled={isSyncing}
-          aria-busy={isSyncing}
-          className="relative group flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-phosphor-600 to-phosphor-500 text-slate-900 font-semibold rounded-lg transition-all hover:shadow-[0_0_30px_rgba(0,245,255,0.4)] disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
-        >
-          {/* Shimmer effect */}
-          <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-
-          {isSyncing ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
-          ) : (
-            <RefreshCw className="w-5 h-5" />
+        <div className="flex items-center gap-2">
+          {onCheckRemote && (
+            <button
+              type="button"
+              onClick={onCheckRemote}
+              disabled={isCheckingRemote}
+              aria-busy={isCheckingRemote}
+              title="Fetch remote refs without merging so ahead/behind badges use current origin state."
+              className="relative flex items-center gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 font-semibold text-cyan-200 transition-all hover:border-cyan-400/40 hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RefreshCw
+                className={`w-5 h-5 ${isCheckingRemote ? 'animate-spin' : ''}`}
+              />
+              <span>Check Remote</span>
+            </button>
           )}
-          <span>{isSyncing ? busyLabel : actionLabel}</span>
 
-          {/* Glow ring when syncing */}
-          {isSyncing && (
-            <span className="absolute inset-0 rounded-lg animate-pulse ring-2 ring-phosphor-400/50" />
-          )}
-        </button>
+          <button
+            type="button"
+            onClick={onSync}
+            disabled={isSyncing}
+            aria-busy={isSyncing}
+            title="Pull latest remote changes with fast-forward only."
+            className="relative group flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-phosphor-600 to-phosphor-500 text-slate-900 font-semibold rounded-lg transition-all hover:shadow-[0_0_30px_rgba(0,245,255,0.4)] disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
+          >
+            {/* Shimmer effect */}
+            <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+
+            {isSyncing ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <RefreshCw className="w-5 h-5" />
+            )}
+            <span>{isSyncing ? busyLabel : actionLabel}</span>
+
+            {/* Glow ring when syncing */}
+            {isSyncing && (
+              <span className="absolute inset-0 rounded-lg animate-pulse ring-2 ring-phosphor-400/50" />
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Quick Stats Bar */}

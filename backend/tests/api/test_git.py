@@ -348,6 +348,29 @@ class TestGitSync:
         assert data["failed"] == 0
         assert data["success"] == 0
 
+    def test_git_fetch_checks_remote_refs_without_pull(self, mocker: MockerFixture) -> None:
+        """Test that remote check fetches refs for managed repos."""
+        from app.api.models.git_models import SyncResult
+
+        mock_get_repos = mocker.patch("app.api.git.get_managed_repos")
+        mock_fetch = mocker.patch("app.utils.git_helpers.fetch_repository")
+        mock_get_repos.return_value = ["/test/repo"]
+        mock_fetch.return_value = SyncResult(
+            path="/test/repo",
+            name="repo",
+            branch="main",
+            status="updated",
+        )
+
+        response = client.post("/api/git/fetch")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] == 1
+        assert data["failed"] == 0
+        assert data["skipped"] == 0
+        mock_fetch.assert_called_once_with("/test/repo")
+
 
 class TestPREndpoints:
     """Tests for /api/tasks/{task_id}/pr endpoints."""

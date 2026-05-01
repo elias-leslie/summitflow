@@ -2,6 +2,7 @@
 
 import clsx from 'clsx'
 import { AlertTriangle, GitBranch, Scissors, Unplug } from 'lucide-react'
+import { RemoteStatusBadge } from '@/components/git/RemoteStatusBadge'
 import type { RepoStatus } from '@/lib/api'
 import {
   getStateColor,
@@ -12,6 +13,7 @@ import {
 
 interface GitRepoCardProps {
   repo: RepoStatus
+  remoteCheckedAt?: Date | null
 }
 
 function WorkspacePill({
@@ -42,7 +44,7 @@ function WorkspacePill({
   )
 }
 
-export function GitRepoCard({ repo }: GitRepoCardProps) {
+export function GitRepoCard({ repo, remoteCheckedAt }: GitRepoCardProps) {
   const stateColor = getStateColor(repo.state)
   const hexColor = getStateHexColor(stateColor)
   const workspaceSummary = repo.workspace_summary
@@ -128,6 +130,13 @@ export function GitRepoCard({ repo }: GitRepoCardProps) {
       <div className="flex items-center gap-2 mb-4">
         <GitBranch className="w-4 h-4 text-slate-500" />
         <span className="mono text-sm text-slate-300">{repo.branch}</span>
+        <RemoteStatusBadge
+          ahead={repo.ahead}
+          behind={repo.behind}
+          branch={repo.branch}
+          checkedAt={remoteCheckedAt}
+          compact
+        />
       </div>
 
       {/* Stats Grid */}

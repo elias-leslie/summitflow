@@ -5,6 +5,7 @@ import type { SyncResult } from '@/lib/api'
 
 interface GitSyncToastProps {
   results: SyncResult[]
+  title?: string
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -14,7 +15,10 @@ const STATUS_COLORS: Record<string, string> = {
   failed: 'text-rose-400',
 }
 
-export function GitSyncToast({ results }: GitSyncToastProps) {
+export function GitSyncToast({
+  results,
+  title = 'Git Operation Complete',
+}: GitSyncToastProps) {
   return (
     <div
       className="fixed top-20 right-6 z-50 animate-slide-up"
@@ -24,7 +28,7 @@ export function GitSyncToast({ results }: GitSyncToastProps) {
       <div className="card p-4 border border-phosphor-500/30 shadow-[0_0_20px_rgba(0,245,255,0.2)]">
         <div className="flex items-center gap-3 mb-2">
           <Zap className="w-5 h-5 text-phosphor-500" />
-          <span className="font-semibold text-slate-100">Sync Complete</span>
+          <span className="font-semibold text-slate-100">{title}</span>
         </div>
         <div className="space-y-1 text-sm">
           {results.map((result) => (
