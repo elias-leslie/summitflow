@@ -487,6 +487,20 @@ def test_pulse_defaults_to_detected_current_project() -> None:
     assert "PULSE:agent-hub|" in result.output
 
 
+def test_pulse_gate_requires_current_project_or_explicit_all() -> None:
+    mock_client = MagicMock()
+
+    with (
+        patch("cli.commands.pulse.STClient", return_value=mock_client),
+        patch("cli.commands.pulse.get_config_optional", return_value=MagicMock(project_id="")),
+    ):
+        result = runner.invoke(app, ["pulse", "--gate"])
+
+    assert result.exit_code == 2
+    assert "Pulse gate requires a current project." in result.output
+    mock_client.get.assert_not_called()
+
+
 def test_pulse_rejects_project_and_all_together() -> None:
     result = runner.invoke(app, ["pulse", "--project", "agent-hub", "--all"])
 
