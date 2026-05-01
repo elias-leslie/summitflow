@@ -332,7 +332,7 @@ def cleanup_checkpoints(
     stale_metadata = _cleanup_stale_checkpoint_metadata(project_id, dry_run) if auto and not force else 0
 
     if not checkpoints:
-        counts = cleanup_safe_git_residue(_iter_target_repos(all_projects), dry_run) if auto else (0, 0, 0, 0)
+        counts = cleanup_safe_git_residue(_iter_target_repos(all_projects), dry_run) if auto else (0, 0, 0, 0, 0, 0)
         if auto and dry_run:
             typer.echo(_DRY_RUN_MSG)
         output_success("No checkpoint residue found")

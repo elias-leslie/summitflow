@@ -108,6 +108,30 @@ def commit_git_revision(
     return result
 
 
+def _cleanup_after_publish(repo: Path, result: dict[str, Any], *, push: bool) -> dict[str, Any]:
+    """Prune safe task refs after successful publication."""
+    if not push or result.get("status") != "SUCCESS" or not result.get("pushed"):
+        return result
+    try:
+        from cli.commands.cleanup_handlers import cleanup_safe_git_residue
+    except Exception:
+        return result
+    try:
+        counts = cleanup_safe_git_residue([repo], dry_run=False)
+    except Exception:
+        return result
+    result["residue_pruned"] = sum(counts)
+    result["residue_pruned_counts"] = {
+        "legacy_registrations": counts[0],
+        "orphan_merged": counts[1],
+        "orphan_equivalent": counts[2],
+        "orphan_closed": counts[3],
+        "task_local": counts[4],
+        "task_remote": counts[5],
+    }
+    return result
+
+
 def commit_repo(
     repo: Path,
     *,
@@ -122,7 +146,7 @@ def commit_repo(
         raise CommitError("refusing to publish with --skip-checks")
     if (repo / ".jj").is_dir():
         try:
-            return commit_current_revision(
+            result = commit_current_revision(
                 repo,
                 message=message,
                 task_id=task_id,
@@ -131,14 +155,16 @@ def commit_repo(
                 bookmark=bookmark,
                 paths=paths,
             )
+            return _cleanup_after_publish(repo, result, push=push)
         except JJError as exc:
             raise CommitError(str(exc)) from exc
     if paths:
         raise CommitError("selective commit requires a jj-colocated repository")
-    return commit_git_revision(
+    result = commit_git_revision(
         repo,
         message=message,
         task_id=task_id,
         push=push,
         skip_checks=skip_checks,
     )
+    return _cleanup_after_publish(repo, result, push=push)

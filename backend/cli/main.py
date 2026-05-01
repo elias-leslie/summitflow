@@ -130,6 +130,7 @@ def commit_command(
     task_id: Annotated[str, typer.Option("--task", help="Task id for bookmark and audit log.")] = "",
     repo: Annotated[str | None, typer.Option("--repo", "-R", help="Repository path. Defaults to current repo.")] = None,
     skip_checks: Annotated[bool, typer.Option("--skip-checks", help="Skip local check gate for local-only recovery commits.")] = False,
+    bookmark: Annotated[str, typer.Option("--bookmark", help="Explicit jj bookmark to publish.")] = "",
     paths: Annotated[
         list[str] | None,
         typer.Option("--path", "--paths", help="Only commit/publish selected path(s) in jj repositories."),
@@ -144,6 +145,7 @@ def commit_command(
             task_id=task_id,
             push=push,
             skip_checks=skip_checks,
+            bookmark=bookmark,
             paths=tuple(paths or ()),
         )
     except CommitError as exc:

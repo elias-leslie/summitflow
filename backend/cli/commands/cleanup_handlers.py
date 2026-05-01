@@ -11,6 +11,7 @@ from app.utils._git_branches import (
     prune_checkout_registrations,
     prune_equivalent_orphan_task_branches,
     prune_prunable_task_branches,
+    prune_safe_task_refs,
 )
 
 from .cleanup_analysis import (
@@ -181,13 +182,16 @@ def build_force_checkpoint_preview(
     return command_key, preview_lines, f"st cleanup checkpoints --force {scope}".strip()
 
 
-def cleanup_safe_git_residue(repos: list[Path], dry_run: bool) -> tuple[int, int, int, int]:
+def cleanup_safe_git_residue(repos: list[Path], dry_run: bool) -> tuple[int, int, int, int, int, int]:
     """Prune stale git admin registrations and provably safe orphan task branches."""
     if dry_run:
-        return (0, 0, 0, 0)
-    pruned_regs = pruned_branches = pruned_equiv = pruned_closed = 0
+        return (0, 0, 0, 0, 0, 0)
+    pruned_regs = pruned_branches = pruned_equiv = pruned_closed = pruned_task_local = pruned_task_remote = 0
     for repo_path in repos:
         pruned_regs += prune_checkout_registrations(repo_path)
         pruned_branches += len(prune_prunable_task_branches(repo_path))
         pruned_equiv += len(prune_equivalent_orphan_task_branches(repo_path))
-    return pruned_regs, pruned_branches, pruned_equiv, pruned_closed
+        local_count, remote_count = prune_safe_task_refs(repo_path)
+        pruned_task_local += local_count
+        pruned_task_remote += remote_count
+    return pruned_regs, pruned_branches, pruned_equiv, pruned_closed, pruned_task_local, pruned_task_remote

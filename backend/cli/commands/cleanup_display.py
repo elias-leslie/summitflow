@@ -133,9 +133,13 @@ def print_git_residue_report(
     pruned_merged: int,
     pruned_equivalent: int,
     pruned_closed: int,
+    pruned_task_local: int = 0,
+    pruned_task_remote: int = 0,
 ) -> None:
     """Print pruned git residue counts."""
     typer.echo(f"  Pruned legacy lane git metadata registrations: {pruned_registrations}")
     typer.echo(f"  Pruned merged orphan task branches: {pruned_merged}")
     typer.echo(f"  Pruned equivalent orphan task branches: {pruned_equivalent}")
     typer.echo(f"  Pruned closed orphan task branches: {pruned_closed}")
+    typer.echo(f"  Pruned safe local task refs: {pruned_task_local}")
+    typer.echo(f"  Pruned safe remote task refs: {pruned_task_remote}")

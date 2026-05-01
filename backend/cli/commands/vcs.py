@@ -10,6 +10,7 @@ from typing import Annotated, Any
 import typer
 
 from app.storage.connection import get_cursor
+from app.utils._git_branches import list_safe_task_refs
 from app.utils._git_core import pull_repository
 
 from ..details import display_path, write_details
@@ -143,11 +144,32 @@ def _cleanup_payload(all_projects: bool) -> dict[str, Any]:
     return build_cleanup_status_payload(all_projects)
 
 
+def _safe_task_ref_rows(repos: list[Path]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for repo in repos:
+        if not repo.exists():
+            continue
+        for ref in list_safe_task_refs(repo):
+            rows.append(
+                {
+                    "repo": repo.name,
+                    "path": str(repo),
+                    "name": ref.name,
+                    "ref": ref.ref,
+                    "kind": ref.kind,
+                    "reason": ref.reason,
+                    "remote": ref.remote,
+                }
+            )
+    return rows
+
+
 def _issues(
     git_rows: list[dict[str, Any]],
     jj_rows: list[dict[str, Any]],
     cleanup_payload: dict[str, Any],
     unmanaged: list[Path],
+    task_refs: list[dict[str, Any]],
 ) -> list[VcsIssue]:
     issues: list[VcsIssue] = []
     for row in git_rows:
@@ -180,6 +202,20 @@ def _issues(
         issues.append(VcsIssue(project_id, "cleanup", detail, f"st -P {project_id} cleanup status"))
     for repo in unmanaged:
         issues.append(VcsIssue(repo.name, "unmanaged", str(repo), "st vcs reconcile"))
+    refs_by_repo: dict[str, list[dict[str, Any]]] = {}
+    for ref in task_refs:
+        refs_by_repo.setdefault(str(ref["repo"]), []).append(ref)
+    for repo, refs in sorted(refs_by_repo.items()):
+        local_count = sum(1 for ref in refs if ref["kind"] == "local")
+        remote_count = sum(1 for ref in refs if ref["kind"] == "remote")
+        issues.append(
+            VcsIssue(
+                repo,
+                "task_refs",
+                f"safe_local:{local_count} safe_remote:{remote_count}",
+                "st vcs reconcile",
+            )
+        )
     return issues
 
 
@@ -189,6 +225,7 @@ def _summary(
     jj_rows: list[dict[str, Any]],
     cleanup_payload: dict[str, Any],
     unmanaged: list[Path],
+    task_refs: list[dict[str, Any]],
 ) -> dict[str, int]:
     cleanup_summary = cleanup_payload["summary"]
     return {
@@ -200,6 +237,7 @@ def _summary(
         "conflicts": sum(1 for row in jj_rows if row.get("conflicted")),
         "cleanup": int(cleanup_summary["repos_needing_cleanup"]),
         "unmanaged": len(unmanaged),
+        "task_refs": len(task_refs),
     }
 
 
@@ -211,6 +249,7 @@ def _details_text(
     jj_rows: list[dict[str, Any]],
     cleanup_payload: dict[str, Any],
     unmanaged: list[Path],
+    task_refs: list[dict[str, Any]],
     issues: list[VcsIssue],
 ) -> str:
     payload = {
@@ -220,6 +259,7 @@ def _details_text(
         "jj": jj_rows,
         "cleanup": cleanup_payload,
         "unmanaged": [str(repo) for repo in unmanaged],
+        "task_refs": task_refs,
         "issues": [issue.__dict__ for issue in issues],
     }
     return json.dumps(payload, indent=2, sort_keys=True)
@@ -231,7 +271,7 @@ def _print_compact(label: str, summary: dict[str, int], issues: list[VcsIssue], 
         f"{label}:{status} repos={summary['repos']} dirty={summary['dirty']} "
         f"ahead={summary['ahead']} behind={summary['behind']} unpublished={summary['unpublished']} "
         f"conflicts={summary['conflicts']} cleanup={summary['cleanup']} unmanaged={summary['unmanaged']} "
-        f"blockers={len(issues)} details:{display_path(Path.cwd(), details)}"
+        f"task_refs={summary['task_refs']} blockers={len(issues)} details:{display_path(Path.cwd(), details)}"
     )
     for issue in issues[:8]:
         print(f"BLOCKER:{issue.repo}:{issue.kind}:{issue.detail}|next:{issue.next_action}")
@@ -246,8 +286,9 @@ def _run_doctor(*, all_projects: bool, fetch: bool) -> tuple[dict[str, Any], lis
     jj_rows = _jj_rows(repos)
     cleanup = _cleanup_payload(all_projects)
     unmanaged = _discover_unmanaged_repos(repos) if all_projects else []
-    summary = _summary(repos, git_rows, jj_rows, cleanup, unmanaged)
-    issues = _issues(git_rows, jj_rows, cleanup, unmanaged)
+    task_refs = _safe_task_ref_rows(repos)
+    summary = _summary(repos, git_rows, jj_rows, cleanup, unmanaged, task_refs)
+    issues = _issues(git_rows, jj_rows, cleanup, unmanaged, task_refs)
     details = write_details(
         Path.cwd(),
         "vcs-doctor",
@@ -258,6 +299,7 @@ def _run_doctor(*, all_projects: bool, fetch: bool) -> tuple[dict[str, Any], lis
             jj_rows=jj_rows,
             cleanup_payload=cleanup,
             unmanaged=unmanaged,
+            task_refs=task_refs,
             issues=issues,
         ),
     )

@@ -60,6 +60,7 @@ def test_doctor_prints_one_compact_ok_line(tmp_path: Path) -> None:
         patch.object(vcs, "_jj_rows", return_value=[]),
         patch.object(vcs, "_cleanup_payload", return_value=_cleanup_payload(False)),
         patch.object(vcs, "_discover_unmanaged_repos", return_value=[]),
+        patch.object(vcs, "_safe_task_ref_rows", return_value=[]),
     ):
         result = runner.invoke(vcs.app, ["doctor"], obj=OutputContext(compact=True))
 
@@ -90,6 +91,11 @@ def test_doctor_exits_two_with_exact_blockers(tmp_path: Path) -> None:
         patch.object(vcs, "_jj_rows", return_value=[]),
         patch.object(vcs, "_cleanup_payload", return_value=_cleanup_payload(True)),
         patch.object(vcs, "_discover_unmanaged_repos", return_value=[tmp_path / "extra"]),
+        patch.object(
+            vcs,
+            "_safe_task_ref_rows",
+            return_value=[{"repo": "repo", "kind": "local", "name": "task/task-1"}],
+        ),
     ):
         result = runner.invoke(vcs.app, ["doctor"], obj=OutputContext(compact=True))
 
@@ -97,6 +103,7 @@ def test_doctor_exits_two_with_exact_blockers(tmp_path: Path) -> None:
     assert "VCS:ISSUES" in result.stdout
     assert "BLOCKER:repo:dirty:uncommitted:1" in result.stdout
     assert "BLOCKER:repo:cleanup:" in result.stdout
+    assert "BLOCKER:repo:task_refs:safe_local:1 safe_remote:0" in result.stdout
     assert "BLOCKER:extra:unmanaged:" in result.stdout
 
 
@@ -110,7 +117,7 @@ def test_reconcile_runs_safe_steps_then_reports_doctor_result(tmp_path: Path) ->
         patch.object(vcs, "_register_unmanaged", return_value=[{"repo": "extra", "status": "registered"}]),
         patch.object(vcs, "pull_repository", return_value=sync_result) as mock_pull,
         patch.object(vcs, "_cleanup_stale_checkpoint_metadata", return_value=1),
-        patch.object(vcs, "cleanup_safe_git_residue", return_value=(1, 2, 3, 4)),
+        patch.object(vcs, "cleanup_safe_git_residue", return_value=(1, 2, 3, 4, 5, 6)),
         patch.object(
             vcs,
             "_run_doctor",
@@ -125,6 +132,7 @@ def test_reconcile_runs_safe_steps_then_reports_doctor_result(tmp_path: Path) ->
                         "conflicts": 0,
                         "cleanup": 0,
                         "unmanaged": 0,
+                        "task_refs": 0,
                     }
                 },
                 [],

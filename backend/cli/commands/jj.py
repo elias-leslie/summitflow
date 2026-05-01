@@ -26,6 +26,7 @@ from ..lib.jj import (
 from ..output import output_error, output_json
 from ..output_context import OutputContext
 from ._git_helpers import _get_managed_repos
+from .cleanup_handlers import cleanup_safe_git_residue
 
 HELP_TEXT = """Jujutsu workflow through st.
 
@@ -271,6 +272,12 @@ def push(
                 remote=remote,
                 dry_run=dry_run,
             )
+            if result.get("pushed"):
+                try:
+                    counts = cleanup_safe_git_residue([path], dry_run=False)
+                except Exception:
+                    counts = (0, 0, 0, 0, 0, 0)
+                result["residue_pruned"] = sum(counts)
     except JJError as exc:
         output_error(str(exc))
         raise typer.Exit(1) from None

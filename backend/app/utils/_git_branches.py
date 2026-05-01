@@ -206,9 +206,11 @@ from ._git_branch_cleanup import (  # noqa: E402
     list_closed_orphan_task_branches,
     list_equivalent_orphan_task_branches,
     list_prunable_task_branches,
+    list_safe_task_refs,
     prune_closed_orphan_task_branches,
     prune_equivalent_orphan_task_branches,
     prune_prunable_task_branches,
+    prune_safe_task_refs,
 )
 
 __all__ = [
@@ -224,8 +226,10 @@ __all__ = [
     "list_closed_orphan_task_branches",
     "list_equivalent_orphan_task_branches",
     "list_prunable_task_branches",
+    "list_safe_task_refs",
     "prune_checkout_registrations",
     "prune_closed_orphan_task_branches",
     "prune_equivalent_orphan_task_branches",
     "prune_prunable_task_branches",
+    "prune_safe_task_refs",
 ]

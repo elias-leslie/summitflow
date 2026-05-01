@@ -125,7 +125,7 @@ async def execute_project_publish(project_root: Path) -> dict[str, Any]:
     command_prefix, env = _project_publish_env()
     try:
         proc = await asyncio.create_subprocess_exec(
-            *command_prefix, "--push", "--message", "publish project work",
+            *command_prefix, "--push", "--bookmark", "main", "--message", "publish project work",
             cwd=project_root, env=env,
             stdout=aio_subprocess.PIPE, stderr=aio_subprocess.PIPE,
         )
