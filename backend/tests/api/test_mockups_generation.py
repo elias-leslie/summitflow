@@ -124,3 +124,43 @@ class TestMockupsGeneration:
             mock_create_mockup.call_args.kwargs["generator"]
             == "agent:ui-mockup-designer"
         )
+
+    @patch("app.services.mockup_generator.revisions.mockups_storage.create_mockup")
+    @patch("app.services.mockup_generator.revisions.mockups_storage.get_mockup")
+    @patch("app.services.mockup_generator.revisions.get_sync_client")
+    def test_rerun_mockup_empty_revision_content_returns_clear_failure(
+        self,
+        mock_get_client: MagicMock,
+        mock_get_mockup: MagicMock,
+        mock_create_mockup: MagicMock,
+        client: Any,
+    ) -> None:
+        mock_get_mockup.return_value = {
+            "id": 7,
+            "project_id": "agent-hub",
+            "mockup_id": "mk-parent",
+            "name": "Settings page",
+            "description": "Original",
+            "mockup_type": "page",
+            "content": "<html><body>Original</body></html>",
+            "task_id": None,
+            "page_path": "/settings",
+            "version": 1,
+        }
+        mock_client = MagicMock()
+        mock_client.complete.return_value = SimpleNamespace(
+            content='{"name":"Settings page revision","change_summary":"Tighter spacing"}',
+            model="codex/gpt-5.5",
+            provider="codex",
+            session_id="sess-123",
+        )
+        mock_get_client.return_value = mock_client
+
+        response = client.post(
+            "/api/projects/agent-hub/mockups/mk-parent/rerun",
+            json={"notes": "Tighten spacing"},
+        )
+
+        assert response.status_code == 502
+        assert response.json()["message"].startswith("Mockup revision did not produce revised content")
+        mock_create_mockup.assert_not_called()

@@ -13,12 +13,25 @@ from ..prompts import build_mockup_image_prompt
 logger = get_logger(__name__)
 
 
+class MockupImageGenerationError(RuntimeError):
+    """Image provider failed while generating a visual mockup."""
+
+
+def _failure_message(exc: Exception) -> str:
+    message = str(exc).strip() or type(exc).__name__
+    if "rate limit" in message.lower():
+        return f"Image provider rate limit: {message}"
+    return f"Image generation failed: {message}"
+
+
 def generate_mockup_image(
     project_id: str,
     screenshot_path: Path,
     recommendations: str,
     output_path: Path,
     page_url: str,
+    *,
+    raise_on_failure: bool = False,
 ) -> str | None:
     """Generate a mockup image showing the improved design.
 
@@ -61,8 +74,11 @@ def generate_mockup_image(
         return str(output_path)
 
     except Exception as e:
-        logger.error("mockup_image_generation_failed", error=str(e))
+        message = _failure_message(e)
+        if raise_on_failure:
+            raise MockupImageGenerationError(message) from e
+        logger.warning("mockup_image_generation_failed", error=message)
         return None
 
 
-__all__ = ["generate_mockup_image"]
+__all__ = ["MockupImageGenerationError", "generate_mockup_image"]

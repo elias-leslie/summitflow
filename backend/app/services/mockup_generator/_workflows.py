@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from ...logging_config import get_logger
 from ...storage import mockups as mockups_storage
 from .analysis import (
+    MockupImageGenerationError,
     analyze_screenshot_with_vision,
     capture_page_screenshot,
     generate_mockup_image,
@@ -50,10 +51,10 @@ def _try_generate_mockup(
     mockup_image_path: Path,
     recommendations: str | None,
     page_url: str,
-) -> Path:
+) -> tuple[Path, str | None]:
     """Attempt to generate a mockup image; returns the resulting path."""
     if not recommendations:
-        return mockup_image_path
+        return mockup_image_path, None
     try:
         result = generate_mockup_image(
             project_id=project_id,
@@ -61,18 +62,21 @@ def _try_generate_mockup(
             recommendations=recommendations,
             output_path=mockup_image_path,
             page_url=page_url,
+            raise_on_failure=True,
         )
         if result:
-            return Path(result)
-    except Exception as e:
+            return Path(result), None
+    except MockupImageGenerationError as e:
         logger.warning("mockup_image_generation_failed", error=str(e))
-    return mockup_image_path
+        return mockup_image_path, str(e)
+    return mockup_image_path, "Image generation returned no mockup image; screenshot saved instead."
 
 
 def _store_mockup_and_build_result(
     project_id: str, page_url: str, page_path: str,
     screenshot_path: Path, mockup_image_path: Path,
     recommendations: str | None, issues_count: int, generation_time_ms: int,
+    image_generation_error: str | None = None,
 ) -> DesignAnalysisResult:
     """Persist the mockup record and return the final result."""
     primary_file = str(mockup_image_path) if mockup_image_path.exists() else str(screenshot_path)
@@ -103,6 +107,7 @@ def _store_mockup_and_build_result(
         mockup_image_path=(str(mockup_image_path) if mockup_image_path.exists() else None),
         recommendations=recommendations,
         issues_found=issues_count,
+        error=image_generation_error,
         generation_time_ms=generation_time_ms,
     )
 
@@ -146,10 +151,10 @@ async def run_analyze_page_design(
             generation_time_ms=_elapsed_ms(start_time),
         )
 
-    mockup_image_path = _try_generate_mockup(
+    mockup_image_path, image_generation_error = _try_generate_mockup(
         project_id, screenshot_path, screenshot_dir / "mockup.png", recommendations, page_url
     )
     return _store_mockup_and_build_result(
         project_id, page_url, page_path, screenshot_path,
-        mockup_image_path, recommendations, issues_count, _elapsed_ms(start_time),
+        mockup_image_path, recommendations, issues_count, _elapsed_ms(start_time), image_generation_error,
     )

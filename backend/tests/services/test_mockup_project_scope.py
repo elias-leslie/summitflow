@@ -35,6 +35,41 @@ class TestMockupProjectScope:
 
         assert mock_client.generate_image.call_args.kwargs["project_id"] == "agent-hub"
 
+    @patch("app.services.mockup_generator.analysis.mockup_image.get_sync_client")
+    @patch("app.services.mockup_generator.analysis.mockup_image.build_mockup_image_prompt")
+    def test_generate_mockup_image_rate_limit_can_surface_degraded_reason(
+        self,
+        mock_prompt: MagicMock,
+        mock_get_client: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        from app.services.mockup_generator.analysis.mockup_image import (
+            MockupImageGenerationError,
+            generate_mockup_image,
+        )
+
+        screenshot_path = tmp_path / "screenshot.png"
+        screenshot_path.write_bytes(b"png")
+        output_path = tmp_path / "out" / "mockup.png"
+        mock_prompt.return_value = "prompt"
+        mock_client = MagicMock()
+        mock_client.generate_image.side_effect = RuntimeError("Rate limit exceeded for gemini. Wait 60s")
+        mock_get_client.return_value = mock_client
+
+        try:
+            generate_mockup_image(
+                "agent-hub",
+                screenshot_path,
+                "recommendations",
+                output_path,
+                "/home",
+                raise_on_failure=True,
+            )
+        except MockupImageGenerationError as exc:
+            assert "Image provider rate limit" in str(exc)
+        else:
+            raise AssertionError("expected rate-limit degradation error")
+
     @patch("app.services.mockup_generator.analysis.vision.get_sync_client")
     @patch("app.services.mockup_generator.analysis.vision.build_design_analysis_prompt")
     def test_analyze_screenshot_with_vision_uses_passed_project_id(

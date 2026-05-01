@@ -30,6 +30,10 @@ class MockupRevisionResult:
     generation_time_ms: int
 
 
+class MockupRevisionContentError(RuntimeError):
+    """Agent response lacked usable revised mockup content."""
+
+
 def _extract_json(content: str) -> dict[str, Any]:
     """Extract first JSON object from an Agent Hub response."""
     try:
@@ -95,7 +99,7 @@ def _coerce_revision_payload(parsed: dict[str, Any], fallback: dict[str, Any]) -
     content = str(parsed.get("content") or "").strip()
     change_summary = str(parsed.get("change_summary") or description).strip()
     if not content:
-        raise RuntimeError("Agent response did not include revised mockup content")
+        raise MockupRevisionContentError("Agent response did not include revised mockup content")
     return {
         "name": name[:240],
         "description": description,
