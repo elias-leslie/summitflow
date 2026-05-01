@@ -153,6 +153,60 @@ def test_check_changed_only_skips_unrelated_tools() -> None:
     run_tool.assert_not_called()
 
 
+def test_check_changed_only_skips_pytest_for_app_only_python_changes() -> None:
+    configs = {
+        "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
+    }
+    with (
+        patch("cli.commands.check._tool_configs", return_value=configs),
+        patch("cli.commands.check._changed_files", return_value=["backend/app/api/tasks.py"]),
+        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
+    ):
+        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
+
+    assert result.exit_code == 0
+    assert "TEST:SKIP:pytest:no_relevant_changed_paths" in result.output
+    run_tool.assert_not_called()
+
+
+def test_check_changed_only_targets_changed_pytest_files() -> None:
+    configs = {
+        "pytest": {
+            "label": "TEST",
+            "binary": "pytest",
+            "working_dir": "test",
+            "pass_path": False,
+        },
+    }
+    with (
+        patch("cli.commands.check._repo_root", return_value=Path("/repo")),
+        patch("cli.commands.check.Path.exists", return_value=True),
+        patch("cli.commands.check.Path.is_file", return_value=True),
+        patch("cli.commands.check._tool_configs", return_value=configs),
+        patch("cli.commands.check._changed_files", return_value=["backend/tests/cli/test_check.py"]),
+        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
+    ):
+        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
+
+    assert result.exit_code == 0
+    run_tool.assert_called_once_with("pytest", configs["pytest"], ["tests/cli/test_check.py"])
+
+
+def test_check_changed_only_runs_broad_pytest_for_config_changes() -> None:
+    configs = {
+        "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
+    }
+    with (
+        patch("cli.commands.check._tool_configs", return_value=configs),
+        patch("cli.commands.check._changed_files", return_value=["pyproject.toml"]),
+        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
+    ):
+        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
+
+    assert result.exit_code == 0
+    run_tool.assert_called_once_with("pytest", configs["pytest"], [])
+
+
 def test_check_normalizes_repo_relative_explicit_paths(tmp_path: Path) -> None:
     (tmp_path / "frontend" / "src").mkdir(parents=True)
     (tmp_path / "frontend" / "src" / "app.ts").write_text("", encoding="utf-8")
