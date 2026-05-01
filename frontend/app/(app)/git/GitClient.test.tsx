@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { GitClient } from './GitClient'
@@ -19,6 +20,25 @@ vi.mock('@/components/git/ProjectRow', () => ({
     <div data-testid="project-row">{repo.name}</div>
   ),
 }))
+
+vi.mock('@/lib/api', () => ({
+  checkGitRemotes: vi.fn(),
+}))
+
+function renderClient() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  })
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <GitClient />
+    </QueryClientProvider>,
+  )
+}
 
 describe('GitClient', () => {
   it('derives the header pills from repo workspace summaries', () => {
@@ -73,7 +93,7 @@ describe('GitClient', () => {
       isError: false,
     })
 
-    render(<GitClient />)
+    renderClient()
 
     expect(screen.getByText('10')).toBeInTheDocument()
     expect(screen.getByText('15')).toBeInTheDocument()

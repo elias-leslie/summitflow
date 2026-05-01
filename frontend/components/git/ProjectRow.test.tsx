@@ -33,7 +33,7 @@ function renderRow() {
           name: 'repo-folder',
           project_id: 'project-alpha',
           branch: 'main',
-          uncommitted: 0,
+          uncommitted: 1,
           ahead: 0,
           behind: 0,
           state: 'clean',
@@ -70,7 +70,7 @@ function renderConfigRow() {
           name: '.claude',
           project_id: null,
           branch: 'main',
-          uncommitted: 0,
+          uncommitted: 1,
           ahead: 0,
           behind: 0,
           state: 'clean',
@@ -115,8 +115,7 @@ describe('ProjectRow', () => {
       'project-alpha',
     )
 
-    // Click publish button (exact text match to avoid matching the row header)
-    fireEvent.click(screen.getByRole('button', { name: 'Publish' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Commit + Push' }))
 
     await waitFor(() => {
       expect(apiMocks.publishProjectChanges).toHaveBeenCalledWith(
@@ -128,6 +127,8 @@ describe('ProjectRow', () => {
   it('offers publish for config repos', () => {
     renderConfigRow()
 
-    expect(screen.getByRole('button', { name: 'Publish' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Commit + Push' }),
+    ).toBeInTheDocument()
   })
 })

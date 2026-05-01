@@ -6,6 +6,7 @@ import json
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -16,6 +17,7 @@ import typer
 from app.services.graphify_tools import (
     GraphifyCommandResult,
     explain_graph,
+    graphify_code_refresh_needed,
     graphify_status,
     path_graph,
     query_graph,
@@ -33,6 +35,8 @@ _GITNEXUS_PACKAGE = "gitnexus"
 _GITNEXUS_NPX_SPEC = "gitnexus@latest"
 _FALLOW_PACKAGE = "fallow"
 _FALLOW_MODES = {"audit", "changed", "health", "plugins", "flags", "dead-code", "dupes"}
+_GRAPH_REFRESH_PROGRESS_DELAY_SECONDS = 1.5
+_DOCTOR_BLOCKING_DIAGNOSTICS = {"graph_missing", "graph_stale", "graph_unreadable", "detect_missing"}
 
 
 def _project_payload(project_id: str) -> dict[str, Any]:
@@ -61,8 +65,67 @@ def _root_for_project(project_id: str) -> Path:
     return Path(str(root_path)).expanduser().resolve()
 
 
-def _status_for_project(project_id: str) -> dict[str, Any]:
-    return graphify_status(project_id, _root_for_project(project_id))
+def _emit_status(message: str) -> None:
+    typer.echo(message, err=True)
+
+
+def _start_delayed_status_timer(message: str) -> threading.Timer:
+    timer = threading.Timer(_GRAPH_REFRESH_PROGRESS_DELAY_SECONDS, _emit_status, args=(message,))
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
+def _status_for_project(
+    project_id: str,
+    *,
+    auto_refresh: bool = True,
+    action: str = "status",
+    create_missing: bool = True,
+) -> dict[str, Any]:
+    root = _root_for_project(project_id)
+    status = graphify_status(project_id, root)
+    if not create_missing and not status.get("graph_exists"):
+        return status
+    if not auto_refresh or not graphify_code_refresh_needed(status):
+        return status
+
+    timer = _start_delayed_status_timer(f"st graph: refreshing Graphify code graph before {action}.")
+    try:
+        refresh_graph(root)
+    except (FileNotFoundError, RuntimeError, subprocess.SubprocessError, OSError) as exc:
+        timer.cancel()
+        if not status.get("graph_exists") or "graph_unreadable" in status.get("diagnostics", []):
+            raise
+        _emit_status(f"st graph: auto-refresh failed before {action}; using existing graph. reason={exc}")
+        return status
+    finally:
+        timer.cancel()
+
+    _emit_status(f"st graph: refreshed Graphify code graph before {action}.")
+    return graphify_status(project_id, root)
+
+
+def _fresh_root_for_project(project_id: str, *, action: str) -> Path:
+    root = _root_for_project(project_id)
+    status = graphify_status(project_id, root)
+    if not graphify_code_refresh_needed(status):
+        return root
+
+    timer = _start_delayed_status_timer(f"st graph: refreshing Graphify code graph before {action}.")
+    try:
+        refresh_graph(root)
+    except (FileNotFoundError, RuntimeError, subprocess.SubprocessError, OSError) as exc:
+        timer.cancel()
+        if not status.get("graph_exists") or "graph_unreadable" in status.get("diagnostics", []):
+            raise
+        _emit_status(f"st graph: auto-refresh failed before {action}; using existing graph. reason={exc}")
+        return root
+    finally:
+        timer.cancel()
+
+    _emit_status(f"st graph: refreshed Graphify code graph before {action}.")
+    return root
 
 
 def _command_payload(result: GraphifyCommandResult) -> dict[str, Any]:
@@ -70,42 +133,74 @@ def _command_payload(result: GraphifyCommandResult) -> dict[str, Any]:
 
 
 def _issue_count(status: dict[str, Any]) -> int:
-    return len(status.get("diagnostics", []))
+    return sum(1 for item in status.get("diagnostics", []) if item in _DOCTOR_BLOCKING_DIAGNOSTICS)
+
+
+def _warning_count(status: dict[str, Any]) -> int:
+    return sum(1 for item in status.get("diagnostics", []) if item not in _DOCTOR_BLOCKING_DIAGNOSTICS)
 
 
 @app.command("status")
 def status(
     project: Annotated[str | None, typer.Option("--project", "-p", help="Project id. Defaults to current project.")] = None,
     all_projects: Annotated[bool, typer.Option("--all", help="Show every registered project.")] = False,
+    refresh: Annotated[bool, typer.Option("--refresh/--no-refresh", help="Refresh stale code graphs before reporting.")] = True,
 ) -> None:
     """Show Graphify status and diagnostics."""
     if all_projects:
-        output_json([_status_for_project(str(item["id"])) for item in _all_projects() if item.get("id")])
+        output_json([
+            _status_for_project(str(item["id"]), auto_refresh=refresh, create_missing=False)
+            for item in _all_projects()
+            if item.get("id")
+        ])
         return
-    output_json(_status_for_project(_project_id(project)))
+    output_json(_status_for_project(_project_id(project), auto_refresh=refresh))
 
 
 @app.command("doctor")
 def doctor(
     project: Annotated[str | None, typer.Option("--project", "-p", help="Project id. Defaults to every project.")] = None,
+    refresh: Annotated[bool, typer.Option("--refresh/--no-refresh", help="Refresh stale code graphs before diagnosis.")] = True,
 ) -> None:
     """Report Graphify issues that affect agent usefulness."""
     project_ids = [_project_id(project)] if project else [str(item["id"]) for item in _all_projects() if item.get("id")]
-    statuses = [_status_for_project(project_id) for project_id in project_ids]
+    statuses = [
+        _status_for_project(project_id, auto_refresh=refresh, action="doctor", create_missing=bool(project))
+        for project_id in project_ids
+    ]
     issues = [
         {
             "project_id": item["project_id"],
-            "diagnostics": item["diagnostics"],
+            "diagnostics": [
+                diagnostic
+                for diagnostic in item["diagnostics"]
+                if diagnostic in _DOCTOR_BLOCKING_DIAGNOSTICS
+            ],
             "changed_files_since_graph": item["changed_files_since_graph"],
         }
         for item in statuses
         if _issue_count(item)
     ]
+    warnings = [
+        {
+            "project_id": item["project_id"],
+            "diagnostics": [
+                diagnostic
+                for diagnostic in item["diagnostics"]
+                if diagnostic not in _DOCTOR_BLOCKING_DIAGNOSTICS
+            ],
+            "changed_files_since_graph": item["changed_files_since_graph"],
+        }
+        for item in statuses
+        if _warning_count(item)
+    ]
     payload = {
         "status": "ISSUES" if issues else "OK",
         "projects": len(statuses),
         "issues": issues,
+        "warnings": warnings,
         "issue_count": sum(_issue_count(item) for item in statuses),
+        "warning_count": sum(_warning_count(item) for item in statuses),
     }
     output_json(payload)
     if issues:
@@ -130,7 +225,7 @@ def query(
     dfs: Annotated[bool, typer.Option("--dfs", help="Use depth-first traversal.")] = False,
 ) -> None:
     """Run Graphify query against a project graph."""
-    result = query_graph(_root_for_project(_project_id(project)), question, budget=budget, dfs=dfs)
+    result = query_graph(_fresh_root_for_project(_project_id(project), action="query"), question, budget=budget, dfs=dfs)
     output_json(_command_payload(result))
 
 
@@ -141,7 +236,7 @@ def path(
     project: Annotated[str | None, typer.Option("--project", "-p", help="Project id. Defaults to current project.")] = None,
 ) -> None:
     """Find shortest Graphify path between two nodes."""
-    result = path_graph(_root_for_project(_project_id(project)), source, target)
+    result = path_graph(_fresh_root_for_project(_project_id(project), action="path"), source, target)
     output_json(_command_payload(result))
 
 
@@ -151,7 +246,7 @@ def explain(
     project: Annotated[str | None, typer.Option("--project", "-p", help="Project id. Defaults to current project.")] = None,
 ) -> None:
     """Explain one graph node and its neighbors."""
-    result = explain_graph(_root_for_project(_project_id(project)), node)
+    result = explain_graph(_fresh_root_for_project(_project_id(project), action="explain"), node)
     output_json(_command_payload(result))
 
 
@@ -488,7 +583,7 @@ def profile(
 ) -> None:
     """Profile st search vs Graphify command shapes for agent work."""
     project_id = _project_id(project)
-    root = _root_for_project(project_id)
+    root = _fresh_root_for_project(project_id, action="profile")
     st_bin = shutil.which("st") or sys.argv[0]
     runs = [
         _run_measured([st_bin, "-P", project_id, "search", question], cwd=root),

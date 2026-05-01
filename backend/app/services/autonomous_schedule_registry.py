@@ -78,6 +78,14 @@ SCHEDULE_DEFINITIONS: tuple[AutonomousScheduleDefinition, ...] = (
         scope="system",
     ),
     AutonomousScheduleDefinition(
+        schedule_id="refresh_graphify_graphs",
+        config_key="refresh_graphify_graphs_enabled",
+        label="Graphify graph refresh",
+        description="Refreshes stale existing Graphify code graphs for topology retrieval.",
+        cron="25 */2 * * *",
+        scope="system",
+    ),
+    AutonomousScheduleDefinition(
         schedule_id="scheduled_backups",
         config_key="scheduled_backups_enabled",
         label="Scheduled backups",

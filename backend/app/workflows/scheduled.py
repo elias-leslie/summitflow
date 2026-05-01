@@ -1,6 +1,6 @@
 """Scheduled (cron) workflows for SummitFlow.
 
-12 active cron workflows on Hatchet schedule.
+14 cron workflows on Hatchet schedule; 13 enabled by default.
 Most use ConcurrencyExpression with CANCEL_IN_PROGRESS; explorer maintenance shares
 CANCEL_NEWEST concurrency so scan/index jobs do not overlap.
 
@@ -156,6 +156,24 @@ async def refresh_precision_indexes_wf(input: EmptyInput, ctx: Context) -> dict[
         dispatch=None,
         isolate_process=True,
     )
+
+
+@hatchet.task(
+    name="summitflow-refresh-graphify-graphs",
+    input_validator=EmptyInput,
+    execution_timeout="1200s",
+    retries=3,
+    backoff_factor=2.0,
+    on_crons=["25 */2 * * *"],
+    concurrency=_explorer_schedule_concurrency(),
+)
+async def refresh_graphify_graphs_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from ..tasks.graphify_tasks import refresh_existing_graphify_graphs
+
+    if not _system_schedule_enabled("refresh_graphify_graphs"):
+        return _disabled_schedule_result("refresh_graphify_graphs")
+
+    return await asyncio.to_thread(refresh_existing_graphify_graphs)
 
 
 @hatchet.task(

@@ -8,6 +8,7 @@ const navigationMocks = vi.hoisted(() => ({
 }))
 
 const apiMocks = vi.hoisted(() => ({
+  checkProjectGitRemote: vi.fn(),
   fetchProjectGitStatus: vi.fn(),
   pullRepository: vi.fn(),
 }))
@@ -17,6 +18,7 @@ vi.mock('next/navigation', () => ({
 }))
 
 vi.mock('@/lib/api', () => ({
+  checkProjectGitRemote: apiMocks.checkProjectGitRemote,
   fetchProjectGitStatus: apiMocks.fetchProjectGitStatus,
   pullRepository: apiMocks.pullRepository,
 }))
@@ -105,7 +107,7 @@ describe('ProjectGitClient', () => {
       'project-alpha',
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /pull latest/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sync/i }))
 
     await waitFor(() => {
       expect(apiMocks.pullRepository).toHaveBeenCalledWith('project-alpha')

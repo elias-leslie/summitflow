@@ -21,6 +21,7 @@ from app.workflows.scheduled import (
     health_monitor_wf,
     pending_drain_wf,
     prod_smoke_test_wf,
+    refresh_graphify_graphs_wf,
     refresh_precision_indexes_wf,
     reset_claims_wf,
     restore_tests_wf,
@@ -59,11 +60,12 @@ def main() -> None:
             review_wf,
             merge_cleanup_wf,
             escalation_wf,
-            # Scheduled (13)
+            # Scheduled (14)
             work_pickup_wf,
             reset_claims_wf,
             scan_projects_wf,
             refresh_precision_indexes_wf,
+            refresh_graphify_graphs_wf,
             scheduled_backups_wf,
             stale_cleanup_wf,
             task_generation_wf,

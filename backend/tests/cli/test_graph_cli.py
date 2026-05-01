@@ -59,6 +59,10 @@ def _result(command: str, output: str = "graph output") -> GraphifyCommandResult
     )
 
 
+def _json_line(output: str) -> dict[str, Any]:
+    return json.loads(next(line for line in output.splitlines() if line.startswith("{")))
+
+
 @pytest.fixture
 def graph_cli_project(monkeypatch: pytest.MonkeyPatch) -> Path:
     root = Path("/repo")
@@ -98,13 +102,68 @@ def test_doctor_exits_nonzero_when_graph_has_agent_issues(
         lambda project_id, root: _status(project_id, ["graph_stale", "html_uses_external_cdn"]),
     )
 
-    result = runner.invoke(graph.app, ["doctor"])
+    result = runner.invoke(graph.app, ["doctor", "--no-refresh"])
 
     assert result.exit_code == 2
     payload = json.loads(result.output)
     assert payload["status"] == "ISSUES"
-    assert payload["issue_count"] == 2
-    assert payload["issues"][0]["diagnostics"] == ["graph_stale", "html_uses_external_cdn"]
+    assert payload["issue_count"] == 1
+    assert payload["warning_count"] == 1
+    assert payload["issues"][0]["diagnostics"] == ["graph_stale"]
+    assert payload["warnings"][0]["diagnostics"] == ["html_uses_external_cdn"]
+
+
+def test_status_auto_refreshes_stale_code_graph(
+    graph_cli_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[Path] = []
+
+    def fake_status(project_id: str, root: Path) -> dict[str, Any]:
+        if calls:
+            return _status(project_id)
+        return _status(project_id, ["graph_stale"])
+
+    def fake_refresh(root: Path) -> GraphifyCommandResult:
+        calls.append(root)
+        return _result("update")
+
+    monkeypatch.setattr(graph, "graphify_status", fake_status)
+    monkeypatch.setattr(graph, "refresh_graph", fake_refresh)
+
+    result = runner.invoke(graph.app, ["status", "--project", "summitflow"])
+
+    assert result.exit_code == 0
+    assert "refreshed Graphify code graph before status" in result.output
+    assert _json_line(result.output)["diagnostics"] == []
+    assert calls == [graph_cli_project]
+
+
+def test_query_auto_refresh_failure_uses_existing_graph(
+    graph_cli_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr(graph, "graphify_status", lambda project_id, root: _status(project_id, ["graph_stale"]))
+
+    def fake_refresh(root: Path) -> GraphifyCommandResult:
+        calls.append("refresh")
+        raise RuntimeError("refresh failed")
+
+    def fake_query(root: Path, question: str, *, budget: int, dfs: bool) -> GraphifyCommandResult:
+        calls.append("query")
+        return _result("query", "stale answer")
+
+    monkeypatch.setattr(graph, "refresh_graph", fake_refresh)
+    monkeypatch.setattr(graph, "query_graph", fake_query)
+
+    result = runner.invoke(graph.app, ["query", "central modules?", "--project", "summitflow"])
+
+    assert result.exit_code == 0
+    assert "auto-refresh failed before query; using existing graph" in result.output
+    assert _json_line(result.output)["output"] == "stale answer"
+    assert calls == ["refresh", "query"]
 
 
 def test_query_path_and_explain_output_measured_payloads(
@@ -128,6 +187,7 @@ def test_query_path_and_explain_output_measured_payloads(
     monkeypatch.setattr(graph, "query_graph", fake_query)
     monkeypatch.setattr(graph, "path_graph", fake_path)
     monkeypatch.setattr(graph, "explain_graph", fake_explain)
+    monkeypatch.setattr(graph, "graphify_status", lambda project_id, root: _status(project_id))
 
     query_result = runner.invoke(
         graph.app,
@@ -180,6 +240,7 @@ def test_profile_compares_search_graph_and_agent_tool_shapes(
     monkeypatch.setattr(graph.shutil, "which", fake_which)
     monkeypatch.setattr(graph, "_run_measured", fake_run_measured)
     monkeypatch.setattr(graph, "query_graph", lambda root, question, budget: _result("query"))
+    monkeypatch.setattr(graph, "graphify_status", lambda project_id, root: _status(project_id))
 
     result = runner.invoke(
         graph.app,

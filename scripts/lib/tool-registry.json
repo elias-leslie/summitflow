@@ -24,6 +24,16 @@
       "verify": ["st check --help"]
     },
     {
+      "id": "graph",
+      "canonical": "st graph",
+      "replaces": ["graphify", "fallow"],
+      "summary": "Graphify topology, auto-refresh diagnostics, and compact Fallow JS/TS audits.",
+      "safety": "read-mostly",
+      "commands": ["status", "doctor", "refresh", "query", "path", "explain", "fallow", "profile"],
+      "examples": ["st graph doctor --project summitflow", "st graph query \"auth topology\" --project summitflow", "st graph fallow audit --project summitflow"],
+      "verify": ["st graph doctor --project summitflow"]
+    },
+    {
       "id": "task_workflow",
       "canonical": "st pulse / st claim / st context / st done",
       "replaces": ["manual task branch setup", "st tasks claim"],

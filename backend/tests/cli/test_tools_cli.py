@@ -62,6 +62,7 @@ def test_tools_default_shows_operator_catalog_without_internal_secret() -> None:
     assert "TOOLS_CATALOG[" in result.output
     assert "st claim" in result.output
     assert "st service" in result.output
+    assert "st graph" in result.output
     assert "st browser" in result.output
 
 
@@ -71,6 +72,7 @@ def test_tools_catalog_json_includes_registry_source() -> None:
     assert result.exit_code == 0
     assert "tool-registry.json" in result.output
     assert "st claim" in result.output
+    assert "st graph" in result.output
     assert "st browser" in result.output
 
 

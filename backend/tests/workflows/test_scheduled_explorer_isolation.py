@@ -9,6 +9,7 @@ from hatchet_sdk import ConcurrencyLimitStrategy
 from app.workflows.models import EmptyInput
 from app.workflows.scheduled import (
     _explorer_schedule_concurrency,
+    refresh_graphify_graphs_wf,
     refresh_precision_indexes_wf,
     scan_projects_wf,
 )
@@ -67,3 +68,22 @@ async def test_refresh_precision_indexes_wf_uses_isolated_process(monkeypatch) -
         dispatch=None,
         isolate_process=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_refresh_graphify_graphs_wf_uses_shared_maintenance_lane(monkeypatch) -> None:
+    refresh_existing_graphify_graphs = Mock(return_value={"status": "success", "refreshed": 1})
+
+    monkeypatch.setattr("app.workflows.scheduled._system_schedule_enabled", lambda _schedule_id: True)
+    monkeypatch.setattr("app.workflows.scheduled.asyncio.to_thread", _run_inline)
+    monkeypatch.setattr(
+        "app.tasks.graphify_tasks.refresh_existing_graphify_graphs",
+        refresh_existing_graphify_graphs,
+    )
+
+    call = refresh_graphify_graphs_wf._task.fn(EmptyInput(), None)
+    assert isinstance(call, Awaitable)
+    result = await call
+
+    assert result == {"status": "success", "refreshed": 1}
+    refresh_existing_graphify_graphs.assert_called_once_with()

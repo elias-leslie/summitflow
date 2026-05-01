@@ -17,6 +17,7 @@ _DEFAULT_GRAPHIFY_BIN = Path.home() / ".local" / "bin" / "graphify"
 _SEMANTIC_FILE_TYPES = {"document", "paper", "image", "video", "audio"}
 _CODE_ONLY_FILE_TYPES = {"code", "rationale", "community"}
 _CDN_MARKERS = ("https://unpkg.com", "https://cdn.", "https://cdn.jsdelivr.net")
+_CODE_REFRESH_DIAGNOSTICS = {"graph_missing", "graph_stale", "graph_unreadable", "detect_missing"}
 
 
 @dataclass(frozen=True)
@@ -182,6 +183,7 @@ def graphify_status(project_id: str, root: Path) -> dict[str, Any]:
     changed_count, changed_sample = _changed_files_since(root, out, graph_updated_at)
     html_uses_cdn = _html_uses_cdn(graph_html)
     graph_exists = graph_json.exists()
+    detect_exists = _detect_path(out).exists()
     semantic_coverage = (
         "semantic"
         if semantic_node_count
@@ -192,6 +194,8 @@ def graphify_status(project_id: str, root: Path) -> dict[str, Any]:
     diagnostics: list[str] = []
     if not graph_exists:
         diagnostics.append("graph_missing")
+    if graph_exists and not detect_exists:
+        diagnostics.append("detect_missing")
     if changed_count:
         diagnostics.append("graph_stale")
     if semantic_source_count and semantic_node_count == 0:
@@ -232,6 +236,12 @@ def graphify_status(project_id: str, root: Path) -> dict[str, Any]:
         "diagnostics": diagnostics,
         "unreadable_error": unreadable_error,
     }
+
+
+def graphify_code_refresh_needed(status: dict[str, Any]) -> bool:
+    """Return True when a code-only Graphify refresh can fix agent-facing staleness."""
+    diagnostics = {str(item) for item in status.get("diagnostics", [])}
+    return bool(diagnostics & _CODE_REFRESH_DIAGNOSTICS)
 
 
 def run_graphify(root: Path, args: list[str], *, timeout: int = _GRAPHIFY_TIMEOUT_SECONDS) -> GraphifyCommandResult:
@@ -277,6 +287,6 @@ def explain_graph(root: Path, node: str) -> GraphifyCommandResult:
     return run_graphify(root, ["explain", node, "--graph", str(graphify_graph_path(root))])
 
 
-def refresh_graph(root: Path) -> GraphifyCommandResult:
+def refresh_graph(root: Path, *, timeout: int = _GRAPHIFY_TIMEOUT_SECONDS) -> GraphifyCommandResult:
     """Refresh Graphify code graph for a project root."""
-    return run_graphify(root, ["update", str(root)])
+    return run_graphify(root, ["update", str(root)], timeout=timeout)
