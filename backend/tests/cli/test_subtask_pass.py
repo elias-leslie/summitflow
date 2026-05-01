@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import typer
 
+from cli.client import APIError
 from cli.commands.subtask import clear_subtask, list_subtasks, pass_subtask
 from cli.commands.subtask_validation import is_step_resolved
 
@@ -94,6 +95,28 @@ class TestPassSubtaskCommand:
             pass_subtask("1.1", "task-1", ["M:abc12345+"], True)
 
         assert exc_info.value.exit_code == 1
+
+    def test_pass_subtask_dependency_blocker_outputs_clean_error(self, capsys) -> None:
+        client = MagicMock()
+        client.update_subtask.side_effect = APIError(
+            400,
+            {
+                "message": "Cannot pass subtask 1.2; incomplete dependencies: 1.1",
+                "incomplete_steps": [],
+            },
+        )
+
+        with (
+            patch("cli.commands.subtask.STClient", return_value=client),
+            pytest.raises(typer.Exit) as exc_info,
+        ):
+            pass_subtask("1.2", "task-1", None, True)
+
+        assert exc_info.value.exit_code == 1
+        stderr = capsys.readouterr().err
+        assert "Cannot pass subtask 1.2; incomplete dependencies: 1.1" in stderr
+        assert "PL/pgSQL" not in stderr
+        assert "CONTEXT" not in stderr
 
     def test_subtask_list_accepts_task_id_argument(self) -> None:
         client = MagicMock()

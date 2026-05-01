@@ -59,6 +59,22 @@ def _set_subtask_passes(
             acknowledged_at = row[0] if row else None
 
             validate_citations_acknowledged(table_id, subtask_id, acknowledged_at)
+            cur.execute(
+                """
+                SELECT ts.subtask_id
+                FROM subtask_dependencies sd
+                JOIN task_subtasks ts ON sd.depends_on_subtask_id = ts.id
+                WHERE sd.subtask_id = %s AND ts.passes = FALSE
+                ORDER BY ts.display_order, ts.subtask_id
+                """,
+                (table_id,),
+            )
+            blocker_ids = ", ".join(str(row[0]) for row in cur.fetchall())
+            if blocker_ids:
+                raise SubtaskGateError(
+                    f"Cannot pass subtask {subtask_id}; incomplete dependencies: {blocker_ids}",
+                    incomplete_steps=[],
+                )
 
             cur.execute(
                 f"""
