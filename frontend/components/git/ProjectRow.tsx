@@ -28,7 +28,7 @@ interface ProjectRowProps {
   remoteCheckedAt?: Date | null
 }
 
-const PUBLISH_RESULT_AUTO_DISMISS_MS = 12000
+const PUBLISH_RESULT_AUTO_DISMISS_MS = 4000
 
 export function ProjectRow({ repo, remoteCheckedAt }: ProjectRowProps) {
   const [expanded, setExpanded] = useState(false)
