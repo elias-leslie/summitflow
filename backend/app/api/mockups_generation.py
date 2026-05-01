@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from ..constants import GEMINI_IMAGE
 from ..logging_config import get_logger
 from ..services.agent_hub_client import get_sync_client
-from ..services.mockup_generator.revisions import rerun_mockup
+from ..services.mockup_generator.revisions import MockupRevisionContentError, rerun_mockup
 from ..services.mockup_generator.sprite_prompts import (
     build_environment_prompt,
     build_sheet_prompt,
@@ -222,6 +222,17 @@ async def rerun_mockup_endpoint(
         message = str(e)
         status_code = 404 if message == "Mockup not found" else 400
         raise HTTPException(status_code=status_code, detail=message) from e
+    except MockupRevisionContentError as e:
+        logger.warning(
+            "mockup_revision_failed",
+            project_id=project_id,
+            mockup_id=mockup_id,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Mockup revision did not produce revised content: {e}",
+        ) from e
     except Exception as e:
         logger.error(
             "mockup_revision_failed",
