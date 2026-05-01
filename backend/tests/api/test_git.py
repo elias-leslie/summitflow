@@ -426,6 +426,21 @@ class TestProjectPublishParsing:
         assert result["errors"] == ["ssh: connect to host github.com timed out"]
         assert result["raw_output"].endswith("ssh: connect to host github.com timed out")
 
+    def test_parse_project_publish_output_allows_warning_before_json(self) -> None:
+        from app.api.git_helpers.endpoints import _parse_project_publish_output
+
+        payload = (
+            "2026-05-01 13:45:31 [warning  ] Task project-publish not found, cannot log event\n"
+            '{"status":"SUCCESS","repos":[{"repo":"summitflow","status":"SUCCESS","pushed":true}]}'
+        )
+
+        result = _parse_project_publish_output(payload, "", 0)
+
+        assert result["success"] is True
+        assert result["status"] == "SUCCESS"
+        assert result["pushed"] is True
+        assert result["errors"] == []
+
     def test_parse_project_publish_output_preserves_workflow_metadata(self) -> None:
         from app.api.git_helpers.endpoints import _parse_project_publish_output
 

@@ -66,20 +66,23 @@ def _project_publish_env() -> tuple[list[str], dict[str, str] | None]:
 
 def _parse_project_publish_output(output: str, stderr_text: str, returncode: int) -> dict[str, Any]:
     """Parse st commit JSON output into a normalized response dict."""
+    raw_output = output + stderr_text
     try:
         data = json.loads(output)
     except json.JSONDecodeError:
-        return {
-            "success": False,
-            "status": "UNKNOWN",
-            "gates": "",
-            "errors": [stderr_text[:200]],
-            "message": "",
-            "reason": "json_parse_failed",
-            "detail": stderr_text[:200],
-            "pushed": False,
-            "raw_output": output + stderr_text,
-        }
+        data = _extract_project_publish_json(raw_output)
+        if data is None:
+            return {
+                "success": False,
+                "status": "UNKNOWN",
+                "gates": "",
+                "errors": [stderr_text[:200]],
+                "message": "",
+                "reason": "json_parse_failed",
+                "detail": stderr_text[:200],
+                "pushed": False,
+                "raw_output": raw_output,
+            }
     repo_data = data.get("repos", [{}])[0] if data.get("repos") else data
     detail = str(repo_data.get("detail", "") or stderr_text or "")
     error_text = detail or str(repo_data.get("reason", "") or "")
@@ -95,8 +98,23 @@ def _parse_project_publish_output(output: str, stderr_text: str, returncode: int
         "workflow_summary": repo_data.get("workflow_summary", ""),
         "workflow_hint": repo_data.get("workflow_hint", ""),
         "workflow_runs": repo_data.get("workflow_runs", []),
-        "raw_output": output + stderr_text,
+        "raw_output": raw_output,
     }
+
+
+def _extract_project_publish_json(raw_output: str) -> dict[str, Any] | None:
+    """Extract the first JSON object from output mixed with warnings/log lines."""
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(raw_output):
+        if char != "{":
+            continue
+        try:
+            data, _end = decoder.raw_decode(raw_output[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
 
 
 async def execute_project_publish(project_root: Path) -> dict[str, Any]:
@@ -107,7 +125,7 @@ async def execute_project_publish(project_root: Path) -> dict[str, Any]:
     command_prefix, env = _project_publish_env()
     try:
         proc = await asyncio.create_subprocess_exec(
-            *command_prefix, "--push", "--task", "project-publish", "--message", "publish project work",
+            *command_prefix, "--push", "--message", "publish project work",
             cwd=project_root, env=env,
             stdout=aio_subprocess.PIPE, stderr=aio_subprocess.PIPE,
         )
