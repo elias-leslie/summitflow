@@ -2,31 +2,38 @@
 
 from __future__ import annotations
 
-import tarfile
-from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from app.tasks.backup_native import restore_archive
-
 from ..client import APIError, STClient
 from ..config import get_config
-from ..lib.confirm_token import confirm_gate
 from ..output import handle_api_error, output_error, output_json
 from ..output_context import OutputContext
 from .backup_api import BackupProjectAPI, BackupSourceAPI
+from .backup_archives import (
+    archive_paths,
+    list_archives_command,
+    local_status_command,
+    run_archive_restore,
+)
 from .backup_formatters import (
     format_size,
     output_backup,
     output_backup_queue,
     output_backups,
     output_deleted,
-    output_source,
-    output_sources,
     output_task_queued,
 )
 from .backup_infra import app as infra_app
+from .backup_runtime import (
+    backup_all_command,
+    backup_schedule_command,
+    drain_pending_command,
+    list_sources_command,
+    reject_backup_all_args,
+    restore_backup_id_command,
+)
 from .backup_storage import app as storage_app
 from .backup_testbed import app as testbed_app
 
@@ -106,153 +113,7 @@ def create_backup(
         handle_api_error(e)
 
 
-def _restore_archive_args(
-    *,
-    latest: bool,
-    archive_file: str | None,
-    archive_name: str | None,
-    dry_run: bool,
-    db_only: bool,
-    files_only: bool,
-) -> list[str]:
-    targets = [latest, archive_file is not None, archive_name is not None]
-    if sum(1 for target in targets if target) != 1:
-        output_error("Use exactly one archive target: --latest, --file PATH, or --name ARCHIVE.")
-        raise typer.Exit(1) from None
-
-    args: list[str] = []
-    if latest:
-        args.append("--latest")
-    elif archive_file:
-        args.extend(["--file", archive_file])
-    elif archive_name:
-        args.extend(["--name", archive_name])
-
-    if dry_run:
-        args.append("--dry-run")
-    if db_only:
-        args.append("--db-only")
-    if files_only:
-        args.append("--files-only")
-    return args
-
-
-def _confirm_restore(
-    command_key: str,
-    confirm: str | None,
-    command_hint: str,
-    preview_lines: list[str],
-) -> None:
-    confirm_gate(command_key, confirm, preview_lines, command_hint)
-
-
-def _run_archive_restore(
-    *,
-    latest: bool,
-    archive_file: str | None,
-    archive_name: str | None,
-    dry_run: bool,
-    db_only: bool,
-    files_only: bool,
-    confirm: str | None,
-) -> None:
-    _restore_archive_args(
-        latest=latest,
-        archive_file=archive_file,
-        archive_name=archive_name,
-        dry_run=dry_run,
-        db_only=db_only,
-        files_only=files_only,
-    )
-    if not dry_run:
-        target = "latest" if latest else archive_file or archive_name or "unknown"
-        hint = "st backup restore"
-        if latest:
-            hint += " --latest"
-        elif archive_file:
-            hint += f" --file {archive_file}"
-        elif archive_name:
-            hint += f" --name {archive_name}"
-        if db_only:
-            hint += " --db-only"
-        if files_only:
-            hint += " --files-only"
-        _confirm_restore(
-            f"backup-archive-restore-{target}",
-            confirm,
-            hint,
-            [
-                f"RESTORE ARCHIVE: {target}",
-                "This can overwrite project files and/or database state.",
-                "Use --dry-run first for archive restore preview output.",
-            ],
-        )
-    archive = _resolve_archive(latest=latest, archive_file=archive_file, archive_name=archive_name)
-    if dry_run:
-        _preview_archive(archive, db_only=db_only, files_only=files_only)
-        return
-    config = get_config()
-    project_root = Path(config.project_root or Path.cwd())
-    result = restore_archive(archive, project_root, dry_run=False, db_only=db_only, files_only=files_only)
-    output_json(result)
-
-
-def _archive_dirs() -> list[tuple[str, Path]]:
-    config = get_config()
-    project_root = Path(config.project_root or Path.cwd())
-    return [
-        ("LOCAL", project_root / "backups"),
-        ("PENDING", Path.home() / ".local" / "share" / "backup-pending"),
-    ]
-
-
-def _archive_paths() -> list[tuple[str, Path]]:
-    paths: list[tuple[str, Path]] = []
-    for label, directory in _archive_dirs():
-        if directory.exists():
-            paths.extend((label, path) for path in sorted(directory.glob("*.tar.gz")))
-    return paths
-
-
-def _resolve_archive(*, latest: bool, archive_file: str | None, archive_name: str | None) -> Path:
-    if archive_file:
-        path = Path(archive_file).expanduser()
-        if path.exists():
-            return path
-        output_error(f"Archive not found: {archive_file}")
-        raise typer.Exit(1) from None
-    matches = _archive_paths()
-    if archive_name:
-        for _, path in matches:
-            if path.name == archive_name:
-                return path
-        output_error(f"Archive not found: {archive_name}")
-        raise typer.Exit(1) from None
-    if latest and matches:
-        return max((path for _, path in matches), key=lambda item: item.stat().st_mtime)
-    output_error("No archive found")
-    raise typer.Exit(1) from None
-
-
-def _preview_archive(path: Path, *, db_only: bool, files_only: bool, limit: int = 30) -> None:
-    print(f"ARCHIVE {path}")
-    print(f"MODE db_only:{str(db_only).lower()} files_only:{str(files_only).lower()}")
-    shown = 0
-    omitted = 0
-    with tarfile.open(path, "r:gz") as archive:
-        for member in archive.getmembers():
-            name = member.name
-            if db_only and not name.endswith("database.sql.gz"):
-                continue
-            if files_only and name.endswith("database.sql.gz"):
-                continue
-            if shown < limit:
-                print(f"  {name}")
-                shown += 1
-            else:
-                omitted += 1
-    if omitted:
-        print(f"  ... ({omitted} more)")
+_archive_paths = archive_paths
 
 
 @app.command("restore")
@@ -270,7 +131,7 @@ def restore_backup(
 ) -> None:
     """Restore from a backup ID or local/pending/SMB archive."""
     if latest or archive_file or archive_name:
-        _run_archive_restore(
+        run_archive_restore(
             latest=latest,
             archive_file=archive_file,
             archive_name=archive_name,
@@ -289,45 +150,16 @@ def restore_backup(
         output_error("Backup ID required, or use --latest, --file, or --name for archive restore.")
         raise typer.Exit(1) from None
 
-    try:
-        if not dry_run:
-            target = f"{source}:{backup_id}" if source else backup_id
-            _confirm_restore(
-                f"backup-restore-{target}",
-                confirm,
-                f"st backup restore {backup_id}{f' --source {source}' if source else ''}",
-                [
-                    f"RESTORE BACKUP: {backup_id}",
-                    f"Source: {source or get_config().project_id}",
-                    "This can overwrite project files and/or database state.",
-                    "Use --dry-run first for backend restore preview output.",
-                ],
-            )
-
-        if source:
-            result = _get_source_api().restore_source_backup(source, backup_id, dry_run=dry_run)
-        else:
-            project_api = _get_project_api()
-            project_api.get_backup(backup_id)  # validate backup exists
-            result = project_api.restore_backup(backup_id, dry_run=dry_run)
-        task_id = result.get("task_id")
-        if task_id:
-            if ctx.obj.is_compact:
-                print(f"{'DRY_RUN' if dry_run else 'QUEUED'} {task_id}")
-            else:
-                output_json(result)
-        else:
-            output_backup_queue(
-                ctx.obj,
-                status=str(result.get("status", "queued")),
-                message=str(result.get("message", "Restore queued")),
-                backup_id=backup_id,
-                source_id=source,
-                project_id=None if source else get_config().project_id,
-                dry_run=dry_run,
-            )
-    except APIError as e:
-        handle_api_error(e)
+    restore_backup_id_command(
+        ctx,
+        backup_id=backup_id,
+        dry_run=dry_run,
+        source=source,
+        confirm=confirm,
+        source_api=_get_source_api(),
+        project_api=_get_project_api(),
+        project_id=get_config().project_id,
+    )
 
 
 @app.command("status")
@@ -338,12 +170,7 @@ def backup_status(
 ) -> None:
     """Show most recent backup status."""
     if local:
-        archives = _archive_paths()
-        if not archives:
-            print("NO_LOCAL_ARCHIVES")
-            return
-        _, latest = max(archives, key=lambda item: item[1].stat().st_mtime)
-        print(f"LOCAL_LATEST {latest.name}|{format_size(latest.stat().st_size)}|{latest}")
+        local_status_command()
         return
 
     if task_id:
@@ -373,31 +200,14 @@ def backup_status(
 @app.command("archives")
 def list_archives() -> None:
     """List local, pending, and SMB archives."""
-    archives = _archive_paths()
-    print(f"ARCHIVES[{len(archives)}]")
-    for label, path in archives:
-        print(f"  {label} {path.name} {format_size(path.stat().st_size)} {path}")
+    list_archives_command()
 
 
 @app.command("all", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def backup_all(ctx: typer.Context) -> None:
     """Run all-source backup orchestration through the canonical st surface."""
-    if ctx.args:
-        output_error("st backup all does not accept legacy passthrough args; use st backup create/source flags.")
-        raise typer.Exit(2) from None
-    try:
-        sources = _get_source_api().list_sources()
-        queued = 0
-        for source in sources:
-            source_id = source.get("id")
-            if not source_id:
-                continue
-            result = _get_source_api().create_source_backup(str(source_id))
-            queued += 1
-            print(f"QUEUED {source_id}|{result.get('task_id') or result.get('message', 'queued')}")
-        print(f"BACKUP_ALL queued:{queued}")
-    except APIError as e:
-        handle_api_error(e)
+    reject_backup_all_args(ctx.args)
+    backup_all_command(_get_source_api())
 
 
 @app.command("schedule")
@@ -409,22 +219,7 @@ def backup_schedule(
     retention_days: Annotated[int | None, typer.Option("--retention-days", "-r", help="Days to retain backups")] = None,
 ) -> None:
     """View or configure backup schedule for a source."""
-    source_api = _get_source_api()
-    try:
-        if enable is None and frequency is None and retention_days is None:
-            source = source_api.get_source(source_id)
-            output_source(ctx.obj, source)
-        else:
-            result = source_api.update_source(
-                source_id, enabled=enable, frequency=frequency, retention_days=retention_days
-            )
-            if ctx.obj.is_compact:
-                enabled = "enabled" if result.get("enabled") else "disabled"
-                print(f"SCHEDULE_UPDATED {enabled}|{result.get('frequency')}|retention_days:{result.get('retention_days')}")
-            else:
-                output_json(result)
-    except APIError as e:
-        handle_api_error(e)
+    backup_schedule_command(ctx, _get_source_api(), source_id, enable, frequency, retention_days)
 
 
 @app.command("show")
@@ -485,30 +280,7 @@ def drain_pending(
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Show pending without uploading")] = False,
 ) -> None:
     """Upload pending backups to SMB and reconcile DB records."""
-    from app.tasks.backup_drain import drain_pending_backups
-
-    try:
-        result = drain_pending_backups(dry_run=dry_run)
-        if ctx.obj.is_compact:
-            status = result.get("status", "unknown")
-            uploaded = result.get("uploaded", 0)
-            failed = result.get("failed", 0)
-            promoted = result.get("promoted", 0)
-            remaining = result.get("remaining", 0)
-            db_remaining = result.get("db_remaining", remaining)
-            file_remaining = result.get("file_remaining", remaining)
-            print(
-                f"DRAIN {status}|uploaded:{uploaded}|failed:{failed}|promoted:{promoted}|"
-                f"remaining:{remaining}|db_remaining:{db_remaining}|file_remaining:{file_remaining}"
-            )
-            detail = str(result.get("script_output") or "").strip()
-            if detail:
-                print(f"DETAIL {detail.splitlines()[0]}")
-        else:
-            output_json(result)
-    except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1) from None
+    drain_pending_command(ctx, dry_run=dry_run)
 
 
 @app.command("sources")
@@ -517,8 +289,4 @@ def list_sources(
     source_type: Annotated[str | None, typer.Option("--type", "-t", help="Filter by type: project, config, workspace")] = None,
 ) -> None:
     """List all registered backup sources."""
-    try:
-        sources = _get_source_api().list_sources(source_type=source_type)
-        output_sources(ctx.obj, sources)
-    except APIError as e:
-        handle_api_error(e)
+    list_sources_command(ctx, _get_source_api(), source_type)
