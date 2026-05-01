@@ -134,6 +134,33 @@ def test_pulse_compact_labels_task_checkout_owner_more_usefully() -> None:
     assert "WRITE task-2 | refactor | sess-own | kind=task_checkout" in result.output
 
 
+def test_pulse_compact_fetches_compact_api_payload_by_default() -> None:
+    mock_client = MagicMock()
+    mock_client.get.return_value = {
+        "project_id": "agent-hub",
+        "summary": {
+            "running_tasks": 0,
+            "active_owners": 0,
+            "active_specialists": 0,
+            "active_sessions": 0,
+            "stale_sessions": 0,
+            "reapable_sessions": 0,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {
+            "active_checkpoints": 0,
+            "dirty_checkpoints": 0,
+            "needs_cleanup": False,
+        },
+    }
+
+    with patch("cli.commands.pulse.STClient", return_value=mock_client):
+        result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
+
+    assert result.exit_code == 0
+    assert mock_client.get.call_args.args[0].endswith("/projects/agent-hub/pulse?compact=true")
+
+
 def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
     mock_client = MagicMock()
     mock_client.get.return_value = {

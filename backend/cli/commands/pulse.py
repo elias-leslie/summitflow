@@ -418,7 +418,12 @@ def pulse(
     client = STClient(require_project=False)
     try:
         payloads = [
-            client.get(client._global_url(f"/projects/{resolved_project_id}/pulse"))
+            client.get(
+                client._global_url(
+                    f"/projects/{resolved_project_id}/pulse"
+                    f"{'' if details or not is_compact() else '?compact=true'}"
+                )
+            )
             for resolved_project_id in _resolve_project_ids(
                 client,
                 project_id,
