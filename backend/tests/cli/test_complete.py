@@ -115,3 +115,16 @@ def test_complete_forwards_task_type() -> None:
 
     assert result.exit_code == 0
     assert mock_call.call_args.args[16] == "heartbeat"
+
+
+def test_complete_exits_nonzero_for_error_content() -> None:
+    with patch("cli.commands.complete.call_complete") as mock_call:
+        mock_call.return_value = {"content": "Error: provider failed"}
+
+        result = runner.invoke(
+            app,
+            ["--agent", "persona", "--message", "Run"],
+        )
+
+    assert result.exit_code == 1
+    assert "Error: provider failed" in result.output

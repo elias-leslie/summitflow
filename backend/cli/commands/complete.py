@@ -49,6 +49,14 @@ def _output_result(result: dict[str, Any], stream: bool, raw: bool) -> None:
         typer.echo(result.get("content", ""))
 
 
+def _completion_failed(result: dict[str, Any]) -> bool:
+    """Return True when Agent Hub encoded a failure in a 200 response."""
+    if result.get("error"):
+        return True
+    content = result.get("content")
+    return isinstance(content, str) and content.startswith("Error:")
+
+
 @app.callback(invoke_without_command=True)
 def complete_default(
     ctx: typer.Context,
@@ -107,3 +115,5 @@ def complete_default(
         thinking_level, max_turns, stream, trace_id, roles, task_type, image or None,
     )
     _output_result(result, stream, raw)
+    if _completion_failed(result):
+        raise typer.Exit(1)
