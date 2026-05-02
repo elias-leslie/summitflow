@@ -286,11 +286,30 @@ def test_semantic_refresh_no_execute_writes_prompt(
 
     assert result.exit_code == 0
     assert "GRAPH_SEMANTIC_REFRESH:READY" in result.output
-    assert "--agent graphify-semantic-extractor" in result.output
+    assert "agent=graphify-semantic-extractor" in result.output
+    assert "mode=batch" in result.output
     assert " -M " not in result.output
     prompt = tmp_path / ".dev-tools" / "graphify-semantic-refresh-prompt-details.txt"
     assert prompt.exists()
     assert "Refresh Graphify semantic coverage" in prompt.read_text(encoding="utf-8")
+
+
+def test_semantic_batches_keep_prompts_bounded(tmp_path: Path) -> None:
+    docs = []
+    for index in range(3):
+        path = tmp_path / f"doc-{index}.md"
+        path.write_text("x" * 30_000, encoding="utf-8")
+        docs.append(("document", path))
+
+    batches = graph._semantic_batches(tmp_path, docs)
+
+    assert len(batches) == 2
+
+
+def test_parse_semantic_fragment_accepts_markdown_fence() -> None:
+    payload = graph._parse_semantic_fragment('```json\n{"nodes":[],"edges":[],"hyperedges":[]}\n```')
+
+    assert payload == {"nodes": [], "edges": [], "hyperedges": []}
 
 
 def test_semantic_refresh_agent_treats_error_output_as_failure(

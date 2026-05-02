@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,7 @@ from app.services.graphify_tools import (
     path_graph,
     query_graph,
     refresh_graph,
+    run_graphify,
 )
 
 from ..config import get_config
@@ -41,6 +43,13 @@ _FALLOW_MODES = {"audit", "changed", "health", "plugins", "flags", "dead-code", 
 _GRAPH_REFRESH_PROGRESS_DELAY_SECONDS = 1.5
 _DOCTOR_BLOCKING_DIAGNOSTICS = {"graph_missing", "graph_stale", "graph_unreadable", "detect_missing"}
 _DEFAULT_CONTEXT_QUESTION = "What are the central modules, coupling points, and architecture communities in this project?"
+_SEMANTIC_BATCH_AGENT = "graphify-semantic-extractor"
+_SEMANTIC_BATCH_MAX_CHARS = 48_000
+_SEMANTIC_BATCH_MAX_FILES = 8
+_SEMANTIC_TEXT_SUFFIXES = {".md", ".mdx", ".txt", ".rst", ".adoc", ".json", ".yaml", ".yml", ".csv", ".svg"}
+_SEMANTIC_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+_SEMANTIC_SOURCE_TYPES = {"document", "paper", "image", "video", "audio"}
+_CODE_ONLY_NODE_TYPES = {"code", "rationale", "community"}
 
 
 def _project_payload(project_id: str) -> dict[str, Any]:
@@ -253,6 +262,321 @@ Do not perform unrelated refactors. Do not edit source code unless needed to rep
 """
 
 
+def _semantic_sources(root: Path) -> list[tuple[str, Path]]:
+    detect_path = root / "graphify-out" / ".graphify_detect.json"
+    if not detect_path.exists():
+        return []
+    try:
+        detect = json.loads(detect_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    files = detect.get("files", {})
+    if not isinstance(files, dict):
+        return []
+    sources: list[tuple[str, Path]] = []
+    for source_type in sorted(_SEMANTIC_SOURCE_TYPES):
+        paths = files.get(source_type, [])
+        if not isinstance(paths, list):
+            continue
+        for raw_path in paths:
+            path = Path(str(raw_path))
+            if not path.is_absolute():
+                path = root / path
+            if path.exists() and path.is_file():
+                sources.append((source_type, path.resolve()))
+    return sources
+
+
+def _rel_source(root: Path, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _semantic_source_text(root: Path, source_type: str, path: Path) -> tuple[str, bool]:
+    rel = _rel_source(root, path)
+    suffix = path.suffix.lower()
+    if suffix in _SEMANTIC_IMAGE_SUFFIXES:
+        return f"=== {rel} ({source_type}, image attachment) ===\nUse attached image. Extract visible UI, labels, workflows, and domain concepts.", True
+    if suffix in _SEMANTIC_TEXT_SUFFIXES or source_type in {"document", "paper"}:
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            content = ""
+        return f"=== {rel} ({source_type}) ===\n{content[:20_000]}", False
+    return f"=== {rel} ({source_type}) ===\nBinary source. Extract only filename-level concept if content is unavailable.", False
+
+
+def _semantic_batches(root: Path, sources: list[tuple[str, Path]]) -> list[list[tuple[str, Path]]]:
+    batches: list[list[tuple[str, Path]]] = []
+    current: list[tuple[str, Path]] = []
+    current_chars = 0
+    for item in sources:
+        source_type, path = item
+        text, _ = _semantic_source_text(root, source_type, path)
+        size = len(text)
+        if current and (
+            len(current) >= _SEMANTIC_BATCH_MAX_FILES
+            or current_chars + size > _SEMANTIC_BATCH_MAX_CHARS
+        ):
+            batches.append(current)
+            current = []
+            current_chars = 0
+        current.append(item)
+        current_chars += size
+    if current:
+        batches.append(current)
+    return batches
+
+
+def _semantic_batch_prompt(root: Path, batch: list[tuple[str, Path]]) -> tuple[str, list[Path]]:
+    sections: list[str] = []
+    images: list[Path] = []
+    source_list: list[str] = []
+    for source_type, path in batch:
+        rel = _rel_source(root, path)
+        source_list.append(f"- {rel} ({source_type})")
+        text, is_image = _semantic_source_text(root, source_type, path)
+        sections.append(text)
+        if is_image:
+            images.append(path)
+    return (
+        "Extract Graphify semantic graph JSON for these non-code sources.\n"
+        "Return JSON only. No markdown fences. No prose.\n\n"
+        "Schema:\n"
+        '{"nodes":[{"id":"source_entity","label":"Human Name","file_type":"document|paper|image|concept",'
+        '"source_file":"relative/path","source_location":null}],'
+        '"edges":[{"source":"node_id","target":"node_id","relation":"references|cites|conceptually_related_to|shares_data_with|semantically_similar_to",'
+        '"confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],'
+        '"hyperedges":[]}\n\n'
+        "Rules:\n"
+        "- Use only these source_file values:\n"
+        + "\n".join(source_list)
+        + "\n- Create concise nodes for decisions, workflows, requirements, risks, concepts, screens, and docs.\n"
+        "- Do not duplicate AST/code nodes. Do not extract secrets or credentials.\n"
+        "- Keep IDs lowercase with only a-z, 0-9, underscore.\n\n"
+        + "\n\n".join(sections),
+        images,
+    )
+
+
+def _parse_semantic_fragment(raw: str) -> dict[str, Any]:
+    text = strip_ansi(raw).strip()
+    if text.startswith("Error:"):
+        raise RuntimeError(text)
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    decoder = json.JSONDecoder()
+    index = text.find("{")
+    while index >= 0:
+        try:
+            payload, _ = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            index = text.find("{", index + 1)
+            continue
+        if isinstance(payload, dict):
+            return payload
+        index = text.find("{", index + 1)
+    raise RuntimeError("semantic extractor returned no JSON object")
+
+
+def _safe_node_id(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9]+", "_", value).strip("_").lower()
+    return cleaned or "semantic_node"
+
+
+def _dedupe_node_id(node_id: str, used: set[str]) -> str:
+    candidate = _safe_node_id(node_id)
+    if candidate not in used:
+        used.add(candidate)
+        return candidate
+    base = candidate
+    index = 2
+    while f"{base}_{index}" in used:
+        index += 1
+    candidate = f"{base}_{index}"
+    used.add(candidate)
+    return candidate
+
+
+def _sanitize_semantic_fragment(root: Path, batch: list[tuple[str, Path]], fragment: dict[str, Any], used: set[str]) -> dict[str, list[dict[str, Any]]]:
+    allowed_sources = {_rel_source(root, path): source_type for source_type, path in batch}
+    nodes: list[dict[str, Any]] = []
+    id_map: dict[str, str] = {}
+    for raw_node in fragment.get("nodes", []):
+        if not isinstance(raw_node, dict):
+            continue
+        source_file = str(raw_node.get("source_file") or "")
+        if source_file not in allowed_sources:
+            continue
+        label = str(raw_node.get("label") or raw_node.get("id") or Path(source_file).stem)
+        original_id = str(raw_node.get("id") or f"{Path(source_file).stem}_{label}")
+        node_id = _dedupe_node_id(original_id, used)
+        id_map[_safe_node_id(original_id)] = node_id
+        file_type = str(raw_node.get("file_type") or allowed_sources[source_file])
+        if file_type in _CODE_ONLY_NODE_TYPES:
+            file_type = allowed_sources[source_file]
+        nodes.append({
+            **raw_node,
+            "id": node_id,
+            "label": label[:160],
+            "file_type": file_type,
+            "source_file": source_file,
+            "source_location": raw_node.get("source_location"),
+        })
+    valid_ids = set(used)
+    edges: list[dict[str, Any]] = []
+    for raw_edge in fragment.get("edges", []):
+        if not isinstance(raw_edge, dict):
+            continue
+        source = id_map.get(_safe_node_id(str(raw_edge.get("source") or "")), str(raw_edge.get("source") or ""))
+        target = id_map.get(_safe_node_id(str(raw_edge.get("target") or "")), str(raw_edge.get("target") or ""))
+        if source not in valid_ids or target not in valid_ids or source == target:
+            continue
+        source_file = str(raw_edge.get("source_file") or "")
+        if source_file not in allowed_sources:
+            source_file = next(iter(allowed_sources))
+        edges.append({
+            **raw_edge,
+            "source": source,
+            "target": target,
+            "_src": source,
+            "_tgt": target,
+            "relation": str(raw_edge.get("relation") or "conceptually_related_to"),
+            "confidence": str(raw_edge.get("confidence") or "INFERRED"),
+            "confidence_score": float(raw_edge.get("confidence_score") or 0.8),
+            "source_file": source_file,
+            "source_location": raw_edge.get("source_location"),
+            "weight": float(raw_edge.get("weight") or 1.0),
+        })
+    return {"nodes": nodes, "edges": edges, "hyperedges": []}
+
+
+def _merge_semantic_fragments(root: Path, fragments: list[dict[str, list[dict[str, Any]]]], semantic_sources: list[tuple[str, Path]]) -> None:
+    graph_path = root / "graphify-out" / "graph.json"
+    data = json.loads(graph_path.read_text(encoding="utf-8"))
+    semantic_rel_sources = {_rel_source(root, path) for _, path in semantic_sources}
+    old_nodes = data.get("nodes", [])
+    old_links = data.get("links", data.get("edges", []))
+    removed_ids = {
+        str(node.get("id"))
+        for node in old_nodes
+        if isinstance(node, dict)
+        and str(node.get("file_type") or "") not in _CODE_ONLY_NODE_TYPES
+        and str(node.get("source_file") or "") in semantic_rel_sources
+    }
+    nodes = [
+        node for node in old_nodes
+        if not (isinstance(node, dict) and str(node.get("id")) in removed_ids)
+    ]
+    links = [
+        edge for edge in old_links
+        if isinstance(edge, dict)
+        and str(edge.get("source") or edge.get("_src") or "") not in removed_ids
+        and str(edge.get("target") or edge.get("_tgt") or "") not in removed_ids
+        and str(edge.get("source_file") or "") not in semantic_rel_sources
+    ]
+    for fragment in fragments:
+        nodes.extend(fragment["nodes"])
+        links.extend(fragment["edges"])
+    data["nodes"] = nodes
+    data["links"] = links
+    if "edges" in data:
+        data.pop("edges", None)
+    graph_path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _run_semantic_refresh_batches(
+    project_id: str,
+    root: Path,
+    *,
+    agent: str | None,
+    model: str | None,
+    timeout: int,
+) -> int:
+    if not agent:
+        raise typer.BadParameter("semantic-refresh requires --agent with a purpose-built Agent Hub agent slug")
+    status = _status_for_project_root(project_id, root, auto_refresh=True, action="semantic-refresh")
+    sources = _semantic_sources(root)
+    if not sources:
+        print(f"GRAPH_SEMANTIC_REFRESH:OK:0|semantic=0/0|diagnostics={','.join(status.get('diagnostics', [])) or '-'}")
+        return 0
+    batches = _semantic_batches(root, sources)
+    st_bin = shutil.which("st") or sys.argv[0]
+    fragments: list[dict[str, list[dict[str, Any]]]] = []
+    used_ids = {
+        str(node.get("id"))
+        for node in json.loads((root / "graphify-out" / "graph.json").read_text(encoding="utf-8")).get("nodes", [])
+        if isinstance(node, dict) and node.get("id")
+    }
+    start = time.perf_counter()
+    details_lines = [f"semantic_sources={len(sources)} batches={len(batches)} agent={agent} model={model or 'agent-default'}"]
+    try:
+        for index, batch in enumerate(batches, start=1):
+            prompt, images = _semantic_batch_prompt(root, batch)
+            prompt_path = write_details(root, f"graphify-semantic-batch-{index:03d}-prompt", prompt)
+            command = [
+                st_bin,
+                "complete",
+                "--agent",
+                agent,
+                "--project",
+                project_id,
+                "--roles",
+                "agent_system_prompt",
+                "--file",
+                str(prompt_path),
+                "--timeout",
+                str(timeout),
+                "--skip-cache",
+            ]
+            if model:
+                command[4:4] = ["-M", model]
+            for image in images:
+                command.extend(["--image", str(image)])
+            output = ""
+            for attempt in range(1, 4):
+                result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=timeout + 30, check=False)
+                output = "\n".join(part for part in ((result.stdout or "").strip(), (result.stderr or "").strip()) if part)
+                if result.returncode == 0 and not output.startswith("Error:"):
+                    break
+                if attempt == 3 or "Internal server error" not in output:
+                    raise RuntimeError(output[-4000:] or f"batch {index} exited {result.returncode}")
+                time.sleep(2 * attempt)
+            fragment = _parse_semantic_fragment(output)
+            sanitized = _sanitize_semantic_fragment(root, batch, fragment, used_ids)
+            fragments.append(sanitized)
+            details_lines.append(
+                f"batch={index}/{len(batches)} files={len(batch)} nodes={len(sanitized['nodes'])} edges={len(sanitized['edges'])}"
+            )
+        _merge_semantic_fragments(root, fragments, sources)
+        refresh_result = run_graphify(root, ["cluster-only", str(root)], timeout=timeout)
+        details_lines.append(refresh_result.output)
+        refreshed_status = graphify_status(project_id, root)
+        semantic_source_count = int(refreshed_status.get("semantic_source_count", 0) or 0)
+        semantic_node_count = int(refreshed_status.get("semantic_node_count", 0) or 0)
+        diagnostics = [str(item) for item in refreshed_status.get("diagnostics", [])]
+        exit_code = 0 if semantic_node_count > 0 and "semantic_sources_not_extracted" not in diagnostics else 1
+    except (OSError, RuntimeError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        refreshed_status = graphify_status(project_id, root)
+        semantic_source_count = int(refreshed_status.get("semantic_source_count", 0) or 0)
+        semantic_node_count = int(refreshed_status.get("semantic_node_count", 0) or 0)
+        diagnostics = [str(item) for item in refreshed_status.get("diagnostics", [])]
+        details_lines.append(f"ERROR: {type(exc).__name__}: {exc}")
+        exit_code = 1
+    elapsed_ms = round((time.perf_counter() - start) * 1000)
+    details = write_details(root, "graphify-semantic-refresh", "\n".join(details_lines))
+    print(
+        f"GRAPH_SEMANTIC_REFRESH:{'OK' if exit_code == 0 else 'FAIL'}:{exit_code}|"
+        f"elapsed_ms={elapsed_ms}|batches={len(batches)}|semantic={semantic_node_count}/"
+        f"{semantic_source_count}|diagnostics={','.join(diagnostics) or '-'}|"
+        f"details:{display_path(root, details)}"
+    )
+    return exit_code
+
+
 def _run_semantic_refresh_agent(
     project_id: str,
     root: Path,
@@ -455,18 +779,16 @@ def semantic_refresh(
         print(
             "GRAPH_SEMANTIC_REFRESH:READY|"
             f"project={project_id}|prompt:{display_path(root, prompt_path)}|"
-            f"command=st complete --agent {agent} "
-            f"{'-M ' + model + ' ' if model else ''}--project {project_id} --execute-tools "
-            f"--working-dir {root} --max-turns {max_turns} --file {prompt_path} --timeout {timeout}"
+            f"mode=batch|agent={agent}|model={model or 'agent-default'}|"
+            f"max_turns_ignored={max_turns}"
         )
         return
     raise typer.Exit(
-        _run_semantic_refresh_agent(
+        _run_semantic_refresh_batches(
             project_id,
             root,
             agent=agent,
             model=model,
-            max_turns=max_turns,
             timeout=timeout,
         )
     )
