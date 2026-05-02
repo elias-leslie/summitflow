@@ -569,6 +569,30 @@ def test_browser_url_resolves_project() -> None:
     assert "a-term hosts.browser_frontend" in result.output
 
 
+def test_browser_endpoint_prints_canonical_http_url() -> None:
+    with (
+        patch("cli.commands.browser._select_port", return_value=9222),
+        patch("cli.commands.browser._host_for_engine", return_value="browser-vm"),
+        patch("cli.commands.browser._cdp_ws", return_value="ws://browser-vm/devtools/browser/abc"),
+    ):
+        result = runner.invoke(main_app, ["browser", "endpoint"])
+
+    assert result.exit_code == 0
+    assert result.output == "http://browser-vm:9222\n"
+
+
+def test_browser_endpoint_prints_canonical_ws_url() -> None:
+    with (
+        patch("cli.commands.browser._select_port", return_value=9222),
+        patch("cli.commands.browser._host_for_engine", return_value="browser-vm"),
+        patch("cli.commands.browser._cdp_ws", return_value="ws://browser-vm/devtools/browser/abc"),
+    ):
+        result = runner.invoke(main_app, ["browser", "endpoint", "--ws"])
+
+    assert result.exit_code == 0
+    assert result.output == "ws://browser-vm/devtools/browser/abc\n"
+
+
 def test_browser_select_port_honors_explicit_port(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SF_BROWSER_HOST", "192.0.2.10")
     monkeypatch.setenv("SF_BROWSER_PORT", "9333")

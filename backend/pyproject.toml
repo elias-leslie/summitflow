@@ -1,6 +1,6 @@
 [project]
 name = "summitflow"
-version = "0.1.1"
+version = "0.1.2"
 description = "AI-assisted software development platform"
 license = "Apache-2.0"
 requires-python = ">=3.13"

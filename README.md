@@ -88,10 +88,12 @@ st checkpoints                 # List active checkpoints
 st memory search <query>       # Search memory system
 st browser url a-term          # Resolve canonical browser URL from project identity
 st browser check a-term        # Check desktop/narrow/mobile through browser VM 100
+st browser endpoint --ws       # Print canonical CDP WebSocket for optional tools
 ```
 
 Browser automation for agents uses browser VM 100 by default. Do not start
 Chrome, CDP proxies, or browser containers on project hosts for normal checks.
+Use `st browser endpoint` when an optional tool needs the managed CDP target.
 See [`docs/agentic-browser-research.md`](docs/agentic-browser-research.md) and
 [`docs/browser-runtime-architecture.md`](docs/browser-runtime-architecture.md).
 
