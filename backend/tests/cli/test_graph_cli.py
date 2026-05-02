@@ -320,6 +320,36 @@ def test_semantic_refresh_agent_treats_error_output_as_failure(
     assert "GRAPH_SEMANTIC_REFRESH:FAIL:1" in capsys.readouterr().out
 
 
+def test_semantic_refresh_agent_fails_when_semantic_sources_remain_uncovered(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    status = _status("summitflow", ["semantic_sources_not_extracted"])
+    status["semantic_node_count"] = 0
+    status["semantic_source_count"] = 3
+    monkeypatch.setattr(graph, "_status_for_project_root", lambda *args, **kwargs: status)
+    monkeypatch.setattr(graph, "graphify_status", lambda *args, **kwargs: status)
+    monkeypatch.setattr(graph.shutil, "which", lambda name: "/bin/st")
+    monkeypatch.setattr(
+        graph.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, stdout="No changes", stderr=""),
+    )
+
+    exit_code = graph._run_semantic_refresh_agent(
+        "summitflow",
+        tmp_path,
+        agent="graphify-semantic-extractor",
+        model=None,
+        max_turns=1,
+        timeout=60,
+    )
+
+    assert exit_code == 1
+    assert "semantic=0/3" in capsys.readouterr().out
+
+
 def test_profile_compares_search_graph_and_agent_tool_shapes(
     graph_cli_project: Path,
     monkeypatch: pytest.MonkeyPatch,

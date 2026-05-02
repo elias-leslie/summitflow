@@ -306,11 +306,18 @@ def _run_semantic_refresh_agent(
     elapsed_ms = round((time.perf_counter() - start) * 1000)
     details = write_details(root, "graphify-semantic-refresh", output)
     refreshed_status = graphify_status(project_id, root)
+    semantic_source_count = int(refreshed_status.get("semantic_source_count", 0) or 0)
+    semantic_node_count = int(refreshed_status.get("semantic_node_count", 0) or 0)
+    diagnostics = [str(item) for item in refreshed_status.get("diagnostics", [])]
+    if semantic_source_count and (
+        semantic_node_count == 0 or "semantic_sources_not_extracted" in diagnostics
+    ):
+        exit_code = exit_code or 1
     print(
         f"GRAPH_SEMANTIC_REFRESH:{'OK' if exit_code == 0 else 'FAIL'}:{exit_code}|"
-        f"elapsed_ms={elapsed_ms}|semantic={refreshed_status.get('semantic_node_count', 0)}/"
-        f"{refreshed_status.get('semantic_source_count', 0)}|"
-        f"diagnostics={','.join(str(item) for item in refreshed_status.get('diagnostics', [])) or '-'}|"
+        f"elapsed_ms={elapsed_ms}|semantic={semantic_node_count}/"
+        f"{semantic_source_count}|"
+        f"diagnostics={','.join(diagnostics) or '-'}|"
         f"prompt:{display_path(root, prompt_path)}|details:{display_path(root, details)}"
     )
     return exit_code
