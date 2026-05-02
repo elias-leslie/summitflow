@@ -258,7 +258,7 @@ def _run_semantic_refresh_agent(
     root: Path,
     *,
     agent: str | None,
-    model: str,
+    model: str | None,
     max_turns: int,
     timeout: int,
 ) -> int:
@@ -269,8 +269,6 @@ def _run_semantic_refresh_agent(
     command = [
         st_bin,
         "complete",
-        "-M",
-        model,
         "--project",
         project_id,
         "--execute-tools",
@@ -286,6 +284,8 @@ def _run_semantic_refresh_agent(
     if not agent:
         raise typer.BadParameter("semantic-refresh requires --agent with a purpose-built Agent Hub agent slug")
     command[2:2] = ["--agent", agent]
+    if model:
+        command[4:4] = ["-M", model]
     start = time.perf_counter()
     try:
         result = subprocess.run(
@@ -298,6 +298,8 @@ def _run_semantic_refresh_agent(
         )
         output = "\n".join(part for part in ((result.stdout or "").strip(), (result.stderr or "").strip()) if part)
         exit_code = result.returncode
+        if output.startswith("Error:"):
+            exit_code = exit_code or 1
     except (OSError, subprocess.SubprocessError) as exc:
         output = f"{type(exc).__name__}: {exc}"
         exit_code = 127
@@ -429,7 +431,10 @@ def semantic_refresh(
     agent: Annotated[str | None, typer.Option("--agent", "-a", help="Purpose-built Agent Hub agent slug.")] = (
         "graphify-semantic-extractor"
     ),
-    model: Annotated[str, typer.Option("--model", "-M", help="Model override for semantic extraction.")] = "gemini-3-flash-preview",
+    model: Annotated[
+        str | None,
+        typer.Option("--model", "-M", help="Optional model override. Defaults to the agent model chain."),
+    ] = None,
     max_turns: Annotated[int, typer.Option("--max-turns", "-n", min=1, max=200, help="Agentic turn limit.")] = 40,
     timeout: Annotated[int, typer.Option("--timeout", min=60, max=7200, help="Agent Hub read timeout seconds.")] = 1800,
     execute: Annotated[bool, typer.Option("--execute/--no-execute", help="Run Agent Hub; otherwise write prompt and print command.")] = True,
@@ -443,7 +448,8 @@ def semantic_refresh(
         print(
             "GRAPH_SEMANTIC_REFRESH:READY|"
             f"project={project_id}|prompt:{display_path(root, prompt_path)}|"
-            f"command=st complete --agent {agent} -M {model} --project {project_id} --execute-tools "
+            f"command=st complete --agent {agent} "
+            f"{'-M ' + model + ' ' if model else ''}--project {project_id} --execute-tools "
             f"--working-dir {root} --max-turns {max_turns} --file {prompt_path} --timeout {timeout}"
         )
         return

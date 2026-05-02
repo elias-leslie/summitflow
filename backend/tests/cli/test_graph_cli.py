@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -286,9 +287,37 @@ def test_semantic_refresh_no_execute_writes_prompt(
     assert result.exit_code == 0
     assert "GRAPH_SEMANTIC_REFRESH:READY" in result.output
     assert "--agent graphify-semantic-extractor" in result.output
+    assert " -M " not in result.output
     prompt = tmp_path / ".dev-tools" / "graphify-semantic-refresh-prompt-details.txt"
     assert prompt.exists()
     assert "Refresh Graphify semantic coverage" in prompt.read_text(encoding="utf-8")
+
+
+def test_semantic_refresh_agent_treats_error_output_as_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(graph, "_status_for_project_root", lambda *args, **kwargs: _status("summitflow"))
+    monkeypatch.setattr(graph, "graphify_status", lambda *args, **kwargs: _status("summitflow"))
+    monkeypatch.setattr(graph.shutil, "which", lambda name: "/bin/st")
+    monkeypatch.setattr(
+        graph.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, stdout="Error: Gemini quota", stderr=""),
+    )
+
+    exit_code = graph._run_semantic_refresh_agent(
+        "summitflow",
+        tmp_path,
+        agent="graphify-semantic-extractor",
+        model=None,
+        max_turns=1,
+        timeout=60,
+    )
+
+    assert exit_code == 1
+    assert "GRAPH_SEMANTIC_REFRESH:FAIL:1" in capsys.readouterr().out
 
 
 def test_profile_compares_search_graph_and_agent_tool_shapes(
