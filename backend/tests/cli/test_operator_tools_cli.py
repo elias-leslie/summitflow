@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -459,6 +460,8 @@ def test_browser_help_explains_isolated_target() -> None:
 
     assert result.exit_code == 0
     assert "Plain st browser commands use approved browser VM 100" in result.output
+    assert "st browser url <project>" in result.output
+    assert "st browser check a-term" in result.output
     assert "Override with SF_BROWSER_HOST" in result.output
     assert "SF_BROWSER_DISABLE_DEFAULT_VM_HOST=1" in result.output
     assert "SF_BROWSER_ALLOW_LOCAL=1" in result.output
@@ -556,6 +559,26 @@ def test_browser_vm_ip_selection_honors_prefix() -> None:
     assert browser._select_browser_vm_ip(output, {"SF_BROWSER_VM_IP_PREFIX": "10."}) == "10.1.2.3"
 
 
+def test_browser_url_resolves_project() -> None:
+    route = SimpleNamespace(url="https://terminal.summitflow.dev/", project_id="a-term", source="hosts.browser_frontend")
+    with patch("cli.commands.browser.resolve_browser_project_route", return_value=route):
+        result = runner.invoke(main_app, ["browser", "url", "terminal"])
+
+    assert result.exit_code == 0
+    assert "https://terminal.summitflow.dev/" in result.output
+    assert "a-term hosts.browser_frontend" in result.output
+
+
+def test_browser_select_port_honors_explicit_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SF_BROWSER_HOST", "192.0.2.10")
+    monkeypatch.setenv("SF_BROWSER_PORT", "9333")
+
+    with patch("cli.commands.browser._engine_up", return_value=True) as engine_up:
+        assert browser._select_port("chrome") == 9333
+
+    engine_up.assert_called_once_with(9333, host="192.0.2.10")
+
+
 def test_browser_open_uses_repo_scoped_session(monkeypatch) -> None:
     monkeypatch.delenv("AGENT_BROWSER_SESSION", raising=False)
     monkeypatch.delenv("ST_BROWSER_SESSION", raising=False)
@@ -584,6 +607,30 @@ def test_browser_open_uses_repo_scoped_session(monkeypatch) -> None:
         "st-repo-1234",
         "open",
         "https://example.com",
+    ]
+
+
+def test_browser_open_resolves_project_target(monkeypatch) -> None:
+    monkeypatch.delenv("AGENT_BROWSER_SESSION", raising=False)
+    monkeypatch.delenv("ST_BROWSER_SESSION", raising=False)
+
+    with (
+        patch("cli.commands.browser._select_port", return_value=9222),
+        patch("cli.commands.browser._host_for_engine", return_value="browser"),
+        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
+        patch("cli.commands.browser._default_browser_session", return_value="st-repo-1234"),
+        patch("cli.commands.browser.resolve_browser_location", return_value="https://terminal.summitflow.dev/"),
+        patch("cli.commands.browser._run_browser_reaper"),
+        patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0)) as run_agent,
+    ):
+        result = runner.invoke(main_app, ["browser", "open", "a-term"])
+
+    assert result.exit_code == 0
+    assert run_agent.call_args_list[1].args[0] == [
+        "--session",
+        "st-repo-1234",
+        "open",
+        "https://terminal.summitflow.dev/",
     ]
 
 

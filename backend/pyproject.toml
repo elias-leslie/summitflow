@@ -1,6 +1,6 @@
 [project]
 name = "summitflow"
-version = "0.1.0"
+version = "0.1.1"
 description = "AI-assisted software development platform"
 license = "Apache-2.0"
 requires-python = ">=3.13"
@@ -77,4 +77,3 @@ unfixable = ["F401"]
 "**/scripts/**" = ["E402", "SIM105", "SIM117"]
 "**/tests/**" = ["SIM105"]
 "**/migrations/**" = ["SIM117"]
-
