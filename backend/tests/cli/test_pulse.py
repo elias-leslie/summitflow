@@ -327,6 +327,44 @@ def test_pulse_compact_requires_review_for_ownerless_clean_checkpoint() -> None:
     assert "commit-push-prune-or-leave-explicit-handoff" in result.output
 
 
+def test_pulse_gate_blocks_dirty_cleanup_with_nonwriter_active_session() -> None:
+    mock_client = MagicMock()
+    mock_client.get.return_value = {
+        "project_id": "a-term",
+        "summary": {
+            "running_tasks": 0,
+            "active_owners": 0,
+            "active_readers": 1,
+            "active_specialists": 0,
+            "active_sessions": 1,
+            "stale_sessions": 0,
+            "reapable_sessions": 0,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {
+            "active_checkpoints": 0,
+            "dirty_checkpoints": 0,
+            "dirty_main_repo": True,
+            "needs_cleanup": True,
+        },
+        "running_tasks": [],
+        "active_owners": [],
+        "active_readers": [{"session_id": "sess-unassigned", "scope_confidence": "observed_read"}],
+        "active_sessions": [{"id": "sess-unassigned", "lane_role": "observer"}],
+        "stale_sessions": [],
+        "stranded_tasks": [],
+    }
+
+    with patch("cli.commands.pulse.STClient", return_value=mock_client):
+        result = runner.invoke(app, ["pulse", "--project", "a-term", "--gate"])
+
+    assert result.exit_code == 2
+    assert "PULSE:a-term|tasks=0|writers=0|readers=1|specialists=0|sessions=1|" in result.output
+    assert "PREFLIGHT:a-term|claim=blocked|edit=blocked|reasons=active_nonwriter_session|source=st-pulse" in result.output
+    assert "SESSION-REVIEW:a-term|nonwriter_active=1|dirty=1|checkpoints=0|" in result.output
+    assert "REVIEW:a-term|ownerless=yes" not in result.output
+
+
 def test_pulse_prefers_source_client_for_observer_session_label() -> None:
     mock_client = MagicMock()
     mock_client.get.return_value = {

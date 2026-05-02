@@ -9,6 +9,7 @@ import typer
 
 from .._observability import refresh_agent_observability
 from ..client import APIError, STClient
+from ..config import get_project_override
 from ..details import current_root, display_path, write_details
 from ..output import handle_api_error, is_compact, output_json
 from .sessions_overlap import render_overlap_list
@@ -67,6 +68,7 @@ def _render_session_list(
     refresh_agent_observability()
     client = STClient(require_project=False)
     normalized_status = _normalize_status_filter(status_filter)
+    resolved_project_id = project_id or get_project_override()
 
     try:
         sessions = client.list_sessions(
@@ -75,7 +77,7 @@ def _render_session_list(
             page=1,
             agent_slug=agent_slug,
             parent_session_id=parent_session_id,
-            project_id=project_id,
+            project_id=resolved_project_id,
         )
     except APIError as e:
         handle_api_error(e)

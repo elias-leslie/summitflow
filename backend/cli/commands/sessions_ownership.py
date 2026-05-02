@@ -6,6 +6,7 @@ from app.services._ownership_roles import is_read_only_owner
 
 from .._output_state import is_compact
 from ..client import APIError, STClient
+from ..config import get_project_override
 from ..output import handle_api_error, output_json
 
 
@@ -85,9 +86,10 @@ def _partition_owner_rows(
 
 def render_ownership_list(client: STClient, project_id: str | None) -> None:
     rows: list[dict[str, object]] = []
+    resolved_project_id = project_id or get_project_override()
 
     try:
-        for pid in _resolve_projects(client, project_id):
+        for pid in _resolve_projects(client, resolved_project_id):
             rows.extend(collect_project_owners(client, pid))
     except APIError as e:
         handle_api_error(e)

@@ -263,6 +263,46 @@ def get_agent(
     _print_agent(agent)
 
 
+@app.command("create")
+def create_agent(
+    slug: Annotated[str, typer.Argument(help="Agent slug")],
+    name: Annotated[str, typer.Argument(help="Display name")],
+    primary_model: Annotated[str, typer.Option("--primary-model", help="Primary model id.")],
+    system_prompt_file: Annotated[Path, typer.Option("--system-prompt-file", help="System prompt file.")],
+    description: Annotated[str | None, typer.Option("--description")] = None,
+    temperature: Annotated[float, typer.Option("--temperature", min=0.0, max=2.0)] = 0.1,
+    thinking_level: Annotated[str | None, typer.Option("--thinking-level")] = None,
+    verbosity_level: Annotated[str | None, typer.Option("--verbosity-level")] = None,
+    active: Annotated[bool, typer.Option("--active/--inactive")] = True,
+    coding_agent: Annotated[bool, typer.Option("--coding-agent/--non-coding-agent")] = False,
+    fallback_model: Annotated[list[str] | None, typer.Option("--fallback-model")] = None,
+    escalation_model: Annotated[str | None, typer.Option("--escalation-model")] = None,
+    memory_config_file: Annotated[Path | None, typer.Option("--memory-config-file")] = None,
+) -> None:
+    """Create an agent using the Agent Hub API."""
+    payload: dict[str, Any] = {
+        "slug": slug,
+        "name": name,
+        "system_prompt": _load_text_file(system_prompt_file, "System prompt"),
+        "primary_model_id": primary_model,
+        "temperature": temperature,
+        "is_active": active,
+        "is_coding_agent": coding_agent,
+    }
+    for key, val in [
+        ("description", description),
+        ("thinking_level", thinking_level),
+        ("verbosity_level", verbosity_level),
+        ("fallback_models", fallback_model),
+        ("escalation_model_id", escalation_model),
+    ]:
+        if val is not None:
+            payload[key] = val
+    if memory_config_file is not None:
+        payload["memory_config"] = _load_json_file(memory_config_file, "Memory config")
+    _print_agent(agents_api("POST", "", json=payload))
+
+
 @app.command("preview")
 def preview_agent(
     slug: Annotated[str, typer.Argument(help="Agent slug")],

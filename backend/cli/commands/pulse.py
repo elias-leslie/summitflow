@@ -181,12 +181,39 @@ def _needs_ownerless_review(summary: dict[str, Any], cleanup: dict[str, Any]) ->
         _truthy_count(summary.get("active_owners"))
         + _truthy_count(summary.get("active_specialists"))
     )
-    if active_agents:
+    if active_agents or _truthy_count(summary.get("active_sessions")):
         return False
     return bool(
         _truthy_count(cleanup.get("active_checkpoints"))
         or _dirty_residue_count(cleanup)
         or _truthy_count(summary.get("stranded_tasks"))
+    )
+
+
+def _nonwriter_active_sessions(summary: dict[str, Any]) -> int:
+    assigned_writers = (
+        _truthy_count(summary.get("active_owners"))
+        + _truthy_count(summary.get("active_specialists"))
+    )
+    return max(0, _truthy_count(summary.get("active_sessions")) - assigned_writers)
+
+
+def _format_nonwriter_session_review(project_id: Any, summary: dict[str, Any], cleanup: dict[str, Any]) -> str | None:
+    if _truthy_count(summary.get("active_owners")) or _truthy_count(summary.get("active_specialists")):
+        return None
+    nonwriter = _nonwriter_active_sessions(summary)
+    if not nonwriter:
+        return None
+    if not (
+        _truthy_count(cleanup.get("active_checkpoints"))
+        or _dirty_residue_count(cleanup)
+        or _truthy_count(summary.get("stranded_tasks"))
+    ):
+        return None
+    return (
+        f"SESSION-REVIEW:{project_id}|nonwriter_active={nonwriter}|dirty={_dirty_residue_count(cleanup)}|"
+        f"checkpoints={_truthy_count(cleanup.get('active_checkpoints'))}|"
+        "action=inspect-raw-session-before-cleanup-or-adoption"
     )
 
 
@@ -231,6 +258,8 @@ def _preflight_reasons(
     reasons: list[str] = []
     if jj_status and jj_status.colocated and jj_status.conflicted:
         reasons.append("jj_conflicts")
+    if _format_nonwriter_session_review("?", summary, cleanup):
+        reasons.append("active_nonwriter_session")
     return reasons
 
 
@@ -326,9 +355,12 @@ def _print_compact(payloads: list[dict[str, Any]], *, details: bool = False) -> 
             print(_format_jj_state(project_id, jj_status))
         print(_format_preflight(project_id, summary, cleanup, jj_status))
         review_line = _format_ownerless_review(project_id, summary, cleanup)
+        session_review_line = _format_nonwriter_session_review(project_id, summary, cleanup)
         if review_line:
             print(review_line)
-        if review_line or (jj_status is not None and jj_status.state != "clean"):
+        if session_review_line:
+            print(session_review_line)
+        if review_line or session_review_line or (jj_status is not None and jj_status.state != "clean"):
             print(
                 f"ACTION:{project_id}|if_dirty=inspect-diff-once-then-commit-or-continue-narrow|"
                 "ownership=diagnostic-only"
