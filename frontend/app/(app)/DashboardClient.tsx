@@ -16,7 +16,7 @@ import { motion } from 'motion/react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { ActivityFeed, ProjectCard } from '@/components/dashboard'
-import { Skeleton } from '@/components/ui/skeleton'
+import { ProjectCardGridSkeleton } from '@/components/projects/ProjectCardGridSkeleton'
 import { useClampedPagination } from '@/hooks/useClampedPagination'
 import { fetchProjectsWithStats, type ProjectWithStats } from '@/lib/api'
 
@@ -244,27 +244,7 @@ interface ProjectsGridProps {
 
 function ProjectsGrid({ projects, isLoading, error }: ProjectsGridProps) {
   if (isLoading) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="card p-5 space-y-4">
-            <div className="flex items-center gap-3">
-              <Skeleton className="w-12 h-12 rounded-xl" />
-              <div className="space-y-2 flex-1">
-                <Skeleton className="h-4 w-3/4 rounded" />
-                <Skeleton className="h-3 w-1/2 rounded" />
-              </div>
-            </div>
-            <Skeleton className="h-px w-full" />
-            <div className="flex items-center gap-3">
-              <Skeleton className="h-6 w-12 rounded" />
-              <Skeleton className="h-6 w-12 rounded" />
-              <Skeleton className="h-6 w-12 rounded" />
-            </div>
-          </div>
-        ))}
-      </div>
-    )
+    return <ProjectCardGridSkeleton />
   }
 
   if (error) {

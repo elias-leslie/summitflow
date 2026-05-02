@@ -15,6 +15,7 @@ import type {
   ExplorerFilters,
   ExplorerHealthStatus,
 } from '@/lib/api/explorer'
+import { nextSortState } from './stateUtils'
 
 type SortField = 'path' | 'name' | 'health_status' | 'last_scanned_at'
 type SortDir = 'asc' | 'desc'
@@ -120,14 +121,11 @@ export function useExplorerFilters({
 
   const toggleSort = useCallback(
     (field: SortField) => {
-      if (sortField === field) {
-        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-      } else {
-        setSortField(field)
-        setSortDir('asc')
-      }
+      const next = nextSortState(sortField, sortDir, field)
+      setSortField(next.field)
+      setSortDir(next.dir)
     },
-    [sortField],
+    [sortField, sortDir],
   )
 
   // Pagination helpers

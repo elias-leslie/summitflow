@@ -20,16 +20,18 @@ export function BackupExpandedRow({
   backup,
   sourceName,
   sourceType,
+  colSpan = 7,
 }: {
   backup: Backup
   sourceName: string
   sourceType: BackupSource['source_type'] | undefined
+  colSpan?: number
 }) {
   const hasDatabase = backupHasDatabase(backup)
 
   return (
     <tr>
-      <td colSpan={7} className="px-0 py-0">
+      <td colSpan={colSpan} className="px-0 py-0">
         <div className="mx-4 mb-3 rounded-lg border border-slate-800/60 bg-slate-900/40 p-4 space-y-3">
           {/* Metrics grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">

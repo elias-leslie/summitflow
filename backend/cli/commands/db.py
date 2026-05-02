@@ -9,6 +9,12 @@ from pathlib import Path
 
 import typer
 
+from app.services.db_workbench import (
+    DbWorkbenchError,
+    start_workbench,
+    status_workbench,
+    stop_workbench,
+)
 from app.storage.projects import find_project_by_cwd, get_project_root_path
 
 from ..details import emit_result_or_details
@@ -159,12 +165,28 @@ def _alembic(project: str, args: list[str]) -> int:
 
 
 def _parse_project_arg(args: list[str]) -> tuple[str | None, list[str]]:
-    if args[:1] in (["-P"], ["--project"]):
-        if len(args) < 2:
-            output_error("-P/--project requires a value")
-            raise typer.Exit(2) from None
-        return args[1], args[2:]
-    return None, args
+    project: str | None = None
+    remaining: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in {"-P", "--project"}:
+            if index + 1 >= len(args):
+                output_error("-P/--project requires a value")
+                raise typer.Exit(2) from None
+            project = args[index + 1]
+            index += 2
+            continue
+        if arg.startswith("--project="):
+            project = arg.split("=", 1)[1]
+            index += 1
+            continue
+        remaining.append(arg)
+        index += 1
+    if project == "":
+        output_error("-P/--project requires a value")
+        raise typer.Exit(2) from None
+    return project, remaining
 
 
 def _usage() -> None:
@@ -180,6 +202,7 @@ Commands:
   sample <table> [limit]     Sample rows
   sizes                      Show table/index sizes
   indexes [table]            Show indexes
+  workbench start|stop|status Start or inspect Pgweb workbench
   query [-t] "SELECT ..."    Run read-only SQL
   exec "UPDATE ..."          Run write SQL with destructive DDL blocked
   ddl "CREATE INDEX ..."     Run safe DDL only
@@ -204,6 +227,8 @@ def db(ctx: typer.Context) -> None:
     command = args[0]
     rest = args[1:]
 
+    if command == "workbench":
+        raise typer.Exit(_workbench(project, rest))
     if command == "tables":
         if rest[:1] == ["--counts"]:
             sql = """
@@ -278,3 +303,44 @@ def db(ctx: typer.Context) -> None:
             raise typer.Exit(_alembic(project, ["revision", "--autogenerate", "-m", rest[1]]))
     output_error(f"Unknown or incomplete st db command: {' '.join(args)}")
     raise typer.Exit(2)
+
+
+def _print_workbench_status(project: str, *, message: str | None = None) -> None:
+    status = status_workbench(project, message=message)
+    state = "running" if status.running else "stopped"
+    install = "installed" if status.installed else "missing-pgweb"
+    url = status.proxy_url if status.running else "-"
+    pid = status.pid if status.pid is not None else "-"
+    mode = "readonly" if status.readonly else "admin"
+    print(f"WORKBENCH {project} {state} {install} {mode} pid={pid} url={url}")
+    if status.message:
+        print(status.message)
+
+
+def _workbench(project: str, args: list[str]) -> int:
+    if not args or args[0] in {"-h", "--help", "help"}:
+        print(
+            """Usage: st db [-P project] workbench start|stop|status [--admin]
+
+Starts Pgweb bound to localhost and proxies it through SummitFlow.
+"""
+        )
+        return 0
+    subcommand = args[0]
+    try:
+        if subcommand == "start":
+            start_workbench(project, readonly="--admin" not in args[1:])
+            _print_workbench_status(project)
+            return 0
+        if subcommand == "stop":
+            stop_workbench(project)
+            _print_workbench_status(project)
+            return 0
+        if subcommand == "status":
+            _print_workbench_status(project)
+            return 0
+    except DbWorkbenchError as exc:
+        output_error(str(exc))
+        return 1
+    output_error(f"Unknown st db workbench command: {subcommand}")
+    return 2

@@ -16,6 +16,10 @@
 // ---------------------------------------------------------------------------
 
 import { PORTS } from '@/lib/api-config'
+import {
+  createProxyRouteExports,
+  createProxyRouteHandler,
+} from '@/lib/proxy-route'
 
 const ENV_PREFIX = 'SUMMITFLOW'
 
@@ -35,16 +39,6 @@ function resolveConfig(): ProxyConfig {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Headers
-// ---------------------------------------------------------------------------
-
-const SSE_HEADERS: Record<string, string> = {
-  'Cache-Control': 'no-cache, no-transform',
-  'X-Accel-Buffering': 'no',
-  Connection: 'keep-alive',
-}
-
 function buildAuthHeaders(config: ProxyConfig): Record<string, string> {
   const headers: Record<string, string> = {}
   if (config.requestSource) headers['X-Request-Source'] = config.requestSource
@@ -62,70 +56,24 @@ function buildUpstreamUrl(
   return `${config.agentHubUrl}/api/${joined}${qs}`
 }
 
-// ---------------------------------------------------------------------------
-// Route Handlers
-// ---------------------------------------------------------------------------
-
-type RouteContext = { params: Promise<{ path: string[] }> }
-
 const config = resolveConfig()
-const auth = buildAuthHeaders(config)
 
-function proxyResponse(response: Response): Response {
-  const contentType = response.headers.get('Content-Type') ?? 'application/json'
-  const isSSE = contentType.includes('text/event-stream')
-  return new Response(response.body, {
-    status: response.status,
-    headers: {
-      'Content-Type': contentType,
-      ...(isSSE ? SSE_HEADERS : {}),
-    },
-  })
+function buildForwardHeaders(
+  _request: Request,
+  config: ProxyConfig,
+  bodyPresent: boolean,
+): HeadersInit {
+  const auth = buildAuthHeaders(config)
+  return bodyPresent ? { 'Content-Type': 'application/json', ...auth } : auth
 }
 
-async function proxyWithBody(
-  request: Request,
-  { params }: RouteContext,
-  method: string,
-): Promise<Response> {
-  const { path } = await params
-  const qs =
-    method === 'DELETE'
-      ? new URL(request.url).searchParams.toString()
-      : undefined
-  const url = buildUpstreamUrl(config, path, qs)
-  const body = await request.text()
-  const response = await fetch(url, {
-    method,
-    headers: body ? { 'Content-Type': 'application/json', ...auth } : auth,
-    ...(body ? { body } : {}),
-  })
-  return proxyResponse(response)
-}
+const proxyRequest = createProxyRouteHandler<ProxyConfig>({
+  resolveConfig: () => config,
+  buildUpstreamUrl,
+  buildHeaders: buildForwardHeaders,
+  bodyMode: 'text',
+  queryMode: 'get-delete',
+})
 
-export async function GET(request: Request, { params }: RouteContext) {
-  const { path } = await params
-  const url = buildUpstreamUrl(
-    config,
-    path,
-    new URL(request.url).searchParams.toString(),
-  )
-  const response = await fetch(url, { headers: auth })
-  return proxyResponse(response)
-}
-
-export async function POST(request: Request, context: RouteContext) {
-  return proxyWithBody(request, context, 'POST')
-}
-
-export async function PUT(request: Request, context: RouteContext) {
-  return proxyWithBody(request, context, 'PUT')
-}
-
-export async function PATCH(request: Request, context: RouteContext) {
-  return proxyWithBody(request, context, 'PATCH')
-}
-
-export async function DELETE(request: Request, context: RouteContext) {
-  return proxyWithBody(request, context, 'DELETE')
-}
+export const { GET, POST, PUT, PATCH, DELETE } =
+  createProxyRouteExports(proxyRequest)

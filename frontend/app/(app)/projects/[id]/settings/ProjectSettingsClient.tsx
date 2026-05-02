@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AutonomousSettingsPanel } from '@/components/settings/AutonomousSettings'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -32,6 +32,7 @@ import {
   fetchProjectHealth,
   fetchQualityGateHealth,
   PROJECT_CATEGORY_LABELS,
+  type Project,
   type ProjectCategory,
   updateProject,
 } from '@/lib/api'
@@ -87,15 +88,19 @@ export function ProjectSettingsClient() {
     enabled: Boolean(project),
   })
 
+  const loadProjectForm = useCallback((nextProject: Project) => {
+    setName(nextProject.name)
+    setBaseUrl(nextProject.base_url)
+    setHealthEndpoint(nextProject.health_endpoint)
+    setRootPath(nextProject.root_path ?? '')
+    setCategory(nextProject.category)
+    setErrors({})
+  }, [])
+
   useEffect(() => {
     if (!project) return
-    setName(project.name)
-    setBaseUrl(project.base_url)
-    setHealthEndpoint(project.health_endpoint)
-    setRootPath(project.root_path ?? '')
-    setCategory(project.category)
-    setErrors({})
-  }, [project])
+    loadProjectForm(project)
+  }, [loadProjectForm, project])
 
   const mutation = useMutation({
     mutationFn: (payload: {
@@ -184,12 +189,7 @@ export function ProjectSettingsClient() {
 
   const handleReset = () => {
     if (!project) return
-    setName(project.name)
-    setBaseUrl(project.base_url)
-    setHealthEndpoint(project.health_endpoint)
-    setRootPath(project.root_path ?? '')
-    setCategory(project.category)
-    setErrors({})
+    loadProjectForm(project)
     setSaveState(null)
   }
 

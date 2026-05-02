@@ -16,21 +16,6 @@ vi.mock('next/navigation', () => ({
   useRouter: routerMocks.useRouter,
 }))
 
-vi.mock('next/link', () => ({
-  default: ({
-    href,
-    children,
-    ...props
-  }: {
-    href: string
-    children: React.ReactNode
-  }) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
-}))
-
 vi.mock('@/lib/api', () => ({
   createProject: apiMocks.createProject,
   PROJECT_CATEGORY_LABELS: {
@@ -53,6 +38,15 @@ function renderClient() {
       <NewProjectClient />
     </QueryClientProvider>,
   )
+}
+
+async function submitProject() {
+  fireEvent.click(screen.getByRole('button', { name: 'Create Project' }))
+
+  await waitFor(() => {
+    expect(apiMocks.createProject).toHaveBeenCalled()
+  })
+  return apiMocks.createProject.mock.calls[0]?.[0]
 }
 
 describe('NewProjectClient', () => {
@@ -84,12 +78,7 @@ describe('NewProjectClient', () => {
     expect(screen.getByText('https://example.com/healthz')).toBeInTheDocument()
     expect(screen.getByText('/tmp/my-project')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create Project' }))
-
-    await waitFor(() => {
-      expect(apiMocks.createProject).toHaveBeenCalled()
-    })
-    expect(apiMocks.createProject.mock.calls[0]?.[0]).toEqual({
+    expect(await submitProject()).toEqual({
       id: 'my-project',
       name: 'My Project!!',
       base_url: 'https://example.com',
@@ -123,12 +112,7 @@ describe('NewProjectClient', () => {
       '/srv/workspaces/projects/hosted-example',
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create Project' }))
-
-    await waitFor(() => {
-      expect(apiMocks.createProject).toHaveBeenCalled()
-    })
-    expect(apiMocks.createProject.mock.calls[0]?.[0]).toEqual({
+    expect(await submitProject()).toEqual({
       id: 'hosted-example',
       name: 'Hosted Example',
       base_url: undefined,
@@ -182,12 +166,8 @@ describe('NewProjectClient', () => {
       target: { value: 'https://example.com' },
     })
     fireEvent.click(screen.getByLabelText('Provision Agent Hub permission'))
-    fireEvent.click(screen.getByRole('button', { name: 'Create Project' }))
 
-    await waitFor(() => {
-      expect(apiMocks.createProject).toHaveBeenCalled()
-    })
-    expect(apiMocks.createProject.mock.calls[0]?.[0]).toEqual({
+    expect(await submitProject()).toEqual({
       id: 'no-bootstrap',
       name: 'No Bootstrap',
       base_url: 'https://example.com',
@@ -216,12 +196,8 @@ describe('NewProjectClient', () => {
     })
     fireEvent.click(screen.getByLabelText('Sidebar Category'))
     fireEvent.click(screen.getByRole('button', { name: 'Testing' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Create Project' }))
 
-    await waitFor(() => {
-      expect(apiMocks.createProject).toHaveBeenCalled()
-    })
-    expect(apiMocks.createProject.mock.calls[0]?.[0]).toMatchObject({
+    expect(await submitProject()).toMatchObject({
       id: 'testing-project',
       category: 'testing',
       summitflow_hosted: true,

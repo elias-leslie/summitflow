@@ -18,21 +18,6 @@ vi.mock('next/navigation', () => ({
   useParams: navigationMocks.useParams,
 }))
 
-vi.mock('next/link', () => ({
-  default: ({
-    href,
-    children,
-    ...props
-  }: {
-    href: string
-    children: React.ReactNode
-  }) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
-}))
-
 vi.mock('@/components/settings/AutonomousSettings', () => ({
   AutonomousSettingsPanel: ({ projectId }: { projectId: string }) => (
     <div data-testid="autonomous-settings">{projectId}</div>
@@ -50,6 +35,18 @@ vi.mock('@/lib/api', () => ({
     dev: 'Dev',
   },
 }))
+
+const TEST_PROJECT = {
+  id: 'summitflow',
+  name: 'SummitFlow',
+  base_url: 'https://dev.summitflow.dev',
+  public_url: 'https://app.example.test',
+  health_endpoint: '/health',
+  root_path: '/home/testuser/summitflow',
+  category: 'production',
+  sidebar_rank: 1,
+  created_at: '2026-03-12T09:00:00Z',
+}
 
 function renderClient() {
   const queryClient = new QueryClient({
@@ -112,17 +109,7 @@ describe('ProjectSettingsClient', () => {
   })
 
   it('shows live project trust signals and automation tab', async () => {
-    apiMocks.fetchProject.mockResolvedValue({
-      id: 'summitflow',
-      name: 'SummitFlow',
-      base_url: 'https://dev.summitflow.dev',
-      public_url: 'https://app.example.test',
-      health_endpoint: '/health',
-      root_path: '/home/testuser/summitflow',
-      category: 'production',
-      sidebar_rank: 1,
-      created_at: '2026-03-12T09:00:00Z',
-    })
+    apiMocks.fetchProject.mockResolvedValue(TEST_PROJECT)
 
     renderClient()
 
@@ -139,17 +126,7 @@ describe('ProjectSettingsClient', () => {
   })
 
   it('saves normalized registration changes', async () => {
-    apiMocks.fetchProject.mockResolvedValue({
-      id: 'summitflow',
-      name: 'SummitFlow',
-      base_url: 'https://dev.summitflow.dev',
-      public_url: 'https://app.example.test',
-      health_endpoint: '/health',
-      root_path: '/home/testuser/summitflow',
-      category: 'production',
-      sidebar_rank: 1,
-      created_at: '2026-03-12T09:00:00Z',
-    })
+    apiMocks.fetchProject.mockResolvedValue(TEST_PROJECT)
 
     renderClient()
 
@@ -188,15 +165,8 @@ describe('ProjectSettingsClient', () => {
 
   it('uses the stored public URL for the open app link', async () => {
     apiMocks.fetchProject.mockResolvedValue({
-      id: 'summitflow',
-      name: 'SummitFlow',
+      ...TEST_PROJECT,
       base_url: 'http://localhost:3001',
-      public_url: 'https://app.example.test',
-      health_endpoint: '/health',
-      root_path: '/home/testuser/summitflow',
-      category: 'production',
-      sidebar_rank: 1,
-      created_at: '2026-03-12T09:00:00Z',
     })
 
     renderClient()

@@ -1,6 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ProjectWithStats } from '@/lib/api'
 import { ProjectCard } from './ProjectCard'
@@ -18,21 +17,6 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({
     push: pushMock,
   }),
-}))
-
-vi.mock('next/link', () => ({
-  default: ({
-    href,
-    children,
-    ...props
-  }: {
-    href: string
-    children: ReactNode
-  }) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
 }))
 
 vi.mock('next/image', () => ({

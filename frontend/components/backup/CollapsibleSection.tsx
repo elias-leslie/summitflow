@@ -6,21 +6,37 @@ import { type ReactNode, useState } from 'react'
 
 interface CollapsibleSectionProps {
   title: string
+  titleAccessory?: ReactNode
   summary: ReactNode
   children: ReactNode
   defaultExpanded?: boolean
+  className?: string
+  expandedClassName?: string
+  collapsedClassName?: string
+  contentClassName?: string
 }
 
 export function CollapsibleSection({
   title,
+  titleAccessory,
   summary,
   children,
   defaultExpanded = false,
+  className,
+  expandedClassName,
+  collapsedClassName,
+  contentClassName = 'border-t border-slate-800/60 px-4 py-4',
 }: CollapsibleSectionProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
 
   return (
-    <section className="rounded-lg border border-slate-700/60 bg-slate-900/30 overflow-hidden">
+    <section
+      className={clsx(
+        'rounded-lg border border-slate-700/60 bg-slate-900/30 overflow-hidden',
+        expanded ? expandedClassName : collapsedClassName,
+        className,
+      )}
+    >
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
@@ -35,9 +51,12 @@ export function CollapsibleSection({
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
-              {title}
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300 display">
+                {title}
+              </h2>
+              {titleAccessory}
+            </div>
             <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
               {expanded ? 'Collapse' : 'Expand'}
             </span>
@@ -55,9 +74,7 @@ export function CollapsibleSection({
         )}
       >
         <div className="overflow-hidden">
-          <div className="border-t border-slate-800/60 px-4 py-4">
-            {children}
-          </div>
+          <div className={contentClassName}>{children}</div>
         </div>
       </div>
     </section>

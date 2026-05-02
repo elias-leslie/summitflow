@@ -1,5 +1,4 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Project } from '@/lib/api'
 import { ProjectAccordionItem } from './ProjectAccordionItem'
@@ -12,21 +11,6 @@ const permissionTierMock = vi.hoisted(() => vi.fn())
 
 vi.mock('next/navigation', () => ({
   usePathname: navigationMocks.usePathname,
-}))
-
-vi.mock('next/link', () => ({
-  default: ({
-    href,
-    children,
-    ...props
-  }: {
-    href: string
-    children: ReactNode
-  }) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
 }))
 
 vi.mock('./useProjectPermissionTier', () => ({

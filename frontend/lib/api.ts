@@ -3,6 +3,7 @@
 
 // Re-export domain modules
 export * from './api/backups'
+export * from './api/db-workbench'
 export * from './api/files'
 export * from './api/git'
 export * from './api/notifications'

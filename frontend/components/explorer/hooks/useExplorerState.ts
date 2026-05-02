@@ -9,6 +9,7 @@
  */
 
 import { useCallback, useState } from 'react'
+import { toggleSetValue } from './stateUtils'
 
 interface UseExplorerStateOptions {
   /** Initial expanded IDs */
@@ -57,15 +58,7 @@ export function useExplorerState({
   )
 
   const toggleExpand = useCallback((id: string) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
+    setExpandedIds((prev) => toggleSetValue(prev, id))
   }, [])
 
   const expand = useCallback((id: string) => {

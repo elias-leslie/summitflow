@@ -8,21 +8,6 @@ const apiMocks = vi.hoisted(() => ({
   fetchProjectsWithStats: vi.fn(),
 }))
 
-vi.mock('next/link', () => ({
-  default: ({
-    href,
-    children,
-    ...props
-  }: {
-    href: string
-    children: ReactNode
-  }) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
-}))
-
 vi.mock('motion/react', () => ({
   motion: {
     div: ({ children, ...props }: { children: ReactNode }) => (

@@ -4,6 +4,7 @@
 
 import { useCallback, useState } from 'react'
 import type { ExplorerType, HealthStatus } from '../types'
+import { nextSortState, toggleSetValue } from './stateUtils'
 
 export interface ExplorerShellState {
   activeType: ExplorerType
@@ -53,26 +54,15 @@ export function useExplorerShellState(
 
   const handleSort = useCallback(
     (field: string) => {
-      if (sortField === field) {
-        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-      } else {
-        setSortField(field)
-        setSortDir('asc')
-      }
+      const next = nextSortState(sortField, sortDir, field)
+      setSortField(next.field)
+      setSortDir(next.dir)
     },
-    [sortField],
+    [sortField, sortDir],
   )
 
   const handleToggleExpand = useCallback((id: string) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
+    setExpandedIds((prev) => toggleSetValue(prev, id))
   }, [])
 
   const handleCollapseAll = useCallback(() => {

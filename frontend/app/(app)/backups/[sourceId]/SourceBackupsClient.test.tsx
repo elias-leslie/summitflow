@@ -9,14 +9,6 @@ const fetchBackupSourceMock = vi.fn()
 const fetchSourceBackupsMock = vi.fn()
 const fetchStorageSummaryMock = vi.fn()
 
-vi.mock('next/link', () => ({
-  default: ({ children, href, ...props }: any) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
-}))
-
 vi.mock('@tanstack/react-query', async () => {
   const actual = await vi.importActual<typeof import('@tanstack/react-query')>(
     '@tanstack/react-query',
@@ -47,6 +39,14 @@ function renderClient() {
   )
 }
 
+async function submitCreateBackup() {
+  renderClient()
+
+  await screen.findByText('Alpha')
+  fireEvent.click(screen.getByRole('button', { name: /create backup/i }))
+  fireEvent.click(screen.getByRole('button', { name: /^create$/i }))
+}
+
 describe('SourceBackupsClient', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -75,11 +75,7 @@ describe('SourceBackupsClient', () => {
   it('shows lost-confirmation warning for ambiguous create errors and refreshes backup state', async () => {
     createSourceBackupMock.mockRejectedValueOnce(new Error('socket hang up'))
 
-    renderClient()
-
-    await screen.findByText('Alpha')
-    fireEvent.click(screen.getByRole('button', { name: /create backup/i }))
-    fireEvent.click(screen.getByRole('button', { name: /^create$/i }))
+    await submitCreateBackup()
 
     expect(
       await screen.findByText(
@@ -100,11 +96,7 @@ describe('SourceBackupsClient', () => {
   it('keeps real backend create errors as hard failures', async () => {
     createSourceBackupMock.mockRejectedValueOnce(new Error('Source disabled'))
 
-    renderClient()
-
-    await screen.findByText('Alpha')
-    fireEvent.click(screen.getByRole('button', { name: /create backup/i }))
-    fireEvent.click(screen.getByRole('button', { name: /^create$/i }))
+    await submitCreateBackup()
 
     expect(await screen.findByText('Source disabled')).toBeInTheDocument()
     expect(mockInvalidateQueries).not.toHaveBeenCalled()

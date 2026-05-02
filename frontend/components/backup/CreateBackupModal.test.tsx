@@ -40,6 +40,27 @@ const sources: BackupSource[] = [
   },
 ]
 
+function renderAndSubmitAll(options?: {
+  onClose?: () => void
+  onCreated?: () => Promise<void>
+}) {
+  const onCreated = options?.onCreated ?? vi.fn().mockResolvedValue(undefined)
+  const onClose = options?.onClose ?? vi.fn()
+
+  render(
+    <CreateBackupModal
+      sources={sources}
+      onClose={onClose}
+      onCreated={onCreated}
+    />,
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: /select all/i }))
+  fireEvent.click(screen.getByTestId('backup-create-confirm'))
+
+  return { onClose, onCreated }
+}
+
 describe('CreateBackupModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -51,19 +72,7 @@ describe('CreateBackupModal', () => {
       status: 'queued',
       message: 'queued',
     })
-    const onCreated = vi.fn().mockResolvedValue(undefined)
-    const onClose = vi.fn()
-
-    render(
-      <CreateBackupModal
-        sources={sources}
-        onClose={onClose}
-        onCreated={onCreated}
-      />,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: /select all/i }))
-    fireEvent.click(screen.getByTestId('backup-create-confirm'))
+    const { onCreated, onClose } = renderAndSubmitAll()
 
     await waitFor(() => expect(createSourceBackupMock).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1))
@@ -80,16 +89,7 @@ describe('CreateBackupModal', () => {
       .mockRejectedValueOnce(new Error('socket hang up'))
     const onCreated = vi.fn().mockResolvedValue(undefined)
 
-    render(
-      <CreateBackupModal
-        sources={sources}
-        onClose={vi.fn()}
-        onCreated={onCreated}
-      />,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: /select all/i }))
-    fireEvent.click(screen.getByTestId('backup-create-confirm'))
+    renderAndSubmitAll({ onCreated })
 
     expect(
       await screen.findByText(
@@ -105,19 +105,7 @@ describe('CreateBackupModal', () => {
 
   it('shows an ambiguous warning instead of a hard failure when confirmations are lost', async () => {
     createSourceBackupMock.mockRejectedValue(new Error('fetch failed'))
-    const onCreated = vi.fn().mockResolvedValue(undefined)
-    const onClose = vi.fn()
-
-    render(
-      <CreateBackupModal
-        sources={sources}
-        onClose={onClose}
-        onCreated={onCreated}
-      />,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: /select all/i }))
-    fireEvent.click(screen.getByTestId('backup-create-confirm'))
+    const { onCreated, onClose } = renderAndSubmitAll()
 
     expect(
       await screen.findByText(

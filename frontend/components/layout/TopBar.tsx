@@ -7,6 +7,7 @@ import { NotificationBell } from '@/components/notifications'
 import { DEFAULT_PROJECT_ID, getProjectIdOrDefault } from '@/lib/project-config'
 
 import { AnimatedLogo } from './topbar/AnimatedLogo'
+import { DatabaseWorkbenchButton } from './topbar/DatabaseWorkbenchButton'
 import { Navigation } from './topbar/Navigation'
 import { TaskSearch } from './topbar/TaskSearch'
 import { useAdaptiveNavigation } from './topbar/useAdaptiveNavigation'
@@ -54,6 +55,7 @@ export function TopBar() {
           <div className="relative z-10 flex flex-shrink-0 items-center gap-1.5 rounded-[1.15rem] border border-slate-700/60 bg-slate-900/84 px-1.5 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_14px_30px_-24px_rgba(0,0,0,0.9)]">
             <TaskSearch onExpandedChange={setIsSearchExpanded} />
             <WorkspaceFilesButton />
+            <DatabaseWorkbenchButton />
             <div className="topbar-button p-1">
               <NotesProvider apiPrefix="/api" projectScope="summitflow">
                 <NotesButton />

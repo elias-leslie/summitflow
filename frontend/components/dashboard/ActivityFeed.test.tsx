@@ -10,21 +10,6 @@ vi.mock('@/lib/api/activity', () => ({
   fetchActivity: (...args: unknown[]) => fetchActivityMock(...args),
 }))
 
-vi.mock('next/link', () => ({
-  default: ({
-    href,
-    children,
-    ...props
-  }: {
-    href: string
-    children: ReactNode
-  }) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
-}))
-
 vi.mock('react-window', () => ({
   List: ({
     rowComponent: RowComponent,

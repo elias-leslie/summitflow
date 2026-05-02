@@ -21,6 +21,7 @@ from .api import (
     checkpoints,
     collab_sessions,
     console_errors,
+    db_workbench,
     design_assets,
     design_standards,
     docker,
@@ -129,6 +130,7 @@ app.include_router(collab_sessions.global_router, prefix="/api", tags=["collab-s
 app.include_router(files.project_router, prefix="/api/projects", tags=["files"])
 app.include_router(files.global_router, prefix="/api", tags=["files"])
 app.include_router(graphify.router, prefix="/api/projects", tags=["graphify"])
+app.include_router(db_workbench.router, prefix="/api/projects", tags=["db-workbench"])
 
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])

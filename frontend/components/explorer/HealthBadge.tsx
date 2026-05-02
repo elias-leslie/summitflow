@@ -105,6 +105,21 @@ const typeThresholds: Record<EntryType, string> = {
   architecture: 'Parallel implementations, missing infrastructure, duplicates',
 }
 
+function buildTooltipLines(
+  label: string,
+  type: EntryType | undefined,
+  count: number | undefined,
+) {
+  const tooltipLines = [label]
+  if (type && typeThresholds[type]) {
+    tooltipLines.push(`Checks: ${typeThresholds[type]}`)
+  }
+  if (count !== undefined && count > 0) {
+    tooltipLines.push(`Issues: ${count}`)
+  }
+  return tooltipLines
+}
+
 export function HealthBadge({
   status,
   count,
@@ -115,14 +130,7 @@ export function HealthBadge({
 }: HealthBadgeProps) {
   const config = statusConfig[status]
   const sizes = sizeConfig[size]
-
-  const tooltipLines = [config.label]
-  if (type && typeThresholds[type]) {
-    tooltipLines.push(`Checks: ${typeThresholds[type]}`)
-  }
-  if (count !== undefined && count > 0) {
-    tooltipLines.push(`Issues: ${count}`)
-  }
+  const tooltipLines = buildTooltipLines(config.label, type, count)
 
   const shouldPulse = status === 'error'
   const shouldGlow = status !== 'unknown'
@@ -166,14 +174,7 @@ export function HealthPill({
   className,
 }: Omit<HealthBadgeProps, 'size' | 'showLabel'>) {
   const config = statusConfig[status]
-
-  const tooltipLines = [config.label]
-  if (type && typeThresholds[type]) {
-    tooltipLines.push(`Checks: ${typeThresholds[type]}`)
-  }
-  if (count !== undefined && count > 0) {
-    tooltipLines.push(`Issues: ${count}`)
-  }
+  const tooltipLines = buildTooltipLines(config.label, type, count)
 
   return (
     <span
