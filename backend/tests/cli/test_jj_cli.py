@@ -360,6 +360,73 @@ def test_commit_rejects_skip_checks_when_publishing(tmp_path: Path) -> None:
         jj_lib.commit_current_revision(tmp_path, message="test", push=True, skip_checks=True)
 
 
+def test_commit_selected_paths_quotes_fileset_meta_characters(tmp_path: Path) -> None:
+    (tmp_path / ".jj").mkdir()
+    (tmp_path / ".git").mkdir()
+    target = tmp_path / "frontend" / "src" / "app" / "agents" / "[slug]" / "chat" / "page.tsx"
+    target.parent.mkdir(parents=True)
+    target.write_text("changed", encoding="utf-8")
+    revision = JJRevisionInfo(
+        change_id="chg",
+        commit_id="commit",
+        empty=False,
+        conflict=False,
+        description="selected",
+    )
+    fileset = 'root-file:"frontend/src/app/agents/[slug]/chat/page.tsx"'
+    with (
+        patch("cli.lib.jj_publish.revision_info", return_value=revision),
+        patch("cli.lib.jj_publish.run_jj") as mock_run_jj,
+    ):
+        mock_run_jj.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=target.as_posix(), stderr=""),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+        ]
+
+        result = jj_lib.commit_selected_paths(
+            tmp_path,
+            message="selected path",
+            paths=("frontend/src/app/agents/[slug]/chat/page.tsx",),
+            push=False,
+        )
+
+    assert result["selected_paths"] == ["frontend/src/app/agents/[slug]/chat/page.tsx"]
+    assert mock_run_jj.call_args_list == [
+        call(tmp_path, ["diff", "--name-only", fileset]),
+        call(tmp_path, ["split", "-m", "selected path", "--", fileset]),
+    ]
+
+
+def test_commit_selected_paths_rejects_no_matching_changes(tmp_path: Path) -> None:
+    (tmp_path / ".jj").mkdir()
+    (tmp_path / ".git").mkdir()
+
+    with (
+        patch("cli.lib.jj_publish.revision_info") as revision_info,
+        patch("cli.lib.jj_publish.run_jj") as mock_run_jj,
+        pytest.raises(jj_lib.JJError, match="selected paths have no changes"),
+    ):
+        mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        jj_lib.commit_selected_paths(
+            tmp_path,
+            message="selected path",
+            paths=("frontend/src/app/agents/[slug]/chat/page.tsx",),
+            push=False,
+        )
+
+    revision_info.assert_not_called()
+    assert mock_run_jj.call_args_list == [
+        call(
+            tmp_path,
+            [
+                "diff",
+                "--name-only",
+                'root-file:"frontend/src/app/agents/[slug]/chat/page.tsx"',
+            ],
+        )
+    ]
+
+
 def test_commit_advances_to_clean_working_copy_after_publish(tmp_path: Path) -> None:
     (tmp_path / ".jj").mkdir()
     (tmp_path / ".git").mkdir()

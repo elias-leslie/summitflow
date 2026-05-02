@@ -257,7 +257,7 @@ def _run_semantic_refresh_agent(
     project_id: str,
     root: Path,
     *,
-    agent: str | None,
+    agent: str,
     model: str,
     max_turns: int,
     timeout: int,
@@ -284,8 +284,7 @@ def _run_semantic_refresh_agent(
         "--timeout",
         str(timeout),
     ]
-    if agent:
-        command[2:2] = ["--agent", agent]
+    command[2:2] = ["--agent", agent]
     start = time.perf_counter()
     try:
         result = subprocess.run(
@@ -426,7 +425,7 @@ def context(
 @app.command("semantic-refresh")
 def semantic_refresh(
     project: Annotated[str | None, typer.Option("--project", "-p", help="Project id. Defaults to current project.")] = None,
-    agent: Annotated[str | None, typer.Option("--agent", "-a", help="Agent Hub agent slug.")] = None,
+    agent: Annotated[str, typer.Option("--agent", "-a", help="Agent Hub agent slug.")] = "coder",
     model: Annotated[str, typer.Option("--model", "-M", help="Model override for semantic extraction.")] = "gemini-3-flash-preview",
     max_turns: Annotated[int, typer.Option("--max-turns", "-n", min=1, max=200, help="Agentic turn limit.")] = 40,
     timeout: Annotated[int, typer.Option("--timeout", min=60, max=7200, help="Agent Hub read timeout seconds.")] = 1800,
@@ -441,7 +440,7 @@ def semantic_refresh(
         print(
             "GRAPH_SEMANTIC_REFRESH:READY|"
             f"project={project_id}|prompt:{display_path(root, prompt_path)}|"
-            f"command=st complete -M {model} --project {project_id} --no-memory --execute-tools "
+            f"command=st complete --agent {agent} -M {model} --project {project_id} --no-memory --execute-tools "
             f"--working-dir {root} --max-turns {max_turns} --file {prompt_path} --timeout {timeout}"
         )
         return

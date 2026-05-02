@@ -285,6 +285,7 @@ def test_semantic_refresh_no_execute_writes_prompt(
 
     assert result.exit_code == 0
     assert "GRAPH_SEMANTIC_REFRESH:READY" in result.output
+    assert "--agent coder" in result.output
     prompt = tmp_path / ".dev-tools" / "graphify-semantic-refresh-prompt-details.txt"
     assert prompt.exists()
     assert "Refresh Graphify semantic coverage" in prompt.read_text(encoding="utf-8")
