@@ -15,8 +15,8 @@ app = typer.Typer(
     help=(
         "Proxmox VM lifecycle through st. Use for browser/test VM status, IPs, "
         "snapshots, start/stop, rollback, and clone. Destructive actions use "
-        "two-pass confirmation gates. For browser work, use st vm list/status/ip "
-        "to find the approved VM, then run st browser with SF_BROWSER_HOST."
+        "two-pass confirmation gates. For browser work, st browser uses the default "
+        "browser VM; use st vm list/status/ip/start only when changing or repairing it."
     ),
 )
 

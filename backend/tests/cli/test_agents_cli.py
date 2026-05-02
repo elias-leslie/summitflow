@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,6 +11,62 @@ from typer.testing import CliRunner
 from cli.commands.agents import app
 
 runner = CliRunner()
+
+
+def test_create_agent_posts_full_payload(tmp_path: Path) -> None:
+    prompt_path = tmp_path / "prompt.md"
+    prompt_path.write_text("You are purpose built.", encoding="utf-8")
+    memory_path = tmp_path / "memory.json"
+    memory_path.write_text(json.dumps({"include_mandates": True}), encoding="utf-8")
+
+    with (
+        patch("cli.commands.agents.agents_api", return_value={"slug": "graphify-semantic-extractor"}) as mock_agents_api,
+        patch("cli.commands.agents._print_agent"),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "graphify-semantic-extractor",
+                "Graphify Semantic Extractor",
+                "--primary-model",
+                "gemini-3-flash-preview",
+                "--fallback-model",
+                "gemini-3.1-pro-preview",
+                "--fallback-model",
+                "codex/gpt-5.5",
+                "--escalation-model",
+                "codex/gpt-5.5",
+                "--temperature",
+                "0.1",
+                "--thinking-level",
+                "high",
+                "--verbosity-level",
+                "low",
+                "--non-coding-agent",
+                "--system-prompt-file",
+                str(prompt_path),
+                "--memory-config-file",
+                str(memory_path),
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert mock_agents_api.call_args.args == ("POST", "")
+    assert mock_agents_api.call_args.kwargs["json"] == {
+        "slug": "graphify-semantic-extractor",
+        "name": "Graphify Semantic Extractor",
+        "system_prompt": "You are purpose built.",
+        "primary_model_id": "gemini-3-flash-preview",
+        "temperature": 0.1,
+        "is_active": True,
+        "is_coding_agent": False,
+        "thinking_level": "high",
+        "verbosity_level": "low",
+        "fallback_models": ["gemini-3.1-pro-preview", "codex/gpt-5.5"],
+        "escalation_model_id": "codex/gpt-5.5",
+        "memory_config": {"include_mandates": True},
+    }
 
 
 class TestAgentMemoryConfigUpdate:
@@ -113,4 +170,3 @@ class TestAgentMemoryConfigUpdate:
         assert result.exit_code == 1
         assert "Use either granular memory-config flags or --memory-config-file/--clear-memory-config, not both" in result.output
         mock_agents_api.assert_not_called()
-

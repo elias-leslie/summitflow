@@ -57,6 +57,11 @@ def set_project_override(project_id: str | None) -> None:
     get_config.cache_clear()
 
 
+def get_project_override() -> str | None:
+    """Return project id provided by the root --project/-P flag, if any."""
+    return _project_override
+
+
 def _resolve_project_from_list(projects: list[object], cwd: Path) -> tuple[str | None, str | None]:
     """Return (project_id, root_path) for the project containing cwd, or (None, None)."""
     for project in projects:

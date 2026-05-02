@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
@@ -17,10 +18,14 @@ runner = CliRunner()
 
 
 @pytest.fixture(autouse=True)
-def _stub_observability_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
+def _stub_observability_refresh(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     from cli.commands import sessions as sessions_cmd
+    from cli.config import set_project_override
 
+    set_project_override(None)
     monkeypatch.setattr(sessions_cmd, "refresh_agent_observability", lambda: None)
+    yield
+    set_project_override(None)
 
 
 class TestSessionClientContract:
@@ -150,6 +155,23 @@ class TestSessionsListCommand:
             agent_slug="debugger",
             parent_session_id="parent-123",
             project_id="summitflow",
+        )
+
+    def test_list_honors_root_project_override(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = []
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["-P", "a-term", "sessions", "list", "-s", "active"])
+
+        assert result.exit_code == 0
+        mock_client.list_sessions.assert_called_once_with(
+            status="active",
+            limit=20,
+            page=1,
+            agent_slug=None,
+            parent_session_id=None,
+            project_id="a-term",
         )
 
     def test_list_normalizes_running_status_to_active(self) -> None:
@@ -667,7 +689,7 @@ class TestOwnershipCommand:
         assert "paths=backend/app/foo.py" in result.output
 
         assert mock_client.get.call_count == 3
-        global_url_paths = [call.args[0] for call in mock_client._global_url.call_args_list]
+        global_url_paths = [item.args[0] for item in mock_client._global_url.call_args_list]
         assert global_url_paths == [
             "/projects",
             "/agent-hub/ownership/projects/summitflow/live",
@@ -697,6 +719,18 @@ class TestOwnershipCommand:
         assert '"readers": []' in result.output
         assert '"project_id": "agent-hub"' in result.output
         assert '"task_id": "task-2"' in result.output
+
+    def test_ownership_honors_root_project_override(self) -> None:
+        mock_client = MagicMock()
+        mock_client.get.return_value = {"active_owners": []}
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["-P", "a-term", "sessions", "ownership"])
+
+        assert result.exit_code == 0
+        assert "OWNERSHIP[writers=0|readers=0]" in result.output
+        global_url_paths = [item.args[0] for item in mock_client._global_url.call_args_list]
+        assert global_url_paths == ["/agent-hub/ownership/projects/a-term/live"]
 
     def test_ownership_labels_read_only_rows_as_readers(self) -> None:
         mock_client = MagicMock()

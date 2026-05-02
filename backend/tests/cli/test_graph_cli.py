@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -285,9 +286,87 @@ def test_semantic_refresh_no_execute_writes_prompt(
 
     assert result.exit_code == 0
     assert "GRAPH_SEMANTIC_REFRESH:READY" in result.output
+    assert "agent=graphify-semantic-extractor" in result.output
+    assert "mode=batch" in result.output
+    assert " -M " not in result.output
     prompt = tmp_path / ".dev-tools" / "graphify-semantic-refresh-prompt-details.txt"
     assert prompt.exists()
     assert "Refresh Graphify semantic coverage" in prompt.read_text(encoding="utf-8")
+
+
+def test_semantic_batches_keep_prompts_bounded(tmp_path: Path) -> None:
+    docs = []
+    for index in range(3):
+        path = tmp_path / f"doc-{index}.md"
+        path.write_text("x" * 30_000, encoding="utf-8")
+        docs.append(("document", path))
+
+    batches = graph._semantic_batches(tmp_path, docs)
+
+    assert len(batches) == 2
+
+
+def test_parse_semantic_fragment_accepts_markdown_fence() -> None:
+    payload = graph._parse_semantic_fragment('```json\n{"nodes":[],"edges":[],"hyperedges":[]}\n```')
+
+    assert payload == {"nodes": [], "edges": [], "hyperedges": []}
+
+
+def test_semantic_refresh_agent_treats_error_output_as_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(graph, "_status_for_project_root", lambda *args, **kwargs: _status("summitflow"))
+    monkeypatch.setattr(graph, "graphify_status", lambda *args, **kwargs: _status("summitflow"))
+    monkeypatch.setattr(graph.shutil, "which", lambda name: "/bin/st")
+    monkeypatch.setattr(
+        graph.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, stdout="Error: Gemini quota", stderr=""),
+    )
+
+    exit_code = graph._run_semantic_refresh_agent(
+        "summitflow",
+        tmp_path,
+        agent="graphify-semantic-extractor",
+        model=None,
+        max_turns=1,
+        timeout=60,
+    )
+
+    assert exit_code == 1
+    assert "GRAPH_SEMANTIC_REFRESH:FAIL:1" in capsys.readouterr().out
+
+
+def test_semantic_refresh_agent_fails_when_semantic_sources_remain_uncovered(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    status = _status("summitflow", ["semantic_sources_not_extracted"])
+    status["semantic_node_count"] = 0
+    status["semantic_source_count"] = 3
+    monkeypatch.setattr(graph, "_status_for_project_root", lambda *args, **kwargs: status)
+    monkeypatch.setattr(graph, "graphify_status", lambda *args, **kwargs: status)
+    monkeypatch.setattr(graph.shutil, "which", lambda name: "/bin/st")
+    monkeypatch.setattr(
+        graph.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, stdout="No changes", stderr=""),
+    )
+
+    exit_code = graph._run_semantic_refresh_agent(
+        "summitflow",
+        tmp_path,
+        agent="graphify-semantic-extractor",
+        model=None,
+        max_turns=1,
+        timeout=60,
+    )
+
+    assert exit_code == 1
+    assert "semantic=0/3" in capsys.readouterr().out
 
 
 def test_profile_compares_search_graph_and_agent_tool_shapes(

@@ -101,6 +101,27 @@ def _normalize_selected_paths(repo: Path, paths: Sequence[str]) -> list[str]:
     return selected
 
 
+def _fileset_string_literal(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _selected_path_fileset(repo: Path, path: str) -> str:
+    prefix = "root" if (repo / path).is_dir() else "root-file"
+    return f"{prefix}:{_fileset_string_literal(path)}"
+
+
+def _selected_path_filesets(repo: Path, paths: Sequence[str]) -> list[str]:
+    return [_selected_path_fileset(repo, path) for path in paths]
+
+
+def _ensure_selected_paths_have_changes(repo: Path, filesets: Sequence[str], paths: Sequence[str]) -> None:
+    result = run_jj(repo, ["diff", "--name-only", *filesets])
+    require_success(result, "jj diff selected paths")
+    if result.stdout.strip():
+        return
+    raise JJError(f"selected paths have no changes: {', '.join(paths)}")
+
+
 def commit_selected_paths(
     repo: Path,
     *,
@@ -114,7 +135,9 @@ def commit_selected_paths(
     """Split selected paths from @, describe that revision, and optionally publish it."""
     _validate_commit(repo, message, push, skip_checks)
     selected_paths = _normalize_selected_paths(repo, paths)
-    require_success(run_jj(repo, ["split", "-m", message, "--", *selected_paths]), "jj split")
+    selected_filesets = _selected_path_filesets(repo, selected_paths)
+    _ensure_selected_paths_have_changes(repo, selected_filesets, selected_paths)
+    require_success(run_jj(repo, ["split", "-m", message, "--", *selected_filesets]), "jj split")
     info = revision_info(repo, "@-")
     result = _commit_result(repo, info, message, selected_paths=selected_paths, working_copy="remaining")
     if push:

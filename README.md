@@ -13,6 +13,7 @@ Key capabilities:
 - **Quality Gates** - Verification-based step completion with citation requirements
 - **Evidence Capture** - Screenshots, console logs, and network activity for feature verification
 - **Project Monitoring** - Sitemap discovery, endpoint health checks, and system monitoring
+- **Agentic Browser Runtime** - `st browser` resolves managed project URLs and uses isolated VM Chrome for agent checks
 
 ## Tech Stack
 
@@ -85,7 +86,14 @@ st abandon <task-id>           # Abandon task
 st autocode <task-id>          # Queue for autonomous execution
 st checkpoints                 # List active checkpoints
 st memory search <query>       # Search memory system
+st browser url a-term          # Resolve canonical browser URL from project identity
+st browser check a-term        # Check desktop/narrow/mobile through browser VM 100
 ```
+
+Browser automation for agents uses browser VM 100 by default. Do not start
+Chrome, CDP proxies, or browser containers on project hosts for normal checks.
+See [`docs/agentic-browser-research.md`](docs/agentic-browser-research.md) and
+[`docs/browser-runtime-architecture.md`](docs/browser-runtime-architecture.md).
 
 ## Hatchet Workflows
 
