@@ -552,6 +552,40 @@ def _browser_update() -> int:
     return 0
 
 
+def _browser_endpoint(args: list[str], engine: str | None) -> int:
+    output_format = "http"
+    if args:
+        if args[0] in {"--ws", "ws"}:
+            output_format = "ws"
+        elif args[0] in {"--http", "http"}:
+            output_format = "http"
+        elif args[0] in {"--json", "json"}:
+            output_format = "json"
+        elif args[0] == "--format" and len(args) >= 2:
+            output_format = args[1]
+        else:
+            output_error("Usage: st browser endpoint [--http|--ws|--json|--format http|ws|json]")
+            return 2
+    if output_format not in {"http", "ws", "json"}:
+        output_error("Browser endpoint format must be http, ws, or json")
+        return 2
+
+    port = _select_port(engine)
+    host = _host_for_engine(engine)
+    http_url = f"http://{host}:{port}"
+    ws_url = _cdp_ws(port, host=host)
+    if not ws_url:
+        output_error(f"Unable to resolve browser CDP endpoint on {host}:{port}")
+        return 1
+    if output_format == "ws":
+        print(ws_url)
+    elif output_format == "json":
+        print(json.dumps({"engine": engine or "auto", "host": host, "port": port, "http": http_url, "ws": ws_url}))
+    else:
+        print(http_url)
+    return 0
+
+
 def _browser_url(args: list[str]) -> int:
     if not args:
         output_error("Usage: st browser url <project-or-url>")
@@ -600,6 +634,7 @@ Usage:
   st browser screenshot [path]
   st browser snapshot
   st browser eval <js>
+  st browser endpoint [--http|--ws|--json]
   st browser update
   st browser [--chrome|--lp|--engine <name>] <agent-browser command> [args...]
 
@@ -607,6 +642,7 @@ Examples:
   st browser health
   st browser url a-term
   st browser check a-term /tmp/a-term.png
+  st browser endpoint --ws
   st vm status <browser-vm-id>
   SF_BROWSER_HOST=<browser-vm-or-connector> st browser health
   SF_BROWSER_HOST=<browser-vm-or-connector> st browser check http://localhost:3001 /tmp/page.png
@@ -642,6 +678,8 @@ def browser(ctx: typer.Context) -> None:
         raise typer.Exit(_browser_url(browser_args[1:]))
     if command == "check":
         raise typer.Exit(_browser_check(browser_args[1:]))
+    if command == "endpoint":
+        raise typer.Exit(_browser_endpoint(browser_args[1:], engine))
     if command == "update":
         raise typer.Exit(_browser_update())
 
