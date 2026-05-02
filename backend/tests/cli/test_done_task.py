@@ -6,7 +6,7 @@ import pytest
 from typer import Exit
 
 from cli.commands.done_lifecycle import _reconstruct_snapshot_info
-from cli.commands.done_task import complete_task
+from cli.commands.done_task import _task_scope_paths, complete_task
 from cli.lib.checkpoint_branches import resolve_task_branch
 
 
@@ -132,11 +132,102 @@ def test_complete_task_missing_checkpoint_active_task_closes_after_pushed_commit
     mock_prereqs.assert_called_once_with(
         client, "task-789", "summitflow", merge_subtask_branches=False
     )
-    mock_merge.assert_called_once_with("task-789", project_id="summitflow")
+    mock_merge.assert_not_called()
     mock_publish.assert_called_once_with("task-789", "summitflow")
     client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
-    assert result["merged"] is True
+    assert result["merged"] is False
     assert result["snapshot_removed"] is True
+
+
+def test_task_scope_paths_extracts_file_mentions_from_task_text() -> None:
+    assert "backend/scripts/persona_honing/__init__.py" in _task_scope_paths(
+        {
+            "description": "Inspect backend/scripts/persona_honing/__init__.py and fix only if needed.",
+        }
+    )
+
+
+def test_complete_task_missing_checkpoint_active_task_auto_commits_dirty_work() -> None:
+    client = MagicMock()
+    client.get_task.return_value = {
+        "status": "pending",
+        "project_id": "summitflow",
+        "base_branch": "main",
+    }
+    client.export_task_data.return_value = {
+        "task": {"context": {"files_to_modify": ["backend/app/api/heartbeat.py"]}}
+    }
+
+    with (
+        patch("cli.commands.done_task.get_snapshot_info", return_value=None),
+        patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None),
+        patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
+        patch("cli.commands.done_task.is_working_tree_clean", side_effect=[False, True]),
+        patch("cli.commands.done_task._git_dirty_paths", return_value=["backend/app/api/heartbeat.py"]),
+        patch("cli.commands.done_task._task_has_published_commit_event", side_effect=[False, True]),
+        patch("cli.commands.done_task.commit_repo") as mock_commit,
+        patch("cli.commands.done_task._record_task_commit_event") as mock_record,
+        patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
+        patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
+        patch("cli.commands.done_task.merge_task_branch") as mock_merge,
+        patch("cli.commands.done_task._publish_completed_work") as mock_publish,
+        patch("cli.commands.done_task._run_smart_prereqs") as mock_prereqs,
+        patch("cli.commands.done_task.output_success"),
+    ):
+        mock_commit.return_value = {
+            "status": "SUCCESS",
+            "commit_id": "abc123",
+            "pushed": True,
+        }
+        mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
+        result = complete_task(client, "task-789", message="finish task")
+
+    mock_commit.assert_called_once()
+    assert mock_commit.call_args.kwargs["message"] == "finish task"
+    assert mock_commit.call_args.kwargs["task_id"] == "task-789"
+    assert mock_commit.call_args.kwargs["push"] is True
+    mock_record.assert_called_once_with("task-789", mock_commit.return_value)
+    client.export_task_data.assert_called_once_with("task-789")
+    mock_prereqs.assert_called_once_with(
+        client, "task-789", "summitflow", merge_subtask_branches=False
+    )
+    mock_merge.assert_not_called()
+    mock_publish.assert_called_once_with("task-789", "summitflow")
+    client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
+    assert result["merged"] is False
+    assert result["snapshot_removed"] is True
+
+
+def test_complete_task_missing_checkpoint_refuses_unscoped_dirty_paths() -> None:
+    client = MagicMock()
+    client.get_task.return_value = {
+        "status": "pending",
+        "project_id": "summitflow",
+        "base_branch": "main",
+        "context": {"files_to_modify": ["backend/app/api/heartbeat.py"]},
+    }
+    client.export_task_data.return_value = {}
+
+    with (
+        patch("cli.commands.done_task.get_snapshot_info", return_value=None),
+        patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None),
+        patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
+        patch("cli.commands.done_task.is_working_tree_clean", return_value=False),
+        patch(
+            "cli.commands.done_task._git_dirty_paths",
+            return_value=["backend/app/api/heartbeat.py", "frontend/app/database/page.tsx"],
+        ),
+        patch("cli.commands.done_task._task_has_published_commit_event", return_value=False),
+        patch("cli.commands.done_task.commit_repo") as mock_commit,
+        patch("cli.commands.done_task.output_error") as mock_output,
+        pytest.raises(Exit) as exc_info,
+    ):
+        complete_task(client, "task-789", message="finish task")
+
+    assert exc_info.value.exit_code == 1
+    mock_commit.assert_not_called()
+    assert "dirty paths outside task scope" in mock_output.call_args.args[0]
+    assert "frontend/app/database/page.tsx" in mock_output.call_args.args[0]
 
 
 def test_run_smart_prereqs_can_pass_subtasks_without_branch_merge() -> None:
@@ -159,6 +250,31 @@ def test_run_smart_prereqs_can_pass_subtasks_without_branch_merge() -> None:
 
     client.update_subtask.assert_called_once_with("task-789", "1.1", passes=True)
     mock_merge.assert_not_called()
+
+
+def test_run_smart_prereqs_auto_closes_subtasks_in_dependency_order() -> None:
+    client = MagicMock()
+    client.get_subtasks.return_value = {
+        "subtasks": [
+            {"subtask_id": "2.1", "passes": False, "depends_on": ["1.1"], "citations_status": "acknowledged"},
+            {"subtask_id": "1.1", "passes": False, "citations_status": "acknowledged"},
+            {"subtask_id": "3.1", "passes": False, "depends_on": ["2.1"], "citations_status": "acknowledged"},
+        ]
+    }
+    client.get_task_completion_readiness.return_value = {"ready": True}
+
+    with (
+        patch("cli.commands.done_task.sync_completed_subtasks") as mock_sync,
+        patch("cli.commands.done_subtask.merge_subtask_branch"),
+    ):
+        mock_sync.return_value.synced = []
+        from cli.commands.done_task import _run_smart_prereqs
+
+        _run_smart_prereqs(
+            client, "task-789", "summitflow", merge_subtask_branches=False
+        )
+
+    assert [call.args[1] for call in client.update_subtask.call_args_list] == ["1.1", "2.1", "3.1"]
 
 
 def test_reconstruct_snapshot_info_defaults_missing_base_branch_to_main() -> None:

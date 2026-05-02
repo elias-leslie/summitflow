@@ -19,6 +19,7 @@ from ..client import STClient
 from ..lib.autosnapshot import capture_lifecycle_baseline
 from ..lib.checkpoint import get_snapshot_info, remove_snapshot
 from ..lib.checkpoint_branches import merge_task_branch, resolve_task_branch
+from ..lib.commit_workflow import CommitError, commit_repo
 from ..output import output_error, output_success, output_warning
 from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
 from .done_lifecycle import (
@@ -146,6 +147,163 @@ def _task_has_published_commit_event(task_id: str) -> bool:
         message and commit_event_re.search(message)
         for event in reversed(events)
         if (message := event.get("message"))
+    )
+
+
+def _record_task_commit_event(task_id: str, result: dict[str, Any]) -> None:
+    if result.get("status") != "SUCCESS":
+        return
+    try:
+        from app.storage.events import log_task_event
+    except Exception:
+        return
+    detail_parts = [
+        f"change={result.get('change_id', '')}",
+        f"commit={result.get('commit_id') or result.get('sha') or ''}",
+        f"bookmark={result.get('bookmark', '')}",
+        f"op={result.get('operation_id', '')}",
+        f"pushed={str(result.get('pushed', False)).lower()}",
+    ]
+    log_task_event(
+        task_id,
+        "st commit " + " ".join(part for part in detail_parts if not part.endswith("=")),
+    )
+
+
+_PATH_TOKEN_RE = re.compile(r"(?P<path>(?:[A-Za-z0-9_.@-]+/)+[A-Za-z0-9_.@-]+)")
+
+
+def _git_dirty_paths(repo_root: str) -> list[str]:
+    result = subprocess.run(
+        ["git", "-C", repo_root, "status", "--porcelain"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    paths: list[str] = []
+    for line in result.stdout.splitlines():
+        raw_path = line[3:].strip()
+        if " -> " in raw_path:
+            raw_path = raw_path.rsplit(" -> ", 1)[-1].strip()
+        if raw_path:
+            paths.append(raw_path)
+    return sorted(set(paths))
+
+
+def _task_scope_paths(task: dict[str, Any]) -> set[str]:
+    scope: set[str] = set()
+
+    def add_value(value: Any) -> None:
+        if isinstance(value, str):
+            scope.update(match.group("path") for match in _PATH_TOKEN_RE.finditer(value))
+        elif isinstance(value, list | tuple | set):
+            for item in value:
+                add_value(item)
+        elif isinstance(value, dict):
+            for item in value.values():
+                add_value(item)
+
+    add_value(task.get("title"))
+    add_value(task.get("description"))
+    add_value(task.get("done_when"))
+    add_value(task.get("context"))
+    return scope
+
+
+def _task_with_export_context(client: STClient, task_id: str, task: dict[str, Any]) -> dict[str, Any]:
+    """Return task data enriched with export/workflow context when available."""
+    try:
+        exported = client.export_task_data(task_id)
+    except APIError:
+        return task
+    exported_task = exported.get("task") if isinstance(exported, dict) else None
+    if not isinstance(exported_task, dict):
+        return task
+    merged = dict(task)
+    for key in ("description", "done_when", "context"):
+        if exported_task.get(key):
+            merged[key] = exported_task[key]
+    spirit = exported.get("spirit")
+    if isinstance(spirit, dict):
+        if spirit.get("done_when"):
+            merged["done_when"] = spirit["done_when"]
+        if spirit.get("context"):
+            merged["context"] = spirit["context"]
+    return merged
+
+
+def _ensure_dirty_paths_match_task_scope(repo_root: str, task: dict[str, Any]) -> None:
+    dirty_paths = _git_dirty_paths(repo_root)
+    if not dirty_paths:
+        return
+    scope = _task_scope_paths(task)
+    out_of_scope = [
+        path
+        for path in dirty_paths
+        if path not in scope and not any(path.startswith(f"{prefix.rstrip('/')}/") for prefix in scope)
+    ]
+    if not out_of_scope:
+        return
+    shown = ", ".join(out_of_scope[:8])
+    if len(out_of_scope) > 8:
+        shown += f", +{len(out_of_scope) - 8} more"
+    output_error(
+        "Task closeout blocked: dirty paths outside task scope.\n"
+        f"  Out of scope: {shown}\n"
+        "  Commit or isolate unrelated work, then rerun st done."
+    )
+    raise typer.Exit(1)
+
+
+def _dirty_paths_in_task_scope(repo_root: str, task: dict[str, Any]) -> list[str]:
+    scope = _task_scope_paths(task)
+    return [
+        path
+        for path in _git_dirty_paths(repo_root)
+        if path in scope or any(path.startswith(f"{prefix.rstrip('/')}/") for prefix in scope)
+    ]
+
+
+def _commit_active_task_work(repo_root: str, task_id: str, task: dict[str, Any], message: str | None) -> None:
+    _ensure_dirty_paths_match_task_scope(repo_root, task)
+    commit_message = (message or f"complete {task_id}").strip()
+    try:
+        result = commit_repo(Path(repo_root), message=commit_message, task_id=task_id, push=True)
+    except CommitError as exc:
+        output_error(f"Task closeout blocked: st commit failed: {exc}")
+        raise typer.Exit(1) from None
+    if result.get("status") == "BLOCKED":
+        detail = str(result.get("detail") or result.get("reason") or "quality gates failed")
+        output_error(f"Task closeout blocked: {detail}")
+        raise typer.Exit(2)
+    _record_task_commit_event(task_id, result)
+    output_success(f"Committed task work before completion: {result.get('commit_id') or result.get('sha')}")
+
+
+def _close_missing_checkpoint_active_task(
+    client: STClient,
+    task_id: str,
+    task: dict[str, Any],
+    project_id: str | None,
+    *,
+    base_branch: str,
+    repo_is_clean: bool,
+) -> dict[str, str | bool]:
+    _run_smart_prereqs(client, task_id, project_id, merge_subtask_branches=False)
+    try:
+        client.update_status(task_id, "completed", skip_gates=_completion_skip_gates(client, task_id))
+    except APIError as e:
+        output_error(f"Failed to close task: {e.detail}")
+        raise typer.Exit(1) from None
+    if repo_is_clean:
+        _publish_completed_work(task_id, project_id)
+    output_success(f"No checkpoint for {task_id}; closed from clean/task-committed checkout.")
+    return _done_result(
+        task_id,
+        merged=False,
+        snapshot_removed=True,
+        base_branch=base_branch,
+        project_id=project_id,
     )
 
 
@@ -289,6 +447,7 @@ def _finalize_missing_snapshot_residue(
     task_id: str,
     task: dict[str, Any],
     *,
+    message: str | None,
     strict: bool,
     skip_diff_gate: bool = False,
 ) -> dict[str, str | bool] | None:
@@ -300,29 +459,36 @@ def _finalize_missing_snapshot_residue(
     if status in {"running", "pending"}:
         project_id = _task_project_id(task)
         repo_root = _checkpoint_repo_root(project_id)
-        if repo_root and is_working_tree_clean(repo_root) and _task_has_published_commit_event(task_id):
+        scoped_task = _task_with_export_context(client, task_id, task)
+        if repo_root and not is_working_tree_clean(repo_root) and not _task_has_published_commit_event(task_id):
+            _commit_active_task_work(repo_root, task_id, scoped_task, message)
+        if repo_root:
             base_branch = _task_base_branch(task)
-            if not skip_diff_gate:
-                _run_diff_gate(repo_root, task_id, project_id, base_branch)
-            _run_smart_prereqs(client, task_id, project_id, merge_subtask_branches=False)
-            merge_task_branch(task_id, project_id=project_id)
-            try:
-                client.update_status(task_id, "completed", skip_gates=_completion_skip_gates(client, task_id))
-            except APIError as e:
-                output_error(f"Failed to close task after published commit: {e.detail}")
-                raise typer.Exit(1) from None
-            _publish_completed_work(task_id, project_id)
-            output_success(f"No checkpoint for {task_id}; merged and closed from pushed st commit event.")
-            return _done_result(
-                task_id,
-                merged=True,
-                snapshot_removed=True,
-                base_branch=base_branch,
-                project_id=project_id,
-            )
+            repo_is_clean = is_working_tree_clean(repo_root)
+            if not repo_is_clean and (task_dirty := _dirty_paths_in_task_scope(repo_root, scoped_task)):
+                shown = ", ".join(task_dirty[:8])
+                if len(task_dirty) > 8:
+                    shown += f", +{len(task_dirty) - 8} more"
+                output_error(
+                    "Task closeout blocked: task-scope dirty paths remain.\n"
+                    f"  Paths: {shown}\n"
+                    "  Commit or finish these paths, then rerun st done."
+                )
+                raise typer.Exit(1)
+            if repo_is_clean or _task_has_published_commit_event(task_id):
+                if repo_is_clean and not skip_diff_gate and _task_has_published_commit_event(task_id):
+                    _run_diff_gate(repo_root, task_id, project_id, base_branch)
+                return _close_missing_checkpoint_active_task(
+                    client,
+                    task_id,
+                    task,
+                    project_id,
+                    base_branch=base_branch,
+                    repo_is_clean=repo_is_clean,
+                )
         output_error(
             f"Checkpoint metadata missing for active task {task_id} (status={status}).\n"
-            "  Restore/claim the task checkpoint first; residue finalize is only for closed tasks."
+            "  No clean checkout or task-linked commit found for safe default closeout."
         )
         raise typer.Exit(1)
     if status not in {"completed", "failed"}:
@@ -389,6 +555,7 @@ def complete_task(
                 client,
                 task_id,
                 task,
+                message=message,
                 strict=strict,
                 skip_diff_gate=skip_diff_gate,
             )

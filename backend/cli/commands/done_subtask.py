@@ -76,17 +76,45 @@ def auto_close_subtasks(
     """
     subtasks_resp = client.get_subtasks(task_id)
     subtasks = subtasks_resp.get("subtasks", [])
+    all_ids = {
+        str(subtask_id)
+        for subtask in subtasks
+        if (subtask_id := subtask.get("subtask_id") or subtask.get("id"))
+    }
+    passed_ids = {
+        str(subtask_id)
+        for subtask in subtasks
+        if subtask.get("passes") is True and (subtask_id := subtask.get("subtask_id") or subtask.get("id"))
+    }
+    remaining = [subtask for subtask in subtasks if subtask.get("passes") is not True]
 
-    for subtask in subtasks:
-        subtask_id = subtask.get("subtask_id") or subtask.get("id")
-        if not subtask_id or subtask.get("passes") is True:
-            continue
-
-        citations_status = subtask.get("citations_status") or subtask.get(
-            "citations_acknowledged"
-        )
-        _acknowledge_citations(client, task_id, subtask_id, citations_status)
-        _close_subtask(client, task_id, subtask_id, project_id, merge_branch=merge_branches)
+    while remaining:
+        next_remaining = []
+        progressed = False
+        for subtask in remaining:
+            subtask_id = subtask.get("subtask_id") or subtask.get("id")
+            if not subtask_id:
+                continue
+            dependencies = {
+                str(dep)
+                for dep in (subtask.get("depends_on") or [])
+                if isinstance(dep, str) and dep in all_ids
+            }
+            if dependencies - passed_ids:
+                next_remaining.append(subtask)
+                continue
+            citations_status = subtask.get("citations_status") or subtask.get(
+                "citations_acknowledged"
+            )
+            _acknowledge_citations(client, task_id, str(subtask_id), citations_status)
+            _close_subtask(client, task_id, str(subtask_id), project_id, merge_branch=merge_branches)
+            passed_ids.add(str(subtask_id))
+            progressed = True
+        if not progressed:
+            blocked = ", ".join(str(subtask.get("subtask_id") or subtask.get("id")) for subtask in next_remaining)
+            output_error(f"Cannot auto-close subtasks; dependency cycle or missing dependency: {blocked}")
+            raise typer.Exit(1)
+        remaining = next_remaining
 
 
 def _validate_working_tree_clean() -> None:
