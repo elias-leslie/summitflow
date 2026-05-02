@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...services.task_context_guardrails import format_task_freshness_lines
 from ...services.task_continuity import format_continuity_lines
 from ...services.task_execution_readiness import TaskExecutionReadiness, is_final_task_status
 from ...services.task_lane_preflight import TaskLaneConflictCheck, TaskLaneConflictCheckDict
@@ -154,8 +155,9 @@ def format_toon_context(
     if description:
         lines.append(f"DESCRIPTION:{description[:200]}{'...' if len(description) > 200 else ''}")
 
-    plan_status = spirit.get("plan_status", "draft") if spirit else "draft"
     final_status = is_final_task_status(task.get("status"))
+    lines.extend(format_task_freshness_lines(task.get("status")))
+    plan_status = spirit.get("plan_status", "draft") if spirit else "draft"
     subtask_lines = _format_subtask_lines(subtasks)
     lines.extend(
         _format_workflow_readiness_lines(

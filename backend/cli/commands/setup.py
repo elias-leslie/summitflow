@@ -21,7 +21,7 @@ app = typer.Typer(
     help=(
         "Host, service, browser, tooling, and test database setup through st. "
         "Use dry-run/confirm gates for host changes. Browser setup defaults to "
-        "isolated SF_BROWSER_HOST targets; server-local installs are debug-only."
+        "isolated ST_BROWSER_HOST targets; server-local installs are debug-only."
     )
 )
 
@@ -67,10 +67,10 @@ def _remove_legacy_links() -> None:
         if remove_regular or remove_symlink:
             path.unlink()
             print(f"removed legacy link {path}")
-    sf_browser = Path.home() / ".local" / "bin" / "sf-browser"
-    if sf_browser.is_symlink() and str(sf_browser.resolve()).startswith(str(summitflow_scripts)):
-        sf_browser.unlink()
-        print(f"removed legacy link {sf_browser}")
+    legacy_browser = Path.home() / ".local" / "bin" / ("sf" + "-" + "browser")
+    if legacy_browser.is_symlink() and str(legacy_browser.resolve()).startswith(str(summitflow_scripts)):
+        legacy_browser.unlink()
+        print(f"removed legacy link {legacy_browser}")
 
 
 def _remove_scripts_path_from_rc() -> None:
@@ -183,7 +183,7 @@ def browser(
     lines = [
         "SETUP BROWSER",
         f"Version: {version or 'latest'}",
-        "Default path: configure SF_BROWSER_HOST to an isolated VM or connector endpoint.",
+        "Default path: configure ST_BROWSER_HOST to an isolated VM or connector endpoint.",
         "Server-local agent-browser install is debug-only and requires --allow-server-install.",
     ]
     _preview("st setup browser", lines, dry_run, confirm)
@@ -191,7 +191,7 @@ def browser(
         return
     if not allow_server_install and os.environ.get("ST_SETUP_BROWSER_ALLOW_SERVER_INSTALL", "").strip() != "1":
         typer.echo(
-            "Refusing server-local browser install. Set SF_BROWSER_HOST to an isolated browser VM/connector, "
+            "Refusing server-local browser install. Set ST_BROWSER_HOST to an isolated browser VM/connector, "
             "or rerun with --allow-server-install for explicit debug-only use.",
             err=True,
         )

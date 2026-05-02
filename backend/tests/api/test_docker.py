@@ -657,9 +657,9 @@ class TestDockerRuntime:
         from app.api.docker import live_sessions
 
         monkeypatch.delenv("SUMMITFLOW_LIVE_BROWSER_HOST", raising=False)
-        monkeypatch.delenv("SF_BROWSER_HOST", raising=False)
+        monkeypatch.delenv("ST_BROWSER_HOST", raising=False)
         monkeypatch.delenv("SUMMITFLOW_LIVE_BROWSER_ALLOW_LOCAL", raising=False)
-        monkeypatch.delenv("SF_BROWSER_ALLOW_LOCAL", raising=False)
+        monkeypatch.delenv("ST_BROWSER_ALLOW_LOCAL", raising=False)
 
         with pytest.raises(HTTPException) as exc:
             live_sessions._browser_endpoint()

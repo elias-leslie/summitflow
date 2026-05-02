@@ -39,12 +39,12 @@ def resolve_browser_endpoint(
     allow_local = _allow_local(values, live=live)
     if not host:
         raise BrowserTargetError(
-            "Browser host is not configured; set SF_BROWSER_HOST to the isolated VM or connector endpoint"
+            "Browser host is not configured; set ST_BROWSER_HOST to the isolated VM or connector endpoint"
         )
     if _is_server_local_host(host) and not allow_local:
         raise BrowserTargetError(
-            f"Refusing server-local browser endpoint {host}; set SF_BROWSER_HOST to an isolated VM/connector "
-            "or set SF_BROWSER_ALLOW_LOCAL=1 for an explicit debug-only override"
+            f"Refusing server-local browser endpoint {host}; set ST_BROWSER_HOST to an isolated VM/connector "
+            "or set ST_BROWSER_ALLOW_LOCAL=1 for an explicit debug-only override"
         )
     port = _configured_port(values, live=live, engine=engine)
     return BrowserEndpoint(host=host, port=port, source=source, debug_local=allow_local and _is_server_local_host(host))
@@ -54,8 +54,8 @@ def _configured_host(values: Mapping[str, str], *, live: bool) -> tuple[str, str
     candidates = []
     if live:
         candidates.append(("SUMMITFLOW_LIVE_BROWSER_HOST", values.get("SUMMITFLOW_LIVE_BROWSER_HOST", "")))
-    candidates.append(("SF_BROWSER_HOST", values.get("SF_BROWSER_HOST", "")))
-    candidates.append(("SF_BROWSER_DEFAULT_HOST", values.get("SF_BROWSER_DEFAULT_HOST", "")))
+    candidates.append(("ST_BROWSER_HOST", values.get("ST_BROWSER_HOST", "")))
+    candidates.append(("ST_BROWSER_DEFAULT_HOST", values.get("ST_BROWSER_DEFAULT_HOST", "")))
     for name, raw in candidates:
         host = raw.strip()
         if host:
@@ -68,7 +68,7 @@ def _configured_port(values: Mapping[str, str], *, live: bool, engine: str | Non
         raw = values.get("SUMMITFLOW_LIVE_BROWSER_PORT", "").strip()
         if raw:
             return _parse_port(raw, _DEFAULT_BROWSER_PORT)
-    raw = values.get("SF_BROWSER_PORT", "").strip()
+    raw = values.get("ST_BROWSER_PORT", "").strip()
     if raw:
         return _parse_port(raw, _DEFAULT_BROWSER_PORT)
     if engine == "lightpanda":
@@ -87,7 +87,7 @@ def _parse_port(raw: str, default: int) -> int:
 def _allow_local(values: Mapping[str, str], *, live: bool) -> bool:
     if live and values.get("SUMMITFLOW_LIVE_BROWSER_ALLOW_LOCAL", "").strip() == "1":
         return True
-    return values.get("SF_BROWSER_ALLOW_LOCAL", "").strip() == "1"
+    return values.get("ST_BROWSER_ALLOW_LOCAL", "").strip() == "1"
 
 
 def _is_server_local_host(host: str) -> bool:

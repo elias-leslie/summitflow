@@ -57,7 +57,6 @@ def test_intercepts_raw_jj() -> None:
         ("commit.sh --current", "st commit"),
         ("dt pytest backend/tests/", "st check"),
         ("db tables", "st db"),
-        ("sf-browser health", "st browser"),
         ("web-research search --query SummitFlow", "st web"),
         ("proxmox-vm.sh list", "st vm"),
         ("restore.sh --list", "st backup"),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from app.services.task_context_guardrails import format_task_freshness_lines
 from app.services.task_continuity import format_continuity_lines
 from app.services.task_execution_readiness import is_final_task_status
 from app.services.task_harness import summarize_execution_contract
@@ -181,6 +182,7 @@ def format_context_task(task: dict[str, Any]) -> str:
         if deletion_reason := task.get("deletion_reason"):
             archived_line += f" | reason:{deletion_reason}"
         lines.append(archived_line)
+    lines.extend(format_task_freshness_lines(status))
     if workflow := _format_workflow_line(task):
         lines.append(workflow)
     if harness := _format_harness_line(task):

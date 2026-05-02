@@ -72,18 +72,18 @@ _AGENT_BROWSER_OPTIONS_WITH_VALUE = {
 
 def _browser_target_env() -> dict[str, str]:
     values = dict(os.environ)
-    if values.get("SF_BROWSER_HOST", "").strip() or values.get("SF_BROWSER_DEFAULT_HOST", "").strip():
+    if values.get("ST_BROWSER_HOST", "").strip() or values.get("ST_BROWSER_DEFAULT_HOST", "").strip():
         return values
-    if values.get("SF_BROWSER_DISABLE_DEFAULT_VM_HOST", "").strip() == "1":
+    if values.get("ST_BROWSER_DISABLE_DEFAULT_VM_HOST", "").strip() == "1":
         return values
     host = _default_browser_vm_host(values)
     if host:
-        values["SF_BROWSER_DEFAULT_HOST"] = host
+        values["ST_BROWSER_DEFAULT_HOST"] = host
     return values
 
 
 def _default_browser_vm_host(values: dict[str, str]) -> str:
-    vmid = values.get("SF_BROWSER_VM_ID", "").strip() or _DEFAULT_BROWSER_VM_ID
+    vmid = values.get("ST_BROWSER_VM_ID", "").strip() or _DEFAULT_BROWSER_VM_ID
     try:
         result = subprocess.run(
             [_st_bin(), "vm", "ip", vmid],
@@ -109,7 +109,7 @@ def _select_browser_vm_ip(output: str, values: dict[str, str]) -> str:
     addresses = [line.strip() for line in output.splitlines() if re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", line.strip())]
     if not addresses:
         return ""
-    prefix = values.get("SF_BROWSER_VM_IP_PREFIX", "").strip()
+    prefix = values.get("ST_BROWSER_VM_IP_PREFIX", "").strip()
     if prefix:
         for address in addresses:
             if address.startswith(prefix):
@@ -127,7 +127,7 @@ def _resolve_endpoint(engine: str | None = None) -> BrowserEndpoint:
 
 def _explicit_browser_port(engine: str | None = None) -> int | None:
     values = _browser_target_env()
-    if values.get("SF_BROWSER_PORT", "").strip() or values.get("SUMMITFLOW_LIVE_BROWSER_PORT", "").strip():
+    if values.get("ST_BROWSER_PORT", "").strip() or values.get("SUMMITFLOW_LIVE_BROWSER_PORT", "").strip():
         try:
             return resolve_browser_endpoint(env=values, engine=engine).port
         except BrowserTargetError as exc:
@@ -332,7 +332,7 @@ def _agent_command(args: list[str]) -> str:
 
 
 def _parse_engine_args(args: list[str]) -> tuple[str | None, list[str]]:
-    engine = os.environ.get("SF_BROWSER_ENGINE", "").strip() or None
+    engine = os.environ.get("ST_BROWSER_ENGINE", "").strip() or None
     remaining: list[str] = []
     index = 0
     while index < len(args):
@@ -421,11 +421,11 @@ def _browser_check(args: list[str]) -> int:
     network_result = subprocess.CompletedProcess([], 0, stdout="[]", stderr="")
     try:
         viewports = [
-            ("desktop", int(os.environ.get("SF_BROWSER_CHECK_DESKTOP_WIDTH", "1600")), int(os.environ.get("SF_BROWSER_CHECK_DESKTOP_HEIGHT", "900")), screenshot_path),
-            ("narrow", int(os.environ.get("SF_BROWSER_CHECK_NARROW_WIDTH", "1180")), int(os.environ.get("SF_BROWSER_CHECK_NARROW_HEIGHT", "900")), _suffixed(screenshot_path, "-narrow")),
-            ("mobile", int(os.environ.get("SF_BROWSER_CHECK_MOBILE_WIDTH", "390")), int(os.environ.get("SF_BROWSER_CHECK_MOBILE_HEIGHT", "844")), _suffixed(screenshot_path, "-mobile")),
+            ("desktop", int(os.environ.get("ST_BROWSER_CHECK_DESKTOP_WIDTH", "1600")), int(os.environ.get("ST_BROWSER_CHECK_DESKTOP_HEIGHT", "900")), screenshot_path),
+            ("narrow", int(os.environ.get("ST_BROWSER_CHECK_NARROW_WIDTH", "1180")), int(os.environ.get("ST_BROWSER_CHECK_NARROW_HEIGHT", "900")), _suffixed(screenshot_path, "-narrow")),
+            ("mobile", int(os.environ.get("ST_BROWSER_CHECK_MOBILE_WIDTH", "390")), int(os.environ.get("ST_BROWSER_CHECK_MOBILE_HEIGHT", "844")), _suffixed(screenshot_path, "-mobile")),
         ]
-        if os.environ.get("SF_BROWSER_CHECK_RESPONSIVE") == "0":
+        if os.environ.get("ST_BROWSER_CHECK_RESPONSIVE") == "0":
             viewports = viewports[:1]
 
         first_viewport = _run_agent([*session_args, "set", "viewport", str(viewports[0][1]), str(viewports[0][2])], cdp=ws, capture=True)
@@ -436,7 +436,7 @@ def _browser_check(args: list[str]) -> int:
             if warning := _agent_failure("open", open_result):
                 output_error(warning)
             return open_result.returncode
-        load_wait = _run_agent([*session_args, "wait", os.environ.get("SF_BROWSER_CHECK_WAIT", "5000")], cdp=ws, capture=True)
+        load_wait = _run_agent([*session_args, "wait", os.environ.get("ST_BROWSER_CHECK_WAIT", "5000")], cdp=ws, capture=True)
         if warning := _agent_failure("load wait", load_wait):
             command_warnings.append(warning)
         hook_result = _run_agent(
@@ -460,7 +460,7 @@ def _browser_check(args: list[str]) -> int:
             viewport = _run_agent([*session_args, "set", "viewport", str(width), str(height)], cdp=ws, capture=True)
             if warning := _agent_failure(f"{label} viewport", viewport):
                 command_warnings.append(warning)
-            viewport_wait = _run_agent([*session_args, "wait", os.environ.get("SF_BROWSER_CHECK_VIEWPORT_SETTLE_MS", "350")], cdp=ws, capture=True)
+            viewport_wait = _run_agent([*session_args, "wait", os.environ.get("ST_BROWSER_CHECK_VIEWPORT_SETTLE_MS", "350")], cdp=ws, capture=True)
             if warning := _agent_failure(f"{label} wait", viewport_wait):
                 command_warnings.append(warning)
             screenshot = _run_agent([*session_args, "screenshot", path], cdp=ws, capture=True)
@@ -622,9 +622,9 @@ def _usage() -> str:
 
 Default target:
   Plain st browser commands use approved browser VM 100 via st vm ip.
-  Override with SF_BROWSER_HOST, SF_BROWSER_DEFAULT_HOST, or SF_BROWSER_VM_ID.
+  Override with ST_BROWSER_HOST, ST_BROWSER_DEFAULT_HOST, or ST_BROWSER_VM_ID.
   Do not start Chrome, CDP proxies, or agent-browser on the project/server host.
-  Set SF_BROWSER_DISABLE_DEFAULT_VM_HOST=1 to require explicit host config.
+  Set ST_BROWSER_DISABLE_DEFAULT_VM_HOST=1 to require explicit host config.
 
 Usage:
   st browser health
@@ -644,11 +644,11 @@ Examples:
   st browser check a-term /tmp/a-term.png
   st browser endpoint --ws
   st vm status <browser-vm-id>
-  SF_BROWSER_HOST=<browser-vm-or-connector> st browser health
-  SF_BROWSER_HOST=<browser-vm-or-connector> st browser check http://localhost:3001 /tmp/page.png
+  ST_BROWSER_HOST=<browser-vm-or-connector> st browser health
+  ST_BROWSER_HOST=<browser-vm-or-connector> st browser check http://localhost:3001 /tmp/page.png
 
 Debug local override:
-  SF_BROWSER_HOST=127.0.0.1 SF_BROWSER_ALLOW_LOCAL=1 st browser health
+  ST_BROWSER_HOST=127.0.0.1 ST_BROWSER_ALLOW_LOCAL=1 st browser health
 """
 
 
@@ -690,14 +690,14 @@ def browser(ctx: typer.Context) -> None:
         output_error(f"Unable to resolve browser CDP endpoint on {host}:{port}")
         raise typer.Exit(1) from None
     scoped_browser_args = _with_default_session(_with_resolved_navigation_target(browser_args, command))
-    if command == "open" and os.environ.get("SF_BROWSER_DISABLE_DEFAULT_VIEWPORT") != "1":
+    if command == "open" and os.environ.get("ST_BROWSER_DISABLE_DEFAULT_VIEWPORT") != "1":
         _run_agent(
             [
                 *_session_args(scoped_browser_args),
                 "set",
                 "viewport",
-                os.environ.get("SF_BROWSER_VIEWPORT_WIDTH", "1600"),
-                os.environ.get("SF_BROWSER_VIEWPORT_HEIGHT", "900"),
+                os.environ.get("ST_BROWSER_VIEWPORT_WIDTH", "1600"),
+                os.environ.get("ST_BROWSER_VIEWPORT_HEIGHT", "900"),
             ],
             cdp=ws,
         )

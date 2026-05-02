@@ -12,6 +12,12 @@ from cli._output_formatters import (
 from cli.client import APIError
 from cli.commands.tasks_context import get_task_context
 
+FRESHNESS_LINE = (
+    "FRESHNESS:verify-system-project-state|"
+    "task-text=historical|"
+    "reshape-or-abandon-if-stale"
+)
+
 
 class TestFormatContextTask:
     """Tests for compact task context formatting."""
@@ -32,6 +38,34 @@ class TestFormatContextTask:
         assert "TASK:task-123|running|P2|bug|SIMPLE" in output
         assert "TITLE:Repair ST workflow phase 2" in output
         assert "DESCRIPTION:Complete task closure flow follow-through." in output
+
+    def test_includes_task_freshness_guardrail_for_active_tasks(self) -> None:
+        task = {
+            "id": "task-fresh",
+            "status": "pending",
+            "priority": 2,
+            "task_type": "task",
+            "complexity": "STANDARD",
+            "title": "Review stale task safely",
+        }
+
+        output = format_context_task(task)
+
+        assert FRESHNESS_LINE in output
+
+    def test_omits_task_freshness_guardrail_for_final_tasks(self) -> None:
+        task = {
+            "id": "task-done",
+            "status": "completed",
+            "priority": 2,
+            "task_type": "task",
+            "complexity": "STANDARD",
+            "title": "Completed task",
+        }
+
+        output = format_context_task(task)
+
+        assert "FRESHNESS:" not in output
 
     def test_omits_empty_workflow_markers(self) -> None:
         task = {

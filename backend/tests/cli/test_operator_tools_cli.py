@@ -462,9 +462,9 @@ def test_browser_help_explains_isolated_target() -> None:
     assert "Plain st browser commands use approved browser VM 100" in result.output
     assert "st browser url <project>" in result.output
     assert "st browser check a-term" in result.output
-    assert "Override with SF_BROWSER_HOST" in result.output
-    assert "SF_BROWSER_DISABLE_DEFAULT_VM_HOST=1" in result.output
-    assert "SF_BROWSER_ALLOW_LOCAL=1" in result.output
+    assert "Override with ST_BROWSER_HOST" in result.output
+    assert "ST_BROWSER_DISABLE_DEFAULT_VM_HOST=1" in result.output
+    assert "ST_BROWSER_ALLOW_LOCAL=1" in result.output
 
 
 def test_browser_subcommand_help_does_not_run_health() -> None:
@@ -517,10 +517,10 @@ def test_git_help_explains_managed_workflow() -> None:
 
 
 def test_browser_host_uses_default_vm_when_host_missing(monkeypatch) -> None:
-    monkeypatch.setenv("SF_BROWSER_HOST", "")
-    monkeypatch.delenv("SF_BROWSER_DEFAULT_HOST", raising=False)
-    monkeypatch.delenv("SF_BROWSER_DISABLE_DEFAULT_VM_HOST", raising=False)
-    monkeypatch.delenv("SF_BROWSER_ALLOW_LOCAL", raising=False)
+    monkeypatch.setenv("ST_BROWSER_HOST", "")
+    monkeypatch.delenv("ST_BROWSER_DEFAULT_HOST", raising=False)
+    monkeypatch.delenv("ST_BROWSER_DISABLE_DEFAULT_VM_HOST", raising=False)
+    monkeypatch.delenv("ST_BROWSER_ALLOW_LOCAL", raising=False)
 
     with patch("cli.commands.browser._default_browser_vm_host", return_value="192.0.2.88") as default_host:
         assert browser._host() == "192.0.2.88"
@@ -529,17 +529,17 @@ def test_browser_host_uses_default_vm_when_host_missing(monkeypatch) -> None:
 
 
 def test_browser_host_can_disable_default_vm(monkeypatch) -> None:
-    monkeypatch.setenv("SF_BROWSER_HOST", "")
-    monkeypatch.delenv("SF_BROWSER_DEFAULT_HOST", raising=False)
-    monkeypatch.setenv("SF_BROWSER_DISABLE_DEFAULT_VM_HOST", "1")
-    monkeypatch.delenv("SF_BROWSER_ALLOW_LOCAL", raising=False)
+    monkeypatch.setenv("ST_BROWSER_HOST", "")
+    monkeypatch.delenv("ST_BROWSER_DEFAULT_HOST", raising=False)
+    monkeypatch.setenv("ST_BROWSER_DISABLE_DEFAULT_VM_HOST", "1")
+    monkeypatch.delenv("ST_BROWSER_ALLOW_LOCAL", raising=False)
 
     with pytest.raises(typer.Exit):
         browser._host()
 
 
 def test_browser_host_uses_env_without_probe(monkeypatch) -> None:
-    monkeypatch.setenv("SF_BROWSER_HOST", "192.0.2.10")
+    monkeypatch.setenv("ST_BROWSER_HOST", "192.0.2.10")
 
     with patch("cli.commands.browser._default_browser_vm_host") as default_host:
         assert browser._host() == "192.0.2.10"
@@ -556,7 +556,7 @@ def test_browser_vm_ip_selection_prefers_management_network() -> None:
 def test_browser_vm_ip_selection_honors_prefix() -> None:
     output = "\n".join(["192.168.8.234", "10.1.2.3"])
 
-    assert browser._select_browser_vm_ip(output, {"SF_BROWSER_VM_IP_PREFIX": "10."}) == "10.1.2.3"
+    assert browser._select_browser_vm_ip(output, {"ST_BROWSER_VM_IP_PREFIX": "10."}) == "10.1.2.3"
 
 
 def test_browser_url_resolves_project() -> None:
@@ -594,8 +594,8 @@ def test_browser_endpoint_prints_canonical_ws_url() -> None:
 
 
 def test_browser_select_port_honors_explicit_port(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SF_BROWSER_HOST", "192.0.2.10")
-    monkeypatch.setenv("SF_BROWSER_PORT", "9333")
+    monkeypatch.setenv("ST_BROWSER_HOST", "192.0.2.10")
+    monkeypatch.setenv("ST_BROWSER_PORT", "9333")
 
     with patch("cli.commands.browser._engine_up", return_value=True) as engine_up:
         assert browser._select_port("chrome") == 9333
