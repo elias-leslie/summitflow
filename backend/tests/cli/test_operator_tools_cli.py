@@ -458,9 +458,9 @@ def test_browser_help_explains_isolated_target() -> None:
     result = runner.invoke(main_app, ["browser", "--help"])
 
     assert result.exit_code == 0
-    assert "Set SF_BROWSER_HOST to the approved isolated browser VM" in result.output
-    assert "fail closed when SF_BROWSER_HOST is missing" in result.output
-    assert "Use st vm list/status/ip/start" in result.output
+    assert "Plain st browser commands use approved browser VM 100" in result.output
+    assert "Override with SF_BROWSER_HOST" in result.output
+    assert "SF_BROWSER_DISABLE_DEFAULT_VM_HOST=1" in result.output
     assert "SF_BROWSER_ALLOW_LOCAL=1" in result.output
 
 
@@ -469,7 +469,7 @@ def test_browser_subcommand_help_does_not_run_health() -> None:
         result = runner.invoke(main_app, ["browser", "health", "--help"])
 
     assert result.exit_code == 0
-    assert "Set SF_BROWSER_HOST to the approved isolated browser VM" in result.output
+    assert "Plain st browser commands use approved browser VM 100" in result.output
     health.assert_not_called()
 
 
@@ -477,8 +477,8 @@ def test_vm_help_points_to_browser_target_workflow() -> None:
     result = runner.invoke(main_app, ["vm", "--help"])
 
     assert result.exit_code == 0
-    assert "use st vm list/status/ip" in result.output
-    assert "st browser with SF_BROWSER_HOST" in result.output
+    assert "Use for browser/test VM status" in result.output
+    assert "st browser uses the default browser VM" in result.output
 
 
 def test_service_help_explains_canonical_rebuild_path() -> None:
@@ -513,8 +513,22 @@ def test_git_help_explains_managed_workflow() -> None:
     assert "st vcs doctor/reconcile" in result.output
 
 
-def test_browser_host_requires_configured_target(monkeypatch) -> None:
+def test_browser_host_uses_default_vm_when_host_missing(monkeypatch) -> None:
     monkeypatch.setenv("SF_BROWSER_HOST", "")
+    monkeypatch.delenv("SF_BROWSER_DEFAULT_HOST", raising=False)
+    monkeypatch.delenv("SF_BROWSER_DISABLE_DEFAULT_VM_HOST", raising=False)
+    monkeypatch.delenv("SF_BROWSER_ALLOW_LOCAL", raising=False)
+
+    with patch("cli.commands.browser._default_browser_vm_host", return_value="192.0.2.88") as default_host:
+        assert browser._host() == "192.0.2.88"
+
+    default_host.assert_called_once()
+
+
+def test_browser_host_can_disable_default_vm(monkeypatch) -> None:
+    monkeypatch.setenv("SF_BROWSER_HOST", "")
+    monkeypatch.delenv("SF_BROWSER_DEFAULT_HOST", raising=False)
+    monkeypatch.setenv("SF_BROWSER_DISABLE_DEFAULT_VM_HOST", "1")
     monkeypatch.delenv("SF_BROWSER_ALLOW_LOCAL", raising=False)
 
     with pytest.raises(typer.Exit):
@@ -524,7 +538,22 @@ def test_browser_host_requires_configured_target(monkeypatch) -> None:
 def test_browser_host_uses_env_without_probe(monkeypatch) -> None:
     monkeypatch.setenv("SF_BROWSER_HOST", "192.0.2.10")
 
-    assert browser._host() == "192.0.2.10"
+    with patch("cli.commands.browser._default_browser_vm_host") as default_host:
+        assert browser._host() == "192.0.2.10"
+
+    default_host.assert_not_called()
+
+
+def test_browser_vm_ip_selection_prefers_management_network() -> None:
+    output = "\n".join(["172.24.0.1", "10.1.2.3", "192.168.8.234"])
+
+    assert browser._select_browser_vm_ip(output, {}) == "192.168.8.234"
+
+
+def test_browser_vm_ip_selection_honors_prefix() -> None:
+    output = "\n".join(["192.168.8.234", "10.1.2.3"])
+
+    assert browser._select_browser_vm_ip(output, {"SF_BROWSER_VM_IP_PREFIX": "10."}) == "10.1.2.3"
 
 
 def test_browser_open_uses_repo_scoped_session(monkeypatch) -> None:

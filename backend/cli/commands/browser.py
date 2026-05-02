@@ -8,13 +8,18 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 import httpx
 import typer
 
-from app.services.browser_targets import BrowserTargetError, resolve_browser_endpoint
+from app.services.browser_targets import (
+    BrowserEndpoint,
+    BrowserTargetError,
+    resolve_browser_endpoint,
+)
 
 from ..details import (
     current_root,
@@ -32,6 +37,7 @@ app = typer.Typer(
 )
 
 _ENGINE_PORTS = {"chrome": 9222, "lightpanda": 9223}
+_DEFAULT_BROWSER_VM_ID = "100"
 _SESSION_NAME_SAFE_CHARS = re.compile(r"[^a-zA-Z0-9_-]+")
 _AGENT_BROWSER_OPTIONS_WITH_VALUE = {
     "--allowed-domains",
@@ -59,9 +65,64 @@ _AGENT_BROWSER_OPTIONS_WITH_VALUE = {
 }
 
 
+def _browser_target_env() -> dict[str, str]:
+    values = dict(os.environ)
+    if values.get("SF_BROWSER_HOST", "").strip() or values.get("SF_BROWSER_DEFAULT_HOST", "").strip():
+        return values
+    if values.get("SF_BROWSER_DISABLE_DEFAULT_VM_HOST", "").strip() == "1":
+        return values
+    host = _default_browser_vm_host(values)
+    if host:
+        values["SF_BROWSER_DEFAULT_HOST"] = host
+    return values
+
+
+def _default_browser_vm_host(values: dict[str, str]) -> str:
+    vmid = values.get("SF_BROWSER_VM_ID", "").strip() or _DEFAULT_BROWSER_VM_ID
+    try:
+        result = subprocess.run(
+            [_st_bin(), "vm", "ip", vmid],
+            text=True,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if result.returncode != 0:
+        return ""
+    return _select_browser_vm_ip(result.stdout, values)
+
+
+def _st_bin() -> str:
+    return shutil.which("st") or sys.argv[0]
+
+
+def _select_browser_vm_ip(output: str, values: dict[str, str]) -> str:
+    addresses = [line.strip() for line in output.splitlines() if re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", line.strip())]
+    if not addresses:
+        return ""
+    prefix = values.get("SF_BROWSER_VM_IP_PREFIX", "").strip()
+    if prefix:
+        for address in addresses:
+            if address.startswith(prefix):
+                return address
+    for preferred_prefix in ("192.168.", "10."):
+        for address in addresses:
+            if address.startswith(preferred_prefix):
+                return address
+    return addresses[0]
+
+
+def _resolve_endpoint(engine: str | None = None) -> BrowserEndpoint:
+    return resolve_browser_endpoint(env=_browser_target_env(), engine=engine)
+
+
 def _host() -> str:
     try:
-        return resolve_browser_endpoint().host
+        return _resolve_endpoint().host
     except BrowserTargetError as exc:
         output_error(str(exc))
         raise typer.Exit(1) from None
@@ -69,7 +130,7 @@ def _host() -> str:
 
 def _host_for_engine(engine: str | None = None) -> str:
     try:
-        return resolve_browser_endpoint(engine=engine).host
+        return _resolve_endpoint(engine=engine).host
     except BrowserTargetError as exc:
         output_error(str(exc))
         raise typer.Exit(1) from None
@@ -264,7 +325,7 @@ def _parse_engine_args(args: list[str]) -> tuple[str | None, list[str]]:
 
 def _print_health() -> None:
     try:
-        endpoint = resolve_browser_endpoint()
+        endpoint = _resolve_endpoint()
     except BrowserTargetError as exc:
         output_error(str(exc))
         raise typer.Exit(1) from None
@@ -445,7 +506,7 @@ def _browser_update() -> int:
     print(f"agent-browser: installed={current} latest={latest.stdout.strip() or '?'}")
     print("Runtime:")
     try:
-        endpoint = resolve_browser_endpoint()
+        endpoint = _resolve_endpoint()
         print(f"  host: {endpoint.host}")
         print(f"  source: {endpoint.source}")
         print(f"  debug_local: {endpoint.debug_local}")
@@ -458,11 +519,11 @@ def _browser_update() -> int:
 def _usage() -> str:
     return """Remote browser automation through st
 
-Required target:
-  Set SF_BROWSER_HOST to the approved isolated browser VM or connector endpoint.
-  Plain st browser commands fail closed when SF_BROWSER_HOST is missing.
+Default target:
+  Plain st browser commands use approved browser VM 100 via st vm ip.
+  Override with SF_BROWSER_HOST, SF_BROWSER_DEFAULT_HOST, or SF_BROWSER_VM_ID.
   Do not start Chrome, CDP proxies, or agent-browser on the project/server host.
-  Use st vm list/status/ip/start to inspect or start the approved browser VM.
+  Set SF_BROWSER_DISABLE_DEFAULT_VM_HOST=1 to require explicit host config.
 
 Usage:
   st browser health
@@ -475,9 +536,8 @@ Usage:
   st browser [--chrome|--lp|--engine <name>] <agent-browser command> [args...]
 
 Examples:
-  st vm list
+  st browser health
   st vm status <browser-vm-id>
-  st vm ip <browser-vm-id>
   SF_BROWSER_HOST=<browser-vm-or-connector> st browser health
   SF_BROWSER_HOST=<browser-vm-or-connector> st browser check http://localhost:3001 /tmp/page.png
 

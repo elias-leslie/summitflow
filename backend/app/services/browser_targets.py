@@ -55,6 +55,7 @@ def _configured_host(values: Mapping[str, str], *, live: bool) -> tuple[str, str
     if live:
         candidates.append(("SUMMITFLOW_LIVE_BROWSER_HOST", values.get("SUMMITFLOW_LIVE_BROWSER_HOST", "")))
     candidates.append(("SF_BROWSER_HOST", values.get("SF_BROWSER_HOST", "")))
+    candidates.append(("SF_BROWSER_DEFAULT_HOST", values.get("SF_BROWSER_DEFAULT_HOST", "")))
     for name, raw in candidates:
         host = raw.strip()
         if host:

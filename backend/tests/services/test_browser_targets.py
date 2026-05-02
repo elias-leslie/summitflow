@@ -27,6 +27,13 @@ def test_browser_endpoint_allows_localhost_with_debug_override() -> None:
     assert endpoint.debug_local is True
 
 
+def test_browser_endpoint_uses_default_host_when_explicit_host_missing() -> None:
+    endpoint = resolve_browser_endpoint(env={"SF_BROWSER_DEFAULT_HOST": "192.0.2.88"})
+
+    assert endpoint.host == "192.0.2.88"
+    assert endpoint.source == "SF_BROWSER_DEFAULT_HOST"
+
+
 def test_browser_endpoint_uses_live_host_and_port() -> None:
     endpoint = resolve_browser_endpoint(
         live=True,
