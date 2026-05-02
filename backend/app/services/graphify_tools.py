@@ -18,6 +18,55 @@ _SEMANTIC_FILE_TYPES = {"document", "paper", "image", "video", "audio"}
 _CODE_ONLY_FILE_TYPES = {"code", "rationale", "community"}
 _CDN_MARKERS = ("https://unpkg.com", "https://cdn.", "https://cdn.jsdelivr.net")
 _CODE_REFRESH_DIAGNOSTICS = {"graph_missing", "graph_stale", "graph_unreadable", "detect_missing"}
+_CODE_SOURCE_SUFFIXES = {
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cs",
+    ".cxx",
+    ".go",
+    ".h",
+    ".hpp",
+    ".java",
+    ".js",
+    ".jsx",
+    ".kt",
+    ".kts",
+    ".mjs",
+    ".php",
+    ".py",
+    ".rb",
+    ".rs",
+    ".swift",
+    ".ts",
+    ".tsx",
+}
+_SOURCE_EXCLUDE_DIRS = {
+    ".git",
+    ".gitnexus",
+    ".jj",
+    ".mypy_cache",
+    ".next",
+    ".pnpm-store",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".st",
+    ".summitflow",
+    ".venv",
+    "__pycache__",
+    "build",
+    "coverage",
+    "data",
+    "dist",
+    "graphify-out",
+    "htmlcov",
+    "node_modules",
+    "out",
+    "references",
+}
+_SENSITIVE_FILENAMES = {".env", ".env.local", "credentials.json", "secrets.json"}
+_SENSITIVE_PATH_PARTS = ("credential", "secret", "token")
+_SENSITIVE_SUFFIXES = {".key", ".pem"}
 
 
 @dataclass(frozen=True)
@@ -115,21 +164,99 @@ def _source_files(out: Path) -> list[str]:
     return paths
 
 
-def _changed_files_since(root: Path, out: Path, graph_mtime: datetime | None) -> tuple[int, list[str]]:
+def _normalize_source_path(root: Path, raw_path: str) -> str | None:
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = root / path
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return None
+
+
+def _detected_source_set(root: Path, out: Path) -> set[str]:
+    paths: set[str] = set()
+    for raw_path in _source_files(out):
+        normalized = _normalize_source_path(root, raw_path)
+        if normalized and (root / normalized).suffix.lower() in _CODE_SOURCE_SUFFIXES:
+            paths.add(normalized)
+    return paths
+
+
+def _is_supported_source(path: Path) -> bool:
+    parts = [part.lower() for part in path.parts]
+    name = parts[-1]
+    if name in _SENSITIVE_FILENAMES or path.suffix.lower() in _SENSITIVE_SUFFIXES:
+        return False
+    if any(marker in part for part in parts for marker in _SENSITIVE_PATH_PARTS):
+        return False
+    return path.suffix.lower() in _CODE_SOURCE_SUFFIXES
+
+
+def _current_source_set(root: Path) -> set[str]:
+    paths: set[str] = set()
+    if not root.exists():
+        return paths
+    for dirpath, dirnames, filenames in os.walk(root):
+        current_dir = Path(dirpath)
+        try:
+            relative_parts = current_dir.resolve().relative_to(root.resolve()).parts
+        except ValueError:
+            relative_parts = ()
+        dirnames[:] = [
+            name
+            for name in dirnames
+            if name not in _SOURCE_EXCLUDE_DIRS
+            and not (not relative_parts and name == "backups")
+            and not (name.startswith(".") and name != ".github")
+        ]
+        for filename in filenames:
+            path = current_dir / filename
+            if not _is_supported_source(path):
+                continue
+            try:
+                paths.add(path.resolve().relative_to(root.resolve()).as_posix())
+            except ValueError:
+                continue
+    return paths
+
+
+def _graph_source_set(root: Path, nodes: list[dict[str, Any]], out: Path) -> set[str]:
+    paths: set[str] = set()
+    for node in nodes:
+        raw_path = node.get("source_file")
+        file_type = str(node.get("file_type") or "")
+        if file_type not in {"code", "rationale"} or not raw_path:
+            continue
+        normalized = _normalize_source_path(root, str(raw_path))
+        if normalized:
+            paths.add(normalized)
+    return paths or _detected_source_set(root, out)
+
+
+def _changed_files_since(root: Path, out: Path, nodes: list[dict[str, Any]], graph_mtime: datetime | None) -> tuple[int, list[str]]:
     if graph_mtime is None:
         return 0, []
+    detected_sources = _graph_source_set(root, nodes, out)
+    current_sources = _current_source_set(root)
     changed: list[str] = []
     graph_ts = graph_mtime.timestamp()
-    for raw_path in _source_files(out):
-        path = Path(raw_path)
-        if not path.is_absolute():
-            path = root / path
+    for rel_path in sorted(current_sources & detected_sources):
+        path = root / rel_path
         try:
             if path.exists() and path.stat().st_mtime > graph_ts:
-                changed.append(str(path.relative_to(root)))
-        except (OSError, ValueError):
+                changed.append(rel_path)
+        except OSError:
             continue
-    return len(changed), changed[:12]
+    added = sorted(current_sources - detected_sources)
+    deleted = sorted(detected_sources - current_sources)
+    sample = changed[:6] + [f"added:{path}" for path in added[:3]] + [f"deleted:{path}" for path in deleted[:3]]
+    return len(changed) + len(added) + len(deleted), sample[:12]
+
+
+def graphify_report_path(root: Path) -> Path:
+    """Return GRAPH_REPORT.md path for a project root."""
+    return graphify_dir(root) / "GRAPH_REPORT.md"
 
 
 def _html_uses_cdn(graph_html: Path) -> bool:
@@ -180,7 +307,7 @@ def graphify_status(project_id: str, root: Path) -> dict[str, Any]:
     )
     detect_summary = _detect_summary(out)
     semantic_source_count = sum(detect_summary.get(file_type, 0) for file_type in _SEMANTIC_FILE_TYPES)
-    changed_count, changed_sample = _changed_files_since(root, out, graph_updated_at)
+    changed_count, changed_sample = _changed_files_since(root, out, nodes, graph_updated_at)
     html_uses_cdn = _html_uses_cdn(graph_html)
     graph_exists = graph_json.exists()
     detect_exists = _detect_path(out).exists()

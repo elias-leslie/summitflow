@@ -234,6 +234,62 @@ def test_query_path_and_explain_output_measured_payloads(
     ]
 
 
+def test_context_emits_prompt_ready_graph_summary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    out = tmp_path / "graphify-out"
+    out.mkdir()
+    (out / "GRAPH_REPORT.md").write_text(
+        "# Graph Report - test\n\n## Summary\n- 10 nodes\n\n## Community Hubs\n- Hub A\n",
+        encoding="utf-8",
+    )
+
+    def fake_projects_api(method: str, path: str = "") -> object:
+        assert method == "GET"
+        if path == "/summitflow":
+            return {"id": "summitflow", "root_path": str(tmp_path)}
+        return [{"id": "summitflow", "root_path": str(tmp_path)}]
+
+    monkeypatch.setattr(graph, "projects_api", fake_projects_api)
+    monkeypatch.setattr(graph, "graphify_status", lambda project_id, root: _status(project_id))
+
+    result = runner.invoke(graph.app, ["context", "--project", "summitflow", "--budget", "600"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["project_id"] == "summitflow"
+    assert "Use st graph query/path/explain" in payload["prompt_context"]
+    assert "## Community Hubs" in payload["prompt_context"]
+    assert payload["metadata"]["semantic_coverage"] == "semantic"
+
+
+def test_semantic_refresh_no_execute_writes_prompt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_projects_api(method: str, path: str = "") -> object:
+        assert method == "GET"
+        if path == "/summitflow":
+            return {"id": "summitflow", "root_path": str(tmp_path)}
+        return [{"id": "summitflow", "root_path": str(tmp_path)}]
+
+    monkeypatch.setattr(graph, "projects_api", fake_projects_api)
+    monkeypatch.setattr(
+        graph,
+        "graphify_status",
+        lambda project_id, root: _status(project_id, ["semantic_sources_not_extracted"]),
+    )
+
+    result = runner.invoke(graph.app, ["semantic-refresh", "--project", "summitflow", "--no-execute"])
+
+    assert result.exit_code == 0
+    assert "GRAPH_SEMANTIC_REFRESH:READY" in result.output
+    prompt = tmp_path / ".dev-tools" / "graphify-semantic-refresh-prompt-details.txt"
+    assert prompt.exists()
+    assert "Refresh Graphify semantic coverage" in prompt.read_text(encoding="utf-8")
+
+
 def test_profile_compares_search_graph_and_agent_tool_shapes(
     graph_cli_project: Path,
     monkeypatch: pytest.MonkeyPatch,

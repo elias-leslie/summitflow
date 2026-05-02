@@ -14,10 +14,13 @@ from typing import Annotated, Any
 
 import typer
 
+from app.services.context_gatherer.token_utils import truncate_to_tokens
 from app.services.graphify_tools import (
     GraphifyCommandResult,
+    estimate_tokens,
     explain_graph,
     graphify_code_refresh_needed,
+    graphify_report_path,
     graphify_status,
     path_graph,
     query_graph,
@@ -37,6 +40,7 @@ _FALLOW_PACKAGE = "fallow"
 _FALLOW_MODES = {"audit", "changed", "health", "plugins", "flags", "dead-code", "dupes"}
 _GRAPH_REFRESH_PROGRESS_DELAY_SECONDS = 1.5
 _DOCTOR_BLOCKING_DIAGNOSTICS = {"graph_missing", "graph_stale", "graph_unreadable", "detect_missing"}
+_DEFAULT_CONTEXT_QUESTION = "What are the central modules, coupling points, and architecture communities in this project?"
 
 
 def _project_payload(project_id: str) -> dict[str, Any]:
@@ -160,6 +164,156 @@ def _warning_count(status: dict[str, Any]) -> int:
     return sum(1 for item in status.get("diagnostics", []) if item not in _DOCTOR_BLOCKING_DIAGNOSTICS)
 
 
+def _compact_status_lines(status: dict[str, Any]) -> list[str]:
+    diagnostics = status.get("diagnostics") or []
+    return [
+        "## Graph Status",
+        f"- project: {status.get('project_id', '-')}",
+        f"- nodes: {status.get('node_count', 0)}",
+        f"- edges: {status.get('edge_count', 0)}",
+        f"- communities: {status.get('community_count', 0)}",
+        f"- semantic_coverage: {status.get('semantic_coverage', '-')}",
+        f"- diagnostics: {', '.join(str(item) for item in diagnostics) if diagnostics else '-'}",
+        f"- graph_stale: {str(status.get('graph_stale', False)).lower()}",
+    ]
+
+
+def _report_context(root: Path, *, line_limit: int = 80) -> str:
+    report = graphify_report_path(root)
+    if not report.exists():
+        return "## Graph Report\n- missing"
+    lines = report.read_text(encoding="utf-8", errors="replace").splitlines()
+    selected: list[str] = []
+    capture = False
+    for line in lines:
+        if line.startswith("# Graph Report") or line.startswith("## Summary") or line.startswith("## Community Hubs"):
+            capture = True
+        elif line.startswith("## ") and selected and not line.startswith("## Community Hubs"):
+            capture = False
+        if capture:
+            selected.append(line)
+        if len(selected) >= line_limit:
+            break
+    if not selected:
+        selected = lines[:line_limit]
+    return "\n".join(selected)
+
+
+def _graph_context_payload(project_id: str, root: Path, status: dict[str, Any], *, budget: int) -> dict[str, Any]:
+    report_context = _report_context(root)
+    body = "\n".join(
+        [
+            "Graphify Context",
+            "",
+            "Use st graph query/path/explain for topology. Use st search for exact source facts.",
+            "",
+            *_compact_status_lines(status),
+            "",
+            report_context,
+            "",
+            "## Useful Commands",
+            f"- st graph query --project {project_id} --budget 1200 \"{_DEFAULT_CONTEXT_QUESTION}\"",
+            f"- st graph explain --project {project_id} \"<node>\"",
+            f"- st graph path --project {project_id} \"<source>\" \"<target>\"",
+            f"- st search -P {project_id} \"<symbol or route>\"",
+        ]
+    )
+    truncated = truncate_to_tokens(body, budget)
+    return {
+        "project_id": project_id,
+        "prompt_context": truncated,
+        "metadata": {
+            "budget": budget,
+            "estimated_tokens": estimate_tokens(truncated),
+            "diagnostics": status.get("diagnostics", []),
+            "semantic_coverage": status.get("semantic_coverage"),
+            "graph_stale": status.get("graph_stale", False),
+            "node_count": status.get("node_count", 0),
+            "edge_count": status.get("edge_count", 0),
+            "community_count": status.get("community_count", 0),
+        },
+    }
+
+
+def _semantic_refresh_prompt(project_id: str, root: Path, status: dict[str, Any]) -> str:
+    diagnostics = ", ".join(str(item) for item in status.get("diagnostics", [])) or "-"
+    return f"""Refresh Graphify semantic coverage for project `{project_id}` at `{root}`.
+
+Use local project rules. Keep work scoped to Graphify artifacts and diagnostics.
+
+Required workflow:
+1. Run `st pulse --gate`.
+2. Run `st graph status --project {project_id}`. If graph is stale/missing/unreadable, run `st graph refresh --project {project_id}` and re-check.
+3. Inspect `graphify-out/.graphify_detect.json`. Process only non-code semantic sources: document, paper, image, video, audio. Current status diagnostics: {diagnostics}.
+4. Use the Graphify skill extraction rules for semantic nodes/edges/hyperedges. Prefer Gemini via Agent Hub for semantic extraction when model calls are needed.
+5. Merge semantic results into `graphify-out/graph.json`, regenerate `graphify-out/GRAPH_REPORT.md` and `graphify-out/graph.html`, then run `st graph status --project {project_id}`.
+6. Keep stdout compact. Put large logs under `.dev-tools/`.
+
+Do not perform unrelated refactors. Do not edit source code unless needed to repair Graphify tooling itself.
+"""
+
+
+def _run_semantic_refresh_agent(
+    project_id: str,
+    root: Path,
+    *,
+    agent: str | None,
+    model: str,
+    max_turns: int,
+    timeout: int,
+) -> int:
+    status = _status_for_project_root(project_id, root, auto_refresh=True, action="semantic-refresh")
+    prompt = _semantic_refresh_prompt(project_id, root, status)
+    prompt_path = write_details(root, "graphify-semantic-refresh-prompt", prompt)
+    st_bin = shutil.which("st") or sys.argv[0]
+    command = [
+        st_bin,
+        "complete",
+        "-M",
+        model,
+        "--project",
+        project_id,
+        "--no-memory",
+        "--execute-tools",
+        "--working-dir",
+        str(root),
+        "--max-turns",
+        str(max_turns),
+        "--file",
+        str(prompt_path),
+        "--timeout",
+        str(timeout),
+    ]
+    if agent:
+        command[2:2] = ["--agent", agent]
+    start = time.perf_counter()
+    try:
+        result = subprocess.run(
+            command,
+            cwd=root,
+            text=True,
+            capture_output=True,
+            timeout=timeout + 30,
+            check=False,
+        )
+        output = "\n".join(part for part in ((result.stdout or "").strip(), (result.stderr or "").strip()) if part)
+        exit_code = result.returncode
+    except (OSError, subprocess.SubprocessError) as exc:
+        output = f"{type(exc).__name__}: {exc}"
+        exit_code = 127
+    elapsed_ms = round((time.perf_counter() - start) * 1000)
+    details = write_details(root, "graphify-semantic-refresh", output)
+    refreshed_status = graphify_status(project_id, root)
+    print(
+        f"GRAPH_SEMANTIC_REFRESH:{'OK' if exit_code == 0 else 'FAIL'}:{exit_code}|"
+        f"elapsed_ms={elapsed_ms}|semantic={refreshed_status.get('semantic_node_count', 0)}/"
+        f"{refreshed_status.get('semantic_source_count', 0)}|"
+        f"diagnostics={','.join(str(item) for item in refreshed_status.get('diagnostics', [])) or '-'}|"
+        f"prompt:{display_path(root, prompt_path)}|details:{display_path(root, details)}"
+    )
+    return exit_code
+
+
 @app.command("status")
 def status(
     project: Annotated[str | None, typer.Option("--project", "-p", help="Project id. Defaults to current project.")] = None,
@@ -255,6 +409,52 @@ def refresh(
     root = _root_for_project(project_id)
     result = refresh_graph(root)
     output_json({"project_id": project_id, **_command_payload(result), "status": _status_for_project_root(project_id, root)})
+
+
+@app.command("context")
+def context(
+    project: Annotated[str | None, typer.Option("--project", "-p", help="Project id. Defaults to current project.")] = None,
+    budget: Annotated[int, typer.Option("--budget", min=200, max=8000, help="Prompt context token budget.")] = 1200,
+) -> None:
+    """Emit compact Graphify context for agents."""
+    project_id = _project_id(project)
+    root = _fresh_root_for_project(project_id, action="context")
+    status = graphify_status(project_id, root)
+    output_json(_graph_context_payload(project_id, root, status, budget=budget))
+
+
+@app.command("semantic-refresh")
+def semantic_refresh(
+    project: Annotated[str | None, typer.Option("--project", "-p", help="Project id. Defaults to current project.")] = None,
+    agent: Annotated[str | None, typer.Option("--agent", "-a", help="Agent Hub agent slug.")] = None,
+    model: Annotated[str, typer.Option("--model", "-M", help="Model override for semantic extraction.")] = "gemini-3-flash-preview",
+    max_turns: Annotated[int, typer.Option("--max-turns", "-n", min=1, max=200, help="Agentic turn limit.")] = 40,
+    timeout: Annotated[int, typer.Option("--timeout", min=60, max=7200, help="Agent Hub read timeout seconds.")] = 1800,
+    execute: Annotated[bool, typer.Option("--execute/--no-execute", help="Run Agent Hub; otherwise write prompt and print command.")] = True,
+) -> None:
+    """Launch an explicit semantic Graphify refresh through Agent Hub."""
+    project_id = _project_id(project)
+    root = _root_for_project(project_id)
+    if not execute:
+        status = _status_for_project_root(project_id, root, auto_refresh=True, action="semantic-refresh")
+        prompt_path = write_details(root, "graphify-semantic-refresh-prompt", _semantic_refresh_prompt(project_id, root, status))
+        print(
+            "GRAPH_SEMANTIC_REFRESH:READY|"
+            f"project={project_id}|prompt:{display_path(root, prompt_path)}|"
+            f"command=st complete -M {model} --project {project_id} --no-memory --execute-tools "
+            f"--working-dir {root} --max-turns {max_turns} --file {prompt_path} --timeout {timeout}"
+        )
+        return
+    raise typer.Exit(
+        _run_semantic_refresh_agent(
+            project_id,
+            root,
+            agent=agent,
+            model=model,
+            max_turns=max_turns,
+            timeout=timeout,
+        )
+    )
 
 
 @app.command("query")

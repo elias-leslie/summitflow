@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.services.graphify_tools import GraphifyCommandResult
+from app.services.graphify_tools import GraphifyCommandResult, graphify_status
 from app.storage.connection import get_connection
 
 
@@ -80,8 +80,8 @@ def _write_graphify_outputs(root: Path) -> None:
     for artifact in (out / "graph.json", out / "graph.html", out / "GRAPH_REPORT.md"):
         os.utime(artifact, (old_timestamp, old_timestamp))
     older_source_timestamp = old_timestamp - 60
-    os.utime(code_source, (older_source_timestamp, older_source_timestamp))
-    os.utime(doc_source, None)
+    os.utime(code_source, None)
+    os.utime(doc_source, (older_source_timestamp, older_source_timestamp))
 
 
 def test_graphify_status_and_static_outputs(
@@ -108,7 +108,7 @@ def test_graphify_status_and_static_outputs(
     assert status["semantic_coverage"] == "semantic"
     assert status["graph_stale"] is True
     assert status["changed_files_since_graph"] == 1
-    assert status["changed_files_sample"] == ["docs/note.md"]
+    assert status["changed_files_sample"] == ["backend/app.py"]
     assert status["graph_size_bytes"] > 0
     assert status["html_size_bytes"] > 0
     assert status["report_size_bytes"] > 0
@@ -123,6 +123,26 @@ def test_graphify_status_and_static_outputs(
     report_response = client.get(f"/api/projects/{project_id}/graphify/report")
     assert report_response.status_code == 200
     assert report_response.text == "# Report\n"
+
+
+def test_graphify_status_detects_added_and_deleted_supported_files(tmp_path: Path) -> None:
+    _write_graphify_outputs(tmp_path)
+    old_timestamp = time.time() - 120
+    for source in (tmp_path / "backend" / "app.py", tmp_path / "docs" / "note.md"):
+        os.utime(source, (old_timestamp, old_timestamp))
+
+    new_source = tmp_path / "frontend" / "Graph.tsx"
+    new_source.parent.mkdir()
+    new_source.write_text("export function Graph() { return null }\n", encoding="utf-8")
+    (tmp_path / "backend" / "app.py").unlink()
+
+    status = graphify_status("graphify-api-test", tmp_path)
+
+    assert status["graph_stale"] is True
+    assert status["changed_files_since_graph"] == 2
+    assert "added:frontend/Graph.tsx" in status["changed_files_sample"]
+    assert "deleted:backend/app.py" in status["changed_files_sample"]
+    assert "graph_stale" in status["diagnostics"]
 
 
 def test_graphify_update_runs_code_only_refresh(
