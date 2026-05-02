@@ -262,6 +262,8 @@ def _run_tool(name: str, config: dict[str, Any], extra_args: list[str]) -> int:
     base_args = shlex.split(str(config.get("args") or ""))
     if name == "biome" and any(not arg.startswith("-") for arg in extra_args):
         base_args = [arg for arg in base_args if arg != "."]
+    if name == "pytest":
+        extra_args = _pytest_extra_args(extra_args)
     command = [*_resolve_command(binary, root, cwd, base_args), *extra_args]
     label = str(config.get("label") or name.upper())
     print(f"{label}:{name}:start")
@@ -290,6 +292,14 @@ def _run_tool(name: str, config: dict[str, Any], extra_args: list[str]) -> int:
         f"details:{display_path(root, details)}|hint:{summary_hint(output)}"
     )
     return result.returncode
+
+
+def _pytest_extra_args(extra_args: list[str]) -> list[str]:
+    has_path_arg = any(arg and not arg.startswith("-") for arg in extra_args)
+    has_cov_control = any(arg == "--no-cov" or arg.startswith("--cov") for arg in extra_args)
+    if has_path_arg and not has_cov_control:
+        return ["--no-cov", *extra_args]
+    return extra_args
 
 
 def _run_selected(

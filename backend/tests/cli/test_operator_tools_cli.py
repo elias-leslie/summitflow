@@ -365,6 +365,28 @@ def test_check_tool_output_goes_to_details_file(tmp_path: Path, capsys: pytest.C
     assert "TEST:OK:0|details:.dev-tools/pytest-details.txt|hint:2187 passed in 19.87s" in captured.out
 
 
+def test_check_pytest_scoped_paths_disable_configured_coverage(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = subprocess.CompletedProcess(args=["pytest"], returncode=0, stdout="1 passed\n", stderr="")
+    with (
+        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check.subprocess.run", return_value=result) as run,
+    ):
+        exit_code = check._run_tool(
+            "pytest",
+            {"label": "TEST", "binary": "pytest", "args": "--cov=app --cov-fail-under=51"},
+            ["tests/test_prediction.py"],
+        )
+
+    command = run.call_args.args[0]
+    assert exit_code == 0
+    assert "--no-cov" in command
+    assert command.index("--no-cov") < command.index("tests/test_prediction.py")
+    assert "TEST:OK:0" in capsys.readouterr().out
+
+
 def test_check_tool_hint_prefers_result_summary_over_late_runtime_warning(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
