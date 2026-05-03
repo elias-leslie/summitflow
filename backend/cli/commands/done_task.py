@@ -232,29 +232,6 @@ def _task_with_export_context(client: STClient, task_id: str, task: dict[str, An
     return merged
 
 
-def _ensure_dirty_paths_match_task_scope(repo_root: str, task: dict[str, Any]) -> None:
-    dirty_paths = _git_dirty_paths(repo_root)
-    if not dirty_paths:
-        return
-    scope = _task_scope_paths(task)
-    out_of_scope = [
-        path
-        for path in dirty_paths
-        if path not in scope and not any(path.startswith(f"{prefix.rstrip('/')}/") for prefix in scope)
-    ]
-    if not out_of_scope:
-        return
-    shown = ", ".join(out_of_scope[:8])
-    if len(out_of_scope) > 8:
-        shown += f", +{len(out_of_scope) - 8} more"
-    output_error(
-        "Task closeout blocked: dirty paths outside task scope.\n"
-        f"  Out of scope: {shown}\n"
-        "  Commit or isolate unrelated work, then rerun st done."
-    )
-    raise typer.Exit(1)
-
-
 def _dirty_paths_in_task_scope(repo_root: str, task: dict[str, Any]) -> list[str]:
     scope = _task_scope_paths(task)
     return [
@@ -264,8 +241,7 @@ def _dirty_paths_in_task_scope(repo_root: str, task: dict[str, Any]) -> list[str
     ]
 
 
-def _commit_active_task_work(repo_root: str, task_id: str, task: dict[str, Any], message: str | None) -> None:
-    _ensure_dirty_paths_match_task_scope(repo_root, task)
+def _commit_active_task_work(repo_root: str, task_id: str, message: str | None) -> None:
     commit_message = (message or f"complete {task_id}").strip()
     try:
         result = commit_repo(Path(repo_root), message=commit_message, task_id=task_id, push=True)
@@ -461,7 +437,7 @@ def _finalize_missing_snapshot_residue(
         repo_root = _checkpoint_repo_root(project_id)
         scoped_task = _task_with_export_context(client, task_id, task)
         if repo_root and not is_working_tree_clean(repo_root) and not _task_has_published_commit_event(task_id):
-            _commit_active_task_work(repo_root, task_id, scoped_task, message)
+            _commit_active_task_work(repo_root, task_id, message)
         if repo_root:
             base_branch = _task_base_branch(task)
             repo_is_clean = is_working_tree_clean(repo_root)
@@ -538,7 +514,7 @@ def complete_task(
 ) -> dict[str, str | bool]:
     """Complete a task with branch merge and snapshot cleanup.
 
-    Smart mode (default): auto-verifies steps, auto-closes subtasks, stashes dirty main.
+    Smart mode (default): auto-verifies, checkpoints, publishes, closes, and cleans up.
     Strict mode: fails if gates not pre-passed or main dirty.
     """
     snapshot_info, early = _load_snapshot_info(client, task_id, admin, message)

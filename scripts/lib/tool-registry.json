@@ -55,12 +55,12 @@
     },
     {
       "id": "vcs",
-      "canonical": "st commit / st jj / st git",
+      "canonical": "st done / st commit / st jj / st git",
       "replaces": ["commit.sh"],
-      "summary": "Version-control workflow: st commit and st jj for normal work; st git only for inspection and residue repair.",
+      "summary": "Version-control workflow: st done for task closeout; st commit and st jj for blockers/checkpoints; st git only for inspection and residue repair.",
       "safety": "mutating",
-      "commands": ["commit", "jj", "git status", "git sync", "git resolve-conflict"],
-      "examples": ["st commit --message \"describe work\" --push", "st jj status", "st git status"],
+      "commands": ["done", "commit", "jj", "git status", "git sync", "git resolve-conflict"],
+      "examples": ["st done task-abc123 -m \"complete\"", "st commit --message \"checkpoint\" --push", "st jj status", "st git status"],
       "verify": ["st git status"]
     },
     {

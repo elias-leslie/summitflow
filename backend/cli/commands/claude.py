@@ -175,8 +175,8 @@ def run_batch(
         bool, _Opt("--stop-on-error/--keep-going", help="Stop submitting after first worker failure"),
     ] = False,
     commit_and_done: Annotated[
-        bool, _Opt("--commit-and-done/--no-commit-and-done", help="Commit/push and run st done on success"),
-    ] = False,
+        bool, _Opt("--commit-and-done/--no-commit-and-done", help="Run st done on success"),
+    ] = True,
     feedback_text: _FeedbackText = None,
     feedback_file: _FeedbackFile = None,
     effort: _EffortArg = None,

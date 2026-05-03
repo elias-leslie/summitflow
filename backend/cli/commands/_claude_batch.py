@@ -9,7 +9,7 @@ from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 import typer
 
 from ..output import output_error
-from ._claude_constants import _COMMIT_COMMAND, WorkerDispatch
+from ._claude_constants import WorkerDispatch
 
 _FetchFn = Callable[[str], dict[str, object]]
 _RunWorkerFn = Callable[..., int]
@@ -61,17 +61,12 @@ def run_batch_workers(
 
 
 def commit_and_done_task(spec: WorkerDispatch, *, fetch_task_fn: _FetchFn, fatal: Callable) -> int:
-    """Commit/push the task checkout, then run canonical closeout."""
+    """Run canonical task closeout."""
     fetch_task_fn(spec.task_id)
-    commit_result = subprocess.run(
-        [*_COMMIT_COMMAND, "--push", "--task", spec.task_id,
-         "--message", f"claude(batch): complete {spec.task_id}"],
-        cwd=spec.project_root, check=False,
-    )
-    if commit_result.returncode != 0:
-        return int(commit_result.returncode)
     done_result = subprocess.run(
-        ["st", "done", spec.task_id], cwd=spec.project_root, check=False,
+        ["st", "done", spec.task_id, "--message", f"claude(batch): complete {spec.task_id}"],
+        cwd=spec.project_root,
+        check=False,
     )
     return int(done_result.returncode)
 
@@ -98,6 +93,6 @@ def process_batch_results(
             closeout_failed = True
             output_error(f"Closeout failed for {spec.task_id} (exit {closeout_code})")
         else:
-            typer.echo(f"Committed and closed {spec.task_id}")
+            typer.echo(f"Closed {spec.task_id}")
     if worker_failed or closeout_failed:
         raise typer.Exit(1)

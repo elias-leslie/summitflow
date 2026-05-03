@@ -121,7 +121,7 @@ def _validate_working_tree_clean() -> None:
     """Ensure working tree has no uncommitted changes."""
     if not is_working_tree_clean():
         output_error(
-            "Working tree has uncommitted changes.\nCommit first: st commit --message 'message'"
+            "Working tree has uncommitted changes.\nUse task-level closeout: st done <task-id> -m 'message'"
         )
         raise typer.Exit(1)
 

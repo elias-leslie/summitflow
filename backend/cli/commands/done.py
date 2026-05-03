@@ -3,7 +3,7 @@
 Checkpoint-aware completion for tasks and subtasks.
 Merges git branches and cleans up DB snapshots.
 
-Smart default: auto-verifies steps, auto-closes subtasks, stash-merge-pop.
+Smart default: auto-verifies, checkpoints, publishes, closes, and cleans up.
 Use --strict for old gate-check-only behavior.
 """
 
@@ -91,7 +91,7 @@ def done_command(
 ) -> None:
     """Complete a task or subtask.
 
-    Smart mode (default): auto-verifies steps, auto-closes subtasks, stashes dirty main.
+    Smart mode (default): auto-verifies, checkpoints, publishes, closes, and cleans up.
     Strict mode (--strict): fails if gates not pre-passed or main dirty.
     """
     if is_subtask_id(id):

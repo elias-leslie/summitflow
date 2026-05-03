@@ -193,7 +193,7 @@ def test_claude_task_prints_patience_note(tmp_path: Path) -> None:
     assert "Do not redrive early" in result.output
 
 
-def test_claude_batch_runs_multiple_tasks_and_optional_closeout() -> None:
+def test_claude_batch_runs_multiple_tasks_and_defaults_to_closeout() -> None:
     dispatches = [
         WorkerDispatch(
             index=0,
@@ -226,15 +226,14 @@ def test_claude_batch_runs_multiple_tasks_and_optional_closeout() -> None:
                 "task-b",
                 "--max-subagents",
                 "2",
-                "--commit-and-done",
             ],
         )
 
     assert result.exit_code == 0
     assert mock_prepare.call_count == 2
     assert mock_closeout.call_count == 2
-    assert "Committed and closed task-a" in result.output
-    assert "Committed and closed task-b" in result.output
+    assert "Closed task-a" in result.output
+    assert "Closed task-b" in result.output
 
 
 def test_claude_batch_help_mentions_batch_flags() -> None:

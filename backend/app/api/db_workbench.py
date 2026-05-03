@@ -247,7 +247,7 @@ _PGWEB_DARK_STYLE = """
   }
   .ace_gutter,
   .ace_gutter-cell {
-    color: #6f7d91 !important;
+    color: #94a3b8 !important;
   }
   .ace_active-line,
   .ace_gutter-active-line {
@@ -256,32 +256,48 @@ _PGWEB_DARK_STYLE = """
   .ace_cursor {
     color: #f7fbff !important;
   }
-  .ace-tm .ace_keyword,
-  .ace-tm .ace_meta,
-  .ace-tm .ace_storage,
-  .ace-tm .ace_support {
+  .ace_editor.ace-tomorrow .ace_keyword,
+  .ace_editor.ace-tomorrow .ace_meta,
+  .ace_editor.ace-tomorrow .ace_storage,
+  .ace_editor.ace-tomorrow .ace_support,
+  .ace_editor .ace_keyword,
+  .ace_editor .ace_meta,
+  .ace_editor .ace_storage,
+  .ace_editor .ace_support {
     color: #93c5fd !important;
   }
-  .ace-tm .ace_string,
-  .ace-tm .ace_string * {
+  .ace_editor.ace-tomorrow .ace_string,
+  .ace_editor.ace-tomorrow .ace_string *,
+  .ace_editor .ace_string,
+  .ace_editor .ace_string * {
     color: #86efac !important;
   }
-  .ace-tm .ace_constant,
-  .ace-tm .ace_numeric,
-  .ace-tm .ace_boolean {
+  .ace_editor.ace-tomorrow .ace_constant,
+  .ace_editor.ace-tomorrow .ace_numeric,
+  .ace_editor.ace-tomorrow .ace_boolean,
+  .ace_editor .ace_constant,
+  .ace_editor .ace_numeric,
+  .ace_editor .ace_boolean {
     color: #fdba74 !important;
   }
-  .ace-tm .ace_comment {
+  .ace_editor.ace-tomorrow .ace_comment,
+  .ace_editor .ace_comment {
     color: #94a3b8 !important;
   }
-  .ace-tm .ace_identifier,
-  .ace-tm .ace_variable,
-  .ace-tm .ace_entity,
-  .ace-tm .ace_text {
+  .ace_editor.ace-tomorrow .ace_identifier,
+  .ace_editor.ace-tomorrow .ace_variable,
+  .ace_editor.ace-tomorrow .ace_entity,
+  .ace_editor.ace-tomorrow .ace_text,
+  .ace_editor .ace_identifier,
+  .ace_editor .ace_variable,
+  .ace_editor .ace_entity,
+  .ace_editor .ace_text {
     color: #e8eef7 !important;
   }
-  .ace-tm .ace_operator,
-  .ace-tm .ace_punctuation {
+  .ace_editor.ace-tomorrow .ace_operator,
+  .ace_editor.ace-tomorrow .ace_punctuation,
+  .ace_editor .ace_operator,
+  .ace_editor .ace_punctuation {
     color: #67e8f9 !important;
   }
   table,

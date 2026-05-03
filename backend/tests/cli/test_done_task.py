@@ -198,7 +198,7 @@ def test_complete_task_missing_checkpoint_active_task_auto_commits_dirty_work() 
     assert result["snapshot_removed"] is True
 
 
-def test_complete_task_missing_checkpoint_refuses_unscoped_dirty_paths() -> None:
+def test_complete_task_missing_checkpoint_active_task_commits_combined_dirty_checkpoint() -> None:
     client = MagicMock()
     client.get_task.return_value = {
         "status": "pending",
@@ -212,22 +212,42 @@ def test_complete_task_missing_checkpoint_refuses_unscoped_dirty_paths() -> None
         patch("cli.commands.done_task.get_snapshot_info", return_value=None),
         patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None),
         patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
-        patch("cli.commands.done_task.is_working_tree_clean", return_value=False),
+        patch("cli.commands.done_task.is_working_tree_clean", side_effect=[False, True]),
         patch(
             "cli.commands.done_task._git_dirty_paths",
             return_value=["backend/app/api/heartbeat.py", "frontend/app/database/page.tsx"],
         ),
-        patch("cli.commands.done_task._task_has_published_commit_event", return_value=False),
+        patch("cli.commands.done_task._task_has_published_commit_event", side_effect=[False, True]),
         patch("cli.commands.done_task.commit_repo") as mock_commit,
-        patch("cli.commands.done_task.output_error") as mock_output,
-        pytest.raises(Exit) as exc_info,
+        patch("cli.commands.done_task._record_task_commit_event") as mock_record,
+        patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
+        patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
+        patch("cli.commands.done_task.merge_task_branch") as mock_merge,
+        patch("cli.commands.done_task._publish_completed_work") as mock_publish,
+        patch("cli.commands.done_task._run_smart_prereqs") as mock_prereqs,
+        patch("cli.commands.done_task.output_success"),
     ):
-        complete_task(client, "task-789", message="finish task")
+        mock_commit.return_value = {
+            "status": "SUCCESS",
+            "commit_id": "abc123",
+            "pushed": True,
+        }
+        mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
+        result = complete_task(client, "task-789", message="finish task")
 
-    assert exc_info.value.exit_code == 1
-    mock_commit.assert_not_called()
-    assert "dirty paths outside task scope" in mock_output.call_args.args[0]
-    assert "frontend/app/database/page.tsx" in mock_output.call_args.args[0]
+    mock_commit.assert_called_once()
+    assert mock_commit.call_args.kwargs["message"] == "finish task"
+    assert mock_commit.call_args.kwargs["task_id"] == "task-789"
+    assert mock_commit.call_args.kwargs["push"] is True
+    mock_record.assert_called_once_with("task-789", mock_commit.return_value)
+    mock_prereqs.assert_called_once_with(
+        client, "task-789", "summitflow", merge_subtask_branches=False
+    )
+    mock_merge.assert_not_called()
+    mock_publish.assert_called_once_with("task-789", "summitflow")
+    client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
+    assert result["merged"] is False
+    assert result["snapshot_removed"] is True
 
 
 def test_run_smart_prereqs_can_pass_subtasks_without_branch_merge() -> None:

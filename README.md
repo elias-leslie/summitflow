@@ -205,7 +205,8 @@ curl -X POST http://localhost:8001/api/projects \
 - `st check` - quality gates and named tool checks
 - `st db` - database inspection and migrations
 - `st jj` - normal Jujutsu-backed version-control workflow
-- `st commit` - managed repo commit/push workflow
+- `st done` - default task closeout with check, checkpoint, publish, status closure, and cleanup
+- `st commit` - managed repo commit/push workflow for non-task checkpoints and closeout blockers
 - `st backup` - source backups, restores, schedules, and pending drain
 - `st browser` - browser health, screenshots, DOM eval, and page checks
 - `st web` - Agent Hub-backed web search/research/fetch

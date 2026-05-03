@@ -11,5 +11,6 @@
 ## Version Control
 
 - Use `st jj --help` as the source of truth.
-- Normal work uses `st jj` and `st commit`; agents do not call raw git or raw jj.
+- Normal task closeout uses `st done <task-id> -m "..."`; it owns check, checkpoint, publish, task closure, and cleanup.
+- Use `st commit` or `st jj` only for exact `st done` blockers, combined checkpoints, inspection, or residue repair.
 - `st git` is only for inspection and residue repair.
