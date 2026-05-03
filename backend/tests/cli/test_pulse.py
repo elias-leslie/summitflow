@@ -722,6 +722,100 @@ def test_require_pulse_gate_allows_current_task_checkpoint() -> None:
         pulse.require_pulse_gate("summitflow", allow_task_id="task-1")
 
 
+def test_require_pulse_gate_allows_current_task_read_only_transcript_sync_session() -> None:
+    from cli.commands import pulse
+
+    payload = {
+        "project_id": "agent-hub",
+        "summary": {
+            "running_tasks": 0,
+            "active_owners": 0,
+            "active_readers": 1,
+            "active_specialists": 0,
+            "active_sessions": 1,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {
+            "active_checkpoints": 1,
+            "dirty_checkpoints": 0,
+            "dirty_main_repo": True,
+            "needs_cleanup": True,
+            "checkpoint_task_ids": ["task-1"],
+        },
+        "running_tasks": [],
+        "active_owners": [],
+        "active_readers": [
+            {
+                "session_id": "sess-sync",
+                "scope_confidence": "observed_read",
+                "observed_read_paths": [".dev-tools/pytest-details.txt"],
+                "observed_write_paths": [],
+            }
+        ],
+        "active_specialists": [],
+        "active_sessions": [
+            {
+                "id": "sess-sync",
+                "current_branch": "task-1/main",
+                "request_source": "codex-transcript-sync",
+                "source_client": "summitflow/codex-session-sync",
+            }
+        ],
+        "stranded_tasks": [],
+    }
+
+    with patch.object(pulse, "fetch_pulse_payload", return_value=payload):
+        pulse.require_pulse_gate("agent-hub", allow_task_id="task-1")
+
+
+def test_require_pulse_gate_keeps_other_task_read_only_session_blocking() -> None:
+    from cli.commands import pulse
+
+    payload = {
+        "project_id": "agent-hub",
+        "summary": {
+            "running_tasks": 0,
+            "active_owners": 0,
+            "active_readers": 1,
+            "active_specialists": 0,
+            "active_sessions": 1,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {
+            "active_checkpoints": 1,
+            "dirty_checkpoints": 0,
+            "dirty_main_repo": True,
+            "needs_cleanup": True,
+            "checkpoint_task_ids": ["task-1"],
+        },
+        "running_tasks": [],
+        "active_owners": [],
+        "active_readers": [
+            {
+                "task_id": "task-other",
+                "session_id": "sess-other",
+                "scope_confidence": "observed_read",
+                "observed_read_paths": [".dev-tools/pytest-details.txt"],
+                "observed_write_paths": [],
+            }
+        ],
+        "active_specialists": [],
+        "active_sessions": [
+            {
+                "id": "sess-other",
+                "current_branch": "task-other/main",
+                "request_source": "codex-transcript-sync",
+                "source_client": "summitflow/codex-session-sync",
+            }
+        ],
+        "stranded_tasks": [],
+    }
+
+    assert pulse.preflight_reasons_for_payload(payload, allow_task_id="task-1") == [
+        "active_nonwriter_session"
+    ]
+
+
 def test_claim_task_runs_pulse_gate_before_checkpoint_creation() -> None:
     from cli.commands import claim
 

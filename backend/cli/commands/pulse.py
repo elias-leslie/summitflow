@@ -275,37 +275,82 @@ def _format_preflight(
     return f"PREFLIGHT:{project_id}|claim={state}|edit={state}|reasons={detail}|source=st-pulse"
 
 
+def _record_session_id(record: dict[str, Any]) -> str:
+    return str(record.get("session_id") or record.get("id") or "")
+
+
+def _record_belongs_to_task(record: dict[str, Any], task_id: str) -> bool:
+    for key in ("task_id", "external_id"):
+        if str(record.get(key) or "") == task_id:
+            return True
+    for key in ("current_branch", "branch"):
+        branch = record.get(key)
+        if isinstance(branch, str) and branch.split("/", 1)[0] == task_id:
+            return True
+    return False
+
+
+def _allowed_task_session_ids(payload: dict[str, Any], task_id: str) -> set[str]:
+    session_ids: set[str] = set()
+    for key in ("active_owners", "active_readers", "active_specialists", "active_sessions"):
+        records = payload.get(key, [])
+        if not isinstance(records, list):
+            continue
+        for record in records:
+            if not isinstance(record, dict) or not _record_belongs_to_task(record, task_id):
+                continue
+            session_id = _record_session_id(record)
+            if session_id:
+                session_ids.add(session_id)
+    return session_ids
+
+
+def _filter_allowed_task_records(records: Any, task_id: str, allowed_session_ids: set[str]) -> list[Any]:
+    if not isinstance(records, list):
+        return []
+    filtered: list[Any] = []
+    for record in records:
+        if not isinstance(record, dict):
+            filtered.append(record)
+            continue
+        session_id = _record_session_id(record)
+        if _record_belongs_to_task(record, task_id) or (session_id and session_id in allowed_session_ids):
+            continue
+        filtered.append(record)
+    return filtered
+
+
+def _filter_allowed_task_rows(records: Any, task_id: str) -> list[Any]:
+    if not isinstance(records, list):
+        return []
+    return [
+        record
+        for record in records
+        if not (
+            isinstance(record, dict)
+            and (str(record.get("id") or "") == task_id or _record_belongs_to_task(record, task_id))
+        )
+    ]
+
+
 def _payload_for_allowed_task(payload: dict[str, Any], task_id: str | None) -> dict[str, Any]:
     if not task_id:
         return payload
-    allowed_session_ids = {
-        str(owner.get("session_id") or "")
-        for owner in [*payload.get("active_owners", []), *payload.get("active_specialists", [])]
-        if isinstance(owner, dict) and owner.get("task_id") == task_id
-    }
+    allowed_session_ids = _allowed_task_session_ids(payload, task_id)
     filtered = dict(payload)
-    filtered["active_owners"] = [
-        owner for owner in payload.get("active_owners", [])
-        if not (isinstance(owner, dict) and owner.get("task_id") == task_id)
-    ]
-    filtered["active_specialists"] = [
-        owner for owner in payload.get("active_specialists", [])
-        if not (isinstance(owner, dict) and owner.get("task_id") == task_id)
-    ]
-    filtered["active_sessions"] = [
-        session for session in payload.get("active_sessions", [])
-        if not (isinstance(session, dict) and str(session.get("id") or "") in allowed_session_ids)
-    ]
-    filtered["running_tasks"] = [
-        task for task in payload.get("running_tasks", [])
-        if not (isinstance(task, dict) and task.get("id") == task_id)
-    ]
-    filtered["stranded_tasks"] = [
-        task for task in payload.get("stranded_tasks", [])
-        if not (isinstance(task, dict) and task.get("id") == task_id)
-    ]
+    filtered["active_owners"] = _filter_allowed_task_records(payload.get("active_owners", []), task_id, allowed_session_ids)
+    filtered["active_readers"] = _filter_allowed_task_records(payload.get("active_readers", []), task_id, allowed_session_ids)
+    filtered["active_specialists"] = _filter_allowed_task_records(
+        payload.get("active_specialists", []), task_id, allowed_session_ids
+    )
+    filtered["active_sessions"] = _filter_allowed_task_records(
+        payload.get("active_sessions", []), task_id, allowed_session_ids
+    )
+    filtered["running_tasks"] = _filter_allowed_task_rows(payload.get("running_tasks", []), task_id)
+    filtered["stranded_tasks"] = _filter_allowed_task_rows(payload.get("stranded_tasks", []), task_id)
     summary = dict(payload.get("summary", {}))
     summary["active_owners"] = len(filtered["active_owners"])
+    summary["active_readers"] = len(filtered["active_readers"])
     summary["active_specialists"] = len(filtered["active_specialists"])
     summary["active_sessions"] = len(filtered["active_sessions"])
     summary["running_tasks"] = len(filtered["running_tasks"])
