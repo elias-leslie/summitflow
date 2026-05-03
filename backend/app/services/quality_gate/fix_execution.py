@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 from ...logging_config import get_logger
+from ...utils import safe_subprocess
 
 logger = get_logger(__name__)
 
@@ -70,7 +71,7 @@ def verify_fix(project_path: Path, check_type: str, file_path: str) -> bool:
         logger.warning("unknown_check_type", check_type=check_type)
         return False
     try:
-        result = subprocess.run(
+        result = safe_subprocess.run(
             cmd, cwd=project_path, capture_output=True, text=True, timeout=60
         )
         return result.returncode == 0

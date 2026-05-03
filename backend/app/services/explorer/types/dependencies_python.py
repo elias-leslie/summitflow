@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ....logging_config import get_logger
+from ....utils import safe_subprocess
 from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
 
@@ -113,7 +114,7 @@ def _run_python_audit(root_path: Path) -> dict[str, dict[str, Any]]:
     """Run pip-audit and return vulnerability info by package."""
     results: dict[str, dict[str, Any]] = {}
     try:
-        proc = subprocess.run([*_venv_cmd(root_path, "pip-audit"), "--format", "json"],
+        proc = safe_subprocess.run([*_venv_cmd(root_path, "pip-audit"), "--format", "json"],
                               cwd=root_path, capture_output=True, text=True, timeout=120)
         if not proc.stdout:
             return results
@@ -137,7 +138,7 @@ def _run_python_outdated(root_path: Path) -> dict[str, dict[str, Any]]:
     """Check for outdated Python packages."""
     results: dict[str, dict[str, Any]] = {}
     try:
-        proc = subprocess.run([*_venv_cmd(root_path, "pip"), "list", "--outdated", "--format", "json"],
+        proc = safe_subprocess.run([*_venv_cmd(root_path, "pip"), "list", "--outdated", "--format", "json"],
                               cwd=root_path, capture_output=True, text=True, timeout=60)
         if not proc.stdout:
             return results

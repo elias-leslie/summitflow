@@ -5,11 +5,11 @@ Handles reverting project state to a known good commit.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 from ...logging_config import get_logger
 from ...storage.connection import get_cursor
+from ...utils import safe_subprocess
 
 logger = get_logger(__name__)
 
@@ -88,19 +88,13 @@ async def _verify_commit_exists(
         Dict with success status and optional error.
     """
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            "-C",
-            project_root,
-            "cat-file",
-            "-t",
-            commit_sha,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        result = await safe_subprocess.run_async(
+            ["git", "-C", project_root, "cat-file", "-t", commit_sha],
+            capture_output=True,
+            text=True,
         )
-        _stdout, _stderr = await proc.communicate()
 
-        if proc.returncode != 0:
+        if result.returncode != 0:
             return {
                 "success": False,
                 "message": "Commit not found",
@@ -130,33 +124,29 @@ async def _stash_if_dirty(
         commit_sha: Target commit SHA (for stash message)
     """
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            "-C",
-            project_root,
-            "status",
-            "--porcelain",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        result = await safe_subprocess.run_async(
+            ["git", "-C", project_root, "status", "--porcelain"],
+            capture_output=True,
+            text=True,
         )
-        stdout, _stderr = await proc.communicate()
 
-        if not stdout.strip():
+        if not result.stdout.strip():
             return
 
         logger.warning("stashing_before_rollback", project_id=project_id)
-        stash_proc = await asyncio.create_subprocess_exec(
-            "git",
-            "-C",
-            project_root,
-            "stash",
-            "push",
-            "-m",
-            f"Auto-stash before rollback to {commit_sha[:8]}",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        await safe_subprocess.run_async(
+            [
+                "git",
+                "-C",
+                project_root,
+                "stash",
+                "push",
+                "-m",
+                f"Auto-stash before rollback to {commit_sha[:8]}",
+            ],
+            capture_output=True,
+            text=True,
         )
-        await stash_proc.communicate()
 
     except Exception as e:
         logger.warning("stash_check_failed", error=str(e))
@@ -178,23 +168,17 @@ async def _perform_rollback(
         Dict with success status, message, and optional error.
     """
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            "-C",
-            project_root,
-            "reset",
-            "--hard",
-            commit_sha,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        result = await safe_subprocess.run_async(
+            ["git", "-C", project_root, "reset", "--hard", commit_sha],
+            capture_output=True,
+            text=True,
         )
-        _stdout, stderr = await proc.communicate()
 
-        if proc.returncode != 0:
+        if result.returncode != 0:
             return {
                 "success": False,
                 "message": "Rollback failed",
-                "error": stderr.decode() if stderr else "Unknown error",
+                "error": result.stderr or "Unknown error",
             }
 
         logger.info("rollback_success", project_id=project_id, commit_sha=commit_sha[:8])

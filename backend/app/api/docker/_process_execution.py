@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
-import logging
 import os
+import subprocess
 from pathlib import Path
 
+from ...utils import safe_subprocess
 from .constants import (
     _COMMAND_TIMEOUT_SECONDS,
     _SYSTEMCTL_TIMEOUT_SECONDS,
@@ -25,23 +25,43 @@ __all__ = [
 
 
 async def _communicate_with_timeout(
-    proc: asyncio.subprocess.Process,
+    proc: object,
     *,
     stdin_data: bytes | None = None,
     timeout: float | None = None,
 ) -> tuple[str, str, int]:
+    """Compatibility shim; new callers use safe_subprocess directly."""
+    _ = (proc, stdin_data)
+    detail = f"Timed out after {timeout:.2f}s" if timeout is not None else "Timed out"
+    return "", detail, 124
+
+
+async def _run_safe_command(
+    args: tuple[str, ...],
+    *,
+    stdin_data: bytes | None = None,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+    timeout: float | None = None,
+) -> tuple[str, str, int]:
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(stdin_data), timeout=timeout)
-    except TimeoutError:
-        proc.kill()
-        try:
-            stdout, stderr = await proc.communicate()
-        except Exception:
-            logging.getLogger(__name__).warning("Failed to read output after killing timed-out process", exc_info=True)
-            stdout, stderr = b"", b""
+        result = await safe_subprocess.run_async(
+            list(args),
+            cwd=cwd,
+            env=env,
+            input=stdin_data,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
         detail = f"Timed out after {timeout:.2f}s" if timeout is not None else "Timed out"
-        return stdout.decode(), detail, 124
-    return stdout.decode(), stderr.decode(), proc.returncode or 0
+        return "", detail, 124
+    except OSError as exc:
+        return "", str(exc), 127
+    stdout = result.stdout.decode(errors="replace") if isinstance(result.stdout, bytes) else str(result.stdout or "")
+    stderr = result.stderr.decode(errors="replace") if isinstance(result.stderr, bytes) else str(result.stderr or "")
+    return stdout, stderr, result.returncode
 
 
 async def _run_docker(
@@ -50,13 +70,7 @@ async def _run_docker(
     timeout: float | None = None,
 ) -> tuple[str, str, int]:
     """Run a docker command asynchronously."""
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        stdin=asyncio.subprocess.PIPE if stdin_data else None,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    return await _communicate_with_timeout(proc, stdin_data=stdin_data, timeout=timeout)
+    return await _run_safe_command(args, stdin_data=stdin_data, timeout=timeout)
 
 
 async def _run_command(
@@ -66,14 +80,7 @@ async def _run_command(
     timeout: float | None = _COMMAND_TIMEOUT_SECONDS,
 ) -> tuple[str, str, int]:
     """Run a shell command asynchronously."""
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        cwd=str(cwd) if cwd else None,
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    return await _communicate_with_timeout(proc, timeout=timeout)
+    return await _run_safe_command(args, cwd=cwd, env=env, timeout=timeout)
 
 
 def _systemctl_user_env() -> dict[str, str]:

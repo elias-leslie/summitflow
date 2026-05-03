@@ -15,6 +15,7 @@ from ...logging_config import get_logger
 from ...storage import tasks as task_store
 from ...storage.tasks.update import update_task_fields
 from ...tasks.autonomous.cleanup.merge_types import MergeResult
+from ...utils import safe_subprocess
 from ...utils.git_helpers import (
     enrich_branch_cleanup_details,
     get_all_branches,
@@ -120,17 +121,26 @@ def _extract_project_publish_json(raw_output: str) -> dict[str, Any] | None:
 async def execute_project_publish(project_root: Path) -> dict[str, Any]:
     """Publish project work using st commit."""
     import asyncio
-    from asyncio import subprocess as aio_subprocess
 
     command_prefix, env = _project_publish_env()
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *command_prefix, "--push", "--bookmark", "main", "--message", "publish project work",
-            cwd=project_root, env=env,
-            stdout=aio_subprocess.PIPE, stderr=aio_subprocess.PIPE,
+        result = await asyncio.to_thread(
+            safe_subprocess.run,
+            [
+                *command_prefix,
+                "--push",
+                "--bookmark",
+                "main",
+                "--message",
+                "publish project work",
+                "-R",
+                str(project_root),
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
         )
-        stdout, stderr = await proc.communicate()
-        return _parse_project_publish_output(stdout.decode(), stderr.decode(), proc.returncode or 0)
+        return _parse_project_publish_output(result.stdout, result.stderr, result.returncode)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
@@ -139,9 +149,8 @@ def find_repo_for_sha(commit_sha: str) -> Path | None:
     """Find which managed repo contains the given SHA."""
     for repo_path in get_managed_repos():
         try:
-            result = subprocess.run(
-                ["git", "cat-file", "-t", commit_sha],
-                cwd=repo_path,
+            result = safe_subprocess.run(
+                ["git", "-C", str(repo_path), "cat-file", "-t", commit_sha],
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -156,9 +165,8 @@ def find_repo_for_sha(commit_sha: str) -> Path | None:
 def _validate_sha_in_repo(sha: str, repo_path: Path, project_id: str) -> None:
     """Validate that a SHA exists as a commit in the given repo."""
     try:
-        check = subprocess.run(
-            ["git", "cat-file", "-t", sha],
-            cwd=repo_path,
+        check = safe_subprocess.run(
+            ["git", "-C", str(repo_path), "cat-file", "-t", sha],
             capture_output=True,
             text=True,
             timeout=5,
@@ -175,9 +183,8 @@ def _validate_sha_in_repo(sha: str, repo_path: Path, project_id: str) -> None:
 def _get_commit_metadata(sha: str, repo_path: Path) -> tuple[str, list[str]]:
     """Get commit title and list of parent SHAs."""
     try:
-        meta_result = subprocess.run(
-            ["git", "log", "-1", "--format=%s%n%P", sha],
-            cwd=repo_path,
+        meta_result = safe_subprocess.run(
+            ["git", "-C", str(repo_path), "log", "-1", "--format=%s%n%P", sha],
             capture_output=True,
             text=True,
             timeout=5,

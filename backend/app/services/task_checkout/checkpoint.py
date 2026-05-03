@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
 from ...logging_config import get_logger
 from ...storage.projects import get_project_root_path
+from ...utils import safe_subprocess
 from ...utils.git_base import normalize_base_branch
 
 logger = get_logger(__name__)
@@ -31,9 +31,8 @@ def _get_main_repo_dirty_paths(project_root: str) -> list[str]:
     task checkout into the shared project root.
     """
     try:
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=project_root,
+        result = safe_subprocess.run(
+            ["git", "-C", str(project_root), "status", "--porcelain"],
             capture_output=True,
             text=True,
             timeout=30,

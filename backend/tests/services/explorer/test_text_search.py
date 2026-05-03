@@ -65,7 +65,14 @@ def test_search_text_uses_ripgrep_when_available(mocker, tmp_path: Path) -> None
     assert result["truncated"] is False
     run.assert_called_once()
     called_args = run.call_args.args[0]
-    assert called_args[:5] == ["/usr/bin/rg", "--json", "--line-number", "--ignore-case", "--fixed-strings"]
+    assert called_args[1:4] == ["-C", str(project_root), "/usr/bin/rg"]
+    json_index = called_args.index("--json")
+    assert called_args[json_index:json_index + 4] == [
+        "--json",
+        "--line-number",
+        "--ignore-case",
+        "--fixed-strings",
+    ]
 
 
 def test_search_text_falls_back_to_indexed_reads_when_ripgrep_times_out(

@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from ...logging_config import get_logger
+from ...utils import safe_subprocess
 
 logger = get_logger(__name__)
 
@@ -73,9 +74,8 @@ def create_task_branch(
 
     try:
         # Check if branch already exists
-        result = subprocess.run(
-            ["git", "branch", "--list", branch_name],
-            cwd=project_path,
+        result = safe_subprocess.run(
+            ["git", "-C", str(project_path), "branch", "--list", branch_name],
             capture_output=True,
             text=True,
         )
@@ -85,9 +85,8 @@ def create_task_branch(
             return branch_name
 
         # Create the branch from HEAD
-        result = subprocess.run(
-            ["git", "checkout", "-b", branch_name],
-            cwd=project_path,
+        result = safe_subprocess.run(
+            ["git", "-C", str(project_path), "checkout", "-b", branch_name],
             capture_output=True,
             text=True,
         )
@@ -125,9 +124,8 @@ def get_current_branch(project_path: str | Path) -> str:
     """
     project_path = Path(project_path)
 
-    result = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        cwd=project_path,
+    result = safe_subprocess.run(
+        ["git", "-C", str(project_path), "rev-parse", "--abbrev-ref", "HEAD"],
         capture_output=True,
         text=True,
     )
@@ -153,9 +151,8 @@ def checkout_branch(
     """
     project_path = Path(project_path)
 
-    result = subprocess.run(
-        ["git", "checkout", branch_name],
-        cwd=project_path,
+    result = safe_subprocess.run(
+        ["git", "-C", str(project_path), "checkout", branch_name],
         capture_output=True,
         text=True,
     )

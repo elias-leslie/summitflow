@@ -7,7 +7,6 @@ import os
 import shutil
 import signal
 import socket
-import subprocess
 import time
 from contextlib import suppress
 from dataclasses import asdict, dataclass
@@ -324,6 +323,43 @@ def _pgweb_binary() -> str | None:
     return shutil.which(configured)
 
 
+def _spawn_pgweb(args: list[str], env: dict[str, str], log_path: Path) -> int:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+    cloexec = getattr(os, "O_CLOEXEC", 0)
+    log_fd = os.open(log_path, flags | cloexec, 0o644)
+    stdin_fd = os.open(os.devnull, os.O_RDONLY | cloexec)
+    try:
+        file_actions = [
+            (os.POSIX_SPAWN_DUP2, stdin_fd, 0),
+            (os.POSIX_SPAWN_DUP2, log_fd, 1),
+            (os.POSIX_SPAWN_DUP2, log_fd, 2),
+            (os.POSIX_SPAWN_CLOSE, stdin_fd),
+            (os.POSIX_SPAWN_CLOSE, log_fd),
+        ]
+        try:
+            return os.posix_spawn(
+                args[0],
+                args,
+                env,
+                file_actions=file_actions,
+                setsid=True,
+            )
+        except NotImplementedError:
+            return os.posix_spawn(
+                args[0],
+                args,
+                env,
+                file_actions=file_actions,
+                setsid=False,
+            )
+    except OSError as exc:
+        raise DbWorkbenchError(f"Failed to launch pgweb: {exc}") from exc
+    finally:
+        os.close(stdin_fd)
+        os.close(log_fd)
+
+
 def _read_state(project_id: str) -> dict[str, Any] | None:
     path = _state_path(project_id)
     if not path.exists():
@@ -503,27 +539,11 @@ def start_workbench(project_id: str, *, readonly: bool = True) -> DbWorkbenchSta
     env["PGWEB_URL_PREFIX"] = prefix
     env["PGWEB_LOCK_SESSION"] = "1"
 
-    _state_dir().mkdir(parents=True, exist_ok=True)
-    log_file = _log_path(project_id).open("a", encoding="utf-8")
-    try:
-        try:
-            process = subprocess.Popen(
-                args,
-                env=env,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,
-                close_fds=True,
-            )
-        except OSError as exc:
-            raise DbWorkbenchError(f"Failed to launch pgweb: {exc}") from exc
-    finally:
-        log_file.close()
+    pid = _spawn_pgweb(args, env, _log_path(project_id))
 
     state = {
         "project_id": project_id,
-        "pid": process.pid,
+        "pid": pid,
         "port": port,
         "readonly": readonly,
         "prefix": prefix,

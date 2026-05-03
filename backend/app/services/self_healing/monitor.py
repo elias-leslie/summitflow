@@ -13,6 +13,7 @@ from typing import Any
 from ...logging_config import get_logger
 from ...storage.tasks.core import create_task
 from ...storage.tasks.dedup import bug_task_exists_for_error
+from ...utils import safe_subprocess
 
 logger = get_logger(__name__)
 
@@ -76,7 +77,7 @@ class SystemdMonitor:
     def parse_journal(self) -> list[JournalError]:
         """Run journalctl and return error-level entries."""
         try:
-            result = subprocess.run(
+            result = safe_subprocess.run(
                 ["journalctl", "--user", "-u", self.unit_pattern,
                  "--since", self.since, "-o", "json", "--no-pager"],
                 capture_output=True, text=True, timeout=_JOURNAL_TIMEOUT,

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import typer
 
-from cli.commands import cleanup
+from cli.commands import cleanup, cleanup_snapshots_cmd
 from cli.lib import quick_snapshots
 from cli.lib.quick_snapshots import SnapshotError
 from cli.lib.snapshots._cleanup import SnapshotResidue
@@ -56,7 +56,11 @@ def test_snapshot_deletions_exit_nonzero_on_errors(
         path=tmp_path / "bad-snapshot-root",
         residue_type="legacy-snapshot-root",
     )
-    monkeypatch.setattr(cleanup, "_execute_snapshot_deletions", lambda residues: (0, ["agent-hub/bad: boom"]))
+    monkeypatch.setattr(
+        cleanup_snapshots_cmd,
+        "execute_snapshot_deletions",
+        lambda residues: (0, ["agent-hub/bad: boom"]),
+    )
 
     with pytest.raises(typer.Exit) as exc_info:
         cleanup.run_snapshot_deletions([residue], dry_run=False)

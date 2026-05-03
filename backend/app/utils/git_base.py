@@ -6,15 +6,19 @@ import re
 import subprocess
 from pathlib import Path
 
+from . import safe_subprocess
+
 _BASE_BRANCH_CANDIDATES = ("main", "master", "develop")
 _INVALID_BASE_BRANCHES = {"", "HEAD"}
 _TASK_BRANCH_RE = re.compile(r"^(?:task/)?task-[0-9a-f]{8}(?:/main)?$")
 
 
 def _run_git(args: list[str], repo_path: str | Path | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=repo_path,
+    command = ["git", *args]
+    if repo_path is not None:
+        command = ["git", "-C", str(repo_path), *args]
+    return safe_subprocess.run(
+        command,
         capture_output=True,
         text=True,
         check=False,

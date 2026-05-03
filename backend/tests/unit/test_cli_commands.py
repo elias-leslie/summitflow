@@ -1619,7 +1619,7 @@ class TestBackupCommands:
         with (
             patch("cli.commands.backup._get_project_api") as mock_api_factory,
             patch("cli.commands.backup.get_config", return_value=mock_config),
-            patch("cli.commands.backup.confirm_gate") as confirm_gate,
+            patch("cli.commands.backup_runtime.confirm_gate") as confirm_gate,
         ):
             mock_api = MagicMock()
             mock_api.get_backup.return_value = {"id": "bkp-123"}

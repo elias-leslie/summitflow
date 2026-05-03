@@ -8,6 +8,8 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
+from ..utils import safe_subprocess
+
 _ENV_SESSION_ID_KEYS = (
     "ST_SESSION_ID",
     "AGENT_HUB_SESSION_ID",
@@ -76,9 +78,9 @@ def resolve_project_id(repo_root: Path) -> str | None:
 def current_branch(repo_root: Path) -> str | None:
     """Return the current git branch for repo_root."""
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=repo_root, capture_output=True, text=True, check=True,
+        result = safe_subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, check=True,
         )
     except subprocess.CalledProcessError:
         return None

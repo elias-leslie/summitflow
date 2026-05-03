@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess  # noqa: F401 - public patch surface for legacy tests/callers.
+
 from .jj_common import (
     CURRENT_REV_TEMPLATE,
     JJ_GLOBAL_ARGS,

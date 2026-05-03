@@ -10,6 +10,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..utils import safe_subprocess
 from ..utils._git_core import get_managed_repos
 
 _SHELL_SEPARATORS = frozenset({";", "&&", "||", "|"})
@@ -162,9 +163,9 @@ def git_revert_paths(repo_root: Path, args: Sequence[str], error_class: type[Exc
     if not revisions:
         return []
     try:
-        result = subprocess.run(
-            ["git", "show", "--format=", "--name-only", "--no-renames", *revisions],
-            cwd=repo_root, capture_output=True, text=True, check=True,
+        result = safe_subprocess.run(
+            ["git", "-C", str(repo_root), "show", "--format=", "--name-only", "--no-renames", *revisions],
+            capture_output=True, text=True, check=True,
         )
     except (OSError, subprocess.CalledProcessError) as exc:
         raise error_class(f"Failed to inspect git revert paths for {' '.join(revisions)}: {exc}") from exc
@@ -195,16 +196,21 @@ def normalize_repo_paths(repo_root: Path, raw_paths: Sequence[str]) -> list[str]
 
 def is_inside_git_repo(path: Path) -> bool:
     try:
-        result = subprocess.run(_GIT_REPO_CHECK, cwd=path, capture_output=True, text=True, check=False)
+        result = safe_subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
     except OSError:
         return False
     return result.returncode == 0 and result.stdout.strip() == "true"
 
 def repo_root(cwd: Path) -> Path | None:
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=cwd, capture_output=True, text=True, check=True,
+        result = safe_subprocess.run(
+            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, check=True,
         )
     except (OSError, subprocess.CalledProcessError):
         return None

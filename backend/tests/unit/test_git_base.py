@@ -10,6 +10,29 @@ def _completed(args: list[str], returncode: int, stdout: str = "") -> subprocess
     return subprocess.CompletedProcess(["git", *args], returncode, stdout=stdout, stderr="")
 
 
+def test_run_git_uses_git_c_and_no_close_fds(monkeypatch) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    completed = _completed(["status"], 0)
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((command, kwargs))
+        return completed
+
+    monkeypatch.setattr(git_base.safe_subprocess, "run", fake_run)
+
+    assert git_base._run_git(["status"], Path("/repo")) is completed
+    assert calls == [
+        (
+            ["git", "-C", "/repo", "status"],
+            {
+                "capture_output": True,
+                "text": True,
+                "check": False,
+            },
+        )
+    ]
+
+
 def test_current_branch_returns_none_for_detached_head(monkeypatch) -> None:
     monkeypatch.setattr(git_base, "_run_git", lambda args, repo_path=None: _completed(args, 1))
 

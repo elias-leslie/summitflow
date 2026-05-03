@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from ..utils import safe_subprocess
 from ._destructive_path_guard_helpers import (
     current_branch as _current_branch,
 )
@@ -81,10 +82,13 @@ class GuardDecision:
 def staged_destructive_paths(repo_root: Path) -> list[str]:
     """Return repo-relative staged destructive paths (delete or rename-away)."""
     try:
-        result = subprocess.run(
-            ["git", "diff", "--cached", "--name-status", "--find-renames",
-             "--diff-filter", _DESTRUCTIVE_DIFF_FILTER, "-z"],
-            cwd=repo_root, capture_output=True, check=True,
+        result = safe_subprocess.run(
+            [
+                "git", "-C", str(repo_root), "diff", "--cached", "--name-status",
+                "--find-renames", "--diff-filter", _DESTRUCTIVE_DIFF_FILTER, "-z",
+            ],
+            capture_output=True,
+            check=True,
         )
     except subprocess.CalledProcessError as exc:
         raise DestructivePathGuardError(

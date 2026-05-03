@@ -280,7 +280,7 @@ class TestSystemdMonitor:
 
         mock_run.assert_called_once()
         call_args = mock_run.call_args[0][0]
-        assert "journalctl" in call_args
+        assert any(str(arg).endswith("journalctl") for arg in call_args)
         assert "--user" in call_args
         assert "-u" in call_args
         assert "summitflow-*" in call_args

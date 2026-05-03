@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from ...logging_config import get_logger
+from ...utils import safe_subprocess
 
 logger = get_logger(__name__)
 
@@ -36,9 +37,8 @@ def push_branch(
     else:
         cmd.extend(["origin", branch_name])
 
-    result = subprocess.run(
-        cmd,
-        cwd=project_path,
+    result = safe_subprocess.run(
+        ["git", "-C", str(project_path), *cmd[1:]],
         capture_output=True,
         text=True,
     )
@@ -68,9 +68,8 @@ def revert_to(repo_path: Path | str, sha: str) -> bool:
     """
     repo_path = Path(repo_path)
 
-    result = subprocess.run(
-        ["git", "reset", "--hard", sha],
-        cwd=repo_path,
+    result = safe_subprocess.run(
+        ["git", "-C", str(repo_path), "reset", "--hard", sha],
         capture_output=True,
         text=True,
     )
@@ -94,9 +93,8 @@ def get_head_sha(repo_path: str | Path) -> str:
     """
     repo_path = Path(repo_path)
 
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=repo_path,
+    result = safe_subprocess.run(
+        ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
         capture_output=True,
         text=True,
     )
@@ -122,9 +120,8 @@ def get_blob_shas(repo_path: str | Path, paths: list[str]) -> dict[str, str]:
 
     for path in paths:
         try:
-            proc = subprocess.run(
-                ["git", "ls-files", "-s", path],
-                cwd=repo_path,
+            proc = safe_subprocess.run(
+                ["git", "-C", str(repo_path), "ls-files", "-s", path],
                 capture_output=True,
                 text=True,
             )

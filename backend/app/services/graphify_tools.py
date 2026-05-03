@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from ..utils import safe_subprocess
 
 _GRAPHIFY_TIMEOUT_SECONDS = 180
 _DEFAULT_GRAPHIFY_BIN = Path.home() / ".local" / "bin" / "graphify"
@@ -375,7 +376,7 @@ def run_graphify(root: Path, args: list[str], *, timeout: int = _GRAPHIFY_TIMEOU
     """Run Graphify in a project root and capture measured output."""
     command = [graphify_bin(), *args]
     start = time.perf_counter()
-    result = subprocess.run(
+    result = safe_subprocess.run(
         command,
         cwd=root,
         text=True,

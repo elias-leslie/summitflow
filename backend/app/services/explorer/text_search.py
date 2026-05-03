@@ -10,6 +10,7 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...storage import explorer as explorer_storage
+from ...utils import safe_subprocess
 from ..file_browser import read_file
 from .base import get_project_root
 
@@ -104,7 +105,7 @@ def _search_text_with_ripgrep(
     args.extend([query, normalized_prefix or "."])
 
     try:
-        proc = subprocess.run(
+        proc = safe_subprocess.run(
             args,
             cwd=root_path,
             capture_output=True,

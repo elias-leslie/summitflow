@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from ...storage import backups as backup_store
+from ...utils import safe_subprocess
 from .models import StorageBackendCreate, StorageBackendResponse, StorageBackendUpdate
 from .utils import as_object_dict, optional_bool, optional_str, parse_iso_datetime
 
@@ -166,7 +167,7 @@ async def test_storage_backend(backend_id: str) -> dict[str, object]:
             # Test by listing the configured path (root ls may be ACL-denied)
             ls_cmd = f"cd {shlex.quote(smb_path)}; ls" if smb_path else "ls"
             try:
-                result = subprocess.run(
+                result = safe_subprocess.run(
                     ["smbclient", f"//{host}/{share}", "-A", cred_file, "-c", ls_cmd],
                     capture_output=True,
                     text=True,

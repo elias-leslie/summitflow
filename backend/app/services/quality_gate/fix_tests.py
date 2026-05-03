@@ -16,6 +16,7 @@ from ...logging_config import get_logger
 from ...services.agent_hub_client import get_agent
 from ...storage import quality_check_results as qcr_store
 from ...storage.projects import get_project_root_path
+from ...utils import safe_subprocess
 from .escalation import escalate_to_supervisor
 
 logger = get_logger(__name__)
@@ -229,7 +230,7 @@ def _verify_test(
         cmd.extend(["-k", test_name])
 
     try:
-        result = subprocess.run(
+        result = safe_subprocess.run(
             cmd,
             cwd=project_path,
             capture_output=True,

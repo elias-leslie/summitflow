@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ....logging_config import get_logger
+from ....utils import safe_subprocess
 from .file_constants import STALE_THRESHOLD_DAYS
 
 logger = get_logger(__name__)
@@ -20,9 +21,8 @@ logger = get_logger(__name__)
 
 def _run_git_log(root_path: Path, args: list[str], timeout: int) -> str | None:
     """Run git log and return stdout, or None on failure."""
-    result = subprocess.run(
-        ["git", "log", *args],
-        cwd=str(root_path),
+    result = safe_subprocess.run(
+        ["git", "-C", str(root_path), "log", *args],
         capture_output=True,
         text=True,
         timeout=timeout,

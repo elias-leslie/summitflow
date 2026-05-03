@@ -107,3 +107,66 @@ def test_start_reports_missing_pgweb_after_db_url_resolution(
 
     with pytest.raises(db_workbench.DbWorkbenchError, match="pgweb binary not found"):
         db_workbench.start_workbench("summitflow")
+
+
+def test_spawn_pgweb_uses_posix_spawn_sets_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, bool, list[tuple[int, int, int]]]] = []
+
+    def fake_posix_spawn(
+        path: str,
+        argv: list[str],
+        env: dict[str, str],
+        *,
+        file_actions: list[tuple[int, int, int]],
+        setsid: bool,
+    ) -> int:
+        calls.append((path, setsid, file_actions))
+        return 1234
+
+    monkeypatch.setattr(db_workbench.os, "posix_spawn", fake_posix_spawn)
+
+    pid = db_workbench._spawn_pgweb(
+        ["/usr/bin/pgweb", "--listen=9081"],
+        {"PGWEB_DATABASE_URL": "postgresql://example/db"},
+        tmp_path / "pgweb.log",
+    )
+
+    assert pid == 1234
+    assert calls[0][0] == "/usr/bin/pgweb"
+    assert calls[0][1] is True
+    assert any(action[0] == db_workbench.os.POSIX_SPAWN_DUP2 for action in calls[0][2])
+
+
+def test_spawn_pgweb_falls_back_when_setsid_is_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    setsid_values: list[bool] = []
+
+    def fake_posix_spawn(
+        _path: str,
+        _argv: list[str],
+        _env: dict[str, str],
+        *,
+        file_actions: list[tuple[int, int, int]],
+        setsid: bool,
+    ) -> int:
+        assert file_actions
+        setsid_values.append(setsid)
+        if setsid:
+            raise NotImplementedError("setsid unavailable")
+        return 1234
+
+    monkeypatch.setattr(db_workbench.os, "posix_spawn", fake_posix_spawn)
+
+    pid = db_workbench._spawn_pgweb(
+        ["/usr/bin/pgweb", "--listen=9081"],
+        {"PGWEB_DATABASE_URL": "postgresql://example/db"},
+        tmp_path / "pgweb.log",
+    )
+
+    assert pid == 1234
+    assert setsid_values == [True, False]

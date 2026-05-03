@@ -35,12 +35,25 @@ def test_run_jj_uses_global_noninteractive_args(_mock_which: MagicMock, mock_run
     jj_lib.run_jj(Path("/repo"), ["status"])
 
     command = mock_run.call_args.args[0]
-    assert command[:2] == ["/bin/jj", "--no-pager"]
+    assert command[:3] == ["/bin/jj", "-R", "/repo"]
     assert 'ui.editor="true"' in command
     assert 'ui.paginate="never"' in command
     assert 'ui.diff-editor=":builtin"' in command
     assert command[-1] == "status"
-    assert mock_run.call_args.kwargs["cwd"] == Path("/repo")
+    assert "cwd" not in mock_run.call_args.kwargs
+    assert mock_run.call_args.kwargs["close_fds"] is False
+
+
+@patch("cli.lib.jj_common.subprocess.run")
+@patch("cli.lib.jj_common.shutil.which", return_value="/usr/bin/git")
+def test_run_git_uses_git_c_without_cwd(_mock_which: MagicMock, mock_run: MagicMock) -> None:
+    mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+    jj_lib.run_git(Path("/repo"), ["status"])
+
+    assert mock_run.call_args.args[0] == ["/usr/bin/git", "-C", "/repo", "status"]
+    assert "cwd" not in mock_run.call_args.kwargs
+    assert mock_run.call_args.kwargs["close_fds"] is False
 
 
 @patch("cli.lib.jj_status.run_jj")

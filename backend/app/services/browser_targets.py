@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import os
 import socket
-import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
+
+from ..utils import safe_subprocess
 
 _LOCAL_HOSTS = {"", "localhost", "127.0.0.1", "::1", "0.0.0.0"}
 _DEFAULT_BROWSER_PORT = 9222
@@ -112,7 +113,7 @@ def _server_ip_addresses() -> set[str]:
         address = entry[4][0]
         if address:
             addresses.add(address)
-    detected = subprocess.run(["hostname", "-I"], text=True, capture_output=True, check=False)
+    detected = safe_subprocess.run(["hostname", "-I"], text=True, capture_output=True, check=False)
     if detected.returncode == 0:
         addresses.update(item for item in detected.stdout.split() if item)
     return addresses

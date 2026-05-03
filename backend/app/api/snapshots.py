@@ -8,13 +8,13 @@ Reuses CLI library functions from quick_snapshots and autosnapshot.
 from __future__ import annotations
 
 import contextlib
-import subprocess
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..logging_config import get_logger
+from ..utils import safe_subprocess
 
 logger = get_logger(__name__)
 
@@ -105,7 +105,7 @@ def _snapshot_to_response(snap: Any, usage: Any | None = None) -> SnapshotRespon
 def _is_timer_active() -> bool:
     """Check if the btrfs-autosnapshot systemd timer is active."""
     try:
-        result = subprocess.run(
+        result = safe_subprocess.run(
             ["systemctl", "--user", "is-active", "btrfs-autosnapshot.timer"],
             capture_output=True, text=True, timeout=5,
         )

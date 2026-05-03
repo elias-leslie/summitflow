@@ -11,6 +11,7 @@ import subprocess
 from pathlib import Path
 
 from ....logging_config import get_logger
+from ....utils import safe_subprocess
 from .code_violations import CodeViolation, ViolationType
 from .violation_parsers import parse_jscpd_output, parse_semgrep_output, parse_vulture_line
 
@@ -75,7 +76,7 @@ def _run_jscpd(project_root: Path, scan_dir: Path, formats: list[str]) -> list[C
     ]
 
     try:
-        proc = subprocess.run(
+        proc = safe_subprocess.run(
             cmd, capture_output=True, text=True, timeout=120, cwd=project_root
         )
         return parse_jscpd_output(proc.stdout) if proc.stdout else []
@@ -106,7 +107,7 @@ def detect_dead_code(project_root: Path, backend_dir: str) -> list[CodeViolation
     ]
 
     try:
-        proc = subprocess.run(
+        proc = safe_subprocess.run(
             cmd, capture_output=True, text=True, timeout=60, cwd=project_root
         )
         return [
@@ -143,7 +144,7 @@ def detect_missing_infrastructure(
     ]
 
     try:
-        proc = subprocess.run(
+        proc = safe_subprocess.run(
             cmd, capture_output=True, text=True, timeout=180, cwd=project_root
         )
         return parse_semgrep_output(proc.stdout) if proc.stdout else []

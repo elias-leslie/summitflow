@@ -74,39 +74,42 @@ def run_jj(
     timeout: int = JJ_TIMEOUT_SECONDS,
 ) -> subprocess.CompletedProcess[str]:
     """Run jj non-interactively in repo."""
-    command = [jj_binary(), *JJ_GLOBAL_ARGS, *args]
+    command = [jj_binary(), "-R", str(repo), *JJ_GLOBAL_ARGS, *args]
     return subprocess.run(
         command,
-        cwd=repo,
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
         timeout=timeout,
         check=False,
+        close_fds=False,
     )
 
 
 def run_git(repo: Path, args: list[str], *, timeout: int = 60) -> subprocess.CompletedProcess[str]:
     """Run git for compatibility checks around a colocated jj repo."""
+    git_binary = shutil.which("git") or "/usr/bin/git"
     return subprocess.run(
-        ["git", *args],
-        cwd=repo,
+        [git_binary, "-C", str(repo), *args],
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
         timeout=timeout,
         check=False,
+        close_fds=False,
     )
 
 
 def current_git_repo() -> Path:
+    git_binary = shutil.which("git") or "/usr/bin/git"
     result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
+        [git_binary, "rev-parse", "--show-toplevel"],
         capture_output=True,
         text=True,
         check=False,
+        close_fds=False,
     )
     if result.returncode != 0 or not result.stdout.strip():
         raise JJError("not inside a git repository")

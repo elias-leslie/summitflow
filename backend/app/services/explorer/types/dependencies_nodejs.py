@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from ....logging_config import get_logger
+from ....utils import safe_subprocess
 from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
 
@@ -157,7 +158,7 @@ def _scan_standalone_node_project(package_json: Path) -> list[ExplorerEntryCreat
 def _run_pnpm_audit(workspace_root: Path) -> dict[str, _AuditEntry]:
     results: dict[str, _AuditEntry] = {}
     try:
-        proc = subprocess.run(["pnpm", "audit", "--json"], cwd=workspace_root, capture_output=True, text=True, timeout=120)
+        proc = safe_subprocess.run(["pnpm", "audit", "--json"], cwd=workspace_root, capture_output=True, text=True, timeout=120)
         if not proc.stdout:
             return results
         try:
@@ -184,7 +185,7 @@ def _run_pnpm_audit(workspace_root: Path) -> dict[str, _AuditEntry]:
 def _run_pnpm_outdated(workspace_root: Path) -> dict[str, dict[str, str | bool | None]]:
     results: dict[str, dict[str, str | bool | None]] = {}
     try:
-        proc = subprocess.run(["pnpm", "outdated", "--json"], cwd=workspace_root, capture_output=True, text=True, timeout=60)
+        proc = safe_subprocess.run(["pnpm", "outdated", "--json"], cwd=workspace_root, capture_output=True, text=True, timeout=60)
         if proc.stdout:
             try:
                 for pkg, info in json.loads(proc.stdout).items():

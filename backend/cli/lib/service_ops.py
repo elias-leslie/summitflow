@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -179,22 +180,75 @@ def _port_open(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
-def _kill_port(port: int) -> None:
-    if port <= 0 or not _port_open(port):
-        return
+_SS_PID_RE = re.compile(r"pid=(\d+)")
+
+
+def _port_listener_pids(port: int) -> set[int]:
     result = capture(["ss", "-ltnp", f"( sport = :{port} )"])
-    pids: set[str] = set()
-    for part in result.stdout.replace(",", " ").split():
-        if part.startswith("pid="):
-            pids.add(part.removeprefix("pid="))
-    for pid in pids:
-        run(["kill", pid])
-    for _ in range(10):
-        if not _port_open(port):
+    return {int(match.group(1)) for match in _SS_PID_RE.finditer(result.stdout)}
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _terminate_pids(pids: set[int], *, timeout: float = 10.0) -> None:
+    own_pid = os.getpid()
+    targets = {pid for pid in pids if pid > 0 and pid != own_pid}
+    for pid in sorted(targets):
+        capture(["kill", str(pid)])
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not any(_pid_alive(pid) for pid in targets):
             return
-        time.sleep(1)
-    for pid in pids:
-        run(["kill", "-9", pid])
+        time.sleep(0.25)
+    for pid in sorted(targets):
+        if _pid_alive(pid):
+            capture(["kill", "-9", str(pid)])
+
+
+def _kill_port(port: int) -> bool:
+    if port <= 0 or not _port_open(port):
+        return True
+    _terminate_pids(_port_listener_pids(port))
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        if not _port_open(port):
+            return True
+        refreshed = _port_listener_pids(port)
+        if refreshed:
+            _terminate_pids(refreshed, timeout=0.5)
+        time.sleep(0.25)
+    return not _port_open(port)
+
+
+def _systemctl_value(service: str, key: str) -> str:
+    return systemctl("show", service, "-p", key, "--value").stdout.strip()
+
+
+def _service_main_pid(service: str) -> int:
+    raw = _systemctl_value(service, "MainPID")
+    try:
+        return int(raw)
+    except ValueError:
+        return 0
+
+
+def _service_active_state(service: str) -> str:
+    return _systemctl_value(service, "ActiveState") or "unknown"
+
+
+def _wait_service_inactive(service: str, *, timeout: float = 8.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _service_active_state(service) in {"inactive", "failed"}:
+            return True
+        time.sleep(0.25)
+    return _service_active_state(service) in {"inactive", "failed"}
 
 
 def restart_service(service: str, *, port: int = 0) -> int:
@@ -210,8 +264,21 @@ def restart_service(service: str, *, port: int = 0) -> int:
             print(f"[service] skipping current unit {service}")
             return 0
     print(f"[service] restarting {service}")
-    run(["systemctl", "--user", "stop", service])
-    _kill_port(port)
+    old_pid = _service_main_pid(service)
+    stop_result = run(["systemctl", "--user", "stop", service])
+    if stop_result != 0 or not _wait_service_inactive(service):
+        print(f"[service] {service} did not stop cleanly; killing unit")
+        run(["systemctl", "--user", "kill", "--kill-who=all", "-s", "SIGKILL", service])
+        _wait_service_inactive(service, timeout=3.0)
+    if old_pid and _pid_alive(old_pid):
+        capture(["kill", "-9", str(old_pid)])
+        time.sleep(0.25)
+    if port and not _kill_port(port):
+        print(f"[service] {service} FAIL: port {port} still in use")
+        return 1
+    if old_pid and _pid_alive(old_pid):
+        print(f"[service] {service} FAIL: old PID {old_pid} still alive")
+        return 1
     result = run(["systemctl", "--user", "start", service])
     print(f"[service] {service} {'OK' if result == 0 else 'FAIL'}")
     return result

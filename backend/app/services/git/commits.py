@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 from typing import Any
+
+from ...utils import safe_subprocess
 
 
 def get_current_commit(repo_path: Path | str) -> str:
@@ -19,9 +20,8 @@ def get_current_commit(repo_path: Path | str) -> str:
     """
     repo_path = Path(repo_path)
 
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=repo_path,
+    result = safe_subprocess.run(
+        ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
         capture_output=True,
         text=True,
     )
@@ -49,9 +49,8 @@ def capture_diff(
     """
     repo_path = Path(repo_path)
 
-    result = subprocess.run(
-        ["git", "diff", f"{base_sha}..{head_sha}", "--unified=3"],
-        cwd=repo_path,
+    result = safe_subprocess.run(
+        ["git", "-C", str(repo_path), "diff", f"{base_sha}..{head_sha}", "--unified=3"],
         capture_output=True,
         text=True,
     )
@@ -79,9 +78,8 @@ def get_diff_stats(
     """
     repo_path = Path(repo_path)
 
-    result = subprocess.run(
-        ["git", "diff", f"{base_sha}..{head_sha}", "--shortstat"],
-        cwd=repo_path,
+    result = safe_subprocess.run(
+        ["git", "-C", str(repo_path), "diff", f"{base_sha}..{head_sha}", "--shortstat"],
         capture_output=True,
         text=True,
     )

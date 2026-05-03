@@ -7,6 +7,21 @@ from app.api.models.git_models import RepoWorkspaceSummary
 from app.utils import _git_core
 
 
+def test_run_git_uses_posix_spawn_friendly_command(mocker, tmp_path: Path) -> None:
+    completed = subprocess.CompletedProcess([], 0, "", "")
+    run = mocker.patch("app.utils._git_core.safe_subprocess.run", return_value=completed)
+
+    assert _git_core.run_git(["status", "--porcelain"], tmp_path) is completed
+
+    run.assert_called_once_with(
+        ["git", "-C", str(tmp_path), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
 def test_resolve_project_id_uses_git_core_collaborators(mocker) -> None:
     mocker.patch(
         "app.utils._git_core._query_db_project_roots",

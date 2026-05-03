@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from ...logging_config import get_logger
+from ...utils import safe_subprocess
 from ...utils.git_base import current_branch, normalize_base_branch
 from .checkpoint import create_checkpoint_metadata, remove_checkpoint_metadata
 from .types import TaskCheckoutInfo
@@ -25,9 +26,8 @@ def _task_branch(task_id: str) -> str:
 
 
 def _run_git(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=cwd,
+    return safe_subprocess.run(
+        ["git", "-C", str(cwd), *args],
         check=check,
         capture_output=True,
         text=True,

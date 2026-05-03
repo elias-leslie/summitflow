@@ -19,6 +19,7 @@ import yaml
 from ...logging_config import get_logger
 from ...project_identity import get_project_identity
 from ...storage import explorer as storage
+from ...utils import safe_subprocess
 from .base import get_project_root
 from .environment import get_cli_info, get_environment
 from .port_detection import get_services
@@ -103,7 +104,7 @@ def get_network_info() -> dict[str, str]:
     """
     info: dict[str, str] = {}
     try:
-        result = subprocess.run(
+        result = safe_subprocess.run(
             ["hostname", "-I"],
             capture_output=True,
             text=True,

@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 
 from ...logging_config import get_logger
 from ...storage import runtime_metrics as runtime_metric_store
+from ...utils import safe_subprocess
 from .._runtime_proxmox import ProxmoxStatus
 from .._runtime_proxmox import get_proxmox_status as _get_proxmox_status
 from .constants import BACKUP_DIR
@@ -185,32 +186,35 @@ async def get_logs(
 async def _stream_logs(svc: dict, tail: int):
     """SSE generator for tailing service logs."""
     if svc["manager"] == "systemd":
-        proc = await asyncio.create_subprocess_exec(
-            "journalctl", "--user", "-u", svc["unit"],
-            "-n", str(tail), "-f", "--output=short-iso",
+        proc = safe_subprocess.spawn_pipe(
+            [
+                "journalctl", "--user", "-u", svc["unit"],
+                "-n", str(tail), "-f", "--output=short-iso",
+            ],
             env=_systemctl_user_env(),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stderr_to_stdout=True,
         )
     else:
-        proc = await asyncio.create_subprocess_exec(
-            "docker", "logs", "-f", "--tail", str(tail),
-            _find_container_name(svc["container_service"]),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+        proc = safe_subprocess.spawn_pipe(
+            [
+                "docker", "logs", "-f", "--tail", str(tail),
+                _find_container_name(svc["container_service"]),
+            ],
+            stderr_to_stdout=True,
         )
     try:
         while True:
-            line = await proc.stdout.readline()  # type: ignore[union-attr]
+            line = await proc.readline()
             if not line:
                 break
             yield f"data: {line.decode().rstrip()}\n\n"
     finally:
-        proc.terminate()
+        proc.kill()
         try:
             await asyncio.wait_for(proc.wait(), timeout=5)
         except (TimeoutError, ProcessLookupError):
             proc.kill()
+        proc.close()
 
 
 async def _fetch_logs(svc: dict, service: str, tail: int) -> dict[str, str]:

@@ -112,6 +112,50 @@ def test_build_frontend_suppresses_successful_build_output() -> None:
     run.assert_called_once_with(["pnpm", "build"], cwd=project.frontend_dir, quiet_success=True)
 
 
+def test_kill_port_parses_ss_listener_pids(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+    port_checks = iter([True, False])
+
+    def fake_capture(command: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        if command[0] == "ss":
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                'LISTEN users:(("uvicorn",pid=556775,fd=19),("uvicorn",pid=1725536,fd=19))',
+                "",
+            )
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(service_ops, "_port_open", lambda _port: next(port_checks))
+    monkeypatch.setattr(service_ops, "_pid_alive", lambda _pid: False)
+    monkeypatch.setattr(service_ops, "capture", fake_capture)
+
+    assert service_ops._kill_port(8001) is True
+    assert ["kill", "556775"] in calls
+    assert ["kill", "1725536"] in calls
+
+
+def test_restart_service_fails_if_old_pid_survives(monkeypatch: pytest.MonkeyPatch) -> None:
+    run_calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> int:
+        run_calls.append(command)
+        return 0
+
+    monkeypatch.setattr(service_ops, "service_exists", lambda _service: True)
+    monkeypatch.setattr(service_ops, "_systemctl_value", lambda _service, _key: "")
+    monkeypatch.setattr(service_ops, "_service_main_pid", lambda _service: 556775)
+    monkeypatch.setattr(service_ops, "_wait_service_inactive", lambda _service, timeout=8.0: True)
+    monkeypatch.setattr(service_ops, "_pid_alive", lambda pid: pid == 556775)
+    monkeypatch.setattr(service_ops, "_kill_port", lambda _port: True)
+    monkeypatch.setattr(service_ops, "capture", lambda command, cwd=None: subprocess.CompletedProcess(command, 0, "", ""))
+    monkeypatch.setattr(service_ops, "run", fake_run)
+
+    assert service_ops.restart_service("summitflow-backend.service", port=8001) == 1
+    assert ["systemctl", "--user", "start", "summitflow-backend.service"] not in run_calls
+
+
 def test_service_stop_uses_confirm_gate() -> None:
     with (
         patch("cli.commands.service._load", return_value=_project()),
@@ -247,6 +291,64 @@ def test_check_changed_only_runs_broad_pytest_for_config_changes() -> None:
 
     assert result.exit_code == 0
     run_tool.assert_called_once_with("pytest", configs["pytest"], [])
+
+
+def test_check_architecture_blocks_raw_subprocess_in_web_app(tmp_path: Path) -> None:
+    target = tmp_path / "backend" / "app" / "api" / "unsafe.py"
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        "import subprocess\n\ndef f():\n    return subprocess.run(['hostname'])\n",
+        encoding="utf-8",
+    )
+
+    with (
+        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._tool_configs", return_value={}),
+        patch("cli.commands.check._changed_files", return_value=["backend/app/api/unsafe.py"]),
+    ):
+        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
+
+    assert result.exit_code == 1
+    assert "ARCH:FAIL:1" in result.output
+    assert "backend/app/api/unsafe.py:4 raw subprocess.run" in result.output
+
+
+def test_check_architecture_blocks_async_subprocess_in_web_app(tmp_path: Path) -> None:
+    target = tmp_path / "backend" / "app" / "services" / "unsafe_async.py"
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        "import asyncio\n\nasync def f():\n    return await asyncio.create_subprocess_exec('hostname')\n",
+        encoding="utf-8",
+    )
+
+    with (
+        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._tool_configs", return_value={}),
+        patch("cli.commands.check._changed_files", return_value=["backend/app/services/unsafe_async.py"]),
+    ):
+        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
+
+    assert result.exit_code == 1
+    assert "backend/app/services/unsafe_async.py:4 raw asyncio.create_subprocess_exec" in result.output
+
+
+def test_check_architecture_allows_safe_subprocess_wrapper(tmp_path: Path) -> None:
+    target = tmp_path / "backend" / "app" / "api" / "safe.py"
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        "from app.utils import safe_subprocess\n\ndef f():\n    return safe_subprocess.run(['hostname'])\n",
+        encoding="utf-8",
+    )
+
+    with (
+        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._tool_configs", return_value={}),
+        patch("cli.commands.check._changed_files", return_value=["backend/app/api/safe.py"]),
+    ):
+        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
+
+    assert result.exit_code == 0
+    assert "ARCH:OK:architecture" in result.output
 
 
 def test_check_normalizes_repo_relative_explicit_paths(tmp_path: Path) -> None:
