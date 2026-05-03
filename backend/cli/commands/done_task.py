@@ -69,17 +69,25 @@ def _task_base_branch(task: dict[str, Any]) -> str:
 
 def ensure_checkpoint_clean(
     snapshot_info: dict[str, str | int | None],
+    *,
+    task_id: str | None = None,
+    message: str | None = None,
+    strict: bool = True,
 ) -> None:
-    """Fail fast when the claimed checkpoint branch still has uncommitted changes."""
+    """Ensure the claimed checkpoint branch is clean before merge."""
     raw_project_id = snapshot_info.get("project_id")
     project_id = str(raw_project_id) if isinstance(raw_project_id, str) and raw_project_id else None
     repo_root = _checkpoint_repo_root(project_id)
     if not repo_root or is_working_tree_clean(repo_root):
         return
+    if not strict and task_id:
+        _commit_active_task_work(repo_root, task_id, message)
+        if is_working_tree_clean(repo_root):
+            return
     output_error(
         "Claimed checkpoint branch has uncommitted changes.\n"
         f"  Path: {repo_root}\n"
-        f"Commit or stash there before running st done."
+        "  Smart mode could not create a clean checkpoint. Fix the reported closeout blocker, then rerun st done."
     )
     raise typer.Exit(1)
 
@@ -552,7 +560,7 @@ def complete_task(
             project_id=project_id,
         )
 
-    ensure_checkpoint_clean(snapshot_info)
+    ensure_checkpoint_clean(snapshot_info, task_id=task_id, message=message, strict=strict)
     pid = snapshot_info.get("project_id")
     project_id = str(pid) if isinstance(pid, str) and pid else None
     base_branch = normalize_base_branch(

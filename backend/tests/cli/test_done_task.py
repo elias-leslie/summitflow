@@ -162,9 +162,9 @@ def test_complete_task_missing_checkpoint_active_task_auto_commits_dirty_work() 
         patch("cli.commands.done_task.get_snapshot_info", return_value=None),
         patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None),
         patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
-        patch("cli.commands.done_task.is_working_tree_clean", side_effect=[False, True]),
+        patch("cli.commands.done_task.is_working_tree_clean", side_effect=[False, True, True]),
         patch("cli.commands.done_task._git_dirty_paths", return_value=["backend/app/api/heartbeat.py"]),
-        patch("cli.commands.done_task._task_has_published_commit_event", side_effect=[False, True]),
+        patch("cli.commands.done_task._task_has_published_commit_event", side_effect=[False, True, True]),
         patch("cli.commands.done_task.commit_repo") as mock_commit,
         patch("cli.commands.done_task._record_task_commit_event") as mock_record,
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
@@ -212,7 +212,7 @@ def test_complete_task_missing_checkpoint_active_task_commits_combined_dirty_che
         patch("cli.commands.done_task.get_snapshot_info", return_value=None),
         patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None),
         patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
-        patch("cli.commands.done_task.is_working_tree_clean", side_effect=[False, True]),
+        patch("cli.commands.done_task.is_working_tree_clean", side_effect=[False, True, True]),
         patch(
             "cli.commands.done_task._git_dirty_paths",
             return_value=["backend/app/api/heartbeat.py", "frontend/app/database/page.tsx"],
@@ -248,6 +248,50 @@ def test_complete_task_missing_checkpoint_active_task_commits_combined_dirty_che
     client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
     assert result["merged"] is False
     assert result["snapshot_removed"] is True
+
+
+def test_complete_task_claimed_checkpoint_auto_commits_dirty_branch_before_merge() -> None:
+    client = MagicMock()
+    client.get_subtasks.return_value = {"subtasks": []}
+    client.get_task_completion_readiness.return_value = {"ready": True}
+    client.get_task.return_value = {"status": "running"}
+    snapshot_info = {
+        "task_id": "task-1",
+        "project_id": "summitflow",
+        "base_branch": "main",
+    }
+
+    with (
+        patch("cli.commands.done_task.get_snapshot_info", return_value=snapshot_info),
+        patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
+        patch("cli.commands.done_task.is_working_tree_clean", side_effect=[False, True, True]),
+        patch("cli.commands.done_task.commit_repo") as mock_commit,
+        patch("cli.commands.done_task._record_task_commit_event") as mock_record,
+        patch("cli.commands.done_task._task_branch_touched_frontend", return_value=False),
+        patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-1"),
+        patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
+        patch("cli.commands.done_task.merge_task_branch") as mock_merge,
+        patch("cli.commands.done_task._capture_and_remove_snapshot"),
+        patch("cli.commands.done_task._publish_completed_work"),
+        patch("cli.commands.done_task.output_success"),
+    ):
+        mock_commit.return_value = {
+            "status": "SUCCESS",
+            "commit_id": "abc123",
+            "pushed": True,
+        }
+        mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
+
+        result = complete_task(client, "task-1", message="finish task")
+
+    mock_commit.assert_called_once()
+    assert mock_commit.call_args.kwargs["message"] == "finish task"
+    assert mock_commit.call_args.kwargs["task_id"] == "task-1"
+    assert mock_commit.call_args.kwargs["push"] is True
+    mock_record.assert_called_once_with("task-1", mock_commit.return_value)
+    mock_merge.assert_called_once_with("task-1", project_id="summitflow")
+    client.update_status.assert_called_once_with("task-1", "completed", skip_gates=False)
+    assert result["merged"] is True
 
 
 def test_run_smart_prereqs_can_pass_subtasks_without_branch_merge() -> None:
