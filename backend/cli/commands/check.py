@@ -493,6 +493,7 @@ Required path:
 
 Usage:
   st check --check
+  st check --changed-only
   st check --quick [--changed-only]
   st check --frontend-only
   st check cleanroom -- <command>
@@ -520,6 +521,8 @@ def check(ctx: typer.Context) -> None:
     ]
     fix = "--fix" in args
     args = ["--fix"] if args == ["--fix"] else [arg for arg in args if arg != "--fix"]
+    if changed_only and not args:
+        args = ["--quick"]
 
     first = args[0]
     if first == "cleanroom":

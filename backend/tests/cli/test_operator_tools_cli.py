@@ -198,6 +198,24 @@ def test_check_changed_only_skips_unrelated_tools() -> None:
     run_tool.assert_not_called()
 
 
+def test_check_bare_changed_only_defaults_to_quick() -> None:
+    configs = {
+        "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
+        "tsc": {"label": "TSC", "binary": "npx", "args": "tsc --noEmit", "pass_path": False},
+    }
+    with (
+        patch("cli.commands.check._tool_configs", return_value=configs),
+        patch("cli.commands.check._changed_files", return_value=["config.toml"]),
+        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
+    ):
+        result = runner.invoke(main_app, ["check", "--changed-only"])
+
+    assert result.exit_code == 0
+    assert "TEST:SKIP:pytest:no_relevant_changed_paths" in result.output
+    assert "TSC:SKIP:tsc:no_relevant_changed_paths" in result.output
+    run_tool.assert_not_called()
+
+
 def test_check_changed_only_skips_pytest_for_app_only_python_changes() -> None:
     configs = {
         "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
