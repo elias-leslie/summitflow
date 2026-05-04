@@ -1,17 +1,10 @@
 """Projects API - Register and manage target applications."""
 
 import asyncio
-from collections.abc import Iterable
-from datetime import UTC, datetime
-from typing import cast
 
-import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-from ...project_identity import canonicalize_project_name
 from ...services import explorer
-from ...storage import backups as backup_store
-from ...storage.connection import get_cursor
 from ...storage.project_identity_sync import (
     sync_project_identity as sync_registered_project_identity,
 )
@@ -28,8 +21,19 @@ from .db_helpers import (
     get_project_from_db,
     update_project_in_db,
 )
+from .lifecycle import (
+    queue_existing_project_onboarding,
+    queue_project_create_work,
+    resolve_project_create_urls,
+    validate_existing_project_onboarding,
+)
+from .listing import (
+    build_project_response,
+    check_registered_project_health,
+    list_project_rows,
+    resolve_project_health_statuses,
+)
 from .models import (
-    ProjectCategory,
     ProjectCreate,
     ProjectHealthResponse,
     ProjectOnboardingRequest,
@@ -39,115 +43,14 @@ from .models import (
     ProjectUpdate,
 )
 from .onboarding import build_onboarding_response, run_project_onboarding
-from .public_urls import build_project_urls, resolve_project_public_url
 from .pulse import router as pulse_router
-
-ProjectListRow = tuple[str, str, str, str | None, str, str | None, ProjectCategory, int | None, datetime]
 
 router = APIRouter()
 router.include_router(pulse_router, tags=["projects"])
 
-# Timeouts
-_PROJECT_HEALTH_TIMEOUT = httpx.Timeout(2.0, connect=0.5)
-_HEALTH_CHECK_FULL_TIMEOUT = 10
 
-# Triggered-by labels
-_TRIGGER_PROJECT_CREATE = "project_create"
-_TRIGGER_PROJECT_ONBOARD = "project_onboard"
-
-# Shared SQL
-_SQL_LIST_PROJECTS = """
-    SELECT id, name, base_url, public_url, health_endpoint, root_path, category, sidebar_rank, created_at
-    FROM projects
-"""
-
-# Error messages
-_ERR_ONBOARDING_REQUIRES_ROOT = "Project onboarding requires root_path"
-_ERR_ONBOARDING_REQUIRES_BACKUP = "Project onboarding requires a backup source"
-_ERR_BASE_URL_REQUIRED = (
-    "Project base URL is required unless SummitFlow-hosted defaults are configured"
-)
-
-
-async def _probe_project_health(
-    client: httpx.AsyncClient,
-    project_id: str,
-    base_url: str,
-    health_endpoint: str,
-) -> tuple[str, str]:
-    """Return a lightweight health label for project listings."""
-    try:
-        response = await client.get(f"{base_url}{health_endpoint}")
-    except httpx.HTTPError:
-        return project_id, "warning"
-    return project_id, "healthy" if response.status_code == 200 else "warning"
-
-
-async def _resolve_project_health_statuses(
-    projects: Iterable[tuple[str, str, str]],
-) -> dict[str, str]:
-    """Fetch live health labels for project list/detail responses."""
-    targets = list(projects)
-    if not targets:
-        return {}
-    async with httpx.AsyncClient(timeout=_PROJECT_HEALTH_TIMEOUT) as client:
-        results = await asyncio.gather(
-            *(
-                _probe_project_health(client, pid, url, ep)
-                for pid, url, ep in targets
-            )
-        )
-    return dict(results)
-
-
-def _list_project_rows() -> list[ProjectListRow]:
-    """Fetch and sort all project rows for list-style responses."""
-    with get_cursor() as cur:
-        cur.execute(_SQL_LIST_PROJECTS)
-        return cast(list[ProjectListRow], sorted(cur.fetchall(), key=_project_sort_key))
-
-
-def _build_project_response(
-    row: ProjectListRow,
-    health_status: str | None = None,
-) -> ProjectResponse:
-    """Build API response model for one raw project row."""
-    return ProjectResponse(
-        id=row[0],
-        name=canonicalize_project_name(row[0], row[1], row[5]),
-        base_url=row[2],
-        public_url=resolve_project_public_url(
-            row[0],
-            base_url=row[2],
-            public_url=row[3],
-            root_path=row[5],
-        ),
-        health_endpoint=row[4],
-        root_path=row[5],
-        category=row[6],
-        sidebar_rank=row[7],
-        created_at=row[8],
-        health_status=health_status,
-    )
-
-
-def _project_sort_key(
-    row: tuple[str, str, str, str | None, str, str | None, str, int | None, datetime],
-) -> tuple[int, int, int, str, float]:
-    category_rank = {
-        "production": 0,
-        "testing": 1,
-    }.get(row[6], 2)
-    sidebar_rank = row[7] if row[7] is not None else 10_000
-    canonical_name = canonicalize_project_name(row[0], row[1], row[5]) or row[1]
-    created_sort = -row[8].timestamp()
-    return (
-        category_rank,
-        1 if row[7] is None else 0,
-        sidebar_rank,
-        canonical_name.lower(),
-        created_sort,
-    )
+async def _resolve_project_health_statuses(projects):
+    return await resolve_project_health_statuses(projects)
 
 
 @router.post("", response_model=ProjectResponse)
@@ -158,19 +61,7 @@ async def create_project(
 
     Triggers an initial Explorer scan for all types in the background.
     """
-    if project.onboarding is not None and not project.root_path:
-        raise HTTPException(status_code=400, detail=_ERR_ONBOARDING_REQUIRES_ROOT)
-
-    effective_base_url, effective_public_url = build_project_urls(
-        project.id,
-        base_url=project.base_url,
-        public_url=project.public_url,
-        root_path=project.root_path,
-        summitflow_hosted=project.summitflow_hosted,
-    )
-    if not effective_base_url:
-        raise HTTPException(status_code=400, detail=_ERR_BASE_URL_REQUIRED)
-
+    effective_base_url, effective_public_url = resolve_project_create_urls(project)
     response = create_project_in_db(
         project.id,
         project.name,
@@ -192,38 +83,29 @@ async def create_project(
             delete_project_in_db(project.id)
             raise
 
-    if project.onboarding is not None:
-        background_tasks.add_task(
-            run_project_onboarding,
-            project.id,
-            project.onboarding,
-            triggered_by=_TRIGGER_PROJECT_CREATE,
-        )
-    else:
-        background_tasks.add_task(
-            explorer.run_scan_job,
-            project.id,
-            None,
-            triggered_by=_TRIGGER_PROJECT_CREATE,
-        )
-
+    queue_project_create_work(
+        project,
+        background_tasks,
+        onboarding_runner=run_project_onboarding,
+        scan_runner=explorer.run_scan_job,
+    )
     return response
 
 
 @router.get("", response_model=list[ProjectResponse])
 async def list_projects() -> list[ProjectResponse]:
     """List all registered projects."""
-    rows = _list_project_rows()
+    rows = list_project_rows()
     health_statuses = await _resolve_project_health_statuses(
         (row[0], row[2], row[4]) for row in rows
     )
-    return [_build_project_response(row, health_statuses.get(row[0])) for row in rows]
+    return [build_project_response(row, health_statuses.get(row[0])) for row in rows]
 
 
 @router.get("/with-stats", response_model=ProjectsWithStatsResponse)
 async def list_projects_with_stats() -> ProjectsWithStatsResponse:
     """List all projects with aggregated stats (features, tasks, bugs, blocked)."""
-    projects = _list_project_rows()
+    projects = list_project_rows()
 
     if not projects:
         return ProjectsWithStatsResponse(projects=[], total=0)
@@ -269,36 +151,7 @@ async def sync_project_identity(project_id: str) -> ProjectResponse:
 @router.get("/{project_id}/health", response_model=ProjectHealthResponse)
 async def check_project_health(project_id: str) -> ProjectHealthResponse:
     """Check health of a registered project."""
-    with get_cursor() as cur:
-        cur.execute(
-            "SELECT base_url, health_endpoint FROM projects WHERE id = %s",
-            (project_id,),
-        )
-        row = cur.fetchone()
-
-    if not row:
-        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-
-    url = f"{row[0]}{row[1]}"
-    try:
-        async with httpx.AsyncClient(timeout=_HEALTH_CHECK_FULL_TIMEOUT) as client:
-            start = datetime.now(UTC)
-            response = await client.get(url)
-            elapsed = (datetime.now(UTC) - start).total_seconds() * 1000
-        return ProjectHealthResponse(
-            project_id=project_id,
-            healthy=response.status_code == 200,
-            status_code=response.status_code,
-            response_time_ms=elapsed,
-            checked_at=datetime.now(UTC),
-        )
-    except httpx.RequestError as e:
-        return ProjectHealthResponse(
-            project_id=project_id,
-            healthy=False,
-            error=str(e),
-            checked_at=datetime.now(UTC),
-        )
+    return await check_registered_project_health(project_id)
 
 
 @router.patch("/{project_id}", response_model=ProjectResponse)
@@ -315,16 +168,12 @@ async def onboard_project(
 ) -> ProjectOnboardingResponse:
     """Queue standard SummitFlow onboarding for an existing project."""
     project = get_project_from_db(project_id)
-    if not project.root_path:
-        raise HTTPException(status_code=400, detail=_ERR_ONBOARDING_REQUIRES_ROOT)
-    if not backup_store.get_source(project_id):
-        raise HTTPException(status_code=400, detail=_ERR_ONBOARDING_REQUIRES_BACKUP)
-
-    background_tasks.add_task(
-        run_project_onboarding,
+    validate_existing_project_onboarding(project_id, project.root_path)
+    queue_existing_project_onboarding(
         project_id,
         request,
-        triggered_by=_TRIGGER_PROJECT_ONBOARD,
+        background_tasks,
+        onboarding_runner=run_project_onboarding,
     )
     return build_onboarding_response(project_id, request)
 
