@@ -3,206 +3,64 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import secrets
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from datetime import timedelta
+from typing import Any
 from urllib.parse import quote
 
 import httpx
 import websockets
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel, Field
 
-from ...services.browser_targets import BrowserTargetError, resolve_browser_endpoint
-from ...utils.env import float_env
 from .helpers import _require_auth
-
-LiveSessionKind = Literal["browser"]
-LiveSessionState = Literal["active", "expired", "closed"]
-LiveControlAction = Literal["click", "key", "text", "wheel", "navigate", "resize"]
-LiveAuditActor = Literal["internal", "operator"]
-
-_DEFAULT_TARGET_URL = "https://www.amazon.com/photos/all"
-_SESSION_TTL_SECONDS = int(float_env("SUMMITFLOW_LIVE_SESSION_TTL_SECONDS", 30 * 60))
-_CONTROL_GRANT_TTL_SECONDS = int(float_env("SUMMITFLOW_LIVE_CONTROL_GRANT_TTL_SECONDS", 10 * 60))
-_CDP_HTTP_TIMEOUT_SECONDS = float_env("SUMMITFLOW_LIVE_CDP_HTTP_TIMEOUT", 5.0)
-_CDP_WS_TIMEOUT_SECONDS = float_env("SUMMITFLOW_LIVE_CDP_WS_TIMEOUT", 8.0)
-_SCREENSHOT_QUALITY = 68
-_MAX_VIEWPORT_WIDTH = 3840
-_MAX_VIEWPORT_HEIGHT = 2160
-_MAX_TEXT_INPUT_CHARS = 4096
-_MAX_SECURE_TEXT_INPUT_BYTES = 16 * 1024
-_EDITABLE_FOCUS_EXPRESSION = """
-(() => {
-  const blockedInputTypes = new Set([
-    'button',
-    'checkbox',
-    'color',
-    'file',
-    'hidden',
-    'image',
-    'radio',
-    'range',
-    'reset',
-    'submit',
-  ]);
-  function activeElement(root) {
-    const active = root && root.activeElement;
-    if (active && active.tagName === 'IFRAME') {
-      try {
-        return activeElement(active.contentDocument) || active;
-      } catch {
-        return active;
-      }
-    }
-    return active;
-  }
-  function isEditable(element) {
-    if (!element) return false;
-    if (element.isContentEditable) return true;
-    if (element.disabled || element.readOnly) return false;
-    const tagName = element.tagName;
-    if (tagName === 'TEXTAREA') return true;
-    if (tagName !== 'INPUT') return false;
-    const type = (element.getAttribute('type') || 'text').toLowerCase();
-    return !blockedInputTypes.has(type);
-  }
-  return isEditable(activeElement(document));
-})()
-"""
+from .live_session_browser import _browser_endpoint, _normalize_ws_url
+from .live_session_models import (
+    _CDP_HTTP_TIMEOUT_SECONDS,
+    _CDP_WS_TIMEOUT_SECONDS,
+    _CONTROL_GRANT_TTL_SECONDS,
+    _EDITABLE_FOCUS_EXPRESSION,
+    _KEY_CODES,
+    _KEY_EVENT_CODES,
+    _MAX_SECURE_TEXT_INPUT_BYTES,
+    _MAX_TEXT_INPUT_CHARS,
+    _SCREENSHOT_QUALITY,
+    _SESSION_TTL_SECONDS,
+    LiveControlAction,
+    LiveSessionControl,
+    LiveSessionControlGrantUpdate,
+    LiveSessionCreate,
+    LiveSessionCreated,
+    LiveSessionFrame,
+    LiveSessionKind,
+    LiveSessionSensitiveUpdate,
+    LiveSessionState,
+    LiveSessionStatus,
+    _ManagedLiveSession,
+)
+from .live_session_state import (
+    _LIVE_SESSION_LOCK,
+    _LIVE_SESSIONS,
+    _audit,
+    _cleanup_expired_sessions,
+    _close_session,
+    _expire_control_grant,
+    _now,
+    _require_operator_token,
+    _require_session,
+    _require_view_authorization,
+    _status_from_session,
+    _token_hash,
+)
 
 router = APIRouter(dependencies=[Depends(_require_auth)])
 
-
-class LiveSessionCreate(BaseModel):
-    """Request to create an operator-visible live session."""
-
-    kind: LiveSessionKind = "browser"
-    target_url: str = _DEFAULT_TARGET_URL
-    viewport_width: int = Field(default=1440, ge=640, le=_MAX_VIEWPORT_WIDTH)
-    viewport_height: int = Field(default=900, ge=360, le=_MAX_VIEWPORT_HEIGHT)
-
-
-class LiveSessionStatus(BaseModel):
-    """Public status for a live co-driving session."""
-
-    id: str
-    kind: LiveSessionKind
-    state: LiveSessionState
-    target_url: str
-    current_url: str | None = None
-    title: str | None = None
-    sensitive: bool
-    created_at: datetime
-    expires_at: datetime
-    viewport_width: int
-    viewport_height: int
-    control_enabled: bool
-    control_owner: str | None = None
-    control_expires_at: datetime | None = None
-    viewer_connected: bool
-    token_required: bool
-    last_viewed_at: datetime | None = None
-    last_controlled_at: datetime | None = None
-    audit_events: list[LiveSessionAuditEvent]
-    control_policy: str
-    capture_policy: str
-    browser_target_host: str | None = None
-    browser_target_port: int | None = None
-    browser_target_source: str | None = None
-    browser_target_debug_local: bool = False
-
-
-class LiveSessionCreated(LiveSessionStatus):
-    """Create response with the one-time operator token."""
-
-    operator_token: str
-
-
-class LiveSessionAuditEvent(BaseModel):
-    """Sanitized session audit event."""
-
-    at: datetime
-    actor: LiveAuditActor
-    action: str
-    detail: str | None = None
-
-
-class LiveSessionFrame(BaseModel):
-    """Screenshot frame for a live session."""
-
-    session_id: str
-    captured_at: datetime
-    image_data_url: str
-    viewport_width: int
-    viewport_height: int
-    sensitive: bool
-
-
-class LiveSessionControl(BaseModel):
-    """Remote control command for a live session."""
-
-    action: LiveControlAction
-    x: int | None = Field(default=None, ge=0, le=_MAX_VIEWPORT_WIDTH)
-    y: int | None = Field(default=None, ge=0, le=_MAX_VIEWPORT_HEIGHT)
-    key: str | None = Field(default=None, max_length=32)
-    text: str | None = None
-    delta_x: int | None = Field(default=0, ge=-4000, le=4000)
-    delta_y: int | None = Field(default=0, ge=-4000, le=4000)
-    target_url: str | None = Field(default=None, max_length=2048)
-    viewport_width: int | None = Field(default=None, ge=640, le=_MAX_VIEWPORT_WIDTH)
-    viewport_height: int | None = Field(default=None, ge=360, le=_MAX_VIEWPORT_HEIGHT)
-
-
-class LiveSessionSensitiveUpdate(BaseModel):
-    """Toggle sensitive handling for auth flows."""
-
-    sensitive: bool
-
-
-class LiveSessionControlGrantUpdate(BaseModel):
-    """Toggle operator input control."""
-
-    enabled: bool
-
-
-@dataclass(slots=True)
-class _ManagedLiveSession:
-    id: str
-    kind: LiveSessionKind
-    target_url: str
-    target_id: str
-    ws_url: str
-    operator_token_hash: str
-    created_at: datetime
-    expires_at: datetime
-    viewport_width: int
-    viewport_height: int
-    sensitive: bool = True
-    control_enabled: bool = False
-    viewer_connected: bool = False
-    last_viewed_at: datetime | None = None
-    last_controlled_at: datetime | None = None
-    control_expires_at: datetime | None = None
-    audit_events: list[LiveSessionAuditEvent] | None = None
-    state: LiveSessionState = "active"
-    current_url: str | None = None
-    title: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class BrowserTargetStatus:
-    host: str | None = None
-    port: int | None = None
-    source: str | None = None
-    debug_local: bool = False
-
-
-_LIVE_SESSIONS: dict[str, _ManagedLiveSession] = {}
-_LIVE_SESSION_LOCK = asyncio.Lock()
+__all__ = [
+    "LiveControlAction",
+    "LiveSessionKind",
+    "LiveSessionState",
+    "router",
+]
 
 
 @router.get("", response_model=list[LiveSessionStatus])
@@ -623,170 +481,6 @@ async def _cdp_call(
         raise HTTPException(status_code=503, detail=f"Browser command unavailable: {exc}") from exc
 
 
-async def _require_session(session_id: str) -> _ManagedLiveSession:
-    await _cleanup_expired_sessions()
-    session = _LIVE_SESSIONS.get(session_id)
-    if session is None or session.state != "active":
-        raise HTTPException(status_code=404, detail="Live session not found")
-    return session
-
-
-async def _cleanup_expired_sessions() -> None:
-    now = _now()
-    expired = [session for session in _LIVE_SESSIONS.values() if session.expires_at <= now]
-    for session in expired:
-        await _close_session(session, state="expired")
-        async with _LIVE_SESSION_LOCK:
-            _LIVE_SESSIONS.pop(session.id, None)
-
-
-async def _close_session(
-    session: _ManagedLiveSession,
-    *,
-    state: LiveSessionState = "closed",
-) -> None:
-    session.state = state
-    host, port = _browser_endpoint()
-    close_url = f"http://{host}:{port}/json/close/{session.target_id}"
-    try:
-        async with httpx.AsyncClient(timeout=_CDP_HTTP_TIMEOUT_SECONDS) as client:
-            await client.get(close_url)
-    except httpx.HTTPError:
-        return
-
-
-def _status_from_session(session: _ManagedLiveSession) -> LiveSessionStatus:
-    _expire_control_grant(session)
-    target = _browser_target_status()
-    return LiveSessionStatus(
-        id=session.id,
-        kind=session.kind,
-        state=session.state,
-        target_url=session.target_url,
-        current_url=session.current_url,
-        title=session.title,
-        sensitive=session.sensitive,
-        created_at=session.created_at,
-        expires_at=session.expires_at,
-        viewport_width=session.viewport_width,
-        viewport_height=session.viewport_height,
-        control_enabled=session.control_enabled,
-        control_owner="operator" if session.control_enabled else None,
-        control_expires_at=session.control_expires_at,
-        viewer_connected=session.viewer_connected,
-        token_required=session.sensitive,
-        last_viewed_at=session.last_viewed_at,
-        last_controlled_at=session.last_controlled_at,
-        audit_events=list(session.audit_events or []),
-        control_policy=(
-            "operator token required; input starts locked and must be enabled"
-        ),
-        capture_policy=(
-            "sensitive frames require the operator token and are not persisted"
-            if session.sensitive
-            else "frames are transient and not persisted"
-        ),
-        browser_target_host=target.host,
-        browser_target_port=target.port,
-        browser_target_source=target.source,
-        browser_target_debug_local=target.debug_local,
-    )
-
-
-def _expire_control_grant(session: _ManagedLiveSession) -> None:
-    if not session.control_enabled or session.control_expires_at is None:
-        return
-    if session.control_expires_at > _now():
-        return
-    session.control_enabled = False
-    session.control_expires_at = None
-    _audit(session, actor="internal", action="control-expired")
-
-
-def _browser_target_status() -> BrowserTargetStatus:
-    try:
-        endpoint = resolve_browser_endpoint(live=True)
-    except BrowserTargetError:
-        return BrowserTargetStatus()
-    return BrowserTargetStatus(
-        host=endpoint.host,
-        port=endpoint.port,
-        source=endpoint.source,
-        debug_local=endpoint.debug_local,
-    )
-
-
-def _require_view_authorization(
-    session: _ManagedLiveSession,
-    operator_token: str,
-) -> LiveAuditActor:
-    if _operator_token_valid(session, operator_token):
-        return "operator"
-    if session.sensitive:
-        raise HTTPException(status_code=403, detail="Operator token required")
-    return "internal"
-
-
-def _require_operator_token(
-    session: _ManagedLiveSession,
-    operator_token: str,
-) -> None:
-    if not _operator_token_valid(session, operator_token):
-        raise HTTPException(status_code=403, detail="Operator token required")
-
-
-def _operator_token_valid(session: _ManagedLiveSession, operator_token: str) -> bool:
-    if not operator_token:
-        return False
-    return secrets.compare_digest(
-        session.operator_token_hash,
-        _token_hash(operator_token),
-    )
-
-
-def _token_hash(operator_token: str) -> str:
-    return hashlib.sha256(operator_token.encode("utf-8")).hexdigest()
-
-
-def _audit(
-    session: _ManagedLiveSession,
-    *,
-    actor: LiveAuditActor,
-    action: str,
-    detail: str | None = None,
-) -> None:
-    events = session.audit_events
-    if events is None:
-        events = []
-        session.audit_events = events
-    event = LiveSessionAuditEvent(
-        at=_now(),
-        actor=actor,
-        action=action,
-        detail=detail,
-    )
-    if action == "viewed" and events and events[-1].action == "viewed":
-        events[-1] = event
-    else:
-        events.append(event)
-    del events[:-30]
-
-
-def _browser_endpoint() -> tuple[str, int]:
-    try:
-        endpoint = resolve_browser_endpoint(live=True)
-    except BrowserTargetError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return endpoint.host, endpoint.port
-
-
-def _normalize_ws_url(ws_url: str, host: str) -> str:
-    return ws_url.replace("ws://0.0.0.0:", f"ws://{host}:").replace(
-        "ws://127.0.0.1:",
-        f"ws://{host}:",
-    )
-
-
 def _validate_target_url(target_url: str) -> None:
     if target_url == "about:blank":
         return
@@ -796,40 +490,3 @@ def _validate_target_url(target_url: str) -> None:
         status_code=400,
         detail="target_url must be http, https, or about:blank",
     )
-
-
-def _now() -> datetime:
-    return datetime.now(UTC)
-
-
-_KEY_CODES: dict[str, int] = {
-    "Backspace": 8,
-    "Tab": 9,
-    "Enter": 13,
-    "Escape": 27,
-    "ArrowLeft": 37,
-    "ArrowUp": 38,
-    "ArrowRight": 39,
-    "ArrowDown": 40,
-    "Delete": 46,
-    "Home": 36,
-    "End": 35,
-    "PageUp": 33,
-    "PageDown": 34,
-}
-
-_KEY_EVENT_CODES: dict[str, str] = {
-    "Backspace": "Backspace",
-    "Tab": "Tab",
-    "Enter": "Enter",
-    "Escape": "Escape",
-    "ArrowLeft": "ArrowLeft",
-    "ArrowUp": "ArrowUp",
-    "ArrowRight": "ArrowRight",
-    "ArrowDown": "ArrowDown",
-    "Delete": "Delete",
-    "Home": "Home",
-    "End": "End",
-    "PageUp": "PageUp",
-    "PageDown": "PageDown",
-}
