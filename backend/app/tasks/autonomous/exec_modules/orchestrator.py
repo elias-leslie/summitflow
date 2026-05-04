@@ -1,5 +1,3 @@
-"""Main task orchestration and execution flow."""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -26,8 +24,18 @@ from .completion_handler import (
 )
 from .events import emit_error, emit_log, emit_progress
 from .execution_loop import execute_subtask_loop
+from .orchestrator_execution import execute_task_locked_impl, handle_completion, load_subtasks
+from .orchestrator_lanes import (
+    maybe_reclaim_same_task_lane,
+    same_task_lane_guard_result,
+    session_ready_for_reclaim,
+)
+from .orchestrator_preparation import (
+    active_task_checkpoint,
+    prepare_completed_task_closeout,
+    prepare_execution,
+)
 from .pristine_validation import validate_pristine_codebase
-from .session import WindDownState
 
 logger = get_logger(__name__)
 
@@ -47,20 +55,12 @@ def _fetch_agent_hub_session(session_id: str) -> dict[str, Any] | None:
 
 
 def _session_ready_for_reclaim(session: dict[str, Any] | None) -> bool:
-    if not isinstance(session, dict):
-        return False
-    if str(session.get("status") or "").strip().lower() in _FINAL_SESSION_STATUSES:
-        return True
-    live_activity = session.get("live_activity")
-    if not isinstance(live_activity, dict):
-        return False
-    if bool(live_activity.get("reapable")):
-        return True
-    lifecycle_state = str(live_activity.get("lifecycle_state") or "").strip().lower()
-    if lifecycle_state in _REAPABLE_LIFECYCLE_STATES:
-        return True
-    health = str(live_activity.get("health") or "").strip().lower()
-    return health in _FINAL_SESSION_HEALTH
+    return session_ready_for_reclaim(
+        session,
+        final_statuses=_FINAL_SESSION_STATUSES,
+        final_health=_FINAL_SESSION_HEALTH,
+        reapable_states=_REAPABLE_LIFECYCLE_STATES,
+    )
 
 
 def _close_agent_hub_session(session_id: str) -> bool:
@@ -71,104 +71,30 @@ def _close_agent_hub_session(session_id: str) -> bool:
     return True
 
 
-def _maybe_reclaim_same_task_lane(
-    task_id: str,
-    project_id: str,
-    lane_check: Any,
-) -> tuple[Any, bool]:
-    if lane_check.overlap_kind != "stale_same_task" or not lane_check.owner_session_id:
-        return lane_check, False
-
-    owner_session_id = str(lane_check.owner_session_id)
-    try:
-        session = _fetch_agent_hub_session(owner_session_id)
-    except Exception as exc:
-        emit_log(
-            task_id,
-            "warn",
-            f"Could not inspect stale same-task session {owner_session_id}: {type(exc).__name__}: {exc}",
-            source="orchestrator",
-            project_id=project_id,
-        )
-        return lane_check, False
-
-    if not _session_ready_for_reclaim(session):
-        emit_log(
-            task_id,
-            "warn",
-            f"Stale same-task session {owner_session_id} was not reclaimable on recheck",
-            source="orchestrator",
-            project_id=project_id,
-        )
-        return lane_check, False
-
-    emit_log(
+def _maybe_reclaim_same_task_lane(task_id: str, project_id: str, lane_check: Any) -> tuple[Any, bool]:
+    return maybe_reclaim_same_task_lane(
         task_id,
-        "info",
-        f"Reclaiming stale same-task session {owner_session_id}",
-        source="orchestrator",
-        project_id=project_id,
+        project_id,
+        lane_check,
+        fetch_session=_fetch_agent_hub_session,
+        session_ready=_session_ready_for_reclaim,
+        close_session=_close_agent_hub_session,
+        lane_conflicts=check_task_lane_conflicts,
+        emit_log=emit_log,
     )
-    try:
-        _close_agent_hub_session(owner_session_id)
-    except Exception as exc:
-        emit_log(
-            task_id,
-            "warn",
-            f"Failed to close stale same-task session {owner_session_id}: {type(exc).__name__}: {exc}",
-            source="orchestrator",
-            project_id=project_id,
-        )
-        return lane_check, False
-
-    return check_task_lane_conflicts(task_id, project_id), True
 
 
 def _guard_existing_same_task_lane(task_id: str, project_id: str) -> dict[str, Any] | None:
-    """Avoid replaying the same task when an active live session already exists."""
     lane_check = check_task_lane_conflicts(task_id, project_id)
     lane_check, reclaimed = _maybe_reclaim_same_task_lane(task_id, project_id, lane_check)
-    if lane_check.overlap_kind == "stale_same_task":
-        owner = lane_check.owner_session_id or "unknown"
-        emit_log(
-            task_id,
-            "warn",
-            f"Execution skipped: stale same-task session {owner} could not be reclaimed",
-            project_id=project_id,
-        )
-        return {
-            "task_id": task_id,
-            "status": "already_running",
-            "message": "Stale task session requires reconciliation",
-            "owner_session_id": lane_check.owner_session_id,
-        }
-    if lane_check.overlap_kind != "same_task" or lane_check.disposition != "block":
-        return None
-
-    owner = lane_check.owner_session_id or "unknown"
-    emit_log(
+    return same_task_lane_guard_result(
         task_id,
-        "info",
-        (
-            f"Execution skipped: refreshed same-task session still active with owner {owner}"
-            if reclaimed
-            else f"Execution skipped: active task session already owned by session {owner}"
-        ),
-        project_id=project_id,
+        project_id,
+        lane_check,
+        reclaimed=reclaimed,
+        emit_log=emit_log,
+        logger=logger,
     )
-    logger.info(
-        "Skipping duplicate autonomous execution for active task session",
-        task_id=task_id,
-        project_id=project_id,
-        owner_session_id=lane_check.owner_session_id,
-        owner_location=lane_check.owner_location,
-    )
-    return {
-        "task_id": task_id,
-        "status": "already_running",
-        "message": "Active task session already exists",
-        "owner_session_id": lane_check.owner_session_id,
-    }
 
 
 def start_execution(
@@ -176,12 +102,6 @@ def start_execution(
     project_id: str,
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> dict[str, Any]:
-    """Start autonomous execution of a task.
-
-    Executes subtasks in order with fresh context per subtask, using
-    complete() with execute_tools=True. Concurrency handled by Hatchet
-    ConcurrencyExpression (max_runs=1 per task_id).
-    """
     debug_section("Autonomous Execution", task_id=task_id, project_id=project_id)
     logger.info("Starting autonomous execution", task_id=task_id, project_id=project_id)
     emit_log(task_id, "info", "Starting autonomous execution", project_id=project_id)
@@ -191,121 +111,33 @@ def start_execution(
     return execute_task_locked(task_id, project_id, dispatch=dispatch)
 
 
-def _prepare_execution(
-    task_id: str, project_id: str,
-) -> tuple[dict[str, Any] | None, str | None, str | None, str | None]:
-    """Validate task and set up the shared checkout. Returns (error, path, task_type, agent_override)."""
-    task = task_store.get_task(task_id)
-    if not task:
-        emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
-        return {"task_id": task_id, "status": "error", "message": "Task not found"}, None, None, None
-
-    task_type = task.get("task_type")
-    agent_override = task.get("agent_override")
-
-    if not validate_pristine_codebase(task_id, project_id):
-        return (
-            {"task_id": task_id, "status": "failed", "error": "Pristine validation failed", "reason": "pristine_self_heal_failed"},
-            None, None, None,
-        )
-
-    project_path = setup_task_checkout(task_id, project_id)
-    if not project_path:
-        return (
-            {"task_id": task_id, "status": "failed", "error": "Task branch setup failed", "reason": "task_branch_setup_failed"},
-            None, None, None,
-        )
-
-    return None, project_path, task_type, agent_override
+def _prepare_execution(task_id: str, project_id: str) -> tuple[dict[str, Any] | None, str | None, str | None, str | None]:
+    return prepare_execution(
+        task_id,
+        project_id,
+        task_store=task_store,
+        emit_error=emit_error,
+        validate_pristine_codebase=validate_pristine_codebase,
+        setup_task_checkout=setup_task_checkout,
+    )
 
 
 def _has_active_task_checkpoint(task_id: str, project_id: str) -> bool:
-    """Return whether the task still has active checkpoint metadata to clean up."""
     from cli.lib.checkpoint_metadata import load_snapshot_meta
 
-    meta = load_snapshot_meta(task_id)
-    return meta is not None and meta.project_id == project_id
+    return active_task_checkpoint(task_id, project_id, load_snapshot_meta=load_snapshot_meta)
 
 
 def _prepare_completed_task_closeout(task_id: str, project_id: str) -> dict[str, Any] | None:
-    """Run safety checks before early-completing a task whose subtasks already passed."""
-    if not validate_pristine_codebase(task_id, project_id):
-        return {
-            "task_id": task_id,
-            "status": "failed",
-            "error": "Pristine validation failed",
-            "reason": "pristine_self_heal_failed",
-        }
-
-    if not _has_active_task_checkpoint(task_id, project_id):
-        emit_log(task_id, "info", "All subtasks already complete; skipping checkout setup", project_id=project_id)
-        return None
-
-    existing_checkout = get_task_checkout(task_id, project_id)
-    if not existing_checkout:
-        emit_log(
-            task_id,
-            "warning",
-            "All subtasks already complete; active checkpoint metadata remains but no task branch exists, skipping checkout recovery",
-            project_id=project_id,
-        )
-        return None
-
-    emit_log(
+    return prepare_completed_task_closeout(
         task_id,
-        "info",
-        "All subtasks already complete; reusing existing task branch to recover residue before closeout",
-        project_id=project_id,
+        project_id,
+        validate_pristine_codebase=validate_pristine_codebase,
+        has_active_task_checkpoint=_has_active_task_checkpoint,
+        get_task_checkout=get_task_checkout,
+        setup_task_checkout=setup_task_checkout,
+        emit_log=emit_log,
     )
-    project_path = setup_task_checkout(task_id, project_id)
-    if project_path:
-        return None
-
-    return {
-        "task_id": task_id,
-        "status": "failed",
-        "error": "Task branch setup failed",
-        "reason": "task_branch_setup_failed",
-    }
-
-
-def _load_subtasks(
-    task_id: str,
-    project_id: str,
-) -> tuple[dict[str, Any] | None, list, int, int]:
-    """Load subtasks. Returns (error, incomplete, total, completed)."""
-    subtasks = get_subtasks_for_task(task_id, include_steps=True)
-    incomplete = [s for s in subtasks if not s.get("passes")]
-    total = len(subtasks)
-    completed = total - len(incomplete)
-    emit_progress(task_id, total_subtasks=total, completed_subtasks=completed, project_id=project_id)
-    if total == 0:
-        emit_error(task_id, "No subtasks to execute — planning may have failed", project_id=project_id)
-        task_store.update_task_status(task_id, "failed")
-        return {"task_id": task_id, "status": "failed", "error": "No subtasks to execute", "reason": "no_subtasks"}, [], 0, 0
-    return None, incomplete, total, completed
-
-
-def _handle_completion(
-    task_id: str, project_id: str, project_path: str,
-    results: list, incomplete: list, dispatch: Callable[[str, str, str], None] | None,
-    wind_down_state: WindDownState | None,
-) -> str | None:
-    """Route to appropriate completion handler based on results."""
-    if wind_down_state and wind_down_state.paused:
-        return "paused"
-
-    all_passed = all(r.get("status") == "passed" for r in results)
-    any_passed = any(r.get("status") == "passed" for r in results)
-    if all_passed and len(results) == len(incomplete):
-        return "passed" if handle_successful_completion(task_id, project_id, project_path, results, dispatch) else "failed"
-    if any_passed:
-        if handle_partial_completion(task_id, project_id, project_path, results, dispatch):
-            return "partial"
-        handle_failed_execution(task_id, project_id, results=results)
-        return "failed"
-    handle_failed_execution(task_id, project_id, results=results)
-    return "failed"
 
 
 def execute_task_locked(
@@ -313,51 +145,54 @@ def execute_task_locked(
     project_id: str,
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> dict[str, Any]:
-    """Inner execution body. Concurrency handled by Hatchet."""
-    task = task_store.get_task(task_id)
-    if not task:
-        emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
-        return {"task_id": task_id, "status": "error", "message": "Task not found"}
+    return execute_task_locked_impl(task_id, project_id, dispatch, deps=_execution_deps())
 
-    error, incomplete, total, completed = _load_subtasks(task_id, project_id)
-    if error:
-        return error
 
-    if not incomplete:
-        completion_error = _prepare_completed_task_closeout(task_id, project_id)
-        if completion_error:
-            return completion_error
-        return handle_early_completion(task_id, project_id, total, dispatch)
+def _execution_deps() -> dict[str, Any]:
+    return {
+        "task_store": task_store,
+        "emit_error": emit_error,
+        "emit_log": emit_log,
+        "load_subtasks": _load_subtasks_with_deps,
+        "prepare_completed_task_closeout": _prepare_completed_task_closeout,
+        "handle_early_completion": handle_early_completion,
+        "prepare_execution": _prepare_execution,
+        "execute_subtask_loop": execute_subtask_loop,
+        "check_main_repo_leakage": check_main_repo_leakage,
+        "handle_completion": _handle_completion_with_deps,
+        "execute_agent_feedback": execute_agent_feedback,
+    }
 
-    error, project_path, task_type, agent_override = _prepare_execution(task_id, project_id)
-    if error:
-        return error
-    assert project_path is not None
 
-    task = task_store.get_task(task_id)
-    if task and task.get("status") != "running":
-        task_store.update_task_status(task_id, "running")
-
-    results, completed, wind_down_state = execute_subtask_loop(
-        task_id, project_id, project_path, incomplete, total, completed,
-        task_type, agent_override,
+def _load_subtasks_with_deps(task_id: str, project_id: str) -> tuple[dict[str, Any] | None, list, int, int]:
+    return load_subtasks(
+        task_id,
+        project_id,
+        get_subtasks_for_task=get_subtasks_for_task,
+        emit_progress=emit_progress,
+        emit_error=emit_error,
+        task_store=task_store,
     )
 
-    check_main_repo_leakage(task_id, project_id, project_path)
 
-    _handle_completion(task_id, project_id, project_path, results, incomplete, dispatch, wind_down_state)
-    if results:
-        try:
-            execute_agent_feedback(
-                task_id, project_path, project_id, results,
-                agent_slug=agent_override or "coder",
-            )
-        except Exception as e:
-            emit_log(
-                task_id,
-                "warning",
-                f"Agent feedback collection failed after completion routing: {type(e).__name__}: {e}",
-                source="orchestrator",
-                project_id=project_id,
-            )
-    return {"task_id": task_id, "status": "executed", "subtask_results": results}
+def _handle_completion_with_deps(
+    task_id: str,
+    project_id: str,
+    project_path: str,
+    results: list,
+    incomplete: list,
+    dispatch: Callable[[str, str, str], None] | None,
+    wind_down_state: Any,
+) -> str | None:
+    return handle_completion(
+        task_id,
+        project_id,
+        project_path,
+        results,
+        incomplete,
+        dispatch,
+        wind_down_state,
+        handle_successful_completion=handle_successful_completion,
+        handle_partial_completion=handle_partial_completion,
+        handle_failed_execution=handle_failed_execution,
+    )
