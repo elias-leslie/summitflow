@@ -1,7 +1,9 @@
 """SummitFlow Tasks CLI entry point."""
 
 import atexit
+from importlib import import_module
 from pathlib import Path
+from types import ModuleType
 from typing import Annotated
 
 import typer
@@ -9,52 +11,6 @@ import typer
 from app.storage.connection import close_pool
 from app.storage.events import log_task_event
 
-from .commands import (
-    abandon,
-    agents,
-    autonomous,
-    autosnapshot,
-    backup,
-    browser,
-    check,
-    checkpoints,
-    claim,
-    claude,
-    cleanup,
-    complete,
-    db,
-    deps,
-    design,
-    docker,
-    done,
-    exec_monitor,
-    feedback,
-    git,
-    graph,
-    health,
-    jj,
-    logs,
-    memory,
-    persona,
-    projects,
-    prompt,
-    pulse,
-    refactor,
-    runtime,
-    search,
-    service,
-    session_events,
-    sessions,
-    setup,
-    snapshots,
-    subtask,
-    tasks,
-    tests,
-    tools,
-    vcs,
-    vm,
-    web,
-)
 from .config import set_project_override
 from .lib.commit_workflow import CommitError, commit_repo, current_repo
 from .output import set_compact_output, set_human_output, set_progress_only
@@ -70,6 +26,82 @@ Pause/resume: pause <id> [-r reason] | resume <id> [-r reason].
 VCS: vcs doctor | vcs reconcile | commit -m MSG [--task T] | jj diff | jj show.
 Tools: check | graph | service | runtime | db | browser | web | sessions | cleanup | logs.
 Use `<command> --help` for command-specific syntax."""
+
+
+class _FailedCommandModule:
+    def __init__(self, command: str, exc: Exception) -> None:
+        self.command = command
+        self.exc = exc
+        self.app = typer.Typer(help=f"{command} command unavailable: {exc}")
+
+        @self.app.callback(invoke_without_command=True)
+        def _failed_group() -> None:
+            self._raise()
+
+    def __getattr__(self, _name: str):
+        def _failed_command() -> None:
+            self._raise()
+
+        return _failed_command
+
+    def _raise(self) -> None:
+        typer.echo(f"ERROR:st command '{self.command}' unavailable: {self.exc}", err=True)
+        raise typer.Exit(1)
+
+
+def _load_command_module(command: str, *, required: bool = False) -> ModuleType | _FailedCommandModule:
+    try:
+        return import_module(f"{__package__}.commands.{command}")
+    except Exception as exc:
+        if required:
+            raise
+        return _FailedCommandModule(command, exc)
+
+
+abandon = _load_command_module("abandon")
+agents = _load_command_module("agents")
+autonomous = _load_command_module("autonomous")
+autosnapshot = _load_command_module("autosnapshot")
+backup = _load_command_module("backup")
+browser = _load_command_module("browser")
+check = _load_command_module("check", required=True)
+checkpoints = _load_command_module("checkpoints")
+claim = _load_command_module("claim")
+claude = _load_command_module("claude")
+cleanup = _load_command_module("cleanup")
+complete = _load_command_module("complete")
+db = _load_command_module("db")
+deps = _load_command_module("deps")
+design = _load_command_module("design")
+docker = _load_command_module("docker")
+done = _load_command_module("done")
+exec_monitor = _load_command_module("exec_monitor")
+feedback = _load_command_module("feedback")
+git = _load_command_module("git")
+graph = _load_command_module("graph")
+health = _load_command_module("health")
+jj = _load_command_module("jj")
+logs = _load_command_module("logs")
+memory = _load_command_module("memory")
+persona = _load_command_module("persona")
+projects = _load_command_module("projects")
+prompt = _load_command_module("prompt")
+pulse = _load_command_module("pulse")
+refactor = _load_command_module("refactor")
+runtime = _load_command_module("runtime")
+search = _load_command_module("search")
+service = _load_command_module("service")
+session_events = _load_command_module("session_events")
+sessions = _load_command_module("sessions")
+setup = _load_command_module("setup")
+snapshots = _load_command_module("snapshots")
+subtask = _load_command_module("subtask")
+tasks = _load_command_module("tasks")
+tests = _load_command_module("tests")
+tools = _load_command_module("tools")
+vcs = _load_command_module("vcs")
+vm = _load_command_module("vm")
+web = _load_command_module("web")
 
 app = typer.Typer(
     name="st",

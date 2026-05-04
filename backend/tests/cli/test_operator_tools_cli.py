@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -175,6 +176,31 @@ def test_check_runs_native_tool() -> None:
         patch("cli.commands.check._run_tool", return_value=0) as run_tool,
     ):
         result = runner.invoke(main_app, ["check", "ruff"])
+
+    assert result.exit_code == 0
+    run_tool.assert_called_once()
+
+
+def test_check_boots_when_unrelated_command_import_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    import cli.main as main_module
+
+    real_import_module = importlib.import_module
+
+    def fake_import_module(name: str, package: str | None = None):
+        if name == "cli.commands.browser":
+            raise NameError("name 're' is not defined")
+        return real_import_module(name, package)
+
+    with monkeypatch.context() as ctx:
+        ctx.setattr(importlib, "import_module", fake_import_module)
+        reloaded = importlib.reload(main_module)
+        with (
+            patch("cli.commands.check._tool_configs", return_value={"ruff": {"label": "LINT", "binary": "ruff"}}),
+            patch("cli.commands.check._run_tool", return_value=0) as run_tool,
+        ):
+            result = runner.invoke(reloaded.app, ["check", "ruff"])
+
+    importlib.reload(main_module)
 
     assert result.exit_code == 0
     run_tool.assert_called_once()
