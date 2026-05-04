@@ -14,11 +14,17 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Body, HTTPException
-from pydantic import BaseModel
 
 from ..logging_config import get_logger
 from ..storage import notes as note_store
 from ..storage import projects as project_store
+from .notes_models import CreateNoteRequest, NoteResponse, UpdateNoteRequest
+from .notes_proposal_models import (
+    NotesCapabilitiesResponse,
+    NotesScopeOptionResponse,
+    ProposalResponse,
+    VersionResponse,
+)
 
 logger = get_logger(__name__)
 
@@ -26,80 +32,6 @@ router = APIRouter(tags=["Notes"])
 
 _EDIT_VERSION_FIELDS = {"title", "content", "tags"}
 _EDIT_CHECKPOINT_COOLDOWN = timedelta(minutes=5)
-
-
-# ============================================================================
-# Request/Response Models
-# ============================================================================
-
-
-class NoteResponse(BaseModel):
-    id: str
-    project_scope: str
-    type: str
-    title: str
-    content: str
-    tags: list[str]
-    pinned: bool
-    metadata: dict[str, Any]
-    created_at: str | None
-    updated_at: str | None
-
-
-class CreateNoteRequest(BaseModel):
-    title: str
-    content: str = ""
-    project_scope: str = "global"
-    type: Literal["note", "prompt"] = "note"
-    tags: list[str] = []
-    pinned: bool = False
-    metadata: dict[str, Any] | None = None
-
-
-class UpdateNoteRequest(BaseModel):
-    title: str | None = None
-    content: str | None = None
-    project_scope: str | None = None
-    type: Literal["note", "prompt"] | None = None
-    tags: list[str] | None = None
-    pinned: bool | None = None
-    metadata: dict[str, Any] | None = None
-
-
-class ProposalResponse(BaseModel):
-    id: str
-    note_id: str
-    status: str
-    original_title: str
-    original_content: str
-    proposed_title: str | None
-    proposed_content: str | None
-    error_message: str | None
-    created_at: str | None
-    completed_at: str | None
-
-
-class VersionResponse(BaseModel):
-    id: str
-    note_id: str
-    version: int
-    title: str
-    content: str
-    tags: list[str]
-    change_source: str
-    created_at: str | None
-
-
-class NotesCapabilitiesResponse(BaseModel):
-    title_generation: bool
-    formatting: bool
-    prompt_refinement: bool
-
-
-class NotesScopeOptionResponse(BaseModel):
-    value: str
-    label: str
-    known: bool
 
 
 # ============================================================================
