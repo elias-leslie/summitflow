@@ -1,5 +1,6 @@
 'use client'
 
+import { PanelsTopLeft } from 'lucide-react'
 import type { Task, TaskStatus } from '@/lib/api/tasks'
 import { AgentSelector } from './AgentSelector'
 import { AutonomousToggle } from './AutonomousToggle'
@@ -40,9 +41,28 @@ export function TaskModalActions({
   onDelete,
 }: TaskModalActionsProps) {
   const isRunning = task.status === 'running'
+  const openWorkChat = () => {
+    const existingSessionId = task.agent_hub_session_ids?.at(-1)
+    const params = new URLSearchParams({
+      project_id: task.project_id,
+      task_id: task.id,
+      task_title: task.title,
+    })
+    if (task.description) params.set('task_summary', task.description)
+    if (existingSessionId) params.set('session_id', existingSessionId)
+    window.open(`/work-chats?${params.toString()}`, '_blank')
+  }
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
+      <button
+        type="button"
+        onClick={openWorkChat}
+        className="inline-flex items-center gap-1.5 rounded-md border border-phosphor-500/30 bg-phosphor-500/10 px-3 py-1.5 text-xs font-medium text-phosphor-300 transition-colors hover:bg-phosphor-500/20"
+      >
+        <PanelsTopLeft className="h-3.5 w-3.5" />
+        Work Chat
+      </button>
       <StatusActionButtons
         status={task.status}
         isExecuting={isExecuting}

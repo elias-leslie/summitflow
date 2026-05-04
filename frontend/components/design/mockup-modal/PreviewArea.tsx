@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
   Layers3,
   MessageSquare,
+  PanelsTopLeft,
   RefreshCw,
   Trash2,
 } from 'lucide-react'
@@ -53,6 +54,15 @@ export function PreviewArea({
   onDelete,
   onOpenReviewOverlay,
 }: PreviewAreaProps) {
+  const openWorkChat = () => {
+    const params = new URLSearchParams({
+      project_id: projectId,
+      design_id: mockup.mockup_id,
+      artifact_summary: mockup.name,
+    })
+    window.open(`/work-chats?${params.toString()}`, '_blank')
+  }
+
   return (
     <div className="flex-1 p-4 flex flex-col min-h-0 min-w-0">
       <div className="flex-1 bg-slate-800 rounded-lg flex items-center justify-center relative min-h-0">
@@ -150,6 +160,14 @@ export function PreviewArea({
         >
           <Layers3 className="w-4 h-4" />
           New Iteration
+        </button>
+        <button
+          type="button"
+          onClick={openWorkChat}
+          className="btn-secondary flex items-center gap-2"
+        >
+          <PanelsTopLeft className="w-4 h-4" />
+          Work Chat
         </button>
         {onOpenReviewOverlay && (
           <button
