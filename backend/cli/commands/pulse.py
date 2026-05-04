@@ -190,19 +190,50 @@ def _needs_ownerless_review(summary: dict[str, Any], cleanup: dict[str, Any]) ->
     )
 
 
-def _nonwriter_active_sessions(summary: dict[str, Any]) -> int:
-    assigned_writers = (
-        _truthy_count(summary.get("active_owners"))
-        + _truthy_count(summary.get("active_specialists"))
-    )
-    return max(0, _truthy_count(summary.get("active_sessions")) - assigned_writers)
+def _record_has_observed_writes(record: dict[str, Any]) -> bool:
+    writes = record.get("observed_write_paths")
+    if not isinstance(writes, list):
+        return False
+    return any(str(path).strip() for path in writes)
 
 
-def _format_nonwriter_session_review(project_id: Any, summary: dict[str, Any], cleanup: dict[str, Any]) -> str | None:
+def _nonwriter_write_sessions(payload: dict[str, Any]) -> int:
+    writer_session_ids = {
+        _record_session_id(record)
+        for key in ("active_owners", "active_specialists")
+        for record in payload.get(key, [])
+        if isinstance(record, dict) and _record_session_id(record)
+    }
+    count = 0
+    seen: set[str] = set()
+    for key in ("active_sessions", "active_readers"):
+        records = payload.get(key, [])
+        if not isinstance(records, list):
+            continue
+        for record in records:
+            if not isinstance(record, dict) or not _record_has_observed_writes(record):
+                continue
+            session_id = _record_session_id(record)
+            if session_id and session_id in writer_session_ids:
+                continue
+            if session_id and session_id in seen:
+                continue
+            if session_id:
+                seen.add(session_id)
+            count += 1
+    return count
+
+
+def _format_nonwriter_session_review(
+    project_id: Any,
+    summary: dict[str, Any],
+    cleanup: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+) -> str | None:
     if _truthy_count(summary.get("active_owners")) or _truthy_count(summary.get("active_specialists")):
         return None
-    nonwriter = _nonwriter_active_sessions(summary)
-    if not nonwriter:
+    nonwriter_writes = _nonwriter_write_sessions(payload or {})
+    if not nonwriter_writes:
         return None
     if not (
         _truthy_count(cleanup.get("active_checkpoints"))
@@ -211,9 +242,9 @@ def _format_nonwriter_session_review(project_id: Any, summary: dict[str, Any], c
     ):
         return None
     return (
-        f"SESSION-REVIEW:{project_id}|nonwriter_active={nonwriter}|dirty={_dirty_residue_count(cleanup)}|"
+        f"SESSION-REVIEW:{project_id}|nonwriter_writes={nonwriter_writes}|dirty={_dirty_residue_count(cleanup)}|"
         f"checkpoints={_truthy_count(cleanup.get('active_checkpoints'))}|"
-        "action=inspect-raw-session-before-cleanup-or-adoption"
+        "action=inspect-write-session-before-cleanup-or-adoption"
     )
 
 
@@ -250,16 +281,47 @@ def _format_jj_state(project_id: Any, status: JJRepoStatus) -> str:
     )
 
 
+def _format_vcs_review(project_id: Any, cleanup: dict[str, Any], jj_status: JJRepoStatus | None) -> str | None:
+    dirty = _dirty_residue_count(cleanup)
+    if jj_status is None:
+        if not dirty:
+            return None
+        return f"VCS-REVIEW:{project_id}|dirty={dirty}|action=commit-push-or-continue-narrow"
+
+    needs_revision_commit = jj_status.state not in {"clean", "described", "unpublished"}
+    needs_review = bool(
+        dirty
+        or needs_revision_commit
+        or jj_status.conflicted
+        or jj_status.unpublished
+    )
+    if not needs_review:
+        return None
+
+    if jj_status.conflicted:
+        action = "resolve-jj-conflicts"
+    elif dirty or needs_revision_commit:
+        action = "commit-push-or-continue-narrow"
+    else:
+        action = "push-unpublished"
+    return (
+        f"VCS-REVIEW:{project_id}|dirty={dirty}|jj_state={jj_status.state}|"
+        f"described={str(jj_status.described).lower()}|unpublished={jj_status.unpublished}|"
+        f"action={action}"
+    )
+
+
 def _preflight_reasons(
     summary: dict[str, Any],
     cleanup: dict[str, Any],
     jj_status: JJRepoStatus | None = None,
+    payload: dict[str, Any] | None = None,
 ) -> list[str]:
     reasons: list[str] = []
     if jj_status and jj_status.colocated and jj_status.conflicted:
         reasons.append("jj_conflicts")
-    if _format_nonwriter_session_review("?", summary, cleanup):
-        reasons.append("active_nonwriter_session")
+    if _format_nonwriter_session_review("?", summary, cleanup, payload):
+        reasons.append("active_nonwriter_write_session")
     return reasons
 
 
@@ -268,8 +330,9 @@ def _format_preflight(
     summary: dict[str, Any],
     cleanup: dict[str, Any],
     jj_status: JJRepoStatus | None = None,
+    payload: dict[str, Any] | None = None,
 ) -> str:
-    reasons = _preflight_reasons(summary, cleanup, jj_status)
+    reasons = _preflight_reasons(summary, cleanup, jj_status, payload)
     state = "blocked" if reasons else "clear"
     detail = ",".join(reasons) if reasons else "-"
     return f"PREFLIGHT:{project_id}|claim={state}|edit={state}|reasons={detail}|source=st-pulse"
@@ -370,7 +433,7 @@ def preflight_reasons_for_payload(payload: dict[str, Any], *, allow_task_id: str
     summary = filtered.get("summary", {})
     cleanup = filtered.get("cleanup", {})
     project_id = filtered.get("project_id", "?")
-    return _preflight_reasons(summary, cleanup, _jj_status_for_project(project_id))
+    return _preflight_reasons(summary, cleanup, _jj_status_for_project(project_id), filtered)
 
 
 def _print_compact(payloads: list[dict[str, Any]], *, details: bool = False) -> None:
@@ -398,14 +461,17 @@ def _print_compact(payloads: list[dict[str, Any]], *, details: bool = False) -> 
         )
         if jj_status is not None:
             print(_format_jj_state(project_id, jj_status))
-        print(_format_preflight(project_id, summary, cleanup, jj_status))
+        print(_format_preflight(project_id, summary, cleanup, jj_status, payload))
         review_line = _format_ownerless_review(project_id, summary, cleanup)
-        session_review_line = _format_nonwriter_session_review(project_id, summary, cleanup)
+        session_review_line = _format_nonwriter_session_review(project_id, summary, cleanup, payload)
+        vcs_review_line = _format_vcs_review(project_id, cleanup, jj_status)
         if review_line:
             print(review_line)
         if session_review_line:
             print(session_review_line)
-        if review_line or session_review_line or (jj_status is not None and jj_status.state != "clean"):
+        if vcs_review_line:
+            print(vcs_review_line)
+        if review_line or session_review_line or vcs_review_line:
             print(
                 f"ACTION:{project_id}|if_dirty=inspect-diff-once-then-commit-or-continue-narrow|"
                 "ownership=diagnostic-only"
@@ -498,7 +564,7 @@ def pulse(
             client.get(
                 client._global_url(
                     f"/projects/{resolved_project_id}/pulse"
-                    f"{'' if details or not is_compact() else '?compact=true'}"
+                    f"{'' if details or gate or not is_compact() else '?compact=true'}"
                 )
             )
             for resolved_project_id in _resolve_project_ids(

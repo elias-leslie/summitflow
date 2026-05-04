@@ -254,6 +254,56 @@ def test_pulse_compact_reports_jj_state_without_checkpoint_preflight_block() -> 
     assert result.exit_code == 0
     assert "JJSTATE:monkey-fight|state=described|described=true|conflicts=false|unpublished=1|change=chg|commit=commit" in result.output
     assert "PREFLIGHT:monkey-fight|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
+    assert "VCS-REVIEW:monkey-fight|dirty=0|jj_state=described|described=true|unpublished=1|action=push-unpublished" in result.output
+
+
+def test_pulse_compact_does_not_report_vcs_review_for_clean_empty_jj_change() -> None:
+    mock_client = MagicMock()
+    mock_client.get.return_value = {
+        "project_id": "agent-hub",
+        "summary": {
+            "running_tasks": 0,
+            "active_owners": 0,
+            "active_specialists": 0,
+            "active_sessions": 0,
+            "stale_sessions": 0,
+            "reapable_sessions": 0,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {
+            "active_checkpoints": 0,
+            "dirty_checkpoints": 0,
+            "dirty_main_repo": False,
+            "needs_cleanup": False,
+        },
+        "running_tasks": [],
+        "active_owners": [],
+        "active_sessions": [],
+        "stale_sessions": [],
+        "stranded_tasks": [],
+    }
+    jj_status = JJRepoStatus(
+        repo="agent-hub",
+        path="/srv/workspaces/projects/agent-hub",
+        branch="main",
+        colocated=True,
+        state="clean",
+        described=False,
+        conflicted=False,
+        unpublished=0,
+        change_id="chg",
+        commit_id="commit",
+    )
+
+    with (
+        patch("cli.commands.pulse.STClient", return_value=mock_client),
+        patch("cli.commands.pulse._jj_status_for_project", return_value=jj_status),
+    ):
+        result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
+
+    assert result.exit_code == 0
+    assert "PREFLIGHT:agent-hub|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
+    assert "VCS-REVIEW:agent-hub" not in result.output
 
 
 def test_pulse_compact_counts_dirty_main_repo_without_checkpoints() -> None:
@@ -289,6 +339,7 @@ def test_pulse_compact_counts_dirty_main_repo_without_checkpoints() -> None:
     assert "PULSE:test2|tasks=0|writers=0|readers=0|specialists=0|sessions=0|stale=0|reapable=0|checkpoints=0|dirty=1|cleanup=yes|stranded=0" in result.output
     assert "PREFLIGHT:test2|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
     assert "REVIEW:test2|ownerless=yes|dirty=1|checkpoints=0|stranded=0|" in result.output
+    assert "VCS-REVIEW:test2|dirty=1|action=commit-push-or-continue-narrow" in result.output
 
 
 def test_pulse_compact_requires_review_for_ownerless_clean_checkpoint() -> None:
@@ -327,7 +378,7 @@ def test_pulse_compact_requires_review_for_ownerless_clean_checkpoint() -> None:
     assert "commit-push-prune-or-leave-explicit-handoff" in result.output
 
 
-def test_pulse_gate_blocks_dirty_cleanup_with_nonwriter_active_session() -> None:
+def test_pulse_gate_allows_dirty_cleanup_with_read_only_session() -> None:
     mock_client = MagicMock()
     mock_client.get.return_value = {
         "project_id": "a-term",
@@ -358,10 +409,54 @@ def test_pulse_gate_blocks_dirty_cleanup_with_nonwriter_active_session() -> None
     with patch("cli.commands.pulse.STClient", return_value=mock_client):
         result = runner.invoke(app, ["pulse", "--project", "a-term", "--gate"])
 
+    assert result.exit_code == 0
+    assert "PULSE:a-term|tasks=0|writers=0|readers=1|specialists=0|sessions=1|" in result.output
+    assert "PREFLIGHT:a-term|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
+    assert "SESSION-REVIEW:a-term" not in result.output
+    assert "REVIEW:a-term|ownerless=yes" not in result.output
+
+
+def test_pulse_gate_blocks_dirty_cleanup_with_nonwriter_write_session() -> None:
+    mock_client = MagicMock()
+    mock_client.get.return_value = {
+        "project_id": "a-term",
+        "summary": {
+            "running_tasks": 0,
+            "active_owners": 0,
+            "active_readers": 1,
+            "active_specialists": 0,
+            "active_sessions": 1,
+            "stale_sessions": 0,
+            "reapable_sessions": 0,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {
+            "active_checkpoints": 0,
+            "dirty_checkpoints": 0,
+            "dirty_main_repo": True,
+            "needs_cleanup": True,
+        },
+        "running_tasks": [],
+        "active_owners": [],
+        "active_readers": [
+            {
+                "session_id": "sess-unassigned",
+                "observed_write_paths": ["backend/app/api/tasks.py"],
+                "scope_confidence": "observed_read",
+            }
+        ],
+        "active_sessions": [{"id": "sess-unassigned", "lane_role": "observer"}],
+        "stale_sessions": [],
+        "stranded_tasks": [],
+    }
+
+    with patch("cli.commands.pulse.STClient", return_value=mock_client):
+        result = runner.invoke(app, ["pulse", "--project", "a-term", "--gate"])
+
     assert result.exit_code == 2
     assert "PULSE:a-term|tasks=0|writers=0|readers=1|specialists=0|sessions=1|" in result.output
-    assert "PREFLIGHT:a-term|claim=blocked|edit=blocked|reasons=active_nonwriter_session|source=st-pulse" in result.output
-    assert "SESSION-REVIEW:a-term|nonwriter_active=1|dirty=1|checkpoints=0|" in result.output
+    assert "PREFLIGHT:a-term|claim=blocked|edit=blocked|reasons=active_nonwriter_write_session|source=st-pulse" in result.output
+    assert "SESSION-REVIEW:a-term|nonwriter_writes=1|dirty=1|checkpoints=0|" in result.output
     assert "REVIEW:a-term|ownerless=yes" not in result.output
 
 
@@ -768,7 +863,7 @@ def test_require_pulse_gate_allows_current_task_read_only_transcript_sync_sessio
         pulse.require_pulse_gate("agent-hub", allow_task_id="task-1")
 
 
-def test_require_pulse_gate_keeps_other_task_read_only_session_blocking() -> None:
+def test_require_pulse_gate_allows_other_task_read_only_session() -> None:
     from cli.commands import pulse
 
     payload = {
@@ -811,8 +906,54 @@ def test_require_pulse_gate_keeps_other_task_read_only_session_blocking() -> Non
         "stranded_tasks": [],
     }
 
+    assert pulse.preflight_reasons_for_payload(payload, allow_task_id="task-1") == []
+
+
+def test_require_pulse_gate_keeps_other_task_write_session_blocking() -> None:
+    from cli.commands import pulse
+
+    payload = {
+        "project_id": "agent-hub",
+        "summary": {
+            "running_tasks": 0,
+            "active_owners": 0,
+            "active_readers": 1,
+            "active_specialists": 0,
+            "active_sessions": 1,
+            "stranded_tasks": 0,
+        },
+        "cleanup": {
+            "active_checkpoints": 1,
+            "dirty_checkpoints": 0,
+            "dirty_main_repo": True,
+            "needs_cleanup": True,
+            "checkpoint_task_ids": ["task-1"],
+        },
+        "running_tasks": [],
+        "active_owners": [],
+        "active_readers": [
+            {
+                "task_id": "task-other",
+                "session_id": "sess-other",
+                "scope_confidence": "observed_read",
+                "observed_read_paths": [".dev-tools/pytest-details.txt"],
+                "observed_write_paths": ["backend/app/api/tasks.py"],
+            }
+        ],
+        "active_specialists": [],
+        "active_sessions": [
+            {
+                "id": "sess-other",
+                "current_branch": "task-other/main",
+                "request_source": "codex-transcript-sync",
+                "source_client": "summitflow/codex-session-sync",
+            }
+        ],
+        "stranded_tasks": [],
+    }
+
     assert pulse.preflight_reasons_for_payload(payload, allow_task_id="task-1") == [
-        "active_nonwriter_session"
+        "active_nonwriter_write_session"
     ]
 
 
