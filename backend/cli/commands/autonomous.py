@@ -11,6 +11,24 @@ app = typer.Typer(help="Autonomous execution management")
 
 
 @app.command()
+def status() -> None:
+    """Show autonomous execution settings for the project.
+
+    Examples:
+        st autonomous status
+    """
+    client = STClient()
+
+    try:
+        result = client.get_autonomous_settings()
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    output_json(result)
+
+
+@app.command()
 def enable() -> None:
     """Enable autonomous execution for the project.
 

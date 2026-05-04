@@ -170,6 +170,17 @@ def test_service_stop_uses_confirm_gate() -> None:
     stop_services.assert_called_once()
 
 
+def test_autonomous_status_reads_settings() -> None:
+    settings = {"enabled": True, "upkeep_enabled": False}
+    with patch("cli.commands.autonomous.STClient") as client_cls:
+        client_cls.return_value.get_autonomous_settings.return_value = settings
+        result = runner.invoke(main_app, ["autonomous", "status"])
+
+    assert result.exit_code == 0
+    assert '"enabled": true' in result.output
+    client_cls.return_value.get_autonomous_settings.assert_called_once_with()
+
+
 def test_check_runs_native_tool() -> None:
     with (
         patch("cli.commands.check._tool_configs", return_value={"ruff": {"label": "LINT", "binary": "ruff"}}),
