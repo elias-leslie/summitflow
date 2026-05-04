@@ -57,6 +57,7 @@ import {
   fetchActionRequests,
   fetchAgentHubAgents,
   fetchAgentHubSessions,
+  submitVerifierOutcome,
   upsertWorkChatBinding,
   type WorkContext,
 } from '@/lib/api/agent-hub-work-chats'
@@ -70,12 +71,18 @@ type WorkChatLayout =
   | 'main-side'
   | 'two-by-two'
   | 'wide-grid'
+type RoutingMode = 'auto' | 'direct'
+type RoutingPolicy = 'auto' | 'force' | 'avoid'
 
 interface WorkChatPane {
   id: string
   chatKey: number
   sessionId: string | null
   agentSlug: string
+  routingMode: RoutingMode
+  preferredAgentSlug: string | null
+  explorePolicy: RoutingPolicy
+  researchPolicy: RoutingPolicy
   projectId: string | null
   taskId: string | null
   taskTitle: string | null
@@ -115,6 +122,7 @@ const STORAGE_KEY = 'summitflow_work_chats_v2'
 const MAX_PANES = 6
 const SOURCE_CLIENT = 'summitflow/work-chats'
 const GENERAL_PROJECT_ID = 'summitflow'
+const AUTO_AGENT_SLUG = 'persona'
 const VERIFIER_AGENT_SLUG = 'verifier'
 const DEFAULT_VERIFIER_SPLIT = 50
 const BUILDER_SNAP_PERCENT = 88
@@ -124,12 +132,16 @@ const VERIFIER_MAX_PERCENT = 88
 const VERIFIER_COLLAPSE_THRESHOLD = 18
 const VERIFIER_MAX_LOOPS = 3
 
-function makePane(agentSlug = 'chat'): WorkChatPane {
+function makePane(agentSlug = AUTO_AGENT_SLUG): WorkChatPane {
   return {
     id: `pane-${Math.random().toString(36).slice(2, 10)}`,
     chatKey: 0,
     sessionId: null,
     agentSlug,
+    routingMode: agentSlug === AUTO_AGENT_SLUG ? 'auto' : 'direct',
+    preferredAgentSlug: null,
+    explorePolicy: 'auto',
+    researchPolicy: 'auto',
     projectId: null,
     taskId: null,
     taskTitle: null,
@@ -168,19 +180,32 @@ function readSavedState(defaultAgent: string): {
       ? parsed.panes
           .slice(0, MAX_PANES)
           .filter((pane: Partial<WorkChatPane>) => pane?.id)
-          .map((pane: Partial<WorkChatPane>) => ({
-            ...makePane(defaultAgent),
-            ...pane,
-            chatKey: pane.chatKey ?? 0,
-            verifierEnabled: pane.verifierEnabled ?? false,
-            verifierChatKey: pane.verifierChatKey ?? 0,
-            verifierSessionId: pane.verifierSessionId ?? null,
-            verifierSplitPercent:
-              pane.verifierSplitPercent ?? DEFAULT_VERIFIER_SPLIT,
-            verifierLoopCount: pane.verifierLoopCount ?? 0,
-            verifierLastBuilderSessionId:
-              pane.verifierLastBuilderSessionId ?? null,
-          }))
+          .map((pane: Partial<WorkChatPane>) => {
+            const savedAgent = pane.agentSlug ?? defaultAgent
+            const routingMode =
+              pane.routingMode ??
+              (savedAgent === AUTO_AGENT_SLUG || savedAgent === 'chat'
+                ? 'auto'
+                : 'direct')
+            return {
+              ...makePane(defaultAgent),
+              ...pane,
+              agentSlug: routingMode === 'auto' ? AUTO_AGENT_SLUG : savedAgent,
+              routingMode,
+              preferredAgentSlug: pane.preferredAgentSlug ?? null,
+              explorePolicy: pane.explorePolicy ?? 'auto',
+              researchPolicy: pane.researchPolicy ?? 'auto',
+              chatKey: pane.chatKey ?? 0,
+              verifierEnabled: pane.verifierEnabled ?? false,
+              verifierChatKey: pane.verifierChatKey ?? 0,
+              verifierSessionId: pane.verifierSessionId ?? null,
+              verifierSplitPercent:
+                pane.verifierSplitPercent ?? DEFAULT_VERIFIER_SPLIT,
+              verifierLoopCount: pane.verifierLoopCount ?? 0,
+              verifierLastBuilderSessionId:
+                pane.verifierLastBuilderSessionId ?? null,
+            } satisfies WorkChatPane
+          })
       : []
     if (panes.length === 0) throw new Error('empty panes')
     return {
@@ -203,6 +228,11 @@ function layoutClass(layout: WorkChatLayout, count: number): string {
   return 'md:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]'
 }
 
+function parseRoutingPolicy(value: string | null): RoutingPolicy {
+  if (value === 'force' || value === 'avoid') return value
+  return 'auto'
+}
+
 function workContextForPane(
   pane: WorkChatPane,
   project: Project | null,
@@ -217,6 +247,14 @@ function workContextForPane(
 
   return {
     mode,
+    routing_mode: pane.routingMode,
+    preferred_agent_slug:
+      pane.routingMode === 'auto'
+        ? (pane.preferredAgentSlug ?? undefined)
+        : undefined,
+    explore_policy: pane.explorePolicy,
+    research_policy: pane.researchPolicy,
+    verifier_enabled: pane.verifierEnabled,
     project_id: pane.projectId ?? undefined,
     project_name: project?.name,
     task_id: pane.taskId ?? undefined,
@@ -238,6 +276,13 @@ function startPromptForPane(
     'Start work in this SummitFlow Work Chats pane.',
     'Use work_context as authoritative. Keep this parent chat as supervisor context. Spawn child work lanes for implementation when useful.',
   ]
+  if (pane.routingMode === 'auto') {
+    lines.push(
+      'Routing mode: Auto Jenny. Answer directly or delegate based on work_context routing preferences.',
+    )
+  } else {
+    lines.push(`Direct agent mode: ${pane.agentSlug}.`)
+  }
   if (pane.taskId) {
     lines.push(
       `Work task ${pane.taskId}${pane.taskTitle ? `: ${pane.taskTitle}` : ''}.`,
@@ -260,6 +305,7 @@ function verifierPromptForPane(
   pane: WorkChatPane,
   project: Project | null,
   parentMessages: ChatMessage[] = [],
+  childSessions: AgentHubSessionListItem[] = [],
 ): string {
   const parentSession = pane.sessionId ?? 'unknown'
   const recentMessages = parentMessages.slice(-8)
@@ -283,6 +329,20 @@ function verifierPromptForPane(
     lines.push(`Project ${project?.name ?? pane.projectId}.`)
   }
   if (pane.artifactSummary) lines.push(`Artifact: ${pane.artifactSummary}.`)
+  if (childSessions.length) {
+    lines.push('', 'Child agent sessions to verify as part of Jenny routing:')
+    childSessions.forEach((session) => {
+      const summary =
+        session.summary_oneliner ??
+        session.live_activity?.summary ??
+        session.summary_outcome ??
+        session.workstream_status ??
+        ''
+      lines.push(
+        `- ${session.agent_slug ?? 'agent'} | ${session.status} | ${session.id}${summary ? ` | ${summary}` : ''}`,
+      )
+    })
+  }
   if (recentMessages.length) {
     lines.push('', 'Parent turn excerpt:')
     recentMessages.forEach((message, index) => {
@@ -454,6 +514,20 @@ function PaneStatus({
   )
 }
 
+function agentName(agents: AgentHubAgent[], slug: string | null | undefined) {
+  if (!slug) return 'agent'
+  return agents.find((agent) => agent.slug === slug)?.name ?? slug
+}
+
+function autoAgentLabel(agents: AgentHubAgent[]) {
+  return `Auto: ${agentName(agents, AUTO_AGENT_SLUG)}`
+}
+
+function paneAgentLabel(pane: WorkChatPane, agents: AgentHubAgent[]) {
+  if (pane.routingMode === 'auto') return autoAgentLabel(agents)
+  return agentName(agents, pane.agentSlug)
+}
+
 function buildArtifactOptions({
   pane,
   feedbackItems,
@@ -524,6 +598,7 @@ function PaneChrome({
   onStart,
   onPause,
   onStop,
+  onOpenChildSession,
 }: {
   pane: WorkChatPane
   status: StreamStatus
@@ -542,6 +617,7 @@ function PaneChrome({
   onStart: () => void
   onPause: () => void
   onStop: () => void
+  onOpenChildSession: (session: AgentHubSessionListItem) => void
 }) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [feedbackItems, setFeedbackItems] = useState<FeedbackItem[]>([])
@@ -633,112 +709,135 @@ function PaneChrome({
   )
 
   return (
-    <div className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-800 bg-slate-900/85 px-1.5">
-      <PaneStatus status={status} error={error} />
+    <div className="shrink-0 border-b border-slate-800 bg-slate-900/85">
+      <div className="flex h-8 items-center gap-1 overflow-x-auto px-1.5">
+        <PaneStatus status={status} error={error} />
 
-      <label
-        title="Enable verifier"
-        className={cn(
-          'flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded border px-2 text-xs transition-colors',
-          pane.verifierEnabled
-            ? 'border-phosphor-500/40 bg-phosphor-500/10 text-phosphor-200'
-            : 'border-slate-800 bg-slate-950/60 text-slate-500 hover:border-slate-600 hover:text-slate-200',
-        )}
-      >
-        <input
-          type="checkbox"
-          checked={pane.verifierEnabled}
-          onChange={(event) =>
+        <SelectControl
+          value={pane.routingMode === 'auto' ? AUTO_AGENT_SLUG : pane.agentSlug}
+          onChange={(value) => {
+            const routingMode = value === AUTO_AGENT_SLUG ? 'auto' : 'direct'
             onPatch({
-              verifierEnabled: event.target.checked,
-              verifierLoopCount: event.target.checked
-                ? pane.verifierLoopCount
-                : 0,
+              routingMode,
+              agentSlug: routingMode === 'auto' ? AUTO_AGENT_SLUG : value,
+              sessionId: null,
+              chatKey: pane.chatKey + 1,
+              verifierSessionId: null,
+              verifierChatKey: pane.verifierChatKey + 1,
+              verifierLoopCount: 0,
+              verifierLastBuilderSessionId: null,
             })
-          }
-          className="h-3 w-3 accent-cyan-400"
-          aria-label="Enable verifier"
-        />
-        <ShieldCheck className="h-3.5 w-3.5" />
-      </label>
+          }}
+          label="Routing"
+          className="w-40"
+        >
+          <option value={AUTO_AGENT_SLUG}>{autoAgentLabel(agents)}</option>
+          {agents
+            .filter((agent) => agent.slug !== AUTO_AGENT_SLUG)
+            .map((agent) => (
+              <option key={agent.slug} value={agent.slug}>
+                {agent.name}
+              </option>
+            ))}
+        </SelectControl>
 
-      <SelectControl
-        value={pane.agentSlug}
-        onChange={(value) => onPatch({ agentSlug: value })}
-        label="Agent"
-        className="w-40"
-      >
-        {agents.map((agent) => (
-          <option key={agent.slug} value={agent.slug}>
-            {agent.name}
-          </option>
-        ))}
-      </SelectControl>
+        <SelectControl
+          value={pane.preferredAgentSlug ?? ''}
+          onChange={(value) => onPatch({ preferredAgentSlug: value || null })}
+          label="Prefer agent"
+          disabled={pane.routingMode !== 'auto'}
+          className="w-36"
+        >
+          <option value="">Prefer agent</option>
+          {agents
+            .filter((agent) => agent.slug !== AUTO_AGENT_SLUG)
+            .map((agent) => (
+              <option key={agent.slug} value={agent.slug}>
+                {agent.name}
+              </option>
+            ))}
+        </SelectControl>
 
-      <SelectControl
-        value={pane.projectId ?? ''}
-        onChange={(value) =>
-          onPatch({
-            projectId: value || null,
-            taskId: null,
-            taskTitle: null,
-            taskSummary: null,
-            feedbackId: null,
-            designId: null,
-            artifactSummary: null,
-            sessionId: null,
-            chatKey: pane.chatKey + 1,
-            verifierSessionId: null,
-            verifierChatKey: pane.verifierChatKey + 1,
-            verifierLoopCount: 0,
-            verifierLastBuilderSessionId: null,
-          })
-        }
-        label="Project"
-        className="w-40"
-      >
-        <option value="">General</option>
-        {projects.map((project) => (
-          <option key={project.id} value={project.id}>
-            {project.name}
-          </option>
-        ))}
-      </SelectControl>
+        <label
+          title="Explore first"
+          className={cn(
+            'flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded border px-2 text-xs transition-colors',
+            pane.explorePolicy === 'force'
+              ? 'border-phosphor-500/40 bg-phosphor-500/10 text-phosphor-200'
+              : 'border-slate-800 bg-slate-950/60 text-slate-500 hover:border-slate-600 hover:text-slate-200',
+          )}
+        >
+          <input
+            type="checkbox"
+            checked={pane.explorePolicy === 'force'}
+            onChange={(event) =>
+              onPatch({
+                explorePolicy: event.target.checked ? 'force' : 'auto',
+              })
+            }
+            className="h-3 w-3 accent-cyan-400"
+            aria-label="Explore first"
+          />
+          <Workflow className="h-3.5 w-3.5" />
+        </label>
 
-      <SelectControl
-        value={pane.taskId ?? ''}
-        onChange={(value) => {
-          const task = displayedTasks.find((item) => item.id === value)
-          onPatch({
-            taskId: task?.id ?? null,
-            taskTitle: task?.title ?? null,
-            taskSummary: task?.description ?? null,
-            sessionId: null,
-            chatKey: pane.chatKey + 1,
-            verifierSessionId: null,
-            verifierChatKey: pane.verifierChatKey + 1,
-            verifierLoopCount: 0,
-            verifierLastBuilderSessionId: null,
-          })
-        }}
-        label="Task"
-        disabled={!pane.projectId}
-        className="w-56"
-      >
-        <option value="">No task</option>
-        {displayedTasks.map((task) => (
-          <option key={task.id} value={task.id}>
-            {task.id} - {task.title}
-          </option>
-        ))}
-      </SelectControl>
+        <label
+          title="Research first"
+          className={cn(
+            'flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded border px-2 text-xs transition-colors',
+            pane.researchPolicy === 'force'
+              ? 'border-phosphor-500/40 bg-phosphor-500/10 text-phosphor-200'
+              : 'border-slate-800 bg-slate-950/60 text-slate-500 hover:border-slate-600 hover:text-slate-200',
+          )}
+        >
+          <input
+            type="checkbox"
+            checked={pane.researchPolicy === 'force'}
+            onChange={(event) =>
+              onPatch({
+                researchPolicy: event.target.checked ? 'force' : 'auto',
+              })
+            }
+            className="h-3 w-3 accent-cyan-400"
+            aria-label="Research first"
+          />
+          <Globe2 className="h-3.5 w-3.5" />
+        </label>
 
-      <SelectControl
-        value={selectedArtifact}
-        onChange={(value) => {
-          const artifact = artifacts.find((item) => item.value === value)
-          if (!artifact) {
+        <label
+          title="Enable verifier"
+          className={cn(
+            'flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded border px-2 text-xs transition-colors',
+            pane.verifierEnabled
+              ? 'border-phosphor-500/40 bg-phosphor-500/10 text-phosphor-200'
+              : 'border-slate-800 bg-slate-950/60 text-slate-500 hover:border-slate-600 hover:text-slate-200',
+          )}
+        >
+          <input
+            type="checkbox"
+            checked={pane.verifierEnabled}
+            onChange={(event) =>
+              onPatch({
+                verifierEnabled: event.target.checked,
+                verifierLoopCount: event.target.checked
+                  ? pane.verifierLoopCount
+                  : 0,
+              })
+            }
+            className="h-3 w-3 accent-cyan-400"
+            aria-label="Enable verifier"
+          />
+          <ShieldCheck className="h-3.5 w-3.5" />
+        </label>
+
+        <SelectControl
+          value={pane.projectId ?? ''}
+          onChange={(value) =>
             onPatch({
+              projectId: value || null,
+              taskId: null,
+              taskTitle: null,
+              taskSummary: null,
               feedbackId: null,
               designId: null,
               artifactSummary: null,
@@ -749,157 +848,256 @@ function PaneChrome({
               verifierLoopCount: 0,
               verifierLastBuilderSessionId: null,
             })
-            return
           }
-          onPatch({
-            feedbackId: artifact.kind === 'feedback' ? artifact.id : null,
-            designId: artifact.kind === 'design' ? artifact.id : null,
-            artifactSummary: artifact.label,
-            taskId: artifact.linkedTaskId ?? pane.taskId,
-            sessionId: null,
-            chatKey: pane.chatKey + 1,
-            verifierSessionId: null,
-            verifierChatKey: pane.verifierChatKey + 1,
-            verifierLoopCount: 0,
-            verifierLastBuilderSessionId: null,
-          })
-        }}
-        label="Feedback or design"
-        disabled={!pane.projectId}
-        className="w-48"
-      >
-        <option value="">No artifact</option>
-        {artifacts.map((artifact) => (
-          <option key={artifact.value} value={artifact.value}>
-            {artifact.kind} - {artifact.label}
-          </option>
-        ))}
-      </SelectControl>
-
-      <SelectControl
-        value={pane.sessionId ?? ''}
-        onChange={(value) =>
-          onPatch({
-            sessionId: value || null,
-            verifierSessionId: null,
-            verifierChatKey: pane.verifierChatKey + 1,
-            verifierLoopCount: 0,
-            verifierLastBuilderSessionId: null,
-          })
-        }
-        label="Session"
-        className="w-36"
-      >
-        <option value="">New session</option>
-        {sessions.map((session) => (
-          <option key={session.id} value={session.id}>
-            {session.id.slice(0, 8)} - {session.agent_slug ?? 'agent'}
-          </option>
-        ))}
-      </SelectControl>
-
-      <div className="flex-1" />
-
-      <PaneBadge title="Transport: Web via SummitFlow">
-        <Globe2 className="h-3.5 w-3.5" />
-      </PaneBadge>
-      {pane.sessionId ? (
-        <PaneBadge title={`Session ${pane.sessionId}`} active>
-          <Radio className="h-3.5 w-3.5" />
-        </PaneBadge>
-      ) : null}
-      {pane.taskId ? (
-        <PaneBadge title={`Task ${pane.taskId}`} active>
-          <ClipboardList className="h-3.5 w-3.5" />
-        </PaneBadge>
-      ) : null}
-      {pane.feedbackId || pane.designId ? (
-        <PaneBadge title={pane.artifactSummary ?? 'Artifact'} active>
-          <Layers3 className="h-3.5 w-3.5" />
-        </PaneBadge>
-      ) : null}
-      {childSessions.length ? (
-        <PaneBadge title={`${childSessions.length} child lanes`} active>
-          <Workflow className="h-3.5 w-3.5" />
-          <span className="ml-1">{childSessions.length}</span>
-        </PaneBadge>
-      ) : null}
-      {pane.verifierEnabled ? (
-        <PaneBadge
-          title={
-            verifierError ??
-            `Verifier ${verifierStatus}${pane.verifierSessionId ? ` ${pane.verifierSessionId}` : ''}`
-          }
-          active
+          label="Project"
+          className="w-40"
         >
-          {verifierError || verifierStatus === 'error' ? (
-            <AlertTriangle className="h-3.5 w-3.5 text-rose-400" />
-          ) : verifierStatus === 'streaming' ||
-            verifierStatus === 'connecting' ? (
-            <ActivityIndicator state={verifierStatus} className="scale-75" />
-          ) : (
-            <ShieldCheck className="h-3.5 w-3.5" />
-          )}
-        </PaneBadge>
-      ) : null}
-      {blockers.length ? (
-        <PaneBadge title={`${blockers.length} action requests`} active>
-          <MessageCircleWarning className="h-3.5 w-3.5" />
-          <span className="ml-1">{blockers.length}</span>
-        </PaneBadge>
-      ) : null}
-      {hasTelegram ? (
-        <PaneBadge title="Telegram linked" active>
-          <Send className="h-3.5 w-3.5" />
-        </PaneBadge>
-      ) : null}
+          <option value="">General</option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </SelectControl>
 
-      <IconButton title="New chat" onClick={onNewChat}>
-        <MessageSquarePlus className="h-3.5 w-3.5" />
-      </IconButton>
-      <IconButton title="Split pane" onClick={onSplit}>
-        <Columns2 className="h-3.5 w-3.5" />
-      </IconButton>
-      <IconButton
-        title="Detach"
-        onClick={() => {
-          const params = new URLSearchParams()
-          if (pane.sessionId) params.set('session_id', pane.sessionId)
-          if (pane.projectId) params.set('project_id', pane.projectId)
-          if (pane.taskId) params.set('task_id', pane.taskId)
-          if (pane.taskTitle) params.set('task_title', pane.taskTitle)
-          if (pane.verifierEnabled) params.set('verifier', '1')
-          if (pane.verifierSessionId) {
-            params.set('verifier_session_id', pane.verifierSessionId)
+        <SelectControl
+          value={pane.taskId ?? ''}
+          onChange={(value) => {
+            const task = displayedTasks.find((item) => item.id === value)
+            onPatch({
+              taskId: task?.id ?? null,
+              taskTitle: task?.title ?? null,
+              taskSummary: task?.description ?? null,
+              sessionId: null,
+              chatKey: pane.chatKey + 1,
+              verifierSessionId: null,
+              verifierChatKey: pane.verifierChatKey + 1,
+              verifierLoopCount: 0,
+              verifierLastBuilderSessionId: null,
+            })
+          }}
+          label="Task"
+          disabled={!pane.projectId}
+          className="w-56"
+        >
+          <option value="">No task</option>
+          {displayedTasks.map((task) => (
+            <option key={task.id} value={task.id}>
+              {task.id} - {task.title}
+            </option>
+          ))}
+        </SelectControl>
+
+        <SelectControl
+          value={selectedArtifact}
+          onChange={(value) => {
+            const artifact = artifacts.find((item) => item.value === value)
+            if (!artifact) {
+              onPatch({
+                feedbackId: null,
+                designId: null,
+                artifactSummary: null,
+                sessionId: null,
+                chatKey: pane.chatKey + 1,
+                verifierSessionId: null,
+                verifierChatKey: pane.verifierChatKey + 1,
+                verifierLoopCount: 0,
+                verifierLastBuilderSessionId: null,
+              })
+              return
+            }
+            onPatch({
+              feedbackId: artifact.kind === 'feedback' ? artifact.id : null,
+              designId: artifact.kind === 'design' ? artifact.id : null,
+              artifactSummary: artifact.label,
+              taskId: artifact.linkedTaskId ?? pane.taskId,
+              sessionId: null,
+              chatKey: pane.chatKey + 1,
+              verifierSessionId: null,
+              verifierChatKey: pane.verifierChatKey + 1,
+              verifierLoopCount: 0,
+              verifierLastBuilderSessionId: null,
+            })
+          }}
+          label="Feedback or design"
+          disabled={!pane.projectId}
+          className="w-48"
+        >
+          <option value="">No artifact</option>
+          {artifacts.map((artifact) => (
+            <option key={artifact.value} value={artifact.value}>
+              {artifact.kind} - {artifact.label}
+            </option>
+          ))}
+        </SelectControl>
+
+        <SelectControl
+          value={pane.sessionId ?? ''}
+          onChange={(value) =>
+            onPatch({
+              sessionId: value || null,
+              verifierSessionId: null,
+              verifierChatKey: pane.verifierChatKey + 1,
+              verifierLoopCount: 0,
+              verifierLastBuilderSessionId: null,
+            })
           }
-          window.open(`/work-chats?${params.toString()}`, '_blank')
-        }}
-      >
-        <Maximize2 className="h-3.5 w-3.5" />
-      </IconButton>
-      <IconButton
-        title={pane.sessionId ? 'Resume work' : 'Start work'}
-        onClick={onStart}
-      >
-        <Play className="h-3.5 w-3.5" />
-      </IconButton>
-      <IconButton
-        title="Pause"
-        onClick={onPause}
-        disabled={!pane.sessionId && !pane.verifierSessionId}
-      >
-        <Pause className="h-3.5 w-3.5" />
-      </IconButton>
-      <IconButton
-        title="Stop"
-        onClick={onStop}
-        disabled={!pane.sessionId && !pane.verifierSessionId}
-      >
-        <StopCircle className="h-3.5 w-3.5" />
-      </IconButton>
-      <IconButton title="Close pane" onClick={onClose}>
-        <X className="h-3.5 w-3.5" />
-      </IconButton>
+          label="Session"
+          className="w-36"
+        >
+          <option value="">New session</option>
+          {sessions.map((session) => (
+            <option key={session.id} value={session.id}>
+              {session.id.slice(0, 8)} - {session.agent_slug ?? 'agent'}
+            </option>
+          ))}
+        </SelectControl>
+
+        <div className="flex-1" />
+
+        <PaneBadge title="Transport: Web via SummitFlow">
+          <Globe2 className="h-3.5 w-3.5" />
+        </PaneBadge>
+        {pane.sessionId ? (
+          <PaneBadge title={`Session ${pane.sessionId}`} active>
+            <Radio className="h-3.5 w-3.5" />
+          </PaneBadge>
+        ) : null}
+        {pane.taskId ? (
+          <PaneBadge title={`Task ${pane.taskId}`} active>
+            <ClipboardList className="h-3.5 w-3.5" />
+          </PaneBadge>
+        ) : null}
+        {pane.feedbackId || pane.designId ? (
+          <PaneBadge title={pane.artifactSummary ?? 'Artifact'} active>
+            <Layers3 className="h-3.5 w-3.5" />
+          </PaneBadge>
+        ) : null}
+        {childSessions.length ? (
+          <PaneBadge title={`${childSessions.length} child lanes`} active>
+            <Workflow className="h-3.5 w-3.5" />
+            <span className="ml-1">{childSessions.length}</span>
+          </PaneBadge>
+        ) : null}
+        {pane.verifierEnabled ? (
+          <PaneBadge
+            title={
+              verifierError ??
+              `Verifier ${verifierStatus}${pane.verifierSessionId ? ` ${pane.verifierSessionId}` : ''}`
+            }
+            active
+          >
+            {verifierError || verifierStatus === 'error' ? (
+              <AlertTriangle className="h-3.5 w-3.5 text-rose-400" />
+            ) : verifierStatus === 'streaming' ||
+              verifierStatus === 'connecting' ? (
+              <ActivityIndicator state={verifierStatus} className="scale-75" />
+            ) : (
+              <ShieldCheck className="h-3.5 w-3.5" />
+            )}
+          </PaneBadge>
+        ) : null}
+        {blockers.length ? (
+          <PaneBadge title={`${blockers.length} action requests`} active>
+            <MessageCircleWarning className="h-3.5 w-3.5" />
+            <span className="ml-1">{blockers.length}</span>
+          </PaneBadge>
+        ) : null}
+        {hasTelegram ? (
+          <PaneBadge title="Telegram linked" active>
+            <Send className="h-3.5 w-3.5" />
+          </PaneBadge>
+        ) : null}
+
+        <IconButton title="New chat" onClick={onNewChat}>
+          <MessageSquarePlus className="h-3.5 w-3.5" />
+        </IconButton>
+        <IconButton title="Split pane" onClick={onSplit}>
+          <Columns2 className="h-3.5 w-3.5" />
+        </IconButton>
+        <IconButton
+          title="Detach"
+          onClick={() => {
+            const params = new URLSearchParams()
+            if (pane.sessionId) params.set('session_id', pane.sessionId)
+            params.set('routing_mode', pane.routingMode)
+            if (pane.routingMode === 'direct')
+              params.set('agent_slug', pane.agentSlug)
+            if (pane.preferredAgentSlug) {
+              params.set('preferred_agent_slug', pane.preferredAgentSlug)
+            }
+            params.set('explore_policy', pane.explorePolicy)
+            params.set('research_policy', pane.researchPolicy)
+            if (pane.projectId) params.set('project_id', pane.projectId)
+            if (pane.taskId) params.set('task_id', pane.taskId)
+            if (pane.taskTitle) params.set('task_title', pane.taskTitle)
+            if (pane.verifierEnabled) params.set('verifier', '1')
+            if (pane.verifierSessionId) {
+              params.set('verifier_session_id', pane.verifierSessionId)
+            }
+            window.open(`/work-chats?${params.toString()}`, '_blank')
+          }}
+        >
+          <Maximize2 className="h-3.5 w-3.5" />
+        </IconButton>
+        <IconButton
+          title={pane.sessionId ? 'Resume work' : 'Start work'}
+          onClick={onStart}
+        >
+          <Play className="h-3.5 w-3.5" />
+        </IconButton>
+        <IconButton
+          title="Pause"
+          onClick={onPause}
+          disabled={!pane.sessionId && !pane.verifierSessionId}
+        >
+          <Pause className="h-3.5 w-3.5" />
+        </IconButton>
+        <IconButton
+          title="Stop"
+          onClick={onStop}
+          disabled={!pane.sessionId && !pane.verifierSessionId}
+        >
+          <StopCircle className="h-3.5 w-3.5" />
+        </IconButton>
+        <IconButton title="Close pane" onClick={onClose}>
+          <X className="h-3.5 w-3.5" />
+        </IconButton>
+      </div>
+      {childSessions.length ? (
+        <div className="flex h-8 items-center gap-1 overflow-x-auto border-t border-slate-800/70 px-1.5">
+          {childSessions.map((session) => {
+            const summary =
+              session.summary_oneliner ??
+              session.live_activity?.summary ??
+              session.summary_outcome ??
+              session.workstream_status ??
+              ''
+            return (
+              <button
+                key={session.id}
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onOpenChildSession(session)
+                }}
+                title={summary || session.id}
+                className="flex h-6 max-w-64 shrink-0 items-center gap-1 rounded border border-slate-800 bg-slate-950/60 px-2 text-[10px] text-slate-300 hover:border-phosphor-500/50 hover:text-phosphor-200"
+              >
+                <Workflow className="h-3 w-3 shrink-0 text-phosphor-300" />
+                <span className="font-medium">
+                  {agentName(agents, session.agent_slug)}
+                </span>
+                <span className="text-slate-500">{session.status}</span>
+                <span className="font-mono text-slate-500">
+                  {session.id.slice(0, 8)}
+                </span>
+                {summary ? <span className="truncate">{summary}</span> : null}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -947,6 +1145,15 @@ function WorkChatBody({
   const lastNotifiedSessionId = useRef<string | null>(null)
   const lastAutoSendKey = useRef<number | null>(null)
   const previousStatus = useRef<StreamStatus>('idle')
+  const turnInFlight = useRef(false)
+
+  const sendTurn = useCallback(
+    (content: string, targetModels?: string[]) => {
+      turnInFlight.current = true
+      sendMessage(content, targetModels)
+    },
+    [sendMessage],
+  )
 
   useEffect(() => {
     onRuntimeChange({ status, error })
@@ -958,12 +1165,12 @@ function WorkChatBody({
 
   useEffect(() => {
     onControllerReady?.({
-      sendMessage: (content: string) => sendMessage(content),
+      sendMessage: (content: string) => sendTurn(content),
       cancelStream,
       sessionId: currentSessionId,
       status,
     })
-  }, [cancelStream, currentSessionId, onControllerReady, sendMessage, status])
+  }, [cancelStream, currentSessionId, onControllerReady, sendTurn, status])
 
   useEffect(() => {
     const wasActive =
@@ -971,8 +1178,12 @@ function WorkChatBody({
       previousStatus.current === 'connecting' ||
       previousStatus.current === 'reconnecting' ||
       previousStatus.current === 'cancelling'
-    if (wasActive && status === 'idle') {
+    if (wasActive && status === 'idle' && turnInFlight.current) {
+      turnInFlight.current = false
       onTurnFinished?.()
+    }
+    if (status === 'error') {
+      turnInFlight.current = false
     }
     previousStatus.current = status
   }, [onTurnFinished, status])
@@ -992,8 +1203,8 @@ function WorkChatBody({
     if (!startCommand || lastAutoSendKey.current === startCommand.key) return
     if (status !== 'idle' && status !== 'error') return
     lastAutoSendKey.current = startCommand.key
-    sendMessage(startCommand.prompt)
-  }, [sendMessage, startCommand, status])
+    sendTurn(startCommand.prompt)
+  }, [sendTurn, startCommand, status])
 
   const isStreaming =
     status === 'streaming' ||
@@ -1018,7 +1229,7 @@ function WorkChatBody({
       </div>
       <div className="shrink-0 border-t border-slate-800 bg-slate-950/85">
         <MessageInput
-          onSend={(message, targetModels) => sendMessage(message, targetModels)}
+          onSend={(message, targetModels) => sendTurn(message, targetModels)}
           onCancel={cancelStream}
           status={status}
           compact
@@ -1054,11 +1265,23 @@ function extractReportSection(content: string, heading: string): string {
 function parseVerifierReport(content: string): {
   status: string | null
   confidence: string | null
+  atomicClaimCount: number | null
+  atomicPassCount: number | null
+  atomicFailCount: number | null
   feedback: string
+  excerpt: string
 } {
   const reportIndex = content.search(/^##\s+Report\s*$/im)
   if (reportIndex === -1) {
-    return { status: null, confidence: null, feedback: '' }
+    return {
+      status: null,
+      confidence: null,
+      atomicClaimCount: null,
+      atomicPassCount: null,
+      atomicFailCount: null,
+      feedback: '',
+      excerpt: '',
+    }
   }
   const report = content.slice(reportIndex)
   const status = report.match(/^\s*STATUS\s*:\s*([a-z_ -]+)/im)?.[1]?.trim()
@@ -1067,7 +1290,31 @@ function parseVerifierReport(content: string): {
     ?.trim()
     .toUpperCase()
   const feedback = extractReportSection(report, 'What feedback did you give?')
-  return { status: status ?? null, confidence: confidence ?? null, feedback }
+  const parseCount = (...patterns: RegExp[]) => {
+    for (const pattern of patterns) {
+      const match = report.match(pattern)
+      if (match?.[1]) return Number.parseInt(match[1], 10)
+    }
+    return null
+  }
+  return {
+    status: status ?? null,
+    confidence: confidence ?? null,
+    atomicClaimCount: parseCount(
+      /^\s*ATOMIC[_\s-]*CLAIMS?\s*:\s*(\d+)/im,
+      /^\s*CLAIMS?\s*:\s*(\d+)/im,
+    ),
+    atomicPassCount: parseCount(
+      /^\s*ATOMIC[_\s-]*PASS(?:ED)?\s*:\s*(\d+)/im,
+      /^\s*PASS(?:ED)?\s*:\s*(\d+)/im,
+    ),
+    atomicFailCount: parseCount(
+      /^\s*ATOMIC[_\s-]*FAIL(?:ED)?\s*:\s*(\d+)/im,
+      /^\s*FAIL(?:ED)?\s*:\s*(\d+)/im,
+    ),
+    feedback,
+    excerpt: report.slice(0, 5000),
+  }
 }
 
 function hasVerifierFeedback(report: {
@@ -1144,6 +1391,7 @@ function BuilderVerifierSplit({
   verifierRuntime,
   builderSessionId,
   verifierSessionId,
+  builderLabel,
   onPatch,
   builder,
   verifier,
@@ -1153,6 +1401,7 @@ function BuilderVerifierSplit({
   verifierRuntime: { status: StreamStatus; error: string | null }
   builderSessionId: string | null
   verifierSessionId: string | null
+  builderLabel: string
   onPatch: (patch: Partial<WorkChatPane>) => void
   builder: React.ReactNode
   verifier: React.ReactNode
@@ -1210,7 +1459,7 @@ function BuilderVerifierSplit({
         style={{ flexBasis: `${split}%` }}
       >
         <ChatLane
-          label="Builder"
+          label={builderLabel}
           kind="builder"
           collapsed={builderCollapsed}
           status={builderRuntime.status}
@@ -1305,6 +1554,7 @@ function WorkChatPaneView({
   onStart,
   onPause,
   onStop,
+  onOpenChildSession,
 }: {
   pane: WorkChatPane
   active: boolean
@@ -1325,6 +1575,7 @@ function WorkChatPaneView({
   onStart: () => void
   onPause: () => void
   onStop: () => void
+  onOpenChildSession: (session: AgentHubSessionListItem) => void
 }) {
   const [builderRuntime, setBuilderRuntime] = useState<{
     status: StreamStatus
@@ -1502,6 +1753,22 @@ function WorkChatPaneView({
     if (handledVerifierReportKey.current === reportKey) return
     handledVerifierReportKey.current = reportKey
     const report = parseVerifierReport(content)
+    if (pane.sessionId && pane.verifierSessionId && report.status) {
+      void submitVerifierOutcome({
+        parent_session_id: pane.sessionId,
+        verifier_session_id: pane.verifierSessionId,
+        builder_session_id: pane.sessionId,
+        project_id: pane.projectId ?? GENERAL_PROJECT_ID,
+        task_id: pane.taskId,
+        status: report.status,
+        confidence: report.confidence,
+        atomic_claim_count: report.atomicClaimCount,
+        atomic_pass_count: report.atomicPassCount,
+        atomic_fail_count: report.atomicFailCount,
+        feedback_loop_count: pane.verifierLoopCount,
+        report_excerpt: report.excerpt,
+      }).catch(() => null)
+    }
     if (!hasVerifierFeedback(report)) return
     if (pane.verifierLoopCount >= VERIFIER_MAX_LOOPS) return
     const feedback = report.feedback.trim()
@@ -1510,29 +1777,17 @@ function WorkChatPaneView({
     verifierFeedbackInFlight.current = true
     onPatch({ verifierLoopCount: pane.verifierLoopCount + 1 })
     controller.sendMessage(feedback)
-  }, [onPatch, pane.verifierLoopCount, pane.verifierSessionId])
-
-  useEffect(() => {
-    if (!pane.verifierEnabled || !pane.sessionId) return
-    const key = `${pane.sessionId}:${pane.verifierChatKey}`
-    if (pane.verifierLastBuilderSessionId === pane.sessionId) return
-    onPatch({
-      verifierLoopCount: 0,
-      verifierLastBuilderSessionId: pane.sessionId,
-    })
-    setVerifierTrigger((current) => {
-      if (verifierRunKey.current === key) return current
-      return current + 1
-    })
   }, [
     onPatch,
+    pane.projectId,
     pane.sessionId,
-    pane.verifierChatKey,
-    pane.verifierEnabled,
-    pane.verifierLastBuilderSessionId,
+    pane.taskId,
+    pane.verifierLoopCount,
+    pane.verifierSessionId,
   ])
 
   useEffect(() => {
+    if (verifierTrigger <= 0) return
     if (!pane.verifierEnabled || !pane.sessionId) return
     if (
       verifierRuntime.status !== 'idle' &&
@@ -1545,9 +1800,15 @@ function WorkChatPaneView({
     verifierRunKey.current = key
     setVerifierStartCommand({
       key: Date.now(),
-      prompt: verifierPromptForPane(pane, project, builderMessagesRef.current),
+      prompt: verifierPromptForPane(
+        pane,
+        project,
+        builderMessagesRef.current,
+        childSessions,
+      ),
     })
   }, [
+    childSessions,
     pane,
     pane.sessionId,
     pane.verifierChatKey,
@@ -1591,6 +1852,7 @@ function WorkChatPaneView({
         onStart={onStart}
         onPause={onPause}
         onStop={onStop}
+        onOpenChildSession={onOpenChildSession}
       />
       <div className="min-h-0 flex-1">
         {pane.verifierEnabled ? (
@@ -1600,10 +1862,15 @@ function WorkChatPaneView({
             verifierRuntime={verifierRuntime}
             builderSessionId={pane.sessionId}
             verifierSessionId={pane.verifierSessionId}
+            builderLabel={
+              pane.agentSlug === AUTO_AGENT_SLUG
+                ? agentName(agents, AUTO_AGENT_SLUG)
+                : 'Builder'
+            }
             onPatch={onPatch}
             builder={
               <WorkChatBody
-                key={`${pane.id}:builder:${pane.chatKey}:${pane.sessionId ?? 'new'}:${pane.agentSlug}`}
+                key={`${pane.id}:builder:${pane.chatKey}:${pane.agentSlug}`}
                 pane={pane}
                 apiConfig={apiConfig}
                 workingDir={project?.root_path ?? undefined}
@@ -1621,7 +1888,7 @@ function WorkChatPaneView({
             }
             verifier={
               <WorkChatBody
-                key={`${pane.id}:verifier:${pane.verifierChatKey}:${pane.verifierSessionId ?? 'new'}:${pane.sessionId ?? 'no-parent'}`}
+                key={`${pane.id}:verifier:${pane.verifierChatKey}`}
                 pane={verifierPane}
                 apiConfig={verifierApiConfig}
                 workingDir={project?.root_path ?? undefined}
@@ -1637,7 +1904,7 @@ function WorkChatPaneView({
           />
         ) : (
           <WorkChatBody
-            key={`${pane.id}:builder:${pane.chatKey}:${pane.sessionId ?? 'new'}:${pane.agentSlug}`}
+            key={`${pane.id}:builder:${pane.chatKey}:${pane.agentSlug}`}
             pane={pane}
             apiConfig={apiConfig}
             workingDir={project?.root_path ?? undefined}
@@ -1662,8 +1929,18 @@ function paneFromSearchParams(
   searchParams: URLSearchParams,
   defaultAgent: string,
 ): WorkChatPane {
+  const routingMode =
+    searchParams.get('routing_mode') === 'direct' ? 'direct' : 'auto'
+  const agentSlug =
+    routingMode === 'direct'
+      ? searchParams.get('agent_slug') || defaultAgent
+      : AUTO_AGENT_SLUG
   return {
-    ...makePane(searchParams.get('agent_slug') || defaultAgent),
+    ...makePane(agentSlug),
+    routingMode,
+    preferredAgentSlug: searchParams.get('preferred_agent_slug'),
+    explorePolicy: parseRoutingPolicy(searchParams.get('explore_policy')),
+    researchPolicy: parseRoutingPolicy(searchParams.get('research_policy')),
     sessionId: searchParams.get('session_id'),
     projectId: searchParams.get('project_id'),
     taskId: searchParams.get('task_id'),
@@ -1698,7 +1975,7 @@ function WorkChatsContent() {
   const [paneActionError, setPaneActionError] = useState<string | null>(null)
   const [appliedQueryString, setAppliedQueryString] = useState('')
 
-  const defaultAgent = agents[0]?.slug ?? 'chat'
+  const defaultAgent = AUTO_AGENT_SLUG
 
   useEffect(() => {
     if (initializedRef.current) return
@@ -1712,9 +1989,11 @@ function WorkChatsContent() {
   useEffect(() => {
     fetchAgentHubAgents()
       .then((items) =>
-        setAgents(items.length ? items : [{ slug: 'chat', name: 'Chat' }]),
+        setAgents(
+          items.length ? items : [{ slug: AUTO_AGENT_SLUG, name: 'Jenny' }],
+        ),
       )
-      .catch(() => setAgents([{ slug: 'chat', name: 'Chat' }]))
+      .catch(() => setAgents([{ slug: AUTO_AGENT_SLUG, name: 'Jenny' }]))
     fetchProjects()
       .then(setProjects)
       .catch(() => setProjects([]))
@@ -1803,15 +2082,32 @@ function WorkChatsContent() {
       return
     }
 
-    fetchAgentHubSessions({
-      parent_session_id: activePane.sessionId,
-      page_size: 50,
-    })
-      .then(setChildSessions)
-      .catch(() => setChildSessions([]))
-    fetchActionRequests({ session_id: activePane.sessionId })
-      .then(setActionRequests)
-      .catch(() => setActionRequests([]))
+    let cancelled = false
+    const load = () => {
+      fetchAgentHubSessions({
+        parent_session_id: activePane.sessionId,
+        page_size: 50,
+      })
+        .then((items) => {
+          if (!cancelled) setChildSessions(items)
+        })
+        .catch(() => {
+          if (!cancelled) setChildSessions([])
+        })
+      fetchActionRequests({ session_id: activePane.sessionId })
+        .then((items) => {
+          if (!cancelled) setActionRequests(items)
+        })
+        .catch(() => {
+          if (!cancelled) setActionRequests([])
+        })
+    }
+    load()
+    const timer = window.setInterval(load, 5000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
   }, [activePane?.sessionId])
 
   const visiblePanes = useMemo(
@@ -1904,6 +2200,36 @@ function WorkChatsContent() {
     }
   }
 
+  const openChildSession = (
+    sourcePane: WorkChatPane,
+    session: AgentHubSessionListItem,
+  ) => {
+    const existing = panes.find((pane) => pane.sessionId === session.id)
+    if (existing) {
+      setActivePaneId(existing.id)
+      return
+    }
+    if (panes.length >= MAX_PANES) {
+      setPaneActionError('Max panes reached')
+      return
+    }
+    const agentSlug = session.agent_slug ?? defaultAgent
+    const next = {
+      ...makePane(agentSlug),
+      sessionId: session.id,
+      projectId: session.project_id ?? sourcePane.projectId,
+      taskId: sourcePane.taskId,
+      taskTitle: sourcePane.taskTitle,
+      taskSummary: sourcePane.taskSummary,
+      feedbackId: sourcePane.feedbackId,
+      designId: sourcePane.designId,
+      artifactSummary: sourcePane.artifactSummary,
+      routingMode: agentSlug === AUTO_AGENT_SLUG ? 'auto' : 'direct',
+    } satisfies WorkChatPane
+    setPanes((current) => [...current, next])
+    setActivePaneId(next.id)
+  }
+
   if (!panes.length) {
     return (
       <div className="flex h-[calc(100dvh-66px)] items-center justify-center text-sm text-slate-500 lg:h-[calc(100dvh-70px)]">
@@ -1926,7 +2252,7 @@ function WorkChatsContent() {
         >
           {panes.map((pane, index) => (
             <option key={pane.id} value={pane.id}>
-              Pane {index + 1} - {pane.agentSlug}
+              Pane {index + 1} - {paneAgentLabel(pane, agents)}
             </option>
           ))}
         </SelectControl>
@@ -2008,6 +2334,7 @@ function WorkChatsContent() {
               onStart={() => queueStart(pane, project)}
               onPause={() => void pausePane(pane)}
               onStop={() => void stopPane(pane)}
+              onOpenChildSession={(session) => openChildSession(pane, session)}
             />
           )
         })}

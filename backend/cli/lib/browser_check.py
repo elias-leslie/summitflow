@@ -8,7 +8,12 @@ import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from .browser_support import json_from_agent_eval, suffixed
+from .browser_support import (
+    browser_page_target_ids,
+    close_browser_targets,
+    json_from_agent_eval,
+    suffixed,
+)
 
 RunAgent = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -119,6 +124,7 @@ def run_browser_check(
     if not ws:
         output_error(f"Unable to resolve Chrome CDP endpoint on {host}:{port}")
         return 1
+    baseline_targets = browser_page_target_ids(host, port)
 
     command_warnings: list[str] = []
     error_result = subprocess.CompletedProcess([], 0, stdout="{}", stderr="")
@@ -199,6 +205,9 @@ def run_browser_check(
         if warning := _agent_failure("close", close_result, summary_hint):
             command_warnings.append(warning)
         run_browser_reaper()
+        remaining_targets = browser_page_target_ids(host, port)
+        if baseline_targets is not None and remaining_targets is not None:
+            close_browser_targets(host, port, remaining_targets - baseline_targets)
 
     detail_lines = [
         f"Screenshot: {screenshot_path}",

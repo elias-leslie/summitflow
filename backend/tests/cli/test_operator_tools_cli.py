@@ -780,6 +780,7 @@ def test_browser_open_uses_repo_scoped_session(monkeypatch) -> None:
         patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
         patch("cli.commands.browser._default_browser_session", return_value="st-repo-1234"),
         patch("cli.commands.browser._run_browser_reaper"),
+        patch("cli.commands.browser._close_blank_browser_targets") as close_blank,
         patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0)) as run_agent,
     ):
         result = runner.invoke(main_app, ["browser", "open", "https://example.com"])
@@ -799,6 +800,7 @@ def test_browser_open_uses_repo_scoped_session(monkeypatch) -> None:
         "open",
         "https://example.com",
     ]
+    close_blank.assert_not_called()
 
 
 def test_browser_open_resolves_project_target(monkeypatch) -> None:
@@ -831,6 +833,7 @@ def test_browser_open_preserves_explicit_session() -> None:
         patch("cli.commands.browser._host_for_engine", return_value="browser"),
         patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
         patch("cli.commands.browser._run_browser_reaper"),
+        patch("cli.commands.browser._close_blank_browser_targets") as close_blank,
         patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0)) as run_agent,
     ):
         result = runner.invoke(main_app, ["browser", "--session", "operator", "open", "https://example.com"])
@@ -850,6 +853,23 @@ def test_browser_open_preserves_explicit_session() -> None:
         "open",
         "https://example.com",
     ]
+    close_blank.assert_not_called()
+
+
+def test_browser_snapshot_prunes_remote_blank_targets(tmp_path: Path) -> None:
+    with (
+        patch("cli.commands.browser.current_root", return_value=tmp_path),
+        patch("cli.commands.browser._select_port", return_value=9222),
+        patch("cli.commands.browser._host_for_engine", return_value="browser"),
+        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
+        patch("cli.commands.browser._run_browser_reaper"),
+        patch("cli.commands.browser._close_blank_browser_targets") as close_blank,
+        patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0, stdout="(empty page)", stderr="")),
+    ):
+        result = runner.invoke(main_app, ["browser", "snapshot"])
+
+    assert result.exit_code == 0
+    close_blank.assert_called_once_with("browser", 9222)
 
 
 def test_browser_check_closes_session_and_runs_reaper() -> None:
@@ -866,6 +886,8 @@ def test_browser_check_closes_session_and_runs_reaper() -> None:
         patch("cli.commands.browser._host_for_engine", return_value="browser"),
         patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
         patch("cli.commands.browser._run_browser_reaper") as reaper,
+        patch("cli.lib.browser_check.browser_page_target_ids", side_effect=[{"before"}, {"before", "after"}]),
+        patch("cli.lib.browser_check.close_browser_targets") as close_targets,
         patch("cli.commands.browser._run_agent", side_effect=fake_run_agent),
     ):
         result = runner.invoke(main_app, ["browser", "check", "https://example.com", "/tmp/check.png"])
@@ -873,6 +895,7 @@ def test_browser_check_closes_session_and_runs_reaper() -> None:
     assert result.exit_code == 0
     assert calls[-1][2:] == ["close"]
     reaper.assert_called_once()
+    close_targets.assert_called_once_with("browser", 9222, {"after"})
 
 
 def test_browser_check_treats_screenshot_timeout_as_warning(tmp_path: Path) -> None:
@@ -891,6 +914,8 @@ def test_browser_check_treats_screenshot_timeout_as_warning(tmp_path: Path) -> N
         patch("cli.commands.browser._host_for_engine", return_value="browser"),
         patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
         patch("cli.commands.browser._run_browser_reaper"),
+        patch("cli.lib.browser_check.browser_page_target_ids", return_value=set()),
+        patch("cli.lib.browser_check.close_browser_targets"),
         patch("cli.commands.browser._run_agent", side_effect=fake_run_agent),
     ):
         result = runner.invoke(main_app, ["browser", "check", "https://example.com", "/tmp/check.png"])
@@ -909,6 +934,7 @@ def test_browser_large_forwarded_output_goes_to_details_file(tmp_path: Path) -> 
         patch("cli.commands.browser._host_for_engine", return_value="browser"),
         patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
         patch("cli.commands.browser._run_browser_reaper"),
+        patch("cli.commands.browser._close_blank_browser_targets"),
         patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0, stdout=output, stderr="")),
     ):
         result = runner.invoke(main_app, ["browser", "snapshot"])

@@ -47,7 +47,19 @@ class TestListCodingAgents:
             ]
         }
 
-    def test_list_coding_agents_passes_query_flag_to_agent_hub(self, mocker: MockerFixture) -> None:
+    def test_list_agents_omits_coding_filter_by_default(self, mocker: MockerFixture) -> None:
+        mock_get_json = AsyncMock(return_value={"agents": []})
+        mocker.patch("app.api.agent_hub._get_json", mock_get_json)
+
+        response = client.get("/api/agent-hub/agents")
+
+        assert response.status_code == 200
+        mock_get_json.assert_awaited_once_with(
+            f"{AGENT_HUB_URL}/api/agents",
+            params=None,
+        )
+
+    def test_list_agents_passes_query_flag_to_agent_hub(self, mocker: MockerFixture) -> None:
         mock_get_json = AsyncMock(return_value={"agents": []})
         mocker.patch("app.api.agent_hub._get_json", mock_get_json)
 
