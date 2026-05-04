@@ -28,47 +28,79 @@ def drain_pending_backups(dry_run: bool = False) -> dict[str, Any]:
     file_pending = int((archive_result or {}).get("pending_before") or 0)
 
     if pending_count == 0 and file_pending == 0:
-        return {
-            "status": "success",
-            "message": "No pending uploads to drain",
-            "pending_before": 0,
-            "file_pending": 0,
-            "uploaded": 0,
-            "failed": 0,
-            "promoted": 0,
-            "remaining": 0,
-            "db_remaining": 0,
-            "file_remaining": 0,
-        }
+        return _empty_drain_result()
 
     if dry_run:
-        return {
-            "status": "dry_run",
-            "message": f"{pending_count} DB backup(s), {file_pending} file(s) pending upload",
-            "pending_before": pending_count,
-            "file_pending": file_pending,
-            "backups": [
-                {
-                    "id": b["id"],
-                    "source_id": b["source_id"],
-                    "name": b.get("name"),
-                    "location": b.get("location"),
-                    "size_bytes": b.get("size_bytes"),
-                }
-                for b in pending_before
-            ],
-            "archives": (archive_result or {}).get("backups", []),
-        }
+        return _dry_run_result(
+            pending_before=pending_before,
+            file_pending=file_pending,
+            archive_result=archive_result,
+        )
 
     upload_result = drain_pending_archives(dry_run=False)
-
-    # Reconcile: check which pending backups are no longer in the pending dir
     uploaded_locations = upload_result.get("uploaded_archives")
     promoted = _reconcile_pending_records(
         pending_before,
         uploaded_locations if isinstance(uploaded_locations, dict) else {},
     )
 
+    return _upload_drain_result(
+        pending_before_count=pending_count,
+        file_pending=file_pending,
+        upload_result=upload_result,
+        promoted=promoted,
+    )
+
+
+def _empty_drain_result() -> dict[str, Any]:
+    return {
+        "status": "success",
+        "message": "No pending uploads to drain",
+        "pending_before": 0,
+        "file_pending": 0,
+        "uploaded": 0,
+        "failed": 0,
+        "promoted": 0,
+        "remaining": 0,
+        "db_remaining": 0,
+        "file_remaining": 0,
+    }
+
+
+def _dry_run_result(
+    *,
+    pending_before: list[dict[str, Any]],
+    file_pending: int,
+    archive_result: dict[str, Any] | None,
+) -> dict[str, Any]:
+    pending_count = len(pending_before)
+    return {
+        "status": "dry_run",
+        "message": f"{pending_count} DB backup(s), {file_pending} file(s) pending upload",
+        "pending_before": pending_count,
+        "file_pending": file_pending,
+        "backups": [_pending_backup_summary(backup) for backup in pending_before],
+        "archives": (archive_result or {}).get("backups", []),
+    }
+
+
+def _pending_backup_summary(backup: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": backup["id"],
+        "source_id": backup["source_id"],
+        "name": backup.get("name"),
+        "location": backup.get("location"),
+        "size_bytes": backup.get("size_bytes"),
+    }
+
+
+def _upload_drain_result(
+    *,
+    pending_before_count: int,
+    file_pending: int,
+    upload_result: dict[str, Any],
+    promoted: int,
+) -> dict[str, Any]:
     pending_after = backup_store.get_pending_upload_backups()
     upload_status = str(upload_result.get("status") or "")
     file_remaining = int(upload_result.get("remaining") or 0)
@@ -80,7 +112,7 @@ def drain_pending_backups(dry_run: bool = False) -> dict[str, Any]:
     return {
         "status": status,
         "message": upload_result.get("message", "Drain completed"),
-        "pending_before": pending_count,
+        "pending_before": pending_before_count,
         "file_pending": upload_result.get("pending_before", file_pending),
         "uploaded": upload_result.get("uploaded", 0),
         "failed": upload_result.get("failed", 0),
