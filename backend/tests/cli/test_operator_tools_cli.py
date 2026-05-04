@@ -11,7 +11,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from cli.commands import browser, check, docker, service, setup, vm
+from cli.commands import browser, check, db, docker, service, setup, vm
 from cli.lib import service_ops
 from cli.lib.service_ops import ProjectServices
 from cli.main import app as main_app
@@ -547,6 +547,16 @@ def test_db_runs_native_migration_status() -> None:
 
     assert result.exit_code == 0
     alembic.assert_called_once_with("summitflow", ["current", "-v"])
+
+
+def test_db_tables_counts_uses_exact_counts_not_pg_stats() -> None:
+    sql = db._tables_counts_sql()
+
+    assert "query_to_xml" in sql
+    assert "count(*)" in sql.lower()
+    assert "information_schema.tables" in sql
+    assert "n_live_tup" not in sql
+    assert "pg_stat_user_tables" not in sql
 
 
 def test_browser_health_uses_native_health() -> None:

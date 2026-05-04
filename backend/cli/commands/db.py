@@ -214,6 +214,27 @@ Options:
     )
 
 
+def _tables_counts_sql() -> str:
+    return """
+        SELECT table_schema || '.' || table_name AS table_name,
+               (
+                   xpath(
+                       '/row/c/text()',
+                       query_to_xml(
+                           format('SELECT count(*) AS c FROM %I.%I', table_schema, table_name),
+                           false,
+                           true,
+                           ''
+                       )
+                   )
+               )[1]::text::bigint AS row_count
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_type = 'BASE TABLE'
+        ORDER BY table_name;
+    """
+
+
 @app.callback(invoke_without_command=True)
 def db(ctx: typer.Context) -> None:
     """Run database inspection or migration commands."""
@@ -231,13 +252,7 @@ def db(ctx: typer.Context) -> None:
         raise typer.Exit(_workbench(project, rest))
     if command == "tables":
         if rest[:1] == ["--counts"]:
-            sql = """
-                SELECT schemaname || '.' || relname AS table_name, n_live_tup AS row_count
-                FROM pg_stat_user_tables
-                WHERE schemaname = 'public'
-                ORDER BY relname;
-            """
-            raise typer.Exit(_run_psql(project, sql))
+            raise typer.Exit(_run_psql(project, _tables_counts_sql()))
         sql = "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;"
         raise typer.Exit(_run_psql(project, sql, tuples_only=True))
     if command == "schema" and rest:
