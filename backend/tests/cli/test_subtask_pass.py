@@ -6,10 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import typer
+from typer.testing import CliRunner
 
 from cli.client import APIError
+from cli.commands.subtask import app as subtask_app
 from cli.commands.subtask import clear_subtask, list_subtasks, pass_subtask
 from cli.commands.subtask_validation import is_step_resolved
+
+runner = CliRunner()
 
 
 class TestIsStepResolved:
@@ -29,6 +33,13 @@ class TestIsStepResolved:
 
 
 class TestPassSubtaskCommand:
+    def test_pass_subtask_help_shows_accepted_citation_formats(self) -> None:
+        result = runner.invoke(subtask_app, ["pass", "--help"])
+
+        assert result.exit_code == 0
+        assert "M:abc12345" in result.output
+        assert "Applied: [M:abc12345]" in result.output
+
     def test_pass_subtask_can_acknowledge_none_inline(self) -> None:
         client = MagicMock()
         client.get_subtasks.return_value = {

@@ -61,7 +61,10 @@ def pass_subtask(
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
     citations: Annotated[
         list[str] | None,
-        typer.Option("--citation", help="Inline memory citations for this pass"),
+        typer.Option(
+            "--citation",
+            help="Memory citations: M:abc12345, G:abc12345, or Applied: [M:abc12345]",
+        ),
     ] = None,
     acknowledge_none: Annotated[
         bool,
