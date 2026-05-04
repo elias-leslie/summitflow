@@ -96,6 +96,7 @@ function agentHubUrl(path: string): string {
 export function buildWorkChatApiConfig(options: {
   projectId?: string | null
   externalId?: string | null
+  parentSessionId?: string | null
   sourceMetadata?: Record<string, string | undefined>
   workContext?: WorkContext
 }) {
@@ -105,6 +106,7 @@ export function buildWorkChatApiConfig(options: {
       projectId: options.projectId ?? 'summitflow',
     }),
     externalId: options.externalId ?? undefined,
+    parentSessionId: options.parentSessionId ?? undefined,
     sourceMetadata: options.sourceMetadata,
     workContext: options.workContext,
   }
