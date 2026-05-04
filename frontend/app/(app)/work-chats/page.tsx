@@ -1,25 +1,40 @@
 'use client'
 
-import { ChatPanel as BaseChatPanel } from '@agent-hub/chat-ui'
 import {
+  ActivityIndicator,
+  MessageInput,
+  MessageList,
+  type StreamStatus,
+  useChatStream,
+} from '@agent-hub/chat-ui'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ClipboardList,
   Columns2,
+  Globe2,
   Grid2X2,
+  Layers3,
   Maximize2,
+  MessageCircleWarning,
   MessageSquarePlus,
   PanelRightClose,
   PanelsTopLeft,
   Pause,
   Play,
+  Plus,
+  Radio,
   Rows2,
+  Send,
   SquareSplitHorizontal,
   StopCircle,
+  Workflow,
   X,
 } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import {
-  type ComponentProps,
-  type ComponentType,
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -53,6 +68,7 @@ type WorkChatLayout =
 
 interface WorkChatPane {
   id: string
+  chatKey: number
   sessionId: string | null
   agentSlug: string
   projectId: string | null
@@ -69,14 +85,15 @@ interface WorkStartCommand {
   prompt: string
 }
 
-type WorkChatPanelProps = ComponentProps<typeof BaseChatPanel> & {
-  autoSendPrompt?: string | null
-  autoSendKey?: string | number | null
+interface ArtifactOption {
+  value: string
+  label: string
+  kind: 'feedback' | 'design'
+  id: string
+  linkedTaskId?: string | null
 }
 
-const ChatPanel = BaseChatPanel as ComponentType<WorkChatPanelProps>
-
-const STORAGE_KEY = 'summitflow_work_chats_v1'
+const STORAGE_KEY = 'summitflow_work_chats_v2'
 const MAX_PANES = 6
 const SOURCE_CLIENT = 'summitflow/work-chats'
 const GENERAL_PROJECT_ID = 'summitflow'
@@ -84,6 +101,7 @@ const GENERAL_PROJECT_ID = 'summitflow'
 function makePane(agentSlug = 'chat'): WorkChatPane {
   return {
     id: `pane-${Math.random().toString(36).slice(2, 10)}`,
+    chatKey: 0,
     sessionId: null,
     agentSlug,
     projectId: null,
@@ -121,6 +139,7 @@ function readSavedState(defaultAgent: string): {
           .map((pane: Partial<WorkChatPane>) => ({
             ...makePane(defaultAgent),
             ...pane,
+            chatKey: pane.chatKey ?? 0,
           }))
       : []
     if (panes.length === 0) throw new Error('empty panes')
@@ -210,6 +229,39 @@ function useIsMobile(): boolean {
   return isMobile
 }
 
+function IconButton({
+  title,
+  onClick,
+  disabled = false,
+  active = false,
+  children,
+}: {
+  title: string
+  onClick: () => void
+  disabled?: boolean
+  active?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      className={cn(
+        'flex h-7 w-7 shrink-0 items-center justify-center rounded border transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-phosphor-500/40',
+        active
+          ? 'border-phosphor-500/40 bg-phosphor-500/10 text-phosphor-300'
+          : 'border-slate-800 bg-slate-950/60 text-slate-500 hover:border-slate-600 hover:text-slate-200',
+        disabled && 'cursor-not-allowed opacity-40',
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
 function LayoutButton({
   value,
   active,
@@ -231,20 +283,9 @@ function LayoutButton({
             : PanelRightClose
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex h-8 w-8 items-center justify-center rounded-md border transition-colors',
-        active
-          ? 'border-phosphor-500/40 bg-phosphor-500/10 text-phosphor-300'
-          : 'border-slate-700 bg-slate-900/70 text-slate-500 hover:border-slate-600 hover:text-slate-200',
-      )}
-      title={value}
-      aria-label={value}
-    >
-      <Icon className="h-4 w-4" />
-    </button>
+    <IconButton title={value} active={active} onClick={onClick}>
+      <Icon className="h-3.5 w-3.5" />
+    </IconButton>
   )
 }
 
@@ -269,8 +310,9 @@ function SelectControl({
       onChange={(event) => onChange(event.target.value)}
       disabled={disabled}
       aria-label={label}
+      title={label}
       className={cn(
-        'h-8 min-w-28 rounded-md border border-slate-700 bg-slate-950/70 px-2 text-xs text-slate-200 outline-none transition-colors',
+        'h-7 min-w-0 shrink-0 rounded border border-slate-800 bg-slate-950/70 px-2 text-xs text-slate-200 outline-none transition-colors',
         'hover:border-slate-600 focus:border-phosphor-500/50 disabled:cursor-not-allowed disabled:opacity-40',
         className,
       )}
@@ -280,36 +322,119 @@ function SelectControl({
   )
 }
 
-function IconButton({
+function PaneBadge({
   title,
-  onClick,
-  disabled = false,
   children,
+  active = false,
 }: {
   title: string
-  onClick: () => void
-  disabled?: boolean
   children: React.ReactNode
+  active?: boolean
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <span
       title={title}
-      aria-label={title}
-      disabled={disabled}
-      className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-700 bg-slate-950/70 text-slate-400 transition-colors hover:border-slate-600 hover:bg-slate-800/80 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+      className={cn(
+        'flex h-6 min-w-6 shrink-0 items-center justify-center rounded border px-1 text-[10px]',
+        active
+          ? 'border-phosphor-500/30 bg-phosphor-500/10 text-phosphor-300'
+          : 'border-slate-800 bg-slate-950/60 text-slate-500',
+      )}
     >
       {children}
-    </button>
+    </span>
   )
 }
 
-function PaneToolbar({
+function PaneStatus({
+  status,
+  error,
+}: {
+  status: StreamStatus
+  error: string | null
+}) {
+  if (error || status === 'error') {
+    return (
+      <PaneBadge title={error ?? 'Chat error'} active>
+        <AlertTriangle className="h-3.5 w-3.5 text-rose-400" />
+      </PaneBadge>
+    )
+  }
+  if (status === 'streaming' || status === 'connecting') {
+    return (
+      <PaneBadge title={status} active>
+        <ActivityIndicator state={status} className="scale-75" />
+      </PaneBadge>
+    )
+  }
+  return (
+    <PaneBadge title="Ready">
+      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+    </PaneBadge>
+  )
+}
+
+function buildArtifactOptions({
   pane,
+  feedbackItems,
+  mockups,
+}: {
+  pane: WorkChatPane
+  feedbackItems: FeedbackItem[]
+  mockups: Mockup[]
+}): ArtifactOption[] {
+  const feedbackOptions = feedbackItems.map((item) => ({
+    value: `feedback:${item.id}`,
+    label: item.title,
+    kind: 'feedback' as const,
+    id: item.id,
+    linkedTaskId: item.linked_task_id,
+  }))
+  const designOptions = mockups.map((mockup) => ({
+    value: `design:${mockup.mockup_id}`,
+    label: mockup.name,
+    kind: 'design' as const,
+    id: mockup.mockup_id,
+    linkedTaskId: mockup.task_id,
+  }))
+
+  const options = [...feedbackOptions, ...designOptions]
+  if (
+    pane.feedbackId &&
+    !options.some((option) => option.value === `feedback:${pane.feedbackId}`)
+  ) {
+    options.unshift({
+      value: `feedback:${pane.feedbackId}`,
+      label: pane.artifactSummary ?? pane.feedbackId,
+      kind: 'feedback',
+      id: pane.feedbackId,
+      linkedTaskId: pane.taskId,
+    })
+  }
+  if (
+    pane.designId &&
+    !options.some((option) => option.value === `design:${pane.designId}`)
+  ) {
+    options.unshift({
+      value: `design:${pane.designId}`,
+      label: pane.artifactSummary ?? pane.designId,
+      kind: 'design',
+      id: pane.designId,
+      linkedTaskId: pane.taskId,
+    })
+  }
+  return options
+}
+
+function PaneChrome({
+  pane,
+  status,
+  error,
   agents,
   sessions,
   projects,
+  childSessions,
+  actionRequests,
   onPatch,
   onNewChat,
   onSplit,
@@ -319,9 +444,13 @@ function PaneToolbar({
   onStop,
 }: {
   pane: WorkChatPane
+  status: StreamStatus
+  error: string | null
   agents: AgentHubAgent[]
   sessions: AgentHubSessionListItem[]
   projects: Project[]
+  childSessions: AgentHubSessionListItem[]
+  actionRequests: ActionRequest[]
   onPatch: (patch: Partial<WorkChatPane>) => void
   onNewChat: () => void
   onSplit: () => void
@@ -405,49 +534,33 @@ function PaneToolbar({
     ]
   }, [pane.projectId, pane.taskId, pane.taskSummary, pane.taskTitle, tasks])
 
+  const artifacts = useMemo(
+    () => buildArtifactOptions({ pane, feedbackItems, mockups }),
+    [feedbackItems, mockups, pane],
+  )
+  const selectedArtifact = pane.feedbackId
+    ? `feedback:${pane.feedbackId}`
+    : pane.designId
+      ? `design:${pane.designId}`
+      : ''
+  const hasTelegram = actionRequests.some((request) => request.telegram_chat_id)
+  const blockers = actionRequests.filter(
+    (request) => request.status !== 'resolved',
+  )
+
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 bg-slate-900/80 px-2 py-2">
-      <IconButton title="New Chat" onClick={onNewChat}>
-        <MessageSquarePlus className="h-4 w-4" />
-      </IconButton>
-      <IconButton title="Split Pane" onClick={onSplit}>
-        <Columns2 className="h-4 w-4" />
-      </IconButton>
-      <IconButton
-        title="Detach"
-        onClick={() => {
-          const params = new URLSearchParams()
-          if (pane.sessionId) params.set('session_id', pane.sessionId)
-          if (pane.projectId) params.set('project_id', pane.projectId)
-          if (pane.taskId) params.set('task_id', pane.taskId)
-          if (pane.taskTitle) params.set('task_title', pane.taskTitle)
-          window.open(`/work-chats?${params.toString()}`, '_blank')
-        }}
-      >
-        <Maximize2 className="h-4 w-4" />
-      </IconButton>
-      <IconButton
-        title={pane.sessionId ? 'Resume Work' : 'Start Work'}
-        onClick={onStart}
-      >
-        <Play className="h-4 w-4" />
-      </IconButton>
-      <IconButton title="Pause" onClick={onPause} disabled={!pane.sessionId}>
-        <Pause className="h-4 w-4" />
-      </IconButton>
-      <IconButton title="Stop" onClick={onStop} disabled={!pane.sessionId}>
-        <StopCircle className="h-4 w-4" />
-      </IconButton>
+    <div className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-800 bg-slate-900/85 px-1.5">
+      <PaneStatus status={status} error={error} />
 
       <SelectControl
         value={pane.agentSlug}
         onChange={(value) => onPatch({ agentSlug: value })}
-        label="Change Agent"
-        className="min-w-40"
+        label="Agent"
+        className="w-40"
       >
         {agents.map((agent) => (
           <option key={agent.slug} value={agent.slug}>
-            {agent.name} · {agent.slug}
+            {agent.name}
           </option>
         ))}
       </SelectControl>
@@ -465,8 +578,8 @@ function PaneToolbar({
             artifactSummary: null,
           })
         }
-        label="Change Project Context"
-        className="min-w-36"
+        label="Project"
+        className="w-40"
       >
         <option value="">General</option>
         {projects.map((project) => (
@@ -486,58 +599,45 @@ function PaneToolbar({
             taskSummary: task?.description ?? null,
           })
         }}
-        label="Change Task Context"
+        label="Task"
         disabled={!pane.projectId}
-        className="min-w-44"
+        className="w-56"
       >
         <option value="">No task</option>
         {displayedTasks.map((task) => (
           <option key={task.id} value={task.id}>
-            {task.id} · {task.title}
+            {task.id} - {task.title}
           </option>
         ))}
       </SelectControl>
 
       <SelectControl
-        value={pane.feedbackId ?? ''}
+        value={selectedArtifact}
         onChange={(value) => {
-          const feedback = feedbackItems.find((item) => item.id === value)
+          const artifact = artifacts.find((item) => item.value === value)
+          if (!artifact) {
+            onPatch({
+              feedbackId: null,
+              designId: null,
+              artifactSummary: null,
+            })
+            return
+          }
           onPatch({
-            feedbackId: feedback?.id ?? null,
-            artifactSummary: feedback?.title ?? pane.artifactSummary,
-            taskId: feedback?.linked_task_id ?? pane.taskId,
+            feedbackId: artifact.kind === 'feedback' ? artifact.id : null,
+            designId: artifact.kind === 'design' ? artifact.id : null,
+            artifactSummary: artifact.label,
+            taskId: artifact.linkedTaskId ?? pane.taskId,
           })
         }}
-        label="Change Feedback Context"
+        label="Feedback or design"
         disabled={!pane.projectId}
-        className="min-w-36"
+        className="w-48"
       >
-        <option value="">No feedback</option>
-        {feedbackItems.map((item) => (
-          <option key={item.id} value={item.id}>
-            {item.title}
-          </option>
-        ))}
-      </SelectControl>
-
-      <SelectControl
-        value={pane.designId ?? ''}
-        onChange={(value) => {
-          const mockup = mockups.find((item) => item.mockup_id === value)
-          onPatch({
-            designId: mockup?.mockup_id ?? null,
-            artifactSummary: mockup?.name ?? pane.artifactSummary,
-            taskId: mockup?.task_id ?? pane.taskId,
-          })
-        }}
-        label="Change Design Context"
-        disabled={!pane.projectId}
-        className="min-w-36"
-      >
-        <option value="">No design</option>
-        {mockups.map((mockup) => (
-          <option key={mockup.mockup_id} value={mockup.mockup_id}>
-            {mockup.name}
+        <option value="">No artifact</option>
+        {artifacts.map((artifact) => (
+          <option key={artifact.value} value={artifact.value}>
+            {artifact.kind} - {artifact.label}
           </option>
         ))}
       </SelectControl>
@@ -545,138 +645,184 @@ function PaneToolbar({
       <SelectControl
         value={pane.sessionId ?? ''}
         onChange={(value) => onPatch({ sessionId: value || null })}
-        label="Attach Existing Session"
-        className="min-w-40"
+        label="Session"
+        className="w-36"
       >
         <option value="">New session</option>
         {sessions.map((session) => (
           <option key={session.id} value={session.id}>
-            {session.id.slice(0, 8)} · {session.agent_slug ?? 'agent'}
+            {session.id.slice(0, 8)} - {session.agent_slug ?? 'agent'}
           </option>
         ))}
       </SelectControl>
 
       <div className="flex-1" />
-      <IconButton title="Close Pane" onClick={onClose}>
-        <X className="h-4 w-4" />
+
+      <PaneBadge title="Transport: Web via SummitFlow">
+        <Globe2 className="h-3.5 w-3.5" />
+      </PaneBadge>
+      {pane.sessionId ? (
+        <PaneBadge title={`Session ${pane.sessionId}`} active>
+          <Radio className="h-3.5 w-3.5" />
+        </PaneBadge>
+      ) : null}
+      {pane.taskId ? (
+        <PaneBadge title={`Task ${pane.taskId}`} active>
+          <ClipboardList className="h-3.5 w-3.5" />
+        </PaneBadge>
+      ) : null}
+      {pane.feedbackId || pane.designId ? (
+        <PaneBadge title={pane.artifactSummary ?? 'Artifact'} active>
+          <Layers3 className="h-3.5 w-3.5" />
+        </PaneBadge>
+      ) : null}
+      {childSessions.length ? (
+        <PaneBadge title={`${childSessions.length} child lanes`} active>
+          <Workflow className="h-3.5 w-3.5" />
+          <span className="ml-1">{childSessions.length}</span>
+        </PaneBadge>
+      ) : null}
+      {blockers.length ? (
+        <PaneBadge title={`${blockers.length} action requests`} active>
+          <MessageCircleWarning className="h-3.5 w-3.5" />
+          <span className="ml-1">{blockers.length}</span>
+        </PaneBadge>
+      ) : null}
+      {hasTelegram ? (
+        <PaneBadge title="Telegram linked" active>
+          <Send className="h-3.5 w-3.5" />
+        </PaneBadge>
+      ) : null}
+
+      <IconButton title="New chat" onClick={onNewChat}>
+        <MessageSquarePlus className="h-3.5 w-3.5" />
+      </IconButton>
+      <IconButton title="Split pane" onClick={onSplit}>
+        <Columns2 className="h-3.5 w-3.5" />
+      </IconButton>
+      <IconButton
+        title="Detach"
+        onClick={() => {
+          const params = new URLSearchParams()
+          if (pane.sessionId) params.set('session_id', pane.sessionId)
+          if (pane.projectId) params.set('project_id', pane.projectId)
+          if (pane.taskId) params.set('task_id', pane.taskId)
+          if (pane.taskTitle) params.set('task_title', pane.taskTitle)
+          window.open(`/work-chats?${params.toString()}`, '_blank')
+        }}
+      >
+        <Maximize2 className="h-3.5 w-3.5" />
+      </IconButton>
+      <IconButton
+        title={pane.sessionId ? 'Resume work' : 'Start work'}
+        onClick={onStart}
+      >
+        <Play className="h-3.5 w-3.5" />
+      </IconButton>
+      <IconButton title="Pause" onClick={onPause} disabled={!pane.sessionId}>
+        <Pause className="h-3.5 w-3.5" />
+      </IconButton>
+      <IconButton title="Stop" onClick={onStop} disabled={!pane.sessionId}>
+        <StopCircle className="h-3.5 w-3.5" />
+      </IconButton>
+      <IconButton title="Close pane" onClick={onClose}>
+        <X className="h-3.5 w-3.5" />
       </IconButton>
     </div>
   )
 }
 
-function SourceBadges({
+function WorkChatBody({
   pane,
-  hasTelegram,
+  apiConfig,
+  workingDir,
+  startCommand,
+  onRuntimeChange,
+  onSessionCreated,
 }: {
   pane: WorkChatPane
-  hasTelegram: boolean
+  apiConfig: ReturnType<typeof buildWorkChatApiConfig>
+  workingDir?: string
+  startCommand?: WorkStartCommand
+  onRuntimeChange: (state: {
+    status: StreamStatus
+    error: string | null
+  }) => void
+  onSessionCreated: (sessionId: string) => void
 }) {
-  const badges = ['Web', 'SummitFlow']
-  if (hasTelegram) badges.push('Telegram')
-  if (pane.sessionId) badges.push('Session')
-  if (pane.taskId) badges.push('Task')
-  if (pane.feedbackId) badges.push('Feedback')
-  if (pane.designId) badges.push('Design')
+  const {
+    messages,
+    status,
+    error,
+    currentSessionId,
+    sendMessage,
+    cancelStream,
+    editMessage,
+    regenerateMessage,
+  } = useChatStream({
+    agentSlug: pane.agentSlug,
+    sessionId: pane.sessionId ?? undefined,
+    workingDir,
+    toolsEnabled: true,
+    apiConfig,
+  })
+  const lastNotifiedSessionId = useRef<string | null>(null)
+  const lastAutoSendKey = useRef<number | null>(null)
+
+  useEffect(() => {
+    onRuntimeChange({ status, error })
+  }, [error, onRuntimeChange, status])
+
+  useEffect(() => {
+    if (
+      !currentSessionId ||
+      currentSessionId === lastNotifiedSessionId.current
+    ) {
+      return
+    }
+    lastNotifiedSessionId.current = currentSessionId
+    onSessionCreated(currentSessionId)
+  }, [currentSessionId, onSessionCreated])
+
+  useEffect(() => {
+    if (!startCommand || lastAutoSendKey.current === startCommand.key) return
+    if (status !== 'idle' && status !== 'error') return
+    lastAutoSendKey.current = startCommand.key
+    sendMessage(startCommand.prompt)
+  }, [sendMessage, startCommand, status])
+
+  const isStreaming =
+    status === 'streaming' ||
+    status === 'reconnecting' ||
+    status === 'cancelling' ||
+    status === 'connecting'
 
   return (
-    <div className="flex flex-wrap gap-1">
-      {badges.map((badge) => (
-        <span
-          key={badge}
-          className="rounded border border-slate-700 bg-slate-950/70 px-1.5 py-0.5 text-[10px] text-slate-400"
-        >
-          {badge}
-        </span>
-      ))}
+    <div className="flex h-full min-h-0 flex-col chat-outrun">
+      {error ? (
+        <div className="shrink-0 border-b border-rose-500/20 bg-rose-500/10 px-3 py-1 text-xs text-rose-300">
+          {error}
+        </div>
+      ) : null}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <MessageList
+          messages={messages}
+          isStreaming={isStreaming}
+          onEditMessage={editMessage}
+          onRegenerateMessage={regenerateMessage}
+        />
+      </div>
+      <div className="shrink-0 border-t border-slate-800 bg-slate-950/85">
+        <MessageInput
+          onSend={(message, targetModels) => sendMessage(message, targetModels)}
+          onCancel={cancelStream}
+          status={status}
+          compact
+          preferencesEndpoint={`${getAgentHubProxyBase()}/preferences`}
+          modelsEndpoint={`${getAgentHubProxyBase()}/models`}
+        />
+      </div>
     </div>
-  )
-}
-
-function RightRail({
-  sessionId,
-  childSessions,
-  actionRequests,
-}: {
-  sessionId: string | null
-  childSessions: AgentHubSessionListItem[]
-  actionRequests: ActionRequest[]
-}) {
-  return (
-    <aside className="hidden w-80 shrink-0 border-l border-slate-800 bg-slate-900/70 p-3 xl:block">
-      <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500">
-        Child Lanes
-      </div>
-      <div className="mt-2 space-y-2 text-xs">
-        {childSessions.length ? (
-          childSessions.map((session) => (
-            <div
-              key={session.id}
-              className="rounded-md border border-slate-800 bg-slate-950/60 p-2"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-mono text-slate-300">
-                  {session.id.slice(0, 8)}
-                </span>
-                <span className="text-slate-500">{session.status}</span>
-              </div>
-              <div className="mt-1 line-clamp-2 text-slate-400">
-                {session.summary_oneliner ??
-                  session.live_activity?.summary ??
-                  session.workstream_status ??
-                  'working'}
-              </div>
-              {session.observed_write_paths?.length ? (
-                <div className="mt-1 truncate text-phosphor-400">
-                  {session.observed_write_paths.slice(0, 3).join(', ')}
-                </div>
-              ) : null}
-              {session.live_activity?.last_validation_command ? (
-                <div className="mt-1 truncate text-amber-300">
-                  {session.live_activity.last_validation_command}
-                </div>
-              ) : null}
-            </div>
-          ))
-        ) : (
-          <div className="text-slate-600">
-            {sessionId ? 'No child lanes' : 'No session attached'}
-          </div>
-        )}
-      </div>
-
-      <div className="mt-4 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500">
-        Action Requests
-      </div>
-      <div className="mt-2 space-y-2 text-xs">
-        {actionRequests.length ? (
-          actionRequests.map((request) => (
-            <div
-              key={request.id}
-              className="rounded-md border border-slate-800 bg-slate-950/60 p-2"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium text-slate-300">
-                  {request.request_type}
-                </span>
-                <span className="text-slate-500">{request.status}</span>
-              </div>
-              {request.prompt ? (
-                <div className="mt-1 line-clamp-3 text-slate-400">
-                  {request.prompt}
-                </div>
-              ) : null}
-              {request.join_code ? (
-                <div className="mt-1 font-mono text-phosphor-400">
-                  /join {request.join_code}
-                </div>
-              ) : null}
-            </div>
-          ))
-        ) : (
-          <div className="text-slate-600">No blockers</div>
-        )}
-      </div>
-    </aside>
   )
 }
 
@@ -684,10 +830,12 @@ function WorkChatPaneView({
   pane,
   active,
   index,
+  paneCount,
   layout,
   agents,
   sessions,
   projects,
+  childSessions,
   actionRequests,
   startCommand,
   onActivate,
@@ -702,10 +850,12 @@ function WorkChatPaneView({
   pane: WorkChatPane
   active: boolean
   index: number
+  paneCount: number
   layout: WorkChatLayout
   agents: AgentHubAgent[]
   sessions: AgentHubSessionListItem[]
   projects: Project[]
+  childSessions: AgentHubSessionListItem[]
   actionRequests: ActionRequest[]
   startCommand?: WorkStartCommand
   onActivate: () => void
@@ -717,10 +867,21 @@ function WorkChatPaneView({
   onPause: () => void
   onStop: () => void
 }) {
+  const [runtime, setRuntime] = useState<{
+    status: StreamStatus
+    error: string | null
+  }>({ status: 'idle', error: null })
   const project = pane.projectId
     ? (projects.find((item) => item.id === pane.projectId) ?? null)
     : null
-  const context = workContextForPane(pane, project)
+  const context = useMemo(
+    () => workContextForPane(pane, project),
+    [pane, project],
+  )
+  const mainSideRowSpan =
+    layout === 'main-side' && index === 0 && paneCount > 2
+      ? Math.min(paneCount - 1, MAX_PANES - 1)
+      : null
   const apiConfig = useMemo(
     () =>
       buildWorkChatApiConfig({
@@ -747,24 +908,56 @@ function WorkChatPaneView({
     ],
   )
 
-  const workingDir = project?.root_path ?? undefined
+  const handleSessionCreated = useCallback(
+    (sessionId: string) => {
+      onPatch({ sessionId })
+      void upsertWorkChatBinding({
+        session_id: sessionId,
+        surface: 'work_chats',
+        pane_id: pane.id,
+        project_id: pane.projectId,
+        task_id: pane.taskId,
+        feedback_id: pane.feedbackId,
+        design_id: pane.designId,
+        source_client: SOURCE_CLIENT,
+        work_context: context,
+      })
+    },
+    [
+      context,
+      onPatch,
+      pane.designId,
+      pane.feedbackId,
+      pane.id,
+      pane.projectId,
+      pane.taskId,
+    ],
+  )
 
   return (
     <section
       onClick={onActivate}
+      style={
+        mainSideRowSpan
+          ? { gridRow: `span ${mainSideRowSpan} / span ${mainSideRowSpan}` }
+          : undefined
+      }
       className={cn(
-        'flex min-h-[360px] min-w-0 resize flex-col overflow-hidden rounded-lg border bg-slate-950/70',
+        'flex min-h-0 min-w-0 resize flex-col overflow-hidden rounded border bg-slate-950/80',
         active
           ? 'border-phosphor-500/50 shadow-[0_0_0_1px_rgba(0,245,255,0.08)]'
           : 'border-slate-800',
-        layout === 'main-side' && index === 0 ? 'xl:row-span-2' : '',
       )}
     >
-      <PaneToolbar
+      <PaneChrome
         pane={pane}
+        status={runtime.status}
+        error={runtime.error}
         agents={agents}
         sessions={sessions}
         projects={projects}
+        childSessions={childSessions}
+        actionRequests={actionRequests}
         onPatch={onPatch}
         onNewChat={onNewChat}
         onSplit={onSplit}
@@ -773,49 +966,15 @@ function WorkChatPaneView({
         onPause={onPause}
         onStop={onStop}
       />
-
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 px-2 py-1 text-xs text-slate-500">
-        <SourceBadges
+      <div className="min-h-0 flex-1">
+        <WorkChatBody
+          key={`${pane.id}:${pane.chatKey}:${pane.sessionId ?? 'new'}:${pane.agentSlug}`}
           pane={pane}
-          hasTelegram={actionRequests.some(
-            (request) => request.telegram_chat_id,
-          )}
-        />
-        <span>agent {pane.agentSlug}</span>
-        <span>project {pane.projectId ?? 'general'}</span>
-        <span>task {pane.taskId ?? 'none'}</span>
-        <span>
-          session {pane.sessionId ? pane.sessionId.slice(0, 8) : 'new'}
-        </span>
-      </div>
-
-      <div className="min-h-0 flex-1 chat-outrun">
-        <ChatPanel
-          key={`${pane.id}:${pane.sessionId ?? 'new'}:${pane.agentSlug}`}
-          agentSlug={pane.agentSlug}
-          sessionId={pane.sessionId ?? undefined}
-          workingDir={workingDir}
-          toolsEnabled
           apiConfig={apiConfig}
-          modelsEndpoint={`${getAgentHubProxyBase()}/models`}
-          title="Work Chat"
-          autoSendPrompt={startCommand?.prompt ?? null}
-          autoSendKey={startCommand?.key ?? null}
-          onSessionCreated={(sessionId) => {
-            onPatch({ sessionId })
-            void upsertWorkChatBinding({
-              session_id: sessionId,
-              surface: 'work_chats',
-              pane_id: pane.id,
-              project_id: pane.projectId,
-              task_id: pane.taskId,
-              feedback_id: pane.feedbackId,
-              design_id: pane.designId,
-              source_client: SOURCE_CLIENT,
-              work_context: context,
-            })
-          }}
-          onClear={() => onPatch({ sessionId: null })}
+          workingDir={project?.root_path ?? undefined}
+          startCommand={startCommand}
+          onRuntimeChange={setRuntime}
+          onSessionCreated={handleSessionCreated}
         />
       </div>
     </section>
@@ -998,7 +1157,7 @@ function WorkChatsContent() {
 
   const closePane = (pane: WorkChatPane) => {
     if (panes.length === 1) {
-      patchPane(pane.id, { sessionId: null })
+      patchPane(pane.id, { sessionId: null, chatKey: pane.chatKey + 1 })
       return
     }
     const remaining = panes.filter((item) => item.id !== pane.id)
@@ -1042,20 +1201,31 @@ function WorkChatsContent() {
 
   if (!panes.length) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-slate-500">
+      <div className="flex h-[calc(100dvh-66px)] items-center justify-center text-sm text-slate-500 lg:h-[calc(100dvh-70px)]">
         Loading...
       </div>
     )
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-slate-950">
-      <div className="flex flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-900/80 px-3 py-2">
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-          <PanelsTopLeft className="h-4 w-4 text-phosphor-400" />
-          Work Chats
-        </div>
-        <div className="flex gap-1">
+    <div className="flex h-[calc(100dvh-66px)] min-h-0 flex-col overflow-hidden bg-slate-950 lg:h-[calc(100dvh-70px)]">
+      <div className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-800 bg-slate-900/90 px-1.5">
+        <PaneBadge title="SummitFlow Work Chats" active>
+          <PanelsTopLeft className="h-3.5 w-3.5" />
+        </PaneBadge>
+        <SelectControl
+          value={activePaneId}
+          onChange={setActivePaneId}
+          label="Active pane"
+          className="w-44 md:hidden"
+        >
+          {panes.map((pane, index) => (
+            <option key={pane.id} value={pane.id}>
+              Pane {index + 1} - {pane.agentSlug}
+            </option>
+          ))}
+        </SelectControl>
+        <div className="flex items-center gap-1">
           {(
             [
               'main-side',
@@ -1073,79 +1243,66 @@ function WorkChatsContent() {
             />
           ))}
         </div>
-
-        <SelectControl
-          value={activePaneId}
-          onChange={setActivePaneId}
-          label="Active Pane"
-          className="md:hidden"
-        >
-          {panes.map((pane, index) => (
-            <option key={pane.id} value={pane.id}>
-              Pane {index + 1} · {pane.agentSlug}
-            </option>
-          ))}
-        </SelectControl>
-
-        <button
-          type="button"
+        <IconButton
+          title="Add pane"
+          disabled={panes.length >= MAX_PANES}
           onClick={() => {
             if (panes.length >= MAX_PANES) return
             const next = makePane(defaultAgent)
             setPanes((current) => [...current, next])
             setActivePaneId(next.id)
           }}
-          className="ml-auto rounded-md border border-slate-700 bg-slate-950/70 px-2 py-1 text-xs text-slate-300 transition-colors hover:border-slate-600 hover:text-slate-100"
         >
-          Add Pane
-        </button>
-
+          <Plus className="h-3.5 w-3.5" />
+        </IconButton>
+        <div className="flex-1" />
         {paneActionError ? (
-          <div className="text-xs text-rose-400">{paneActionError}</div>
+          <span className="text-xs text-rose-400">{paneActionError}</span>
         ) : null}
       </div>
 
-      <div className="flex min-h-0 flex-1">
-        <main
-          className={cn(
-            'grid min-h-0 flex-1 auto-rows-fr gap-2 p-2',
-            layoutClass(layout, visiblePanes.length),
-          )}
-        >
-          {visiblePanes.map((pane, index) => {
-            const project = pane.projectId
-              ? (projects.find((item) => item.id === pane.projectId) ?? null)
-              : null
-            return (
-              <WorkChatPaneView
-                key={pane.id}
-                pane={pane}
-                active={activePaneId === pane.id}
-                index={index}
-                layout={layout}
-                agents={agents}
-                sessions={sessions}
-                projects={projects}
-                actionRequests={actionRequests}
-                startCommand={startCommands[pane.id]}
-                onActivate={() => setActivePaneId(pane.id)}
-                onPatch={(patch) => patchPane(pane.id, patch)}
-                onNewChat={() => patchPane(pane.id, { sessionId: null })}
-                onSplit={() => splitPane(pane)}
-                onClose={() => closePane(pane)}
-                onStart={() => queueStart(pane, project)}
-                onPause={() => void pausePane(pane)}
-                onStop={() => void stopPane(pane)}
-              />
-            )
-          })}
-        </main>
-        <RightRail
-          sessionId={activePane?.sessionId ?? null}
-          childSessions={childSessions}
-          actionRequests={actionRequests}
-        />
-      </div>
+      <main
+        className={cn(
+          'grid min-h-0 flex-1 auto-rows-fr overflow-hidden gap-1 p-1',
+          layoutClass(layout, visiblePanes.length),
+        )}
+      >
+        {visiblePanes.map((pane, index) => {
+          const project = pane.projectId
+            ? (projects.find((item) => item.id === pane.projectId) ?? null)
+            : null
+          const isActive = activePaneId === pane.id
+          return (
+            <WorkChatPaneView
+              key={pane.id}
+              pane={pane}
+              active={isActive}
+              index={index}
+              paneCount={visiblePanes.length}
+              layout={layout}
+              agents={agents}
+              sessions={sessions}
+              projects={projects}
+              childSessions={isActive ? childSessions : []}
+              actionRequests={isActive ? actionRequests : []}
+              startCommand={startCommands[pane.id]}
+              onActivate={() => setActivePaneId(pane.id)}
+              onPatch={(patch) => patchPane(pane.id, patch)}
+              onNewChat={() =>
+                patchPane(pane.id, {
+                  sessionId: null,
+                  chatKey: pane.chatKey + 1,
+                })
+              }
+              onSplit={() => splitPane(pane)}
+              onClose={() => closePane(pane)}
+              onStart={() => queueStart(pane, project)}
+              onPause={() => void pausePane(pane)}
+              onStop={() => void stopPane(pane)}
+            />
+          )
+        })}
+      </main>
     </div>
   )
 }
@@ -1154,7 +1311,7 @@ export default function WorkChatsPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex h-full items-center justify-center text-sm text-slate-500">
+        <div className="flex h-[calc(100dvh-66px)] items-center justify-center text-sm text-slate-500 lg:h-[calc(100dvh-70px)]">
           Loading...
         </div>
       }
