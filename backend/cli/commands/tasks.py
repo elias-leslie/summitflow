@@ -17,6 +17,21 @@ from .task_plan_contract import (
     VERIFY_FILE_ARGUMENT_HELP,
 )
 from .tasks_bug import create_bug_task
+from .tasks_helpers import (
+    default_capture_priority as _default_capture_priority,
+)
+from .tasks_helpers import (
+    merge_label_strings as _merge_label_strings,
+)
+from .tasks_helpers import (
+    normalize_capture_kind as _normalize_capture_kind,
+)
+from .tasks_helpers import (
+    removed_command as _removed_command,
+)
+from .tasks_helpers import (
+    resolve_log_inputs as _resolve_log_inputs,
+)
 
 app = typer.Typer(help="Task management commands")
 
@@ -26,74 +41,6 @@ _IDEA_LABELS = "crowdsourced"
 _IDEA_EXECUTION_MODE = "autonomous"
 _DEFAULT_CRITIQUE_STAGE = "task_shape"
 _DEFAULT_CRITIQUE_AGENT = "specifier"
-_CAPTURE_KINDS = {"task", "bug", "idea"}
-
-
-def _looks_like_task_id(value: str | None) -> bool:
-    if not value:
-        return False
-    candidate = value.strip().lower()
-    return candidate.startswith("task-")
-
-
-def _resolve_log_inputs(
-    arg1: str,
-    arg2: str | None,
-    task_id: str | None,
-) -> tuple[str, str]:
-    if task_id:
-        return arg1, task_id
-    if not arg2:
-        typer.echo(
-            "Error: task id required via `st log <task-id> <message>` or `--task`",
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    arg1_is_task_id = _looks_like_task_id(arg1)
-    arg2_is_task_id = _looks_like_task_id(arg2)
-
-    if arg1_is_task_id and not arg2_is_task_id:
-        return arg2, arg1
-    if arg2_is_task_id and not arg1_is_task_id:
-        return arg1, arg2
-    if arg1_is_task_id and arg2_is_task_id:
-        typer.echo(
-            "Error: ambiguous log arguments. Pass the message with `--task <task-id>`.",
-            err=True,
-        )
-        raise typer.Exit(1)
-    return arg1, arg2
-
-
-def _removed_command(name: str, replacement: str) -> None:
-    """Emit a standard error for removed commands and exit."""
-    typer.echo(f"Error: '{name}' removed. Use '{replacement}'", err=True)
-    raise typer.Exit(1)
-
-
-def _normalize_capture_kind(kind: str) -> str:
-    normalized = kind.strip().lower()
-    if normalized in _CAPTURE_KINDS:
-        return normalized
-    allowed = ", ".join(sorted(_CAPTURE_KINDS))
-    typer.echo(f"Error: invalid capture kind '{kind}'. Use one of: {allowed}", err=True)
-    raise typer.Exit(1)
-
-
-def _default_capture_priority(kind: str) -> int:
-    return 3 if kind == "idea" else 2
-
-
-def _merge_label_strings(labels: str | None, extra_label: str) -> str:
-    merged: list[str] = []
-    for raw in (labels or "").split(","):
-        label = raw.strip()
-        if label and label not in merged:
-            merged.append(label)
-    if extra_label not in merged:
-        merged.append(extra_label)
-    return ",".join(merged)
 
 
 def _create_bug_capture(
