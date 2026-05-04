@@ -162,15 +162,15 @@ def test_create_quality_failure_task_uses_source_key_and_marks_escalated(mocker)
         "line_number": 42,
         "escalation_task_id": None,
     }
-    mocker.patch("app.tasks.autonomous.upkeep._list_unfixed_quality_results", return_value=[quality_result])
-    mocker.patch("app.tasks.autonomous.upkeep.task_exists_for_upkeep_source", return_value=False)
+    mocker.patch("app.tasks.autonomous.upkeep_quality.list_unfixed_quality_results", return_value=[quality_result])
+    mocker.patch("app.tasks.autonomous.upkeep_quality.task_exists_for_upkeep_source", return_value=False)
     create_task = mocker.patch(
-        "app.tasks.autonomous.upkeep.task_store.create_task",
+        "app.tasks.autonomous.upkeep_signals.task_store.create_task",
         return_value={"id": "task-quality"},
     )
-    create_spirit = mocker.patch("app.tasks.autonomous.upkeep.create_task_spirit")
-    create_subtask = mocker.patch("app.tasks.autonomous.upkeep.create_single_subtask_with_steps")
-    mark_escalated = mocker.patch("app.tasks.autonomous.upkeep._mark_quality_escalated")
+    create_spirit = mocker.patch("app.tasks.autonomous.upkeep_signals.create_task_spirit")
+    create_subtask = mocker.patch("app.tasks.autonomous.upkeep_signals.create_single_subtask_with_steps")
+    mark_escalated = mocker.patch("app.tasks.autonomous.upkeep_quality.mark_quality_escalated")
 
     created = upkeep._create_quality_failure_tasks("summitflow", limit=3)
 
@@ -202,9 +202,9 @@ def test_create_quality_failure_task_skips_unactionable_project_level_failures(m
         "line_number": None,
         "escalation_task_id": None,
     }
-    mocker.patch("app.tasks.autonomous.upkeep._list_unfixed_quality_results", return_value=[quality_result])
-    create_task = mocker.patch("app.tasks.autonomous.upkeep.task_store.create_task")
-    mark_escalated = mocker.patch("app.tasks.autonomous.upkeep._mark_quality_escalated")
+    mocker.patch("app.tasks.autonomous.upkeep_quality.list_unfixed_quality_results", return_value=[quality_result])
+    create_task = mocker.patch("app.tasks.autonomous.upkeep_signals.task_store.create_task")
+    mark_escalated = mocker.patch("app.tasks.autonomous.upkeep_quality.mark_quality_escalated")
 
     created = upkeep._create_quality_failure_tasks("summitflow", limit=3)
 
@@ -227,13 +227,13 @@ def test_quality_failure_task_dedupes_by_stable_signal_not_result_id(mocker) -> 
         "line_number": 42,
         "escalation_task_id": None,
     }
-    mocker.patch("app.tasks.autonomous.upkeep._list_unfixed_quality_results", return_value=[quality_result])
+    mocker.patch("app.tasks.autonomous.upkeep_quality.list_unfixed_quality_results", return_value=[quality_result])
     task_exists = mocker.patch(
-        "app.tasks.autonomous.upkeep.task_exists_for_upkeep_source",
+        "app.tasks.autonomous.upkeep_quality.task_exists_for_upkeep_source",
         return_value="task-existing",
     )
-    create_task = mocker.patch("app.tasks.autonomous.upkeep.task_store.create_task")
-    mark_escalated = mocker.patch("app.tasks.autonomous.upkeep._mark_quality_escalated")
+    create_task = mocker.patch("app.tasks.autonomous.upkeep_signals.task_store.create_task")
+    mark_escalated = mocker.patch("app.tasks.autonomous.upkeep_quality.mark_quality_escalated")
 
     created = upkeep._create_quality_failure_tasks("summitflow", limit=3)
 
@@ -261,15 +261,15 @@ def test_create_feedback_task_links_agent_hub_item(mocker) -> None:
         "linked_task_id": None,
         "created_at": datetime.now(UTC).isoformat(),
     }
-    mocker.patch("app.tasks.autonomous.upkeep._fetch_feedback_items", return_value=[feedback])
-    mocker.patch("app.tasks.autonomous.upkeep.task_exists_for_upkeep_source", return_value=False)
+    mocker.patch("app.tasks.autonomous.upkeep_feedback.fetch_feedback_items", return_value=[feedback])
+    mocker.patch("app.tasks.autonomous.upkeep_feedback.task_exists_for_upkeep_source", return_value=False)
     mocker.patch(
-        "app.tasks.autonomous.upkeep.task_store.create_task",
+        "app.tasks.autonomous.upkeep_signals.task_store.create_task",
         return_value={"id": "task-feedback"},
     )
-    create_spirit = mocker.patch("app.tasks.autonomous.upkeep.create_task_spirit")
-    mocker.patch("app.tasks.autonomous.upkeep.create_single_subtask_with_steps")
-    link_feedback = mocker.patch("app.tasks.autonomous.upkeep._link_feedback_task")
+    create_spirit = mocker.patch("app.tasks.autonomous.upkeep_signals.create_task_spirit")
+    mocker.patch("app.tasks.autonomous.upkeep_signals.create_single_subtask_with_steps")
+    link_feedback = mocker.patch("app.tasks.autonomous.upkeep_feedback.link_feedback_task")
 
     created = upkeep._create_feedback_tasks("summitflow", limit=2)
 
@@ -281,11 +281,11 @@ def test_create_feedback_task_links_agent_hub_item(mocker) -> None:
 
 
 def test_task_exists_for_upkeep_source_uses_task_spirit_context(mocker) -> None:
-    from app.tasks.autonomous.upkeep import task_exists_for_upkeep_source
+    from app.tasks.autonomous.upkeep_signals import task_exists_for_upkeep_source
 
     cursor = MagicMock()
     cursor.fetchone.return_value = ("task-existing",)
-    get_cursor = mocker.patch("app.tasks.autonomous.upkeep.get_cursor")
+    get_cursor = mocker.patch("app.tasks.autonomous.upkeep_signals.get_cursor")
     get_cursor.return_value.__enter__.return_value = cursor
 
     assert task_exists_for_upkeep_source("summitflow", "upkeep:quality:123") == "task-existing"
