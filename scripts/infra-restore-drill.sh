@@ -20,7 +20,7 @@ DRILL_REDIS_CONTAINER="sf-drill-redis-$$"
 START_TIME=$(date +%s%3N 2>/dev/null || echo "0")
 
 cleanup() {
-    docker rm -f "$DRILL_PG_CONTAINER" "$DRILL_REDIS_CONTAINER" 2>/dev/null || true
+    docker rm -f "$DRILL_PG_CONTAINER" "$DRILL_REDIS_CONTAINER" >/dev/null 2>&1 || true
     [ -d "$DRILL_DIR" ] && rm -rf "$DRILL_DIR"
 }
 trap cleanup EXIT
@@ -52,18 +52,17 @@ PG_DUMP=$(find "$EXTRACT_ROOT" -name "pgdumpall.sql.gz" -type f 2>/dev/null | he
 if [ -n "$PG_DUMP" ]; then
     docker run -d --name "$DRILL_PG_CONTAINER" \
         -e POSTGRES_PASSWORD=drill_test \
-        -e POSTGRES_USER=admin \
-        postgres:16-alpine >/dev/null 2>&1
+        pgvector/pgvector:pg16 >/dev/null 2>&1
 
     for i in $(seq 1 30); do
-        if docker exec "$DRILL_PG_CONTAINER" pg_isready -U admin >/dev/null 2>&1; then
+        if docker exec "$DRILL_PG_CONTAINER" pg_isready -U postgres >/dev/null 2>&1; then
             break
         fi
         sleep 1
     done
 
-    if gunzip -c "$PG_DUMP" | docker exec -i "$DRILL_PG_CONTAINER" psql -U admin -d postgres >/dev/null 2>&1; then
-        db_count=$(docker exec "$DRILL_PG_CONTAINER" psql -U admin -d postgres -tAc \
+    if gunzip -c "$PG_DUMP" | docker exec -i "$DRILL_PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres >/dev/null 2>&1; then
+        db_count=$(docker exec "$DRILL_PG_CONTAINER" psql -U postgres -d postgres -tAc \
             "SELECT count(*) FROM pg_database WHERE datistemplate = false AND datname != 'postgres'" 2>/dev/null || echo "0")
         db_count=$(echo "$db_count" | tr -d '[:space:]')
         if [ "${db_count:-0}" -gt 0 ]; then
