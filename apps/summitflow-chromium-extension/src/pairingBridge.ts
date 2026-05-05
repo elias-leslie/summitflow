@@ -42,7 +42,7 @@ function isAllowedSummitFlowOrigin(origin: string): boolean {
   return (
     origin === 'http://127.0.0.1:3001' ||
     origin === 'http://localhost:3001' ||
-    origin === 'http://192.168.8.244:3001' ||
+    origin === 'http://192.168.8.10:3001' ||
     origin === 'https://terminal.summitflow.dev'
   )
 }
