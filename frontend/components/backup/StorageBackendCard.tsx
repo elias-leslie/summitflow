@@ -3,8 +3,10 @@
 import { clsx } from 'clsx'
 import {
   CheckCircle2,
+  FolderOpen,
   HardDrive,
   Loader2,
+  Server,
   Star,
   Wifi,
   XCircle,
@@ -44,6 +46,12 @@ export function StorageBackendCard({
 
   const config = backend.config as Record<string, string>
   const testStatus = testResult?.success ?? backend.last_test_ok
+  const location =
+    backend.backend_type === 'local'
+      ? [config.root_path, config.path].filter(Boolean).join('/')
+      : config.host
+        ? `${config.host}${config.share ? `/${config.share}` : ''}`
+        : ''
 
   return (
     <div
@@ -56,7 +64,13 @@ export function StorageBackendCard({
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
-          <HardDrive className="w-4 h-4 text-slate-400" />
+          {backend.backend_type === 'local' ? (
+            <FolderOpen className="w-4 h-4 text-emerald-400" />
+          ) : backend.backend_type === 'smb' ? (
+            <Server className="w-4 h-4 text-blue-400" />
+          ) : (
+            <HardDrive className="w-4 h-4 text-slate-400" />
+          )}
           <span className="text-sm font-medium text-slate-200">
             {backend.name}
           </span>
@@ -79,7 +93,9 @@ export function StorageBackendCard({
               'text-xs px-2 py-0.5 rounded-full',
               backend.backend_type === 'smb'
                 ? 'bg-blue-500/15 text-blue-400'
-                : 'bg-slate-600 text-slate-400',
+                : backend.backend_type === 'local'
+                  ? 'bg-emerald-500/15 text-emerald-400'
+                  : 'bg-slate-600 text-slate-400',
             )}
           >
             {backend.backend_type.toUpperCase()}
@@ -88,6 +104,12 @@ export function StorageBackendCard({
       </div>
 
       <div className="space-y-1 text-xs text-slate-400 mb-3">
+        {location && (
+          <div>
+            <span className="text-slate-500">Location: </span>
+            <span className="text-slate-300 font-mono">{location}</span>
+          </div>
+        )}
         {config.host && (
           <div>
             <span className="text-slate-500">Host: </span>
@@ -130,7 +152,7 @@ export function StorageBackendCard({
           ) : (
             <Wifi className="w-3 h-3" />
           )}
-          {testing ? 'Testing...' : 'Test Connection'}
+          {testing ? 'Testing...' : 'Test Storage'}
         </button>
       </div>
 

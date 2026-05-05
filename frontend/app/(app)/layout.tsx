@@ -13,12 +13,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Main content area with sidebar */}
         <AppShell>
-          <div className="flex flex-1 overflow-hidden">
+          <div className="flex min-w-0 flex-1 overflow-hidden">
             {/* Sidebar - shows on all pages, adapts to context */}
             <Sidebar />
 
             {/* Main content */}
-            <main className="flex-1 overflow-auto bg-grid">{children}</main>
+            <main className="min-w-0 flex-1 overflow-auto bg-grid">
+              {children}
+            </main>
           </div>
         </AppShell>
       </div>

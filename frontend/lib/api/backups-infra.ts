@@ -5,7 +5,7 @@ import { fetchWithErrorHandling, postJson } from './utils'
 export interface StorageBackend {
   id: string
   name: string
-  backend_type: string
+  backend_type: 'smb' | 'local' | string
   config: Record<string, unknown>
   is_default: boolean
   enabled: boolean

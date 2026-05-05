@@ -1,7 +1,15 @@
 'use client'
 
 import { clsx } from 'clsx'
-import { ArrowRight, CheckCircle2, Loader2, Wifi, XCircle } from 'lucide-react'
+import {
+  ArrowRight,
+  CheckCircle2,
+  FolderOpen,
+  Loader2,
+  Server,
+  Wifi,
+  XCircle,
+} from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { CollapsibleSection } from '@/components/backup/CollapsibleSection'
@@ -30,16 +38,21 @@ export function StorageCard({
 
   const configured = storageStatus?.configured ?? false
   const defaultBackend = backends.find((b) => b.is_default) ?? backends[0]
-  const backendHost = (
-    defaultBackend?.config as Record<string, string> | undefined
-  )?.host
-  const backendShare = (
-    defaultBackend?.config as Record<string, string> | undefined
-  )?.share
+  const backendConfig = defaultBackend?.config as
+    | Record<string, string>
+    | undefined
+  const backendLocation =
+    defaultBackend?.backend_type === 'local'
+      ? [backendConfig?.root_path, backendConfig?.path]
+          .filter(Boolean)
+          .join('/')
+      : backendConfig?.host
+        ? `${backendConfig.host}${backendConfig.share ? `/${backendConfig.share}` : ''}`
+        : ''
   const summary =
     configured && defaultBackend
-      ? `${defaultBackend.name} over ${defaultBackend.backend_type.toUpperCase()}${backendHost ? ` at ${backendHost}${backendShare ? `/${backendShare}` : ''}` : ''}`
-      : 'Remote storage is not configured yet, so backups stay local until a backend is connected.'
+      ? `${defaultBackend.name} over ${defaultBackend.backend_type.toUpperCase()}${backendLocation ? ` at ${backendLocation}` : ''}`
+      : 'Storage is not configured yet, so backups stay in project-local archives until a backend is connected.'
 
   const handleTest = async () => {
     if (!defaultBackend) return
@@ -91,18 +104,21 @@ export function StorageCard({
                 Type
               </div>
               <div className="truncate text-xs text-slate-200">
+                {defaultBackend.backend_type === 'local' ? (
+                  <FolderOpen className="w-3 h-3 inline mr-1 text-emerald-400" />
+                ) : (
+                  <Server className="w-3 h-3 inline mr-1 text-blue-400" />
+                )}
                 {defaultBackend.backend_type.toUpperCase()}
               </div>
             </div>
-            {(defaultBackend.config as Record<string, string>)?.host && (
+            {backendLocation && (
               <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5 col-span-2">
                 <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                  Host
+                  Location
                 </div>
                 <div className="truncate text-xs text-slate-200 font-mono">
-                  {(defaultBackend.config as Record<string, string>).host}
-                  {(defaultBackend.config as Record<string, string>).share &&
-                    `/${(defaultBackend.config as Record<string, string>).share}`}
+                  {backendLocation}
                 </div>
               </div>
             )}
@@ -161,7 +177,7 @@ export function StorageCard({
         <>
           <p className="text-xs text-slate-400 leading-relaxed">
             Configure where backups are stored. Without a storage backend,
-            backups are only kept locally.
+            backups are kept in project-local archives.
           </p>
           <Link
             href="/backups/setup"

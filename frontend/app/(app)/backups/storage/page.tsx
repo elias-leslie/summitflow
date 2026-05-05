@@ -49,7 +49,8 @@ export default function StorageBackendsPage() {
             No storage backends
           </h3>
           <p className="text-slate-400 mb-4">
-            Set up a storage backend to start sending backups to your NAS.
+            Set up a storage backend to start writing backups to SMB or a local
+            path.
           </p>
           <Link
             href="/backups/setup"

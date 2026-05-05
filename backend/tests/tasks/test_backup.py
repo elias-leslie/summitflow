@@ -19,7 +19,7 @@ from app.tasks.backup import (
     create_backup,
 )
 from app.tasks.backup_drain import drain_pending_backups
-from app.tasks.backup_native import SmbUploadResult, drain_pending_archives
+from app.tasks.backup_native import SmbUploadResult, drain_pending_archives, run_project_backup
 from app.tasks.backup_restore import restore_backup
 
 
@@ -238,6 +238,55 @@ class TestCreateBackupTask:
         assert backup["db_size_bytes"] == 50 * 1024 * 1024
 
         assert mock_run.call_args.kwargs["local_only"] is True
+
+
+class TestNativeLocalStorage:
+    """Tests for native local filesystem storage backends."""
+
+    def test_run_project_backup_writes_to_local_storage_backend(self, tmp_path: Path) -> None:
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        storage_root = tmp_path / "Backups"
+
+        def fake_create_project_archive(
+            _project_path: Path,
+            _project_name: str,
+            staging: Path,
+            _env: dict[str, str],
+        ) -> dict[str, object]:
+            archive_path = staging / "project-20260505-180000.tar.gz"
+            archive_path.write_bytes(b"archive")
+            return {
+                "archive_name": archive_path.name,
+                "archive_path": archive_path,
+                "total_bytes": archive_path.stat().st_size,
+                "db_bytes": 0,
+                "files_bytes": archive_path.stat().st_size,
+                "verification": {"verified": True},
+            }
+
+        with patch(
+            "app.tasks.backup_native._create_project_archive",
+            side_effect=fake_create_project_archive,
+        ):
+            result = run_project_backup(
+                project_dir=str(project_dir),
+                source_id="source-1",
+                env={
+                    "STORAGE_BACKEND_TYPE": "local",
+                    "LOCAL_BACKUP_ROOT": str(storage_root),
+                    "LOCAL_BACKUP_PATH": "project-backups",
+                },
+            )
+
+        destination = (
+            storage_root
+            / "project-backups"
+            / "source-1"
+            / "project-20260505-180000.tar.gz"
+        )
+        assert destination.read_bytes() == b"archive"
+        assert result["location"] == str(destination)
 
 
 class TestPendingBackupDrain:

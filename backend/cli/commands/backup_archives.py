@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import tarfile
 from pathlib import Path
+from typing import Any
 
 import typer
 
+from app.storage.backups.storage_backends import list_backends as list_storage_backends
 from app.tasks.backup_native import restore_archive
 
 from ..config import get_config
@@ -71,9 +73,18 @@ def run_archive_restore(
 
 def archive_paths() -> list[tuple[str, Path]]:
     paths: list[tuple[str, Path]] = []
+    seen: set[Path] = set()
     for label, directory in _archive_dirs():
         if directory.exists():
-            paths.extend((label, path) for path in sorted(directory.glob("*.tar.gz")))
+            pattern = "**/*.tar.gz" if label == "STORAGE" else "*.tar.gz"
+            for path in sorted(directory.glob(pattern)):
+                if not path.is_file():
+                    continue
+                resolved = path.resolve()
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                paths.append((label, path))
     return paths
 
 
@@ -168,7 +179,56 @@ def _archive_dirs() -> list[tuple[str, Path]]:
     return [
         ("LOCAL", project_root / "backups"),
         ("PENDING", Path.home() / ".local" / "share" / "backup-pending"),
+        *_configured_local_archive_dirs(),
     ]
+
+
+def _configured_local_archive_dirs() -> list[tuple[str, Path]]:
+    try:
+        backends = list_storage_backends(enabled_only=True)
+    except Exception:
+        return []
+
+    directories: list[tuple[str, Path]] = []
+    seen: set[Path] = set()
+    for backend in backends:
+        if str(backend.get("backend_type") or "").lower() != "local":
+            continue
+        config = backend.get("config")
+        if not isinstance(config, dict):
+            continue
+        directory = _local_backend_archive_dir(config)
+        if directory is None:
+            continue
+        resolved = directory.expanduser().resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        directories.append(("STORAGE", directory))
+    return directories
+
+
+def _local_backend_archive_dir(config: dict[str, Any]) -> Path | None:
+    root_raw = _string_value(config.get("root_path") or config.get("base_path"))
+    path_raw = _string_value(config.get("path")) or ""
+
+    if path_raw and Path(path_raw).expanduser().is_absolute():
+        return Path(path_raw).expanduser()
+
+    if not root_raw:
+        return None
+
+    directory = Path(root_raw).expanduser()
+    if path_raw:
+        directory = directory / path_raw.strip("/")
+    return directory
+
+
+def _string_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _named_archive(matches: list[tuple[str, Path]], archive_name: str) -> Path:

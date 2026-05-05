@@ -9,6 +9,7 @@ from .backup_lock import acquire_backup_lock, release_backup_lock
 from .backup_native import INFRA_BACKUP_TIMEOUT, run_infra_backup
 from .backup_utils import (
     as_mapping,
+    build_storage_env,
     build_verification_kwargs,
     get_int_field,
     get_str_field,
@@ -55,6 +56,7 @@ def _run_infra_backup(
 
     try:
         parsed_output = run_infra_backup(
+            env=build_storage_env(source_id),
             keep_local=keep_local,
             retention_days=retention_days,
         )
