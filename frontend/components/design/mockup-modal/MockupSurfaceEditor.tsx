@@ -54,7 +54,6 @@ interface MockupSurfaceEditorProps {
   onSendToJenny?: (payload: {
     sourceMockup: Mockup
     savedMockup?: Mockup
-    content: string
     summary: string
   }) => void
 }
@@ -630,7 +629,6 @@ export function MockupSurfaceEditor({
     onSendToJenny?.({
       sourceMockup: mockup,
       savedMockup,
-      content: draftContent,
       summary,
     })
   }

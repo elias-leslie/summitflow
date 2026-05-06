@@ -15,7 +15,6 @@ interface MockupEditorModalProps {
   onSendToJenny?: (payload: {
     sourceMockup: Mockup
     savedMockup?: Mockup
-    content: string
     summary: string
   }) => void
 }
