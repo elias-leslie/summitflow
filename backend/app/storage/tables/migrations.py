@@ -26,6 +26,7 @@ def apply_schema_migrations(conn: psycopg.Connection, cur: psycopg.Cursor) -> No
     _create_task_related_tables(cur)
     _add_missing_columns(cur)
     _drop_removed_spirit_columns(cur)
+    _drop_removed_design_review_tables(cur)
     _backfill_execution_mode(cur)
     _ensure_execution_mode_constraint(cur)
     _create_migration_indexes(cur)
@@ -142,6 +143,25 @@ def _drop_removed_spirit_columns(cur: psycopg.Cursor) -> None:
             cur.execute(
                 sql.SQL("ALTER TABLE task_spirit DROP COLUMN IF EXISTS {}").format(
                     sql.Identifier(col)
+                )
+            )
+
+
+def _drop_removed_design_review_tables(cur: psycopg.Cursor) -> None:
+    """Drop the removed global/live design review persistence tables."""
+    for table in (
+        "collab_connector_pairings",
+        "collab_evidence_packets",
+        "collab_annotations",
+        "collab_participants",
+        "collab_audit_events",
+        "collab_sessions",
+        "route_evidence",
+    ):
+        with contextlib.suppress(psycopg.Error):
+            cur.execute(
+                sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
+                    sql.Identifier(table)
                 )
             )
 

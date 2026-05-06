@@ -1,10 +1,9 @@
 /**
  * PageDetail - Detail panel for frontend pages
  *
- * Shows route info, health, performance, console errors, and design compliance.
+ * Shows route info, health, performance, and console errors.
  */
 
-import { ImageIcon } from 'lucide-react'
 import type { ExplorerEntry } from '@/lib/api/explorer'
 import { formatDate, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -18,9 +17,6 @@ export function PageDetail({ entry }: PageDetailProps) {
   const consoleErrors = meta.console_errors ?? 0
   const consoleWarnings = meta.console_warnings ?? 0
   const routeParams = meta.route_params ?? []
-  const recentRouteEvidence = Array.isArray(meta.recent_route_evidence)
-    ? meta.recent_route_evidence
-    : []
 
   return (
     <div className="space-y-4">
@@ -151,62 +147,6 @@ export function PageDetail({ entry }: PageDetailProps) {
           <p className="text-sm text-slate-400 mt-1">
             {formatDate(meta.last_health_check)}
           </p>
-        </div>
-      )}
-
-      {/* Design Compliance - shows when evidence is available */}
-      {entry.evidenceCount !== undefined && entry.evidenceCount > 0 && (
-        <div className="pt-2 border-t border-slate-700/50 space-y-3">
-          <div>
-            <span className="text-xs text-slate-500 uppercase tracking-wide">
-              Design Evidence
-            </span>
-            <div className="mt-2 flex items-center gap-3">
-              <div className="flex items-center gap-2 px-3 py-2 rounded bg-pink-500/10 border border-pink-500/20">
-                <ImageIcon className="w-4 h-4 text-pink-400" />
-                <span className="text-xs text-pink-400 font-medium">
-                  {entry.evidenceCount} Screenshot
-                  {entry.evidenceCount > 1 ? 's' : ''}
-                </span>
-              </div>
-              {entry.lastEvidenceAt && (
-                <span className="text-xs text-slate-500">
-                  Last: {formatDate(entry.lastEvidenceAt)}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {recentRouteEvidence.length > 0 && (
-            <div className="space-y-2">
-              <span className="text-xs text-slate-500 uppercase tracking-wide">
-                Recent feedback
-              </span>
-              <div className="space-y-2">
-                {recentRouteEvidence.map((item) => (
-                  <div
-                    key={item.evidence_id}
-                    className="rounded-lg border border-slate-700/60 bg-slate-900/70 px-3 py-2"
-                  >
-                    <div className="mb-1 flex items-center justify-between gap-3 text-xs text-slate-500">
-                      <span>{item.created_by_display ?? 'User'}</span>
-                      <span>
-                        {item.created_at
-                          ? formatDate(item.created_at)
-                          : 'Saved'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-slate-200">{item.comment}</p>
-                    {item.selector && (
-                      <p className="mt-1 font-mono text-[11px] text-slate-500">
-                        {item.selector}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>

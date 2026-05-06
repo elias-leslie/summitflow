@@ -376,6 +376,30 @@ def test_search_precision_reports_completed_stale_refresh() -> None:
     assert "refreshed stale Explorer indexes before returning results" in result.output
 
 
+def test_search_precision_suppresses_stale_warning_when_results_returned() -> None:
+    payload = {
+        "prompt_context": "Precision Code Search: symbol-first\n\n## Relevant Symbols",
+        "metadata": {
+            "symbol_count": 1,
+            "used_symbol_first": True,
+            "estimated_tokens_saved": 500,
+            "final_tokens": 200,
+            "refreshed_index": False,
+            "stale_hit": True,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = _invoke(["stale_symbol"])
+
+    assert result.exit_code == 0
+    assert "Explorer indexes are stale" not in result.output
+    assert "SEARCH:stale_symbol|mode=symbol-first|symbols=1|tokens=200|saved=500" in result.output
+
+
 def test_search_file_mode_scope_checkout_reads_local_symbols_without_api_even_with_project_override() -> None:
     with runner.isolated_filesystem():
         file_path = Path("frontend/src/example.tsx")

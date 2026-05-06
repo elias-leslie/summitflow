@@ -11,13 +11,11 @@ from .connection import get_connection
 from .tables import (
     apply_schema_migrations,
     create_agent_tables,
-    create_collab_session_tables,
     create_core_tables,
     create_design_tables,
     create_explorer_tables,
     create_notes_tables,
     create_notifications_tables,
-    create_route_evidence_tables,
 )
 
 logger = get_logger(__name__)
@@ -66,8 +64,6 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
     create_notes_tables(cur)
     create_design_tables(cur)
     create_explorer_tables(cur)
-    create_route_evidence_tables(cur)
-    create_collab_session_tables(cur)
 
     # Apply backward compatibility migrations
     apply_schema_migrations(conn, cur)

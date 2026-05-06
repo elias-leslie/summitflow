@@ -12,6 +12,7 @@ from ...utils.datetime_helpers import parse_iso_datetime
 from .. import explorer as explorer_service
 from ..explorer.text_search import search_text
 from ._precision_query import (
+    has_explicit_code_signal,
     is_import_query,
     is_natural_language_query,
     looks_like_workflow_meta_query,
@@ -19,7 +20,7 @@ from ._precision_query import (
     normalize_queries,
     split_path_and_symbol_terms,
 )
-from ._precision_ranking import search_and_rank_symbols
+from ._precision_ranking import normalize_match_text, search_and_rank_symbols
 from ._precision_sections import (
     build_symbol_section,
     build_text_section,
@@ -273,12 +274,36 @@ def _search_symbols_for_queries(
     return symbols, section
 
 
+def _symbol_hits_cover_plain_phrase(
+    normalized_queries: list[str],
+    symbols: list[dict[str, object]],
+) -> bool:
+    """Return True when at least one symbol covers all plain query words."""
+    combined = " ".join(normalized_queries).strip()
+    terms = [term for term in normalize_match_text(combined).split() if len(term) >= 3]
+    if len(terms) < 2 or has_explicit_code_signal(normalized_queries):
+        return True
+
+    for symbol in symbols:
+        blob = normalize_match_text(
+            " ".join(
+                str(symbol.get(key) or "")
+                for key in ("name", "qualified_name", "file_path", "signature", "summary")
+            )
+        )
+        if all(term in blob for term in terms):
+            return True
+
+    return False
+
+
 def _text_fallback(
     project_id: str,
     normalized_queries: list[str],
     symbol_section: str,
     *,
     path_prefix: str | None = None,
+    force: bool = False,
 ) -> tuple[dict[str, Any], str]:
     """Run text search as a fallback when symbol search yields nothing.
 
@@ -287,7 +312,7 @@ def _text_fallback(
     to surface at least *some* relevant content.
     """
     _empty: dict[str, Any] = {"count": 0, "files_searched": 0, "items": [], "truncated": False}
-    if symbol_section:
+    if symbol_section and not force:
         return _empty, ""
 
     path_terms, _symbol_terms = split_path_and_symbol_terms(normalized_queries)
@@ -335,10 +360,12 @@ def _retrieve_and_assemble(
         normalized_queries,
         symbol_section,
         path_prefix=path_prefix,
+        force=bool(symbol_section)
+        and not _symbol_hits_cover_plain_phrase(normalized_queries, symbols),
     )
 
-    used_symbol_first = bool(symbol_section)
-    used_fallback = not used_symbol_first and bool(text_section)
+    used_symbol_first = bool(symbol_section) and not bool(text_section)
+    used_fallback = bool(text_section) and not used_symbol_first
     body = symbol_section if used_symbol_first else text_section
 
     return _RetrievalState(

@@ -8,7 +8,6 @@ import {
   History,
   Image as ImageIcon,
   Layers3,
-  MessageSquare,
   PanelsTopLeft,
   RefreshCw,
   Trash2,
@@ -38,7 +37,6 @@ interface PreviewAreaProps {
   onCreateIteration: () => void
   onRerun: () => void
   onDelete: () => void
-  onOpenReviewOverlay?: () => void
 }
 
 export function PreviewArea({
@@ -52,7 +50,6 @@ export function PreviewArea({
   onCreateIteration,
   onRerun,
   onDelete,
-  onOpenReviewOverlay,
 }: PreviewAreaProps) {
   const openWorkChat = () => {
     const params = new URLSearchParams({
@@ -169,16 +166,6 @@ export function PreviewArea({
           <PanelsTopLeft className="w-4 h-4" />
           Work Chat
         </button>
-        {onOpenReviewOverlay && (
-          <button
-            type="button"
-            onClick={onOpenReviewOverlay}
-            className="btn-secondary flex items-center gap-2"
-          >
-            <MessageSquare className="w-4 h-4" />
-            Review Overlay
-          </button>
-        )}
         <div className="flex-1" />
         <button
           type="button"

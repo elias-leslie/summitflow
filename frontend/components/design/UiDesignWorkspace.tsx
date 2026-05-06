@@ -11,7 +11,6 @@ import {
 } from '@/components/design/DesignFilters'
 import { DesignHeader, type ViewMode } from '@/components/design/DesignHeader'
 import { GenerateMockupDialog } from '@/components/design/GenerateMockupDialog'
-import type { ReviewOverlayReferenceRequest } from '@/components/design/live-review/ReviewOverlayReferenceHost'
 import { MockupDetailModal } from '@/components/design/MockupDetailModal'
 import { MockupGrid } from '@/components/design/MockupGrid'
 import {
@@ -32,43 +31,13 @@ import {
   fetchMockups,
   type Mockup,
 } from '@/lib/api/mockups'
-import { getApiBaseUrl } from '@/lib/api-config'
-
-function resolveAgentHubEmbedUrl(projectId: string): string {
-  if (typeof window === 'undefined') {
-    return `http://localhost:3003/embed?projectId=${encodeURIComponent(projectId)}`
-  }
-
-  const explicitBase = process.env.NEXT_PUBLIC_AGENT_HUB_EMBED_URL?.trim()
-  if (explicitBase) {
-    const url = new URL(explicitBase, window.location.origin)
-    if (
-      !url.searchParams.get('project') &&
-      !url.searchParams.get('projectId')
-    ) {
-      url.searchParams.set('projectId', projectId)
-    }
-    return url.toString()
-  }
-
-  const host = window.location.hostname
-  if (host === 'localhost' || host === '127.0.0.1') {
-    return `http://localhost:3003/embed?projectId=${encodeURIComponent(projectId)}`
-  }
-
-  return `${window.location.protocol}//${host}:3003/embed?projectId=${encodeURIComponent(projectId)}`
-}
 
 interface UiDesignWorkspaceProps {
   projectId: string
-  onRequestReviewOverlay?: (
-    request: ReviewOverlayReferenceRequest | null,
-  ) => void
 }
 
 export function UiDesignWorkspace({
   projectId,
-  onRequestReviewOverlay,
 }: UiDesignWorkspaceProps): React.ReactElement {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -227,18 +196,6 @@ export function UiDesignWorkspace({
     totalCount,
   ])
 
-  const openReviewOverlay = (mockup: Mockup): void => {
-    onRequestReviewOverlay?.({
-      projectId,
-      summitflowBaseUrl: getApiBaseUrl(),
-      agentHubEmbedUrl: resolveAgentHubEmbedUrl(projectId),
-      overlayId: 'summitflow-design-review-overlay',
-      pageKey: mockup.page_path || window.location.pathname,
-      pageUrlSnapshot: window.location.href,
-      title: mockup.name,
-    })
-  }
-
   return (
     <div className="flex h-full gap-4">
       <div className="flex min-w-0 flex-1 flex-col">
@@ -374,7 +331,6 @@ export function UiDesignWorkspace({
               setCreateDialogOpen(true)
             }}
             onSelectMockup={setSelectedMockup}
-            onOpenReviewOverlay={openReviewOverlay}
             navigation={modalNavigation}
           />
         )}

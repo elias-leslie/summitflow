@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import typer
 
 from ..client import APIError, STClient
@@ -12,7 +14,7 @@ _BUG_DONE_WHEN = [
     "Root cause is fixed with the smallest scoped code change.",
     "Original symptom no longer reproduces and relevant st check gates pass.",
 ]
-_BUG_SUBTASK_STEPS = [
+_BUG_SUBTASK_STEPS: list[str | dict[str, Any]] = [
     "Confirm reproduction or recorded failure evidence.",
     "Implement the smallest root-cause fix.",
     "Verify the original symptom and run st check --quick --changed-only.",

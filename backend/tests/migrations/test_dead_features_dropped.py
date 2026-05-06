@@ -5,7 +5,11 @@ ac-004: Evidence and Tests tables are dropped from database
 
 from __future__ import annotations
 
+import pytest
+
 from app.storage.connection import get_connection
+
+pytestmark = pytest.mark.usefixtures("db_schema_initialized")
 
 
 class TestEvidenceSystemDropped:
@@ -97,7 +101,7 @@ class TestEvidenceSystemDropped:
             assert not exists, "project_evidence_config table should be dropped"
 
     def test_no_legacy_evidence_tables_exist(self) -> None:
-        """Legacy evidence tables stay dropped even though route_evidence is allowed."""
+        """Legacy evidence tables stay dropped."""
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -114,11 +118,39 @@ class TestEvidenceSystemDropped:
                     'evidence_capture_jobs',
                     'evidence_types',
                     'project_evidence_config',
+                    'route_evidence',
                 }.intersection(tables)
             )
             assert not legacy_tables, (
                 f"Legacy evidence tables should not exist: {legacy_tables}"
             )
+
+
+class TestDesignReviewSystemDropped:
+    """Verify removed global/live design review tables have been dropped."""
+
+    def test_design_review_tables_dropped(self) -> None:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public'
+                AND table_name = ANY(%s)
+                """,
+                (
+                    [
+                        "collab_sessions",
+                        "collab_participants",
+                        "collab_annotations",
+                        "collab_evidence_packets",
+                        "collab_audit_events",
+                        "collab_connector_pairings",
+                        "route_evidence",
+                    ],
+                ),
+            )
+            tables = sorted(row[0] for row in cur.fetchall())
+            assert not tables, f"Design review tables should be dropped: {tables}"
 
 
 class TestTestsSystemDropped:

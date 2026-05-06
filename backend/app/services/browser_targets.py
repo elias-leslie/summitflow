@@ -111,7 +111,7 @@ def _server_ip_addresses() -> set[str]:
         hostname_ips = []
     for entry in hostname_ips:
         address = entry[4][0]
-        if address:
+        if isinstance(address, str) and address:
             addresses.add(address)
     detected = safe_subprocess.run(["hostname", "-I"], text=True, capture_output=True, check=False)
     if detected.returncode == 0:

@@ -144,7 +144,6 @@ else
 fi
 
 pack_js_package "@summitflow/notes-ui" "$SUMMITFLOW_ROOT/packages/notes-ui" "summitflow-notes-ui-0.1.0.tgz"
-pack_js_package "@summitflow/review-overlay" "$SUMMITFLOW_ROOT/packages/review-overlay" "summitflow-review-overlay-0.1.0.tgz"
 
 # ── Python package (uv build → .whl) ────────────────────────────
 PYTHON_PKG="${PACKAGES_DIR:+$PACKAGES_DIR/agent-hub-client}"

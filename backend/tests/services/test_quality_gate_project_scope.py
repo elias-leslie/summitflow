@@ -10,7 +10,7 @@ from app.services.quality_gate.fix_verification import process_successful_fix
 
 
 def test_build_prompt_passes_project_id_to_pattern_lookup(tmp_path: Path) -> None:
-    check_result = {
+    check_result: dict[str, object] = {
         "project_id": "agent-hub",
         "check_type": "ruff",
         "check_name": "F401",
@@ -58,7 +58,7 @@ def test_apply_and_verify_passes_check_result_project_id_to_verification(tmp_pat
     conn = MagicMock()
     file_path = tmp_path / "test.py"
     file_path.write_text("import os\n")
-    check_result = {
+    check_result: dict[str, object] = {
         "project_id": "agent-hub",
         "check_type": "ruff",
         "check_name": "F401",

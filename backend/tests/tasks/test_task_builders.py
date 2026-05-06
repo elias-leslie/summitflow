@@ -198,7 +198,7 @@ class TestCreateRefactorTask:
     ) -> None:
         mock_issue.return_value = 42
         mock_create_task.return_value = "task-123"
-        steps = [
+        steps: list[dict[str, object]] = [
             {"description": "Refactor safely"},
             {
                 "description": "Verify structure",
@@ -228,7 +228,7 @@ class TestCreateSingleSubtaskWithSteps:
 
     @patch("app.tasks.autonomous._subtask_builder.bulk_create_subtasks")
     def test_preserves_steps_for_plan_context_sync(self, mock_bulk_create: MagicMock) -> None:
-        steps = [
+        steps: list[dict[str, object]] = [
             {"description": "Keep behavior stable"},
             {
                 "description": "Run checks",

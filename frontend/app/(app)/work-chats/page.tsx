@@ -72,7 +72,6 @@ type WorkChatLayout =
   | 'two-by-two'
   | 'wide-grid'
 type RoutingMode = 'auto' | 'direct'
-type RoutingPolicy = 'auto' | 'force' | 'avoid'
 
 interface WorkChatPane {
   id: string
@@ -81,8 +80,6 @@ interface WorkChatPane {
   agentSlug: string
   routingMode: RoutingMode
   preferredAgentSlug: string | null
-  explorePolicy: RoutingPolicy
-  researchPolicy: RoutingPolicy
   projectId: string | null
   taskId: string | null
   taskTitle: string | null
@@ -140,8 +137,6 @@ function makePane(agentSlug = AUTO_AGENT_SLUG): WorkChatPane {
     agentSlug,
     routingMode: agentSlug === AUTO_AGENT_SLUG ? 'auto' : 'direct',
     preferredAgentSlug: null,
-    explorePolicy: 'auto',
-    researchPolicy: 'auto',
     projectId: null,
     taskId: null,
     taskTitle: null,
@@ -187,14 +182,21 @@ function readSavedState(defaultAgent: string): {
               (savedAgent === AUTO_AGENT_SLUG || savedAgent === 'chat'
                 ? 'auto'
                 : 'direct')
+            const basePane = makePane(defaultAgent)
             return {
-              ...makePane(defaultAgent),
-              ...pane,
+              ...basePane,
+              id: pane.id ?? basePane.id,
+              sessionId: pane.sessionId ?? null,
               agentSlug: routingMode === 'auto' ? AUTO_AGENT_SLUG : savedAgent,
               routingMode,
               preferredAgentSlug: pane.preferredAgentSlug ?? null,
-              explorePolicy: pane.explorePolicy ?? 'auto',
-              researchPolicy: pane.researchPolicy ?? 'auto',
+              projectId: pane.projectId ?? null,
+              taskId: pane.taskId ?? null,
+              taskTitle: pane.taskTitle ?? null,
+              taskSummary: pane.taskSummary ?? null,
+              feedbackId: pane.feedbackId ?? null,
+              designId: pane.designId ?? null,
+              artifactSummary: pane.artifactSummary ?? null,
               chatKey: pane.chatKey ?? 0,
               verifierEnabled: pane.verifierEnabled ?? false,
               verifierChatKey: pane.verifierChatKey ?? 0,
@@ -228,11 +230,6 @@ function layoutClass(layout: WorkChatLayout, count: number): string {
   return 'md:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]'
 }
 
-function parseRoutingPolicy(value: string | null): RoutingPolicy {
-  if (value === 'force' || value === 'avoid') return value
-  return 'auto'
-}
-
 function workContextForPane(
   pane: WorkChatPane,
   project: Project | null,
@@ -252,8 +249,6 @@ function workContextForPane(
       pane.routingMode === 'auto'
         ? (pane.preferredAgentSlug ?? undefined)
         : undefined,
-    explore_policy: pane.explorePolicy,
-    research_policy: pane.researchPolicy,
     verifier_enabled: pane.verifierEnabled,
     project_id: pane.projectId ?? undefined,
     project_name: project?.name,
@@ -759,52 +754,6 @@ function PaneChrome({
         </SelectControl>
 
         <label
-          title="Explore first"
-          className={cn(
-            'flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded border px-2 text-xs transition-colors',
-            pane.explorePolicy === 'force'
-              ? 'border-phosphor-500/40 bg-phosphor-500/10 text-phosphor-200'
-              : 'border-slate-800 bg-slate-950/60 text-slate-500 hover:border-slate-600 hover:text-slate-200',
-          )}
-        >
-          <input
-            type="checkbox"
-            checked={pane.explorePolicy === 'force'}
-            onChange={(event) =>
-              onPatch({
-                explorePolicy: event.target.checked ? 'force' : 'auto',
-              })
-            }
-            className="h-3 w-3 accent-cyan-400"
-            aria-label="Explore first"
-          />
-          <Workflow className="h-3.5 w-3.5" />
-        </label>
-
-        <label
-          title="Research first"
-          className={cn(
-            'flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded border px-2 text-xs transition-colors',
-            pane.researchPolicy === 'force'
-              ? 'border-phosphor-500/40 bg-phosphor-500/10 text-phosphor-200'
-              : 'border-slate-800 bg-slate-950/60 text-slate-500 hover:border-slate-600 hover:text-slate-200',
-          )}
-        >
-          <input
-            type="checkbox"
-            checked={pane.researchPolicy === 'force'}
-            onChange={(event) =>
-              onPatch({
-                researchPolicy: event.target.checked ? 'force' : 'auto',
-              })
-            }
-            className="h-3 w-3 accent-cyan-400"
-            aria-label="Research first"
-          />
-          <Globe2 className="h-3.5 w-3.5" />
-        </label>
-
-        <label
           title="Enable verifier"
           className={cn(
             'flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded border px-2 text-xs transition-colors',
@@ -1026,8 +975,6 @@ function PaneChrome({
             if (pane.preferredAgentSlug) {
               params.set('preferred_agent_slug', pane.preferredAgentSlug)
             }
-            params.set('explore_policy', pane.explorePolicy)
-            params.set('research_policy', pane.researchPolicy)
             if (pane.projectId) params.set('project_id', pane.projectId)
             if (pane.taskId) params.set('task_id', pane.taskId)
             if (pane.taskTitle) params.set('task_title', pane.taskTitle)
@@ -1939,8 +1886,6 @@ function paneFromSearchParams(
     ...makePane(agentSlug),
     routingMode,
     preferredAgentSlug: searchParams.get('preferred_agent_slug'),
-    explorePolicy: parseRoutingPolicy(searchParams.get('explore_policy')),
-    researchPolicy: parseRoutingPolicy(searchParams.get('research_policy')),
     sessionId: searchParams.get('session_id'),
     projectId: searchParams.get('project_id'),
     taskId: searchParams.get('task_id'),
