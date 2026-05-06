@@ -1,7 +1,7 @@
 // SummitFlow Service Worker — offline caching and PWA support
 
-const CACHE_NAME = 'summitflow-v23'
-const STATIC_CACHE_NAME = 'summitflow-static-v22'
+const CACHE_NAME = 'summitflow-v24'
+const STATIC_CACHE_NAME = 'summitflow-static-v24'
 const CACHE_PREFIX = 'summitflow-'
 const CF_ACCESS_HOST = 'cloudflareaccess.com'
 const ACCEPT_HTML = 'text/html'
@@ -11,7 +11,7 @@ const ICON_PATH = '/icons/icon-192.png'
 const DEFAULT_NOTIF_TAG = 'summitflow-notification'
 const CRITICAL_SEVERITIES = ['critical', 'error']
 const OFFLINE_STATUS = 503
-const STATIC_ASSETS = ['/', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png']
+const STATIC_ASSETS = ['/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png']
 
 // Install — cache static assets with credentials (CF Access compatible)
 self.addEventListener('install', (event) => {
@@ -65,11 +65,7 @@ function storeInCache(cacheName, request, response) {
 
 function networkFirstHtml(request) {
   return fetch(request, { credentials: 'same-origin' })
-    .then((res) => {
-      if (res.ok) storeInCache(CACHE_NAME, request, res.clone())
-      return res
-    })
-    .catch(() => caches.match(request).then((cached) => cached || caches.match('/')))
+    .catch(() => new Response('Offline', { status: OFFLINE_STATUS, statusText: 'Service Unavailable' }))
 }
 
 function cacheFirstAsset(request, url) {

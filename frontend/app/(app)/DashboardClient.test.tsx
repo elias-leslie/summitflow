@@ -79,4 +79,25 @@ describe('DashboardClient', () => {
     expect(featureLabel.parentElement?.parentElement).toHaveTextContent('2')
     expect(screen.getByText('Tasks')).toBeInTheDocument()
   })
+
+  it('shows an empty state when no projects are registered', async () => {
+    apiMocks.fetchProjectsWithStats.mockResolvedValue({
+      total: 0,
+      projects: [],
+    })
+
+    renderClient()
+
+    await screen.findByText('No projects registered')
+
+    expect(
+      screen.getByText(
+        'Add your first project to start tracking health, quality, tasks, and automation',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /add project/i })).toHaveAttribute(
+      'href',
+      '/projects/new',
+    )
+  })
 })

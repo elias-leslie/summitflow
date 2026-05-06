@@ -32,7 +32,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           __html: `
             if ('serviceWorker' in navigator) {
               window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/sw.js?v=23').catch(function(e) { if (process.env.NODE_ENV === 'development') console.warn('SW registration failed:', e); });
+                navigator.serviceWorker.register('/sw.js?v=24').catch(function(e) { if (process.env.NODE_ENV === 'development') console.warn('SW registration failed:', e); });
               });
             }
           `,
