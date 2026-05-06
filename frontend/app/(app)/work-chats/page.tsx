@@ -3,8 +3,9 @@
 import {
   ActivityIndicator,
   type ChatMessage,
+  groupMessages,
+  MessageBubble,
   MessageInput,
-  MessageList,
   type StreamStatus,
   useChatStream,
 } from '@agent-hub/chat-ui'
@@ -45,6 +46,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { MockupEditorModal } from '@/components/design/MockupEditorModal'
 import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
 import { fetchProjects, fetchTasks, type Project, type Task } from '@/lib/api'
 import {
@@ -63,6 +65,7 @@ import {
 } from '@/lib/api/agent-hub-work-chats'
 import { type FeedbackItem, fetchFeedbackItems } from '@/lib/api/feedback'
 import { fetchMockups, type Mockup } from '@/lib/api/mockups'
+import { summarizeMockupForWorkContext } from '@/lib/mockup-html'
 import { cn } from '@/lib/utils'
 
 type WorkChatLayout =
@@ -113,6 +116,13 @@ interface ArtifactOption {
   kind: 'feedback' | 'design'
   id: string
   linkedTaskId?: string | null
+  mockup?: Mockup
+}
+
+interface MockupEditorTarget {
+  projectId: string
+  mockupId: string
+  paneId: string
 }
 
 const STORAGE_KEY = 'summitflow_work_chats_v2'
@@ -532,19 +542,20 @@ function buildArtifactOptions({
   feedbackItems: FeedbackItem[]
   mockups: Mockup[]
 }): ArtifactOption[] {
-  const feedbackOptions = feedbackItems.map((item) => ({
+  const feedbackOptions: ArtifactOption[] = feedbackItems.map((item) => ({
     value: `feedback:${item.id}`,
     label: item.title,
     kind: 'feedback' as const,
     id: item.id,
     linkedTaskId: item.linked_task_id,
   }))
-  const designOptions = mockups.map((mockup) => ({
+  const designOptions: ArtifactOption[] = mockups.map((mockup) => ({
     value: `design:${mockup.mockup_id}`,
     label: mockup.name,
     kind: 'design' as const,
     id: mockup.mockup_id,
     linkedTaskId: mockup.task_id,
+    mockup,
   }))
 
   const options = [...feedbackOptions, ...designOptions]
@@ -594,6 +605,8 @@ function PaneChrome({
   onPause,
   onStop,
   onOpenChildSession,
+  onOpenMockup,
+  onSendPaneMessage,
 }: {
   pane: WorkChatPane
   status: StreamStatus
@@ -613,6 +626,8 @@ function PaneChrome({
   onPause: () => void
   onStop: () => void
   onOpenChildSession: (session: AgentHubSessionListItem) => void
+  onOpenMockup: (target: MockupEditorTarget) => void
+  onSendPaneMessage: (prompt: string) => void
 }) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [feedbackItems, setFeedbackItems] = useState<FeedbackItem[]>([])
@@ -698,6 +713,10 @@ function PaneChrome({
     : pane.designId
       ? `design:${pane.designId}`
       : ''
+  const selectedDesignArtifact = artifacts.find(
+    (artifact) =>
+      artifact.value === selectedArtifact && artifact.kind === 'design',
+  )
   const hasTelegram = actionRequests.some((request) => request.telegram_chat_id)
   const blockers = actionRequests.filter(
     (request) => request.status !== 'resolved',
@@ -1045,6 +1064,183 @@ function PaneChrome({
           })}
         </div>
       ) : null}
+      {pane.projectId && pane.designId ? (
+        <div className="flex min-h-9 items-center gap-2 overflow-x-auto border-t border-slate-800/70 bg-slate-950/72 px-2 py-1">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Layers3 className="h-3.5 w-3.5 shrink-0 text-phosphor-300" />
+            <span className="truncate text-xs text-slate-300">
+              {pane.artifactSummary ?? pane.designId}
+            </span>
+            {selectedDesignArtifact?.mockup?.version ? (
+              <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+                v{selectedDesignArtifact.mockup.version}
+              </span>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              onOpenMockup({
+                projectId: pane.projectId!,
+                mockupId: pane.designId!,
+                paneId: pane.id,
+              })
+            }
+            className="h-7 shrink-0 rounded border border-phosphor-500/30 bg-phosphor-500/10 px-2 text-xs text-phosphor-200 hover:bg-phosphor-500/15"
+          >
+            Open mock
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const summary = selectedDesignArtifact?.mockup
+                ? summarizeMockupForWorkContext(selectedDesignArtifact.mockup)
+                : `${pane.artifactSummary ?? pane.designId} (${pane.designId})`
+              onSendPaneMessage(
+                [
+                  'Use this design artifact as current Work Chat context.',
+                  `Artifact: ${summary}`,
+                  'Discuss it, revise the mockup, create tasks, or plan page implementation as needed.',
+                ].join('\n'),
+              )
+            }}
+            className="h-7 shrink-0 rounded border border-slate-700 bg-slate-950/70 px-2 text-xs text-slate-300 hover:border-phosphor-500/50 hover:text-phosphor-200"
+          >
+            Send context
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function extractMockupIds(content: string): string[] {
+  return Array.from(new Set(content.match(/\bmk-[a-z0-9]{8,}\b/gi) ?? []))
+}
+
+function MockupMentionCards({
+  content,
+  projectId,
+  paneId,
+  onOpenMockup,
+}: {
+  content: string
+  projectId: string | null
+  paneId: string
+  onOpenMockup: (target: MockupEditorTarget) => void
+}) {
+  const ids = projectId ? extractMockupIds(content) : []
+  if (!ids.length || !projectId) return null
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {ids.map((mockupId) => (
+        <button
+          key={mockupId}
+          type="button"
+          onClick={() => onOpenMockup({ projectId, mockupId, paneId })}
+          className="inline-flex items-center gap-1.5 rounded border border-phosphor-500/25 bg-phosphor-500/8 px-2 py-1 text-xs text-phosphor-200 transition-colors hover:border-phosphor-500/50 hover:bg-phosphor-500/12"
+        >
+          <Layers3 className="h-3.5 w-3.5" />
+          Open mock {mockupId}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function WorkChatMessageList({
+  messages,
+  isStreaming,
+  pane,
+  onEditMessage,
+  onRegenerateMessage,
+  onOpenMockup,
+}: {
+  messages: ChatMessage[]
+  isStreaming: boolean
+  pane: WorkChatPane
+  onEditMessage?: (messageId: string, newContent: string) => void
+  onRegenerateMessage?: (messageId: string) => void
+  onOpenMockup: (target: MockupEditorTarget) => void
+}) {
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  if (!messages.length) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-slate-500">
+        <p>Start a conversation</p>
+      </div>
+    )
+  }
+
+  const groupedMessages = groupMessages(messages)
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {groupedMessages.map((item, index) => {
+        if (Array.isArray(item)) {
+          return (
+            <div
+              key={item[0].responseGroupId}
+              className="flex flex-col gap-3 md:flex-row"
+            >
+              {item.map((message) => (
+                <div key={message.id} className="min-w-0 flex-1">
+                  <MessageBubble
+                    message={message}
+                    isStreaming={
+                      isStreaming &&
+                      message.role === 'assistant' &&
+                      !message.content
+                    }
+                    onEdit={onEditMessage}
+                    onRegenerate={onRegenerateMessage}
+                    canEdit={!isStreaming}
+                    canRegenerate={!isStreaming}
+                    canContinue={!isStreaming}
+                  />
+                  <MockupMentionCards
+                    content={message.content}
+                    projectId={pane.projectId}
+                    paneId={pane.id}
+                    onOpenMockup={onOpenMockup}
+                  />
+                </div>
+              ))}
+            </div>
+          )
+        }
+
+        const message = item
+        const isLastMessage = index === groupedMessages.length - 1
+        return (
+          <div key={message.id}>
+            <MessageBubble
+              message={message}
+              isStreaming={
+                isStreaming && message.role === 'assistant' && isLastMessage
+              }
+              onEdit={onEditMessage}
+              onRegenerate={onRegenerateMessage}
+              canEdit={!isStreaming}
+              canRegenerate={!isStreaming}
+              canContinue={!isStreaming}
+            />
+            <MockupMentionCards
+              content={message.content}
+              projectId={pane.projectId}
+              paneId={pane.id}
+              onOpenMockup={onOpenMockup}
+            />
+          </div>
+        )
+      })}
+      <div ref={bottomRef} />
     </div>
   )
 }
@@ -1054,6 +1250,7 @@ function WorkChatBody({
   apiConfig,
   workingDir,
   startCommand,
+  onOpenMockup,
   onRuntimeChange,
   onMessagesChange,
   onTurnFinished,
@@ -1064,6 +1261,7 @@ function WorkChatBody({
   apiConfig: ReturnType<typeof buildWorkChatApiConfig>
   workingDir?: string
   startCommand?: WorkStartCommand
+  onOpenMockup: (target: MockupEditorTarget) => void
   onRuntimeChange: (state: {
     status: StreamStatus
     error: string | null
@@ -1167,11 +1365,13 @@ function WorkChatBody({
         </div>
       ) : null}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <MessageList
+        <WorkChatMessageList
           messages={messages}
           isStreaming={isStreaming}
+          pane={pane}
           onEditMessage={editMessage}
           onRegenerateMessage={regenerateMessage}
+          onOpenMockup={onOpenMockup}
         />
       </div>
       <div className="shrink-0 border-t border-slate-800 bg-slate-950/85">
@@ -1502,6 +1702,8 @@ function WorkChatPaneView({
   onPause,
   onStop,
   onOpenChildSession,
+  onOpenMockup,
+  onSendPaneMessage,
 }: {
   pane: WorkChatPane
   active: boolean
@@ -1523,6 +1725,8 @@ function WorkChatPaneView({
   onPause: () => void
   onStop: () => void
   onOpenChildSession: (session: AgentHubSessionListItem) => void
+  onOpenMockup: (target: MockupEditorTarget) => void
+  onSendPaneMessage: (prompt: string) => void
 }) {
   const [builderRuntime, setBuilderRuntime] = useState<{
     status: StreamStatus
@@ -1800,6 +2004,8 @@ function WorkChatPaneView({
         onPause={onPause}
         onStop={onStop}
         onOpenChildSession={onOpenChildSession}
+        onOpenMockup={onOpenMockup}
+        onSendPaneMessage={onSendPaneMessage}
       />
       <div className="min-h-0 flex-1">
         {pane.verifierEnabled ? (
@@ -1822,6 +2028,7 @@ function WorkChatPaneView({
                 apiConfig={apiConfig}
                 workingDir={project?.root_path ?? undefined}
                 startCommand={startCommand}
+                onOpenMockup={onOpenMockup}
                 onRuntimeChange={setBuilderRuntime}
                 onMessagesChange={(messages) => {
                   builderMessagesRef.current = messages
@@ -1840,6 +2047,7 @@ function WorkChatPaneView({
                 apiConfig={verifierApiConfig}
                 workingDir={project?.root_path ?? undefined}
                 startCommand={verifierStartCommand}
+                onOpenMockup={onOpenMockup}
                 onRuntimeChange={setVerifierRuntime}
                 onMessagesChange={(messages) => {
                   verifierMessagesRef.current = messages
@@ -1856,6 +2064,7 @@ function WorkChatPaneView({
             apiConfig={apiConfig}
             workingDir={project?.root_path ?? undefined}
             startCommand={startCommand}
+            onOpenMockup={onOpenMockup}
             onRuntimeChange={setBuilderRuntime}
             onMessagesChange={(messages) => {
               builderMessagesRef.current = messages
@@ -1917,6 +2126,8 @@ function WorkChatsContent() {
   const [startCommands, setStartCommands] = useState<
     Record<string, WorkStartCommand>
   >({})
+  const [mockupEditorTarget, setMockupEditorTarget] =
+    useState<MockupEditorTarget | null>(null)
   const [paneActionError, setPaneActionError] = useState<string | null>(null)
   const [appliedQueryString, setAppliedQueryString] = useState('')
 
@@ -2111,6 +2322,17 @@ function WorkChatsContent() {
     }))
   }
 
+  const queuePaneMessage = (paneId: string, prompt: string) => {
+    setPaneActionError(null)
+    setStartCommands((current) => ({
+      ...current,
+      [paneId]: {
+        key: Date.now(),
+        prompt,
+      },
+    }))
+  }
+
   const pausePane = async (pane: WorkChatPane) => {
     if (!pane.sessionId && !pane.verifierSessionId) return
     setPaneActionError(null)
@@ -2280,10 +2502,52 @@ function WorkChatsContent() {
               onPause={() => void pausePane(pane)}
               onStop={() => void stopPane(pane)}
               onOpenChildSession={(session) => openChildSession(pane, session)}
+              onOpenMockup={setMockupEditorTarget}
+              onSendPaneMessage={(prompt) => queuePaneMessage(pane.id, prompt)}
             />
           )
         })}
       </main>
+
+      {mockupEditorTarget ? (
+        <MockupEditorModal
+          projectId={mockupEditorTarget.projectId}
+          mockupId={mockupEditorTarget.mockupId}
+          open
+          onOpenChange={(open) => {
+            if (!open) setMockupEditorTarget(null)
+          }}
+          onSaved={(saved) => {
+            patchPane(mockupEditorTarget.paneId, {
+              designId: saved.mockup_id,
+              artifactSummary: saved.name,
+              taskId: saved.task_id ?? null,
+            })
+            setMockupEditorTarget((current) =>
+              current ? { ...current, mockupId: saved.mockup_id } : current,
+            )
+          }}
+          onSendToJenny={({ sourceMockup, savedMockup, summary }) => {
+            const targetMockup = savedMockup ?? sourceMockup
+            queuePaneMessage(
+              mockupEditorTarget.paneId,
+              [
+                'I updated or annotated this design mockup in the Work Chats editor.',
+                `Project: ${targetMockup.project_id}`,
+                `Mockup: ${targetMockup.mockup_id} v${targetMockup.version}`,
+                `Name: ${targetMockup.name}`,
+                targetMockup.page_path ? `Page: ${targetMockup.page_path}` : '',
+                '',
+                summary,
+                '',
+                'Read the stored mockup artifact from per-project Design if more detail is needed. Revise the mock, plan, task, or implementation path accordingly.',
+              ]
+                .filter(Boolean)
+                .join('\n'),
+            )
+          }}
+        />
+      ) : null}
     </div>
   )
 }

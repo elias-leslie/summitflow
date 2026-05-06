@@ -103,6 +103,11 @@ export function MockupDetailModal({
             onCreateIteration={() => onCreateIteration(mockup)}
             onRerun={() => setShowRerunDialog(true)}
             onDelete={() => setShowDeleteConfirm(true)}
+            onVersionCreated={(created) => {
+              onStatusChange()
+              setShowHistory(true)
+              onSelectMockup(created)
+            }}
           />
 
           <DetailsSidebar

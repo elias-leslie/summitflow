@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import Image from 'next/image'
 import { hasScreenshot, type Mockup } from '@/lib/api/mockups'
+import { isHtmlMockupContent } from '@/lib/mockup-html'
 
 interface MockupCardProps {
   mockup: Mockup
@@ -126,14 +127,7 @@ export function MockupCard({
   const TypeIcon =
     typeIcons[mockup.mockup_type as keyof typeof typeIcons] ?? Code2
   const isImprovement = hasScreenshot(mockup)
-  const hasHtmlContent =
-    mockup.content != null &&
-    (() => {
-      const t = mockup.content!.trimStart()
-      return (
-        t.startsWith('<!') || t.startsWith('<html') || t.startsWith('<HTML')
-      )
-    })()
+  const hasHtmlContent = isHtmlMockupContent(mockup.content)
 
   const formattedDate = mockup.created_at
     ? new Date(mockup.created_at).toLocaleDateString(undefined, {
@@ -249,15 +243,7 @@ export function MockupCard({
             </div>
           </div>
         )}
-        {mockup.file_path ? (
-          <Image
-            src={`/api/projects/${mockup.project_id}/mockups/${mockup.mockup_id}/image`}
-            alt={mockup.name}
-            fill
-            className="object-cover"
-            unoptimized
-          />
-        ) : hasHtmlContent ? (
+        {hasHtmlContent ? (
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
             <iframe
               srcDoc={buildThumbnailSrcDoc(mockup.content!)}
@@ -274,6 +260,14 @@ export function MockupCard({
               tabIndex={-1}
             />
           </div>
+        ) : mockup.file_path ? (
+          <Image
+            src={`/api/projects/${mockup.project_id}/mockups/${mockup.mockup_id}/image`}
+            alt={mockup.name}
+            fill
+            className="object-cover"
+            unoptimized
+          />
         ) : (
           <TypeIcon className="w-12 h-12 text-slate-600" />
         )}

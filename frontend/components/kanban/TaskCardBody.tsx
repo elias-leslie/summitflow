@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { Link2, Loader2 } from 'lucide-react'
+import { Bot, Link2, Loader2, Palette, ShieldCheck } from 'lucide-react'
 import type { Task } from '@/lib/api'
 import { getTaskStatusCardConfig } from '@/lib/task-config'
 import { StepProgressIndicator } from './StepProgressIndicator'
@@ -21,6 +21,11 @@ export function TaskCardBody({
   const allPassed =
     hasCriteria && capability.criteria_passed === capability.criteria_total
   const isRunning = task.status === 'running'
+  const sessionCount = task.agent_hub_session_ids?.length ?? 0
+  const hasDesignWork = task.labels?.some((label) =>
+    ['design', 'ui-design', 'mockup'].includes(label.toLowerCase()),
+  )
+  const hasVerifier = Boolean(task.verification_result)
 
   return (
     <>
@@ -36,6 +41,29 @@ export function TaskCardBody({
       )}
 
       {canExpand && <StepProgressIndicator status={task.status} />}
+
+      {(sessionCount > 0 || hasVerifier || hasDesignWork) && (
+        <div className="mb-2 flex flex-wrap gap-1">
+          {sessionCount > 0 && (
+            <span className="inline-flex items-center gap-1 rounded border border-phosphor-500/20 bg-phosphor-500/10 px-1.5 py-0.5 text-[10px] text-phosphor-300">
+              <Bot className="h-3 w-3" />
+              {sessionCount} agent{sessionCount === 1 ? '' : 's'}
+            </span>
+          )}
+          {hasVerifier && (
+            <span className="inline-flex items-center gap-1 rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+              <ShieldCheck className="h-3 w-3" />
+              verified
+            </span>
+          )}
+          {hasDesignWork && (
+            <span className="inline-flex items-center gap-1 rounded border border-outrun-500/20 bg-outrun-500/10 px-1.5 py-0.5 text-[10px] text-outrun-300">
+              <Palette className="h-3 w-3" />
+              design
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="flex items-center justify-between">
         {capability ? (

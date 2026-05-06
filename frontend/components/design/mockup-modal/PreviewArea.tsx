@@ -15,16 +15,9 @@ import {
 import Image from 'next/image'
 import type { Mockup } from '@/lib/api/mockups'
 import { getMockupImageUrl, getScreenshotUrl } from '@/lib/api/mockups'
+import { isHtmlMockupContent } from '@/lib/mockup-html'
 import { ComparisonSlider } from '../ComparisonSlider'
-
-function isHtmlContent(content: string): boolean {
-  const trimmed = content.trimStart()
-  return (
-    trimmed.startsWith('<!') ||
-    trimmed.startsWith('<html') ||
-    trimmed.startsWith('<HTML')
-  )
-}
+import { MockupSurfaceEditor } from './MockupSurfaceEditor'
 
 interface PreviewAreaProps {
   mockup: Mockup
@@ -37,6 +30,13 @@ interface PreviewAreaProps {
   onCreateIteration: () => void
   onRerun: () => void
   onDelete: () => void
+  onVersionCreated?: (mockup: Mockup) => void
+  onSendToJenny?: (payload: {
+    sourceMockup: Mockup
+    savedMockup?: Mockup
+    content: string
+    summary: string
+  }) => void
 }
 
 export function PreviewArea({
@@ -50,6 +50,8 @@ export function PreviewArea({
   onCreateIteration,
   onRerun,
   onDelete,
+  onVersionCreated,
+  onSendToJenny,
 }: PreviewAreaProps) {
   const openWorkChat = () => {
     const params = new URLSearchParams({
@@ -70,6 +72,13 @@ export function PreviewArea({
             beforeAlt="Original screenshot"
             afterAlt={mockup.name}
           />
+        ) : isHtmlMockupContent(mockup.content) ? (
+          <MockupSurfaceEditor
+            mockup={mockup}
+            projectId={projectId}
+            onSaved={onVersionCreated}
+            onSendToJenny={onSendToJenny}
+          />
         ) : mockup.file_path ? (
           <Image
             src={getMockupImageUrl(projectId, mockup.mockup_id)}
@@ -79,18 +88,9 @@ export function PreviewArea({
             unoptimized
           />
         ) : mockup.content ? (
-          isHtmlContent(mockup.content) ? (
-            <iframe
-              srcDoc={mockup.content}
-              title={mockup.name}
-              sandbox="allow-same-origin"
-              className="w-full h-full rounded-lg border-0"
-            />
-          ) : (
-            <div className="w-full h-full p-4 overflow-auto text-slate-100 text-sm font-mono whitespace-pre-wrap">
-              {mockup.content}
-            </div>
-          )
+          <div className="w-full h-full p-4 overflow-auto text-slate-100 text-sm font-mono whitespace-pre-wrap">
+            {mockup.content}
+          </div>
         ) : (
           <ImageIcon className="w-16 h-16 text-slate-600" />
         )}

@@ -17,6 +17,7 @@ import type { ExplorerType } from '@/components/explorer/types'
 import { TaskKanbanBoard } from '@/components/kanban/TaskKanbanBoard'
 import { ProjectOverview } from '@/components/projects/ProjectOverview'
 import { useViewMode } from '@/components/tasks/hooks/useViewMode'
+import { JennyExecutionStrip } from '@/components/tasks/JennyExecutionStrip'
 import type { TaskFilterValues } from '@/components/tasks/TaskFilters'
 import { TaskIdeationDialog } from '@/components/tasks/TaskIdeationDialog'
 import { TaskModal } from '@/components/tasks/TaskModal'
@@ -314,6 +315,7 @@ export function ProjectDetailClient() {
               onViewModeChange={setViewMode}
               onNewTask={handleNewTask}
             />
+            <JennyExecutionStrip tasks={kanbanTasks} />
             {viewMode === 'board' ? (
               <>
                 <TaskKanbanBoard
