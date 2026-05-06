@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -29,6 +30,24 @@ def _write_smb_credentials(username: str, password: str) -> str:
     )
     cred_file.chmod(0o600)
     return str(cred_file)
+
+
+def _local_storage_dir(config: dict[str, object]) -> Path | None:
+    """Resolve the directory used by a local storage backend."""
+    root_raw = optional_str(config.get("root_path") or config.get("base_path"))
+    path_raw = optional_str(config.get("path")) or ""
+
+    if not root_raw and path_raw and Path(path_raw).is_absolute():
+        root_raw = path_raw
+        path_raw = ""
+
+    if not root_raw:
+        return None
+
+    target = Path(root_raw).expanduser()
+    if path_raw:
+        target = target / path_raw.strip("/")
+    return target
 
 
 def _backend_to_response(backend: dict[str, object]) -> StorageBackendResponse:
@@ -179,6 +198,20 @@ async def test_storage_backend(backend_id: str) -> dict[str, object]:
                 message = "Connection timed out (15s)"
             except FileNotFoundError:
                 message = "smbclient not installed"
+    elif backend["backend_type"] == "local":
+        target_dir = _local_storage_dir(config)
+        if target_dir is None:
+            message = "Missing root_path for local backend"
+        else:
+            probe = target_dir / f".summitflow-storage-test-{uuid.uuid4().hex}"
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+                probe.write_text("ok\n", encoding="utf-8")
+                probe.unlink(missing_ok=True)
+                success = True
+                message = f"Local storage writable: {target_dir}"
+            except OSError as exc:
+                message = f"Local storage unavailable: {exc}"
 
     backup_store.update_test_result(backend_id, success)
     return {"success": success, "message": message, "backend_id": backend_id}

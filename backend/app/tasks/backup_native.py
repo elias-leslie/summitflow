@@ -10,6 +10,7 @@ import subprocess
 import tarfile
 import tempfile
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -29,12 +30,56 @@ from .backup_native_smb import (
     StorageConfig,
     _save_pending,
     _smb_upload,
+    _source_remote_path,
     _storage_config,
 )
 
 logger = get_logger(__name__)
 
 INFRA_BACKUP_TIMEOUT = 900
+
+
+@dataclass(frozen=True)
+class LocalStorageConfig:
+    root_path: Path
+    remote_path: str
+
+    @property
+    def location_prefix(self) -> str:
+        return str(self.root_path / self.remote_path)
+
+
+def _storage_backend_type(env: dict[str, str]) -> str:
+    return str(env.get("STORAGE_BACKEND_TYPE") or env.get("BACKUP_STORAGE_TYPE") or "smb").lower()
+
+
+def _local_storage_config(source_id: str, env: dict[str, str]) -> LocalStorageConfig:
+    root_raw = env.get("LOCAL_BACKUP_ROOT") or env.get("BACKUP_LOCAL_ROOT") or env.get("BACKUP_ROOT")
+    path_raw = env.get("LOCAL_BACKUP_PATH") or env.get("BACKUP_PATH") or "project-backups"
+
+    if not root_raw and path_raw and Path(path_raw).expanduser().is_absolute():
+        root_raw = path_raw
+        path_raw = ""
+
+    if not root_raw:
+        raise RuntimeError("Local storage backend requires root_path")
+
+    return LocalStorageConfig(
+        root_path=Path(root_raw).expanduser(),
+        remote_path=_source_remote_path(source_id, path_raw),
+    )
+
+
+def _copy_to_local_backend(
+    archive_path: Path,
+    archive_name: str,
+    storage: LocalStorageConfig,
+) -> str:
+    destination_dir = storage.root_path / storage.remote_path
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    destination = destination_dir / archive_name
+    shutil.copy2(archive_path, destination)
+    return str(destination)
 
 
 def _backup_state_root() -> Path:
@@ -118,6 +163,17 @@ def _upload_project_archive(
     retention: int,
 ) -> dict[str, Any]:
     archive_name = str(result["archive_name"])
+    if _storage_backend_type(run_env) == "local":
+        local_storage = _local_storage_config(source_id, run_env)
+        location = _copy_to_local_backend(archive_path, archive_name, local_storage)
+        if keep_local:
+            local_dir = project_path / "backups"
+            local_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(archive_path, local_dir / archive_name)
+            _apply_local_retention(local_dir)
+        _update_backup_index(source_id, result, "ok", location, retention)
+        return {**result, "location": location}
+
     max_retries = int(run_env.get("SMB_MAX_RETRIES", "5"))
     last_upload: SmbUploadResult | None = None
     for attempt in range(max_retries):
@@ -166,7 +222,6 @@ def run_project_backup(
     project_path = Path(project_dir)
     project_name = project_path.name
     run_env = dict(env or {})
-    storage = _storage_config(project_name, run_env)
     retention = retention_days or 14
     with tempfile.TemporaryDirectory(prefix=f"{project_name}-backup-") as temp_dir:
         result = _create_project_archive(project_path, project_name, Path(temp_dir), run_env)
@@ -174,6 +229,7 @@ def run_project_backup(
         archive_path = Path(result["archive_path"])
         if local_only:
             return _store_local_project_archive(project_path, source_id, result, archive_path, archive_name, retention)
+        storage = _storage_config(project_name, run_env)
         return _upload_project_archive(project_path, source_id, result, archive_path, storage, run_env, keep_local, retention)
 
 
@@ -268,8 +324,19 @@ def _finish_infra_backup(
     storage: StorageConfig,
     keep_local: bool,
     retention: int,
+    run_env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     archive_name = str(result["archive_name"])
+    if _storage_backend_type(run_env or {}) == "local":
+        local_storage = _local_storage_config(source_id, run_env or {})
+        location = _copy_to_local_backend(archive_path, archive_name, local_storage)
+        if keep_local:
+            local_dir = project_dir / "backups" / "infrastructure"
+            local_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(archive_path, local_dir / archive_name)
+        _update_backup_index(source_id, result, "ok", location, retention)
+        return {**result, "location": location}
+
     upload = _smb_upload(archive_path, archive_name, storage)
     if upload.ok:
         location = upload.location
@@ -301,14 +368,24 @@ def run_infra_backup(
     source_id = "infrastructure"
     project_dir = get_repo_root()
     run_env = dict(env or {})
-    storage = _storage_config(source_id, {**run_env, "SMB_PATH": "project-backups/infrastructure"})
+    storage_env = {**run_env, "SMB_PATH": run_env.get("SMB_PATH", "project-backups/infrastructure")}
+    storage = _storage_config(source_id, storage_env)
     retention = retention_days or 14
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     archive_name = f"infrastructure-{timestamp}.tar.gz"
     with tempfile.TemporaryDirectory(prefix="infrastructure-backup-") as temp_dir:
         staging = Path(temp_dir)
         archive_path, _, result = _build_infra_archive(project_dir, staging, archive_name)
-        return _finish_infra_backup(project_dir, source_id, result, archive_path, storage, keep_local, retention)
+        return _finish_infra_backup(
+            project_dir,
+            source_id,
+            result,
+            archive_path,
+            storage,
+            keep_local,
+            retention,
+            run_env=run_env,
+        )
 
 
 def drain_pending_archives(*, dry_run: bool = False) -> dict[str, Any]:

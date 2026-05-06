@@ -86,7 +86,7 @@ class TestSymbolMatchRank:
 
     def test_name_match_ranks_above_summary_only(self) -> None:
         """A symbol with query in its name should outrank one with query only in summary."""
-        name_match = {
+        name_match: dict[str, object] = {
             "name": "neo4j_cleanup",
             "qualified_name": "services.neo4j_cleanup",
             "signature": "def neo4j_cleanup()",
@@ -94,7 +94,7 @@ class TestSymbolMatchRank:
             "file_path": "backend/services/graph.py",
             "keywords": [],
         }
-        summary_only = {
+        summary_only: dict[str, object] = {
             "name": "scan_entries",
             "qualified_name": "services.scan_entries",
             "signature": "def scan_entries()",
@@ -110,7 +110,7 @@ class TestSymbolMatchRank:
         assert rank_name > rank_summary, "Name match should rank higher than summary-only match"
 
     def test_exact_name_ranks_above_partial(self) -> None:
-        exact = {
+        exact: dict[str, object] = {
             "name": "neo4j",
             "qualified_name": "config.neo4j",
             "signature": "",
@@ -118,7 +118,7 @@ class TestSymbolMatchRank:
             "file_path": "backend/config.py",
             "keywords": [],
         }
-        partial = {
+        partial: dict[str, object] = {
             "name": "neo4j_cleanup",
             "qualified_name": "services.neo4j_cleanup",
             "signature": "",

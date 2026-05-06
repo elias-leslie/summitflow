@@ -58,10 +58,10 @@ function computeSteps(
     {
       id: 'storage',
       icon: <HardDrive className="w-4 h-4" />,
-      title: 'Remote storage',
+      title: 'Backup storage',
       description: hasStorage
-        ? `Backups sent to ${storageStatus?.default_backend_name ?? 'remote storage'}`
-        : 'Set up a remote destination (NAS, file server) so backups survive even if this machine fails.',
+        ? `Backups sent to ${storageStatus?.default_backend_name ?? 'configured storage'}`
+        : 'Set up SMB or a mounted local directory so backups are stored outside project worktrees.',
       complete: hasStorage,
     },
     {

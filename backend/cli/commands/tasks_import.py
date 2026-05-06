@@ -47,34 +47,40 @@ def create_from_file(file_path: Path, dry_run: bool) -> None:
         output_error("'tasks' array is empty")
         raise typer.Exit(1) from None
     all_errors: list[str] = []
+    task_items: list[dict[str, Any]] = []
     for i, item in enumerate(items):
-        all_errors.extend(validate_task_item(item, i))
+        if not isinstance(item, dict):
+            all_errors.append(f"Task {i + 1}: must be an object")
+            continue
+        task_item = cast(dict[str, Any], item)
+        task_items.append(task_item)
+        all_errors.extend(validate_task_item(task_item, i))
     if all_errors:
         output_error("Validation errors:")
         for err in all_errors:
             typer.echo(f"  {err}", err=True)
         raise typer.Exit(1)
     if dry_run:
-        typer.echo(f"Would create {len(items)} task(s):")
-        for i, item in enumerate(items):
+        typer.echo(f"Would create {len(task_items)} task(s):")
+        for i, item in enumerate(task_items):
             n = len(item.get("subtasks", []))
             suffix = f" - {n} subtask(s)" if n else ""
             typer.echo(f"  [{i + 1}] {item.get('title', '?')} ({item.get('task_type', 'task')}){suffix}")
         return
     client = STClient()
     try:
-        result = client.batch_create_tasks(items)
+        result = client.batch_create_tasks(task_items)
     except APIError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None
     created, errors = result.get("created", []), result.get("errors", [])
-    typer.echo(f"Creating {len(items)} task(s) from {file_path}...")
+    typer.echo(f"Creating {len(task_items)} task(s) from {file_path}...")
     for task in created:
         typer.echo(f"  \u2713 {task.get('id', '?')}: {task.get('title', '?')}")
     for err in errors:
         typer.echo(f"  \u2717 {err.get('title', '?')}: {err.get('error', 'Unknown error')}", err=True)
     typer.echo()
-    typer.echo(f"Created: {len(created)}/{len(items)} tasks")
+    typer.echo(f"Created: {len(created)}/{len(task_items)} tasks")
     if errors:
         typer.echo(f"Errors: {len(errors)}")
         raise typer.Exit(1)

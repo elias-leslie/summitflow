@@ -25,14 +25,6 @@ export type ExplorerEntryType =
   | 'architecture'
 export type ExplorerHealthStatus = 'healthy' | 'warning' | 'error' | 'unknown'
 
-export interface ExplorerRouteEvidenceSummaryItem {
-  evidence_id: string
-  comment: string
-  selector: string | null
-  created_at: string | null
-  created_by_display: string | null
-}
-
 export interface ExplorerEntryMetadata {
   // File metadata
   is_directory?: boolean
@@ -93,7 +85,6 @@ export interface ExplorerEntryMetadata {
   // Page metadata
   route_params?: string[]
   url?: string
-  recent_route_evidence?: ExplorerRouteEvidenceSummaryItem[]
 
   // Dependency metadata
   package_type?: 'python' | 'nodejs'
@@ -123,9 +114,6 @@ export interface ExplorerEntry {
   healthStatus: ExplorerHealthStatus
   lastScannedAt: string | null
   metadata: ExplorerEntryMetadata
-  // Evidence fields (explorer-driven evidence capture)
-  evidenceCount?: number
-  lastEvidenceAt?: string | null
 }
 
 export interface ExplorerStats {
@@ -243,8 +231,6 @@ interface RawExplorerEntry {
   health_status: ExplorerHealthStatus
   last_scanned_at: string | null
   metadata: ExplorerEntryMetadata
-  evidence_count?: number
-  last_evidence_at?: string | null
 }
 
 function normalizeExplorerEntry(
@@ -261,8 +247,6 @@ function normalizeExplorerEntry(
     healthStatus: entry.health_status,
     lastScannedAt: entry.last_scanned_at,
     metadata: entry.metadata ?? {},
-    evidenceCount: entry.evidence_count,
-    lastEvidenceAt: entry.last_evidence_at,
   }
 }
 

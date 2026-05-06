@@ -73,41 +73,60 @@ def list_backends(ctx: typer.Context) -> None:
 def add_backend(
     ctx: typer.Context,
     name: Annotated[str | None, typer.Option("--name", "-n", help="Backend name")] = None,
+    backend_type: Annotated[str, typer.Option("--type", help="Backend type: smb or local")] = "smb",
     host: Annotated[str | None, typer.Option("--host", help="SMB host")] = None,
     share: Annotated[str | None, typer.Option("--share", help="SMB share name")] = None,
     user: Annotated[str | None, typer.Option("--user", "-u", help="SMB username")] = None,
     password: Annotated[str | None, typer.Option("--password", "-p", help="SMB password (or prompted)")] = None,
+    root_path: Annotated[str | None, typer.Option("--root-path", help="Local storage root path")] = None,
     path: Annotated[str | None, typer.Option("--path", help="SMB path prefix")] = None,
     default: Annotated[bool, typer.Option("--default/--no-default", help="Set as default backend")] = True,
     interactive: Annotated[bool, typer.Option("--interactive/--no-interactive", "-i", help="Interactive mode")] = True,
 ) -> None:
     """Add a new storage backend. Interactive by default."""
     try:
-        if interactive and not host:
-            typer.echo("Configure SMB Storage Backend")
-            typer.echo("─" * 35)
-            name = name or typer.prompt("Backend name", default="NAS Backup")
-            host = typer.prompt("SMB host (IP or hostname)")
-            share = share or typer.prompt("Share name", default="backups")
-            user = user or typer.prompt("Username", default="backup-svc")
-            password = password or typer.prompt("Password", hide_input=True)
-            path = path or typer.prompt("Path prefix", default="project-backups")
-
-        if not host or not share:
-            typer.echo("Error: --host and --share are required", err=True)
+        backend_type = backend_type.lower()
+        if backend_type not in {"smb", "local"}:
+            typer.echo("Error: --type must be 'smb' or 'local'", err=True)
             raise typer.Exit(1)
 
-        config: dict[str, Any] = {"host": host, "share": share}
-        if user:
-            config["user"] = user
-        if password:
-            config["password"] = password
+        if interactive and ((backend_type == "smb" and not host) or (backend_type == "local" and not root_path)):
+            typer.echo(f"Configure {backend_type.upper()} Storage Backend")
+            typer.echo("─" * 35)
+            name = name or typer.prompt(
+                "Backend name", default="Local Backup" if backend_type == "local" else "NAS Backup"
+            )
+            if backend_type == "local":
+                root_path = typer.prompt("Local root path")
+            else:
+                host = typer.prompt("SMB host (IP or hostname)")
+                share = share or typer.prompt("Share name", default="backups")
+                user = user or typer.prompt("Username", default="backup-svc")
+                password = password or typer.prompt("Password", hide_input=True)
+            path = path or typer.prompt("Path prefix", default="project-backups")
+
+        if backend_type == "smb" and (not host or not share):
+            typer.echo("Error: --host and --share are required", err=True)
+            raise typer.Exit(1)
+        if backend_type == "local" and not root_path:
+            typer.echo("Error: --root-path is required for local storage", err=True)
+            raise typer.Exit(1)
+
+        config: dict[str, Any]
+        if backend_type == "local":
+            config = {"root_path": root_path}
+        else:
+            config = {"host": host, "share": share}
+            if user:
+                config["user"] = user
+            if password:
+                config["password"] = password
         if path:
             config["path"] = path
 
         result = _api_post("backup-storage", {
-            "name": name or f"SMB {host}",
-            "backend_type": "smb",
+            "name": name or (f"Local {root_path}" if backend_type == "local" else f"SMB {host}"),
+            "backend_type": backend_type,
             "config": config,
             "is_default": default,
         })

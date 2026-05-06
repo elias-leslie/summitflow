@@ -67,7 +67,6 @@ async def list_entries(
 
     # For page entries, include sub_elements if any exist
     helpers.enrich_page_entries_with_sub_elements(entries, type)
-    helpers.enrich_page_entries_with_route_evidence(entries)
 
     # Get stats filtered by type if type filter is applied
     stats = explorer.get_stats(project_id, entry_type=type)
@@ -304,7 +303,6 @@ async def get_entry_by_id(project_id: str, entry_id: int) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found")
     if entry.get("project_id") != project_id:
         raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found in project")
-    helpers.enrich_page_entries_with_route_evidence([entry])
     return entry
 
 
@@ -388,7 +386,6 @@ async def get_entry(project_id: str, entry_type: str, path: str) -> dict[str, An
             status_code=404,
             detail=f"Entry not found: {entry_type}/{path}",
         )
-    helpers.enrich_page_entries_with_route_evidence([entry])
     return entry
 
 

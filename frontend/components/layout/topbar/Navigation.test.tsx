@@ -20,7 +20,7 @@ describe('Navigation', () => {
 
     expect(screen.getAllByText('Runtime')[0]).toHaveClass('hidden')
     expect(screen.getAllByText('Feedback')[0]).toHaveClass('hidden')
-    expect(screen.getAllByText('Design')[0]).toHaveClass('hidden')
+    expect(screen.getAllByText('Work Chats')[0]).toHaveClass('hidden')
     expect(container.querySelector('nav')).toHaveClass('justify-center')
   })
 
@@ -29,7 +29,7 @@ describe('Navigation', () => {
 
     expect(screen.getAllByText('Runtime')[0]).toHaveClass('inline')
     expect(screen.getAllByText('Feedback')[0]).toHaveClass('inline')
-    expect(screen.getAllByText('Design')[0]).toHaveClass('inline')
+    expect(screen.getAllByText('Work Chats')[0]).toHaveClass('inline')
     expect(container.querySelector('nav')).toHaveClass('justify-start')
   })
 })

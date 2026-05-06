@@ -12,8 +12,8 @@ function renderStorageCard() {
       backends={[
         {
           id: 'storage-1',
-          name: 'Davion-Sidar',
-          backend_type: 'smb',
+          name: 'Local Backup Drive',
+          backend_type: 'local',
           is_default: true,
           enabled: true,
           last_test_at: null,
@@ -21,8 +21,8 @@ function renderStorageCard() {
           created_at: null,
           updated_at: null,
           config: {
-            host: '192.168.8.128',
-            share: 'davion-gem',
+            root_path: '/media/kasadis/Backups/davion-gem',
+            path: 'project-backups',
           },
         },
       ]}
@@ -30,7 +30,7 @@ function renderStorageCard() {
         configured: true,
         backend_count: 1,
         default_backend_id: 'storage-1',
-        default_backend_name: 'Davion-Sidar',
+        default_backend_name: 'Local Backup Drive',
       }}
       onRefresh={() => {}}
     />,
@@ -45,7 +45,9 @@ describe('StorageCard', () => {
 
     expect(screen.getByText('Storage')).toBeInTheDocument()
     expect(
-      screen.getByText(/Davion-Sidar over SMB at 192.168.8.128\/davion-gem/),
+      screen.getByText(
+        /Local Backup Drive over LOCAL at \/media\/kasadis\/Backups\/davion-gem\/project-backups/,
+      ),
     ).toBeInTheDocument()
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
   })
@@ -57,6 +59,6 @@ describe('StorageCard', () => {
 
     expect(screen.getByText('Name')).toBeInTheDocument()
     expect(screen.getByText('Type')).toBeInTheDocument()
-    expect(screen.getAllByText('Davion-Sidar').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Local Backup Drive').length).toBeGreaterThan(0)
   })
 })

@@ -20,6 +20,7 @@ from ..lib.jj import (
     init_colocated,
     is_colocated,
     publish_current_revision,
+    run_git,
     run_jj,
     status_summary,
 )
@@ -81,6 +82,10 @@ def _run_or_exit(repo: Path, args: list[str]):
         output_error(str(exc))
         raise typer.Exit(1) from None
     _echo_result(result)
+
+
+def _git_revision(revision: str) -> str:
+    return "HEAD" if revision == "@" else revision
 
 
 def _write_jj_result(repo: Path, name: str, result, label: str) -> None:
@@ -149,7 +154,12 @@ def log(
     limit: Annotated[int, typer.Option("--limit", "-n", help="Revision count.")] = 20,
 ) -> None:
     """Show recent jj revisions with stable fields."""
-    _run_or_exit(_repo_or_current(repo), ["log", "--no-graph", "-n", str(limit), "-T", LOG_TEMPLATE])
+    path = _repo_or_current(repo)
+    if is_colocated(path):
+        _run_or_exit(path, ["log", "--no-graph", "-n", str(limit), "-T", LOG_TEMPLATE])
+        return
+    result = run_git(path, ["log", f"-n{limit}", "--date=iso", "--format=%h\t%H\t%ae\t%ci\t%s"])
+    _echo_result(result)
 
 
 @app.command()
@@ -158,8 +168,15 @@ def diff(
     revision: Annotated[str, typer.Option("--revision", "-r", help="Revision to diff.")] = "@",
     stdout: Annotated[bool, typer.Option("--stdout", help="Print raw diff instead of details path.")] = False,
 ) -> None:
-    """Show a git-format jj diff."""
+    """Show a git-format diff for jj or plain Git repositories."""
     path = _repo_or_current(repo)
+    if not is_colocated(path):
+        result = run_git(path, ["diff", _git_revision(revision), "--"])
+        if stdout:
+            _echo_result(result)
+            return
+        _write_jj_result(path, "git-diff", result, f"GITDIFF:rev={_git_revision(revision)}")
+        return
     if stdout:
         _run_or_exit(path, ["diff", "-r", revision, "--git"])
         return
@@ -173,8 +190,15 @@ def show(
     repo: Annotated[Path | None, typer.Option("--repo", "-R", help="Repository path.")] = None,
     stdout: Annotated[bool, typer.Option("--stdout", help="Print raw revision patch instead of details path.")] = False,
 ) -> None:
-    """Show one revision."""
+    """Show one revision for jj or plain Git repositories."""
     path = _repo_or_current(repo)
+    if not is_colocated(path):
+        result = run_git(path, ["show", _git_revision(revision)])
+        if stdout:
+            _echo_result(result)
+            return
+        _write_jj_result(path, "git-show", result, f"GITSHOW:rev={_git_revision(revision)}")
+        return
     if stdout:
         _run_or_exit(path, ["show", "-r", revision, "--git"])
         return

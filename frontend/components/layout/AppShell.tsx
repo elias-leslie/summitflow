@@ -11,5 +11,5 @@ interface AppShellProps {
  * A-Term is now a standalone app at a-term.summitflow.dev
  */
 export function AppShell({ children }: AppShellProps) {
-  return <div className="flex-1 overflow-auto">{children}</div>
+  return <div className="min-w-0 flex-1 overflow-auto">{children}</div>
 }

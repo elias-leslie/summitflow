@@ -20,6 +20,7 @@ export interface AgentHubSessionListItem {
   parent_session_id?: string | null
   external_id?: string | null
   summary_oneliner?: string | null
+  summary_outcome?: string | null
   workstream_status?: string | null
   current_branch?: string | null
   observed_write_paths?: string[] | null
@@ -40,6 +41,9 @@ export interface AgentHubSessionListItem {
 
 export interface WorkContext extends Record<string, unknown> {
   mode?: string
+  routing_mode?: string
+  preferred_agent_slug?: string
+  verifier_enabled?: boolean
   project_id?: string
   project_name?: string
   task_id?: string
@@ -50,6 +54,21 @@ export interface WorkContext extends Record<string, unknown> {
   artifact_summary?: string
   surface?: string
   pane_id?: string
+}
+
+export interface VerifierOutcomeRequest {
+  parent_session_id?: string | null
+  verifier_session_id: string
+  builder_session_id: string
+  project_id?: string | null
+  task_id?: string | null
+  status: string
+  confidence?: string | null
+  atomic_claim_count?: number | null
+  atomic_pass_count?: number | null
+  atomic_fail_count?: number | null
+  feedback_loop_count?: number | null
+  report_excerpt?: string
 }
 
 export interface WorkChatBinding {
@@ -96,6 +115,7 @@ function agentHubUrl(path: string): string {
 export function buildWorkChatApiConfig(options: {
   projectId?: string | null
   externalId?: string | null
+  parentSessionId?: string | null
   sourceMetadata?: Record<string, string | undefined>
   workContext?: WorkContext
 }) {
@@ -105,6 +125,7 @@ export function buildWorkChatApiConfig(options: {
       projectId: options.projectId ?? 'summitflow',
     }),
     externalId: options.externalId ?? undefined,
+    parentSessionId: options.parentSessionId ?? undefined,
     sourceMetadata: options.sourceMetadata,
     workContext: options.workContext,
   }
@@ -183,5 +204,15 @@ export async function closeAgentHubSession(sessionId: string): Promise<void> {
     agentHubUrl(`/sessions/${sessionId}/close`),
     {},
     'Failed to close session',
+  )
+}
+
+export async function submitVerifierOutcome(
+  outcome: VerifierOutcomeRequest,
+): Promise<void> {
+  await postJson(
+    agentHubUrl('/work-chats/verifier-outcomes'),
+    outcome,
+    'Failed to submit verifier outcome',
   )
 }

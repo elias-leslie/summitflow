@@ -178,6 +178,45 @@ def test_describe_requires_noninteractive_message(mock_repo: MagicMock, mock_run
     mock_run_jj.assert_called_once_with(Path("/repo"), ["describe", "-m", "test description"])
 
 
+@patch("cli.commands.jj.is_colocated", return_value=False)
+@patch("cli.commands.jj.run_git")
+@patch("cli.commands.jj.current_git_repo")
+def test_diff_falls_back_to_git_for_plain_git_repo(
+    mock_repo: MagicMock,
+    mock_run_git: MagicMock,
+    _mock_colocated: MagicMock,
+) -> None:
+    mock_repo.return_value = Path("/repo")
+    mock_run_git.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="diff\n", stderr="")
+
+    result = runner.invoke(jj.app, ["diff", "--stdout"])
+
+    assert result.exit_code == 0
+    assert result.stdout == "diff\n"
+    mock_run_git.assert_called_once_with(Path("/repo"), ["diff", "HEAD", "--"])
+
+
+@patch("cli.commands.jj.is_colocated", return_value=False)
+@patch("cli.commands.jj.run_git")
+@patch("cli.commands.jj.current_git_repo")
+def test_log_falls_back_to_git_for_plain_git_repo(
+    mock_repo: MagicMock,
+    mock_run_git: MagicMock,
+    _mock_colocated: MagicMock,
+) -> None:
+    mock_repo.return_value = Path("/repo")
+    mock_run_git.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="abc\tcommit\tme@example.com\tdate\tmsg\n", stderr="")
+
+    result = runner.invoke(jj.app, ["log", "--limit", "3"])
+
+    assert result.exit_code == 0
+    assert "abc\tcommit" in result.stdout
+    mock_run_git.assert_called_once_with(
+        Path("/repo"),
+        ["log", "-n3", "--date=iso", "--format=%h\t%H\t%ae\t%ci\t%s"],
+    )
+
+
 @patch("cli.commands.jj.log_task_event")
 @patch("cli.commands.jj.publish_current_revision")
 @patch("cli.commands.jj.current_git_repo")

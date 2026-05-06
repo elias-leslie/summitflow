@@ -4,6 +4,7 @@ import { clsx } from 'clsx'
 import {
   CheckCircle2,
   ChevronRight,
+  FolderOpen,
   HardDrive,
   Loader2,
   Server,
@@ -32,6 +33,7 @@ export function StorageSetupWizard() {
   const [share, setShare] = useState('backups')
   const [user, setUser] = useState('backup-svc')
   const [password, setPassword] = useState('')
+  const [rootPath, setRootPath] = useState('/media/kasadis/Backups/davion-gem')
   const [path, setPath] = useState('project-backups')
   const [isDefault, setIsDefault] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -52,7 +54,10 @@ export function StorageSetupWizard() {
       const result = await createStorageBackend({
         name,
         backend_type: backendType,
-        config: { host, share, user, password, path },
+        config:
+          backendType === 'local'
+            ? { root_path: rootPath, path }
+            : { host, share, user, password, path },
         is_default: isDefault,
       })
       setBackendId(result.id)
@@ -125,14 +130,14 @@ export function StorageSetupWizard() {
             Where should we store your backups?
           </h2>
           <p className="text-sm text-slate-400">
-            Choose a storage type. Most setups use SMB (network share) to send
-            backups to a NAS.
+            Choose SMB or a local directory.
           </p>
           <div className="space-y-2">
             <button
               type="button"
               onClick={() => {
                 setBackendType('smb')
+                setName('NAS Backup')
                 setStep('details')
               }}
               className={clsx(
@@ -150,6 +155,28 @@ export function StorageSetupWizard() {
                 </p>
               </div>
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setBackendType('local')
+                setName('Local Backup Drive')
+                setStep('details')
+              }}
+              className={clsx(
+                'w-full p-4 rounded-lg border text-left flex items-center gap-4 transition-colors',
+                'bg-slate-800/50 border-slate-700 hover:border-phosphor-500/50',
+              )}
+            >
+              <FolderOpen className="w-8 h-8 text-emerald-400" />
+              <div>
+                <p className="text-sm font-medium text-slate-200">
+                  Local Directory
+                </p>
+                <p className="text-xs text-slate-400">
+                  Write backups to a mounted disk or local path
+                </p>
+              </div>
+            </button>
           </div>
         </div>
       )}
@@ -158,10 +185,12 @@ export function StorageSetupWizard() {
       {step === 'details' && (
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-slate-100">
-            Enter your connection details
+            Enter storage details
           </h2>
           <p className="text-sm text-slate-400">
-            These settings connect to your NAS or file server.
+            {backendType === 'local'
+              ? 'These settings write archives directly to a mounted local directory.'
+              : 'These settings connect to your NAS or file server.'}
           </p>
 
           <div className="space-y-3">
@@ -181,40 +210,62 @@ export function StorageSetupWizard() {
                            focus:outline-none focus:ring-2 focus:ring-phosphor-500"
               />
             </div>
-            <div>
-              <label
-                htmlFor="setup-host"
-                className="block text-xs text-slate-400 mb-1"
-              >
-                Host (IP or hostname)
-              </label>
-              <input
-                id="setup-host"
-                type="text"
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-                placeholder="192.168.1.100 or nas.local"
-                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
-                           placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-phosphor-500"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
+            {backendType === 'local' ? (
               <div>
                 <label
-                  htmlFor="setup-share"
+                  htmlFor="setup-root-path"
                   className="block text-xs text-slate-400 mb-1"
                 >
-                  Share name
+                  Root path
                 </label>
                 <input
-                  id="setup-share"
+                  id="setup-root-path"
                   type="text"
-                  value={share}
-                  onChange={(e) => setShare(e.target.value)}
+                  value={rootPath}
+                  onChange={(e) => setRootPath(e.target.value)}
+                  placeholder="/media/kasadis/Backups/davion-gem"
                   className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
-                             focus:outline-none focus:ring-2 focus:ring-phosphor-500"
+                             placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-phosphor-500"
                 />
               </div>
+            ) : (
+              <div>
+                <label
+                  htmlFor="setup-host"
+                  className="block text-xs text-slate-400 mb-1"
+                >
+                  Host (IP or hostname)
+                </label>
+                <input
+                  id="setup-host"
+                  type="text"
+                  value={host}
+                  onChange={(e) => setHost(e.target.value)}
+                  placeholder="192.168.1.100 or nas.local"
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
+                             placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-phosphor-500"
+                />
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              {backendType === 'smb' && (
+                <div>
+                  <label
+                    htmlFor="setup-share"
+                    className="block text-xs text-slate-400 mb-1"
+                  >
+                    Share name
+                  </label>
+                  <input
+                    id="setup-share"
+                    type="text"
+                    value={share}
+                    onChange={(e) => setShare(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
+                               focus:outline-none focus:ring-2 focus:ring-phosphor-500"
+                  />
+                </div>
+              )}
               <div>
                 <label
                   htmlFor="setup-path"
@@ -232,40 +283,42 @@ export function StorageSetupWizard() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label
-                  htmlFor="setup-user"
-                  className="block text-xs text-slate-400 mb-1"
-                >
-                  Username
-                </label>
-                <input
-                  id="setup-user"
-                  type="text"
-                  value={user}
-                  onChange={(e) => setUser(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
-                             focus:outline-none focus:ring-2 focus:ring-phosphor-500"
-                />
+            {backendType === 'smb' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label
+                    htmlFor="setup-user"
+                    className="block text-xs text-slate-400 mb-1"
+                  >
+                    Username
+                  </label>
+                  <input
+                    id="setup-user"
+                    type="text"
+                    value={user}
+                    onChange={(e) => setUser(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
+                               focus:outline-none focus:ring-2 focus:ring-phosphor-500"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="setup-password"
+                    className="block text-xs text-slate-400 mb-1"
+                  >
+                    Password
+                  </label>
+                  <input
+                    id="setup-password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
+                               focus:outline-none focus:ring-2 focus:ring-phosphor-500"
+                  />
+                </div>
               </div>
-              <div>
-                <label
-                  htmlFor="setup-password"
-                  className="block text-xs text-slate-400 mb-1"
-                >
-                  Password
-                </label>
-                <input
-                  id="setup-password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
-                             focus:outline-none focus:ring-2 focus:ring-phosphor-500"
-                />
-              </div>
-            </div>
+            )}
             <label className="flex items-center gap-2 text-sm text-slate-300">
               <input
                 type="checkbox"
@@ -290,10 +343,16 @@ export function StorageSetupWizard() {
             <button
               type="button"
               onClick={handleSave}
-              disabled={!host || !share || saving}
+              disabled={
+                saving ||
+                (backendType === 'smb' && (!host || !share)) ||
+                (backendType === 'local' && !rootPath)
+              }
               className={clsx(
                 'flex items-center gap-2 px-4 py-2 text-sm rounded-md font-medium transition-colors',
-                host && share && !saving
+                !saving &&
+                  ((backendType === 'smb' && host && share) ||
+                    (backendType === 'local' && rootPath))
                   ? 'bg-phosphor-600 text-slate-50 hover:bg-phosphor-500'
                   : 'bg-slate-700 text-slate-400 cursor-not-allowed',
               )}
@@ -309,7 +368,7 @@ export function StorageSetupWizard() {
       {step === 'test' && (
         <div className="space-y-4 text-center">
           <h2 className="text-lg font-semibold text-slate-100">
-            Test your connection
+            Test your storage
           </h2>
           <p className="text-sm text-slate-400">
             Verify that SummitFlow can reach your storage.
@@ -350,7 +409,7 @@ export function StorageSetupWizard() {
                              text-sm font-medium hover:bg-phosphor-500 transition-colors"
                 >
                   <Wifi className="w-4 h-4" />
-                  Test Connection
+                  Test Storage
                 </button>
               )}
             </div>

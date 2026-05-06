@@ -24,7 +24,7 @@ describe('SetupChecklist', () => {
     expect(
       screen.getByText('0 of 4 complete. 4 steps still need attention.'),
     ).toBeInTheDocument()
-    expect(screen.queryByText('Remote storage')).not.toBeInTheDocument()
+    expect(screen.queryByText('Backup storage')).not.toBeInTheDocument()
   })
 
   it('reveals setup steps after expanding the checklist', () => {
@@ -43,7 +43,7 @@ describe('SetupChecklist', () => {
       screen.getByRole('button', { name: /set up backup protection/i }),
     )
 
-    expect(screen.getByText('Remote storage')).toBeInTheDocument()
+    expect(screen.getByText('Backup storage')).toBeInTheDocument()
     expect(screen.getByText('Backup sources')).toBeInTheDocument()
   })
 })

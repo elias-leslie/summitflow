@@ -12,27 +12,6 @@ importers:
 
   .: {}
 
-  apps/summitflow-chromium-extension:
-    devDependencies:
-      tsup:
-        specifier: ^8.0.0
-        version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.7.0
-        version: 5.9.3
-
-  apps/summitflow-windows-connector:
-    devDependencies:
-      '@types/node':
-        specifier: ^22.19.7
-        version: 22.19.15
-      tsup:
-        specifier: ^8.0.0
-        version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.7.0
-        version: 5.9.3
-
   frontend:
     dependencies:
       '@agent-hub/chat-ui':
@@ -107,9 +86,6 @@ importers:
       '@summitflow/notes-ui':
         specifier: workspace:*
         version: link:../packages/notes-ui
-      '@summitflow/review-overlay':
-        specifier: workspace:*
-        version: link:../packages/review-overlay
       '@tanstack/react-query':
         specifier: ^5.90.18
         version: 5.95.2(react@19.2.4)
@@ -225,15 +201,6 @@ importers:
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(typescript@5.9.3)
       typescript:
         specifier: ^5.3.0
-        version: 5.9.3
-
-  packages/review-overlay:
-    devDependencies:
-      tsup:
-        specifier: ^8.0.0
-        version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.7.0
         version: 5.9.3
 
 packages:

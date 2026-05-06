@@ -97,7 +97,11 @@ def _emit_precision_search_metadata_note(metadata: dict[str, Any]) -> None:
     if metadata.get("refreshed_index"):
         _emit_status("st search: refreshed stale Explorer indexes before returning results.")
         return
-    if metadata.get("stale_hit"):
+    has_usable_results = any(
+        int(metadata.get(key) or 0) > 0
+        for key in ("final_tokens", "symbol_count", "text_match_count")
+    )
+    if metadata.get("stale_hit") and not has_usable_results:
         _emit_status(
             "st search: Explorer indexes are stale and refresh did not complete; verify results carefully or rerun after scan."
         )

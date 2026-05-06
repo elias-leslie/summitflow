@@ -141,12 +141,15 @@ def _parse_agents(data: object) -> CodingAgentsListResponse:
 
 @router.get("/agent-hub/agents", response_model=CodingAgentsListResponse)
 async def list_coding_agents(
-    is_coding_agent: bool = True,
+    is_coding_agent: bool | None = Query(default=None),
 ) -> CodingAgentsListResponse:
     """Proxy to Agent Hub to list coding agents."""
+    params: dict[str, str | int] | None = None
+    if is_coding_agent is not None:
+        params = {"is_coding_agent": str(is_coding_agent).lower()}
     data = await _get_json(
         f"{AGENT_HUB_URL}/api/agents",
-        params={"is_coding_agent": str(is_coding_agent).lower()},
+        params=params,
     )
     return _parse_agents(data)
 

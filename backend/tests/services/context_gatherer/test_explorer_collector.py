@@ -162,6 +162,90 @@ def test_collect_precision_code_search_context_skips_fallback_fetch_on_symbol_hi
     assert not result.metadata["used_fallback"]
 
 
+def test_collect_precision_code_search_context_probes_text_for_weak_multiword_symbol_hits() -> None:
+    with (
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_and_rank_symbols",
+            return_value=[
+                {
+                    "symbol_id": "backend/app/services/explorer/index_generator.py::get_explorer_summary#function",
+                    "qualified_name": "get_explorer_summary",
+                    "name": "get_explorer_summary",
+                    "kind": "function",
+                    "file_path": "backend/app/services/explorer/index_generator.py",
+                    "start_line": 122,
+                    "end_line": 141,
+                    "signature": "def get_explorer_summary(project_id: str) -> dict[str, Any]",
+                    "summary": "Get Explorer trust metadata.",
+                }
+            ],
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.build_symbol_section",
+            return_value="## Relevant Symbols\n\n- `get_explorer_summary`",
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_text",
+            return_value={
+                "items": [
+                    {
+                        "path": "frontend/components/design/UiDesignWorkspace.tsx",
+                        "line": 762,
+                        "content": "Pixel audit",
+                        "language": "typescript",
+                    }
+                ],
+                "count": 1,
+                "files_searched": 120,
+                "truncated": False,
+            },
+        ) as mock_search_text,
+    ):
+        result = collect_precision_code_search_context("project-1", ["Pixel audit"])
+
+    mock_search_text.assert_called_once_with("project-1", "Pixel audit", limit=12)
+    assert result.metadata["used_symbol_first"] is False
+    assert result.metadata["used_fallback"] is True
+    assert result.metadata["text_match_count"] == 1
+    assert "frontend/components/design/UiDesignWorkspace.tsx:762" in result.prompt_context
+
+
+def test_collect_precision_code_search_context_keeps_strong_multiword_symbol_hits() -> None:
+    with (
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_and_rank_symbols",
+            return_value=[
+                {
+                    "symbol_id": "frontend/components/layout/ProjectSelector.tsx::ProjectSelector#function",
+                    "qualified_name": "ProjectSelector",
+                    "name": "ProjectSelector",
+                    "kind": "function",
+                    "file_path": "frontend/components/layout/ProjectSelector.tsx",
+                    "start_line": 21,
+                    "end_line": 180,
+                    "signature": "export function ProjectSelector({ onProjectChange })",
+                    "summary": "Project selection dropdown component.",
+                }
+            ],
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.build_symbol_section",
+            return_value="## Relevant Symbols\n\n- `ProjectSelector`",
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.estimate_naive_file_tokens",
+            return_value=2000,
+        ),
+        patch("app.services.context_gatherer.precision_code_search.search_text") as mock_search_text,
+    ):
+        result = collect_precision_code_search_context("project-1", ["project selector"])
+
+    mock_search_text.assert_not_called()
+    assert result.metadata["used_symbol_first"] is True
+    assert result.metadata["used_fallback"] is False
+    assert "ProjectSelector" in result.prompt_context
+
+
 def test_collect_precision_code_search_context_uses_text_search_primitive_for_fallback() -> None:
     with (
         patch("app.services.context_gatherer._precision_ranking.search_symbols", return_value=[]),

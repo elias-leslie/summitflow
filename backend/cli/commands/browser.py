@@ -52,6 +52,7 @@ _session_args = browser_support.session_args
 _agent_command = browser_support.agent_command
 _suffixed = browser_support.suffixed
 _json_from_agent_eval = browser_support.json_from_agent_eval
+_close_blank_browser_targets = browser_support.close_blank_browser_targets
 
 
 def _browser_target_env() -> dict[str, str]:
@@ -368,4 +369,6 @@ def browser(ctx: typer.Context) -> None:
     result = _run_agent(scoped_browser_args, cdp=ws, capture=True)
     emit_result_or_details(current_root(), f"browser-{command or 'command'}", "BROWSER", result)
     _run_browser_reaper()
+    if command not in {"open", "goto", "navigate"}:
+        _close_blank_browser_targets(host, port)
     raise typer.Exit(result.returncode)

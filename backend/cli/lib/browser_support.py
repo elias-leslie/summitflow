@@ -11,6 +11,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Any, cast
 
 import httpx
 
@@ -112,6 +113,59 @@ def http_json(url: str) -> dict[str, object] | list[object] | None:
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, dict | list) else None
+
+
+def browser_page_target_ids(host: str, port: int) -> set[str] | None:
+    targets = http_json(f"http://{host}:{port}/json/list")
+    if not isinstance(targets, list):
+        return None
+
+    ids: set[str] = set()
+    for target in targets:
+        if not isinstance(target, dict):
+            continue
+        target_data = cast(dict[str, Any], target)
+        target_id = target_data.get("id")
+        if target_data.get("type") == "page" and isinstance(target_id, str) and target_id:
+            ids.add(target_id)
+    return ids
+
+
+def close_browser_targets(host: str, port: int, target_ids: set[str]) -> int:
+    closed = 0
+    for target_id in target_ids:
+        try:
+            response = httpx.get(f"http://{host}:{port}/json/close/{target_id}", timeout=2.0)
+        except httpx.HTTPError:
+            continue
+        if response.status_code < 400:
+            closed += 1
+    return closed
+
+
+def close_blank_browser_targets(host: str, port: int) -> int:
+    targets = http_json(f"http://{host}:{port}/json/list")
+    if not isinstance(targets, list):
+        return 0
+
+    closed = 0
+    for target in targets:
+        if not isinstance(target, dict):
+            continue
+        target_data = cast(dict[str, Any], target)
+        if target_data.get("type") != "page":
+            continue
+        target_id = target_data.get("id")
+        title = str(target_data.get("title") or "")
+        url = str(target_data.get("url") or "")
+        if not isinstance(target_id, str) or not target_id:
+            continue
+        if url != "about:blank":
+            continue
+        if title not in {"", "about:blank"} and not title.startswith("Starting agent "):
+            continue
+        closed += close_browser_targets(host, port, {target_id})
+    return closed
 
 
 def engine_up(port: int, *, host: str) -> bool:

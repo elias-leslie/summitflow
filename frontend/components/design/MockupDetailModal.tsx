@@ -20,7 +20,6 @@ interface MockupDetailModalProps {
   onStatusChange: () => void
   onCreateIteration: (mockup: Mockup) => void
   onSelectMockup: (mockup: Mockup) => void
-  onOpenReviewOverlay?: (mockup: Mockup) => void
   navigation?: MockupModalNavigation
 }
 
@@ -32,7 +31,6 @@ export function MockupDetailModal({
   onStatusChange,
   onCreateIteration,
   onSelectMockup,
-  onOpenReviewOverlay,
   navigation,
 }: MockupDetailModalProps) {
   const {
@@ -105,7 +103,6 @@ export function MockupDetailModal({
             onCreateIteration={() => onCreateIteration(mockup)}
             onRerun={() => setShowRerunDialog(true)}
             onDelete={() => setShowDeleteConfirm(true)}
-            onOpenReviewOverlay={() => onOpenReviewOverlay?.(mockup)}
           />
 
           <DetailsSidebar

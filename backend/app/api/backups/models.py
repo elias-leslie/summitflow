@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-BackendType = Literal["smb"]
+BackendType = Literal["smb", "local"]
 SourceType = Literal["project", "config", "infrastructure", "workspace"]
 Frequency = Literal["hourly", "daily", "weekly", "monthly"]
 

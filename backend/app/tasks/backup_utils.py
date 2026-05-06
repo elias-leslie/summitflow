@@ -274,7 +274,7 @@ def get_source_type(source_id: str) -> str | None:
 
 
 def get_storage_config(source_id: str) -> dict[str, Any] | None:
-    """Resolve SMB config: source → default backend → env/files.
+    """Resolve storage config: source → default backend → env/files.
 
     Checks if the source has a storage_backend_id, then falls back to the
     default backend, then returns None (caller uses env/file-based config).
@@ -283,23 +283,27 @@ def get_storage_config(source_id: str) -> dict[str, Any] | None:
         # Check source-specific backend
         cur.execute(
             """
-            SELECT sb.config FROM storage_backends sb
+            SELECT sb.backend_type, sb.config FROM storage_backends sb
             JOIN backup_sources bs ON bs.storage_backend_id = sb.id
             WHERE bs.id = %s AND sb.enabled = TRUE
             """,
             (source_id,),
         )
         row = cur.fetchone()
-        if row and row[0]:
-            return row[0] if isinstance(row[0], dict) else None
+        if row and row[1]:
+            config = row[1] if isinstance(row[1], dict) else None
+            if config is not None:
+                return {**config, "__backend_type": row[0]}
 
         # Fall back to default backend
         cur.execute(
-            "SELECT config FROM storage_backends WHERE is_default = TRUE AND enabled = TRUE LIMIT 1"
+            "SELECT backend_type, config FROM storage_backends WHERE is_default = TRUE AND enabled = TRUE LIMIT 1"
         )
         row = cur.fetchone()
-        if row and row[0]:
-            return row[0] if isinstance(row[0], dict) else None
+        if row and row[1]:
+            config = row[1] if isinstance(row[1], dict) else None
+            if config is not None:
+                return {**config, "__backend_type": row[0]}
 
     return None
 
@@ -307,7 +311,7 @@ def get_storage_config(source_id: str) -> dict[str, Any] | None:
 def build_storage_env(source_id: str) -> dict[str, str]:
     """Resolve storage backend config and return as env var overrides.
 
-    Returns a dict of SMB_HOST, SMB_SHARE, etc. that can be passed as
+    Returns a dict of storage env vars that can be passed as
     extra env vars to subprocess calls. Returns empty dict if no backend
     is configured (scripts will use their own env/file-based config).
     """
@@ -316,15 +320,22 @@ def build_storage_env(source_id: str) -> dict[str, str]:
         return {}
 
     env_map: dict[str, str] = {}
+    backend_type = str(config.get("__backend_type") or config.get("backend_type") or "smb")
+    env_map["STORAGE_BACKEND_TYPE"] = backend_type
     if config.get("host"):
-        env_map["SMB_HOST"] = config["host"]
+        env_map["SMB_HOST"] = str(config["host"])
     if config.get("share"):
-        env_map["SMB_SHARE"] = config["share"]
+        env_map["SMB_SHARE"] = str(config["share"])
     if config.get("path"):
-        env_map["SMB_PATH"] = config["path"]
+        env_map["SMB_PATH"] = str(config["path"])
+        env_map["LOCAL_BACKUP_PATH"] = str(config["path"])
+    if config.get("root_path"):
+        env_map["LOCAL_BACKUP_ROOT"] = str(config["root_path"])
+    if config.get("base_path"):
+        env_map["LOCAL_BACKUP_ROOT"] = str(config["base_path"])
     if config.get("user"):
-        env_map["SMB_USER"] = config["user"]
+        env_map["SMB_USER"] = str(config["user"])
     if config.get("credentials_file"):
-        env_map["CREDENTIALS_FILE"] = config["credentials_file"]
+        env_map["CREDENTIALS_FILE"] = str(config["credentials_file"])
 
     return env_map

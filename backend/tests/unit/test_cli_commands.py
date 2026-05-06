@@ -14,6 +14,7 @@ import tempfile
 from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import ANY, MagicMock, patch
 
@@ -1646,6 +1647,42 @@ class TestBackupCommands:
         assert result.exit_code == 0
         assert "ARCHIVE" in result.output
         assert "summitflow/file.txt" in result.output
+
+    def test_backup_archives_includes_configured_local_backend(self, tmp_path: Path) -> None:
+        """Archive listing should scan enabled local storage backends."""
+        from cli.commands.backup import app as backup_app
+
+        project_root = tmp_path / "project"
+        storage_root = tmp_path / "Backups"
+        archive_dir = storage_root / "project-backups" / "codex-config"
+        archive_dir.mkdir(parents=True)
+        archive = archive_dir / "codex-config-20260505-180912.tar.gz"
+        archive.write_bytes(b"archive")
+
+        with (
+            patch(
+                "cli.commands.backup_archives.get_config",
+                return_value=SimpleNamespace(project_root=str(project_root)),
+            ),
+            patch(
+                "cli.commands.backup_archives.list_storage_backends",
+                return_value=[
+                    {
+                        "backend_type": "local",
+                        "config": {
+                            "root_path": str(storage_root),
+                            "path": "project-backups",
+                        },
+                    }
+                ],
+            ),
+        ):
+            result = runner.invoke(backup_app, ["archives"])
+
+        assert result.exit_code == 0
+        assert "ARCHIVES[1]" in result.output
+        assert "STORAGE" in result.output
+        assert archive.name in result.output
 
 
 class TestVerifyPlanGates:
