@@ -867,6 +867,7 @@ CREATE TABLE public.mockups (
     generation_prompt text,
     generation_time_ms integer,
     iteration_count integer DEFAULT 1 NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT mockups_status_check CHECK (((status)::text = ANY (ARRAY[('generated'::character varying)::text, ('pending_approval'::character varying)::text, ('approved'::character varying)::text, ('rejected'::character varying)::text, ('applied'::character varying)::text, ('archived'::character varying)::text]))),

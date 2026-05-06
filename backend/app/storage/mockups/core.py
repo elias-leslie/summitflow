@@ -5,10 +5,14 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from psycopg.types.json import Jsonb
+
 from ..connection import get_connection, get_cursor
 
 # Mockup type constants
-MOCKUP_TYPES = frozenset({"component", "page", "layout", "icon", "illustration", "sprite", "sheet"})
+MOCKUP_TYPES = frozenset(
+    {"component", "page", "layout", "icon", "illustration", "sprite", "sheet"}
+)
 
 # Mockup status constants
 MOCKUP_STATUSES = frozenset(
@@ -19,7 +23,8 @@ MOCKUP_STATUSES = frozenset(
 MOCKUP_SELECT_COLUMNS = """id, project_id, mockup_id, name, description, mockup_type,
        file_path, content, status, approved_at, approved_by, applied_at,
        task_id, page_path, version, parent_mockup_id, generator,
-       generation_prompt, generation_time_ms, iteration_count, created_at, updated_at"""
+       generation_prompt, generation_time_ms, iteration_count, metadata,
+       created_at, updated_at"""
 
 # Default initial mockup version and iteration count
 _DEFAULT_VERSION = 1
@@ -57,8 +62,9 @@ def _row_to_mockup(row: tuple[Any, ...]) -> dict[str, Any]:
         "generation_prompt": row[17],
         "generation_time_ms": row[18],
         "iteration_count": row[19],
-        "created_at": row[20].isoformat() if row[20] else None,
-        "updated_at": row[21].isoformat() if row[21] else None,
+        "metadata": row[20] or {},
+        "created_at": row[21].isoformat() if row[21] else None,
+        "updated_at": row[22].isoformat() if row[22] else None,
     }
 
 
@@ -94,9 +100,12 @@ def _insert_mockup_row(params: tuple[Any, ...]) -> dict[str, Any]:
                 project_id, mockup_id, name, description, mockup_type,
                 file_path, content, status, task_id, page_path,
                 version, parent_mockup_id, generator, generation_prompt,
-                generation_time_ms, iteration_count
+                generation_time_ms, iteration_count, metadata
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, '{_INITIAL_STATUS}', %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, '{_INITIAL_STATUS}',
+                %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
             RETURNING {MOCKUP_SELECT_COLUMNS}
             """,
             params,
@@ -122,6 +131,7 @@ def create_mockup(
     generator: str | None = None,
     generation_prompt: str | None = None,
     generation_time_ms: int | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a new mockup record and return it."""
     if mockup_type not in MOCKUP_TYPES:
@@ -130,9 +140,21 @@ def create_mockup(
     version, iteration_count = _resolve_version_and_iteration(parent_mockup_id)
     return _insert_mockup_row(
         (
-            project_id, mockup_id, name, description, mockup_type,
-            file_path, content, task_id, page_path,
-            version, parent_mockup_id, generator, generation_prompt,
-            generation_time_ms, iteration_count,
+            project_id,
+            mockup_id,
+            name,
+            description,
+            mockup_type,
+            file_path,
+            content,
+            task_id,
+            page_path,
+            version,
+            parent_mockup_id,
+            generator,
+            generation_prompt,
+            generation_time_ms,
+            iteration_count,
+            Jsonb(metadata or {}),
         )
     )

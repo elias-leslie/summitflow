@@ -255,12 +255,20 @@ def _backup_source_column_additions() -> list[tuple[str, str]]:
     ]
 
 
+def _mockup_column_additions() -> list[tuple[str, str]]:
+    """Return column additions for mockup artifacts."""
+    return [
+        ("metadata JSONB NOT NULL DEFAULT '{}'::jsonb", "mockups"),
+    ]
+
+
 def _add_missing_columns(cur: psycopg.Cursor) -> None:
     """Add columns that may be missing from older schema versions."""
     column_additions = (
         _project_column_additions()
         + _task_column_additions()
         + _backup_source_column_additions()
+        + _mockup_column_additions()
     )
     for column, table in column_additions:
         _try_add_column(cur, table, column)

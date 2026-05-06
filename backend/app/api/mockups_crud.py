@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 
 from ..storage import mockups as mockups_storage
 from .mockups_models import (
+    MockupContextResponse,
     MockupCreate,
     MockupListResponse,
     MockupResponse,
@@ -14,7 +15,7 @@ from .mockups_models import (
     MockupStatusUpdate,
     MockupUpdate,
 )
-from .mockups_utils import to_response
+from .mockups_utils import compact_context_for_mockup, to_response
 from .mockups_validation import validate_mockup_path
 
 router = APIRouter()
@@ -47,6 +48,7 @@ async def create_mockup(
             generator=request.generator,
             generation_prompt=request.generation_prompt,
             generation_time_ms=request.generation_time_ms,
+            metadata=request.metadata,
         )
         return to_response(mockup)
     except ValueError as e:
@@ -116,6 +118,22 @@ async def get_mockup(
     if not mockup:
         raise HTTPException(status_code=404, detail="Mockup not found")
     return to_response(mockup)
+
+
+@router.get(
+    "/projects/{project_id}/mockups/{mockup_id}/context",
+    response_model=MockupContextResponse,
+)
+async def get_mockup_context(
+    project_id: str,
+    mockup_id: str,
+    include_content: bool = Query(False, description="Include full HTML content"),
+) -> MockupContextResponse:
+    """Get compact mockup context for Work Chats and agents."""
+    mockup = mockups_storage.get_mockup(project_id, mockup_id)
+    if not mockup:
+        raise HTTPException(status_code=404, detail="Mockup not found")
+    return compact_context_for_mockup(mockup, include_content=include_content)
 
 
 @router.get("/projects/{project_id}/mockups/{mockup_id}/image")
@@ -223,6 +241,7 @@ async def update_mockup(
         file_path=request.file_path,
         content=request.content,
         page_path=request.page_path,
+        metadata=request.metadata,
     )
     if not mockup:
         raise HTTPException(status_code=404, detail="Mockup not found")

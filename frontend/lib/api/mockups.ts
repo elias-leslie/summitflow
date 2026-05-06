@@ -31,6 +31,7 @@ export interface Mockup {
   generation_prompt: string | null
   generation_time_ms: number | null
   iteration_count: number
+  metadata?: Record<string, unknown>
   created_at: string | null
   updated_at: string | null
 }
@@ -61,6 +62,26 @@ export interface CreateMockupRequest {
   generator?: string
   generation_prompt?: string
   generation_time_ms?: number
+  metadata?: Record<string, unknown>
+}
+
+export interface MockupContext {
+  project_id: string
+  mockup_id: string
+  name: string
+  description: string | null
+  version: number
+  page_path: string | null
+  task_id: string | null
+  parent_mockup_id: number | null
+  generator: string | null
+  updated_at: string | null
+  annotation_count: number
+  annotations: Array<Record<string, unknown>>
+  compact_summary: string
+  content_included: boolean
+  content_excerpt: string | null
+  content: string | null
 }
 
 export interface RerunMockupRequest {
@@ -163,6 +184,21 @@ export async function fetchMockup(
   return fetchWithErrorHandling<Mockup>(
     `/api/projects/${projectId}/mockups/${mockupId}`,
     { errorMessage: 'Failed to fetch mockup' },
+  )
+}
+
+/**
+ * Fetch token-efficient mockup artifact context.
+ */
+export async function fetchMockupContext(
+  projectId: string,
+  mockupId: string,
+  includeContent = false,
+): Promise<MockupContext> {
+  const query = includeContent ? '?include_content=true' : ''
+  return fetchWithErrorHandling<MockupContext>(
+    `/api/projects/${projectId}/mockups/${mockupId}/context${query}`,
+    { errorMessage: 'Failed to fetch mockup context' },
   )
 }
 

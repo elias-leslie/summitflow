@@ -1,5 +1,7 @@
 """Pydantic models for mockups API."""
 
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -17,6 +19,7 @@ class MockupCreate(BaseModel):
     generator: str | None = None
     generation_prompt: str | None = None
     generation_time_ms: int | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class MockupUpdate(BaseModel):
@@ -27,6 +30,7 @@ class MockupUpdate(BaseModel):
     file_path: str | None = None
     content: str | None = None
     page_path: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class MockupStatusUpdate(BaseModel):
@@ -59,8 +63,30 @@ class MockupResponse(BaseModel):
     generation_prompt: str | None
     generation_time_ms: int | None
     iteration_count: int
+    metadata: dict[str, Any]
     created_at: str | None
     updated_at: str | None
+
+
+class MockupContextResponse(BaseModel):
+    """Token-efficient artifact context for Work Chats and agents."""
+
+    project_id: str
+    mockup_id: str
+    name: str
+    description: str | None
+    version: int
+    page_path: str | None
+    task_id: str | None
+    parent_mockup_id: int | None
+    generator: str | None
+    updated_at: str | None
+    annotation_count: int
+    annotations: list[dict[str, Any]]
+    compact_summary: str
+    content_included: bool
+    content_excerpt: str | None = None
+    content: str | None = None
 
 
 class MockupListResponse(BaseModel):

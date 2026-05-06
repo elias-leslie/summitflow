@@ -64,7 +64,13 @@ import {
   type WorkContext,
 } from '@/lib/api/agent-hub-work-chats'
 import { type FeedbackItem, fetchFeedbackItems } from '@/lib/api/feedback'
-import { fetchMockups, type Mockup } from '@/lib/api/mockups'
+import {
+  analyzePage,
+  fetchMockupContext,
+  fetchMockups,
+  type Mockup,
+  type MockupContext,
+} from '@/lib/api/mockups'
 import { summarizeMockupForWorkContext } from '@/lib/mockup-html'
 import { cn } from '@/lib/utils'
 
@@ -717,10 +723,81 @@ function PaneChrome({
     (artifact) =>
       artifact.value === selectedArtifact && artifact.kind === 'design',
   )
+  const currentProject = pane.projectId
+    ? (projects.find((project) => project.id === pane.projectId) ?? null)
+    : null
+  const [isAnalyzingPage, setIsAnalyzingPage] = useState(false)
   const hasTelegram = actionRequests.some((request) => request.telegram_chat_id)
   const blockers = actionRequests.filter(
     (request) => request.status !== 'resolved',
   )
+
+  const sendDesignContext = async () => {
+    if (!pane.projectId || !pane.designId) return
+    try {
+      const context = await fetchMockupContext(pane.projectId, pane.designId)
+      onSendPaneMessage(
+        [
+          'Use this design artifact as current Work Chat context.',
+          `Artifact context: ${context.compact_summary}`,
+          `Artifact id: ${context.mockup_id}`,
+          'Full HTML is stored in per-project Design; fetch it only if needed.',
+        ].join('\n'),
+      )
+    } catch {
+      const summary = selectedDesignArtifact?.mockup
+        ? summarizeMockupForWorkContext(selectedDesignArtifact.mockup)
+        : `${pane.artifactSummary ?? pane.designId} (${pane.designId})`
+      onSendPaneMessage(
+        [
+          'Use this design artifact as current Work Chat context.',
+          `Artifact: ${summary}`,
+          'Discuss it, revise the mockup, create tasks, or plan page implementation as needed.',
+        ].join('\n'),
+      )
+    }
+  }
+
+  const analyzeDesignPage = async () => {
+    const pagePath = selectedDesignArtifact?.mockup?.page_path
+    const baseUrl = currentProject?.public_url || currentProject?.base_url
+    if (!pane.projectId || !pagePath || !baseUrl) return
+    setIsAnalyzingPage(true)
+    try {
+      const pageUrl = new URL(pagePath, baseUrl).toString()
+      const result = await analyzePage(pane.projectId, pageUrl, pagePath)
+      if (result.success && result.mockup_id) {
+        onPatch({
+          designId: result.mockup_id,
+          artifactSummary: `Page analysis ${pagePath}`,
+        })
+        onSendPaneMessage(
+          [
+            'I captured and analyzed the current page into a project Design artifact.',
+            `Mockup: ${result.mockup_id}`,
+            `Page: ${pagePath}`,
+            result.recommendations
+              ? `Compact findings: ${result.recommendations.slice(0, 1200)}`
+              : '',
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        )
+      } else {
+        onSendPaneMessage(
+          `Page design analysis failed for ${pagePath}: ${result.error ?? 'unknown error'}`,
+        )
+      }
+    } catch (error) {
+      onSendPaneMessage(
+        `Page design analysis failed for ${pagePath}: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      )
+    } finally {
+      setIsAnalyzingPage(false)
+    }
+  }
 
   return (
     <div className="shrink-0 border-b border-slate-800 bg-slate-900/85">
@@ -1092,22 +1169,21 @@ function PaneChrome({
           </button>
           <button
             type="button"
-            onClick={() => {
-              const summary = selectedDesignArtifact?.mockup
-                ? summarizeMockupForWorkContext(selectedDesignArtifact.mockup)
-                : `${pane.artifactSummary ?? pane.designId} (${pane.designId})`
-              onSendPaneMessage(
-                [
-                  'Use this design artifact as current Work Chat context.',
-                  `Artifact: ${summary}`,
-                  'Discuss it, revise the mockup, create tasks, or plan page implementation as needed.',
-                ].join('\n'),
-              )
-            }}
+            onClick={() => void sendDesignContext()}
             className="h-7 shrink-0 rounded border border-slate-700 bg-slate-950/70 px-2 text-xs text-slate-300 hover:border-phosphor-500/50 hover:text-phosphor-200"
           >
             Send context
           </button>
+          {selectedDesignArtifact?.mockup?.page_path ? (
+            <button
+              type="button"
+              onClick={() => void analyzeDesignPage()}
+              disabled={isAnalyzingPage}
+              className="h-7 shrink-0 rounded border border-slate-700 bg-slate-950/70 px-2 text-xs text-slate-300 hover:border-phosphor-500/50 hover:text-phosphor-200 disabled:opacity-50"
+            >
+              {isAnalyzingPage ? 'Analyzing' : 'Analyze page'}
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -1115,7 +1191,16 @@ function PaneChrome({
 }
 
 function extractMockupIds(content: string): string[] {
-  return Array.from(new Set(content.match(/\bmk-[a-z0-9]{8,}\b/gi) ?? []))
+  const ids = [...(content.match(/\bmk-[a-z0-9]{8,}\b/gi) ?? [])]
+  const encodedIds =
+    content.match(
+      /(?:mockup_id|design_id|artifact_id|artifact)[:="'\s]+(mk-[a-z0-9]{8,})/gi,
+    ) ?? []
+  encodedIds.forEach((value) => {
+    const id = value.match(/\bmk-[a-z0-9]{8,}\b/i)?.[0]
+    if (id) ids.push(id)
+  })
+  return Array.from(new Set(ids))
 }
 
 function MockupMentionCards({
@@ -1130,21 +1215,61 @@ function MockupMentionCards({
   onOpenMockup: (target: MockupEditorTarget) => void
 }) {
   const ids = projectId ? extractMockupIds(content) : []
+  const idsKey = ids.join('|')
+  const [contexts, setContexts] = useState<Record<string, MockupContext>>({})
+
+  useEffect(() => {
+    if (!projectId || !ids.length) return
+    let cancelled = false
+    Promise.all(
+      ids.map((id) =>
+        fetchMockupContext(projectId, id)
+          .then((context) => [id, context] as const)
+          .catch(() => null),
+      ),
+    ).then((items) => {
+      if (cancelled) return
+      setContexts(
+        Object.fromEntries(
+          items.filter(
+            (item): item is readonly [string, MockupContext] => item !== null,
+          ),
+        ),
+      )
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [idsKey, projectId])
+
   if (!ids.length || !projectId) return null
 
   return (
     <div className="mt-2 flex flex-wrap gap-2">
-      {ids.map((mockupId) => (
-        <button
-          key={mockupId}
-          type="button"
-          onClick={() => onOpenMockup({ projectId, mockupId, paneId })}
-          className="inline-flex items-center gap-1.5 rounded border border-phosphor-500/25 bg-phosphor-500/8 px-2 py-1 text-xs text-phosphor-200 transition-colors hover:border-phosphor-500/50 hover:bg-phosphor-500/12"
-        >
-          <Layers3 className="h-3.5 w-3.5" />
-          Open mock {mockupId}
-        </button>
-      ))}
+      {ids.map((mockupId) => {
+        const context = contexts[mockupId]
+        return (
+          <button
+            key={mockupId}
+            type="button"
+            onClick={() => onOpenMockup({ projectId, mockupId, paneId })}
+            title={context?.compact_summary ?? mockupId}
+            className="inline-flex max-w-96 items-center gap-1.5 rounded border border-phosphor-500/25 bg-phosphor-500/8 px-2 py-1 text-xs text-phosphor-200 transition-colors hover:border-phosphor-500/50 hover:bg-phosphor-500/12"
+          >
+            <Layers3 className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">
+              {context
+                ? `${context.name} v${context.version}`
+                : `Open mock ${mockupId}`}
+            </span>
+            {context?.annotation_count ? (
+              <span className="rounded bg-slate-950/70 px-1 font-mono text-[10px] text-slate-400">
+                {context.annotation_count} notes
+              </span>
+            ) : null}
+          </button>
+        )
+      })}
     </div>
   )
 }

@@ -15,6 +15,7 @@ from . import mockups_analysis, mockups_crud, mockups_generation, mockups_task_p
 from .mockups_models import (
     AnalyzePageRequest,
     AnalyzePageResponse,
+    MockupContextResponse,
     MockupCreate,
     MockupListResponse,
     MockupResponse,
@@ -36,6 +37,7 @@ router.include_router(mockups_generation.router)
 __all__ = [
     "AnalyzePageRequest",
     "AnalyzePageResponse",
+    "MockupContextResponse",
     "MockupCreate",
     "MockupListResponse",
     "MockupResponse",

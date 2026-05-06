@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from psycopg.types.json import Jsonb
+
 from .._sql import static_sql
 from ..connection import get_connection
 from .core import MOCKUP_SELECT_COLUMNS, MOCKUP_STATUSES, _row_to_mockup
@@ -19,6 +21,7 @@ def update_mockup(
     file_path: str | None = None,
     content: str | None = None,
     page_path: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Update mockup fields.
 
@@ -46,6 +49,10 @@ def update_mockup(
     if page_path is not None:
         updates.append("page_path = %s")
         params.append(page_path)
+
+    if metadata is not None:
+        updates.append("metadata = %s")
+        params.append(Jsonb(metadata))
 
     if not updates:
         return get_mockup(project_id, mockup_id)
