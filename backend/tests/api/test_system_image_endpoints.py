@@ -1,7 +1,30 @@
+import subprocess
+
 from fastapi.testclient import TestClient
 
 from app.api.backups import system_image_endpoints as endpoint
 from app.main import app
+
+
+def test_system_image_sessions_are_newest_first(monkeypatch):
+    output = """Job name               Type    ID                                      State    Created at        Started at        Finished at
+SummitFlowSystemImage  Backup  {50f4fa3a-15ff-4d16-af15-44c18ec26299}  Failed   2026-05-07 10:18  2026-05-07 10:18  2026-05-07 10:18
+SummitFlowSystemImage  Backup  {140ed198-fe5e-4e38-b89e-811706a6dceb}  Success  2026-05-07 17:12  2026-05-07 17:12  2026-05-07 17:20
+Total amount: 2
+"""
+    monkeypatch.setattr(
+        endpoint,
+        "_veeam",
+        lambda args: subprocess.CompletedProcess(args=args, returncode=0, stdout=output, stderr=""),
+    )
+
+    sessions = endpoint._sessions()
+
+    assert [session.id for session in sessions] == [
+        "140ed198-fe5e-4e38-b89e-811706a6dceb",
+        "50f4fa3a-15ff-4d16-af15-44c18ec26299",
+    ]
+    assert sessions[0].state == "Success"
 
 
 def test_system_image_status_reports_secure_boot_pending(monkeypatch):

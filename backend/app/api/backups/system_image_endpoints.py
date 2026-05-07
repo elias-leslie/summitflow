@@ -197,7 +197,16 @@ def _sessions() -> list[SystemImageSession]:
                 finished_at=parts[6] if len(parts) > 6 else None,
             )
         )
-    return sessions
+    return sorted(
+        sessions,
+        key=lambda session: (
+            session.created_at or "",
+            session.started_at or "",
+            session.finished_at or "",
+            session.id,
+        ),
+        reverse=True,
+    )
 
 
 def _status_sync() -> SystemImageBackupStatus:
