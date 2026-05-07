@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ....constants import ESCALATION_MODEL, SELF_HEAL_MAX_ATTEMPTS, SUPERVISOR_GUIDED_MAX_ATTEMPTS
+from ....constants import SELF_HEAL_MAX_ATTEMPTS, SUPERVISOR_GUIDED_MAX_ATTEMPTS
 from ....logging_config import get_logger
 from ....storage import agent_configs
 from .agent_routing import EXTENSION_ATTEMPTS
@@ -64,11 +64,9 @@ def _run_fix_attempt(
         self_fix_attempts += 1
     else:
         supervisor_guided_attempts += 1
-    model_override = ESCALATION_MODEL if self_fix_attempts >= max_self_fix else None
     response_content, agent_session_id = execute_fix_attempt(
         task_id, subtask_short_id, fix_prompt, agent_slug, project_path, project_id,
         agent_session_id, self_fix_attempts, supervisor_guided_attempts, heal_attempt,
-        model_override=model_override,
     )
     return response_content, agent_session_id, self_fix_attempts, supervisor_guided_attempts, guidance
 

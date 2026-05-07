@@ -10,7 +10,7 @@ from pathlib import Path
 
 TRANSCRIPTS_ROOT = Path.home() / ".codex" / "sessions"
 PROC_ROOT = Path("/proc")
-DEFAULT_MODEL = "gpt-5.4"
+DEFAULT_MODEL = "unknown"
 TRANSCRIPT_SCAN_LINES = 100
 
 

@@ -23,8 +23,8 @@ def test_generate_design_asset_uses_project_scope(
     mock_client.generate_image.return_value = SimpleNamespace(
         image_base64="aGVsbG8=",
         mime_type="image/png",
-        model="gemini-3-pro-image-preview",
-        provider="gemini",
+        model="served-image-model",
+        provider="served-image-provider",
     )
     mock_get_client.return_value = mock_client
     mock_create_asset.return_value = {
@@ -43,8 +43,8 @@ def test_generate_design_asset_uses_project_scope(
         "width": 512,
         "height": 512,
         "transparent_background": True,
-        "model": "gemini-3-pro-image-preview",
-        "generator": "gemini-image",
+        "model": "served-image-model",
+        "generator": "image-gen",
         "file_path": "/tmp/asset.png",
         "source_asset_id": None,
         "sheet_columns": None,
@@ -102,8 +102,8 @@ def test_export_sprite_frames_creates_manifest(
             "width": 128,
             "height": 64,
             "transparent_background": True,
-            "model": "gemini-3-pro-image-preview",
-            "generator": "gemini-image",
+            "model": "served-image-model",
+            "generator": "image-gen",
             "file_path": str(image_path),
             "source_asset_id": None,
             "sheet_columns": 2,
@@ -164,8 +164,8 @@ def test_generate_design_asset_passes_reference_image_to_image_client(
     mock_client.generate_image.return_value = SimpleNamespace(
         image_base64="aGVsbG8=",
         mime_type="image/png",
-        model="nvidia/flux.1-kontext-dev",
-        provider="nvidia",
+        model="served-reference-image-model",
+        provider="served-image-provider",
     )
     mock_get_client.return_value = mock_client
     mock_create_asset.return_value = {
@@ -184,8 +184,8 @@ def test_generate_design_asset_passes_reference_image_to_image_client(
         "width": 512,
         "height": 512,
         "transparent_background": True,
-        "model": "nvidia/flux.1-kontext-dev",
-        "generator": "gemini-image",
+        "model": "served-reference-image-model",
+        "generator": "image-gen",
         "file_path": "/tmp/asset.png",
         "source_asset_id": None,
         "sheet_columns": 4,
@@ -208,7 +208,7 @@ def test_generate_design_asset_passes_reference_image_to_image_client(
             "prompt": "Single sprite for main character",
             "asset_type": "sprite_sheet",
             "size": "512x512",
-            "model": "nvidia/flux.1-kontext-dev",
+            "agent_slug": "image-gen",
             "reference_image": "aGVsbG8=",
             "reference_mime_type": "image/png",
             "sheet_columns": 4,
@@ -221,30 +221,22 @@ def test_generate_design_asset_passes_reference_image_to_image_client(
 
     assert response.status_code == 200
     kwargs = mock_client.generate_image.call_args.kwargs
-    assert kwargs["model"] == "nvidia/flux.1-kontext-dev"
+    assert kwargs["agent_slug"] == "image-gen"
     assert kwargs["reference_image"] == "aGVsbG8="
     assert kwargs["reference_mime_type"] == "image/png"
 
 
 @patch("app.services.design_asset_pipeline.design_assets.create_asset")
 @patch("app.services.design_asset_pipeline.get_sync_client")
-def test_generate_design_asset_falls_back_to_next_model_on_provider_failure(
+def test_generate_design_asset_returns_provider_failure_without_local_model_retry(
     mock_get_client: MagicMock,
     mock_create_asset: MagicMock,
     client: Any,
     ensure_test_project: str,
 ) -> None:
-    """Sprite sheet generation should continue through the fallback chain."""
+    """Provider fallback is owned by Agent Hub, not local project model lists."""
     mock_client = MagicMock()
-    mock_client.generate_image.side_effect = [
-        RuntimeError("nvidia failed"),
-        SimpleNamespace(
-            image_base64="aGVsbG8=",
-            mime_type="image/png",
-            model="cloudflare/flux-2-dev",
-            provider="cloudflare",
-        ),
-    ]
+    mock_client.generate_image.side_effect = RuntimeError("provider failed")
     mock_get_client.return_value = mock_client
     mock_create_asset.return_value = {
         "id": 1,
@@ -262,8 +254,8 @@ def test_generate_design_asset_falls_back_to_next_model_on_provider_failure(
         "width": 512,
         "height": 512,
         "transparent_background": True,
-        "model": "cloudflare/flux-2-dev",
-        "generator": "gemini-image",
+        "model": "served-image-model",
+        "generator": "image-gen",
         "file_path": "/tmp/asset.png",
         "source_asset_id": None,
         "sheet_columns": 4,
@@ -273,9 +265,9 @@ def test_generate_design_asset_falls_back_to_next_model_on_provider_failure(
         "animation_labels": ["idle", "run"],
         "tags": [],
         "metadata": {
-            "requested_model": "nvidia/flux.1-kontext-dev",
-            "served_model": "cloudflare/flux-2-dev",
-            "served_provider": "cloudflare",
+            "requested_agent": "image-gen",
+            "served_model": "served-image-model",
+            "served_provider": "served-image-provider",
         },
         "approved_at": None,
         "approved_by": None,
@@ -290,7 +282,7 @@ def test_generate_design_asset_falls_back_to_next_model_on_provider_failure(
             "prompt": "Single sprite for main character",
             "asset_type": "sprite_sheet",
             "size": "512x512",
-            "model": "nvidia/flux.1-kontext-dev",
+            "agent_slug": "image-gen",
             "sheet_columns": 4,
             "sheet_rows": 2,
             "frame_width": 128,
@@ -299,9 +291,6 @@ def test_generate_design_asset_falls_back_to_next_model_on_provider_failure(
         },
     )
 
-    assert response.status_code == 200
-    assert mock_client.generate_image.call_count == 2
-    first_call = mock_client.generate_image.call_args_list[0].kwargs
-    second_call = mock_client.generate_image.call_args_list[1].kwargs
-    assert first_call["model"] == "nvidia/flux.1-kontext-dev"
-    assert second_call["model"] == "cloudflare/flux-2-dev"
+    assert response.status_code == 502
+    mock_client.generate_image.assert_called_once()
+    assert mock_client.generate_image.call_args.kwargs["agent_slug"] == "image-gen"

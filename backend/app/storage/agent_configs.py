@@ -6,7 +6,6 @@ from typing import TypedDict, cast
 
 from psycopg.types.json import Jsonb
 
-from ..constants import DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL
 from ..logging_config import get_logger
 from .connection import get_connection, get_cursor
 
@@ -19,8 +18,8 @@ class AgentConfig(TypedDict, total=False):
     claude_enabled: bool
     gemini_enabled: bool
     default_agent: str  # "claude" or "gemini"
-    claude_model: str  # "claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5"
-    gemini_model: str  # "gemini-3-flash-preview", "gemini-3-pro-preview"
+    claude_model: str  # Legacy UI field. Do not use for routing.
+    gemini_model: str  # Legacy UI field. Do not use for routing.
 
     # Component management
     component_source: str  # "pages", "endpoints", "directories", or "manual"
@@ -69,8 +68,6 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "claude_enabled": True,
     "gemini_enabled": True,
     "default_agent": "gemini",
-    "claude_model": DEFAULT_CLAUDE_MODEL,
-    "gemini_model": DEFAULT_GEMINI_MODEL,
     # Component management
     "component_source": "manual",
     # Autonomous execution - disabled by default (opt-in)

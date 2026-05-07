@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
@@ -11,9 +12,29 @@ import typer
 
 from ..output import output_error, output_json
 from ._memory_crud_helpers import parse_csv_values
-from .agents_api import agent_preview_api, agents_api
+from .agents_api import agent_preview_api, agents_api, models_api
 
 app = typer.Typer(help="Agent management (Agent Hub)")
+
+_SCORE_KEYS = ("coding", "reasoning", "planning", "tool_use", "instruction", "design")
+_SCORE_LABELS = {
+    "coding": "C",
+    "reasoning": "R",
+    "planning": "P",
+    "tool_use": "T",
+    "instruction": "I",
+    "design": "D",
+    "finance": "F",
+    "verification": "V",
+    "jenny": "J",
+}
+_FIT_WEIGHTS = {
+    "finance": {"reasoning": 0.60, "planning": 0.25, "instruction": 0.15},
+    "verification": {"reasoning": 0.55, "instruction": 0.25, "tool_use": 0.20},
+    "jenny": {"planning": 0.45, "reasoning": 0.35, "tool_use": 0.20},
+}
+_ROUTING_MODES = {"manual_locked", "auto_shadow", "auto_canary", "auto"}
+_WORD_RE = re.compile(r"[a-z0-9]+")
 
 
 @dataclass
@@ -171,11 +192,146 @@ def _print_agent(agent: dict[str, Any]) -> None:
     print(f"  memory_config={json.dumps(agent.get('memory_config'), sort_keys=True)}")
 
 
+def _agent_items(result: dict[str, Any]) -> list[dict[str, Any]]:
+    agents = result.get("agents") if isinstance(result, dict) else None
+    return [a for a in agents if isinstance(a, dict)] if isinstance(agents, list) else []
+
+
+def _score_map() -> dict[str, dict[str, Any]]:
+    result = models_api()
+    models = result.get("models") if isinstance(result, dict) else None
+    if not isinstance(models, list):
+        return {}
+    return {
+        str(model["id"]): model
+        for model in models
+        if isinstance(model, dict) and model.get("id")
+    }
+
+
+def _focus_score_key(agent: dict[str, Any]) -> str:
+    slug = str(agent.get("slug") or "").lower()
+    text = f"{slug} {agent.get('name', '')} {agent.get('description', '')}".lower()
+    words = set(_WORD_RE.findall(text))
+    if slug == "persona" or words & {"jenny"}:
+        return "jenny"
+    if slug == "verifier" or words & {"verifier", "verification"}:
+        return "verification"
+    if words & {"design", "ui", "ux", "mockup", "site", "visual", "image", "designer"}:
+        return "design"
+    if agent.get("is_coding_agent"):
+        return "coding"
+    if words & {"finance", "financial", "equity", "trade", "trading", "risk", "investment", "market", "portfolio"}:
+        return "finance"
+    if words & {"plan", "planner", "planning", "triage", "triager", "supervisor", "orchestrator", "committee"}:
+        return "planning"
+    if words & {"review", "reviewer", "critic", "audit", "auditor", "validator", "extract", "extractor"}:
+        return "instruction"
+    if words & {"research", "researcher", "analyst", "reason", "reasoner"}:
+        return "reasoning"
+    return "instruction"
+
+
+def _model_scores(model: dict[str, Any] | None) -> dict[str, Any]:
+    scores = model.get("scores") if isinstance(model, dict) else None
+    return scores if isinstance(scores, dict) else {}
+
+
+def _score_value(model: dict[str, Any] | None, key: str) -> str:
+    scores = _model_scores(model)
+    weights = _FIT_WEIGHTS.get(key)
+    if weights:
+        values = [
+            float(scores[score_key]) * weight
+            for score_key, weight in weights.items()
+            if isinstance(scores.get(score_key), (int, float))
+        ]
+        value = round(sum(values)) if len(values) == len(weights) else None
+    else:
+        value = scores.get(key)
+    return str(value) if value is not None else "-"
+
+
+def _format_score_vector(model: dict[str, Any] | None) -> str:
+    scores = _model_scores(model)
+    parts = []
+    for key in _SCORE_KEYS:
+        value = scores.get(key)
+        parts.append(f"{_SCORE_LABELS[key]}{value if value is not None else '-'}")
+    return " ".join(parts)
+
+
+def _print_table(headers: list[str], rows: list[list[str]]) -> None:
+    widths = [
+        max(len(headers[i]), *(len(row[i]) for row in rows)) if rows else len(headers[i])
+        for i in range(len(headers))
+    ]
+    print("  ".join(headers[i].ljust(widths[i]) for i in range(len(headers))))
+    print("  ".join("-" * widths[i] for i in range(len(headers))))
+    for row in rows:
+        print("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))))
+
+
+def _format_slugs(agents: list[dict[str, Any]], limit: int = 8) -> str:
+    slugs = [str(a.get("slug") or "-") for a in sorted(agents, key=lambda a: str(a.get("slug") or ""))]
+    if len(slugs) <= limit:
+        return ",".join(slugs)
+    return f"{','.join(slugs[:limit])},+{len(slugs) - limit}"
+
+
+def _print_compact_agents(result: dict[str, Any], *, with_scores: bool) -> None:
+    agents = _agent_items(result)
+    scores_by_model = _score_map()
+    total = result.get("total", len(agents))
+    print(f"AGENTS[{len(agents)} shown/{total} total]")
+    headers = ["slug", "kind", "focus", "fit", "primary", "fb", "esc"]
+    if with_scores:
+        headers.append("scores")
+    rows: list[list[str]] = []
+    for agent in agents:
+        model_id = str(agent.get("primary_model_id") or "-")
+        model = scores_by_model.get(model_id)
+        focus = _focus_score_key(agent)
+        row = [
+            str(agent.get("slug") or "-"),
+            "code" if agent.get("is_coding_agent") else "text",
+            _SCORE_LABELS[focus],
+            _score_value(model, focus),
+            model_id,
+            str(len(agent.get("fallback_models") or [])),
+            str(agent.get("escalation_model_id") or "-"),
+        ]
+        if with_scores:
+            row.append(_format_score_vector(model))
+        rows.append(row)
+    _print_table(headers, rows)
+
+
+def _print_agents_by_model(result: dict[str, Any]) -> None:
+    agents = _agent_items(result)
+    scores_by_model = _score_map()
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for agent in agents:
+        grouped.setdefault(str(agent.get("primary_model_id") or "-"), []).append(agent)
+    rows: list[list[str]] = []
+    for model_id, model_agents in sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0])):
+        model = scores_by_model.get(model_id)
+        rows.append([
+            model_id,
+            str(len(model_agents)),
+            _format_score_vector(model),
+            _format_slugs(model_agents),
+        ])
+    print(f"AGENT_MODELS[{len(grouped)} primary models/{len(agents)} agents]")
+    _print_table(["primary", "agents", "scores", "slugs"], rows)
+
+
 def _build_agent_payload(
     *,
     name: str | None,
     description: str | None,
     primary_model: str | None,
+    escalation_model: str | None,
     temperature: float | None,
     thinking_level: str | None,
     active: bool | None,
@@ -188,6 +344,7 @@ def _build_agent_payload(
     payload: dict[str, Any] = {}
     for key, val in [
         ("name", name), ("description", description), ("primary_model_id", primary_model),
+        ("escalation_model_id", escalation_model),
         ("temperature", temperature), ("thinking_level", thinking_level),
         ("is_active", active), ("is_coding_agent", coding_agent),
         ("fallback_models", fallback_model), ("change_reason", change_reason),
@@ -197,6 +354,59 @@ def _build_agent_payload(
     if system_prompt_file is not None:
         payload["system_prompt"] = _load_text_file(system_prompt_file, "System prompt")
     return payload
+
+
+def _default_manual_route(routing: dict[str, Any]) -> dict[str, Any] | None:
+    routes = routing.get("manual_routes")
+    if not isinstance(routes, list):
+        return None
+    for route in routes:
+        if isinstance(route, dict) and route.get("workload_profile") is None:
+            return route
+    return None
+
+
+def _sync_manual_route(
+    slug: str,
+    *,
+    primary_model: str | None,
+    fallback_model: list[str] | None,
+    escalation_model: str | None,
+    routing_mode: str | None,
+    change_reason: str | None,
+) -> None:
+    """Mirror CLI model flags into Agent Hub routing tables."""
+    if routing_mode is not None and routing_mode not in _ROUTING_MODES:
+        output_error(f"Invalid routing mode: {routing_mode}")
+        raise typer.Exit(1)
+    if not any([primary_model, fallback_model is not None, escalation_model, routing_mode]):
+        return
+
+    payload: dict[str, Any] = {}
+    if routing_mode is not None:
+        payload["default_routing_mode"] = routing_mode
+
+    if primary_model or fallback_model is not None or escalation_model:
+        routing = agents_api("GET", f"/{slug}/routing")
+        current_route = _default_manual_route(routing) or {}
+        current_primary = current_route.get("primary_model_id")
+        resolved_primary = primary_model or (str(current_primary) if current_primary else None)
+        if not resolved_primary:
+            output_error("--primary-model is required when no default manual route exists.")
+            raise typer.Exit(1)
+        current_fallbacks = current_route.get("fallback_models")
+        payload["manual_route"] = {
+            "primary_model_id": resolved_primary,
+            "fallback_models": fallback_model if fallback_model is not None else list(current_fallbacks or []),
+            "escalation_model_id": escalation_model
+            if escalation_model is not None
+            else current_route.get("escalation_model_id"),
+            "reason": change_reason or "st agents update manual route",
+            "owner": "st agents update",
+            "enabled": True,
+        }
+
+    agents_api("PUT", f"/{slug}/routing", json=payload)
 
 
 def _collect_memory_flags(
@@ -241,6 +451,9 @@ def list_agents(
     coding_only: Annotated[bool | None, typer.Option("--coding-only/--non-coding")] = None,
     limit: Annotated[int, typer.Option("--limit", min=1, max=500)] = 100,
     offset: Annotated[int, typer.Option("--offset", min=0)] = 0,
+    as_json: Annotated[bool, typer.Option("--json", help="Print full API payload.")] = False,
+    scores: Annotated[bool, typer.Option("--scores", help="Show compact assignment rows with all score dimensions.")] = False,
+    by_model: Annotated[bool, typer.Option("--by-model", help="Group active agents by primary model.")] = False,
 ) -> None:
     """List agents."""
     params: dict[str, Any] = {
@@ -251,7 +464,13 @@ def list_agents(
     if coding_only is not None:
         params["is_coding_agent"] = str(coding_only).lower()
     result = agents_api("GET", "", params=params)
-    output_json(result)
+    if as_json:
+        output_json(result)
+        return
+    if by_model:
+        _print_agents_by_model(result)
+        return
+    _print_compact_agents(result, with_scores=scores)
 
 
 @app.command("get")
@@ -359,6 +578,8 @@ def update_agent(
     name: Annotated[str | None, typer.Option("--name")] = None,
     description: Annotated[str | None, typer.Option("--description")] = None,
     primary_model: Annotated[str | None, typer.Option("--primary-model")] = None,
+    escalation_model: Annotated[str | None, typer.Option("--escalation-model")] = None,
+    routing_mode: Annotated[str | None, typer.Option("--routing-mode")] = None,
     temperature: Annotated[float | None, typer.Option("--temperature", min=0.0, max=2.0)] = None,
     thinking_level: Annotated[str | None, typer.Option("--thinking-level")] = None,
     active: Annotated[bool | None, typer.Option("--active/--inactive")] = None,
@@ -386,7 +607,7 @@ def update_agent(
     """Update an agent using the Agent Hub API."""
     payload = _build_agent_payload(
         name=name, description=description, primary_model=primary_model, temperature=temperature,
-        thinking_level=thinking_level, active=active, coding_agent=coding_agent,
+        escalation_model=escalation_model, thinking_level=thinking_level, active=active, coding_agent=coding_agent,
         fallback_model=fallback_model, change_reason=change_reason, system_prompt_file=system_prompt_file,
     )
     mem = _collect_memory_flags(
@@ -400,7 +621,17 @@ def update_agent(
     memory_result = _resolve_memory_config(slug, mem, memory_config_file, clear_memory_config)
     if memory_result is not False:
         payload["memory_config"] = memory_result
-    if not payload:
+    has_routing_update = any([primary_model, fallback_model is not None, escalation_model, routing_mode])
+    if not payload and not has_routing_update:
         output_error("Nothing to update. Provide at least one update flag.")
         raise typer.Exit(1)
-    _print_agent(agents_api("PUT", f"/{slug}", json=payload))
+    updated = agents_api("PUT", f"/{slug}", json=payload) if payload else agents_api("GET", f"/{slug}")
+    _sync_manual_route(
+        slug,
+        primary_model=primary_model,
+        fallback_model=fallback_model,
+        escalation_model=escalation_model,
+        routing_mode=routing_mode,
+        change_reason=change_reason,
+    )
+    _print_agent(updated)

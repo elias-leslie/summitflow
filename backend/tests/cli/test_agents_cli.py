@@ -13,6 +13,198 @@ from cli.commands.agents import app
 runner = CliRunner()
 
 
+def _agent(
+    slug: str,
+    model: str,
+    *,
+    coding: bool = False,
+    name: str | None = None,
+    fallbacks: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "slug": slug,
+        "name": name or slug.replace("-", " ").title(),
+        "description": "",
+        "primary_model_id": model,
+        "fallback_models": fallbacks or [],
+        "escalation_model_id": None,
+        "is_coding_agent": coding,
+    }
+
+
+def _model(model_id: str, **scores: int) -> dict[str, object]:
+    return {
+        "id": model_id,
+        "scores": {
+            "coding": scores.get("coding", 1),
+            "reasoning": scores.get("reasoning", 2),
+            "planning": scores.get("planning", 3),
+            "tool_use": scores.get("tool_use", 4),
+            "instruction": scores.get("instruction", 5),
+            "design": scores.get("design", 6),
+        },
+    }
+
+
+def test_list_agents_defaults_to_compact_scored_rows() -> None:
+    agents_payload = {
+        "agents": [
+            _agent("coder", "kimi-code/kimi-for-coding", coding=True, fallbacks=["minimax/MiniMax-M2.7"]),
+            _agent("designer", "claude-sonnet-4-6", name="UI Designer"),
+        ],
+        "total": 2,
+    }
+    models_payload = {
+        "models": [
+            _model("kimi-code/kimi-for-coding", coding=90, design=82),
+            _model("claude-sonnet-4-6", coding=80, design=72),
+        ]
+    }
+
+    with (
+        patch("cli.commands.agents.agents_api", return_value=agents_payload) as mock_agents_api,
+        patch("cli.commands.agents.models_api", return_value=models_payload),
+    ):
+        result = runner.invoke(app, ["list"])
+
+    assert result.exit_code == 0
+    assert mock_agents_api.call_args.kwargs["params"] == {
+        "active_only": "true",
+        "limit": 100,
+        "offset": 0,
+    }
+    assert "AGENTS[2 shown/2 total]" in result.output
+    assert "slug" in result.output
+    assert "primary" in result.output
+    assert "coder" in result.output
+    assert "kimi-code/kimi-for-coding" in result.output
+    assert " C " in result.output
+    assert " 90 " in result.output
+    assert "designer" in result.output
+    assert " D " in result.output
+    assert " 72 " in result.output
+    assert '"agents"' not in result.output
+
+
+def test_list_agents_focus_matching_uses_words_not_substrings() -> None:
+    agents_payload = {
+        "agents": [
+            _agent("equity-analyst", "minimax/MiniMax-M2.7", name="Equity Analyst"),
+            _agent("prompt-builder", "minimax/MiniMax-M2.7", name="Prompt Builder"),
+        ],
+        "total": 2,
+    }
+    models_payload = {"models": [_model("minimax/MiniMax-M2.7", reasoning=88, planning=80, instruction=86, design=64)]}
+
+    with (
+        patch("cli.commands.agents.agents_api", return_value=agents_payload),
+        patch("cli.commands.agents.models_api", return_value=models_payload),
+    ):
+        result = runner.invoke(app, ["list"])
+
+    assert result.exit_code == 0
+    assert "equity-analyst" in result.output
+    assert " F " in result.output
+    assert " 86 " in result.output
+    assert "prompt-builder" in result.output
+    assert " I " in result.output
+    assert " 86 " in result.output
+    assert " D " not in result.output
+
+
+def test_list_agents_scores_use_workload_fit_for_persona_and_verifier() -> None:
+    agents_payload = {
+        "agents": [
+            _agent("persona", "codex/gpt-5.5", name="Jenny"),
+            _agent("verifier", "codex/gpt-5.5", name="Verifier"),
+        ],
+        "total": 2,
+    }
+    models_payload = {
+        "models": [
+            _model(
+                "codex/gpt-5.5",
+                reasoning=100,
+                planning=90,
+                tool_use=56,
+                instruction=74,
+            )
+        ]
+    }
+
+    with (
+        patch("cli.commands.agents.agents_api", return_value=agents_payload),
+        patch("cli.commands.agents.models_api", return_value=models_payload),
+    ):
+        result = runner.invoke(app, ["list"])
+
+    assert result.exit_code == 0
+    assert "persona" in result.output
+    assert " J " in result.output
+    assert " 87 " in result.output
+    assert "verifier" in result.output
+    assert " V " in result.output
+    assert " 85 " in result.output
+
+
+def test_list_agents_scores_view_includes_score_vector() -> None:
+    agents_payload = {"agents": [_agent("reviewer", "minimax/MiniMax-M2.7")], "total": 1}
+    models_payload = {"models": [_model("minimax/MiniMax-M2.7", coding=84, reasoning=88, planning=80)]}
+
+    with (
+        patch("cli.commands.agents.agents_api", return_value=agents_payload),
+        patch("cli.commands.agents.models_api", return_value=models_payload),
+    ):
+        result = runner.invoke(app, ["list", "--scores"])
+
+    assert result.exit_code == 0
+    assert "scores" in result.output
+    assert "C84 R88 P80 T4 I5 D6" in result.output
+
+
+def test_list_agents_by_model_groups_assignments() -> None:
+    agents_payload = {
+        "agents": [
+            _agent("coder", "kimi-code/kimi-for-coding", coding=True),
+            _agent("debugger", "kimi-code/kimi-for-coding", coding=True),
+            _agent("planner", "minimax/MiniMax-M2.7"),
+        ],
+        "total": 3,
+    }
+    models_payload = {
+        "models": [
+            _model("kimi-code/kimi-for-coding", coding=90),
+            _model("minimax/MiniMax-M2.7", planning=80),
+        ]
+    }
+
+    with (
+        patch("cli.commands.agents.agents_api", return_value=agents_payload),
+        patch("cli.commands.agents.models_api", return_value=models_payload),
+    ):
+        result = runner.invoke(app, ["list", "--by-model"])
+
+    assert result.exit_code == 0
+    assert "AGENT_MODELS[2 primary models/3 agents]" in result.output
+    assert "kimi-code/kimi-for-coding" in result.output
+    assert "coder,debugger" in result.output
+    assert "minimax/MiniMax-M2.7" in result.output
+
+
+def test_list_agents_json_preserves_full_payload() -> None:
+    agents_payload = {"agents": [_agent("coder", "kimi-code/kimi-for-coding", coding=True)], "total": 1}
+
+    with (
+        patch("cli.commands.agents.agents_api", return_value=agents_payload),
+        patch("cli.commands.agents.models_api") as mock_models_api,
+    ):
+        result = runner.invoke(app, ["list", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == agents_payload
+    mock_models_api.assert_not_called()
+
+
 def test_create_agent_posts_full_payload(tmp_path: Path) -> None:
     prompt_path = tmp_path / "prompt.md"
     prompt_path.write_text("You are purpose built.", encoding="utf-8")
@@ -30,13 +222,13 @@ def test_create_agent_posts_full_payload(tmp_path: Path) -> None:
                 "graphify-semantic-extractor",
                 "Graphify Semantic Extractor",
                 "--primary-model",
-                "gemini-3-flash-preview",
+                "served-scout-model",
                 "--fallback-model",
-                "gemini-3.1-pro-preview",
+                "served-reasoner-model",
                 "--fallback-model",
-                "codex/gpt-5.5",
+                "served-code-model",
                 "--escalation-model",
-                "codex/gpt-5.5",
+                "served-code-model",
                 "--temperature",
                 "0.1",
                 "--thinking-level",
@@ -57,15 +249,79 @@ def test_create_agent_posts_full_payload(tmp_path: Path) -> None:
         "slug": "graphify-semantic-extractor",
         "name": "Graphify Semantic Extractor",
         "system_prompt": "You are purpose built.",
-        "primary_model_id": "gemini-3-flash-preview",
+        "primary_model_id": "served-scout-model",
         "temperature": 0.1,
         "is_active": True,
         "is_coding_agent": False,
         "thinking_level": "high",
         "verbosity_level": "low",
-        "fallback_models": ["gemini-3.1-pro-preview", "codex/gpt-5.5"],
-        "escalation_model_id": "codex/gpt-5.5",
+        "fallback_models": ["served-reasoner-model", "served-code-model"],
+        "escalation_model_id": "served-code-model",
         "memory_config": {"include_mandates": True},
+    }
+
+
+def test_update_agent_model_flags_sync_manual_route() -> None:
+    current_route = {
+        "manual_routes": [
+            {
+                "workload_profile": None,
+                "primary_model_id": "minimax/MiniMax-M2.7",
+                "fallback_models": ["kimi-code/kimi-for-coding"],
+                "escalation_model_id": None,
+            }
+        ]
+    }
+
+    with (
+        patch(
+            "cli.commands.agents.agents_api",
+            side_effect=[
+                {"slug": "verifier"},
+                current_route,
+                {"agent_slug": "verifier"},
+            ],
+        ) as mock_agents_api,
+        patch("cli.commands.agents._print_agent"),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "update",
+                "verifier",
+                "--primary-model",
+                "codex/gpt-5.5",
+                "--fallback-model",
+                "claude-opus-4-7",
+                "--escalation-model",
+                "claude-opus-4-7",
+                "--routing-mode",
+                "manual_locked",
+                "--change-reason",
+                "critical verification route",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert mock_agents_api.call_args_list[0].args == ("PUT", "/verifier")
+    assert mock_agents_api.call_args_list[0].kwargs["json"] == {
+        "primary_model_id": "codex/gpt-5.5",
+        "escalation_model_id": "claude-opus-4-7",
+        "fallback_models": ["claude-opus-4-7"],
+        "change_reason": "critical verification route",
+    }
+    assert mock_agents_api.call_args_list[1].args == ("GET", "/verifier/routing")
+    assert mock_agents_api.call_args_list[2].args == ("PUT", "/verifier/routing")
+    assert mock_agents_api.call_args_list[2].kwargs["json"] == {
+        "default_routing_mode": "manual_locked",
+        "manual_route": {
+            "primary_model_id": "codex/gpt-5.5",
+            "fallback_models": ["claude-opus-4-7"],
+            "escalation_model_id": "claude-opus-4-7",
+            "reason": "critical verification route",
+            "owner": "st agents update",
+            "enabled": True,
+        },
     }
 
 

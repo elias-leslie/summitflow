@@ -118,6 +118,7 @@ async def generate_design_assets(
                     background=request.background,
                     transparent_background=request.transparent_background,
                     size=request.size,
+                    agent_slug=request.agent_slug,
                     model=request.model,
                     source_asset_id=request.source_asset_id,
                     sheet_columns=request.sheet_columns,

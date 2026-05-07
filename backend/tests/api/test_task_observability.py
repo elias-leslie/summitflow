@@ -59,7 +59,7 @@ class TestTaskObservability:
             return_value={
                 "id": "sess-1",
                 "status": "active",
-                "effective_model": "claude-sonnet-4-6",
+                "effective_model": "served-model",
                 "updated_at": "2026-03-07T00:00:00Z",
                 "live_activity": {
                     "phase": "reading_file",
@@ -115,7 +115,7 @@ class TestTaskObservability:
             "id": "sess-fallback",
             "status": "completed",
             "external_id": task_id,
-            "effective_model": "codex/gpt-5.4",
+            "effective_model": "served-code-model",
             "updated_at": "2026-03-26T00:00:00Z",
             "live_activity": {
                 "phase": "completed",
@@ -181,7 +181,7 @@ class TestTaskObservability:
             "external_id": None,
             "current_branch": None,
             "repo_root": f"/srv/workspaces/projects/{test_project_id}/{task_id}",
-            "effective_model": "claude-sonnet-4-6",
+            "effective_model": "served-model",
             "updated_at": "2026-03-26T00:00:00Z",
             "live_activity": {
                 "phase": "finalizing",

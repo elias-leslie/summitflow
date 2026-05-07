@@ -143,7 +143,6 @@ def call_complete(
     session_id: str,
     max_turns: int,
     include_roles: list[str],
-    model_override: str | None = None,
     timeout_seconds: float | None = None,
 ) -> CompletionResponse:
     """Invoke client.complete with standard kwargs."""
@@ -156,7 +155,6 @@ def call_complete(
             task_id=task_id,
             session_id=session_id,
             max_turns=max_turns,
-            model_override=model_override,
             include_roles=include_roles,
         ),
         timeout_seconds=timeout_seconds,

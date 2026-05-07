@@ -24,39 +24,9 @@ export const BACKGROUND_MODES = [
 
 export const IMAGE_MODELS = [
   {
-    id: 'gemini-3-pro-image-preview',
-    name: 'Pro Image',
-    hint: 'Best quality',
-  },
-  {
-    id: 'nvidia/flux.1-kontext-dev',
-    name: 'Flux Kontext',
-    hint: 'Best for sprites',
-  },
-  {
-    id: 'nvidia/flux.1-dev',
-    name: 'Flux Dev',
-    hint: 'Good fallback',
-  },
-  {
-    id: 'cloudflare/flux-2-dev',
-    name: 'CF Flux 2',
-    hint: 'Best fallback',
-  },
-  {
-    id: 'cloudflare/flux-1-schnell',
-    name: 'CF Schnell',
-    hint: 'Fast fallback',
-  },
-  {
-    id: 'gemini-2.5-flash-image',
-    name: 'Nano Banana',
-    hint: 'Fast',
-  },
-  {
-    id: 'gemini-3.1-flash-image-preview',
-    name: 'Nano Banana 2',
-    hint: 'Fastest',
+    id: 'image-gen',
+    name: 'Image Gen',
+    hint: 'Agent-routed',
   },
 ] as const
 

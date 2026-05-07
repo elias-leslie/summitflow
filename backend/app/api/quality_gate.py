@@ -127,7 +127,7 @@ async def record_fix_attempt(project_id: str, result_id: int) -> CheckResultResp
 async def mark_result_fixed(
     project_id: str,
     result_id: int,
-    fixed_by: str = Query(description="Who/what fixed it (e.g., 'gemini-flash', 'user')"),
+    fixed_by: str = Query(description="Who/what fixed it (e.g., 'agent:debugger', 'user')"),
 ) -> CheckResultResponse:
     """Mark a check result as fixed."""
     validate_project_exists(project_id)

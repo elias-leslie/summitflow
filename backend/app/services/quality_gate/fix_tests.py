@@ -1,8 +1,4 @@
-"""Fix agent for test failures.
-
-Uses CLAUDE_SONNET for test failure fixes since tests require more
-complex reasoning about expected vs actual behavior.
-"""
+"""Fix agent for test failures."""
 
 from __future__ import annotations
 
@@ -252,7 +248,7 @@ def fix_test_failure(
 ) -> TestFixResult:
     """Attempt to fix a test failure.
 
-    Uses CLAUDE_SONNET to analyze the failure and generate a fix.
+    Uses the assigned Agent Hub agent to analyze the failure and generate a fix.
     May fix either the test or the source code.
 
     Args:
@@ -317,7 +313,7 @@ def fix_test_failure(
     prompt = _build_test_fix_prompt(check_result, test_content, source_content, project_path)
 
     try:
-        agent = get_agent("coder")
+        agent = get_agent("debugger")
         response = agent.generate(
             prompt=prompt,
             temperature=0.3,
@@ -355,7 +351,7 @@ def fix_test_failure(
     # Verify the fix worked
     test_name = check_result.get("check_name")
     if _verify_test(project_path, test_name):
-        qcr_store.mark_fixed(conn, result_id, fixed_by="claude-sonnet")
+        qcr_store.mark_fixed(conn, result_id, fixed_by="agent:debugger")
         logger.info(
             "test_fix_successful",
             result_id=result_id,

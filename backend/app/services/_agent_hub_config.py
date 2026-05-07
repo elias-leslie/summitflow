@@ -50,6 +50,8 @@ SUMMITFLOW_REQUEST_SOURCE = os.getenv("SUMMITFLOW_REQUEST_SOURCE") or _ENV_LOCAL
 HEADER_CLIENT_ID: Final = "X-Client-Id"
 HEADER_REQUEST_SOURCE: Final = "X-Request-Source"
 DEFAULT_REQUEST_SOURCE: Final = "summitflow"
+
+
 def resolve_agent_hub_request_source(
     default_request_source: str = DEFAULT_REQUEST_SOURCE,
 ) -> str:

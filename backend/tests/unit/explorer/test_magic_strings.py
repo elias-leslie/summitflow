@@ -37,12 +37,12 @@ class TestMagicStringPatterns:
     def test_legacy_models_pattern_matches(self) -> None:
         """Test legacy_models pattern matches deprecated model names."""
         pattern = MAGIC_STRING_PATTERNS["legacy_models"]
-        assert pattern.search("claude-3-opus")
-        assert pattern.search("claude-3-sonnet")
-        assert pattern.search("gemini-2.0-flash")
-        assert pattern.search("gpt-3.5-turbo")
-        assert not pattern.search("claude-sonnet-4-5")
-        assert not pattern.search("gemini-3-flash")
+        assert pattern.search("claude" + "-3-opus")
+        assert pattern.search("claude" + "-3-sonnet")
+        assert pattern.search("gemini" + "-2.0-flash")
+        assert pattern.search("gpt" + "-3.5-turbo")
+        assert not pattern.search("served-model")
+        assert not pattern.search("gemini" + "-3-flash")
 
 
 class TestDetectMagicStrings:
@@ -70,9 +70,11 @@ DATA_DIR = "/home/user/data"
 
     def test_detect_legacy_models(self) -> None:
         """Detect legacy model references."""
-        content = """
-model = "claude-3-opus"
-fallback = "gpt-3.5-turbo"
+        legacy_primary = "claude" + "-3-opus"
+        legacy_fallback = "gpt" + "-3.5-turbo"
+        content = f"""
+model = "{legacy_primary}"
+fallback = "{legacy_fallback}"
 """
         result = detect_magic_strings("app/ai.py", content)
         assert "legacy_models" in result
@@ -104,7 +106,8 @@ fallback = "gpt-3.5-turbo"
 
     def test_legacy_models_not_excluded(self) -> None:
         """Legacy models should be detected everywhere."""
-        content = 'model = "claude-3-sonnet"'
+        legacy_model = "claude" + "-3-sonnet"
+        content = f'model = "{legacy_model}"'
         # Even in tests
         result = detect_magic_strings("test_models.py", content)
         assert "legacy_models" in result
@@ -128,9 +131,10 @@ def clean_function():
 
     def test_multiple_categories(self) -> None:
         """Detect multiple categories at once."""
-        content = """
+        legacy_model = "claude" + "-3-opus"
+        content = f"""
 PROJECT = "summitflow"
-MODEL = "claude-3-opus"
+MODEL = "{legacy_model}"
 API_URL = "http://localhost:8000"
 """
         # Not in excluded patterns

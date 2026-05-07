@@ -204,11 +204,11 @@ class TestHelperFunctions:
     async def test_send_model_change(self, mocker: MockerFixture) -> None:
         """Test send_model_change broadcasts correct message."""
         mock_broadcast = mocker.patch.object(manager, "broadcast", new_callable=AsyncMock)
-        await send_model_change("task-1", "claude-sonnet-4-5", reason="Stuck pattern")
+        await send_model_change("task-1", "served-model", reason="Stuck pattern")
         mock_broadcast.assert_called_once()
         msg = mock_broadcast.call_args[0][1]
         assert msg.type == MessageType.MODEL_CHANGE
-        assert msg.data["model"] == "claude-sonnet-4-5"
+        assert msg.data["model"] == "served-model"
         assert msg.data["reason"] == "Stuck pattern"
 
     @pytest.mark.asyncio

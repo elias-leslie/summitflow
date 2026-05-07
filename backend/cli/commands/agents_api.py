@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._api_paths import AGENTS_BASE_PATH, AGENTS_PREVIEW_PATH
+from ._api_paths import AGENTS_BASE_PATH, AGENTS_PREVIEW_PATH, MODELS_BASE_PATH
 from .memory_api import agent_hub_request
 
 
@@ -26,3 +26,8 @@ def agent_preview_api(slug: str, **kwargs: Any) -> dict[str, Any]:
         tool_name="st agents",
         params=params,
     )
+
+
+def models_api() -> dict[str, Any]:
+    """Fetch Agent Hub model catalog metadata for assignment scoring."""
+    return agent_hub_request("GET", MODELS_BASE_PATH, tool_name="st agents")

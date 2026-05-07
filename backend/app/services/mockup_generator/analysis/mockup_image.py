@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 
-from ....constants import GEMINI_IMAGE
+from ....constants import AGENT_IMAGE_GEN
 from ....logging_config import get_logger
 from ...agent_hub_client import get_sync_client
 from ..prompts import build_mockup_image_prompt
@@ -35,7 +35,7 @@ def generate_mockup_image(
 ) -> str | None:
     """Generate a mockup image showing the improved design.
 
-    Uses Gemini Image to generate a visual mockup based on the
+    Uses the Agent Hub image agent to generate a visual mockup based on the
     current screenshot and the improvement recommendations.
 
     Args:
@@ -50,13 +50,12 @@ def generate_mockup_image(
     try:
         prompt = build_mockup_image_prompt(recommendations, page_url)
 
-        # Call Gemini Image via Agent Hub
         client = get_sync_client()
         response = client.generate_image(
             prompt=prompt,
             project_id=project_id,
             purpose="mockup_generation",
-            model=GEMINI_IMAGE,
+            agent_slug=AGENT_IMAGE_GEN,
             size="1920x1080",
         )
 

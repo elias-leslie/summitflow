@@ -72,13 +72,8 @@ def execute_agent_fix(
     project_path: str,
     project_id: str,
     agent_session_id: str | None,
-    model_override: str | None = None,
 ) -> tuple[CompletionResponse, str | None]:
     """Execute agent fix attempt.
-
-    Args:
-        model_override: Optional model ID to use instead of agent's primary model.
-            Used for model escalation during supervisor-guided attempts.
 
     Returns:
         Tuple of (response, agent_session_id)
@@ -97,7 +92,6 @@ def execute_agent_fix(
     response = call_complete(
         client, fix_prompt, agent_slug, project_path, project_id,
         task_id, agent_session_id, max_turns=25, include_roles=AUTOCODE_ROLES,
-        model_override=model_override,
         timeout_seconds=AUTOCODE_REQUEST_TIMEOUT_SECONDS,
     )
     agent_session_id = update_session_if_changed(

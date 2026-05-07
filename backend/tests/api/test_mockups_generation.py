@@ -32,6 +32,8 @@ class TestMockupsGeneration:
         mock_client.generate_image.return_value = SimpleNamespace(
             image_base64="aGVsbG8=",
             mime_type="image/png",
+            model="served-image-model",
+            provider="served-image-provider",
         )
         mock_get_client.return_value = mock_client
 
@@ -102,8 +104,8 @@ class TestMockupsGeneration:
                 '"content":"<html><body>Revision</body></html>",'
                 '"change_summary":"Tighter spacing"}'
             ),
-            model="codex/gpt-5.5",
-            provider="codex",
+            model="served-mockup-model",
+            provider="served-provider",
             session_id="sess-123",
         )
         mock_get_client.return_value = mock_client
@@ -150,8 +152,8 @@ class TestMockupsGeneration:
         mock_client = MagicMock()
         mock_client.complete.return_value = SimpleNamespace(
             content='{"name":"Settings page revision","change_summary":"Tighter spacing"}',
-            model="codex/gpt-5.5",
-            provider="codex",
+            model="served-mockup-model",
+            provider="served-provider",
             session_id="sess-123",
         )
         mock_get_client.return_value = mock_client

@@ -32,6 +32,7 @@ import { SourceTypeBadge } from '@/components/backup/SourceTypeBadge'
 import { StatusBadge } from '@/components/backup/StatusBadge'
 import { StatusRibbon } from '@/components/backup/StatusRibbon'
 import { StorageCard } from '@/components/backup/StorageCard'
+import { SystemImageBackupCard } from '@/components/backup/SystemImageBackupCard'
 import { ScopeList } from '@/components/snapshots/ScopeList'
 import { SnapshotSummaryCard } from '@/components/snapshots/SnapshotSummaryCard'
 import {
@@ -43,6 +44,7 @@ import {
   fetchStorageBackends,
   fetchStorageStatus,
   fetchStorageSummary,
+  fetchSystemImageBackupStatus,
 } from '@/lib/api/backups'
 import { fetchScopes, fetchSnapshotSummary } from '@/lib/api/snapshots'
 import { formatBytes, formatDate, formatTimeAgo } from '@/lib/format'
@@ -321,6 +323,17 @@ export function BackupsClient() {
     queryFn: fetchStorageBackends,
   })
 
+  const {
+    data: systemImageStatus,
+    isLoading: systemImageLoading,
+    refetch: refetchSystemImage,
+  } = useQuery({
+    queryKey: ['system-image-backup'],
+    queryFn: fetchSystemImageBackupStatus,
+    refetchInterval: (query) =>
+      query.state.data?.active_session ? 3000 : false,
+  })
+
   const { data: snapshotSummary, isLoading: snapshotLoading } = useQuery({
     queryKey: ['snapshot-summary'],
     queryFn: () => fetchSnapshotSummary(),
@@ -494,6 +507,15 @@ export function BackupsClient() {
         backends={storageBackends}
         storageStatus={storageStatus}
         onRefresh={refreshStorage}
+      />
+
+      <SystemImageBackupCard
+        status={systemImageStatus}
+        isLoading={systemImageLoading}
+        onRefresh={() => {
+          refetchSystemImage()
+          queryClient.invalidateQueries({ queryKey: ['system-image-backup'] })
+        }}
       />
 
       {/* Snapshots & Recovery */}

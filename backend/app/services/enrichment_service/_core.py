@@ -72,7 +72,7 @@ def _run_enrichment_with_retries(
 
     client = AgentHubLLMClient(agent_slug="planner")
     if not client.is_available():
-        raise RuntimeError("Claude API not available")
+        raise RuntimeError("Planner agent unavailable")
 
     last_error: Exception | None = None
     for attempt in range(max_retries + 1):
@@ -133,7 +133,7 @@ def enrich_task(
 
 
 def _build_validation_prompt(enriched_task: EnrichedTask) -> str:
-    """Build the validation prompt for Gemini."""
+    """Build the validation prompt for the specifier agent."""
     validation_prompt = load_prompt("criteria_validation")
     task_json = json.dumps(enriched_task.raw_json, indent=2)
     return f"""{validation_prompt}
@@ -151,7 +151,7 @@ Return ONLY valid JSON matching the output format in the prompt above."""
 
 
 def validate_enrichment(enriched_task: EnrichedTask) -> ValidationResult:
-    """Validate enriched task using Gemini for cross-check.
+    """Validate enriched task using the specifier agent for cross-check.
 
     Args:
         enriched_task: The enriched task to validate
@@ -163,14 +163,14 @@ def validate_enrichment(enriched_task: EnrichedTask) -> ValidationResult:
     try:
         from ..agent_hub_client import AgentHubLLMClient
 
-        client = AgentHubLLMClient(agent_slug="auditor")
+        client = AgentHubLLMClient(agent_slug="specifier")
         if not client.is_available():
-            logger.warning("Gemini not available for validation, skipping")
+            logger.warning("Specifier agent unavailable for validation, skipping")
             return ValidationResult(
                 valid=True,
                 criteria_feedback=[],
                 missing_coverage=[],
-                overall_notes="Validation skipped (Gemini unavailable)",
+                overall_notes="Validation skipped (specifier unavailable)",
             )
 
         response = client.generate(
@@ -202,7 +202,7 @@ def enrich_and_validate(
 ) -> tuple[EnrichedTask, ValidationResult]:
     """Enrich a task and validate the results.
 
-    Combines enrichment with Opus and validation with Gemini.
+    Combines planner enrichment with specifier validation.
 
     Args:
         project_id: Project ID

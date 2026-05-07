@@ -67,8 +67,8 @@ async def trigger_auto_fix(
 ) -> AutoFixResponse:
     """Trigger auto-fix for unfixed quality issues.
 
-    Uses GEMINI_FLASH for lint/type errors (ruff, types, biome, tsc)
-    and CLAUDE_SONNET for test failures (pytest).
+    Routes lint/type fixes through worker/supervisor agents and test failures
+    through the reviewer/debugger path.
 
     Args:
         project_id: Project ID

@@ -32,6 +32,7 @@ MEMORY_EPISODE_TAGS_PATH = "/api/memory/episodes/{uuid}/tags"
 # ── Agents ───────────────────────────────────────────────────────────
 AGENTS_BASE_PATH = "/api/agents"
 AGENTS_PREVIEW_PATH = "/api/agents/{slug}/preview"
+MODELS_BASE_PATH = "/api/models"
 
 # ── Prompts ──────────────────────────────────────────────────────────
 PROMPTS_BASE_PATH = "/api/prompts"

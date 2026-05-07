@@ -20,7 +20,7 @@ dependencies = [
     "typer>=0.15.0",
     "radon>=6.0.0",
     "jsonschema>=4.21.0",
-    "agent-hub-client @ git+https://github.com/elias-leslie/agent-hub.git#subdirectory=packages/agent-hub-client",
+    "agent-hub-client==0.4.0",
     "croniter>=3.0.0",
     "python-dotenv>=1.0.0",
     "PyYAML>=6.0.0",
@@ -53,6 +53,9 @@ dev = [
 
 [tool.uv]
 constraint-dependencies = ["requests>=2.33.0", "cryptography>=46.0.6"]
+
+[tool.uv.sources]
+agent-hub-client = { path = "../docker/workspace-packages/agent_hub_client-0.4.0-py3-none-any.whl" }
 
 [build-system]
 requires = ["hatchling"]

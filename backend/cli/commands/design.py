@@ -55,8 +55,8 @@ def generate_asset(
     asset_type: _AssetType = "sprite",
     workflow: _Workflow = "concept",
     size: Annotated[str, typer.Option("--size", help="Target size in WIDTHxHEIGHT format")] = "1024x1024",
-    model: Annotated[str | None, typer.Option("--model", help="Image model override")] = None,
-    style_prompt: Annotated[str | None, typer.Option("--style", help="Style direction for the model prompt")] = None,
+    agent_slug: Annotated[str | None, typer.Option("--agent", help="Agent Hub image agent slug")] = None,
+    style_prompt: Annotated[str | None, typer.Option("--style", help="Style direction for the image prompt")] = None,
     negative_prompt: Annotated[str | None, typer.Option("--negative", help="Negative prompt guidance")] = None,
     background: _Background = "transparent",
     variant_count: _VariantCount = 1,
@@ -80,7 +80,7 @@ def generate_asset(
     payload = _build_asset_payload(
         name=name, prompt=prompt, description=description,
         asset_type=asset_type, workflow=workflow, size=size,
-        model=model, style_prompt=style_prompt, negative_prompt=negative_prompt,
+        agent_slug=agent_slug, style_prompt=style_prompt, negative_prompt=negative_prompt,
         background=background, variant_count=variant_count, tags=tags,
         sheet_columns=sheet_columns, sheet_rows=sheet_rows,
         frame_width=frame_width, frame_height=frame_height,
@@ -184,7 +184,7 @@ def _build_asset_payload(
     asset_type: str,
     workflow: str,
     size: str,
-    model: str | None,
+    agent_slug: str | None,
     style_prompt: str | None,
     negative_prompt: str | None,
     background: str,
@@ -210,7 +210,7 @@ def _build_asset_payload(
         "transparent_background": background == "transparent",
         "variant_count": variant_count,
     }
-    _apply_optional_fields(payload, description=description, model=model,
+    _apply_optional_fields(payload, description=description, agent_slug=agent_slug,
                            style_prompt=style_prompt, negative_prompt=negative_prompt,
                            source_asset_id=source_asset_id)
     _apply_reference_image(payload, reference_image_path, reference_mime_type)
@@ -224,7 +224,7 @@ def _apply_optional_fields(
     payload: dict[str, Any],
     *,
     description: str | None,
-    model: str | None,
+    agent_slug: str | None,
     style_prompt: str | None,
     negative_prompt: str | None,
     source_asset_id: int | None,
@@ -232,8 +232,8 @@ def _apply_optional_fields(
     """Apply simple optional scalar fields to the payload in place."""
     if description:
         payload["description"] = description
-    if model:
-        payload["model"] = model
+    if agent_slug:
+        payload["agent_slug"] = agent_slug
     if style_prompt:
         payload["style_prompt"] = style_prompt
     if negative_prompt:

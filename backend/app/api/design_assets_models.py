@@ -80,6 +80,7 @@ class GenerateDesignAssetRequest(BaseModel):
     asset_type: str = "sprite"
     workflow: str = "concept"
     size: str = "1024x1024"
+    agent_slug: str | None = None
     model: str | None = None
     style_prompt: str | None = None
     negative_prompt: str | None = None

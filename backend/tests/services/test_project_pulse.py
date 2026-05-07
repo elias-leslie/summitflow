@@ -91,7 +91,7 @@ async def test_build_project_pulse_prefers_richer_active_session_over_tmux_prese
                 "id": "sess-codex-rich",
                 "status": "active",
                 "provider": "codex",
-                "model": "codex/gpt-5.4",
+                "model": "served-code-model",
                 "session_type": "agent",
                 "current_branch": "main",
                 "working_dir": "/home/kasadis/a-term",

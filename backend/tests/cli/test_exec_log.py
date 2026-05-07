@@ -124,7 +124,7 @@ class TestExecLogCommand:
                 {
                     "id": "sess-1",
                     "status": "active",
-                    "effective_model": "claude-sonnet-4-6",
+                    "effective_model": "served-model",
                     "live_activity": {
                         "health": "active",
                         "phase": "reading_file",
@@ -171,7 +171,7 @@ class TestExecLogCommand:
             assert "EXEC:task-test123" in result.output
             assert "running" in result.output
             assert "1/2(1W)" in result.output  # subtask summary
-            assert "AH:agent:claude-sonnet-4-6:active/reading_file" in result.output
+            assert "AH:agent:served-model:active/reading_file" in result.output
             assert "|AH|sess-1|[1.1] assistant_message" in result.output
 
     def test_exec_log_compact_includes_recent_agent_activity(self, mock_client: MagicMock) -> None:
@@ -237,7 +237,7 @@ class TestExecLogCommand:
                     "id": "sess-old",
                     "status": "completed",
                     "agent_slug": "refactor",
-                    "effective_model": "claude-sonnet-4-6",
+                    "effective_model": "served-model",
                     "updated_at": "2026-01-26T11:00:00+00:00",
                     "live_activity": {
                         "health": "completed",
@@ -248,7 +248,7 @@ class TestExecLogCommand:
                     "id": "sess-new",
                     "status": "completed",
                     "agent_slug": "refactor",
-                    "effective_model": "claude-sonnet-4-6",
+                    "effective_model": "served-model",
                     "updated_at": "2026-01-26T12:00:00+00:00",
                     "live_activity": {
                         "health": "completed",
@@ -259,7 +259,7 @@ class TestExecLogCommand:
                     "id": "sess-feedback",
                     "status": "completed",
                     "agent_slug": "coder",
-                    "effective_model": "codex/gpt-5.4",
+                    "effective_model": "served-code-model",
                     "updated_at": "2026-01-26T12:03:00+00:00",
                     "live_activity": {
                         "health": "completed",
@@ -309,7 +309,7 @@ class TestExecLogCommand:
             result = runner.invoke(app, ["exec-log", "task-test123"])
 
         assert result.exit_code == 0
-        assert "AH:refactor:claude-sonnet-4-6:completed/completed,coder:gpt-5.4:completed/completed|hist=1" in result.output
+        assert "AH:refactor:served-model:completed/completed,coder:served-code-model:completed/completed|hist=1" in result.output
         assert "sess-old" not in result.output
         assert "Old retry attempt" not in result.output
         assert "Old attempt started" not in result.output

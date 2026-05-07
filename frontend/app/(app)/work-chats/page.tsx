@@ -1505,8 +1505,8 @@ function WorkChatBody({
           onCancel={cancelStream}
           status={status}
           compact
+          allowModelMentions={false}
           preferencesEndpoint={`${getAgentHubProxyBase()}/preferences`}
-          modelsEndpoint={`${getAgentHubProxyBase()}/models`}
         />
       </div>
     </div>
