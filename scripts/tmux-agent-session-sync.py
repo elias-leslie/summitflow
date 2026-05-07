@@ -95,9 +95,9 @@ def _git_value(working_dir: str | None, args: list[str]) -> str | None:
 def _provider_for_mode(mode: str) -> tuple[str, str, str]:
     normalized = (mode or "").lower()
     if normalized == "claude":
-        return "anthropic", "claude/external-tmux", "claude_code"
+        return "anthropic", "external-tmux:claude", "claude_code"
     if normalized == "codex":
-        return "codex", "codex/external-tmux", "agent"
+        return "codex", "external-tmux:codex", "agent"
     return normalized or "tmux", f"{normalized or 'tmux'}/external-tmux", "agent"
 
 

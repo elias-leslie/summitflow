@@ -37,9 +37,7 @@ def _create_projects_table(cur: psycopg.Cursor) -> None:
             agent_configs JSONB DEFAULT '{
                 "claude_enabled": true,
                 "gemini_enabled": true,
-                "default_agent": "gemini",
-                "claude_model": "claude-sonnet-4-5",
-                "gemini_model": "gemini-3-flash-preview"
+                "default_agent": "gemini"
             }'::jsonb,
             created_at TIMESTAMPTZ DEFAULT NOW()
         )

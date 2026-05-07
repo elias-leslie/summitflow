@@ -154,7 +154,7 @@ def create_mock_usage() -> MagicMock:
 
 def create_mock_completion_response(
     content: str = "Test response",
-    model: str = "claude-sonnet-4-5",
+    model: str = "served-model",
     provider: str = "claude",
     session_id: str = "session-123",
     from_cache: bool = False,
@@ -232,7 +232,7 @@ class TestCompletionContract:
             "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="chat")
             with pytest.raises(ValueError, match="system overrides are not supported"):
                 client.generate(
                     prompt="Hello",
@@ -253,7 +253,7 @@ class TestCompletionContract:
             "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="chat")
             client.generate(prompt="Hello")
 
         call_kwargs = mock_agent_hub_client.complete.call_args.kwargs
@@ -268,7 +268,7 @@ class TestCompletionContract:
 
         mock_response = create_mock_completion_response(
             content="Test output",
-            model="claude-sonnet-4-5",
+            model="served-model",
             provider="claude",
             session_id="sess-abc",
             from_cache=True,
@@ -279,12 +279,12 @@ class TestCompletionContract:
             "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="chat")
             result = client.generate(prompt="Hello")
 
         # Verify LLMResponse fields are correctly populated
         assert result.content == "Test output"
-        assert result.model == "claude-sonnet-4-5"
+        assert result.model == "served-model"
         assert result.provider == "claude"
         assert result.usage["input_tokens"] == 100
         assert result.usage["output_tokens"] == 50
@@ -309,7 +309,7 @@ class TestCompletionContract:
             "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="chat")
             client.generate(prompt="Hello", task_id="task-12345678")
 
         call_kwargs = mock_agent_hub_client.complete.call_args.kwargs
@@ -325,7 +325,7 @@ class TestCompletionContract:
             "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="chat")
             client.generate(prompt="Hello")
 
         call_kwargs = mock_agent_hub_client.complete.call_args.kwargs
@@ -345,7 +345,7 @@ class TestErrorHandlingContract:
             "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="chat")
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
@@ -361,7 +361,7 @@ class TestErrorHandlingContract:
             "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="chat")
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
@@ -375,7 +375,7 @@ class TestErrorHandlingContract:
             "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="chat")
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
@@ -389,7 +389,7 @@ class TestErrorHandlingContract:
             "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="chat")
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
@@ -405,7 +405,7 @@ class TestErrorHandlingContract:
             "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="chat")
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
@@ -419,7 +419,7 @@ class TestErrorHandlingContract:
             "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="chat")
             with pytest.raises(RuntimeError, match="Agent Hub request failed"):
                 client.generate(prompt="Hello")
 
@@ -434,7 +434,7 @@ class TestErrorHandlingContract:
             return_value=mock_client,
         ) as mock_factory:
             client = AgentHubLLMClient(
-                agent_slug="claude-sonnet-4-5",
+                agent_slug="chat",
                 base_url="http://test:8003",
                 api_key="test-key",
             )
@@ -443,7 +443,7 @@ class TestErrorHandlingContract:
         mock_factory.assert_called_once_with(
             base_url="http://test:8003",
             api_key="test-key",
-            timeout=600.0,
+            timeout=None,
             client_name="summitflow",
         )
 
@@ -518,7 +518,7 @@ class TestSessionContract:
             "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="chat")
             result = client.is_available()
 
         assert result
@@ -534,7 +534,7 @@ class TestSessionContract:
             "app.services.agent_hub_client.get_sync_client",
             return_value=mock_agent_hub_client,
         ):
-            client = AgentHubLLMClient(agent_slug="claude-sonnet-4-5")
+            client = AgentHubLLMClient(agent_slug="chat")
             result = client.is_available()
 
         assert not result
@@ -603,7 +603,7 @@ class TestLiveAgentHubContract:
 
         # Use test project ID to avoid production pollution
         client = AgentHubLLMClient(
-            agent_slug="claude-sonnet-4-5",
+            agent_slug="chat",
             project_id=CONTRACT_TEST_PROJECT_ID,
         )
         response = client.generate(
@@ -634,7 +634,7 @@ class TestLiveAgentHubContract:
         """Test that completion creates a session."""
         client = live_client_with_cleanup
         response = client.complete(
-            model="claude-sonnet-4-5",
+            model="served-model",
             messages=[{"role": "user", "content": "Hi"}],
         )
 

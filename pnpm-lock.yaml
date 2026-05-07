@@ -209,7 +209,7 @@ packages:
     resolution: {integrity: sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg==}
 
   '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz':
-    resolution: {integrity: sha512-wvDZ4i3PbxCcf1d1uhNleWNHRyUOmtZW3bHDShyI/+GIQKFkNTmMIpYDoq739an8Yw8V/crbBu8B+k1t/hbOTw==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz}
+    resolution: {integrity: sha512-JIk3UNEr42YQb07WnBdcO3mWYc2+9yWegPGJfToSY6Rl3DT3iBI6Sfg2hgJ03mG6TcKLQ9H1WS3qLhLiJcbmjw==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz}
     version: 0.1.0
     peerDependencies:
       react: '>=18 || ^19.0.0'

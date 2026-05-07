@@ -186,6 +186,56 @@ class BackupHealthResponse(BaseModel):
     pending_upload_count: int = 0
 
 
+# ─── System Image / Veeam Models ────────────────────────────────
+
+
+class SystemImageSession(BaseModel):
+    """A Veeam system-image session summary."""
+
+    id: str
+    job_name: str
+    session_type: str
+    state: str
+    created_at: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+
+
+class SystemImageBackupStatus(BaseModel):
+    """Status for the host-level Veeam system-image backup."""
+
+    installed: bool
+    version: str | None = None
+    service_active: bool
+    secure_boot_enabled: bool
+    mok_enrolled: bool
+    mok_enrollment_pending: bool
+    module_loaded: bool
+    module_signer: str | None = None
+    repository_name: str
+    repository_path: str
+    repository_accessible: bool
+    job_name: str
+    job_configured: bool
+    job_id: str | None = None
+    schedule_summary: str | None = None
+    protected_objects: list[str] = []
+    last_session: SystemImageSession | None = None
+    active_session: SystemImageSession | None = None
+    can_start: bool
+    blocked_reason: str | None = None
+    next_action: str
+
+
+class SystemImageActionResponse(BaseModel):
+    """Response for a system-image backup control action."""
+
+    status: str
+    message: str
+    session_id: str | None = None
+    output: str | None = None
+
+
 # ─── Coverage Contract Models ──────────────────────────────────
 
 

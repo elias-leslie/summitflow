@@ -56,7 +56,7 @@ def test_pulse_compact_renders_canonical_summary() -> None:
                 "id": "sess-owner",
                 "lane_role": "owner",
                 "agent_slug": "refactor",
-                "effective_model": "claude-sonnet-4-6",
+                "effective_model": "served-model",
                 "status": "active",
                 "live_activity": {"health": "active", "phase": "reading_file", "files_touched": []},
             }
@@ -68,7 +68,7 @@ def test_pulse_compact_renders_canonical_summary() -> None:
                 "session_type": "agent",
                 "request_source": "codex-transcript-sync",
                 "source_client": "summitflow/codex-session-sync",
-                "effective_model": "claude-sonnet-4-6",
+                "effective_model": "served-model",
                 "status": "active",
                 "live_activity": {
                     "health": "stalled",
@@ -89,7 +89,7 @@ def test_pulse_compact_renders_canonical_summary() -> None:
     assert "PREFLIGHT:agent-hub|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
     assert "RUN task-1 | running | P2 | Refactor timeline" in result.output
     assert "WRITE task-1 | refactor | sess-own | kind=scoped | paths=frontend/src/app.tsx" in result.output
-    assert "STALE observer | summitflow/codex-session-sync | sess-sta | claude-sonnet-4-6 | reapable | reason=heartbeat_only+no_lane" in result.output
+    assert "STALE observer | summitflow/codex-session-sync | sess-sta | served-model | reapable | reason=heartbeat_only+no_lane" in result.output
 
 
 def test_pulse_compact_labels_task_checkout_owner_more_usefully() -> None:
@@ -189,7 +189,7 @@ def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
                 "session_type": "agent",
                 "request_source": "codex-transcript-sync",
                 "source_client": "summitflow/codex-session-sync",
-                "effective_model": "claude-sonnet-4-6",
+                "effective_model": "served-model",
                 "status": "active",
                 "live_activity": {"lifecycle_state": "reapable", "reapable_reason": "heartbeat_only+no_lane"},
             }
@@ -487,7 +487,7 @@ def test_pulse_prefers_source_client_for_observer_session_label() -> None:
                 "session_type": "agent",
                 "request_source": "codex-transcript-sync",
                 "source_client": "summitflow/codex-session-sync",
-                "effective_model": "codex/gpt-5.4",
+                "effective_model": "served-code-model",
                 "status": "active",
                 "live_activity": {"health": "quiet", "phase": "waiting_for_model", "files_touched": []},
             }
@@ -500,7 +500,7 @@ def test_pulse_prefers_source_client_for_observer_session_label() -> None:
         result = runner.invoke(app, ["pulse", "--project", "agent-hub", "--details"])
 
     assert result.exit_code == 0
-    assert "SES observer | summitflow/codex-session-sync | sess-obs | gpt-5.4 | quiet/waiting_for_model" in result.output
+    assert "SES observer | summitflow/codex-session-sync | sess-obs | served-code-model | quiet/waiting_for_model" in result.output
 
 
 def test_pulse_compact_renders_readers_as_nonblocking() -> None:

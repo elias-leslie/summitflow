@@ -1,7 +1,7 @@
-"""Tier classifier and model selector for autonomous execution.
+"""Tier classifier and Agent Hub route selector for autonomous execution.
 
 Classifies tasks into tiers based on complexity and selects appropriate
-AI models for execution.
+Agent Hub agents for execution.
 
 Tiers:
 - 1: Small tasks (<10 complexity, <300 LOC, <=1 file)
@@ -14,65 +14,62 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
-from ...constants import (
-    CLAUDE_HAIKU,
-    CLAUDE_OPUS,
-    CLAUDE_SONNET,
-    GEMINI_PRO,
-)
 
+class AgentRouteConfig(TypedDict):
+    """Configuration for an Agent Hub route."""
 
-class ModelConfig(TypedDict):
-    """Configuration for an AI model."""
-
-    provider: str  # 'claude' or 'gemini'
-    model: str  # Model identifier
+    provider: str
+    agent_slug: str
+    model: str
     description: str
 
 
-# Model configurations by tier and mode
-# Claude is PRIMARY for all coding - Gemini only for consultation/handoff
-# Gemini advantages: 1-2M context window, certain specialized tasks (TBD profiling)
-AUTONOMOUS_MODELS: dict[int, ModelConfig] = {
+AUTONOMOUS_ROUTES: dict[int, AgentRouteConfig] = {
     1: {
-        "provider": "claude",
-        "model": CLAUDE_HAIKU,
-        "description": "Claude Haiku 4.5 for small tasks",
+        "provider": "agent_hub",
+        "agent_slug": "coder",
+        "model": "agent:coder",
+        "description": "Coder agent for small implementation tasks",
     },
     2: {
-        "provider": "claude",
-        "model": CLAUDE_SONNET,
-        "description": "Claude Sonnet 4.5 for medium tasks",
+        "provider": "agent_hub",
+        "agent_slug": "coder",
+        "model": "agent:coder",
+        "description": "Coder agent for medium implementation tasks",
     },
     3: {
-        "provider": "claude",
-        "model": CLAUDE_SONNET,
-        "description": "Claude Sonnet 4.5 for large tasks",
+        "provider": "agent_hub",
+        "agent_slug": "refactor",
+        "model": "agent:refactor",
+        "description": "Refactor agent for larger structured changes",
     },
     4: {
-        "provider": "claude",
-        "model": CLAUDE_OPUS,
-        "description": "Claude Opus 4.5 for architecture/multi-domain",
+        "provider": "agent_hub",
+        "agent_slug": "supervisor",
+        "model": "agent:supervisor",
+        "description": "Supervisor agent for architecture and multi-domain work",
     },
 }
 
-# Alternate model for consultation when primary is stuck
-CONSULTATION_MODEL: ModelConfig = {
-    "provider": "gemini",
-    "model": GEMINI_PRO,
-    "description": "Gemini 3 Pro for consultation/handoff (large context)",
+CONSULTATION_ROUTE: AgentRouteConfig = {
+    "provider": "agent_hub",
+    "agent_slug": "analyst",
+    "model": "agent:analyst",
+    "description": "Analyst agent for consultation and handoff",
 }
 
-MANUAL_MODEL: ModelConfig = {
-    "provider": "claude",
-    "model": CLAUDE_SONNET,
-    "description": "Claude Sonnet 4.5 for manual CC execution",
+MANUAL_ROUTE: AgentRouteConfig = {
+    "provider": "agent_hub",
+    "agent_slug": "coder",
+    "model": "agent:coder",
+    "description": "Coder agent for manual execution",
 }
 
-REVIEW_MODEL: ModelConfig = {
-    "provider": "claude",
-    "model": CLAUDE_OPUS,
-    "description": "Claude Opus 4.5 for review gate",
+REVIEW_ROUTE: AgentRouteConfig = {
+    "provider": "agent_hub",
+    "agent_slug": "reviewer",
+    "model": "agent:reviewer",
+    "description": "Reviewer agent for review gate",
 }
 
 
@@ -105,26 +102,34 @@ def classify_tier(target: dict[str, Any]) -> int:
     return 4
 
 
-def select_model_for_tier(tier: int, manual: bool = False) -> ModelConfig:
-    """Select the appropriate model for a tier.
+def select_model_for_tier(tier: int, manual: bool = False) -> AgentRouteConfig:
+    """Select the appropriate Agent Hub route for a tier.
 
     Args:
         tier: Execution tier (1-4)
-        manual: If True, always return Claude Sonnet for better quality
+        manual: If True, return the manual execution agent route
 
     Returns:
-        ModelConfig dict with provider, model, description
+        AgentRouteConfig dict with provider, agent_slug, model, description
     """
     if manual:
-        return MANUAL_MODEL.copy()
+        return MANUAL_ROUTE.copy()
 
-    return AUTONOMOUS_MODELS.get(tier, AUTONOMOUS_MODELS[4]).copy()
+    return AUTONOMOUS_ROUTES.get(tier, AUTONOMOUS_ROUTES[4]).copy()
 
 
-def get_review_model() -> ModelConfig:
-    """Get the model configuration for the Opus review gate.
+def get_review_model() -> AgentRouteConfig:
+    """Get the route configuration for the review gate.
 
     Returns:
-        ModelConfig for Claude Opus
+        AgentRouteConfig for reviewer
     """
-    return REVIEW_MODEL.copy()
+    return REVIEW_ROUTE.copy()
+
+
+# Backwards-compatible names for imports that have not moved yet.
+ModelConfig = AgentRouteConfig
+AUTONOMOUS_MODELS = AUTONOMOUS_ROUTES
+CONSULTATION_MODEL = CONSULTATION_ROUTE
+MANUAL_MODEL = MANUAL_ROUTE
+REVIEW_MODEL = REVIEW_ROUTE

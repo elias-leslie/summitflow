@@ -1,7 +1,7 @@
 """Escalation logic for fix agent (3-2-1 pattern).
 
-- WORKER (3 attempts): GEMINI_FLASH
-- SUPERVISOR (2 attempts): CLAUDE_SONNET with different strategy
+- WORKER (3 attempts): worker agent
+- SUPERVISOR (2 attempts): supervisor agent with different strategy
 - ESCALATE: Create blocking task for autonomous investigation
 """
 
@@ -70,8 +70,8 @@ def _build_escalation_title(
 
 _PIPELINE_NOTE = (
     "This error could not be fixed automatically by the 3-2-1 escalation pipeline:\n"
-    "- 3 attempts with GEMINI_FLASH (worker level)\n"
-    "- 2 attempts with CLAUDE_SONNET + GEMINI_PRO (supervisor level)\n\n"
+    "- 3 attempts with worker agent\n"
+    "- 2 attempts with supervisor agent\n\n"
     "Supervisor investigation required."
 )
 

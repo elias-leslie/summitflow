@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from ..constants import GEMINI_IMAGE
+from ..constants import AGENT_IMAGE_GEN
 from ..services.agent_hub_client import get_sync_client
 from ..storage import design_assets
 from .mockup_generator.storage_helpers import get_mockup_directory
@@ -18,38 +18,10 @@ from .mockup_generator.storage_helpers import get_mockup_directory
 # Constants
 # ---------------------------------------------------------------------------
 
-VALID_IMAGE_MODELS = frozenset(
-    {
-        "gemini-3-pro-image-preview",
-        "gemini-2.5-flash-image",
-        "gemini-3.1-flash-image-preview",
-        "nvidia/flux.1-kontext-dev",
-        "nvidia/flux.1-dev",
-        "nvidia/flux.1-schnell",
-        "cloudflare/flux-2-dev",
-        "cloudflare/flux-1-schnell",
-        "cloudflare/sd-xl-lightning",
-    }
-)
-
 _MIME_TO_EXT: dict[str, str] = {
     "image/jpeg": "jpg",
     "image/webp": "webp",
 }
-
-_SPRITE_FALLBACK_MODELS: tuple[str, ...] = (
-    "cloudflare/flux-2-dev",
-    "cloudflare/flux-1-schnell",
-    "nvidia/flux.1-dev",
-    "nvidia/flux.1-schnell",
-    "gemini-3.1-flash-image-preview",
-    "gemini-2.5-flash-image",
-)
-
-_GENERIC_FALLBACK_MODELS: tuple[str, ...] = (
-    "gemini-3.1-flash-image-preview",
-    "gemini-2.5-flash-image",
-)
 
 _BACKGROUND_TRANSPARENT = "transparent"
 _PURPOSE_DESIGN_ASSET = "design_asset_generation"
@@ -142,33 +114,19 @@ def _append_asset_type_guidance(
 
 
 # ---------------------------------------------------------------------------
-# Model resolution helpers
+# Agent resolution helpers
 # ---------------------------------------------------------------------------
 
 
-def _resolve_model(model: str | None) -> str:
-    """Resolve a requested image model, falling back to the default."""
-    if model and model in VALID_IMAGE_MODELS:
-        return model
-    return GEMINI_IMAGE
+def _resolve_agent_slug(agent_slug: str | None, legacy_agent_or_model: str | None = None) -> str:
+    """Resolve an image generation agent slug.
 
-
-def _candidate_models(
-    requested_model: str,
-    *,
-    asset_type: str,
-    reference_image: str | None,
-) -> list[str]:
-    """Build an ordered image-model chain for this asset generation."""
-    fallbacks = _SPRITE_FALLBACK_MODELS if (asset_type == "sprite_sheet" or reference_image) else _GENERIC_FALLBACK_MODELS
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for model_id in (requested_model, *fallbacks):
-        if model_id in seen:
-            continue
-        seen.add(model_id)
-        ordered.append(model_id)
-    return ordered
+    Legacy model IDs are intentionally ignored; Agent Hub owns image model choice.
+    """
+    candidate = agent_slug or legacy_agent_or_model
+    if candidate and "/" not in candidate:
+        return candidate.removeprefix("agent:")
+    return AGENT_IMAGE_GEN
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +137,7 @@ def _candidate_models(
 def _call_image_api(
     *,
     client: object,
-    candidates: list[str],
+    agent_slug: str,
     prompt: str,
     project_id: str,
     width: int,
@@ -188,23 +146,17 @@ def _call_image_api(
     reference_image: str | None,
     reference_mime_type: str | None,
 ) -> object:
-    """Try each candidate model in order; return the first successful response."""
-    last_error: Exception | None = None
-    for try_model in candidates:
-        try:
-            return client.generate_image(  # type: ignore[union-attr]
-                prompt=prompt,
-                project_id=project_id,
-                purpose=_PURPOSE_DESIGN_ASSET,
-                model=try_model,
-                size=f"{width}x{height}",
-                style=style_prompt,
-                reference_image=reference_image,
-                reference_mime_type=reference_mime_type,
-            )
-        except Exception as exc:
-            last_error = exc
-    raise last_error or RuntimeError("Asset generation failed without a provider response")
+    """Generate through the assigned Agent Hub image agent."""
+    return client.generate_image(  # type: ignore[union-attr]
+        prompt=prompt,
+        project_id=project_id,
+        purpose=_PURPOSE_DESIGN_ASSET,
+        agent_slug=agent_slug,
+        size=f"{width}x{height}",
+        style=style_prompt,
+        reference_image=reference_image,
+        reference_mime_type=reference_mime_type,
+    )
 
 
 def _save_image_file(project_id: str, asset_id: str, image_bytes: bytes, ext: str) -> Path:
@@ -260,19 +212,17 @@ def _persist_asset(
 def _generate_and_save(
     *,
     project_id: str,
-    normalized_type: str,
     merged_prompt: str,
     style_prompt: str | None,
     reference_image: str | None,
     reference_mime_type: str | None,
     width: int,
     height: int,
-    resolved_model: str,
+    agent_slug: str,
 ) -> tuple[str, Path, object]:
     """Call the image API and write the result to disk; return (asset_id, image_path, response)."""
-    candidates = _candidate_models(resolved_model, asset_type=normalized_type, reference_image=reference_image)
     response = _call_image_api(
-        client=get_sync_client(), candidates=candidates, prompt=merged_prompt,
+        client=get_sync_client(), agent_slug=agent_slug, prompt=merged_prompt,
         project_id=project_id, width=width, height=height, style_prompt=style_prompt,
         reference_image=reference_image, reference_mime_type=reference_mime_type,
     )
@@ -283,12 +233,12 @@ def _generate_and_save(
 
 
 def _make_served_metadata(
-    base: dict[str, str | int] | None, resolved_model: str, response: object,
+    base: dict[str, str | int] | None, agent_slug: str, response: object,
 ) -> dict[str, str | int]:
     """Merge caller metadata with provider telemetry fields."""
     return {
         **(base or {}),
-        "requested_model": resolved_model,
+        "requested_agent": agent_slug,
         "served_model": response.model,  # type: ignore[union-attr]
         "served_provider": response.provider,  # type: ignore[union-attr]
     }
@@ -307,8 +257,9 @@ def generate_asset_image(
     background: str,
     transparent_background: bool,
     size: str,
-    model: str | None,
-    generator: str = "gemini-image",
+    agent_slug: str | None = None,
+    model: str | None = None,
+    generator: str = "image-gen",
     source_asset_id: int | None = None,
     sheet_columns: int | None = None,
     sheet_rows: int | None = None,
@@ -321,7 +272,11 @@ def generate_asset_image(
     reference_mime_type: str | None = None,
 ) -> dict[str, object]:
     """Generate an image and persist a design asset."""
-    normalized_type, (width, height), resolved_model = normalize_asset_type(asset_type), parse_size(size), _resolve_model(model)
+    normalized_type, (width, height), resolved_agent_slug = (
+        normalize_asset_type(asset_type),
+        parse_size(size),
+        _resolve_agent_slug(agent_slug, model),
+    )
     merged_prompt = build_generation_prompt(
         asset_type=normalized_type, prompt=prompt, style_prompt=style_prompt,
         negative_prompt=negative_prompt, background=background, width=width, height=height,
@@ -329,9 +284,9 @@ def generate_asset_image(
         sheet_rows=sheet_rows, frame_width=frame_width, frame_height=frame_height, animation_labels=animation_labels,
     )
     asset_id, image_path, rsp = _generate_and_save(
-        project_id=project_id, normalized_type=normalized_type, merged_prompt=merged_prompt,
+        project_id=project_id, merged_prompt=merged_prompt,
         style_prompt=style_prompt, reference_image=reference_image, reference_mime_type=reference_mime_type,
-        width=width, height=height, resolved_model=resolved_model,
+        width=width, height=height, agent_slug=resolved_agent_slug,
     )
     return _persist_asset(
         project_id, asset_id, image_path, name=name, description=description,
@@ -342,7 +297,7 @@ def generate_asset_image(
         generator=generator, source_asset_id=source_asset_id, sheet_columns=sheet_columns,
         sheet_rows=sheet_rows, frame_width=frame_width, frame_height=frame_height,
         animation_labels=animation_labels, tags=tags,
-        extra_metadata=_make_served_metadata(metadata, resolved_model, rsp),
+        extra_metadata=_make_served_metadata(metadata, resolved_agent_slug, rsp),
     )
 
 

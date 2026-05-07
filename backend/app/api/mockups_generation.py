@@ -1,6 +1,6 @@
 """Asset generation endpoint for mockups API.
 
-Generates images via Agent Hub's Gemini image generation, with prompt
+Generates images via Agent Hub's image generation agent, with prompt
 templates for game assets (sprites, sheets, environments).
 """
 
@@ -12,7 +12,7 @@ import time
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..constants import GEMINI_IMAGE
+from ..constants import AGENT_IMAGE_GEN
 from ..logging_config import get_logger
 from ..services.agent_hub_client import get_sync_client
 from ..services.mockup_generator.revisions import MockupRevisionContentError, rerun_mockup
@@ -32,13 +32,6 @@ from .mockups_utils import to_response
 logger = get_logger(__name__)
 
 router = APIRouter()
-
-# Model ID constants for the image generation models
-_IMAGE_MODELS = frozenset({
-    "gemini-3-pro-image-preview",
-    "gemini-2.5-flash-image",
-    "gemini-3.1-flash-image-preview",
-})
 
 _MIME_TO_EXT: dict[str, str] = {
     "image/jpeg": "jpg",
@@ -71,6 +64,7 @@ class GenerateAssetRequest(BaseModel):
     prompt: str
     name: str
     mockup_type: str = "sprite"
+    agent_slug: str | None = None
     model: str | None = None
     size: str = "1024x1024"
     style: str | None = None
@@ -112,11 +106,15 @@ def _build_merged_prompt(request: GenerateAssetRequest) -> str:
     return request.prompt
 
 
-def _resolve_model(model: str | None) -> str:
-    """Resolve requested model, defaulting to pro image."""
-    if model and model in _IMAGE_MODELS:
-        return model
-    return GEMINI_IMAGE
+def _resolve_agent_slug(agent_slug: str | None, legacy_agent_or_model: str | None = None) -> str:
+    """Resolve an image generation agent slug.
+
+    Legacy model IDs are intentionally ignored; Agent Hub owns image model choice.
+    """
+    candidate = agent_slug or legacy_agent_or_model
+    if candidate and "/" not in candidate:
+        return candidate.removeprefix("agent:")
+    return AGENT_IMAGE_GEN
 
 
 # ---------------------------------------------------------------------------
@@ -135,11 +133,11 @@ async def generate_asset(
     """Generate a game asset image and store it as a mockup.
 
     Merges the user prompt with game-asset-specific templates, calls
-    Gemini image generation via Agent Hub, saves the result to disk,
+    Agent Hub image generation, saves the result to disk,
     and creates a mockup DB record.
     """
     start_time = time.monotonic()
-    model = _resolve_model(request.model)
+    agent_slug = _resolve_agent_slug(request.agent_slug, request.model)
     merged_prompt = _build_merged_prompt(request)
 
     try:
@@ -148,7 +146,7 @@ async def generate_asset(
             prompt=merged_prompt,
             project_id=project_id,
             purpose="asset_generation",
-            model=model,
+            agent_slug=agent_slug,
             size=request.size,
             style=request.style,
         )
@@ -170,7 +168,7 @@ async def generate_asset(
             description=f"Generated {request.mockup_type}: {request.prompt[:200]}",
             mockup_type=request.mockup_type,
             file_path=str(image_path),
-            generator="gemini-image",
+            generator="image-gen",
             generation_prompt=merged_prompt,
             generation_time_ms=generation_time,
         )
@@ -180,7 +178,8 @@ async def generate_asset(
             project_id=project_id,
             mockup_id=mockup["mockup_id"],
             mockup_type=request.mockup_type,
-            model=model,
+            agent_slug=agent_slug,
+            model=response.model,
             generation_time_ms=generation_time,
         )
 
@@ -189,7 +188,7 @@ async def generate_asset(
             mockup_id=mockup["mockup_id"],
             file_path=str(image_path),
             generation_time_ms=generation_time,
-            model_used=model,
+            model_used=response.model,
         )
 
     except Exception as e:
@@ -198,7 +197,7 @@ async def generate_asset(
             "asset_generation_failed",
             project_id=project_id,
             error=str(e),
-            model=model,
+            agent_slug=agent_slug,
         )
         raise HTTPException(
             status_code=502,

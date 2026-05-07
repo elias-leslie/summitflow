@@ -10,12 +10,26 @@ constraints = [
 
 [[package]]
 name = "agent-hub-client"
-version = "0.3.0"
-source = { git = "https://github.com/elias-leslie/agent-hub.git?subdirectory=packages%2Fagent-hub-client#877cae3cc3704a2f8b7c9540cd0c5f9df57a6b05" }
+version = "0.4.0"
+source = { path = "../docker/workspace-packages/agent_hub_client-0.4.0-py3-none-any.whl" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
 ]
+wheels = [
+    { filename = "agent_hub_client-0.4.0-py3-none-any.whl", hash = "sha256:99f178082a114172c88d58e295d1d31b3e78d80c71533c380d1e831d5cf58397" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27.0" },
+    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
+    { name = "pytest-httpx", marker = "extra == 'dev'", specifier = ">=0.34.0" },
+    { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.17" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "aiohappyeyeballs"
@@ -1517,7 +1531,7 @@ wheels = [
 
 [[package]]
 name = "summitflow"
-version = "0.1.0"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "agent-hub-client" },
@@ -1562,7 +1576,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-hub-client", git = "https://github.com/elias-leslie/agent-hub.git?subdirectory=packages%2Fagent-hub-client" },
+    { name = "agent-hub-client", path = "../docker/workspace-packages/agent_hub_client-0.4.0-py3-none-any.whl" },
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "croniter", specifier = ">=3.0.0" },
     { name = "fastapi", specifier = ">=0.115.0" },

@@ -27,7 +27,7 @@ interface ExecutionBadgesProps {
 }
 
 interface ExecutionMetadata {
-  model?: string
+  agent?: string
   retryCount?: number
   cost?: number
   duration?: number
@@ -74,16 +74,12 @@ const statusIcons: Record<
 }
 
 // ============================================================================
-// Model name formatting
+// Agent name formatting
 // ============================================================================
 
-function formatModelName(model?: string): string | null {
-  if (!model) return null
-  if (model.includes('haiku') || model.includes('flash')) return 'Flash'
-  if (model.includes('sonnet')) return 'Sonnet'
-  if (model.includes('opus')) return 'Opus'
-  if (model.includes('pro')) return 'Pro'
-  return model.split('-').pop() || model
+function formatAgentName(agent?: string): string | null {
+  if (!agent) return null
+  return agent
 }
 
 // ============================================================================
@@ -97,18 +93,16 @@ function formatCost(cost?: number): string | null {
 }
 
 // ============================================================================
-// Extract model from progress log
+// Extract agent from progress log
 // ============================================================================
 
-function extractModelFromLog(progressLog?: string | null): string | undefined {
+function extractAgentFromLog(progressLog?: string | null): string | undefined {
   if (!progressLog) return undefined
-  const modelPatterns = [
-    /with\s+(claude-[a-z0-9-]+)/i,
-    /with\s+(gemini-[a-z0-9-]+)/i,
-    /model[:\s]+([a-z]+-[a-z0-9-]+)/i,
-    /(claude-sonnet|claude-opus|claude-haiku|gemini-flash|gemini-pro)/i,
+  const agentPatterns = [
+    /agent[:\s]+([a-z0-9-]+)/i,
+    /calling agent \(([a-z0-9-]+)\)/i,
   ]
-  for (const pattern of modelPatterns) {
+  for (const pattern of agentPatterns) {
     const match = progressLog.match(pattern)
     if (match?.[1]) return match[1]
   }
@@ -127,12 +121,11 @@ export function ExecutionBadges({
   const statusConfig = statusIcons[task.status] || statusIcons.pending
 
   const metadata: ExecutionMetadata = {
-    model: extractModelFromLog(task.progress_log),
+    agent: extractAgentFromLog(task.progress_log),
     retryCount: task.total_sessions > 1 ? task.total_sessions : undefined,
-    cost: task.total_tokens_used ? task.total_tokens_used * 0.00001 : undefined,
   }
 
-  const modelName = formatModelName(metadata.model)
+  const agentName = formatAgentName(metadata.agent)
   const costDisplay = formatCost(metadata.cost)
 
   if (compact) {
@@ -166,14 +159,14 @@ export function ExecutionBadges({
         <span className="capitalize">{task.status.replace('_', ' ')}</span>
       </span>
 
-      {/* Model badge */}
-      {modelName && (
+      {/* Agent badge */}
+      {agentName && (
         <span
           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-purple-500/20 text-purple-400 border border-purple-500/20"
-          title={`Model: ${metadata.model}`}
+          title={`Agent: ${metadata.agent}`}
         >
           <Zap className="h-3 w-3" />
-          {modelName}
+          {agentName}
         </span>
       )}
 

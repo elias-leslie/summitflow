@@ -469,12 +469,12 @@ class TestCrossAgentFallback:
 
 
 # =============================================================================
-# T4: Model escalation logic
+# T4: Agent routing owns model selection
 # =============================================================================
 
 
-class TestModelEscalation:
-    """Tests for model escalation in retry_loop.py."""
+class TestAgentRoutedRetries:
+    """Tests for Agent Hub agent-routed retry_loop.py calls."""
 
     @patch("app.tasks.autonomous.exec_modules.retry_loop.execute_fix_attempt")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.determine_fix_prompt")
@@ -486,7 +486,7 @@ class TestModelEscalation:
     )
     @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_checkout_health")
-    def test_model_override_none_during_self_heal(
+    def test_retry_omits_model_override_during_self_heal(
         self,
         mock_health: MagicMock,
         mock_assert_runnable: MagicMock,
@@ -495,7 +495,7 @@ class TestModelEscalation:
         mock_prompt: MagicMock,
         mock_fix: MagicMock,
     ) -> None:
-        """During self-heal phase (attempts < threshold), model_override is None."""
+        """During self-heal phase, model selection stays inside Agent Hub."""
         from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
 
         steps = [{"step_number": 1, "description": "Test"}]
@@ -525,16 +525,9 @@ class TestModelEscalation:
             initial_response_content="Initial response",
         )
 
-        # First fix attempt should NOT have model_override (self-heal phase)
         fix_call = mock_fix.call_args
         assert fix_call is not None
-        # model_override is a keyword arg
-        model_override = fix_call.kwargs.get("model_override") or fix_call[1].get(
-            "model_override"
-        )
-        assert model_override is None, (
-            f"Expected no model_override during self-heal, got {model_override}"
-        )
+        assert "model_override" not in fix_call.kwargs
 
     @patch("app.tasks.autonomous.exec_modules.retry_loop.execute_fix_attempt")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.determine_fix_prompt")
@@ -546,7 +539,7 @@ class TestModelEscalation:
     )
     @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
     @patch("app.tasks.autonomous.exec_modules.retry_loop.check_checkout_health")
-    def test_model_override_escalation_after_threshold(
+    def test_retry_omits_model_override_after_threshold(
         self,
         mock_health: MagicMock,
         mock_assert_runnable: MagicMock,
@@ -555,8 +548,8 @@ class TestModelEscalation:
         mock_prompt: MagicMock,
         mock_fix: MagicMock,
     ) -> None:
-        """After self-heal exhausted, model_override is set to ESCALATION_MODEL."""
-        from app.constants import ESCALATION_MODEL, SELF_HEAL_MAX_ATTEMPTS
+        """After self-heal exhausted, escalation remains agent-slug routed."""
+        from app.constants import SELF_HEAL_MAX_ATTEMPTS
         from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
 
         steps = [{"step_number": 1, "description": "Test"}]
@@ -591,18 +584,11 @@ class TestModelEscalation:
             initial_response_content="Initial response",
         )
 
-        # After SELF_HEAL_MAX_ATTEMPTS, fix calls should use ESCALATION_MODEL
         calls = mock_fix.call_args_list
         assert len(calls) >= SELF_HEAL_MAX_ATTEMPTS + 1
 
-        # The call at index SELF_HEAL_MAX_ATTEMPTS should have model_override
-        escalated_call = calls[SELF_HEAL_MAX_ATTEMPTS]
-        model_override = escalated_call.kwargs.get(
-            "model_override"
-        ) or escalated_call[1].get("model_override")
-        assert model_override == ESCALATION_MODEL, (
-            f"Expected ESCALATION_MODEL={ESCALATION_MODEL}, got {model_override}"
-        )
+        for call in calls:
+            assert "model_override" not in call.kwargs
 
 
 # =============================================================================

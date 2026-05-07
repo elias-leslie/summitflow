@@ -30,7 +30,6 @@ def build_complete_kwargs(
     task_id: str,
     session_id: str,
     max_turns: int,
-    model_override: str | None = None,
     include_roles: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build kwargs dict for Agent Hub complete call."""
@@ -51,6 +50,4 @@ def build_complete_kwargs(
     }
     if current_branch:
         kwargs["current_branch"] = current_branch
-    if model_override:
-        kwargs["model"] = model_override
     return kwargs

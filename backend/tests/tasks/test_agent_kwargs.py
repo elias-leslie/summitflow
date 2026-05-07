@@ -42,10 +42,10 @@ def test_build_complete_kwargs_leaves_model_selection_to_agent_routing() -> None
             task_id="task-123",
             session_id="sess-1",
             max_turns=25,
-            model_override=None,
         )
 
     assert "tier_preference" not in result
+    assert "model" not in result
 
 
 def test_build_complete_kwargs_does_not_set_timeout_for_autonomous_runs() -> None:

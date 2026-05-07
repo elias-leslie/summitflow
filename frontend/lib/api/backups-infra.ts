@@ -157,3 +157,73 @@ export function runRestoreDrill(): Promise<RestoreDrillResult> {
     },
   )
 }
+
+// ─── System Image / Veeam ──────────────────────────────────────
+
+export interface SystemImageSession {
+  id: string
+  job_name: string
+  session_type: string
+  state: string
+  created_at: string | null
+  started_at: string | null
+  finished_at: string | null
+}
+
+export interface SystemImageBackupStatus {
+  installed: boolean
+  version: string | null
+  service_active: boolean
+  secure_boot_enabled: boolean
+  mok_enrolled: boolean
+  mok_enrollment_pending: boolean
+  module_loaded: boolean
+  module_signer: string | null
+  repository_name: string
+  repository_path: string
+  repository_accessible: boolean
+  job_name: string
+  job_configured: boolean
+  job_id: string | null
+  schedule_summary: string | null
+  protected_objects: string[]
+  last_session: SystemImageSession | null
+  active_session: SystemImageSession | null
+  can_start: boolean
+  blocked_reason: string | null
+  next_action: string
+}
+
+export interface SystemImageActionResponse {
+  status: string
+  message: string
+  session_id: string | null
+  output: string | null
+}
+
+export function fetchSystemImageBackupStatus(): Promise<SystemImageBackupStatus> {
+  return fetchWithErrorHandling<SystemImageBackupStatus>(
+    '/api/backups/system-image',
+    { errorMessage: 'Failed to fetch system-image backup status' },
+  )
+}
+
+export function startSystemImageBackup(): Promise<SystemImageActionResponse> {
+  return fetchWithErrorHandling<SystemImageActionResponse>(
+    '/api/backups/system-image/start',
+    {
+      method: 'POST',
+      errorMessage: 'Failed to start system-image backup',
+    },
+  )
+}
+
+export function stopSystemImageBackup(): Promise<SystemImageActionResponse> {
+  return fetchWithErrorHandling<SystemImageActionResponse>(
+    '/api/backups/system-image/stop',
+    {
+      method: 'POST',
+      errorMessage: 'Failed to stop system-image backup',
+    },
+  )
+}

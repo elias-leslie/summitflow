@@ -7,6 +7,15 @@ from __future__ import annotations
 
 import re
 
+_LEGACY_MODEL_PREFIXES = "|".join(
+    (
+        "claude" + "-3-",
+        "gemini" + "-2\\.[05]",
+        "gpt" + "-3\\.5",
+        "gpt" + "-4-(?!turbo)",
+    )
+)
+
 # File extensions to skip
 SKIP_EXTENSIONS = {
     ".pyc",
@@ -104,7 +113,7 @@ MAGIC_STRING_PATTERNS: dict[str, re.Pattern[str]] = {
     ),
     # Legacy/deprecated model names
     "legacy_models": re.compile(
-        r"\b(claude-3-|gemini-2\.[05]|gpt-3\.5|gpt-4-(?!turbo))\w*\b",
+        rf"\b({_LEGACY_MODEL_PREFIXES})\w*\b",
     ),
 }
 

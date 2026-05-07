@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from ...constants import CLAUDE_OPUS_FULL
 from ...logging_config import get_logger
 from ...services.task_plan_context import build_task_plan_context
 from .models import EnrichedTask
 
 logger = get_logger(__name__)
 ENRICHMENT_STATUS_REVIEW = "review"
+ENRICHMENT_AGENT = "agent:planner"
 
 
 def _update_task_with_enrichment(
@@ -28,7 +28,7 @@ def _update_task_with_enrichment(
         priority=enriched.priority,
         labels=enriched.labels,
         enrichment_status=ENRICHMENT_STATUS_REVIEW,
-        enriched_by=CLAUDE_OPUS_FULL,
+        enriched_by=ENRICHMENT_AGENT,
         enriched_at=datetime.now(UTC),
     )
 

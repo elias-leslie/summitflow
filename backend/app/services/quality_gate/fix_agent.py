@@ -1,8 +1,8 @@
 """Fix agent for lint/type errors.
 
 Uses 3-2-1 escalation pattern:
-- WORKER (3 attempts): GEMINI_FLASH
-- SUPERVISOR (2 attempts): CLAUDE_SONNET with different strategy
+- WORKER (3 attempts): worker agent
+- SUPERVISOR (2 attempts): supervisor agent with different strategy
 - ESCALATE: Create blocking task for autonomous investigation
 """
 

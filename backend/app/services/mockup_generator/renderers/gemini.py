@@ -1,4 +1,4 @@
-"""Gemini-based mockup image generation."""
+"""Agent Hub image-agent mockup generation."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import base64
 import time
 from typing import Any
 
-from ....constants import GEMINI_IMAGE
+from ....constants import AGENT_IMAGE_GEN
 from ....logging_config import get_logger
 from ....storage import mockups as mockups_storage
 from ...agent_hub_client import get_sync_client
@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 # Module-level constants
 # ---------------------------------------------------------------------------
 
-_GENERATOR_NAME = "gemini"
+_GENERATOR_NAME = "image-gen"
 _GENERATION_PURPOSE = "mockup_generation"
 _IMAGE_SIZE = "1920x1080"
 _MOCKUP_TYPE = "page"
@@ -54,7 +54,7 @@ def _call_image_api(project_id: str, prompt: str) -> Any:
         prompt=prompt,
         project_id=project_id,
         purpose=_GENERATION_PURPOSE,
-        model=GEMINI_IMAGE,
+        agent_slug=AGENT_IMAGE_GEN,
         size=_IMAGE_SIZE,
     )
 
@@ -154,7 +154,7 @@ def generate_mockup_gemini(
     design_standard: dict[str, Any],
     design_direction: str | None = None,
 ) -> MockupResult:
-    """Generate mockup using Agent Hub image generation (Gemini backend).
+    """Generate mockup using Agent Hub image generation.
 
     Args:
         project_id: Project ID

@@ -192,7 +192,7 @@ export function AssetFormFields({
 
       <div>
         <label className="block text-sm font-medium text-slate-300 mb-2">
-          Model
+          Agent
         </label>
         <div className="grid grid-cols-3 gap-2">
           {IMAGE_MODELS.map((m) => (
