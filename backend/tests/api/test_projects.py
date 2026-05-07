@@ -75,7 +75,7 @@ def test_create_project_syncs_agent_hub_permission_when_requested(client, monkey
                 "root_path": root_path,
                 "category": "testing",
                 "agent_hub_permission": {
-                    "permission_tier": "yolo",
+                    "permission_tier": "full",
                     "auto_exec_enabled": True,
                     "execution_start_hour": 0,
                     "execution_end_hour": 24,
@@ -89,7 +89,7 @@ def test_create_project_syncs_agent_hub_permission_when_requested(client, monkey
         assert sync_mock.await_args is not None
         args = sync_mock.await_args.args
         assert args[0] == project_id
-        assert args[1].permission_tier == "yolo"
+        assert args[1].permission_tier == "full"
         assert args[1].auto_exec_enabled is True
         assert args[2] == root_path
     finally:
@@ -303,7 +303,7 @@ def test_create_project_rolls_back_when_agent_hub_sync_fails(client, monkeypatch
             "health_endpoint": "/health",
             "root_path": root_path,
             "agent_hub_permission": {
-                "permission_tier": "yolo",
+                "permission_tier": "full",
                 "auto_exec_enabled": True,
                 "execution_start_hour": 0,
                 "execution_end_hour": 24,

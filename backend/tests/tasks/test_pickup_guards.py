@@ -18,15 +18,15 @@ class TestCheckAutonomousEnabled:
     """Tests for check_autonomous_enabled permission tier validation."""
 
     @patch("httpx.get")
-    def test_allowed_write_tier(self, mock_get: MagicMock) -> None:
-        """Write tier permits autonomous execution."""
+    def test_legacy_write_tier_alias_permits_execution(self, mock_get: MagicMock) -> None:
+        """Legacy write tier is treated as full during rollout."""
         mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "write"})
         assert check_autonomous_enabled("proj") is None
 
     @patch("httpx.get")
     def test_sends_auth_headers(self, mock_get: MagicMock) -> None:
         """HTTP call includes X-Client-Id and X-Request-Source headers."""
-        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "write"})
+        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "full"})
         check_autonomous_enabled("monkey-fight")
         mock_get.assert_called_once()
         call_kwargs = mock_get.call_args
@@ -37,7 +37,7 @@ class TestCheckAutonomousEnabled:
     @patch("httpx.get")
     def test_auth_headers_include_client_id_when_configured(self, mock_get: MagicMock) -> None:
         """X-Client-Id header is present when SUMMITFLOW_CLIENT_ID is set."""
-        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "write"})
+        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "full"})
         with patch("app.services._agent_hub_config.SUMMITFLOW_CLIENT_ID", "test-client-123"):
             check_autonomous_enabled("monkey-fight")
         headers = mock_get.call_args.kwargs.get("headers", {})
@@ -46,16 +46,16 @@ class TestCheckAutonomousEnabled:
     @patch("httpx.get")
     def test_project_id_interpolated_in_url(self, mock_get: MagicMock) -> None:
         """URL contains the project_id for monkey-fight."""
-        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "write"})
+        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "full"})
         check_autonomous_enabled("monkey-fight")
         url = mock_get.call_args[0][0]
         assert "monkey-fight" in url
         assert "/execution-permission" in url
 
     @patch("httpx.get")
-    def test_allowed_yolo_tier(self, mock_get: MagicMock) -> None:
-        """Yolo tier permits autonomous execution."""
-        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "yolo"})
+    def test_allowed_full_tier(self, mock_get: MagicMock) -> None:
+        """Full tier permits autonomous execution."""
+        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "full"})
         assert check_autonomous_enabled("proj") is None
 
     @patch("httpx.get")

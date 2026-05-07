@@ -53,8 +53,7 @@ export function AgentHubSection({
             >
               <option value="off">Off</option>
               <option value="read">Read</option>
-              <option value="write">Write</option>
-              <option value="yolo">YOLO</option>
+              <option value="full">Full</option>
             </select>
           </div>
 

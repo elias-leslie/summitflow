@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 type ProjectCategory = Literal["production", "testing", "dev"]
 
@@ -19,6 +19,16 @@ class ProjectPermissionBootstrap(BaseModel):
     daily_cost_budget_usd: float | None = Field(default=None, ge=0)
     monthly_cost_budget_usd: float | None = Field(default=None, ge=0)
     budget_alert_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
+
+    @field_validator("permission_tier", mode="before")
+    @classmethod
+    def normalize_permission_tier(cls, value: object) -> str:
+        tier = str(value or "read").strip().lower()
+        if tier in {"write", "yolo"}:
+            return "full"
+        if tier in {"off", "read", "full"}:
+            return tier
+        raise ValueError("permission_tier must be one of: off, read, full")
 
     @model_validator(mode="after")
     def validate_window(self) -> "ProjectPermissionBootstrap":

@@ -118,7 +118,7 @@ async def test_sync_auto_exec_permission_preserves_existing_agent_hub_fields() -
             "app.api.autonomous._fetch_agent_hub_project_permission",
             return_value={
                 "project_id": "test-project",
-                "permission_tier": "yolo",
+                "permission_tier": "full",
                 "auto_exec_enabled": False,
                 "execution_start_hour": 1,
                 "execution_end_hour": 23,
@@ -135,7 +135,7 @@ async def test_sync_auto_exec_permission_preserves_existing_agent_hub_fields() -
     await_args = cast(_Call, mock_sync.await_args)
     args = await_args.args
     assert args[0] == "test-project"
-    assert args[1].permission_tier == "yolo"
+    assert args[1].permission_tier == "full"
     assert args[1].auto_exec_enabled is True
     assert args[1].execution_start_hour == 1
     assert args[1].execution_end_hour == 23

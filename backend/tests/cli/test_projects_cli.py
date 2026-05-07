@@ -74,7 +74,7 @@ def test_projects_create_sends_permission_bootstrap_fields() -> None:
                 "--root-path",
                 "/srv/workspaces/projects/test2",
                 "--permission-tier",
-                "yolo",
+                "full",
                 "--auto-exec",
             ],
         )
@@ -89,7 +89,7 @@ def test_projects_create_sends_permission_bootstrap_fields() -> None:
             "health_endpoint": "/health",
             "root_path": "/srv/workspaces/projects/test2",
             "agent_hub_permission": {
-                "permission_tier": "yolo",
+                "permission_tier": "full",
                 "auto_exec_enabled": True,
             },
         },

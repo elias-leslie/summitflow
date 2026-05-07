@@ -178,7 +178,7 @@ def create_project(
     Examples:
         st projects create persona-sandbox "Persona Sandbox" --base-url http://localhost:3003
         st projects create my-app "My App" -u http://localhost:8080 -r /home/user/my-app
-        st projects create test2 "Testbed" --summitflow-hosted --permission-tier yolo --auto-exec
+        st projects create test2 "Testbed" --summitflow-hosted --permission-tier full --auto-exec
     """
     effective_onboard = summitflow_hosted if onboard is None else onboard
 

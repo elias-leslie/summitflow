@@ -11,8 +11,17 @@ import { POLL_SLOW } from '@/lib/polling'
 
 interface ProjectPermission {
   project_id: string
-  permission_tier: 'off' | 'read' | 'write' | 'yolo'
+  permission_tier: 'off' | 'read' | 'full' | 'write' | 'yolo'
   auto_exec_enabled: boolean
+}
+
+type ProjectPermissionTier = 'off' | 'read' | 'full'
+
+function normalizePermissionTier(
+  tier: ProjectPermission['permission_tier'],
+): ProjectPermissionTier {
+  if (tier === 'write' || tier === 'yolo') return 'full'
+  return tier
 }
 
 async function fetchPermissions(): Promise<ProjectPermission[]> {
@@ -37,5 +46,5 @@ export function useProjectPermissionTier(projectId: string): string | null {
 
   if (!data) return null
   const perm = data.find((p) => p.project_id === projectId)
-  return perm?.permission_tier ?? null
+  return perm ? normalizePermissionTier(perm.permission_tier) : null
 }
