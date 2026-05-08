@@ -95,6 +95,7 @@ def run_incomplete_subtasks(
 ) -> tuple[str, list, Any, str | None]:
     error, project_path, task_type, agent_override = prepare_execution(task_id, project_id)
     if error:
+        _mark_setup_failed(task_id, task_store=task_store, error=error)
         return "", [error], None, None
     assert project_path is not None
     _mark_running(task_id, task_store=task_store)
@@ -124,6 +125,7 @@ def execute_task_locked_impl(
     if not incomplete:
         completion_error = deps["prepare_completed_task_closeout"](task_id, project_id)
         if completion_error:
+            _mark_setup_failed(task_id, task_store=task_store, error=completion_error)
             return completion_error
         return deps["handle_early_completion"](task_id, project_id, total, dispatch)
 
@@ -171,3 +173,21 @@ def _mark_running(task_id: str, *, task_store: Any) -> None:
     task = task_store.get_task(task_id)
     if task and task.get("status") != "running":
         task_store.update_task_status(task_id, "running")
+
+
+def _mark_setup_failed(task_id: str, *, task_store: Any, error: dict[str, Any]) -> None:
+    message = str(
+        error.get("error")
+        or error.get("message")
+        or error.get("reason")
+        or "Execution setup failed"
+    )
+    try:
+        task_store.update_task_status(task_id, "failed", error_message=message)
+    except ValueError:
+        task_store.update_task_status(
+            task_id,
+            "failed",
+            error_message=message,
+            validate_transition=False,
+        )

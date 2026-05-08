@@ -58,9 +58,10 @@ def claim_task(
             UPDATE tasks
             SET claimed_by = %s,
                 claimed_at = NOW(),
-                lock_expires_at = NOW() + INTERVAL '%s minutes',
+                lock_expires_at = NOW() + (%s * INTERVAL '1 minute'),
                 status = 'running',
-                started_at = COALESCE(started_at, NOW())
+                started_at = COALESCE(started_at, NOW()),
+                updated_at = NOW()
             WHERE id = %s
             RETURNING {TASK_COLUMNS}
             """,
@@ -88,7 +89,8 @@ def release_task(task_id: str) -> dict[str, Any] | None:
             SET claimed_by = NULL,
                 claimed_at = NULL,
                 lock_expires_at = NULL,
-                status = 'pending'
+                status = 'pending',
+                updated_at = NOW()
             WHERE id = %s
             RETURNING {TASK_COLUMNS}
             """,
@@ -115,7 +117,8 @@ def reset_expired_claims() -> int:
             SET claimed_by = NULL,
                 claimed_at = NULL,
                 lock_expires_at = NULL,
-                status = 'pending'
+                status = 'pending',
+                updated_at = NOW()
             WHERE status = 'running'
               AND lock_expires_at IS NOT NULL
               AND lock_expires_at < NOW()

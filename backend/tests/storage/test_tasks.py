@@ -236,6 +236,23 @@ class TestUpdateTaskStatus:
         assert result["claimed_at"] is None
         assert result["lock_expires_at"] is None
 
+    def test_claim_task_honors_requested_lock_duration(self, test_task: dict[str, Any]) -> None:
+        """Claim locks should use the requested minute duration."""
+        claimed = task_store.claim_task(test_task["id"], "test-worker", lock_duration_minutes=60)
+
+        assert claimed is not None
+        lock_span = claimed["lock_expires_at"] - claimed["claimed_at"]
+        assert 3500 <= lock_span.total_seconds() <= 3700
+        assert claimed["updated_at"] >= claimed["claimed_at"]
+
+    def test_count_running_tasks_can_exclude_current_task(self, test_task: dict[str, Any], project_id: str) -> None:
+        """Concurrency checks should ignore the task whose workflow is already starting."""
+        claimed = task_store.claim_task(test_task["id"], "test-worker", lock_duration_minutes=60)
+        assert claimed is not None
+
+        assert task_store.count_running_tasks(project_id) == 1
+        assert task_store.count_running_tasks(project_id, exclude_task_id=test_task["id"]) == 0
+
     def test_status_paused_to_pending_resumes_task(self, test_task: dict[str, Any]) -> None:
         """Paused tasks should become claimable again through pending."""
         task_store.update_task_status(test_task["id"], "paused")
