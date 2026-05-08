@@ -306,10 +306,62 @@ def delete_subtask_branch(task_id: str, subtask_id: str) -> bool:
         return False
 
 
-def delete_task_branches(task_id: str) -> bool:
+def get_remote_task_branches(task_id: str, project_id: str | None = None, remote: str = "origin") -> list[str]:
+    """Return remote task-family branches for a task."""
+    repo_cwd = _get_repo_cwd(project_id)
+    result = _run_git(
+        ["git", "for-each-ref", "--format=%(refname:short)", f"refs/remotes/{remote}/{task_id}"],
+        repo_cwd,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    prefix = f"{remote}/"
+    branches: list[str] = []
+    for line in result.stdout.splitlines():
+        remote_ref = line.strip()
+        if not remote_ref.startswith(prefix):
+            continue
+        branch = remote_ref.removeprefix(prefix)
+        if branch:
+            branches.append(branch)
+    return branches
+
+
+def _delete_remote_task_branches(task_id: str, repo_cwd: str | None, remote: str = "origin") -> int:
+    """Delete pushed task-family branches for abandoned work."""
+    result = _run_git(
+        ["git", "for-each-ref", "--format=%(refname:short)", f"refs/remotes/{remote}/{task_id}"],
+        repo_cwd,
+        check=False,
+    )
+    if result.returncode != 0:
+        return 0
+    prefix = f"{remote}/"
+    remote_branches = [
+        ref.removeprefix(prefix)
+        for ref in (line.strip() for line in result.stdout.splitlines())
+        if ref.startswith(prefix)
+    ]
+    deleted = 0
+    for branch in remote_branches:
+        result = _run_git(["git", "push", remote, "--delete", branch], repo_cwd, check=False)
+        detail = f"{result.stdout}\n{result.stderr}"
+        if result.returncode == 0 or "remote ref does not exist" in detail:
+            deleted += 1
+            print(f"Deleted remote branch: {remote}/{branch}")
+        else:
+            print(f"Warning: Failed to delete remote branch {remote}/{branch}: {detail.strip()}", file=sys.stderr)
+    if deleted:
+        _run_git(["git", "fetch", remote, "--prune"], repo_cwd, check=False)
+    return deleted
+
+
+def delete_task_branches(task_id: str, project_id: str | None = None) -> bool:
     """Delete task branch and all subtask branches (used when abandoning task)."""
     meta = load_snapshot_meta(task_id)
-    repo_cwd = _get_repo_cwd(meta.project_id if meta else None)
+    resolved_project_id = project_id or (meta.project_id if meta else None)
+    repo_cwd = _get_repo_cwd(resolved_project_id)
     base_branch = normalize_base_branch(meta.base_branch if meta else "main", repo_cwd)
 
     with contextlib.suppress(subprocess.CalledProcessError):
@@ -326,4 +378,5 @@ def delete_task_branches(task_id: str) -> bool:
     except subprocess.CalledProcessError as e:
         print(f"Warning: Failed to list branches: {e.stderr}", file=sys.stderr)
 
+    _delete_remote_task_branches(task_id, repo_cwd)
     return True

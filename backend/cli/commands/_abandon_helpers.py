@@ -14,6 +14,7 @@ from ..lib.autosnapshot import capture_lifecycle_baseline
 from ..lib.checkpoint import (
     delete_subtask_branch,
     delete_task_branches,
+    get_remote_task_branches,
     get_snapshot_info,
     remove_snapshot,
 )
@@ -98,6 +99,7 @@ def get_dirty_files() -> list[str]:
 def _build_preview_lines(
     task_id: str,
     subtask_branches: list[str],
+    remote_branches: list[str],
     has_snapshot: bool,
     snapshot_info: Mapping[str, object] | None,
     unmerged: int,
@@ -114,6 +116,12 @@ def _build_preview_lines(
             lines.append(f"    {branch}")
         if len(subtask_branches) > 5:
             lines.append(f"    ... and {len(subtask_branches) - 5} more")
+    if remote_branches:
+        lines.append(f"  Delete {len(remote_branches)} remote task branches")
+        for branch in remote_branches[:5]:
+            lines.append(f"    origin/{branch}")
+        if len(remote_branches) > 5:
+            lines.append(f"    ... and {len(remote_branches) - 5} more")
     if has_snapshot and snapshot_info:
         lines.append("  Remove checkpoint metadata")
     if unmerged > 0:
@@ -173,12 +181,22 @@ def abandon_task(
 
     snapshot_info = get_snapshot_info(task_id)
     has_snapshot = snapshot_info is not None
+    raw_pid = snapshot_info.get("project_id") if snapshot_info else None
+    project_id: str | None = str(raw_pid) if raw_pid is not None else None
+    if project_id is None:
+        try:
+            task = client.get_task(task_id)
+            raw_task_pid = task.get("project_id") if isinstance(task, dict) else None
+            project_id = str(raw_task_pid) if raw_task_pid else None
+        except APIError:
+            project_id = None
     unmerged = count_unmerged_commits(task_id)
     subtask_branches = get_subtask_branches(task_id)
+    remote_branches = get_remote_task_branches(task_id, project_id=project_id)
     dirty_files = get_dirty_files()
 
     preview_lines = _build_preview_lines(
-        task_id, subtask_branches, has_snapshot, snapshot_info,
+        task_id, subtask_branches, remote_branches, has_snapshot, snapshot_info,
         unmerged, dirty_files,
     )
 
@@ -190,9 +208,6 @@ def abandon_task(
         output_error(f"Failed to cancel task before cleanup: {e.detail}")
         raise typer.Exit(1) from None
 
-    raw_pid = snapshot_info.get("project_id") if snapshot_info else None
-    project_id: str | None = str(raw_pid) if raw_pid is not None else None
-
     if has_snapshot:
         capture_lifecycle_baseline(
             project_id=project_id,
@@ -200,12 +215,12 @@ def abandon_task(
         )
         remove_snapshot(task_id, project_id=project_id)
 
-    delete_task_branches(task_id)
+    delete_task_branches(task_id, project_id=project_id)
 
     return {
         "task_id": task_id,
         "action": "abandoned",
         "db_restored": False,
-        "branches_deleted": len(subtask_branches) + 1,
+        "branches_deleted": len(subtask_branches) + len(remote_branches) + 1,
         "snapshot_removed": has_snapshot,
     }
