@@ -2,6 +2,7 @@
 
 import {
   ActivityIndicator,
+  type AdhocWorkSpec,
   type ChatMessage,
   groupMessages,
   MessageBubble,
@@ -129,6 +130,11 @@ const SOURCE_CLIENT = 'summitflow/work-chats'
 const GENERAL_PROJECT_ID = 'summitflow'
 const AUTO_AGENT_SLUG = 'persona'
 const VERIFIER_AGENT_SLUG = 'verifier'
+const WORK_CHAT_PERSONA_ROLES = [
+  'system',
+  'persona-personality',
+  'persona-user-context',
+]
 const DEFAULT_VERIFIER_SPLIT = 50
 const BUILDER_SNAP_PERCENT = 88
 const VERIFIER_SNAP_PERCENT = 12
@@ -236,6 +242,73 @@ function layoutClass(layout: WorkChatLayout, count: number): string {
   return 'md:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]'
 }
 
+function adhocWorkSpecForPane(
+  pane: WorkChatPane,
+  project: Project | null,
+): AdhocWorkSpec {
+  const isProjectWork = Boolean(pane.projectId)
+  const isImplementationWork = Boolean(pane.taskId || pane.feedbackId)
+  const isDesignWork = Boolean(pane.designId)
+  const workloadProfile = isDesignWork
+    ? 'frontend_ux'
+    : isImplementationWork
+      ? 'coding_impl'
+      : isProjectWork
+        ? 'planning'
+        : 'general'
+  const capabilities: Record<string, number> = {
+    reasoning: 0.7,
+    tool_use: isProjectWork ? 0.8 : 0.4,
+  }
+  if (isProjectWork) capabilities.coding = isImplementationWork ? 0.85 : 0.55
+  if (isDesignWork) capabilities.vision = 0.45
+  if (!isProjectWork) capabilities.research = 0.45
+
+  return {
+    title:
+      pane.taskTitle ??
+      pane.artifactSummary ??
+      (project ? `${project.name} work chat` : 'General work chat'),
+    task_type: pane.taskId
+      ? 'project_task'
+      : pane.feedbackId
+        ? 'feedback_work'
+        : pane.designId
+          ? 'design_work'
+          : isProjectWork
+            ? 'project_work'
+            : 'general',
+    workload_profile: workloadProfile,
+    risk_tier: isImplementationWork ? 'normal' : 'low',
+    tool_mode: isProjectWork ? 'write' : 'read_only',
+    context: {
+      project_id: pane.projectId ?? undefined,
+      task_id: pane.taskId ?? undefined,
+      feedback_id: pane.feedbackId ?? undefined,
+      design_id: pane.designId ?? undefined,
+      surface: 'work_chats',
+      pane_id: pane.id,
+    },
+    expected_output:
+      'result, evidence, files/checks when changed, exact blocker if blocked',
+    routing_judgment: {
+      workload_profile: workloadProfile,
+      risk_tier: isImplementationWork ? 'normal' : 'low',
+      capabilities,
+      constraints: {
+        needs_repo_access: isProjectWork,
+        verifier_enabled: pane.verifierEnabled,
+        source_surface: 'work_chats',
+      },
+      confidence: 0.7,
+      rationale: 'Derived from Work Chats context.',
+    },
+    routing: {
+      cost_preference: isImplementationWork ? 'balanced' : 'low_cost',
+    },
+  }
+}
+
 function workContextForPane(
   pane: WorkChatPane,
   project: Project | null,
@@ -262,6 +335,10 @@ function workContextForPane(
     artifact_summary: pane.artifactSummary ?? undefined,
     surface: 'work_chats',
     pane_id: pane.id,
+    adhoc_spec:
+      pane.routingMode === 'auto'
+        ? adhocWorkSpecForPane(pane, project)
+        : undefined,
   }
 }
 
@@ -276,6 +353,7 @@ function startPromptForPane(
   if (pane.routingMode === 'auto') {
     lines.push(
       'Routing mode: Auto Jenny. Answer directly or delegate based on work_context and Agent Hub routing.',
+      'For flexible child work, use bash `st agent run --adhoc --json <workspec>` from work_context.adhoc_spec; do not choose a provider or model.',
     )
   } else {
     lines.push(`Direct agent mode: ${pane.agentSlug}.`)
@@ -1896,6 +1974,11 @@ function WorkChatPaneView({
           source_client: SOURCE_CLIENT,
         },
         workContext: context,
+        includeRoles:
+          pane.agentSlug === AUTO_AGENT_SLUG
+            ? WORK_CHAT_PERSONA_ROLES
+            : undefined,
+        promptMode: pane.agentSlug === AUTO_AGENT_SLUG ? 'chat' : undefined,
       }),
     [
       context,
@@ -1904,6 +1987,7 @@ function WorkChatPaneView({
       pane.id,
       pane.projectId,
       pane.taskId,
+      pane.agentSlug,
     ],
   )
   const verifierPane = useMemo(

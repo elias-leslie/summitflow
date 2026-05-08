@@ -1,3 +1,4 @@
+import type { AdhocWorkSpec, PromptMode } from '@agent-hub/chat-ui'
 import { buildAgentHubChatApiConfig } from '@/lib/agent-hub-chat-config'
 import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
 import { buildQueryString, fetchWithErrorHandling, postJson } from './utils'
@@ -54,6 +55,7 @@ export interface WorkContext extends Record<string, unknown> {
   artifact_summary?: string
   surface?: string
   pane_id?: string
+  adhoc_spec?: AdhocWorkSpec
 }
 
 export interface VerifierOutcomeRequest {
@@ -118,6 +120,8 @@ export function buildWorkChatApiConfig(options: {
   parentSessionId?: string | null
   sourceMetadata?: Record<string, string | undefined>
   workContext?: WorkContext
+  includeRoles?: string[]
+  promptMode?: PromptMode
 }) {
   return {
     ...buildAgentHubChatApiConfig({
@@ -128,6 +132,8 @@ export function buildWorkChatApiConfig(options: {
     parentSessionId: options.parentSessionId ?? undefined,
     sourceMetadata: options.sourceMetadata,
     workContext: options.workContext,
+    includeRoles: options.includeRoles,
+    promptMode: options.promptMode,
   }
 }
 

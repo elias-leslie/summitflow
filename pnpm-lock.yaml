@@ -209,14 +209,14 @@ packages:
     resolution: {integrity: sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg==}
 
   '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz':
-    resolution: {integrity: sha512-2cOVLF00GeniRDqXLuQRi/kA3sRwGTR0AcgzZySw5nqi4A6OguAZ1F/gF6prl1YbxkCH9V4AyALbstL2KmvbLw==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz}
+    resolution: {integrity: sha512-DyBifkrWG9Mc70tuzIm9MLS3jokgoa4LEFz+RWiH8Jt5vJ8MR8lMo+9LRAZTEG7V72cwWEZbuzjNK84mqzl+BQ==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz}
     version: 0.1.0
     peerDependencies:
       react: '>=18 || ^19.0.0'
       react-dom: '>=18 || ^19.0.0'
 
   '@agent-hub/passport-client@file:docker/workspace-packages/agent-hub-passport-client-0.1.0.tgz':
-    resolution: {integrity: sha512-AgXiOjugEL9LSxWpy922TFhyZLK2Aj2SERduYQ6rxT/KnbEGMtyo7iW8EKa7sV1GCvZ/+Pm6zrkfXO41zHinWw==, tarball: file:docker/workspace-packages/agent-hub-passport-client-0.1.0.tgz}
+    resolution: {integrity: sha512-RY68/hEXu4aVSiPolesh5AGCqHebOztfs7fYYURoKtJ5fkHQsDYfgPi4UHo5Quw7j9oxGjPTXDq0hVqYQDz+Ow==, tarball: file:docker/workspace-packages/agent-hub-passport-client-0.1.0.tgz}
     version: 0.1.0
     peerDependencies:
       react: '>=18 || ^19.0.0'

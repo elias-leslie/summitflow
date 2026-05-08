@@ -127,8 +127,14 @@ pack_js_package() {
       fs.writeFileSync(path, JSON.stringify(pkg, null, 2));
     "
 
-    # Repack
-    (cd "$tmp_dir" && tar czf "$tgz" package/)
+    # Repack deterministically so unchanged packages do not churn lockfile integrity.
+    (cd "$tmp_dir" && tar \
+      --sort=name \
+      --mtime='UTC 2020-01-01' \
+      --owner=0 \
+      --group=0 \
+      --numeric-owner \
+      -czf "$tgz" package/)
     remove_dir "$tmp_dir"
     echo "  Patched"
   fi
