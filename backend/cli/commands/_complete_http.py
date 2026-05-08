@@ -45,7 +45,11 @@ def handle_error_response(response: httpx.Response) -> None:
 
 
 def build_headers(
-    client_id: str, request_source: str, source_client: str, skip_cache: bool
+    client_id: str,
+    request_source: str,
+    source_client: str,
+    skip_cache: bool,
+    tool_name: str = "st complete",
 ) -> dict[str, str]:
     """Build request headers for /api/complete."""
     headers: dict[str, str] = {
@@ -53,7 +57,7 @@ def build_headers(
         "X-Client-Id": client_id,
         "X-Request-Source": request_source,
         "X-Source-Client": source_client,
-        "X-Tool-Name": "st complete",
+        "X-Tool-Name": tool_name,
     }
     if skip_cache:
         headers["X-Skip-Cache"] = "true"
@@ -78,8 +82,17 @@ def build_payload(
     session_id: str | None, thinking_level: str | None,
     trace_id: str | None, use_memory: bool, execute_tools: bool,
     task_type: str | None,
-    max_turns: int, stream: bool, include_roles: list[str] | None,
+    max_turns: int | None, stream: bool, include_roles: list[str] | None,
     images: list[str] | None = None,
+    *,
+    parent_session_id: str | None = None,
+    source_metadata: dict[str, Any] | None = None,
+    work_context: dict[str, Any] | None = None,
+    read_only: bool = False,
+    adhoc: bool = False,
+    adhoc_spec: dict[str, Any] | None = None,
+    routing_exclude_providers: list[str] | None = None,
+    routing_cost_preference: str | None = None,
 ) -> dict[str, Any]:
     """Build request payload for /api/complete."""
     content: str | list[dict[str, Any]]
@@ -96,19 +109,33 @@ def build_payload(
         ("agent_slug", agent_slug), ("memory_group_id", memory_group_id),
         ("working_dir", working_dir), ("session_id", session_id),
         ("thinking_level", thinking_level), ("trace_id", trace_id),
-        ("task_type", task_type),
+        ("task_type", task_type), ("parent_session_id", parent_session_id),
     ]:
         if val:
             payload[key] = val
     payload["use_memory"] = use_memory
     if execute_tools:
         payload["execute_tools"] = True
-    if max_turns > 1:
+    if max_turns and max_turns > 1:
         payload["max_turns"] = max_turns
+    if read_only:
+        payload["read_only"] = True
+    if adhoc:
+        payload["adhoc"] = True
+    if adhoc_spec:
+        payload["adhoc_spec"] = adhoc_spec
+    if routing_exclude_providers:
+        payload["routing_exclude_providers"] = routing_exclude_providers
+    if routing_cost_preference:
+        payload["routing_cost_preference"] = routing_cost_preference
     if stream:
         payload["stream"] = True
     if include_roles:
         payload["include_roles"] = include_roles
+    if source_metadata:
+        payload["source_metadata"] = source_metadata
+    if work_context:
+        payload["work_context"] = work_context
     return payload
 
 
@@ -188,20 +215,37 @@ def call_complete(
     memory_group_id: str | None = None, execute_tools: bool = False,
     working_dir: str | None = None, timeout: float | None = None,
     skip_cache: bool = False, session_id: str | None = None,
-    thinking_level: str | None = None, max_turns: int = 1,
+    thinking_level: str | None = None, max_turns: int | None = 1,
     stream: bool = False, trace_id: str | None = None,
     include_roles: list[str] | None = None,
     task_type: str | None = None,
     images: list[str] | None = None,
+    parent_session_id: str | None = None,
+    source_metadata: dict[str, Any] | None = None,
+    work_context: dict[str, Any] | None = None,
+    read_only: bool = False,
+    adhoc: bool = False,
+    adhoc_spec: dict[str, Any] | None = None,
+    routing_exclude_providers: list[str] | None = None,
+    routing_cost_preference: str | None = None,
+    tool_name: str = "st complete",
 ) -> dict[str, Any]:
     """Call /api/complete endpoint."""
     client_id, request_source = load_credentials(default_source="st-complete")
     agent_hub_url = get_agent_hub_url()
-    headers = build_headers(client_id, request_source, source_client, skip_cache)
+    headers = build_headers(client_id, request_source, source_client, skip_cache, tool_name)
     payload = build_payload(
         message, project_id, agent_slug, memory_group_id, working_dir,
         session_id, thinking_level, trace_id, use_memory, execute_tools, task_type,
         max_turns, stream, include_roles, images,
+        parent_session_id=parent_session_id,
+        source_metadata=source_metadata,
+        work_context=work_context,
+        read_only=read_only,
+        adhoc=adhoc,
+        adhoc_spec=adhoc_spec,
+        routing_exclude_providers=routing_exclude_providers,
+        routing_cost_preference=routing_cost_preference,
     )
     read_timeout = timeout
     timeout_for_errors = read_timeout if read_timeout is not None else 30.0

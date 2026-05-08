@@ -32,13 +32,6 @@ def _resolve_message(message: str | None, file: str | None) -> str | None:
     return None
 
 
-def _resolve_working_dir(working_dir: str | None, execute_tools: bool) -> str | None:
-    """Default tool execution to the caller cwd when no working dir is provided."""
-    if working_dir or not execute_tools:
-        return working_dir
-    return str(Path.cwd())
-
-
 def _output_result(result: dict[str, Any], stream: bool, raw: bool) -> None:
     """Output the completion result to stdout."""
     if stream and not raw:
@@ -69,10 +62,7 @@ def complete_default(
     session_id: Annotated[str | None, _Opt("--session", "-S", help="Continue existing session")] = None,
     memory: Annotated[bool, _Opt("--memory/--no-memory", "-m", help="Enable memory injection")] = True,
     memory_group: Annotated[str | None, _Opt("--memory-group", "-g", help="Memory group ID")] = None,
-    execute_tools: Annotated[bool, _Opt("--execute-tools", "-x", help="Execute tools")] = False,
-    working_dir: Annotated[str | None, _Opt("--working-dir", "-w", help="Working dir")] = None,
     task_type: Annotated[str | None, _Opt("--task-type", help="Optional task type label (e.g. wake, heartbeat)")] = None,
-    max_turns: Annotated[int, _Opt("--max-turns", "-n", help="Max agentic turns (high limit intentional for long-running autonomous tasks)", min=1, max=200)] = 1,
     thinking_level: Annotated[str | None, _Opt("--thinking", help="Thinking level: minimal|low|medium|high|ultrathink")] = None,
     skip_cache: Annotated[bool, _Opt("--skip-cache", help="Bypass response cache")] = False,
     stream: Annotated[bool, _Opt("--stream", help="Stream response via SSE")] = False,
@@ -91,7 +81,6 @@ def complete_default(
         st complete "Say hello"
         st complete -a critic --file /tmp/review.txt
         cat prompt.txt | st complete -a reasoner
-        st complete -a coder -x -w /tmp "Run: echo hi"
         st complete -a coder --stream "Write a hello world"
     """
     if ctx.invoked_subcommand is not None:
@@ -108,11 +97,10 @@ def complete_default(
 
         cfg = get_config_optional()
         project = cfg.project_id or "st-cli"
-    resolved_working_dir = _resolve_working_dir(working_dir, execute_tools)
     result = call_complete(
         agent, resolved_message, project, source, memory, memory_group,
-        execute_tools, resolved_working_dir, timeout, skip_cache, session_id,
-        thinking_level, max_turns, stream, trace_id, roles, task_type, image or None,
+        False, None, timeout, skip_cache, session_id,
+        thinking_level, 1, stream, trace_id, roles, task_type, image or None,
     )
     _output_result(result, stream, raw)
     if _completion_failed(result):

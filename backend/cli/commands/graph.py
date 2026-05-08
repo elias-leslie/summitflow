@@ -586,30 +586,30 @@ def _run_semantic_refresh_agent(
     max_turns: int,
     timeout: int,
 ) -> int:
+    del max_turns
     status = _status_for_project_root(project_id, root, auto_refresh=True, action="semantic-refresh")
     prompt = _semantic_refresh_prompt(project_id, root, status)
     prompt_path = write_details(root, "graphify-semantic-refresh-prompt", prompt)
     st_bin = shutil.which("st") or sys.argv[0]
+    if not agent:
+        raise typer.BadParameter("semantic-refresh requires --agent with a purpose-built Agent Hub agent slug")
     command = [
         st_bin,
-        "complete",
+        "agent",
+        "run",
+        "--agent",
+        agent,
         "--project",
         project_id,
-        "--execute-tools",
         "--working-dir",
         str(root),
-        "--max-turns",
-        str(max_turns),
         "--file",
         str(prompt_path),
         "--timeout",
         str(timeout),
     ]
-    if not agent:
-        raise typer.BadParameter("semantic-refresh requires --agent with a purpose-built Agent Hub agent slug")
-    command[2:2] = ["--agent", agent]
     if model:
-        command[4:4] = ["-M", model]
+        command[5:5] = ["-M", model]
     start = time.perf_counter()
     try:
         result = subprocess.run(
@@ -766,7 +766,6 @@ def semantic_refresh(
         str | None,
         typer.Option("--model", "-M", help="Optional model override. Defaults to the agent model chain."),
     ] = None,
-    max_turns: Annotated[int, typer.Option("--max-turns", "-n", min=1, max=200, help="Agentic turn limit.")] = 40,
     timeout: Annotated[int, typer.Option("--timeout", min=60, max=7200, help="Agent Hub read timeout seconds.")] = 1800,
     execute: Annotated[bool, typer.Option("--execute/--no-execute", help="Run Agent Hub; otherwise write prompt and print command.")] = True,
 ) -> None:
@@ -779,8 +778,7 @@ def semantic_refresh(
         print(
             "GRAPH_SEMANTIC_REFRESH:READY|"
             f"project={project_id}|prompt:{display_path(root, prompt_path)}|"
-            f"mode=batch|agent={agent}|model={model or 'agent-default'}|"
-            f"max_turns_ignored={max_turns}"
+            f"mode=batch|agent={agent}|model={model or 'agent-default'}"
         )
         return
     raise typer.Exit(

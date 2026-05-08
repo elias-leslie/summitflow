@@ -49,46 +49,13 @@ def test_complete_help_mentions_message_option() -> None:
     assert "--message" in result.output
 
 
-def test_complete_execute_tools_defaults_working_dir_to_cwd(tmp_path: Path) -> None:
-    cwd = tmp_path / "agent-cwd"
-    cwd.mkdir()
-
-    with (
-        patch("cli.commands.complete.Path.cwd", return_value=cwd),
-        patch("cli.commands.complete.call_complete") as mock_call,
-    ):
-        mock_call.return_value = {"content": "ok"}
-
-        result = runner.invoke(
-            app,
-            ["--agent", "persona", "--execute-tools", "--message", "Run tools"],
-        )
+def test_complete_no_longer_exposes_agentic_flags() -> None:
+    result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    assert mock_call.call_args.args[7] == str(cwd)
-
-
-def test_complete_explicit_working_dir_wins_over_cwd_default(tmp_path: Path) -> None:
-    cwd = tmp_path / "agent-cwd"
-    cwd.mkdir()
-    explicit = "/tmp/explicit-dir"
-
-    with (
-        patch("cli.commands.complete.Path.cwd", return_value=cwd),
-        patch("cli.commands.complete.call_complete") as mock_call,
-    ):
-        mock_call.return_value = {"content": "ok"}
-
-        result = runner.invoke(
-            app,
-            [
-                "--agent", "persona", "--execute-tools", "--working-dir", explicit,
-                "--message", "Run tools",
-            ],
-        )
-
-    assert result.exit_code == 0
-    assert mock_call.call_args.args[7] == explicit
+    assert "--execute-tools" not in result.output
+    assert "--max-turns" not in result.output
+    assert "--working-dir" not in result.output
 
 
 def test_complete_supports_no_memory_flag() -> None:

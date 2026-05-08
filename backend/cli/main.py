@@ -24,7 +24,7 @@ CLI_REFERENCE = """ST CLI - SummitFlow Tasks.
 Core loop: pulse --gate | ready | claim <id> | context <id> | done <id>.
 Pause/resume: pause <id> [-r reason] | resume <id> [-r reason].
 VCS: vcs doctor | vcs reconcile | commit -m MSG [--task T] | jj diff | jj show.
-Tools: check | graph | service | runtime | db | browser | web | sessions | cleanup | logs.
+Tools: check | graph | service | runtime | db | browser | web | sessions | agent | cleanup | logs.
 Use `<command> --help` for command-specific syntax."""
 
 
@@ -59,6 +59,7 @@ def _load_command_module(command: str, *, required: bool = False) -> ModuleType 
 
 
 abandon = _load_command_module("abandon")
+agent = _load_command_module("agent")
 agents = _load_command_module("agents")
 autonomous = _load_command_module("autonomous")
 autosnapshot = _load_command_module("autosnapshot")
@@ -138,6 +139,7 @@ app.add_typer(health.app, name="health")
 app.add_typer(logs.app, name="logs")
 app.add_typer(memory.app, name="memory")
 app.add_typer(complete.app, name="complete")
+app.add_typer(agent.app, name="agent")
 app.command("session-events", help="Agent Hub session events (observability)")(session_events.show_events)
 app.add_typer(tools.app, name="tools")
 app.add_typer(cleanup.app, name="cleanup")

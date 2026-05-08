@@ -21,6 +21,7 @@ logger = get_logger(__name__)
 
 AUTOCODE_ROLES = ["system", "autocode"]
 AUTOCODE_REQUEST_TIMEOUT_SECONDS = 1800.0
+AUTOCODE_AGENT_MAX_TURNS = 5000
 
 
 def execute_agent_initial(
@@ -45,7 +46,7 @@ def execute_agent_initial(
     )
     logger.info(
         "Calling Agent Hub complete (agentic mode)",
-        agent_slug=agent_slug, max_turns=50, session_id=agent_session_id,
+        agent_slug=agent_slug, max_turns=AUTOCODE_AGENT_MAX_TURNS, session_id=agent_session_id,
     )
     emit_log(
         task_id, "info", f"Agent session started: {agent_session_id}",
@@ -53,7 +54,7 @@ def execute_agent_initial(
     )
     response = call_complete(
         client, prompt, agent_slug, project_path, project_id,
-        task_id, agent_session_id, max_turns=50,
+        task_id, agent_session_id, max_turns=AUTOCODE_AGENT_MAX_TURNS,
         include_roles=AUTOCODE_ROLES,
         timeout_seconds=AUTOCODE_REQUEST_TIMEOUT_SECONDS,
     )
@@ -91,7 +92,7 @@ def execute_agent_fix(
     )
     response = call_complete(
         client, fix_prompt, agent_slug, project_path, project_id,
-        task_id, agent_session_id, max_turns=25, include_roles=AUTOCODE_ROLES,
+        task_id, agent_session_id, max_turns=AUTOCODE_AGENT_MAX_TURNS, include_roles=AUTOCODE_ROLES,
         timeout_seconds=AUTOCODE_REQUEST_TIMEOUT_SECONDS,
     )
     agent_session_id = update_session_if_changed(
@@ -128,7 +129,7 @@ def execute_agent_feedback(
         )
         call_complete(
             client, prompt, agent_slug, project_path, project_id,
-            task_id, feedback_session_id, max_turns=3,
+            task_id, feedback_session_id, max_turns=AUTOCODE_AGENT_MAX_TURNS,
             include_roles=AUTOCODE_ROLES,
         )
         emit_log(
