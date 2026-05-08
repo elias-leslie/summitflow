@@ -59,6 +59,15 @@ _SQL_IS_BLOCKED = """
         WHERE d.task_id = %s AND d.dependency_type = 'blocks' AND t.status NOT IN ('completed')
     )
 """
+_SQL_BLOCKED_DEPENDENTS_BATCH = """
+    SELECT d.depends_on_task_id, COUNT(*)::int
+    FROM task_dependencies d
+    JOIN tasks dependent ON d.task_id = dependent.id
+    WHERE d.depends_on_task_id = ANY(%s)
+      AND d.dependency_type = 'blocks'
+      AND dependent.status NOT IN ('completed')
+    GROUP BY d.depends_on_task_id
+"""
 
 
 def _dep_row_to_dict(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -160,3 +169,13 @@ def is_blocked(task_id: str) -> bool:
         cur.execute(_SQL_IS_BLOCKED, (task_id,))
         result = cur.fetchone()
     return result[0] if result else False
+
+
+def count_blocked_dependents_batch(task_ids: list[str]) -> dict[str, int]:
+    """Count incomplete tasks each task currently unblocks."""
+    if not task_ids:
+        return {}
+    with get_cursor() as cur:
+        cur.execute(_SQL_BLOCKED_DEPENDENTS_BATCH, (task_ids,))
+        rows = cur.fetchall()
+    return {str(row[0]): int(row[1] or 0) for row in rows}

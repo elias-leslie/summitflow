@@ -30,7 +30,7 @@ class ReadyAllClient(Protocol):
     ) -> list[dict[str, object]]: ...
 
 
-def task_sort_key(task: dict[str, Any]) -> tuple[int, int, int, int, str, str]:
+def task_sort_key(task: dict[str, Any]) -> tuple[int, int, int, int, int, str, str]:
     """Sort key matching autonomous ready pickup order."""
     return ready_task_sort_key(task)
 

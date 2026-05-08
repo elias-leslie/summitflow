@@ -835,6 +835,85 @@ class TestReadyEndpoint:
             "task-complex-feature",
         ]
 
+    def test_ready_endpoint_promotes_tasks_that_unblock_other_work(
+        self, client: Any, test_project_id: str
+    ) -> None:
+        template = {
+            "project_id": test_project_id,
+            "capability_id": None,
+            "description": "Ready task",
+            "status": "pending",
+            "error_message": None,
+            "branch_name": None,
+            "commits": [],
+            "total_sessions": 0,
+            "total_tokens_used": 0,
+            "created_at": None,
+            "started_at": None,
+            "completed_at": None,
+            "labels": [],
+            "parent_task_id": None,
+            "current_phase": None,
+            "verification_result": None,
+            "done_when": ["Relevant checks pass"],
+            "raw_request": None,
+            "enrichment_status": "none",
+            "enriched_by": None,
+            "enriched_at": None,
+            "subtask_summary": {"total": 0, "completed": 0, "progress_percent": 0.0},
+            "execution_mode": "autonomous",
+            "autonomous": True,
+            "ai_review": True,
+            "agent_override": None,
+            "plan_status": "approved",
+            "plan_approved_at": None,
+            "plan_approved_by": None,
+            "context": None,
+        }
+        tasks = [
+            {
+                **template,
+                "id": "task-simple-unrelated",
+                "title": "Simple unrelated bug",
+                "priority": 2,
+                "task_type": "bug",
+                "complexity": "SIMPLE",
+            },
+            {
+                **template,
+                "id": "task-baseline-blocker",
+                "title": "Baseline blocker",
+                "priority": 1,
+                "task_type": "bug",
+                "complexity": "STANDARD",
+            },
+        ]
+
+        class _Readiness:
+            ready = True
+
+        with (
+            patch(
+                "app.api.tasks.list_endpoints.task_store.list_ready_tasks",
+                return_value=tasks,
+            ),
+            patch(
+                "app.services.task_execution_readiness.sync_task_execution_readiness",
+                return_value=_Readiness(),
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.dep_store.count_blocked_dependents_batch",
+                return_value={"task-baseline-blocker": 1},
+            ),
+        ):
+            response = client.get(f"/api/projects/{test_project_id}/tasks/ready?limit=2")
+
+        assert response.status_code == 200
+        assert [task["id"] for task in response.json()["tasks"]] == [
+            "task-baseline-blocker",
+            "task-simple-unrelated",
+        ]
+
     def test_ready_all_overview_returns_payload_and_raw_text(
         self,
         client: Any,

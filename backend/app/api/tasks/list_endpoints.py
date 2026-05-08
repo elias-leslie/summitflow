@@ -121,6 +121,13 @@ async def _collect_execution_ready_tasks(
             break
         scan_offset += scan_batch_size
 
+    blocking_counts = await asyncio.to_thread(
+        dep_store.count_blocked_dependents_batch,
+        [str(task.get("id") or "") for task in ready_tasks],
+    )
+    for task in ready_tasks:
+        task["blocking_count"] = blocking_counts.get(str(task.get("id") or ""), 0)
+
     ranked_tasks = sort_ready_tasks([dict(task) for task in ready_tasks])
     return ranked_tasks[:limit], total_ready
 

@@ -44,3 +44,27 @@ def test_sort_ready_tasks_uses_priority_inside_complexity_band() -> None:
         "task-simple-p1",
         "task-simple-p2",
     ]
+
+
+def test_sort_ready_tasks_promotes_tasks_that_unblock_other_work() -> None:
+    tasks = [
+        {
+            "id": "task-simple-unrelated",
+            "priority": 2,
+            "task_type": "bug",
+            "complexity": "SIMPLE",
+            "blocking_count": 0,
+        },
+        {
+            "id": "task-baseline-blocker",
+            "priority": 1,
+            "task_type": "bug",
+            "complexity": "STANDARD",
+            "blocking_count": 1,
+        },
+    ]
+
+    assert [task["id"] for task in sort_ready_tasks(tasks)] == [
+        "task-baseline-blocker",
+        "task-simple-unrelated",
+    ]
