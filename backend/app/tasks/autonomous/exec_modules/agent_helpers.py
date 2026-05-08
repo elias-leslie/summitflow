@@ -13,6 +13,19 @@ from ....storage.tasks.core import add_agent_hub_session
 from ._agent_kwargs import build_complete_kwargs  # re-exported for callers
 from .events import emit_log, emit_progress_log
 
+_AGENT_FAILURE_FINISH_REASONS = {"error", "failed", "cancelled"}
+
+
+def agent_completion_failure(response: CompletionResponse) -> str | None:
+    """Return a compact failure reason when Agent Hub did not produce a usable response."""
+    finish_reason = str(getattr(response, "finish_reason", "") or "").strip().lower()
+    content = str(getattr(response, "content", "") or "").strip()
+    if finish_reason in _AGENT_FAILURE_FINISH_REASONS:
+        return content[:500] or f"Agent Hub completion ended with finish_reason={finish_reason}"
+    if content.startswith("Session interrupted"):
+        return content[:500]
+    return None
+
 
 def create_session(task_id: str, session_id: str | None = None) -> str:
     """Create or ensure agent session ID is tracked."""
@@ -52,6 +65,17 @@ def log_initial_completion_fallback(
     if response.progress_log:
         return
     response_preview = response.content[:300] if response.content else "(no response)"
+    failure = agent_completion_failure(response)
+    if failure:
+        emit_log(
+            task_id, "warn", f"Agent interrupted subtask {subtask_short_id}: {failure[:180]}",
+            source="agent", project_id=project_id,
+        )
+        emit_log(
+            task_id, "debug", f"Agent response: {response_preview}",
+            source="agent", project_id=project_id, visibility="internal",
+        )
+        return
     emit_log(
         task_id, "info", f"Agent completed subtask {subtask_short_id}",
         source="agent", project_id=project_id,

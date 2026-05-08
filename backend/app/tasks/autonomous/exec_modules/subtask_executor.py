@@ -7,6 +7,7 @@ from typing import Any
 
 from ....logging_config import get_logger
 from .agent_execution import execute_agent_initial
+from .agent_helpers import agent_completion_failure
 from .agent_routing import get_agent_for_subtask
 from .ah_events import emit_prompt_harness_snapshot
 from .checkout import get_project_path
@@ -105,6 +106,16 @@ def _run_initial_agent(
     response, agent_session_id = execute_agent_initial(
         task_id, subtask_short_id, prompt, agent_slug, project_path, project_id,
     )
+    failure = agent_completion_failure(response)
+    if failure:
+        step_result = {
+            "step_number": 0,
+            "passed": False,
+            "output": failure,
+            "reason": "agent_interrupted",
+            "returncode": 1,
+        }
+        return False, [step_result], 0, 0, 0, response.content, agent_session_id
 
     all_passed, step_results, self_fix_attempts, supervisor_guided_attempts, extensions_granted, _ = (
         run_self_healing_loop(

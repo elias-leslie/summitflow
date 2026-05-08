@@ -9,7 +9,11 @@ from app.tasks.autonomous.exec_modules.agent_execution import (
     execute_agent_fix,
     execute_agent_initial,
 )
-from app.tasks.autonomous.exec_modules.agent_helpers import call_complete
+from app.tasks.autonomous.exec_modules.agent_helpers import (
+    agent_completion_failure,
+    call_complete,
+    log_initial_completion_fallback,
+)
 
 
 def test_call_complete_omits_request_timeout_by_default() -> None:
@@ -40,6 +44,31 @@ def test_call_complete_omits_request_timeout_by_default() -> None:
         messages=[{"role": "user", "content": "hi"}],
         project_id="summitflow",
     )
+
+
+def test_agent_completion_failure_detects_interrupted_tool_loop() -> None:
+    response = MagicMock()
+    response.content = "Session interrupted: Repeated identical tool result 5 times for bash"
+    response.finish_reason = "error"
+
+    failure = agent_completion_failure(response)
+
+    assert failure is not None
+    assert "Repeated identical tool result" in failure
+
+
+def test_log_initial_completion_fallback_does_not_mark_interrupted_session_complete() -> None:
+    response = MagicMock()
+    response.content = "Session interrupted: Repeated identical tool result 5 times for bash"
+    response.finish_reason = "error"
+    response.progress_log = None
+
+    with patch("app.tasks.autonomous.exec_modules.agent_helpers.emit_log") as emit_log:
+        log_initial_completion_fallback("task-123", "1.1", response, "summitflow")
+
+    messages = [call.args[2] for call in emit_log.call_args_list]
+    assert any("Agent interrupted subtask 1.1" in message for message in messages)
+    assert not any(message == "Agent completed subtask 1.1" for message in messages)
 
 
 def test_execute_agent_initial_does_not_set_request_timeout() -> None:
