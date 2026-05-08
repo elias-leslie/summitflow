@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException
 
 from ...logging_config import get_logger
 from ...schemas.tasks import TaskResponse, TaskStatusUpdate, TaskUpdate
+from ...services.dispatch import dispatch_task
 from ...services.task_validation import validate_task_ready
 from ...storage import log_task_event
 from ...storage import tasks as task_store
@@ -30,6 +31,15 @@ from .response import task_to_response
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+
+def _dispatch_failure_status_code(status: str) -> int:
+    """Map dispatch guard failures to API status codes."""
+    if status == "unhealthy" or status == "disabled":
+        return 503
+    if status in {"not_claimable", "already_running"}:
+        return 409
+    return 409
 
 
 @router.patch("/projects/{project_id}/tasks/{task_id}", response_model=TaskResponse)
@@ -212,7 +222,14 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to start execution")
 
-    # Dispatch autonomous execution
-    await dispatch_autonomous_task(task_id, "pending", project_id)
+    dispatch_result = await dispatch_task(task_id, project_id)
+    if dispatch_result.get("status") != "dispatched":
+        raise HTTPException(
+            status_code=_dispatch_failure_status_code(dispatch_result.get("status", "blocked")),
+            detail={
+                "message": "Failed to start autonomous execution",
+                "dispatch": dispatch_result,
+            },
+        )
 
     return task_to_response(updated)

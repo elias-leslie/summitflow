@@ -1,4 +1,4 @@
-"""Tests for autonomous agent execution timeouts."""
+"""Tests for autonomous agent execution client calls."""
 
 from __future__ import annotations
 
@@ -6,15 +6,14 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.tasks.autonomous.exec_modules.agent_execution import (
-    AUTOCODE_REQUEST_TIMEOUT_SECONDS,
     execute_agent_fix,
     execute_agent_initial,
 )
 from app.tasks.autonomous.exec_modules.agent_helpers import call_complete
 
 
-def test_call_complete_passes_request_timeout_without_changing_payload_builder() -> None:
-    """Autocode request timeout should be applied at the client call boundary."""
+def test_call_complete_omits_request_timeout_by_default() -> None:
+    """Autocode should let Agent Hub handle long-running agentic loops."""
     client = MagicMock()
     client.complete.return_value = SimpleNamespace(content="done")
     built_kwargs = {"messages": [{"role": "user", "content": "hi"}], "project_id": "summitflow"}
@@ -31,9 +30,7 @@ def test_call_complete_passes_request_timeout_without_changing_payload_builder()
             project_id="summitflow",
             task_id="task-123",
             session_id="sess-1",
-            max_turns=50,
             include_roles=["system", "autocode"],
-            timeout_seconds=AUTOCODE_REQUEST_TIMEOUT_SECONDS,
         )
 
     assert response.content == "done"
@@ -42,12 +39,11 @@ def test_call_complete_passes_request_timeout_without_changing_payload_builder()
     client.complete.assert_called_once_with(
         messages=[{"role": "user", "content": "hi"}],
         project_id="summitflow",
-        timeout_seconds=AUTOCODE_REQUEST_TIMEOUT_SECONDS,
     )
 
 
-def test_execute_agent_initial_uses_extended_request_timeout() -> None:
-    """Initial autocode runs should not inherit the 120s default client timeout."""
+def test_execute_agent_initial_does_not_set_request_timeout() -> None:
+    """Initial autocode runs should not impose a local HTTP timeout ceiling."""
     response = SimpleNamespace(session_id="sess-1", content="done")
 
     with (
@@ -69,11 +65,11 @@ def test_execute_agent_initial_uses_extended_request_timeout() -> None:
 
     assert result is response
     assert session_id == "sess-1"
-    assert call_complete_mock.call_args.kwargs["timeout_seconds"] == AUTOCODE_REQUEST_TIMEOUT_SECONDS
+    assert "timeout_seconds" not in call_complete_mock.call_args.kwargs
 
 
-def test_execute_agent_fix_uses_extended_request_timeout() -> None:
-    """Fix attempts should keep the same long-running request timeout."""
+def test_execute_agent_fix_does_not_set_request_timeout() -> None:
+    """Fix attempts should not impose a local HTTP timeout ceiling."""
     response = SimpleNamespace(session_id="sess-2", content="done")
 
     with (
@@ -95,4 +91,4 @@ def test_execute_agent_fix_uses_extended_request_timeout() -> None:
 
     assert result is response
     assert session_id == "sess-2"
-    assert call_complete_mock.call_args.kwargs["timeout_seconds"] == AUTOCODE_REQUEST_TIMEOUT_SECONDS
+    assert "timeout_seconds" not in call_complete_mock.call_args.kwargs

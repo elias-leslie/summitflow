@@ -6,12 +6,13 @@ Called from CLI (st autocode) and API endpoints to queue tasks for execution.
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from ..logging_config import get_logger
 from ..storage import tasks as task_store
 from ..storage.tasks.claims import claim_task
 from ..tasks.autonomous.pickup import _determine_next_stage
+from ..tasks.autonomous.pickup_guards import validate_autonomous_dispatch
 
 logger = get_logger(__name__)
 
@@ -21,6 +22,8 @@ class DispatchResult(TypedDict):
     project_id: str
     stage: str
     status: str
+    reason: NotRequired[str]
+    details: NotRequired[dict[str, Any]]
 
 
 async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
@@ -74,6 +77,26 @@ async def dispatch_task(task_id: str, project_id: str) -> DispatchResult:
     task = task_store.get_task(task_id)
     if not task:
         raise ValueError(f"Task {task_id} not found")
+
+    task_type = str(task.get("task_type") or "").strip() or None
+    if guard_error := validate_autonomous_dispatch(project_id, task_type):
+        status = str(guard_error.get("status") or "blocked")
+        reason = str(guard_error.get("reason") or status)
+        logger.warning(
+            "Task dispatch blocked by autonomous guard",
+            task_id=task_id,
+            project_id=project_id,
+            status=status,
+            reason=reason,
+        )
+        return DispatchResult(
+            task_id=task_id,
+            project_id=project_id,
+            stage="blocked",
+            status=status,
+            reason=reason,
+            details=guard_error,
+        )
 
     stage = _determine_next_stage(task_id)
 

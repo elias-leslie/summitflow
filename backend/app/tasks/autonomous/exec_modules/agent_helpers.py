@@ -141,24 +141,24 @@ def call_complete(
     project_id: str,
     task_id: str,
     session_id: str,
-    max_turns: int,
-    include_roles: list[str],
+    max_turns: int | None = None,
+    include_roles: list[str] | None = None,
     timeout_seconds: float | None = None,
 ) -> CompletionResponse:
     """Invoke client.complete with standard kwargs."""
-    return client.complete(
-        **build_complete_kwargs(
-            prompt=prompt,
-            agent_slug=agent_slug,
-            project_path=project_path,
-            project_id=project_id,
-            task_id=task_id,
-            session_id=session_id,
-            max_turns=max_turns,
-            include_roles=include_roles,
-        ),
-        timeout_seconds=timeout_seconds,
+    kwargs = build_complete_kwargs(
+        prompt=prompt,
+        agent_slug=agent_slug,
+        project_path=project_path,
+        project_id=project_id,
+        task_id=task_id,
+        session_id=session_id,
+        max_turns=max_turns,
+        include_roles=include_roles,
     )
+    if timeout_seconds is not None:
+        kwargs["timeout_seconds"] = timeout_seconds
+    return client.complete(**kwargs)
 
 
 def post_initial_response(

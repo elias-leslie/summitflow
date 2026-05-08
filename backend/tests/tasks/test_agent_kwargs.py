@@ -65,3 +65,23 @@ def test_build_complete_kwargs_does_not_set_timeout_for_autonomous_runs() -> Non
         )
 
     assert "timeout_seconds" not in result
+
+
+def test_build_complete_kwargs_lets_agent_hub_choose_agentic_turn_default() -> None:
+    """Autocode should not duplicate Agent Hub's agentic-loop turn default."""
+    with patch(
+        "app.tasks.autonomous.exec_modules._agent_kwargs._detect_git_branch",
+        return_value="task-123/main",
+    ):
+        result = build_complete_kwargs(
+            prompt="Refactor this file",
+            agent_slug="refactor",
+            project_path="/tmp/checkout",
+            project_id="agent-hub",
+            task_id="task-123",
+            session_id="sess-1",
+            max_turns=None,
+        )
+
+    assert result["execute_tools"] is True
+    assert "max_turns" not in result

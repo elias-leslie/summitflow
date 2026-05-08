@@ -73,8 +73,14 @@ class TestTaskLifecycleEndpoints:
             return_value=SimpleNamespace(ready=True, issues=[], suggestions=[], lane_conflict=None),
         )
         mock_dispatch = mocker.patch(
-            "app.api.tasks.update_endpoints.dispatch_autonomous_task",
+            "app.api.tasks.update_endpoints.dispatch_task",
             new_callable=AsyncMock,
+            return_value={
+                "task_id": task_id,
+                "project_id": test_project_id,
+                "stage": "execution",
+                "status": "dispatched",
+            },
         )
 
         response = client.post(f"/api/projects/{test_project_id}/tasks/{task_id}/execute")
@@ -83,7 +89,53 @@ class TestTaskLifecycleEndpoints:
         data = response.json()
         assert data["id"] == task_id
         assert data["status"] == "pending"
-        mock_dispatch.assert_awaited_once_with(task_id, "pending", test_project_id)
+        mock_dispatch.assert_awaited_once_with(task_id, test_project_id)
+
+    def test_execute_surfaces_dispatch_failure(
+        self,
+        client: Any,
+        test_project_id: str,
+        cleanup_task: Callable[[str], None],
+        mocker: Any,
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Execution guard target",
+                "task_type": "bug",
+                "priority": 2,
+                "complexity": "SIMPLE",
+                "objective": "Verify dispatch errors reach the UI",
+                "done_when": ["Start Execution shows a clear error"],
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        mocker.patch(
+            "app.api.tasks.update_endpoints.validate_task_ready",
+            return_value=SimpleNamespace(ready=True, issues=[], suggestions=[], lane_conflict=None),
+        )
+        mocker.patch(
+            "app.api.tasks.update_endpoints.dispatch_task",
+            new_callable=AsyncMock,
+            return_value={
+                "task_id": task_id,
+                "project_id": test_project_id,
+                "stage": "blocked",
+                "status": "disabled",
+                "reason": "not_allowed",
+            },
+        )
+
+        response = client.post(f"/api/projects/{test_project_id}/tasks/{task_id}/execute")
+
+        assert response.status_code == 503
+        body = response.json()
+        assert body["message"] == "Failed to start autonomous execution"
+        assert body["dispatch"]["status"] == "disabled"
+        assert body["dispatch"]["reason"] == "not_allowed"
 
     def test_execute_rejects_manual_only_task(
         self,

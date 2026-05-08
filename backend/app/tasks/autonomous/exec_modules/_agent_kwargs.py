@@ -29,7 +29,7 @@ def build_complete_kwargs(
     project_id: str,
     task_id: str,
     session_id: str,
-    max_turns: int,
+    max_turns: int | None = None,
     include_roles: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build kwargs dict for Agent Hub complete call."""
@@ -39,7 +39,6 @@ def build_complete_kwargs(
         "agent_slug": agent_slug,
         "external_id": task_id,
         "working_dir": project_path,
-        "max_turns": max_turns,
         "execute_tools": True,
         "project_id": project_id,
         "use_memory": True,
@@ -48,6 +47,8 @@ def build_complete_kwargs(
         "include_roles": include_roles or [],
         "session_id": session_id,
     }
+    if max_turns and max_turns > 1:
+        kwargs["max_turns"] = max_turns
     if current_branch:
         kwargs["current_branch"] = current_branch
     return kwargs

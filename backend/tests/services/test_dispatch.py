@@ -13,7 +13,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.services import dispatch as dispatch_service
 from app.services.dispatch import dispatch_task
+
+
+@pytest.fixture(autouse=True)
+def allow_autonomous_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dispatch unit tests focus on stage/claim behavior unless a guard is under test."""
+    monkeypatch.setattr(
+        "app.services.dispatch.validate_autonomous_dispatch",
+        lambda _project_id, _task_type=None: None,
+    )
 
 
 class TestDispatchTaskClaiming:
@@ -162,6 +172,40 @@ class TestDispatchTaskBasics:
 
         with pytest.raises(ValueError, match="not found"):
             await dispatch_task("task-nonexistent", "monkey-fight")
+
+    @pytest.mark.asyncio
+    async def test_guard_failure_skips_claim_and_workflow(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Autonomous guard failures return a clear blocked result before dispatch."""
+        trigger = AsyncMock()
+        claim = MagicMock()
+        stage = MagicMock(return_value="execution")
+
+        monkeypatch.setattr(
+            dispatch_service.task_store,
+            "get_task",
+            lambda _task_id: {"id": "task-1", "status": "pending", "task_type": "bug"},
+        )
+        monkeypatch.setattr(dispatch_service, "_trigger_workflow", trigger)
+        monkeypatch.setattr(dispatch_service, "claim_task", claim)
+        monkeypatch.setattr(dispatch_service, "_determine_next_stage", stage)
+        monkeypatch.setattr(
+            dispatch_service,
+            "validate_autonomous_dispatch",
+            lambda _project_id, _task_type=None: {"status": "disabled", "reason": "not_allowed"},
+        )
+
+        result = await dispatch_task("task-1", "monkey-fight")
+
+        assert result["status"] == "disabled"
+        assert result["stage"] == "blocked"
+        assert result["reason"] == "not_allowed"
+        assert result["details"] == {"status": "disabled", "reason": "not_allowed"}
+        stage.assert_not_called()
+        claim.assert_not_called()
+        trigger.assert_not_awaited()
 
     @pytest.mark.asyncio
     @patch("app.services.dispatch._trigger_workflow", new_callable=AsyncMock)
