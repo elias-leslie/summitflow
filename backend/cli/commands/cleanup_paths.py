@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,10 @@ _FORBIDDEN_ROOTS = frozenset({
     "/usr", "/var",
 })
 _GLOB_CHARS = frozenset({"*", "?"})
+_DEFAULT_ALLOWED_NON_REPO_ROOTS = (
+    "/srv/workspaces/projects",
+    str(Path("/media") / Path.home().name / "Backups"),
+)
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,25 @@ def _count_entries(path: Path) -> int:
     return 1 + sum(1 for _ in path.rglob("*"))
 
 
+def _allowed_non_repo_roots() -> list[Path]:
+    configured = os.environ.get("SUMMITFLOW_CLEANUP_ALLOWED_ROOTS")
+    raw_roots = configured.split(":") if configured else _DEFAULT_ALLOWED_NON_REPO_ROOTS
+    roots: list[Path] = [Path.home().resolve()]
+    for raw in raw_roots:
+        if raw.strip():
+            roots.append(Path(raw).expanduser().resolve(strict=False))
+    return roots
+
+
+def _relative_to_allowed_root(target: Path) -> tuple[Path, Path] | None:
+    for root in _allowed_non_repo_roots():
+        try:
+            return root, target.relative_to(root)
+        except ValueError:
+            continue
+    return None
+
+
 def _validate_non_repo_path(target: Path, raw_path: str, recursive: bool) -> CleanupTarget:
     """Validate a path outside any git repo against safety checks."""
     home = Path.home().resolve()
@@ -80,8 +104,13 @@ def _validate_non_repo_path(target: Path, raw_path: str, recursive: bool) -> Cle
         output_error(f"Refusing to cleanup system directory: {raw_path}")
         raise typer.Exit(1)
 
-    if not target_str.startswith(str(home)):
-        output_error(f"Refusing to cleanup path outside home directory: {raw_path}")
+    allowed = _relative_to_allowed_root(target)
+    if allowed is None:
+        output_error(f"Refusing to cleanup path outside allowed cleanup roots: {raw_path}")
+        raise typer.Exit(1)
+    allowed_root, relative = allowed
+    if target == allowed_root or relative.parts == ():
+        output_error(f"Refusing to cleanup allowed root directory: {raw_path}")
         raise typer.Exit(1)
 
     if not target.exists() and not target.is_symlink():
@@ -93,7 +122,7 @@ def _validate_non_repo_path(target: Path, raw_path: str, recursive: bool) -> Cle
         raise typer.Exit(1)
 
     path_type = "directory" if target.is_dir() else "file"
-    relative_str = str(target.relative_to(home))
+    relative_str = str(relative)
     return CleanupTarget(
         raw_path=raw_path,
         absolute_path=target,
