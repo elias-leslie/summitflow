@@ -47,17 +47,13 @@ def test_get_routine_upkeep_status(client, ensure_test_project, mocker) -> None:
 
 
 def test_manual_routine_upkeep_run_returns_summary(client, ensure_test_project, mocker) -> None:
-    mocker.patch(
-        "app.api.autonomous._make_dispatch_callback",
-        return_value=lambda _stage, _task_id, _project_id: None,
-    )
     run_upkeep = mocker.patch(
         "app.api.autonomous.run_routine_upkeep",
         return_value={
             "project_id": ensure_test_project,
             "status": "completed",
             "tasks_created": 2,
-            "dispatch": {"dispatched": 2, "breakdown": {"execution": 2}},
+            "dispatch": {"dispatched": 0, "message": "discovery_only"},
         },
     )
 

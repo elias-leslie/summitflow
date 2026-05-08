@@ -151,7 +151,7 @@ export function RoutineUpkeepSection({
             Routine Upkeep
           </h3>
           <p className="text-xs text-slate-400 mt-2">
-            Finds upkeep work and routes it through normal autonomous tasks.
+            Finds refactor, quality, and feedback work without starting agents.
           </p>
         </div>
         <button
@@ -208,7 +208,7 @@ export function RoutineUpkeepSection({
             Cadence
           </Label>
           <p className="text-xs text-slate-400 mb-3">
-            How often to run routine upkeep (15-1440 min)
+            How often to discover upkeep tasks (15-1440 min)
           </p>
           <Input
             id="upkeep-frequency"
@@ -226,7 +226,7 @@ export function RoutineUpkeepSection({
             Max tasks per run
           </Label>
           <p className="text-xs text-slate-400 mb-3">
-            Caps how many tasks a single upkeep run can create.
+            Caps how many tasks a single discovery run can create.
           </p>
           <Input
             id="upkeep-batch"

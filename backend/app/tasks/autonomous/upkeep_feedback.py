@@ -22,6 +22,7 @@ from .upkeep_constants import (
     TOOL_NAME,
 )
 from .upkeep_models import CreatedSignalTask, SignalTaskSpec
+from .upkeep_prune import prune_obsolete_upkeep_signal_tasks
 from .upkeep_signals import create_signal_task, source_key, task_exists_for_upkeep_source
 
 logger = get_logger(__name__)
@@ -117,7 +118,14 @@ def feedback_task_from_item(project_id: str, feedback: dict[str, Any]) -> Create
 def create_feedback_tasks(project_id: str, limit: int) -> list[str]:
     """Create autonomous tasks for top active feedback items."""
     created: list[str] = []
-    for feedback in fetch_feedback_items(project_id, limit):
+    feedback_items = fetch_feedback_items(project_id, max(limit, 200))
+    active_source_keys = {
+        source_key(SOURCE_FEEDBACK, feedback["id"])
+        for feedback in feedback_items
+        if feedback.get("id") and feedback_task_type(feedback) is not None
+    }
+    prune_obsolete_upkeep_signal_tasks(project_id, SOURCE_FEEDBACK, active_source_keys)
+    for feedback in feedback_items:
         created_task = feedback_task_from_item(project_id, feedback)
         if created_task is None:
             continue

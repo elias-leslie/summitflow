@@ -7,6 +7,7 @@ from typing import Any, cast
 from app.storage import log_task_event
 from app.storage import tasks as task_store
 from app.tasks.autonomous.task_builders import create_schema_task
+from app.tasks.autonomous.upkeep_prune import close_obsolete_generated_task
 from app.tasks.autonomous.violation_handlers import (
     get_violation_done_when,
     get_violation_objective,
@@ -24,20 +25,27 @@ VIOLATION_TIER_MAP: dict[str, int] = {
 
 
 def _cancel_stale_task(task: dict[str, Any], max_age_days: int) -> bool:
-    """Cancel a single stale task. Returns True if cancelled, False if skipped."""
+    """Close a single stale generated task. Returns True if closed, False if skipped."""
     task_id = task.get("id")
     if not task_id:
         return False
 
     try:
-        task_store.update_task(task_id, status="cancelled")
-        log_task_event(
-            task_id,
-            f"Auto-cancelled: No activity for {max_age_days}+ days. "
-            "Stale auto-generated task archived.",
+        result = close_obsolete_generated_task(
+            task,
+            reason=f"No activity for {max_age_days}+ days",
+            resolved=False,
+            deletion_source="routine-upkeep:stale-generated-cleanup",
+            grace_hours=max_age_days * 24,
         )
-        logger.info("Cancelled stale task %s: %s", task_id, task.get('title', '')[:50])
-        return True
+        if result in {"cancelled", "completed"}:
+            log_task_event(
+                task_id,
+                f"Auto-cancelled: No activity for {max_age_days}+ days. "
+                "Stale auto-generated task archived.",
+            )
+        logger.info("Closed stale task %s result=%s title=%s", task_id, result, task.get('title', '')[:50])
+        return result in {"deleted", "cancelled", "completed"}
     except Exception:
         logger.exception("Failed to cancel task %s", task_id)
         return False

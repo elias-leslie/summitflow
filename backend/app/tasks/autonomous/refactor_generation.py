@@ -16,6 +16,7 @@ from app.storage.connection import get_connection
 from app.storage.events import log_task_event
 from app.storage.explorer_analysis import (
     DEFAULT_REFACTOR_TARGET_LIMIT,
+    get_promotable_refactor_paths,
     get_refactor_targets,
 )
 from app.storage.projects import get_project_root_path
@@ -23,6 +24,7 @@ from app.storage.task_spirit import get_task_spirit, update_task_spirit
 from app.tasks.autonomous._issue_builder import create_refactor_issue
 from app.tasks.autonomous.step_builders import build_refactor_steps, calculate_target_lines
 from app.tasks.autonomous.task_builders import create_refactor_task
+from app.tasks.autonomous.upkeep_prune import close_obsolete_generated_task
 from app.tasks.explorer_resolution import check_and_close_resolved_issues
 
 from ...logging_config import get_logger
@@ -31,6 +33,7 @@ logger = get_logger(__name__)
 
 _SIZE_ISSUES = {"oversized", "large_file", "bloat_critical", "bloat_warning"}
 _REFACTOR_REGENERATE_LOCK_PREFIX = "summitflow:refactor-regenerate:"
+_REFACTOR_PRUNE_STATUSES = ("pending", "paused", "failed")
 
 
 def _regenerate_lock_id(project_id: str) -> int:
@@ -246,6 +249,86 @@ def _retire_duplicate_refactor_tasks(project_id: str, relative_path: str, canoni
     return retired_count
 
 
+def _candidate_generated_refactor_tasks(project_id: str) -> list[dict[str, Any]]:
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                t.id,
+                t.status,
+                t.started_at,
+                t.updated_at,
+                t.total_sessions,
+                t.commits,
+                t.title,
+                ts.context,
+                q.file_path,
+                q.status
+            FROM tasks t
+            LEFT JOIN task_spirit ts ON ts.task_id = t.id
+            LEFT JOIN qa_issues q ON q.st_task_id = t.id
+                AND q.project_id = t.project_id
+                AND q.issue_type = 'complexity'
+            WHERE t.project_id = %s
+              AND t.task_type = 'refactor'
+              AND t.status = ANY(%s)
+              AND (q.id IS NOT NULL OR 'auto-generated' = ANY(t.labels))
+            """,
+            (project_id, list(_REFACTOR_PRUNE_STATUSES)),
+        )
+        rows = cur.fetchall()
+    tasks: list[dict[str, Any]] = []
+    for row in rows:
+        context = row[7] if isinstance(row[7], dict) else {}
+        files = context.get("files_to_modify")
+        relative_path = files[0] if isinstance(files, list) and files else row[8]
+        tasks.append(
+            {
+                "id": row[0],
+                "status": row[1],
+                "started_at": row[2],
+                "updated_at": row[3],
+                "total_sessions": row[4],
+                "commits": row[5],
+                "title": row[6],
+                "relative_path": relative_path,
+                "issue_status": row[9],
+            }
+        )
+    return tasks
+
+
+def _prune_obsolete_refactor_tasks(
+    project_id: str,
+    active_paths: set[str],
+    project_root: str | None,
+) -> dict[str, int]:
+    counts = {"deleted": 0, "completed": 0, "cancelled": 0, "skipped": 0, "skipped_active": 0}
+    for task in _candidate_generated_refactor_tasks(project_id):
+        relative_path = task.get("relative_path")
+        if not isinstance(relative_path, str) or not relative_path:
+            counts["skipped"] += 1
+            continue
+        file_path = Path(project_root, relative_path) if project_root else Path(relative_path)
+        still_needed = relative_path in active_paths and file_path.exists()
+        if still_needed:
+            counts["skipped"] += 1
+            continue
+        reason = (
+            f"Generated refactor source no longer active for {relative_path}"
+            if file_path.exists()
+            else f"Generated refactor target no longer exists: {relative_path}"
+        )
+        result = close_obsolete_generated_task(
+            task,
+            reason=reason,
+            resolved=file_path.exists() or task.get("issue_status") == "resolved",
+            deletion_source="routine-upkeep:prune-refactors",
+        )
+        counts[result] = counts.get(result, 0) + 1
+    return counts
+
+
 def generate_refactor_tasks_internal(
     project_id: str,
     skip_existing: bool,
@@ -257,6 +340,8 @@ def generate_refactor_tasks_internal(
         project_id,
         limit=DEFAULT_REFACTOR_TARGET_LIMIT,
     ).get("targets", [])
+    active_paths = get_promotable_refactor_paths(project_id)
+    pruned = _prune_obsolete_refactor_tasks(project_id, active_paths, project_root)
     created = 0
     retired = 0
     for target in targets:
@@ -273,6 +358,8 @@ def generate_refactor_tasks_internal(
     return {
         "created_count": created,
         "retired_count": retired,
+        "pruned_count": pruned["deleted"] + pruned["completed"] + pruned["cancelled"],
+        "prune": pruned,
         "scanned_count": len(targets),
         "skipped_count": len(targets) - created,
     }

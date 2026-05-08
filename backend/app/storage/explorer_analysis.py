@@ -137,6 +137,30 @@ def get_refactor_targets(
     return {"targets": targets, "summary": summary}
 
 
+def get_promotable_refactor_paths(
+    project_id: str,
+    *,
+    limit: int = 5000,
+    code_only: bool = True,
+    extensions: list[str] | None = None,
+) -> set[str]:
+    """Return paths that still qualify for generated refactor work."""
+    conditions, params = _build_refactor_filter_conditions(
+        project_id=project_id, extensions=extensions, code_only=code_only
+    )
+    with get_cursor() as cur:
+        cur.execute(
+            sql.SQL(REFACTOR_TARGETS_SQL).format(where_clause=build_where_clause(conditions)),
+            (*params, limit),
+        )
+        targets = [row_to_target(row) for row in cur.fetchall()]
+    return {
+        str(target["path"])
+        for target in targets
+        if assess_refactor_target(target).should_create_task
+    }
+
+
 def count_stale_metadata_entries(project_id: str, min_version: int = 2) -> int:
     """Count file entries with outdated or missing schema version.
 

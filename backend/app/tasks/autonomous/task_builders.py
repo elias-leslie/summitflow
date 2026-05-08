@@ -20,6 +20,11 @@ from app.tasks.autonomous._task_core import (
     create_task_with_spirit,
     link_task_to_issue,
 )
+from app.tasks.autonomous.upkeep_constants import (
+    EXECUTION_MODE_AUTONOMOUS,
+    SOURCE_REFACTORS,
+    UPKEEP_LABELS,
+)
 
 from ...logging_config import get_logger
 
@@ -70,8 +75,17 @@ def create_refactor_task(
         project_id=project_id, title=title, description=objective,
         priority=2 if priority == "high" else 3, task_type="refactor", tier=tier,
         done_when=_build_issue_aware_done_when(lines, target_lines, issues, is_frontend=(category == "frontend")),
-        context={"files_to_modify": [relative_path]},
+        context={
+            "files_to_modify": [relative_path],
+            "upkeep": {
+                "source_key": f"upkeep:{SOURCE_REFACTORS}:{relative_path}",
+                "signal_type": SOURCE_REFACTORS,
+            },
+        },
         complexity="SIMPLE", auto_approve=True, ai_review=False,
+        execution_mode=EXECUTION_MODE_AUTONOMOUS,
+        autonomous=True,
+        labels=[*UPKEEP_LABELS, SOURCE_REFACTORS],
     )
 
     if not task_id:

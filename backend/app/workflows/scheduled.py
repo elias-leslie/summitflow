@@ -53,6 +53,16 @@ def _disabled_schedule_result(
     return result
 
 
+def _enabled_project_ids(schedule_id: str) -> list[str]:
+    from ..storage.projects import list_projects
+
+    return [
+        str(project["id"])
+        for project in list_projects()
+        if _project_schedule_enabled(str(project["id"]), schedule_id)
+    ]
+
+
 def _work_pickup_due(project_id: str) -> bool:
     from ..storage import agent_configs
     from ..storage import maintenance_runs as maintenance_store
@@ -91,6 +101,59 @@ def _record_work_pickup(project_id: str, started_at: datetime, result: dict[str,
     )
 
 
+async def _run_work_pickup_for_project(project_id: str) -> dict[str, Any]:
+    from ..tasks.autonomous.pickup import autonomous_work_pickup
+    from .pipeline import _make_dispatch_callback
+
+    if not _project_schedule_enabled(project_id, "work_pickup"):
+        return _disabled_schedule_result("work_pickup", project_id=project_id)
+    if not _work_pickup_due(project_id):
+        return {
+            "schedule_id": "work_pickup",
+            "status": "skipped",
+            "reason": "not_due",
+            "project_id": project_id,
+        }
+
+    started_at = datetime.now(UTC)
+    dispatch = _make_dispatch_callback()
+    result = await asyncio.to_thread(autonomous_work_pickup, project_id, dispatch=dispatch)
+    await asyncio.to_thread(_record_work_pickup, project_id, started_at, dict(result))
+    return dict(result)
+
+
+async def _run_task_generation_for_project(project_id: str) -> dict[str, Any]:
+    from ..tasks.autonomous.upkeep import run_routine_upkeep
+
+    if not _project_schedule_enabled(project_id, "task_generation"):
+        return _disabled_schedule_result("task_generation", project_id=project_id)
+
+    return await asyncio.to_thread(
+        run_routine_upkeep,
+        project_id,
+    )
+
+
+async def _run_project_schedule_for_enabled_projects(schedule_id: str) -> dict[str, Any]:
+    project_ids = _enabled_project_ids(schedule_id)
+    results: dict[str, dict[str, Any]] = {}
+    for project_id in project_ids:
+        if schedule_id == "work_pickup":
+            results[project_id] = await _run_work_pickup_for_project(project_id)
+        else:
+            results[project_id] = await _run_task_generation_for_project(project_id)
+    return {
+        "schedule_id": schedule_id,
+        "status": "completed",
+        "project_count": len(project_ids),
+        "dispatched": sum(
+            int((result.get("dispatch") or {}).get("dispatched", result.get("dispatched", 0)) or 0)
+            for result in results.values()
+        ),
+        "projects": results,
+    }
+
+
 def _explorer_schedule_concurrency() -> ConcurrencyExpression:
     """Shared concurrency guard for memory-heavy explorer maintenance workflows."""
 
@@ -115,19 +178,9 @@ def _explorer_schedule_concurrency() -> ConcurrencyExpression:
     ),
 )
 async def work_pickup_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.autonomous.pickup import autonomous_work_pickup
-    from .pipeline import _make_dispatch_callback
-
-    if not _project_schedule_enabled(input.project_id, "work_pickup"):
-        return _disabled_schedule_result("work_pickup", project_id=input.project_id)
-    if not _work_pickup_due(input.project_id):
-        return {"schedule_id": "work_pickup", "status": "skipped", "reason": "not_due", "project_id": input.project_id}
-
-    started_at = datetime.now(UTC)
-    dispatch = _make_dispatch_callback()
-    result = await asyncio.to_thread(autonomous_work_pickup, input.project_id, dispatch=dispatch)
-    await asyncio.to_thread(_record_work_pickup, input.project_id, started_at, dict(result))
-    return result
+    if input.project_id == SUMMITFLOW_CONTROL_PROJECT_ID:
+        return await _run_project_schedule_for_enabled_projects("work_pickup")
+    return await _run_work_pickup_for_project(input.project_id)
 
 
 @hatchet.task(
@@ -280,18 +333,9 @@ async def stale_cleanup_wf(input: StaleCleanupInput, ctx: Context) -> dict[str, 
     ),
 )
 async def task_generation_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.autonomous.upkeep import run_routine_upkeep
-    from .pipeline import _make_dispatch_callback
-
-    if not _project_schedule_enabled(input.project_id, "task_generation"):
-        return _disabled_schedule_result("task_generation", project_id=input.project_id)
-
-    dispatch = _make_dispatch_callback()
-    return await asyncio.to_thread(
-        run_routine_upkeep,
-        input.project_id,
-        dispatch=dispatch,
-    )
+    if input.project_id == SUMMITFLOW_CONTROL_PROJECT_ID:
+        return await _run_project_schedule_for_enabled_projects("task_generation")
+    return await _run_task_generation_for_project(input.project_id)
 
 
 @hatchet.task(

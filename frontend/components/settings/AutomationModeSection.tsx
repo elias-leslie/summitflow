@@ -40,8 +40,8 @@ const MODES: Array<{
   },
   {
     value: 'upkeep',
-    label: 'Queue + upkeep',
-    description: 'Also create routine maintenance tasks.',
+    label: 'Queue + discovery',
+    description: 'Also discover maintenance tasks.',
     icon: Wrench,
   },
 ]

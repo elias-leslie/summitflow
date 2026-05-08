@@ -49,7 +49,7 @@ SCHEDULE_DEFINITIONS: tuple[AutonomousScheduleDefinition, ...] = (
         schedule_id="task_generation",
         config_key="task_generation_enabled",
         label="Routine upkeep trigger",
-        description="Runs the hourly upkeep discovery entrypoint, which can also feed autonomous pickup.",
+        description="Discovers refactor, quality, and feedback tasks without dispatching execution.",
         cron="0 * * * *",
         scope="project",
     ),

@@ -49,10 +49,6 @@ def test_run_routine_upkeep_records_completed_no_work(mocker) -> None:
     )
     mocker.patch("app.tasks.autonomous.upkeep._create_quality_failure_tasks", return_value=[])
     mocker.patch("app.tasks.autonomous.upkeep._create_feedback_tasks", return_value=[])
-    mocker.patch(
-        "app.tasks.autonomous.upkeep.autonomous_work_pickup",
-        return_value={"project_id": "summitflow", "dispatched": 0, "message": "No tasks in queue"},
-    )
     record_run = mocker.patch("app.tasks.autonomous.upkeep.maintenance_store.record_maintenance_run")
 
     result = run_routine_upkeep("summitflow")
@@ -60,6 +56,7 @@ def test_run_routine_upkeep_records_completed_no_work(mocker) -> None:
     assert result["status"] == "completed"
     assert result["tasks_created"] == 0
     assert result["dispatch"]["dispatched"] == 0
+    assert result["dispatch"]["message"] == "discovery_only"
     record_run.assert_called_once()
     assert record_run.call_args.args[:2] == ("routine_upkeep", "completed")
     assert record_run.call_args.kwargs["summary"]["outcome"] == "completed"
@@ -102,10 +99,6 @@ def test_run_routine_upkeep_counts_refactors_against_batch_limit(mocker) -> None
         return_value=["task-quality"],
     )
     create_feedback = mocker.patch("app.tasks.autonomous.upkeep._create_feedback_tasks")
-    mocker.patch(
-        "app.tasks.autonomous.upkeep.autonomous_work_pickup",
-        return_value={"project_id": "summitflow", "dispatched": 0},
-    )
     mocker.patch("app.tasks.autonomous.upkeep.maintenance_store.record_maintenance_run")
 
     result = run_routine_upkeep("summitflow")
@@ -135,10 +128,6 @@ def test_run_routine_upkeep_counts_quality_against_daily_budget(mocker) -> None:
         return_value=["task-quality-1", "task-quality-2"],
     )
     create_feedback = mocker.patch("app.tasks.autonomous.upkeep._create_feedback_tasks")
-    mocker.patch(
-        "app.tasks.autonomous.upkeep.autonomous_work_pickup",
-        return_value={"project_id": "summitflow", "dispatched": 0},
-    )
     mocker.patch("app.tasks.autonomous.upkeep.maintenance_store.record_maintenance_run")
 
     result = run_routine_upkeep("summitflow")

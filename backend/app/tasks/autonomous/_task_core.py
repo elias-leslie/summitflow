@@ -147,6 +147,9 @@ def create_task_with_spirit(
     context: dict[str, object] | None = None,
     auto_approve: bool = True,
     ai_review: bool = True,
+    execution_mode: str | None = None,
+    autonomous: bool = False,
+    labels: list[str] | None = None,
 ) -> str | None:
     """Create a task with an attached spirit.
 
@@ -165,7 +168,19 @@ def create_task_with_spirit(
     Returns:
         Task ID or None if creation failed
     """
-    task_id = _create_base_task(project_id, title, description, priority, task_type, tier, ai_review)
+    task = task_store.create_task(
+        project_id=project_id,
+        title=title,
+        description=description,
+        priority=priority,
+        task_type=task_type,
+        tier=tier,
+        ai_review=ai_review,
+        execution_mode=execution_mode,
+        autonomous=autonomous,
+        labels=labels,
+    )
+    task_id = cast(str, task["id"]) if task else None
     if not task_id:
         return None
     _attach_spirit_and_approve(

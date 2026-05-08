@@ -1,8 +1,7 @@
-"""Routine upkeep signal discovery and routing.
+"""Routine upkeep signal discovery.
 
 This module converts existing maintenance signals into normal SummitFlow tasks,
-then routes those tasks through existing autonomous pickup pipeline. It is
-not orchestration layer.
+without dispatching them. Autonomous pickup is the separate execution path.
 """
 
 from __future__ import annotations
@@ -22,9 +21,7 @@ from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 from app.tasks.autonomous.refactor_generation import regenerate_refactor_tasks_impl
 
-from .pickup import autonomous_work_pickup
 from .upkeep_constants import (
-    DISPATCH_FAILURE_STATUSES,
     LOCK_PREFIX,
     REASON_ALREADY_RUNNING,
     REASON_NOT_DUE,
@@ -222,14 +219,8 @@ def _run_sources(project_id: str, settings: RoutineUpkeepSettings) -> RunOutcome
     )
 
 
-def _dispatch_result(
-    project_id: str,
-    settings: RoutineUpkeepSettings,
-    dispatch: Callable[[str, str, str], None] | None,
-) -> dict[str, Any]:
-    if dispatch is None:
-        return {"dispatched": 0, "message": "dispatch not configured"}
-    return dict(autonomous_work_pickup(project_id, dispatch=dispatch, limit=settings.batch_limit))
+def _discovery_only_dispatch_result() -> dict[str, Any]:
+    return {"dispatched": 0, "message": "discovery_only"}
 
 
 def _result_status(
@@ -241,10 +232,6 @@ def _result_status(
     status = STATUS_COMPLETED
     if errors and tasks_created == 0 and int(dispatch_result.get("dispatched", 0) or 0) == 0:
         status = STATUS_FAILED
-    dispatch_status = dispatch_result.get("status")
-    if dispatch_status in DISPATCH_FAILURE_STATUSES:
-        status = STATUS_FAILED
-        errors["dispatch"] = str(dispatch_result.get("reason") or dispatch_status)
     return status, errors
 
 
@@ -275,7 +262,11 @@ def run_routine_upkeep(
     *,
     force: bool = False,
 ) -> dict[str, Any]:
-    """Run one routine upkeep discovery and routing cycle."""
+    """Run one routine upkeep discovery cycle.
+
+    ``dispatch`` is accepted for legacy callers but intentionally ignored.
+    Work pickup is owned by the separate autonomous_work_pickup workflow.
+    """
     started_at = datetime.now(UTC)
     settings = get_routine_upkeep_settings(project_id)
     if not settings.enabled:
@@ -290,7 +281,7 @@ def run_routine_upkeep(
             return result
 
         run = _run_sources(project_id, settings)
-        dispatch_result = _dispatch_result(project_id, settings, dispatch)
+        dispatch_result = _discovery_only_dispatch_result()
         status, result = _build_run_result(project_id, settings, run, dispatch_result)
         _record_run(status, started_at, result)
         return result

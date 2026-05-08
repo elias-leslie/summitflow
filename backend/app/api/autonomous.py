@@ -172,12 +172,6 @@ async def _settings_with_execution_permission(project_id: str) -> AutonomousSett
     )
 
 
-def _make_dispatch_callback() -> Any:
-    from ..workflows.pipeline import _make_dispatch_callback as make_callback
-
-    return make_callback()
-
-
 def _validate_update(update: AutonomousSettingsUpdate) -> None:
     """Validate all fields of an autonomous settings update request."""
     if update.auto_merge_tiers is not None:
@@ -297,13 +291,11 @@ async def update_autonomous_schedule(
 
 @router.post("/{project_id}/autonomous/upkeep/run", response_model=RoutineUpkeepRunResponse)
 async def run_upkeep(project_id: str) -> RoutineUpkeepRunResponse:
-    """Run one routine upkeep cycle immediately."""
+    """Run one routine upkeep discovery cycle immediately."""
     validate_project_exists(project_id)
-    dispatch = _make_dispatch_callback()
     result = await asyncio.to_thread(
         run_routine_upkeep,
         project_id,
-        dispatch=dispatch,
         force=True,
     )
     return RoutineUpkeepRunResponse(**result)
