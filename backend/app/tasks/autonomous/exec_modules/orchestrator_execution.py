@@ -176,6 +176,8 @@ def _mark_running(task_id: str, *, task_store: Any) -> None:
 
 
 def _mark_setup_failed(task_id: str, *, task_store: Any, error: dict[str, Any]) -> None:
+    if error.get("reason") == "quality_gate_blocked":
+        return
     message = str(
         error.get("error")
         or error.get("message")

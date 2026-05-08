@@ -33,6 +33,10 @@ _PRISTINE_FIX_RUNTIME_GUIDANCE = """# Runtime Guidance
 class PristineCheckError(Exception):
     """Raised when codebase is not in pristine state."""
 
+    def __init__(self, message: str, *, output: str = "") -> None:
+        super().__init__(message)
+        self.output = output
+
 
 def _emit(task_id: str, level: str, msg: str, project_id: str) -> None:
     emit_log(task_id, level, msg, source="pristine", project_id=project_id)
@@ -111,8 +115,12 @@ def check_pristine_codebase(project_id: str) -> None:
         raise PristineCheckError(
             f"Codebase quality gates failed (exit code {result.returncode}). "
             "Fix lint/type/test errors before running automated execution. "
-            "Run 'st check --quick' to see details."
+            "Run 'st check --quick' to see details.",
+            output=out,
         )
+    from .baseline_blockers import clear_project_quality_gate_blockers
+
+    clear_project_quality_gate_blockers(project_id)
     logger.info("pristine_check_passed", project_id=project_id)
 
 

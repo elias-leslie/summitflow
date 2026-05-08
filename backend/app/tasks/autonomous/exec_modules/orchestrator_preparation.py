@@ -22,7 +22,7 @@ def prepare_execution(
         return {"task_id": task_id, "status": "error", "message": "Task not found"}, None, None, None
 
     if not validate_pristine_codebase(task_id, project_id):
-        return _setup_failed_result(task_id, "Pristine validation failed", "pristine_self_heal_failed"), None, None, None
+        return _setup_failed_result(task_id, "Blocked by baseline quality gate", "quality_gate_blocked"), None, None, None
 
     project_path = setup_task_checkout(task_id, project_id)
     if not project_path:
@@ -49,7 +49,7 @@ def prepare_completed_task_closeout(
 ) -> dict[str, Any] | None:
     """Run safety checks before early-completing a task whose subtasks already passed."""
     if not validate_pristine_codebase(task_id, project_id):
-        return _setup_failed_result(task_id, "Pristine validation failed", "pristine_self_heal_failed")
+        return _setup_failed_result(task_id, "Blocked by baseline quality gate", "quality_gate_blocked")
 
     if not has_active_task_checkpoint(task_id, project_id):
         emit_log(task_id, "info", "All subtasks already complete; skipping checkout setup", project_id=project_id)
