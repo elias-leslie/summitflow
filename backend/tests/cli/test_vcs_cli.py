@@ -145,3 +145,16 @@ def test_reconcile_runs_safe_steps_then_reports_doctor_result(tmp_path: Path) ->
     assert result.exit_code == 0
     mock_pull.assert_called_once_with(repo)
     assert "VCS-RECONCILE:OK repos=1" in result.stdout
+
+
+def test_discover_unmanaged_repos_ignores_config_mirrors(tmp_path: Path) -> None:
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    extra = projects / "extra"
+    claude_config = projects / "claude-config"
+    codex_config = projects / "codex-config"
+    for repo in (extra, claude_config, codex_config):
+        (repo / ".git").mkdir(parents=True)
+
+    with patch.object(vcs, "get_projects_base_dir", return_value=projects):
+        assert vcs._discover_unmanaged_repos([]) == [extra]

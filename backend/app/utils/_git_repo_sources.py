@@ -21,7 +21,7 @@ _SQL_SELECT_ROOT_PATHS = "SELECT root_path FROM projects WHERE root_path IS NOT 
 _SQL_SELECT_PROJECT_ROOTS = "SELECT id, root_path FROM projects WHERE root_path IS NOT NULL"
 _SQL_SELECT_EXTRA_REPOS = (
     "SELECT id, path FROM backup_sources "
-    "WHERE path IS NOT NULL AND source_type IN ('config', 'workspace')"
+    "WHERE path IS NOT NULL AND enabled IS TRUE AND source_type IN ('config', 'workspace')"
 )
 
 

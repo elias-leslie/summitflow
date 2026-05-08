@@ -33,6 +33,8 @@ app = typer.Typer(
     )
 )
 
+_IGNORED_WORKSPACE_REPO_NAMES = frozenset({"claude-config", "codex-config"})
+
 
 @dataclass(frozen=True)
 class VcsIssue:
@@ -86,6 +88,8 @@ def _discover_unmanaged_repos(repos: list[Path]) -> list[Path]:
     managed = {p.resolve() for p in repos if p.exists()}
     discovered: list[Path] = []
     for child in sorted(projects_dir.iterdir()):
+        if child.name in _IGNORED_WORKSPACE_REPO_NAMES:
+            continue
         if not child.is_dir() or not (child / ".git").exists():
             continue
         resolved = child.resolve()
