@@ -321,11 +321,26 @@ class TestAutocodeValidation:
         assert "not execution-ready" in result.output
         assert "Missing description" in result.output
 
-    def test_autocode_next_selects_first_ready_task(self) -> None:
+    def test_autocode_next_selects_best_ranked_ready_task(self) -> None:
         mock_client = MagicMock()
         mock_client.project_id = "summitflow"
-        mock_client.list_ready.return_value = {"tasks": [{"id": "task-ready-1"}]}
-        mock_client.get_task.return_value = _make_mock_task("task-ready-1")
+        mock_client.list_ready.return_value = {
+            "tasks": [
+                {
+                    "id": "task-complex-feature",
+                    "priority": 1,
+                    "task_type": "feature",
+                    "complexity": "COMPLEX",
+                },
+                {
+                    "id": "task-simple-refactor",
+                    "priority": 2,
+                    "task_type": "refactor",
+                    "complexity": "SIMPLE",
+                },
+            ]
+        }
+        mock_client.get_task.return_value = _make_mock_task("task-simple-refactor")
         mock_client.get_subtasks.return_value = {"subtasks": [{"subtask_id": "1.1", "passes": False}]}
         mock_client.validate_ready.return_value = {"ready": True}
 
@@ -333,9 +348,9 @@ class TestAutocodeValidation:
             result = runner.invoke(tasks_app, ["autocode", "--next"])
 
         assert result.exit_code == 0
-        mock_client.list_ready.assert_called_once_with(limit=1)
-        mock_client.execute_task.assert_called_once_with("task-ready-1")
-        assert '"task_id": "task-ready-1"' in result.output
+        mock_client.list_ready.assert_called_once_with(limit=25)
+        mock_client.execute_task.assert_called_once_with("task-simple-refactor")
+        assert '"task_id": "task-simple-refactor"' in result.output
         assert '"selected_from_ready": true' in result.output
 
     def test_autocode_next_reports_empty_ready_queue(self) -> None:

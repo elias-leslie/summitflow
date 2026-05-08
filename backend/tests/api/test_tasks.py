@@ -757,6 +757,84 @@ class TestReadyEndpoint:
             "task-ready-2",
         ]
 
+    def test_ready_endpoint_orders_smaller_work_before_complex_features(
+        self, client: Any, test_project_id: str
+    ) -> None:
+        template = {
+            "project_id": test_project_id,
+            "capability_id": None,
+            "description": "Ready task",
+            "status": "pending",
+            "error_message": None,
+            "branch_name": None,
+            "commits": [],
+            "total_sessions": 0,
+            "total_tokens_used": 0,
+            "created_at": None,
+            "started_at": None,
+            "completed_at": None,
+            "labels": [],
+            "parent_task_id": None,
+            "current_phase": None,
+            "verification_result": None,
+            "done_when": ["Relevant checks pass"],
+            "raw_request": None,
+            "enrichment_status": "none",
+            "enriched_by": None,
+            "enriched_at": None,
+            "subtask_summary": {"total": 0, "completed": 0, "progress_percent": 0.0},
+            "execution_mode": "autonomous",
+            "autonomous": True,
+            "ai_review": True,
+            "agent_override": None,
+            "plan_status": "approved",
+            "plan_approved_at": None,
+            "plan_approved_by": None,
+            "context": None,
+        }
+        tasks = [
+            {
+                **template,
+                "id": "task-complex-feature",
+                "title": "Complex feature",
+                "priority": 1,
+                "task_type": "feature",
+                "complexity": "COMPLEX",
+            },
+            {
+                **template,
+                "id": "task-simple-refactor",
+                "title": "Simple refactor",
+                "priority": 2,
+                "task_type": "refactor",
+                "complexity": "SIMPLE",
+            },
+        ]
+
+        def _fake_sync(task_id: str):
+            class _Readiness:
+                ready = True
+
+            return _Readiness()
+
+        with (
+            patch(
+                "app.api.tasks.list_endpoints.task_store.list_ready_tasks",
+                return_value=tasks,
+            ),
+            patch(
+                "app.services.task_execution_readiness.sync_task_execution_readiness",
+                side_effect=_fake_sync,
+            ),
+        ):
+            response = client.get(f"/api/projects/{test_project_id}/tasks/ready?limit=2")
+
+        assert response.status_code == 200
+        assert [task["id"] for task in response.json()["tasks"]] == [
+            "task-simple-refactor",
+            "task-complex-feature",
+        ]
+
     def test_ready_all_overview_returns_payload_and_raw_text(
         self,
         client: Any,

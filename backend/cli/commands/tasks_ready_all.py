@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from app.services.ready_task_ranking import ready_task_sort_key
+
 from .._output_formatters import truncate
 from ..client import APIError
 from ..lib.checkpoint import get_snapshot_info
@@ -28,13 +30,9 @@ class ReadyAllClient(Protocol):
     ) -> list[dict[str, object]]: ...
 
 
-def task_sort_key(task: dict[str, Any]) -> tuple[int, int, str]:
-    """Sort key: bugs first, then by priority (lower = higher), then title."""
-    task_type = task.get("task_type", "task")
-    type_order = 0 if task_type == "bug" else 1 if task_type == "feature" else 2
-    priority = task.get("priority", 3)
-    title = task.get("title", "")
-    return (type_order, priority, title)
+def task_sort_key(task: dict[str, Any]) -> tuple[int, int, int, int, str, str]:
+    """Sort key matching autonomous ready pickup order."""
+    return ready_task_sort_key(task)
 
 
 def _format_task_line(task: dict[str, Any], prefix: str = " ") -> str:

@@ -9,6 +9,8 @@ import typer
 from ..client import APIError, STClient
 from ..output import handle_api_error, output_error, output_json
 
+_READY_SELECTION_WINDOW = 25
+
 
 def autocode_task(
     task_id: str | None,
@@ -52,7 +54,7 @@ def _resolve_task_id(
         raise typer.Exit(1)
 
     try:
-        result = client.list_ready(limit=1)
+        result = client.list_ready(limit=_READY_SELECTION_WINDOW)
     except APIError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None
@@ -63,7 +65,9 @@ def _resolve_task_id(
         output_error(f"No execution-ready tasks found for {project_id}.")
         raise typer.Exit(1)
 
-    selected = tasks[0]
+    from app.services.ready_task_ranking import sort_ready_tasks
+
+    selected = sort_ready_tasks([dict(task) for task in tasks])[0]
     selected_id = selected.get("id")
     if not isinstance(selected_id, str) or not selected_id:
         output_error("Ready queue returned a task without an id.")

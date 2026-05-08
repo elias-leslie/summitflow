@@ -20,6 +20,7 @@ from cli.commands.tasks_ready_all import lane_task_id, render_ready_all_compact,
 from ...logging_config import get_logger
 from ...schemas.tasks import TaskListResponse
 from ...services._lane_inventory import fetch_live_project_inventory
+from ...services.ready_task_ranking import sort_ready_tasks
 from ...storage import projects as project_store
 from ...storage import task_dependencies as dep_store
 from ...storage import tasks as task_store
@@ -114,14 +115,14 @@ async def _collect_execution_ready_tasks(
             if has_active_checkpoint(task_id, project_id):
                 continue
             total_ready += 1
-            if len(ready_tasks) < limit:
-                ready_tasks.append(task)
+            ready_tasks.append(task)
 
         if len(tasks) < scan_batch_size:
             break
         scan_offset += scan_batch_size
 
-    return ready_tasks, total_ready
+    ranked_tasks = sort_ready_tasks([dict(task) for task in ready_tasks])
+    return ranked_tasks[:limit], total_ready
 
 
 async def _fetch_live_lane_task_ids(project_id: str) -> set[str]:
