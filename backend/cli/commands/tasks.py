@@ -334,14 +334,17 @@ def idea(
 @app.command()
 def autocode(
     task_id: Annotated[str | None, typer.Argument()] = None,
+    next_task: Annotated[
+        bool,
+        typer.Option("--next", help="Queue the first execution-ready task from this project's ready queue."),
+    ] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
     at: Annotated[str | None, typer.Option("--at")] = None,
 ) -> None:
     """Queue task for autonomous execution via Hatchet."""
-    from ..context import require_task_id
     from .tasks_autocode import autocode_task
 
-    autocode_task(require_task_id(task_id), dry_run, at, STClient(require_project=False))
+    autocode_task(task_id, dry_run, at, STClient(require_project=False), next_task=next_task)
 
 
 @app.command("critique")

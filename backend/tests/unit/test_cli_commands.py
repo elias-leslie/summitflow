@@ -321,6 +321,45 @@ class TestAutocodeValidation:
         assert "not execution-ready" in result.output
         assert "Missing description" in result.output
 
+    def test_autocode_next_selects_first_ready_task(self) -> None:
+        mock_client = MagicMock()
+        mock_client.project_id = "summitflow"
+        mock_client.list_ready.return_value = {"tasks": [{"id": "task-ready-1"}]}
+        mock_client.get_task.return_value = _make_mock_task("task-ready-1")
+        mock_client.get_subtasks.return_value = {"subtasks": [{"subtask_id": "1.1", "passes": False}]}
+        mock_client.validate_ready.return_value = {"ready": True}
+
+        with patch("cli.commands.tasks.STClient", return_value=mock_client):
+            result = runner.invoke(tasks_app, ["autocode", "--next"])
+
+        assert result.exit_code == 0
+        mock_client.list_ready.assert_called_once_with(limit=1)
+        mock_client.execute_task.assert_called_once_with("task-ready-1")
+        assert '"task_id": "task-ready-1"' in result.output
+        assert '"selected_from_ready": true' in result.output
+
+    def test_autocode_next_reports_empty_ready_queue(self) -> None:
+        mock_client = MagicMock()
+        mock_client.project_id = "summitflow"
+        mock_client.list_ready.return_value = {"tasks": []}
+
+        with patch("cli.commands.tasks.STClient", return_value=mock_client):
+            result = runner.invoke(tasks_app, ["autocode", "--next"])
+
+        assert result.exit_code == 1
+        assert "No execution-ready tasks found for summitflow" in result.output
+        mock_client.get_task.assert_not_called()
+
+    def test_autocode_rejects_task_id_with_next(self) -> None:
+        mock_client = MagicMock()
+
+        with patch("cli.commands.tasks.STClient", return_value=mock_client):
+            result = runner.invoke(tasks_app, ["autocode", "task-ready-1", "--next"])
+
+        assert result.exit_code == 1
+        assert "Pass either a task id or --next" in result.output
+        mock_client.list_ready.assert_not_called()
+
 
 class TestTaskCliErgonomics:
     """Tests for task CLI friction fixes."""
