@@ -178,7 +178,7 @@ def _daily_budget_remaining(project_id: str, settings: RoutineUpkeepSettings) ->
 
 
 def _run_refactor_source(project_id: str, create_limit: int) -> dict[str, Any]:
-    return regenerate_refactor_tasks_impl(project_id, create_limit=create_limit)
+    return regenerate_refactor_tasks_impl(project_id, create_limit=create_limit, refresh_scan=False)
 
 
 def _source_plan(project_id: str, remaining: int) -> dict[str, Callable[[], Any]]:

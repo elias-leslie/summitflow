@@ -365,7 +365,12 @@ def generate_refactor_tasks_internal(
     }
 
 
-def regenerate_refactor_tasks_impl(project_id: str, create_limit: int | None = None) -> dict[str, Any]:
+def regenerate_refactor_tasks_impl(
+    project_id: str,
+    create_limit: int | None = None,
+    *,
+    refresh_scan: bool = True,
+) -> dict[str, Any]:
     """Scan, close resolved refactor tasks, and create only newly needed tasks."""
     with _regenerate_lock(project_id):
         project_root = get_project_root_path(project_id)
@@ -378,7 +383,8 @@ def regenerate_refactor_tasks_impl(project_id: str, create_limit: int | None = N
                 "scanned_count": 0,
             }
 
-        scan(project_id, "file")
+        if refresh_scan:
+            scan(project_id, "file")
         closed_count = check_and_close_resolved_issues(project_id)
         result = generate_refactor_tasks_internal(
             project_id,

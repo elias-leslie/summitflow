@@ -109,6 +109,19 @@ def test_run_routine_upkeep_counts_refactors_against_batch_limit(mocker) -> None
     create_feedback.assert_not_called()
 
 
+def test_upkeep_refactor_source_uses_existing_scan_index(mocker) -> None:
+    from app.tasks.autonomous import upkeep
+
+    regenerate = mocker.patch(
+        "app.tasks.autonomous.upkeep.regenerate_refactor_tasks_impl",
+        return_value={"created_count": 0},
+    )
+
+    upkeep._run_refactor_source("summitflow", 3)
+
+    regenerate.assert_called_once_with("summitflow", create_limit=3, refresh_scan=False)
+
+
 def test_run_routine_upkeep_counts_quality_against_daily_budget(mocker) -> None:
     from app.tasks.autonomous.upkeep import RoutineUpkeepSettings, run_routine_upkeep
 
