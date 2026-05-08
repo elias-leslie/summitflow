@@ -22,6 +22,13 @@ from .quality_utils import find_check_tool, parse_error_count
 logger = get_logger(__name__)
 AUTOCODE_ROLES = ["system", "autocode"]
 
+_PRISTINE_FIX_RUNTIME_GUIDANCE = """# Runtime Guidance
+- Use `st check`, never raw pytest, Vitest, Biome, TSC, Ruff, SQLFluff, Squawk, or legacy dt.
+- Read the referenced `.dev-tools/*-details.txt` files before changing code.
+- Fix only the quality gate failures shown.
+- Do not report completion until files were changed when needed and verification passes.
+"""
+
 
 class PristineCheckError(Exception):
     """Raised when codebase is not in pristine state."""
@@ -50,7 +57,11 @@ def _invoke_pristine_agent(
     """Log attempt, invoke coder agent to fix issues, emit progress; return (session_id, response)."""
     logger.info("pristine_self_heal_attempt", project_id=project_id, attempt=attempt + 1, error_count=error_count)
     _emit(task_id, "info", f"Pristine self-heal attempt {attempt + 1}/{PRISTINE_SELF_HEAL_MAX_ATTEMPTS}: {error_count} errors, invoking coder agent", project_id)
-    fix_prompt = get_prompt_template("autocode-pristine-fix").format_map({"errors_output": output[:8000]})
+    fix_prompt = (
+        _PRISTINE_FIX_RUNTIME_GUIDANCE
+        + "\n"
+        + get_prompt_template("autocode-pristine-fix").format_map({"errors_output": output[:8000]})
+    )
     if not session_id:
         session_id = str(uuid.uuid4())
         add_agent_hub_session(task_id, session_id)
@@ -59,7 +70,6 @@ def _invoke_pristine_agent(
         messages=[{"role": "user", "content": fix_prompt}],
         agent_slug="coder",
         working_dir=str(repo_path),
-        max_turns=10,
         execute_tools=True,
         project_id=project_id,
         use_memory=False,

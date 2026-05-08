@@ -165,6 +165,9 @@ class TestPristineSelfHeal:
 
         assert result
         mock_agent_client.complete.assert_called_once()
+        complete_kwargs = mock_agent_client.complete.call_args.kwargs
+        assert "max_turns" not in complete_kwargs
+        assert "Use `st check`, never raw pytest" in complete_kwargs["messages"][0]["content"]
         mock_commit.assert_called_once_with(
             "/test/project",
             "[pristine] Auto-fix quality issues before task-123",
