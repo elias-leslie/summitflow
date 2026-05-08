@@ -141,6 +141,7 @@ def task_to_response(task: dict[str, Any]) -> TaskResponse:
         blocked_by_incomplete=blocked_by_incomplete,
         subtask_summary=_parse_subtask_summary(task),
         subtasks=_parse_subtasks(task),
+        blocking_count=int(task.get("blocking_count") or 0),
         execution_mode=execution_mode,
         autonomous=is_autonomous_mode(execution_mode),
         ai_review=task.get("ai_review", True),

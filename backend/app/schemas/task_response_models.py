@@ -66,6 +66,8 @@ class TaskResponse(BaseModel):
     blocked_by_incomplete: bool | None = None
     # Subtask summary (when include=subtasks or from list_ready_tasks)
     subtask_summary: SubtaskSummary | None = None
+    # Number of incomplete tasks this ready task currently unblocks.
+    blocking_count: int = 0
     execution_mode: ExecutionModeLiteral = "manual"
     # Autonomous execution flag
     autonomous: bool = False

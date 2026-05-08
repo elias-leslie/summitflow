@@ -909,10 +909,12 @@ class TestReadyEndpoint:
             response = client.get(f"/api/projects/{test_project_id}/tasks/ready?limit=2")
 
         assert response.status_code == 200
-        assert [task["id"] for task in response.json()["tasks"]] == [
+        payload_tasks = response.json()["tasks"]
+        assert [task["id"] for task in payload_tasks] == [
             "task-baseline-blocker",
             "task-simple-unrelated",
         ]
+        assert payload_tasks[0]["blocking_count"] == 1
 
     def test_ready_all_overview_returns_payload_and_raw_text(
         self,

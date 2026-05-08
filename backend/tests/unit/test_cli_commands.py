@@ -365,6 +365,38 @@ class TestAutocodeValidation:
         assert "No execution-ready tasks found for summitflow" in result.output
         mock_client.get_task.assert_not_called()
 
+    def test_autocode_next_preserves_blocker_priority_from_ready_payload(self) -> None:
+        mock_client = MagicMock()
+        mock_client.project_id = "summitflow"
+        mock_client.list_ready.return_value = {
+            "tasks": [
+                {
+                    "id": "task-blocker",
+                    "priority": 1,
+                    "task_type": "bug",
+                    "complexity": "STANDARD",
+                    "blocking_count": 1,
+                },
+                {
+                    "id": "task-simple",
+                    "priority": 2,
+                    "task_type": "bug",
+                    "complexity": "SIMPLE",
+                    "blocking_count": 0,
+                },
+            ]
+        }
+        mock_client.get_task.return_value = _make_mock_task("task-blocker")
+        mock_client.get_subtasks.return_value = {"subtasks": [{"subtask_id": "1.1", "passes": False}]}
+        mock_client.validate_ready.return_value = {"ready": True}
+
+        with patch("cli.commands.tasks.STClient", return_value=mock_client):
+            result = runner.invoke(tasks_app, ["autocode", "--next"])
+
+        assert result.exit_code == 0
+        mock_client.execute_task.assert_called_once_with("task-blocker")
+        assert '"task_id": "task-blocker"' in result.output
+
     def test_autocode_rejects_task_id_with_next(self) -> None:
         mock_client = MagicMock()
 
