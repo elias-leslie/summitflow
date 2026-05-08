@@ -20,9 +20,6 @@ from .persona_display import (
 from .persona_display import (
     print_persona as _print_persona,
 )
-from .persona_display import (
-    print_preview_detail as _print_preview_detail,
-)
 from .persona_helpers import (
     api_call as _api,
 )
@@ -41,6 +38,8 @@ from .persona_helpers import (
 from .persona_helpers import (
     write_file as _write_file,
 )
+from .preview_formatters import print_preview_detail as _print_preview_detail
+from .preview_formatters import print_preview_summary as _print_preview_summary
 
 app = typer.Typer(help="Manage the persona identity")
 _Opt = typer.Option
@@ -187,6 +186,7 @@ def preview(
     prompt_input: Annotated[str | None, _Opt("--input", help="Optional prompt input placeholder")] = None,
     as_json: Annotated[bool, _Opt("--json", help="Print raw JSON response")] = False,
     combined_only: Annotated[bool, _Opt("--combined-only", help="Print only the full combined context")] = False,
+    show_content: Annotated[bool, _Opt("--show-content", help="Print full section bodies plus full context.")] = False,
 ) -> None:
     """Show the effective runtime prompt/context preview for Jenny."""
     preview_data = _api(
@@ -206,7 +206,10 @@ def preview(
     if combined_only:
         print(full_context)
         return
-    _print_preview_detail(preview_data, mode, project, phase, full_context)
+    if show_content:
+        _print_preview_detail(preview_data, mode, project, phase, full_context)
+        return
+    _print_preview_summary(preview_data, mode, project, phase)
 
 
 @app.command()

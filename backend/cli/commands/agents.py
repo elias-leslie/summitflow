@@ -13,6 +13,7 @@ import typer
 from ..output import output_error, output_json
 from ._memory_crud_helpers import parse_csv_values
 from .agents_api import agent_preview_api, agents_api, models_api
+from .preview_formatters import print_preview_detail, print_preview_summary
 
 app = typer.Typer(help="Agent management (Agent Hub)")
 
@@ -387,6 +388,7 @@ def _sync_manual_route(
         payload["default_routing_mode"] = routing_mode
 
     if primary_model or fallback_model is not None or escalation_model:
+        payload.setdefault("default_routing_mode", "manual_locked")
         routing = agents_api("GET", f"/{slug}/routing")
         current_route = _default_manual_route(routing) or {}
         current_primary = current_route.get("primary_model_id")
@@ -531,6 +533,7 @@ def preview_agent(
     prompt_input: Annotated[str | None, typer.Option("--input", help="Optional task input placeholder")] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Print raw JSON response")] = False,
     full_context_only: Annotated[bool, typer.Option("--full-context-only", help="Print only the effective full context")] = False,
+    show_content: Annotated[bool, typer.Option("--show-content", help="Print full section bodies plus full context.")] = False,
 ) -> None:
     """Show the effective runtime prompt/context preview for an agent."""
     preview = agent_preview_api(
@@ -545,31 +548,11 @@ def preview_agent(
         print(full_context)
         return
 
-    print(
-        f"{preview.get('name', slug)} preview | "
-        f"mode={preview.get('task_type') or mode} | "
-        f"sections={len(preview.get('sections') or [])} | "
-        f"mandates={preview.get('mandate_count', 0)} | "
-        f"guardrails={preview.get('guardrail_count', 0)}"
-    )
-    if preview.get("memory_query"):
-        print(f"memory_query={preview['memory_query']}")
-    for section in preview.get("sections") or []:
-        print(
-            "\n"
-            f"=== {section.get('label', 'Section')} | "
-            f"{section.get('placement', 'system')} | "
-            f"{section.get('source_kind', 'unknown')} | "
-            f"{section.get('source_id', '-')}"
-            f" | {section.get('estimated_tokens', 0)} tok ==="
-        )
-        print(section.get("content", ""))
-    if preview.get("loaded_memory_uuids"):
-        print("\n=== Loaded Memory UUIDs ===")
-        for uuid in preview["loaded_memory_uuids"]:
-            print(uuid)
-    print("\n=== Full Context ===")
-    print(full_context)
+    if show_content:
+        print_preview_detail(preview, mode, project, phase, full_context)
+        return
+
+    print_preview_summary(preview, mode, project, phase)
 
 
 @app.command("update")

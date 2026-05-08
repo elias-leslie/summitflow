@@ -205,6 +205,71 @@ def test_list_agents_json_preserves_full_payload() -> None:
     mock_models_api.assert_not_called()
 
 
+def test_preview_agent_defaults_to_compact_summary() -> None:
+    preview_payload = {
+        "name": "Code Generator",
+        "task_type": "chat",
+        "sections": [
+            {
+                "label": "Coder Agent",
+                "source_kind": "agent_prompt",
+                "source_id": "coder",
+                "estimated_tokens": 253,
+                "share_of_total": 0.42,
+                "content": "FULL SECTION BODY",
+            }
+        ],
+        "mandate_count": 2,
+        "guardrail_count": 1,
+        "full_context": "FULL CONTEXT",
+        "prompt_budget": {
+            "severity": "ok",
+            "total_estimated_tokens": 600,
+            "low_yield_estimated_tokens": 0,
+            "warning_count": 0,
+        },
+    }
+
+    with patch("cli.commands.agents.agent_preview_api", return_value=preview_payload):
+        result = runner.invoke(app, ["preview", "coder"])
+
+    assert result.exit_code == 0
+    assert "Code Generator preview | mode=chat | sections=1 | mandates=2 | guardrails=1" in result.output
+    assert "prompt=600 tok | severity=ok" in result.output
+    assert "Coder Agent" in result.output
+    assert "FULL SECTION BODY" not in result.output
+    assert "FULL CONTEXT" not in result.output
+
+
+def test_preview_agent_show_content_preserves_full_detail() -> None:
+    preview_payload = {
+        "name": "Code Generator",
+        "task_type": "chat",
+        "sections": [
+            {
+                "label": "Coder Agent",
+                "placement": "system",
+                "source_kind": "agent_prompt",
+                "source_id": "coder",
+                "estimated_tokens": 253,
+                "content": "FULL SECTION BODY",
+            }
+        ],
+        "mandate_count": 0,
+        "guardrail_count": 0,
+        "full_context": "FULL CONTEXT",
+    }
+
+    with patch("cli.commands.agents.agent_preview_api", return_value=preview_payload):
+        result = runner.invoke(app, ["preview", "coder", "--show-content"])
+
+    assert result.exit_code == 0
+    assert "=== Coder Agent | system | agent_prompt | coder | 253 tok ===" in result.output
+    assert "FULL SECTION BODY" in result.output
+    assert "=== Full Context ===" in result.output
+    assert "FULL CONTEXT" in result.output
+
+
 def test_create_agent_posts_full_payload(tmp_path: Path) -> None:
     prompt_path = tmp_path / "prompt.md"
     prompt_path.write_text("You are purpose built.", encoding="utf-8")
@@ -323,6 +388,46 @@ def test_update_agent_model_flags_sync_manual_route() -> None:
             "enabled": True,
         },
     }
+
+
+def test_update_agent_model_flags_default_to_manual_locked_route() -> None:
+    current_route = {
+        "manual_routes": [
+            {
+                "workload_profile": None,
+                "primary_model_id": "minimax/MiniMax-M2.7",
+                "fallback_models": [],
+                "escalation_model_id": None,
+            }
+        ]
+    }
+
+    with (
+        patch(
+            "cli.commands.agents.agents_api",
+            side_effect=[
+                {"slug": "planner"},
+                current_route,
+                {"agent_slug": "planner"},
+            ],
+        ) as mock_agents_api,
+        patch("cli.commands.agents._print_agent"),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "update",
+                "planner",
+                "--primary-model",
+                "minimax/MiniMax-M2.7",
+                "--change-reason",
+                "manual test route",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert mock_agents_api.call_args_list[2].args == ("PUT", "/planner/routing")
+    assert mock_agents_api.call_args_list[2].kwargs["json"]["default_routing_mode"] == "manual_locked"
 
 
 class TestAgentMemoryConfigUpdate:

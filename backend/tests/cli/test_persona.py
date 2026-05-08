@@ -78,6 +78,46 @@ class TestPersonaInstructionsCommand:
 
 
 class TestPersonaPreviewCommand:
+    def test_preview_defaults_to_compact_summary(self) -> None:
+        preview = {
+            "name": "Jenny",
+            "task_type": "heartbeat",
+            "sections": [
+                {
+                    "label": "Persona Context",
+                    "source_kind": "persona_context",
+                    "source_id": "persona",
+                    "estimated_tokens": 2342,
+                    "share_of_total": 0.4,
+                    "content": "FULL PERSONA CONTEXT",
+                }
+            ],
+            "mandate_count": 1,
+            "guardrail_count": 1,
+            "full_context": "FULL",
+            "prompt_budget": {
+                "severity": "danger",
+                "total_estimated_tokens": 5853,
+                "low_yield_estimated_tokens": 3935,
+                "warning_count": 1,
+                "warnings": ["Prompt budget danger"],
+            },
+        }
+
+        with (
+            patch("cli.commands.persona.agent_preview_api", return_value=preview),
+            patch("cli.commands.persona._api", side_effect=lambda fn, _: fn()),
+        ):
+            result = runner.invoke(app, ["preview"])
+
+        assert result.exit_code == 0
+        assert "Jenny preview | mode=heartbeat | sections=1 | mandates=1 | guardrails=1" in result.output
+        assert "prompt=5853 tok | severity=danger | low_yield=3935 tok | warnings=1" in result.output
+        assert "warn: Prompt budget danger" in result.output
+        assert "Persona Context" in result.output
+        assert "FULL PERSONA CONTEXT" not in result.output
+        assert "FULL" not in result.output
+
     def test_preview_uses_shared_agent_preview_api(self) -> None:
         preview = {
             "name": "Jenny",
