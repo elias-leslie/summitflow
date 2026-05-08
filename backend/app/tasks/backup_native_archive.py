@@ -138,8 +138,12 @@ def _dump_database(project_name: str, destination: Path, env: dict[str, str]) ->
     if not db["password"]:
         return 0, expects_db
     destination.parent.mkdir(parents=True, exist_ok=True)
-    run_env = {**os.environ, **env, "PGPASSWORD": db["password"]}
-    command = ["pg_dump", "-U", db["user"], "-h", db["host"], "-p", db["port"], db["name"]]
+    # Prefer PGUSER/PGPASSWORD (typically superuser) to avoid connection-slot
+    # exhaustion for non-superuser roles.
+    user = os.environ.get("PGUSER", db["user"])
+    password = os.environ.get("PGPASSWORD", db["password"])
+    run_env = {**os.environ, **env, "PGPASSWORD": password}
+    command = ["pg_dump", "-U", user, "-h", db["host"], "-p", db["port"], db["name"]]
     returncode, stderr = _run_gzip_stream(command, destination, env=run_env, timeout=BACKUP_TIMEOUT)
     if returncode != 0:
         detail = stderr.decode(errors="ignore").strip()
