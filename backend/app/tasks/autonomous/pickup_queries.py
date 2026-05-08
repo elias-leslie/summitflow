@@ -130,8 +130,6 @@ def determine_next_stage(task_id: str) -> str:
         return "triage"
 
     if not subtasks:
-        if _plan_status(spirit) in _DRAFT_PLAN_STATUSES:
-            return "planning"
         if _has_saved_plan_artifacts(spirit, subtasks) and not _should_replan(
             task,
             spirit,
@@ -139,6 +137,8 @@ def determine_next_stage(task_id: str) -> str:
             ["subtasks"],
         ):
             return "unknown"
+        if _plan_status(spirit) in _DRAFT_PLAN_STATUSES:
+            return "planning"
         return "planning"
 
     readiness = load_task_execution_readiness(task_id)

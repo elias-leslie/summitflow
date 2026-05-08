@@ -24,7 +24,7 @@ DEFAULT_ENABLED = False
 ResultDict = dict[str, int]
 OrchestrateResult = dict[str, int | str | bool]
 
-_ZERO_ORCHESTRATE: OrchestrateResult = {"enabled": False, "projects_processed": 0, "total_fixed": 0, "total_failed": 0, "total_escalated": 0}
+_ZERO_ORCHESTRATE: OrchestrateResult = {"projects_processed": 0, "total_fixed": 0, "total_failed": 0, "total_escalated": 0}
 
 
 def _resolve_project_id(project_id: str | None = None) -> str:
@@ -129,7 +129,7 @@ def _run_orchestration(max_errors: int) -> OrchestrateResult:
 
         if not health["should_run"]:
             logger.info("no_unfixed_errors")
-            return {**_ZERO_ORCHESTRATE, "message": "No unfixed errors to process"}
+            return {**_ZERO_ORCHESTRATE, "enabled": True, "message": "No unfixed errors to process"}
 
         logger.info("unfixed_errors_found", total=health["total_unfixed"], projects=health["projects_needing_fixes"])
         results = orchestrator.poll_and_fix()
@@ -154,4 +154,4 @@ def orchestrate_self_healing(
         return _run_orchestration(max_errors)
     except Exception as exc:
         logger.error("self_healing_orchestration_failed", error=str(exc))
-        return {**_ZERO_ORCHESTRATE, "error": str(exc)}
+        return {**_ZERO_ORCHESTRATE, "enabled": True, "error": str(exc)}

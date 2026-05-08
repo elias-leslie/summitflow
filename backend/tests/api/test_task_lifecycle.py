@@ -90,7 +90,7 @@ class TestTaskLifecycleEndpoints:
         data = response.json()
         assert data["id"] == task_id
         assert data["status"] == "pending"
-        mock_dispatch.assert_awaited_once_with(task_id, test_project_id)
+        mock_dispatch.assert_awaited_once_with(task_id, test_project_id, manual_dispatch=True)
 
     def test_execute_surfaces_dispatch_failure(
         self,

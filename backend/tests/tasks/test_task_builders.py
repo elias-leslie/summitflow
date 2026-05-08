@@ -178,7 +178,11 @@ class TestCreateRefactorTask:
         assert issue_id == 42
         assert "backend/app/tasks/autonomous/task_generation.py" in mock_create_task.call_args.kwargs["title"]
         assert mock_create_task.call_args.kwargs["context"] == {
-            "files_to_modify": ["backend/app/tasks/autonomous/task_generation.py"]
+            "files_to_modify": ["backend/app/tasks/autonomous/task_generation.py"],
+            "upkeep": {
+                "source_key": "upkeep:refactors:backend/app/tasks/autonomous/task_generation.py",
+                "signal_type": "refactors",
+            },
         }
         assert mock_create_subtask.call_args.kwargs["subtask_type"] == "refactor"
         assert "reduce size toward <200 lines only if it improves clarity" in mock_create_subtask.call_args.kwargs["description"]

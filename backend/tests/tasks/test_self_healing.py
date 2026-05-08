@@ -341,7 +341,7 @@ class TestOrchestrateTask:
         }
         mock_orch_cls.return_value = mock_orch
 
-        result = orchestrate_self_healing()
+        result = orchestrate_self_healing(enabled=True)
 
         assert result["enabled"]
         assert result["projects_processed"] == 0
@@ -374,7 +374,7 @@ class TestOrchestrateTask:
         }
         mock_orch_cls.return_value = mock_orch
 
-        result = orchestrate_self_healing(max_errors=10)
+        result = orchestrate_self_healing(max_errors=10, enabled=True)
 
         assert result["enabled"]
         assert result["projects_processed"] == 1
@@ -398,7 +398,7 @@ class TestOrchestrateTask:
         mock_orch.get_health_summary.side_effect = Exception("DB connection failed")
         mock_orch_cls.return_value = mock_orch
 
-        result = orchestrate_self_healing()
+        result = orchestrate_self_healing(enabled=True)
 
         assert result["enabled"]
         assert "error" in result
