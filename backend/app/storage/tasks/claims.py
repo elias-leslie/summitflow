@@ -128,23 +128,30 @@ def reset_expired_claims() -> int:
     return count
 
 
-def count_running_tasks(project_id: str) -> int:
+def count_running_tasks(project_id: str, *, exclude_task_id: str | None = None) -> int:
     """Count tasks currently running for a project.
 
     Returns:
         Number of tasks with status='running' and valid claim.
     """
+    params: list[object] = [project_id]
+    exclude_clause = ""
+    if exclude_task_id:
+        exclude_clause = " AND id <> %s"
+        params.append(canonicalize_task_id(exclude_task_id))
+
     with get_cursor() as cur:
         cur.execute(
-            """
+            f"""
             SELECT COUNT(*)
             FROM tasks
             WHERE project_id = %s
               AND status = 'running'
               AND claimed_by IS NOT NULL
               AND (lock_expires_at IS NULL OR lock_expires_at > NOW())
+              {exclude_clause}
             """,
-            (project_id,),
+            params,
         )
         row = cur.fetchone()
         return int(row[0]) if row else 0

@@ -229,6 +229,7 @@ async def execute_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
         input.project_id,
         task_type,
         require_enabled=not input.manual_dispatch,
+        exclude_task_id=input.task_id,
     ):
         status = str(guard_error.get("status") or "blocked")
         logger.warning(

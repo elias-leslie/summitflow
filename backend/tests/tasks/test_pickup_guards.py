@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from app.tasks.autonomous.pickup_guards import check_autonomous_enabled, check_system_health
+from app.tasks.autonomous.pickup_guards import (
+    check_autonomous_enabled,
+    check_system_health,
+    get_concurrency_snapshot,
+)
 
 
 def _mock_response(data: dict) -> MagicMock:
@@ -156,3 +160,22 @@ class TestCheckSystemHealth:
 
         result = check_system_health("proj")
         assert result is None  # should not block dispatch
+
+
+class TestConcurrencySnapshot:
+    """Tests for project concurrency accounting."""
+
+    @patch("app.tasks.autonomous.pickup_guards.count_active_agent_hub_sessions", return_value=0)
+    @patch("app.tasks.autonomous.pickup_guards.task_store.count_running_tasks", return_value=0)
+    @patch("app.tasks.autonomous.pickup_guards.agent_configs.get_agent_config", return_value={"autonomous_max_concurrent": 1})
+    def test_can_exclude_current_dispatch_task_from_running_count(
+        self,
+        _mock_config: MagicMock,
+        mock_count_running: MagicMock,
+        _mock_sessions: MagicMock,
+    ) -> None:
+        snapshot = get_concurrency_snapshot("agent-hub", exclude_task_id="task-177f0dec")
+
+        mock_count_running.assert_called_once_with("agent-hub", exclude_task_id="task-177f0dec")
+        assert snapshot["running_count"] == 0
+        assert snapshot["remaining_capacity"] == 1

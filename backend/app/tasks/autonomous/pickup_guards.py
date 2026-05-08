@@ -81,11 +81,11 @@ def count_active_agent_hub_sessions(project_id: str) -> int:
     return sum(1 for session in sessions if isinstance(session, dict) and _session_counts_for_concurrency(session))
 
 
-def get_concurrency_snapshot(project_id: str) -> dict[str, int]:
+def get_concurrency_snapshot(project_id: str, *, exclude_task_id: str | None = None) -> dict[str, int]:
     """Return current task/session capacity pressure for autonomous dispatch."""
     config = agent_configs.get_agent_config(project_id)
     max_concurrent = int(config.get("autonomous_max_concurrent", 1))
-    running_count = task_store.count_running_tasks(project_id)
+    running_count = task_store.count_running_tasks(project_id, exclude_task_id=exclude_task_id)
     active_session_count = count_active_agent_hub_sessions(project_id)
     active_count = max(running_count, active_session_count)
     return {
@@ -97,10 +97,10 @@ def get_concurrency_snapshot(project_id: str) -> dict[str, int]:
     }
 
 
-def check_concurrency_limit(project_id: str) -> dict[str, Any] | None:
+def check_concurrency_limit(project_id: str, *, exclude_task_id: str | None = None) -> dict[str, Any] | None:
     """Return error dict if task/session concurrency limit reached, else None."""
     try:
-        snapshot = get_concurrency_snapshot(project_id)
+        snapshot = get_concurrency_snapshot(project_id, exclude_task_id=exclude_task_id)
     except Exception as exc:
         return {
             "status": "concurrency_unavailable",
@@ -213,6 +213,7 @@ def validate_autonomous_dispatch(
     task_type: str | None = None,
     *,
     require_enabled: bool = True,
+    exclude_task_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Run all guard checks; return first error dict or None if all pass."""
     def permission_check(project: str) -> dict[str, Any] | None:
@@ -221,9 +222,12 @@ def validate_autonomous_dispatch(
             require_enabled=require_enabled,
         )
 
+    def concurrency_check(project: str) -> dict[str, Any] | None:
+        return check_concurrency_limit(project, exclude_task_id=exclude_task_id)
+
     checks: list[Callable[[str], dict[str, Any] | None]] = [
         check_system_health,
-        check_concurrency_limit,
+        concurrency_check,
         check_max_tasks_per_day,
         check_cooldown_period,
     ]
