@@ -10,7 +10,8 @@ Handles:
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, NoReturn
 
 from fastapi import APIRouter, HTTPException
 
@@ -21,6 +22,7 @@ from ...services.task_validation import validate_task_ready
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.tasks.execution_mode import is_manual_only_mode
+from ...tasks.autonomous.pickup_guards import validate_autonomous_dispatch
 from .helpers import (
     dispatch_autonomous_task,
     refresh_task_tracking,
@@ -40,6 +42,17 @@ def _dispatch_failure_status_code(status: str) -> int:
     if status in {"not_claimable", "already_running"}:
         return 409
     return 409
+
+
+def _raise_dispatch_failure(dispatch_result: Mapping[str, Any]) -> NoReturn:
+    status = str(dispatch_result.get("status") or "blocked")
+    raise HTTPException(
+        status_code=_dispatch_failure_status_code(status),
+        detail={
+            "message": "Failed to start autonomous execution",
+            "dispatch": dict(dispatch_result),
+        },
+    )
 
 
 @router.patch("/projects/{project_id}/tasks/{task_id}", response_model=TaskResponse)
@@ -214,6 +227,22 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
             },
         )
 
+    task_type = str(existing.get("task_type") or "").strip() or None
+    guard_error = await asyncio.to_thread(validate_autonomous_dispatch, project_id, task_type)
+    if guard_error:
+        status = str(guard_error.get("status") or "blocked")
+        reason = str(guard_error.get("reason") or status)
+        _raise_dispatch_failure(
+            {
+                "task_id": task_id,
+                "project_id": project_id,
+                "stage": "blocked",
+                "status": status,
+                "reason": reason,
+                "details": guard_error,
+            }
+        )
+
     try:
         updated = await asyncio.to_thread(task_store.update_task_status, task_id, "pending")
     except ValueError as e:
@@ -224,12 +253,6 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
 
     dispatch_result = await dispatch_task(task_id, project_id)
     if dispatch_result.get("status") != "dispatched":
-        raise HTTPException(
-            status_code=_dispatch_failure_status_code(dispatch_result.get("status", "blocked")),
-            detail={
-                "message": "Failed to start autonomous execution",
-                "dispatch": dispatch_result,
-            },
-        )
+        _raise_dispatch_failure(dispatch_result)
 
     return task_to_response(updated)

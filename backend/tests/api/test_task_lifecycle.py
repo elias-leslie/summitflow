@@ -72,6 +72,7 @@ class TestTaskLifecycleEndpoints:
             "app.api.tasks.update_endpoints.validate_task_ready",
             return_value=SimpleNamespace(ready=True, issues=[], suggestions=[], lane_conflict=None),
         )
+        mocker.patch("app.api.tasks.update_endpoints.validate_autonomous_dispatch", return_value=None)
         mock_dispatch = mocker.patch(
             "app.api.tasks.update_endpoints.dispatch_task",
             new_callable=AsyncMock,
@@ -117,6 +118,7 @@ class TestTaskLifecycleEndpoints:
             "app.api.tasks.update_endpoints.validate_task_ready",
             return_value=SimpleNamespace(ready=True, issues=[], suggestions=[], lane_conflict=None),
         )
+        mocker.patch("app.api.tasks.update_endpoints.validate_autonomous_dispatch", return_value=None)
         mocker.patch(
             "app.api.tasks.update_endpoints.dispatch_task",
             new_callable=AsyncMock,
@@ -136,6 +138,49 @@ class TestTaskLifecycleEndpoints:
         assert body["message"] == "Failed to start autonomous execution"
         assert body["dispatch"]["status"] == "disabled"
         assert body["dispatch"]["reason"] == "not_allowed"
+
+    def test_execute_preflight_guard_blocks_before_dispatch(
+        self,
+        client: Any,
+        test_project_id: str,
+        cleanup_task: Callable[[str], None],
+        mocker: Any,
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Preflight guard target",
+                "task_type": "bug",
+                "priority": 2,
+                "complexity": "SIMPLE",
+                "objective": "Block before task status is changed",
+                "done_when": ["Dispatch is not called when autonomous execution is disabled"],
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        mocker.patch(
+            "app.api.tasks.update_endpoints.validate_task_ready",
+            return_value=SimpleNamespace(ready=True, issues=[], suggestions=[], lane_conflict=None),
+        )
+        mocker.patch(
+            "app.api.tasks.update_endpoints.validate_autonomous_dispatch",
+            return_value={"status": "disabled", "reason": "not_allowed"},
+        )
+        mock_dispatch = mocker.patch(
+            "app.api.tasks.update_endpoints.dispatch_task",
+            new_callable=AsyncMock,
+        )
+
+        response = client.post(f"/api/projects/{test_project_id}/tasks/{task_id}/execute")
+
+        assert response.status_code == 503
+        body = response.json()
+        assert body["dispatch"]["stage"] == "blocked"
+        assert body["dispatch"]["status"] == "disabled"
+        mock_dispatch.assert_not_awaited()
 
     def test_execute_rejects_manual_only_task(
         self,
