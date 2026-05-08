@@ -19,6 +19,7 @@ from app.storage.task_spirit import get_task_spirit
 
 _REPLANNING_FIELDS = frozenset({"description", "done_when", "subtasks", "context", "execution_contract"})
 _ADVISORY_MISSING_FIELDS = frozenset({"second_opinion"})
+_DRAFT_PLAN_STATUSES = frozenset({"", "draft", "needs_revision"})
 
 
 def _parse_timestamp(value: object) -> datetime | None:
@@ -82,6 +83,12 @@ def _second_opinion_status(spirit: dict[str, Any] | None) -> str:
     return status
 
 
+def _plan_status(spirit: dict[str, Any] | None) -> str:
+    if not isinstance(spirit, dict):
+        return ""
+    return str(spirit.get("plan_status") or "").strip().lower()
+
+
 def _should_replan(
     task: dict[str, Any],
     spirit: dict[str, Any] | None,
@@ -123,6 +130,8 @@ def determine_next_stage(task_id: str) -> str:
         return "triage"
 
     if not subtasks:
+        if _plan_status(spirit) in _DRAFT_PLAN_STATUSES:
+            return "planning"
         if _has_saved_plan_artifacts(spirit, subtasks) and not _should_replan(
             task,
             spirit,
@@ -138,6 +147,10 @@ def determine_next_stage(task_id: str) -> str:
         blocking_missing_fields = [
             field for field in readiness.missing_fields if field not in _ADVISORY_MISSING_FIELDS
         ]
+        if _plan_status(spirit) in _DRAFT_PLAN_STATUSES and _REPLANNING_FIELDS.intersection(
+            blocking_missing_fields
+        ):
+            return "planning"
         if _should_replan(task, spirit, subtasks, blocking_missing_fields):
             return "planning"
         if not blocking_missing_fields and second_opinion_status in {"pending", "needs_revision", ""}:
