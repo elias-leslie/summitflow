@@ -108,6 +108,7 @@ SCHEDULE_DEFINITIONS: tuple[AutonomousScheduleDefinition, ...] = (
         description="Checks repeated failures and runs the self-healing orchestrator.",
         cron="*/30 * * * *",
         scope="system",
+        default_enabled=False,
     ),
     AutonomousScheduleDefinition(
         schedule_id="prod_smoke_test",

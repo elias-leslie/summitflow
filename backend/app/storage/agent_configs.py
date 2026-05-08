@@ -89,7 +89,7 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "refresh_graphify_graphs_enabled": True,
     "scheduled_backups_enabled": True,
     "stale_cleanup_enabled": True,
-    "self_healing_enabled": True,
+    "self_healing_enabled": False,
     "prod_smoke_test_enabled": True,
     "health_monitor_enabled": True,
     "pending_drain_enabled": True,

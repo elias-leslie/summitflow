@@ -7,4 +7,4 @@ from pydantic import BaseModel
 
 class SelfHealingInput(BaseModel):
     max_errors: int = 20
-    enabled: bool = True
+    enabled: bool = False

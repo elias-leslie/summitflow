@@ -20,11 +20,11 @@ logger = get_logger(__name__)
 
 MAX_TASKS_PER_RUN = 10
 DEFAULT_MAX_ERRORS = 20
-DEFAULT_ENABLED = True
+DEFAULT_ENABLED = False
 ResultDict = dict[str, int]
 OrchestrateResult = dict[str, int | str | bool]
 
-_ZERO_ORCHESTRATE: OrchestrateResult = {"enabled": True, "projects_processed": 0, "total_fixed": 0, "total_failed": 0, "total_escalated": 0}
+_ZERO_ORCHESTRATE: OrchestrateResult = {"enabled": False, "projects_processed": 0, "total_fixed": 0, "total_failed": 0, "total_escalated": 0}
 
 
 def _resolve_project_id(project_id: str | None = None) -> str:
