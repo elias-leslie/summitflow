@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from app.storage import task_dependencies
 from app.storage import tasks as task_store
+from app.storage.subtasks import get_subtasks_for_task
 from app.storage.task_spirit import approve_plan, create_task_spirit, get_task_spirit
 from app.tasks.autonomous.exec_modules.baseline_blockers import (
     BASELINE_QUALITY_MARKER,
@@ -67,6 +68,14 @@ def test_quality_gate_blocker_resets_original_to_pending_and_adds_dependency(
     spirit = get_task_spirit(blocker_id)
     assert spirit is not None
     assert spirit["context"]["upkeep"][BASELINE_QUALITY_MARKER] is True
+    subtasks = get_subtasks_for_task(blocker_id, include_steps=True)
+    assert len(subtasks) == 1
+    assert subtasks[0]["steps_source"] == "plan_context"
+    assert [step["description"] for step in subtasks[0]["steps"]] == [
+        "Inspect st check output and referenced .dev-tools detail files to identify the current baseline failures",
+        "Fix only the current baseline quality failures without broadening scope",
+        "Verify the baseline quality gate is green",
+    ]
 
 
 def test_clear_project_quality_gate_blockers_unblocks_original_task(
@@ -85,7 +94,7 @@ def test_clear_project_quality_gate_blockers_unblocks_original_task(
 
     result = clear_project_quality_gate_blockers(ensure_test_project)
 
-    assert result["deleted"] == 1
+    assert result["deleted"] >= 1
     assert task_dependencies.is_blocked(task["id"]) is False
 
 

@@ -98,6 +98,7 @@ def create_signal_task(project_id: str, spec: SignalTaskSpec) -> str:
         subtask_id=SUBTASK_ID,
         phase=subtask_phase(spec.files_to_modify),
         description=spec.subtask_description,
+        steps=spec.steps,
         subtask_type=SUBTASK_TYPE_BUG_FIX if spec.task_type == TASK_TYPE_BUG else SUBTASK_TYPE_IMPLEMENTATION,
     )
     return task_id

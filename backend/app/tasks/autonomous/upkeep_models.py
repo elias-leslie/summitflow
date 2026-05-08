@@ -30,6 +30,7 @@ class SignalTaskSpec(BaseModel):
     complexity: str = COMPLEXITY_SIMPLE
     files_to_modify: list[str] | None = None
     source_context: dict[str, Any] | None = None
+    steps: list[dict[str, object]] | None = None
 
 
 class RunAccumulator(BaseModel):

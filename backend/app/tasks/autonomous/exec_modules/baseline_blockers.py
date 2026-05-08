@@ -102,6 +102,18 @@ def _create_quality_blocker_task(
             "failure_fingerprint": fingerprint,
             "check_command": "st check --quick",
         },
+        steps=[
+            {
+                "description": "Inspect st check output and referenced .dev-tools detail files to identify the current baseline failures",
+            },
+            {
+                "description": "Fix only the current baseline quality failures without broadening scope",
+            },
+            {
+                "description": "Verify the baseline quality gate is green",
+                "spec": {"verify_commands": ["st check --quick"]},
+            },
+        ],
     )
     return create_signal_task(project_id, spec)
 
