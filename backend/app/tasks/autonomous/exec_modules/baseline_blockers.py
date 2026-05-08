@@ -19,6 +19,7 @@ from app.tasks.autonomous.upkeep_signals import (
 
 BASELINE_QUALITY_MARKER = "baseline_quality_gate"
 QUALITY_BLOCKER_REASON = "quality_gate_blocked"
+QUALITY_FIX_AGENT = "debugger"
 
 
 def _quality_lines(output: str) -> list[str]:
@@ -96,6 +97,7 @@ def _create_quality_blocker_task(
         task_type=TASK_TYPE_BUG,
         subtask_description=f"Restore green baseline quality gate for {project_id}",
         complexity="STANDARD",
+        agent_override=QUALITY_FIX_AGENT,
         source_context={
             BASELINE_QUALITY_MARKER: True,
             "blocked_task_id": blocked_task_id,

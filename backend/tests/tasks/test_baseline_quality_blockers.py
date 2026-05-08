@@ -64,6 +64,10 @@ def test_quality_gate_blocker_resets_original_to_pending_and_adds_dependency(
     assert task_dependencies.is_blocked(task["id"]) is True
     assert any(item["id"] == task["id"] for item in task_store.list_blocked_tasks(ensure_test_project))
 
+    blocker_task = task_store.get_task(blocker_id)
+    assert blocker_task is not None
+    assert blocker_task["agent_override"] == "debugger"
+
     assert is_baseline_quality_gate_task(blocker_id) is True
     spirit = get_task_spirit(blocker_id)
     assert spirit is not None

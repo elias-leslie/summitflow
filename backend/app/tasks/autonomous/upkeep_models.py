@@ -31,6 +31,7 @@ class SignalTaskSpec(BaseModel):
     files_to_modify: list[str] | None = None
     source_context: dict[str, Any] | None = None
     steps: list[dict[str, object]] | None = None
+    agent_override: str | None = None
 
 
 class RunAccumulator(BaseModel):

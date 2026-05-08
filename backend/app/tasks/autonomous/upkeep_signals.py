@@ -81,6 +81,8 @@ def create_signal_task(project_id: str, spec: SignalTaskSpec) -> str:
         labels=[*UPKEEP_LABELS, spec.signal_type],
     )
     task_id = str(task["id"])
+    if spec.agent_override:
+        task_store.update_task(task_id, agent_override=spec.agent_override)
     create_task_spirit(
         task_id=task_id,
         done_when=DONE_WHEN,
