@@ -61,7 +61,7 @@ export function useTaskExecution({
     if (!task) return
     setIsStopping(true)
     try {
-      const updated = await updateTaskStatus(projectId, task.id, 'pending')
+      const updated = await updateTaskStatus(projectId, task.id, 'paused')
       setTask(updated)
       onTaskUpdate?.(updated)
       syncUpdatedTask(updated)

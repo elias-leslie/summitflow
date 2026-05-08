@@ -21,16 +21,32 @@ export function StatusActionButtons({
   onStopExecution,
 }: StatusActionButtonsProps) {
   const isPending = status === 'pending'
+  const isPaused = status === 'paused'
   const isRunning = status === 'running'
   const isCompleted = status === 'completed'
   const isFailed = status === 'failed'
+  const canQueue = isPending || isPaused || isFailed
+  const queueLabel = isPaused
+    ? 'Resume'
+    : isFailed
+      ? 'Retry'
+      : 'Start Execution'
+  const queueingLabel = isPaused
+    ? 'Resuming...'
+    : isFailed
+      ? 'Retrying...'
+      : 'Starting...'
 
   return (
     <>
-      {isPending && (
+      {canQueue && (
         <Button
           variant="outline"
-          className="gap-2"
+          className={
+            isFailed
+              ? 'gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10'
+              : 'gap-2'
+          }
           onClick={onStartExecution}
           disabled={isExecuting}
         >
@@ -39,22 +55,7 @@ export function StatusActionButtons({
           ) : (
             <Play className="h-4 w-4" />
           )}
-          {isExecuting ? 'Starting...' : 'Start Execution'}
-        </Button>
-      )}
-      {isFailed && (
-        <Button
-          variant="outline"
-          className="gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
-          onClick={onStartExecution}
-          disabled={isExecuting}
-        >
-          {isExecuting ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Play className="h-4 w-4" />
-          )}
-          {isExecuting ? 'Retrying...' : 'Retry'}
+          {isExecuting ? queueingLabel : queueLabel}
         </Button>
       )}
       {isRunning && (

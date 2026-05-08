@@ -156,6 +156,22 @@ export function TaskRow({
                     Start
                   </Button>
                 )}
+                {task.status === 'paused' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onStatusChange('pending')
+                    }}
+                    disabled={isUpdating}
+                  >
+                    {isUpdating ? (
+                      <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                    ) : null}
+                    Resume
+                  </Button>
+                )}
                 {task.status === 'running' && (
                   <Button
                     size="sm"
