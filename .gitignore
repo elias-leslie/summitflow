@@ -85,6 +85,7 @@ references/
 .gitnexus/
 .claude/skills/gitnexus/
 .fallow/
+graphify-out/
 
 # Checkpoint data
 .st/
