@@ -13,11 +13,33 @@ from ..client import APIError, STClient
 from ..config import get_config_optional
 from ..output import handle_api_error, output_json
 from ._complete_http import call_complete
+from ._session_resolver import resolve_session_id
 from .complete import _completion_failed, _resolve_message
 
 app = typer.Typer(help="Run Agent Hub agents with tools", no_args_is_help=True)
 
 DEFAULT_AGENT_MAX_TURNS = 5000
+NORMAL_TERMINATION_REASONS = {"streaming_one_shot_closed"}
+
+ADHOC_WORKLOAD_CAPABILITIES: dict[str, dict[str, float]] = {
+    "coding_impl": {"coding": 0.9, "tool_use": 0.85, "reasoning": 0.75},
+    "frontend_ux": {"coding": 0.75, "design": 0.8, "tool_use": 0.75, "vision": 0.4},
+    "planning": {"planning": 0.8, "reasoning": 0.75, "tool_use": 0.5},
+    "research": {"research": 0.8, "reasoning": 0.7, "tool_use": 0.45},
+    "general": {"reasoning": 0.6, "tool_use": 0.4},
+}
+ADHOC_TASK_TYPE_WORKLOADS: dict[str, str] = {
+    "coding_impl": "coding_impl",
+    "implementation": "coding_impl",
+    "refactor": "coding_impl",
+    "debug": "coding_impl",
+    "frontend_ux": "frontend_ux",
+    "frontend": "frontend_ux",
+    "design": "frontend_ux",
+    "planning": "planning",
+    "research": "research",
+    "general": "general",
+}
 
 
 def _project(project: str | None) -> str:
@@ -76,10 +98,30 @@ def _merge_adhoc_spec(
     prompt_text: str | None,
     exclude_providers: list[str] | None,
     cost_preference: str | None,
+    task_type: str | None,
+    read_only: bool = False,
 ) -> dict[str, Any]:
     merged = dict(spec)
     if prompt_text:
         merged["prompt"] = prompt_text
+    if task_type and not merged.get("task_type"):
+        merged["task_type"] = task_type
+    profile = None
+    if task_type:
+        profile = ADHOC_TASK_TYPE_WORKLOADS.get(task_type.strip().lower())
+    if profile and not merged.get("workload_profile"):
+        merged["workload_profile"] = profile
+    if profile and not merged.get("routing_judgment"):
+        merged["routing_judgment"] = {
+            "workload_profile": profile,
+            "risk_tier": "low" if profile in {"planning", "research", "general"} else "normal",
+            "capabilities": ADHOC_WORKLOAD_CAPABILITIES[profile],
+            "constraints": {"needs_repo_access": not read_only},
+            "confidence": 0.8,
+            "rationale": f"Derived from st agent --task-type {task_type}.",
+        }
+    if profile and not merged.get("tool_mode"):
+        merged["tool_mode"] = "read_only" if read_only else "write"
     routing = dict(merged.get("routing") or {})
     if exclude_providers:
         routing["exclude_providers"] = exclude_providers
@@ -212,6 +254,8 @@ def run_agent(
         prompt_text=prompt_text,
         exclude_providers=exclude_provider,
         cost_preference=cost_preference,
+        task_type=task_type,
+        read_only=read_only,
     ) if adhoc else {}
     resolved_message = _resolve_message(message_option or message, file) or (
         _message_from_adhoc_spec(adhoc_spec) if adhoc else None
@@ -269,10 +313,15 @@ def run_agent(
 
 @app.command("status")
 def status_agent(session_id: str, raw: Annotated[bool, typer.Option("--raw")] = False) -> None:
-    """Show compact status for an agent session."""
+    """Show compact status for an agent session.
+
+    Accepts the short ID printed by ``st sessions list`` as well as the full
+    UUID; prefixes are resolved before the API call.
+    """
     client = STClient(require_project=False)
+    resolved_id = resolve_session_id(session_id, client)
     try:
-        session = client.get_session(session_id)
+        session = client.get_session(resolved_id)
     except APIError as e:
         handle_api_error(e)
         return
@@ -292,7 +341,7 @@ def status_agent(session_id: str, raw: Annotated[bool, typer.Option("--raw")] = 
         f"summary={str(live.get('summary') or '-')[:180]}"
     )
     termination = live.get("termination_reason")
-    if termination:
+    if termination and termination not in NORMAL_TERMINATION_REASONS:
         print(f"AGENT_ERROR {str(termination)[:300]}")
     tool_error = live.get("last_tool_error_excerpt")
     if tool_error:
@@ -301,9 +350,14 @@ def status_agent(session_id: str, raw: Annotated[bool, typer.Option("--raw")] = 
 
 @app.command("stop")
 def stop_agent(session_id: str) -> None:
-    """Close an active agent session."""
+    """Close an active agent session.
+
+    Accepts the short ID printed by ``st sessions list`` as well as the full
+    UUID; prefixes are resolved before the API call.
+    """
     client = STClient(require_project=False)
+    resolved_id = resolve_session_id(session_id, client)
     try:
-        output_json(client.close_session(session_id))
+        output_json(client.close_session(resolved_id))
     except APIError as e:
         handle_api_error(e)

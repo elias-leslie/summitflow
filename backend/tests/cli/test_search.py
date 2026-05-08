@@ -330,6 +330,29 @@ def test_search_precision_passes_limit() -> None:
     assert "/explorer/precision-search?" in call_url
 
 
+def test_search_caps_limit_above_api_max() -> None:
+    payload = {
+        "prompt_context": "Precision Code Search: symbol-first\n\n## Relevant Symbols",
+        "metadata": {
+            "symbol_count": 3,
+            "used_symbol_first": True,
+            "estimated_tokens_saved": 800,
+            "final_tokens": 400,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)) as mock_client,
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = _invoke(["my_function", "--limit", "30"])
+
+    assert result.exit_code == 0
+    call_url = mock_client.return_value.get.call_args[0][0]
+    assert "limit=20" in call_url
+    assert "st search: --limit 30 capped at 20." in result.output
+
+
 def test_search_precision_emits_delayed_status_note_for_slow_searches() -> None:
     payload = {
         "prompt_context": "Precision Code Search: symbol-first\n\n## Relevant Symbols",

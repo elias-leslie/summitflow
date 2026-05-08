@@ -249,38 +249,41 @@ function adhocWorkSpecForPane(
   const isProjectWork = Boolean(pane.projectId)
   const isImplementationWork = Boolean(pane.taskId || pane.feedbackId)
   const isDesignWork = Boolean(pane.designId)
-  const workloadProfile = isDesignWork
-    ? 'frontend_ux'
-    : isImplementationWork
-      ? 'coding_impl'
-      : isProjectWork
-        ? 'planning'
-        : 'general'
+
+  let workloadProfile: string
+  if (isDesignWork) workloadProfile = 'frontend_ux'
+  else if (isImplementationWork) workloadProfile = 'coding_impl'
+  else if (isProjectWork) workloadProfile = 'planning'
+  else workloadProfile = 'general'
+
+  let taskType: string
+  if (pane.taskId) taskType = 'project_task'
+  else if (pane.feedbackId) taskType = 'feedback_work'
+  else if (pane.designId) taskType = 'design_work'
+  else if (isProjectWork) taskType = 'project_work'
+  else taskType = 'general'
+
+  const riskTier = isImplementationWork ? 'normal' : 'low'
+  const toolMode = isProjectWork ? 'write' : 'read_only'
+  const costPreference = isImplementationWork ? 'balanced' : 'low_cost'
+
   const capabilities: Record<string, number> = {
     reasoning: 0.7,
     tool_use: isProjectWork ? 0.8 : 0.4,
+    ...(isProjectWork && { coding: isImplementationWork ? 0.85 : 0.55 }),
+    ...(isDesignWork && { vision: 0.45 }),
+    ...(!isProjectWork && { research: 0.45 }),
   }
-  if (isProjectWork) capabilities.coding = isImplementationWork ? 0.85 : 0.55
-  if (isDesignWork) capabilities.vision = 0.45
-  if (!isProjectWork) capabilities.research = 0.45
 
   return {
     title:
       pane.taskTitle ??
       pane.artifactSummary ??
       (project ? `${project.name} work chat` : 'General work chat'),
-    task_type: pane.taskId
-      ? 'project_task'
-      : pane.feedbackId
-        ? 'feedback_work'
-        : pane.designId
-          ? 'design_work'
-          : isProjectWork
-            ? 'project_work'
-            : 'general',
+    task_type: taskType,
     workload_profile: workloadProfile,
-    risk_tier: isImplementationWork ? 'normal' : 'low',
-    tool_mode: isProjectWork ? 'write' : 'read_only',
+    risk_tier: riskTier,
+    tool_mode: toolMode,
     context: {
       project_id: pane.projectId ?? undefined,
       task_id: pane.taskId ?? undefined,
@@ -293,7 +296,7 @@ function adhocWorkSpecForPane(
       'result, evidence, files/checks when changed, exact blocker if blocked',
     routing_judgment: {
       workload_profile: workloadProfile,
-      risk_tier: isImplementationWork ? 'normal' : 'low',
+      risk_tier: riskTier,
       capabilities,
       constraints: {
         needs_repo_access: isProjectWork,
@@ -304,7 +307,7 @@ function adhocWorkSpecForPane(
       rationale: 'Derived from Work Chats context.',
     },
     routing: {
-      cost_preference: isImplementationWork ? 'balanced' : 'low_cost',
+      cost_preference: costPreference,
     },
   }
 }
@@ -598,6 +601,17 @@ function sessionSummary(session: AgentHubSessionListItem) {
     session.workstream_status ??
     ''
   )
+}
+
+function resetChatRuntimePatch(pane: WorkChatPane): Partial<WorkChatPane> {
+  return {
+    sessionId: null,
+    chatKey: pane.chatKey + 1,
+    verifierSessionId: null,
+    verifierChatKey: pane.verifierChatKey + 1,
+    verifierLoopCount: 0,
+    verifierLastBuilderSessionId: null,
+  }
 }
 
 function sessionResumePatch(
@@ -1008,12 +1022,7 @@ function PaneChrome({
                 feedbackId: null,
                 designId: null,
                 artifactSummary: null,
-                sessionId: null,
-                chatKey: pane.chatKey + 1,
-                verifierSessionId: null,
-                verifierChatKey: pane.verifierChatKey + 1,
-                verifierLoopCount: 0,
-                verifierLastBuilderSessionId: null,
+                ...resetChatRuntimePatch(pane),
               })
             }
             label="Project"
@@ -1035,12 +1044,7 @@ function PaneChrome({
                 taskId: task?.id ?? null,
                 taskTitle: task?.title ?? null,
                 taskSummary: task?.description ?? null,
-                sessionId: null,
-                chatKey: pane.chatKey + 1,
-                verifierSessionId: null,
-                verifierChatKey: pane.verifierChatKey + 1,
-                verifierLoopCount: 0,
-                verifierLastBuilderSessionId: null,
+                ...resetChatRuntimePatch(pane),
               })
             }}
             label="Task"
@@ -1064,12 +1068,7 @@ function PaneChrome({
                   feedbackId: null,
                   designId: null,
                   artifactSummary: null,
-                  sessionId: null,
-                  chatKey: pane.chatKey + 1,
-                  verifierSessionId: null,
-                  verifierChatKey: pane.verifierChatKey + 1,
-                  verifierLoopCount: 0,
-                  verifierLastBuilderSessionId: null,
+                  ...resetChatRuntimePatch(pane),
                 })
                 return
               }
@@ -1078,12 +1077,7 @@ function PaneChrome({
                 designId: artifact.kind === 'design' ? artifact.id : null,
                 artifactSummary: artifact.label,
                 taskId: artifact.linkedTaskId ?? pane.taskId,
-                sessionId: null,
-                chatKey: pane.chatKey + 1,
-                verifierSessionId: null,
-                verifierChatKey: pane.verifierChatKey + 1,
-                verifierLoopCount: 0,
-                verifierLastBuilderSessionId: null,
+                ...resetChatRuntimePatch(pane),
               })
             }}
             label="Feedback or design"
@@ -1189,12 +1183,7 @@ function PaneChrome({
               type="button"
               onClick={() =>
                 onPatch({
-                  sessionId: null,
-                  chatKey: pane.chatKey + 1,
-                  verifierSessionId: null,
-                  verifierChatKey: pane.verifierChatKey + 1,
-                  verifierLoopCount: 0,
-                  verifierLastBuilderSessionId: null,
+                  ...resetChatRuntimePatch(pane),
                 })
               }
               className="flex h-8 items-center gap-2 rounded border border-slate-800 bg-slate-950/80 px-2 text-left text-xs text-slate-300 hover:border-phosphor-500/50 hover:text-phosphor-200"
@@ -2714,12 +2703,7 @@ function WorkChatsContent() {
               onPatch={(patch) => patchPane(pane.id, patch)}
               onNewChat={() =>
                 patchPane(pane.id, {
-                  sessionId: null,
-                  chatKey: pane.chatKey + 1,
-                  verifierSessionId: null,
-                  verifierChatKey: pane.verifierChatKey + 1,
-                  verifierLoopCount: 0,
-                  verifierLastBuilderSessionId: null,
+                  ...resetChatRuntimePatch(pane),
                 })
               }
               onSplit={() => splitPane(pane)}

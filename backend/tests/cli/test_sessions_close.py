@@ -13,6 +13,9 @@ runner = CliRunner()
 
 def test_sessions_close_calls_client_and_prints_response() -> None:
     mock_client = MagicMock()
+    # The CLI resolves short prefixes via list_sessions before closing so the
+    # short ID printed by `st sessions list` works directly.
+    mock_client.list_sessions.return_value = [{"id": "sess-1"}]
     mock_client.close_session.return_value = {
         "id": "sess-1",
         "status": "completed",

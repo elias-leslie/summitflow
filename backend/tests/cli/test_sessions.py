@@ -342,6 +342,8 @@ class TestSessionsCommandAliases:
 
     def test_sessions_show_uses_projectless_client(self) -> None:
         mock_client = MagicMock()
+        # Resolver looks up the prefix via list_sessions before fetching detail.
+        mock_client.list_sessions.return_value = [{"id": "sess-show"}]
         mock_client.get_session.return_value = {"id": "sess-show"}
 
         with patch("cli.commands.sessions.STClient", return_value=mock_client) as mock_client_ctor:
@@ -354,6 +356,7 @@ class TestSessionsCommandAliases:
 
     def test_sessions_close_uses_projectless_client(self) -> None:
         mock_client = MagicMock()
+        mock_client.list_sessions.return_value = [{"id": "sess-close"}]
         mock_client.close_session.return_value = {"closed": True}
 
         with patch("cli.commands.sessions.STClient", return_value=mock_client) as mock_client_ctor:
@@ -589,6 +592,9 @@ class TestRequireProjectFalse:
             def __init__(self, **kwargs: object) -> None:
                 captured_kwargs.append(kwargs)
 
+            def list_sessions(self, **_: object) -> list[dict[str, object]]:
+                return [{"id": "sess-abc"}]
+
             def get_session(self, session_id: str) -> dict[str, object]:
                 return {"id": session_id, "status": "completed"}
 
@@ -604,6 +610,9 @@ class TestRequireProjectFalse:
         class _DummyClient:
             def __init__(self, **kwargs: object) -> None:
                 captured_kwargs.append(kwargs)
+
+            def list_sessions(self, **_: object) -> list[dict[str, object]]:
+                return [{"id": "sess-xyz"}]
 
             def close_session(self, session_id: str) -> dict[str, object]:
                 return {"id": session_id, "status": "completed"}

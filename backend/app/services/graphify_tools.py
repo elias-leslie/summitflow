@@ -86,15 +86,42 @@ def estimate_tokens(text: str) -> int:
     return (len(text) + 3) // 4 if text else 0
 
 
+def _missing_shebang_interpreter(path: Path) -> str | None:
+    """Return missing interpreter path for script executables with absolute shebangs."""
+    try:
+        first_line = path.read_bytes().splitlines()[0].decode("utf-8", errors="replace")
+    except (IndexError, OSError):
+        return None
+    if not first_line.startswith("#!"):
+        return None
+    parts = first_line[2:].strip().split()
+    if not parts:
+        return None
+    interpreter = parts[0]
+    if Path(interpreter).name == "env" and len(parts) > 1 and parts[1].startswith("/"):
+        interpreter = parts[1]
+    if interpreter.startswith("/") and not Path(interpreter).exists():
+        return interpreter
+    return None
+
+
+def _usable_executable(path: Path) -> bool:
+    if not path.exists() or not os.access(path, os.X_OK):
+        return False
+    return _missing_shebang_interpreter(path) is None
+
+
 def graphify_bin() -> str:
     """Resolve Graphify executable."""
     configured = os.getenv("GRAPHIFY_BIN")
     if configured:
+        if not _usable_executable(Path(configured)):
+            raise FileNotFoundError(f"configured graphify executable is not runnable: {configured}")
         return configured
     found = shutil.which("graphify")
-    if found:
+    if found and _usable_executable(Path(found)):
         return found
-    if _DEFAULT_GRAPHIFY_BIN.exists():
+    if _usable_executable(_DEFAULT_GRAPHIFY_BIN):
         return str(_DEFAULT_GRAPHIFY_BIN)
     raise FileNotFoundError("graphify executable not found")
 

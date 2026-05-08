@@ -13,6 +13,7 @@ import typer
 
 from ..context import require_task_id
 from ..output import output_json
+from ._session_resolver import resolve_session_id
 from .session_events_client import get_session_events, get_task_events
 from .session_events_follow import follow_session_events, follow_task_events
 from .session_events_formatter import display_events
@@ -79,7 +80,7 @@ def show_events(
     turn: Annotated[int | None, typer.Option("--turn", help="Filter by turn number")] = None,
     follow: Annotated[bool, typer.Option("-f", "--follow", help="Follow events in real-time (poll every 2s)")] = False,
     page: Annotated[int, typer.Option("--page", help="Page number")] = 1,
-    page_size: Annotated[int, typer.Option("--page-size", "-n", help="Events per page")] = 50,
+    page_size: Annotated[int, typer.Option("--page-size", "-n", "--limit", help="Events per page")] = 50,
     raw: Annotated[bool, typer.Option("--raw", "-r", help="Output raw JSON")] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Show full content without truncation")] = False,
 ) -> None:
@@ -96,4 +97,9 @@ def show_events(
     if not session_id:
         typer.echo("Provide a session ID or use --task/-T <task-id>.")
         raise typer.Exit(1)
-    _handle_session_events(session_id, event_type, turn, follow, page, page_size, raw, verbose)
+    # Accept short IDs from `st sessions list` (8-char prefix) by resolving
+    # them to the full UUID Agent Hub's events endpoint expects.
+    resolved_session_id = resolve_session_id(session_id)
+    _handle_session_events(
+        resolved_session_id, event_type, turn, follow, page, page_size, raw, verbose
+    )

@@ -145,3 +145,35 @@ def test_agent_run_adhoc_json_sends_workspec_without_registered_agent(tmp_path: 
     assert kwargs["adhoc_spec"]["routing"]["exclude_providers"] == ["codex"]
     assert kwargs["routing_exclude_providers"] == ["codex"]
     assert kwargs["routing_cost_preference"] == "low_cost"
+
+
+def test_agent_run_adhoc_derives_coding_workspec_from_task_type() -> None:
+    with patch("cli.commands.agent.call_complete") as mock_call:
+        mock_call.return_value = {
+            "content": "done",
+            "session_id": "sess-adhoc",
+            "model": "claude-sonnet-4-6",
+        }
+
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--adhoc",
+                "--project", "summitflow",
+                "--task-type", "coding_impl",
+                "--message", "Fix a CLI issue",
+            ],
+        )
+
+    assert result.exit_code == 0
+    adhoc_spec = mock_call.call_args.kwargs["adhoc_spec"]
+    assert adhoc_spec["task_type"] == "coding_impl"
+    assert adhoc_spec["workload_profile"] == "coding_impl"
+    assert adhoc_spec["tool_mode"] == "write"
+    assert adhoc_spec["routing_judgment"]["workload_profile"] == "coding_impl"
+    assert adhoc_spec["routing_judgment"]["capabilities"] == {
+        "coding": 0.9,
+        "tool_use": 0.85,
+        "reasoning": 0.75,
+    }

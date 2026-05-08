@@ -12,6 +12,7 @@ from ..client import APIError, STClient
 from ..config import get_project_override
 from ..details import current_root, display_path, write_details
 from ..output import handle_api_error, is_compact, output_json
+from ._session_resolver import resolve_session_id as _resolve_session_id
 from .sessions_overlap import render_overlap_list
 from .sessions_ownership import render_ownership_list
 
@@ -20,7 +21,6 @@ app = typer.Typer(
     invoke_without_command=True,
     no_args_is_help=False,
 )
-
 
 _ACTIVE_STATUS_ALIASES = {"running", "stale", "reapable"}
 _LIVE_STATUS_ALIASES = {"stale", "reapable"}
@@ -198,9 +198,10 @@ def show_session(
         st sessions show abc123
     """
     client = STClient(require_project=False)
+    resolved_id = _resolve_session_id(session_id, client)
 
     try:
-        session = client.get_session(session_id)
+        session = client.get_session(resolved_id)
     except APIError as e:
         handle_api_error(e)
         return
@@ -209,8 +210,8 @@ def show_session(
         output_json(session)
         return
     root = current_root()
-    details = write_details(root, f"session-{session_id[:8]}", json.dumps(session, default=str, indent=2))
-    print(f"SESSION:{session.get('id', session_id)}|project={session.get('project_id', '-')}|status={session.get('status', '-')}|details:{display_path(root, details)}")
+    details = write_details(root, f"session-{resolved_id[:8]}", json.dumps(session, default=str, indent=2))
+    print(f"SESSION:{session.get('id', resolved_id)}|project={session.get('project_id', '-')}|status={session.get('status', '-')}|details:{display_path(root, details)}")
 
 
 @app.command("close")
@@ -222,9 +223,10 @@ def close_session(
     Works from any directory — no project context required.
     """
     client = STClient(require_project=False)
+    resolved_id = _resolve_session_id(session_id, client)
 
     try:
-        result = client.close_session(session_id)
+        result = client.close_session(resolved_id)
     except APIError as e:
         handle_api_error(e)
         return

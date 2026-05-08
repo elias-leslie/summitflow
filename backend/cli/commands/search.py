@@ -57,6 +57,7 @@ ScopeOption = Annotated[
 ]
 
 _SEARCH_PROGRESS_DELAY_SECONDS = 1.5
+_MAX_RESULT_LIMIT = 20
 _SEARCH_PROGRESS_MESSAGE = (
     "st search: still working; first precision search may refresh stale Explorer indexes before returning results."
 )
@@ -73,6 +74,13 @@ def _start_delayed_status_timer(message: str) -> threading.Timer:
     timer.daemon = True
     timer.start()
     return timer
+
+
+def _normalize_limit(limit: int) -> int:
+    if limit <= _MAX_RESULT_LIMIT:
+        return limit
+    _emit_status(f"st search: --limit {limit} capped at {_MAX_RESULT_LIMIT}.")
+    return _MAX_RESULT_LIMIT
 
 
 def _run_precision_search(
@@ -245,6 +253,7 @@ def search(
 ) -> None:
     """Search codebase symbols, endpoints, and tables with Precision Code Search."""
     q = " ".join(query).strip() if query else ""
+    limit = _normalize_limit(limit)
     normalized_path = _normalize_path_prefix(path)
     if not q and not file:
         typer.echo("Error: empty query", err=True)
