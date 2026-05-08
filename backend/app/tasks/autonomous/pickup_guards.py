@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -13,14 +14,20 @@ from app.storage.connection import get_cursor
 
 # Constants
 _AGENT_HUB_URL = f"{AGENT_HUB_URL}/api/projects/{{project_id}}/execution-permission"
+_AGENT_HUB_SESSIONS_URL = f"{AGENT_HUB_URL}/api/sessions"
 _REDIS_URL = f"{REDIS_URL}/1"
 _REDIS_TIMEOUT = 3
 _HTTP_TIMEOUT = 5.0
 _DISPATCHABLE_STATUSES = ("pending", "failed")
+_IGNORED_CONCURRENCY_SOURCES = {"codex-transcript-sync"}
 
 
-def check_autonomous_enabled(project_id: str) -> dict[str, Any] | None:
-    """Return error dict if autonomous mode is disabled/unreachable, else None."""
+def check_agent_hub_execution_permission(
+    project_id: str,
+    *,
+    require_enabled: bool = True,
+) -> dict[str, Any] | None:
+    """Return error dict if Agent Hub permission cannot support execution."""
     import httpx
     try:
         resp = httpx.get(
@@ -30,10 +37,10 @@ def check_autonomous_enabled(project_id: str) -> dict[str, Any] | None:
         )
         resp.raise_for_status()
         data = resp.json()
-        if not data.get("allowed"):
+        if require_enabled and not data.get("allowed"):
             return {"status": "disabled", "reason": data.get("reason", "not_allowed")}
-        # Autonomous execution requires trusted project access — reject read-only projects
-        # early instead of wasting agent sessions that fail on every tool call.
+        # Execution requires trusted project access. Manual dispatch may bypass
+        # the auto-enabled flag, but never the project permission tier.
         tier = str(data.get("permission_tier", "")).strip().lower()
         if tier in {"write", "yolo"}:
             tier = "full"
@@ -44,13 +51,63 @@ def check_autonomous_enabled(project_id: str) -> dict[str, Any] | None:
         return {"status": "disabled", "reason": f"agent_hub_unreachable: {e}"}
 
 
-def check_concurrency_limit(project_id: str) -> dict[str, Any] | None:
-    """Return error dict if concurrency limit reached, else None."""
+def check_autonomous_enabled(project_id: str) -> dict[str, Any] | None:
+    """Return error dict if autonomous mode is disabled/unreachable, else None."""
+    return check_agent_hub_execution_permission(project_id, require_enabled=True)
+
+
+def _session_counts_for_concurrency(session: dict[str, Any]) -> bool:
+    if str(session.get("status") or "").lower() != "active":
+        return False
+    request_source = str(session.get("request_source") or "").strip().lower()
+    return request_source not in _IGNORED_CONCURRENCY_SOURCES
+
+
+def count_active_agent_hub_sessions(project_id: str) -> int:
+    """Count live Agent Hub sessions that should consume autonomous project capacity."""
+    import httpx
+
+    resp = httpx.get(
+        _AGENT_HUB_SESSIONS_URL,
+        headers=build_agent_hub_headers(request_source="sf-pipeline"),
+        params={"project_id": project_id, "status": "active", "page_size": 100},
+        timeout=_HTTP_TIMEOUT,
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+    sessions = payload.get("sessions", [])
+    if not isinstance(sessions, list):
+        return 0
+    return sum(1 for session in sessions if isinstance(session, dict) and _session_counts_for_concurrency(session))
+
+
+def get_concurrency_snapshot(project_id: str) -> dict[str, int]:
+    """Return current task/session capacity pressure for autonomous dispatch."""
     config = agent_configs.get_agent_config(project_id)
     max_concurrent = int(config.get("autonomous_max_concurrent", 1))
     running_count = task_store.count_running_tasks(project_id)
-    if running_count >= max_concurrent:
-        return {"status": "concurrency_limit", "running_count": running_count, "max_concurrent": max_concurrent}
+    active_session_count = count_active_agent_hub_sessions(project_id)
+    active_count = max(running_count, active_session_count)
+    return {
+        "running_count": running_count,
+        "active_session_count": active_session_count,
+        "active_count": active_count,
+        "max_concurrent": max_concurrent,
+        "remaining_capacity": max(0, max_concurrent - active_count),
+    }
+
+
+def check_concurrency_limit(project_id: str) -> dict[str, Any] | None:
+    """Return error dict if task/session concurrency limit reached, else None."""
+    try:
+        snapshot = get_concurrency_snapshot(project_id)
+    except Exception as exc:
+        return {
+            "status": "concurrency_unavailable",
+            "reason": f"agent_hub_sessions_unreachable: {exc}",
+        }
+    if snapshot["active_count"] >= snapshot["max_concurrent"]:
+        return {"status": "concurrency_limit", **snapshot}
     return None
 
 
@@ -158,9 +215,19 @@ def validate_autonomous_dispatch(
     require_enabled: bool = True,
 ) -> dict[str, Any] | None:
     """Run all guard checks; return first error dict or None if all pass."""
-    checks = [check_system_health, check_concurrency_limit, check_max_tasks_per_day, check_cooldown_period]
-    if require_enabled:
-        checks.insert(0, check_autonomous_enabled)
+    def permission_check(project: str) -> dict[str, Any] | None:
+        return check_agent_hub_execution_permission(
+            project,
+            require_enabled=require_enabled,
+        )
+
+    checks: list[Callable[[str], dict[str, Any] | None]] = [
+        check_system_health,
+        check_concurrency_limit,
+        check_max_tasks_per_day,
+        check_cooldown_period,
+    ]
+    checks.insert(0, permission_check)
     for check in checks:
         if error := check(project_id):
             return error
