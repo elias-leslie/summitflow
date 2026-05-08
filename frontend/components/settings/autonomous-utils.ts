@@ -3,6 +3,7 @@
 export const TASK_TYPES = [
   { value: 'refactor', label: 'Refactor' },
   { value: 'bug', label: 'Bug' },
+  { value: 'regression', label: 'Regression' },
   { value: 'feature', label: 'Feature' },
   { value: 'chore', label: 'Chore' },
   { value: 'docs', label: 'Docs' },

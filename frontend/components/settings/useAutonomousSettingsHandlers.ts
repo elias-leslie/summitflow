@@ -84,7 +84,7 @@ export function useAutonomousSettingsHandlers(
     const next = current.includes(taskType)
       ? current.filter((t) => t !== taskType)
       : [...current, taskType]
-    mutate({ allowed_types: next.length === TASK_TYPES.length ? null : next })
+    mutate({ allowed_types: next })
   }
   // --- Self-healing ---
   const handleSelfFixAttemptsChange = makeBoundedIntHandler(

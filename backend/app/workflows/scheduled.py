@@ -14,6 +14,7 @@ Schedule philosophy (2026-03-16 tuning):
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from hatchet_sdk import ConcurrencyExpression, ConcurrencyLimitStrategy, Context
@@ -29,6 +30,8 @@ from .models import (
     SelfHealingInput,
     StaleCleanupInput,
 )
+
+WORK_PICKUP_WORKFLOW = "autonomous_work_pickup"
 
 
 def _project_schedule_enabled(project_id: str, schedule_id: str) -> bool:
@@ -50,6 +53,44 @@ def _disabled_schedule_result(
     return result
 
 
+def _work_pickup_due(project_id: str) -> bool:
+    from ..storage import agent_configs
+    from ..storage import maintenance_runs as maintenance_store
+
+    config = agent_configs.get_agent_config(project_id)
+    frequency_minutes = int(config.get("autonomous_frequency_minutes", 30) or 30)
+    recent = maintenance_store.list_maintenance_runs(
+        limit=1,
+        workflow_name=WORK_PICKUP_WORKFLOW,
+        project_id=project_id,
+    )
+    if not recent:
+        return True
+    started_at = recent[0].get("started_at")
+    if not isinstance(started_at, datetime):
+        return True
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=UTC)
+    return datetime.now(UTC) - started_at >= timedelta(minutes=frequency_minutes)
+
+
+def _record_work_pickup(project_id: str, started_at: datetime, result: dict[str, Any]) -> None:
+    from ..storage import maintenance_runs as maintenance_store
+
+    summary = {"project_id": project_id, **result}
+    status = "failed" if result.get("status") in {"disabled", "unhealthy"} else "completed"
+    error_message = str(result.get("reason") or "") if status == "failed" else ""
+    maintenance_store.record_maintenance_run(
+        WORK_PICKUP_WORKFLOW,
+        status,
+        started_at=started_at,
+        finished_at=datetime.now(UTC),
+        rows_cleaned=int(result.get("dispatched", 0) or 0),
+        summary=summary,
+        error_message=error_message or None,
+    )
+
+
 def _explorer_schedule_concurrency() -> ConcurrencyExpression:
     """Shared concurrency guard for memory-heavy explorer maintenance workflows."""
 
@@ -66,7 +107,7 @@ def _explorer_schedule_concurrency() -> ConcurrencyExpression:
     execution_timeout="600s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["15 */2 * * *"],
+    on_crons=["*/15 * * * *"],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-work-pickup'",
         max_runs=1,
@@ -79,9 +120,14 @@ async def work_pickup_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
 
     if not _project_schedule_enabled(input.project_id, "work_pickup"):
         return _disabled_schedule_result("work_pickup", project_id=input.project_id)
+    if not _work_pickup_due(input.project_id):
+        return {"schedule_id": "work_pickup", "status": "skipped", "reason": "not_due", "project_id": input.project_id}
 
+    started_at = datetime.now(UTC)
     dispatch = _make_dispatch_callback()
-    return await asyncio.to_thread(autonomous_work_pickup, input.project_id, dispatch=dispatch)
+    result = await asyncio.to_thread(autonomous_work_pickup, input.project_id, dispatch=dispatch)
+    await asyncio.to_thread(_record_work_pickup, input.project_id, started_at, dict(result))
+    return result
 
 
 @hatchet.task(

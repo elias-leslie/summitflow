@@ -41,8 +41,8 @@ SCHEDULE_DEFINITIONS: tuple[AutonomousScheduleDefinition, ...] = (
         schedule_id="work_pickup",
         config_key="work_pickup_enabled",
         label="Autonomous work pickup",
-        description="Dispatches pending autonomous tasks into triage, planning, or execution. This was the main stale planner churn source.",
-        cron="15 */2 * * *",
+        description="Dispatches pending autonomous tasks into triage, planning, or execution when the project check frequency is due.",
+        cron="*/15 * * * *",
         scope="project",
     ),
     AutonomousScheduleDefinition(

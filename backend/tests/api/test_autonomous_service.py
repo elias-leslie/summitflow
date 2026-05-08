@@ -154,6 +154,7 @@ async def test_update_settings_syncs_agent_hub_permission_when_enabled_present()
         patch("app.api.autonomous.validate_project_exists"),
         patch("app.api.autonomous._update_settings", return_value=settings),
         patch("app.api.autonomous._sync_auto_exec_permission", new_callable=AsyncMock) as mock_sync,
+        patch("app.api.autonomous._settings_with_execution_permission", new_callable=AsyncMock, return_value=settings) as mock_settings,
     ):
         result = await update_autonomous_endpoint(
             "test-project",
@@ -162,3 +163,4 @@ async def test_update_settings_syncs_agent_hub_permission_when_enabled_present()
 
     assert result == settings
     mock_sync.assert_awaited_once_with("test-project", True)
+    mock_settings.assert_awaited_once_with("test-project")

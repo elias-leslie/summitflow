@@ -6,9 +6,12 @@ import asyncio
 from datetime import datetime
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from ..config import AGENT_HUB_URL
+from ..services._agent_hub_config import build_agent_hub_headers
 from ..services.autonomous_schedule_registry import (
     list_autonomous_schedule_states,
     set_autonomous_schedule_enabled,
@@ -114,6 +117,61 @@ class AutonomousScheduleUpdate(BaseModel):
     enabled: bool
 
 
+async def _fetch_agent_hub_execution_permission(project_id: str) -> dict[str, Any]:
+    """Fetch lightweight Agent Hub execution status without failing settings load."""
+    url = f"{AGENT_HUB_URL}/api/projects/{project_id}/execution-permission"
+    headers = build_agent_hub_headers(request_source="summitflow-autonomous-settings")
+    try:
+        async with httpx.AsyncClient(timeout=5.0, headers=headers) as client:
+            response = await client.get(url)
+    except Exception as exc:
+        return {
+            "allowed": False,
+            "auto_exec_enabled": False,
+            "in_time_window": False,
+            "permission_tier": None,
+            "reason": f"agent_hub_unreachable: {exc}",
+        }
+    if response.status_code == 404:
+        return {
+            "allowed": False,
+            "auto_exec_enabled": False,
+            "in_time_window": False,
+            "permission_tier": None,
+            "reason": "permission_missing",
+        }
+    if response.status_code >= 400:
+        return {
+            "allowed": False,
+            "auto_exec_enabled": False,
+            "in_time_window": False,
+            "permission_tier": None,
+            "reason": f"agent_hub_http_{response.status_code}",
+        }
+    payload = response.json()
+    return payload if isinstance(payload, dict) else {
+        "allowed": False,
+        "auto_exec_enabled": False,
+        "in_time_window": False,
+        "permission_tier": None,
+        "reason": "invalid_agent_hub_response",
+    }
+
+
+async def _settings_with_execution_permission(project_id: str) -> AutonomousSettings:
+    settings = _get_settings(project_id)
+    permission = await _fetch_agent_hub_execution_permission(project_id)
+    return settings.model_copy(
+        update={
+            "enabled": bool(permission.get("auto_exec_enabled")),
+            "execution_allowed": bool(permission.get("allowed")),
+            "execution_in_time_window": bool(permission.get("in_time_window", True)),
+            "permission_tier": permission.get("permission_tier"),
+            "permission_reason": permission.get("reason"),
+        }
+    )
+
+
 def _make_dispatch_callback() -> Any:
     from ..workflows.pipeline import _make_dispatch_callback as make_callback
 
@@ -174,7 +232,7 @@ async def _sync_auto_exec_permission(project_id: str, enabled: bool) -> None:
 async def get_settings(project_id: str) -> AutonomousSettings:
     """Get autonomous execution settings for a project."""
     validate_project_exists(project_id)
-    return _get_settings(project_id)
+    return await _settings_with_execution_permission(project_id)
 
 
 @router.patch("/{project_id}/autonomous/settings", response_model=AutonomousSettings)
@@ -182,10 +240,10 @@ async def update_settings(project_id: str, update: AutonomousSettingsUpdate) -> 
     """Update autonomous execution settings for a project."""
     validate_project_exists(project_id)
     _validate_update(update)
-    settings = _update_settings(project_id, update)
+    _update_settings(project_id, update)
     if update.enabled is not None:
         await _sync_auto_exec_permission(project_id, update.enabled)
-    return settings
+    return await _settings_with_execution_permission(project_id)
 
 
 @router.get("/{project_id}/autonomous/upkeep/status", response_model=RoutineUpkeepStatusResponse)

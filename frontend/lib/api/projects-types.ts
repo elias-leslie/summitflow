@@ -172,6 +172,11 @@ export interface FetchQualityResultsOptions {
 export interface AutonomousExecutionSettings {
   // Access control (enabled, hours) now managed by Agent Hub project permissions.
   // See: agent.summitflow.dev/access-control/permissions
+  enabled: boolean
+  execution_allowed: boolean
+  execution_in_time_window: boolean
+  permission_tier: string | null
+  permission_reason: string | null
   frequency_minutes: number
   auto_merge_tiers: number[]
   task_types: string[]
@@ -193,6 +198,7 @@ export interface AutonomousExecutionSettings {
 }
 
 export interface AutonomousExecutionSettingsUpdate {
+  enabled?: boolean
   frequency_minutes?: number
   auto_merge_tiers?: number[]
   task_types?: string[]

@@ -1,14 +1,19 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ExternalLink, Loader2, Shield } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import {
   getAutonomousSchedules,
   getAutonomousSettings,
   getRoutineUpkeepStatus,
   runRoutineUpkeep,
   updateAutonomousSchedule,
+  updateAutonomousSettings,
 } from '@/lib/api'
+import {
+  type AutomationMode,
+  AutomationModeSection,
+} from './AutomationModeSection'
 import { AutomationSchedulesSection } from './AutomationSchedulesSection'
 import { TASK_TYPES } from './autonomous-utils'
 import { ExecutionControlSection } from './ExecutionControlSection'
@@ -61,6 +66,35 @@ export function AutonomousSettingsPanel({
       })
     },
   })
+  const modeMutation = useMutation({
+    mutationFn: async (mode: AutomationMode) => {
+      const enableQueue = mode !== 'off'
+      const enableUpkeep = mode === 'upkeep'
+      await updateAutonomousSettings(projectId, {
+        enabled: enableQueue,
+        upkeep_enabled: enableUpkeep,
+      })
+      await Promise.all([
+        updateAutonomousSchedule(projectId, 'work_pickup', {
+          enabled: enableQueue,
+        }),
+        updateAutonomousSchedule(projectId, 'task_generation', {
+          enabled: enableUpkeep,
+        }),
+      ])
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['autonomous-settings', projectId],
+      })
+      queryClient.invalidateQueries({
+        queryKey: ['autonomous-schedules', projectId],
+      })
+      queryClient.invalidateQueries({
+        queryKey: ['routine-upkeep-status', projectId],
+      })
+    },
+  })
 
   const handlers = useAutonomousSettingsHandlers(projectId, settings!)
 
@@ -81,35 +115,33 @@ export function AutonomousSettingsPanel({
   }
 
   const selectedTypes = settings.allowed_types || TASK_TYPES.map((t) => t.value)
+  const workPickupEnabled = schedules.some(
+    (schedule) => schedule.schedule_id === 'work_pickup' && schedule.enabled,
+  )
+  const taskGenerationEnabled = schedules.some(
+    (schedule) =>
+      schedule.schedule_id === 'task_generation' && schedule.enabled,
+  )
+  const automationMode: AutomationMode =
+    settings.enabled && workPickupEnabled
+      ? taskGenerationEnabled && settings.upkeep_enabled
+        ? 'upkeep'
+        : 'queue'
+      : 'off'
+  const isSaving = handlers.isPending || modeMutation.isPending
 
   return (
     <div className="space-y-6">
-      {/* Access control banner — points to Agent Hub */}
-      <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700 flex items-start gap-3">
-        <Shield className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-        <div className="flex-1">
-          <p className="text-sm font-medium text-slate-200">
-            Access control managed by Agent Hub
-          </p>
-          <p className="text-xs text-slate-400 mt-1">
-            Enable/disable autonomous execution, permission tiers, and execution
-            time windows are now configured in Agent Hub&apos;s Access Control.
-          </p>
-          <a
-            href="/api/agent-hub/projects/permissions"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 mt-2 transition-colors"
-          >
-            <ExternalLink className="w-3 h-3" />
-            Open Agent Hub Permissions
-          </a>
-        </div>
-      </div>
+      <AutomationModeSection
+        mode={automationMode}
+        settings={settings}
+        isPending={isSaving}
+        onModeChange={(mode) => modeMutation.mutate(mode)}
+      />
 
       <ExecutionControlSection
         settings={settings}
-        isPending={handlers.isPending}
+        isPending={isSaving}
         onConcurrencyChange={handlers.handleConcurrencyChange}
         onMaxTasksPerDayChange={handlers.handleMaxTasksPerDayChange}
         onCooldownChange={handlers.handleCooldownChange}
@@ -135,7 +167,7 @@ export function AutonomousSettingsPanel({
       <RoutineUpkeepSection
         settings={settings}
         status={upkeepStatus}
-        isPending={handlers.isPending}
+        isPending={isSaving}
         isRunning={upkeepRun.isPending}
         onEnabledToggle={handlers.handleUpkeepEnabledToggle}
         onFrequencyChange={handlers.handleUpkeepFrequencyChange}
@@ -145,13 +177,13 @@ export function AutonomousSettingsPanel({
 
       <TaskFilteringSection
         selectedTypes={selectedTypes}
-        isPending={handlers.isPending}
+        isPending={isSaving}
         onTaskTypeToggle={handlers.handleTaskTypeToggle}
       />
 
       <QualityGateSection
         settings={settings}
-        isPending={handlers.isPending}
+        isPending={isSaving}
         onToolsChange={handlers.handleQualityToolsChange}
         onModeChange={handlers.handleQualityModeChange}
         onFixEnabledToggle={handlers.handleQualityFixToggle}
@@ -159,7 +191,7 @@ export function AutonomousSettingsPanel({
 
       <SelfHealingSection
         settings={settings}
-        isPending={handlers.isPending}
+        isPending={isSaving}
         onSelfFixAttemptsChange={handlers.handleSelfFixAttemptsChange}
         onSupervisorAttemptsChange={handlers.handleSupervisorAttemptsChange}
         onExtensionsChange={handlers.handleExtensionsChange}
@@ -167,13 +199,13 @@ export function AutonomousSettingsPanel({
 
       <MergeReviewSection
         settings={settings}
-        isPending={handlers.isPending}
+        isPending={isSaving}
         onAutoMergeToggle={handlers.handleAutoMergeToggle}
         onRequireReviewToggle={handlers.handleRequireReviewToggle}
         onAutoMergeTiersChange={handlers.handleAutoMergeTiersChange}
       />
 
-      {handlers.isPending && (
+      {isSaving && (
         <div className="flex items-center justify-center gap-2 text-sm text-slate-400">
           <Loader2 className="w-4 h-4 animate-spin" />
           Saving...

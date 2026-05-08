@@ -97,7 +97,7 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "runtime_hygiene_enabled": False,
     "autonomous_max_tasks_per_day": None,
     "autonomous_cooldown_minutes": 0,
-    "autonomous_allowed_types": None,
+    "autonomous_allowed_types": ["refactor", "bug", "regression", "feature", "chore", "docs"],
     "autonomous_max_self_fix_attempts": 3,
     "autonomous_max_supervisor_attempts": 3,
     "autonomous_max_extensions": 3,

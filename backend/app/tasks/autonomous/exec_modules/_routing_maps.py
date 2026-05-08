@@ -5,6 +5,7 @@ from __future__ import annotations
 TASK_TYPE_AGENT_MAP: dict[str, str] = {
     "refactor": "refactor",
     "bug": "debugger",
+    "regression": "debugger",
     "feature": "coder",
 }
 

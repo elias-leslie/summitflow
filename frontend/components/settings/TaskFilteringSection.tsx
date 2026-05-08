@@ -43,7 +43,7 @@ export function TaskFilteringSection({
         </div>
         {selectedTypes.length === TASK_TYPES.length && (
           <p className="text-xs text-phosphor-400 mt-2">
-            All task types allowed
+            All listed autonomous types allowed
           </p>
         )}
       </div>

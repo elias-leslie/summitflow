@@ -7,7 +7,7 @@ behavior settings only.
 
 from pydantic import BaseModel, Field
 
-VALID_TASK_TYPES = ["refactor", "bug", "feature", "chore", "docs"]
+VALID_TASK_TYPES = ["refactor", "bug", "regression", "feature", "chore", "docs"]
 
 
 class AutonomousSettings(BaseModel):
@@ -16,6 +16,27 @@ class AutonomousSettings(BaseModel):
     Access control (enabled, schedule hours) is managed by Agent Hub's
     project_permissions. These settings control HOW execution proceeds.
     """
+
+    enabled: bool = Field(
+        default=False,
+        description="Agent Hub auto-exec flag for this project",
+    )
+    execution_allowed: bool = Field(
+        default=False,
+        description="Whether Agent Hub currently allows automated execution",
+    )
+    execution_in_time_window: bool = Field(
+        default=True,
+        description="Whether current time is inside the Agent Hub execution window",
+    )
+    permission_tier: str | None = Field(
+        default=None,
+        description="Agent Hub permission tier for this project",
+    )
+    permission_reason: str | None = Field(
+        default=None,
+        description="Agent Hub execution permission reason when blocked",
+    )
 
     frequency_minutes: int = Field(
         default=30, ge=5, le=1440, description="How often to check for work (5-1440 min)"
