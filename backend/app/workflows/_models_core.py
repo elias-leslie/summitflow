@@ -12,6 +12,7 @@ from ._model_constants import DEFAULT_PROJECT_ID
 class TaskInput(BaseModel):
     task_id: str
     project_id: str
+    manual_dispatch: bool = False
 
 
 class ProjectInput(BaseModel):

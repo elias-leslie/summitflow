@@ -22,7 +22,7 @@ def allow_autonomous_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
     """Dispatch unit tests focus on stage/claim behavior unless a guard is under test."""
     monkeypatch.setattr(
         "app.services.dispatch.validate_autonomous_dispatch",
-        lambda _project_id, _task_type=None: None,
+        lambda _project_id, _task_type=None, **_kwargs: None,
     )
 
 
@@ -48,7 +48,7 @@ class TestDispatchTaskClaiming:
         result = await dispatch_task("task-1", "monkey-fight")
 
         mock_claim.assert_called_once_with("task-1", "api-dispatch-monkey-fight", lock_duration_minutes=60)
-        mock_trigger.assert_called_once_with("execution", "task-1", "monkey-fight")
+        mock_trigger.assert_called_once_with("execution", "task-1", "monkey-fight", manual_dispatch=False)
         assert result["status"] == "dispatched"
         assert result["stage"] == "execution"
 
@@ -91,7 +91,7 @@ class TestDispatchTaskClaiming:
         result = await dispatch_task("task-1", "monkey-fight")
 
         mock_claim.assert_not_called()
-        mock_trigger.assert_called_once_with("triage", "task-1", "monkey-fight")
+        mock_trigger.assert_called_once_with("triage", "task-1", "monkey-fight", manual_dispatch=False)
         assert result["status"] == "dispatched"
 
     @pytest.mark.asyncio
@@ -112,7 +112,7 @@ class TestDispatchTaskClaiming:
         result = await dispatch_task("task-1", "monkey-fight")
 
         mock_claim.assert_not_called()
-        mock_trigger.assert_called_once_with("planning", "task-1", "monkey-fight")
+        mock_trigger.assert_called_once_with("planning", "task-1", "monkey-fight", manual_dispatch=False)
         assert result["status"] == "dispatched"
 
     @pytest.mark.asyncio
@@ -133,7 +133,7 @@ class TestDispatchTaskClaiming:
         result = await dispatch_task("task-1", "monkey-fight")
 
         mock_claim.assert_not_called()
-        mock_trigger.assert_called_once_with("ideation", "task-1", "monkey-fight")
+        mock_trigger.assert_called_once_with("ideation", "task-1", "monkey-fight", manual_dispatch=False)
         assert result["status"] == "dispatched"
 
     @pytest.mark.asyncio
@@ -154,7 +154,7 @@ class TestDispatchTaskClaiming:
         result = await dispatch_task("task-1", "monkey-fight")
 
         mock_claim.assert_not_called()
-        mock_trigger.assert_called_once_with("review", "task-1", "monkey-fight")
+        mock_trigger.assert_called_once_with("review", "task-1", "monkey-fight", manual_dispatch=False)
         assert result["status"] == "dispatched"
 
 
@@ -194,7 +194,7 @@ class TestDispatchTaskBasics:
         monkeypatch.setattr(
             dispatch_service,
             "validate_autonomous_dispatch",
-            lambda _project_id, _task_type=None: {"status": "disabled", "reason": "not_allowed"},
+            lambda _project_id, _task_type=None, **_kwargs: {"status": "disabled", "reason": "not_allowed"},
         )
 
         result = await dispatch_task("task-1", "monkey-fight")
@@ -206,6 +206,37 @@ class TestDispatchTaskBasics:
         stage.assert_not_called()
         claim.assert_not_called()
         trigger.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_manual_dispatch_bypasses_auto_enable_guard(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Manual Start Execution does not require scheduled autonomous mode enabled."""
+        trigger = AsyncMock()
+        claim = MagicMock(return_value={"id": "task-1", "claimed_by": "api-dispatch-monkey-fight"})
+        seen_kwargs: dict[str, object] = {}
+
+        monkeypatch.setattr(
+            dispatch_service.task_store,
+            "get_task",
+            lambda _task_id: {"id": "task-1", "status": "pending", "task_type": "bug"},
+        )
+        monkeypatch.setattr(dispatch_service, "_trigger_workflow", trigger)
+        monkeypatch.setattr(dispatch_service, "claim_task", claim)
+        monkeypatch.setattr(dispatch_service, "_determine_next_stage", MagicMock(return_value="execution"))
+
+        def guard(_project_id: str, _task_type: str | None = None, **kwargs: object) -> None:
+            seen_kwargs.update(kwargs)
+            return None
+
+        monkeypatch.setattr(dispatch_service, "validate_autonomous_dispatch", guard)
+
+        result = await dispatch_task("task-1", "monkey-fight", manual_dispatch=True)
+
+        assert result["status"] == "dispatched"
+        assert seen_kwargs == {"require_enabled": False}
+        trigger.assert_awaited_once_with("execution", "task-1", "monkey-fight", manual_dispatch=True)
 
     @pytest.mark.asyncio
     @patch("app.services.dispatch._trigger_workflow", new_callable=AsyncMock)

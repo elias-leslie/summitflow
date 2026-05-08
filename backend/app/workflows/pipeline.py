@@ -18,7 +18,7 @@ from .models import TaskInput
 logger = get_logger(__name__)
 
 
-async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
+async def _trigger_workflow(stage: str, task_id: str, project_id: str, *, manual_dispatch: bool = False) -> None:
     """Trigger a downstream workflow by stage name.
 
     Supports both pipeline stages and utility/post-scan stages.
@@ -38,7 +38,7 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
     }
     wf = workflow_map.get(stage)
     if wf:
-        await wf.aio_run_no_wait(TaskInput(task_id=task_id, project_id=project_id))
+        await wf.aio_run_no_wait(TaskInput(task_id=task_id, project_id=project_id, manual_dispatch=manual_dispatch))
         return
 
     # Post-scan utility workflows (keyed by project_id)
@@ -114,7 +114,7 @@ async def ideate_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 
     # Auto-advance to triage on success
     if result.get("status") == "ideated":
-        await _trigger_workflow("triage", input.task_id, input.project_id)
+        await _trigger_workflow("triage", input.task_id, input.project_id, manual_dispatch=input.manual_dispatch)
 
     return result
 
@@ -143,7 +143,7 @@ async def triage_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
         next_stage = _determine_next_stage(input.task_id)
         wf_stage = _STAGE_TO_WF.get(next_stage)
         if wf_stage:
-            await _trigger_workflow(wf_stage, input.task_id, input.project_id)
+            await _trigger_workflow(wf_stage, input.task_id, input.project_id, manual_dispatch=input.manual_dispatch)
 
     return result
 
@@ -172,7 +172,7 @@ async def plan_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
         next_stage = _determine_next_stage(input.task_id)
         wf_stage = _STAGE_TO_WF.get(next_stage)
         if wf_stage:
-            await _trigger_workflow(wf_stage, input.task_id, input.project_id)
+            await _trigger_workflow(wf_stage, input.task_id, input.project_id, manual_dispatch=input.manual_dispatch)
 
     return result
 
@@ -196,7 +196,7 @@ async def critique_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
     if result.get("status") == "completed":
         verdict = str(result.get("verdict") or "").upper()
         if verdict == "APPROVED":
-            await _trigger_workflow("execute", input.task_id, input.project_id)
+            await _trigger_workflow("execute", input.task_id, input.project_id, manual_dispatch=input.manual_dispatch)
         elif verdict == "NEEDS_REVISION":
             logger.info(
                 "Task-shape critique parked for revision",
@@ -219,7 +219,32 @@ async def critique_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
     ),
 )
 async def execute_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
+    from ..storage import tasks as task_store
     from ..tasks.autonomous.execution import start_execution
+    from ..tasks.autonomous.pickup_guards import validate_autonomous_dispatch
+
+    task = task_store.get_task(input.task_id) or {}
+    task_type = str(task.get("task_type") or "").strip() or None
+    if guard_error := validate_autonomous_dispatch(
+        input.project_id,
+        task_type,
+        require_enabled=not input.manual_dispatch,
+    ):
+        status = str(guard_error.get("status") or "blocked")
+        logger.warning(
+            "Execution workflow blocked by autonomous guard",
+            task_id=input.task_id,
+            project_id=input.project_id,
+            status=status,
+            details=guard_error,
+        )
+        return {
+            "task_id": input.task_id,
+            "project_id": input.project_id,
+            "stage": "execution",
+            "status": status,
+            "details": guard_error,
+        }
 
     dispatch = _make_dispatch_callback()
     return await asyncio.to_thread(start_execution, input.task_id, input.project_id, dispatch=dispatch)

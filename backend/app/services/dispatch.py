@@ -26,7 +26,7 @@ class DispatchResult(TypedDict):
     details: NotRequired[dict[str, Any]]
 
 
-async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
+async def _trigger_workflow(stage: str, task_id: str, project_id: str, *, manual_dispatch: bool = False) -> None:
     """Trigger the appropriate Hatchet workflow for the given stage."""
     from ..workflows.models import TaskInput
     from ..workflows.pipeline import (
@@ -38,7 +38,7 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
         triage_wf,
     )
 
-    task_input = TaskInput(task_id=task_id, project_id=project_id)
+    task_input = TaskInput(task_id=task_id, project_id=project_id, manual_dispatch=manual_dispatch)
 
     workflow_map = {
         "ideation": ideate_wf,
@@ -57,7 +57,7 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str) -> None:
     await workflow.aio_run_no_wait(task_input)
 
 
-async def dispatch_task(task_id: str, project_id: str) -> DispatchResult:
+async def dispatch_task(task_id: str, project_id: str, *, manual_dispatch: bool = False) -> DispatchResult:
     """Dispatch a task for autonomous execution via Hatchet.
 
     Determines the appropriate pipeline stage using the canonical
@@ -79,7 +79,7 @@ async def dispatch_task(task_id: str, project_id: str) -> DispatchResult:
         raise ValueError(f"Task {task_id} not found")
 
     task_type = str(task.get("task_type") or "").strip() or None
-    if guard_error := validate_autonomous_dispatch(project_id, task_type):
+    if guard_error := validate_autonomous_dispatch(project_id, task_type, require_enabled=not manual_dispatch):
         status = str(guard_error.get("status") or "blocked")
         reason = str(guard_error.get("reason") or status)
         logger.warning(
@@ -112,7 +112,7 @@ async def dispatch_task(task_id: str, project_id: str) -> DispatchResult:
                 status="not_claimable",
             )
 
-    await _trigger_workflow(stage, task_id, project_id)
+    await _trigger_workflow(stage, task_id, project_id, manual_dispatch=manual_dispatch)
 
     logger.info(
         "task_dispatched",

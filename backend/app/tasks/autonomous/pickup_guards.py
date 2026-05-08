@@ -151,10 +151,16 @@ def check_task_dispatchable(task: dict[str, object]) -> dict[str, object] | None
     return None
 
 
-def validate_autonomous_dispatch(project_id: str, task_type: str | None = None) -> dict[str, Any] | None:
+def validate_autonomous_dispatch(
+    project_id: str,
+    task_type: str | None = None,
+    *,
+    require_enabled: bool = True,
+) -> dict[str, Any] | None:
     """Run all guard checks; return first error dict or None if all pass."""
-    checks = [check_autonomous_enabled, check_system_health, check_concurrency_limit,
-               check_max_tasks_per_day, check_cooldown_period]
+    checks = [check_system_health, check_concurrency_limit, check_max_tasks_per_day, check_cooldown_period]
+    if require_enabled:
+        checks.insert(0, check_autonomous_enabled)
     for check in checks:
         if error := check(project_id):
             return error

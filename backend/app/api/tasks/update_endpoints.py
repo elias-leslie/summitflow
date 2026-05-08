@@ -228,7 +228,12 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
         )
 
     task_type = str(existing.get("task_type") or "").strip() or None
-    guard_error = await asyncio.to_thread(validate_autonomous_dispatch, project_id, task_type)
+    guard_error = await asyncio.to_thread(
+        validate_autonomous_dispatch,
+        project_id,
+        task_type,
+        require_enabled=False,
+    )
     if guard_error:
         status = str(guard_error.get("status") or "blocked")
         reason = str(guard_error.get("reason") or status)
@@ -251,7 +256,7 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to start execution")
 
-    dispatch_result = await dispatch_task(task_id, project_id)
+    dispatch_result = await dispatch_task(task_id, project_id, manual_dispatch=True)
     if dispatch_result.get("status") != "dispatched":
         _raise_dispatch_failure(dispatch_result)
 
