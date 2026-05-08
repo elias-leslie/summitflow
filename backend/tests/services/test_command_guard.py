@@ -40,6 +40,22 @@ def test_registry_redirects_raw_pytest(tmp_path: Path) -> None:
     assert "st check pytest" in (decision.message or "")
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "/repo/backend/.venv/bin/pytest tests/workflows/test_pipeline.py -v",
+        "/repo/backend/.venv/bin/python -m pytest tests/workflows/test_pipeline.py -v",
+        "cd /repo/backend && /repo/backend/.venv/bin/python -m pytest tests/workflows/test_pipeline.py",
+    ],
+)
+def test_registry_redirects_absolute_venv_pytest(command: str, tmp_path: Path) -> None:
+    decision = evaluate_shell_command(command, tmp_path)
+
+    assert decision.blocked is True
+    assert decision.code == "redirect"
+    assert "st check pytest" in (decision.message or "")
+
+
 def test_st_check_commands_are_allowed(tmp_path: Path) -> None:
     decision = evaluate_shell_command("st check pytest -- backend/tests/", tmp_path)
 

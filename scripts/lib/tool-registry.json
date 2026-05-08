@@ -123,9 +123,10 @@
       "name": "pytest",
       "component_id": "sf.check",
       "redirect_patterns": [
-        "(\\.venv/bin/)?pytest\\b",
+        "([^\\s]*/)?\\.venv/bin/pytest\\b",
+        "pytest\\b",
         "python[0-9.]*\\s+-m\\s+pytest\\b",
-        "\\.venv/bin/python.*-m\\s+pytest\\b"
+        "([^\\s]*/)?\\.venv/bin/python.*-m\\s+pytest\\b"
       ],
       "redirect_message": "Use 'st check pytest [args]' — handles venv, TOON output, and project resolution.",
       "check": {
