@@ -98,6 +98,7 @@ def _fetch_task_data(
     task_id: str,
     limit: int,
     debug: bool,
+    history: bool,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Fetch task, subtasks, and events from the API."""
     task = client.get_task(task_id)
@@ -105,8 +106,8 @@ def _fetch_task_data(
     subtasks_data = client.get_subtasks(task_id)
     subtasks = subtasks_data.get("subtasks", [])
     events = client.get_events(project_id, task_id, limit=limit, include_debug=debug)
-    agent_sessions = client.get_task_agent_sessions(task_id)
-    agent_events = client.get_task_agent_events(task_id, page_size=min(max(limit, 20), 100))
+    agent_sessions = client.get_task_agent_sessions(task_id, include_history=history)
+    agent_events = client.get_task_agent_events(task_id, page_size=min(max(limit, 20), 100), include_history=history)
     return task, subtasks, events, agent_sessions, agent_events
 
 
@@ -127,6 +128,10 @@ def exec_log_command(
     debug: Annotated[
         bool,
         typer.Option("--debug", help="Include debug-level events with timing and attributes"),
+    ] = False,
+    history: Annotated[
+        bool,
+        typer.Option("--history", help="Include older linked Agent Hub sessions"),
     ] = False,
     json_output: Annotated[
         bool,
@@ -150,7 +155,7 @@ def exec_log_command(
     client = STClient()
 
     try:
-        task, subtasks, events, agent_sessions, agent_events = _fetch_task_data(client, task_id, limit, debug)
+        task, subtasks, events, agent_sessions, agent_events = _fetch_task_data(client, task_id, limit, debug, history)
     except APIError as e:
         handle_api_error(e)
         return

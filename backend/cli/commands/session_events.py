@@ -31,12 +31,13 @@ _HELP_EVENT_TYPE = "Filter by event type (tool_use, tool_result, user_message, a
 def _handle_task_events(
     task_id: str, event_type: str | None, turn: int | None,
     follow: bool, page: int, page_size: int, raw: bool, verbose: bool,
+    include_history: bool,
 ) -> None:
     """Handle the task-based event lookup path."""
     if follow:
-        follow_task_events(task_id, event_type, verbose, page_size)
+        follow_task_events(task_id, event_type, verbose, page_size, include_history=include_history)
         return
-    result = get_task_events(task_id, event_type, turn, page, page_size)
+    result = get_task_events(task_id, event_type, turn, page, page_size, include_history=include_history)
     if raw:
         output_json(result)
         return
@@ -76,6 +77,7 @@ def _handle_session_events(
 def show_events(
     session_id: Annotated[str | None, typer.Argument(help="Session ID to view")] = None,
     task: Annotated[str | None, typer.Option("--task", "-T", help=_HELP_TASK)] = None,
+    project_id: Annotated[str | None, typer.Option("--project", "-P", help="Project scope for short session ID lookup")] = None,
     event_type: Annotated[str | None, typer.Option("--type", "-t", help=_HELP_EVENT_TYPE)] = None,
     turn: Annotated[int | None, typer.Option("--turn", help="Filter by turn number")] = None,
     follow: Annotated[bool, typer.Option("-f", "--follow", help="Follow events in real-time (poll every 2s)")] = False,
@@ -83,6 +85,7 @@ def show_events(
     page_size: Annotated[int, typer.Option("--page-size", "-n", "--limit", help="Events per page")] = 50,
     raw: Annotated[bool, typer.Option("--raw", "-r", help="Output raw JSON")] = False,
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Show full content without truncation")] = False,
+    history: Annotated[bool, typer.Option("--history", help="Include older linked task sessions")] = False,
 ) -> None:
     """View Agent Hub session events for full observability.
 
@@ -92,14 +95,14 @@ def show_events(
     """
     if task:
         task_id = require_task_id(task)
-        _handle_task_events(task_id, event_type, turn, follow, page, page_size, raw, verbose)
+        _handle_task_events(task_id, event_type, turn, follow, page, page_size, raw, verbose, history)
         return
     if not session_id:
         typer.echo("Provide a session ID or use --task/-T <task-id>.")
         raise typer.Exit(1)
     # Accept short IDs from `st sessions list` (8-char prefix) by resolving
     # them to the full UUID Agent Hub's events endpoint expects.
-    resolved_session_id = resolve_session_id(session_id)
+    resolved_session_id = resolve_session_id(session_id, project_id=project_id)
     _handle_session_events(
         resolved_session_id, event_type, turn, follow, page, page_size, raw, verbose
     )

@@ -6,11 +6,13 @@ observability, including thinking blocks, tool calls, memory events, etc.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, Query
 
 from ...logging_config import get_logger
+from ...storage.events import get_events_by_trace
 from ...storage.tasks.core import add_agent_hub_session, get_agent_hub_sessions
 
 # Re-export helpers so existing patch targets (tests) remain valid
@@ -34,6 +36,7 @@ from .helpers import verify_task_project
 
 logger = get_logger(__name__)
 router = APIRouter()
+_SESSION_STARTED_RE = re.compile(r"Agent session started:\s+([A-Za-z0-9][A-Za-z0-9_-]{2,120})")
 
 
 def _build_session_summary(session: dict[str, Any]) -> AgentHubSessionSummary:
@@ -80,9 +83,39 @@ def _collect_session_events(
     return all_events, total, max_turn
 
 
+def _current_attempt_session_ids(task_id: str) -> tuple[bool, list[str]]:
+    """Return whether a latest attempt exists plus its Agent Hub session IDs."""
+    events = get_events_by_trace(task_id, limit=1000)
+    attempt_start = None
+    for event in reversed(events):
+        if event.get("message") == "Starting autonomous execution":
+            attempt_start = event.get("timestamp")
+            break
+
+    if attempt_start is None:
+        return False, []
+
+    current: list[str] = []
+    seen: set[str] = set()
+    for event in events:
+        if event.get("timestamp") < attempt_start:
+            continue
+        message = event.get("message") or ""
+        match = _SESSION_STARTED_RE.search(message)
+        if not match:
+            continue
+        session_id = match.group(1)
+        if session_id not in seen:
+            seen.add(session_id)
+            current.append(session_id)
+    return True, current
+
+
 def _resolve_task_sessions(
     project_id: str,
     task_id: str,
+    *,
+    include_history: bool = False,
 ) -> tuple[list[str], list[AgentHubSessionSummary]]:
     """Resolve task-linked session IDs and summaries, with self-healing fallback.
 
@@ -101,6 +134,10 @@ def _resolve_task_sessions(
         if session_id not in stored_session_ids:
             add_agent_hub_session(task_id, session_id)
     session_ids = [*stored_session_ids, *(sid for sid in discovered_by_id if sid not in stored_session_ids)]
+    if not include_history:
+        current_attempt_seen, current_session_ids = _current_attempt_session_ids(task_id)
+        if current_attempt_seen:
+            session_ids = current_session_ids
     summaries: list[AgentHubSessionSummary] = []
     for sid in session_ids:
         payload = discovered_by_id.get(sid) or _fetch_session_summary(sid)
@@ -117,6 +154,7 @@ async def get_task_agent_events(
     turn: int | None = Query(None, description="Filter by turn number"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(500, ge=1, le=500, description="Events per page"),
+    include_history: bool = Query(False, description="Include older linked Agent Hub sessions"),
 ) -> AgentHubEventsResponse:
     """Get Agent Hub session events for a task.
 
@@ -125,7 +163,7 @@ async def get_task_agent_events(
     from all Agent Hub sessions linked to this task, ordered by (session, turn, sequence).
     """
     verify_task_project(task_id, project_id)
-    session_ids, sessions = _resolve_task_sessions(project_id, task_id)
+    session_ids, sessions = _resolve_task_sessions(project_id, task_id, include_history=include_history)
     if not session_ids:
         return AgentHubEventsResponse(task_id=task_id, session_ids=[], sessions=[], events=[], total=0, max_turn=0)
     events, total, max_turn = _collect_session_events(session_ids, event_type, turn, page, page_size)
@@ -133,8 +171,12 @@ async def get_task_agent_events(
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}/agent-sessions")
-async def get_task_agent_sessions(project_id: str, task_id: str) -> dict[str, Any]:
+async def get_task_agent_sessions(
+    project_id: str,
+    task_id: str,
+    include_history: bool = Query(False, description="Include older linked Agent Hub sessions"),
+) -> dict[str, Any]:
     """Get Agent Hub session IDs linked to a task."""
     verify_task_project(task_id, project_id)
-    session_ids, summaries = _resolve_task_sessions(project_id, task_id)
+    session_ids, summaries = _resolve_task_sessions(project_id, task_id, include_history=include_history)
     return {"task_id": task_id, "session_ids": session_ids, "count": len(session_ids), "sessions": [s.model_dump() for s in summaries]}

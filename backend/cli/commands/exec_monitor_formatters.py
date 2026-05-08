@@ -178,6 +178,16 @@ def _print_subtasks(subtasks: list[dict[str, Any]], summary: str) -> None:
         print(f"  {s_id}: {s_status} - {s_desc}")
 
 
+def _print_task_monitor_breadcrumb(task_id: str, *, compact: bool) -> None:
+    prefix = "MORE"
+    detail = (
+        f"detail=st sessions monitor {task_id} --history; "
+        f"events=st session-events --task {task_id} --verbose; "
+        f"context=st context {task_id}; json=st sessions monitor {task_id} --json"
+    )
+    print(f"{prefix}:{detail}" if compact else f"{prefix}: {detail}")
+
+
 def print_header(
     out: OutputContext,
     task: dict[str, Any],
@@ -204,6 +214,7 @@ def print_header(
         if hidden_attempts:
             suffix += f"|hist={hidden_attempts}"
         print(f"EXEC:{task_id}|{status}|{summary}|{title}{suffix}")
+        _print_task_monitor_breadcrumb(str(task_id), compact=True)
         return
 
     print(f"Task: {task_id}")
@@ -217,4 +228,5 @@ def print_header(
         _print_subtasks(subtasks, summary)
     if debug:
         print("Mode: debug (showing all visibility levels)")
+    _print_task_monitor_breadcrumb(str(task_id), compact=False)
     print("-" * 60)

@@ -86,6 +86,7 @@ class ExecutionOperationsMixin:
         turn: int | None = None,
         page: int = 1,
         page_size: int = 500,
+        include_history: bool = False,
     ) -> dict[str, Any]:
         task = self.get_task(task_id)
         project_id = task.get("project_id", "")
@@ -99,9 +100,10 @@ class ExecutionOperationsMixin:
             turn,
             page,
             page_size,
+            include_history,
         )
 
-    def get_task_agent_sessions(self, task_id: str) -> dict[str, Any]:
+    def get_task_agent_sessions(self, task_id: str, include_history: bool = False) -> dict[str, Any]:
         task = self.get_task(task_id)
         project_id = task.get("project_id", "")
         return exec_ops.get_task_agent_sessions(
@@ -110,6 +112,7 @@ class ExecutionOperationsMixin:
             self._handle_response,
             project_id,
             task_id,
+            include_history,
         )
 
     def get_events(

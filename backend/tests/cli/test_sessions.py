@@ -354,6 +354,17 @@ class TestSessionsCommandAliases:
         mock_client_ctor.assert_called_once_with(require_project=False)
         mock_client.get_session.assert_called_once_with("sess-show")
 
+    def test_sessions_show_project_flag_scopes_short_id_resolution(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = [{"id": "sess-show"}]
+        mock_client.get_session.return_value = {"id": "sess-show"}
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["sessions", "show", "sess-show", "-P", "agent-hub"])
+
+        assert result.exit_code == 0
+        assert mock_client.list_sessions.call_args.kwargs["project_id"] == "agent-hub"
+
     def test_sessions_close_uses_projectless_client(self) -> None:
         mock_client = MagicMock()
         mock_client.list_sessions.return_value = [{"id": "sess-close"}]
@@ -366,6 +377,17 @@ class TestSessionsCommandAliases:
         assert '"closed": true' in result.output
         mock_client_ctor.assert_called_once_with(require_project=False)
         mock_client.close_session.assert_called_once_with("sess-close")
+
+    def test_sessions_close_project_flag_scopes_short_id_resolution(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = [{"id": "sess-close"}]
+        mock_client.close_session.return_value = {"closed": True}
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["sessions", "close", "sess-close", "-P", "agent-hub"])
+
+        assert result.exit_code == 0
+        assert mock_client.list_sessions.call_args.kwargs["project_id"] == "agent-hub"
 
 
 class TestSessionCommands:
@@ -661,6 +683,141 @@ class TestRequireProjectFalse:
             parent_session_id=None,
             project_id=None,
         )
+
+    def test_monitor_overview_is_diagnostic_first(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = [
+            {
+                "id": "sess-monitor-1234",
+                "project_id": "agent-hub",
+                "status": "active",
+                "agent_slug": "debugger",
+                "effective_provider": "kimi-code",
+                "effective_model": "kimi-code/kimi-for-coding",
+                "external_id": "task-abc12345",
+                "live_activity": {
+                    "status": "active",
+                    "lifecycle_state": "active",
+                    "health": "active",
+                    "phase": "running_validation",
+                    "quiet_for_seconds": 12,
+                    "current_tool_name": "bash",
+                    "last_command": "st check --quick",
+                    "current_topic": "quality gate",
+                    "files_touched": ["backend/app/foo.py"],
+                    "lifecycle_reason_codes": ["recent_model_activity"],
+                },
+            }
+        ]
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["sessions", "monitor", "-P", "agent-hub"])
+
+        assert result.exit_code == 0, result.output
+        assert "MONITOR[1]" in result.output
+        assert "debugger|sess-mon" in result.output
+        assert "active/running_validation" in result.output
+        assert "model=kimi-code/kimi-for-coding" in result.output
+        assert "task=task-abc12345" in result.output
+        assert "quiet=12s" in result.output
+        assert "tool=bash" in result.output
+        assert "cmd=st check --quick" in result.output
+        assert "files=backend/app/foo.py" in result.output
+        assert "MORE:detail=st sessions monitor <sid> -P agent-hub -n 20" in result.output
+        assert "errors=st sessions monitor <sid> -P agent-hub --errors" in result.output
+
+    def test_monitor_session_uses_project_scoped_short_id_and_latest_events(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = [{"id": "sess-monitor-1234"}]
+        mock_client.get_session.return_value = {
+            "id": "sess-monitor-1234",
+            "project_id": "agent-hub",
+            "status": "active",
+            "agent_slug": "debugger",
+            "live_activity": {"status": "active", "phase": "planning", "health": "active"},
+        }
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client), patch(
+            "cli.commands.sessions.get_session_events",
+            side_effect=[
+                {"events": [], "total": 75, "max_turn": 4},
+                {
+                    "events": [
+                        {
+                            "id": "event-latest",
+                            "turn": 4,
+                            "sequence": 10,
+                            "event_type": "tool_use",
+                            "tool_name": "bash",
+                            "tool_input": {"command": "st check --quick"},
+                        }
+                    ],
+                    "total": 75,
+                    "max_turn": 4,
+                },
+            ],
+        ) as mock_events:
+            result = runner.invoke(app, ["sessions", "monitor", "sess-mon", "-P", "agent-hub", "-n", "20"])
+
+        assert result.exit_code == 0, result.output
+        assert "MON agent-hub|debugger|sess-mon" in result.output
+        assert "MORE:events=st session-events sess-mon -P agent-hub --verbose" in result.output
+        assert "raw=st sessions show sess-mon -P agent-hub --raw" in result.output
+        assert "$ st check --quick" in result.output
+        assert mock_client.list_sessions.call_args.kwargs["project_id"] == "agent-hub"
+        assert mock_events.call_args.kwargs["page"] == 4
+
+    def test_monitor_session_errors_surfaces_tool_failures_and_repeats(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = [{"id": "sess-diag-1234"}]
+        mock_client.get_session.return_value = {
+            "id": "sess-diag-1234",
+            "project_id": "agent-hub",
+            "status": "active",
+            "agent_slug": "debugger",
+            "live_activity": {"status": "active", "phase": "running_validation", "health": "active"},
+        }
+        events = [
+            {
+                "id": f"guard-{idx}",
+                "event_type": "tool_result",
+                "tool_name": "bash",
+                "tool_output": "Use 'st check pytest [args]' - handles project resolution.",
+            }
+            for idx in range(4)
+        ]
+        events.extend(
+            {
+                "id": f"repeat-{idx}",
+                "event_type": "tool_result",
+                "tool_name": "bash",
+                "tool_output": "chain ['cloudflare/flux-2-dev', 'cloudflare/flux-1-schnell']",
+            }
+            for idx in range(5)
+        )
+        events.append(
+            {
+                "id": "value-error",
+                "event_type": "tool_result",
+                "tool_name": "bash",
+                "tool_output": "ERROR ValueError No image model resolved; configure the image-gen agent.",
+            }
+        )
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client), patch(
+            "cli.commands.sessions.get_session_events",
+            return_value={"events": events, "total": len(events), "max_turn": 2},
+        ):
+            result = runner.invoke(
+                app,
+                ["sessions", "monitor", "sess-diag", "-P", "agent-hub", "--errors", "-n", "6"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "DIAG session=sess-dia events_sampled=10 errors=2 repeats=2" in result.output
+        assert "ERR x4|type=tool_result|tool=bash|Use 'st check pytest [args]'" in result.output
+        assert "ERR x1|type=tool_result|tool=bash|ERROR ValueError No image model resolved" in result.output
+        assert "REPEAT x5|type=tool_result|tool=bash|chain ['cloudflare/flux-2-dev'" in result.output
 
 
 class TestOwnershipCommand:

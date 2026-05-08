@@ -183,3 +183,19 @@ class TestSessionEventsResolvesShortId:
 
         assert result.exit_code == 0, result.output
         assert mock_get_events.call_args.args[4] == 50
+
+    def test_session_events_project_flag_scopes_short_id_resolution(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = [{"id": _FULL_UUID}]
+
+        with (
+            patch("cli.client.STClient", return_value=mock_client),
+            patch(
+                "cli.commands.session_events.get_session_events",
+                return_value={"events": [], "total": 0, "max_turn": 0},
+            ),
+        ):
+            result = runner.invoke(app, ["session-events", _FULL_UUID[:8], "-P", "agent-hub"])
+
+        assert result.exit_code == 0, result.output
+        assert mock_client.list_sessions.call_args.kwargs["project_id"] == "agent-hub"

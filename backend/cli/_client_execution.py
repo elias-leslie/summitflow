@@ -79,6 +79,7 @@ def get_task_agent_events(
     turn: int | None = None,
     page: int = 1,
     page_size: int = 500,
+    include_history: bool = False,
 ) -> dict[str, Any]:
     """Get Agent Hub session events linked to a task."""
     canonical_task_id = canonicalize_task_id(task_id)
@@ -87,6 +88,8 @@ def get_task_agent_events(
         params["event_type"] = event_type
     if turn is not None:
         params["turn"] = turn
+    if include_history:
+        params["include_history"] = "true"
     response = client.get(
         f"{base_url}/projects/{project_id}/tasks/{canonical_task_id}/agent-events",
         params=params,
@@ -100,10 +103,15 @@ def get_task_agent_sessions(
     handle_response: Any,
     project_id: str,
     task_id: str,
+    include_history: bool = False,
 ) -> dict[str, Any]:
     """Get Agent Hub sessions linked to a task."""
+    params: dict[str, Any] = {}
+    if include_history:
+        params["include_history"] = "true"
     response = client.get(
-        f"{base_url}/projects/{project_id}/tasks/{canonicalize_task_id(task_id)}/agent-sessions"
+        f"{base_url}/projects/{project_id}/tasks/{canonicalize_task_id(task_id)}/agent-sessions",
+        params=params,
     )
     return cast(dict[str, Any], handle_response(response))
 

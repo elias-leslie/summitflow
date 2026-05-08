@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import patch
 
 from app.api.tasks.observability import _infer_session_task_id
+from app.storage.events import create_event
 
 
 class TestTaskObservability:
@@ -228,3 +230,130 @@ class TestTaskObservability:
         assert body["sessions"][0]["id"] == "sess-repo-root"
         assert body["events"][0]["id"] == "evt-repo-root"
         mock_add_session.assert_called_once_with(task_id, "sess-repo-root")
+
+    def test_get_agent_events_defaults_to_current_attempt_sessions(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={"title": "Observed task", "task_type": "task"},
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+        create_event(
+            project_id=test_project_id,
+            trace_id=task_id,
+            event_type="log",
+            source="execution",
+            message="Starting autonomous execution",
+            timestamp=datetime(2026, 5, 8, 20, 0, tzinfo=UTC),
+        )
+        create_event(
+            project_id=test_project_id,
+            trace_id=task_id,
+            event_type="log",
+            source="orchestrator",
+            message="Agent session started: sess-current-0000-0000-0000-000000000000",
+            timestamp=datetime(2026, 5, 8, 20, 1, tzinfo=UTC),
+        )
+
+        with patch(
+            "app.api.tasks.observability.get_agent_hub_sessions",
+            return_value=[
+                "sess-old-0000-0000-0000-000000000000",
+                "sess-current-0000-0000-0000-000000000000",
+            ],
+        ), patch(
+            "app.api.tasks.observability._fetch_session_summary",
+            side_effect=lambda sid: {
+                "id": sid,
+                "status": "active",
+                "effective_model": "served-model",
+                "updated_at": "2026-05-08T20:02:00Z",
+                "live_activity": {
+                    "phase": "waiting_for_model",
+                    "status": "active",
+                    "summary": "Waiting",
+                    "health": "active",
+                    "stalled": False,
+                    "files_touched": [],
+                    "outstanding_tool_calls": 0,
+                    "tool_calls_count": 1,
+                },
+            },
+        ), patch(
+            "app.api.tasks.observability._fetch_session_events",
+            return_value={"events": [], "total": 0, "max_turn": 0},
+        ) as mock_fetch_events:
+            response = client.get(f"/api/projects/{test_project_id}/tasks/{task_id}/agent-events")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["session_ids"] == ["sess-current-0000-0000-0000-000000000000"]
+        mock_fetch_events.assert_called_once()
+
+        with patch(
+            "app.api.tasks.observability.get_agent_hub_sessions",
+            return_value=[
+                "sess-old-0000-0000-0000-000000000000",
+                "sess-current-0000-0000-0000-000000000000",
+            ],
+        ), patch(
+            "app.api.tasks.observability._fetch_session_summary",
+            side_effect=lambda sid: {
+                "id": sid,
+                "status": "active",
+                "updated_at": "2026-05-08T20:02:00Z",
+                "live_activity": None,
+            },
+        ), patch(
+            "app.api.tasks.observability._fetch_session_events",
+            return_value={"events": [], "total": 0, "max_turn": 0},
+        ):
+            response = client.get(
+                f"/api/projects/{test_project_id}/tasks/{task_id}/agent-events?include_history=true"
+            )
+
+        assert response.status_code == 200
+        assert response.json()["session_ids"] == [
+            "sess-old-0000-0000-0000-000000000000",
+            "sess-current-0000-0000-0000-000000000000",
+        ]
+
+    def test_get_agent_events_with_attempt_but_no_session_does_not_show_stale_sessions(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={"title": "Observed task", "task_type": "task"},
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+        create_event(
+            project_id=test_project_id,
+            trace_id=task_id,
+            event_type="log",
+            source="execution",
+            message="Starting autonomous execution",
+            timestamp=datetime(2026, 5, 8, 20, 0, tzinfo=UTC),
+        )
+
+        with patch(
+            "app.api.tasks.observability.get_agent_hub_sessions",
+            return_value=["sess-stale-0000-0000-0000-000000000000"],
+        ), patch(
+            "app.api.tasks.observability._fetch_session_summary",
+        ) as mock_fetch_summary, patch(
+            "app.api.tasks.observability._fetch_session_events",
+        ) as mock_fetch_events:
+            response = client.get(f"/api/projects/{test_project_id}/tasks/{task_id}/agent-events")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["session_ids"] == []
+        assert body["sessions"] == []
+        assert body["events"] == []
+        mock_fetch_summary.assert_not_called()
+        mock_fetch_events.assert_not_called()

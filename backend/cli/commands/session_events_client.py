@@ -81,6 +81,7 @@ def get_task_events(
     turn: int | None = None,
     page: int = 1,
     page_size: int = 500,
+    include_history: bool = False,
 ) -> dict[str, Any]:
     """Fetch agent events for a task via SummitFlow observability API."""
     client = STClient()
@@ -91,6 +92,7 @@ def get_task_events(
             turn=turn,
             page=page,
             page_size=page_size,
+            include_history=include_history,
         )
     except APIError as e:
         handle_api_error(e)
