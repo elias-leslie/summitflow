@@ -98,35 +98,36 @@ def get_project_path(project_id: str, task_id: str | None = None) -> str:
     return project_root
 
 
-def check_checkout_health(project_path: str, task_id: str, project_id: str) -> bool:
-    """Check the shared checkout is still a valid git working directory."""
+def get_checkout_health_failure(project_path: str, task_id: str, project_id: str) -> str | None:
+    """Return why the shared checkout is invalid, or None when healthy.
+
+    Returns:
+        None if healthy, otherwise a human-readable failure reason.
+    """
     path = Path(project_path)
     if not path.is_dir():
-        emit_log(
-            task_id, "error",
-            f"CHECKOUT GONE: {project_path} removed during execution",
-            source="orchestrator", project_id=project_id,
-        )
-        return False
+        reason = f"CHECKOUT GONE: {project_path} removed during execution"
+        emit_log(task_id, "error", reason, source="orchestrator", project_id=project_id)
+        return reason
     if not (path / ".git").exists():
-        emit_log(
-            task_id, "error",
-            f"CHECKOUT CORRUPTED: {project_path} not a git checkout",
-            source="orchestrator", project_id=project_id,
-        )
-        return False
+        reason = f"CHECKOUT CORRUPTED: {project_path} not a git checkout"
+        emit_log(task_id, "error", reason, source="orchestrator", project_id=project_id)
+        return reason
     current_branch = _current_branch(project_path)
     expected_branch = _expected_task_branch(task_id)
     if current_branch != expected_branch:
-        emit_log(
-            task_id,
-            "error",
-            f"CHECKOUT BRANCH MISMATCH: expected {expected_branch}, got {current_branch or 'unknown'}",
-            source="orchestrator",
-            project_id=project_id,
+        reason = (
+            f"CHECKOUT BRANCH MISMATCH: expected {expected_branch}, "
+            f"got {current_branch or 'unknown'}"
         )
-        return False
-    return True
+        emit_log(task_id, "error", reason, source="orchestrator", project_id=project_id)
+        return reason
+    return None
+
+
+def check_checkout_health(project_path: str, task_id: str, project_id: str) -> bool:
+    """Check the shared checkout is still a valid git working directory."""
+    return get_checkout_health_failure(project_path, task_id, project_id) is None
 
 
 def check_main_repo_leakage(

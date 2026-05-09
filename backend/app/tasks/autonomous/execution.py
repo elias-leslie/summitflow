@@ -28,6 +28,9 @@ from .exec_modules.checkout import (
 from .exec_modules.checkout import (
     check_main_repo_leakage as _check_main_repo_leakage,
 )
+from .exec_modules.checkout import (
+    get_checkout_health_failure as _get_checkout_health_failure,
+)
 from .exec_modules.quality import (
     PristineCheckError,
     check_pristine_codebase,
@@ -66,6 +69,7 @@ __all__ = [
     "_check_main_repo_leakage",
     "_detect_progress",
     "_execute_subtask",
+    "_get_checkout_health_failure",
     "_is_infrastructure_failure",
     "_parse_error_count",
     "_request_extension",

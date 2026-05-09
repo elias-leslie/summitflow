@@ -188,18 +188,39 @@ class TestCheckoutHealthCheck:
         mock_log.assert_called_once()
         assert "CHECKOUT BRANCH MISMATCH" in mock_log.call_args[0][2]
 
+    @patch(f"{_CHECKOUT}.subprocess.run")
+    @patch(f"{_CHECKOUT}.emit_log")
+    def test_checkout_health_failure_includes_branch_mismatch_reason(
+        self,
+        mock_log: MagicMock,
+        mock_run: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Returns the concrete checkout failure reason for execution diagnostics."""
+        from app.tasks.autonomous.exec_modules.checkout import get_checkout_health_failure
+
+        (tmp_path / ".git").mkdir()
+        mock_run.return_value = MagicMock(returncode=0, stdout="task-other/main\n")
+
+        reason = get_checkout_health_failure(str(tmp_path), "task-1", "test-project")
+
+        assert reason is not None
+        assert "expected task-1/main" in reason
+        assert "got task-other/main" in reason
+        mock_log.assert_called_once()
+
 
 class TestHealLoopAbortsOnInvalidCheckout:
     """Bug #2, Layer B: Heal loop breaks immediately on checkout destruction."""
 
     @patch(f"{_RETRY_LOOP}.agent_configs")
     @patch(f"{_RETRY_LOOP}.run_execution_quality_check")
-    @patch(f"{_RETRY_LOOP}.check_checkout_health")
+    @patch(f"{_RETRY_LOOP}.get_checkout_health_failure")
     @patch(f"{_RETRY_LOOP}.assert_task_runnable")
     def test_heal_loop_aborts_on_invalid_checkout(
         self,
         mock_assert_task_runnable: MagicMock,
-        mock_checkout_health: MagicMock,
+        mock_checkout_failure: MagicMock,
         mock_verify: MagicMock,
         mock_agent_configs: MagicMock,
     ) -> None:
@@ -210,7 +231,7 @@ class TestHealLoopAbortsOnInvalidCheckout:
         mock_agent_configs.get_max_supervisor_attempts.return_value = 0
 
         # Checkout check fails on first iteration (heal_attempt=0)
-        mock_checkout_health.return_value = False
+        mock_checkout_failure.return_value = "CHECKOUT GONE: /tmp/test-checkout removed during execution"
 
         subtask = {
             "id": "sub-1",
@@ -235,16 +256,17 @@ class TestHealLoopAbortsOnInvalidCheckout:
         step_results = result[1]
         assert not all_passed
         assert step_results[0]["reason"] == "checkout_destroyed"
+        assert "CHECKOUT GONE" in step_results[0]["output"]
 
 
 class TestInitialCheckoutGuard:
     """Bug #2, Layer C: Initial checkout check before agent call."""
 
     @patch(f"{_SUBTASK_VALIDATION}.emit_log")
-    @patch(f"{_SUBTASK_VALIDATION}.check_checkout_health")
+    @patch(f"{_SUBTASK_VALIDATION}.get_checkout_health_failure")
     def test_execute_subtask_fails_on_invalid_checkout(
         self,
-        mock_checkout_health: MagicMock,
+        mock_checkout_failure: MagicMock,
         mock_log: MagicMock,
     ) -> None:
         """validate_subtask_environment returns failed when checkout is invalid at start."""
@@ -252,7 +274,7 @@ class TestInitialCheckoutGuard:
             validate_subtask_environment,
         )
 
-        mock_checkout_health.return_value = False
+        mock_checkout_failure.return_value = "CHECKOUT CORRUPTED: /tmp/nonexistent not a git checkout"
 
         subtask = {
             "id": "sub-1",
@@ -268,6 +290,7 @@ class TestInitialCheckoutGuard:
         assert result is not None
         assert result["status"] == "failed"
         assert result["reason"] == "checkout_invalid"
+        assert "CHECKOUT CORRUPTED" in result["output"]
 
 
 class TestMainRepoLeakageDetection:
@@ -391,10 +414,10 @@ class TestZeroStepSubtask:
     """Zero-step subtask logs a warning but does not fail — uses smoke tests only."""
 
     @patch(f"{_SUBTASK_VALIDATION}.emit_log")
-    @patch(f"{_SUBTASK_VALIDATION}.check_checkout_health")
+    @patch(f"{_SUBTASK_VALIDATION}.get_checkout_health_failure")
     def test_zero_steps_returns_none(
         self,
-        mock_checkout_health: MagicMock,
+        mock_checkout_failure: MagicMock,
         mock_log: MagicMock,
     ) -> None:
         """Subtask with 0 steps returns None (passes env check) and logs an info message."""
@@ -402,7 +425,7 @@ class TestZeroStepSubtask:
             validate_subtask_environment,
         )
 
-        mock_checkout_health.return_value = True
+        mock_checkout_failure.return_value = None
 
         subtask = {
             "id": "sub-1",

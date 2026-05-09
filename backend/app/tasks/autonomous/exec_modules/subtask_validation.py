@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .checkout import check_checkout_health
+from .checkout import get_checkout_health_failure
 from .events import emit_log
 
 
@@ -20,11 +20,13 @@ def validate_subtask_environment(
     Returns:
         Failure dict if validation fails, None if validation passes.
     """
-    if not check_checkout_health(project_path, task_id, project_id):
+    health_reason = get_checkout_health_failure(project_path, task_id, project_id)
+    if health_reason:
         return {
             "subtask_id": subtask_short_id,
             "status": "failed",
             "reason": "checkout_invalid",
+            "output": f"Checkout became invalid before execution: {health_reason}",
         }
 
     steps = subtask.get("steps_from_table") or subtask.get("steps") or []
