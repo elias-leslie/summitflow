@@ -56,14 +56,16 @@ def check_autonomous_enabled(project_id: str) -> dict[str, Any] | None:
     return check_agent_hub_execution_permission(project_id, require_enabled=True)
 
 
-def _session_counts_for_concurrency(session: dict[str, Any]) -> bool:
+def _session_counts_for_concurrency(session: dict[str, Any], *, exclude_task_id: str | None = None) -> bool:
     if str(session.get("status") or "").lower() != "active":
+        return False
+    if exclude_task_id and str(session.get("external_id") or "") == exclude_task_id:
         return False
     request_source = str(session.get("request_source") or "").strip().lower()
     return request_source not in _IGNORED_CONCURRENCY_SOURCES
 
 
-def count_active_agent_hub_sessions(project_id: str) -> int:
+def count_active_agent_hub_sessions(project_id: str, *, exclude_task_id: str | None = None) -> int:
     """Count live Agent Hub sessions that should consume autonomous project capacity."""
     import httpx
 
@@ -78,7 +80,12 @@ def count_active_agent_hub_sessions(project_id: str) -> int:
     sessions = payload.get("sessions", [])
     if not isinstance(sessions, list):
         return 0
-    return sum(1 for session in sessions if isinstance(session, dict) and _session_counts_for_concurrency(session))
+    return sum(
+        1
+        for session in sessions
+        if isinstance(session, dict)
+        and _session_counts_for_concurrency(session, exclude_task_id=exclude_task_id)
+    )
 
 
 def get_concurrency_snapshot(project_id: str, *, exclude_task_id: str | None = None) -> dict[str, int]:
@@ -86,7 +93,7 @@ def get_concurrency_snapshot(project_id: str, *, exclude_task_id: str | None = N
     config = agent_configs.get_agent_config(project_id)
     max_concurrent = int(config.get("autonomous_max_concurrent", 1))
     running_count = task_store.count_running_tasks(project_id, exclude_task_id=exclude_task_id)
-    active_session_count = count_active_agent_hub_sessions(project_id)
+    active_session_count = count_active_agent_hub_sessions(project_id, exclude_task_id=exclude_task_id)
     active_count = max(running_count, active_session_count)
     return {
         "running_count": running_count,

@@ -8,6 +8,7 @@ from app.tasks.autonomous.pickup_guards import (
     check_allowed_task_type,
     check_autonomous_enabled,
     check_system_health,
+    count_active_agent_hub_sessions,
     get_concurrency_snapshot,
 )
 
@@ -176,6 +177,35 @@ class TestCheckSystemHealth:
 
 class TestConcurrencySnapshot:
     """Tests for project concurrency accounting."""
+
+    @patch("httpx.get")
+    def test_active_session_count_excludes_current_task_and_transcript_sync(
+        self,
+        mock_get: MagicMock,
+    ) -> None:
+        mock_get.return_value = _mock_response(
+            {
+                "sessions": [
+                    {
+                        "status": "active",
+                        "external_id": "task-current",
+                        "request_source": "summitflow",
+                    },
+                    {
+                        "status": "active",
+                        "external_id": None,
+                        "request_source": "codex-transcript-sync",
+                    },
+                    {
+                        "status": "active",
+                        "external_id": "task-other",
+                        "request_source": "summitflow",
+                    },
+                ]
+            }
+        )
+
+        assert count_active_agent_hub_sessions("agent-hub", exclude_task_id="task-current") == 1
 
     @patch("app.tasks.autonomous.pickup_guards.count_active_agent_hub_sessions", return_value=0)
     @patch("app.tasks.autonomous.pickup_guards.task_store.count_running_tasks", return_value=0)
