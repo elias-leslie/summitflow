@@ -147,6 +147,29 @@ ContextKindUpdateOpt = Annotated[
     ),
 ]
 
+RenderModeOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--render-mode",
+        help=(
+            "Per-memory render expansion: full | compact | summary. "
+            "Forces L2 / L1 / L0 rendering across all consumer profiles."
+        ),
+    ),
+]
+
+RenderModeUpdateOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--render-mode",
+        help=(
+            "Per-memory render expansion: full | compact | summary. "
+            "Pass 'auto' (or 'clear') to revert to profile-driven tiering. "
+            "Omit to leave unchanged."
+        ),
+    ),
+]
+
 ConsumerProfilesOpt = Annotated[
     str | None,
     typer.Option("--consumer-profiles", help="Comma-separated consumer profiles to target"),

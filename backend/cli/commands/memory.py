@@ -64,6 +64,8 @@ from .memory_options import (
     PinnedOpt,
     PinnedUpdateOpt,
     QueryArg,
+    RenderModeOpt,
+    RenderModeUpdateOpt,
     RevisionArg,
     SaveSummaryOpt,
     ScopeIdOpt,
@@ -197,6 +199,7 @@ def save(
     scope: ScopeOpt = "global",
     scope_id: ScopeIdOpt = None,
     change_reason: ChangeReasonOpt = None,
+    render_mode: RenderModeOpt = None,
 ) -> None:
     """Save a learning to the memory system."""
     if content is not None and content_option is not None:
@@ -212,6 +215,7 @@ def save(
         trigger_types, trigger_phases, context_kind, consumer_profiles,
         exclude_consumer_profiles, agent_slugs, exclude_agent_slugs,
         audience_tags, exclude_audience_tags, tags, scope, scope_id, change_reason,
+        render_mode=render_mode,
     )
 
 
@@ -294,6 +298,7 @@ def update(
     tags: TagsUpdateOpt = None,
     clear_tags: ClearTagsOpt = False,
     change_reason: ChangeReasonOpt = None,
+    render_mode: RenderModeUpdateOpt = None,
 ) -> None:
     """Update an episode in place (content/tier and properties)."""
     resolved_content = _resolve_content(content, content_file, require_value=False)
@@ -305,6 +310,7 @@ def update(
         pinned, context_kind, consumer_profiles, exclude_consumer_profiles,
         agent_slugs, exclude_agent_slugs, audience_tags, exclude_audience_tags,
         clear_applicability, tags, clear_tags, change_reason,
+        render_mode=render_mode,
     )
 
 

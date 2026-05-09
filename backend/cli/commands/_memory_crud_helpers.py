@@ -14,6 +14,12 @@ from .memory_validation import validate_episode_content_present, validate_summar
 
 VALID_TIERS = ("mandate", "guardrail", "reference")
 VALID_CONTEXT_KINDS = ("policy", "reference", "capability", "continuity", "signal")
+VALID_RENDER_MODES = ("full", "compact", "summary")
+RENDER_MODE_CLEAR_ALIASES = ("auto", "clear", "none")
+
+# Sentinel returned by validate_render_mode_input to mean "clear the field"
+# (distinct from None which means "leave unchanged").
+RENDER_MODE_CLEAR = "__RENDER_MODE_CLEAR__"
 
 _APPLICABILITY_KEYS = (
     "consumer_profiles", "exclude_consumer_profiles",
@@ -53,6 +59,36 @@ def validate_context_kind(context_kind: str) -> str:
     if normalized not in VALID_CONTEXT_KINDS:
         output_error(
             f"Invalid context kind: {context_kind}. Must be policy, reference, capability, continuity, or signal."
+        )
+        raise typer.Exit(1)
+    return normalized
+
+
+def validate_render_mode_input(value: str | None, *, allow_clear: bool) -> str | None:
+    """Validate --render-mode input.
+
+    Returns None if value is None (unset). Returns RENDER_MODE_CLEAR sentinel when
+    the user explicitly asked to clear (only valid when allow_clear=True). Returns
+    the normalized 'full' / 'compact' / 'summary' otherwise. Exits on invalid input.
+    """
+    from ..output import output_error
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if not normalized:
+        output_error("--render-mode cannot be blank.")
+        raise typer.Exit(1)
+    if normalized in RENDER_MODE_CLEAR_ALIASES:
+        if not allow_clear:
+            output_error(
+                "--render-mode 'auto' / 'clear' is only valid for update; omit the flag for save."
+            )
+            raise typer.Exit(1)
+        return RENDER_MODE_CLEAR
+    if normalized not in VALID_RENDER_MODES:
+        output_error(
+            f"Invalid --render-mode: {value}. Must be full, compact, summary"
+            + (", or auto/clear." if allow_clear else ".")
         )
         raise typer.Exit(1)
     return normalized
@@ -107,6 +143,7 @@ def build_save_payload(
     agent_slugs: str | None, exclude_agent_slugs: str | None,
     audience_tags: str | None, exclude_audience_tags: str | None,
     change_reason: str | None,
+    render_mode: str | None = None,
 ) -> dict[str, object]:
     """Build the payload dict for save-learning request."""
     payload: dict[str, object] = {
@@ -125,6 +162,11 @@ def build_save_payload(
         payload["trigger_phases"] = parse_csv_values(trigger_phases) or []
     if context_kind is not None:
         payload["context_kind"] = validate_context_kind(context_kind)
+    if render_mode is not None:
+        # save flow: cannot clear, value must be full/compact/summary
+        normalized = validate_render_mode_input(render_mode, allow_clear=False)
+        if normalized is not None:
+            payload["render_mode"] = normalized
     applicability = build_applicability_payload(
         consumer_profiles=consumer_profiles, exclude_consumer_profiles=exclude_consumer_profiles,
         agent_slugs=agent_slugs, exclude_agent_slugs=exclude_agent_slugs,
@@ -194,7 +236,7 @@ def update_episode_content_or_tier(
 def _echo_patched_props(
     props: dict[str, object], summary: str | None, trigger_types: str | None,
     trigger_phases: str | None, pinned: bool | None, context_kind: str | None,
-    applicability: dict[str, list[str]] | None,
+    applicability: dict[str, list[str]] | None, render_mode: str | None = None,
 ) -> None:
     if summary is not None:
         typer.echo(f"  Summary: {summary}")
@@ -206,6 +248,8 @@ def _echo_patched_props(
         typer.echo(f"  Pinned: {pinned}")
     if context_kind is not None:
         typer.echo(f"  Context kind: {props['context_kind']}")
+    if render_mode is not None:
+        typer.echo(f"  Render mode: {props.get('render_mode') or 'auto'}")
     if applicability is not None:
         typer.echo(f"  Applicability: {applicability}")
 
@@ -214,8 +258,13 @@ def patch_episode_properties(
     target_uuid: str, summary: str | None, trigger_types: str | None,
     trigger_phases: str | None, pinned: bool | None, context_kind: str | None,
     applicability: dict[str, list[str]] | None, *, change_reason: str | None = None,
+    render_mode: str | None = None,
 ) -> None:
-    """Patch episode properties and echo results."""
+    """Patch episode properties and echo results.
+
+    `render_mode` values: None = leave unchanged, RENDER_MODE_CLEAR sentinel =
+    clear (send null to API), or one of 'full' / 'compact' / 'summary'.
+    """
     props: dict[str, object] = {}
     if summary is not None:
         props["summary"] = summary
@@ -227,6 +276,9 @@ def patch_episode_properties(
         props["pinned"] = pinned
     if context_kind is not None:
         props["context_kind"] = validate_context_kind(context_kind)
+    if render_mode is not None:
+        # Caller already passed validated render_mode (or RENDER_MODE_CLEAR).
+        props["render_mode"] = None if render_mode == RENDER_MODE_CLEAR else render_mode
     if applicability is not None:
         props["applicability"] = applicability
     if change_reason:
@@ -237,7 +289,7 @@ def patch_episode_properties(
     if not patch_result.get("success"):
         typer.echo(f"Warning: Failed to update properties: {patch_result.get('message', 'Unknown')}")
         return
-    _echo_patched_props(props, summary, trigger_types, trigger_phases, pinned, context_kind, applicability)
+    _echo_patched_props(props, summary, trigger_types, trigger_phases, pinned, context_kind, applicability, render_mode)
 
 
 def replace_episode_tags(target_uuid: str, tags: list[str]) -> None:
@@ -258,17 +310,19 @@ def _validate_update_and_normalize(
     consumer_profiles: str | None, exclude_consumer_profiles: str | None,
     agent_slugs: str | None, exclude_agent_slugs: str | None,
     audience_tags: str | None, exclude_audience_tags: str | None,
-) -> tuple[str | None, str | None, list[str] | None]:
+    render_mode: str | None = None,
+) -> tuple[str | None, str | None, list[str] | None, str | None]:
     if tags and clear_tags:
         typer.echo("Error: Specify only one of --tags or --clear-tags")
         raise typer.Exit(1)
     _nullable = (content, tier, summary, trigger_types, trigger_phases, pinned, context_kind,
                  consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs,
-                 audience_tags, exclude_audience_tags, tags)
+                 audience_tags, exclude_audience_tags, tags, render_mode)
     if not any(f is not None for f in _nullable) and not clear_applicability and not clear_tags:
         typer.echo(
             "Error: Must specify at least one of: --content, --tier, --summary, --trigger-types,"
-            " --trigger-phases, --pinned, --context-kind, applicability options, --tags, --clear-tags, --clear-applicability"
+            " --trigger-phases, --pinned, --context-kind, --render-mode, applicability options,"
+            " --tags, --clear-tags, --clear-applicability"
         )
         raise typer.Exit(1)
     if content is not None:
@@ -277,4 +331,5 @@ def _validate_update_and_normalize(
         validate_summary_input(summary, required=False) if summary is not None else None,
         validate_tier(tier) if tier is not None else None,
         [] if clear_tags else parse_tags_csv(tags),
+        validate_render_mode_input(render_mode, allow_clear=True),
     )

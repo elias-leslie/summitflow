@@ -80,6 +80,7 @@ def save(
     scope: str,
     scope_id: str | None,
     change_reason: str | None,
+    render_mode: str | None = None,
 ) -> None:
     """Save a new memory episode."""
     save_impl(
@@ -103,6 +104,7 @@ def save(
         scope,
         scope_id,
         change_reason,
+        render_mode=render_mode,
     )
 
 
@@ -159,6 +161,7 @@ def update(
     tags: str | None,
     clear_tags: bool,
     change_reason: str | None,
+    render_mode: str | None = None,
 ) -> None:
     """Update a memory episode."""
     update_impl(
@@ -180,6 +183,7 @@ def update(
         tags,
         clear_tags,
         change_reason,
+        render_mode=render_mode,
     )
 
 

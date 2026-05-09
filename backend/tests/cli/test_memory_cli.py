@@ -861,7 +861,9 @@ class TestMemoryTagOptions:
 
         mock_fetch_existing.assert_not_called()
         mock_fetch_tags.assert_not_called()
-        mock_patch_properties.assert_called_once_with("abc12345", "Updated summary", None, None, None, None, None)
+        mock_patch_properties.assert_called_once_with(
+            "abc12345", "Updated summary", None, None, None, None, None, render_mode=None,
+        )
         mock_replace_tags.assert_not_called()
 
     def test_update_impl_merges_applicability_changes(self) -> None:
@@ -915,6 +917,7 @@ class TestMemoryTagOptions:
                 "audience_tags": [],
                 "exclude_audience_tags": [],
             },
+            render_mode=None,
         )
 
     def test_update_impl_rejects_invalid_tier(self) -> None:
@@ -928,6 +931,60 @@ class TestMemoryTagOptions:
                 raise AssertionError("Expected typer.Exit for invalid tier")
 
         mock_fetch_existing.assert_not_called()
+
+    def test_update_impl_passes_render_mode_to_patch(self) -> None:
+        """--render-mode flows through update_impl into patch_episode_properties."""
+        with (
+            patch("cli.commands.memory_crud.fetch_existing_episode") as mock_fetch_existing,
+            patch("cli.commands.memory_crud.patch_episode_properties") as mock_patch_properties,
+        ):
+            update_impl(
+                "abc12345",
+                None, None, None, None, None, None, None, None, None, None, None, None, None,
+                False, None, False, None,
+                render_mode="full",
+            )
+
+        mock_fetch_existing.assert_not_called()
+        mock_patch_properties.assert_called_once_with(
+            "abc12345", None, None, None, None, None, None, render_mode="full",
+        )
+
+    def test_update_impl_clears_render_mode_with_auto(self) -> None:
+        """--render-mode auto sends a null render_mode to clear the override."""
+        with (
+            patch("cli.commands.memory_crud.fetch_existing_episode"),
+            patch("cli.commands.memory_crud.patch_episode_properties") as mock_patch_properties,
+        ):
+            update_impl(
+                "abc12345",
+                None, None, None, None, None, None, None, None, None, None, None, None, None,
+                False, None, False, None,
+                render_mode="auto",
+            )
+
+        # The CLI sentinel for "clear" is the RENDER_MODE_CLEAR string from
+        # _memory_crud_helpers; patch_episode_properties translates it to None.
+        from cli.commands._memory_crud_helpers import RENDER_MODE_CLEAR
+
+        mock_patch_properties.assert_called_once_with(
+            "abc12345", None, None, None, None, None, None, render_mode=RENDER_MODE_CLEAR,
+        )
+
+    def test_update_impl_rejects_invalid_render_mode(self) -> None:
+        """--render-mode must be full/compact/summary/auto/clear."""
+        with patch("cli.commands.memory_crud.fetch_existing_episode"):
+            try:
+                update_impl(
+                    "abc12345",
+                    None, None, None, None, None, None, None, None, None, None, None, None, None,
+                    False, None, False, None,
+                    render_mode="bogus",
+                )
+            except typer.Exit as exc:
+                assert exc.exit_code == 1
+            else:
+                raise AssertionError("Expected typer.Exit for invalid render-mode")
 
 
 class TestMemoryStatusCommand:

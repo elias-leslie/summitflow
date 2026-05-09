@@ -13,6 +13,10 @@ def _format_meta_line(record: dict[str, Any]) -> str | None:
     if record.get("pinned"):
         meta_parts.append("pinned")
 
+    render_mode = record.get("render_mode")
+    if render_mode:
+        meta_parts.append(f"render={render_mode}")
+
     trigger_types = [str(item) for item in record.get("trigger_task_types", []) if item]
     if trigger_types:
         meta_parts.append(f"triggers={','.join(trigger_types)}")
@@ -121,6 +125,9 @@ def format_get_compact(result: dict[str, Any]) -> None:
         typer.echo(f"Triggers: {', '.join(trigger_types)}")
     if pinned:
         typer.echo("Pinned: yes")
+    render_mode = result.get("render_mode")
+    if render_mode:
+        typer.echo(f"Render mode: {render_mode}")
     if tags:
         typer.echo(f"Tags: {', '.join(str(tag) for tag in tags)}")
     typer.echo("")

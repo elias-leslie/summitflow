@@ -133,7 +133,7 @@ def save_impl(
     context_kind: str | None, consumer_profiles: str | None, exclude_consumer_profiles: str | None,
     agent_slugs: str | None, exclude_agent_slugs: str | None, audience_tags: str | None,
     exclude_audience_tags: str | None, tags: str | None, scope: str, scope_id: str | None,
-    change_reason: str | None = None,
+    change_reason: str | None = None, render_mode: str | None = None,
 ) -> None:
     summary = validate_save_inputs(tier, confidence, summary)
     validate_episode_content_present(content)
@@ -141,7 +141,7 @@ def save_impl(
     payload = build_save_payload(
         content, summary, tier, confidence, context, pinned, trigger_types, trigger_phases,
         context_kind, consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs,
-        audience_tags, exclude_audience_tags, change_reason,
+        audience_tags, exclude_audience_tags, change_reason, render_mode=render_mode,
     )
     result = agent_hub_request(
         "POST", MEMORY_SAVE_LEARNING_PATH, json=payload,
@@ -232,11 +232,15 @@ def _apply_properties_patch(
     normalized_summary: str | None, trigger_types: str | None, trigger_phases: str | None,
     pinned: bool | None, context_kind: str | None, app_fields: tuple[str | None, ...],
     clear_applicability: bool, change_reason: str | None,
+    render_mode: str | None = None,
 ) -> bool:
     consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs, audience_tags, exclude_audience_tags = app_fields
     applicability_changed = any(f is not None for f in app_fields) or clear_applicability
     if not (
-        any(f is not None for f in (normalized_summary, trigger_types, trigger_phases, pinned, context_kind))
+        any(
+            f is not None
+            for f in (normalized_summary, trigger_types, trigger_phases, pinned, context_kind, render_mode)
+        )
         or applicability_changed
     ):
         return False
@@ -253,12 +257,13 @@ def _apply_properties_patch(
     if change_reason:
         patch_episode_properties(
             target_uuid, normalized_summary, trigger_types, trigger_phases,
-            pinned, context_kind, applicability, change_reason=change_reason,
+            pinned, context_kind, applicability,
+            change_reason=change_reason, render_mode=render_mode,
         )
     else:
         patch_episode_properties(
             target_uuid, normalized_summary, trigger_types, trigger_phases,
-            pinned, context_kind, applicability,
+            pinned, context_kind, applicability, render_mode=render_mode,
         )
     return True
 
@@ -269,12 +274,12 @@ def update_impl(
     context_kind: str | None, consumer_profiles: str | None, exclude_consumer_profiles: str | None,
     agent_slugs: str | None, exclude_agent_slugs: str | None, audience_tags: str | None,
     exclude_audience_tags: str | None, clear_applicability: bool, tags: str | None,
-    clear_tags: bool, change_reason: str | None = None,
+    clear_tags: bool, change_reason: str | None = None, render_mode: str | None = None,
 ) -> None:
-    normalized_summary, normalized_tier, replacement_tags = _validate_update_and_normalize(
+    normalized_summary, normalized_tier, replacement_tags, normalized_render_mode = _validate_update_and_normalize(
         content, tier, summary, tags, clear_tags, clear_applicability, trigger_types, trigger_phases,
         pinned, context_kind, consumer_profiles, exclude_consumer_profiles, agent_slugs,
-        exclude_agent_slugs, audience_tags, exclude_audience_tags,
+        exclude_agent_slugs, audience_tags, exclude_audience_tags, render_mode=render_mode,
     )
     existing, effective_tier, target_uuid, existing_tags = _resolve_existing_state(
         uuid, content, normalized_tier, replacement_tags
@@ -296,6 +301,7 @@ def update_impl(
     properties_patched = _apply_properties_patch(
         target_uuid, existing, uuid, normalized_summary, trigger_types, trigger_phases,
         pinned, context_kind, _app, clear_applicability, change_reason,
+        render_mode=normalized_render_mode,
     )
     if not content_or_tier_changed and tags_changed:
         replace_episode_tags(target_uuid, replacement_tags or [])
