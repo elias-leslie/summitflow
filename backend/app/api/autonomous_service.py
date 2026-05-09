@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TypedDict
 
 from ..storage.agent_configs import AgentConfig, get_agent_config, update_agent_config
+from ..storage.agent_configs_autonomous import normalize_allowed_task_types
 from .autonomous_models import (
     AutonomousSettings,
     AutonomousSettingsUpdate,
@@ -51,8 +52,7 @@ def _parse_core_settings(config: AgentConfig) -> _CoreSettingsPayload:
     upkeep_batch_limit = int(config.get("upkeep_batch_limit", 5) or 5)
     max_tasks_per_day_raw = config.get("autonomous_max_tasks_per_day")
     max_tasks_per_day = int(max_tasks_per_day_raw) if max_tasks_per_day_raw else None
-    allowed_types_raw = config.get("autonomous_allowed_types")
-    allowed_types = list(allowed_types_raw) if allowed_types_raw else None
+    allowed_types = normalize_allowed_task_types(config.get("autonomous_allowed_types"))
     return {
         "frequency_minutes": frequency_minutes,
         "auto_merge_tiers": auto_merge_tiers,

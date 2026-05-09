@@ -9,6 +9,21 @@ from __future__ import annotations
 
 from .agent_configs import get_agent_config
 
+LEGACY_DEFAULT_ALLOWED_TYPES = ["refactor", "bug", "regression", "feature", "chore", "docs"]
+DEFAULT_ALLOWED_TYPES = [*LEGACY_DEFAULT_ALLOWED_TYPES, "task", "debt", "test"]
+
+
+def normalize_allowed_task_types(allowed_types: object) -> list[str] | None:
+    """Return normalized allowed task types, preserving explicit narrow lists."""
+    if not allowed_types:
+        return None
+    if not isinstance(allowed_types, list):
+        return None
+    values = [str(t) for t in allowed_types]
+    if values == LEGACY_DEFAULT_ALLOWED_TYPES:
+        return DEFAULT_ALLOWED_TYPES.copy()
+    return values
+
 
 def get_max_tasks_per_day(project_id: str) -> int | None:
     """Get maximum tasks per day limit for autonomous execution.
@@ -50,13 +65,7 @@ def get_allowed_task_types(project_id: str) -> list[str] | None:
         List of allowed task types, or None for all types allowed
     """
     config = get_agent_config(project_id)
-    allowed_types = config.get("autonomous_allowed_types")
-    if not allowed_types:
-        return None
-    # Ensure it's a list of strings
-    if isinstance(allowed_types, list):
-        return [str(t) for t in allowed_types]
-    return None
+    return normalize_allowed_task_types(config.get("autonomous_allowed_types"))
 
 
 def get_max_self_fix_attempts(project_id: str) -> int:

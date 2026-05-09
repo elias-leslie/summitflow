@@ -63,6 +63,36 @@ def test_get_autonomous_settings_reads_extended_agent_config() -> None:
     assert not settings.quality_gate_fix_enabled
 
 
+def test_get_autonomous_settings_expands_legacy_default_allowed_types() -> None:
+    config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
+    config["autonomous_allowed_types"] = ["refactor", "bug", "regression", "feature", "chore", "docs"]
+
+    with patch("app.api.autonomous_service.get_agent_config", return_value=config):
+        settings = get_autonomous_settings("test-project")
+
+    assert settings.allowed_types == [
+        "refactor",
+        "bug",
+        "regression",
+        "feature",
+        "chore",
+        "docs",
+        "task",
+        "debt",
+        "test",
+    ]
+
+
+def test_get_autonomous_settings_preserves_explicit_narrow_allowed_types() -> None:
+    config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
+    config["autonomous_allowed_types"] = ["bug"]
+
+    with patch("app.api.autonomous_service.get_agent_config", return_value=config):
+        settings = get_autonomous_settings("test-project")
+
+    assert settings.allowed_types == ["bug"]
+
+
 def test_update_autonomous_settings_writes_partial_agent_config() -> None:
     updated_config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
     updated_config.update(
@@ -109,6 +139,10 @@ def test_validate_update_accepts_vitest_quality_gate_tool() -> None:
     _validate_update(
         AutonomousSettingsUpdate(quality_gate_tools=["biome", "tsc", "vitest"])
     )
+
+
+def test_validate_update_accepts_ready_ranked_task_types() -> None:
+    _validate_update(AutonomousSettingsUpdate(allowed_types=["task", "debt", "test"]))
 
 
 @pytest.mark.asyncio

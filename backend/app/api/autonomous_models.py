@@ -7,7 +7,17 @@ behavior settings only.
 
 from pydantic import BaseModel, Field
 
-VALID_TASK_TYPES = ["refactor", "bug", "regression", "feature", "chore", "docs"]
+VALID_TASK_TYPES = [
+    "refactor",
+    "bug",
+    "regression",
+    "feature",
+    "chore",
+    "docs",
+    "task",
+    "debt",
+    "test",
+]
 
 
 class AutonomousSettings(BaseModel):

@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from app.tasks.autonomous.pickup_guards import (
+    check_allowed_task_type,
     check_autonomous_enabled,
     check_system_health,
     get_concurrency_snapshot,
@@ -94,6 +95,17 @@ class TestCheckAutonomousEnabled:
         result = check_autonomous_enabled("proj")
         assert result is not None
         assert "unreachable" in result["reason"]
+
+
+class TestCheckAllowedTaskType:
+    """Tests for autonomous task type guard."""
+
+    @patch(
+        "app.tasks.autonomous.pickup_guards.agent_configs.get_allowed_task_types",
+        return_value=["refactor", "bug", "regression", "feature", "chore", "docs", "task", "debt", "test"],
+    )
+    def test_ready_ranked_generic_task_type_is_allowed(self, _mock_allowed: MagicMock) -> None:
+        assert check_allowed_task_type("agent-hub", "task") is None
 
 
 def _mock_healthy_infra() -> tuple:
