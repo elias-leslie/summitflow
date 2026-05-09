@@ -33,7 +33,9 @@ from ..output import output_error, output_json
 
 app = typer.Typer(help="Agent-facing portfolio analytics (TLH, IPS, drift, catalysts, retirement)")
 tlh_app = typer.Typer(help="Tax-loss harvesting + wash-sale detection")
+ips_app = typer.Typer(help="Investment Policy Statement targets (allocation goals)")
 app.add_typer(tlh_app, name="tlh")
+app.add_typer(ips_app, name="ips")
 
 
 # Map of `st portfolio schema <command>` aliases to the OpenAPI path the
@@ -43,6 +45,9 @@ app.add_typer(tlh_app, name="tlh")
 _SCHEMA_PATHS: dict[str, tuple[str, str]] = {
     "tlh-candidates": ("/api/portfolio/tlh/candidates", "get"),
     "tlh-wash-sale-check": ("/api/portfolio/tlh/wash-sale-check", "post"),
+    "drift": ("/api/portfolio/ips/drift", "get"),
+    "rebalance": ("/api/portfolio/ips/rebalance", "post"),
+    "ips-targets": ("/api/portfolio/ips/targets", "get"),
 }
 
 
@@ -281,3 +286,249 @@ def schema(
     schema_obj = response.get("schema") or {}
     components = spec.get("components", {}).get("schemas", {})
     output_json({"command": command, "path": path, "method": method.upper(), "schema": schema_obj, "components": components})
+
+
+# ----------------------------------------------------------------------
+# IPS / drift / rebalance — F3 surface
+# ----------------------------------------------------------------------
+
+
+_FRIENDLY_CLASS = {
+    "us_equity": "US stocks",
+    "intl_equity": "Foreign stocks",
+    "bonds": "Bonds",
+    "cash": "Cash",
+    "alts": "Alternatives",
+    "real_estate": "Real estate",
+    "unclassified": "Unclassified",
+}
+
+
+def _human_drift_summary(summary: dict[str, Any]) -> str:
+    oob = int(summary.get("classes_out_of_band", 0) or 0)
+    max_drift = float(summary.get("max_drift_pct", 0) or 0) * 100
+    total = float(summary.get("total_value", 0) or 0)
+    if oob == 0:
+        return (
+            f"On plan. Total ${total:,.0f}. "
+            f"Worst category is {max_drift:.1f}% off goal — inside wiggle room."
+        )
+    return (
+        f"{oob} category{'s' if oob != 1 else ''} outside wiggle room. "
+        f"Worst is {max_drift:.1f}% off goal. Total ${total:,.0f}."
+    )
+
+
+def _human_drift_report(report: dict[str, Any]) -> str:
+    rows = report.get("rows", []) or []
+    total = float(report.get("total_value", 0) or 0)
+    lines = [f"Allocation snapshot for {report.get('snapshot_date')} — total ${total:,.0f}:", ""]
+    for row in rows:
+        klass = _FRIENDLY_CLASS.get(row.get("asset_class"), row.get("asset_class"))
+        actual = float(row.get("actual_pct", 0) or 0) * 100
+        target = float(row.get("target_pct", 0) or 0) * 100
+        drift = float(row.get("drift_pct", 0) or 0) * 100
+        flag = "  outside wiggle room" if row.get("out_of_band") else ""
+        lines.append(
+            f"  - {klass}: {actual:.1f}% (goal {target:.1f}%, off {drift:+.1f}%){flag}"
+        )
+    missing = report.get("classes_missing_targets") or []
+    if missing:
+        lines.append("")
+        lines.append("Held but no goal set: " + ", ".join(_FRIENDLY_CLASS.get(c, c) for c in missing))
+    return "\n".join(lines)
+
+
+def _human_rebalance_plan(plan: dict[str, Any]) -> str:
+    trades = plan.get("trades", []) or []
+    if not trades:
+        return "Already on plan — no trades suggested."
+    lines = [
+        f"{len(trades)} trade(s) to get back on plan "
+        f"(total buys ${float(plan.get('total_buy_value', 0) or 0):,.0f}, "
+        f"total sells ${float(plan.get('total_sell_value', 0) or 0):,.0f}):",
+        "",
+    ]
+    for trade in trades:
+        action = "BUY " if trade.get("action") == "buy" else "SELL"
+        symbol = trade.get("symbol", "?")
+        klass = _FRIENDLY_CLASS.get(trade.get("asset_class"), trade.get("asset_class"))
+        amount = float(trade.get("estimated_value", 0) or 0)
+        account = trade.get("account_type", trade.get("account_id"))
+        suffix = ""
+        if trade.get("wash_sale_conflict"):
+            reason = trade.get("wash_sale_reason") or "recent buy blocks this sale"
+            suffix = f" — BLOCKED: {reason}"
+        lines.append(f"  {action} ${amount:,.0f} of {symbol} ({klass}) in {account}{suffix}")
+    if plan.get("wash_sale_conflicts"):
+        lines.append("")
+        lines.append(
+            f"Note: {plan['wash_sale_conflicts']} sell(s) blocked by recent buys — "
+            "switch the conflicting account or wait 31 days."
+        )
+    return "\n".join(lines)
+
+
+@app.command("drift")
+def drift(
+    scope: Annotated[str, typer.Option("--scope", help="household | account")] = "household",
+    scope_id: Annotated[str, typer.Option("--scope-id", help="Scope identifier")] = "default",
+    summary: Annotated[bool, typer.Option("--summary/--no-summary", help="Compact digest (default) vs full row table")] = True,
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """Show how far each asset class is from its goal allocation.
+
+    Default response is a single-line digest. Pass ``--no-summary`` for
+    the full per-class table.
+    """
+    if scope not in ("household", "account"):
+        output_error(f"--scope must be 'household' or 'account', got {scope!r}")
+        raise typer.Exit(3)
+    params: dict[str, Any] = {"scope": scope, "scope_id": scope_id, "summary": str(summary).lower()}
+    try:
+        with _client(remote)[0] as client:
+            data = client.get("/api/portfolio/ips/drift", params=params)
+    except PortfolioConnectError as exc:
+        _handle_connect(exc)
+    except APIError as exc:
+        _handle_api_error(exc)
+
+    if not isinstance(data, dict):
+        data = {}
+    envelope = {
+        "ok": True,
+        "schema_version": 1,
+        "data": data,
+        "meta": {"scope": scope, "scope_id": scope_id, "summary": summary},
+    }
+    summary_text = _human_drift_summary(data) if summary else _human_drift_report(data)
+    _emit(envelope, human=human, summary_text=summary_text)
+
+
+@app.command("rebalance")
+def rebalance(
+    scope: Annotated[str, typer.Option("--scope", help="household | account")] = "household",
+    scope_id: Annotated[str, typer.Option("--scope-id", help="Scope identifier")] = "default",
+    prefer_tax_advantaged: Annotated[bool, typer.Option("--prefer-tax-advantaged/--no-prefer-tax-advantaged", help="Route buys to Roth/IRA/401k first")] = True,
+    prefer_ltcg: Annotated[bool, typer.Option("--prefer-ltcg/--no-prefer-ltcg", help="Prefer long-term over short-term gains on sells")] = True,
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """Propose tax-aware trades to close the drift gap.
+
+    Three-pass: route buys to tax-advantaged first, prefer
+    long-term losses/gains over short-term on sells, run wash-sale
+    check on every taxable sell and reroute or flag conflicts.
+    """
+    if scope not in ("household", "account"):
+        output_error(f"--scope must be 'household' or 'account', got {scope!r}")
+        raise typer.Exit(3)
+    body = {
+        "scope": scope,
+        "scope_id": scope_id,
+        "prefer_tax_advantaged": prefer_tax_advantaged,
+        "prefer_ltcg": prefer_ltcg,
+    }
+    try:
+        with _client(remote)[0] as client:
+            plan = client.post("/api/portfolio/ips/rebalance", json_body=body)
+    except PortfolioConnectError as exc:
+        _handle_connect(exc)
+    except APIError as exc:
+        _handle_api_error(exc)
+
+    if not isinstance(plan, dict):
+        plan = {}
+    envelope = {
+        "ok": True,
+        "schema_version": 1,
+        "data": plan,
+        "meta": {"scope": scope, "scope_id": scope_id},
+    }
+    _emit(envelope, human=human, summary_text=_human_rebalance_plan(plan))
+
+
+@ips_app.command("list")
+def ips_list(
+    scope: Annotated[str, typer.Option("--scope", help="household | account")] = "household",
+    scope_id: Annotated[str, typer.Option("--scope-id", help="Scope identifier")] = "default",
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """List allocation goals for one scope."""
+    if scope not in ("household", "account"):
+        output_error(f"--scope must be 'household' or 'account', got {scope!r}")
+        raise typer.Exit(3)
+    params: dict[str, Any] = {"scope": scope, "scope_id": scope_id}
+    try:
+        with _client(remote)[0] as client:
+            rows = client.get("/api/portfolio/ips/targets", params=params)
+    except PortfolioConnectError as exc:
+        _handle_connect(exc)
+    except APIError as exc:
+        _handle_api_error(exc)
+    if not isinstance(rows, list):
+        rows = []
+    envelope = {
+        "ok": True,
+        "schema_version": 1,
+        "data": rows,
+        "meta": {"count": len(rows), "scope": scope, "scope_id": scope_id},
+    }
+    if human:
+        if not rows:
+            text = "No allocation goals set yet."
+        else:
+            lines = ["Allocation goals:"]
+            for row in rows:
+                klass = _FRIENDLY_CLASS.get(row.get("asset_class"), row.get("asset_class"))
+                target = float(row.get("target_pct", 0) or 0) * 100
+                band = float(row.get("drift_band_pct", 0) or 0) * 100
+                lines.append(f"  - {klass}: {target:.1f}% (wiggle room ±{band:.1f}%)")
+            text = "\n".join(lines)
+        _emit(envelope, human=True, summary_text=text)
+    else:
+        _emit(envelope, human=False)
+
+
+@ips_app.command("set")
+def ips_set(
+    asset_class: Annotated[str, typer.Option("--asset-class", help="us_equity | intl_equity | bonds | cash | alts | real_estate")],
+    target: Annotated[float, typer.Option("--target", min=0.0, max=1.0, help="Target weight (0-1)")],
+    band: Annotated[float, typer.Option("--band", min=0.0, max=1.0, help="Wiggle room ± (0-1)")] = 0.05,
+    notes: Annotated[str | None, typer.Option("--notes", help="Optional rationale")] = None,
+    scope: Annotated[str, typer.Option("--scope", help="household | account")] = "household",
+    scope_id: Annotated[str, typer.Option("--scope-id", help="Scope identifier")] = "default",
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """Set or update one allocation goal (upsert)."""
+    if scope not in ("household", "account"):
+        output_error(f"--scope must be 'household' or 'account', got {scope!r}")
+        raise typer.Exit(3)
+    body = {
+        "scope": scope,
+        "scope_id": scope_id,
+        "asset_class": asset_class,
+        "target_pct": target,
+        "drift_band_pct": band,
+        "notes": notes,
+    }
+    try:
+        with _client(remote)[0] as client:
+            row = client.put("/api/portfolio/ips/targets", json_body=body)
+    except PortfolioConnectError as exc:
+        _handle_connect(exc)
+    except APIError as exc:
+        _handle_api_error(exc)
+
+    if not isinstance(row, dict):
+        row = {}
+    envelope = {"ok": True, "schema_version": 1, "data": row, "meta": {"upsert": True}}
+    if human:
+        klass = _FRIENDLY_CLASS.get(asset_class, asset_class)
+        text = f"Set {klass} goal to {target * 100:.1f}% (wiggle room ±{band * 100:.1f}%)."
+        _emit(envelope, human=True, summary_text=text)
+    else:
+        _emit(envelope, human=False)

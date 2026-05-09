@@ -259,3 +259,11 @@ class PortfolioClient:
         except httpx.HTTPError as exc:
             raise PortfolioConnectError(url, str(exc)) from exc
         return self._handle(response)
+
+    def put(self, path: str, *, json_body: dict[str, Any] | None = None) -> Any:
+        url = self._full(path)
+        try:
+            response = self._client.put(url, json=json_body)
+        except httpx.HTTPError as exc:
+            raise PortfolioConnectError(url, str(exc)) from exc
+        return self._handle(response)
