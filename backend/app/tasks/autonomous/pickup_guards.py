@@ -20,6 +20,8 @@ _REDIS_TIMEOUT = 3
 _HTTP_TIMEOUT = 5.0
 _DISPATCHABLE_STATUSES = ("pending", "failed")
 _IGNORED_CONCURRENCY_SOURCES = {"codex-transcript-sync"}
+_STALE_LIFECYCLE_STATES = {"dead_candidate", "reapable"}
+_FINAL_HEALTH_STATES = {"completed", "failed", "error"}
 
 
 def check_agent_hub_execution_permission(
@@ -59,6 +61,14 @@ def check_autonomous_enabled(project_id: str) -> dict[str, Any] | None:
 def _session_counts_for_concurrency(session: dict[str, Any], *, exclude_task_id: str | None = None) -> bool:
     if str(session.get("status") or "").lower() != "active":
         return False
+    live_activity = session.get("live_activity")
+    if isinstance(live_activity, dict):
+        lifecycle_state = str(live_activity.get("lifecycle_state") or "").strip().lower()
+        if lifecycle_state in _STALE_LIFECYCLE_STATES:
+            return False
+        health = str(live_activity.get("health") or "").strip().lower()
+        if health in _FINAL_HEALTH_STATES:
+            return False
     if exclude_task_id and str(session.get("external_id") or "") == exclude_task_id:
         return False
     request_source = str(session.get("request_source") or "").strip().lower()

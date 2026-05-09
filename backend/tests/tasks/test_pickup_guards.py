@@ -198,8 +198,27 @@ class TestConcurrencySnapshot:
                     },
                     {
                         "status": "active",
+                        "external_id": None,
+                        "request_source": "summitflow",
+                        "live_activity": {"lifecycle_state": "dead_candidate", "health": "stalled"},
+                    },
+                    {
+                        "status": "active",
+                        "external_id": None,
+                        "request_source": "summitflow",
+                        "live_activity": {"lifecycle_state": "reapable", "health": "stalled"},
+                    },
+                    {
+                        "status": "active",
+                        "external_id": None,
+                        "request_source": "summitflow",
+                        "live_activity": {"lifecycle_state": "quiet", "health": "completed"},
+                    },
+                    {
+                        "status": "active",
                         "external_id": "task-other",
                         "request_source": "summitflow",
+                        "live_activity": {"lifecycle_state": "quiet", "health": "quiet"},
                     },
                 ]
             }
