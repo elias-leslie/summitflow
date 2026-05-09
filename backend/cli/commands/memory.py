@@ -147,9 +147,21 @@ def memory_default(ctx: typer.Context) -> None:
 
 
 @app.command()
-def stats(ctx: typer.Context, scope: ScopeOpt = "global", scope_id: ScopeIdOpt = None) -> None:
+def stats(
+    ctx: typer.Context,
+    scope: ScopeOpt = "global",
+    scope_id: ScopeIdOpt = None,
+    all_groups: Annotated[
+        bool,
+        typer.Option(
+            "--all-groups",
+            "-a",
+            help="Sum across every scope/group (overrides --scope filter)",
+        ),
+    ] = False,
+) -> None:
     """Get memory statistics."""
-    stats_impl(ctx.obj, scope, scope_id)
+    stats_impl(ctx.obj, scope, scope_id, all_groups=all_groups)
 
 
 @app.command()

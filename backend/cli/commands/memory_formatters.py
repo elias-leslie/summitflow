@@ -34,6 +34,9 @@ def format_stats_compact(stats: dict[str, Any]) -> None:
     """Format memory stats in TOON style."""
     total = stats.get("total", stats.get("total_count", 0))
     by_category = stats.get("by_category", [])
+    scope = stats.get("scope") or "global"
+    scope_id = stats.get("scope_id")
+    scope_label = f"{scope}:{scope_id}" if scope_id else scope
 
     category_parts = []
     if isinstance(by_category, list):
@@ -46,7 +49,7 @@ def format_stats_compact(stats: dict[str, Any]) -> None:
             category_parts.append(f"{cat}={count}")
 
     category_str = "|".join(category_parts) if category_parts else "empty"
-    print(f"MEMORY[{total}]:{category_str}")
+    print(f"MEMORY[{total}]:scope={scope_label}|{category_str}")
 
 
 def format_save_compact(result: dict[str, Any]) -> None:

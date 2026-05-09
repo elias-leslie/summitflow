@@ -69,10 +69,23 @@ def _resolve_existing_state(
     return existing, effective_tier, target_uuid, existing_tags
 
 
-def stats_impl(out: OutputContext, scope: str, scope_id: str | None) -> None:
+def stats_impl(
+    out: OutputContext,
+    scope: str,
+    scope_id: str | None,
+    all_groups: bool = False,
+) -> None:
+    params = {"all_groups": "true"} if all_groups else None
     result = agent_hub_request(
-        "GET", MEMORY_STATS_PATH, scope=scope, scope_id=scope_id, tool_name="st memory stats"
+        "GET",
+        MEMORY_STATS_PATH,
+        params=params,
+        scope=scope,
+        scope_id=scope_id,
+        tool_name="st memory stats",
     )
+    if isinstance(result, dict) and all_groups:
+        result["scope"] = "all"
     _emit(out, result, format_stats_compact)
 
 

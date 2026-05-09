@@ -99,7 +99,15 @@ def test_resolver_remote_uses_hosts_when_no_local_identity(tmp_path: Path, monke
 # --- candidates -----------------------------------------------------------
 
 
-def _fake_client(get_return: Any = None, post_return: Any = None, *, get_exc: Exception | None = None, post_exc: Exception | None = None) -> MagicMock:
+def _fake_client(
+    get_return: Any = None,
+    post_return: Any = None,
+    put_return: Any = None,
+    *,
+    get_exc: Exception | None = None,
+    post_exc: Exception | None = None,
+    put_exc: Exception | None = None,
+) -> MagicMock:
     client = MagicMock()
     if get_exc is not None:
         client.get.side_effect = get_exc
@@ -109,6 +117,10 @@ def _fake_client(get_return: Any = None, post_return: Any = None, *, get_exc: Ex
         client.post.side_effect = post_exc
     else:
         client.post.return_value = post_return
+    if put_exc is not None:
+        client.put.side_effect = put_exc
+    else:
+        client.put.return_value = put_return
     client.__enter__.return_value = client
     client.__exit__.return_value = None
     return client
@@ -323,3 +335,211 @@ def test_schema_missing_path_exits_1(monkeypatch) -> None:
     with _patch_client(fake):
         result = runner.invoke(app, ["portfolio", "schema", "tlh-candidates"])
     assert result.exit_code == 1, result.stdout
+
+
+# --- drift ----------------------------------------------------------------
+
+
+def test_drift_summary_default(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    summary = {
+        "scope": "household",
+        "scope_id": "default",
+        "total_value": 50000.0,
+        "max_drift_pct": 0.12,
+        "classes_out_of_band": 2,
+        "snapshot_date": "2026-05-09",
+    }
+    fake = _fake_client(get_return=summary)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "drift"])
+    assert result.exit_code == 0, result.stdout
+    fake.get.assert_called_once_with(
+        "/api/portfolio/ips/drift",
+        params={"scope": "household", "scope_id": "default", "summary": "true"},
+    )
+    payload = json.loads(result.stdout.strip())
+    assert payload["data"]["max_drift_pct"] == 0.12
+
+
+def test_drift_full_report_when_no_summary(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    report = {
+        "scope": "household",
+        "scope_id": "default",
+        "snapshot_date": "2026-05-09",
+        "total_value": 10000.0,
+        "rows": [
+            {
+                "asset_class": "us_equity",
+                "target_pct": 0.6,
+                "actual_pct": 0.7,
+                "drift_pct": 0.1,
+                "drift_band_pct": 0.05,
+                "out_of_band": True,
+                "target_value": 6000,
+                "actual_value": 7000,
+                "drift_value": 1000,
+            }
+        ],
+        "classes_missing_targets": [],
+    }
+    fake = _fake_client(get_return=report)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "drift", "--no-summary"])
+    assert result.exit_code == 0, result.stdout
+    fake.get.assert_called_once_with(
+        "/api/portfolio/ips/drift",
+        params={"scope": "household", "scope_id": "default", "summary": "false"},
+    )
+
+
+def test_drift_human_summary(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    summary = {
+        "scope": "household",
+        "scope_id": "default",
+        "total_value": 50000.0,
+        "max_drift_pct": 0.12,
+        "classes_out_of_band": 2,
+        "snapshot_date": "2026-05-09",
+    }
+    fake = _fake_client(get_return=summary)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "drift", "--human"])
+    assert result.exit_code == 0, result.stdout
+    assert "outside wiggle room" in result.stdout
+    assert "$50,000" in result.stdout
+
+
+def test_drift_invalid_scope_exits_3(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    fake = _fake_client(get_return={})
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "drift", "--scope", "weird"])
+    assert result.exit_code == 3
+    fake.get.assert_not_called()
+
+
+# --- rebalance ------------------------------------------------------------
+
+
+def test_rebalance_posts_body(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    plan = {
+        "scope": "household",
+        "scope_id": "default",
+        "snapshot_date": "2026-05-09",
+        "trades": [
+            {
+                "action": "buy",
+                "account_id": "roth-1",
+                "account_type": "Roth",
+                "symbol": "VTI",
+                "asset_class": "us_equity",
+                "shares": 0.0,
+                "estimated_value": 5000.0,
+                "rationale": "route_to_tax_advantaged",
+                "wash_sale_conflict": False,
+                "wash_sale_reason": None,
+                "realized_gain_long_term": 0.0,
+                "realized_gain_short_term": 0.0,
+            }
+        ],
+        "total_buy_value": 5000.0,
+        "total_sell_value": 0.0,
+        "wash_sale_conflicts": 0,
+        "asset_classes_corrected": ["us_equity"],
+    }
+    fake = _fake_client(post_return=plan)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "rebalance"])
+    assert result.exit_code == 0, result.stdout
+    fake.post.assert_called_once_with(
+        "/api/portfolio/ips/rebalance",
+        json_body={
+            "scope": "household",
+            "scope_id": "default",
+            "prefer_tax_advantaged": True,
+            "prefer_ltcg": True,
+        },
+    )
+
+
+def test_rebalance_human_renders_trade(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    plan = {
+        "trades": [
+            {
+                "action": "buy",
+                "symbol": "VTI",
+                "asset_class": "us_equity",
+                "estimated_value": 5000.0,
+                "account_type": "Roth",
+                "wash_sale_conflict": False,
+            }
+        ],
+        "total_buy_value": 5000.0,
+        "total_sell_value": 0.0,
+        "wash_sale_conflicts": 0,
+    }
+    fake = _fake_client(post_return=plan)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "rebalance", "--human"])
+    assert result.exit_code == 0, result.stdout
+    assert "BUY  $5,000 of VTI" in result.stdout
+    assert "Roth" in result.stdout
+
+
+# --- ips list/set --------------------------------------------------------
+
+
+def test_ips_list_returns_targets(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    targets = [
+        {"asset_class": "us_equity", "target_pct": 0.6, "drift_band_pct": 0.05},
+        {"asset_class": "bonds", "target_pct": 0.4, "drift_band_pct": 0.05},
+    ]
+    fake = _fake_client(get_return=targets)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "ips", "list"])
+    assert result.exit_code == 0, result.stdout
+    fake.get.assert_called_once_with(
+        "/api/portfolio/ips/targets",
+        params={"scope": "household", "scope_id": "default"},
+    )
+    payload = json.loads(result.stdout.strip())
+    assert len(payload["data"]) == 2
+
+
+def test_ips_set_uses_put(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    target = {
+        "scope": "household",
+        "scope_id": "default",
+        "asset_class": "us_equity",
+        "target_pct": 0.6,
+        "drift_band_pct": 0.05,
+    }
+    fake = _fake_client(put_return=target)
+    with _patch_client(fake):
+        result = runner.invoke(
+            app,
+            [
+                "portfolio", "ips", "set",
+                "--asset-class", "us_equity",
+                "--target", "0.6",
+            ],
+        )
+    assert result.exit_code == 0, result.stdout
+    fake.put.assert_called_once_with(
+        "/api/portfolio/ips/targets",
+        json_body={
+            "scope": "household",
+            "scope_id": "default",
+            "asset_class": "us_equity",
+            "target_pct": 0.6,
+            "drift_band_pct": 0.05,
+            "notes": None,
+        },
+    )
