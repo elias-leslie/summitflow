@@ -485,10 +485,10 @@ class TestAgentRoutedRetries:
         "app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check"
     )
     @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.check_checkout_health")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.get_checkout_health_failure")
     def test_retry_omits_model_override_during_self_heal(
         self,
-        mock_health: MagicMock,
+        mock_checkout_failure: MagicMock,
         mock_assert_runnable: MagicMock,
         mock_verify: MagicMock,
         mock_infra: MagicMock,
@@ -499,7 +499,7 @@ class TestAgentRoutedRetries:
         from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
 
         steps = [{"step_number": 1, "description": "Test"}]
-        mock_health.return_value = True
+        mock_checkout_failure.return_value = None
         mock_assert_runnable.return_value = None
         # First verify → fail, second → pass (heal succeeds on first try)
         mock_verify.side_effect = [
@@ -538,10 +538,10 @@ class TestAgentRoutedRetries:
         "app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check"
     )
     @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.check_checkout_health")
+    @patch("app.tasks.autonomous.exec_modules.retry_loop.get_checkout_health_failure")
     def test_retry_omits_model_override_after_threshold(
         self,
-        mock_health: MagicMock,
+        mock_checkout_failure: MagicMock,
         mock_assert_runnable: MagicMock,
         mock_verify: MagicMock,
         mock_infra: MagicMock,
@@ -553,7 +553,7 @@ class TestAgentRoutedRetries:
         from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
 
         steps = [{"step_number": 1, "description": "Test"}]
-        mock_health.return_value = True
+        mock_checkout_failure.return_value = None
         mock_assert_runnable.return_value = None
         # Always fail verification until we've exhausted self-heal + 1 supervisor attempt
         fail_result = (

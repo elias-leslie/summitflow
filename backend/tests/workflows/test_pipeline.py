@@ -42,7 +42,8 @@ async def test_execute_wf_excludes_current_preclaimed_task_from_concurrency_guar
         lambda task_id, project_id, dispatch=None: {"task_id": task_id, "project_id": project_id, "status": "executed"},
     )
 
-    call = execute_wf._task.fn(
+    runner = cast(Any, getattr(getattr(execute_wf, "_task", None), "fn", execute_wf))
+    call = runner(
         TaskInput(task_id="task-177f0dec", project_id="agent-hub", manual_dispatch=True),
         None,
     )

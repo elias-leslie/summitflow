@@ -8,7 +8,7 @@ from ....constants import SELF_HEAL_MAX_ATTEMPTS, SUPERVISOR_GUIDED_MAX_ATTEMPTS
 from ....logging_config import get_logger
 from ....storage import agent_configs
 from .agent_routing import EXTENSION_ATTEMPTS
-from .checkout import check_checkout_health
+from .checkout import get_checkout_health_failure
 from .interruption import assert_task_runnable
 from .quality_check import run_execution_quality_check
 from .retry_execution import execute_fix_attempt
@@ -92,7 +92,7 @@ def _healing_loop_body(
 ) -> tuple[bool, list[dict[str, Any]], int, int, str | None, int, int, str | None, bool]:
     """One iteration of the healing loop; returns updated state plus should_break flag."""
     assert_task_runnable(task_id, project_id, f"self_heal_attempt_{heal_attempt}")
-    health_reason = check_checkout_health(project_path, task_id, project_id)
+    health_reason = get_checkout_health_failure(project_path, task_id, project_id)
     if health_reason:
         return (
             False,
