@@ -30,6 +30,12 @@ _TRANSIENT_COMPLETE_ERROR_TEXT = (
     "http 503",
     "http 504",
 )
+_TRANSIENT_COMPLETION_FAILURE_TEXT = (
+    "completion cancelled unexpectedly",
+    "tool execution cancelled",
+    "sdk cancelled",
+    "provider request cancelled",
+)
 
 
 def agent_completion_failure(response: CompletionResponse) -> str | None:
@@ -50,6 +56,15 @@ def _is_transient_agent_hub_complete_error(error: Exception) -> bool:
         return error.response.status_code in {502, 503, 504}
     text = str(error).lower()
     return any(marker in text for marker in _TRANSIENT_COMPLETE_ERROR_TEXT)
+
+
+def _is_transient_agent_hub_failure_response(response: CompletionResponse) -> bool:
+    """Return True for Agent Hub responses that represent retryable runtime loss."""
+    failure = agent_completion_failure(response)
+    if not failure:
+        return False
+    text = failure.lower()
+    return any(marker in text for marker in _TRANSIENT_COMPLETION_FAILURE_TEXT)
 
 
 def _complete_retry_delay(attempt: int) -> float:
@@ -215,7 +230,7 @@ def call_complete(
         kwargs["timeout_seconds"] = timeout_seconds
     for attempt in range(_COMPLETE_RETRY_ATTEMPTS):
         try:
-            return client.complete(**kwargs)
+            response = client.complete(**kwargs)
         except Exception as exc:
             if (
                 attempt == _COMPLETE_RETRY_ATTEMPTS - 1
@@ -233,6 +248,23 @@ def call_complete(
                 project_id=project_id,
             )
             sleep(delay)
+            continue
+        if not _is_transient_agent_hub_failure_response(response):
+            return response
+        if attempt == _COMPLETE_RETRY_ATTEMPTS - 1:
+            return response
+        delay = _complete_retry_delay(attempt)
+        failure = agent_completion_failure(response) or "transient interruption"
+        emit_log(
+            task_id,
+            "warn",
+            "Agent Hub complete returned transient interruption; "
+            f"retrying in {delay:g}s (attempt {attempt + 2}/{_COMPLETE_RETRY_ATTEMPTS}): "
+            f"{failure[:160]}",
+            source="orchestrator",
+            project_id=project_id,
+        )
+        sleep(delay)
     raise RuntimeError("unreachable Agent Hub complete retry state")
 
 

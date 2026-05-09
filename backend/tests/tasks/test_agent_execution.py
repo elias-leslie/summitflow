@@ -80,6 +80,73 @@ def test_call_complete_retries_transient_agent_hub_disconnect() -> None:
     assert emit_log_mock.call_count == 2
 
 
+def test_call_complete_retries_transient_interrupted_response() -> None:
+    client = MagicMock()
+    client.complete.side_effect = [
+        SimpleNamespace(
+            content="Session interrupted: Error: Completion cancelled unexpectedly.",
+            finish_reason="error",
+        ),
+        SimpleNamespace(content="done", finish_reason="end_turn"),
+    ]
+    built_kwargs = {"messages": [{"role": "user", "content": "hi"}], "project_id": "agent-hub"}
+
+    with (
+        patch(
+            "app.tasks.autonomous.exec_modules.agent_helpers.build_complete_kwargs",
+            return_value=built_kwargs,
+        ),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.sleep") as sleep_mock,
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.emit_log") as emit_log_mock,
+    ):
+        response = call_complete(
+            client,
+            prompt="Fix ownership",
+            agent_slug="coder",
+            project_path="/tmp/task",
+            project_id="agent-hub",
+            task_id="task-123",
+            session_id="sess-1",
+        )
+
+    assert response.content == "done"
+    assert client.complete.call_count == 2
+    sleep_mock.assert_called_once_with(2.0)
+    assert "transient interruption" in emit_log_mock.call_args.args[2]
+
+
+def test_call_complete_does_not_retry_non_transient_interrupted_response() -> None:
+    client = MagicMock()
+    response = SimpleNamespace(
+        content="Session interrupted: Repeated identical tool result 5 times for bash",
+        finish_reason="error",
+    )
+    client.complete.return_value = response
+
+    with (
+        patch(
+            "app.tasks.autonomous.exec_modules.agent_helpers.build_complete_kwargs",
+            return_value={"messages": []},
+        ),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.sleep") as sleep_mock,
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.emit_log") as emit_log_mock,
+    ):
+        result = call_complete(
+            client,
+            prompt="Fix ownership",
+            agent_slug="coder",
+            project_path="/tmp/task",
+            project_id="agent-hub",
+            task_id="task-123",
+            session_id="sess-1",
+        )
+
+    assert result is response
+    client.complete.assert_called_once()
+    sleep_mock.assert_not_called()
+    emit_log_mock.assert_not_called()
+
+
 def test_call_complete_does_not_retry_non_transient_error() -> None:
     client = MagicMock()
     client.complete.side_effect = ValueError("bad request")
