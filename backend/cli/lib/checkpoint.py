@@ -78,8 +78,9 @@ def remove_snapshot(task_id: str, project_id: str | None = None) -> bool:
     """Delete checkpoint metadata."""
     if project_id is None:
         meta = load_snapshot_meta(task_id)
-        if meta:
-            project_id = meta.project_id
+        if not meta:
+            return True
+        project_id = meta.project_id
     meta_path = get_meta_path(task_id, project_id=project_id)
     meta_path.unlink(missing_ok=True)
     return True

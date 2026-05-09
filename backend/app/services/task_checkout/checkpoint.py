@@ -1,15 +1,14 @@
 """Checkpoint metadata management for task branches.
 
-Creates and manages .st/snapshots/<task_id>.meta.json files for
-unified tracking via `st checkpoints`.
+Writes task checkpoint metadata to the global checkpoint store
+(``~/.local/share/st/checkpoints/<project_id>/``) so `st checkpoints`,
+`st cleanup`, and the block-main-edits hook share a single source of truth.
 """
 
 from __future__ import annotations
 
-import json
 import os
 from datetime import UTC, datetime
-from pathlib import Path
 
 from ...logging_config import get_logger
 from ...storage.projects import get_project_root_path
@@ -55,31 +54,12 @@ def _get_main_repo_dirty_paths(project_root: str) -> list[str]:
     return paths
 
 
-def _get_snapshots_dir(project_root: str) -> Path:
-    """Get the .st/snapshots directory for a project, creating if needed."""
-    snapshots_dir = Path(project_root) / ".st" / "snapshots"
-    snapshots_dir.mkdir(parents=True, exist_ok=True)
-    return snapshots_dir
-
-
 def create_checkpoint_metadata(
     task_id: str,
     project_id: str,
     base_branch: str,
 ) -> bool:
-    """Create checkpoint metadata file for unified tracking.
-
-    Creates .st/snapshots/<task_id>.meta.json in the project root.
-    This enables `st checkpoints` to show autonomous task branches.
-
-    Args:
-        task_id: Task identifier
-        project_id: Project identifier
-        base_branch: Branch the task branch is based on
-
-    Returns:
-        True if metadata was created, False on error
-    """
+    """Create checkpoint metadata in the global checkpoint store."""
     project_root = get_project_root_path(project_id)
     if not project_root:
         logger.warning(
@@ -90,27 +70,29 @@ def create_checkpoint_metadata(
         return False
 
     try:
-        snapshots_dir = _get_snapshots_dir(project_root)
-        meta_path = snapshots_dir / f"{task_id}.meta.json"
+        from cli.lib.checkpoint_metadata import (
+            SnapshotMeta,
+            get_meta_path,
+            save_snapshot_meta,
+        )
 
-        if meta_path.exists():
+        if get_meta_path(task_id, project_id=project_id).exists():
             logger.debug("checkpoint_metadata_exists", task_id=task_id)
             return True
 
-        metadata = {
-            "task_id": task_id,
-            "project_id": project_id,
-            "base_branch": normalize_base_branch(base_branch, project_root),
-            "created_at": datetime.now(UTC).isoformat(),
-            "claimed_by": _get_claimed_by(),
-            "main_repo_dirty_paths": _get_main_repo_dirty_paths(project_root),
-        }
-
-        meta_path.write_text(json.dumps(metadata, indent=2))
+        meta = SnapshotMeta(
+            task_id=task_id,
+            project_id=project_id,
+            base_branch=normalize_base_branch(base_branch, project_root),
+            created_at=datetime.now(UTC).isoformat(),
+            claimed_by=_get_claimed_by(),
+            main_repo_dirty_paths=_get_main_repo_dirty_paths(project_root),
+        )
+        save_snapshot_meta(meta)
         logger.info(
             "checkpoint_metadata_created",
             task_id=task_id,
-            path=str(meta_path),
+            path=str(get_meta_path(task_id, project_id=project_id)),
         )
         return True
 
@@ -124,23 +106,11 @@ def create_checkpoint_metadata(
 
 
 def remove_checkpoint_metadata(task_id: str, project_id: str) -> bool:
-    """Remove checkpoint metadata file.
-
-    Args:
-        task_id: Task identifier
-        project_id: Project identifier
-
-    Returns:
-        True if metadata was removed or didn't exist, False on error
-    """
-    project_root = get_project_root_path(project_id)
-    if not project_root:
-        return True
-
+    """Remove checkpoint metadata from the global checkpoint store."""
     try:
         from cli.lib.checkpoint_metadata import get_meta_path
 
-        meta_path = get_meta_path(task_id, project_root)
+        meta_path = get_meta_path(task_id, project_id=project_id)
         if meta_path.exists():
             meta_path.unlink()
             logger.info("checkpoint_metadata_removed", task_id=task_id)

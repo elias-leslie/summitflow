@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import subprocess
-from json import JSONDecodeError, loads
 from pathlib import Path
 
 from ....logging_config import get_logger
@@ -54,25 +53,10 @@ def _parse_dirty_paths(status_output: str) -> list[str]:
 
 def _load_main_repo_dirty_baseline(task_id: str, project_id: str, main_root: str) -> list[str]:
     """Load the dirty-file baseline captured when the checkpoint was created."""
-    meta_path = Path(main_root) / ".st" / "snapshots" / f"{task_id}.meta.json"
-    if not meta_path.exists():
-        return []
-    try:
-        meta = loads(meta_path.read_text())
-    except (OSError, JSONDecodeError) as e:
-        logger.warning(
-            "main_repo_dirty_baseline_load_failed",
-            task_id=task_id,
-            project_id=project_id,
-            path=str(meta_path),
-            error=str(e),
-        )
-        return []
+    from cli.lib.checkpoint_metadata import load_snapshot_meta
 
-    baseline = meta.get("main_repo_dirty_paths")
-    if not isinstance(baseline, list):
-        return []
-    return [str(path) for path in baseline if str(path)]
+    meta = load_snapshot_meta(task_id)
+    return list(meta.main_repo_dirty_paths) if meta else []
 
 
 def get_project_path(project_id: str, task_id: str | None = None) -> str:
