@@ -68,3 +68,29 @@ def test_sort_ready_tasks_promotes_tasks_that_unblock_other_work() -> None:
         "task-baseline-blocker",
         "task-simple-unrelated",
     ]
+
+
+def test_sort_ready_tasks_demotes_generic_feedback_upkeep_behind_scoped_work() -> None:
+    tasks = [
+        {
+            "id": "task-generic-feedback",
+            "priority": 2,
+            "task_type": "bug",
+            "complexity": "SIMPLE",
+            "title": "Handle feedback: historical tool failure",
+            "description": "Routine upkeep selected this active feedback item for resolution.",
+        },
+        {
+            "id": "task-refactor",
+            "priority": 2,
+            "task_type": "refactor",
+            "complexity": "SIMPLE",
+            "title": "[TRIAGE] Refactor: backend/app/services/example.py",
+            "description": "Extract helper from example.py.",
+        },
+    ]
+
+    assert [task["id"] for task in sort_ready_tasks(tasks)] == [
+        "task-refactor",
+        "task-generic-feedback",
+    ]

@@ -30,12 +30,20 @@ def _load(project: str) -> service_ops.ProjectServices:
 
 @app.command()
 def status(
-    project: Annotated[
+    project_arg: Annotated[
         str | None,
         typer.Argument(help="Project id. Omit to show all projects."),
     ] = None,
+    project_option: Annotated[
+        str | None,
+        typer.Option("--project", "-P", help="Project id. Alias for PROJECT."),
+    ] = None,
 ) -> None:
     """Show managed service status through the canonical service path."""
+    if project_arg and project_option and project_arg != project_option:
+        output_error("Pass project either as PROJECT or --project/-P, not both.")
+        raise typer.Exit(1)
+    project = project_option or project_arg
     projects = [project] if project else service_ops.project_ids()
     errors = 0
     for project_id in projects:

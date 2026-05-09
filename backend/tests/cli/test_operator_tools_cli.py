@@ -49,6 +49,24 @@ def test_service_status_reads_native_service_state() -> None:
     assert state.call_count == 3
 
 
+def test_service_status_accepts_project_option_alias() -> None:
+    with (
+        patch("cli.commands.service._load", return_value=_project()) as load,
+        patch("cli.commands.service.service_ops.service_state", return_value="active"),
+    ):
+        result = runner.invoke(service.app, ["status", "--project", "summitflow"])
+
+    assert result.exit_code == 0
+    load.assert_called_once_with("summitflow")
+
+
+def test_service_status_rejects_conflicting_project_inputs() -> None:
+    result = runner.invoke(service.app, ["status", "summitflow", "--project", "portfolio-ai"])
+
+    assert result.exit_code == 1
+    assert "Pass project either as PROJECT or --project/-P" in result.output
+
+
 def test_service_rebuild_uses_native_steps() -> None:
     with (
         patch("cli.commands.service._load", return_value=_project()),
