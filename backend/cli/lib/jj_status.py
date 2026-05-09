@@ -102,7 +102,15 @@ def current_revision_info(repo: Path) -> JJRevisionInfo:
 
 
 def unpublished_count(repo: Path) -> int:
-    result = run_jj(repo, ["log", "-r", "remote_bookmarks(remote=origin)..(@ & ~empty())", "--count"])
+    """Count locally-unpublished revisions, excluding the post-publish empty ceremony commit.
+
+    `jj new` after publish leaves an empty undescribed `@` (or `@-` once new
+    work starts on top); that's canonical clean state, not "ahead". Filter
+    those out of the range, not just the leaf, so the surface doesn't
+    false-positive after every publish.
+    """
+    revset = "remote_bookmarks(remote=origin)..@ ~ (empty() & description(exact:\"\"))"
+    result = run_jj(repo, ["log", "-r", revset, "--count"])
     if result.returncode != 0:
         return 0
     try:

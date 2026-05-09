@@ -135,12 +135,46 @@ def test_st_commit_forwards_explicit_bookmark(
     )
 
 
-def test_commit_repo_supports_selected_paths_in_plain_git(tmp_path: Path) -> None:
-    """Plain-Git repos accept --paths for scoped commits when foreign WIP is present."""
+def test_commit_repo_skips_gitignored_paths_in_add_step(tmp_path: Path) -> None:
+    """Already-ignored paths (e.g., user did `git rm --cached` then added to .gitignore)
+    must not abort the commit. The add step should skip them; commit picks up the
+    pre-staged deletion."""
     from cli.lib import commit_workflow
 
-    git_dir = tmp_path / ".git"
-    git_dir.mkdir()
+    (tmp_path / ".git").mkdir()
+
+    def fake_run_git(_repo: Path, args: list[str]):
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = ""
+        result.stderr = ""
+        if args[:2] == ["status", "--porcelain"]:
+            result.stdout = "D  ignored.json\nM  .gitignore\n"
+        if args[:2] == ["diff", "--cached"] and "--quiet" in args:
+            result.returncode = 1
+        if args[:1] == ["check-ignore"]:
+            # ignored.json is gitignored; .gitignore itself isn't.
+            result.returncode = 0 if "ignored.json" in args else 1
+        if args[:2] == ["rev-parse", "--short"]:
+            result.stdout = "abc1234"
+        return result
+
+    with (
+        patch.object(commit_workflow, "run_git", side_effect=fake_run_git) as run,
+        patch.object(commit_workflow, "run_checks", return_value=(True, "")),
+    ):
+        result = commit_repo(
+            tmp_path,
+            message="ignore drift",
+            paths=(".gitignore", "ignored.json"),
+            push=False,
+        )
+
+    add_calls = [c for c in run.call_args_list if c.args[1][:1] == ["add"]]
+    assert add_calls, "expected git add to be called for the non-ignored path"
+    # ignored.json must be excluded from add args
+    assert add_calls[0].args[1] == ["add", "--", ".gitignore"]
+    assert result["status"] == "SUCCESS"
 
     def fake_run_git(_repo: Path, args: list[str]):
         result = MagicMock()
@@ -151,6 +185,9 @@ def test_commit_repo_supports_selected_paths_in_plain_git(tmp_path: Path) -> Non
             result.stdout = " M a.py\n"
         if args[:2] == ["diff", "--cached"] and "--quiet" in args:
             result.returncode = 1  # has staged changes
+        if args[:1] == ["check-ignore"]:
+            # default: not ignored (exit 1 means no match)
+            result.returncode = 1
         if args[:2] == ["rev-parse", "--short"]:
             result.stdout = "abc1234"
         if args[:1] == ["push"]:

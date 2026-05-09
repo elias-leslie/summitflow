@@ -85,6 +85,24 @@ def _selected_paths_dirty(repo: Path, paths: Sequence[str]) -> bool:
     return bool(result.stdout.strip())
 
 
+def _addable_paths(repo: Path, paths: Sequence[str]) -> list[str]:
+    """Drop paths that git refuses to `add` (currently gitignored).
+
+    Common case: user runs `git rm --cached file` then adds the file to
+    `.gitignore`, then asks st commit to commit both. The .gitignore change
+    is addable; the now-ignored file isn't (its deletion is already staged).
+    Without this filter, `git add -- <paths>` errors on the ignored entry
+    and aborts the whole commit.
+    """
+    addable: list[str] = []
+    for path in paths:
+        check = run_git(repo, ["check-ignore", "--quiet", "--", path])
+        if check.returncode == 0:
+            continue
+        addable.append(path)
+    return addable
+
+
 def commit_git_revision(
     repo: Path,
     *,
@@ -125,10 +143,16 @@ def commit_git_revision(
         ok, detail = run_checks(repo)
         if not ok:
             return {**result, "status": "BLOCKED", "reason": "quality_gates_failed", "detail": detail}
-    add_args = ["add", "--", *selected_paths] if selected_paths else ["add", "-A"]
-    add = run_git(repo, add_args)
-    if add.returncode != 0:
-        raise CommitError(add.stderr.strip() or "git add failed")
+    if selected_paths:
+        addable = _addable_paths(repo, selected_paths)
+        if addable:
+            add = run_git(repo, ["add", "--", *addable])
+            if add.returncode != 0:
+                raise CommitError(add.stderr.strip() or "git add failed")
+    else:
+        add = run_git(repo, ["add", "-A"])
+        if add.returncode != 0:
+            raise CommitError(add.stderr.strip() or "git add failed")
     if run_git(repo, ["diff", "--cached", "--quiet"]).returncode == 0:
         return {**result, "reason": "no_staged_changes"}
     committed = run_git(repo, ["commit", "-m", message])
