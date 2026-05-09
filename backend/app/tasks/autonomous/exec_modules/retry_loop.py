@@ -71,14 +71,15 @@ def _run_fix_attempt(
     return response_content, agent_session_id, self_fix_attempts, supervisor_guided_attempts, guidance
 
 
-# Sentinel for checkout-destroyed abort
-_CHECKOUT_DESTROYED = [{
-    "step_number": 0,
-    "passed": False,
-    "output": "Checkout became invalid during execution",
-    "reason": "checkout_destroyed",
-    "returncode": -1,
-}]
+def _checkout_destroyed_result(reason: str) -> list[dict[str, Any]]:
+    """Build a step result that explains why the checkout was invalidated."""
+    return [{
+        "step_number": 0,
+        "passed": False,
+        "output": f"Checkout became invalid during execution: {reason}",
+        "reason": "checkout_destroyed",
+        "returncode": -1,
+    }]
 
 
 def _healing_loop_body(
@@ -91,10 +92,11 @@ def _healing_loop_body(
 ) -> tuple[bool, list[dict[str, Any]], int, int, str | None, int, int, str | None, bool]:
     """One iteration of the healing loop; returns updated state plus should_break flag."""
     assert_task_runnable(task_id, project_id, f"self_heal_attempt_{heal_attempt}")
-    if not check_checkout_health(project_path, task_id, project_id):
+    health_reason = check_checkout_health(project_path, task_id, project_id)
+    if health_reason:
         return (
             False,
-            _CHECKOUT_DESTROYED,
+            _checkout_destroyed_result(health_reason),
             self_fix_attempts,
             supervisor_guided_attempts,
             agent_session_id,

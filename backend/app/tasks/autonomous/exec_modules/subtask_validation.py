@@ -20,11 +20,13 @@ def validate_subtask_environment(
     Returns:
         Failure dict if validation fails, None if validation passes.
     """
-    if not check_checkout_health(project_path, task_id, project_id):
+    health_reason = check_checkout_health(project_path, task_id, project_id)
+    if health_reason:
         return {
             "subtask_id": subtask_short_id,
             "status": "failed",
             "reason": "checkout_invalid",
+            "output": f"Checkout became invalid before execution: {health_reason}",
         }
 
     steps = subtask.get("steps_from_table") or subtask.get("steps") or []
