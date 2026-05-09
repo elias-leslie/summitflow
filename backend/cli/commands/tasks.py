@@ -146,6 +146,20 @@ def context(
     compact: Annotated[bool | None, typer.Option("--compact/--no-compact")] = None,
 ) -> None:
     """Get task or subtask context in a single call."""
+    _context_command(task_id, subtask, compact)
+
+
+@app.command("get", hidden=True)
+def get_context_alias(
+    task_id: Annotated[str, typer.Argument()],
+    subtask: Annotated[str | None, typer.Option("--subtask", "-s")] = None,
+    compact: Annotated[bool | None, typer.Option("--compact/--no-compact")] = None,
+) -> None:
+    """Compatibility alias for `st task context`."""
+    _context_command(task_id, subtask, compact)
+
+
+def _context_command(task_id: str, subtask: str | None, compact: bool | None) -> None:
     from .tasks_context import get_task_context
 
     if compact is not None:
