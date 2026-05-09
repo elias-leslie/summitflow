@@ -94,3 +94,29 @@ def test_sort_ready_tasks_demotes_generic_feedback_upkeep_behind_scoped_work() -
         "task-refactor",
         "task-generic-feedback",
     ]
+
+
+def test_sort_ready_tasks_does_not_let_generic_simple_feedback_starve_refactors() -> None:
+    tasks = [
+        {
+            "id": "task-generic-feedback",
+            "priority": 2,
+            "task_type": "bug",
+            "complexity": "SIMPLE",
+            "title": "Handle feedback: stale command failure",
+            "description": "Routine upkeep selected this active feedback item for resolution.",
+        },
+        {
+            "id": "task-standard-refactor",
+            "priority": 2,
+            "task_type": "refactor",
+            "complexity": "STANDARD",
+            "title": "[TRIAGE] Refactor: backend/app/services/example.py",
+            "description": "Extract cohesive helpers from example.py.",
+        },
+    ]
+
+    assert [task["id"] for task in sort_ready_tasks(tasks)] == [
+        "task-standard-refactor",
+        "task-generic-feedback",
+    ]

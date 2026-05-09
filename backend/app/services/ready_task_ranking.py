@@ -61,10 +61,12 @@ def ready_task_sort_key(task: dict[str, Any]) -> tuple[int, int, int, int, int, 
     """Rank ready work for sequential pickup."""
     complexity = str(task.get("complexity") or "STANDARD").upper()
     task_type = str(task.get("task_type") or "task").lower()
+    friction = _friction_penalty(task)
+    effective_complexity = _COMPLEXITY_ORDER.get(complexity, _COMPLEXITY_ORDER["STANDARD"]) + friction
     return (
         -_int_value(task.get("blocking_count")),
-        _COMPLEXITY_ORDER.get(complexity, _COMPLEXITY_ORDER["STANDARD"]),
-        _friction_penalty(task),
+        effective_complexity,
+        friction,
         _int_value(task.get("priority"), 2),
         _TYPE_ORDER.get(task_type, _TYPE_ORDER["task"]),
         _remaining_subtasks(task),
