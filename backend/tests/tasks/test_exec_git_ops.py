@@ -53,6 +53,7 @@ def test_smart_commit_uses_canonical_st_commit_with_push(
             "--task",
             "task-1",
             "--push",
+            "--skip-checks",
         ],
         cwd="/tmp/checkout",
         capture_output=True,

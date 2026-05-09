@@ -143,7 +143,7 @@ def _build_smart_commit_args(
         args.append("--push")
     else:
         args.append("--no-push")
-    if skip_checks and not push:
+    if skip_checks:
         args.append("--skip-checks")
     return args
 

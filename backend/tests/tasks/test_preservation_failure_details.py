@@ -27,6 +27,45 @@ def test_checkout_setup_logs_preservation_failure_detail() -> None:
     assert any("stderr: rejected" in message for message in messages)
 
 
+def test_checkout_setup_preserves_dirty_checkout_before_branch_switch() -> None:
+    from app.tasks.autonomous.exec_modules.checkout_setup import setup_task_checkout
+
+    order: list[str] = []
+    checkout = MagicMock(branch="task-1/main")
+
+    def create_checkout(_task_id: str, _project_id: str) -> MagicMock:
+        order.append("checkout")
+        return checkout
+
+    def preserve_work(*_args: object, **_kwargs: object) -> dict[str, object]:
+        order.append("preserve")
+        return {"success": True}
+
+    with (
+        patch(
+            "app.tasks.autonomous.exec_modules.checkout_setup.create_task_checkout",
+            side_effect=create_checkout,
+        ),
+        patch("app.tasks.autonomous.exec_modules.checkout_setup.get_project_path", return_value="/repo"),
+        patch(
+            "app.tasks.autonomous.exec_modules.checkout_setup.has_uncommitted_changes",
+            side_effect=[True, False],
+        ),
+        patch(
+            "app.tasks.autonomous.exec_modules.checkout_setup.smart_commit_result",
+            side_effect=preserve_work,
+        ) as smart_commit,
+        patch("app.tasks.autonomous.exec_modules.checkout_setup.emit_log"),
+    ):
+        result = setup_task_checkout("task-1", "summitflow")
+
+    assert result == "/repo"
+    assert order == ["preserve", "checkout"]
+    smart_commit.assert_called_once()
+    assert smart_commit.call_args.kwargs["push"] is True
+    assert smart_commit.call_args.kwargs["skip_checks"] is True
+
+
 def test_subtask_commit_logs_preservation_failure_detail() -> None:
     from app.tasks.autonomous.exec_modules.execution_loop import _commit_subtask_changes
 
