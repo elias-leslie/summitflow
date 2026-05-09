@@ -11,9 +11,10 @@ from agent_hub import CompletionResponse
 
 from ....constants import CONTEXT_FRESHNESS_THRESHOLD
 from ....storage.subtasks import acknowledge_no_citations, log_citations
-from ....storage.tasks.core import add_agent_hub_session
+from ....storage.tasks.core import add_agent_hub_session, get_task
 from ._agent_kwargs import build_complete_kwargs  # re-exported for callers
 from .events import emit_log, emit_progress_log
+from .interruption import ExecutionInterrupted
 
 _AGENT_FAILURE_FINISH_REASONS = {"error", "failed", "cancelled"}
 _COMPLETE_RETRY_ATTEMPTS = 5
@@ -37,6 +38,7 @@ _TRANSIENT_COMPLETION_FAILURE_TEXT = (
     "sdk cancelled",
     "provider request cancelled",
 )
+_STOPPED_TASK_RETRY_STATUSES = {"paused", "cancelled", "completed", "failed", "abandoned", "closed"}
 
 
 def agent_completion_failure(response: CompletionResponse) -> str | None:
@@ -62,6 +64,21 @@ def _rotate_session_after_interruption(
     add_agent_hub_session(task_id, new_session_id)
     kwargs["session_id"] = new_session_id
     return new_session_id
+
+
+def _abort_retry_if_task_stopped(task_id: str, project_id: str, checkpoint: str) -> None:
+    task = get_task(task_id)
+    status = str((task or {}).get("status") or "").strip().lower()
+    if status not in _STOPPED_TASK_RETRY_STATUSES:
+        return
+    emit_log(
+        task_id,
+        "info",
+        f"Agent retry checkpoint reached: {checkpoint}; task status is {status}",
+        source="orchestrator",
+        project_id=project_id,
+    )
+    raise ExecutionInterrupted(status, f"task_status={status}")
 
 
 def _is_transient_agent_hub_complete_error(error: Exception) -> bool:
@@ -254,6 +271,7 @@ def call_complete(
             ):
                 raise
             delay = _complete_retry_delay(attempt)
+            _abort_retry_if_task_stopped(task_id, project_id, "agent_hub_complete_error_retry")
             emit_log(
                 task_id,
                 "warn",
@@ -271,6 +289,7 @@ def call_complete(
             return response
         delay = _complete_retry_delay(attempt)
         failure = agent_completion_failure(response) or "transient interruption"
+        _abort_retry_if_task_stopped(task_id, project_id, "agent_hub_interruption_retry")
         current_session_id = _rotate_session_after_interruption(
             task_id, kwargs, current_session_id
         )

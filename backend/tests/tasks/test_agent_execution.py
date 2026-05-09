@@ -14,6 +14,7 @@ from app.tasks.autonomous.exec_modules.agent_helpers import (
     call_complete,
     log_initial_completion_fallback,
 )
+from app.tasks.autonomous.exec_modules.interruption import ExecutionInterrupted
 
 
 def test_call_complete_omits_request_timeout_by_default() -> None:
@@ -60,6 +61,7 @@ def test_call_complete_retries_transient_agent_hub_disconnect() -> None:
             "app.tasks.autonomous.exec_modules.agent_helpers.build_complete_kwargs",
             return_value=built_kwargs,
         ),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.get_task", return_value={"status": "running"}),
         patch("app.tasks.autonomous.exec_modules.agent_helpers.sleep") as sleep_mock,
         patch("app.tasks.autonomous.exec_modules.agent_helpers.emit_log") as emit_log_mock,
     ):
@@ -96,6 +98,7 @@ def test_call_complete_retries_transient_interrupted_response() -> None:
             "app.tasks.autonomous.exec_modules.agent_helpers.build_complete_kwargs",
             return_value=built_kwargs,
         ),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.get_task", return_value={"status": "running"}),
         patch("app.tasks.autonomous.exec_modules.agent_helpers.add_agent_hub_session") as add_session_mock,
         patch("app.tasks.autonomous.exec_modules.agent_helpers.sleep") as sleep_mock,
         patch("app.tasks.autonomous.exec_modules.agent_helpers.emit_log") as emit_log_mock,
@@ -138,6 +141,7 @@ def test_call_complete_retries_missing_final_summary_response() -> None:
             "app.tasks.autonomous.exec_modules.agent_helpers.build_complete_kwargs",
             return_value=built_kwargs,
         ),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.get_task", return_value={"status": "running"}),
         patch("app.tasks.autonomous.exec_modules.agent_helpers.add_agent_hub_session"),
         patch("app.tasks.autonomous.exec_modules.agent_helpers.sleep") as sleep_mock,
         patch("app.tasks.autonomous.exec_modules.agent_helpers.emit_log"),
@@ -155,6 +159,48 @@ def test_call_complete_retries_missing_final_summary_response() -> None:
     assert response.content == "done"
     assert client.complete.call_count == 2
     sleep_mock.assert_called_once_with(2.0)
+
+
+def test_call_complete_aborts_transient_retry_when_task_is_paused() -> None:
+    client = MagicMock()
+    client.complete.return_value = SimpleNamespace(
+        content="Session interrupted: Error: Completion cancelled unexpectedly.",
+        finish_reason="error",
+    )
+    built_kwargs = {
+        "messages": [{"role": "user", "content": "hi"}],
+        "project_id": "agent-hub",
+        "session_id": "sess-1",
+    }
+
+    with (
+        patch(
+            "app.tasks.autonomous.exec_modules.agent_helpers.build_complete_kwargs",
+            return_value=built_kwargs,
+        ),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.get_task", return_value={"status": "paused"}),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.add_agent_hub_session") as add_session_mock,
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.sleep") as sleep_mock,
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.emit_log"),
+    ):
+        try:
+            call_complete(
+                client,
+                prompt="Fix ownership",
+                agent_slug="coder",
+                project_path="/tmp/task",
+                project_id="agent-hub",
+                task_id="task-123",
+                session_id="sess-1",
+            )
+        except ExecutionInterrupted as exc:
+            assert exc.status == "paused"
+        else:
+            raise AssertionError("expected ExecutionInterrupted")
+
+    client.complete.assert_called_once()
+    add_session_mock.assert_not_called()
+    sleep_mock.assert_not_called()
 
 
 def test_call_complete_does_not_retry_non_transient_interrupted_response() -> None:
