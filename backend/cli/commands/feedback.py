@@ -216,13 +216,14 @@ def vote(
 def resolve(
     item_id: Annotated[str, typer.Argument(help="Feedback item ID to resolve")],
     note: Annotated[
-        str | None, typer.Option("--note", "-n", help="Resolution note")
+        str | None, typer.Option("--note", "-n", "--message", "-m", help="Resolution note")
     ] = None,
 ) -> None:
     """Resolve a feedback item.
 
     Examples:
       st feedback resolve a1b2c3d4 --note "Fixed in commit abc123"
+      st feedback resolve a1b2c3d4 -m "Fixed in commit abc123"
     """
     resolve_impl(item_id, note=note)
 

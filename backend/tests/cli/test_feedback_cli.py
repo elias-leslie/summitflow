@@ -83,6 +83,13 @@ class TestFeedbackCommandRouting:
         assert result.exit_code == 0
         mock_archive_impl.assert_called_once_with("deadbeef", note="aged out")
 
+    def test_resolve_accepts_message_alias(self) -> None:
+        with patch("cli.commands.feedback.resolve_impl") as mock_resolve_impl:
+            result = runner.invoke(app, ["resolve", "deadbeef", "-m", "fixed"])
+
+        assert result.exit_code == 0
+        mock_resolve_impl.assert_called_once_with("deadbeef", note="fixed")
+
     def test_merge_routes_to_merge_impl(self) -> None:
         with patch("cli.commands.feedback.merge_impl") as mock_merge_impl:
             result = runner.invoke(app, ["merge", "deadbeef", "feedcafe"])
