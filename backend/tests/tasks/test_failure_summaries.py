@@ -55,3 +55,50 @@ def test_build_feedback_prompt_surfaces_timeout_output_detail() -> None:
     assert "st check --check" in prompt
     assert "600s" in prompt
     assert "Affected steps: 0" in prompt
+
+
+def test_build_feedback_prompt_uses_boundary_metadata_without_step_results() -> None:
+    from app.tasks.autonomous.exec_modules.prompts import build_feedback_prompt
+
+    result = {
+        "subtask_id": "1.3",
+        "status": "failed",
+        "self_fix_attempts": 0,
+        "supervisor_guided_attempts": 0,
+        "error_boundary": "after_agent_complete",
+        "last_executed_step": "quality gate",
+        "last_tool_name": "bash",
+        "last_command": "st check --quick --changed-only",
+        "agent_session_id": "sess-123",
+    }
+
+    prompt = build_feedback_prompt([result], "sess-feedback-1")
+
+    assert "no details available" not in prompt
+    assert "boundary=after_agent_complete" in prompt
+    assert "last_step=quality gate" in prompt
+    assert "tool=bash" in prompt
+    assert "st check --quick --changed-only" in prompt
+
+
+def test_partial_completion_verification_uses_boundary_metadata_without_step_results() -> None:
+    from app.tasks.autonomous.exec_modules.completion_status import (
+        build_partial_completion_verification,
+    )
+
+    failed = [
+        {
+            "subtask_id": "1.3",
+            "status": "failed",
+            "error_boundary": "runtime_eval",
+            "last_tool_name": "runtime_evaluator",
+            "last_command": "st browser eval",
+        }
+    ]
+
+    verification = build_partial_completion_verification(failed, passed=[], failed=failed)
+
+    reason = verification["failed_details"][0]["failure_reason"]
+    assert "runtime_eval" in reason
+    assert "runtime_evaluator" in reason
+    assert "st browser eval" in reason

@@ -27,7 +27,7 @@ from ._prompt_blocks import (
     classify_events,
 )
 from ._prompt_fetch import PromptFetchError, TransientPromptFetchError, get_prompt_template
-from .failure_summaries import summarize_failed_steps
+from .failure_summaries import summarize_failed_steps, summarize_subtask_failure
 
 logger = get_logger(__name__)
 
@@ -453,9 +453,7 @@ def _format_subtask_result_line(r: dict[str, Any]) -> str:
 
     if status != "passed":
         step_results = r.get("step_results", [])
-        failure_reason = _summarize_failure(step_results) if step_results else (
-            r.get("error") or r.get("message") or "no details available"
-        )
+        failure_reason = _summarize_failure(step_results) if step_results else summarize_subtask_failure(r)
         line += f"\n  Failure: {failure_reason}"
         # Surface affected area from failed steps
         failed_steps = [s for s in step_results if not s.get("passed")]

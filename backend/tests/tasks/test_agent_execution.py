@@ -96,6 +96,7 @@ def test_call_complete_retries_transient_interrupted_response() -> None:
             "app.tasks.autonomous.exec_modules.agent_helpers.build_complete_kwargs",
             return_value=built_kwargs,
         ),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.add_agent_hub_session") as add_session_mock,
         patch("app.tasks.autonomous.exec_modules.agent_helpers.sleep") as sleep_mock,
         patch("app.tasks.autonomous.exec_modules.agent_helpers.emit_log") as emit_log_mock,
     ):
@@ -111,8 +112,49 @@ def test_call_complete_retries_transient_interrupted_response() -> None:
 
     assert response.content == "done"
     assert client.complete.call_count == 2
+    assert client.complete.call_args.kwargs["session_id"] != "sess-1"
+    add_session_mock.assert_called_once()
     sleep_mock.assert_called_once_with(2.0)
     assert "transient interruption" in emit_log_mock.call_args.args[2]
+
+
+def test_call_complete_retries_missing_final_summary_response() -> None:
+    client = MagicMock()
+    client.complete.side_effect = [
+        SimpleNamespace(
+            content="Tool activity recorded without a final assistant summary. Tools: bash.",
+            finish_reason="end_turn",
+        ),
+        SimpleNamespace(content="done", finish_reason="end_turn"),
+    ]
+    built_kwargs = {
+        "messages": [{"role": "user", "content": "hi"}],
+        "project_id": "agent-hub",
+        "session_id": "sess-1",
+    }
+
+    with (
+        patch(
+            "app.tasks.autonomous.exec_modules.agent_helpers.build_complete_kwargs",
+            return_value=built_kwargs,
+        ),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.add_agent_hub_session"),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.sleep") as sleep_mock,
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.emit_log"),
+    ):
+        response = call_complete(
+            client,
+            prompt="Fix ownership",
+            agent_slug="coder",
+            project_path="/tmp/task",
+            project_id="agent-hub",
+            task_id="task-123",
+            session_id="sess-1",
+        )
+
+    assert response.content == "done"
+    assert client.complete.call_count == 2
+    sleep_mock.assert_called_once_with(2.0)
 
 
 def test_call_complete_does_not_retry_non_transient_interrupted_response() -> None:
@@ -186,6 +228,17 @@ def test_agent_completion_failure_detects_interrupted_tool_loop() -> None:
 
     assert failure is not None
     assert "Repeated identical tool result" in failure
+
+
+def test_agent_completion_failure_detects_missing_final_summary() -> None:
+    response = MagicMock()
+    response.content = "Tool activity recorded without a final assistant summary. Tools: bash."
+    response.finish_reason = "end_turn"
+
+    failure = agent_completion_failure(response)
+
+    assert failure is not None
+    assert "without a final assistant summary" in failure
 
 
 def test_log_initial_completion_fallback_does_not_mark_interrupted_session_complete() -> None:
