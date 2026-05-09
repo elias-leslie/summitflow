@@ -44,6 +44,7 @@ SCHEDULE_DEFINITIONS: tuple[AutonomousScheduleDefinition, ...] = (
         description="Dispatches pending autonomous tasks into triage, planning, or execution when the project check frequency is due.",
         cron="*/15 * * * *",
         scope="project",
+        default_enabled=False,
     ),
     AutonomousScheduleDefinition(
         schedule_id="task_generation",

@@ -1,6 +1,7 @@
 """Scheduled (cron) workflows for SummitFlow.
 
-14 cron workflows on Hatchet schedule; 13 enabled by default.
+14 cron workflows on Hatchet schedule; 11 enabled by default.
+Autonomous work pickup is explicit opt-in so missing project config cannot dispatch work.
 Most use ConcurrencyExpression with CANCEL_IN_PROGRESS; explorer maintenance shares
 CANCEL_NEWEST concurrency so scan/index jobs do not overlap.
 

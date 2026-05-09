@@ -81,7 +81,7 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "upkeep_enabled": False,
     "upkeep_frequency_minutes": 120,
     "upkeep_batch_limit": 5,
-    "work_pickup_enabled": True,
+    "work_pickup_enabled": False,
     "task_generation_enabled": True,
     "reset_claims_enabled": True,
     "scan_projects_enabled": True,
