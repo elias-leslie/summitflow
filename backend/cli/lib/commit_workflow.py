@@ -59,6 +59,32 @@ def push_args(repo: Path) -> list[str]:
     return args
 
 
+def _normalize_paths(repo: Path, paths: Sequence[str]) -> list[str]:
+    """Resolve user-supplied paths to repo-relative posix strings."""
+    repo_root = repo.resolve()
+    selected: list[str] = []
+    for raw in paths:
+        value = raw.strip()
+        if not value:
+            continue
+        path = Path(value).expanduser()
+        if path.is_absolute():
+            try:
+                value = path.resolve().relative_to(repo_root).as_posix()
+            except ValueError as exc:
+                raise CommitError(f"path is outside repository: {raw}") from exc
+        selected.append(value)
+    if not selected:
+        raise CommitError("at least one path is required for selective commit")
+    return selected
+
+
+def _selected_paths_dirty(repo: Path, paths: Sequence[str]) -> bool:
+    """Return True if any of the selected paths has staged or unstaged changes."""
+    result = run_git(repo, ["status", "--porcelain", "--", *paths])
+    return bool(result.stdout.strip())
+
+
 def commit_git_revision(
     repo: Path,
     *,
@@ -66,6 +92,7 @@ def commit_git_revision(
     task_id: str = "",
     push: bool = True,
     skip_checks: bool = False,
+    paths: Sequence[str] = (),
 ) -> dict[str, Any]:
     if not message.strip():
         raise CommitError("commit message is required")
@@ -77,7 +104,17 @@ def commit_git_revision(
         "status": "SKIP",
         "pushed": False,
     }
-    if not dirty(repo):
+    selected_paths: list[str] = []
+    if paths:
+        selected_paths = _normalize_paths(repo, paths)
+        if not _selected_paths_dirty(repo, selected_paths):
+            if not push:
+                return {**result, "reason": "no_changes_in_selected_paths"}
+            pushed = run_git(repo, push_args(repo))
+            if pushed.returncode != 0:
+                raise CommitError(pushed.stderr.strip() or pushed.stdout.strip() or "git push failed")
+            return {**result, "reason": "no_changes_in_selected_paths", "pushed": True}
+    elif not dirty(repo):
         if not push:
             return {**result, "reason": "clean"}
         pushed = run_git(repo, push_args(repo))
@@ -88,7 +125,8 @@ def commit_git_revision(
         ok, detail = run_checks(repo)
         if not ok:
             return {**result, "status": "BLOCKED", "reason": "quality_gates_failed", "detail": detail}
-    add = run_git(repo, ["add", "-A"])
+    add_args = ["add", "--", *selected_paths] if selected_paths else ["add", "-A"]
+    add = run_git(repo, add_args)
     if add.returncode != 0:
         raise CommitError(add.stderr.strip() or "git add failed")
     if run_git(repo, ["diff", "--cached", "--quiet"]).returncode == 0:
@@ -98,6 +136,8 @@ def commit_git_revision(
         raise CommitError(committed.stderr.strip() or committed.stdout.strip() or "git commit failed")
     sha = run_git(repo, ["rev-parse", "--short", "HEAD"]).stdout.strip()
     result.update({"status": "SUCCESS", "sha": sha, "message": message})
+    if selected_paths:
+        result["selected_paths"] = selected_paths
     if push:
         pushed = run_git(repo, push_args(repo))
         if pushed.returncode != 0:
@@ -158,13 +198,12 @@ def commit_repo(
             return _cleanup_after_publish(repo, result, push=push)
         except JJError as exc:
             raise CommitError(str(exc)) from exc
-    if paths:
-        raise CommitError("selective commit requires a jj-colocated repository")
     result = commit_git_revision(
         repo,
         message=message,
         task_id=task_id,
         push=push,
         skip_checks=skip_checks,
+        paths=paths,
     )
     return _cleanup_after_publish(repo, result, push=push)

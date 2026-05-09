@@ -50,7 +50,15 @@ def publish_current_revision(
     resolved_bookmark = task_bookmark(task_id, bookmark) or display_branch(repo)
     if resolved_bookmark == "HEAD":
         raise JJError("bookmark or task id is required when no current bookmark is available")
-    require_success(run_jj(repo, ["bookmark", "set", resolved_bookmark, "-r", revision]), "jj bookmark set")
+    bookmark_set = run_jj(repo, ["bookmark", "set", resolved_bookmark, "-r", revision])
+    if bookmark_set.returncode != 0:
+        detail = (bookmark_set.stderr or bookmark_set.stdout or "").strip()
+        if "Refusing to move bookmark backwards or sideways" in detail:
+            raise JJError(
+                f"sideways revision: @ has diverged from {resolved_bookmark}. "
+                f"Run `jj rebase -d {resolved_bookmark}` and resolve any conflicts, then retry st commit."
+            )
+        raise JJError(f"jj bookmark set failed: {detail}")
 
     push_result = run_jj(repo, _push_args(remote, resolved_bookmark, dry_run))
     require_success(push_result, "jj git push")

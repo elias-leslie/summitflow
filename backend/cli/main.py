@@ -167,7 +167,7 @@ def commit_command(
     bookmark: Annotated[str, typer.Option("--bookmark", help="Explicit jj bookmark to publish.")] = "",
     paths: Annotated[
         list[str] | None,
-        typer.Option("--path", "--paths", help="Only commit/publish selected path(s) in jj repositories."),
+        typer.Option("--path", "--paths", help="Only commit/publish selected path(s); works for jj and plain-Git repos."),
     ] = None,
 ) -> None:
     """High-level st-owned commit workflow."""

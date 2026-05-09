@@ -135,9 +135,43 @@ def test_st_commit_forwards_explicit_bookmark(
     )
 
 
-def test_commit_repo_rejects_selected_paths_without_jj(tmp_path: Path) -> None:
-    with pytest.raises(CommitError, match="selective commit requires"):
-        commit_repo(tmp_path, message="test", paths=("a.py",))
+def test_commit_repo_supports_selected_paths_in_plain_git(tmp_path: Path) -> None:
+    """Plain-Git repos accept --paths for scoped commits when foreign WIP is present."""
+    from cli.lib import commit_workflow
+
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+
+    def fake_run_git(_repo: Path, args: list[str]):
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = ""
+        result.stderr = ""
+        if args[:2] == ["status", "--porcelain"]:
+            result.stdout = " M a.py\n"
+        if args[:2] == ["diff", "--cached"] and "--quiet" in args:
+            result.returncode = 1  # has staged changes
+        if args[:2] == ["rev-parse", "--short"]:
+            result.stdout = "abc1234"
+        if args[:1] == ["push"]:
+            result.stdout = "pushed"
+        return result
+
+    with (
+        patch.object(commit_workflow, "run_git", side_effect=fake_run_git) as run,
+        patch.object(commit_workflow, "run_checks", return_value=(True, "")),
+        patch(
+            "cli.commands.cleanup_handlers.cleanup_safe_git_residue",
+            return_value=(0, 0, 0, 0, 0, 0),
+        ),
+    ):
+        result = commit_repo(tmp_path, message="scoped", paths=("a.py",), push=True)
+
+    assert result["status"] == "SUCCESS"
+    assert result["selected_paths"] == ["a.py"]
+    add_calls = [c for c in run.call_args_list if c.args[1][:1] == ["add"]]
+    assert add_calls, "expected git add to be called"
+    assert add_calls[0].args[1] == ["add", "--", "a.py"], "git add must be scoped, not -A"
 
 
 def test_jj_run_checks_scopes_changed_files_for_selected_paths(tmp_path: Path) -> None:
