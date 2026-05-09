@@ -36,7 +36,12 @@ def _preserve_uncommitted_changes(
         skip_checks=True,
     )
     if commit_result.get("success"):
-        emit_log(task_id, "info", "Recovered orphaned changes published", project_id=project_id)
+        status = (
+            "published"
+            if commit_result.get("published", True)
+            else "committed locally for branch recovery"
+        )
+        emit_log(task_id, "info", f"Recovered orphaned changes {status}", project_id=project_id)
         return
 
     detail = str(commit_result.get("detail") or "unknown preservation failure")

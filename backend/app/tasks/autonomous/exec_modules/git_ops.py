@@ -178,6 +178,85 @@ def _build_commit_failure_detail(
     return "; ".join(parts)
 
 
+def _success_result(
+    *,
+    args: list[str],
+    command_display: str,
+    result: subprocess.CompletedProcess[str],
+    published: bool,
+    detail: str = "",
+) -> dict[str, Any]:
+    return {
+        "success": True,
+        "command": args,
+        "command_display": command_display,
+        "returncode": result.returncode,
+        "detail": detail,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "published": published,
+    }
+
+
+def _run_local_recovery_commit(
+    project_path: str,
+    message: str,
+    task_id: str,
+    *,
+    original_stderr: str,
+) -> dict[str, Any] | None:
+    fallback_args = _build_smart_commit_args(
+        project_path,
+        message,
+        task_id,
+        push=False,
+        skip_checks=True,
+    )
+    if not fallback_args:
+        return None
+    command_display = _format_command(fallback_args)
+    fallback = subprocess.run(
+        fallback_args,
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    if fallback.returncode != 0:
+        return {
+            "success": False,
+            "command": fallback_args,
+            "command_display": command_display,
+            "returncode": fallback.returncode,
+            "detail": _build_commit_failure_detail(
+                command_display,
+                returncode=fallback.returncode,
+                stdout=fallback.stdout,
+                stderr=fallback.stderr,
+                note=f"push recovery refused first: {original_stderr.strip()[:200]}",
+            ),
+            "stdout": fallback.stdout,
+            "stderr": fallback.stderr,
+            "published": False,
+        }
+    return _success_result(
+        args=fallback_args,
+        command_display=command_display,
+        result=fallback,
+        published=False,
+        detail="Committed locally because st commit refuses --push with --skip-checks.",
+    )
+
+
+def _should_retry_recovery_commit_locally(
+    *,
+    push: bool,
+    skip_checks: bool,
+    stderr: str,
+) -> bool:
+    return push and skip_checks and "refusing to publish with --skip-checks" in stderr
+
+
 
 def smart_commit_result(
     project_path: str,
@@ -225,15 +304,27 @@ def smart_commit_result(
             published = not has_unpublished_commits(project_path)
         if result.returncode == 0 and published:
             logger.info("smart_commit_success", message=message[:80])
-            return {
-                "success": True,
-                "command": args,
-                "command_display": command_display,
-                "returncode": result.returncode,
-                "detail": "",
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-            }
+            return _success_result(
+                args=args,
+                command_display=command_display,
+                result=result,
+                published=published,
+            )
+
+        if _should_retry_recovery_commit_locally(
+            push=push,
+            skip_checks=skip_checks,
+            stderr=result.stderr,
+        ):
+            local_result = _run_local_recovery_commit(
+                project_path,
+                message,
+                task_id,
+                original_stderr=result.stderr,
+            )
+            if local_result is not None:
+                logger.info("smart_commit_local_recovery", message=message[:80])
+                return local_result
 
         detail = _build_commit_failure_detail(
             command_display,

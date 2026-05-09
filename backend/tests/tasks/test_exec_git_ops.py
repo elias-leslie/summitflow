@@ -79,7 +79,10 @@ def test_smart_commit_result_surfaces_command_and_stderr_on_failure(
     mock_get_repo_root.return_value = Path("/srv/workspaces/projects/summitflow")
     mock_which.return_value = None
     mock_has_uncommitted_changes.return_value = True
-    mock_git.side_effect = [MagicMock(stdout="/tmp/checkout\n", returncode=0)]
+    mock_git.side_effect = [
+        MagicMock(stdout="/tmp/checkout\n", returncode=0),
+        MagicMock(stdout="/tmp/checkout\n", returncode=0),
+    ]
     mock_run.return_value = MagicMock(
         returncode=1,
         stdout="checks:FAIL\n",
@@ -104,6 +107,55 @@ def test_smart_commit_result_surfaces_command_and_stderr_on_failure(
     assert "--task task-1" in result["detail"]
     assert "changed_only_types failed for backend/app/foo.py" in result["detail"]
     assert "checks:FAIL" in result["detail"]
+
+
+@patch("app.tasks.autonomous.exec_modules.git_ops.has_uncommitted_changes")
+@patch("app.tasks.autonomous.exec_modules.git_ops.shutil.which")
+@patch("app.tasks.autonomous.exec_modules.git_ops.get_repo_root")
+@patch("app.tasks.autonomous.exec_modules.git_ops._run_git")
+@patch("app.tasks.autonomous.exec_modules.git_ops.subprocess.run")
+def test_smart_commit_result_falls_back_to_local_recovery_commit_when_push_skip_refused(
+    mock_run: MagicMock,
+    mock_git: MagicMock,
+    mock_get_repo_root: MagicMock,
+    mock_which: MagicMock,
+    mock_has_uncommitted_changes: MagicMock,
+) -> None:
+    from app.tasks.autonomous.exec_modules.git_ops import smart_commit_result
+
+    mock_get_repo_root.return_value = Path("/srv/workspaces/projects/summitflow")
+    mock_which.return_value = None
+    mock_has_uncommitted_changes.return_value = True
+    mock_git.side_effect = [
+        MagicMock(stdout="/tmp/checkout\n", returncode=0),
+        MagicMock(stdout="/tmp/checkout\n", returncode=0),
+    ]
+    mock_run.side_effect = [
+        MagicMock(
+            returncode=1,
+            stdout="",
+            stderr="ERROR:refusing to publish with --skip-checks\n",
+        ),
+        MagicMock(returncode=0, stdout="COMMIT local\n", stderr=""),
+    ]
+
+    with patch("pathlib.Path.is_file", return_value=True), patch(
+        "pathlib.Path.stat",
+        return_value=MagicMock(st_mode=0o100755),
+    ):
+        result = smart_commit_result(
+            "/tmp/checkout",
+            "fix: preserve work",
+            task_id="task-1",
+            push=True,
+            skip_checks=True,
+        )
+
+    assert result["success"] is True
+    assert result["published"] is False
+    assert "--no-push" in result["command"]
+    assert "--skip-checks" in result["command"]
+    assert mock_run.call_count == 2
 
 
 @patch("app.tasks.autonomous.exec_modules.git_ops.shutil.which")
