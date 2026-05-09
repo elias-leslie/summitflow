@@ -6,7 +6,7 @@ from typing import Any
 
 import typer
 
-from ..output import output_error
+from ..output import output_error, output_json
 from .feedback_api import feedback_request
 from .feedback_formatters import (
     output_duplicate_candidates,
@@ -114,9 +114,13 @@ def list_impl(
     output_feedback_list(items, result.get("total", len(items)))
 
 
-def get_impl(item_id: str) -> None:
+def get_impl(item_id: str, *, json_output: bool = False) -> None:
     """Get feedback item details with votes."""
-    output_feedback_detail(feedback_request("GET", f"{FEEDBACK_API_PATH}/{item_id}"))
+    result = feedback_request("GET", f"{FEEDBACK_API_PATH}/{item_id}")
+    if json_output:
+        output_json(result)
+        return
+    output_feedback_detail(result)
 
 
 def vote_impl(

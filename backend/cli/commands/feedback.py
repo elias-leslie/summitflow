@@ -172,13 +172,14 @@ def list_feedback(
 @app.command("get")
 def get(
     item_id: Annotated[str, typer.Argument(help="Feedback item ID")],
+    json_output: Annotated[bool, typer.Option("--json", help="Output raw JSON")] = False,
 ) -> None:
     """Get full details of a feedback item including votes.
 
     Examples:
       st feedback get a1b2c3d4-...
     """
-    get_impl(item_id)
+    get_impl(item_id, json_output=json_output)
 
 
 @app.command("vote")

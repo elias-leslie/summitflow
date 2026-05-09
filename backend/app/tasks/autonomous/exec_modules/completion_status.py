@@ -19,7 +19,7 @@ from ....storage.notifications import (
     create_task_failure_notification,
 )
 from .events import emit_log
-from .failure_summaries import summarize_failed_steps
+from .failure_summaries import summarize_subtask_failure
 
 logger = get_logger(__name__)
 
@@ -121,10 +121,7 @@ def build_successful_completion_verification(
 
 def _extract_failure_summary(result: dict[str, Any]) -> str:
     """Extract a concise failure reason from a subtask result."""
-    step_results = result.get("step_results", [])
-    if isinstance(step_results, list) and step_results:
-        return summarize_failed_steps(step_results)
-    return str(result.get("error") or result.get("message") or "unknown")
+    return summarize_subtask_failure(result)
 
 
 def build_partial_completion_verification(

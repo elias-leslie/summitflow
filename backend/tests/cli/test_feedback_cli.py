@@ -96,3 +96,10 @@ class TestFeedbackCommandRouting:
 
         assert result.exit_code == 0
         mock_merge_impl.assert_called_once_with("deadbeef", "feedcafe")
+
+    def test_get_accepts_json_output(self) -> None:
+        with patch("cli.commands.feedback.get_impl") as mock_get_impl:
+            result = runner.invoke(app, ["get", "deadbeef", "--json"])
+
+        assert result.exit_code == 0
+        mock_get_impl.assert_called_once_with("deadbeef", json_output=True)

@@ -32,6 +32,7 @@ _TRANSIENT_COMPLETE_ERROR_TEXT = (
 )
 _TRANSIENT_COMPLETION_FAILURE_TEXT = (
     "completion cancelled unexpectedly",
+    "final assistant summary",
     "tool execution cancelled",
     "sdk cancelled",
     "provider request cancelled",
@@ -46,7 +47,21 @@ def agent_completion_failure(response: CompletionResponse) -> str | None:
         return content[:500] or f"Agent Hub completion ended with finish_reason={finish_reason}"
     if content.startswith("Session interrupted"):
         return content[:500]
+    if content.startswith("Tool activity recorded without a final assistant summary"):
+        return content[:500]
     return None
+
+
+def _rotate_session_after_interruption(
+    task_id: str,
+    kwargs: dict[str, Any],
+    current_session_id: str,
+) -> str:
+    """Use a fresh Agent Hub session after runtime interruption retries."""
+    new_session_id = str(uuid.uuid4())
+    add_agent_hub_session(task_id, new_session_id)
+    kwargs["session_id"] = new_session_id
+    return new_session_id
 
 
 def _is_transient_agent_hub_complete_error(error: Exception) -> bool:
@@ -228,6 +243,7 @@ def call_complete(
     )
     if timeout_seconds is not None:
         kwargs["timeout_seconds"] = timeout_seconds
+    current_session_id = session_id
     for attempt in range(_COMPLETE_RETRY_ATTEMPTS):
         try:
             response = client.complete(**kwargs)
@@ -255,12 +271,15 @@ def call_complete(
             return response
         delay = _complete_retry_delay(attempt)
         failure = agent_completion_failure(response) or "transient interruption"
+        current_session_id = _rotate_session_after_interruption(
+            task_id, kwargs, current_session_id
+        )
         emit_log(
             task_id,
             "warn",
             "Agent Hub complete returned transient interruption; "
             f"retrying in {delay:g}s (attempt {attempt + 2}/{_COMPLETE_RETRY_ATTEMPTS}): "
-            f"{failure[:160]}",
+            f"{failure[:160]} Fresh session: {current_session_id}",
             source="orchestrator",
             project_id=project_id,
         )
