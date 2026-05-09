@@ -261,6 +261,71 @@ def test_allows_git_restore_all_in_unmanaged_temp_clone(monkeypatch: pytest.Monk
     assert decision.blocked is False
 
 
+def test_blocks_st_done_for_different_agent_task(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_HUB_SESSION_ID", "sess-current")
+    monkeypatch.setattr(
+        "app.services.command_guard._agent_hub_task_id_for_session",
+        lambda session_id: "task-current",
+    )
+
+    decision = evaluate_shell_command("st -P agent-hub done task-other --skip-diff-gate", tmp_path)
+
+    assert decision.blocked is True
+    assert decision.code == "st_done_task_mismatch"
+    assert "owns task-current" in (decision.message or "")
+    assert "not task-other" in (decision.message or "")
+
+
+def test_blocks_st_done_task_option_for_different_agent_task(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("AGENT_HUB_SESSION_ID", "sess-current")
+    monkeypatch.setattr(
+        "app.services.command_guard._agent_hub_task_id_for_session",
+        lambda session_id: "task-current",
+    )
+
+    decision = evaluate_shell_command("st done 1.2 --task task-other -m done", tmp_path)
+
+    assert decision.blocked is True
+    assert decision.code == "st_done_task_mismatch"
+
+
+def test_allows_st_done_for_current_agent_task(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_HUB_SESSION_ID", "sess-current")
+    monkeypatch.setattr(
+        "app.services.command_guard._agent_hub_task_id_for_session",
+        lambda session_id: "task-current",
+    )
+
+    decision = evaluate_shell_command("st done task-current --skip-diff-gate", tmp_path)
+
+    assert decision.blocked is False
+
+
+def test_allows_st_done_without_agent_task(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("AGENT_HUB_SESSION_ID", raising=False)
+    monkeypatch.delenv("AGENT_HUB_EXTERNAL_ID", raising=False)
+    monkeypatch.delenv("AGENT_HUB_TASK_ID", raising=False)
+
+    decision = evaluate_shell_command("st done task-other --skip-diff-gate", tmp_path)
+
+    assert decision.blocked is False
+
+
+def test_blocks_nested_st_done_for_different_agent_task(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("AGENT_HUB_EXTERNAL_ID", "task-current")
+
+    decision = evaluate_shell_command("bash -lc 'st done task-other --skip-diff-gate'", tmp_path)
+
+    assert decision.blocked is True
+    assert decision.code == "st_done_task_mismatch"
+
+
 def test_blocks_git_revert_path_overlap(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
@@ -322,3 +387,4 @@ def test_intercept_words_cover_shell_wrappers() -> None:
     assert "git" in words
     assert "env" in words
     assert "bash" in words
+    assert "st" in words

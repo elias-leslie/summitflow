@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from collections.abc import Sequence
@@ -39,6 +40,7 @@ from ._command_guard_helpers import (
 from ._command_guard_helpers import (
     repo_root as _repo_root,
 )
+from ._destructive_path_guard_helpers import derive_task_id
 from .destructive_path_guard import (
     DestructivePathGuardError,
     check_destructive_paths,
@@ -48,6 +50,7 @@ from .destructive_path_guard import (
 
 _ROOT = Path(__file__).resolve().parents[3]
 _REGISTRY_PATH = _ROOT / "scripts" / "lib" / "tool-registry.json"
+_AGENT_HUB_SESSION_TIMEOUT_SECONDS = 2.0
 _GIT_GLOBAL_OPTIONS_WITH_VALUE = {
     "-c",
     "--config-env",
@@ -75,6 +78,19 @@ _GIT_MANAGED_REDIRECTS = {
     "fetch": ("git_fetch_redirect", "BLOCKED:git fetch:Use 'st vcs reconcile' or 'st jj sync'."),
     "pull": ("git_pull_redirect", "BLOCKED:git pull:Use 'st vcs reconcile'."),
     "push": ("git_push_redirect", "BLOCKED:git push:Use 'st commit --push' or 'st jj push'."),
+}
+_ST_GLOBAL_OPTIONS_WITH_VALUE = {
+    "-P",
+    "--project",
+    "--project-id",
+}
+_ST_DONE_OPTIONS_WITH_VALUE = {
+    "-m",
+    "--message",
+}
+_ST_DONE_TASK_OPTIONS = {
+    "-t",
+    "--task",
 }
 
 
@@ -187,6 +203,120 @@ def _nested_shell_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDec
         return None
     nested = shell_exec_args(unwrapped[1:])
     return evaluate_shell_command(nested, cwd) if nested else None
+
+
+def _is_task_id(value: str | None) -> bool:
+    return bool(value and value.startswith("task-"))
+
+
+@lru_cache(maxsize=256)
+def _agent_hub_task_id_for_session(session_id: str) -> str | None:
+    try:
+        import httpx
+
+        from ..config import AGENT_HUB_URL
+        from ._agent_hub_config import build_agent_hub_headers
+
+        headers = build_agent_hub_headers(request_source="sf-command-guard")
+        with httpx.Client(timeout=_AGENT_HUB_SESSION_TIMEOUT_SECONDS) as client:
+            response = client.get(f"{AGENT_HUB_URL}/api/sessions/{session_id}", headers=headers)
+            response.raise_for_status()
+            payload = response.json()
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return derive_task_id(payload)
+
+
+def _current_agent_task_id() -> str | None:
+    env_task_id = os.getenv("AGENT_HUB_EXTERNAL_ID") or os.getenv("AGENT_HUB_TASK_ID")
+    if _is_task_id(env_task_id):
+        return env_task_id
+    session_id = os.getenv("AGENT_HUB_SESSION_ID")
+    if not session_id:
+        return None
+    return _agent_hub_task_id_for_session(session_id)
+
+
+def _st_invocation(segment: Sequence[str]) -> tuple[str, list[str]] | None:
+    unwrapped = unwrap_segment(segment)
+    if len(unwrapped) < 2 or Path(unwrapped[0]).name != "st":
+        return None
+
+    index = 1
+    while index < len(unwrapped):
+        token = unwrapped[index]
+        if token in _ST_GLOBAL_OPTIONS_WITH_VALUE and index + 1 < len(unwrapped):
+            index += 2
+            continue
+        if any(token.startswith(f"{option}=") for option in _ST_GLOBAL_OPTIONS_WITH_VALUE):
+            index += 1
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        return token, unwrapped[index + 1 :]
+    return None
+
+
+def _task_ids_targeted_by_st_done(args: Sequence[str]) -> tuple[str, ...]:
+    task_ids: list[str] = []
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token in _ST_DONE_TASK_OPTIONS and index + 1 < len(args):
+            target = args[index + 1]
+            if _is_task_id(target):
+                task_ids.append(target)
+            index += 2
+            continue
+        if any(token.startswith(f"{option}=") for option in _ST_DONE_TASK_OPTIONS):
+            target = token.split("=", 1)[1]
+            if _is_task_id(target):
+                task_ids.append(target)
+            index += 1
+            continue
+        if token in _ST_DONE_OPTIONS_WITH_VALUE and index + 1 < len(args):
+            index += 2
+            continue
+        if any(token.startswith(f"{option}=") for option in _ST_DONE_OPTIONS_WITH_VALUE):
+            index += 1
+            continue
+        if not token.startswith("-") and _is_task_id(token):
+            task_ids.append(token)
+        index += 1
+    return tuple(dict.fromkeys(task_ids))
+
+
+def _st_done_task_decision(segment: Sequence[str]) -> CommandGuardDecision | None:
+    parsed = _st_invocation(segment)
+    if parsed is None:
+        return None
+    subcommand, args = parsed
+    if subcommand != "done":
+        return None
+    current_task_id = _current_agent_task_id()
+    if not current_task_id:
+        return None
+    mismatches = [
+        task_id for task_id in _task_ids_targeted_by_st_done(args)
+        if task_id != current_task_id
+    ]
+    if not mismatches:
+        return None
+    target = mismatches[0]
+    return CommandGuardDecision(
+        blocked=True,
+        code="st_done_task_mismatch",
+        message=(
+            "BLOCKED:st done task mismatch:"
+            f"Current Agent Hub session owns {current_task_id}; "
+            f"complete that task, not {target}."
+        ),
+        source="st",
+        command=normalize_segment(segment),
+    )
 
 
 def _make_path_conflict_fn(root: Path | None) -> Any:
@@ -314,6 +444,9 @@ def evaluate_shell_command(command: str, cwd: str | Path | None = None) -> Comma
             return decision
         decision = _nested_shell_decision(segment, working_dir)
         if decision and decision.blocked:
+            return decision
+        decision = _st_done_task_decision(segment)
+        if decision:
             return decision
         decision = _git_decision(segment, working_dir)
         if decision:

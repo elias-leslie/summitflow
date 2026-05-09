@@ -25,7 +25,7 @@ BASH_INTERCEPT_WORDS: tuple[str, ...] = (
     "git", "jj", "python", "python3", "pytest", "mypy", "ty", "ruff", "biome",
     "npx", "pnpm", "npm", "vitest", "sqlfluff", "squawk",
     "docker", "env", "nohup", "nice", "stdbuf", "timeout", "bash", "sh",
-    "systemctl", "pkill", "killall", "uvicorn", "gunicorn", "next", "psql",
+    "st", "systemctl", "pkill", "killall", "uvicorn", "gunicorn", "next", "psql",
     "rm", "rmdir", "find",
 )
 DANGEROUS_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
