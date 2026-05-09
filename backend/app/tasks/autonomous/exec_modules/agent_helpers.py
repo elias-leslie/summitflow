@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import uuid
+from time import sleep
 from typing import Any
 
+import httpx
 from agent_hub import CompletionResponse
 
 from ....constants import CONTEXT_FRESHNESS_THRESHOLD
@@ -14,6 +16,20 @@ from ._agent_kwargs import build_complete_kwargs  # re-exported for callers
 from .events import emit_log, emit_progress_log
 
 _AGENT_FAILURE_FINISH_REASONS = {"error", "failed", "cancelled"}
+_COMPLETE_RETRY_ATTEMPTS = 5
+_COMPLETE_RETRY_DELAYS_SECONDS = (2.0, 4.0, 8.0, 16.0)
+_TRANSIENT_COMPLETE_ERROR_TEXT = (
+    "connection refused",
+    "server disconnected",
+    "connection reset",
+    "temporarily unavailable",
+    "bad gateway",
+    "service unavailable",
+    "gateway timeout",
+    "http 502",
+    "http 503",
+    "http 504",
+)
 
 
 def agent_completion_failure(response: CompletionResponse) -> str | None:
@@ -25,6 +41,21 @@ def agent_completion_failure(response: CompletionResponse) -> str | None:
     if content.startswith("Session interrupted"):
         return content[:500]
     return None
+
+
+def _is_transient_agent_hub_complete_error(error: Exception) -> bool:
+    if isinstance(error, httpx.TimeoutException | httpx.TransportError):
+        return True
+    if isinstance(error, httpx.HTTPStatusError):
+        return error.response.status_code in {502, 503, 504}
+    text = str(error).lower()
+    return any(marker in text for marker in _TRANSIENT_COMPLETE_ERROR_TEXT)
+
+
+def _complete_retry_delay(attempt: int) -> float:
+    return _COMPLETE_RETRY_DELAYS_SECONDS[
+        min(attempt, len(_COMPLETE_RETRY_DELAYS_SECONDS) - 1)
+    ]
 
 
 def create_session(task_id: str, session_id: str | None = None) -> str:
@@ -169,7 +200,7 @@ def call_complete(
     include_roles: list[str] | None = None,
     timeout_seconds: float | None = None,
 ) -> CompletionResponse:
-    """Invoke client.complete with standard kwargs."""
+    """Invoke client.complete with standard kwargs and transient service retry."""
     kwargs = build_complete_kwargs(
         prompt=prompt,
         agent_slug=agent_slug,
@@ -182,7 +213,27 @@ def call_complete(
     )
     if timeout_seconds is not None:
         kwargs["timeout_seconds"] = timeout_seconds
-    return client.complete(**kwargs)
+    for attempt in range(_COMPLETE_RETRY_ATTEMPTS):
+        try:
+            return client.complete(**kwargs)
+        except Exception as exc:
+            if (
+                attempt == _COMPLETE_RETRY_ATTEMPTS - 1
+                or not _is_transient_agent_hub_complete_error(exc)
+            ):
+                raise
+            delay = _complete_retry_delay(attempt)
+            emit_log(
+                task_id,
+                "warn",
+                "Agent Hub complete unavailable; "
+                f"retrying in {delay:g}s (attempt {attempt + 2}/{_COMPLETE_RETRY_ATTEMPTS}): "
+                f"{str(exc)[:160]}",
+                source="orchestrator",
+                project_id=project_id,
+            )
+            sleep(delay)
+    raise RuntimeError("unreachable Agent Hub complete retry state")
 
 
 def post_initial_response(

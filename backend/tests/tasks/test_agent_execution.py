@@ -46,6 +46,70 @@ def test_call_complete_omits_request_timeout_by_default() -> None:
     )
 
 
+def test_call_complete_retries_transient_agent_hub_disconnect() -> None:
+    client = MagicMock()
+    client.complete.side_effect = [
+        ConnectionError("Server disconnected without sending a response."),
+        ConnectionError("[Errno 111] Connection refused"),
+        SimpleNamespace(content="done"),
+    ]
+    built_kwargs = {"messages": [{"role": "user", "content": "hi"}], "project_id": "agent-hub"}
+
+    with (
+        patch(
+            "app.tasks.autonomous.exec_modules.agent_helpers.build_complete_kwargs",
+            return_value=built_kwargs,
+        ),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.sleep") as sleep_mock,
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.emit_log") as emit_log_mock,
+    ):
+        response = call_complete(
+            client,
+            prompt="Fix ownership",
+            agent_slug="coder",
+            project_path="/tmp/task",
+            project_id="agent-hub",
+            task_id="task-123",
+            session_id="sess-1",
+            include_roles=["system", "autocode"],
+        )
+
+    assert response.content == "done"
+    assert client.complete.call_count == 3
+    assert [call.args[0] for call in sleep_mock.call_args_list] == [2.0, 4.0]
+    assert emit_log_mock.call_count == 2
+
+
+def test_call_complete_does_not_retry_non_transient_error() -> None:
+    client = MagicMock()
+    client.complete.side_effect = ValueError("bad request")
+
+    with (
+        patch(
+            "app.tasks.autonomous.exec_modules.agent_helpers.build_complete_kwargs",
+            return_value={"messages": []},
+        ),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.sleep") as sleep_mock,
+    ):
+        try:
+            call_complete(
+                client,
+                prompt="Fix ownership",
+                agent_slug="coder",
+                project_path="/tmp/task",
+                project_id="agent-hub",
+                task_id="task-123",
+                session_id="sess-1",
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("expected ValueError")
+
+    client.complete.assert_called_once()
+    sleep_mock.assert_not_called()
+
+
 def test_agent_completion_failure_detects_interrupted_tool_loop() -> None:
     response = MagicMock()
     response.content = "Session interrupted: Repeated identical tool result 5 times for bash"
