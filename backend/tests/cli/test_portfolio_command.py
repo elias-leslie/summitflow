@@ -543,3 +543,143 @@ def test_ips_set_uses_put(monkeypatch) -> None:
             "notes": None,
         },
     )
+
+
+# --- catalysts ----------------------------------------------------------
+
+
+def test_catalysts_default_emits_envelope(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    payload = {
+        "schema_version": 1,
+        "days": 14,
+        "limit": 20,
+        "kinds": ["earnings", "ex_dividend", "fomc"],
+        "include_watchlist": True,
+        "catalysts": [
+            {
+                "schema_version": 1,
+                "symbol": "AAPL",
+                "kind": "earnings",
+                "date": "2026-05-20",
+                "days_until": 11,
+            }
+        ],
+    }
+    fake = _fake_client(get_return=payload)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "catalysts"])
+    assert result.exit_code == 0, result.stdout
+    body = json.loads(result.stdout.strip())
+    assert body["ok"] is True
+    assert body["data"] == payload
+    assert body["meta"]["count"] == 1
+    fake.get.assert_called_once_with(
+        "/api/catalysts/upcoming",
+        params={
+            "days": 14,
+            "limit": 20,
+            "include_watchlist": "true",
+            "detail": "false",
+        },
+    )
+
+
+def test_catalysts_passes_kinds_and_symbols(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    fake = _fake_client(get_return={"catalysts": []})
+    with _patch_client(fake):
+        result = runner.invoke(
+            app,
+            [
+                "portfolio",
+                "catalysts",
+                "--days",
+                "30",
+                "--kinds",
+                "earnings,fomc",
+                "--symbols",
+                "AAPL,MSFT",
+                "--no-include-watchlist",
+                "--detail",
+            ],
+        )
+    assert result.exit_code == 0, result.stdout
+    fake.get.assert_called_once_with(
+        "/api/catalysts/upcoming",
+        params={
+            "days": 30,
+            "limit": 20,
+            "include_watchlist": "false",
+            "detail": "true",
+            "kinds": "earnings,fomc",
+            "symbols": "AAPL,MSFT",
+        },
+    )
+
+
+def test_catalysts_human_mode_renders_friendly(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    payload = {
+        "catalysts": [
+            {
+                "symbol": "AAPL",
+                "kind": "ex_dividend",
+                "date": "2026-05-12",
+                "days_until": 3,
+            },
+            {
+                "symbol": "",
+                "kind": "fomc",
+                "date": "2026-05-14",
+                "days_until": 5,
+            },
+        ]
+    }
+    fake = _fake_client(get_return=payload)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "catalysts", "--human"])
+    assert result.exit_code == 0, result.stdout
+    assert "Last day for dividend" in result.stdout
+    assert "Fed interest-rate meeting" in result.stdout
+    assert "(macro)" in result.stdout
+
+
+def test_catalysts_connection_error_exits_2(monkeypatch) -> None:
+    from cli._portfolio_client import PortfolioConnectError
+
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    fake = _fake_client(get_exc=PortfolioConnectError("http://test", "boom"))
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "catalysts"])
+    assert result.exit_code == 2
+
+
+def test_schema_catalysts_upcoming_known(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    fake_spec = {
+        "paths": {
+            "/api/catalysts/upcoming": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/CatalystCalendarResponse"}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "components": {"schemas": {"CatalystCalendarResponse": {"type": "object"}}},
+    }
+    fake = _fake_client(get_return=fake_spec)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "schema", "catalysts-upcoming"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout.strip())
+    assert payload["command"] == "catalysts-upcoming"
+    assert payload["path"] == "/api/catalysts/upcoming"
+    assert payload["method"] == "GET"
