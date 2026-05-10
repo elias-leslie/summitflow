@@ -655,6 +655,184 @@ def test_catalysts_connection_error_exits_2(monkeypatch) -> None:
     assert result.exit_code == 2
 
 
+# --- retirement-plan ---------------------------------------------------
+
+
+def _retirement_results(scenario_id: str = "scen-1") -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "summary": {
+            "schema_version": 1,
+            "id": scenario_id,
+            "household_id": "hh-test",
+            "name": "Baseline",
+            "success_probability": 0.83,
+            "median_ending_balance": 1_500_000.0,
+            "sequence_of_returns_risk": 0.04,
+            "trial_count": 10_000,
+            "cma_source": "yaml-v1",
+            "created_at": "2026-05-09T12:00:00+00:00",
+        },
+        "inputs": {
+            "household_id": "hh-test",
+            "primary_age": 46,
+            "spouse_age": 44,
+            "retirement_age": 65,
+            "horizon_years": 30,
+            "annual_expenses": 72_000.0,
+            "portfolio_value": 900_000.0,
+            "asset_allocation": {"us_equity": 0.6, "bonds": 0.4},
+            "income_sources": [],
+            "inflation_rate": 0.025,
+            "as_of_date": "2026-05-09",
+        },
+        "percentiles": {"p10": 200_000.0, "p50": 1_500_000.0, "p90": 3_500_000.0},
+        "failure_year_distribution": {},
+        "ending_balance_paths": None,
+        "cma_snapshot": None,
+    }
+
+
+def test_retirement_run_posts_full_body(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    fake = _fake_client(post_return=_retirement_results())
+    with _patch_client(fake):
+        result = runner.invoke(
+            app,
+            [
+                "portfolio",
+                "retirement-plan",
+                "run",
+                "--household-id",
+                "hh-test",
+                "--trials",
+                "5000",
+                "--seed",
+                "42",
+                "--annual-expenses",
+                "60000",
+                "--retirement-age",
+                "67",
+                "--horizon-years",
+                "35",
+                "--name",
+                "What if I retire later",
+            ],
+        )
+    assert result.exit_code == 0, result.stdout
+    fake.post.assert_called_once_with(
+        "/api/retirement/scenarios",
+        json_body={
+            "household_id": "hh-test",
+            "trials": 5000,
+            "name": "What if I retire later",
+            "seed": 42,
+            "annual_expenses": 60000.0,
+            "retirement_age": 67,
+            "horizon_years": 35,
+        },
+    )
+
+
+def test_retirement_run_omits_optional_fields(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    fake = _fake_client(post_return=_retirement_results())
+    with _patch_client(fake):
+        result = runner.invoke(
+            app,
+            ["portfolio", "retirement-plan", "run", "--household-id", "hh-test"],
+        )
+    assert result.exit_code == 0, result.stdout
+    fake.post.assert_called_once_with(
+        "/api/retirement/scenarios",
+        json_body={"household_id": "hh-test", "trials": 10_000},
+    )
+
+
+def test_retirement_run_human_renders_translations(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    fake = _fake_client(post_return=_retirement_results())
+    with _patch_client(fake):
+        result = runner.invoke(
+            app,
+            [
+                "portfolio",
+                "retirement-plan",
+                "run",
+                "--household-id",
+                "hh-test",
+                "--human",
+            ],
+        )
+    assert result.exit_code == 0, result.stdout
+    assert "Probability of having enough" in result.stdout
+    assert "bad timing early in retirement" in result.stdout
+
+
+def test_retirement_list_filters_by_household(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    summaries = [_retirement_results()["summary"], _retirement_results("scen-2")["summary"]]
+    fake = _fake_client(get_return=summaries)
+    with _patch_client(fake):
+        result = runner.invoke(
+            app,
+            [
+                "portfolio",
+                "retirement-plan",
+                "list",
+                "--household-id",
+                "hh-test",
+                "--limit",
+                "5",
+            ],
+        )
+    assert result.exit_code == 0, result.stdout
+    fake.get.assert_called_once_with(
+        "/api/retirement/scenarios",
+        params={"household_id": "hh-test", "limit": 5},
+    )
+    body = json.loads(result.stdout.strip())
+    assert body["meta"]["count"] == 2
+
+
+def test_retirement_show_passes_detail(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    fake = _fake_client(get_return=_retirement_results())
+    with _patch_client(fake):
+        result = runner.invoke(
+            app,
+            ["portfolio", "retirement-plan", "show", "scen-1", "--detail"],
+        )
+    assert result.exit_code == 0, result.stdout
+    fake.get.assert_called_once_with(
+        "/api/retirement/scenarios/scen-1",
+        params={"detail": "true"},
+    )
+
+
+def test_schema_retirement_run_known(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    fake_spec = {
+        "paths": {
+            "/api/retirement/scenarios": {
+                "post": {
+                    "responses": {
+                        "200": {"content": {"application/json": {"schema": {}}}}
+                    }
+                }
+            }
+        },
+        "components": {"schemas": {}},
+    }
+    fake = _fake_client(get_return=fake_spec)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "schema", "retirement-run"])
+    assert result.exit_code == 0, result.stdout
+    body = json.loads(result.stdout.strip())
+    assert body["command"] == "retirement-run"
+    assert body["method"] == "POST"
+
+
 def test_schema_catalysts_upcoming_known(monkeypatch) -> None:
     monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
     fake_spec = {
