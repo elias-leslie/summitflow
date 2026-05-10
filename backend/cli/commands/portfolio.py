@@ -34,8 +34,10 @@ from ..output import output_error, output_json
 app = typer.Typer(help="Agent-facing portfolio analytics (TLH, IPS, drift, catalysts, retirement)")
 tlh_app = typer.Typer(help="Tax-loss harvesting + wash-sale detection")
 ips_app = typer.Typer(help="Investment Policy Statement targets (allocation goals)")
+retirement_app = typer.Typer(help="Stress-test your retirement plan against thousands of futures")
 app.add_typer(tlh_app, name="tlh")
 app.add_typer(ips_app, name="ips")
+app.add_typer(retirement_app, name="retirement-plan")
 
 
 # Map of `st portfolio schema <command>` aliases to the OpenAPI path the
@@ -49,6 +51,9 @@ _SCHEMA_PATHS: dict[str, tuple[str, str]] = {
     "rebalance": ("/api/portfolio/ips/rebalance", "post"),
     "ips-targets": ("/api/portfolio/ips/targets", "get"),
     "catalysts-upcoming": ("/api/catalysts/upcoming", "get"),
+    "retirement-run": ("/api/retirement/scenarios", "post"),
+    "retirement-list": ("/api/retirement/scenarios", "get"),
+    "retirement-show": ("/api/retirement/scenarios/{scenario_id}", "get"),
 }
 
 
@@ -624,3 +629,159 @@ def catalysts(
         "meta": {"count": len(rows), "limit": limit, "days": days},
     }
     _emit(envelope, human=human, summary_text=_human_catalysts(rows))
+
+
+# ----------------------------------------------------------------------
+# Retirement Monte Carlo — F5 surface
+# ----------------------------------------------------------------------
+
+
+def _human_retirement_summary(summary: dict[str, Any]) -> str:
+    success = float(summary.get("success_probability", 0) or 0) * 100
+    median = float(summary.get("median_ending_balance", 0) or 0)
+    sor = float(summary.get("sequence_of_returns_risk", 0) or 0) * 100
+    trials = int(summary.get("trial_count", 0) or 0)
+    name = summary.get("name", "scenario")
+    lines = [
+        f"{name}",
+        f"  Probability of having enough: {success:.1f}% (across {trials:,} simulated futures)",
+        f"  Median money left at year {summary.get('horizon_years_label', 'end')}: ${median:,.0f}",
+        f"  Risk of bad timing early in retirement: {sor:.1f}%",
+    ]
+    return "\n".join(lines)
+
+
+def _human_retirement_show(results: dict[str, Any]) -> str:
+    summary = results.get("summary") or {}
+    inputs = results.get("inputs") or {}
+    percentiles = results.get("percentiles") or {}
+    lines = [
+        _human_retirement_summary(summary),
+        "",
+        f"Inputs: ${float(inputs.get('portfolio_value', 0) or 0):,.0f} portfolio, "
+        f"${float(inputs.get('annual_expenses', 0) or 0):,.0f}/yr spend, "
+        f"retire at {inputs.get('retirement_age')}, "
+        f"horizon {inputs.get('horizon_years')} years",
+        "",
+        "Where you might land at the end:",
+    ]
+    for label in ("p10", "p25", "p50", "p75", "p90"):
+        if label in percentiles:
+            lines.append(
+                f"  {label.upper()}: ${float(percentiles[label]):,.0f}"
+            )
+    return "\n".join(lines)
+
+
+@retirement_app.command("run")
+def retirement_run(
+    household_id: Annotated[str, typer.Option("--household-id", help="Household scope identifier")],
+    trials: Annotated[int, typer.Option("--trials", min=1, max=50_000, help="Number of simulated futures")] = 10_000,
+    name: Annotated[str | None, typer.Option("--name", help="Scenario label (auto-generated if omitted)")] = None,
+    seed: Annotated[int | None, typer.Option("--seed", help="Deterministic random seed")] = None,
+    annual_expenses: Annotated[float | None, typer.Option("--annual-expenses", min=0.0, help="Override annual spend in dollars")] = None,
+    retirement_age: Annotated[int | None, typer.Option("--retirement-age", min=18, max=120, help="Override target retirement age")] = None,
+    horizon_years: Annotated[int | None, typer.Option("--horizon-years", min=1, max=70, help="Override projection horizon")] = None,
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """Run + persist one retirement Monte Carlo scenario.
+
+    Stress tests the household plan across ``--trials`` simulated
+    futures (default 10,000; capped at 50,000). Pass ``--seed N`` for
+    a reproducible run.
+    """
+    body: dict[str, Any] = {"household_id": household_id, "trials": trials}
+    if name is not None:
+        body["name"] = name
+    if seed is not None:
+        body["seed"] = seed
+    if annual_expenses is not None:
+        body["annual_expenses"] = annual_expenses
+    if retirement_age is not None:
+        body["retirement_age"] = retirement_age
+    if horizon_years is not None:
+        body["horizon_years"] = horizon_years
+    try:
+        with _client(remote)[0] as client:
+            results = client.post("/api/retirement/scenarios", json_body=body)
+    except PortfolioConnectError as exc:
+        _handle_connect(exc)
+    except APIError as exc:
+        _handle_api_error(exc)
+
+    if not isinstance(results, dict):
+        results = {}
+    envelope = {
+        "ok": True,
+        "schema_version": 1,
+        "data": results,
+        "meta": {"household_id": household_id, "trials": trials},
+    }
+    _emit(envelope, human=human, summary_text=_human_retirement_show(results))
+
+
+@retirement_app.command("list")
+def retirement_list(
+    household_id: Annotated[str, typer.Option("--household-id", help="Household scope identifier")],
+    limit: Annotated[int, typer.Option("--limit", min=1, max=100, help="Maximum scenarios to return")] = 20,
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """List recent retirement scenarios for one household."""
+    params = {"household_id": household_id, "limit": limit}
+    try:
+        with _client(remote)[0] as client:
+            rows = client.get("/api/retirement/scenarios", params=params)
+    except PortfolioConnectError as exc:
+        _handle_connect(exc)
+    except APIError as exc:
+        _handle_api_error(exc)
+
+    if not isinstance(rows, list):
+        rows = []
+    envelope = {
+        "ok": True,
+        "schema_version": 1,
+        "data": rows,
+        "meta": {"count": len(rows), "limit": limit, "household_id": household_id},
+    }
+    if human:
+        if not rows:
+            text = f"No retirement scenarios saved for household {household_id}."
+        else:
+            blocks = [_human_retirement_summary(row) for row in rows]
+            text = "\n\n".join(blocks)
+        _emit(envelope, human=True, summary_text=text)
+    else:
+        _emit(envelope, human=False)
+
+
+@retirement_app.command("show")
+def retirement_show(
+    scenario_id: Annotated[str, typer.Argument(help="Scenario UUID returned by run/list")],
+    detail: Annotated[bool, typer.Option("--detail", help="Include percentile paths and CMA snapshot")] = False,
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """Show one retirement scenario by id."""
+    params = {"detail": str(detail).lower()}
+    try:
+        with _client(remote)[0] as client:
+            results = client.get(
+                f"/api/retirement/scenarios/{scenario_id}", params=params
+            )
+    except PortfolioConnectError as exc:
+        _handle_connect(exc)
+    except APIError as exc:
+        _handle_api_error(exc)
+
+    if not isinstance(results, dict):
+        results = {}
+    envelope = {
+        "ok": True,
+        "schema_version": 1,
+        "data": results,
+        "meta": {"scenario_id": scenario_id, "detail": detail},
+    }
+    _emit(envelope, human=human, summary_text=_human_retirement_show(results))
