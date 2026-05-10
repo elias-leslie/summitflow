@@ -48,6 +48,7 @@ _SCHEMA_PATHS: dict[str, tuple[str, str]] = {
     "drift": ("/api/portfolio/ips/drift", "get"),
     "rebalance": ("/api/portfolio/ips/rebalance", "post"),
     "ips-targets": ("/api/portfolio/ips/targets", "get"),
+    "catalysts-upcoming": ("/api/catalysts/upcoming", "get"),
 }
 
 
@@ -532,3 +533,94 @@ def ips_set(
         _emit(envelope, human=True, summary_text=text)
     else:
         _emit(envelope, human=False)
+
+
+# ----------------------------------------------------------------------
+# Catalysts — F4 surface
+# ----------------------------------------------------------------------
+
+
+_FRIENDLY_KIND = {
+    "earnings": "Earnings",
+    "ex_dividend": "Last day for dividend",
+    "fomc": "Fed interest-rate meeting",
+}
+
+
+def _human_catalysts(rows: list[dict[str, Any]]) -> str:
+    if not rows:
+        return "No upcoming events in the requested window."
+    lines = [f"{len(rows)} upcoming event(s):", ""]
+    for row in rows:
+        raw_kind = row.get("kind") or ""
+        kind = _FRIENDLY_KIND.get(raw_kind, raw_kind)
+        symbol = row.get("symbol") or ""
+        target = symbol or "(macro)"
+        date_str = row.get("date", "?")
+        days_until = row.get("days_until")
+        when = f"in {days_until} day{'s' if days_until != 1 else ''}" if days_until is not None else date_str
+        lines.append(f"  - {target}: {kind} on {date_str} ({when})")
+    return "\n".join(lines)
+
+
+@app.command("catalysts")
+def catalysts(
+    days: Annotated[int, typer.Option("--days", min=1, max=365, help="Lookahead window in days")] = 14,
+    limit: Annotated[int, typer.Option("--limit", min=1, max=200, help="Maximum events to return")] = 20,
+    kinds: Annotated[
+        str | None,
+        typer.Option("--kinds", help="Comma-separated subset of earnings,ex_dividend,fomc"),
+    ] = None,
+    include_watchlist: Annotated[
+        bool,
+        typer.Option(
+            "--include-watchlist/--no-include-watchlist",
+            help="Include watchlist symbols (in addition to portfolio holdings)",
+        ),
+    ] = True,
+    symbols: Annotated[
+        str | None,
+        typer.Option("--symbols", help="Comma-separated symbols (overrides default universe)"),
+    ] = None,
+    detail: Annotated[
+        bool,
+        typer.Option("--detail", help="Add time_of_day, confirmed, source to each row"),
+    ] = False,
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """List upcoming catalysts (earnings, ex-dividend, FOMC) sorted by date.
+
+    Compact JSON projection by default — ``{symbol, kind, date,
+    days_until}`` per row. Pass ``--detail`` for ``time_of_day``,
+    ``confirmed``, and ``source`` fields. ``--kinds`` narrows the merge
+    to a subset.
+    """
+    params: dict[str, Any] = {
+        "days": days,
+        "limit": limit,
+        "include_watchlist": str(include_watchlist).lower(),
+        "detail": str(detail).lower(),
+    }
+    if kinds:
+        params["kinds"] = kinds
+    if symbols:
+        params["symbols"] = symbols
+    try:
+        with _client(remote)[0] as client:
+            data = client.get("/api/catalysts/upcoming", params=params)
+    except PortfolioConnectError as exc:
+        _handle_connect(exc)
+    except APIError as exc:
+        _handle_api_error(exc)
+
+    if not isinstance(data, dict):
+        data = {}
+    rows = data.get("catalysts") or []
+    envelope = {
+        "ok": True,
+        "schema_version": 1,
+        "data": data,
+        "meta": {"count": len(rows), "limit": limit, "days": days},
+    }
+    _emit(envelope, human=human, summary_text=_human_catalysts(rows))
