@@ -1,5 +1,7 @@
 'use client'
 
+import clsx from 'clsx'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useEffect } from 'react'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import { hasScreenshot, type Mockup } from '@/lib/api/mockups'
@@ -39,12 +41,14 @@ export function MockupDetailModal({
     showComparison,
     showDeleteConfirm,
     showRerunDialog,
+    showDetails,
     history,
     deleteMutation,
     setShowHistory,
     setShowComparison,
     setShowDeleteConfirm,
     setShowRerunDialog,
+    setShowDetails,
     handleStatusChange,
   } = useMockupModal(mockup, projectId, open, onOpenChange, onStatusChange)
 
@@ -68,10 +72,21 @@ export function MockupDetailModal({
         e.preventDefault()
         navigation.onNext()
       }
+      if (e.key === ']' || e.key === '[') {
+        e.preventDefault()
+        setShowDetails((prev) => !prev)
+      }
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [navigation, onOpenChange, open, showDeleteConfirm, showRerunDialog])
+  }, [
+    navigation,
+    onOpenChange,
+    open,
+    showDeleteConfirm,
+    showRerunDialog,
+    setShowDetails,
+  ])
 
   if (!open) return null
 
@@ -84,14 +99,14 @@ export function MockupDetailModal({
         onClick={() => onOpenChange(false)}
       />
 
-      <div className="relative bg-slate-900 rounded-xl w-[95vw] max-w-[1600px] h-[90vh] overflow-hidden flex flex-col mx-4">
+      <div className="relative bg-slate-900 rounded-xl w-[98vw] h-[94vh] overflow-hidden flex flex-col mx-2">
         <ModalHeader
           mockup={mockup}
           navigation={navigation}
           onClose={() => onOpenChange(false)}
         />
 
-        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row min-h-0">
+        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row min-h-0 relative">
           <PreviewArea
             mockup={mockup}
             projectId={projectId}
@@ -110,14 +125,37 @@ export function MockupDetailModal({
             }}
           />
 
-          <DetailsSidebar
-            mockup={mockup}
-            updating={updating}
-            showHistory={showHistory}
-            history={history}
-            onStatusChange={handleStatusChange}
-            onSelectHistoryMockup={onSelectMockup}
-          />
+          {showDetails && (
+            <DetailsSidebar
+              mockup={mockup}
+              updating={updating}
+              showHistory={showHistory}
+              history={history}
+              onStatusChange={handleStatusChange}
+              onSelectHistoryMockup={onSelectMockup}
+            />
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowDetails((prev) => !prev)}
+            aria-label={showDetails ? 'Hide details (])' : 'Show details (])'}
+            title={showDetails ? 'Hide details (])' : 'Show details (])'}
+            className={clsx(
+              'hidden lg:flex absolute top-1/2 -translate-y-1/2 z-10',
+              'h-16 w-5 items-center justify-center',
+              'rounded-l-md border border-r-0 border-slate-700',
+              'bg-slate-800/90 hover:bg-slate-700 text-slate-400 hover:text-slate-100',
+              'transition-colors backdrop-blur-sm',
+              showDetails ? 'right-80' : 'right-0',
+            )}
+          >
+            {showDetails ? (
+              <ChevronRight className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronLeft className="w-3.5 h-3.5" />
+            )}
+          </button>
         </div>
 
         {showDeleteConfirm && (
