@@ -137,6 +137,92 @@ class TestCheckIntent:
         assert result.summary == "LLM reviewed"
         mock_eval.assert_called_once()
 
+    @patch("app.tasks.autonomous.exec_modules.intent_check._evaluate_completion_gate")
+    @patch("app.tasks.autonomous.exec_modules.intent_check._get_diff_summary")
+    @patch("app.tasks.autonomous.exec_modules.intent_check._read_modified_files")
+    @patch("app.tasks.autonomous.exec_modules.intent_check._get_modified_files")
+    @patch("app.storage.subtasks.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.exec_modules.intent_check.task_store.get_task")
+    @patch("app.tasks.autonomous.exec_modules.intent_check.get_task_spirit")
+    def test_refactor_pass_falls_through_when_target_file_untouched(
+        self,
+        mock_spirit: MagicMock,
+        mock_get_task: MagicMock,
+        mock_get_subtasks: MagicMock,
+        mock_modified: MagicMock,
+        mock_read: MagicMock,
+        mock_diff: MagicMock,
+        mock_eval: MagicMock,
+    ) -> None:
+        """Refactor task names files_to_modify but agent never touched any of them.
+
+        Even with all subtasks/steps marked passes=True, the deterministic pass must
+        decline and fall through to the LLM completion gate. Regression for the false
+        positive observed on sf task-3708d248 where the agent ran 81 turns without
+        editing the target file and the worker swept up unrelated dirty paths.
+        """
+        mock_spirit.return_value = {
+            "done_when": [
+                "All configured quality gates pass",
+                "File structure is meaningfully simplified; reduce size toward <300 lines from 575 only where it improves clarity",
+                "No regressions - all existing tests pass",
+            ],
+            "context": {"files_to_modify": ["backend/cli/commands/check.py"]},
+        }
+        mock_get_task.return_value = {
+            "id": "task-1",
+            "task_type": "refactor",
+            "description": "Refactor check.py",
+        }
+        mock_get_subtasks.return_value = [
+            {"id": "task-1-1.1", "passes": True, "steps_from_table": []},
+        ]
+        mock_modified.return_value = ["backend/tasks/somewhere/notes.md"]
+        mock_read.return_value = "contents"
+        mock_diff.return_value = "some diff"
+        mock_eval.return_value = IntentCheckResult(
+            passed=False, objective_met=False, spirit_violated=False,
+            confidence=95, summary="Target file not modified",
+        )
+
+        result = check_intent("task-1", "/tmp/project", "summitflow")
+
+        mock_eval.assert_called_once()
+        assert result.summary == "Target file not modified"
+
+    @patch("app.storage.subtasks.get_subtasks_for_task")
+    @patch("app.tasks.autonomous.exec_modules.intent_check._get_modified_files")
+    @patch("app.tasks.autonomous.exec_modules.intent_check.task_store.get_task")
+    @patch("app.tasks.autonomous.exec_modules.intent_check.get_task_spirit")
+    def test_refactor_pass_when_target_file_in_diff(
+        self,
+        mock_spirit: MagicMock,
+        mock_get_task: MagicMock,
+        mock_modified: MagicMock,
+        mock_get_subtasks: MagicMock,
+    ) -> None:
+        """files_to_modify is satisfied by the diff — deterministic pass applies."""
+        mock_spirit.return_value = {
+            "done_when": [
+                "All configured quality gates pass",
+                "File structure is meaningfully simplified; reduce size toward <300 lines from 575 only where it improves clarity",
+            ],
+            "context": {"files_to_modify": ["backend/cli/commands/check.py"]},
+        }
+        mock_get_task.return_value = {"id": "task-1", "task_type": "refactor"}
+        mock_modified.return_value = [
+            "backend/cli/commands/check.py",
+            "backend/tests/cli/test_check.py",
+        ]
+        mock_get_subtasks.return_value = [
+            {"id": "task-1-1.1", "passes": True, "steps_from_table": []},
+        ]
+
+        result = check_intent("task-1", "/tmp/project", "summitflow")
+
+        assert result.passed
+        assert result.summary == "Passed using refactor step verification evidence"
+
 
 class TestParseGateResponse:
     """Test completion gate response parsing logic."""

@@ -65,6 +65,8 @@ def _is_supported_refactor_done_when(item: str) -> bool:
 def _deterministic_refactor_pass(
     task_id: str,
     done_when: list[str],
+    project_path: str,
+    spirit: dict,
 ) -> IntentCheckResult | None:
     """Use passed subtask/step verification as authoritative evidence for refactors."""
     from ....storage import subtasks as subtask_store
@@ -74,6 +76,17 @@ def _deterministic_refactor_pass(
         return None
     if not done_when or not all(_is_supported_refactor_done_when(item) for item in done_when):
         return None
+
+    # If files_to_modify is set, require at least one named file to appear in the diff.
+    # Without this, an agent that runs to completion but never edits the target file
+    # (e.g. only Read/Bash calls) gets a trivial pass because existing tests still pass.
+    raw_context = spirit.get("context") if isinstance(spirit, dict) else None
+    context = raw_context if isinstance(raw_context, dict) else {}
+    files_to_modify = context.get("files_to_modify") or []
+    if files_to_modify:
+        modified = set(_get_modified_files(project_path))
+        if not modified.intersection(files_to_modify):
+            return None
 
     subtasks = subtask_store.get_subtasks_for_task(task_id, include_steps=True)
     if not subtasks:
@@ -146,7 +159,7 @@ def check_intent(task_id: str, project_path: str, project_id: str) -> IntentChec
     if not done_when:
         return _trivial_pass("No done_when criteria — skipping completion gate")
 
-    deterministic = _deterministic_refactor_pass(task_id, done_when)
+    deterministic = _deterministic_refactor_pass(task_id, done_when, project_path, spirit)
     if deterministic is not None:
         return deterministic
 
