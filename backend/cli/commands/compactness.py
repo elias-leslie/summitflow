@@ -1,4 +1,10 @@
-"""Strict compactness heuristics for prompt and memory authoring."""
+"""Strict compactness heuristics for prompt and memory authoring.
+
+Thresholds are sourced from Agent Hub's DB-backed compactness policy
+(GET /api/compactness/policy). The fetch is cached per process and falls
+back to local defaults if Agent Hub is unreachable, so CLI usage never
+blocks on the policy lookup.
+"""
 
 from __future__ import annotations
 
@@ -6,11 +12,80 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
+import httpx
 import typer
 
 from app.services.context_gatherer.token_utils import estimate_tokens
 
+from ..config import get_agent_hub_url
+from ..lib.credentials import load_credentials
 from ..output import output_error, output_warning
+
+
+@dataclass(frozen=True)
+class _PolicyThresholds:
+    memory_max_chars: int = 280
+    memory_max_lines: int = 4
+    prompt_max_tokens: int = 350
+    prompt_max_lines: int = 80
+    max_sentence_words: int = 24
+    max_avg_sentence_words: int = 16
+    avg_sentence_min_words: int = 120
+    max_article_ratio_permille: int = 85
+    article_ratio_min_words: int = 80
+
+    @property
+    def max_article_ratio(self) -> float:
+        return self.max_article_ratio_permille / 1000.0
+
+
+_DEFAULT_POLICY = _PolicyThresholds()
+_policy_cache: _PolicyThresholds | None = None
+
+
+def _fetch_policy() -> _PolicyThresholds:
+    """One-shot HTTP fetch with a tight timeout; never raises."""
+    try:
+        client_id, request_source = load_credentials(default_source="st-compactness")
+        headers = {
+            "X-Client-Id": client_id,
+            "X-Request-Source": request_source,
+            "X-Source-Client": "st-cli",
+            "X-Tool-Name": "st compactness",
+        }
+        with httpx.Client(timeout=2.0) as client:
+            response = client.get(
+                f"{get_agent_hub_url()}/api/compactness/policy",
+                headers=headers,
+            )
+            if response.status_code != 200:
+                return _DEFAULT_POLICY
+            data = response.json()
+            return _PolicyThresholds(
+                memory_max_chars=int(data.get("memory_max_chars", _DEFAULT_POLICY.memory_max_chars)),
+                memory_max_lines=int(data.get("memory_max_lines", _DEFAULT_POLICY.memory_max_lines)),
+                prompt_max_tokens=int(data.get("prompt_max_tokens", _DEFAULT_POLICY.prompt_max_tokens)),
+                prompt_max_lines=int(data.get("prompt_max_lines", _DEFAULT_POLICY.prompt_max_lines)),
+                max_sentence_words=int(data.get("max_sentence_words", _DEFAULT_POLICY.max_sentence_words)),
+                max_avg_sentence_words=int(data.get("max_avg_sentence_words", _DEFAULT_POLICY.max_avg_sentence_words)),
+                avg_sentence_min_words=int(data.get("avg_sentence_min_words", _DEFAULT_POLICY.avg_sentence_min_words)),
+                max_article_ratio_permille=int(data.get("max_article_ratio_permille", _DEFAULT_POLICY.max_article_ratio_permille)),
+                article_ratio_min_words=int(data.get("article_ratio_min_words", _DEFAULT_POLICY.article_ratio_min_words)),
+            )
+    except Exception:
+        return _DEFAULT_POLICY
+
+
+def _get_policy() -> _PolicyThresholds:
+    global _policy_cache
+    if _policy_cache is None:
+        _policy_cache = _fetch_policy()
+    return _policy_cache
+
+
+def _reset_policy_cache_for_tests() -> None:
+    global _policy_cache
+    _policy_cache = None
 
 ContentKind = Literal["prompt", "memory"]
 
@@ -95,7 +170,12 @@ def _article_ratio(words: list[str]) -> float:
 
 
 def analyze_compactness(content: str, *, kind: ContentKind) -> CompactnessReport:
-    """Estimate authoring size and flag non-Caveman prose."""
+    """Estimate authoring size and flag non-Caveman prose.
+
+    Thresholds come from the DB-backed compactness policy via Agent Hub
+    so CLI warnings stay aligned with API saves and the UI gate.
+    """
+    policy = _get_policy()
     chars = len(content)
     lines = _line_count(content)
     tokens = estimate_tokens(content)
@@ -107,22 +187,26 @@ def analyze_compactness(content: str, *, kind: ContentKind) -> CompactnessReport
     article_ratio = _article_ratio(prose_words)
 
     if kind == "prompt":
-        if tokens > 350:
+        if tokens > policy.prompt_max_tokens:
             warnings.append(
-                f"large prompt ({tokens} tok). Hot-path prompts pay this every turn."
+                f"large prompt ({tokens} tok > {policy.prompt_max_tokens}). "
+                "Hot-path prompts pay this every turn."
             )
-        if lines > 80:
+        if lines > policy.prompt_max_lines:
             warnings.append(
-                f"long prompt ({lines} lines). Collapse repeated examples and overlap."
+                f"long prompt ({lines} lines > {policy.prompt_max_lines}). "
+                "Collapse repeated examples and overlap."
             )
     else:
-        if chars > 280:
+        if chars > policy.memory_max_chars:
             warnings.append(
-                f"long memory ({chars} chars). Keep one atomic rule; split if needed."
+                f"long memory ({chars} chars > {policy.memory_max_chars}). "
+                "Keep one atomic rule; split if needed."
             )
-        if lines > 4:
+        if lines > policy.memory_max_lines:
             warnings.append(
-                f"multi-line memory ({lines} lines). Prefer one short rule body."
+                f"multi-line memory ({lines} lines > {policy.memory_max_lines}). "
+                "Prefer one short rule body."
             )
 
     if filler_hits:
@@ -140,24 +224,29 @@ def analyze_compactness(content: str, *, kind: ContentKind) -> CompactnessReport
     if _OFFER_BACK_PATTERN.search(content):
         errors.append("offer-back phrasing found. Remove optional follow-up or helper language.")
 
-    if prose_words and len(prose_words) >= 80 and article_ratio > 0.085:
+    if prose_words and len(prose_words) >= policy.article_ratio_min_words and article_ratio > policy.max_article_ratio:
         errors.append(
-            f"article-heavy prose ({article_ratio:.1%}). Drop articles and compress sentence shape."
+            f"article-heavy prose ({article_ratio:.1%} > {policy.max_article_ratio:.1%}). "
+            "Drop articles and compress sentence shape."
         )
 
     long_sentences = [
         sentence
         for sentence in sentences
-        if len(_WORD_PATTERN.findall(sentence)) > 24
+        if len(_WORD_PATTERN.findall(sentence)) > policy.max_sentence_words
     ]
     if long_sentences:
-        errors.append("long prose sentences found. Split into short direct lines or bullets.")
+        errors.append(
+            f"long prose sentences found (> {policy.max_sentence_words} words). "
+            "Split into short direct lines or bullets."
+        )
 
     if sentences:
         average_sentence_words = sum(len(_WORD_PATTERN.findall(s)) for s in sentences) / len(sentences)
-        if len(prose_words) >= 120 and average_sentence_words > 16:
+        if len(prose_words) >= policy.avg_sentence_min_words and average_sentence_words > policy.max_avg_sentence_words:
             errors.append(
-                f"average sentence too long ({average_sentence_words:.1f} words). Compress prose."
+                f"average sentence too long ({average_sentence_words:.1f} words "
+                f"> {policy.max_avg_sentence_words}). Compress prose."
             )
 
     return CompactnessReport(

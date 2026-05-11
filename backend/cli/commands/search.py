@@ -33,6 +33,7 @@ from ..lib.search_output import (
     _print_text_compact,
 )
 from ..lib.search_results import _merge_precision_results
+from ..lib.usage import usage
 from ..output import handle_api_error, output_json
 
 app = typer.Typer(help="Precision Code Search")
@@ -238,6 +239,13 @@ def _emit_query_output(query: str, result: dict[str, Any], text: bool, symbols: 
 
 
 @app.command()
+@usage(
+    surface="st.search",
+    cmd='st search "query"',
+    when="repo/code discovery",
+    precautions=("prefer over rg/grep/find/st memory search",),
+    tier="mandate",
+)
 def search(
     project: ProjectOption = None,
     query: QueryArgument = None,

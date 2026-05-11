@@ -19,6 +19,7 @@ from ..lib.checkpoint import (
     get_snapshot_info,
     remove_snapshot,
 )
+from ..lib.usage import usage
 from ..output import output_error, output_success, output_warning
 from .claim_helpers import (
     handle_existing_checkpoint,
@@ -137,6 +138,17 @@ def _claim_subtask(
 
 
 @app.command(name="claim")
+@usage(
+    surface="st.claim",
+    cmd="st claim <task-id>",
+    when="before any work on a task; after st ready picks one",
+    precautions=(
+        "subtask form uses dotted ID like 1.2; pass --task <parent> when claiming subtask",
+        "claim creates a checkpoint and branch; one claim per agent at a time",
+        "if blocked by lane conflict, fix the conflict — do not --force without reason",
+    ),
+    tier="mandate",
+)
 def claim_command(
     id: Annotated[str, typer.Argument(help="Task ID or subtask ID (e.g., 1.1)")],
     task_id: Annotated[

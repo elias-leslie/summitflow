@@ -14,6 +14,7 @@ from typing import Annotated
 import typer
 
 from ..client import STClient
+from ..lib.usage import usage
 from ..output import output_success
 from .done_subtask import complete_subtask
 from .done_task import complete_task
@@ -60,6 +61,16 @@ def _handle_task_completion(
 
 
 @app.command(name="done")
+@usage(
+    surface="st.done",
+    cmd='st done <task-id> -m "summary"',
+    when="assigned-task closeout (publish + checks + checkpoint + cleanup in one)",
+    precautions=(
+        "use st commit/st jj only when st done names them as blockers, or for off-task work",
+        "never split closeout unless st done explicitly blocks",
+    ),
+    tier="mandate",
+)
 def done_command(
     id: Annotated[str, typer.Argument(help="Task ID or subtask ID (e.g., 1.1)")],
     task_id: Annotated[

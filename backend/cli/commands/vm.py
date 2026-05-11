@@ -9,6 +9,7 @@ import typer
 
 from ..lib.confirm_token import confirm_gate
 from ..lib.proxmox import ProxmoxClient, ProxmoxError, snapshot_name_default
+from ..lib.usage import usage
 from ..output import output_error
 
 app = typer.Typer(
@@ -74,6 +75,14 @@ def list_vms() -> None:
 
 
 @app.command()
+@usage(
+    surface="st.vm.status",
+    cmd="st vm status <id>",
+    when="inspect browser/test VM state when changing or repairing it",
+    precautions=("for routine browser work use st browser, not st vm",),
+    task_types=("devops", "verification"),
+    tier="reference",
+)
 def status(vmid: Annotated[str, typer.Argument(help="VM ID")]) -> None:
     """Show VM status."""
     def action(client: ProxmoxClient) -> None:

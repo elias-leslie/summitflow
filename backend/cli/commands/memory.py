@@ -8,6 +8,7 @@ from typing import Annotated
 
 import typer
 
+from ..lib.usage import usage
 from .compactness import enforce_memory_compactness, warn_memory_compactness
 from .memory_commands import (
     batch_tier_impl,
@@ -185,6 +186,17 @@ def status(
 
 
 @app.command()
+@usage(
+    surface="st.memory.save",
+    cmd='st memory save -S "summary" --content "rule"',
+    when="durable learning surfaced; correction or validated approach",
+    precautions=(
+        "project-specific → -s project --scope-id <id>; else -s global",
+        "use st memory format/save discipline (atomic, bold topic, imperative)",
+        "verify success on save; revisions are immutable",
+    ),
+    tier="mandate",
+)
 def save(
     ctx: typer.Context,
     summary: SaveSummaryOpt = None,
@@ -264,6 +276,13 @@ def list_cmd(
 
 
 @app.command()
+@usage(
+    surface="st.memory.search",
+    cmd='st memory search "query"',
+    when="durable rules / prior incidents / workflow history before retries",
+    precautions=("not for live code/runtime facts — use st search, pulse, db, logs",),
+    tier="mandate",
+)
 def search(
     ctx: typer.Context,
     query: QueryArg,

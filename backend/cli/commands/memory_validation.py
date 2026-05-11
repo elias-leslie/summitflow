@@ -42,7 +42,8 @@ Example:
 
 Limits:
   -S summary : 10-40 chars (hard)
-  content    : <=3 sentences / <=280 chars (soft, warns)
+  content    : per DB compactness policy (soft, warns)
+               see Agent Hub /compactness for live thresholds
   content    : must start with **Topic**: then imperative verb
 """
 
@@ -76,7 +77,7 @@ FORMAT_STANDARD for memory episodes:
 | 4 | One atomic rule | Single concept per episode |
 | 5 | No custom delimiters | No ::, -> except in tables |
 | 6 | No conversational | No please/remember/note:/you should |
-| 7 | Terse content | Prefer 3 sentences max, prefer 280 chars max |
+| 7 | Terse content | Per DB compactness policy (see /api/compactness/policy) |
 | 8 | Summary | 10-40 chars |
 
 Example of GOOD format:
@@ -208,7 +209,14 @@ def suggest_summary(instruction: str, limit: int = 40) -> str:
 
 
 def format_guidance_hints(content: str, summary: str) -> list[str]:
-    """Return soft guidance hints that should not block saving."""
+    """Return soft guidance hints that should not block saving.
+
+    Thresholds for content chars come from the DB-backed compactness policy
+    via Agent Hub so the CLI stays aligned with the API gate and UI.
+    """
+    from .compactness import _get_policy
+
+    policy = _get_policy()
     hints: list[str] = []
     header_match = HEADER_EXTRACT_PATTERN.match(content)
     if header_match and len(header_match.group("topic")) > 35:
@@ -216,8 +224,10 @@ def format_guidance_hints(content: str, summary: str) -> list[str]:
     sentence_count = len(re.findall(r"[.!?](?:\s|$)", content))
     if sentence_count > 3:
         hints.append(f"Content is {sentence_count} sentences; prefer 3 or fewer when possible.")
-    if len(content) > 280:
-        hints.append(f"Content is {len(content)} chars; prefer 280 or fewer when possible.")
+    if len(content) > policy.memory_max_chars:
+        hints.append(
+            f"Content is {len(content)} chars; prefer {policy.memory_max_chars} or fewer when possible."
+        )
     if len(summary) > 35:
         hints.append(f"Summary is {len(summary)} chars; prefer 35 or fewer when possible.")
     return hints

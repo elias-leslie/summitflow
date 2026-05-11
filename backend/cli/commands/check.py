@@ -15,6 +15,7 @@ import typer
 
 from ..details import display_path, summary_hint, write_details
 from ..lib.cleanroom import main as cleanroom_main
+from ..lib.usage import usage
 from ..output import output_error
 from ..tool_registry import load_tool_registry
 
@@ -503,6 +504,16 @@ Usage:
 
 
 @app.callback(invoke_without_command=True)
+@usage(
+    surface="st.check",
+    cmd="st check --quick --changed-only",
+    when="pre-edit gates; pre-commit; before reporting done",
+    precautions=(
+        "use st check for all quality gates (ruff/biome/tsc/types/pytest)",
+        "never run raw pytest/vitest/biome/tsc/ruff/sqlfluff/squawk",
+    ),
+    tier="mandate",
+)
 def check(ctx: typer.Context) -> None:
     """Run quality gates or named check subcommands."""
     if ctx.invoked_subcommand is not None:

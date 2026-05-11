@@ -13,6 +13,7 @@ from app.storage.events import log_task_event
 
 from .config import set_project_override
 from .lib.commit_workflow import CommitError, commit_repo, current_repo
+from .lib.usage import usage
 from .output import set_compact_output, set_human_output, set_progress_only
 from .output_context import OutputContext
 
@@ -159,6 +160,17 @@ app.command("exec-log")(exec_monitor.exec_log_command)
 
 
 @app.command("commit")
+@usage(
+    surface="st.commit",
+    cmd='st commit -m "msg" --push',
+    when="user-requested work complete; off-task or residue commits",
+    precautions=(
+        "use --paths a b c for scoped commits when unrelated files are dirty",
+        "after publish, trust printed COMMIT summary not local-clean state",
+        "commit before destructive ops (abandon, rollback)",
+    ),
+    tier="mandate",
+)
 def commit_command(
     ctx: typer.Context,
     message: Annotated[str, typer.Option("--message", "--msg", "-m", help="Required commit/change description.")],

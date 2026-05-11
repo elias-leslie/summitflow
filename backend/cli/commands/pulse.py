@@ -11,6 +11,7 @@ from .._output_state import is_compact
 from ..client import APIError, STClient
 from ..config import get_config_optional
 from ..lib.jj import JJRepoStatus
+from ..lib.usage import usage
 from ..output import handle_api_error, output_error, output_json
 from .pulse_formatters import (
     _payload_for_allowed_task,
@@ -124,6 +125,16 @@ def _pulse_payloads(
 
 
 @app.command()
+@usage(
+    surface="st.pulse",
+    cmd="st pulse --gate",
+    when="session start; before risky edits; cross-project lane truth",
+    precautions=(
+        "run once; if PREFLIGHT clear, edit without further inspection",
+        "if blocked, fix only listed reasons",
+    ),
+    tier="mandate",
+)
 def pulse(
     project_id: Annotated[
         str | None,

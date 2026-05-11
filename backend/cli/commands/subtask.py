@@ -8,6 +8,7 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
+from ..lib.usage import usage
 from ..output import handle_api_error, output_error, output_subtasks, output_success
 
 # Re-export for backward compatibility
@@ -29,6 +30,16 @@ def _normalize_inline_citations(citations: list[str]) -> list[str]:
 
 
 @app.command("create")
+@usage(
+    surface="st.subtask.create",
+    cmd='st subtask create 1.2 -d "description" --phase implementation',
+    when="break a claimed task into discrete subtasks for verification",
+    precautions=(
+        "subtask IDs are dotted (1.1, 1.2, 2.1); parent task UUID is separate",
+        "phase ∈ {implementation, verification, cleanup, ...}",
+    ),
+    tier="reference",
+)
 def create_subtask(
     subtask_id: str,
     description: Annotated[str, typer.Option("-d", "--description")],
@@ -56,6 +67,16 @@ def create_subtask(
 
 
 @app.command("pass")
+@usage(
+    surface="st.subtask.pass",
+    cmd='st subtask pass 1.2 --citation "M:abc12345" --citation "G:def01234"',
+    when="close a subtask after its verification gates clear",
+    precautions=(
+        "must cite memories that informed the work, OR pass --none if no memories applied",
+        "every passed subtask should leave a verifiable artifact (test, screenshot, log)",
+    ),
+    tier="mandate",
+)
 def pass_subtask(
     subtask_id: str,
     task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,

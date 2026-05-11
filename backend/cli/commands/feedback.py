@@ -6,6 +6,7 @@ from typing import Annotated
 
 import typer
 
+from ..lib.usage import usage
 from .feedback_commands import (
     archive_impl,
     delete_impl,
@@ -27,6 +28,16 @@ app = typer.Typer(
 
 
 @app.command("report")
+@usage(
+    surface="st.feedback.report",
+    cmd="st feedback report <component> 'desc' --type friction|idea|improvement|praise",
+    when="friction, idea, improvement, or praise discovered during work",
+    precautions=(
+        "components: sf.cli sf.dt sf.quality sf.worktree sf.api sf.storage sf.workflows sf.explorer sf.frontend sf.scripts ah.memory ah.completion ah.sessions ah.hooks xc.tool_registry xc.error_handling xc.testing",
+        "inline alt: [[F:type:component:desc]]",
+    ),
+    tier="reference",
+)
 def report(
     component_id: Annotated[str, typer.Argument(help="Component ID (e.g. sf.cli, ah.memory)")],
     title: Annotated[str, typer.Argument(help="Short descriptive title")],

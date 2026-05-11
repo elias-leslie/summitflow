@@ -9,6 +9,7 @@ import typer
 
 from ..lib import service_ops
 from ..lib.confirm_token import confirm_gate
+from ..lib.usage import usage
 from ..output import output_error
 
 app = typer.Typer(
@@ -58,6 +59,28 @@ def status(
 
 
 @app.command()
+@usage(
+    surface="st.service.rebuild",
+    cmd="st service rebuild <project> --detach",
+    when=(
+        "any code/config/worker change in a managed project needs to go live; "
+        "use this for the build+migrate+restart cycle, never raw pnpm/npm/uv build "
+        "or systemctl restart"
+    ),
+    precautions=(
+        "st pulse --gate first",
+        "explicit project, not cwd-implicit",
+        "--include-all-workers only when intentional",
+        "never run raw pnpm run build / npm build / uv pip install + manual systemctl restart for a managed project",
+    ),
+    examples=(
+        "st service rebuild a-term",
+        "st service rebuild agent-hub --detach",
+        "st -P agent-hub service rebuild",
+    ),
+    task_types=("devops", "config", "frontend", "backend"),
+    tier="mandate",
+)
 def rebuild(
     project: Annotated[str, typer.Argument(help="Project id to rebuild")],
     detach: Annotated[bool, typer.Option("--detach", help="Queue rebuild in background")] = False,

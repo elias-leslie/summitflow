@@ -28,6 +28,7 @@ from ..details import (
     write_details,
 )
 from ..lib import browser_check, browser_support
+from ..lib.usage import usage
 from ..output import output_error
 
 app = typer.Typer(
@@ -318,6 +319,18 @@ Debug local override:
 
 
 @app.callback(invoke_without_command=True)
+@usage(
+    surface="st.browser",
+    cmd="st browser check <url> <png>",
+    when="UI render verification; screenshots; DOM snapshots",
+    precautions=(
+        "use plain st browser; it auto-resolves approved browser VM 100",
+        "never start chrome/CDP/agent-browser on project or server host by default",
+        "only set ST_BROWSER_HOST / ST_BROWSER_VM_ID for explicit approved override",
+    ),
+    task_types=("frontend", "ui-design", "design-review", "verification"),
+    tier="mandate",
+)
 def browser(ctx: typer.Context) -> None:
     """Run browser health, checks, screenshots, snapshots, or DOM commands.
 

@@ -15,6 +15,7 @@ from typing import Annotated
 import typer
 
 from ..client import STClient
+from ..lib.usage import usage
 from ..output import output_success
 from ._abandon_helpers import abandon_subtask, abandon_task, is_subtask_id
 
@@ -22,6 +23,17 @@ app = typer.Typer(help="Abandon task or subtask work and rollback")
 
 
 @app.command(name="abandon")
+@usage(
+    surface="st.abandon",
+    cmd='st abandon <task-id> -r "reason"',
+    when="discard a claimed task that won't be finished; rolls back code",
+    precautions=(
+        "commit before abandon — preview cannot recover uncommitted work",
+        "two-pass confirm: first run shows blast radius + token; rerun with --confirm <token>",
+        "use st cancel instead if you want to keep the record without rollback",
+    ),
+    tier="mandate",
+)
 def abandon_command(
     id: Annotated[str, typer.Argument(help="Task ID or subtask ID (e.g., 1.1)")],
     task_id: Annotated[

@@ -8,6 +8,7 @@ import typer
 
 from ..client import APIError, STClient
 from ..config import get_config
+from ..lib.usage import usage
 from ..output import require_explicit_project, set_compact_output
 from .task_plan_contract import (
     CREATE_COMMAND_HELP,
@@ -55,6 +56,17 @@ def _create_bug_capture(
 
 
 @app.command(help=CREATE_COMMAND_HELP)
+@usage(
+    surface="st.create",
+    cmd='st create "title" --plan plan.md',
+    when="create a new task with a structured plan",
+    precautions=(
+        "use --plan plan.md or --from-file for non-trivial scope; bare title only for tiny tasks",
+        "set --parent for subtask-of-task relations",
+        "--dry-run to preview before writing",
+    ),
+    tier="reference",
+)
 def create(
     title: Annotated[str | None, typer.Argument()] = None,
     from_file: Annotated[
@@ -105,6 +117,16 @@ def list_tasks(
 
 
 @app.command()
+@usage(
+    surface="st.ready",
+    cmd="st -P <project> ready --limit N",
+    when="find next claimable task in this project",
+    precautions=(
+        "always pass -P <project>; default project may not be yours",
+        "use st ready-all for cross-project overview",
+    ),
+    tier="mandate",
+)
 def ready(
     limit: Annotated[int, typer.Option("--limit")] = 50,
     blocked: Annotated[bool, typer.Option("--blocked")] = False,
@@ -140,6 +162,16 @@ def ready_all(
 
 
 @app.command()
+@usage(
+    surface="st.context",
+    cmd="st context <task-id>",
+    when="after st claim, before editing — get full task brief + plan + history",
+    precautions=(
+        "claim first; reading context without claiming risks duplicate work",
+        "use --subtask X.Y for subtask context inside a task",
+    ),
+    tier="mandate",
+)
 def context(
     task_id: Annotated[str, typer.Argument()],
     subtask: Annotated[str | None, typer.Option("--subtask", "-s")] = None,
@@ -179,6 +211,16 @@ def export(
 
 
 @app.command()
+@usage(
+    surface="st.cancel",
+    cmd='st cancel <task-id> -r "reason"',
+    when="task is no longer valid (out of scope, superseded, won't-do); preserves history",
+    precautions=(
+        "cancel preserves the task record; use st abandon to discard work-in-progress instead",
+        "always provide -r reason for audit trail",
+    ),
+    tier="reference",
+)
 def cancel(
     task_id: Annotated[str | None, typer.Argument()] = None,
     reason: Annotated[str, typer.Option("-r", "--reason")] = "",
@@ -190,6 +232,16 @@ def cancel(
 
 
 @app.command()
+@usage(
+    surface="st.pause",
+    cmd='st pause <task-id> -r "reason"',
+    when="stop work but plan to return; releases claim so others can pick up",
+    precautions=(
+        "commit/push work-in-progress before pausing; pause does not preserve dirty state",
+        "use st resume to pick back up",
+    ),
+    tier="reference",
+)
 def pause(
     task_id: Annotated[str | None, typer.Argument()] = None,
     reason: Annotated[str, typer.Option("-r", "--reason")] = "",
@@ -201,6 +253,13 @@ def pause(
 
 
 @app.command()
+@usage(
+    surface="st.resume",
+    cmd='st resume <task-id> -r "reason"',
+    when="return to a paused task",
+    precautions=("must st claim again after resume; resume only moves to pending",),
+    tier="reference",
+)
 def resume(
     task_id: Annotated[str | None, typer.Argument()] = None,
     reason: Annotated[str, typer.Option("-r", "--reason")] = "",
@@ -300,6 +359,13 @@ def bug(
 
 
 @app.command()
+@usage(
+    surface="st.log",
+    cmd='st log <task-id> "progress note"',
+    when="record progress, decisions, or blockers on a claimed task",
+    precautions=("prefer task-id first form; trailing task-id is a legacy alias",),
+    tier="reference",
+)
 def log(
     arg1: Annotated[str, typer.Argument(help="Task ID or message")],
     arg2: Annotated[str | None, typer.Argument(help="Message or legacy trailing task ID")] = None,

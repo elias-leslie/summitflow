@@ -9,6 +9,7 @@ import httpx
 import typer
 
 from ..config import get_agent_hub_url
+from ..lib.usage import collect_usage_specs, filter_specs, render_inject
 from ..output import output_error, output_json
 from ..output_context import OutputContext
 from ..tool_registry import list_operator_tools, tool_registry_path
@@ -134,6 +135,87 @@ def status(
         _format_status_compact(result)
     else:
         output_json(result)
+
+
+def _emit_manifest_markdown(payload: dict[str, Any]) -> None:
+    for tool in payload["tools"]:
+        print(f"### `{tool['surface']}`")
+        if tool.get("cmd"):
+            print(f"- **cmd**: `{tool['cmd']}`")
+        if tool.get("when"):
+            print(f"- **when**: {tool['when']}")
+        if tool.get("why"):
+            print(f"- **why**: {tool['why']}")
+        if tool.get("precautions"):
+            print("- **precautions**:")
+            for item in tool["precautions"]:
+                print(f"  - {item}")
+        if tool.get("examples"):
+            print("- **examples**:")
+            for item in tool["examples"]:
+                print(f"  - `{item}`")
+        print()
+
+
+def _emit_manifest_yaml(payload: dict[str, Any]) -> None:
+    import yaml
+
+    print(yaml.safe_dump(payload, default_flow_style=False, sort_keys=False).strip())
+
+
+@app.command()
+def manifest(
+    ctx: typer.Context,
+    surface: Annotated[
+        str | None, typer.Option("--surface", help="Filter to one surface (e.g., st.service.rebuild)")
+    ] = None,
+    task: Annotated[
+        str | None, typer.Option("--task", help="Filter to surfaces declaring this task_type")
+    ] = None,
+    agent: Annotated[
+        str | None, typer.Option("--agent", help="Filter to surfaces declaring this agent_slug")
+    ] = None,
+    profile: Annotated[
+        str | None, typer.Option("--profile", help="Filter to surfaces declaring this consumer_profile")
+    ] = None,
+    fmt: Annotated[
+        str, typer.Option("--format", help="inject | yaml | json | markdown")
+    ] = "inject",
+) -> None:
+    """Emit the registered tool-usage manifest for injection into agentic surfaces.
+
+    Source of truth is the `@usage(...)` decorator on each Typer command.
+    Default `inject` is the token-optimal grouped form for context injection.
+    Examples:
+        st tools manifest --task devops                    # inject form (default)
+        st tools manifest --surface st.service.rebuild --format yaml
+        st tools manifest --profile claude-code --format json
+    """
+    from ..main import app as root_app
+
+    specs = filter_specs(
+        collect_usage_specs(root_app),
+        surface=surface,
+        task_type=task,
+        agent_slug=agent,
+        consumer_profile=profile,
+    )
+    if fmt == "inject":
+        print(render_inject(specs))
+        return
+    payload: dict[str, Any] = {
+        "manifest_version": 1,
+        "tools": [spec.to_dict() for spec in specs],
+    }
+    if fmt == "json":
+        output_json(payload)
+    elif fmt == "markdown":
+        _emit_manifest_markdown(payload)
+    elif fmt == "yaml":
+        _emit_manifest_yaml(payload)
+    else:
+        output_error(f"Unknown --format {fmt!r}; expected inject|yaml|json|markdown")
+        raise typer.Exit(1)
 
 
 @app.callback(invoke_without_command=True)

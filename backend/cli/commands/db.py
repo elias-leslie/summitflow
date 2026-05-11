@@ -18,6 +18,7 @@ from app.services.db_workbench import (
 from app.storage.projects import find_project_by_cwd, get_project_root_path
 
 from ..details import emit_result_or_details
+from ..lib.usage import usage
 from ..output import output_error
 
 app = typer.Typer(
@@ -236,6 +237,14 @@ def _tables_counts_sql() -> str:
 
 
 @app.callback(invoke_without_command=True)
+@usage(
+    surface="st.db",
+    cmd='st db query -t "SELECT ..."',
+    when="read DB state; DDL must go through migrations",
+    precautions=("never run write SQL outside migrations",),
+    task_types=("database", "backend", "verification"),
+    tier="mandate",
+)
 def db(ctx: typer.Context) -> None:
     """Run database inspection or migration commands."""
     if ctx.invoked_subcommand is not None:
