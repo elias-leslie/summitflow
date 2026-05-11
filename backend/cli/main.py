@@ -25,7 +25,7 @@ CLI_REFERENCE = """ST CLI - SummitFlow Tasks.
 Core loop: pulse --gate | ready | claim <id> | context <id> | done <id>.
 Pause/resume: pause <id> [-r reason] | resume <id> [-r reason].
 VCS: vcs doctor | vcs reconcile | commit -m MSG [--task T] | jj diff | jj show.
-Tools: check | graph | service | runtime | db | browser | web | sessions | agent | cleanup | logs.
+Tools: check | graph | service | runtime | db | browser | web | wiki | sessions | agent | cleanup | logs.
 Use `<command> --help` for command-specific syntax."""
 
 
@@ -105,6 +105,7 @@ tools = _load_command_module("tools")
 vcs = _load_command_module("vcs")
 vm = _load_command_module("vm")
 web = _load_command_module("web")
+wiki = _load_command_module("wiki")
 
 app = typer.Typer(
     name="st",
@@ -154,6 +155,7 @@ app.add_typer(agents.app, name="agents")
 app.add_typer(docker.app, name="docker")
 app.add_typer(setup.app, name="setup")
 app.add_typer(vm.app, name="vm")
+app.add_typer(wiki.app, name="wiki")
 app.command("pulse")(pulse.pulse)
 app.command("search")(search.search)
 app.command("exec-log")(exec_monitor.exec_log_command)

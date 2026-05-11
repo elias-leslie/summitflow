@@ -213,10 +213,14 @@ def _changed_args(
             continue
         if name == "pytest" and not _is_pytest_test_path(Path(rel_path)):
             continue
+        if name == "pytest" and absolute.name == "conftest.py":
+            absolute = absolute.parent
         if absolute.is_relative_to(cwd.resolve()):
             relative = absolute.relative_to(cwd)
             if _path_allowed_for_tool(name, relative):
-                paths.append(relative.as_posix())
+                rel_posix = relative.as_posix()
+                if rel_posix not in paths:
+                    paths.append(rel_posix)
     return paths
 
 
