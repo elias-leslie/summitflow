@@ -14,11 +14,15 @@ runner = CliRunner()
 class TestDockerStatus:
     """Tests for st docker status."""
 
+    @patch("cli.commands.docker.compose_env")
+    @patch("cli.commands.docker._run")
     @patch("cli.commands.docker.read_docker_mode")
-    @patch("cli.commands.docker._compose_json")
-    def test_status_prints_mode(self, mock_compose_json: MagicMock, mock_read_mode: MagicMock) -> None:
+    def test_status_prints_mode(
+        self, mock_read_mode: MagicMock, mock_run: MagicMock, mock_compose_env: MagicMock
+    ) -> None:
         mock_read_mode.return_value = "dev"
-        mock_compose_json.return_value = []
+        mock_run.return_value = MagicMock(stdout="")
+        mock_compose_env.return_value = {}
 
         result = runner.invoke(app, ["status"])
 
