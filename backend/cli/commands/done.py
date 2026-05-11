@@ -15,7 +15,7 @@ import typer
 
 from ..client import STClient
 from ..lib.usage import usage
-from ..output import output_success
+from ..output import output_error, output_success
 from .done_subtask import complete_subtask
 from .done_task import complete_task
 from .done_validators import is_subtask_id
@@ -37,6 +37,33 @@ def _handle_subtask_completion(
     output_success(f"Subtask {id} completed. Branch merged.")
 
 
+def _refuse_if_autocode_owned(task: dict[str, object], task_id: str, admin: bool) -> None:
+    """Refuse st done while an autocode dispatcher actively owns the claim.
+
+    The autocode orchestrator owns terminal-status transitions for tasks it
+    runs. When an autocode agent reflexively calls `st done` as its closing
+    move, it races the orchestrator and strands the work product on the task
+    branch (see F2 'stuck-after-success'). The agent declares done by
+    returning control; the orchestrator runs the diff/quality/runtime gates
+    and transitions.
+    """
+    if admin:
+        return
+    claimed_by = task.get("claimed_by")
+    if not isinstance(claimed_by, str) or not claimed_by:
+        return
+    lock_expires_at = task.get("lock_expires_at")
+    expires = str(lock_expires_at) if lock_expires_at else ""
+    output_error(
+        f"Task {task_id} is claimed by '{claimed_by}'"
+        + (f" (lock expires {expires})." if expires else ".")
+        + "\n  The autocode orchestrator owns completion for claimed tasks."
+        + "\n  Return control and let the post-execution gates run."
+        + "\n  Override with --admin only if the claim is known stale."
+    )
+    raise typer.Exit(1)
+
+
 def _handle_task_completion(
     client: STClient,
     id: str,
@@ -47,6 +74,7 @@ def _handle_task_completion(
 ) -> None:
     """Handle task completion."""
     task = client.get_task(id)
+    _refuse_if_autocode_owned(task, id, admin)
     project_id = str(task.get("project_id") or "") or None
     require_pulse_gate(project_id, allow_task_id=id)
     task_client = STClient(project_id=project_id) if project_id else client
