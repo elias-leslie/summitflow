@@ -31,6 +31,7 @@ from app.services.graphify_tools import (
 
 from ..config import get_config
 from ..details import display_path, strip_ansi, summary_hint, write_details
+from ..lib.usage import usage
 from ..output import output_json
 from ._projects_helpers import projects_api
 
@@ -671,6 +672,13 @@ def status(
 
 
 @app.command("doctor")
+@usage(
+    surface="st.graph.doctor",
+    cmd="st graph doctor --project <project>",
+    when="Graphify health; auto-refreshes stale code graph",
+    task_types=("exploration", "refactor", "backend"),
+    tier="reference",
+)
 def doctor(
     project: Annotated[str | None, typer.Option("--project", "-p", help="Project id. Defaults to every project.")] = None,
     refresh: Annotated[bool, typer.Option("--refresh/--no-refresh", help="Refresh stale code graphs before diagnosis.")] = True,

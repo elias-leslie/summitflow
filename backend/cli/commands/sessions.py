@@ -14,6 +14,7 @@ from .._observability import refresh_agent_observability
 from ..client import APIError, STClient
 from ..config import get_project_override
 from ..details import current_root, display_path, write_details
+from ..lib.usage import usage
 from ..output import handle_api_error, is_compact, output_json
 from ._session_resolver import resolve_session_id as _resolve_session_id
 from .session_events_client import get_session_events
@@ -659,6 +660,14 @@ def reap_sessions(
 
 
 @app.command("ownership")
+@usage(
+    surface="st.sessions.ownership",
+    cmd="st sessions ownership -P <project>",
+    when="check lane truth when st pulse --gate reports blocked",
+    precautions=("don't inspect routinely; only when pulse names ownership as the blocker",),
+    task_types=("devops",),
+    tier="reference",
+)
 def list_ownership(
     project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
 ) -> None:

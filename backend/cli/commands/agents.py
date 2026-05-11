@@ -10,6 +10,7 @@ from typing import Annotated, Any
 
 import typer
 
+from ..lib.usage import usage
 from ..output import output_error, output_json
 from ._memory_crud_helpers import parse_csv_values
 from .agents_api import agent_preview_api, agents_api, models_api
@@ -525,6 +526,13 @@ def create_agent(
 
 
 @app.command("preview")
+@usage(
+    surface="st.agents.preview",
+    cmd="st agents preview <slug> --json",
+    when="inspect agent prompt/context size; verify injection",
+    task_types=("config", "prompt-tuning", "verification"),
+    tier="reference",
+)
 def preview_agent(
     slug: Annotated[str, typer.Argument(help="Agent slug")],
     mode: Annotated[str, typer.Option("--mode", "-m", help="Preview mode: chat, heartbeat, wake, review")] = "chat",

@@ -7,6 +7,7 @@ from typing import Annotated, Any
 
 import typer
 
+from ..lib.usage import usage
 from ..output import output_error
 from ._api_paths import PROMPT_RESTORE_PATH, PROMPT_REVISIONS_PATH
 from .compactness import enforce_prompt_compactness, warn_prompt_compactness
@@ -32,6 +33,18 @@ app = typer.Typer(help="Prompt management (Agent Hub)")
 
 
 @app.callback(invoke_without_command=True)
+@usage(
+    surface="st.prompt",
+    cmd="st prompt list | get | update | measure",
+    when="editing agent prompts in DB",
+    precautions=(
+        "run st prompt measure before and after edits",
+        "keep prompts in DB; never duplicate as checked-in markdown",
+        "goal-first; ordered workflow only when order matters",
+    ),
+    task_types=("config", "prompt-tuning"),
+    tier="mandate",
+)
 def prompt_default(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is None:
         list_prompts(is_global=None)

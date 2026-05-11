@@ -15,6 +15,7 @@ from app.utils._git_core import pull_repository
 
 from ..details import display_path, write_details
 from ..lib.jj import JJError, is_colocated, run_jj, status_summary
+from ..lib.usage import usage
 from ..lib.workspace_paths import get_projects_base_dir
 from ..output import output_json
 from ..output_context import OutputContext
@@ -349,6 +350,17 @@ def _register_unmanaged(repos: list[Path]) -> list[dict[str, str]]:
 
 
 @app.command()
+@usage(
+    surface="st.vcs.reconcile",
+    cmd="st vcs reconcile",
+    when="checkpoint, branch, jj publication, unmanaged repo, or snapshot debt",
+    precautions=(
+        "if blockers remain, fix only listed blockers; never leave debt",
+        "never auto-clean ownerless residue; inspect, then commit/push or pause with handoff",
+    ),
+    task_types=("devops", "config"),
+    tier="mandate",
+)
 def reconcile(
     ctx: typer.Context,
     all_projects: Annotated[
