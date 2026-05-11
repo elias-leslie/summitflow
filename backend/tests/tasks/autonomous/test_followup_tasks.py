@@ -661,4 +661,3 @@ class TestHandlePartialCompletionFollowupWiring:
         )
         assert any("Created follow-up task" in message for message in info_logs)
         assert any(f"Reused follow-up task {followup_id}" in message for message in info_logs)
-        assert dispatch.call_count == 2

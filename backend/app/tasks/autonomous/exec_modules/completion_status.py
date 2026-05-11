@@ -153,45 +153,6 @@ def build_partial_completion_verification(
     }
 
 
-def _resolve_require_review(task_id: str, project_id: str) -> bool:
-    """Resolve whether AI review is required, respecting task-level overrides.
-
-    Task-level ai_review=False overrides the project-level require_review setting.
-    """
-    require_review = agent_configs.get_require_review(project_id)
-    if not require_review:
-        return False
-    task = task_store.get_task(task_id)
-    if task and task.get("ai_review") is False:
-        logger.info(
-            "Skipping AI review (task ai_review=False)",
-            task_id=task_id,
-            project_id=project_id,
-        )
-        return False
-    return True
-
-
-def _do_review_transition(
-    task_id: str,
-    project_id: str,
-    log_message: str,
-    dispatch: Callable[[str, str, str], None] | None,
-) -> str:
-    """Keep task active while AI review runs."""
-    task = task_store.get_task(task_id) or {}
-    current_status = str(task.get("status") or "")
-    if current_status != "running":
-        update_kwargs: dict[str, Any] = {}
-        if current_status in {"", "completed", "cancelled"}:
-            update_kwargs["validate_transition"] = False
-        task_store.update_task_status(task_id, "running", **update_kwargs)
-    emit_log(task_id, "info", f"{log_message}, queued for AI review", project_id=project_id)
-    if dispatch:
-        dispatch("review", task_id, project_id)
-    return "running"
-
-
 def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> str:
     """Set task to completed and send a completion notification."""
     from ....tasks.autonomous.cleanup.checkpoint_cleanup import cleanup_task_checkpoint
@@ -257,12 +218,11 @@ def transition_to_review_or_complete(
     log_message: str,
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> str:
-    """Transition task to review handoff or a merge-derived terminal state.
+    """Transition task to a merge-derived terminal state ("completed" or "failed").
 
-    Returns the task status after handoff: "running", "completed", or "failed".
+    `dispatch` is unused; deterministic quality gates replaced the LLM review tier.
     """
-    if _resolve_require_review(task_id, project_id):
-        return _do_review_transition(task_id, project_id, log_message, dispatch)
+    del dispatch
     return _do_complete_transition(task_id, project_id, log_message)
 
 

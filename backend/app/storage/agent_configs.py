@@ -112,7 +112,7 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "autonomous_max_supervisor_attempts": 3,
     "autonomous_max_extensions": 3,
     "autonomous_auto_merge_enabled": True,
-    "autonomous_require_review": True,
+    "autonomous_require_review": False,
     # Quality gate defaults
     "quality_gate_tools": [],  # Empty = use st check --quick (default behavior)
     "quality_gate_mode": "quick",

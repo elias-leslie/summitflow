@@ -75,7 +75,7 @@ def _parse_advanced_settings(config: AgentConfig) -> _AdvancedSettingsPayload:
         "max_supervisor_attempts": int(str(config.get("autonomous_max_supervisor_attempts", 3))),
         "max_extensions": int(str(config.get("autonomous_max_extensions", 3))),
         "auto_merge_enabled": bool(config.get("autonomous_auto_merge_enabled", True)),
-        "require_review": bool(config.get("autonomous_require_review", True)),
+        "require_review": bool(config.get("autonomous_require_review", False)),
         "quality_gate_tools": list(qg_tools_raw) if qg_tools_raw else [],
         "quality_gate_mode": str(config.get("quality_gate_mode", "quick")),
         "quality_gate_fix_enabled": bool(config.get("quality_gate_fix_enabled", True)),

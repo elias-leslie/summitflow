@@ -130,7 +130,7 @@ def get_require_review(project_id: str) -> bool:
         project_id: Project ID
 
     Returns:
-        True if review is required (default: True)
+        True if review is required (default: False — deterministic gates replaced the LLM review tier)
     """
     config = get_agent_config(project_id)
-    return bool(config.get("autonomous_require_review", True))
+    return bool(config.get("autonomous_require_review", False))

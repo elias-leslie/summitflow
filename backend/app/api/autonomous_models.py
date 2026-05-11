@@ -110,7 +110,8 @@ class AutonomousSettings(BaseModel):
         default=True, description="Enable automatic merging of completed tasks"
     )
     require_review: bool = Field(
-        default=True, description="Always run AI review before merge (even if auto_merge_enabled)"
+        default=False,
+        description="Deprecated. AI review tier removed; deterministic gates decide.",
     )
 
     # Quality gate configuration
