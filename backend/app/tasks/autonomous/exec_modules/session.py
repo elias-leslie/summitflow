@@ -54,6 +54,14 @@ NEXT SESSION:
 """
 
     log_task_event(task_id, wind_down_log)
-    task_store.update_task_status(task_id, "pending")
-    emit_log(task_id, "info", f"Session paused: {reason}")
+    current_task = task_store.get_task(task_id) or {}
+    current_status = str(current_task.get("status") or "")
+    # Preserve terminal status: if the orchestrator/agent already declared a
+    # final state (completed/failed/cancelled), wind-down must not erase it.
+    # Only reset mid-flight runs back to pending so the queue can re-pick them.
+    if current_status in {"completed", "failed", "cancelled"}:
+        emit_log(task_id, "info", f"Session paused (status preserved: {current_status}): {reason}")
+    else:
+        task_store.update_task_status(task_id, "pending")
+        emit_log(task_id, "info", f"Session paused: {reason}")
     return WindDownState(paused=True, reason=reason)

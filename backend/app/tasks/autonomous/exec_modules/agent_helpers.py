@@ -38,7 +38,9 @@ _TRANSIENT_COMPLETION_FAILURE_TEXT = (
     "sdk cancelled",
     "provider request cancelled",
 )
-_STOPPED_TASK_RETRY_STATUSES = {"paused", "cancelled", "completed", "failed", "abandoned", "closed"}
+# "completed" omitted: agent-declared success via `st done` must not abort
+# the retry checkpoint — see interruption._INTERRUPT_STATUSES.
+_STOPPED_TASK_RETRY_STATUSES = {"paused", "cancelled", "failed", "abandoned", "closed"}
 
 
 def agent_completion_failure(response: CompletionResponse) -> str | None:

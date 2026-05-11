@@ -35,18 +35,19 @@ app = typer.Typer(
 # ─── Constants ───────────────────────────────────────────────────
 
 ENV_PREFIX = "stenv-"
+GHCR_PREFIX = "ghcr.io/elias-leslie/"
 
 _BUILD_PROJECTS = [
-    ("summitflow",  "docker/backend.Dockerfile",  "ghcr.io/elias-leslie/summitflow-api"),
-    ("summitflow",  "docker/frontend.Dockerfile", "ghcr.io/elias-leslie/summitflow-web"),
-    ("summitflow",  "docker/agent-browser.Dockerfile", "ghcr.io/elias-leslie/agent-browser"),
-    ("agent-hub",   "docker/backend.Dockerfile",  "ghcr.io/elias-leslie/agent-hub-api"),
-    ("agent-hub",   "docker/frontend.Dockerfile", "ghcr.io/elias-leslie/agent-hub-web"),
-    ("a-term",    "docker/backend.Dockerfile",  "ghcr.io/elias-leslie/a-term-api"),
-    ("a-term",    "docker/frontend.Dockerfile", "ghcr.io/elias-leslie/a-term-web"),
-    ("portfolio-ai","docker/backend.Dockerfile",  "ghcr.io/elias-leslie/portfolio-api"),
-    ("portfolio-ai","docker/frontend.Dockerfile", "ghcr.io/elias-leslie/portfolio-web"),
-    ("monkey-fight","Dockerfile",                 "ghcr.io/elias-leslie/monkey-fight"),
+    ("summitflow",  "docker/backend.Dockerfile",       GHCR_PREFIX + "summitflow-api"),
+    ("summitflow",  "docker/frontend.Dockerfile",      GHCR_PREFIX + "summitflow-web"),
+    ("summitflow",  "docker/agent-browser.Dockerfile", GHCR_PREFIX + "agent-browser"),
+    ("agent-hub",   "docker/backend.Dockerfile",       GHCR_PREFIX + "agent-hub-api"),
+    ("agent-hub",   "docker/frontend.Dockerfile",      GHCR_PREFIX + "agent-hub-web"),
+    ("a-term",      "docker/backend.Dockerfile",       GHCR_PREFIX + "a-term-api"),
+    ("a-term",      "docker/frontend.Dockerfile",      GHCR_PREFIX + "a-term-web"),
+    ("portfolio-ai","docker/backend.Dockerfile",       GHCR_PREFIX + "portfolio-api"),
+    ("portfolio-ai","docker/frontend.Dockerfile",      GHCR_PREFIX + "portfolio-web"),
+    ("monkey-fight","Dockerfile",                      GHCR_PREFIX + "monkey-fight"),
 ]
 
 # ─── Helpers ─────────────────────────────────────────────────────
@@ -107,17 +108,6 @@ def _parse_json_lines(text: str) -> list[dict]:
     return rows
 
 
-def _compose_json(*args: str) -> list[dict]:
-    """Run a docker compose command that returns JSON lines."""
-    result = _run(
-        compose_cmd(*args, "--format", "json"),
-        capture=True,
-        check=False,
-        env=compose_env(),
-    )
-    return _parse_json_lines(result.stdout if result else "")
-
-
 def _list_envs() -> list[dict]:
     """Return active ephemeral test environments (stenv-* projects)."""
     result = _run(
@@ -159,7 +149,8 @@ def _resolve_project_context(project: str) -> Path | None:
 @app.command()
 def status() -> None:
     """Show container health grid (TOON format)."""
-    containers = _compose_json("ps", "--all")
+    result = _run(compose_cmd("ps", "--all", "--format", "json"), capture=True, check=False, env=compose_env())
+    containers = _parse_json_lines(result.stdout if result else "")
     mode = read_docker_mode()
     typer.echo(f"DOCKER:MODE:{mode}")
     typer.echo("DOCKER:STATUS")

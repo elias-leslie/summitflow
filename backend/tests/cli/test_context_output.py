@@ -105,6 +105,54 @@ class TestFormatContextTask:
             in output
         )
 
+    def test_runtime_line_surfaces_stuck_after_success_footprint(self) -> None:
+        task = {
+            "id": "task-94c77a0a",
+            "status": "pending",
+            "current_phase": "complete",
+            "verification_result": {"all_verified": True, "total": 0},
+            "priority": 3,
+            "task_type": "refactor",
+            "complexity": "SIMPLE",
+            "title": "Stuck after success",
+        }
+
+        output = format_context_task(task)
+
+        assert "RUNTIME:phase=complete | verify=all_verified=true" in output
+
+    def test_runtime_line_silent_when_status_and_phase_aligned(self) -> None:
+        task = {
+            "id": "task-normal",
+            "status": "pending",
+            "current_phase": "plan",
+            "priority": 3,
+            "task_type": "task",
+            "complexity": "SIMPLE",
+            "title": "Healthy pending task",
+        }
+
+        output = format_context_task(task)
+
+        assert "RUNTIME:" not in output
+
+    def test_runtime_line_surfaces_error_message(self) -> None:
+        task = {
+            "id": "task-failed",
+            "status": "failed",
+            "current_phase": "execute",
+            "error_message": "Diff gate blocked completion: no changes detected",
+            "priority": 3,
+            "task_type": "task",
+            "complexity": "SIMPLE",
+            "title": "Failed task",
+        }
+
+        output = format_context_task(task)
+
+        assert "phase=execute" in output
+        assert "err=Diff gate blocked completion: no changes detected" in output
+
     def test_includes_lane_overlap_summary_when_present(self) -> None:
         task = {
             "id": "task-789",

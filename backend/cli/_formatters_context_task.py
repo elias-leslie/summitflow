@@ -145,6 +145,35 @@ def _visible_sync_skips(task: dict[str, Any]) -> list[str]:
     return [str(item) for item in skipped]
 
 
+def _format_verification_summary(verify: object) -> str | None:
+    if not isinstance(verify, dict) or not verify:
+        return None
+    data = cast(dict[str, Any], verify)
+    for key in ("execution_clean", "all_verified", "partial_merge"):
+        if key in data:
+            return f"{key}={str(data[key]).lower()}"
+    return f"keys={','.join(str(k) for k in list(data.keys())[:3])}"
+
+
+def _format_runtime_line(task: dict[str, Any]) -> str | None:
+    """Surface operational fields that diverge from the visible status.
+
+    Investigations like 'stuck-after-success' need current_phase, verification_result,
+    and error_message at a glance — without these, agents drop to raw DB queries.
+    """
+    parts: list[str] = []
+    status = str(task.get("status") or "")
+    phase = str(task.get("current_phase") or "")
+    expected_phase = {"pending": "plan", "running": "execute", "completed": "complete"}
+    if phase and phase != expected_phase.get(status):
+        parts.append(f"phase={phase}")
+    if verify_summary := _format_verification_summary(task.get("verification_result")):
+        parts.append(f"verify={verify_summary}")
+    if err := task.get("error_message"):
+        parts.append(f"err={str(err)[:80]}")
+    return f"RUNTIME:{' | '.join(parts)}" if parts else None
+
+
 def _format_workflow_line(task: dict[str, Any]) -> str | None:
     """Return WORKFLOW line if there's anything worth showing."""
     if is_final_task_status(task.get("status")):
@@ -242,6 +271,8 @@ def format_context_task(task: dict[str, Any]) -> str:
     lines.extend(format_task_freshness_lines(status))
     if workflow := _format_workflow_line(task):
         lines.append(workflow)
+    if runtime := _format_runtime_line(task):
+        lines.append(runtime)
     if harness := _format_harness_line(task):
         lines.append(harness)
     lines.extend(_format_body_lines(task, final_status=final_status))
