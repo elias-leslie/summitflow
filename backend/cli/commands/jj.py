@@ -25,42 +25,25 @@ from ..lib.jj import (
     status_summary,
 )
 from ..output import output_error, output_json
-from ..output_context import OutputContext
 from ._git_helpers import _get_managed_repos
 from .cleanup_handlers import cleanup_safe_git_residue
 
-HELP_TEXT = """Jujutsu workflow through st.
-
-Principles:
-  - Use st vcs doctor/reconcile for cross-repo hygiene.
-  - Agents call st jj or st commit, not raw jj, for normal VCS work.
-  - All commands run with --no-pager and non-interactive editor config.
-  - Publication runs st check first; jj-backed publish rejects --skip-checks.
-
-Common workflows:
-  st jj status
-  st jj init --repo /path/to/repo
-  st jj new -m "start task"
-  st jj describe -m "better description"
-  st commit -m "fix: concise result" --push --task task-abc
-  st jj push --bookmark main --revision main
-  st jj log --limit 20
-  st jj op-log --limit 20
-  st jj remote-bookmarks <name>
-  st jj undo --task task-abc
-  st jj op-restore <op-id> --task task-abc
-  st jj conflicts
-  st jj revert <revision> --message "rollback" --push --task task-abc
-"""
+HELP_TEXT = (
+    "Jujutsu workflow through st.\n\n"
+    "Principles:\n"
+    "  - Use st vcs doctor/reconcile for cross-repo hygiene.\n"
+    "  - Agents call st jj or st commit, not raw jj.\n"
+    "  - All commands run with --no-pager and non-interactive editor config.\n\n"
+    "Common workflows:\n"
+    "  st jj status | init --repo /path | new -m \"msg\" | describe -m \"msg\"\n"
+    "  st commit -m \"fix\" --push --task task-abc\n"
+    "  st jj push --bookmark main --revision main\n"
+    "  st jj log --limit 20 | op-log --limit 20 | remote-bookmarks <name>\n"
+    "  st jj undo --task task-abc | op-restore <op-id> --task task-abc\n"
+    "  st jj conflicts | revert <rev> --message \"rollback\" --push --task task-abc"
+)
 
 app = typer.Typer(help=HELP_TEXT, rich_markup_mode=None)
-
-
-@app.callback()
-def jj_callback(ctx: typer.Context) -> None:
-    """Initialize context if not set by parent app."""
-    if ctx.obj is None:
-        ctx.obj = OutputContext()
 
 
 def _repo_or_current(repo: Path | None) -> Path:
@@ -100,6 +83,53 @@ def _write_jj_result(repo: Path, name: str, result, label: str) -> None:
         raise typer.Exit(result.returncode)
 
 
+def _log_and_run(repo: Path, args: list[str], task_id: str, msg: str) -> None:
+    _run_or_exit(repo, args)
+    if task_id:
+        log_task_event(task_id, msg)
+
+
+def _prune_residue(path: Path, result: dict) -> None:
+    if not result.get("pushed"):
+        return
+    try:
+        counts = cleanup_safe_git_residue([path], dry_run=False)
+    except Exception:
+        counts = (0, 0, 0, 0, 0, 0)
+    result["residue_pruned"] = sum(counts)
+
+
+def _push_log(task_id: str, result: dict, delete_bookmark: bool) -> None:
+    if delete_bookmark:
+        log_task_event(task_id, f"st jj push --delete-bookmark {result['bookmark']} op={result['operation_id']}")
+    else:
+        log_task_event(
+            task_id,
+            f"st jj push {result['bookmark']} change={result['change_id']} commit={result['commit_id']} op={result['operation_id']}",
+        )
+
+
+def _push_compact(result: dict, delete_bookmark: bool) -> None:
+    if delete_bookmark:
+        print(f"JJPUSH:{result['repo']}:{result['status']}:bookmark={result['bookmark']} deleted={str(result['deleted']).lower()}")
+    else:
+        print(f"JJPUSH:{result['repo']}:{result['status']}:bookmark={result['bookmark']} change={result['change_id']} commit={result['commit_id']} pushed={str(result['pushed']).lower()}")
+
+
+def _revert_publish(path: Path, task_id: str) -> None:
+    try:
+        result = publish_current_revision(path, task_id=task_id)
+    except JJError as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
+    if task_id:
+        log_task_event(
+            task_id,
+            f"st jj revert push {result['bookmark']} change={result['change_id']} commit={result['commit_id']} op={result['operation_id']}",
+        )
+    print(f"JJREVERT:{result['repo']}:{result['status']}:bookmark={result['bookmark']} change={result['change_id']} commit={result['commit_id']} pushed={str(result['pushed']).lower()}")
+
+
 @app.command()
 def init(
     ctx: typer.Context,
@@ -134,7 +164,6 @@ def status(
 ) -> None:
     """Show jj state across managed repos or one repo."""
     repos = [_repo_or_current(repo)] if repo else _get_managed_repos()
-    statuses = []
     try:
         statuses = [status_summary(path) for path in repos if path.exists()]
     except JJError as exc:
@@ -296,31 +325,14 @@ def push(
                 remote=remote,
                 dry_run=dry_run,
             )
-            if result.get("pushed"):
-                try:
-                    counts = cleanup_safe_git_residue([path], dry_run=False)
-                except Exception:
-                    counts = (0, 0, 0, 0, 0, 0)
-                result["residue_pruned"] = sum(counts)
+            _prune_residue(path, result)
     except JJError as exc:
         output_error(str(exc))
         raise typer.Exit(1) from None
     if task_id:
-        if delete_bookmark:
-            log_task_event(task_id, f"st jj push --delete-bookmark {result['bookmark']} op={result['operation_id']}")
-        else:
-            log_task_event(task_id, f"st jj push {result['bookmark']} change={result['change_id']} commit={result['commit_id']} op={result['operation_id']}")
+        _push_log(task_id, result, delete_bookmark)
     if ctx.obj.is_compact:
-        if delete_bookmark:
-            print(
-                f"JJPUSH:{result['repo']}:{result['status']}:bookmark={result['bookmark']} "
-                f"deleted={str(result['deleted']).lower()}"
-            )
-        else:
-            print(
-                f"JJPUSH:{result['repo']}:{result['status']}:bookmark={result['bookmark']} "
-                f"change={result['change_id']} commit={result['commit_id']} pushed={str(result['pushed']).lower()}"
-            )
+        _push_compact(result, delete_bookmark)
     else:
         output_json(result)
 
@@ -331,10 +343,7 @@ def undo(
     repo: Annotated[Path | None, typer.Option("--repo", "-R", help="Repository path.")] = None,
 ) -> None:
     """Undo the last jj operation."""
-    path = _repo_or_current(repo)
-    _run_or_exit(path, ["undo"])
-    if task_id:
-        log_task_event(task_id, "st jj undo executed")
+    _log_and_run(_repo_or_current(repo), ["undo"], task_id, "st jj undo executed")
 
 
 @app.command("op-log")
@@ -353,10 +362,7 @@ def op_restore(
     repo: Annotated[Path | None, typer.Option("--repo", "-R", help="Repository path.")] = None,
 ) -> None:
     """Restore repo state to a previous jj operation."""
-    path = _repo_or_current(repo)
-    _run_or_exit(path, ["op", "restore", operation_id])
-    if task_id:
-        log_task_event(task_id, f"st jj op-restore {operation_id} executed")
+    _log_and_run(_repo_or_current(repo), ["op", "restore", operation_id], task_id, f"st jj op-restore {operation_id} executed")
 
 
 @app.command()
@@ -366,10 +372,7 @@ def recover(
 ) -> None:
     """Show operation log, or restore to --to."""
     path = _repo_or_current(repo)
-    if to:
-        _run_or_exit(path, ["op", "restore", to])
-    else:
-        _run_or_exit(path, ["op", "log", "--no-graph", "-n", "20", "-T", OP_LOG_TEMPLATE])
+    _run_or_exit(path, ["op", "restore", to] if to else ["op", "log", "--no-graph", "-n", "20", "-T", OP_LOG_TEMPLATE])
 
 
 @app.command()
@@ -379,10 +382,7 @@ def abandon(
     repo: Annotated[Path | None, typer.Option("--repo", "-R", help="Repository path.")] = None,
 ) -> None:
     """Abandon a local jj revision; recover with st jj undo/op-restore."""
-    path = _repo_or_current(repo)
-    _run_or_exit(path, ["abandon", revision])
-    if task_id:
-        log_task_event(task_id, f"st jj abandon {revision} executed")
+    _log_and_run(_repo_or_current(repo), ["abandon", revision], task_id, f"st jj abandon {revision} executed")
 
 
 @app.command()
@@ -436,20 +436,5 @@ def revert(
         _run_or_exit(path, ["describe", "-m", message])
     if task_id:
         log_task_event(task_id, f"st jj revert {revision} onto={onto} executed")
-    if not push:
-        return
-    try:
-        result = publish_current_revision(path, task_id=task_id)
-    except JJError as exc:
-        output_error(str(exc))
-        raise typer.Exit(1) from None
-    if task_id:
-        log_task_event(
-            task_id,
-            f"st jj revert push {result['bookmark']} change={result['change_id']} "
-            f"commit={result['commit_id']} op={result['operation_id']}",
-        )
-    print(
-        f"JJREVERT:{result['repo']}:{result['status']}:bookmark={result['bookmark']} "
-        f"change={result['change_id']} commit={result['commit_id']} pushed={str(result['pushed']).lower()}"
-    )
+    if push:
+        _revert_publish(path, task_id)
