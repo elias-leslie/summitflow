@@ -166,7 +166,7 @@ def test_complete_task_missing_checkpoint_active_task_auto_commits_dirty_work() 
         patch("cli.commands.done_task._git_dirty_paths", return_value=["backend/app/api/heartbeat.py"]),
         patch("cli.commands.done_task._task_has_published_commit_event", side_effect=[False, True, True]),
         patch("cli.commands.done_task.commit_repo") as mock_commit,
-        patch("cli.commands.done_task._record_task_commit_event") as mock_record,
+        patch("app.storage.events.log_task_event") as mock_log,
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
         patch("cli.commands.done_task.merge_task_branch") as mock_merge,
@@ -186,7 +186,8 @@ def test_complete_task_missing_checkpoint_active_task_auto_commits_dirty_work() 
     assert mock_commit.call_args.kwargs["message"] == "finish task"
     assert mock_commit.call_args.kwargs["task_id"] == "task-789"
     assert mock_commit.call_args.kwargs["push"] is True
-    mock_record.assert_called_once_with("task-789", mock_commit.return_value)
+    mock_log.assert_called_once()
+    assert mock_log.call_args.args[0] == "task-789"
     client.export_task_data.assert_called_once_with("task-789")
     mock_prereqs.assert_called_once_with(
         client, "task-789", "summitflow", merge_subtask_branches=False
@@ -219,7 +220,7 @@ def test_complete_task_missing_checkpoint_active_task_commits_combined_dirty_che
         ),
         patch("cli.commands.done_task._task_has_published_commit_event", side_effect=[False, True]),
         patch("cli.commands.done_task.commit_repo") as mock_commit,
-        patch("cli.commands.done_task._record_task_commit_event") as mock_record,
+        patch("app.storage.events.log_task_event") as mock_log,
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
         patch("cli.commands.done_task.merge_task_branch") as mock_merge,
@@ -239,7 +240,8 @@ def test_complete_task_missing_checkpoint_active_task_commits_combined_dirty_che
     assert mock_commit.call_args.kwargs["message"] == "finish task"
     assert mock_commit.call_args.kwargs["task_id"] == "task-789"
     assert mock_commit.call_args.kwargs["push"] is True
-    mock_record.assert_called_once_with("task-789", mock_commit.return_value)
+    mock_log.assert_called_once()
+    assert mock_log.call_args.args[0] == "task-789"
     mock_prereqs.assert_called_once_with(
         client, "task-789", "summitflow", merge_subtask_branches=False
     )
@@ -266,7 +268,7 @@ def test_complete_task_claimed_checkpoint_auto_commits_dirty_branch_before_merge
         patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
         patch("cli.commands.done_task.is_working_tree_clean", side_effect=[False, True, True]),
         patch("cli.commands.done_task.commit_repo") as mock_commit,
-        patch("cli.commands.done_task._record_task_commit_event") as mock_record,
+        patch("app.storage.events.log_task_event") as mock_log,
         patch("cli.commands.done_task._task_branch_touched_frontend", return_value=False),
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-1"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
@@ -288,7 +290,8 @@ def test_complete_task_claimed_checkpoint_auto_commits_dirty_branch_before_merge
     assert mock_commit.call_args.kwargs["message"] == "finish task"
     assert mock_commit.call_args.kwargs["task_id"] == "task-1"
     assert mock_commit.call_args.kwargs["push"] is True
-    mock_record.assert_called_once_with("task-1", mock_commit.return_value)
+    mock_log.assert_called_once()
+    assert mock_log.call_args.args[0] == "task-1"
     mock_merge.assert_called_once_with("task-1", project_id="summitflow")
     client.update_status.assert_called_once_with("task-1", "completed", skip_gates=False)
     assert result["merged"] is True
