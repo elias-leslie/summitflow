@@ -144,12 +144,15 @@ def build_save_payload(
     audience_tags: str | None, exclude_audience_tags: str | None,
     change_reason: str | None,
     render_mode: str | None = None,
+    bypass_compactness: bool = False,
 ) -> dict[str, object]:
     """Build the payload dict for save-learning request."""
     payload: dict[str, object] = {
         "content": content, "injection_tier": tier,
         "confidence": confidence, "summary": summary,
     }
+    if bypass_compactness:
+        payload["bypass_compactness"] = True
     if context:
         payload["context"] = context
     if pinned:
@@ -212,7 +215,8 @@ def fetch_episode_tags(uuid: str) -> list[str]:
 
 
 def update_episode_content_or_tier(
-    episode_uuid: str, *, content: str | None, tier: str | None, change_reason: str | None = None,
+    episode_uuid: str, *, content: str | None, tier: str | None,
+    change_reason: str | None = None, bypass_compactness: bool = False,
 ) -> None:
     """Patch episode content and/or tier in place while preserving UUID."""
     payload: dict[str, object] = {}
@@ -222,6 +226,8 @@ def update_episode_content_or_tier(
         payload["injection_tier"] = tier
     if change_reason:
         payload["change_reason"] = change_reason
+    if bypass_compactness:
+        payload["bypass_compactness"] = True
     result = agent_hub_request(
         "PATCH", MEMORY_EPISODE_PATH.format(uuid=episode_uuid), json=payload, tool_name="st memory update",
     )

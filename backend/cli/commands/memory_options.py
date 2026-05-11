@@ -94,6 +94,19 @@ PinnedOpt = Annotated[
     typer.Option("--pinned", "-p", help="Pin episode (always inject regardless of budget)"),
 ]
 
+BypassCompactnessOpt = Annotated[
+    bool,
+    typer.Option(
+        "--bypass-compactness",
+        help=(
+            "Override: skip the strict-Caveman compactness gate. Use only when one "
+            "combined memory is more token-efficient than splitting into atomic rules "
+            "(e.g., cohesive multi-part system docs). Structural rules (header, "
+            "imperative, no lists, no conversational, summary length) still apply."
+        ),
+    ),
+]
+
 PinnedUpdateOpt = Annotated[
     bool | None,
     typer.Option(

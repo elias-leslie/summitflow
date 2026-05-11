@@ -828,6 +828,8 @@ class TestMemoryTagOptions:
             "abc12345",
             content="new content",
             tier="reference",
+            change_reason=None,
+            bypass_compactness=False,
         )
         mock_replace_tags.assert_called_once_with("abc12345", ["finance-relevant"])
 
