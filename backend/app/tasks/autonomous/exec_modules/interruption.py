@@ -15,7 +15,11 @@ class ExecutionInterrupted(Exception):
         super().__init__(reason)
 
 
-_INTERRUPT_STATUSES = {"paused", "cancelled", "completed", "failed"}
+# "completed" is intentionally excluded: an agent that runs `st done` mid-flight
+# flips status to completed; treating that as an interrupt winds the session
+# down to pending and skips the post-execution completion handler, stranding
+# the agent's commit on the task branch with no review/merge.
+_INTERRUPT_STATUSES = {"paused", "cancelled", "failed"}
 
 
 def assert_task_runnable(task_id: str, project_id: str, checkpoint: str) -> None:
