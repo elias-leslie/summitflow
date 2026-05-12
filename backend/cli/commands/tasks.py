@@ -370,12 +370,13 @@ def log(
     arg1: Annotated[str, typer.Argument(help="Task ID or message")],
     arg2: Annotated[str | None, typer.Argument(help="Message or legacy trailing task ID")] = None,
     task_id: Annotated[str | None, typer.Option("-t", "--task", help="Task ID")] = None,
+    message: Annotated[str | None, typer.Option("-m", "--message", help="Progress note")] = None,
 ) -> None:
     """Append a task log entry. Prefer `st log <task-id> "<message>"`."""
     from .tasks_commands import append_task_log
 
-    message, resolved_task_id = _resolve_log_inputs(arg1, arg2, task_id)
-    append_task_log(message, resolved_task_id, STClient())
+    resolved_message, resolved_task_id = _resolve_log_inputs(arg1, arg2, task_id, message)
+    append_task_log(resolved_message, resolved_task_id, STClient())
 
 
 @app.command("sync-progress")

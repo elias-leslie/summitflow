@@ -586,6 +586,20 @@ class TestTaskCliErgonomics:
         assert result.exit_code == 0
         mock_append.assert_called_once_with("hello world", "task-123", ANY)
 
+    def test_log_accepts_message_option_with_task_first(self) -> None:
+        with patch("cli.commands.tasks_commands.append_task_log") as mock_append:
+            result = runner.invoke(tasks_app, ["log", "task-123", "--message", "hello world"])
+
+        assert result.exit_code == 0
+        mock_append.assert_called_once_with("hello world", "task-123", ANY)
+
+    def test_log_accepts_message_option_with_explicit_task(self) -> None:
+        with patch("cli.commands.tasks_commands.append_task_log") as mock_append:
+            result = runner.invoke(tasks_app, ["log", "ignored", "--task", "task-123", "-m", "hello world"])
+
+        assert result.exit_code == 0
+        mock_append.assert_called_once_with("hello world", "task-123", ANY)
+
     def test_import_plan_refreshes_subtasks_before_reporting(self) -> None:
         schema_path = Path(__file__).resolve().parents[2] / "app" / "schemas" / "plan.schema.json"
         plan_path = Path(tempfile.mkdtemp()) / "plan.json"
