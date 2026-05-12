@@ -131,7 +131,24 @@ def resolve_log_inputs(
     arg1: str,
     arg2: str | None,
     task_id: str | None,
+    message: str | None = None,
 ) -> tuple[str, str]:
+    if message is not None:
+        if arg2:
+            typer.echo(
+                "Error: pass either positional message or --message, not both",
+                err=True,
+            )
+            raise typer.Exit(1)
+        resolved_task_id = task_id or (arg1 if looks_like_task_id(arg1) else None)
+        if not resolved_task_id:
+            typer.echo(
+                "Error: task id required via `st log <task-id> --message <message>` or `--task`",
+                err=True,
+            )
+            raise typer.Exit(1)
+        return message, resolved_task_id
+
     if task_id:
         return arg1, task_id
     if not arg2:
@@ -185,4 +202,3 @@ def merge_label_strings(labels: str | None, extra_label: str) -> str:
     if extra_label not in merged:
         merged.append(extra_label)
     return ",".join(merged)
-
