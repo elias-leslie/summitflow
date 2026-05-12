@@ -439,6 +439,7 @@ class TestTaskCliErgonomics:
         assert result.exit_code == 0
         assert "/schemas/plan" in result.output
         assert "backend/app/schemas/plan.schema.json" in result.output
+        assert '"complexity":"SIMPLE"' in result.output
 
     def test_create_rejects_plain_single_task_without_plan(self) -> None:
         result = runner.invoke(tasks_app, ["create", "Draft task"])
