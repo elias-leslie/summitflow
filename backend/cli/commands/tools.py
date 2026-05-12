@@ -420,9 +420,89 @@ def _format_audit_compact(data: dict[str, Any]) -> None:
             print(f"    ex: {example}")
 
 
-def _emit_feedback_for_audit(data: dict[str, Any]) -> None:
-    from .feedback_commands import report_impl
+def _find_exact_active_feedback(
+    *,
+    component_id: str,
+    feedback_type: str,
+    title: str,
+) -> dict[str, Any] | None:
+    from .feedback_api import feedback_request
+    from .feedback_helpers import FEEDBACK_API_PATH, build_filter_params
 
+    result = feedback_request(
+        "GET",
+        FEEDBACK_API_PATH,
+        params=build_filter_params(
+            "votes",
+            200,
+            component_id=component_id,
+            feedback_type=feedback_type,
+            status="active",
+        ),
+    )
+    for item in result.get("items", []):
+        if str(item.get("title") or "").casefold() == title.casefold():
+            return cast(dict[str, Any], item)
+    return None
+
+
+def _report_or_vote_feedback(
+    component_id: str,
+    title: str,
+    *,
+    feedback_type: str,
+    severity: str | None,
+    description: str,
+    project_id: str,
+    session_id: str | None,
+    agent_slug: str | None = None,
+) -> None:
+    from .feedback_api import feedback_request
+    from .feedback_commands import report_impl
+    from .feedback_formatters import output_feedback_deduped, output_feedback_existing
+    from .feedback_helpers import ALREADY_VOTED_MSG, FEEDBACK_API_PATH, build_vote_body
+
+    existing = _find_exact_active_feedback(
+        component_id=component_id,
+        feedback_type=feedback_type,
+        title=title,
+    )
+    if existing:
+        item_id = str(existing.get("id") or "")
+        if session_id and item_id:
+            vote = feedback_request(
+                "POST",
+                f"{FEEDBACK_API_PATH}/{item_id}/vote",
+                json=build_vote_body(
+                    session_id,
+                    comment=description,
+                    agent_slug=agent_slug,
+                    model_used=None,
+                ),
+            )
+            refreshed = feedback_request("GET", f"{FEEDBACK_API_PATH}/{item_id}")
+            if vote.get("message") == ALREADY_VOTED_MSG:
+                output_feedback_existing(refreshed)
+            else:
+                output_feedback_deduped(refreshed)
+            return
+        output_feedback_existing(existing)
+        return
+
+    report_impl(
+        component_id,
+        title,
+        feedback_type=feedback_type,
+        severity=severity,
+        description=description,
+        project_id=project_id,
+        session_id=session_id,
+        agent_slug=agent_slug,
+        vote_if_duplicate=True,
+    )
+
+
+def _emit_feedback_for_audit(data: dict[str, Any]) -> None:
     hours = int(data.get("window_hours") or 24)
     grouped: dict[tuple[str, str, str, str], dict[str, Any]] = {}
     for item in data.get("findings", []):
@@ -465,7 +545,7 @@ def _emit_feedback_for_audit(data: dict[str, Any]) -> None:
             f"Projects: {project_summary or 'none captured'}. "
             f"Examples: {example_summary or 'none captured'}"
         )
-        report_impl(
+        _report_or_vote_feedback(
             component,
             f"Tool governance: {finding_type.replace('_', ' ')}",
             feedback_type="friction",
@@ -474,7 +554,6 @@ def _emit_feedback_for_audit(data: dict[str, Any]) -> None:
             project_id=str(data.get("project") or "summitflow"),
             session_id=cast(str | None, bucket.get("session_id")),
             agent_slug=cast(str | None, bucket.get("agent_slug")),
-            vote_if_duplicate=True,
         )
 
 
@@ -638,8 +717,6 @@ def _format_cost_compact(data: dict[str, Any]) -> None:
 
 
 def _emit_feedback_for_cost(data: dict[str, Any]) -> None:
-    from .feedback_commands import report_impl
-
     costs = {item["density"]: item for item in data.get("manifest_costs", [])}
     core_tokens = int(costs.get("core", {}).get("tokens_approx") or 0)
     full_tokens = int(costs.get("full", {}).get("tokens_approx") or 0)
@@ -649,7 +726,7 @@ def _emit_feedback_for_cost(data: dict[str, Any]) -> None:
     feedback_session_id = data.get("feedback_session_id")
     if not feedback_session_id:
         return
-    report_impl(
+    _report_or_vote_feedback(
         "xc.tool_registry",
         "Tool governance: compact manifest saves prompt tokens",
         feedback_type="improvement",
@@ -660,7 +737,6 @@ def _emit_feedback_for_cost(data: dict[str, Any]) -> None:
         ),
         project_id="summitflow",
         session_id=str(feedback_session_id),
-        vote_if_duplicate=True,
     )
 
 

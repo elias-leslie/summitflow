@@ -224,7 +224,7 @@ def test_audit_command_uses_fetcher(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_audit_emit_feedback_groups_duplicate_finding_types(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
-        "cli.commands.feedback_commands.report_impl",
+        "cli.commands.tools._report_or_vote_feedback",
         lambda *args, **kwargs: calls.append({"args": args, "kwargs": kwargs}),
     )
 
@@ -263,7 +263,6 @@ def test_audit_emit_feedback_groups_duplicate_finding_types(monkeypatch: pytest.
     kwargs = cast(dict[str, Any], calls[0]["kwargs"])
     assert kwargs["project_id"] == "summitflow"
     assert kwargs["session_id"] == "session-a"
-    assert kwargs["vote_if_duplicate"] is True
     assert "agent-hub:2" in kwargs["description"]
     assert "summitflow:3" in kwargs["description"]
 
@@ -342,7 +341,7 @@ def test_cost_emit_feedback_requires_session_id(monkeypatch: pytest.MonkeyPatch)
         },
     )
     monkeypatch.setattr(
-        "cli.commands.feedback_commands.report_impl",
+        "cli.commands.tools._report_or_vote_feedback",
         lambda *args, **kwargs: calls.append({"args": args, "kwargs": kwargs}),
     )
 
@@ -370,7 +369,7 @@ def test_cost_emit_feedback_votes_duplicate_with_session_id(monkeypatch: pytest.
         },
     )
     monkeypatch.setattr(
-        "cli.commands.feedback_commands.report_impl",
+        "cli.commands.tools._report_or_vote_feedback",
         lambda *args, **kwargs: calls.append({"args": args, "kwargs": kwargs}),
     )
 
@@ -380,4 +379,3 @@ def test_cost_emit_feedback_votes_duplicate_with_session_id(monkeypatch: pytest.
     assert calls
     kwargs = cast(dict[str, Any], calls[0]["kwargs"])
     assert kwargs["session_id"] == "session-123"
-    assert kwargs["vote_if_duplicate"] is True
