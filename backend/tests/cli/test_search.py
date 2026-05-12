@@ -469,6 +469,36 @@ def test_search_text_mode_scope_checkout_reads_local_matches_without_api() -> No
     mock_client.assert_not_called()
 
 
+def test_search_text_mode_checkout_path_file_treats_pipe_as_literal() -> None:
+    with runner.isolated_filesystem():
+        file_path = Path("backend/cli/example.py")
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(
+            'line = "HARNESS:{mode}|reasons:{reason_text}"\n',
+            encoding="utf-8",
+        )
+
+        with (
+            patch("cli.commands.search.is_compact", return_value=True),
+            patch("cli.commands.search.resolve_checkout_root", return_value=Path.cwd(), create=True),
+            patch("cli.commands.search.canonical_repo_root", return_value=Path("/srv/workspaces/projects/summitflow"), create=True),
+            patch("cli.commands.search.STClient") as mock_client,
+        ):
+            result = _invoke([
+                "HARNESS:{mode}|reasons",
+                "--text",
+                "--scope",
+                "checkout",
+                "--path",
+                "backend/cli/example.py",
+            ])
+
+    assert result.exit_code == 0
+    assert "SEARCH:HARNESS:{mode}|reasons|mode=text|matches=1|files=1|scope=checkout|path=backend/cli/example.py" in result.output
+    assert "backend/cli/example.py:1" in result.output
+    mock_client.assert_not_called()
+
+
 def test_search_scope_checkout_errors_when_no_checkout_root_exists() -> None:
     with (
         patch("cli.commands.search.resolve_checkout_root", return_value=None, create=True),
