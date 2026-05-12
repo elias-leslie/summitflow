@@ -4,8 +4,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import typer
+from typer.testing import CliRunner
 
-from cli.commands.done import _handle_task_completion, _refuse_if_autocode_owned
+from cli.commands.done import _handle_task_completion, _refuse_if_autocode_owned, app
+
+runner = CliRunner()
 
 
 def test_refuse_when_task_is_claimed_by_autocode_dispatcher() -> None:
@@ -75,3 +78,23 @@ def test_task_completion_uses_task_project_client_after_global_lookup() -> None:
         skip_diff_gate=True,
     )
     mock_gate.assert_any_call("portfolio-ai", allow_task_id="task-1")
+
+
+def test_done_dotted_id_uses_subtask_completion_path() -> None:
+    with (
+        patch("cli.commands.done.STClient") as mock_client_cls,
+        patch("cli.commands.done.complete_subtask") as mock_complete_subtask,
+        patch("cli.commands.done.complete_task") as mock_complete_task,
+        patch("cli.commands.done.output_success"),
+    ):
+        result = runner.invoke(app, ["1.1", "--task", "task-parent"])
+
+    assert result.exit_code == 0
+    mock_client_cls.assert_called_once_with()
+    mock_complete_subtask.assert_called_once_with(
+        mock_client_cls.return_value,
+        "1.1",
+        "task-parent",
+        None,
+    )
+    mock_complete_task.assert_not_called()
