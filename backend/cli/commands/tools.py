@@ -424,26 +424,56 @@ def _emit_feedback_for_audit(data: dict[str, Any]) -> None:
     from .feedback_commands import report_impl
 
     hours = int(data.get("window_hours") or 24)
+    grouped: dict[tuple[str, str, str, str], dict[str, Any]] = {}
     for item in data.get("findings", []):
-        examples = "; ".join(str(example) for example in item.get("examples", [])[:2])
-        description = (
-            f"{item.get('count', 0)} event(s) in {hours}h. "
-            f"Expected surface: {item.get('expected_surface', '?')}. "
-            f"Examples: {examples or 'none captured'}"
-        )
-        project_id = str(item.get("project_id") or data.get("project") or "summitflow")
-        if project_id == "unknown":
-            project_id = str(data.get("project") or "summitflow")
-        agent_slug = str(item.get("agent_slug") or "")
-        report_impl(
+        key = (
             str(item.get("component") or "xc.tool_registry"),
-            f"Tool governance: {str(item.get('finding_type', 'missed_tool')).replace('_', ' ')}",
+            str(item.get("finding_type") or "missed_tool"),
+            str(item.get("expected_surface") or "?"),
+            str(item.get("severity") or "medium"),
+        )
+        bucket = grouped.setdefault(
+            key,
+            {
+                "count": 0,
+                "projects": {},
+                "examples": [],
+                "session_id": None,
+                "agent_slug": None,
+            },
+        )
+        bucket["count"] += int(item.get("count") or 0)
+        projects = cast(dict[str, int], bucket["projects"])
+        project_id = str(item.get("project_id") or "unknown")
+        projects[project_id] = projects.get(project_id, 0) + int(item.get("count") or 0)
+        examples = cast(list[str], bucket["examples"])
+        examples.extend(str(example) for example in item.get("examples", [])[:2])
+        if bucket["session_id"] is None:
+            bucket["session_id"] = (item.get("session_ids") or [None])[0]
+        agent_slug = str(item.get("agent_slug") or "")
+        if bucket["agent_slug"] is None and agent_slug and agent_slug != "unknown":
+            bucket["agent_slug"] = agent_slug
+
+    for (component, finding_type, expected_surface, severity), bucket in grouped.items():
+        projects = cast(dict[str, int], bucket["projects"])
+        examples = cast(list[str], bucket["examples"])
+        project_summary = ", ".join(f"{project}:{count}" for project, count in sorted(projects.items()))
+        example_summary = "; ".join(examples[:3])
+        description = (
+            f"{bucket.get('count', 0)} event(s) in {hours}h. "
+            f"Expected surface: {expected_surface}. "
+            f"Projects: {project_summary or 'none captured'}. "
+            f"Examples: {example_summary or 'none captured'}"
+        )
+        report_impl(
+            component,
+            f"Tool governance: {finding_type.replace('_', ' ')}",
             feedback_type="friction",
-            severity=str(item.get("severity") or "medium"),
+            severity=severity,
             description=description,
-            project_id=project_id,
-            session_id=(item.get("session_ids") or [None])[0],
-            agent_slug=agent_slug if agent_slug != "unknown" else None,
+            project_id=str(data.get("project") or "summitflow"),
+            session_id=cast(str | None, bucket.get("session_id")),
+            agent_slug=cast(str | None, bucket.get("agent_slug")),
             vote_if_duplicate=True,
         )
 
@@ -510,8 +540,17 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = "verification
         ORDER BY output_chars DESC, events DESC, tool_name
         LIMIT %s;
     """
+    session_sql = """
+        SELECT session_id
+        FROM session_events
+        WHERE created_at >= now() - (%s * interval '1 hour')
+          AND session_id IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT 1;
+    """
     request_rows: list[tuple[Any, ...]]
     output_rows: list[tuple[Any, ...]]
+    feedback_session_id: str | None
     with (
         _psql_project_lock("agent-hub"),
         psycopg.connect(
@@ -521,6 +560,8 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = "verification
     ):
         request_rows = conn.execute(request_sql, (hours, limit)).fetchall()
         output_rows = conn.execute(output_sql, (hours, limit)).fetchall()
+        session_row = conn.execute(session_sql, (hours,)).fetchone()
+        feedback_session_id = str(session_row[0]) if session_row else None
 
     request_hotspots = [
         {
@@ -558,6 +599,7 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = "verification
         "manifest_costs": _manifest_density_costs(task),
         "request_hotspots": request_hotspots,
         "tool_output_hotspots": output_hotspots,
+        "feedback_session_id": feedback_session_id,
     }
 
 
@@ -604,6 +646,9 @@ def _emit_feedback_for_cost(data: dict[str, Any]) -> None:
     saved = full_tokens - core_tokens
     if saved < 500:
         return
+    feedback_session_id = data.get("feedback_session_id")
+    if not feedback_session_id:
+        return
     report_impl(
         "xc.tool_registry",
         "Tool governance: compact manifest saves prompt tokens",
@@ -614,6 +659,7 @@ def _emit_feedback_for_cost(data: dict[str, Any]) -> None:
             f"estimated saving is ~{saved} tokens per compact injection."
         ),
         project_id="summitflow",
+        session_id=str(feedback_session_id),
         vote_if_duplicate=True,
     )
 

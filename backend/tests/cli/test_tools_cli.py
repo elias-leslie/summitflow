@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import patch
 
 import httpx
@@ -11,6 +12,7 @@ from typer.testing import CliRunner
 from cli.commands.tools import (
     _api_request,
     _build_internal_headers,
+    _emit_feedback_for_audit,
     _format_adoption_compact,
     _format_audit_compact,
     _format_cost_compact,
@@ -219,6 +221,53 @@ def test_audit_command_uses_fetcher(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "No high-confidence tool-governance findings." in result.output
 
 
+def test_audit_emit_feedback_groups_duplicate_finding_types(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "cli.commands.feedback_commands.report_impl",
+        lambda *args, **kwargs: calls.append({"args": args, "kwargs": kwargs}),
+    )
+
+    _emit_feedback_for_audit(
+        {
+            "window_hours": 24,
+            "findings": [
+                {
+                    "component": "sf.quality",
+                    "finding_type": "missing_quality_gate",
+                    "expected_surface": "st.check",
+                    "severity": "medium",
+                    "count": 2,
+                    "project_id": "agent-hub",
+                    "agent_slug": "unknown",
+                    "examples": ["session-a"],
+                    "session_ids": ["session-a"],
+                },
+                {
+                    "component": "sf.quality",
+                    "finding_type": "missing_quality_gate",
+                    "expected_surface": "st.check",
+                    "severity": "medium",
+                    "count": 3,
+                    "project_id": "summitflow",
+                    "agent_slug": "worker",
+                    "examples": ["session-b"],
+                    "session_ids": ["session-b"],
+                },
+            ],
+        }
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["args"] == ("sf.quality", "Tool governance: missing quality gate")
+    kwargs = cast(dict[str, Any], calls[0]["kwargs"])
+    assert kwargs["project_id"] == "summitflow"
+    assert kwargs["session_id"] == "session-a"
+    assert kwargs["vote_if_duplicate"] is True
+    assert "agent-hub:2" in kwargs["description"]
+    assert "summitflow:3" in kwargs["description"]
+
+
 def test_cost_compact_shows_manifest_and_hotspots(capsys: pytest.CaptureFixture[str]) -> None:
     _format_cost_compact(
         {
@@ -274,3 +323,61 @@ def test_cost_command_uses_fetcher(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result.exit_code == 0
     assert "TOOLS_COST[2h]:manifest_core~10t task(backend)~20t full~40t" in result.output
+
+
+def test_cost_emit_feedback_requires_session_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "cli.commands.tools._fetch_cost_metrics",
+        lambda hours, limit, task: {
+            "window_hours": hours,
+            "manifest_costs": [
+                {"density": "core", "task": None, "tokens_approx": 100},
+                {"density": "task", "task": task, "tokens_approx": 200},
+                {"density": "full", "task": None, "tokens_approx": 900},
+            ],
+            "request_hotspots": [],
+            "tool_output_hotspots": [],
+        },
+    )
+    monkeypatch.setattr(
+        "cli.commands.feedback_commands.report_impl",
+        lambda *args, **kwargs: calls.append({"args": args, "kwargs": kwargs}),
+    )
+
+    result = runner.invoke(app, ["cost", "--emit-feedback"])
+
+    assert result.exit_code == 0
+    assert not calls
+
+
+def test_cost_emit_feedback_votes_duplicate_with_session_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "cli.commands.tools._fetch_cost_metrics",
+        lambda hours, limit, task: {
+            "window_hours": hours,
+            "feedback_session_id": "session-123",
+            "manifest_costs": [
+                {"density": "core", "task": None, "tokens_approx": 100},
+                {"density": "task", "task": task, "tokens_approx": 200},
+                {"density": "full", "task": None, "tokens_approx": 900},
+            ],
+            "request_hotspots": [],
+            "tool_output_hotspots": [],
+        },
+    )
+    monkeypatch.setattr(
+        "cli.commands.feedback_commands.report_impl",
+        lambda *args, **kwargs: calls.append({"args": args, "kwargs": kwargs}),
+    )
+
+    result = runner.invoke(app, ["cost", "--emit-feedback"])
+
+    assert result.exit_code == 0
+    assert calls
+    kwargs = cast(dict[str, Any], calls[0]["kwargs"])
+    assert kwargs["session_id"] == "session-123"
+    assert kwargs["vote_if_duplicate"] is True

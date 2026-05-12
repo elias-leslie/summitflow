@@ -1,6 +1,6 @@
 """Scheduled (cron) workflows for SummitFlow.
 
-14 cron workflows on Hatchet schedule; 11 enabled by default.
+15 cron workflows on Hatchet schedule; 12 enabled by default.
 Autonomous work pickup is explicit opt-in so missing project config cannot dispatch work.
 Most use ConcurrencyExpression with CANCEL_IN_PROGRESS; explorer maintenance shares
 CANCEL_NEWEST concurrency so scan/index jobs do not overlap.
@@ -337,6 +337,28 @@ async def task_generation_wf(input: ProjectInput, ctx: Context) -> dict[str, Any
     if input.project_id == SUMMITFLOW_CONTROL_PROJECT_ID:
         return await _run_project_schedule_for_enabled_projects("task_generation")
     return await _run_task_generation_for_project(input.project_id)
+
+
+@hatchet.task(
+    name="summitflow-tool-governance",
+    input_validator=EmptyInput,
+    execution_timeout="300s",
+    retries=2,
+    backoff_factor=2.0,
+    on_crons=["40 16 * * *"],
+    concurrency=ConcurrencyExpression(
+        expression="'summitflow-tool-governance'",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+    ),
+)
+async def tool_governance_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from ..tasks.tool_governance import run_tool_governance_scan
+
+    if not _system_schedule_enabled("tool_governance"):
+        return _disabled_schedule_result("tool_governance")
+
+    return await asyncio.to_thread(run_tool_governance_scan)
 
 
 @hatchet.task(

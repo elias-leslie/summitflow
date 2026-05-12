@@ -152,6 +152,14 @@ SCHEDULE_DEFINITIONS: tuple[AutonomousScheduleDefinition, ...] = (
         scope="system",
         default_enabled=False,
     ),
+    AutonomousScheduleDefinition(
+        schedule_id="tool_governance",
+        config_key="tool_governance_enabled",
+        label="Tool governance scan",
+        description="Runs the daily st tool adoption, missed-tool, and context-cost scan and emits deduped feedback for actionable findings.",
+        cron="40 16 * * *",
+        scope="system",
+    ),
 )
 
 _SCHEDULE_INDEX = {definition.schedule_id: definition for definition in SCHEDULE_DEFINITIONS}
