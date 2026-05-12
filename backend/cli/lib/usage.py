@@ -17,6 +17,22 @@ from typing import Any
 import typer
 
 USAGE_ATTR = "__st_usage__"
+VALID_MANIFEST_DENSITIES = ("core", "task", "full")
+
+_CORE_SURFACES = {
+    "st.pulse",
+    "st.search",
+    "st.check",
+    "st.db",
+    "st.service.rebuild",
+    "st.memory.search",
+    "st.tools.status",
+    "st.tools.adoption",
+    "st.tools.audit",
+    "st.tools.cost",
+    "st.feedback.report",
+    "st.agents.preview",
+}
 
 
 @dataclass(frozen=True)
@@ -53,6 +69,15 @@ class UsageSpec:
         if self.consumer_profiles:
             out["consumer_profiles"] = list(self.consumer_profiles)
         return out
+
+
+def _detail_spec() -> UsageSpec:
+    return UsageSpec(
+        surface="st.details",
+        cmd="st tools manifest --surface <surface>",
+        when="need exact command guidance for a surface omitted from compact context",
+        tier="reference",
+    )
 
 
 def usage(
@@ -149,6 +174,38 @@ def filter_specs(
         if consumer_profile is not None and spec.consumer_profiles and consumer_profile not in spec.consumer_profiles:
             continue
         out.append(spec)
+    return out
+
+
+def select_specs_for_density(
+    specs: Iterable[UsageSpec],
+    *,
+    density: str = "full",
+    task_type: str | None = None,
+) -> list[UsageSpec]:
+    """Select a context-density slice while keeping @usage as the source of truth."""
+    if density not in VALID_MANIFEST_DENSITIES:
+        expected = "|".join(VALID_MANIFEST_DENSITIES)
+        raise ValueError(f"density must be {expected}, got {density!r}")
+
+    spec_list = list(specs)
+    if density == "full":
+        return spec_list
+
+    out: list[UsageSpec] = []
+    seen: set[str] = set()
+    for spec in spec_list:
+        include_core = spec.surface in _CORE_SURFACES
+        include_task = bool(task_type and spec.task_types and task_type in spec.task_types)
+        if not include_core and (density == "core" or not include_task):
+            continue
+        if spec.surface in seen:
+            continue
+        seen.add(spec.surface)
+        out.append(spec)
+
+    if "st.details" not in seen:
+        out.append(_detail_spec())
     return out
 
 

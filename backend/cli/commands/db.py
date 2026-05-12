@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import fcntl
+import hashlib
 import os
 import re
 import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import typer
@@ -83,20 +87,65 @@ def _db_url(project: str) -> str:
     raise typer.Exit(1) from None
 
 
-def _run_psql(project: str, sql: str, *, tuples_only: bool = False) -> int:
+def _safe_detail_part(value: str) -> str:
+    part = re.sub(r"[^A-Za-z0-9_.-]+", "-", value.strip()).strip("-._")
+    return part[:48] or "item"
+
+
+def _psql_detail_name(project: str, kind: str, *parts: str, sql: str | None = None) -> str:
+    name_parts = [f"db-{_safe_detail_part(project)}", _safe_detail_part(kind)]
+    name_parts.extend(_safe_detail_part(part) for part in parts if part)
+    if sql is not None:
+        digest = hashlib.sha1(sql.encode("utf-8")).hexdigest()[:8]
+        name_parts.append(digest)
+    return "-".join(name_parts)
+
+
+@contextmanager
+def _psql_project_lock(project: str) -> Iterator[None]:
+    root = _details_root(project)
+    lock_dir = root / ".dev-tools"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_dir / f"db-{_safe_detail_part(project)}-psql.lock"
+    with lock_path.open("w", encoding="utf-8") as lock_file:
+        # Local st db probes are short-lived; serializing them avoids exhausting
+        # small development PostgreSQL connection pools during parallel agent work.
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _run_psql(
+    project: str,
+    sql: str,
+    *,
+    tuples_only: bool = False,
+    detail_name: str | None = None,
+) -> int:
     args = ["psql", _db_url(project)]
     if tuples_only:
         args.extend(["-t", "-A"])
     args.extend(["-c", sql])
-    result = subprocess.run(
-        args,
-        text=True,
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
+    env = os.environ.copy()
+    env.setdefault("PGAPPNAME", f"st-db-{project}")
+    with _psql_project_lock(project):
+        result = subprocess.run(
+            args,
+            env=env,
+            text=True,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    emit_result_or_details(
+        _details_root(project),
+        detail_name or _psql_detail_name(project, "psql", sql=sql),
+        "DB",
+        result,
     )
-    emit_result_or_details(_details_root(project), f"db-{project}-psql", "DB", result)
     return result.returncode
 
 
@@ -261,9 +310,17 @@ def db(ctx: typer.Context) -> None:
         raise typer.Exit(_workbench(project, rest))
     if command == "tables":
         if rest[:1] == ["--counts"]:
-            raise typer.Exit(_run_psql(project, _tables_counts_sql()))
+            raise typer.Exit(
+                _run_psql(
+                    project,
+                    _tables_counts_sql(),
+                    detail_name=_psql_detail_name(project, "tables-counts"),
+                )
+            )
         sql = "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;"
-        raise typer.Exit(_run_psql(project, sql, tuples_only=True))
+        raise typer.Exit(
+            _run_psql(project, sql, tuples_only=True, detail_name=_psql_detail_name(project, "tables"))
+        )
     if command == "schema" and rest:
         table = rest[0]
         sql = f"""
@@ -273,12 +330,25 @@ def db(ctx: typer.Context) -> None:
             ORDER BY ordinal_position;
             SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = '{table}';
         """
-        raise typer.Exit(_run_psql(project, sql))
+        raise typer.Exit(_run_psql(project, sql, detail_name=_psql_detail_name(project, "schema", table)))
     if command == "count" and rest:
-        raise typer.Exit(_run_psql(project, f"SELECT COUNT(*) FROM {rest[0]};", tuples_only=True))
+        raise typer.Exit(
+            _run_psql(
+                project,
+                f"SELECT COUNT(*) FROM {rest[0]};",
+                tuples_only=True,
+                detail_name=_psql_detail_name(project, "count", rest[0]),
+            )
+        )
     if command == "sample" and rest:
         limit = rest[1] if len(rest) > 1 else "10"
-        raise typer.Exit(_run_psql(project, f"SELECT * FROM {rest[0]} LIMIT {limit};"))
+        raise typer.Exit(
+            _run_psql(
+                project,
+                f"SELECT * FROM {rest[0]} LIMIT {limit};",
+                detail_name=_psql_detail_name(project, "sample", rest[0]),
+            )
+        )
     if command == "sizes":
         sql = """
             SELECT relname AS table_name,
@@ -287,10 +357,17 @@ def db(ctx: typer.Context) -> None:
             FROM pg_catalog.pg_statio_user_tables
             ORDER BY pg_total_relation_size(relid) DESC;
         """
-        raise typer.Exit(_run_psql(project, sql))
+        raise typer.Exit(_run_psql(project, sql, detail_name=_psql_detail_name(project, "sizes")))
     if command == "indexes":
         where = f" AND tablename = '{rest[0]}'" if rest else ""
-        raise typer.Exit(_run_psql(project, f"SELECT tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = 'public'{where} ORDER BY tablename, indexname;"))
+        table_part = rest[0] if rest else "all"
+        raise typer.Exit(
+            _run_psql(
+                project,
+                f"SELECT tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = 'public'{where} ORDER BY tablename, indexname;",
+                detail_name=_psql_detail_name(project, "indexes", table_part),
+            )
+        )
     if command == "query":
         plain = rest[:1] in (["-t"], ["--plain"])
         sql = rest[1] if plain and len(rest) > 1 else (rest[0] if rest else "")
@@ -300,19 +377,28 @@ def db(ctx: typer.Context) -> None:
         if not _is_read_query(sql):
             output_error("Write operations blocked. Use st db exec or migrations.")
             raise typer.Exit(1)
-        raise typer.Exit(_run_psql(project, sql, tuples_only=plain))
+        raise typer.Exit(
+            _run_psql(
+                project,
+                sql,
+                tuples_only=plain,
+                detail_name=_psql_detail_name(project, "query", sql=sql),
+            )
+        )
     if command == "exec" and rest:
         sql = rest[0]
         if not _exec_allowed(sql):
             output_error("Destructive DDL blocked by st db exec. Use migrations.")
             raise typer.Exit(1)
-        raise typer.Exit(_run_psql(project, sql))
+        raise typer.Exit(
+            _run_psql(project, sql, detail_name=_psql_detail_name(project, "exec", sql=sql))
+        )
     if command == "ddl" and rest:
         sql = rest[0]
         if not _ddl_allowed(sql):
             output_error("DDL blocked. Allowed: CREATE INDEX, ALTER TABLE <table> ADD ...")
             raise typer.Exit(1)
-        raise typer.Exit(_run_psql(project, sql))
+        raise typer.Exit(_run_psql(project, sql, detail_name=_psql_detail_name(project, "ddl", sql=sql)))
     if command == "migrate" and rest:
         sub = rest[0]
         if sub == "status":
