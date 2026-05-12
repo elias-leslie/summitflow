@@ -43,7 +43,11 @@ def _validate_subtask_deps(subtasks: list[dict], valid_ids: set) -> list[str]:
     issues: list[str] = []
     for subtask in subtasks:
         subtask_id = subtask.get("id", "?")
-        for dep in subtask.get("depends_on", []):
+        raw_depends_on = subtask.get("depends_on")
+        if "depends_on" in subtask and not isinstance(raw_depends_on, list):
+            issues.append(f"subtask {subtask_id} depends_on must be an array")
+            continue
+        for dep in raw_depends_on or []:
             if dep not in valid_ids:
                 issues.append(f"subtask {subtask_id} depends_on '{dep}' which doesn't exist")
             if dep == subtask_id:

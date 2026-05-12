@@ -1858,6 +1858,27 @@ class TestVerifyPlanGates:
             assert result.exit_code == 1
             assert "1.99" in result.output
 
+    def test_verify_reports_null_subtask_depends_on(self) -> None:
+        """st verify reports null depends_on as a validation error."""
+        plan = {
+            "title": "Test plan with null dep",
+            "objective": "Test objective",
+            "task_type": "task",
+            "complexity": "SIMPLE",
+            "subtasks": [
+                {"id": "1.1", "description": "First", "depends_on": None},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(plan, f)
+            f.flush()
+
+            result = runner.invoke(tasks_app, ["verify", f.name])
+
+            assert result.exit_code == 1
+            assert "subtask 1.1 depends_on must be an array" in result.output
+
 
     def test_build_pre_close_review_packet_falls_back_to_pending_for_legacy_primary_task_shape(self) -> None:
         from cli.commands.tasks_critique import _build_review_packet
