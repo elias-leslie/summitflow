@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import ast
-import contextlib
 import os
 import shlex
 import shutil
@@ -14,6 +12,7 @@ from typing import Any
 import typer
 
 from ..details import display_path, summary_hint, write_details
+from ..lib.architecture_check import run_architecture_check
 from ..lib.cleanroom import main as cleanroom_main
 from ..lib.usage import usage
 from ..output import output_error
@@ -65,18 +64,6 @@ _TOOL_CONFIG_PATHS: dict[str, set[str]] = {
         "yarn.lock",
     },
 }
-
-_ARCH_CHECK_DIRS = (
-    Path("backend/app/api"),
-    Path("backend/app/services"),
-    Path("backend/app/utils"),
-)
-_ARCH_ALLOWLIST = {
-    Path("backend/app/utils/safe_subprocess.py"),
-}
-_SUBPROCESS_CALLS = {"run", "Popen", "call", "check_call", "check_output"}
-_ASYNC_SUBPROCESS_CALLS = {"create_subprocess_exec", "create_subprocess_shell"}
-
 
 def _is_pytest_test_path(path: Path) -> bool:
     return (
@@ -329,7 +316,7 @@ def _run_selected(
 ) -> int:
     root = _repo_root()
     changed_files = _changed_files(root) if changed_only else []
-    failures = 1 if _run_architecture_check(root, changed_files if changed_only else None) != 0 else 0
+    failures = 1 if run_architecture_check(root, changed_files if changed_only else None) != 0 else 0
     for name in selected:
         config = configs[name]
         cwd = _workdir(root, config)
@@ -345,115 +332,8 @@ def _run_selected(
             label = config.get("label") or name.upper()
             print(f"{label!s}:SKIP:{name}:no_relevant_changed_paths")
             continue
-        failures += (
-            _run_tool(name, config, [*scoped_args, *(_fix_args(name) if fix else [])]) != 0
-        )
+        failures += _run_tool(name, config, [*scoped_args, *(_fix_args(name) if fix else [])]) != 0
     return 1 if failures else 0
-
-
-def _run_architecture_check(root: Path, changed_files: list[str] | None) -> int:
-    paths = _architecture_paths(root, changed_files)
-    if changed_files is not None and not paths:
-        print("ARCH:SKIP:architecture:no_changed_paths")
-        return 0
-    violations = _unsafe_subprocess_violations(root, paths)
-    output = "\n".join(violations)
-    details = write_details(root, "architecture", output)
-    if violations:
-        print(
-            f"ARCH:FAIL:1|details:{display_path(root, details)}|"
-            f"hint:{summary_hint(output)}"
-        )
-        return 1
-    print(f"ARCH:OK:architecture|details:{display_path(root, details)}")
-    return 0
-
-
-def _architecture_paths(root: Path, changed_files: list[str] | None) -> list[Path]:
-    if changed_files is not None:
-        candidates = [root / rel_path for rel_path in changed_files]
-    else:
-        candidates = [
-            path
-            for base in _ARCH_CHECK_DIRS
-            for path in (root / base).rglob("*.py")
-        ]
-    paths: list[Path] = []
-    for candidate in candidates:
-        with contextlib.suppress(OSError, ValueError):
-            rel = candidate.resolve().relative_to(root.resolve())
-            if (
-                candidate.is_file()
-                and candidate.suffix == ".py"
-                and rel not in _ARCH_ALLOWLIST
-                and any(rel.is_relative_to(base) for base in _ARCH_CHECK_DIRS)
-            ):
-                paths.append(candidate)
-    return sorted(set(paths))
-
-
-def _unsafe_subprocess_violations(root: Path, paths: list[Path]) -> list[str]:
-    violations: list[str] = []
-    for path in paths:
-        rel_path = path.relative_to(root).as_posix()
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel_path)
-        except (OSError, SyntaxError) as exc:
-            violations.append(f"{rel_path}:1 cannot scan architecture gate: {exc}")
-            continue
-        violations.extend(_unsafe_subprocess_calls(rel_path, tree))
-    return violations
-
-
-def _unsafe_subprocess_calls(rel_path: str, tree: ast.AST) -> list[str]:
-    subprocess_names = {"subprocess"}
-    asyncio_names = {"asyncio"}
-    banned_names: dict[str, str] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                name = alias.asname or alias.name
-                if alias.name == "subprocess":
-                    subprocess_names.add(name)
-                elif alias.name == "asyncio":
-                    asyncio_names.add(name)
-        elif isinstance(node, ast.ImportFrom):
-            if node.module == "subprocess":
-                for alias in node.names:
-                    if alias.name in _SUBPROCESS_CALLS:
-                        banned_names[alias.asname or alias.name] = alias.name
-            elif node.module == "asyncio":
-                for alias in node.names:
-                    if alias.name in _ASYNC_SUBPROCESS_CALLS:
-                        banned_names[alias.asname or alias.name] = alias.name
-
-    violations: list[str] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        name = _banned_call_name(node.func, subprocess_names, asyncio_names, banned_names)
-        if name:
-            violations.append(
-                f"{rel_path}:{node.lineno} raw {name} in web app code; use app.utils.safe_subprocess or os.posix_spawn"
-            )
-    return violations
-
-
-def _banned_call_name(
-    func: ast.expr,
-    subprocess_names: set[str],
-    asyncio_names: set[str],
-    banned_names: dict[str, str],
-) -> str | None:
-    if isinstance(func, ast.Name):
-        return banned_names.get(func.id)
-    if not isinstance(func, ast.Attribute):
-        return None
-    if func.attr in _SUBPROCESS_CALLS and isinstance(func.value, ast.Name) and func.value.id in subprocess_names:
-        return f"subprocess.{func.attr}"
-    if func.attr in _ASYNC_SUBPROCESS_CALLS and isinstance(func.value, ast.Name) and func.value.id in asyncio_names:
-        return f"asyncio.{func.attr}"
-    return None
 
 
 def _fix_args(name: str) -> list[str]:
@@ -485,6 +365,74 @@ def _normalize_explicit_args(root: Path, cwd: Path, args: list[str]) -> list[str
             continue
         normalized.append(arg)
     return normalized
+
+
+def _extract_check_options(args: list[str]) -> tuple[list[str], bool, bool]:
+    changed_only = False
+    args = [
+        arg
+        for arg in args
+        if not (arg in {"--changed-only", "-d"} and (changed_only := True))
+    ]
+    fix = "--fix" in args
+    args = ["--fix"] if args == ["--fix"] else [arg for arg in args if arg != "--fix"]
+    if changed_only and not args:
+        args = ["--quick"]
+    return args, changed_only, fix
+
+
+def _run_named_tool(
+    first: str,
+    args: list[str],
+    configs: dict[str, dict[str, Any]],
+    *,
+    changed_only: bool,
+    fix: bool,
+) -> int | None:
+    if first not in configs:
+        return None
+    root = _repo_root()
+    config = configs[first]
+    cwd = _workdir(root, config)
+    explicit_args = _normalize_explicit_args(root, cwd, _strip_separator(args[1:]))
+    changed_files = _changed_files(root) if changed_only else []
+    scoped_args = [] if explicit_args else _changed_args(
+        first,
+        root,
+        cwd,
+        config,
+        changed_files,
+    )
+    if changed_only and config.get("pass_path") and not explicit_args and not scoped_args:
+        label = config.get("label") or first.upper()
+        print(f"{label!s}:SKIP:{first}:no_changed_paths")
+        return 0
+    if (
+        changed_only
+        and not config.get("pass_path")
+        and not explicit_args
+        and not _has_relevant_changed_files(first, changed_files)
+    ):
+        label = config.get("label") or first.upper()
+        print(f"{label!s}:SKIP:{first}:no_relevant_changed_paths")
+        return 0
+    extra_args = [*explicit_args, *scoped_args, *(_fix_args(first) if fix else [])]
+    return _run_tool(first, configs[first], extra_args)
+
+
+def _selected_tools(
+    first: str,
+    configs: dict[str, dict[str, Any]],
+) -> tuple[list[str], bool] | None:
+    if first == "--fix":
+        return [name for name in ("ruff", "biome") if name in configs], True
+    if first in {"--check", "-c"}:
+        return [name for name in ("ruff", "types", "pytest", "biome", "tsc", "vitest") if name in configs], False
+    if first in {"--quick", "-q"}:
+        return [name for name in ("ruff", "types", "pytest", "biome", "tsc") if name in configs], False
+    if first in {"--frontend-only", "--fe"}:
+        return [name for name in ("biome", "tsc", "vitest") if name in configs], False
+    return None
 
 
 def _usage(configs: dict[str, dict[str, Any]]) -> None:
@@ -528,63 +476,21 @@ def check(ctx: typer.Context) -> None:
         _usage(configs)
         raise typer.Exit(0)
 
-    changed_only = False
-    args = [
-        arg
-        for arg in args
-        if not (arg in {"--changed-only", "-d"} and (changed_only := True))
-    ]
-    fix = "--fix" in args
-    args = ["--fix"] if args == ["--fix"] else [arg for arg in args if arg != "--fix"]
-    if changed_only and not args:
-        args = ["--quick"]
-
+    args, changed_only, fix = _extract_check_options(args)
     first = args[0]
     if first == "cleanroom":
         raise typer.Exit(
             cleanroom_main(["--project-root", str(_repo_root()), *_strip_separator(args[1:])])
         )
 
-    if first in configs:
-        root = _repo_root()
-        config = configs[first]
-        cwd = _workdir(root, config)
-        explicit_args = _normalize_explicit_args(root, cwd, _strip_separator(args[1:]))
-        changed_files = _changed_files(root) if changed_only else []
-        scoped_args = [] if explicit_args else _changed_args(
-            first,
-            root,
-            cwd,
-            config,
-            changed_files,
-        )
-        if changed_only and config.get("pass_path") and not explicit_args and not scoped_args:
-            label = config.get("label") or first.upper()
-            print(f"{label!s}:SKIP:{first}:no_changed_paths")
-            raise typer.Exit(0)
-        if (
-            changed_only
-            and not config.get("pass_path")
-            and not explicit_args
-            and not _has_relevant_changed_files(first, changed_files)
-        ):
-            label = config.get("label") or first.upper()
-            print(f"{label!s}:SKIP:{first}:no_relevant_changed_paths")
-            raise typer.Exit(0)
-        extra_args = [*explicit_args, *scoped_args, *(_fix_args(first) if fix else [])]
-        raise typer.Exit(_run_tool(first, configs[first], extra_args))
+    named_result = _run_named_tool(first, args, configs, changed_only=changed_only, fix=fix)
+    if named_result is not None:
+        raise typer.Exit(named_result)
 
-    if first == "--fix":
-        selected = [name for name in ("ruff", "biome") if name in configs]
-        fix = True
-    elif first in {"--check", "-c"}:
-        selected = [name for name in ("ruff", "types", "pytest", "biome", "tsc", "vitest") if name in configs]
-    elif first in {"--quick", "-q"}:
-        selected = [name for name in ("ruff", "types", "pytest", "biome", "tsc") if name in configs]
-    elif first in {"--frontend-only", "--fe"}:
-        selected = [name for name in ("biome", "tsc", "vitest") if name in configs]
-    else:
+    selected_result = _selected_tools(first, configs)
+    if selected_result is None:
         output_error(f"Unknown st check mode/tool: {first}")
         raise typer.Exit(2)
+    selected, selected_fix = selected_result
 
-    raise typer.Exit(_run_selected(selected, configs, fix=fix, changed_only=changed_only))
+    raise typer.Exit(_run_selected(selected, configs, fix=fix or selected_fix, changed_only=changed_only))
