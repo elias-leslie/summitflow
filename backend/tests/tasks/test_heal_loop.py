@@ -257,6 +257,10 @@ class TestHealLoopAbortsOnInvalidCheckout:
         assert not all_passed
         assert step_results[0]["reason"] == "checkout_destroyed"
         assert "CHECKOUT GONE" in step_results[0]["output"]
+        assert "boundary=self_heal_attempt_0" in step_results[0]["output"]
+        assert "task=task-1" in step_results[0]["output"]
+        assert "subtask=1.1" in step_results[0]["output"]
+        assert "session=session-1" in step_results[0]["output"]
 
 
 class TestInitialCheckoutGuard:
