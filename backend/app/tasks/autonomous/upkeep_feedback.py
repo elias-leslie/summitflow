@@ -27,6 +27,14 @@ from .upkeep_signals import create_signal_task, source_key, task_exists_for_upke
 
 logger = get_logger(__name__)
 
+_COMPONENT_PROJECT_PREFIXES = (
+    ("ah.", "agent-hub"),
+    ("sf.", "summitflow"),
+    ("st.", "summitflow"),
+    ("dt", "summitflow"),
+    ("xc.", "summitflow"),
+)
+
 
 def agent_hub_headers() -> dict[str, str]:
     return build_agent_hub_headers(
@@ -43,6 +51,14 @@ def feedback_task_type(feedback: dict[str, Any]) -> str | None:
     if feedback_type == "praise":
         return None
     return TASK_TYPE_BUG if feedback_type == "friction" else TASK_TYPE_TASK
+
+
+def feedback_task_project_id(default_project_id: str, feedback: dict[str, Any]) -> str:
+    component_id = str(feedback.get("component_id") or "")
+    for prefix, project_id in _COMPONENT_PROJECT_PREFIXES:
+        if component_id == prefix or component_id.startswith(prefix):
+            return project_id
+    return default_project_id
 
 
 def fetch_feedback_items(project_id: str, limit: int) -> list[dict[str, Any]]:
@@ -105,9 +121,10 @@ def feedback_task_from_item(project_id: str, feedback: dict[str, Any]) -> Create
     if task_type is None:
         return None
     source_key_value = source_key(SOURCE_FEEDBACK, feedback_id)
-    if task_exists_for_upkeep_source(project_id, source_key_value):
+    task_project_id = feedback_task_project_id(project_id, feedback)
+    if task_exists_for_upkeep_source(task_project_id, source_key_value):
         return None
-    task_id = create_signal_task(project_id, feedback_task_spec(feedback, task_type, source_key_value))
+    task_id = create_signal_task(task_project_id, feedback_task_spec(feedback, task_type, source_key_value))
     try:
         link_feedback_task(str(feedback_id), task_id)
     except Exception as exc:

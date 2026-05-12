@@ -282,6 +282,38 @@ def test_create_feedback_task_links_agent_hub_item(mocker) -> None:
     link_feedback.assert_called_once_with("fb-123", "task-feedback")
 
 
+def test_create_feedback_task_routes_st_component_to_owner_project(mocker) -> None:
+    from app.tasks.autonomous import upkeep
+
+    feedback = {
+        "id": "fb-456",
+        "component_id": "st.search",
+        "feedback_type": "friction",
+        "title": "Search task created in wrong queue",
+        "description": "This belongs with SummitFlow maintenance.",
+        "status": "open",
+        "project_id": "portfolio-ai",
+        "vote_count": 1,
+        "linked_task_id": None,
+        "created_at": datetime.now(UTC).isoformat(),
+    }
+    mocker.patch("app.tasks.autonomous.upkeep_feedback.fetch_feedback_items", return_value=[feedback])
+    task_exists = mocker.patch("app.tasks.autonomous.upkeep_feedback.task_exists_for_upkeep_source", return_value=False)
+    create_task = mocker.patch(
+        "app.tasks.autonomous.upkeep_signals.task_store.create_task",
+        return_value={"id": "task-feedback"},
+    )
+    mocker.patch("app.tasks.autonomous.upkeep_signals.create_task_spirit")
+    mocker.patch("app.tasks.autonomous.upkeep_signals.create_single_subtask_with_steps")
+    mocker.patch("app.tasks.autonomous.upkeep_feedback.link_feedback_task")
+
+    created = upkeep._create_feedback_tasks("portfolio-ai", limit=2)
+
+    assert created == ["task-feedback"]
+    task_exists.assert_called_once_with("summitflow", "upkeep:feedback:fb-456")
+    assert create_task.call_args.kwargs["project_id"] == "summitflow"
+
+
 def test_task_exists_for_upkeep_source_uses_task_spirit_context(mocker) -> None:
     from app.tasks.autonomous.upkeep_signals import task_exists_for_upkeep_source
 
