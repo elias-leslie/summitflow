@@ -60,7 +60,14 @@ def _search_checkout_text_with_rg(
     rg_path = shutil.which("rg")
     if not rg_path:
         return None
-    args = [rg_path, "--line-number", "--ignore-case", "--fixed-strings", "--hidden"]
+    args = [
+        rg_path,
+        "--line-number",
+        "--with-filename",
+        "--ignore-case",
+        "--fixed-strings",
+        "--hidden",
+    ]
     for glob in CHECKOUT_EXCLUDE_GLOBS:
         args.extend(["--glob", glob])
     args.extend([query_value, normalized_prefix or "."])
