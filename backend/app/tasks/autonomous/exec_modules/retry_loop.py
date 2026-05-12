@@ -71,12 +71,29 @@ def _run_fix_attempt(
     return response_content, agent_session_id, self_fix_attempts, supervisor_guided_attempts, guidance
 
 
-def _checkout_destroyed_result(reason: str) -> list[dict[str, Any]]:
+def _checkout_destroyed_result(
+    reason: str,
+    *,
+    task_id: str,
+    subtask_short_id: str,
+    agent_session_id: str | None,
+    boundary: str,
+) -> list[dict[str, Any]]:
     """Build a step result that explains why the checkout was invalidated."""
+    context = [
+        f"boundary={boundary}",
+        f"task={task_id}",
+        f"subtask={subtask_short_id}",
+    ]
+    if agent_session_id:
+        context.append(f"session={agent_session_id}")
     return [{
         "step_number": 0,
         "passed": False,
-        "output": f"Checkout became invalid during execution: {reason}",
+        "output": (
+            "Checkout became invalid during execution; "
+            f"{'; '.join(context)}; reason={reason}"
+        ),
         "reason": "checkout_destroyed",
         "returncode": -1,
     }]
@@ -96,7 +113,13 @@ def _healing_loop_body(
     if health_reason:
         return (
             False,
-            _checkout_destroyed_result(health_reason),
+            _checkout_destroyed_result(
+                health_reason,
+                task_id=task_id,
+                subtask_short_id=subtask_short_id,
+                agent_session_id=agent_session_id,
+                boundary=f"self_heal_attempt_{heal_attempt}",
+            ),
             self_fix_attempts,
             supervisor_guided_attempts,
             agent_session_id,
