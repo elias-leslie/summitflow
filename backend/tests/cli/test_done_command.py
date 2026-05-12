@@ -8,7 +8,7 @@ import typer
 from cli.commands.done import _handle_task_completion, _refuse_if_autocode_owned
 
 
-def test_refuse_when_task_is_actively_claimed() -> None:
+def test_refuse_when_task_is_claimed_by_autocode_dispatcher() -> None:
     task: dict[str, object] = {
         "id": "task-94c77a0a",
         "claimed_by": "api-dispatch-agent-hub",
@@ -22,13 +22,18 @@ def test_refuse_when_task_is_actively_claimed() -> None:
     assert mock_error.called
     msg = mock_error.call_args[0][0]
     assert "api-dispatch-agent-hub" in msg
-    assert "orchestrator owns completion" in msg
+    assert "dispatcher owns completion" in msg
 
 
 def test_allow_when_claim_is_empty() -> None:
     _refuse_if_autocode_owned({"id": "task-x"}, "task-x", admin=False)
     _refuse_if_autocode_owned({"id": "task-x", "claimed_by": None}, "task-x", admin=False)
     _refuse_if_autocode_owned({"id": "task-x", "claimed_by": ""}, "task-x", admin=False)
+
+
+def test_allow_when_task_is_claimed_by_non_dispatch_worker() -> None:
+    _refuse_if_autocode_owned({"id": "task-x", "claimed_by": "davion-sidarli"}, "task-x", admin=False)
+    _refuse_if_autocode_owned({"id": "task-x", "claimed_by": "worker-1"}, "task-x", admin=False)
 
 
 def test_admin_override_bypasses_claim_check() -> None:

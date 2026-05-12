@@ -23,6 +23,12 @@ from .pulse import require_pulse_gate
 
 app = typer.Typer(help="Complete task or subtask work")
 
+
+def _is_autocode_dispatch_claim(claimed_by: object) -> bool:
+    """Return whether the claim belongs to the autocode dispatcher."""
+    return isinstance(claimed_by, str) and claimed_by.startswith("api-dispatch-")
+
+
 def _handle_subtask_completion(
     client: STClient,
     id: str,
@@ -50,14 +56,14 @@ def _refuse_if_autocode_owned(task: dict[str, object], task_id: str, admin: bool
     if admin:
         return
     claimed_by = task.get("claimed_by")
-    if not isinstance(claimed_by, str) or not claimed_by:
+    if not _is_autocode_dispatch_claim(claimed_by):
         return
     lock_expires_at = task.get("lock_expires_at")
     expires = str(lock_expires_at) if lock_expires_at else ""
     output_error(
         f"Task {task_id} is claimed by '{claimed_by}'"
         + (f" (lock expires {expires})." if expires else ".")
-        + "\n  The autocode orchestrator owns completion for claimed tasks."
+        + "\n  The autocode dispatcher owns completion for this task."
         + "\n  Return control and let the post-execution gates run."
         + "\n  Override with --admin only if the claim is known stale."
     )
