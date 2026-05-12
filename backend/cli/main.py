@@ -167,7 +167,7 @@ app.command("exec-log")(exec_monitor.exec_log_command)
     cmd='st commit -m "msg" --push',
     when="user-requested work complete; off-task or residue commits",
     precautions=(
-        "use --paths a b c for scoped commits when unrelated files are dirty",
+        "use repeated --paths flags for scoped commits: --paths a --paths b",
         "after publish, trust printed COMMIT summary not local-clean state",
         "commit before destructive ops (abandon, rollback)",
     ),
@@ -183,7 +183,14 @@ def commit_command(
     bookmark: Annotated[str, typer.Option("--bookmark", help="Explicit jj bookmark to publish.")] = "",
     paths: Annotated[
         list[str] | None,
-        typer.Option("--path", "--paths", help="Only commit/publish selected path(s); works for jj and plain-Git repos."),
+        typer.Option(
+            "--path",
+            "--paths",
+            help=(
+                "Only commit/publish selected path(s); repeat for multiple paths "
+                "(--paths a --paths b). Works for jj and plain-Git repos."
+            ),
+        ),
     ] = None,
 ) -> None:
     """High-level st-owned commit workflow."""
