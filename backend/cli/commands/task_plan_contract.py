@@ -7,6 +7,10 @@ PLAN_SCHEMA_SOURCE = "backend/app/schemas/plan.schema.json"
 PLAN_SCHEMA_ID = "https://summitflow.dev/schemas/plan.json"
 PLAN_VERIFY_EXAMPLE = "st verify plan.json"
 PLAN_CREATE_EXAMPLE = "st -P <project> create --plan plan.json"
+MINIMAL_PLAN_SHAPE = (
+    '{"title":"...","objective":"...","task_type":"task","complexity":"SIMPLE",'
+    '"subtasks":[{"id":"1.1","description":"..."}]}'
+)
 
 PLAN_DISCOVERY_HINT = (
     f"Validate execution-ready plans with `{PLAN_VERIFY_EXAMPLE}`. "
@@ -25,6 +29,9 @@ VERIFY_COMMAND_HELP = f"""Verify a plan.json file against the live schema and ta
 
 The CLI fetches the schema from `{PLAN_SCHEMA_ENDPOINT}`; the checked-in source
 of truth lives at `{PLAN_SCHEMA_SOURCE}`.
+
+Minimal shape:
+{MINIMAL_PLAN_SHAPE}
 """
 
 PLAN_OPTION_HELP = (
@@ -36,7 +43,7 @@ FROM_FILE_OPTION_HELP = "Batch-create tasks from a JSON file containing a `tasks
 
 VERIFY_FILE_ARGUMENT_HELP = (
     f"Path to plan.json. The CLI validates against the live schema at "
-    f"`{PLAN_SCHEMA_ENDPOINT}`."
+    f"`{PLAN_SCHEMA_ENDPOINT}`. Minimal shape: {MINIMAL_PLAN_SHAPE}"
 )
 
 CREATE_ERROR_HINT = (
