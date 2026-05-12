@@ -106,6 +106,13 @@ def test_st_commit_forwards_selected_paths(
     )
 
 
+def test_st_commit_help_shows_repeated_paths_form() -> None:
+    result = runner.invoke(app, ["commit", "--help"])
+
+    assert result.exit_code == 0
+    assert "--paths a --paths b" in result.stdout
+
+
 @patch("cli.main.commit_repo")
 @patch("cli.main.current_repo")
 def test_st_commit_forwards_explicit_bookmark(
