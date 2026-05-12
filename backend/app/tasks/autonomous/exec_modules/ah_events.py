@@ -6,6 +6,7 @@ in the Agent Hub timeline alongside regular execution events.
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any
 
 import httpx
@@ -19,6 +20,21 @@ from ....services._agent_hub_config import (
 logger = get_logger(__name__)
 
 _TIMEOUT = 5  # seconds — don't block pipeline on slow Agent Hub
+
+
+def _jsonable(value: Any) -> Any:
+    """Return a JSON-serializable representation for session event payloads."""
+    if hasattr(value, "model_dump"):
+        return _jsonable(value.model_dump())
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, list | tuple | set):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, datetime | date):
+        return value.isoformat()
+    if isinstance(value, str | int | float | bool) or value is None:
+        return value
+    return str(value)
 
 
 def _get_headers() -> dict[str, str]:
@@ -66,9 +82,10 @@ def emit_lifecycle_event(
     if tool_name:
         payload["tool_name"] = tool_name
     if tool_output:
-        payload["tool_output"] = tool_output
+        payload["tool_output"] = _jsonable(tool_output)
     if agent_id:
         payload["agent_id"] = agent_id
+    payload = _jsonable(payload)
 
     for session_id in session_ids:
         try:
