@@ -41,6 +41,26 @@ class TestFeedbackLimitValidation:
         mock_search_impl.assert_called_once()
 
 
+class TestFeedbackSortValidation:
+    """Feedback list/search should reject invalid sort values locally."""
+
+    def test_list_rejects_invalid_sort_with_valid_values(self) -> None:
+        result = runner.invoke(app, ["list", "--sort", "recent"])
+
+        assert result.exit_code == 1
+        assert "Invalid sort" in result.output
+        assert "recent" in result.output
+        assert "Valid sorts: votes, newest, oldest" in result.output
+
+    def test_search_rejects_invalid_sort_with_valid_values(self) -> None:
+        result = runner.invoke(app, ["search", "audit", "--sort", "recent"])
+
+        assert result.exit_code == 1
+        assert "Invalid sort" in result.output
+        assert "recent" in result.output
+        assert "Valid sorts: votes, newest, oldest" in result.output
+
+
 class TestFeedbackCommandRouting:
     """Feedback command flags should wire through to implementations."""
 

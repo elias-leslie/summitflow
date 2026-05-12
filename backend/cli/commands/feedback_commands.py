@@ -33,6 +33,7 @@ from .feedback_validators import (
     validate_feedback_type,
     validate_limit,
     validate_severity,
+    validate_sort,
 )
 
 
@@ -85,6 +86,7 @@ def search_impl(
 ) -> None:
     """Search feedback items."""
     validate_limit(limit)
+    validate_sort(sort)
     params = build_filter_params(
         sort, limit, query=query, component_id=component_id,
         feedback_type=feedback_type, status=status or "active", project_id=project_id,
@@ -105,6 +107,7 @@ def list_impl(
 ) -> None:
     """List feedback items."""
     validate_limit(limit)
+    validate_sort(sort)
     params = build_filter_params(
         sort, limit, component_id=component_id, feedback_type=feedback_type,
         status=status or "active", project_id=project_id,
