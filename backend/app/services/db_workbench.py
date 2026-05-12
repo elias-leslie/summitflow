@@ -16,28 +16,32 @@ from pathlib import Path
 from typing import Any
 from urllib import error as urllib_error
 from urllib import request as urllib_request
-from urllib.parse import quote, urlsplit, urlunsplit
 
 import psutil
-import psycopg
 
 from ..project_identity import get_project_identity
+from . import db_workbench_targets
 
-_DEFAULT_DB_URLS = {
-    "summitflow": "postgresql://summitflow_app@localhost:5432/summitflow",
-    "agent-hub": "postgresql://agent_hub_app@localhost:5432/agent_hub",
-    "portfolio-ai": "postgresql://portfolio_app@localhost:5432/portfolio_ai",
-    "a-term": "postgresql://summitflow_app@localhost:5432/summitflow",
-    "hatchet": "postgresql://db_admin@localhost:5432/hatchet?sslmode=disable",
-}
+DbWorkbenchTarget = db_workbench_targets.DbWorkbenchTarget
 
 _BIND_HOST = "127.0.0.1"
 _PORT_BASE = 9081
 _START_TIMEOUT_SECONDS = 5.0
 _QUERY_TIMEOUT_SECONDS = 60
-_GLOBAL_PROJECT_ID = "__global__"
-_GLOBAL_DATABASE_NAME = "postgres"
-_DATABASE_TARGET_PREFIX = "__db__"
+
+__all__ = [
+    "DbWorkbenchError",
+    "DbWorkbenchStatus",
+    "DbWorkbenchTarget",
+    "project_db_url",
+    "proxy_prefix",
+    "proxy_url",
+    "start_workbench",
+    "status_payload",
+    "status_workbench",
+    "stop_workbench",
+    "workbench_targets",
+]
 
 
 class DbWorkbenchError(RuntimeError):
@@ -60,14 +64,27 @@ class DbWorkbenchStatus:
     message: str | None = None
 
 
-@dataclass(frozen=True)
-class DbWorkbenchTarget:
-    id: str
-    label: str
-    database: str | None
-    configured: bool
-    source: str
-    shared_with: str | None = None
+def _sync_target_identity_getter() -> None:
+    db_workbench_targets.get_project_identity = get_project_identity
+
+
+def project_db_url(project_id: str) -> str | None:
+    _sync_target_identity_getter()
+    return db_workbench_targets.project_db_url(project_id)
+
+
+def project_env_var(project_id: str) -> str:
+    return db_workbench_targets.project_env_var(project_id)
+
+
+def shared_db_project_id(project_id: str) -> str | None:
+    _sync_target_identity_getter()
+    return db_workbench_targets.shared_db_project_id(project_id)
+
+
+def workbench_targets() -> list[DbWorkbenchTarget]:
+    _sync_target_identity_getter()
+    return db_workbench_targets.workbench_targets()
 
 
 def _safe_project_id(project_id: str) -> str:
@@ -100,220 +117,6 @@ def _pgweb_prefix(project_id: str) -> str:
 
 def proxy_url(project_id: str) -> str:
     return f"{proxy_prefix(project_id)}/"
-
-
-def _load_env_file(path: Path) -> dict[str, str]:
-    if not path.exists():
-        return {}
-    values: dict[str, str] = {}
-    for raw_line in path.read_text().splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in raw_line:
-            continue
-        key, value = raw_line.split("=", 1)
-        values[key.strip()] = value.strip().strip('"').strip("'")
-    return values
-
-
-def _env_values() -> dict[str, str]:
-    values: dict[str, str] = {}
-    env_paths = (
-        Path.home() / ".env.local",
-        Path.home() / "summitflow" / "docker" / "compose" / ".env",
-    )
-    for path in env_paths:
-        values.update(_load_env_file(path))
-    return values
-
-
-def _project_env_var(project_id: str) -> str:
-    if project_id == _GLOBAL_PROJECT_ID or _database_name_from_target(project_id):
-        return "DATABASE_ADMIN_URL"
-    if project_id == "summitflow":
-        return "DATABASE_URL"
-    return f"{project_id.replace('-', '_').upper()}_DB_URL"
-
-
-def _shared_db_project_id(project_id: str) -> str | None:
-    if project_id == _GLOBAL_PROJECT_ID or _database_name_from_target(project_id):
-        return None
-    identity = get_project_identity(project_id)
-    database = identity.get("database") if identity else None
-    if not isinstance(database, dict):
-        return None
-    shared_with = database.get("shared_with")
-    if isinstance(shared_with, str) and shared_with and shared_with != project_id:
-        return shared_with
-    return None
-
-
-def _safe_database_name(database_name: str) -> bool:
-    return bool(database_name) and all(
-        char.isalnum() or char in {"_", "-", "."} for char in database_name
-    )
-
-
-def _database_target_id(database_name: str) -> str:
-    return f"{_DATABASE_TARGET_PREFIX}{database_name}"
-
-
-def _database_name_from_target(project_id: str) -> str | None:
-    if not project_id.startswith(_DATABASE_TARGET_PREFIX):
-        return None
-    database_name = project_id.removeprefix(_DATABASE_TARGET_PREFIX)
-    return database_name if _safe_database_name(database_name) else None
-
-
-def _database_url_for_database(url: str, database_name: str) -> str:
-    parts = urlsplit(url)
-    if not parts.scheme or not parts.netloc:
-        return url
-    return urlunsplit(
-        (parts.scheme, parts.netloc, f"/{database_name}", parts.query, parts.fragment)
-    )
-
-
-def _global_db_url(database_name: str = _GLOBAL_DATABASE_NAME) -> str | None:
-    env_file = _env_values()
-    admin_url = os.environ.get("DATABASE_ADMIN_URL") or env_file.get(
-        "DATABASE_ADMIN_URL"
-    )
-    if admin_url:
-        return _database_url_for_database(admin_url, database_name)
-
-    password = os.environ.get("POSTGRES_PASSWORD") or env_file.get("POSTGRES_PASSWORD")
-    if not password:
-        return None
-
-    user = os.environ.get("POSTGRES_USER") or env_file.get("POSTGRES_USER") or "admin"
-    host = (
-        os.environ.get("POSTGRES_HOST")
-        or env_file.get("POSTGRES_HOST")
-        or "localhost"
-    )
-    port = os.environ.get("POSTGRES_PORT") or env_file.get("POSTGRES_PORT") or "5432"
-    user_info = f"{quote(user, safe='')}:{quote(password, safe='')}"
-    return f"postgresql://{user_info}@{host}:{port}/{database_name}"
-
-
-def project_db_url(project_id: str) -> str | None:
-    database_name = _database_name_from_target(project_id)
-    if database_name:
-        return _global_db_url(database_name)
-
-    if project_id == _GLOBAL_PROJECT_ID:
-        return _global_db_url()
-
-    env_file = _env_values()
-    key = _project_env_var(project_id)
-    shared_project_id = _shared_db_project_id(project_id)
-    candidates = [
-        os.environ.get(key),
-        env_file.get(key),
-        os.environ.get("DATABASE_URL") if project_id == "summitflow" else None,
-        env_file.get("DATABASE_URL") if project_id == "summitflow" else None,
-        project_db_url(shared_project_id) if shared_project_id else None,
-        _DEFAULT_DB_URLS.get(project_id),
-    ]
-    return next((candidate for candidate in candidates if candidate), None)
-
-
-def _database_name_from_url(url: str | None) -> str | None:
-    if not url:
-        return None
-    path = urlsplit(url).path.lstrip("/")
-    return path or None
-
-
-def _project_ids_from_env(env_file: dict[str, str]) -> set[str]:
-    project_ids = set(_DEFAULT_DB_URLS)
-    values = {**env_file, **os.environ}
-    for key, value in values.items():
-        if not value or key.startswith("TEST"):
-            continue
-        if key == "DATABASE_URL":
-            project_ids.add("summitflow")
-        elif key.endswith("_DB_URL"):
-            project_ids.add(key.removesuffix("_DB_URL").lower().replace("_", "-"))
-    return project_ids
-
-
-def _server_database_names() -> list[str]:
-    db_url = _global_db_url()
-    if not db_url:
-        return []
-    try:
-        with psycopg.connect(db_url, connect_timeout=1) as conn, conn.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT datname
-                FROM pg_database
-                WHERE datallowconn
-                  AND NOT datistemplate
-                ORDER BY datname
-                """
-            )
-            return [
-                str(row[0])
-                for row in cursor.fetchall()
-                if _safe_database_name(str(row[0]))
-            ]
-    except psycopg.Error:
-        return []
-
-
-def workbench_targets() -> list[DbWorkbenchTarget]:
-    env_file = _env_values()
-    targets = [
-        DbWorkbenchTarget(
-            id=_GLOBAL_PROJECT_ID,
-            label="Server catalog",
-            database=_GLOBAL_DATABASE_NAME,
-            configured=_global_db_url() is not None,
-            source="admin",
-        )
-    ]
-
-    seen_ids = {_GLOBAL_PROJECT_ID}
-    for database_name in _server_database_names():
-        target_id = _database_target_id(database_name)
-        targets.append(
-            DbWorkbenchTarget(
-                id=target_id,
-                label=database_name,
-                database=database_name,
-                configured=project_db_url(target_id) is not None,
-                source="database",
-            )
-        )
-        seen_ids.add(target_id)
-
-    for project_id in sorted(_project_ids_from_env(env_file)):
-        if project_id in seen_ids:
-            continue
-        db_url = project_db_url(project_id)
-        if not db_url:
-            continue
-        shared_with = _shared_db_project_id(project_id)
-        database = _database_name_from_url(db_url)
-        if database and _database_target_id(database) in seen_ids and not shared_with:
-            continue
-        label = project_id
-        if shared_with:
-            label = f"{project_id} -> {shared_with}"
-        targets.append(
-            DbWorkbenchTarget(
-                id=project_id,
-                label=label,
-                database=database,
-                configured=True,
-                source="project",
-                shared_with=shared_with,
-            )
-        )
-        seen_ids.add(project_id)
-
-    return targets
 
 
 def _pgweb_binary() -> str | None:
@@ -486,7 +289,7 @@ def status_workbench(project_id: str, *, message: str | None = None) -> DbWorkbe
     port = _optional_int(state.get("port")) if running else None
     direct_url = f"http://{_BIND_HOST}:{port}/{_pgweb_prefix(project_id)}/" if port else None
     db_url = project_db_url(project_id)
-    shared_with = _shared_db_project_id(project_id)
+    shared_with = shared_db_project_id(project_id)
     return DbWorkbenchStatus(
         project_id=project_id,
         running=running,
@@ -515,7 +318,7 @@ def start_workbench(project_id: str, *, readonly: bool = True) -> DbWorkbenchSta
     db_url = project_db_url(project_id)
     if not db_url:
         raise DbWorkbenchError(
-            f"No database URL configured for {project_id}; set {_project_env_var(project_id)}"
+            f"No database URL configured for {project_id}; set {project_env_var(project_id)}"
         )
 
     port = _choose_port(project_id)
