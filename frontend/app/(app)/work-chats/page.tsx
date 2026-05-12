@@ -2,7 +2,6 @@
 
 import {
   ActivityIndicator,
-  type AdhocWorkSpec,
   type ChatMessage,
   groupMessages,
   MessageBubble,
@@ -55,7 +54,6 @@ import {
   fetchAgentHubSessions,
   submitVerifierOutcome,
   upsertWorkChatBinding,
-  type WorkContext,
 } from '@/lib/api/agent-hub-work-chats'
 import { type FeedbackItem, fetchFeedbackItems } from '@/lib/api/feedback'
 import {
@@ -67,372 +65,52 @@ import {
 } from '@/lib/api/mockups'
 import { summarizeMockupForWorkContext } from '@/lib/mockup-html'
 import { cn } from '@/lib/utils'
-
-type WorkChatLayout =
-  | 'horizontal'
-  | 'vertical'
-  | 'main-side'
-  | 'two-by-two'
-  | 'wide-grid'
-type RoutingMode = 'auto' | 'direct'
-
-interface WorkChatPane {
-  id: string
-  chatKey: number
-  sessionId: string | null
-  agentSlug: string
-  routingMode: RoutingMode
-  projectId: string | null
-  taskId: string | null
-  taskTitle: string | null
-  taskSummary: string | null
-  feedbackId: string | null
-  designId: string | null
-  artifactSummary: string | null
-  verifierEnabled: boolean
-  verifierChatKey: number
-  verifierSessionId: string | null
-  verifierSplitPercent: number
-  verifierLoopCount: number
-  verifierLastBuilderSessionId: string | null
-}
-
-interface WorkStartCommand {
-  key: number
-  prompt: string
-}
-
-interface WorkChatController {
-  sendMessage: (content: string) => void
-  cancelStream: () => void
-  sessionId: string | null
-  status: StreamStatus
-}
-
-interface ArtifactOption {
-  value: string
-  label: string
-  kind: 'feedback' | 'design'
-  id: string
-  linkedTaskId?: string | null
-  mockup?: Mockup
-}
-
-interface MockupEditorTarget {
-  projectId: string
-  mockupId: string
-  paneId: string
-}
-
-const STORAGE_KEY = 'summitflow_work_chats_v2'
-const MAX_PANES = 6
-const SOURCE_CLIENT = 'summitflow/work-chats'
-const GENERAL_PROJECT_ID = 'summitflow'
-const AUTO_AGENT_SLUG = 'persona'
-const VERIFIER_AGENT_SLUG = 'verifier'
-const WORK_CHAT_PERSONA_ROLES = [
-  'system',
-  'persona-personality',
-  'persona-user-context',
-]
-const DEFAULT_VERIFIER_SPLIT = 50
-const BUILDER_SNAP_PERCENT = 88
-const VERIFIER_SNAP_PERCENT = 12
-const VERIFIER_MIN_PERCENT = 12
-const VERIFIER_MAX_PERCENT = 88
-const VERIFIER_COLLAPSE_THRESHOLD = 18
-const VERIFIER_MAX_LOOPS = 3
-
-function makePane(agentSlug = AUTO_AGENT_SLUG): WorkChatPane {
-  return {
-    id: `pane-${Math.random().toString(36).slice(2, 10)}`,
-    chatKey: 0,
-    sessionId: null,
-    agentSlug,
-    routingMode: agentSlug === AUTO_AGENT_SLUG ? 'auto' : 'direct',
-    projectId: null,
-    taskId: null,
-    taskTitle: null,
-    taskSummary: null,
-    feedbackId: null,
-    designId: null,
-    artifactSummary: null,
-    verifierEnabled: false,
-    verifierChatKey: 0,
-    verifierSessionId: null,
-    verifierSplitPercent: DEFAULT_VERIFIER_SPLIT,
-    verifierLoopCount: 0,
-    verifierLastBuilderSessionId: null,
-  }
-}
-
-function readSavedState(defaultAgent: string): {
-  layout: WorkChatLayout
-  activePaneId: string
-  panes: WorkChatPane[]
-} {
-  if (typeof window === 'undefined') {
-    const pane = makePane(defaultAgent)
-    return { layout: 'main-side', activePaneId: pane.id, panes: [pane] }
-  }
-
-  const raw = localStorage.getItem(STORAGE_KEY)
-  if (!raw) {
-    const pane = makePane(defaultAgent)
-    return { layout: 'main-side', activePaneId: pane.id, panes: [pane] }
-  }
-
-  try {
-    const parsed = JSON.parse(raw)
-    const panes = Array.isArray(parsed.panes)
-      ? parsed.panes
-          .slice(0, MAX_PANES)
-          .filter((pane: Partial<WorkChatPane>) => pane?.id)
-          .map((pane: Partial<WorkChatPane>) => {
-            const savedAgent = pane.agentSlug ?? defaultAgent
-            const routingMode =
-              pane.routingMode ??
-              (savedAgent === AUTO_AGENT_SLUG || savedAgent === 'chat'
-                ? 'auto'
-                : 'direct')
-            const basePane = makePane(defaultAgent)
-            return {
-              ...basePane,
-              id: pane.id ?? basePane.id,
-              sessionId: pane.sessionId ?? null,
-              agentSlug: routingMode === 'auto' ? AUTO_AGENT_SLUG : savedAgent,
-              routingMode,
-              projectId: pane.projectId ?? null,
-              taskId: pane.taskId ?? null,
-              taskTitle: pane.taskTitle ?? null,
-              taskSummary: pane.taskSummary ?? null,
-              feedbackId: pane.feedbackId ?? null,
-              designId: pane.designId ?? null,
-              artifactSummary: pane.artifactSummary ?? null,
-              chatKey: pane.chatKey ?? 0,
-              verifierEnabled: pane.verifierEnabled ?? false,
-              verifierChatKey: pane.verifierChatKey ?? 0,
-              verifierSessionId: pane.verifierSessionId ?? null,
-              verifierSplitPercent:
-                pane.verifierSplitPercent ?? DEFAULT_VERIFIER_SPLIT,
-              verifierLoopCount: pane.verifierLoopCount ?? 0,
-              verifierLastBuilderSessionId:
-                pane.verifierLastBuilderSessionId ?? null,
-            } satisfies WorkChatPane
-          })
-      : []
-    if (panes.length === 0) throw new Error('empty panes')
-    return {
-      layout: parsed.layout ?? 'main-side',
-      activePaneId: parsed.activePaneId ?? panes[0].id,
-      panes,
-    }
-  } catch {
-    const pane = makePane(defaultAgent)
-    return { layout: 'main-side', activePaneId: pane.id, panes: [pane] }
-  }
-}
-
-function layoutClass(layout: WorkChatLayout, count: number): string {
-  if (count === 1) return 'grid-cols-1'
-  if (layout === 'horizontal') return 'grid-cols-1'
-  if (layout === 'vertical') return 'md:grid-cols-2'
-  if (layout === 'two-by-two') return 'md:grid-cols-2'
-  if (layout === 'wide-grid') return 'md:grid-cols-2 xl:grid-cols-3'
-  return 'md:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]'
-}
-
-function adhocWorkSpecForPane(
-  pane: WorkChatPane,
-  project: Project | null,
-): AdhocWorkSpec {
-  const isProjectWork = Boolean(pane.projectId)
-  const isImplementationWork = Boolean(pane.taskId || pane.feedbackId)
-  const isDesignWork = Boolean(pane.designId)
-
-  let workloadProfile: string
-  if (isDesignWork) workloadProfile = 'frontend_ux'
-  else if (isImplementationWork) workloadProfile = 'coding_impl'
-  else if (isProjectWork) workloadProfile = 'planning'
-  else workloadProfile = 'general'
-
-  let taskType: string
-  if (pane.taskId) taskType = 'project_task'
-  else if (pane.feedbackId) taskType = 'feedback_work'
-  else if (pane.designId) taskType = 'design_work'
-  else if (isProjectWork) taskType = 'project_work'
-  else taskType = 'general'
-
-  const riskTier = isImplementationWork ? 'normal' : 'low'
-  const toolMode = isProjectWork ? 'write' : 'read_only'
-  const costPreference = isImplementationWork ? 'balanced' : 'low_cost'
-
-  const capabilities: Record<string, number> = {
-    reasoning: 0.7,
-    tool_use: isProjectWork ? 0.8 : 0.4,
-    ...(isProjectWork && { coding: isImplementationWork ? 0.85 : 0.55 }),
-    ...(isDesignWork && { vision: 0.45 }),
-    ...(!isProjectWork && { research: 0.45 }),
-  }
-
-  return {
-    title:
-      pane.taskTitle ??
-      pane.artifactSummary ??
-      (project ? `${project.name} work chat` : 'General work chat'),
-    task_type: taskType,
-    workload_profile: workloadProfile,
-    risk_tier: riskTier,
-    tool_mode: toolMode,
-    context: {
-      project_id: pane.projectId ?? undefined,
-      task_id: pane.taskId ?? undefined,
-      feedback_id: pane.feedbackId ?? undefined,
-      design_id: pane.designId ?? undefined,
-      surface: 'work_chats',
-      pane_id: pane.id,
-    },
-    expected_output:
-      'result, evidence, files/checks when changed, exact blocker if blocked',
-    routing_judgment: {
-      workload_profile: workloadProfile,
-      risk_tier: riskTier,
-      capabilities,
-      constraints: {
-        needs_repo_access: isProjectWork,
-        verifier_enabled: pane.verifierEnabled,
-        source_surface: 'work_chats',
-      },
-      confidence: 0.7,
-      rationale: 'Derived from Work Chats context.',
-    },
-    routing: {
-      cost_preference: costPreference,
-    },
-  }
-}
-
-function workContextForPane(
-  pane: WorkChatPane,
-  project: Project | null,
-): WorkContext {
-  const mode = pane.taskId
-    ? 'project_task'
-    : pane.projectId
-      ? 'project'
-      : pane.feedbackId || pane.designId
-        ? 'artifact'
-        : 'general'
-
-  return {
-    mode,
-    routing_mode: pane.routingMode,
-    verifier_enabled: pane.verifierEnabled,
-    project_id: pane.projectId ?? undefined,
-    project_name: project?.name,
-    task_id: pane.taskId ?? undefined,
-    task_title: pane.taskTitle ?? undefined,
-    task_summary: pane.taskSummary ?? undefined,
-    feedback_id: pane.feedbackId ?? undefined,
-    design_id: pane.designId ?? undefined,
-    artifact_summary: pane.artifactSummary ?? undefined,
-    surface: 'work_chats',
-    pane_id: pane.id,
-    adhoc_spec:
-      pane.routingMode === 'auto'
-        ? adhocWorkSpecForPane(pane, project)
-        : undefined,
-  }
-}
-
-function startPromptForPane(
-  pane: WorkChatPane,
-  project: Project | null,
-): string {
-  const lines = [
-    'Start work in this SummitFlow Work Chats pane.',
-    'Use work_context as authoritative. Keep this parent chat as supervisor context. Spawn child work lanes for implementation when useful.',
-  ]
-  if (pane.routingMode === 'auto') {
-    lines.push(
-      'Routing mode: Auto Jenny. Answer directly or delegate based on work_context and Agent Hub routing.',
-      'For flexible child work, use bash `st agent run --adhoc --json <workspec>` from work_context.adhoc_spec; do not choose a provider or model.',
-    )
-  } else {
-    lines.push(`Direct agent mode: ${pane.agentSlug}.`)
-  }
-  if (pane.taskId) {
-    lines.push(
-      `Work task ${pane.taskId}${pane.taskTitle ? `: ${pane.taskTitle}` : ''}.`,
-    )
-  } else if (pane.projectId) {
-    lines.push(
-      `Work in project ${project?.name ?? pane.projectId}. Create or link a task before implementation when needed.`,
-    )
-  } else if (pane.feedbackId || pane.designId) {
-    lines.push('Create or link the relevant task, then start work.')
-  } else {
-    lines.push(
-      'General mode. Create project and task records first when needed.',
-    )
-  }
-  return lines.join('\n')
-}
-
-function verifierPromptForPane(
-  pane: WorkChatPane,
-  project: Project | null,
-  parentMessages: ChatMessage[] = [],
-  childSessions: AgentHubSessionListItem[] = [],
-): string {
-  const parentSession = pane.sessionId ?? 'unknown'
-  const recentMessages = parentMessages.slice(-8)
-  const lines = [
-    'Verification Cycle',
-    '',
-    `Parent session: ${parentSession}`,
-    `Verifier loop: ${pane.verifierLoopCount + 1}/${VERIFIER_MAX_LOOPS}`,
-    '',
-    'Verify the latest completed builder turn in the parent Work Chat session.',
-    'Use work_context, parent_session_id, session events, tool output, artifacts, diffs, and current repo state as evidence.',
-    'Treat the builder final response as a claim, not proof. Decompose into atomic claims.',
-    'If a concrete fix is needed, put the exact corrective builder prompt in the report section "What feedback did you give?".',
-    'End with the required ## Report block.',
-  ]
-  if (pane.taskId) {
-    lines.push(
-      `Task ${pane.taskId}${pane.taskTitle ? `: ${pane.taskTitle}` : ''}.`,
-    )
-  } else if (pane.projectId) {
-    lines.push(`Project ${project?.name ?? pane.projectId}.`)
-  }
-  if (pane.artifactSummary) lines.push(`Artifact: ${pane.artifactSummary}.`)
-  if (childSessions.length) {
-    lines.push('', 'Child agent sessions to verify as part of Jenny routing:')
-    childSessions.forEach((session) => {
-      const summary =
-        session.summary_oneliner ??
-        session.live_activity?.summary ??
-        session.summary_outcome ??
-        session.workstream_status ??
-        ''
-      lines.push(
-        `- ${session.agent_slug ?? 'agent'} | ${session.status} | ${session.id}${summary ? ` | ${summary}` : ''}`,
-      )
-    })
-  }
-  if (recentMessages.length) {
-    lines.push('', 'Parent turn excerpt:')
-    recentMessages.forEach((message, index) => {
-      const content = message.content.trim().slice(0, 4000)
-      lines.push(
-        `--- message ${index + 1} role=${message.role} id=${message.id} ---`,
-        content || '(empty)',
-      )
-    })
-  }
-  return lines.join('\n')
-}
+import {
+  AUTO_AGENT_SLUG,
+  BUILDER_SNAP_PERCENT,
+  DEFAULT_VERIFIER_SPLIT,
+  GENERAL_PROJECT_ID,
+  MAX_PANES,
+  SOURCE_CLIENT,
+  STORAGE_KEY,
+  VERIFIER_AGENT_SLUG,
+  VERIFIER_COLLAPSE_THRESHOLD,
+  VERIFIER_MAX_LOOPS,
+  VERIFIER_MAX_PERCENT,
+  VERIFIER_MIN_PERCENT,
+  VERIFIER_SNAP_PERCENT,
+  WORK_CHAT_PERSONA_ROLES,
+} from './constants'
+import {
+  agentName,
+  buildArtifactOptions,
+  layoutClass,
+  makePane,
+  paneAgentLabel,
+  paneContextLabel,
+  paneFromSearchParams,
+  readSavedState,
+  resetChatRuntimePatch,
+  sessionResumePatch,
+  sessionSummary,
+} from './pane-state'
+import type {
+  MockupEditorTarget,
+  WorkChatController,
+  WorkChatLayout,
+  WorkChatPane,
+  WorkStartCommand,
+} from './types'
+import {
+  hasVerifierFeedback,
+  latestAssistantContent,
+  parseVerifierReport,
+} from './verifier-report'
+import {
+  startPromptForPane,
+  verifierPromptForPane,
+  workContextForPane,
+} from './work-prompts'
 
 function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(false)
@@ -563,129 +241,6 @@ function PaneStatus({
       <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
     </PaneBadge>
   )
-}
-
-function agentName(agents: AgentHubAgent[], slug: string | null | undefined) {
-  if (!slug) return 'agent'
-  return agents.find((agent) => agent.slug === slug)?.name ?? slug
-}
-
-function autoAgentLabel(agents: AgentHubAgent[]) {
-  return `Auto: ${agentName(agents, AUTO_AGENT_SLUG)}`
-}
-
-function paneAgentLabel(pane: WorkChatPane, agents: AgentHubAgent[]) {
-  if (pane.routingMode === 'auto') return autoAgentLabel(agents)
-  return agentName(agents, pane.agentSlug)
-}
-
-function paneContextLabel(pane: WorkChatPane, projects: Project[]) {
-  const project = pane.projectId
-    ? (projects.find((item) => item.id === pane.projectId)?.name ??
-      pane.projectId)
-    : 'General'
-  if (pane.taskId) {
-    return `${project} / ${pane.taskTitle ?? pane.taskId}`
-  }
-  if (pane.artifactSummary) {
-    return `${project} / ${pane.artifactSummary}`
-  }
-  return project
-}
-
-function sessionSummary(session: AgentHubSessionListItem) {
-  return (
-    session.summary_oneliner ??
-    session.live_activity?.summary ??
-    session.summary_outcome ??
-    session.workstream_status ??
-    ''
-  )
-}
-
-function resetChatRuntimePatch(pane: WorkChatPane): Partial<WorkChatPane> {
-  return {
-    sessionId: null,
-    chatKey: pane.chatKey + 1,
-    verifierSessionId: null,
-    verifierChatKey: pane.verifierChatKey + 1,
-    verifierLoopCount: 0,
-    verifierLastBuilderSessionId: null,
-  }
-}
-
-function sessionResumePatch(
-  pane: WorkChatPane,
-  session: AgentHubSessionListItem,
-): Partial<WorkChatPane> {
-  const agentSlug = session.agent_slug ?? AUTO_AGENT_SLUG
-  const externalTaskId = session.external_id?.startsWith('task-')
-    ? session.external_id
-    : null
-  return {
-    sessionId: session.id,
-    agentSlug,
-    routingMode: agentSlug === AUTO_AGENT_SLUG ? 'auto' : 'direct',
-    projectId: session.project_id ?? pane.projectId,
-    taskId: externalTaskId ?? pane.taskId,
-    verifierSessionId: null,
-    verifierChatKey: pane.verifierChatKey + 1,
-    verifierLoopCount: 0,
-    verifierLastBuilderSessionId: null,
-  }
-}
-
-function buildArtifactOptions({
-  pane,
-  feedbackItems,
-  mockups,
-}: {
-  pane: WorkChatPane
-  feedbackItems: FeedbackItem[]
-  mockups: Mockup[]
-}): ArtifactOption[] {
-  const feedbackOptions: ArtifactOption[] = feedbackItems.map((item) => ({
-    value: `feedback:${item.id}`,
-    label: item.title,
-    kind: 'feedback' as const,
-    id: item.id,
-    linkedTaskId: item.linked_task_id,
-  }))
-  const designOptions: ArtifactOption[] = mockups.map((mockup) => ({
-    value: `design:${mockup.mockup_id}`,
-    label: mockup.name,
-    kind: 'design' as const,
-    id: mockup.mockup_id,
-    linkedTaskId: mockup.task_id,
-    mockup,
-  }))
-
-  const options = [...feedbackOptions, ...designOptions]
-  if (
-    pane.feedbackId &&
-    !options.some((option) => option.value === `feedback:${pane.feedbackId}`)
-  ) {
-    options.unshift({
-      value: `feedback:${pane.feedbackId}`,
-      label: pane.artifactSummary ?? pane.feedbackId,
-      kind: 'feedback',
-      id: pane.feedbackId,
-      linkedTaskId: pane.taskId,
-    })
-  }
-  if (
-    pane.designId &&
-    !options.some((option) => option.value === `design:${pane.designId}`)
-  ) {
-    options.unshift({
-      value: `design:${pane.designId}`,
-      label: pane.artifactSummary ?? pane.designId,
-      kind: 'design',
-      id: pane.designId,
-      linkedTaskId: pane.taskId,
-    })
-  }
-  return options
 }
 
 function PaneChrome({
@@ -1580,98 +1135,6 @@ function WorkChatBody({
   )
 }
 
-function latestAssistantContent(messages: ChatMessage[]): string {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]
-    if (message?.role === 'assistant' && message.content.trim()) {
-      return message.content
-    }
-  }
-  return ''
-}
-
-function extractReportSection(content: string, heading: string): string {
-  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const match = content.match(
-    new RegExp(
-      `^###\\s+${escaped}\\s*$([\\s\\S]*?)(?=^###\\s|^##\\s|(?![\\s\\S]))`,
-      'im',
-    ),
-  )
-  return match?.[1]?.trim() ?? ''
-}
-
-function parseVerifierReport(content: string): {
-  status: string | null
-  confidence: string | null
-  atomicClaimCount: number | null
-  atomicPassCount: number | null
-  atomicFailCount: number | null
-  feedback: string
-  excerpt: string
-} {
-  const reportIndex = content.search(/^##\s+Report\s*$/im)
-  if (reportIndex === -1) {
-    return {
-      status: null,
-      confidence: null,
-      atomicClaimCount: null,
-      atomicPassCount: null,
-      atomicFailCount: null,
-      feedback: '',
-      excerpt: '',
-    }
-  }
-  const report = content.slice(reportIndex)
-  const status = report.match(/^\s*STATUS\s*:\s*([a-z_ -]+)/im)?.[1]?.trim()
-  const confidence = report
-    .match(/^\s*CONFIDENCE\s*:\s*([a-z_ -]+)/im)?.[1]
-    ?.trim()
-    .toUpperCase()
-  const feedback = extractReportSection(report, 'What feedback did you give?')
-  const parseCount = (...patterns: RegExp[]) => {
-    for (const pattern of patterns) {
-      const match = report.match(pattern)
-      if (match?.[1]) return Number.parseInt(match[1], 10)
-    }
-    return null
-  }
-  return {
-    status: status ?? null,
-    confidence: confidence ?? null,
-    atomicClaimCount: parseCount(
-      /^\s*ATOMIC[_\s-]*CLAIMS?\s*:\s*(\d+)/im,
-      /^\s*CLAIMS?\s*:\s*(\d+)/im,
-    ),
-    atomicPassCount: parseCount(
-      /^\s*ATOMIC[_\s-]*PASS(?:ED)?\s*:\s*(\d+)/im,
-      /^\s*PASS(?:ED)?\s*:\s*(\d+)/im,
-    ),
-    atomicFailCount: parseCount(
-      /^\s*ATOMIC[_\s-]*FAIL(?:ED)?\s*:\s*(\d+)/im,
-      /^\s*FAIL(?:ED)?\s*:\s*(\d+)/im,
-    ),
-    feedback,
-    excerpt: report.slice(0, 5000),
-  }
-}
-
-function hasVerifierFeedback(report: {
-  status: string | null
-  confidence: string | null
-  feedback: string
-}): boolean {
-  if (report.status?.toLowerCase() !== 'failed') return false
-  if (report.confidence !== 'FEEDBACK') return false
-  const normalized = report.feedback.trim().toLowerCase()
-  return Boolean(
-    normalized &&
-      normalized !== 'none' &&
-      normalized !== 'nothing' &&
-      normalized !== 'n/a',
-  )
-}
-
 function ChatLane({
   label,
   kind,
@@ -2277,32 +1740,6 @@ function WorkChatPaneView({
       </div>
     </section>
   )
-}
-
-function paneFromSearchParams(
-  searchParams: URLSearchParams,
-  defaultAgent: string,
-): WorkChatPane {
-  const routingMode =
-    searchParams.get('routing_mode') === 'direct' ? 'direct' : 'auto'
-  const agentSlug =
-    routingMode === 'direct'
-      ? searchParams.get('agent_slug') || defaultAgent
-      : AUTO_AGENT_SLUG
-  return {
-    ...makePane(agentSlug),
-    routingMode,
-    sessionId: searchParams.get('session_id'),
-    projectId: searchParams.get('project_id'),
-    taskId: searchParams.get('task_id'),
-    taskTitle: searchParams.get('task_title'),
-    taskSummary: searchParams.get('task_summary'),
-    feedbackId: searchParams.get('feedback_id'),
-    designId: searchParams.get('design_id'),
-    artifactSummary: searchParams.get('artifact_summary'),
-    verifierEnabled: searchParams.get('verifier') === '1',
-    verifierSessionId: searchParams.get('verifier_session_id'),
-  }
 }
 
 function WorkChatsContent() {
