@@ -8,7 +8,7 @@ from types import ModuleType
 import typer
 
 from ..output import output_error
-from .feedback_helpers import VALID_SEVERITIES, VALID_TYPES
+from .feedback_helpers import VALID_SEVERITIES, VALID_SORTS, VALID_TYPES
 
 MAX_SUGGESTIONS = 5
 MAX_FALLBACK_COMPONENTS = 10
@@ -68,6 +68,14 @@ def validate_severity(severity: str | None) -> None:
     if severity and severity not in VALID_SEVERITIES:
         output_error(f'Invalid severity "{severity}". Valid: {", ".join(VALID_SEVERITIES)}')
         raise typer.Exit(1)
+
+
+def validate_sort(sort: str) -> None:
+    """Validate feedback list/search sort values."""
+    if sort in VALID_SORTS:
+        return
+    output_error(f'Invalid sort "{sort}". Valid sorts: {", ".join(VALID_SORTS)}')
+    raise typer.Exit(1)
 
 
 def validate_limit(limit: int) -> None:
