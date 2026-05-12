@@ -9,9 +9,11 @@ from typer.testing import CliRunner
 
 from cli.commands.tools import app as tools_app
 from cli.lib.usage import (
+    VALID_MANIFEST_DENSITIES,
     UsageSpec,
     collect_usage_specs,
     filter_specs,
+    select_specs_for_density,
     usage,
 )
 
@@ -81,6 +83,30 @@ def test_filter_specs_by_surface() -> None:
     assert [s.surface for s in out] == ["st.b"]
 
 
+def test_select_specs_for_core_density_adds_drilldown_surface() -> None:
+    specs = [
+        UsageSpec(surface="st.create"),
+        UsageSpec(surface="st.search"),
+        UsageSpec(surface="st.browser", task_types=("frontend",)),
+    ]
+
+    out = select_specs_for_density(specs, density="core")
+
+    assert [s.surface for s in out] == ["st.search", "st.details"]
+
+
+def test_select_specs_for_task_density_adds_matching_task_surfaces() -> None:
+    specs = [
+        UsageSpec(surface="st.search"),
+        UsageSpec(surface="st.browser", task_types=("frontend",)),
+        UsageSpec(surface="st.sessions.ownership", task_types=("devops",)),
+    ]
+
+    out = select_specs_for_density(specs, density="task", task_type="frontend")
+
+    assert [s.surface for s in out] == ["st.search", "st.browser", "st.details"]
+
+
 def test_manifest_command_emits_service_rebuild_yaml() -> None:
     result = runner.invoke(tools_app, ["manifest", "--surface", "st.service.rebuild", "--format", "yaml"])
     assert result.exit_code == 0, result.output
@@ -120,6 +146,44 @@ def test_manifest_command_filter_excludes_task_specific_surfaces() -> None:
     # still excludes surfaces that don't list the requested task type.
     assert "st.sessions.ownership" in devops_surfaces
     assert "st.sessions.ownership" not in frontend_surfaces
+
+
+def test_manifest_command_core_density_is_compact_and_drillable() -> None:
+    full = runner.invoke(tools_app, ["manifest", "--format", "json"])
+    core = runner.invoke(tools_app, ["manifest", "--density", "core", "--format", "json"])
+
+    assert full.exit_code == 0, full.output
+    assert core.exit_code == 0, core.output
+    full_surfaces = {t["surface"] for t in json.loads(full.output)["tools"]}
+    payload = json.loads(core.output)
+    core_surfaces = {t["surface"] for t in payload["tools"]}
+    assert payload["density"] == "core"
+    assert "st.details" in core_surfaces
+    assert "st.search" in core_surfaces
+    assert "st.create" in full_surfaces
+    assert "st.create" not in core_surfaces
+    assert len(core_surfaces) < len(full_surfaces)
+
+
+def test_manifest_command_task_density_keeps_matching_surfaces() -> None:
+    result = runner.invoke(
+        tools_app,
+        ["manifest", "--task", "frontend", "--density", "task", "--format", "json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    surfaces = {t["surface"] for t in json.loads(result.output)["tools"]}
+    assert "st.browser" in surfaces
+    assert "st.sessions.ownership" not in surfaces
+    assert "st.details" in surfaces
+
+
+def test_manifest_command_rejects_unknown_density() -> None:
+    result = runner.invoke(tools_app, ["manifest", "--density", "tiny"])
+
+    assert result.exit_code == 1
+    assert "Unknown --density" in result.output
+    assert "|".join(VALID_MANIFEST_DENSITIES) in result.output
 
 
 def test_manifest_command_rejects_unknown_format() -> None:

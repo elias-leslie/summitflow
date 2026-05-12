@@ -6,6 +6,7 @@ import importlib
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -186,6 +187,56 @@ def test_service_stop_uses_confirm_gate() -> None:
     assert result.exit_code == 0
     confirm_gate.assert_called_once()
     stop_services.assert_called_once()
+
+
+def test_db_detail_name_hashes_query_without_literals() -> None:
+    name = db._psql_detail_name("summitflow", "query", sql="SELECT * FROM events WHERE message = 'secret'")
+
+    assert name.startswith("db-summitflow-query-")
+    assert "secret" not in name
+    assert len(name.rsplit("-", 1)[1]) == 8
+
+
+def test_run_psql_serializes_before_subprocess_and_sets_app_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    emitted: list[tuple[Path, str, str, subprocess.CompletedProcess[str]]] = []
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((args, kwargs))
+        assert (tmp_path / ".dev-tools" / "db-summitflow-psql.lock").exists()
+        return subprocess.CompletedProcess(args, 0, "ok\n", "")
+
+    monkeypatch.setattr(db, "_db_url", lambda project: f"postgresql:///{project}")
+    monkeypatch.setattr(db, "_details_root", lambda _project: tmp_path)
+    monkeypatch.setattr(db.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        db,
+        "emit_result_or_details",
+        lambda root, name, label, result: emitted.append((root, name, label, result)),
+    )
+
+    assert db._run_psql("summitflow", "SELECT 1", detail_name="db-summitflow-query-test") == 0
+
+    assert calls[0][0] == ["psql", "postgresql:///summitflow", "-c", "SELECT 1"]
+    kwargs = calls[0][1]
+    env = kwargs["env"]
+    assert isinstance(env, dict)
+    env = cast(dict[str, str], env)
+    assert env["PGAPPNAME"] == "st-db-summitflow"
+    assert emitted[0][1] == "db-summitflow-query-test"
+
+
+def test_db_schema_uses_command_specific_detail_name() -> None:
+    with (
+        patch("cli.commands.db._detect_project", return_value="summitflow"),
+        patch("cli.commands.db._run_psql", return_value=0) as run_psql,
+    ):
+        result = runner.invoke(main_app, ["db", "schema", "agent_tools"])
+
+    assert result.exit_code == 0
+    assert run_psql.call_args.kwargs["detail_name"] == "db-summitflow-schema-agent_tools"
 
 
 def test_autonomous_status_reads_settings() -> None:
