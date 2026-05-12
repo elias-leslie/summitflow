@@ -57,6 +57,16 @@ def test_build_feedback_prompt_surfaces_timeout_output_detail() -> None:
     assert "Affected steps: 0" in prompt
 
 
+def test_build_feedback_prompt_uses_single_report_command_for_duplicate_handling() -> None:
+    from app.tasks.autonomous.exec_modules.prompts import build_feedback_prompt
+
+    prompt = build_feedback_prompt([], "sess-feedback-1")
+
+    assert 'st feedback search "keyword"' not in prompt
+    assert "--vote-if-match" in prompt
+    assert "duplicate feedback receives a vote" in prompt
+
+
 def test_build_feedback_prompt_uses_boundary_metadata_without_step_results() -> None:
     from app.tasks.autonomous.exec_modules.prompts import build_feedback_prompt
 

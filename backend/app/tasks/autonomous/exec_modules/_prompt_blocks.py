@@ -20,9 +20,7 @@ FEEDBACK_PROMPT = """Before this work stint ends, submit any feedback on the too
 
 Use this session id for feedback and duplicate voting: {feedback_session_id}
 
-Search first to avoid duplicates: st feedback search "keyword"
-
-Then report:
+Report with --vote-if-match so duplicate feedback receives a vote instead of creating another item:
 - What caused friction? st feedback report <component> "issue" --type friction --severity medium --session {feedback_session_id} --vote-if-match
 - Any improvement ideas? st feedback report <component> "idea" --type idea --session {feedback_session_id} --vote-if-match
 - What worked well? st feedback report <component> "what worked" --type praise --session {feedback_session_id} --vote-if-match
