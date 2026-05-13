@@ -94,6 +94,7 @@ def link_feedback_task(feedback_id: str, task_id: str) -> None:
 
 def feedback_task_spec(feedback: dict[str, Any], task_type: str, source_key_value: str) -> SignalTaskSpec:
     feedback_id = feedback.get("id")
+    title = str(feedback.get("title") or feedback_id)
     parts = [
         "Routine upkeep selected this active feedback item for resolution.",
         "",
@@ -107,9 +108,9 @@ def feedback_task_spec(feedback: dict[str, Any], task_type: str, source_key_valu
     return SignalTaskSpec(
         source_key=source_key_value,
         signal_type=SOURCE_FEEDBACK,
-        title=f"Handle feedback: {feedback.get('title') or feedback_id}",
+        title=f"Handle feedback: {title}",
         description="\n".join(parts),
-        priority=2 if task_type == TASK_TYPE_BUG else 3,
+        priority=1 if title.startswith("Tool governance:") else 2 if task_type == TASK_TYPE_BUG else 3,
         task_type=task_type,
         subtask_description=f"Resolve feedback item {feedback_id}",
     )
