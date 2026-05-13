@@ -9,6 +9,8 @@ import httpx
 from app.config import AGENT_HUB_URL
 from app.logging_config import get_logger
 from app.services._agent_hub_config import build_agent_hub_headers
+from app.storage import tasks as task_store
+from app.storage.task_spirit import get_task_spirit
 
 from .upkeep_constants import (
     FEEDBACK_TIMEOUT_SECONDS,
@@ -113,16 +115,48 @@ def feedback_task_spec(feedback: dict[str, Any], task_type: str, source_key_valu
     )
 
 
+def linked_task_matches_source(
+    task_id: object,
+    project_id: str,
+    source_key_value: str,
+) -> bool:
+    """Return True when a linked task is active and still represents this feedback item."""
+    if not task_id:
+        return False
+    task = task_store.get_task(str(task_id))
+    if not task or task.get("project_id") != project_id:
+        return False
+    if task.get("status") in {"completed", "cancelled"}:
+        return False
+    spirit = get_task_spirit(str(task_id)) or {}
+    context = spirit.get("context") if isinstance(spirit, dict) else {}
+    upkeep = context.get("upkeep") if isinstance(context, dict) else {}
+    return isinstance(upkeep, dict) and upkeep.get("source_key") == source_key_value
+
+
 def feedback_task_from_item(project_id: str, feedback: dict[str, Any]) -> CreatedSignalTask | None:
     feedback_id = feedback.get("id")
-    if not feedback_id or feedback.get("linked_task_id"):
+    if not feedback_id:
         return None
     task_type = feedback_task_type(feedback)
     if task_type is None:
         return None
     source_key_value = source_key(SOURCE_FEEDBACK, feedback_id)
     task_project_id = feedback_task_project_id(project_id, feedback)
-    if task_exists_for_upkeep_source(task_project_id, source_key_value):
+    existing_task_id = task_exists_for_upkeep_source(task_project_id, source_key_value)
+    if existing_task_id:
+        if feedback.get("linked_task_id") != existing_task_id:
+            try:
+                link_feedback_task(str(feedback_id), existing_task_id)
+            except Exception as exc:
+                logger.warning(
+                    "feedback_relink_failed",
+                    feedback_id=feedback_id,
+                    task_id=existing_task_id,
+                    error=str(exc),
+                )
+        return None
+    if linked_task_matches_source(feedback.get("linked_task_id"), task_project_id, source_key_value):
         return None
     task_id = create_signal_task(task_project_id, feedback_task_spec(feedback, task_type, source_key_value))
     try:

@@ -282,6 +282,74 @@ def test_create_feedback_task_links_agent_hub_item(mocker) -> None:
     link_feedback.assert_called_once_with("fb-123", "task-feedback")
 
 
+def test_create_feedback_task_replaces_stale_linked_task(mocker) -> None:
+    from app.tasks.autonomous import upkeep
+
+    feedback = {
+        "id": "fb-123",
+        "component_id": "sf.quality",
+        "feedback_type": "friction",
+        "title": "Quality gate missing",
+        "description": "Expected st check.",
+        "status": "open",
+        "project_id": "summitflow",
+        "vote_count": 1,
+        "linked_task_id": "task-stale",
+        "created_at": datetime.now(UTC).isoformat(),
+    }
+    mocker.patch("app.tasks.autonomous.upkeep_feedback.fetch_feedback_items", return_value=[feedback])
+    mocker.patch("app.tasks.autonomous.upkeep_feedback.task_exists_for_upkeep_source", return_value=False)
+    mocker.patch("app.tasks.autonomous.upkeep_feedback.task_store.get_task", return_value=None)
+    mocker.patch("app.tasks.autonomous.upkeep_feedback.get_task_spirit")
+    mocker.patch(
+        "app.tasks.autonomous.upkeep_signals.task_store.create_task",
+        return_value={"id": "task-feedback"},
+    )
+    mocker.patch("app.tasks.autonomous.upkeep_signals.create_task_spirit")
+    mocker.patch("app.tasks.autonomous.upkeep_signals.create_single_subtask_with_steps")
+    link_feedback = mocker.patch("app.tasks.autonomous.upkeep_feedback.link_feedback_task")
+
+    created = upkeep._create_feedback_tasks("summitflow", limit=2)
+
+    assert created == ["task-feedback"]
+    link_feedback.assert_called_once_with("fb-123", "task-feedback")
+
+
+def test_create_feedback_task_keeps_valid_linked_task(mocker) -> None:
+    from app.tasks.autonomous import upkeep
+
+    feedback = {
+        "id": "fb-123",
+        "component_id": "sf.quality",
+        "feedback_type": "friction",
+        "title": "Quality gate missing",
+        "description": "Expected st check.",
+        "status": "open",
+        "project_id": "summitflow",
+        "vote_count": 1,
+        "linked_task_id": "task-existing",
+        "created_at": datetime.now(UTC).isoformat(),
+    }
+    mocker.patch("app.tasks.autonomous.upkeep_feedback.fetch_feedback_items", return_value=[feedback])
+    mocker.patch("app.tasks.autonomous.upkeep_feedback.task_exists_for_upkeep_source", return_value=False)
+    mocker.patch(
+        "app.tasks.autonomous.upkeep_feedback.task_store.get_task",
+        return_value={"id": "task-existing", "project_id": "summitflow", "status": "pending"},
+    )
+    mocker.patch(
+        "app.tasks.autonomous.upkeep_feedback.get_task_spirit",
+        return_value={"context": {"upkeep": {"source_key": "upkeep:feedback:fb-123"}}},
+    )
+    create_task = mocker.patch("app.tasks.autonomous.upkeep_signals.task_store.create_task")
+    link_feedback = mocker.patch("app.tasks.autonomous.upkeep_feedback.link_feedback_task")
+
+    created = upkeep._create_feedback_tasks("summitflow", limit=2)
+
+    assert created == []
+    create_task.assert_not_called()
+    link_feedback.assert_not_called()
+
+
 def test_create_feedback_task_routes_st_component_to_owner_project(mocker) -> None:
     from app.tasks.autonomous import upkeep
 
