@@ -402,6 +402,21 @@ def test_check_changed_only_targets_biome_override_paths(tmp_path: Path, monkeyp
     )
 
 
+def test_check_changed_only_runs_broad_path_tool_for_config_changes() -> None:
+    configs = {
+        "biome": {"label": "BIOME", "binary": "biome", "args": "check .", "pass_path": True},
+    }
+    with (
+        patch("cli.commands.check._tool_configs", return_value=configs),
+        patch("cli.commands.check._changed_files", return_value=["package.json"]),
+        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
+    ):
+        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
+
+    assert result.exit_code == 0
+    run_tool.assert_called_once_with("biome", configs["biome"], [])
+
+
 def test_check_changed_only_runs_broad_pytest_for_config_changes() -> None:
     configs = {
         "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},

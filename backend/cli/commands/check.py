@@ -195,6 +195,8 @@ def _changed_args(
         return []
     paths: list[str] = []
     for rel_path in changed_files:
+        if Path(rel_path).name in _TOOL_CONFIG_PATHS.get(name, set()):
+            continue
         absolute = (root / rel_path).resolve()
         if not absolute.exists() or not absolute.is_file():
             continue
@@ -321,7 +323,12 @@ def _run_selected(
         config = configs[name]
         cwd = _workdir(root, config)
         scoped_args = _changed_args(name, root, cwd, config, changed_files)
-        if changed_only and config.get("pass_path") and not scoped_args:
+        if (
+            changed_only
+            and config.get("pass_path")
+            and not scoped_args
+            and not _has_relevant_changed_files(name, changed_files)
+        ):
             print(f"{config.get('label') or name.upper()!s}:SKIP:{name}:no_changed_paths")
             continue
         if (
@@ -403,7 +410,13 @@ def _run_named_tool(
         config,
         changed_files,
     )
-    if changed_only and config.get("pass_path") and not explicit_args and not scoped_args:
+    if (
+        changed_only
+        and config.get("pass_path")
+        and not explicit_args
+        and not scoped_args
+        and not _has_relevant_changed_files(first, changed_files)
+    ):
         label = config.get("label") or first.upper()
         print(f"{label!s}:SKIP:{first}:no_changed_paths")
         return 0

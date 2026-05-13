@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   integration:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -48,6 +48,7 @@ jobs:
           set_env SUMMITFLOW_CLIENT_ID summitflow
           set_env SUMMITFLOW_CLIENT_SECRET test-summitflow-secret
           set_env TAG ci
+          set_env HATCHET_TAG v0.84.0
 
       - name: Validate compose syntax
         working-directory: docker/compose

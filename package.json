@@ -6,7 +6,8 @@
   "pnpm": {
     "overrides": {
       "@agent-hub/passport-client": "file:docker/workspace-packages/agent-hub-passport-client-0.1.0.tgz",
-      "flatted": ">=3.4.2"
+      "flatted": ">=3.4.2",
+      "postcss": "8.5.14"
     }
   }
 }

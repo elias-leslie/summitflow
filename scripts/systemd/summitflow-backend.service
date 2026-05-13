@@ -11,7 +11,7 @@ EnvironmentFile=-%h/.env.local
 Environment="PYTHONUNBUFFERED=1"
 Environment="HATCHET_CLIENT_HOST_PORT=127.0.0.1:7070"
 Environment="HATCHET_CLIENT_TLS_STRATEGY=none"
-ExecStart=__SUMMITFLOW_ROOT__/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8001
+ExecStart=__SUMMITFLOW_ROOT__/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
 Restart=always
 RestartSec=10
 KillMode=control-group

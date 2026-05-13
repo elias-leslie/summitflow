@@ -12,6 +12,7 @@ WORKDIR /app
 
 COPY frontend/ ./
 COPY docker/workspace-packages/*.tgz /tmp/workspace-packages/
+COPY .npmrc ./
 
 RUN node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.dependencies = { ...pkg.dependencies, '@agent-hub/chat-ui': 'file:/tmp/workspace-packages/agent-hub-chat-ui-0.1.0.tgz', '@agent-hub/push-client': 'file:/tmp/workspace-packages/agent-hub-push-client-0.1.0.tgz', '@summitflow/notes-ui': 'file:/tmp/workspace-packages/summitflow-notes-ui-0.1.0.tgz' }; pkg.pnpm = pkg.pnpm || {}; pkg.pnpm.overrides = { ...(pkg.pnpm.overrides || {}), '@agent-hub/passport-client': 'file:/tmp/workspace-packages/agent-hub-passport-client-0.1.0.tgz' }; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));" && \
     CI=true pnpm install --no-frozen-lockfile
@@ -32,6 +33,7 @@ WORKDIR /app
 
 # Copy all frontend source
 COPY frontend/ ./
+COPY .npmrc ./
 
 # Copy workspace package tarballs (built by pack-workspace-packages.sh)
 COPY docker/workspace-packages/*.tgz /tmp/workspace-packages/

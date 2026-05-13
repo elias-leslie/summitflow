@@ -36,6 +36,7 @@ from .backup_runtime import (
 )
 from .backup_storage import app as storage_app
 from .backup_testbed import app as testbed_app
+from .backup_veeam import app as veeam_app
 
 app = typer.Typer(help="Backup management commands")
 
@@ -43,6 +44,7 @@ app = typer.Typer(help="Backup management commands")
 app.add_typer(storage_app, name="storage")
 app.add_typer(infra_app, name="infra")
 app.add_typer(testbed_app, name="testbed")
+app.add_typer(veeam_app, name="veeam")
 
 
 @app.callback()

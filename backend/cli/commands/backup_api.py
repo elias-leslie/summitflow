@@ -154,3 +154,32 @@ class BackupSourceAPI:
 
 # BackupAPI preserved as an alias for backward-compatibility; prefer BackupProjectAPI directly.
 BackupAPI = BackupProjectAPI
+
+
+class BackupSystemImageAPI:
+    """API client for host system-image backup operations."""
+
+    def __init__(self, base_url: str) -> None:
+        self.base_url = base_url
+        self.timeout = _DEFAULT_TIMEOUT
+
+    def status(self) -> dict[str, Any]:
+        """Return Veeam system-image backup status."""
+        response = httpx.get(f"{self.base_url}/backups/system-image", timeout=self.timeout)
+        if response.status_code >= 400:
+            raise _make_api_error(response)
+        return cast(dict[str, Any], response.json())
+
+    def start(self) -> dict[str, Any]:
+        """Start the configured Veeam system-image backup job."""
+        response = httpx.post(f"{self.base_url}/backups/system-image/start", timeout=self.timeout)
+        if response.status_code >= 400:
+            raise _make_api_error(response)
+        return cast(dict[str, Any], response.json())
+
+    def stop(self) -> dict[str, Any]:
+        """Stop the active Veeam system-image backup session."""
+        response = httpx.post(f"{self.base_url}/backups/system-image/stop", timeout=self.timeout)
+        if response.status_code >= 400:
+            raise _make_api_error(response)
+        return cast(dict[str, Any], response.json())

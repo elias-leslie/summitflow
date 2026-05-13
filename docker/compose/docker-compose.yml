@@ -53,7 +53,7 @@ services:
     restart: unless-stopped
 
   hatchet-migrate:
-    image: ghcr.io/hatchet-dev/hatchet/hatchet-migrate:${HATCHET_TAG:-latest}
+    image: ghcr.io/hatchet-dev/hatchet/hatchet-migrate:${HATCHET_TAG:?Set HATCHET_TAG in .env}
     profiles: [infra, summitflow, agent-hub, portfolio, full]
     environment:
       DATABASE_URL: "postgresql://admin:${POSTGRES_PASSWORD:-changeme}@postgres:5432/hatchet"
@@ -62,7 +62,7 @@ services:
         condition: service_healthy
 
   hatchet-setup-config:
-    image: ghcr.io/hatchet-dev/hatchet/hatchet-admin:${HATCHET_TAG:-latest}
+    image: ghcr.io/hatchet-dev/hatchet/hatchet-admin:${HATCHET_TAG:?Set HATCHET_TAG in .env}
     profiles: [infra, summitflow, agent-hub, portfolio, full]
     command: /hatchet/hatchet-admin quickstart --skip certs --generated-config-dir /hatchet/config --overwrite=false
     environment:
@@ -85,7 +85,7 @@ services:
         condition: service_healthy
 
   hatchet:
-    image: ghcr.io/hatchet-dev/hatchet/hatchet-engine:${HATCHET_TAG:-latest}
+    image: ghcr.io/hatchet-dev/hatchet/hatchet-engine:${HATCHET_TAG:?Set HATCHET_TAG in .env}
     profiles: [infra, summitflow, agent-hub, portfolio, full]
     command: /hatchet/hatchet-engine --config /hatchet/config
     environment:
@@ -130,7 +130,7 @@ services:
 
   # ─── SummitFlow ──────────────────────────────────────────────────
   summitflow-api:
-    image: ghcr.io/elias-leslie/summitflow-api:${TAG:-latest}
+    image: ghcr.io/elias-leslie/summitflow-api:${TAG:?Set TAG in .env}
     profiles: [summitflow, full]
     environment:
       DATABASE_URL: "postgresql://summitflow_app:${SF_DB_PASSWORD:-changeme}@postgres:5432/summitflow"
@@ -166,7 +166,7 @@ services:
       docker-socket-proxy:
         condition: service_healthy
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     volumes:
       - .:/compose:ro
       - ${HOST_HOME_PATH:?}:${HOST_HOME_PATH:?}
@@ -178,12 +178,12 @@ services:
     restart: unless-stopped
 
   summitflow-web:
-    image: ghcr.io/elias-leslie/summitflow-web:${TAG:-latest}
+    image: ghcr.io/elias-leslie/summitflow-web:${TAG:?Set TAG in .env}
     profiles: [summitflow, full]
     depends_on:
       - summitflow-api
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     environment:
       API_URL: "http://summitflow-api:8001"
       AGENT_HUB_URL: "http://agent-hub-api:8003"
@@ -197,7 +197,7 @@ services:
     restart: unless-stopped
 
   summitflow-worker:
-    image: ghcr.io/elias-leslie/summitflow-api:${TAG:-latest}
+    image: ghcr.io/elias-leslie/summitflow-api:${TAG:?Set TAG in .env}
     profiles: [summitflow, full]
     command: ["python", "-m", "app.worker"]
     environment:
@@ -233,7 +233,7 @@ services:
 
   # ─── Agent Hub ───────────────────────────────────────────────────
   agent-hub-api:
-    image: ghcr.io/elias-leslie/agent-hub-api:${TAG:-latest}
+    image: ghcr.io/elias-leslie/agent-hub-api:${TAG:?Set TAG in .env}
     profiles: [agent-hub, full]
     environment:
       AGENT_HUB_DB_URL: "postgresql://agent_hub_app:${AH_DB_PASSWORD:-changeme}@postgres:5432/agent_hub"
@@ -260,7 +260,7 @@ services:
       hatchet:
         condition: service_healthy
     ports:
-      - "8003:8003"
+      - "127.0.0.1:8003:8003"
     volumes:
       - ${HOST_HOME_PATH:?}:${HOST_HOME_PATH:?}
     healthcheck:
@@ -271,12 +271,12 @@ services:
     restart: unless-stopped
 
   agent-hub-web:
-    image: ghcr.io/elias-leslie/agent-hub-web:${TAG:-latest}
+    image: ghcr.io/elias-leslie/agent-hub-web:${TAG:?Set TAG in .env}
     profiles: [agent-hub, full]
     depends_on:
       - agent-hub-api
     ports:
-      - "3003:3003"
+      - "127.0.0.1:3003:3003"
     environment:
       AGENT_HUB_API_URL: "http://agent-hub-api:8003"
       SUMMITFLOW_API_URL: "http://summitflow-api:8001"
@@ -291,7 +291,7 @@ services:
     restart: unless-stopped
 
   agent-hub-worker:
-    image: ghcr.io/elias-leslie/agent-hub-api:${TAG:-latest}
+    image: ghcr.io/elias-leslie/agent-hub-api:${TAG:?Set TAG in .env}
     profiles: [agent-hub, full]
     command: ["python", "-m", "app.worker"]
     environment:
@@ -324,10 +324,10 @@ services:
   # Only a-term-web runs in Docker (static Next.js frontend).
 
   a-term-web:
-    image: ghcr.io/elias-leslie/a-term-web:${TAG:-latest}
+    image: ghcr.io/elias-leslie/a-term-web:${TAG:?Set TAG in .env}
     profiles: [a-term, full]
     ports:
-      - "3002:3002"
+      - "127.0.0.1:3002:3002"
     extra_hosts:
       # a-term-api runs on the host — alias so baked Next.js rewrites resolve
       - "a-term-api:host-gateway"
@@ -340,7 +340,7 @@ services:
 
   # ─── Portfolio AI ────────────────────────────────────────────────
   portfolio-api:
-    image: ghcr.io/elias-leslie/portfolio-api:${TAG:-latest}
+    image: ghcr.io/elias-leslie/portfolio-api:${TAG:?Set TAG in .env}
     profiles: [portfolio, full]
     environment:
       PORTFOLIO_DB_URL: "postgresql://portfolio_app:${PA_DB_PASSWORD:-changeme}@postgres:5432/portfolio_ai"
@@ -364,7 +364,7 @@ services:
       hatchet:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -375,12 +375,12 @@ services:
     restart: unless-stopped
 
   portfolio-web:
-    image: ghcr.io/elias-leslie/portfolio-web:${TAG:-latest}
+    image: ghcr.io/elias-leslie/portfolio-web:${TAG:?Set TAG in .env}
     profiles: [portfolio, full]
     depends_on:
       - portfolio-api
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       API_URL: "http://portfolio-api:8000"
     healthcheck:
@@ -391,7 +391,7 @@ services:
     restart: unless-stopped
 
   portfolio-worker:
-    image: ghcr.io/elias-leslie/portfolio-api:${TAG:-latest}
+    image: ghcr.io/elias-leslie/portfolio-api:${TAG:?Set TAG in .env}
     profiles: [portfolio, full]
     command: ["python", "-m", "app.worker"]
     environment:
@@ -415,10 +415,10 @@ services:
 
   # ─── Monkey Fight ────────────────────────────────────────────────
   monkey-fight:
-    image: ghcr.io/elias-leslie/monkey-fight:${TAG:-latest}
+    image: ghcr.io/elias-leslie/monkey-fight:${TAG:?Set TAG in .env}
     profiles: [monkey-fight, full]
     ports:
-      - "4001:4001"
+      - "127.0.0.1:4001:4001"
     environment:
       API_TARGET: "http://summitflow-api:8001"
       AGENT_HUB_TARGET: "http://agent-hub-api:8003"
@@ -439,7 +439,7 @@ services:
     build:
       context: ../..
       dockerfile: docker/agent-browser.Dockerfile
-    image: ghcr.io/elias-leslie/agent-browser:${TAG:-latest}
+    image: ghcr.io/elias-leslie/agent-browser:${TAG:?Set TAG in .env}
     profiles: [browser-vm-build]
     shm_size: '2gb'
     # Chrome runs with --no-sandbox; default seccomp profile is sufficient
