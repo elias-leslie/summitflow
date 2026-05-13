@@ -388,7 +388,7 @@ def test_create_feedback_task_keeps_valid_linked_task(mocker) -> None:
     link_feedback.assert_not_called()
 
 
-def test_create_feedback_task_routes_st_component_to_owner_project(mocker) -> None:
+def test_create_feedback_task_stays_in_current_project(mocker) -> None:
     from app.tasks.autonomous import upkeep
 
     feedback = {
@@ -416,8 +416,8 @@ def test_create_feedback_task_routes_st_component_to_owner_project(mocker) -> No
     created = upkeep._create_feedback_tasks("portfolio-ai", limit=2)
 
     assert created == ["task-feedback"]
-    task_exists.assert_called_once_with("summitflow", "upkeep:feedback:fb-456")
-    assert create_task.call_args.kwargs["project_id"] == "summitflow"
+    task_exists.assert_called_once_with("portfolio-ai", "upkeep:feedback:fb-456")
+    assert create_task.call_args.kwargs["project_id"] == "portfolio-ai"
 
 
 def test_task_exists_for_upkeep_source_uses_task_spirit_context(mocker) -> None:

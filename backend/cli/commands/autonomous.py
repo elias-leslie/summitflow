@@ -140,3 +140,23 @@ def schedules() -> None:
         return
 
     output_json(result)
+
+
+@app.command()
+@usage(
+    surface="st.autonomous.upkeep",
+    cmd="st autonomous upkeep",
+    when="run one routine upkeep discovery cycle for the current project",
+    task_types=("devops", "verification"),
+)
+def upkeep() -> None:
+    """Run one routine upkeep discovery cycle now."""
+    client = STClient()
+
+    try:
+        result = client.run_routine_upkeep()
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    output_json(result)

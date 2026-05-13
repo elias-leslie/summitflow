@@ -57,6 +57,9 @@ class ExecutionOperationsMixin:
             enabled=enabled,
         )
 
+    def run_routine_upkeep(self) -> dict[str, Any]:
+        return exec_ops.run_routine_upkeep(self._client, self._url, self._handle_response)
+
     def list_sessions(
         self,
         *,

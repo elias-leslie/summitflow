@@ -47,6 +47,14 @@ def update_autonomous_schedule(
     return cast(dict[str, Any], handle_response(response))
 
 
+def run_routine_upkeep(
+    client: httpx.Client, url_fn: Any, handle_response: Any
+) -> dict[str, Any]:
+    """Run one routine upkeep discovery cycle."""
+    response = client.post(url_fn("/autonomous/upkeep/run"))
+    return cast(dict[str, Any], handle_response(response))
+
+
 def list_sessions(
     client: httpx.Client,
     url_fn: Any,

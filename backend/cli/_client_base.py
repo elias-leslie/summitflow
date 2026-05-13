@@ -19,7 +19,7 @@ class APIError(Exception):
 class BaseHTTPClient:
     """Base class providing HTTP request methods and response handling."""
 
-    def __init__(self, base_url: str, project_id: str, timeout: float = 150.0) -> None:
+    def __init__(self, base_url: str, project_id: str, timeout: float | None = 150.0) -> None:
         self.base_url = base_url
         self.project_id = project_id
         self._client = httpx.Client(timeout=timeout)

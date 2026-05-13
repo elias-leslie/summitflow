@@ -282,6 +282,20 @@ def test_autonomous_schedules_lists_schedule_states() -> None:
     client_cls.return_value.list_autonomous_schedules.assert_called_once_with()
 
 
+def test_autonomous_upkeep_runs_discovery_cycle() -> None:
+    with patch("cli.commands.autonomous.STClient") as client_cls:
+        client_cls.return_value.run_routine_upkeep.return_value = {
+            "project_id": "summitflow",
+            "status": "completed",
+            "tasks_created": 2,
+        }
+        result = runner.invoke(main_app, ["autonomous", "upkeep"])
+
+    assert result.exit_code == 0
+    assert '"tasks_created": 2' in result.output
+    client_cls.return_value.run_routine_upkeep.assert_called_once_with()
+
+
 def test_check_runs_native_tool() -> None:
     with (
         patch("cli.commands.check._tool_configs", return_value={"ruff": {"label": "LINT", "binary": "ruff"}}),
