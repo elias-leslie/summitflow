@@ -315,7 +315,8 @@ def _fetch_audit_metrics(hours: int, limit: int, project: str | None = None) -> 
             (array_agg(session_id ORDER BY latest_event DESC))[1:3] AS examples,
             (array_agg(session_id ORDER BY latest_event DESC))[1:3] AS session_ids
         FROM flags
-        WHERE wrote_files AND NOT ran_st_check AND status IN ('completed', 'failed')
+        WHERE wrote_files AND NOT ran_st_check AND status = 'completed'
+          AND agent_slug IS NOT NULL AND agent_slug != 'unknown'
         GROUP BY project_id, agent_slug
         ORDER BY count DESC, project_id, agent_slug
         LIMIT %s;
