@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -42,14 +43,18 @@ def _regenerate_lock_id(project_id: str) -> int:
 
 
 @contextmanager
-def _regenerate_lock(project_id: str):
+def _regenerate_lock(project_id: str) -> Iterator[bool]:
+    """Try to acquire the per-project refactor sync lock without waiting."""
     lock_id = _regenerate_lock_id(project_id)
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT pg_advisory_lock(%s)", (lock_id,))
+        cur.execute("SELECT pg_try_advisory_lock(%s)", (lock_id,))
+        row = cur.fetchone()
+        acquired = bool(row and row[0])
         try:
-            yield
+            yield acquired
         finally:
-            cur.execute("SELECT pg_advisory_unlock(%s)", (lock_id,))
+            if acquired:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (lock_id,))
             conn.commit()
 
 
@@ -372,7 +377,20 @@ def regenerate_refactor_tasks_impl(
     refresh_scan: bool = True,
 ) -> dict[str, Any]:
     """Scan, close resolved refactor tasks, and create only newly needed tasks."""
-    with _regenerate_lock(project_id):
+    with _regenerate_lock(project_id) as acquired:
+        if not acquired:
+            logger.info("Refactor task sync already running for %s", project_id)
+            return {
+                "status": "already_running",
+                "project_id": project_id,
+                "message": "Refactor task sync is already running for this project",
+                "closed_count": 0,
+                "created_count": 0,
+                "retired_count": 0,
+                "pruned_count": 0,
+                "scanned_count": 0,
+                "skipped_count": 0,
+            }
         project_root = get_project_root_path(project_id)
         if not project_root:
             logger.error("Project %s not found or has no root_path", project_id)

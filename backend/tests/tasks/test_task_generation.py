@@ -112,7 +112,7 @@ class TestGenerateTasksFromScan:
         _mock_get_project_root: MagicMock,
     ) -> None:
         mock_get_targets.return_value = {"targets": []}
-        mock_regenerate_lock.return_value.__enter__.return_value = None
+        mock_regenerate_lock.return_value.__enter__.return_value = True
         mock_regenerate_lock.return_value.__exit__.return_value = None
 
         result = regenerate_refactor_tasks_sync("test-project")
@@ -124,6 +124,26 @@ class TestGenerateTasksFromScan:
             "test-project",
             limit=DEFAULT_REFACTOR_TARGET_LIMIT,
         )
+
+    @patch("app.tasks.autonomous.refactor_generation.get_project_root_path")
+    @patch("app.tasks.autonomous.refactor_generation.scan")
+    @patch("app.tasks.autonomous.refactor_generation._regenerate_lock")
+    def test_regenerate_sync_returns_already_running_without_waiting(
+        self,
+        mock_regenerate_lock: MagicMock,
+        mock_scan: MagicMock,
+        mock_get_project_root: MagicMock,
+    ) -> None:
+        mock_regenerate_lock.return_value.__enter__.return_value = False
+        mock_regenerate_lock.return_value.__exit__.return_value = None
+
+        result = regenerate_refactor_tasks_sync("test-project")
+
+        assert result["status"] == "already_running"
+        assert result["project_id"] == "test-project"
+        assert result["created_count"] == 0
+        mock_get_project_root.assert_not_called()
+        mock_scan.assert_not_called()
 
     @patch("app.tasks.autonomous.refactor_generation.process_refactor_target")
     @patch("app.tasks.autonomous.refactor_generation.get_refactor_targets")
