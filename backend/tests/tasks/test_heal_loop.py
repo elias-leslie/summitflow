@@ -680,6 +680,48 @@ class TestWorkProductDetection:
         assert all_passed
         mock_smoke.assert_called_once()
 
+    @patch("app.tasks.autonomous.exec_modules.quality_check._run_smoke_and_targeted_tests")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.get_task_spirit")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.get_task")
+    @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
+    def test_run_execution_quality_check_allows_feedback_resolution_without_work_product(
+        self,
+        mock_run: MagicMock,
+        mock_get_task: MagicMock,
+        mock_get_spirit: MagicMock,
+        mock_smoke: MagicMock,
+    ) -> None:
+        """Feedback cleanup can resolve external state without producing commits."""
+        from app.tasks.autonomous.exec_modules.quality_check import run_execution_quality_check
+
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="refs/remotes/origin/main\n"),
+            MagicMock(returncode=0, stdout=""),
+            MagicMock(stdout=""),
+        ]
+        mock_get_task.return_value = {
+            "id": "task-feedback",
+            "title": "Handle feedback: compact manifest saves prompt tokens",
+            "description": "Feedback ID: feedback-123",
+        }
+        mock_get_spirit.return_value = {
+            "done_when": [
+                "The underlying upkeep signal is resolved or explicitly marked obsolete with evidence"
+            ],
+        }
+        mock_smoke.return_value = True
+
+        all_passed, _results = run_execution_quality_check(
+            "task-feedback",
+            "sub-1",
+            [{"step_number": 1, "description": "Resolve feedback item feedback-123"}],
+            "/tmp/test-checkout",
+            "summitflow",
+        )
+
+        assert all_passed
+        mock_smoke.assert_called_once()
+
     @patch("app.tasks.autonomous.exec_modules.quality_check.get_task_spirit")
     @patch("app.tasks.autonomous.exec_modules.quality_check.get_task")
     @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
