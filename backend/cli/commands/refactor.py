@@ -50,9 +50,6 @@ def regenerate(
         if result.get("status") == "started":
             typer.echo(f"REFACTOR_SYNC: status=started project={result.get('project_id', client.project_id)}")
             return
-        if result.get("status") == "already_running":
-            typer.echo(f"REFACTOR_SYNC: status=already_running project={result.get('project_id', client.project_id)}")
-            return
         closed = result.get("closed_count", 0)
         created = result.get("created_count", 0)
         scanned = result.get("scanned_count", 0)

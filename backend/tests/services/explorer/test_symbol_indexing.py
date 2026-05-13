@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.services.explorer.types.files import FileScanner
-from app.storage import explorer_symbols
+from app.storage import explorer_entries, explorer_symbols
 from app.storage.connection import get_connection
 
 
@@ -101,3 +101,25 @@ def get_file_tree(path: str) -> dict[str, str]:
             project_id,
             "backend/app/api/files.py::get_file_tree#function",
         ) is None
+
+    def test_run_skips_tool_cache_and_vendor_dirs(self, symbol_project: tuple[str, Path]) -> None:
+        """A file scan should not index tool output or dependency cache trees."""
+        project_id, root = symbol_project
+        source_file = root / "backend" / "app" / "api" / "files.py"
+        source_file.write_text("def get_file_tree() -> dict[str, str]:\n    return {}\n", encoding="utf-8")
+        cache_file = root / ".dev-tools" / "cleanroom-pydeps" / "site-packages" / "heavy.py"
+        cache_file.parent.mkdir(parents=True)
+        cache_file.write_text("def cached_dependency() -> None:\n    pass\n", encoding="utf-8")
+
+        result = FileScanner(project_id).run()
+
+        assert result.success
+        assert explorer_entries.get_entry(project_id, "file", "backend/app/api/files.py") is not None
+        assert (
+            explorer_entries.get_entry(
+                project_id,
+                "file",
+                ".dev-tools/cleanroom-pydeps/site-packages/heavy.py",
+            )
+            is None
+        )

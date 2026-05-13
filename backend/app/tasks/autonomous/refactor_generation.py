@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -33,29 +30,7 @@ from ...logging_config import get_logger
 logger = get_logger(__name__)
 
 _SIZE_ISSUES = {"oversized", "large_file", "bloat_critical", "bloat_warning"}
-_REFACTOR_REGENERATE_LOCK_PREFIX = "summitflow:refactor-regenerate:"
 _REFACTOR_PRUNE_STATUSES = ("pending", "paused", "failed")
-
-
-def _regenerate_lock_id(project_id: str) -> int:
-    digest = hashlib.sha1(f"{_REFACTOR_REGENERATE_LOCK_PREFIX}{project_id}".encode()).digest()
-    return int.from_bytes(digest[:8], "big", signed=True)
-
-
-@contextmanager
-def _regenerate_lock(project_id: str) -> Iterator[bool]:
-    """Try to acquire the per-project refactor sync lock without waiting."""
-    lock_id = _regenerate_lock_id(project_id)
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT pg_try_advisory_lock(%s)", (lock_id,))
-        row = cur.fetchone()
-        acquired = bool(row and row[0])
-        try:
-            yield acquired
-        finally:
-            if acquired:
-                cur.execute("SELECT pg_advisory_unlock(%s)", (lock_id,))
-            conn.commit()
 
 
 def _ensure_refactor_scope(task_id: str, relative_path: str) -> None:
@@ -377,42 +352,28 @@ def regenerate_refactor_tasks_impl(
     refresh_scan: bool = True,
 ) -> dict[str, Any]:
     """Scan, close resolved refactor tasks, and create only newly needed tasks."""
-    with _regenerate_lock(project_id) as acquired:
-        if not acquired:
-            logger.info("Refactor task sync already running for %s", project_id)
-            return {
-                "status": "already_running",
-                "project_id": project_id,
-                "message": "Refactor task sync is already running for this project",
-                "closed_count": 0,
-                "created_count": 0,
-                "retired_count": 0,
-                "pruned_count": 0,
-                "scanned_count": 0,
-                "skipped_count": 0,
-            }
-        project_root = get_project_root_path(project_id)
-        if not project_root:
-            logger.error("Project %s not found or has no root_path", project_id)
-            return {
-                "error": f"Project {project_id} not found",
-                "closed_count": 0,
-                "created_count": 0,
-                "scanned_count": 0,
-            }
+    project_root = get_project_root_path(project_id)
+    if not project_root:
+        logger.error("Project %s not found or has no root_path", project_id)
+        return {
+            "error": f"Project {project_id} not found",
+            "closed_count": 0,
+            "created_count": 0,
+            "scanned_count": 0,
+        }
 
-        if refresh_scan:
-            scan(project_id, "file")
-        closed_count = check_and_close_resolved_issues(project_id)
-        result = generate_refactor_tasks_internal(
-            project_id,
-            skip_existing=True,
-            project_root=project_root,
-            create_limit=create_limit,
-        )
-        logger.info(
-            "Refactor task sync complete for %s: closed=%d, created=%d, retired=%d, scanned=%d, skipped=%d",
-            project_id, closed_count, result['created_count'],
-            result['retired_count'], result['scanned_count'], result['skipped_count'],
-        )
-        return {"closed_count": closed_count, **result}
+    if refresh_scan:
+        scan(project_id, "file")
+    closed_count = check_and_close_resolved_issues(project_id)
+    result = generate_refactor_tasks_internal(
+        project_id,
+        skip_existing=True,
+        project_root=project_root,
+        create_limit=create_limit,
+    )
+    logger.info(
+        "Refactor task sync complete for %s: closed=%d, created=%d, retired=%d, scanned=%d, skipped=%d",
+        project_id, closed_count, result['created_count'],
+        result['retired_count'], result['scanned_count'], result['skipped_count'],
+    )
+    return {"closed_count": closed_count, **result}

@@ -69,15 +69,23 @@ SKIP_DIRS: frozenset[str] = frozenset(
         "node_modules",
         ".venv",
         "venv",
+        "env",
+        "site-packages",
+        "vendor",
         # Build/output directories
         ".next",
         "dist",
         "build",
+        "out",
+        "target",
         # Cache directories
+        ".cache",
+        ".dev-tools",
         "__pycache__",
         ".pytest_cache",
         ".mypy_cache",
         ".ruff_cache",
+        ".turbo",
         # Data directories (project-specific)
         "data",
         ".beads",

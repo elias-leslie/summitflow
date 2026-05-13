@@ -10,21 +10,34 @@ def load_subtasks(
     task_id: str,
     project_id: str,
     *,
-    get_subtasks_for_task: Callable[..., list],
     emit_progress: Callable[..., None],
     emit_error: Callable[..., None],
     task_store: Any,
 ) -> tuple[dict[str, Any] | None, list, int, int]:
-    """Load subtasks. Returns (error, incomplete, total, completed)."""
-    subtasks = get_subtasks_for_task(task_id, include_steps=True)
-    incomplete = [s for s in subtasks if not s.get("passes")]
-    total = len(subtasks)
-    completed = total - len(incomplete)
+    """Build one execution unit for the whole task."""
+    task = task_store.get_task(task_id)
+    if not task:
+        emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
+        return {"task_id": task_id, "status": "error", "message": "Task not found"}, [], 0, 0
+    if task.get("status") == "completed":
+        emit_progress(task_id, total_subtasks=1, completed_subtasks=1, project_id=project_id)
+        return None, [], 1, 1
+
+    description = str(task.get("description") or task.get("title") or task_id)
+    incomplete = [
+        {
+            "id": task_id,
+            "subtask_id": "task",
+            "description": description,
+            "subtask_type": None,
+            "steps": [],
+            "steps_from_table": [],
+            "passes": False,
+        }
+    ]
+    total = 1
+    completed = 0
     emit_progress(task_id, total_subtasks=total, completed_subtasks=completed, project_id=project_id)
-    if total == 0:
-        emit_error(task_id, "No subtasks to execute — planning may have failed", project_id=project_id)
-        task_store.update_task_status(task_id, "failed")
-        return {"task_id": task_id, "status": "failed", "error": "No subtasks to execute", "reason": "no_subtasks"}, [], 0, 0
     return None, incomplete, total, completed
 
 
@@ -56,30 +69,6 @@ def handle_completion(
         return "failed"
     handle_failed_execution(task_id, project_id, results=results)
     return "failed"
-
-
-def collect_agent_feedback(
-    task_id: str,
-    project_path: str,
-    project_id: str,
-    results: list,
-    *,
-    agent_slug: str,
-    execute_agent_feedback: Callable[..., Any],
-    emit_log: Callable[..., None],
-) -> None:
-    if not results:
-        return
-    try:
-        execute_agent_feedback(task_id, project_path, project_id, results, agent_slug=agent_slug)
-    except Exception as exc:
-        emit_log(
-            task_id,
-            "warning",
-            f"Agent feedback collection failed after completion routing: {type(exc).__name__}: {exc}",
-            source="orchestrator",
-            project_id=project_id,
-        )
 
 
 def run_incomplete_subtasks(
@@ -129,7 +118,7 @@ def execute_task_locked_impl(
             return completion_error
         return deps["handle_early_completion"](task_id, project_id, total, dispatch)
 
-    project_path, results, wind_down_state, agent_override = run_incomplete_subtasks(
+    project_path, results, wind_down_state, _agent_override = run_incomplete_subtasks(
         task_id,
         project_id,
         incomplete,
@@ -141,7 +130,7 @@ def execute_task_locked_impl(
     )
     if not project_path:
         return results[0]
-    return _finish_execution(task_id, project_id, project_path, results, incomplete, dispatch, wind_down_state, agent_override, deps)
+    return _finish_execution(task_id, project_id, project_path, results, incomplete, dispatch, wind_down_state, deps)
 
 
 def _finish_execution(
@@ -152,20 +141,10 @@ def _finish_execution(
     incomplete: list,
     dispatch: Callable[[str, str, str], None] | None,
     wind_down_state: Any,
-    agent_override: str | None,
     deps: dict[str, Any],
 ) -> dict[str, Any]:
     deps["check_main_repo_leakage"](task_id, project_id, project_path)
     deps["handle_completion"](task_id, project_id, project_path, results, incomplete, dispatch, wind_down_state)
-    collect_agent_feedback(
-        task_id,
-        project_path,
-        project_id,
-        results,
-        agent_slug=agent_override or "coder",
-        execute_agent_feedback=deps["execute_agent_feedback"],
-        emit_log=deps["emit_log"],
-    )
     return {"task_id": task_id, "status": "executed", "subtask_results": results}
 
 

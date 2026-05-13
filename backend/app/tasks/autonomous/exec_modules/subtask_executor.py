@@ -1,4 +1,4 @@
-"""Subtask execution with self-healing retry loop."""
+"""Single task execution unit."""
 
 from __future__ import annotations
 
@@ -14,9 +14,8 @@ from .checkout import get_project_path
 from .git_work_product import ensure_committed_work_product
 from .interruption import ExecutionInterrupted
 from .prompts import build_subtask_prompt_payload
+from .quality_check import run_execution_quality_check
 from .result_processing import process_final_result
-from .retry_loop import run_self_healing_loop
-from .subtask_fallback import execute_with_fallbacks
 from .subtask_helpers import handle_execution_error, initialize_subtask_logging
 from .subtask_validation import validate_subtask_environment
 
@@ -86,13 +85,8 @@ def _run_initial_agent(
     prompt: str,
     project_path: str,
     project_id: str,
-) -> tuple[bool, list[Any], int, int, int, str, str | None]:
-    """Execute the agent and run the self-healing loop.
-
-    Returns (all_passed, step_results, self_fix_attempts,
-             supervisor_guided_attempts, extensions_granted,
-             initial_content, agent_session_id).
-    """
+) -> tuple[bool, list[Any], str]:
+    """Execute the agent once, then run task-scoped verification."""
     steps = subtask.get("steps_from_table") or subtask.get("steps") or []
 
     logger.info(
@@ -103,7 +97,7 @@ def _run_initial_agent(
         agent_slug=agent_slug,
     )
 
-    response, agent_session_id = execute_agent_initial(
+    response, _agent_session_id = execute_agent_initial(
         task_id, subtask_short_id, prompt, agent_slug, project_path, project_id,
     )
     failure = agent_completion_failure(response)
@@ -115,52 +109,13 @@ def _run_initial_agent(
             "reason": "agent_interrupted",
             "returncode": 1,
         }
-        return False, [step_result], 0, 0, 0, response.content, agent_session_id
+        return False, [step_result], response.content
 
-    all_passed, step_results, self_fix_attempts, supervisor_guided_attempts, extensions_granted, _ = (
-        run_self_healing_loop(
-            task_id, subtask_id, subtask_short_id, subtask,
-            steps, project_path, project_id,
-            agent_slug, agent_session_id, response.content,
-        )
+    all_passed, step_results = (
+        run_execution_quality_check(task_id, subtask_id, steps, project_path, project_id)
     )
 
-    return (
-        all_passed, step_results,
-        self_fix_attempts, supervisor_guided_attempts, extensions_granted,
-        response.content, agent_session_id,
-    )
-
-
-def _apply_fallbacks(
-    task_id: str,
-    subtask_id: str,
-    subtask_short_id: str,
-    subtask: dict[str, Any],
-    subtask_type: str | None,
-    agent_slug: str,
-    prompt: str,
-    project_path: str,
-    project_id: str,
-    agent_override: str | None,
-    all_passed: bool,
-    step_results: list[Any],
-    self_fix_attempts: int,
-    supervisor_guided_attempts: int,
-    extensions_granted: int,
-) -> tuple[bool, list[Any], str, int, int, int]:
-    """Apply fallback strategies after the primary self-healing loop.
-
-    Returns (all_passed, step_results, agent_slug, self_fix_attempts,
-             supervisor_guided_attempts, extensions_granted).
-    """
-    steps = subtask.get("steps_from_table") or subtask.get("steps") or []
-    return execute_with_fallbacks(
-        task_id, subtask_id, subtask_short_id, subtask, subtask_type,
-        steps, project_path, project_id, agent_slug, prompt,
-        all_passed, step_results, self_fix_attempts, supervisor_guided_attempts,
-        extensions_granted, agent_override,
-    )
+    return all_passed, step_results, response.content
 
 
 def execute_subtask(
@@ -171,7 +126,7 @@ def execute_subtask(
     task_type: str | None = None,
     agent_override: str | None = None,
 ) -> dict[str, Any]:
-    """Execute a single subtask with fresh context and self-healing retry loop."""
+    """Execute the task once with fresh context."""
     start_time = time.time()
 
     try:
@@ -186,20 +141,10 @@ def execute_subtask(
         prompt, prompt_snapshot = build_subtask_prompt_payload(task_id, subtask, project_id, project_path)
         emit_prompt_harness_snapshot(task_id, prompt_snapshot)
 
-        all_passed, step_results, self_fix_attempts, supervisor_guided_attempts, extensions_granted, initial_content, _ = (
+        all_passed, step_results, initial_content = (
             _run_initial_agent(
                 task_id, subtask_id, subtask_short_id, subtask,
                 agent_slug, prompt, project_path, project_id,
-            )
-        )
-
-        all_passed, step_results, agent_slug, self_fix_attempts, supervisor_guided_attempts, extensions_granted = (
-            _apply_fallbacks(
-                task_id, subtask_id, subtask_short_id, subtask, subtask_type,
-                agent_slug, prompt, project_path, project_id,
-                agent_override,
-                all_passed, step_results, self_fix_attempts,
-                supervisor_guided_attempts, extensions_granted,
             )
         )
 
@@ -216,7 +161,7 @@ def execute_subtask(
             task_id, subtask_id, subtask_short_id, project_id,
             all_passed, step_results, initial_content,
             time.time() - start_time,
-            self_fix_attempts, supervisor_guided_attempts, extensions_granted,
+            0, 0, 0,
             issue_counts, subtask_type=subtask_type,
         )
 

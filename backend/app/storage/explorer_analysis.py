@@ -32,6 +32,30 @@ DEFAULT_REFACTOR_TARGET_LIMIT = 50
 
 # Path patterns to exclude from refactor targets (tests, config, etc.)
 REFACTOR_EXCLUDE_PATTERNS = {"test_", "tests/", "__test__", ".test.", ".spec."}
+REFACTOR_EXCLUDE_PATH_SEGMENTS = {
+    ".cache",
+    ".dev-tools",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".next",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".svn",
+    ".turbo",
+    ".venv",
+    "__pycache__",
+    "build",
+    "coverage",
+    "dist",
+    "env",
+    "node_modules",
+    "out",
+    "site-packages",
+    "target",
+    "vendor",
+    "venv",
+}
 
 
 def _build_refactor_filter_conditions(
@@ -56,6 +80,15 @@ def _build_refactor_filter_conditions(
     for pattern in REFACTOR_EXCLUDE_PATTERNS:
         conditions.append("path NOT LIKE %s")
         params.append(f"%{pattern}%")
+    for segment in REFACTOR_EXCLUDE_PATH_SEGMENTS:
+        conditions.append("path != %s")
+        params.append(segment)
+        conditions.append("path NOT LIKE %s")
+        params.append(f"{segment}/%")
+        conditions.append("path NOT LIKE %s")
+        params.append(f"%/{segment}/%")
+        conditions.append("path NOT LIKE %s")
+        params.append(f"%/{segment}")
 
     return conditions, params
 

@@ -132,3 +132,31 @@ def test_get_refactor_targets_includes_top_symbols(
     assert result["targets"][0]["should_create_task"]
     assert result["targets"][0]["recommended_action"] == "create_task"
     assert result["targets"][0]["promotion_reasons"]
+
+
+def test_get_refactor_targets_excludes_tool_cache_and_vendor_paths(
+    refactor_project: str,
+) -> None:
+    """Refactor task generation should only target project source files."""
+    project_id = refactor_project
+    source_path = "backend/app/services/useful_service.py"
+    excluded_paths = [
+        ".dev-tools/cleanroom-pydeps/site-packages/vendor_pkg/heavy.py",
+        "backend/.venv/lib/python3.12/site-packages/heavy.py",
+        "frontend/node_modules/pkg/heavy.js",
+        "frontend/dist/chunk.js",
+        "vendor/copied_dependency.py",
+    ]
+    explorer_entries.upsert_entries(
+        project_id,
+        "file",
+        [_make_file_entry(source_path)]
+        + [_make_file_entry(path) for path in excluded_paths],
+    )
+
+    result = explorer_analysis.get_refactor_targets(project_id, limit=20)
+    paths = {target["path"] for target in result["targets"]}
+
+    assert paths == {source_path}
+    assert explorer_analysis.get_promotable_refactor_paths(project_id) == {source_path}
+    assert result["summary"]["high_priority_count"] == 1

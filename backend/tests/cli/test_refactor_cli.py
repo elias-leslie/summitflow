@@ -32,14 +32,6 @@ class _FakeSTClient:
     ) -> dict[str, Any]:
         self.calls.append({"url": url, "json": json, "params": params})
         if params == {"sync": "true"}:
-            if url.endswith("already-running"):
-                return {
-                    "status": "already_running",
-                    "project_id": self.project_id,
-                    "closed_count": 0,
-                    "created_count": 0,
-                    "scanned_count": 0,
-                }
             return {
                 "status": "completed",
                 "project_id": self.project_id,
@@ -73,17 +65,3 @@ def test_refactor_regenerate_sync_requires_explicit_flag_and_no_client_timeout()
     client = _FakeSTClient.instances[0]
     assert client.timeout is None
     assert client.calls[0]["params"] == {"sync": "true"}
-
-
-def test_refactor_regenerate_reports_already_running() -> None:
-    _FakeSTClient.instances.clear()
-
-    class AlreadyRunningClient(_FakeSTClient):
-        def _url(self, path: str) -> str:
-            return f"http://summitflow.test/api/projects/{self.project_id}{path}/already-running"
-
-    with patch("cli.commands.refactor.STClient", AlreadyRunningClient):
-        result = runner.invoke(app, ["--sync"])
-
-    assert result.exit_code == 0
-    assert "REFACTOR_SYNC: status=already_running project=summitflow" in result.output

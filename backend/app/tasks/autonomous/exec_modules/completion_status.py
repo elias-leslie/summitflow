@@ -5,13 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-import httpx
-
 from ....logging_config import get_logger
-from ....services._agent_hub_config import (
-    AGENT_HUB_URL,
-    build_agent_hub_headers,
-)
 from ....storage import agent_configs
 from ....storage import tasks as task_store
 from ....storage.notifications import (
@@ -65,26 +59,6 @@ def notify_failure(
         )
     except Exception:
         logger.exception("Failed to create failure notification", task_id=task_id)
-
-
-def wake_persona(task_id: str, project_id: str, event_type: str, context: str) -> None:
-    """Fire-and-forget wake to persona agent via Agent Hub. Non-blocking."""
-    try:
-        headers = build_agent_hub_headers()
-        with httpx.Client(timeout=5.0) as client:
-            client.post(
-                f"{AGENT_HUB_URL}/api/wake",
-                json={
-                    "agent_slug": "persona",
-                    "context": context,
-                    "project_id": project_id,
-                    "event_type": event_type,
-                    "task_id": task_id,
-                },
-                headers=headers,
-            )
-    except Exception:
-        logger.debug("Persona wake failed (non-critical)", task_id=task_id)
 
 
 def build_early_completion_verification(total_subtasks: int) -> dict[str, Any]:
@@ -203,16 +177,10 @@ def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> 
             f"Completed task needs cleanup review: {reason}",
             project_id=project_id,
         )
-        wake_persona(
-            task_id,
-            project_id,
-            "cleanup_needed",
-            f"Completed task {task_id} needs cleanup review: {reason}. Reconcile lingering checkpoint or branch state.",
-        )
     return "completed"
 
 
-def transition_to_review_or_complete(
+def transition_to_complete(
     task_id: str,
     project_id: str,
     log_message: str,
