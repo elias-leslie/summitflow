@@ -57,8 +57,17 @@ const TAB_CONFIG = [
 
 /** Does this task have any execution data worth viewing? */
 function hasExecutionData(task: Task): boolean {
+  const hasLinkedSessions =
+    task.agent_hub_session_ids && task.agent_hub_session_ids.length > 0
+  const hasAttemptedAutonomousExecution =
+    task.execution_mode === 'autonomous' &&
+    ['running', 'paused', 'completed', 'failed', 'cancelled'].includes(
+      task.status,
+    )
+
   return (
-    (task.agent_hub_session_ids && task.agent_hub_session_ids.length > 0) ||
+    hasLinkedSessions ||
+    hasAttemptedAutonomousExecution ||
     task.status === 'running'
   )
 }
@@ -370,12 +379,27 @@ function OverviewPanel({
   )
 }
 
-function ActivityPanel({ task }: { task: Task }) {
+function ActivityPanel({ task, projectId }: { task: Task; projectId: string }) {
   const isLive = task.status === 'running'
 
   return (
     <div className="space-y-4">
-      <NarrationTimeline taskId={task.id} isLive={isLive} pollInterval={5000} />
+      {hasExecutionData(task) ? (
+        <AgentObservabilityTimeline
+          taskId={task.id}
+          projectId={projectId}
+          isLive={isLive}
+          pollInterval={3000}
+          maxHeight="600px"
+          className="border border-slate-700/50 rounded-lg overflow-hidden"
+        />
+      ) : (
+        <NarrationTimeline
+          taskId={task.id}
+          isLive={isLive}
+          pollInterval={5000}
+        />
+      )}
     </div>
   )
 }
@@ -489,7 +513,9 @@ export function TaskModalContent(props: TaskModalContentProps) {
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {resolvedTab === 'overview' && <OverviewPanel {...props} />}
-        {resolvedTab === 'activity' && <ActivityPanel task={task} />}
+        {resolvedTab === 'activity' && (
+          <ActivityPanel task={task} projectId={projectId} />
+        )}
         {resolvedTab === 'execution' && (
           <ExecutionPanel task={task} projectId={projectId} />
         )}

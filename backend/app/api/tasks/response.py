@@ -148,6 +148,7 @@ def task_to_response(task: dict[str, Any]) -> TaskResponse:
         autonomous=is_autonomous_mode(execution_mode),
         ai_review=task.get("ai_review", True),
         agent_override=task.get("agent_override"),
+        agent_hub_session_ids=task.get("agent_hub_session_ids") or [],
         plan_status=task.get("plan_status"),
         plan_approved_at=task.get("plan_approved_at"),
         plan_approved_by=task.get("plan_approved_by"),

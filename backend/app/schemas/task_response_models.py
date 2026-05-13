@@ -79,6 +79,10 @@ class TaskResponse(BaseModel):
     agent_override: str | None = Field(
         default=None, description="Override which agent executes this task (slug from Agent Hub)"
     )
+    agent_hub_session_ids: list[str] = Field(
+        default_factory=list,
+        description="Agent Hub sessions linked to this task execution",
+    )
     # Plan workflow fields (from task_spirit)
     plan_status: Literal["draft", "pending_review", "approved", "rejected"] | None = None
     plan_approved_at: datetime | None = None

@@ -73,3 +73,8 @@ class TestTaskToResponse:
         response = task_to_response(task)
         assert response.execution_mode == "autonomous"
         assert response.autonomous
+
+    def test_agent_hub_session_ids_propagated(self) -> None:
+        task = _minimal_task(agent_hub_session_ids=["sess-1", "sess-2"])
+        response = task_to_response(task)
+        assert response.agent_hub_session_ids == ["sess-1", "sess-2"]

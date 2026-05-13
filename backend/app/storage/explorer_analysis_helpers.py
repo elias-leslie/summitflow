@@ -25,6 +25,10 @@ SELECT path, name,
                 AND (SELECT count(*) FROM jsonb_object_keys(metadata->'health_flags')) >= 3
                 THEN 'Multiple structural issues'
            WHEN (metadata->>'complexity_score')::float > 10 THEN 'Medium complexity'
+           WHEN metadata->'health_flags' ? 'has_long_functions' THEN 'Long functions'
+           WHEN metadata->'health_flags' ? 'deep_nesting' THEN 'Deep nesting'
+           WHEN metadata->'health_flags' ? 'has_large_classes' THEN 'Large classes'
+           WHEN metadata->'health_flags' ? 'too_many_functions' THEN 'Too many functions'
            WHEN (metadata->>'lines_of_code')::int > 300 THEN 'Medium line count'
            WHEN (metadata->>'bloat_level') = 'warning' THEN 'File bloat'
            ELSE 'Structural issues'

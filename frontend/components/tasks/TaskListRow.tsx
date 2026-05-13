@@ -98,13 +98,18 @@ export function TaskListRow({
 
       {/* ID */}
       <td className="px-3 py-3">
-        <span className="text-xs mono text-slate-500">{task.id}</span>
+        <span className="text-xs mono text-slate-500 whitespace-nowrap">
+          {task.id}
+        </span>
       </td>
 
       {/* Title + Warning */}
       <td className="px-3 py-3">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-slate-200 line-clamp-1">
+          <span
+            className="text-sm text-slate-200 leading-snug break-words"
+            title={task.title}
+          >
             {task.title}
           </span>
         </div>
