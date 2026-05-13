@@ -307,35 +307,40 @@ def run_runtime_evaluator(task_id: str, project_id: str) -> RuntimeEvaluationRes
         emit_runtime_evaluator_result(task_id, result.to_event_payload())
         return result
 
-    browser_ok, browser_detail = _check_browser_health()
-    if not browser_ok:
-        result = RuntimeEvaluationResult(
-            mode=decision.mode,
-            passed=False,
-            summary=f"st browser health failed: {browser_detail}",
-            criteria=[
-                {
-                    "criterion_id": "browser-health",
-                    "category": "runtime",
-                    "status": "failed",
-                    "summary": browser_detail,
-                    "evidence": [browser_detail],
-                }
-            ],
-        )
-        emit_runtime_evaluator_result(task_id, result.to_event_payload())
-        return result
-
     host = _get_runtime_host()
     frontend_base = _resolve_frontend_base(project_id, host)
     api_base = _resolve_api_base(project_id, host)
     target_urls = execution_contract.get("target_urls") or []
     user_flows = execution_contract.get("user_flows") or []
+    needs_browser = bool(target_urls or user_flows or decision.run_design_critic)
+    browser_detail = ""
+
+    if needs_browser:
+        browser_ok, browser_detail = _check_browser_health()
+        if not browser_ok:
+            result = RuntimeEvaluationResult(
+                mode=decision.mode,
+                passed=False,
+                summary=f"st browser health failed: {browser_detail}",
+                criteria=[
+                    {
+                        "criterion_id": "browser-health",
+                        "category": "runtime",
+                        "status": "failed",
+                        "summary": browser_detail,
+                        "evidence": [browser_detail],
+                    }
+                ],
+            )
+            emit_runtime_evaluator_result(task_id, result.to_event_payload())
+            return result
 
     if user_flows:
         criteria, screenshots = _process_user_flows(task_id, task, project_id, user_flows, target_urls, frontend_base, host, execution_contract, browser_detail)
-    else:
+    elif target_urls:
         criteria, screenshots = _process_target_urls(task_id, target_urls, frontend_base, host, browser_detail)
+    else:
+        criteria, screenshots = [], []
 
     api_results, api_criteria = _collect_api_results(execution_contract, api_base, host)
     criteria.extend(api_criteria)

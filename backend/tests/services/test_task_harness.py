@@ -83,7 +83,7 @@ class TestDetermineTaskHarness:
         assert decision.mode == "runtime_eval"
         assert decision.requires_execution_contract
 
-    def test_design_sensitive_task_routes_to_runtime_eval_plus_design(self) -> None:
+    def test_design_metadata_without_runtime_checks_routes_to_code_only(self) -> None:
         decision = determine_task_harness(
             {
                 "task_type": "feature",
@@ -94,6 +94,29 @@ class TestDetermineTaskHarness:
                 "context": {
                     "files_to_modify": ["frontend/app/projects/[id]/design/page.tsx"],
                     "execution_contract": {
+                        "design_criteria": {"rubric": ["originality", "craft"]},
+                    },
+                }
+            },
+            [{"subtask_type": "ui-design", "description": "Redesign the overview"}],
+        )
+
+        assert decision.mode == "code_only"
+        assert not decision.run_design_critic
+
+    def test_runtime_contract_with_design_criteria_runs_design_critic(self) -> None:
+        decision = determine_task_harness(
+            {
+                "task_type": "feature",
+                "complexity": "STANDARD",
+                "description": "Redesign the project overview",
+            },
+            {
+                "context": {
+                    "files_to_modify": ["frontend/app/projects/[id]/design/page.tsx"],
+                    "execution_contract": {
+                        "mode": "runtime_eval_plus_design",
+                        "target_urls": ["/app/projects/demo"],
                         "design_criteria": {"rubric": ["originality", "craft"]},
                     },
                 }

@@ -99,33 +99,26 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
     @patch("app.tasks.autonomous.pickup_queries.task_store")
-    @patch("app.tasks.autonomous.pickup_queries.build_task_planning_signature", return_value="sig-unchanged")
-    def test_existing_unchanged_plan_artifacts_do_not_replan_without_subtasks(
+    def test_existing_plan_artifacts_without_subtasks_return_planning(
         self,
-        _mock_signature: MagicMock,
         mock_store: MagicMock,
         mock_spirit: MagicMock,
         mock_subtasks: MagicMock,
     ) -> None:
         from app.tasks.autonomous.pickup import _determine_next_stage
 
-        task_updated_at = datetime(2026, 3, 24, 12, 17, 4, tzinfo=UTC)
-        plan_updated_at = datetime(2026, 3, 24, 12, 17, 5, tzinfo=UTC)
         mock_store.get_task.return_value = {
             "labels": [],
             "description": "Add API endpoint",
-            "updated_at": task_updated_at,
-            "created_at": task_updated_at,
         }
         mock_spirit.return_value = {
             "done_when": ["Endpoint returns 200"],
             "context": {"planning_signature": "sig-unchanged"},
-            "updated_at": plan_updated_at.isoformat(),
             "plan_status": "draft",
         }
         mock_subtasks.return_value = []
 
-        assert _determine_next_stage("task-1") == "unknown"
+        assert _determine_next_stage("task-1") == "planning"
 
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
@@ -166,23 +159,17 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
     @patch("app.tasks.autonomous.pickup_queries.task_store")
-    @patch("app.tasks.autonomous.pickup_queries.build_task_planning_signature", return_value="sig-new")
-    def test_existing_plan_replans_when_task_changed_after_plan(
+    def test_context_gap_does_not_park_incomplete_subtasks(
         self,
-        _mock_signature: MagicMock,
         mock_store: MagicMock,
         mock_spirit: MagicMock,
         mock_subtasks: MagicMock,
     ) -> None:
         from app.tasks.autonomous.pickup import _determine_next_stage
 
-        task_updated_at = datetime(2026, 3, 24, 12, 18, 4, tzinfo=UTC)
-        plan_updated_at = datetime(2026, 3, 24, 12, 17, 5, tzinfo=UTC)
         mock_store.get_task.return_value = {
             "labels": [],
             "description": "Add API endpoint",
-            "updated_at": task_updated_at,
-            "created_at": datetime(2026, 3, 24, 12, 17, 4, tzinfo=UTC),
         }
         mock_spirit.return_value = {
             "done_when": ["Endpoint returns 200"],
@@ -190,14 +177,13 @@ class TestDetermineNextStage:
                 "subtasks": [{"subtask_id": "1.1"}],
                 "planning_signature": "sig-old",
             },
-            "updated_at": plan_updated_at.isoformat(),
             "plan_status": "draft",
         }
         mock_subtasks.return_value = [{"subtask_id": "1.1", "passes": False}]
 
         with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
             mock_ready.return_value = MagicMock(ready=False, missing_fields=["context"])
-            assert _determine_next_stage("task-1") == "planning"
+            assert _determine_next_stage("task-1") == "execution"
 
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
@@ -240,23 +226,17 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
     @patch("app.tasks.autonomous.pickup_queries.task_store")
-    @patch("app.tasks.autonomous.pickup_queries.build_task_planning_signature", return_value="sig-new")
     def test_second_opinion_needs_revision_does_not_replan_after_task_shape_changes(
         self,
-        _mock_signature: MagicMock,
         mock_store: MagicMock,
         mock_spirit: MagicMock,
         mock_subtasks: MagicMock,
     ) -> None:
         from app.tasks.autonomous.pickup import _determine_next_stage
 
-        task_updated_at = datetime(2026, 3, 24, 12, 18, 4, tzinfo=UTC)
-        plan_updated_at = datetime(2026, 3, 24, 12, 17, 5, tzinfo=UTC)
         mock_store.get_task.return_value = {
             "labels": [],
             "description": "Add API endpoint",
-            "updated_at": task_updated_at,
-            "created_at": datetime(2026, 3, 24, 12, 17, 4, tzinfo=UTC),
         }
         mock_spirit.return_value = {
             "done_when": ["Endpoint returns 200"],
@@ -264,7 +244,6 @@ class TestDetermineNextStage:
                 "planning_signature": "sig-old",
                 "second_opinion": {"status": "needs_revision", "stage": "task_shape"},
             },
-            "updated_at": plan_updated_at.isoformat(),
         }
         mock_subtasks.return_value = [{"subtask_id": "1.1", "passes": False}]
 
@@ -275,7 +254,7 @@ class TestDetermineNextStage:
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")
     @patch("app.tasks.autonomous.pickup_queries.task_store")
-    def test_execution_contract_gap_routes_back_to_planning(
+    def test_execution_contract_gap_does_not_block_execution(
         self, mock_store: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock
     ) -> None:
         from app.tasks.autonomous.pickup import _determine_next_stage
@@ -298,7 +277,7 @@ class TestDetermineNextStage:
 
         with patch("app.tasks.autonomous.pickup_queries.load_task_execution_readiness") as mock_ready:
             mock_ready.return_value = MagicMock(ready=False, missing_fields=["execution_contract"])
-            assert _determine_next_stage("task-1") == "planning"
+            assert _determine_next_stage("task-1") == "execution"
 
     @patch("app.tasks.autonomous.pickup_queries.get_subtasks_for_task")
     @patch("app.tasks.autonomous.pickup_queries.get_task_spirit")

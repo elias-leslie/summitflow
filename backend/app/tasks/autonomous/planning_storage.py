@@ -7,7 +7,6 @@ from typing import Any
 from ...logging_config import get_logger
 from ...services.task_execution_readiness import sync_task_execution_readiness
 from ...services.task_plan_context import build_task_plan_context
-from ...services.task_planning_signature import build_task_planning_signature
 from ...services.task_second_opinion import (
     ensure_second_opinion_tracking,
     reset_second_opinion_for_replan,
@@ -84,13 +83,10 @@ def _merge_context(
     return merged
 
 
-def _upsert_task_spirit(task_id: str, plan_data: dict[str, Any], task: dict[str, Any] | None) -> None:
+def _upsert_task_spirit(task_id: str, plan_data: dict[str, Any]) -> None:
     """Create or update the task spirit record."""
     done_when = _merge_unique_strings(None, plan_data.get("done_when", []))
     context = build_task_plan_context(plan_data)
-    planning_signature = build_task_planning_signature(task)
-    if planning_signature:
-        context["planning_signature"] = planning_signature
     complexity = str(plan_data.get("complexity", "")).strip() or None
     spirit = get_task_spirit(task_id)
     if not spirit:
@@ -142,7 +138,7 @@ def save_plan_to_database(task_id: str, plan_data: dict[str, Any]) -> None:
     """
     subtasks_data = plan_data.get("subtasks", [])
     task = task_store.get_task(task_id)
-    _upsert_task_spirit(task_id, plan_data, task)
+    _upsert_task_spirit(task_id, plan_data)
 
     if subtasks_data:
         _create_subtasks_from_plan(task_id, subtasks_data)

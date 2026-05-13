@@ -83,9 +83,7 @@ async def _collect_execution_ready_tasks(
     limit: int,
     exclude_task_ids: set[str] | None = None,
 ) -> tuple[list[dict[str, object]], int]:
-    """Collect execution-ready tasks using the same readiness scan as /tasks/ready."""
-    from ...services.task_execution_readiness import sync_task_execution_readiness
-
+    """Collect tasks ready for pickup, excluding live lanes and checkpoints."""
     scan_batch_size = min(max(limit * 10, 25), 100)
     scan_offset = 0
     ready_tasks: list[dict[str, object]] = []
@@ -102,13 +100,7 @@ async def _collect_execution_ready_tasks(
         if not tasks:
             break
 
-        # Run readiness checks concurrently instead of sequentially (N+1 fix)
-        readiness_results = await asyncio.gather(
-            *(asyncio.to_thread(sync_task_execution_readiness, task["id"]) for task in tasks)
-        )
-        for task, readiness in zip(tasks, readiness_results, strict=True):
-            if not readiness.ready:
-                continue
+        for task in tasks:
             task_id = str(task.get("id") or "")
             if task_id in excluded:
                 continue

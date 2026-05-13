@@ -9,7 +9,7 @@ from typing import Annotated
 import typer
 
 from ..lib.usage import usage
-from .compactness import enforce_memory_compactness, warn_memory_compactness
+from .compactness import enforce_memory_compactness
 from .memory_commands import (
     batch_tier_impl,
     cleanup_impl,
@@ -233,7 +233,6 @@ def save(
     resolved_inline_content = content_option if content_option is not None else content
     resolved_content = _resolve_and_validate_save(summary, resolved_inline_content, content_file)
     assert summary is not None
-    warn_memory_compactness(summary, resolved_content)
     if not bypass_compactness:
         enforce_memory_compactness(summary, resolved_content)
     validate_content_format(resolved_content, summary, tier)
@@ -339,10 +338,8 @@ def update(
 ) -> None:
     """Update an episode in place (content/tier and properties)."""
     resolved_content = _resolve_content(content, content_file, require_value=False)
-    if resolved_content is not None:
-        warn_memory_compactness(uuid, resolved_content)
-        if not bypass_compactness:
-            enforce_memory_compactness(uuid, resolved_content)
+    if resolved_content is not None and not bypass_compactness:
+        enforce_memory_compactness(uuid, resolved_content)
     update_impl(
         uuid, resolved_content, tier, summary, trigger_types, trigger_phases,
         pinned, context_kind, consumer_profiles, exclude_consumer_profiles,

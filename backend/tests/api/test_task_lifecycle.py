@@ -206,11 +206,12 @@ class TestTaskLifecycleEndpoints:
         assert response.status_code == 400
         assert "manual" in response.json()["message"].lower()
 
-    def test_execute_rejects_task_missing_execution_details(
+    def test_execute_dispatches_task_missing_execution_details_to_pipeline(
         self,
         client: Any,
         test_project_id: str,
         cleanup_task: Callable[[str], None],
+        mocker: Any,
     ) -> None:
         response = client.post(
             f"/api/projects/{test_project_id}/tasks",
@@ -220,12 +221,22 @@ class TestTaskLifecycleEndpoints:
         task_id = response.json()["id"]
         cleanup_task(task_id)
 
+        mocker.patch("app.api.tasks.update_endpoints.validate_autonomous_dispatch", return_value=None)
+        mock_dispatch = mocker.patch(
+            "app.api.tasks.update_endpoints.dispatch_task",
+            new_callable=AsyncMock,
+            return_value={
+                "task_id": task_id,
+                "project_id": test_project_id,
+                "stage": "triage",
+                "status": "dispatched",
+            },
+        )
+
         response = client.post(f"/api/projects/{test_project_id}/tasks/{task_id}/execute")
 
-        assert response.status_code == 422
-        body = response.json()
-        body_text = str(body)
-        assert "description" in body_text or "done_when" in body_text
+        assert response.status_code == 200
+        mock_dispatch.assert_awaited_once_with(task_id, test_project_id, manual_dispatch=True)
 
     def test_execute_rejects_lane_overlap_from_validation(
         self,

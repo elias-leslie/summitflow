@@ -69,7 +69,7 @@ class TestAssessTaskExecutionReadiness:
 
         assert readiness.ready
 
-    def test_frontend_task_requires_execution_contract_when_runtime_eval_route_is_selected(self) -> None:
+    def test_frontend_task_without_execution_contract_is_execution_ready(self) -> None:
         readiness = assess_task_execution_readiness(
             {"task_type": "feature", "complexity": "STANDARD", "description": "Refresh dashboard layout"},
             {
@@ -86,9 +86,8 @@ class TestAssessTaskExecutionReadiness:
             ],
         )
 
-        assert not readiness.ready
-        assert "execution_contract" in readiness.missing_fields
-        assert any("execution contract" in issue.lower() for issue in readiness.issues)
+        assert readiness.ready
+        assert "execution_contract" not in readiness.missing_fields
 
     def test_frontend_task_with_execution_contract_is_execution_ready(self) -> None:
         readiness = assess_task_execution_readiness(

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
 
 import typer
 
@@ -208,39 +207,8 @@ def suggest_summary(instruction: str, limit: int = 40) -> str:
     return clipped.rstrip(".!? ")
 
 
-def format_guidance_hints(content: str, summary: str) -> list[str]:
-    """Return soft guidance hints that should not block saving.
-
-    Thresholds for content chars come from the DB-backed compactness policy
-    via Agent Hub so the CLI stays aligned with the API gate and UI.
-    """
-    from .compactness import _get_policy
-
-    policy = _get_policy()
-    hints: list[str] = []
-    header_match = HEADER_EXTRACT_PATTERN.match(content)
-    if header_match and len(header_match.group("topic")) > 35:
-        hints.append("Topic header is long; prefer 35 chars or fewer when possible.")
-    sentence_count = len(re.findall(r"[.!?](?:\s|$)", content))
-    if sentence_count > 3:
-        hints.append(f"Content is {sentence_count} sentences; prefer 3 or fewer when possible.")
-    if len(content) > policy.memory_max_chars:
-        hints.append(
-            f"Content is {len(content)} chars; prefer {policy.memory_max_chars} or fewer when possible."
-        )
-    if len(summary) > 35:
-        hints.append(f"Summary is {len(summary)} chars; prefer 35 or fewer when possible.")
-    return hints
-
-
-def emit_format_guidance_hints(hints: Iterable[str]) -> None:
-    """Print non-blocking FORMAT_STANDARD hints."""
-    for hint in hints:
-        typer.echo(f"Hint: {hint}", err=True)
-
-
 def validate_format_standard(content: str, summary: str, tier: str) -> tuple[list[str], list[str]]:
-    """Validate content against FORMAT_STANDARD. Returns blocking errors and soft hints."""
+    """Validate content against FORMAT_STANDARD. Returns blocking errors."""
     errors: list[str] = []
     hints: list[str] = []
     header_match = HEADER_EXTRACT_PATTERN.match(content)
@@ -284,7 +252,6 @@ def validate_format_standard(content: str, summary: str, tier: str) -> tuple[lis
     if len(summary) < 10:
         errors.append(f"[8] summary: Too short ({len(summary)} chars, need 10-40)")
 
-    hints.extend(format_guidance_hints(content, summary))
     return errors, hints
 
 
@@ -299,11 +266,10 @@ def validate_summary_length(summary: str) -> None:
 def validate_content_format(content: str, summary: str, tier: str) -> None:
     """Validate content format and raise error if invalid."""
     validate_episode_content_present(content)
-    format_errors, hints = validate_format_standard(content, summary, tier)
+    format_errors, _hints = validate_format_standard(content, summary, tier)
     if format_errors:
         output_error("FORMAT_STANDARD violations detected:")
         for err in format_errors:
             typer.echo(f"  {err}", err=True)
         typer.echo(FORMAT_STANDARD_HELP, err=True)
         raise typer.Exit(1)
-    emit_format_guidance_hints(hints)

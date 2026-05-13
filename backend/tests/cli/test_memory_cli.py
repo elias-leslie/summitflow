@@ -238,9 +238,8 @@ class TestMemorySaveContentInput:
         assert "Specify only one of --content or --content-file" in result.output
         mock_save_impl.assert_not_called()
 
-    def test_save_warns_on_memory_compactness(self) -> None:
+    def test_save_enforces_memory_compactness(self) -> None:
         with (
-            patch("cli.commands.memory.warn_memory_compactness") as mock_warn,
             patch("cli.commands.memory.enforce_memory_compactness") as mock_enforce,
             patch("cli.commands.memory.validate_content_format") as mock_validate,
             patch("cli.commands.memory.save_impl") as mock_save_impl,
@@ -256,10 +255,6 @@ class TestMemorySaveContentInput:
             )
 
         assert result.exit_code == 0
-        mock_warn.assert_called_once_with(
-            "Use dt for checks",
-            "**Quality Checks**: Use dt for all quality checks.\n",
-        )
         mock_enforce.assert_called_once_with(
             "Use dt for checks",
             "**Quality Checks**: Use dt for all quality checks.\n",
@@ -483,11 +478,8 @@ class TestMemoryTagOptions:
             None,
         )
 
-    def test_update_warns_on_memory_compactness_when_content_changes(self) -> None:
-        with (
-            patch("cli.commands.memory.warn_memory_compactness") as mock_warn,
-            patch("cli.commands.memory.update_impl") as mock_update_impl,
-        ):
+    def test_update_accepts_content_without_memory_warnings(self) -> None:
+        with patch("cli.commands.memory.update_impl") as mock_update_impl:
             result = runner.invoke(
                 app,
                 [
@@ -499,10 +491,6 @@ class TestMemoryTagOptions:
             )
 
         assert result.exit_code == 0
-        mock_warn.assert_called_once_with(
-            "abc12345",
-            "**Quality Checks**: Use dt for all quality checks.\n",
-        )
         mock_update_impl.assert_called_once()
 
     def test_save_forwards_context_routing_to_impl(self) -> None:

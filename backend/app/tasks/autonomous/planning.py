@@ -14,7 +14,6 @@ from ...services.agent_hub_client import get_sync_client
 from ...services.context_gatherer import (
     collect_precision_code_search_context,
 )
-from ...services.task_harness import apply_execution_contract_defaults
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from .planning_prompt import build_planning_prompt as _build_planning_prompt
@@ -115,7 +114,7 @@ def create_plan(task_id: str, project_id: str) -> dict[str, Any]:
             external_id=task_id,
         )
 
-        plan_data = apply_execution_contract_defaults(task, _parse_plan_response(response.content))
+        plan_data = _parse_plan_response(response.content)
         return _process_plan_result(task_id, project_id, title, description, plan_data)
 
     except Exception as e:

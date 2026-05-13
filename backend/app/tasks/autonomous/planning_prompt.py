@@ -156,36 +156,6 @@ _PLAN_SCHEMA = """{
         }
     ],
     "constraints": ["Any constraints or non-goals"],
-    "execution_contract": {
-        "mode": "code_only|runtime_eval|runtime_eval_plus_design",
-        "target_urls": ["/app/example"],
-        "user_flows": [
-            {
-                "title": "Key user journey",
-                "setup": ["Optional setup step"],
-                "actions": ["Navigate to the page"],
-                "expected_outcomes": ["Visible runtime outcome"]
-            }
-        ],
-        "api_checks": [
-            {
-                "method": "GET",
-                "path": "/api/example",
-                "status": 200,
-                "body_expectations": ["Optional response marker"]
-            }
-        ],
-        "negative_cases": [
-            {
-                "title": "Invalid request handling",
-                "path": "/api/example/invalid",
-                "status": 404
-            }
-        ],
-        "evidence_requirements": ["screenshot", "API response", "file:line citation"],
-        "design_criteria": {"rubric": ["originality", "visual cohesion", "craft", "usability"]},
-        "risk_notes": ["Compact evaluator focus areas"]
-    },
     "context": {
         "files_to_modify": ["existing/file.py"],
         "files_to_create": ["new/file.ts"],

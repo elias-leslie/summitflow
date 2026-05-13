@@ -589,7 +589,7 @@ class TestReadyEndpoint:
         assert payload["total"] == 1
         assert [task["id"] for task in payload["tasks"]] == ["task-ready"]
 
-    def test_ready_endpoint_filters_out_execution_unready_tasks(
+    def test_ready_endpoint_keeps_pickup_tasks_without_plan_theatre(
         self, client: Any, test_project_id: str
     ) -> None:
         draft_task = {
@@ -640,22 +640,9 @@ class TestReadyEndpoint:
             "plan_status": "approved",
         }
 
-        def _fake_sync(task_id: str):
-            class _Readiness:
-                def __init__(self, ready: bool):
-                    self.ready = ready
-
-            return _Readiness(task_id in {"task-ready", "task-ready-live"})
-
-        with (
-            patch(
-                "app.api.tasks.list_endpoints.task_store.list_ready_tasks",
-                return_value=[draft_task, ready_task],
-            ),
-            patch(
-                "app.services.task_execution_readiness.sync_task_execution_readiness",
-                side_effect=_fake_sync,
-            ),
+        with patch(
+            "app.api.tasks.list_endpoints.task_store.list_ready_tasks",
+            return_value=[draft_task, ready_task],
         ):
             response = client.get(f"/api/projects/{test_project_id}/tasks/ready?limit=20")
 
@@ -664,7 +651,7 @@ class TestReadyEndpoint:
         task_ids = {task["id"] for task in tasks}
 
         assert "task-ready" in task_ids
-        assert "task-draft" not in task_ids
+        assert "task-draft" in task_ids
 
     def test_ready_endpoint_scans_beyond_small_limit_candidate_window(
         self, client: Any, test_project_id: str
@@ -729,28 +716,15 @@ class TestReadyEndpoint:
                 return first_batch + second_batch[:5]
             return []
 
-        def _fake_sync(task_id: str):
-            class _Readiness:
-                def __init__(self, ready: bool):
-                    self.ready = ready
-
-            return _Readiness(task_id.startswith("task-ready-"))
-
-        with (
-            patch(
-                "app.api.tasks.list_endpoints.task_store.list_ready_tasks",
-                side_effect=_fake_list_ready_tasks,
-            ),
-            patch(
-                "app.services.task_execution_readiness.sync_task_execution_readiness",
-                side_effect=_fake_sync,
-            ),
+        with patch(
+            "app.api.tasks.list_endpoints.task_store.list_ready_tasks",
+            side_effect=_fake_list_ready_tasks,
         ):
             response = client.get(f"/api/projects/{test_project_id}/tasks/ready?limit=3")
 
         assert response.status_code == 200
         payload = response.json()
-        assert payload["total"] == 4
+        assert payload["total"] == 29
         assert [task["id"] for task in payload["tasks"]] == [
             "task-ready-0",
             "task-ready-1",

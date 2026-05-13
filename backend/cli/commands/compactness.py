@@ -269,16 +269,6 @@ def warn_prompt_compactness(slug: str, content: str) -> CompactnessReport:
     return report
 
 
-def warn_memory_compactness(label: str, content: str) -> CompactnessReport:
-    """Emit non-blocking warnings for memory authoring."""
-    report = analyze_compactness(content, kind="memory")
-    for warning in report.warnings:
-        output_warning(f"memory {label}: {warning}")
-    for error in report.errors:
-        output_warning(f"memory {label}: {error}")
-    return report
-
-
 def enforce_prompt_compactness(slug: str, content: str) -> CompactnessReport:
     """Hard-fail prompt authoring when content regresses out of Caveman form."""
     report = analyze_compactness(content, kind="prompt")
