@@ -718,27 +718,55 @@ def _format_cost_compact(data: dict[str, Any]) -> None:
 
 
 def _emit_feedback_for_cost(data: dict[str, Any]) -> None:
-    costs = {item["density"]: item for item in data.get("manifest_costs", [])}
-    core_tokens = int(costs.get("core", {}).get("tokens_approx") or 0)
-    full_tokens = int(costs.get("full", {}).get("tokens_approx") or 0)
-    saved = full_tokens - core_tokens
-    if saved < 500:
-        return
+    """Emit feedback for actionable cost anomalies.
+
+    Compact manifest savings (core < full) is an intentional design feature,
+    not a transient issue.  Do not auto-emit feedback for it; that creates
+    perpetual noise.  Only emit when a specific hotspot exceeds thresholds.
+    """
+    request_hotspots = data.get("request_hotspots", [])
+    output_hotspots = data.get("tool_output_hotspots", [])
     feedback_session_id = data.get("feedback_session_id")
     if not feedback_session_id:
         return
-    _report_or_vote_feedback(
-        "xc.tool_registry",
-        "Tool governance: compact manifest saves prompt tokens",
-        feedback_type="improvement",
-        severity="medium",
-        description=(
-            f"Core density is ~{core_tokens} tokens versus full density ~{full_tokens}; "
-            f"estimated saving is ~{saved} tokens per compact injection."
-        ),
-        project_id="summitflow",
-        session_id=str(feedback_session_id),
-    )
+
+    # Flag request hotspots with >10k tokens_in or <50% success rate
+    for item in request_hotspots:
+        tokens_in = int(item.get("tokens_in") or 0)
+        success_rate = float(item.get("success_rate") or 100.0)
+        if tokens_in > 10000 or success_rate < 50.0:
+            _report_or_vote_feedback(
+                "xc.tool_registry",
+                "Tool governance: high-cost or failing request hotspot",
+                feedback_type="friction",
+                severity="high" if success_rate < 50.0 else "medium",
+                description=(
+                    f"{item.get('tool_name', '?')}|{item.get('tool_type', '?')} "
+                    f"reqs={item.get('requests', 0)} in={tokens_in} "
+                    f"success={success_rate:.1f}%"
+                ),
+                project_id="summitflow",
+                session_id=str(feedback_session_id),
+            )
+            return
+
+    # Flag tool-output hotspots with >5k tokens of output
+    for item in output_hotspots:
+        output_tokens = int(item.get("output_tokens_approx") or 0)
+        if output_tokens > 5000:
+            _report_or_vote_feedback(
+                "xc.tool_registry",
+                "Tool governance: excessive tool output volume",
+                feedback_type="friction",
+                severity="medium",
+                description=(
+                    f"{item.get('tool_name', '?')} events={item.get('events', 0)} "
+                    f"out~{output_tokens}t chars={item.get('output_chars', 0)}"
+                ),
+                project_id="summitflow",
+                session_id=str(feedback_session_id),
+            )
+            return
 
 
 def _format_catalog_compact(tools: list[dict[str, Any]]) -> None:

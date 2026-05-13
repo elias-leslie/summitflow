@@ -351,7 +351,7 @@ def test_cost_emit_feedback_requires_session_id(monkeypatch: pytest.MonkeyPatch)
     assert not calls
 
 
-def test_cost_emit_feedback_votes_duplicate_with_session_id(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cost_emit_feedback_flags_high_cost_request_hotspot(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(
@@ -364,7 +364,16 @@ def test_cost_emit_feedback_votes_duplicate_with_session_id(monkeypatch: pytest.
                 {"density": "task", "task": task, "tokens_approx": 200},
                 {"density": "full", "task": None, "tokens_approx": 900},
             ],
-            "request_hotspots": [],
+            "request_hotspots": [
+                {
+                    "tool_name": "sdk.complete",
+                    "tool_type": "sdk",
+                    "requests": 50,
+                    "tokens_in": 15000,
+                    "tokens_out": 2000,
+                    "success_rate": 95.0,
+                }
+            ],
             "tool_output_hotspots": [],
         },
     )
@@ -379,3 +388,74 @@ def test_cost_emit_feedback_votes_duplicate_with_session_id(monkeypatch: pytest.
     assert calls
     kwargs = cast(dict[str, Any], calls[0]["kwargs"])
     assert kwargs["session_id"] == "session-123"
+    assert kwargs["severity"] == "medium"
+
+
+def test_cost_emit_feedback_flags_failing_request_hotspot(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "cli.commands.tools._fetch_cost_metrics",
+        lambda hours, limit, task: {
+            "window_hours": hours,
+            "feedback_session_id": "session-456",
+            "manifest_costs": [],
+            "request_hotspots": [
+                {
+                    "tool_name": "api.foo",
+                    "tool_type": "api",
+                    "requests": 10,
+                    "tokens_in": 100,
+                    "tokens_out": 50,
+                    "success_rate": 30.0,
+                }
+            ],
+            "tool_output_hotspots": [],
+        },
+    )
+    monkeypatch.setattr(
+        "cli.commands.tools._report_or_vote_feedback",
+        lambda *args, **kwargs: calls.append({"args": args, "kwargs": kwargs}),
+    )
+
+    result = runner.invoke(app, ["cost", "--emit-feedback"])
+
+    assert result.exit_code == 0
+    assert calls
+    kwargs = cast(dict[str, Any], calls[0]["kwargs"])
+    assert kwargs["session_id"] == "session-456"
+    assert kwargs["severity"] == "high"
+
+
+def test_cost_emit_feedback_flags_excessive_output_hotspot(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "cli.commands.tools._fetch_cost_metrics",
+        lambda hours, limit, task: {
+            "window_hours": hours,
+            "feedback_session_id": "session-789",
+            "manifest_costs": [],
+            "request_hotspots": [],
+            "tool_output_hotspots": [
+                {
+                    "tool_name": "Bash",
+                    "events": 100,
+                    "output_tokens_approx": 8000,
+                    "output_chars": 32000,
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        "cli.commands.tools._report_or_vote_feedback",
+        lambda *args, **kwargs: calls.append({"args": args, "kwargs": kwargs}),
+    )
+
+    result = runner.invoke(app, ["cost", "--emit-feedback"])
+
+    assert result.exit_code == 0
+    assert calls
+    kwargs = cast(dict[str, Any], calls[0]["kwargs"])
+    assert kwargs["session_id"] == "session-789"
+    assert kwargs["severity"] == "medium"
