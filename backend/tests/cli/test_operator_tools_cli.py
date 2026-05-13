@@ -250,6 +250,38 @@ def test_autonomous_status_reads_settings() -> None:
     client_cls.return_value.get_autonomous_settings.assert_called_once_with()
 
 
+def test_autonomous_enable_wires_work_pickup_and_upkeep_schedules() -> None:
+    settings = {"enabled": True, "upkeep_enabled": True}
+    with patch("cli.commands.autonomous.STClient") as client_cls:
+        client = client_cls.return_value
+        client.update_autonomous_settings.return_value = settings
+        client.update_autonomous_schedule.side_effect = [
+            {"schedule_id": "work_pickup", "enabled": True},
+            {"schedule_id": "task_generation", "enabled": True},
+        ]
+
+        result = runner.invoke(main_app, ["autonomous", "enable"])
+
+    assert result.exit_code == 0
+    client.update_autonomous_settings.assert_called_once_with(enabled=True, upkeep_enabled=True)
+    assert client.update_autonomous_schedule.call_args_list[0].args == ("work_pickup",)
+    assert client.update_autonomous_schedule.call_args_list[0].kwargs == {"enabled": True}
+    assert client.update_autonomous_schedule.call_args_list[1].args == ("task_generation",)
+    assert client.update_autonomous_schedule.call_args_list[1].kwargs == {"enabled": True}
+    assert '"schedule_id": "work_pickup"' in result.output
+
+
+def test_autonomous_schedules_lists_schedule_states() -> None:
+    schedules = [{"schedule_id": "work_pickup", "enabled": True}]
+    with patch("cli.commands.autonomous.STClient") as client_cls:
+        client_cls.return_value.list_autonomous_schedules.return_value = schedules
+        result = runner.invoke(main_app, ["autonomous", "schedules"])
+
+    assert result.exit_code == 0
+    assert '"schedule_id": "work_pickup"' in result.output
+    client_cls.return_value.list_autonomous_schedules.assert_called_once_with()
+
+
 def test_check_runs_native_tool() -> None:
     with (
         patch("cli.commands.check._tool_configs", return_value={"ruff": {"label": "LINT", "binary": "ruff"}}),

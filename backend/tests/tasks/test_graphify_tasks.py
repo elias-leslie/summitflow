@@ -35,6 +35,10 @@ def test_refresh_existing_graphify_graphs_refreshes_only_stale_existing_graphs(
         return {"graph_exists": False, "diagnostics": ["graph_missing"]}
 
     refreshed: list[Path] = []
+    monkeypatch.setattr(
+        "app.tasks.graphify_tasks.maintenance_store.record_maintenance_run",
+        lambda *args, **kwargs: None,
+    )
     monkeypatch.setattr("app.tasks.graphify_tasks.graphify_status", fake_status)
     monkeypatch.setattr("app.tasks.graphify_tasks.refresh_graph", lambda root: refreshed.append(root))
 

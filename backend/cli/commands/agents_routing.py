@@ -15,7 +15,11 @@ def default_manual_route(routing: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(routes, list):
         return None
     for route in routes:
-        if isinstance(route, dict) and route.get("workload_profile") is None:
+        if (
+            isinstance(route, dict)
+            and route.get("workload_profile") is None
+            and route.get("enabled", True) is not False
+        ):
             return route
     return None
 
@@ -42,7 +46,10 @@ def sync_manual_route(
     if routing_mode is not None:
         payload["default_routing_mode"] = routing_mode
 
-    if primary_model or fallback_model is not None or escalation_model:
+    should_sync_route = bool(primary_model or escalation_model)
+    if fallback_model is not None and not should_sync_route:
+        should_sync_route = routing_mode is not None
+    if should_sync_route:
         payload.setdefault("default_routing_mode", "manual_locked")
         routing = agents_api("GET", f"/{slug}/routing")
         current_route = default_manual_route(routing) or {}
@@ -62,5 +69,8 @@ def sync_manual_route(
             "owner": "st agents update",
             "enabled": True,
         }
+
+    if not payload:
+        return
 
     agents_api("PUT", f"/{slug}/routing", json=payload)

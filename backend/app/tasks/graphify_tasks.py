@@ -10,11 +10,17 @@ from ..services.graphify_tools import (
     graphify_status,
     refresh_graph,
 )
+from ..storage import maintenance_runs as maintenance_store
 from ..storage.projects import list_projects
+
+GRAPHIFY_REFRESH_WORKFLOW = "refresh_graphify_graphs"
 
 
 def refresh_existing_graphify_graphs() -> dict[str, Any]:
     """Refresh stale existing Graphify code graphs across registered projects."""
+    from datetime import UTC, datetime
+
+    started_at = datetime.now(UTC)
     refreshed: list[str] = []
     skipped_fresh: list[str] = []
     skipped_missing: list[str] = []
@@ -47,7 +53,7 @@ def refresh_existing_graphify_graphs() -> dict[str, Any]:
             continue
         refreshed.append(project_id)
 
-    return {
+    result = {
         "status": "partial" if failures else "success",
         "projects": len(refreshed) + len(skipped_fresh) + len(skipped_missing) + len(skipped_invalid_root) + len(failures),
         "refreshed": len(refreshed),
@@ -58,3 +64,13 @@ def refresh_existing_graphify_graphs() -> dict[str, Any]:
         "refreshed_projects": refreshed[:20],
         "failures": failures[:20],
     }
+    maintenance_store.record_maintenance_run(
+        GRAPHIFY_REFRESH_WORKFLOW,
+        result["status"],
+        started_at=started_at,
+        finished_at=datetime.now(UTC),
+        rows_cleaned=result["refreshed"],
+        summary=result,
+        error_message="; ".join(item["error"] for item in failures[:3]) if failures else None,
+    )
+    return result

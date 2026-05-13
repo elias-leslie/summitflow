@@ -45,6 +45,18 @@ class ExecutionOperationsMixin:
             self._client, self._url, self._handle_response, **updates
         )
 
+    def list_autonomous_schedules(self) -> list[dict[str, Any]]:
+        return exec_ops.list_autonomous_schedules(self._client, self._url, self._handle_response)
+
+    def update_autonomous_schedule(self, schedule_id: str, *, enabled: bool) -> dict[str, Any]:
+        return exec_ops.update_autonomous_schedule(
+            self._client,
+            self._url,
+            self._handle_response,
+            schedule_id,
+            enabled=enabled,
+        )
+
     def list_sessions(
         self,
         *,

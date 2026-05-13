@@ -18,7 +18,7 @@ _DEFAULT_GRAPHIFY_BIN = Path.home() / ".local" / "bin" / "graphify"
 _SEMANTIC_FILE_TYPES = {"document", "paper", "image", "video", "audio"}
 _CODE_ONLY_FILE_TYPES = {"code", "rationale", "community"}
 _CDN_MARKERS = ("https://unpkg.com", "https://cdn.", "https://cdn.jsdelivr.net")
-_CODE_REFRESH_DIAGNOSTICS = {"graph_missing", "graph_stale", "graph_unreadable", "detect_missing"}
+_CODE_REFRESH_DIAGNOSTICS = {"graph_missing", "graph_stale", "graph_unreadable"}
 _CODE_SOURCE_SUFFIXES = {
     ".c",
     ".cc",
@@ -349,7 +349,7 @@ def graphify_status(project_id: str, root: Path) -> dict[str, Any]:
     diagnostics: list[str] = []
     if not graph_exists:
         diagnostics.append("graph_missing")
-    if graph_exists and not detect_exists:
+    if graph_exists and not detect_exists and not nodes:
         diagnostics.append("detect_missing")
     if changed_count:
         diagnostics.append("graph_stale")
@@ -424,6 +424,73 @@ def run_graphify(root: Path, args: list[str], *, timeout: int = _GRAPHIFY_TIMEOU
     )
 
 
+def _edge_endpoint(edge: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = edge.get(key)
+        if value is not None:
+            return str(value)
+    return ""
+
+
+def _prune_missing_code_sources(root: Path) -> int:
+    """Remove stale code/rationale graph nodes whose source files no longer exist."""
+    graph_json = graphify_graph_path(root)
+    if not graph_json.exists():
+        return 0
+    try:
+        data = _read_json(graph_json)
+    except (OSError, json.JSONDecodeError):
+        return 0
+
+    raw_nodes = data.get("nodes", [])
+    if not isinstance(raw_nodes, list):
+        return 0
+
+    current_sources = _current_source_set(root)
+    kept_nodes: list[Any] = []
+    removed_ids: set[str] = set()
+    removed_count = 0
+    for node in raw_nodes:
+        if not isinstance(node, dict):
+            kept_nodes.append(node)
+            continue
+        file_type = str(node.get("file_type") or "")
+        raw_source = node.get("source_file")
+        normalized = _normalize_source_path(root, str(raw_source)) if raw_source else None
+        if file_type in _CODE_ONLY_FILE_TYPES and normalized and normalized not in current_sources:
+            node_id = node.get("id")
+            if node_id is not None:
+                removed_ids.add(str(node_id))
+            removed_count += 1
+            continue
+        kept_nodes.append(node)
+
+    if not removed_ids:
+        return 0
+
+    raw_links = data.get("links", data.get("edges", []))
+    if isinstance(raw_links, list):
+        kept_links = [
+            edge
+            for edge in raw_links
+            if not (
+                isinstance(edge, dict)
+                and (
+                    _edge_endpoint(edge, "source", "_src") in removed_ids
+                    or _edge_endpoint(edge, "target", "_tgt") in removed_ids
+                )
+            )
+        ]
+        if "links" in data:
+            data["links"] = kept_links
+        else:
+            data["edges"] = kept_links
+
+    data["nodes"] = kept_nodes
+    graph_json.write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
+    return removed_count
+
+
 def query_graph(root: Path, question: str, *, budget: int = 1200, dfs: bool = False) -> GraphifyCommandResult:
     """Run Graphify query for a project graph."""
     args = ["query", question, "--budget", str(budget), "--graph", str(graphify_graph_path(root))]
@@ -444,4 +511,15 @@ def explain_graph(root: Path, node: str) -> GraphifyCommandResult:
 
 def refresh_graph(root: Path, *, timeout: int = _GRAPHIFY_TIMEOUT_SECONDS) -> GraphifyCommandResult:
     """Refresh Graphify code graph for a project root."""
-    return run_graphify(root, ["update", str(root)], timeout=timeout)
+    result = run_graphify(root, ["update", str(root), "--force"], timeout=timeout)
+    pruned_count = _prune_missing_code_sources(root)
+    if not pruned_count:
+        return result
+    output = f"{result.output}\nPruned {pruned_count} stale code/rationale node(s) for deleted source files."
+    return GraphifyCommandResult(
+        command=result.command,
+        output=output,
+        elapsed_ms=result.elapsed_ms,
+        output_chars=len(output),
+        estimated_tokens=estimate_tokens(output),
+    )
