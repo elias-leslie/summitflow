@@ -1419,7 +1419,7 @@ class TestIntentOnlyAcceptanceE2E:
                 "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
             ),
             patch(
-                "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate_with_autofix",
+                "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate",
                 return_value=True,
             ),
             patch(
@@ -1489,7 +1489,7 @@ class TestIntentOnlyAcceptanceE2E:
                 "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
             ),
             patch(
-                "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate_with_autofix",
+                "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate",
                 return_value=True,
             ),
             patch(
@@ -1575,7 +1575,7 @@ class TestIntentOnlyAcceptanceE2E:
                 "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
             ),
             patch(
-                "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate_with_autofix",
+                "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate",
                 return_value=True,
             ),
             patch(

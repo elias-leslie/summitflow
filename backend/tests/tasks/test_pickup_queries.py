@@ -29,12 +29,6 @@ def _patch_stage_dependencies(
         lambda _task_id: readiness
         or SimpleNamespace(ready=False, missing_fields=["subtasks"]),
     )
-    monkeypatch.setattr(
-        pickup_queries,
-        "get_second_opinion_entry",
-        lambda _spirit: {},
-    )
-
 
 def test_draft_plan_without_subtask_rows_reenters_planning(monkeypatch: Any) -> None:
     _patch_stage_dependencies(

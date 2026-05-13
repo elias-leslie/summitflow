@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 @patch("app.tasks.autonomous.exec_modules.completion_handler.transition_to_review_or_complete")
 @patch("app.tasks.autonomous.exec_modules.completion_handler.build_successful_completion_verification")
 @patch("app.tasks.autonomous.exec_modules.completion_handler.run_runtime_evaluator")
-@patch("app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate_with_autofix")
+@patch("app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate")
 @patch("app.tasks.autonomous.exec_modules.completion_handler.check_diff_gate")
 def test_handle_successful_completion_runs_runtime_evaluator_when_required(
     mock_diff_gate: MagicMock,
@@ -46,7 +46,7 @@ def test_handle_successful_completion_runs_runtime_evaluator_when_required(
 @patch("app.tasks.autonomous.exec_modules.completion_handler.transition_to_review_or_complete")
 @patch("app.tasks.autonomous.exec_modules.completion_handler.build_successful_completion_verification")
 @patch("app.tasks.autonomous.exec_modules.completion_handler.run_runtime_evaluator")
-@patch("app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate_with_autofix")
+@patch("app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate")
 @patch("app.tasks.autonomous.exec_modules.completion_handler.check_diff_gate")
 def test_handle_successful_completion_allows_code_only_runtime_result(
     mock_diff_gate: MagicMock,
@@ -83,7 +83,7 @@ def test_handle_successful_completion_allows_code_only_runtime_result(
 @patch("app.tasks.autonomous.exec_modules.completion_handler.emit_error")
 @patch("app.tasks.autonomous.exec_modules.completion_handler.task_store")
 @patch("app.tasks.autonomous.exec_modules.completion_handler.run_runtime_evaluator")
-@patch("app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate_with_autofix")
+@patch("app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate")
 @patch("app.tasks.autonomous.exec_modules.completion_handler.check_diff_gate")
 def test_handle_successful_completion_blocks_when_runtime_evaluator_fails(
     mock_diff_gate: MagicMock,

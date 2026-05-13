@@ -285,15 +285,15 @@ def test_collect_precision_code_search_context_ranks_multi_term_matches_by_cover
         assert limit >= 5
         quality_symbols: list[dict[str, object]] = [
             {
-                "symbol_id": "backend/app/tasks/autonomous/exec_modules/quality_gates.py::auto_fix_quality#function",
-                "qualified_name": "auto_fix_quality",
-                "name": "auto_fix_quality",
+                "symbol_id": "backend/app/tasks/autonomous/exec_modules/quality_gates.py::run_final_quality_gate#function",
+                "qualified_name": "run_final_quality_gate",
+                "name": "run_final_quality_gate",
                 "kind": "function",
                 "file_path": "backend/app/tasks/autonomous/exec_modules/quality_gates.py",
-                "start_line": 112,
-                "end_line": 141,
-                "signature": "def auto_fix_quality(project_path: str, project_id: str) -> bool",
-                "summary": "Run st check --fix to attempt auto-fixing quality issues.",
+                "start_line": 69,
+                "end_line": 88,
+                "signature": "def run_final_quality_gate(task_id: str, project_path: str, project_id: str) -> bool",
+                "summary": "Run the task-scoped closeout check.",
             },
             {
                 "symbol_id": "frontend/components/projects/ProjectOverview.tsx::formatCheckLabel#function",

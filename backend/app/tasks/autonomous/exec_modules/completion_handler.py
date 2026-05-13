@@ -19,7 +19,7 @@ from .completion_status import (
 from .diff_gate import check_diff_gate
 from .events import emit_error, emit_log
 from .followup_tasks import create_followup_task_for_failures
-from .quality_gate import run_quality_gate_with_autofix
+from .quality_gate import run_quality_gate
 from .runtime_evaluator import run_runtime_evaluator
 
 
@@ -69,13 +69,13 @@ def handle_successful_completion(
                      f"Task {task_id} blocked by diff gate — zero meaningful changes vs base branch.")
         return False
 
-    if not run_quality_gate_with_autofix(task_id, project_path, project_id):
+    if not run_quality_gate(task_id, project_path, project_id):
         task_store.update_task_status(task_id, "failed")
-        emit_task_transition(task_id, "failed", "Quality gate failed after auto-fix")
-        emit_error(task_id, "Final quality gate failed after auto-fix attempt", project_id=project_id)
-        notify_failure(task_id, project_id, "Quality gate failed after auto-fix attempt.")
+        emit_task_transition(task_id, "failed", "Quality gate failed")
+        emit_error(task_id, "Final quality gate failed", project_id=project_id)
+        notify_failure(task_id, project_id, "Quality gate failed.")
         wake_persona(task_id, project_id, "quality_gate",
-                     f"Task {task_id} quality gate failed after auto-fix. Investigate and advise.")
+                     f"Task {task_id} quality gate failed. Investigate and advise.")
         return False
 
     runtime_result = run_runtime_evaluator(task_id, project_id)

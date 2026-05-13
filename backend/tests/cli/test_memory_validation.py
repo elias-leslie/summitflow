@@ -65,7 +65,7 @@ def test_validate_content_format_error_includes_quickstart(capsys) -> None:
     assert 'st memory format --topic "Quality Gates"' in err
 
 
-def test_validate_content_format_warns_but_allows_long_single_rule(capsys) -> None:
+def test_validate_content_format_allows_long_single_rule_without_hint(capsys) -> None:
     validate_content_format(
         (
             "**Memory Headers**: Use compact bold topic headers for memory episodes so retrieval stays clean and bodies stay terse. "
@@ -76,7 +76,7 @@ def test_validate_content_format_warns_but_allows_long_single_rule(capsys) -> No
     )
 
     err = capsys.readouterr().err
-    assert "prefer 280 or fewer" in err.lower()
+    assert err == ""
 
 
 def test_build_episode_content_normalizes_topic_whitespace() -> None:

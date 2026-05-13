@@ -164,7 +164,7 @@ class TestCheckIntent:
         mock_spirit.return_value = {
             "done_when": [
                 "All configured quality gates pass",
-                "File structure is meaningfully simplified; reduce size toward <300 lines from 575 only where it improves clarity",
+                "File structure is meaningfully simplified where size was the issue",
                 "No regressions - all existing tests pass",
             ],
             "context": {"files_to_modify": ["backend/cli/commands/check.py"]},
@@ -205,7 +205,7 @@ class TestCheckIntent:
         mock_spirit.return_value = {
             "done_when": [
                 "All configured quality gates pass",
-                "File structure is meaningfully simplified; reduce size toward <300 lines from 575 only where it improves clarity",
+                "File structure is meaningfully simplified where size was the issue",
             ],
             "context": {"files_to_modify": ["backend/cli/commands/check.py"]},
         }

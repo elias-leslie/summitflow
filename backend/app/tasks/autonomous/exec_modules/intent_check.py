@@ -40,7 +40,7 @@ _STRUCTURAL_DONE_WHEN_PREFIXES = (
     "Magic strings extracted ",
     "Imports reduced to <=",
     "File structure is meaningfully simplified, with size reduced toward the guideline target",
-    "File structure is meaningfully simplified; reduce size toward ",
+    "File structure is meaningfully simplified where size was the issue",
     "Largest functions are measured ",
     "Deep nesting is measured ",
     "Function count is measured ",

@@ -192,7 +192,7 @@ def _assemble_steps(
     steps: list[dict[str, object]] = []
     if any(i in issues for i in _SIZE_ISSUES) or not issues:
         steps.append(_step(
-            f"Refactor {relative_path} to simplify structure; reduce size toward <{target_lines} lines from {lines} only where it improves clarity",
+            f"Refactor {relative_path} to simplify structure and reduce size where that improves clarity",
         ))
     structural_checks = _build_structural_checks(relative_path, issues)
     if structural_checks:
@@ -202,8 +202,8 @@ def _assemble_steps(
         ))
     targeted_test = get_targeted_test_command(relative_path)
     steps.append(_step(
-        "Quality gate: run fix, fast checks, then targeted verification",
-        ["st check --fix", "st check --quick", targeted_test],
+        "Quality gate: run targeted verification and the changed-file check",
+        [targeted_test, "st check --quick --changed-only"],
     ))
     if is_frontend:
         steps.append(_step(

@@ -21,11 +21,11 @@ from app.tasks.autonomous.task_builders import (
 class TestBuildIssueAwareObjective:
     """Tests for _build_issue_aware_objective."""
 
-    def test_size_issue_includes_line_target(self) -> None:
+    def test_size_issue_omits_line_target(self) -> None:
         obj = _build_issue_aware_objective("foo.py", 400, 200, ["large_file"])
-        assert "400" in obj
-        assert "200" in obj
-        assert "aim" in obj.lower()
+        assert "400" not in obj
+        assert "200" not in obj
+        assert "where that improves clarity" in obj.lower()
 
     def test_structural_issue_describes_problems(self) -> None:
         obj = _build_issue_aware_objective("foo.py", 200, 150, ["deep_nesting", "has_long_functions"])
@@ -59,10 +59,10 @@ class TestBuildIssueAwareDoneWhen:
         criteria = _build_issue_aware_done_when(400, 200, ["large_file"], False)
         assert any("regressions" in c.lower() for c in criteria)
 
-    def test_size_issue_includes_line_count_criterion(self) -> None:
+    def test_size_issue_keeps_line_count_out_of_acceptance(self) -> None:
         criteria = _build_issue_aware_done_when(400, 200, ["large_file"], False)
-        assert any("200" in c for c in criteria)
-        assert any("only where it improves clarity" in c.lower() for c in criteria)
+        assert not any("200" in c for c in criteria)
+        assert any("meaningfully simplified" in c.lower() for c in criteria)
 
     def test_no_size_issue_omits_line_count_criterion(self) -> None:
         criteria = _build_issue_aware_done_when(200, 150, ["deep_nesting"], False)
@@ -111,7 +111,8 @@ class TestBuildIssueAwareDoneWhen:
             ["large_file", "has_long_functions", "deep_nesting", "too_many_functions"],
             False,
         )
-        assert any("200" in c for c in criteria)  # line count
+        assert not any("200" in c for c in criteria)
+        assert any("meaningfully simplified" in c.lower() for c in criteria)
         assert any("largest functions" in c.lower() for c in criteria)
         assert any("deep nesting" in c.lower() for c in criteria)
         assert any("function count" in c.lower() for c in criteria)
@@ -123,8 +124,8 @@ class TestBuildRefactorDescription:
     def test_line_target_is_guidance_not_hard_requirement(self) -> None:
         description = build_refactor_description("backend/app/foo.py", 400, 200, 12.0, "medium")
         assert "Lines: 400" in description
-        assert "guideline" in description.lower()
-        assert "200" in description
+        assert "guideline" not in description.lower()
+        assert "200" not in description
 
     def test_includes_promotion_evidence_when_provided(self) -> None:
         description = build_refactor_description(
@@ -185,7 +186,7 @@ class TestCreateRefactorTask:
             },
         }
         assert mock_create_subtask.call_args.kwargs["subtask_type"] == "refactor"
-        assert "reduce size toward <200 lines only if it improves clarity" in mock_create_subtask.call_args.kwargs["description"]
+        assert "reduce size where that improves clarity" in mock_create_subtask.call_args.kwargs["description"]
         assert "preserving all existing behavior" in mock_create_task.call_args.kwargs["description"]
         mock_link.assert_called_once_with("task-123", 42)
 

@@ -149,8 +149,8 @@ class TestBuildRefactorSteps:
             refactor_issues=["large_file", "has_long_functions"],
         )
         refactor_step = next(s for s in steps if "refactor" in s["description"].lower())
-        assert "only where it improves clarity" in refactor_step["description"].lower()
-        assert "<200" in refactor_step["description"].lower()
+        assert "where that improves clarity" in refactor_step["description"].lower()
+        assert "<200" not in refactor_step["description"].lower()
 
     def test_no_size_issue_skips_refactor_step(self) -> None:
         """Files without size issues skip the refactor step."""
@@ -216,8 +216,8 @@ class TestBuildRefactorSteps:
         )
         quality_step = next(s for s in steps if "quality gate" in s["description"].lower())
         verify_commands = quality_step["spec"]["verify_commands"]
-        assert "st check --quick" in verify_commands
-        assert "st check --fix" in verify_commands
+        assert "st check --quick --changed-only" in verify_commands
+        assert "st check --fix" not in verify_commands
         assert any("st check pytest" in cmd or "python3 -c" in cmd for cmd in verify_commands)
 
     def test_frontend_browser_check(self) -> None:
@@ -250,5 +250,5 @@ class TestBuildRefactorSteps:
         verify_commands = quality_step["spec"]["verify_commands"]
 
         assert "st check --quick" not in quality_step["description"]
-        assert verify_commands[:2] == ["st check --fix", "st check --quick"]
-        assert len(verify_commands) == 3
+        assert verify_commands[-1] == "st check --quick --changed-only"
+        assert len(verify_commands) == 2

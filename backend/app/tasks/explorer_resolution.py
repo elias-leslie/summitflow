@@ -31,8 +31,6 @@ RESOLUTION_REASON_NOT_DETECTED = "Issue no longer detected in scan"
 
 # Metadata keys used in explorer entries and issue metadata
 META_COMPLEXITY_SCORE = "complexity_score"
-META_LINES_OF_CODE = "lines_of_code"
-META_TARGET_LINES = "target_lines"
 META_STALE_STATUS = "stale_status"
 META_BLOAT_LEVEL = "bloat_level"
 
@@ -135,14 +133,8 @@ def _complexity_issue_still_exists(
     """
     entry_metadata = entry.get("metadata", {})
     complexity = entry_metadata.get(META_COMPLEXITY_SCORE, 0)
-    lines = entry_metadata.get(META_LINES_OF_CODE, 0)
 
-    # If issue has a target_lines in metadata, use that for line count check
-    target_lines = issue_metadata.get(META_TARGET_LINES)
-    if target_lines and lines >= target_lines:
-        return True
-
-    # Fall back to complexity check (tier 1 starts at complexity > COMPLEXITY_THRESHOLD)
+    # target_lines is generation context, not a hard acceptance gate.
     return bool(complexity >= COMPLEXITY_THRESHOLD)
 
 

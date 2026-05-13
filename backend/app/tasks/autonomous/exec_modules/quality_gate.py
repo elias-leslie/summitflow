@@ -1,22 +1,17 @@
-"""Quality gate execution and auto-fix logic."""
+"""Quality gate execution."""
 
 from __future__ import annotations
 
-from ....logging_config import get_logger
 from .ah_events import emit_quality_gate_result
-from .events import emit_log
-from .git_ops import has_uncommitted_changes, smart_commit
-from .quality import auto_fix_quality, run_final_quality_gate
-
-logger = get_logger(__name__)
+from .quality import run_final_quality_gate
 
 
-def run_quality_gate_with_autofix(
+def run_quality_gate(
     task_id: str,
     project_path: str,
     project_id: str,
 ) -> bool:
-    """Run quality gate with auto-fix retry if it fails.
+    """Run the final task-scoped quality gate.
 
     Args:
         task_id: The task ID
@@ -24,37 +19,9 @@ def run_quality_gate_with_autofix(
         project_id: The project ID
 
     Returns:
-        True if quality gate passed (either initially or after auto-fix), False otherwise
+        True if quality gate passed, False otherwise
     """
     final_gate_passed = run_final_quality_gate(task_id, project_path, project_id)
-
-    if not final_gate_passed:
-        emit_log(
-            task_id,
-            "warn",
-            "Final quality gate failed, attempting auto-fix",
-            source="quality",
-            project_id=project_id,
-        )
-        auto_fix_quality(project_path, project_id)
-
-        if has_uncommitted_changes(project_path) and not smart_commit(
-            project_path,
-            f"fix: quality gate auto-fix for {task_id}",
-            task_id=task_id,
-            push=True,
-            skip_checks=True,
-        ):
-            emit_log(
-                task_id,
-                "warn",
-                "Quality auto-fix changed files but failed to preserve them on remote",
-                source="quality",
-                project_id=project_id,
-            )
-
-        final_gate_passed = run_final_quality_gate(task_id, project_path, project_id)
-
-    detail = "passed" if final_gate_passed else "failed after auto-fix"
+    detail = "passed" if final_gate_passed else "failed"
     emit_quality_gate_result(task_id, final_gate_passed, detail)
     return final_gate_passed
