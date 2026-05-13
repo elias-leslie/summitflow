@@ -362,6 +362,7 @@ class TestQueuedAutonomousTasks:
         sql_text = mock_cursor.execute.call_args.args[0]
         assert "execution_mode = 'autonomous'" in sql_text
         assert "status = 'pending'" in sql_text
+        assert "CASE WHEN 'feedback' = ANY(labels) THEN 0 ELSE 1 END" in sql_text
         assert tasks[0]["id"] == "task-1"
 
 

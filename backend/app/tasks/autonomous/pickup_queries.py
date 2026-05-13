@@ -185,7 +185,10 @@ def get_queued_autonomous_tasks(project_id: str, limit: int = 10) -> list[dict[s
               AND status = 'pending'
               AND execution_mode = 'autonomous'
               AND (claimed_by IS NULL OR lock_expires_at < NOW())
-            ORDER BY priority ASC, created_at ASC
+            ORDER BY
+                priority ASC,
+                CASE WHEN 'feedback' = ANY(labels) THEN 0 ELSE 1 END,
+                created_at ASC
             LIMIT %s
             """,
             (project_id, limit),
