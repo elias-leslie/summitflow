@@ -118,9 +118,6 @@ def check_pristine_codebase(project_id: str) -> None:
             "Run 'st check --quick' to see details.",
             output=out,
         )
-    from .baseline_blockers import clear_project_quality_gate_blockers
-
-    clear_project_quality_gate_blockers(project_id)
     logger.info("pristine_check_passed", project_id=project_id)
 
 
