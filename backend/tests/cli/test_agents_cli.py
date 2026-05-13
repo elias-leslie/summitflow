@@ -326,24 +326,12 @@ def test_create_agent_posts_full_payload(tmp_path: Path) -> None:
     }
 
 
-def test_update_agent_model_flags_sync_manual_route() -> None:
-    current_route = {
-        "manual_routes": [
-            {
-                "workload_profile": None,
-                "primary_model_id": "minimax/MiniMax-M2.7",
-                "fallback_models": ["kimi-code/kimi-for-coding"],
-                "escalation_model_id": None,
-            }
-        ]
-    }
-
+def test_update_agent_model_flags_update_assignment_and_routing_mode_only() -> None:
     with (
         patch(
             "cli.commands.agents.agents_api",
             side_effect=[
                 {"slug": "verifier"},
-                current_route,
                 {"agent_slug": "verifier"},
             ],
         ) as mock_agents_api,
@@ -375,41 +363,17 @@ def test_update_agent_model_flags_sync_manual_route() -> None:
         "fallback_models": ["claude-opus-4-7"],
         "change_reason": "critical verification route",
     }
-    assert mock_agents_api.call_args_list[1].args == ("GET", "/verifier/routing")
-    assert mock_agents_api.call_args_list[2].args == ("PUT", "/verifier/routing")
-    assert mock_agents_api.call_args_list[2].kwargs["json"] == {
+    assert mock_agents_api.call_args_list[1].args == ("PUT", "/verifier/routing")
+    assert mock_agents_api.call_args_list[1].kwargs["json"] == {
         "default_routing_mode": "manual_locked",
-        "manual_route": {
-            "primary_model_id": "codex/gpt-5.5",
-            "fallback_models": ["claude-opus-4-7"],
-            "escalation_model_id": "claude-opus-4-7",
-            "reason": "critical verification route",
-            "owner": "st agents update",
-            "enabled": True,
-        },
     }
 
 
-def test_update_agent_model_flags_default_to_manual_locked_route() -> None:
-    current_route = {
-        "manual_routes": [
-            {
-                "workload_profile": None,
-                "primary_model_id": "minimax/MiniMax-M2.7",
-                "fallback_models": [],
-                "escalation_model_id": None,
-            }
-        ]
-    }
-
+def test_update_agent_model_flags_do_not_create_manual_route_by_default() -> None:
     with (
         patch(
             "cli.commands.agents.agents_api",
-            side_effect=[
-                {"slug": "planner"},
-                current_route,
-                {"agent_slug": "planner"},
-            ],
+            return_value={"slug": "planner"},
         ) as mock_agents_api,
         patch("cli.commands.agents._print_agent"),
     ):
@@ -426,8 +390,7 @@ def test_update_agent_model_flags_default_to_manual_locked_route() -> None:
         )
 
     assert result.exit_code == 0
-    assert mock_agents_api.call_args_list[2].args == ("PUT", "/planner/routing")
-    assert mock_agents_api.call_args_list[2].kwargs["json"]["default_routing_mode"] == "manual_locked"
+    assert [call.args for call in mock_agents_api.call_args_list] == [("PUT", "/planner")]
 
 
 def test_update_agent_fallback_only_does_not_sync_manual_route() -> None:
@@ -460,27 +423,15 @@ def test_update_agent_fallback_only_does_not_sync_manual_route() -> None:
     }
 
 
-def test_update_agent_manual_route_ignores_disabled_route_primary() -> None:
-    current_route = {
-        "manual_routes": [
-            {
-                "workload_profile": None,
-                "primary_model_id": "xai/grok-4.3",
-                "fallback_models": ["gemini-2.5-flash-lite"],
-                "escalation_model_id": None,
-                "enabled": False,
-            }
-        ]
-    }
-
+def test_update_agent_routing_mode_does_not_sync_manual_route() -> None:
     with (
         patch(
             "cli.commands.agents.agents_api",
             side_effect=[
                 {"slug": "portfolio-mgr-v1"},
-                current_route,
+                {"agent_slug": "portfolio-mgr-v1"},
             ],
-        ),
+        ) as mock_agents_api,
         patch("cli.commands.agents._print_agent"),
     ):
         result = runner.invoke(
@@ -488,13 +439,19 @@ def test_update_agent_manual_route_ignores_disabled_route_primary() -> None:
             [
                 "update",
                 "portfolio-mgr-v1",
-                "--escalation-model",
-                "claude-sonnet-4-6",
+                "--routing-mode",
+                "manual_locked",
             ],
         )
 
-    assert result.exit_code == 1
-    assert "--primary-model is required" in result.output
+    assert result.exit_code == 0
+    assert [call.args for call in mock_agents_api.call_args_list] == [
+        ("GET", "/portfolio-mgr-v1"),
+        ("PUT", "/portfolio-mgr-v1/routing"),
+    ]
+    assert mock_agents_api.call_args_list[1].kwargs["json"] == {
+        "default_routing_mode": "manual_locked",
+    }
 
 
 class TestAgentMemoryConfigUpdate:
