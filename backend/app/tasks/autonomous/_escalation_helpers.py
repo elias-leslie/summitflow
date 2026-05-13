@@ -14,6 +14,7 @@ logger = get_logger(__name__)
 
 # Agent and project defaults — single source of truth for magic strings
 SUPERVISOR_AGENT_SLUG: str = "supervisor"
+SUPERVISOR_GUIDANCE_TIMEOUT_SECONDS: float = 60.0
 _STEP_OUTPUT_TRUNCATE: int = 300
 _GUIDANCE_LOG_TRUNCATE: int = 500
 
@@ -52,7 +53,7 @@ def call_supervisor(
         Response content string, or None on failure.
     """
     try:
-        client = get_sync_client()
+        client = get_sync_client(timeout=SUPERVISOR_GUIDANCE_TIMEOUT_SECONDS)
         response = client.complete(
             messages=[{"role": "user", "content": prompt}],
             agent_slug=SUPERVISOR_AGENT_SLUG,

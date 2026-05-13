@@ -37,6 +37,27 @@ _COMPONENT_PROJECT_PREFIXES = (
     ("xc.", "summitflow"),
 )
 
+_TOOL_GOVERNANCE_FILES = [
+    "backend/cli/commands/tools.py",
+    "backend/app/tasks/tool_governance.py",
+    "backend/app/tasks/autonomous/upkeep_feedback.py",
+    "backend/tests/cli/test_tools_cli.py",
+    "backend/tests/tasks/test_routine_upkeep.py",
+]
+
+_TOOL_GOVERNANCE_STEPS: list[dict[str, object]] = [
+    {
+        "description": "Verify the current governance signal with st tools audit, st tools adoption, and st tools cost.",
+    },
+    {
+        "description": "Patch the st tool governance or feedback task generation path that caused the active signal, or cancel the stale feedback with current evidence.",
+    },
+    {
+        "description": "Run the relevant st check gate for changed governance files.",
+        "spec": {"verify_commands": ["st check --quick --changed-only"]},
+    },
+]
+
 
 def agent_hub_headers() -> dict[str, str]:
     return build_agent_hub_headers(
@@ -95,6 +116,7 @@ def link_feedback_task(feedback_id: str, task_id: str) -> None:
 def feedback_task_spec(feedback: dict[str, Any], task_type: str, source_key_value: str) -> SignalTaskSpec:
     feedback_id = feedback.get("id")
     title = str(feedback.get("title") or feedback_id)
+    is_tool_governance = title.startswith("Tool governance:")
     parts = [
         "Routine upkeep selected this active feedback item for resolution.",
         "",
@@ -105,14 +127,31 @@ def feedback_task_spec(feedback: dict[str, Any], task_type: str, source_key_valu
     ]
     if feedback.get("description"):
         parts.extend(["", str(feedback["description"])[:1200]])
+    if is_tool_governance:
+        parts.extend(
+            [
+                "",
+                "Tool governance handling:",
+                "- Verify the live signal with st tools audit, st tools adoption, and st tools cost.",
+                "- Fix the st governance, prompt, or feedback-generation path that keeps the signal active.",
+                "- If the live signal no longer applies, cancel or resolve the feedback with that evidence instead of making a no-op code change.",
+            ]
+        )
     return SignalTaskSpec(
         source_key=source_key_value,
         signal_type=SOURCE_FEEDBACK,
         title=f"Handle feedback: {title}",
         description="\n".join(parts),
-        priority=1 if title.startswith("Tool governance:") else 2 if task_type == TASK_TYPE_BUG else 3,
+        priority=1 if is_tool_governance else 2 if task_type == TASK_TYPE_BUG else 3,
         task_type=task_type,
-        subtask_description=f"Resolve feedback item {feedback_id}",
+        subtask_description=(
+            f"Resolve tool-governance feedback item {feedback_id}"
+            if is_tool_governance
+            else f"Resolve feedback item {feedback_id}"
+        ),
+        files_to_modify=_TOOL_GOVERNANCE_FILES if is_tool_governance else None,
+        source_context={"tool_governance": True} if is_tool_governance else None,
+        steps=_TOOL_GOVERNANCE_STEPS if is_tool_governance else None,
     )
 
 

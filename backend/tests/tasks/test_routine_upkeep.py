@@ -303,14 +303,21 @@ def test_create_feedback_task_prioritizes_tool_governance(mocker) -> None:
         "app.tasks.autonomous.upkeep_signals.task_store.create_task",
         return_value={"id": "task-feedback"},
     )
-    mocker.patch("app.tasks.autonomous.upkeep_signals.create_task_spirit")
-    mocker.patch("app.tasks.autonomous.upkeep_signals.create_single_subtask_with_steps")
+    create_spirit = mocker.patch("app.tasks.autonomous.upkeep_signals.create_task_spirit")
+    create_subtask = mocker.patch("app.tasks.autonomous.upkeep_signals.create_single_subtask_with_steps")
     mocker.patch("app.tasks.autonomous.upkeep_feedback.link_feedback_task")
 
     created = upkeep._create_feedback_tasks("summitflow", limit=2)
 
     assert created == ["task-feedback"]
     assert create_task.call_args.kwargs["priority"] == 1
+    context = create_spirit.call_args.kwargs["context"]
+    assert context["upkeep"]["tool_governance"] is True
+    assert "backend/cli/commands/tools.py" in context["files_to_modify"]
+    assert create_subtask.call_args.kwargs["description"] == "Resolve tool-governance feedback item fb-governance"
+    steps = create_subtask.call_args.kwargs["steps"]
+    assert steps[0]["description"].startswith("Verify the current governance signal")
+    assert steps[2]["spec"]["verify_commands"] == ["st check --quick --changed-only"]
 
 
 def test_create_feedback_task_replaces_stale_linked_task(mocker) -> None:
