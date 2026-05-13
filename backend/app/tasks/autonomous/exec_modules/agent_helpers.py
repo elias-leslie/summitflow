@@ -138,6 +138,25 @@ def handle_progress_log(
         )
 
 
+def _emit_response_log(
+    task_id: str,
+    subtask_short_id: str,
+    level: str,
+    message: str,
+    response_preview: str,
+    project_id: str,
+) -> None:
+    """Emit agent response log pair (user + debug)."""
+    emit_log(
+        task_id, level, message,
+        source="agent", project_id=project_id,
+    )
+    emit_log(
+        task_id, "debug", f"Agent response: {response_preview}",
+        source="agent", project_id=project_id, visibility="internal",
+    )
+
+
 def log_initial_completion_fallback(
     task_id: str, subtask_short_id: str, response: CompletionResponse, project_id: str
 ) -> None:
@@ -147,22 +166,16 @@ def log_initial_completion_fallback(
     response_preview = response.content[:300] if response.content else "(no response)"
     failure = agent_completion_failure(response)
     if failure:
-        emit_log(
-            task_id, "warn", f"Agent interrupted subtask {subtask_short_id}: {failure[:180]}",
-            source="agent", project_id=project_id,
-        )
-        emit_log(
-            task_id, "debug", f"Agent response: {response_preview}",
-            source="agent", project_id=project_id, visibility="internal",
+        _emit_response_log(
+            task_id, subtask_short_id, "warn",
+            f"Agent interrupted subtask {subtask_short_id}: {failure[:180]}",
+            response_preview, project_id,
         )
         return
-    emit_log(
-        task_id, "info", f"Agent completed subtask {subtask_short_id}",
-        source="agent", project_id=project_id,
-    )
-    emit_log(
-        task_id, "debug", f"Agent response: {response_preview}",
-        source="agent", project_id=project_id, visibility="internal",
+    _emit_response_log(
+        task_id, subtask_short_id, "info",
+        f"Agent completed subtask {subtask_short_id}",
+        response_preview, project_id,
     )
 
 
@@ -237,6 +250,66 @@ def record_citations(
         acknowledge_no_citations(task_id, subtask_short_id)
 
 
+def _try_complete(client: Any, kwargs: dict[str, Any]) -> CompletionResponse:
+    """Single attempt to call client.complete."""
+    return client.complete(**kwargs)
+
+
+def _retry_after_exception(
+    task_id: str,
+    project_id: str,
+    attempt: int,
+    exc: Exception,
+) -> float:
+    """Validate transient exception is retryable and return delay."""
+    if (
+        attempt == _COMPLETE_RETRY_ATTEMPTS - 1
+        or not _is_transient_agent_hub_complete_error(exc)
+    ):
+        raise exc
+    delay = _complete_retry_delay(attempt)
+    _abort_retry_if_task_stopped(task_id, project_id, "agent_hub_complete_error_retry")
+    emit_log(
+        task_id,
+        "warn",
+        "Agent Hub complete unavailable; "
+        f"retrying in {delay:g}s (attempt {attempt + 2}/{_COMPLETE_RETRY_ATTEMPTS}): "
+        f"{str(exc)[:160]}",
+        source="orchestrator",
+        project_id=project_id,
+    )
+    return delay
+
+
+def _retry_after_transient_response(
+    task_id: str,
+    project_id: str,
+    attempt: int,
+    response: CompletionResponse,
+    kwargs: dict[str, Any],
+    current_session_id: str,
+) -> tuple[str, float]:
+    """Rotate session, validate retryable, and return (new_session_id, delay)."""
+    if attempt == _COMPLETE_RETRY_ATTEMPTS - 1:
+        return current_session_id, 0.0
+    delay = _complete_retry_delay(attempt)
+    failure = agent_completion_failure(response) or "transient interruption"
+    _abort_retry_if_task_stopped(task_id, project_id, "agent_hub_interruption_retry")
+    new_session_id = _rotate_session_after_interruption(
+        task_id, kwargs, current_session_id
+    )
+    emit_log(
+        task_id,
+        "warn",
+        "Agent Hub complete returned transient interruption; "
+        f"retrying in {delay:g}s (attempt {attempt + 2}/{_COMPLETE_RETRY_ATTEMPTS}): "
+        f"{failure[:160]} Fresh session: {new_session_id}",
+        source="orchestrator",
+        project_id=project_id,
+    )
+    return new_session_id, delay
+
+
 def call_complete(
     client: Any,
     prompt: str,
@@ -265,45 +338,19 @@ def call_complete(
     current_session_id = session_id
     for attempt in range(_COMPLETE_RETRY_ATTEMPTS):
         try:
-            response = client.complete(**kwargs)
+            response = _try_complete(client, kwargs)
         except Exception as exc:
-            if (
-                attempt == _COMPLETE_RETRY_ATTEMPTS - 1
-                or not _is_transient_agent_hub_complete_error(exc)
-            ):
-                raise
-            delay = _complete_retry_delay(attempt)
-            _abort_retry_if_task_stopped(task_id, project_id, "agent_hub_complete_error_retry")
-            emit_log(
-                task_id,
-                "warn",
-                "Agent Hub complete unavailable; "
-                f"retrying in {delay:g}s (attempt {attempt + 2}/{_COMPLETE_RETRY_ATTEMPTS}): "
-                f"{str(exc)[:160]}",
-                source="orchestrator",
-                project_id=project_id,
-            )
+            delay = _retry_after_exception(task_id, project_id, attempt, exc)
             sleep(delay)
             continue
         if not _is_transient_agent_hub_failure_response(response):
             return response
-        if attempt == _COMPLETE_RETRY_ATTEMPTS - 1:
+        new_session_id, delay = _retry_after_transient_response(
+            task_id, project_id, attempt, response, kwargs, current_session_id
+        )
+        if delay == 0.0:
             return response
-        delay = _complete_retry_delay(attempt)
-        failure = agent_completion_failure(response) or "transient interruption"
-        _abort_retry_if_task_stopped(task_id, project_id, "agent_hub_interruption_retry")
-        current_session_id = _rotate_session_after_interruption(
-            task_id, kwargs, current_session_id
-        )
-        emit_log(
-            task_id,
-            "warn",
-            "Agent Hub complete returned transient interruption; "
-            f"retrying in {delay:g}s (attempt {attempt + 2}/{_COMPLETE_RETRY_ATTEMPTS}): "
-            f"{failure[:160]} Fresh session: {current_session_id}",
-            source="orchestrator",
-            project_id=project_id,
-        )
+        current_session_id = new_session_id
         sleep(delay)
     raise RuntimeError("unreachable Agent Hub complete retry state")
 
