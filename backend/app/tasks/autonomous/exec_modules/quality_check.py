@@ -25,6 +25,8 @@ _NO_CODE_MARKERS = (
     "workflow validation only",
     "workflow-only",
     "temporary validation task only",
+    "feedback id:",
+    "marked obsolete with evidence",
 )
 
 _NO_CODE_STEP_PREFIXES = (
