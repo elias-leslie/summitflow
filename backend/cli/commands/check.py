@@ -129,17 +129,16 @@ def _tool_configs() -> dict[str, dict[str, Any]]:
 
 def _workdir(root: Path, config: dict[str, Any]) -> Path:
     kind = str(config.get("working_dir") or "")
-    if kind == "backend" and (root / "backend").exists():
-        return root / "backend"
-    if kind == "frontend" and (root / "frontend").exists():
-        return root / "frontend"
+    candidates = {
+        "backend": root / "backend",
+        "frontend": root / "frontend",
+    }
+    if kind in candidates and candidates[kind].exists():
+        return candidates[kind]
     if kind == "migrations":
-        if (root / "backend" / "alembic").exists():
-            return root / "backend"
-        if (root / "alembic").exists():
-            return root
-    if kind == "test" and (root / "backend").exists():
-        return root / "backend"
+        return candidates["backend"] if (candidates["backend"] / "alembic").exists() else root
+    if kind == "test" and candidates["backend"].exists():
+        return candidates["backend"]
     return root
 
 
@@ -200,11 +199,10 @@ def _changed_args(
     config: dict[str, Any],
     changed_files: list[str],
 ) -> list[str]:
-    if not changed_files:
-        return []
-    if name != "pytest" and not config.get("pass_path"):
+    if not changed_files or (name != "pytest" and not config.get("pass_path")):
         return []
     paths: list[str] = []
+    cwd_resolved = cwd.resolve()
     for rel_path in changed_files:
         if Path(rel_path).name in _TOOL_CONFIG_PATHS.get(name, set()):
             continue
@@ -215,12 +213,13 @@ def _changed_args(
             continue
         if name == "pytest" and absolute.name == "conftest.py":
             absolute = absolute.parent
-        if absolute.is_relative_to(cwd.resolve()):
-            relative = absolute.relative_to(cwd)
-            if _path_allowed_for_tool(name, relative):
-                rel_posix = relative.as_posix()
-                if rel_posix not in paths:
-                    paths.append(rel_posix)
+        if not absolute.is_relative_to(cwd_resolved):
+            continue
+        relative = absolute.relative_to(cwd)
+        if _path_allowed_for_tool(name, relative):
+            rel_posix = relative.as_posix()
+            if rel_posix not in paths:
+                paths.append(rel_posix)
     return paths
 
 
@@ -355,7 +354,7 @@ def _run_selected(
 ) -> int:
     root = _repo_root()
     changed_files = _changed_files(root) if changed_only else []
-    failures = 1 if run_architecture_check(root, changed_files if changed_only else None) != 0 else 0
+    failures = int(run_architecture_check(root, changed_files if changed_only else None) != 0)
     for name in selected:
         config = configs[name]
         cwd = _workdir(root, config)
@@ -370,8 +369,8 @@ def _run_selected(
         if skip_reason:
             _skip_tool(name, config, skip_reason)
             continue
-        failures += _run_tool(name, config, [*scoped_args, *(_fix_args(name) if fix else [])]) != 0
-    return 1 if failures else 0
+        failures += int(_run_tool(name, config, [*scoped_args, *(_fix_args(name) if fix else [])]) != 0)
+    return int(failures != 0)
 
 
 def _fix_args(name: str) -> list[str]:
@@ -414,9 +413,7 @@ def _extract_check_options(args: list[str]) -> tuple[list[str], bool, bool]:
     ]
     fix = "--fix" in args
     args = ["--fix"] if args == ["--fix"] else [arg for arg in args if arg != "--fix"]
-    if changed_only and not args:
-        args = ["--quick"]
-    return args, changed_only, fix
+    return (["--quick"] if changed_only and not args else args), changed_only, fix
 
 
 def _run_named_tool(
@@ -497,31 +494,31 @@ Usage:
     ),
     tier="mandate",
 )
-def check(ctx: typer.Context) -> None:
-    """Run quality gates or named check subcommands."""
-    if ctx.invoked_subcommand is not None:
-        return
+def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, Any]]) -> int:
     args = list(ctx.args)
-    configs = _tool_configs()
     if not args or args[0] in {"-h", "--help", "help"}:
         _usage(configs)
-        raise typer.Exit(0)
+        return 0
 
     args, changed_only, fix = _extract_check_options(args)
     first = args[0]
     if first == "cleanroom":
-        raise typer.Exit(
-            cleanroom_main(["--project-root", str(_repo_root()), *_strip_separator(args[1:])])
-        )
+        return cleanroom_main(["--project-root", str(_repo_root()), *_strip_separator(args[1:])])
 
     named_result = _run_named_tool(first, args, configs, changed_only=changed_only, fix=fix)
     if named_result is not None:
-        raise typer.Exit(named_result)
+        return named_result
 
     selected_result = _selected_tools(first, configs)
     if selected_result is None:
         output_error(f"Unknown st check mode/tool: {first}")
-        raise typer.Exit(2)
+        return 2
     selected, selected_fix = selected_result
+    return _run_selected(selected, configs, fix=fix or selected_fix, changed_only=changed_only)
 
-    raise typer.Exit(_run_selected(selected, configs, fix=fix or selected_fix, changed_only=changed_only))
+
+def check(ctx: typer.Context) -> None:
+    """Run quality gates or named check subcommands."""
+    if ctx.invoked_subcommand is not None:
+        return
+    raise typer.Exit(_handle_check_args(ctx, _tool_configs()))
