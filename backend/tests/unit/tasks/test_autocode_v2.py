@@ -377,6 +377,7 @@ class TestAgentRouting:
 
         result = get_agent_for_subtask("unknown", task_type="bug")
         assert result == "debugger"
+        assert get_agent_for_subtask(None, task_type="debt") == "refactor"
 
     def test_get_agent_for_subtask_routes_generic_bug_work_to_debugger(self) -> None:
         """Bug tasks with generic implementation subtasks should use maintenance agents."""

@@ -187,6 +187,7 @@ def test_create_quality_failure_task_uses_source_key_and_marks_escalated(mocker)
     assert context["files_to_modify"] == ["backend/app/foo.py"]
     assert create_spirit.call_args.kwargs["complexity"] == "SIMPLE"
     create_subtask.assert_called_once()
+    assert create_subtask.call_args.kwargs["subtask_type"] == "bug-fix"
     mark_escalated.assert_called_once_with(123, "task-quality")
 
 
@@ -254,7 +255,7 @@ def test_create_feedback_task_links_agent_hub_item(mocker) -> None:
     feedback = {
         "id": "fb-123",
         "component_id": "sf.cli",
-        "feedback_type": "friction",
+        "feedback_type": "idea",
         "title": "CLI output confusing",
         "description": "The command output is hard to interpret.",
         "status": "open",
@@ -270,7 +271,7 @@ def test_create_feedback_task_links_agent_hub_item(mocker) -> None:
         return_value={"id": "task-feedback"},
     )
     create_spirit = mocker.patch("app.tasks.autonomous.upkeep_signals.create_task_spirit")
-    mocker.patch("app.tasks.autonomous.upkeep_signals.create_single_subtask_with_steps")
+    create_subtask = mocker.patch("app.tasks.autonomous.upkeep_signals.create_single_subtask_with_steps")
     link_feedback = mocker.patch("app.tasks.autonomous.upkeep_feedback.link_feedback_task")
 
     created = upkeep._create_feedback_tasks("summitflow", limit=2)
@@ -279,6 +280,7 @@ def test_create_feedback_task_links_agent_hub_item(mocker) -> None:
     context = create_spirit.call_args.kwargs["context"]
     assert context["upkeep"]["source_key"] == "upkeep:feedback:fb-123"
     assert context["upkeep"]["signal_type"] == "feedback"
+    assert create_subtask.call_args.kwargs["subtask_type"] is None
     link_feedback.assert_called_once_with("fb-123", "task-feedback")
 
 

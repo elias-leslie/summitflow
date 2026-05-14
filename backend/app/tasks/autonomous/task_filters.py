@@ -80,8 +80,6 @@ def is_security_sensitive(files: list[str]) -> bool:
 
 def is_exploratory(task: TaskDict) -> bool:
     """Check if task is exploratory (requires human reasoning)."""
-    if task.get("task_type") == "research":
-        return True
     title = (task.get("title") or "").lower()
     return any(kw in title for kw in EXPLORATORY_KEYWORDS)
 

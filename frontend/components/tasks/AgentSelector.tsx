@@ -17,7 +17,11 @@ interface AgentSelectorProps {
 
 // Map task_type to default agent slug (mirrors backend TASK_TYPE_AGENT_MAP)
 const TASK_TYPE_AGENT_MAP: Record<string, string> = {
+  bug: 'debugger',
+  debt: 'refactor',
+  feature: 'coder',
   refactor: 'refactor',
+  regression: 'debugger',
 }
 const DEFAULT_AGENT = 'coder'
 

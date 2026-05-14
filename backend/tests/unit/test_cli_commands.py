@@ -1494,6 +1494,15 @@ class TestCreateFromFileErrors:
             assert result.exit_code == 1
             assert "task_type must be one of" in result.output
 
+    def test_task_type_validation_uses_canonical_types(self) -> None:
+        """Batch import accepts canonical task types and rejects stale aliases."""
+        from cli.commands.tasks_validation import validate_task_item
+
+        for task_type in ("feature", "bug", "task", "refactor", "debt", "regression"):
+            assert validate_task_item({"title": "Test", "task_type": task_type}, 0) == []
+
+        assert validate_task_item({"title": "Test", "task_type": "chore"}, 0)
+
     def test_invalid_priority(self) -> None:
         """Test handling of invalid priority."""
         tasks_data = {

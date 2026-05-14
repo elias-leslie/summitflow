@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from ..constants import TaskType
+
 ExecutionModeLiteral = Literal["manual", "autonomous", "manual_only"]
 
 
@@ -20,7 +22,7 @@ class TaskCreate(BaseModel):
     labels: list[str] = Field(
         default_factory=list, description="Labels (complexity:small, domains:backend)"
     )
-    task_type: Literal["feature", "bug", "task", "refactor", "debt", "regression"] = "task"
+    task_type: TaskType = "task"
     parent_task_id: str | None = None
     # Rich plan metadata is preserved in task_spirit.context for round-trip task context.
     objective: str | None = Field(default=None, description="Task objective stored in task_spirit context")
@@ -69,7 +71,7 @@ class TaskUpdate(BaseModel):
     # Issue tracking fields
     priority: int | None = Field(default=None, ge=0, le=4)
     labels: list[str] | None = None
-    task_type: Literal["feature", "bug", "task", "refactor", "debt", "regression"] | None = None
+    task_type: TaskType | None = None
     parent_task_id: str | None = None
     # Allow moving task to different project
     project_id: str | None = None

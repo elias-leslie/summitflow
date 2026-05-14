@@ -57,22 +57,10 @@ async def _dispatch_queue(task_id: str, project_id: str) -> None:
     logger.info("Dispatched autonomous execution", task_id=task_id, stage=result.get("stage"))
 
 
-async def _dispatch_pending_idea(task_id: str, project_id: str) -> None:
-    """Dispatch idea triage if task type is 'idea'."""
-    task = task_store.get_task(task_id)
-    if not (task and task.get("task_type") == "idea"):
-        return
-    from ...workflows.models import TaskInput
-    from ...workflows.pipeline import triage_wf
-    await triage_wf.aio_run_no_wait(TaskInput(task_id=task_id, project_id=project_id))
-    logger.info("Dispatched idea triage", task_id=task_id)
-
-
 async def _route_dispatch(task_id: str, new_status: str, project_id: str) -> None:
     """Route dispatch based on new_status: pending, or cancelled/failed."""
     if new_status == "pending":
         await _dispatch_queue(task_id, project_id)
-        await _dispatch_pending_idea(task_id, project_id)
     elif new_status in ("cancelled", "failed"):
         abort_running_task(task_id)
 

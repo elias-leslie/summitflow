@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.constants import TASK_TYPE_VALUES
+
 
 def validate_task_item(item: dict[str, Any], index: int) -> list[str]:
     """Validate a single task item and return list of errors."""
@@ -13,7 +15,7 @@ def validate_task_item(item: dict[str, Any], index: int) -> list[str]:
         errors.append(f"{prefix}: Missing required field 'title'")
     if "task_type" not in item or not item["task_type"]:
         errors.append(f"{prefix}: Missing required field 'task_type'")
-    valid_types = ("feature", "bug", "task", "chore")
+    valid_types = TASK_TYPE_VALUES
     if item.get("task_type") and item["task_type"] not in valid_types:
         errors.append(f"{prefix}: task_type must be one of: {', '.join(valid_types)}")
     if "priority" in item:

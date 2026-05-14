@@ -7,10 +7,11 @@ behavior helpers (concurrency, cooldown, self-healing, etc.).
 
 from __future__ import annotations
 
+from ..constants import TASK_TYPE_VALUES
 from .agent_configs import get_agent_config
 
 LEGACY_DEFAULT_ALLOWED_TYPES = ["refactor", "bug", "regression", "feature", "chore", "docs"]
-DEFAULT_ALLOWED_TYPES = [*LEGACY_DEFAULT_ALLOWED_TYPES, "task", "debt", "test"]
+DEFAULT_ALLOWED_TYPES = list(TASK_TYPE_VALUES)
 
 
 def normalize_allowed_task_types(allowed_types: object) -> list[str] | None:
@@ -22,7 +23,8 @@ def normalize_allowed_task_types(allowed_types: object) -> list[str] | None:
     values = [str(t) for t in allowed_types]
     if values == LEGACY_DEFAULT_ALLOWED_TYPES:
         return DEFAULT_ALLOWED_TYPES.copy()
-    return values
+    valid_values = [value for value in values if value in TASK_TYPE_VALUES]
+    return valid_values or DEFAULT_ALLOWED_TYPES.copy()
 
 
 def get_max_tasks_per_day(project_id: str) -> int | None:

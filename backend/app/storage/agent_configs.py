@@ -6,6 +6,7 @@ from typing import TypedDict, cast
 
 from psycopg.types.json import Jsonb
 
+from ..constants import TASK_TYPE_VALUES
 from ..logging_config import get_logger
 from .connection import get_connection, get_cursor
 
@@ -97,17 +98,7 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "runtime_hygiene_enabled": False,
     "autonomous_max_tasks_per_day": None,
     "autonomous_cooldown_minutes": 0,
-    "autonomous_allowed_types": [
-        "refactor",
-        "bug",
-        "regression",
-        "feature",
-        "chore",
-        "docs",
-        "task",
-        "debt",
-        "test",
-    ],
+    "autonomous_allowed_types": list(TASK_TYPE_VALUES),
     "autonomous_max_self_fix_attempts": 3,
     "autonomous_max_supervisor_attempts": 3,
     "autonomous_max_extensions": 3,

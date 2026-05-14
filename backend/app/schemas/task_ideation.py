@@ -10,6 +10,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from ..constants import TaskType
+
 # Complexity values as the ideation agent sends them (lowercase)
 IdeationComplexity = Literal["simple", "standard", "complex"]
 
@@ -33,7 +35,7 @@ class IdeationTaskCreate(BaseModel):
     priority: int = Field(
         default=2, ge=0, le=4, description="Priority P0-P4 (0=critical, 4=backlog)"
     )
-    task_type: Literal["feature", "bug", "task", "refactor", "debt", "regression"] = Field(
+    task_type: TaskType = Field(
         default="task", description="Task type classification"
     )
     labels: list[str] = Field(

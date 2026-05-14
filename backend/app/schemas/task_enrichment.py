@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
+from ..constants import TaskType
+
 if TYPE_CHECKING:
     from .task_base import TaskResponse
     from .task_criteria import AcceptanceCriterion
@@ -16,7 +18,7 @@ class EnrichmentRequest(BaseModel):
 
     raw_request: str = Field(min_length=10, description="Natural language task description")
     priority: int | None = Field(default=None, ge=0, le=4, description="Optional priority override")
-    task_type: Literal["feature", "bug", "task", "refactor", "debt", "regression"] | None = Field(
+    task_type: TaskType | None = Field(
         default=None, description="Optional type override"
     )
 

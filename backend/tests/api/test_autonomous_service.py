@@ -6,6 +6,7 @@ from typing import cast
 from unittest.mock import AsyncMock, _Call, patch
 
 import pytest
+from fastapi import HTTPException
 
 from app.api.autonomous import _sync_auto_exec_permission, _validate_update
 from app.api.autonomous import update_settings as update_autonomous_endpoint
@@ -14,6 +15,7 @@ from app.api.autonomous_service import (
     get_autonomous_settings,
     update_autonomous_settings,
 )
+from app.constants import TASK_TYPE_VALUES
 from app.storage.agent_configs import DEFAULT_AGENT_CONFIG, AgentConfig
 
 
@@ -70,17 +72,17 @@ def test_get_autonomous_settings_expands_legacy_default_allowed_types() -> None:
     with patch("app.api.autonomous_service.get_agent_config", return_value=config):
         settings = get_autonomous_settings("test-project")
 
-    assert settings.allowed_types == [
-        "refactor",
-        "bug",
-        "regression",
-        "feature",
-        "chore",
-        "docs",
-        "task",
-        "debt",
-        "test",
-    ]
+    assert settings.allowed_types == list(TASK_TYPE_VALUES)
+
+
+def test_get_autonomous_settings_drops_stale_allowed_types() -> None:
+    config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
+    config["autonomous_allowed_types"] = ["bug", "docs", "test"]
+
+    with patch("app.api.autonomous_service.get_agent_config", return_value=config):
+        settings = get_autonomous_settings("test-project")
+
+    assert settings.allowed_types == ["bug"]
 
 
 def test_get_autonomous_settings_preserves_explicit_narrow_allowed_types() -> None:
@@ -142,7 +144,12 @@ def test_validate_update_accepts_vitest_quality_gate_tool() -> None:
 
 
 def test_validate_update_accepts_ready_ranked_task_types() -> None:
-    _validate_update(AutonomousSettingsUpdate(allowed_types=["task", "debt", "test"]))
+    _validate_update(AutonomousSettingsUpdate(allowed_types=["task", "debt", "regression"]))
+
+
+def test_validate_update_rejects_stale_task_types() -> None:
+    with pytest.raises(HTTPException):
+        _validate_update(AutonomousSettingsUpdate(allowed_types=["chore"]))
 
 
 @pytest.mark.asyncio

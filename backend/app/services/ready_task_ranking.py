@@ -17,9 +17,6 @@ _TYPE_ORDER = {
     "refactor": 1,
     "debt": 1,
     "task": 2,
-    "test": 2,
-    "docs": 2,
-    "chore": 2,
     "feature": 4,
 }
 

@@ -1,5 +1,14 @@
 """Shared constants used across the application."""
 
+from typing import Literal, get_args
+
+# =============================================================================
+# Task Type Constants
+# =============================================================================
+
+TaskType = Literal["feature", "bug", "task", "refactor", "debt", "regression"]
+TASK_TYPE_VALUES: tuple[str, ...] = get_args(TaskType)
+
 # =============================================================================
 # Agent Hub Routing Constants
 # =============================================================================

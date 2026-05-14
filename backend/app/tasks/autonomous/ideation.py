@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ...constants import TASK_TYPE_VALUES
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
 from ...services.task_plan_context import build_task_plan_context
@@ -21,6 +22,7 @@ from ...storage import tasks as task_store
 from ...storage.task_spirit import get_task_spirit, upsert_task_spirit
 
 logger = get_logger(__name__)
+TASK_TYPE_PROMPT = "|".join(TASK_TYPE_VALUES)
 
 
 def _build_ideation_prompt(title: str, description: str) -> str:
@@ -36,7 +38,7 @@ def _build_ideation_prompt(title: str, description: str) -> str:
         f'{{"objective": "clear 1-2 sentence objective",'
         f' "scope": "what is in scope and out of scope",'
         f' "done_when": ["condition 1", "condition 2", ...],'
-        f' "suggested_type": "feature|bug|refactor|task|debt",'
+        f' "suggested_type": "{TASK_TYPE_PROMPT}",'
         f' "complexity": "SIMPLE|STANDARD|COMPLEX",'
         f' "dependencies": ["any known dependencies or blockers"],'
         f' "enriched_description": "expanded description with technical details"}}'

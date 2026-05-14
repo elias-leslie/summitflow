@@ -9,6 +9,9 @@ from ...services.context_gatherer import PRECISION_CODE_SEARCH_GUIDANCE
 from ...services.task_plan_context import extract_task_plan_fields
 from ...services.task_second_opinion import get_second_opinion_entry
 from ...storage.task_spirit import get_task_spirit
+from .exec_modules._routing_maps import SUBTASK_TYPE_AGENT_MAP
+
+SUBTASK_TYPE_PROMPT = "|".join(SUBTASK_TYPE_AGENT_MAP)
 
 _PLAN_FEEDBACK_KEYS = (
     "objective",
@@ -142,7 +145,7 @@ _PLAN_SCHEMA = """{
         {
             "subtask_id": "1.1",
             "phase": "implementation",
-            "subtask_type": "backend|frontend|ui-design|refactor|bug-fix|test|config",
+            "subtask_type": "__SUBTASK_TYPES__",
             "description": "What this subtask accomplishes",
             "steps": [
                 {
@@ -161,4 +164,4 @@ _PLAN_SCHEMA = """{
         "files_to_create": ["new/file.ts"],
         "risks": ["Known risk or gotcha"]
     }
-}"""
+}""".replace("__SUBTASK_TYPES__", SUBTASK_TYPE_PROMPT)

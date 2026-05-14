@@ -16,7 +16,6 @@ from .upkeep_constants import (
     PHASE_IMPLEMENTATION,
     SUBTASK_ID,
     SUBTASK_TYPE_BUG_FIX,
-    SUBTASK_TYPE_IMPLEMENTATION,
     TASK_TYPE_BUG,
     UPKEEP_LABELS,
 )
@@ -101,6 +100,6 @@ def create_signal_task(project_id: str, spec: SignalTaskSpec) -> str:
         phase=subtask_phase(spec.files_to_modify),
         description=spec.subtask_description,
         steps=spec.steps,
-        subtask_type=SUBTASK_TYPE_BUG_FIX if spec.task_type == TASK_TYPE_BUG else SUBTASK_TYPE_IMPLEMENTATION,
+        subtask_type=SUBTASK_TYPE_BUG_FIX if spec.task_type == TASK_TYPE_BUG else None,
     )
     return task_id

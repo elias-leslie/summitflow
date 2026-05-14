@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
 
+from ..constants import TaskType
 from .task_create_update import ExecutionModeLiteral
 from .task_subtasks import SubtaskCreate
 
@@ -21,7 +22,7 @@ class BatchTaskCreate(BaseModel):
     capability_id: int | None = None  # Database ID of capability (optional)
     priority: int = Field(default=2, ge=0, le=4)
     labels: list[str] = Field(default_factory=list)
-    task_type: Literal["feature", "bug", "task", "refactor", "debt", "regression"] = "task"
+    task_type: TaskType = "task"
     parent_task_id: str | None = None
     objective: str | None = None
     # Pipeline v2 fields

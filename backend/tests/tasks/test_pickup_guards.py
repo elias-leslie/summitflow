@@ -103,7 +103,7 @@ class TestCheckAllowedTaskType:
 
     @patch(
         "app.tasks.autonomous.pickup_guards.agent_configs.get_allowed_task_types",
-        return_value=["refactor", "bug", "regression", "feature", "chore", "docs", "task", "debt", "test"],
+        return_value=["feature", "bug", "task", "refactor", "debt", "regression"],
     )
     def test_ready_ranked_generic_task_type_is_allowed(self, _mock_allowed: MagicMock) -> None:
         assert check_allowed_task_type("agent-hub", "task") is None
