@@ -7,6 +7,7 @@ from typing import Annotated, Any, cast
 
 import httpx
 import typer
+from psycopg import sql
 
 from ..config import get_agent_hub_url
 from ..lib.usage import (
@@ -24,6 +25,16 @@ from ._api_paths import ACCESS_CONTROL_METRICS_PATH
 from ._http_errors import parse_error_detail, raise_connect_error, raise_timeout_error
 
 app = typer.Typer(help="Operator tool catalog and Agent Hub usage metrics")
+
+DEFAULT_LOOKBACK_HOURS = 24
+DEFAULT_LIMIT = 10
+DEFAULT_COST_TASK = "verification"
+DEFAULT_FEEDBACK_PROJECT = "summitflow"
+DEFAULT_MANIFEST_VERSION = 1
+INJECT_FORMAT = "inject"
+JSON_FORMAT = "json"
+MARKDOWN_FORMAT = "markdown"
+YAML_FORMAT = "yaml"
 
 _ST_COMMAND_RE = r"(^|&&\s*|;\s*)st(\s|$)"
 _ST_SURFACE_RE = r"(^|&&\s*|;\s*)st\s+(?:(?:-P|--project)\s+\S+\s+)?([a-z][a-z0-9-]*)"
@@ -247,13 +258,8 @@ def _format_adoption_compact(data: dict[str, Any]) -> None:
             print(f"    {item.get('surface', '?')}  {item.get('count', 0)}")
 
 
-def _fetch_audit_metrics(hours: int, limit: int, project: str | None = None) -> dict[str, Any]:
-    """Find high-confidence tool-governance misses from Agent Hub telemetry."""
-    import psycopg
-
-    from .db import _db_url, _psql_project_lock
-
-    raw_sql = """
+def _audit_queries(hours: int, project: str | None, limit: int) -> tuple[sql.SQL, sql.SQL, tuple[Any, ...], tuple[Any, ...]]:
+    raw_sql = sql.SQL("""
         WITH tool_cmds AS (
             SELECT
                 e.session_id,
@@ -283,8 +289,8 @@ def _fetch_audit_metrics(hours: int, limit: int, project: str | None = None) -> 
         GROUP BY project_id, agent_slug
         ORDER BY count DESC, project_id, agent_slug
         LIMIT %s;
-    """
-    missing_gate_sql = """
+    """)
+    missing_gate_sql = sql.SQL("""
         WITH flags AS (
             SELECT
                 e.session_id,
@@ -320,8 +326,22 @@ def _fetch_audit_metrics(hours: int, limit: int, project: str | None = None) -> 
         GROUP BY project_id, agent_slug
         ORDER BY count DESC, project_id, agent_slug
         LIMIT %s;
-    """
+    """)
+    return (
+        raw_sql,
+        missing_gate_sql,
+        (hours, project, project),
+        (_ST_CHECK_RE, hours, project, project, limit),
+    )
 
+
+def _fetch_audit_metrics(hours: int, limit: int, project: str | None = None) -> dict[str, Any]:
+    """Find high-confidence tool-governance misses from Agent Hub telemetry."""
+    import psycopg
+
+    from .db import _db_url, _psql_project_lock
+
+    raw_sql, missing_gate_sql, raw_base_params, missing_gate_params = _audit_queries(hours, project, limit)
     findings: list[dict[str, Any]] = []
     with (
         _psql_project_lock("agent-hub"),
@@ -333,25 +353,18 @@ def _fetch_audit_metrics(hours: int, limit: int, project: str | None = None) -> 
         for rule in _RAW_AUDIT_RULES:
             rows = conn.execute(
                 raw_sql,
-                (
-                    hours,
-                    project,
-                    project,
-                    rule["finding_type"],
-                    rule["expected_surface"],
-                    rule["component"],
-                    rule["severity"],
-                    _ST_COMMAND_RE,
-                    rule["pattern"],
-                    limit,
-                ),
+                (*raw_base_params,
+                 rule["finding_type"],
+                 rule["expected_surface"],
+                 rule["component"],
+                 rule["severity"],
+                 _ST_COMMAND_RE,
+                 rule["pattern"],
+                 limit),
             ).fetchall()
             findings.extend(_audit_rows_to_findings(rows))
 
-        rows = conn.execute(
-            missing_gate_sql,
-            (_ST_CHECK_RE, hours, project, project, limit),
-        ).fetchall()
+        rows = conn.execute(missing_gate_sql, missing_gate_params).fetchall()
         findings.extend(_audit_rows_to_findings(rows))
 
     severity_rank = {"high": 0, "medium": 1, "low": 2}
@@ -579,13 +592,8 @@ def _manifest_density_costs(task: str | None) -> list[dict[str, Any]]:
     return costs
 
 
-def _fetch_cost_metrics(hours: int, limit: int, task: str | None = "verification") -> dict[str, Any]:
-    """Summarize context and persisted tool/request token cost hotspots."""
-    import psycopg
-
-    from .db import _db_url, _psql_project_lock
-
-    request_sql = """
+def _cost_queries(hours: int, limit: int) -> tuple[sql.SQL, sql.SQL, sql.SQL]:
+    request_sql = sql.SQL("""
         SELECT
             COALESCE(tool_name, endpoint, 'unknown') AS tool_name,
             COALESCE(tool_type::text, 'unknown') AS tool_type,
@@ -605,8 +613,8 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = "verification
                  count(*) DESC,
                  tool_name
         LIMIT %s;
-    """
-    output_sql = """
+    """)
+    output_sql = sql.SQL("""
         SELECT
             COALESCE(tool_name, 'unknown') AS tool_name,
             count(*)::int AS events,
@@ -619,15 +627,25 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = "verification
         GROUP BY 1
         ORDER BY output_chars DESC, events DESC, tool_name
         LIMIT %s;
-    """
-    session_sql = """
+    """)
+    session_sql = sql.SQL("""
         SELECT session_id
         FROM session_events
         WHERE created_at >= now() - (%s * interval '1 hour')
           AND session_id IS NOT NULL
         ORDER BY created_at DESC
         LIMIT 1;
-    """
+    """)
+    return request_sql, output_sql, session_sql
+
+
+def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_TASK) -> dict[str, Any]:
+    """Summarize context and persisted tool/request token cost hotspots."""
+    import psycopg
+
+    from .db import _db_url, _psql_project_lock
+
+    request_sql, output_sql, session_sql = _cost_queries(hours, limit)
     request_rows: list[tuple[Any, ...]]
     output_rows: list[tuple[Any, ...]]
     feedback_session_id: str | None
@@ -935,6 +953,55 @@ def _emit_manifest_yaml(payload: dict[str, Any]) -> None:
     print(yaml.safe_dump(payload, default_flow_style=False, sort_keys=False).strip())
 
 
+def _manifest_specs(
+    root_app: typer.Typer,
+    *,
+    surface: str | None,
+    task: str | None,
+    agent: str | None,
+    profile: str | None,
+    density: str,
+) -> list[Any]:
+    all_specs = collect_usage_specs(root_app)
+    if surface is not None:
+        return filter_specs(
+            all_specs,
+            surface=surface,
+            task_type=task,
+            agent_slug=agent,
+            consumer_profile=profile,
+        )
+    specs = filter_specs(all_specs, agent_slug=agent, consumer_profile=profile)
+    if density == "full":
+        return filter_specs(specs, task_type=task)
+    return select_specs_for_density(specs, density=density, task_type=task)
+
+
+def _emit_manifest_payload(
+    specs: list[Any],
+    *,
+    density: str,
+    fmt: str,
+) -> None:
+    if fmt == INJECT_FORMAT:
+        print(render_inject(specs))
+        return
+    payload: dict[str, Any] = {
+        "manifest_version": DEFAULT_MANIFEST_VERSION,
+        "density": density,
+        "tools": [spec.to_dict() for spec in specs],
+    }
+    if fmt == JSON_FORMAT:
+        output_json(payload)
+    elif fmt == MARKDOWN_FORMAT:
+        _emit_manifest_markdown(payload)
+    elif fmt == YAML_FORMAT:
+        _emit_manifest_yaml(payload)
+    else:
+        output_error(f"Unknown --format {fmt!r}; expected {INJECT_FORMAT}|{YAML_FORMAT}|{JSON_FORMAT}|{MARKDOWN_FORMAT}")
+        raise typer.Exit(1)
+
+
 @app.command()
 def manifest(
     ctx: typer.Context,
@@ -955,7 +1022,7 @@ def manifest(
     ] = "full",
     fmt: Annotated[
         str, typer.Option("--format", help="inject | yaml | json | markdown")
-    ] = "inject",
+    ] = INJECT_FORMAT,
 ) -> None:
     """Emit the registered tool-usage manifest for injection into agentic surfaces.
 
@@ -975,39 +1042,15 @@ def manifest(
         output_error(f"Unknown --density {density!r}; expected {expected}")
         raise typer.Exit(1)
 
-    all_specs = collect_usage_specs(root_app)
-    if surface is not None:
-        specs = filter_specs(
-            all_specs,
-            surface=surface,
-            task_type=task,
-            agent_slug=agent,
-            consumer_profile=profile,
-        )
-    else:
-        specs = filter_specs(all_specs, agent_slug=agent, consumer_profile=profile)
-        if density == "full":
-            specs = filter_specs(specs, task_type=task)
-        else:
-            specs = select_specs_for_density(specs, density=density, task_type=task)
-
-    if fmt == "inject":
-        print(render_inject(specs))
-        return
-    payload: dict[str, Any] = {
-        "manifest_version": 1,
-        "density": density,
-        "tools": [spec.to_dict() for spec in specs],
-    }
-    if fmt == "json":
-        output_json(payload)
-    elif fmt == "markdown":
-        _emit_manifest_markdown(payload)
-    elif fmt == "yaml":
-        _emit_manifest_yaml(payload)
-    else:
-        output_error(f"Unknown --format {fmt!r}; expected inject|yaml|json|markdown")
-        raise typer.Exit(1)
+    specs = _manifest_specs(
+        root_app,
+        surface=surface,
+        task=task,
+        agent=agent,
+        profile=profile,
+        density=density,
+    )
+    _emit_manifest_payload(specs, density=density, fmt=fmt)
 
 
 @app.callback(invoke_without_command=True)
