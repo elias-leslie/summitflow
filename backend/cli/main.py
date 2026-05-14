@@ -28,6 +28,115 @@ VCS: vcs doctor | vcs reconcile | commit -m MSG [--task T] | jj diff | jj show.
 Tools: check | graph | service | runtime | db | browser | web | wiki | sessions | agent | cleanup | logs.
 Use `<command> --help` for command-specific syntax."""
 
+SESSION_EVENTS_COMMAND = "session-events"
+PROGRESS_COMMAND = "progress"
+COMMAND_UNAVAILABLE_ERROR = "ERROR:st command '{command}' unavailable: {exc}"
+COMMIT_ERROR_PREFIX = "ERROR:"
+SUCCESS_STATUS = "SUCCESS"
+BLOCKED_STATUS = "BLOCKED"
+COMMIT_EVENT_PREFIX = "st commit"
+COMMIT_COMPACT_TEMPLATE = "COMMIT[1]:status={status} pushed={pushed} detail={detail}"
+PROGRESS_ALIAS_MESSAGE = (
+    "Command 'st progress' does not exist. Did you mean:\n"
+    "  st sync-progress <task-id>              Sync objectively complete, step-backed subtasks\n"
+    "  st subtask pass <subtask-id> -t <task>   Mark individual subtask complete"
+)
+FORWARD_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True, "help_option_names": []}
+
+OPTIONAL_COMMANDS = (
+    "abandon",
+    "agent",
+    "agents",
+    "autonomous",
+    "autosnapshot",
+    "backup",
+    "browser",
+    "checkpoints",
+    "claim",
+    "claude",
+    "cleanup",
+    "complete",
+    "db",
+    "deps",
+    "design",
+    "docker",
+    "done",
+    "exec_monitor",
+    "feedback",
+    "git",
+    "graph",
+    "health",
+    "jj",
+    "logs",
+    "memory",
+    "persona",
+    "portfolio",
+    "projects",
+    "prompt",
+    "pulse",
+    "refactor",
+    "runtime",
+    "search",
+    "service",
+    "session_events",
+    "sessions",
+    "setup",
+    "snapshots",
+    "subtask",
+    "tasks",
+    "tests",
+    "tools",
+    "vcs",
+    "vm",
+    "web",
+    "wiki",
+)
+
+SUBCOMMAND_GROUPS = (
+    ("dep", "deps"),
+    ("design", "design"),
+    ("test", "tests"),
+    ("subtask", "subtask"),
+    ("autonomous", "autonomous"),
+    ("claude", "claude"),
+    ("sessions", "sessions"),
+    ("projects", "projects"),
+    ("git", "git"),
+    ("graph", "graph"),
+    ("jj", "jj"),
+    ("vcs", "vcs"),
+    ("backup", "backup"),
+    ("service", "service"),
+    ("runtime", "runtime"),
+    ("health", "health"),
+    ("logs", "logs"),
+    ("memory", "memory"),
+    ("complete", "complete"),
+    ("agent", "agent"),
+    ("tools", "tools"),
+    ("cleanup", "cleanup"),
+    ("prompt", "prompt"),
+    ("refactor", "refactor"),
+    ("feedback", "feedback"),
+    ("persona", "persona"),
+    ("portfolio", "portfolio"),
+    ("agents", "agents"),
+    ("docker", "docker"),
+    ("setup", "setup"),
+    ("vm", "vm"),
+    ("wiki", "wiki"),
+)
+
+FORWARDED_ROOT_COMMANDS = (
+    ("check", "check", "check"),
+    ("db", "db", "db"),
+    ("browser", "browser", "browser"),
+    ("web", "web", "web"),
+)
+
+SNAPSHOT_COMMAND_NAMES = {"snap", "snaps", "recover", "rollback", "prune"}
+ROOT_TASK_COMMAND_NAMES = {"claim", "done", "abandon"}
+
 
 class _FailedCommandModule:
     def __init__(self, command: str, exc: Exception) -> None:
@@ -46,7 +155,7 @@ class _FailedCommandModule:
         return _failed_command
 
     def _raise(self) -> None:
-        typer.echo(f"ERROR:st command '{self.command}' unavailable: {self.exc}", err=True)
+        typer.echo(COMMAND_UNAVAILABLE_ERROR.format(command=self.command, exc=self.exc), err=True)
         raise typer.Exit(1)
 
 
@@ -59,53 +168,89 @@ def _load_command_module(command: str, *, required: bool = False) -> ModuleType 
         return _FailedCommandModule(command, exc)
 
 
-abandon = _load_command_module("abandon")
-agent = _load_command_module("agent")
-agents = _load_command_module("agents")
-autonomous = _load_command_module("autonomous")
-autosnapshot = _load_command_module("autosnapshot")
-backup = _load_command_module("backup")
-browser = _load_command_module("browser")
-check = _load_command_module("check", required=True)
-checkpoints = _load_command_module("checkpoints")
-claim = _load_command_module("claim")
-claude = _load_command_module("claude")
-cleanup = _load_command_module("cleanup")
-complete = _load_command_module("complete")
-db = _load_command_module("db")
-deps = _load_command_module("deps")
-design = _load_command_module("design")
-docker = _load_command_module("docker")
-done = _load_command_module("done")
-exec_monitor = _load_command_module("exec_monitor")
-feedback = _load_command_module("feedback")
-git = _load_command_module("git")
-graph = _load_command_module("graph")
-health = _load_command_module("health")
-jj = _load_command_module("jj")
-logs = _load_command_module("logs")
-memory = _load_command_module("memory")
-persona = _load_command_module("persona")
-portfolio = _load_command_module("portfolio")
-projects = _load_command_module("projects")
-prompt = _load_command_module("prompt")
-pulse = _load_command_module("pulse")
-refactor = _load_command_module("refactor")
-runtime = _load_command_module("runtime")
-search = _load_command_module("search")
-service = _load_command_module("service")
-session_events = _load_command_module("session_events")
-sessions = _load_command_module("sessions")
-setup = _load_command_module("setup")
-snapshots = _load_command_module("snapshots")
-subtask = _load_command_module("subtask")
-tasks = _load_command_module("tasks")
-tests = _load_command_module("tests")
-tools = _load_command_module("tools")
-vcs = _load_command_module("vcs")
-vm = _load_command_module("vm")
-web = _load_command_module("web")
-wiki = _load_command_module("wiki")
+def _load_optional_commands() -> dict[str, ModuleType | _FailedCommandModule]:
+    return {name: _load_command_module(name) for name in OPTIONAL_COMMANDS}
+
+
+_COMMANDS = _load_optional_commands()
+_COMMANDS["check"] = _load_command_module("check", required=True)
+
+
+def _register_root_task_commands() -> None:
+    for cmd in _COMMANDS["tasks"].app.registered_commands:
+        if cmd.callback is not None:
+            app.command(name=cmd.name, hidden=cmd.hidden)(cmd.callback)
+
+
+def _register_subcommand_groups() -> None:
+    for command_name, module_name in SUBCOMMAND_GROUPS:
+        app.add_typer(_COMMANDS[module_name].app, name=command_name)
+
+
+def _register_forwarded_root_commands() -> None:
+    for command_name, module_name, callback_name in FORWARDED_ROOT_COMMANDS:
+        module = _COMMANDS[module_name]
+        app.command(
+            command_name,
+            context_settings=FORWARD_CONTEXT_SETTINGS,
+            help=module.app.info.help,
+            add_help_option=False,
+        )(getattr(module, callback_name))
+
+
+def _event_detail_parts(result: dict[str, object]) -> list[str]:
+    return [
+        f"change={result.get('change_id', '')}",
+        f"commit={result.get('commit_id') or result.get('sha') or ''}",
+        f"bookmark={result.get('bookmark', '')}",
+        f"op={result.get('operation_id', '')}",
+        f"pushed={str(result.get('pushed', False)).lower()}",
+    ]
+
+
+def _log_commit_event(task_id: str, result: dict[str, object]) -> None:
+    detail = " ".join(part for part in _event_detail_parts(result) if not part.endswith("="))
+    log_task_event(task_id, f"{COMMIT_EVENT_PREFIX} {detail}")
+
+
+def _emit_commit_output(ctx: typer.Context, result: dict[str, object]) -> None:
+    if ctx.obj.is_compact:
+        detail = result.get("commit_id") or result.get("sha") or result.get("reason") or ""
+        print(
+            COMMIT_COMPACT_TEMPLATE.format(
+                status=result["status"],
+                pushed=str(result.get("pushed", False)).lower(),
+                detail=detail,
+            )
+        )
+        return
+
+    from .output import output_json
+
+    output_json(result)
+
+
+def _register_named_command(command_group: typer.Typer, command_name: str) -> None:
+    for cmd in command_group.registered_commands:
+        if cmd.callback is not None and cmd.name == command_name:
+            app.command(name=command_name)(cmd.callback)
+
+
+def _register_snapshot_commands() -> None:
+    for cmd in _COMMANDS["snapshots"].app.registered_commands:
+        if cmd.callback is not None and cmd.name in SNAPSHOT_COMMAND_NAMES:
+            app.command(name=cmd.name, context_settings=cmd.context_settings or {})(cmd.callback)
+
+
+def _apply_output_context(ctx: typer.Context, *, human: bool, compact: bool, progress_only: bool) -> None:
+    ctx.obj = OutputContext(
+        human=human and not compact and not progress_only,
+        compact=compact or progress_only,
+        progress_only=progress_only,
+    )
+    set_human_output(ctx.obj.human)
+    set_compact_output(ctx.obj.compact)
+    set_progress_only(ctx.obj.progress_only)
 
 app = typer.Typer(
     name="st",
@@ -115,50 +260,19 @@ app = typer.Typer(
 )
 
 # Register task commands at root level
-for cmd in tasks.app.registered_commands:
-    if cmd.callback is not None:
-        app.command(name=cmd.name, hidden=cmd.hidden)(cmd.callback)
+_register_root_task_commands()
 
 # Also register task as a subcommand group for `st task verify` / `st task import`
-app.add_typer(tasks.app, name="task", hidden=True)
+app.add_typer(_COMMANDS["tasks"].app, name="task", hidden=True)
 
 # Register subcommand groups (hidden from main help - reference above is complete)
-app.add_typer(deps.app, name="dep")
-app.add_typer(design.app, name="design")
-app.add_typer(tests.app, name="test")
-app.add_typer(subtask.app, name="subtask")
-app.add_typer(autonomous.app, name="autonomous")
-app.add_typer(claude.app, name="claude")
-app.add_typer(sessions.app, name="sessions")
-app.add_typer(projects.app, name="projects")
-app.add_typer(git.app, name="git")
-app.add_typer(graph.app, name="graph")
-app.add_typer(jj.app, name="jj")
-app.add_typer(vcs.app, name="vcs")
-app.add_typer(backup.app, name="backup")
-app.add_typer(service.app, name="service")
-app.add_typer(runtime.app, name="runtime")
-app.add_typer(health.app, name="health")
-app.add_typer(logs.app, name="logs")
-app.add_typer(memory.app, name="memory")
-app.add_typer(complete.app, name="complete")
-app.add_typer(agent.app, name="agent")
-app.command("session-events", help="Agent Hub session events (observability)")(session_events.show_events)
-app.add_typer(tools.app, name="tools")
-app.add_typer(cleanup.app, name="cleanup")
-app.add_typer(prompt.app, name="prompt")
-app.add_typer(refactor.app, name="refactor")
-app.add_typer(feedback.app, name="feedback")
-app.add_typer(persona.app, name="persona")
-app.add_typer(portfolio.app, name="portfolio")
-app.add_typer(agents.app, name="agents")
-app.add_typer(docker.app, name="docker")
-app.add_typer(setup.app, name="setup")
-app.add_typer(vm.app, name="vm")
-app.add_typer(wiki.app, name="wiki")
-app.command("pulse")(pulse.pulse)
-app.command("search")(search.search)
-app.command("exec-log")(exec_monitor.exec_log_command)
+_register_subcommand_groups()
+app.command(SESSION_EVENTS_COMMAND, help="Agent Hub session events (observability)")(
+    _COMMANDS["session_events"].show_events
+)
+app.command("pulse")(_COMMANDS["pulse"].pulse)
+app.command("search")(_COMMANDS["search"].search)
+app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
 
 
 @app.command("commit")
@@ -179,7 +293,10 @@ def commit_command(
     push: Annotated[bool, typer.Option("--push/--no-push", help="Publish after describing the change.")] = True,
     task_id: Annotated[str, typer.Option("--task", help="Task id for bookmark and audit log.")] = "",
     repo: Annotated[str | None, typer.Option("--repo", "-R", help="Repository path. Defaults to current repo.")] = None,
-    skip_checks: Annotated[bool, typer.Option("--skip-checks", help="Skip local check gate for local-only recovery commits.")] = False,
+    skip_checks: Annotated[
+        bool,
+        typer.Option("--skip-checks", help="Skip local check gate for local-only recovery commits."),
+    ] = False,
     bookmark: Annotated[str, typer.Option("--bookmark", help="Explicit jj bookmark to publish.")] = "",
     paths: Annotated[
         list[str] | None,
@@ -206,67 +323,36 @@ def commit_command(
             paths=tuple(paths or ()),
         )
     except CommitError as exc:
-        typer.echo(f"ERROR:{exc}", err=True)
+        typer.echo(f"{COMMIT_ERROR_PREFIX}{exc}", err=True)
         raise typer.Exit(1) from None
-    if task_id and result.get("status") == "SUCCESS":
-        detail_parts = [
-            f"change={result.get('change_id', '')}",
-            f"commit={result.get('commit_id') or result.get('sha') or ''}",
-            f"bookmark={result.get('bookmark', '')}",
-            f"op={result.get('operation_id', '')}",
-            f"pushed={str(result.get('pushed', False)).lower()}",
-        ]
-        log_task_event(task_id, "st commit " + " ".join(part for part in detail_parts if not part.endswith("=")))
-    if ctx.obj.is_compact:
-        detail = result.get("commit_id") or result.get("sha") or result.get("reason") or ""
-        print(
-            f"COMMIT[1]:status={result['status']} "
-            f"pushed={str(result.get('pushed', False)).lower()} detail={detail}"
-        )
-    else:
-        from .output import output_json
 
-        output_json(result)
-    if result.get("status") == "BLOCKED":
+    if task_id and result.get("status") == SUCCESS_STATUS:
+        _log_commit_event(task_id, result)
+    _emit_commit_output(ctx, result)
+    if result.get("status") == BLOCKED_STATUS:
         raise typer.Exit(2)
 
-_FORWARD_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True, "help_option_names": []}
-app.command("check", context_settings=_FORWARD_CONTEXT_SETTINGS, help=check.app.info.help, add_help_option=False)(check.check)
-app.command("db", context_settings=_FORWARD_CONTEXT_SETTINGS, help=db.app.info.help, add_help_option=False)(db.db)
-app.command("browser", context_settings=_FORWARD_CONTEXT_SETTINGS, help=browser.app.info.help, add_help_option=False)(browser.browser)
-app.command("web", context_settings=_FORWARD_CONTEXT_SETTINGS, help=web.app.info.help, add_help_option=False)(web.web)
+
+_register_forwarded_root_commands()
 
 
-@app.command("progress", hidden=True)
+@app.command(PROGRESS_COMMAND, hidden=True)
 def progress_alias(
     task_id: Annotated[str | None, typer.Argument(help="Task ID")] = None,
 ) -> None:
     """Alias hint: use 'st sync-progress' or 'st subtask pass' instead."""
-    typer.echo(
-        "Command 'st progress' does not exist. Did you mean:\n"
-        "  st sync-progress <task-id>              Sync objectively complete, step-backed subtasks\n"
-        "  st subtask pass <subtask-id> -t <task>   Mark individual subtask complete",
-        err=True,
-    )
+    typer.echo(PROGRESS_ALIAS_MESSAGE, err=True)
     raise typer.Exit(1)
 
 
 # Register checkpoint-aware commands (override old claim from tasks.py)
 # These are defined with @app.command() in their modules, so access via module.app
-for cmd in claim.app.registered_commands:
-    if cmd.callback is not None and cmd.name == "claim":
-        app.command(name=cmd.name)(cmd.callback)
-app.add_typer(checkpoints.app, name="checkpoints")
-for cmd in snapshots.app.registered_commands:
-    if cmd.callback is not None and cmd.name in {"snap", "snaps", "recover", "rollback", "prune"}:
-        app.command(name=cmd.name, context_settings=cmd.context_settings or {})(cmd.callback)
-app.add_typer(autosnapshot.app, name="autosnap", hidden=True)
-for cmd in done.app.registered_commands:
-    if cmd.callback is not None and cmd.name == "done":
-        app.command(name="done")(cmd.callback)
-for cmd in abandon.app.registered_commands:
-    if cmd.callback is not None and cmd.name == "abandon":
-        app.command(name="abandon")(cmd.callback)
+_register_named_command(_COMMANDS["claim"].app, "claim")
+app.add_typer(_COMMANDS["checkpoints"].app, name="checkpoints")
+_register_snapshot_commands()
+app.add_typer(_COMMANDS["autosnapshot"].app, name="autosnap", hidden=True)
+for command_name in ROOT_TASK_COMMAND_NAMES - {"claim"}:
+    _register_named_command(_COMMANDS[command_name].app, command_name)
 
 
 @app.callback()
@@ -301,16 +387,7 @@ def main(
     """SummitFlow Tasks CLI."""
     if project:
         set_project_override(project)
-
-    ctx.obj = OutputContext(
-        human=human and not compact and not progress_only,
-        compact=compact or progress_only,
-        progress_only=progress_only,
-    )
-
-    set_human_output(ctx.obj.human)
-    set_compact_output(ctx.obj.compact)
-    set_progress_only(ctx.obj.progress_only)
+    _apply_output_context(ctx, human=human, compact=compact, progress_only=progress_only)
 
 
 if __name__ == "__main__":
