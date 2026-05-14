@@ -104,6 +104,106 @@ def print_table(headers: list[str], rows: list[list[str]]) -> None:
         print("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))))
 
 
+def format_memory_summary(agent: dict[str, Any]) -> str:
+    config = agent.get("memory_config")
+    if not isinstance(config, dict):
+        return "memory=-"
+    parts = []
+    if config.get("injection_enabled") is not None:
+        parts.append(f"inject={str(bool(config.get('injection_enabled'))).lower()}")
+    for label, key in [
+        ("mandates", "include_mandates"),
+        ("guardrails", "include_guardrails"),
+        ("refs", "include_references"),
+        ("continuity", "continuity_enabled"),
+    ]:
+        if config.get(key) is not None:
+            parts.append(f"{label}={str(bool(config.get(key))).lower()}")
+    audience = config.get("audience_tags")
+    if isinstance(audience, list) and audience:
+        parts.append(f"audience={','.join(str(item) for item in audience[:4])}")
+    return "memory=" + (" ".join(parts) if parts else "configured")
+
+
+def print_agent_detail(agent: dict[str, Any]) -> None:
+    fallbacks = [str(item) for item in agent.get("fallback_models") or []]
+    fallback_text = ",".join(fallbacks) if fallbacks else "-"
+    print(
+        f"{agent['slug']} | primary={agent['primary_model_id']} | "
+        f"fallbacks={fallback_text} | escalation={agent.get('escalation_model_id') or '-'} | "
+        f"version={agent['version']}"
+    )
+    print(
+        f"  active={agent['is_active']} coding={agent['is_coding_agent']} "
+        f"thinking={agent.get('thinking_level') or '-'} temp={agent['temperature']} "
+        f"timeout={agent.get('timeout_seconds') or '-'}"
+    )
+    print(f"  {format_memory_summary(agent)}")
+
+
+def _version_config(version: dict[str, Any]) -> dict[str, Any]:
+    config = version.get("config_snapshot")
+    return config if isinstance(config, dict) else {}
+
+
+def print_agent_versions(versions: list[dict[str, Any]]) -> None:
+    print(f"AGENT_VERSIONS[{len(versions)}]")
+    rows: list[list[str]] = []
+    for item in versions:
+        config = _version_config(item)
+        fallbacks = config.get("fallback_models") or []
+        if not isinstance(fallbacks, list):
+            fallbacks = []
+        reason = str(item.get("change_reason") or "-").replace("\n", " ")
+        if len(reason) > 90:
+            reason = reason[:87] + "..."
+        rows.append([
+            str(item.get("version") or "-"),
+            str(config.get("primary_model_id") or "-"),
+            ",".join(str(model) for model in fallbacks) or "-",
+            str(config.get("escalation_model_id") or "-"),
+            str(config.get("thinking_level") or "-"),
+            reason,
+            str(item.get("created_at") or "-"),
+        ])
+    print_table(["ver", "primary", "fallbacks", "escalation", "think", "reason", "created"], rows)
+
+
+def print_agent_activity(payload: dict[str, Any]) -> None:
+    sessions = payload.get("sessions") if isinstance(payload, dict) else None
+    requests = payload.get("requests") if isinstance(payload, dict) else None
+    session_rows = [row for row in sessions if isinstance(row, dict)] if isinstance(sessions, list) else []
+    request_rows = [row for row in requests if isinstance(row, dict)] if isinstance(requests, list) else []
+    print(f"AGENT_ACTIVITY[{payload.get('agent_slug', '-')}] sessions={len(session_rows)} requests={len(request_rows)}")
+    if session_rows:
+        rows = []
+        for row in session_rows:
+            models = row.get("models_used") if isinstance(row.get("models_used"), list) else []
+            rows.append([
+                str(row.get("created_at") or "-"),
+                str(row.get("id") or "-"),
+                str(row.get("external_id") or "-"),
+                str(row.get("model") or "-"),
+                ",".join(str(model) for model in models) or "-",
+                str(row.get("status") or "-"),
+                str(row.get("health_detail") or "-"),
+            ])
+        print_table(["created", "session", "external", "model", "used", "status", "health"], rows)
+    if request_rows:
+        rows = []
+        for row in request_rows:
+            rows.append([
+                str(row.get("created_at") or "-"),
+                str(row.get("session_id") or "-"),
+                str(row.get("model") or "-"),
+                str(row.get("status_code") or "-"),
+                str(row.get("latency_ms") or "-"),
+                "yes" if row.get("timed_out") else "no",
+                str(row.get("fallback_model") or "-") if row.get("used_fallback") else "-",
+            ])
+        print_table(["created", "session", "model", "code", "ms", "timeout", "fallback"], rows)
+
+
 def format_slugs(agents: list[dict[str, Any]], limit: int = 8) -> str:
     slugs = [str(a.get("slug") or "-") for a in sorted(agents, key=lambda a: str(a.get("slug") or ""))]
     if len(slugs) <= limit:

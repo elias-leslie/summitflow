@@ -29,6 +29,12 @@ def _agent(
         "fallback_models": fallbacks or [],
         "escalation_model_id": None,
         "is_coding_agent": coding,
+        "is_active": True,
+        "thinking_level": "medium",
+        "temperature": 0.1,
+        "timeout_seconds": None,
+        "version": 1,
+        "memory_config": None,
     }
 
 
@@ -203,6 +209,134 @@ def test_list_agents_json_preserves_full_payload() -> None:
     assert result.exit_code == 0
     assert json.loads(result.output) == agents_payload
     mock_models_api.assert_not_called()
+
+
+def test_get_agent_prints_token_efficient_routing_detail() -> None:
+    agent_payload = _agent(
+        "refactor",
+        "kimi-code/kimi-for-coding",
+        coding=True,
+        fallbacks=["minimax/MiniMax-M2.7", "codex/gpt-5.4-mini"],
+    )
+    agent_payload["escalation_model_id"] = "codex/gpt-5.5"
+    agent_payload["memory_config"] = {
+        "injection_enabled": True,
+        "include_mandates": True,
+        "include_references": False,
+        "audience_tags": ["coding", "tooling"],
+    }
+
+    with patch("cli.commands.agents.agents_api", return_value=agent_payload):
+        result = runner.invoke(app, ["get", "refactor"])
+
+    assert result.exit_code == 0
+    assert "primary=kimi-code/kimi-for-coding" in result.output
+    assert "fallbacks=minimax/MiniMax-M2.7,codex/gpt-5.4-mini" in result.output
+    assert "escalation=codex/gpt-5.5" in result.output
+    assert "memory=inject=true mandates=true refs=false audience=coding,tooling" in result.output
+    assert "memory_config" not in result.output
+
+
+def test_get_agent_json_preserves_full_payload() -> None:
+    agent_payload = _agent("refactor", "codex/gpt-5.4", coding=True)
+
+    with patch("cli.commands.agents.agents_api", return_value=agent_payload):
+        result = runner.invoke(app, ["get", "refactor", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == agent_payload
+
+
+def test_agent_versions_uses_api_and_prints_compact_history() -> None:
+    versions_payload = [
+        {
+            "version": 2,
+            "config_snapshot": {
+                "primary_model_id": "kimi-code/kimi-for-coding",
+                "fallback_models": ["minimax/MiniMax-M2.7"],
+                "escalation_model_id": "codex/gpt-5.5",
+                "thinking_level": "medium",
+            },
+            "change_reason": "Prefer subscription coding route",
+            "created_at": "2026-05-14T12:00:00Z",
+        }
+    ]
+
+    with patch("cli.commands.agents.agents_api", return_value=versions_payload) as mock_api:
+        result = runner.invoke(app, ["versions", "refactor", "--limit", "5"])
+
+    assert result.exit_code == 0
+    assert mock_api.call_args.args[:2] == ("GET", "/refactor/versions")
+    assert mock_api.call_args.kwargs["params"] == {"limit": 5}
+    assert "AGENT_VERSIONS[1]" in result.output
+    assert "kimi-code/kimi-for-coding" in result.output
+    assert "minimax/MiniMax-M2.7" in result.output
+
+
+def test_agent_activity_uses_api_and_prints_sessions_and_requests() -> None:
+    activity_payload = {
+        "agent_slug": "refactor",
+        "sessions": [
+            {
+                "created_at": "2026-05-14T12:00:00Z",
+                "id": "session-1",
+                "external_id": "task-1",
+                "model": "kimi-code/kimi-for-coding",
+                "models_used": ["kimi-code/kimi-for-coding"],
+                "status": "completed",
+                "health_detail": None,
+            }
+        ],
+        "requests": [
+            {
+                "created_at": "2026-05-14T12:00:10Z",
+                "session_id": "session-1",
+                "model": "kimi-code/kimi-for-coding",
+                "status_code": 200,
+                "latency_ms": 1234,
+                "timed_out": False,
+                "used_fallback": False,
+                "fallback_model": None,
+            }
+        ],
+    }
+
+    with patch("cli.commands.agents.agents_api", return_value=activity_payload) as mock_api:
+        result = runner.invoke(app, ["activity", "refactor", "--external-id", "task-1", "--limit", "3"])
+
+    assert result.exit_code == 0
+    assert mock_api.call_args.args[:2] == ("GET", "/refactor/activity")
+    assert mock_api.call_args.kwargs["params"] == {"limit": 3, "external_id": "task-1"}
+    assert "AGENT_ACTIVITY[refactor]" in result.output
+    assert "session-1" in result.output
+    assert "kimi-code/kimi-for-coding" in result.output
+
+
+def test_update_agent_can_clear_fallback_models() -> None:
+    updated_payload = _agent("refactor", "kimi-code/kimi-for-coding", coding=True)
+
+    with patch("cli.commands.agents.agents_api", return_value=updated_payload) as mock_api:
+        result = runner.invoke(app, ["update", "refactor", "--clear-fallback-models"])
+
+    assert result.exit_code == 0
+    assert mock_api.call_args.args[:2] == ("PUT", "/refactor")
+    assert mock_api.call_args.kwargs["json"]["fallback_models"] == []
+
+
+def test_update_agent_rejects_clear_and_set_fallback_models_together() -> None:
+    result = runner.invoke(
+        app,
+        [
+            "update",
+            "refactor",
+            "--clear-fallback-models",
+            "--fallback-model",
+            "codex/gpt-5.4-mini",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Use either --fallback-model or --clear-fallback-models" in result.output
 
 
 def test_preview_agent_defaults_to_compact_summary() -> None:

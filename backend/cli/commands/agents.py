@@ -12,6 +12,9 @@ from ..lib.usage import usage
 from ..output import output_error, output_json
 from .agents_api import agent_preview_api, agents_api, models_api
 from .agents_formatters import (
+    print_agent_activity,
+    print_agent_detail,
+    print_agent_versions,
     print_agents_by_model,
     print_compact_agents,
     score_map,
@@ -47,15 +50,7 @@ def _load_text_file(path: Path, label: str) -> str:
 
 
 def _print_agent(agent: dict[str, Any]) -> None:
-    print(
-        f"{agent['slug']} | primary={agent['primary_model_id']} | "
-        f"fallbacks={len(agent.get('fallback_models') or [])} | version={agent['version']}"
-    )
-    print(
-        f"  active={agent['is_active']} coding={agent['is_coding_agent']} "
-        f"thinking={agent.get('thinking_level') or '-'} temp={agent['temperature']}"
-    )
-    print(f"  memory_config={json.dumps(agent.get('memory_config'), sort_keys=True)}")
+    print_agent_detail(agent)
 
 
 def _score_map() -> dict[str, dict[str, Any]]:
@@ -127,12 +122,70 @@ def list_agents(
 
 
 @app.command("get")
+@usage(
+    surface="st.agents.get",
+    cmd="st agents get <slug> [--json]",
+    when="inspect one agent's canonical routing, fallbacks, escalation, timeout, and memory summary",
+    task_types=("config", "verification", "prompt-tuning"),
+    tier="reference",
+)
 def get_agent(
     slug: Annotated[str, typer.Argument(help="Agent slug")],
+    as_json: Annotated[bool, typer.Option("--json", help="Print full API payload.")] = False,
 ) -> None:
     """Get one agent by slug."""
     agent = agents_api("GET", f"/{slug}")
+    if as_json:
+        output_json(agent)
+        return
     _print_agent(agent)
+
+
+@app.command("versions")
+@usage(
+    surface="st.agents.versions",
+    cmd="st agents versions <slug> --limit N",
+    when="inspect compact agent routing/config version history without raw DB queries",
+    task_types=("config", "verification", "prompt-tuning"),
+    tier="reference",
+)
+def agent_versions(
+    slug: Annotated[str, typer.Argument(help="Agent slug")],
+    limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 20,
+    as_json: Annotated[bool, typer.Option("--json", help="Print full API payload.")] = False,
+) -> None:
+    """Show compact agent version history."""
+    result = agents_api("GET", f"/{slug}/versions", params={"limit": limit})
+    if as_json:
+        output_json(result)
+        return
+    versions = [item for item in result if isinstance(item, dict)] if isinstance(result, list) else []
+    print_agent_versions(versions)
+
+
+@app.command("activity")
+@usage(
+    surface="st.agents.activity",
+    cmd="st agents activity <slug> [--external-id TASK] --limit N",
+    when="inspect recent agent sessions and complete requests without raw DB queries",
+    task_types=("verification", "debugging", "config"),
+    tier="reference",
+)
+def agent_activity(
+    slug: Annotated[str, typer.Argument(help="Agent slug")],
+    external_id: Annotated[str | None, typer.Option("--external-id", help="Filter by caller external/task id.")] = None,
+    limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 10,
+    as_json: Annotated[bool, typer.Option("--json", help="Print full API payload.")] = False,
+) -> None:
+    """Show recent agent sessions and request logs."""
+    params: dict[str, Any] = {"limit": limit}
+    if external_id:
+        params["external_id"] = external_id
+    result = agents_api("GET", f"/{slug}/activity", params=params)
+    if as_json:
+        output_json(result)
+        return
+    print_agent_activity(result)
 
 
 @app.command("create")
@@ -226,6 +279,7 @@ def update_agent(
     active: Annotated[bool | None, typer.Option("--active/--inactive")] = None,
     coding_agent: Annotated[bool | None, typer.Option("--coding-agent/--non-coding-agent")] = None,
     fallback_model: Annotated[list[str] | None, typer.Option("--fallback-model")] = None,
+    clear_fallback_models: Annotated[bool, typer.Option("--clear-fallback-models")] = False,
     system_prompt_file: Annotated[Path | None, typer.Option("--system-prompt-file")] = None,
     memory_config_file: Annotated[Path | None, typer.Option("--memory-config-file")] = None,
     clear_memory_config: Annotated[bool, typer.Option("--clear-memory-config")] = False,
@@ -246,10 +300,14 @@ def update_agent(
     change_reason: Annotated[str | None, typer.Option("--change-reason")] = None,
 ) -> None:
     """Update an agent using the Agent Hub API."""
+    if clear_fallback_models and fallback_model is not None:
+        output_error("Use either --fallback-model or --clear-fallback-models, not both.")
+        raise typer.Exit(1)
+    effective_fallback_model = [] if clear_fallback_models else fallback_model
     payload = build_agent_payload(
         name=name, description=description, primary_model=primary_model, temperature=temperature,
         escalation_model=escalation_model, thinking_level=thinking_level, active=active, coding_agent=coding_agent,
-        fallback_model=fallback_model, change_reason=change_reason, system_prompt_file=system_prompt_file,
+        fallback_model=effective_fallback_model, change_reason=change_reason, system_prompt_file=system_prompt_file,
         load_text_file=_load_text_file,
     )
     mem = collect_memory_flags(
@@ -271,7 +329,7 @@ def update_agent(
     )
     if memory_result is not False:
         payload["memory_config"] = memory_result
-    has_routing_update = any([primary_model, fallback_model is not None, escalation_model, routing_mode])
+    has_routing_update = any([primary_model, effective_fallback_model is not None, escalation_model, routing_mode])
     if not payload and not has_routing_update:
         output_error("Nothing to update. Provide at least one update flag.")
         raise typer.Exit(1)
@@ -279,7 +337,7 @@ def update_agent(
     _sync_manual_route(
         slug,
         primary_model=primary_model,
-        fallback_model=fallback_model,
+        fallback_model=effective_fallback_model,
         escalation_model=escalation_model,
         routing_mode=routing_mode,
         change_reason=change_reason,
