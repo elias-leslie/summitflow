@@ -45,7 +45,6 @@ class TestMergeBlockedWhenTaskRunning:
     @patch(f"{_CLEANUP}._git")
     @patch(f"{_CLEANUP}.publish_existing_commits")
     @patch(f"{_CLEANUP}.update_task_fields")
-    @patch(f"{_CLEANUP}.run_post_merge_validation")
     @patch(f"{_CLEANUP}.delete_task_branch")
     @patch(f"{_CLEANUP}.merge_task_branch")
     @patch(f"{_CLEANUP}.checkout_base_branch")
@@ -62,7 +61,6 @@ class TestMergeBlockedWhenTaskRunning:
         mock_checkout_base: MagicMock,
         mock_merge: MagicMock,
         mock_delete_branch: MagicMock,
-        mock_validation: MagicMock,
         mock_fields: MagicMock,
         mock_publish: MagicMock,
         mock_git: MagicMock,
@@ -83,12 +81,6 @@ class TestMergeBlockedWhenTaskRunning:
         mock_checkout_base.return_value = None
         mock_merge.return_value = MagicMock(success=True, merge_sha="abc123", conflicting_files=None)
         mock_delete_branch.return_value = True
-        mock_validation.return_value = {
-            "status": "passed",
-            "passed": True,
-            "should_rollback": False,
-            "detail": None,
-        }
         mock_publish.return_value = True
         mock_git.return_value = MagicMock(returncode=0, stdout="")
 

@@ -7,7 +7,6 @@ Tests the FULL flows with real database state and mocked Agent Hub:
 4. Review: PR Created → AI review → auto-merge (SIMPLE) or human review
 5. Escalation: Failures → supervisor guidance → human escalation
 6. Ideation: Raw idea → agent expansion → task_spirit + enriched description
-7. Auto-rollback: Merge + failed validation → revert → regression task
 
 Each test creates real database records, mocks Agent Hub, and verifies state transitions.
 """
@@ -1024,7 +1023,7 @@ class TestIdeationE2E:
 
 @pytest.mark.e2e
 class TestAutoRollbackE2E:
-    """End-to-end tests for merge + auto-rollback on post-merge validation failure."""
+    """End-to-end tests for merge cleanup."""
 
     def test_successful_merge_completes(
         self, test_project_id: str, cleanup_tasks: list[str]
@@ -1064,15 +1063,6 @@ class TestAutoRollbackE2E:
             patch(
                 "app.tasks.autonomous.cleanup.remove_task_checkout",
             ),
-            patch(
-                "app.tasks.autonomous.cleanup._run_post_merge_validation",
-                return_value={
-                    "status": "passed",
-                    "passed": True,
-                    "should_rollback": False,
-                    "detail": None,
-                },
-            ),
         ):
             result = merge_and_cleanup_task_checkpoint(task_id, test_project_id)
 
@@ -1080,123 +1070,6 @@ class TestAutoRollbackE2E:
         assert result["task_branch"] == f"{task_id}/main"
         assert result["base_branch"] == "main"
         assert result["post_merge_valid"]
-
-    def test_merge_with_failed_validation_triggers_rollback(
-        self, test_project_id: str, cleanup_tasks: list[str]
-    ) -> None:
-        """Failed post-merge validation should trigger auto-rollback."""
-        task = task_store.create_task(
-            project_id=test_project_id,
-            title="Regression-causing task",
-            description="This merge will fail validation",
-            task_type="task",
-        )
-        task_id = task["id"]
-        cleanup_tasks.append(task_id)
-        task_store.update_task_status(task_id, "running")
-        task_store.update_task_status(task_id, "completed")
-
-        mock_checkout = MagicMock()
-        mock_checkout.branch = f"{task_id}/main"
-        mock_checkout.base_branch = "main"
-        mock_checkout.path = f"/tmp/lanes/{task_id}"
-
-        mock_subprocess_success = MagicMock(returncode=0, stdout="", stderr="")
-
-        with (
-            patch(
-                "app.tasks.autonomous.cleanup.get_task_checkout",
-                return_value=mock_checkout,
-            ),
-            patch(
-                "app.tasks.autonomous.cleanup.get_project_root_path",
-                return_value="/tmp/e2e-test",
-            ),
-            patch(
-                "app.tasks.autonomous.cleanup.subprocess.run",
-                return_value=mock_subprocess_success,
-            ),
-            patch(
-                "app.tasks.autonomous.cleanup.remove_task_checkout",
-            ),
-            patch(
-                "app.tasks.autonomous.cleanup._run_post_merge_validation",
-                return_value={
-                    "status": "failed",
-                    "passed": False,
-                    "should_rollback": True,
-                    "detail": "FAIL",
-                },
-            ),
-            patch(
-                "app.tasks.autonomous.cleanup._auto_rollback",
-                return_value=True,
-            ) as mock_rollback,
-        ):
-            result = merge_and_cleanup_task_checkpoint(task_id, test_project_id)
-
-        assert result["status"] == "rolled_back"
-        assert result["reason"] == "post_merge_validation_failed"
-        mock_rollback.assert_called_once_with(
-            task_id, "/tmp/e2e-test", test_project_id, f"{task_id}/main"
-        )
-
-    def test_auto_rollback_reverts_and_creates_regression_task(
-        self, test_project_id: str, cleanup_tasks: list[str]
-    ) -> None:
-        """Full auto-rollback should revert merge, create regression task, block original."""
-        from app.tasks.autonomous.cleanup import _auto_rollback
-
-        task = task_store.create_task(
-            project_id=test_project_id,
-            title="Task causing regression",
-            description="This task's merge breaks things",
-            task_type="task",
-        )
-        task_id = task["id"]
-        cleanup_tasks.append(task_id)
-        # ai_reviewing → blocked is a valid transition (completed → blocked is not)
-        task_store.update_task_status(task_id, "running")
-        task_store.update_task_status(task_id, "ai_reviewing")
-
-        mock_revert_success = MagicMock(returncode=0, stdout="", stderr="")
-        task_branch = f"{task_id}/main"
-
-        with (
-            patch(
-                "app.tasks.autonomous.cleanup.subprocess.run",
-                return_value=mock_revert_success,
-            ),
-            patch("app.services.agent_hub_client.get_sync_client"),
-        ):
-            success = _auto_rollback(task_id, "/tmp/e2e-test", test_project_id, task_branch)
-
-        assert success
-
-        # Verify original task is now blocked
-        updated_task = task_store.get_task(task_id)
-        assert updated_task is not None
-        assert updated_task["status"] == "blocked"
-
-        # Verify rollback event logged
-        assert task_events_contain(task_id, "Auto-rollback")
-        assert task_events_contain(task_id, "Reverted merge")
-
-        # Verify regression fix task was created
-        with get_connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT id, title, task_type, parent_task_id, priority FROM tasks WHERE parent_task_id = %s",
-                (task_id,),
-            )
-            regression_tasks = cur.fetchall()
-
-        assert len(regression_tasks) == 1
-        reg_id, reg_title, reg_type, reg_parent, reg_priority = regression_tasks[0]
-        cleanup_tasks.append(reg_id)
-        assert "regression" in reg_title.lower() or task_id in reg_title
-        assert reg_type == "regression"
-        assert reg_parent == task_id
-        assert reg_priority == 1
 
     def test_merge_blocked_when_task_running(
         self, test_project_id: str, cleanup_tasks: list[str]

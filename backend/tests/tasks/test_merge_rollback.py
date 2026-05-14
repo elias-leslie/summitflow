@@ -1,336 +1,9 @@
-"""Tests for merge operations, post-merge validation, and auto-rollback."""
+"""Tests for autonomous merge operations."""
 
 from __future__ import annotations
 
-import subprocess
 from typing import cast
 from unittest.mock import MagicMock, patch
-
-from app.tasks.autonomous.cleanup.validation import (
-    auto_rollback,
-    create_regression_fix_task,
-    run_post_merge_validation,
-    save_rollback_learning,
-)
-
-# ---------------------------------------------------------------------------
-# run_post_merge_validation
-# ---------------------------------------------------------------------------
-
-
-class TestPostMergeValidation:
-    """Tests for post-merge quality checks."""
-
-    @patch("app.tasks.autonomous.cleanup.validation.build_st_check_command")
-    @patch("app.tasks.autonomous.cleanup.validation.find_check_tool")
-    @patch("app.storage.log_task_event")
-    @patch("subprocess.run")
-    def test_passes_when_dt_succeeds(
-        self,
-        mock_run: MagicMock,
-        mock_log: MagicMock,
-        mock_find_st: MagicMock,
-        mock_build_cmd: MagicMock,
-    ) -> None:
-        mock_find_st.return_value = "/mock/st"
-        mock_build_cmd.return_value = ["/mock/st", "check", "--quick"]
-        mock_run.return_value = MagicMock(returncode=0, stdout="OK", stderr="")
-
-        result = run_post_merge_validation("task-1", "/tmp/project", "test-project")
-
-        assert result == {
-            "status": "passed",
-            "passed": True,
-            "should_rollback": False,
-            "detail": None,
-        }
-        mock_run.assert_called_once_with(
-            ["/mock/st", "check", "--quick"],
-            cwd="/tmp/project",
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-
-    @patch("app.tasks.autonomous.cleanup.validation.find_check_tool")
-    @patch("app.storage.log_task_event")
-    @patch("subprocess.run")
-    def test_skips_when_dt_is_unavailable(
-        self,
-        mock_run: MagicMock,
-        mock_log: MagicMock,
-        mock_find_st: MagicMock,
-    ) -> None:
-        mock_find_st.return_value = None
-
-        result = run_post_merge_validation("task-1", "/tmp/project", "test-project")
-
-        assert result == {
-            "status": "skipped",
-            "passed": True,
-            "should_rollback": False,
-            "detail": "st check not available",
-        }
-        mock_run.assert_not_called()
-        mock_log.assert_called_once_with("task-1", "Post-merge validation: SKIPPED - st check not available")
-
-    @patch("app.tasks.autonomous.cleanup.validation.build_st_check_command")
-    @patch("app.tasks.autonomous.cleanup.validation.find_check_tool")
-    @patch("app.storage.log_task_event")
-    @patch("subprocess.run")
-    def test_fails_when_dt_fails(
-        self,
-        mock_run: MagicMock,
-        mock_log: MagicMock,
-        mock_find_st: MagicMock,
-        mock_build_cmd: MagicMock,
-    ) -> None:
-        mock_find_st.return_value = "/mock/st"
-        mock_build_cmd.return_value = ["/mock/st", "check", "--quick"]
-        mock_run.return_value = MagicMock(returncode=1, stdout="FAIL", stderr="error")
-
-        result = run_post_merge_validation("task-1", "/tmp/project", "test-project")
-
-        assert result["status"] == "failed"
-        assert result["passed"] is False
-        assert result["should_rollback"] is True
-        mock_log.assert_called()
-
-    @patch("app.tasks.autonomous.cleanup.validation.build_st_check_command")
-    @patch("app.tasks.autonomous.cleanup.validation.find_check_tool")
-    @patch("app.storage.log_task_event")
-    @patch("subprocess.run")
-    def test_fails_on_timeout(
-        self,
-        mock_run: MagicMock,
-        mock_log: MagicMock,
-        mock_find_st: MagicMock,
-        mock_build_cmd: MagicMock,
-    ) -> None:
-        mock_find_st.return_value = "/mock/st"
-        mock_build_cmd.return_value = ["/mock/st", "check", "--quick"]
-        mock_run.side_effect = subprocess.TimeoutExpired("st", 120)
-
-        result = run_post_merge_validation("task-1", "/tmp/project", "test-project")
-
-        assert result == {
-            "status": "timed_out",
-            "passed": False,
-            "should_rollback": False,
-            "detail": "validation timed out after 120s",
-        }
-
-    @patch("app.tasks.autonomous.cleanup.validation.build_st_check_command")
-    @patch("app.tasks.autonomous.cleanup.validation.find_check_tool")
-    @patch("app.storage.log_task_event")
-    @patch("subprocess.run")
-    def test_skips_when_resolved_dt_disappears(
-        self,
-        mock_run: MagicMock,
-        mock_log: MagicMock,
-        mock_find_st: MagicMock,
-        mock_build_cmd: MagicMock,
-    ) -> None:
-        mock_find_st.return_value = "/mock/st"
-        mock_build_cmd.return_value = ["/mock/st", "check", "--quick"]
-        mock_run.side_effect = FileNotFoundError("st not found")
-
-        result = run_post_merge_validation("task-1", "/tmp/project", "test-project")
-
-        assert result["status"] == "skipped"
-        assert result["passed"] is True
-        assert result["should_rollback"] is False
-        mock_log.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# auto_rollback
-# ---------------------------------------------------------------------------
-
-
-class TestAutoRollback:
-    """Tests for auto-rollback after failed post-merge validation."""
-
-    @patch("app.tasks.autonomous.cleanup.validation.save_rollback_learning")
-    @patch("app.tasks.autonomous.cleanup.validation.create_regression_fix_task")
-    @patch("app.tasks.autonomous.cleanup.validation.task_store")
-    @patch("app.storage.log_task_event")
-    @patch("app.tasks.autonomous.cleanup.validation._get_merge_affected_files")
-    @patch("app.tasks.autonomous.cleanup.validation._get_head_commit")
-    @patch("app.tasks.autonomous.cleanup.validation.revert_merge_commit")
-    def test_successful_rollback(
-        self, mock_revert: MagicMock, mock_head: MagicMock, mock_files: MagicMock,
-        mock_log: MagicMock, mock_store: MagicMock, mock_create: MagicMock, mock_learn: MagicMock,
-    ) -> None:
-        mock_revert.return_value = True
-        mock_head.return_value = "abc1234"
-        mock_files.return_value = ["src/foo.py"]
-
-        result = auto_rollback("task-1", "/tmp/project", "test-project", "task-1/main")
-
-        assert result
-        mock_revert.assert_called_once_with("task-1", "/tmp/project")
-        mock_create.assert_called_once_with(
-            "task-1", "test-project", "task-1/main",
-            failure_detail=None,
-            merge_commit="abc1234",
-            affected_files=["src/foo.py"],
-        )
-        mock_store.update_task_status.assert_called_once_with("task-1", "failed")
-        mock_learn.assert_called_once()
-
-    @patch("app.tasks.autonomous.cleanup.validation.save_rollback_learning")
-    @patch("app.tasks.autonomous.cleanup.validation.create_regression_fix_task")
-    @patch("app.tasks.autonomous.cleanup.validation.task_store")
-    @patch("app.storage.log_task_event")
-    @patch("app.tasks.autonomous.cleanup.validation._get_merge_affected_files")
-    @patch("app.tasks.autonomous.cleanup.validation._get_head_commit")
-    @patch("app.tasks.autonomous.cleanup.validation.revert_merge_commit")
-    def test_successful_rollback_from_completed_forces_failed_transition(
-        self,
-        mock_revert: MagicMock,
-        mock_head: MagicMock,
-        mock_files: MagicMock,
-        mock_log: MagicMock,
-        mock_store: MagicMock,
-        mock_create: MagicMock,
-        mock_learn: MagicMock,
-    ) -> None:
-        mock_revert.return_value = True
-        mock_head.return_value = "abc1234"
-        mock_files.return_value = []
-        mock_store.get_task.return_value = {"status": "completed"}
-
-        result = auto_rollback("task-1", "/tmp/project", "test-project", "task-1/main")
-
-        assert result
-        mock_store.update_task_status.assert_called_once_with(
-            "task-1",
-            "failed",
-            validate_transition=False,
-        )
-
-    @patch("app.storage.log_task_event")
-    @patch("app.tasks.autonomous.cleanup.validation.revert_merge_commit")
-    def test_failed_revert_returns_false(
-        self, mock_revert: MagicMock, mock_log: MagicMock,
-    ) -> None:
-        mock_revert.return_value = False
-
-        result = auto_rollback("task-1", "/tmp/project", "test-project", "task-1/main")
-
-        assert not result
-
-    @patch("app.storage.log_task_event")
-    @patch("app.tasks.autonomous.cleanup.validation.revert_merge_commit")
-    def test_exception_returns_false(
-        self, mock_revert: MagicMock, mock_log: MagicMock,
-    ) -> None:
-        mock_revert.side_effect = RuntimeError("git error")
-
-        result = auto_rollback("task-1", "/tmp/project", "test-project", "task-1/main")
-
-        assert not result
-
-    @patch("app.storage.log_task_event")
-    @patch("app.tasks.autonomous.cleanup.validation.revert_merge_commit")
-    def test_timeout_returns_false(
-        self, mock_revert: MagicMock, mock_log: MagicMock,
-    ) -> None:
-        mock_revert.side_effect = subprocess.TimeoutExpired("git", 30)
-
-        result = auto_rollback("task-1", "/tmp/project", "test-project", "task-1/main")
-
-        assert not result
-
-
-# ---------------------------------------------------------------------------
-# create_regression_fix_task
-# ---------------------------------------------------------------------------
-
-
-class TestCreateRegressionFixTask:
-    """Tests for regression task creation after rollback."""
-
-    @patch("app.tasks.autonomous.cleanup.validation._create_regression_subtasks")
-    @patch("app.storage.task_spirit.update_task_spirit")
-    @patch("app.storage.tasks.core.create_task")
-    def test_creates_task_with_correct_fields(
-        self, mock_create: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock,
-    ) -> None:
-        mock_create.return_value = {"id": "task-new-1"}
-
-        create_regression_fix_task("task-1", "test-project", "task-1/main")
-
-        mock_create.assert_called_once()
-        kwargs = mock_create.call_args.kwargs
-        assert kwargs["project_id"] == "test-project"
-        assert kwargs["task_type"] == "regression"
-        assert kwargs["priority"] == 1
-        assert kwargs["parent_task_id"] == "task-1"
-        assert kwargs["autonomous"]
-        assert "task-1" in kwargs["title"]
-        assert "task-1/main" in kwargs["title"]
-        mock_spirit.assert_called_once_with("task-new-1", done_when=mock_spirit.call_args.kwargs["done_when"])
-        assert len(mock_spirit.call_args.kwargs["done_when"]) == 3
-        mock_subtasks.assert_called_once_with("task-new-1", "task-1/main", None)
-
-    @patch("app.tasks.autonomous.cleanup.validation._create_regression_subtasks")
-    @patch("app.storage.task_spirit.update_task_spirit")
-    @patch("app.storage.tasks.core.create_task")
-    def test_includes_failure_detail_and_commit_in_description(
-        self, mock_create: MagicMock, mock_spirit: MagicMock, mock_subtasks: MagicMock,
-    ) -> None:
-        mock_create.return_value = {"id": "task-new-2"}
-
-        create_regression_fix_task(
-            "task-1", "test-project", "task-1/main",
-            failure_detail="RUFF:FAIL\nsrc/foo.py: error",
-            merge_commit="abc1234",
-            affected_files=["src/foo.py", "src/bar.py"],
-        )
-
-        kwargs = mock_create.call_args.kwargs
-        assert "abc1234" in kwargs["description"]
-        assert "src/foo.py" in kwargs["description"]
-        assert "RUFF:FAIL" in kwargs["description"]
-
-    @patch("app.storage.tasks.core.create_task")
-    def test_handles_creation_error_gracefully(self, mock_create: MagicMock) -> None:
-        mock_create.side_effect = RuntimeError("DB error")
-
-        # Should not raise
-        create_regression_fix_task("task-1", "test-project", "task-1/main")
-
-
-# ---------------------------------------------------------------------------
-# save_rollback_learning
-# ---------------------------------------------------------------------------
-
-
-class TestSaveRollbackLearning:
-    """Tests for saving rollback patterns to memory."""
-
-    @patch("app.services.agent_hub_client.get_sync_client")
-    def test_saves_learning_with_correct_params(self, mock_get: MagicMock) -> None:
-        client = MagicMock()
-        mock_get.return_value = client
-
-        save_rollback_learning("task-1", "test-project", "task-1/main")
-
-        client.save_learning.assert_called_once()
-        call_kwargs = client.save_learning.call_args
-        assert call_kwargs.kwargs["injection_tier"] == "guardrail"
-        assert call_kwargs.kwargs["confidence"] == 85
-        assert call_kwargs.kwargs["scope"] == "project"
-
-    @patch("app.services.agent_hub_client.get_sync_client")
-    def test_handles_error_silently(self, mock_get: MagicMock) -> None:
-        mock_get.side_effect = RuntimeError("connection failed")
-
-        # Should not raise
-        save_rollback_learning("task-1", "test-project", "task-1/main")
-
 
 # ---------------------------------------------------------------------------
 # merge_and_cleanup_task_checkpoint (orchestrator)
@@ -343,7 +16,6 @@ class TestMergeAndCleanup:
     @patch("app.tasks.autonomous.cleanup.merge_operations._git")
     @patch("app.tasks.autonomous.cleanup.merge_operations.publish_existing_commits")
     @patch("app.tasks.autonomous.cleanup.merge_operations.update_task_fields")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.run_post_merge_validation")
     @patch("app.tasks.autonomous.cleanup.merge_operations.delete_task_branch")
     @patch("app.tasks.autonomous.cleanup.merge_operations.remove_task_checkout")
     @patch("app.tasks.autonomous.cleanup.merge_operations.merge_task_branch")
@@ -360,7 +32,6 @@ class TestMergeAndCleanup:
         mock_merge: MagicMock,
         mock_remove: MagicMock,
         mock_delete: MagicMock,
-        mock_validate: MagicMock,
         mock_fields: MagicMock,
         mock_publish: MagicMock,
         mock_git: MagicMock,
@@ -378,12 +49,6 @@ class TestMergeAndCleanup:
         mock_checkout_base.return_value = None  # No error
         mock_merge.return_value = MagicMock(success=True, merge_sha="abc123", conflicting_files=None)
         mock_delete.return_value = True
-        mock_validate.return_value = {
-            "status": "passed",
-            "passed": True,
-            "should_rollback": False,
-            "detail": None,
-        }
         mock_publish.return_value = True
         mock_git.return_value = MagicMock(returncode=0, stdout="")
 
@@ -391,123 +56,11 @@ class TestMergeAndCleanup:
 
         assert result["status"] == "merged"
         assert result["post_merge_valid"]
-        assert result["post_merge_validation_status"] == "passed"
+        assert result["post_merge_validation_status"] == "skipped"
         mock_git.assert_any_call(
             ["git", "update-ref", "refs/summitflow/snapshots/pre-merge/task-1", "HEAD"],
             "/tmp/project",
         )
-
-    @patch("app.tasks.autonomous.cleanup.merge_operations._git")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.publish_existing_commits")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.update_task_fields")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.auto_rollback")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.run_post_merge_validation")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.delete_task_branch")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.remove_task_checkout")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.merge_task_branch")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.checkout_base_branch")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.get_project_root_path")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.get_task_checkout")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.task_store")
-    def test_failed_validation_triggers_rollback(
-        self,
-        mock_store: MagicMock,
-        mock_get_checkout: MagicMock,
-        mock_root: MagicMock,
-        mock_checkout_base: MagicMock,
-        mock_merge: MagicMock,
-        mock_remove: MagicMock,
-        mock_delete: MagicMock,
-        mock_validate: MagicMock,
-        mock_rollback: MagicMock,
-        mock_fields: MagicMock,
-        mock_publish: MagicMock,
-        mock_git: MagicMock,
-    ) -> None:
-        from app.tasks.autonomous.cleanup.merge_operations import (
-            merge_and_cleanup_task_checkpoint,
-        )
-
-        mock_store.get_task.return_value = {"status": "completed"}
-        wt = MagicMock()
-        wt.branch = "task-1/main"
-        wt.base_branch = "main"
-        mock_get_checkout.return_value = wt
-        mock_root.return_value = "/tmp/project"
-        mock_checkout_base.return_value = None
-        mock_merge.return_value = MagicMock(success=True, merge_sha="abc123", conflicting_files=None)
-        mock_delete.return_value = True
-        mock_validate.return_value = {
-            "status": "failed",
-            "passed": False,
-            "should_rollback": True,
-            "detail": "FAIL",
-        }
-        mock_rollback.return_value = True
-        mock_publish.return_value = True
-        mock_git.return_value = MagicMock(returncode=0, stdout="")
-
-        result = merge_and_cleanup_task_checkpoint("task-1", "test-project")
-
-        assert result["status"] == "rolled_back"
-        assert result["reason"] == "post_merge_validation_failed"
-        mock_rollback.assert_called_once()
-
-    @patch("app.tasks.autonomous.cleanup.merge_operations._git")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.publish_existing_commits")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.update_task_fields")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.auto_rollback")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.run_post_merge_validation")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.delete_task_branch")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.remove_task_checkout")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.merge_task_branch")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.checkout_base_branch")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.get_project_root_path")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.get_task_checkout")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.task_store")
-    def test_timeout_validation_keeps_merge_and_skips_rollback(
-        self,
-        mock_store: MagicMock,
-        mock_get_checkout: MagicMock,
-        mock_root: MagicMock,
-        mock_checkout_base: MagicMock,
-        mock_merge: MagicMock,
-        mock_remove: MagicMock,
-        mock_delete: MagicMock,
-        mock_validate: MagicMock,
-        mock_rollback: MagicMock,
-        mock_fields: MagicMock,
-        mock_publish: MagicMock,
-        mock_git: MagicMock,
-    ) -> None:
-        from app.tasks.autonomous.cleanup.merge_operations import (
-            merge_and_cleanup_task_checkpoint,
-        )
-
-        mock_store.get_task.return_value = {"status": "completed"}
-        wt = MagicMock()
-        wt.branch = "task-1/main"
-        wt.base_branch = "main"
-        mock_get_checkout.return_value = wt
-        mock_root.return_value = "/tmp/project"
-        mock_checkout_base.return_value = None
-        mock_merge.return_value = MagicMock(success=True, merge_sha="abc123", conflicting_files=None)
-        mock_delete.return_value = True
-        mock_validate.return_value = {
-            "status": "timed_out",
-            "passed": False,
-            "should_rollback": False,
-            "detail": "validation timed out after 120s",
-        }
-        mock_publish.return_value = True
-        mock_git.return_value = MagicMock(returncode=0, stdout="")
-
-        result = merge_and_cleanup_task_checkpoint("task-1", "test-project")
-
-        assert result["status"] == "merged"
-        assert result["post_merge_valid"] is False
-        assert result["post_merge_validation_status"] == "timed_out"
-        mock_rollback.assert_not_called()
 
     @patch("app.tasks.autonomous.cleanup.merge_operations.get_task_checkout")
     @patch("app.tasks.autonomous.cleanup.merge_operations.task_store")
@@ -588,7 +141,6 @@ class TestMergeAndCleanup:
     @patch("app.tasks.autonomous.cleanup.merge_operations._git")
     @patch("app.tasks.autonomous.cleanup.merge_operations.publish_existing_commits")
     @patch("app.tasks.autonomous.cleanup.merge_operations.update_task_fields")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.run_post_merge_validation")
     @patch("app.tasks.autonomous.cleanup.merge_operations.delete_task_branch")
     @patch("app.tasks.autonomous.cleanup.merge_operations.remove_task_checkout")
     @patch("app.tasks.autonomous.cleanup.merge_operations.merge_task_branch")
@@ -607,7 +159,6 @@ class TestMergeAndCleanup:
         mock_merge: MagicMock,
         mock_remove: MagicMock,
         mock_delete: MagicMock,
-        mock_validate: MagicMock,
         mock_fields: MagicMock,
         mock_publish: MagicMock,
         mock_git: MagicMock,
@@ -625,12 +176,6 @@ class TestMergeAndCleanup:
         mock_checkout_base.return_value = None
         mock_merge.return_value = MagicMock(success=True, merge_sha="abc123", conflicting_files=None)
         mock_delete.return_value = True
-        mock_validate.return_value = {
-            "status": "passed",
-            "passed": True,
-            "should_rollback": False,
-            "detail": None,
-        }
         mock_publish.return_value = True
         mock_git.return_value = MagicMock(returncode=0, stdout="")
 
@@ -642,7 +187,6 @@ class TestMergeAndCleanup:
     @patch("app.tasks.autonomous.cleanup.merge_operations._git")
     @patch("app.tasks.autonomous.cleanup.merge_operations.publish_existing_commits")
     @patch("app.tasks.autonomous.cleanup.merge_operations.update_task_fields")
-    @patch("app.tasks.autonomous.cleanup.merge_operations.run_post_merge_validation")
     @patch("app.tasks.autonomous.cleanup.merge_operations.delete_task_branch")
     @patch("app.tasks.autonomous.cleanup.merge_operations.remove_task_checkout")
     @patch("app.tasks.autonomous.cleanup.merge_operations.merge_task_branch")
@@ -661,7 +205,6 @@ class TestMergeAndCleanup:
         mock_merge: MagicMock,
         mock_remove: MagicMock,
         mock_delete: MagicMock,
-        mock_validate: MagicMock,
         mock_fields: MagicMock,
         mock_publish: MagicMock,
         mock_git: MagicMock,
@@ -678,12 +221,6 @@ class TestMergeAndCleanup:
         mock_root.return_value = "/tmp/project"
         mock_checkout_base.return_value = None
         mock_merge.return_value = MagicMock(success=True, merge_sha="abc123", conflicting_files=None)
-        mock_validate.return_value = {
-            "status": "passed",
-            "passed": True,
-            "should_rollback": False,
-            "detail": None,
-        }
         mock_publish.return_value = False
         mock_git.return_value = MagicMock(returncode=0, stdout="")
 
