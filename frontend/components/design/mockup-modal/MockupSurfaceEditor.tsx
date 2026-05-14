@@ -33,10 +33,6 @@ import { getErrorMessage } from '@/lib/utils'
 
 type EditorMode = 'inspect' | 'text' | 'move' | 'note'
 type CompareMode = 'current' | 'split' | 'original'
-type EditableStyleKey = keyof Pick<
-  SelectedElementState,
-  'color' | 'backgroundColor' | 'margin' | 'padding' | 'borderRadius'
->
 
 interface SelectedElementState {
   id: string
@@ -62,65 +58,9 @@ interface MockupSurfaceEditorProps {
   }) => void
 }
 
-interface ToolbarProps {
-  mode: EditorMode
-  compareMode: CompareMode
-  dirty: boolean
-  canSendToJenny: boolean
-  isSaving: boolean
-  onModeChange: (mode: EditorMode) => void
-  onCompareModeChange: (mode: CompareMode) => void
-  onSendToJenny: () => void
-  onSave: () => void
-}
-
-interface SurfaceFrameProps {
-  compareMode: CompareMode
-  content: string
-  mockup: Mockup
-  draftKey: number
-  iframeRef: React.RefObject<HTMLIFrameElement | null>
-  onLoad: () => void
-}
-
-interface InspectorProps {
-  selected: SelectedElementState | null
-  selectedCount: number
-  noteText: string
-  notes: string[]
-  onTextChange: (value: string) => void
-  onMoveSibling: (direction: 'before' | 'after') => void
-  onStyleChange: (key: EditableStyleKey, value: string) => void
-  onNoteTextChange: (value: string) => void
-  onAddNote: () => void
-  onRemoveSelected: () => void
-}
-
 const EDITOR_STYLE_ID = 'sf-mock-editor-style'
 const SELECTED_CLASS = 'sf-editor-selected'
 const HOVER_CLASS = 'sf-editor-hover'
-const COMPARE_MODES: CompareMode[] = ['current', 'split', 'original']
-const STYLE_FIELDS: Array<{
-  key: EditableStyleKey
-  label: string
-  placeholder: string
-}> = [
-  { key: 'color', label: 'Color', placeholder: '#e2e8f0' },
-  { key: 'backgroundColor', label: 'Background', placeholder: '' },
-  { key: 'margin', label: 'Margin', placeholder: '' },
-  { key: 'padding', label: 'Padding', placeholder: '12px' },
-  { key: 'borderRadius', label: 'Radius', placeholder: '' },
-]
-const MODE_BUTTONS: Array<{
-  value: EditorMode
-  label: string
-  Icon: typeof MousePointer2
-}> = [
-  { value: 'inspect', label: 'Select', Icon: MousePointer2 },
-  { value: 'text', label: 'Text', Icon: Code2 },
-  { value: 'move', label: 'Move', Icon: Grip },
-  { value: 'note', label: 'Note', Icon: MessageSquarePlus },
-]
 
 const editorCss = `
   .${HOVER_CLASS} {
@@ -232,365 +172,6 @@ function buildVersionPayload(
   }
 }
 
-function getElementByEditorId(doc: Document | null, id: string | null) {
-  if (!doc || !id) return null
-  return doc.querySelector<HTMLElement>(
-    `[data-sf-editor-id="${CSS.escape(id)}"]`,
-  )
-}
-
-function getElementsByEditorIds(doc: Document | null, ids: string[]) {
-  if (!doc || !ids.length) return []
-  return ids
-    .map((id) => getElementByEditorId(doc, id))
-    .filter((element): element is HTMLElement => Boolean(element))
-}
-
-function applySelection(doc: Document, ids: string[]) {
-  doc
-    .querySelectorAll(`.${SELECTED_CLASS}`)
-    .forEach((item) => item.classList.remove(SELECTED_CLASS))
-  ids.forEach((id) => {
-    getElementByEditorId(doc, id)?.classList.add(SELECTED_CLASS)
-  })
-}
-
-function toggleSelectedIds(
-  currentIds: string[],
-  id: string,
-  additive: boolean,
-) {
-  if (!additive || !currentIds.length) return [id]
-  return currentIds.includes(id)
-    ? currentIds.filter((item) => item !== id)
-    : [...currentIds, id]
-}
-
-function extractAnnotationsForDraft(
-  annotations: MockupAnnotation[],
-  draftContent: string,
-  metadata: Mockup['metadata'],
-) {
-  return annotations.length
-    ? annotations
-    : extractStructuredMockupAnnotations(draftContent, metadata)
-}
-
-function buildEditorSummary(
-  mockup: Mockup,
-  annotations: MockupAnnotation[],
-  dirty: boolean,
-  draftContent: string,
-) {
-  const draftNotes = extractAnnotationsForDraft(
-    annotations,
-    draftContent,
-    mockup.metadata,
-  )
-  const lines = [
-    `Surface-edited mockup ${mockup.mockup_id} v${mockup.version}.`,
-  ]
-  if (dirty) lines.push('User made direct surface edits.')
-  if (draftNotes.length) {
-    lines.push('Anchored notes:')
-    draftNotes.forEach((item) => {
-      lines.push(
-        `- ${item.element_label ?? item.element_path ?? 'surface'}: ${item.note}`,
-      )
-    })
-  }
-  return lines.join('\n')
-}
-
-function buildEditorMetadata(
-  mockup: Mockup,
-  annotations: MockupAnnotation[],
-  draftContent: string,
-): Record<string, unknown> {
-  return {
-    ...(mockup.metadata ?? {}),
-    annotations: extractAnnotationsForDraft(
-      annotations,
-      draftContent,
-      mockup.metadata,
-    ),
-    edited_by: 'surface-editor',
-    source_mockup_id: mockup.mockup_id,
-    source_version: mockup.version,
-    summary_version: 1,
-    token_policy: {
-      default_context: 'compact',
-      full_html: 'on_request',
-    },
-  }
-}
-
-function toolbarButtonClass(active: boolean) {
-  return clsx(
-    'inline-flex h-8 items-center gap-1.5 rounded border px-2 text-xs transition-colors',
-    active
-      ? 'border-phosphor-500/50 bg-phosphor-500/12 text-phosphor-200'
-      : 'border-slate-700 bg-slate-950/70 text-slate-400 hover:border-slate-600 hover:text-slate-200',
-  )
-}
-
-function compareButtonClass(active: boolean) {
-  return clsx(
-    'h-8 rounded border px-2 text-xs capitalize transition-colors',
-    active
-      ? 'border-slate-500 bg-slate-800 text-slate-100'
-      : 'border-slate-800 bg-slate-950/70 text-slate-500 hover:text-slate-300',
-  )
-}
-
-function EditorToolbar({
-  mode,
-  compareMode,
-  dirty,
-  canSendToJenny,
-  isSaving,
-  onModeChange,
-  onCompareModeChange,
-  onSendToJenny,
-  onSave,
-}: ToolbarProps) {
-  return (
-    <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-800 bg-slate-900/85 px-2">
-      {MODE_BUTTONS.map(({ value, label, Icon }) => (
-        <button
-          key={value}
-          type="button"
-          onClick={() => onModeChange(value)}
-          className={toolbarButtonClass(mode === value)}
-        >
-          <Icon className="h-3.5 w-3.5" />
-          {label}
-        </button>
-      ))}
-
-      <div className="mx-1 h-5 w-px shrink-0 bg-slate-800" />
-
-      {COMPARE_MODES.map((item) => (
-        <button
-          key={item}
-          type="button"
-          onClick={() => onCompareModeChange(item)}
-          className={compareButtonClass(compareMode === item)}
-        >
-          {item}
-        </button>
-      ))}
-
-      <div className="flex-1" />
-      {dirty ? (
-        <span className="rounded border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
-          Unsaved
-        </span>
-      ) : null}
-      {canSendToJenny ? (
-        <button
-          type="button"
-          onClick={onSendToJenny}
-          className="inline-flex h-8 items-center gap-1.5 rounded border border-phosphor-500/30 bg-phosphor-500/10 px-2 text-xs text-phosphor-200 hover:bg-phosphor-500/15"
-        >
-          <Send className="h-3.5 w-3.5" />
-          Jenny
-        </button>
-      ) : null}
-      <button
-        type="button"
-        onClick={onSave}
-        disabled={isSaving}
-        className="inline-flex h-8 items-center gap-1.5 rounded border border-outrun-500 bg-outrun-600 px-2 text-xs text-slate-50 hover:bg-outrun-500 disabled:opacity-50"
-      >
-        <Save className="h-3.5 w-3.5" />
-        {isSaving ? 'Saving' : 'Save version'}
-      </button>
-    </div>
-  )
-}
-
-function SurfaceFrames({
-  compareMode,
-  content,
-  mockup,
-  draftKey,
-  iframeRef,
-  onLoad,
-}: SurfaceFrameProps) {
-  return (
-    <div
-      className={clsx(
-        'grid min-h-0 flex-1 bg-[#07040d]',
-        compareMode === 'split' && 'lg:grid-cols-2',
-      )}
-    >
-      {compareMode !== 'current' ? (
-        <div className="relative min-h-0 border-r border-slate-800">
-          <div className="absolute left-2 top-2 z-10 rounded border border-slate-700 bg-slate-950/85 px-2 py-1 text-xs text-slate-300">
-            Original
-          </div>
-          <iframe
-            srcDoc={content}
-            title={`${mockup.name} original`}
-            sandbox="allow-same-origin"
-            className="h-full w-full border-0 bg-white"
-          />
-        </div>
-      ) : null}
-      {compareMode !== 'original' ? (
-        <div className="relative min-h-0">
-          <div className="absolute left-2 top-2 z-10 rounded border border-phosphor-500/30 bg-slate-950/85 px-2 py-1 text-xs text-phosphor-200">
-            Editable surface
-          </div>
-          <iframe
-            key={`${mockup.mockup_id}-${draftKey}`}
-            ref={iframeRef}
-            srcDoc={content}
-            title={`${mockup.name} editable`}
-            sandbox="allow-same-origin"
-            onLoad={onLoad}
-            className="h-full w-full border-0 bg-white"
-          />
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-function SurfaceInspector({
-  selected,
-  selectedCount,
-  noteText,
-  notes,
-  onTextChange,
-  onMoveSibling,
-  onStyleChange,
-  onNoteTextChange,
-  onAddNote,
-  onRemoveSelected,
-}: InspectorProps) {
-  return (
-    <aside className="hidden w-80 shrink-0 border-l border-slate-800 bg-slate-900/70 p-3 lg:block">
-      <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-200">
-        <Eye className="h-4 w-4 text-phosphor-300" />
-        Surface Inspector
-      </div>
-
-      {selected ? (
-        <div className="space-y-3">
-          <div className="rounded border border-slate-800 bg-slate-950/70 p-2">
-            <div className="text-[10px] uppercase tracking-[0.16em] text-slate-500">
-              Selected
-              {selectedCount > 1 ? ` (${selectedCount})` : ''}
-            </div>
-            <div className="mt-1 truncate font-mono text-xs text-phosphor-200">
-              {selected.label}
-            </div>
-            <div className="mt-1 line-clamp-2 font-mono text-[10px] text-slate-500">
-              {selected.path}
-            </div>
-          </div>
-
-          <label className="grid gap-1 text-xs text-slate-400">
-            Text
-            <textarea
-              value={selected.text}
-              onChange={(event) => onTextChange(event.target.value)}
-              rows={5}
-              className="rounded border border-slate-700 bg-slate-950 p-2 text-sm text-slate-100 focus:border-phosphor-500/60 focus:outline-none"
-            />
-          </label>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => onMoveSibling('before')}
-              className="btn-secondary inline-flex items-center justify-center gap-1 text-xs"
-            >
-              <ArrowUp className="h-3.5 w-3.5" />
-              Reorder
-            </button>
-            <button
-              type="button"
-              onClick={() => onMoveSibling('after')}
-              className="btn-secondary inline-flex items-center justify-center gap-1 text-xs"
-            >
-              <ArrowDown className="h-3.5 w-3.5" />
-              Reorder
-            </button>
-          </div>
-
-          <div className="grid gap-2">
-            {STYLE_FIELDS.map(({ key, label, placeholder }) => (
-              <label key={key} className="grid gap-1 text-xs text-slate-400">
-                {label}
-                <input
-                  value={selected[key]}
-                  onChange={(event) => onStyleChange(key, event.target.value)}
-                  placeholder={placeholder}
-                  className="rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 focus:border-phosphor-500/60 focus:outline-none"
-                />
-              </label>
-            ))}
-          </div>
-
-          <label className="grid gap-1 text-xs text-slate-400">
-            Anchored note
-            <textarea
-              value={noteText}
-              onChange={(event) => onNoteTextChange(event.target.value)}
-              rows={3}
-              placeholder="What should Jenny change here?"
-              className="rounded border border-slate-700 bg-slate-950 p-2 text-sm text-slate-100 focus:border-phosphor-500/60 focus:outline-none"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={onAddNote}
-            disabled={!noteText.trim()}
-            className="w-full btn-secondary inline-flex items-center justify-center gap-1 text-xs disabled:opacity-50"
-          >
-            <MessageSquarePlus className="h-3.5 w-3.5" />
-            Add note bubble
-          </button>
-
-          <button
-            type="button"
-            onClick={onRemoveSelected}
-            className="w-full rounded border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300 transition-colors hover:bg-rose-500/15"
-          >
-            <Trash2 className="mr-1 inline h-3.5 w-3.5" />
-            Delete selected
-          </button>
-        </div>
-      ) : (
-        <div className="rounded border border-dashed border-slate-800 bg-slate-950/50 p-4 text-sm text-slate-500">
-          Select an element on the mock surface.
-        </div>
-      )}
-
-      {notes.length ? (
-        <div className="mt-4">
-          <div className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
-            Existing Notes
-          </div>
-          <div className="space-y-2">
-            {notes.map((note, index) => (
-              <div
-                key={`${note}-${index}`}
-                className="rounded border border-phosphor-500/20 bg-phosphor-500/8 p-2 text-xs text-phosphor-100"
-              >
-                {note}
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </aside>
-  )
-}
-
 export function MockupSurfaceEditor({
   mockup,
   projectId,
@@ -627,19 +208,47 @@ export function MockupSurfaceEditor({
     [],
   )
 
-  const getSelectedElement = useCallback(
-    () => getElementByEditorId(getDoc(), selectedId),
-    [getDoc, selectedId],
-  )
+  const getSelectedElement = useCallback((): HTMLElement | null => {
+    const doc = getDoc()
+    if (!doc || !selectedId) return null
+    return doc.querySelector<HTMLElement>(
+      `[data-sf-editor-id="${CSS.escape(selectedId)}"]`,
+    )
+  }, [getDoc, selectedId])
 
-  const getSelectedElements = useCallback(
-    () => getElementsByEditorIds(getDoc(), selectedIds),
-    [getDoc, selectedIds],
-  )
+  const getSelectedElements = useCallback((): HTMLElement[] => {
+    const doc = getDoc()
+    if (!doc || !selectedIds.length) return []
+    return selectedIds
+      .map((id) =>
+        doc.querySelector<HTMLElement>(
+          `[data-sf-editor-id="${CSS.escape(id)}"]`,
+        ),
+      )
+      .filter((element): element is HTMLElement => Boolean(element))
+  }, [getDoc, selectedIds])
+
+  const applySelection = useCallback((doc: Document, ids: string[]) => {
+    doc
+      .querySelectorAll(`.${SELECTED_CLASS}`)
+      .forEach((item) => item.classList.remove(SELECTED_CLASS))
+    ids.forEach((id) => {
+      doc
+        .querySelector(`[data-sf-editor-id="${CSS.escape(id)}"]`)
+        ?.classList.add(SELECTED_CLASS)
+    })
+  }, [])
 
   const refreshSelected = useCallback(
     (id: string | null = selectedId) => {
-      const element = getElementByEditorId(getDoc(), id)
+      const doc = getDoc()
+      if (!doc || !id) {
+        setSelected(null)
+        return
+      }
+      const element = doc.querySelector<HTMLElement>(
+        `[data-sf-editor-id="${CSS.escape(id)}"]`,
+      )
       setSelected(element ? selectedStateFromElement(element) : null)
     },
     [getDoc, selectedId],
@@ -660,7 +269,12 @@ export function MockupSurfaceEditor({
 
       const id = element.dataset.sfEditorId
       if (!id) return
-      const nextIds = toggleSelectedIds(selectedIds, id, additive)
+      const nextIds =
+        additive && selectedIds.length
+          ? selectedIds.includes(id)
+            ? selectedIds.filter((item) => item !== id)
+            : [...selectedIds, id]
+          : [id]
       applySelection(doc, nextIds)
       setSelectedId(id)
       setSelectedIds(nextIds)
@@ -668,7 +282,7 @@ export function MockupSurfaceEditor({
         nextIds.includes(id) ? selectedStateFromElement(element) : null,
       )
     },
-    [getDoc, selectedIds],
+    [applySelection, getDoc, selectedIds],
   )
 
   const prepareDocument = useCallback(() => {
@@ -714,26 +328,24 @@ export function MockupSurfaceEditor({
       startY: number
     } | null = null
 
-    const isEditableTarget = (
-      target: HTMLElement | null,
-    ): target is HTMLElement =>
-      Boolean(target && target !== doc.body && target !== doc.documentElement)
-
     const onPointerOver = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null
-      if (!isEditableTarget(target)) return
+      if (!target || target === doc.body || target === doc.documentElement) {
+        return
+      }
       target.classList.add(HOVER_CLASS)
     }
 
     const onPointerOut = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null
-      if (!target) return
-      target.classList.remove(HOVER_CLASS)
+      target?.classList.remove(HOVER_CLASS)
     }
 
     const onClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null
-      if (!isEditableTarget(target)) return
+      if (!target || target === doc.body || target === doc.documentElement) {
+        return
+      }
       event.preventDefault()
       event.stopPropagation()
       selectElement(target, event.shiftKey || event.metaKey || event.ctrlKey)
@@ -745,12 +357,14 @@ export function MockupSurfaceEditor({
     const onPointerDown = (event: PointerEvent) => {
       if (mode !== 'move') return
       const target = event.target as HTMLElement | null
-      if (!isEditableTarget(target)) return
+      if (!target || target === doc.body || target === doc.documentElement) {
+        return
+      }
       event.preventDefault()
       event.stopPropagation()
       const targetId = target.dataset.sfEditorId
       if (!targetId) return
-      const selectedForDrag: HTMLElement[] =
+      const selectedForDrag =
         selectedIds.includes(targetId) && selectedIds.length > 1
           ? getSelectedElements()
           : [target]
@@ -772,10 +386,9 @@ export function MockupSurfaceEditor({
 
     const onPointerMove = (event: PointerEvent) => {
       if (!drag) return
-      const activeDrag = drag
-      activeDrag.elements.forEach(({ element, baseX, baseY }) => {
-        const x = Math.round(baseX + event.clientX - activeDrag.startX)
-        const y = Math.round(baseY + event.clientY - activeDrag.startY)
+      drag.elements.forEach(({ element, baseX, baseY }) => {
+        const x = Math.round(baseX + event.clientX - drag!.startX)
+        const y = Math.round(baseY + event.clientY - drag!.startY)
         element.dataset.sfOffsetX = String(x)
         element.dataset.sfOffsetY = String(y)
         element.style.transform = `translate(${x}px, ${y}px)`
@@ -816,13 +429,15 @@ export function MockupSurfaceEditor({
       doc.removeEventListener('keydown', onKeyDown)
     }
   }, [
-    frameRevision,
     getDoc,
+    getSelectedElement,
     getSelectedElements,
     mode,
     refreshSelected,
     selectElement,
+    selectedId,
     selectedIds,
+    frameRevision,
   ])
 
   const serializeDraft = useCallback(() => {
@@ -832,16 +447,54 @@ export function MockupSurfaceEditor({
     return stripEditorState(clone)
   }, [content, getDoc])
 
+  const buildVersionMetadata = useCallback(
+    (draftContent: string): Record<string, unknown> => {
+      const currentAnnotations = annotations.length
+        ? annotations
+        : extractStructuredMockupAnnotations(draftContent, mockup.metadata)
+      return {
+        ...(mockup.metadata ?? {}),
+        annotations: currentAnnotations,
+        edited_by: 'surface-editor',
+        source_mockup_id: mockup.mockup_id,
+        source_version: mockup.version,
+        summary_version: 1,
+        token_policy: {
+          default_context: 'compact',
+          full_html: 'on_request',
+        },
+      }
+    },
+    [annotations, mockup.metadata, mockup.mockup_id, mockup.version],
+  )
+
+  const buildSummary = useCallback(
+    (draftContent: string) => {
+      const draftNotes = annotations.length
+        ? annotations
+        : extractStructuredMockupAnnotations(draftContent, mockup.metadata)
+      const lines = [
+        `Surface-edited mockup ${mockup.mockup_id} v${mockup.version}.`,
+      ]
+      if (dirty) lines.push('User made direct surface edits.')
+      if (draftNotes.length) {
+        lines.push('Anchored notes:')
+        draftNotes.forEach((item) => {
+          lines.push(
+            `- ${item.element_label ?? item.element_path ?? 'surface'}: ${item.note}`,
+          )
+        })
+      }
+      return lines.join('\n')
+    },
+    [annotations, dirty, mockup.metadata, mockup.mockup_id, mockup.version],
+  )
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const draftContent = serializeDraft()
-      const summary = buildEditorSummary(
-        mockup,
-        annotations,
-        dirty,
-        draftContent,
-      )
-      const metadata = buildEditorMetadata(mockup, annotations, draftContent)
+      const summary = buildSummary(draftContent)
+      const metadata = buildVersionMetadata(draftContent)
       return createMockup(
         projectId,
         buildVersionPayload(mockup, draftContent, summary, metadata),
@@ -883,7 +536,13 @@ export function MockupSurfaceEditor({
     setDirty(true)
   }
 
-  const updateStyle = (key: EditableStyleKey, value: string) => {
+  const updateStyle = (
+    key: keyof Pick<
+      SelectedElementState,
+      'color' | 'backgroundColor' | 'margin' | 'padding' | 'borderRadius'
+    >,
+    value: string,
+  ) => {
     const element = getSelectedElement()
     if (!element) return
     element.style[key] = value
@@ -962,7 +621,7 @@ export function MockupSurfaceEditor({
     const draftContent = serializeDraft()
     const savedMockup = lastSavedMockup ?? undefined
     const summary = [
-      buildEditorSummary(mockup, annotations, dirty, draftContent),
+      buildSummary(draftContent),
       '',
       `Current artifact summary: ${summarizeMockupForWorkContext(savedMockup ?? mockup)}`,
       'Full HTML is stored in the Design artifact and should be fetched only when needed.',
@@ -974,44 +633,269 @@ export function MockupSurfaceEditor({
     })
   }
 
+  const toolButtonClass = (item: EditorMode) =>
+    clsx(
+      'inline-flex h-8 items-center gap-1.5 rounded border px-2 text-xs transition-colors',
+      mode === item
+        ? 'border-phosphor-500/50 bg-phosphor-500/12 text-phosphor-200'
+        : 'border-slate-700 bg-slate-950/70 text-slate-400 hover:border-slate-600 hover:text-slate-200',
+    )
+
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <EditorToolbar
-            mode={mode}
-            compareMode={compareMode}
-            dirty={dirty}
-            canSendToJenny={Boolean(onSendToJenny)}
-            isSaving={saveMutation.isPending}
-            onModeChange={setMode}
-            onCompareModeChange={setCompareMode}
-            onSendToJenny={sendToJenny}
-            onSave={() => saveMutation.mutate()}
-          />
+          <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-800 bg-slate-900/85 px-2">
+            <button
+              type="button"
+              onClick={() => setMode('inspect')}
+              className={toolButtonClass('inspect')}
+            >
+              <MousePointer2 className="h-3.5 w-3.5" />
+              Select
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('text')}
+              className={toolButtonClass('text')}
+            >
+              <Code2 className="h-3.5 w-3.5" />
+              Text
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('move')}
+              className={toolButtonClass('move')}
+            >
+              <Grip className="h-3.5 w-3.5" />
+              Move
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('note')}
+              className={toolButtonClass('note')}
+            >
+              <MessageSquarePlus className="h-3.5 w-3.5" />
+              Note
+            </button>
 
-          <SurfaceFrames
-            compareMode={compareMode}
-            content={content}
-            mockup={mockup}
-            draftKey={draftKey}
-            iframeRef={iframeRef}
-            onLoad={prepareDocument}
-          />
+            <div className="mx-1 h-5 w-px shrink-0 bg-slate-800" />
+
+            {(['current', 'split', 'original'] as CompareMode[]).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setCompareMode(item)}
+                className={clsx(
+                  'h-8 rounded border px-2 text-xs capitalize transition-colors',
+                  compareMode === item
+                    ? 'border-slate-500 bg-slate-800 text-slate-100'
+                    : 'border-slate-800 bg-slate-950/70 text-slate-500 hover:text-slate-300',
+                )}
+              >
+                {item}
+              </button>
+            ))}
+
+            <div className="flex-1" />
+            {dirty ? (
+              <span className="rounded border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
+                Unsaved
+              </span>
+            ) : null}
+            {onSendToJenny ? (
+              <button
+                type="button"
+                onClick={sendToJenny}
+                className="inline-flex h-8 items-center gap-1.5 rounded border border-phosphor-500/30 bg-phosphor-500/10 px-2 text-xs text-phosphor-200 hover:bg-phosphor-500/15"
+              >
+                <Send className="h-3.5 w-3.5" />
+                Jenny
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending}
+              className="inline-flex h-8 items-center gap-1.5 rounded border border-outrun-500 bg-outrun-600 px-2 text-xs text-slate-50 hover:bg-outrun-500 disabled:opacity-50"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {saveMutation.isPending ? 'Saving' : 'Save version'}
+            </button>
+          </div>
+
+          <div
+            className={clsx(
+              'grid min-h-0 flex-1 bg-[#07040d]',
+              compareMode === 'split' && 'lg:grid-cols-2',
+            )}
+          >
+            {compareMode !== 'current' ? (
+              <div className="relative min-h-0 border-r border-slate-800">
+                <div className="absolute left-2 top-2 z-10 rounded border border-slate-700 bg-slate-950/85 px-2 py-1 text-xs text-slate-300">
+                  Original
+                </div>
+                <iframe
+                  srcDoc={content}
+                  title={`${mockup.name} original`}
+                  sandbox="allow-same-origin"
+                  className="h-full w-full border-0 bg-white"
+                />
+              </div>
+            ) : null}
+            {compareMode !== 'original' ? (
+              <div className="relative min-h-0">
+                <div className="absolute left-2 top-2 z-10 rounded border border-phosphor-500/30 bg-slate-950/85 px-2 py-1 text-xs text-phosphor-200">
+                  Editable surface
+                </div>
+                <iframe
+                  key={`${mockup.mockup_id}-${draftKey}`}
+                  ref={iframeRef}
+                  srcDoc={content}
+                  title={`${mockup.name} editable`}
+                  sandbox="allow-same-origin"
+                  onLoad={prepareDocument}
+                  className="h-full w-full border-0 bg-white"
+                />
+              </div>
+            ) : null}
+          </div>
         </div>
 
-        <SurfaceInspector
-          selected={selected}
-          selectedCount={selectedIds.length}
-          noteText={noteText}
-          notes={notes}
-          onTextChange={updateSelectedText}
-          onMoveSibling={moveSelectedSibling}
-          onStyleChange={updateStyle}
-          onNoteTextChange={setNoteText}
-          onAddNote={addNote}
-          onRemoveSelected={removeSelected}
-        />
+        <aside className="hidden w-80 shrink-0 border-l border-slate-800 bg-slate-900/70 p-3 lg:block">
+          <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-200">
+            <Eye className="h-4 w-4 text-phosphor-300" />
+            Surface Inspector
+          </div>
+
+          {selected ? (
+            <div className="space-y-3">
+              <div className="rounded border border-slate-800 bg-slate-950/70 p-2">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                  Selected
+                  {selectedIds.length > 1 ? ` (${selectedIds.length})` : ''}
+                </div>
+                <div className="mt-1 truncate font-mono text-xs text-phosphor-200">
+                  {selected.label}
+                </div>
+                <div className="mt-1 line-clamp-2 font-mono text-[10px] text-slate-500">
+                  {selected.path}
+                </div>
+              </div>
+
+              <label className="grid gap-1 text-xs text-slate-400">
+                Text
+                <textarea
+                  value={selected.text}
+                  onChange={(event) => updateSelectedText(event.target.value)}
+                  rows={5}
+                  className="rounded border border-slate-700 bg-slate-950 p-2 text-sm text-slate-100 focus:border-phosphor-500/60 focus:outline-none"
+                />
+              </label>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => moveSelectedSibling('before')}
+                  className="btn-secondary inline-flex items-center justify-center gap-1 text-xs"
+                >
+                  <ArrowUp className="h-3.5 w-3.5" />
+                  Reorder
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveSelectedSibling('after')}
+                  className="btn-secondary inline-flex items-center justify-center gap-1 text-xs"
+                >
+                  <ArrowDown className="h-3.5 w-3.5" />
+                  Reorder
+                </button>
+              </div>
+
+              <div className="grid gap-2">
+                {(
+                  [
+                    ['color', 'Color'],
+                    ['backgroundColor', 'Background'],
+                    ['margin', 'Margin'],
+                    ['padding', 'Padding'],
+                    ['borderRadius', 'Radius'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <label
+                    key={key}
+                    className="grid gap-1 text-xs text-slate-400"
+                  >
+                    {label}
+                    <input
+                      value={selected[key]}
+                      onChange={(event) => updateStyle(key, event.target.value)}
+                      placeholder={
+                        key === 'color'
+                          ? '#e2e8f0'
+                          : key === 'padding'
+                            ? '12px'
+                            : ''
+                      }
+                      className="rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 focus:border-phosphor-500/60 focus:outline-none"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <label className="grid gap-1 text-xs text-slate-400">
+                Anchored note
+                <textarea
+                  value={noteText}
+                  onChange={(event) => setNoteText(event.target.value)}
+                  rows={3}
+                  placeholder="What should Jenny change here?"
+                  className="rounded border border-slate-700 bg-slate-950 p-2 text-sm text-slate-100 focus:border-phosphor-500/60 focus:outline-none"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={addNote}
+                disabled={!noteText.trim()}
+                className="w-full btn-secondary inline-flex items-center justify-center gap-1 text-xs disabled:opacity-50"
+              >
+                <MessageSquarePlus className="h-3.5 w-3.5" />
+                Add note bubble
+              </button>
+
+              <button
+                type="button"
+                onClick={removeSelected}
+                className="w-full rounded border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300 transition-colors hover:bg-rose-500/15"
+              >
+                <Trash2 className="mr-1 inline h-3.5 w-3.5" />
+                Delete selected
+              </button>
+            </div>
+          ) : (
+            <div className="rounded border border-dashed border-slate-800 bg-slate-950/50 p-4 text-sm text-slate-500">
+              Select an element on the mock surface.
+            </div>
+          )}
+
+          {notes.length ? (
+            <div className="mt-4">
+              <div className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                Existing Notes
+              </div>
+              <div className="space-y-2">
+                {notes.map((note, index) => (
+                  <div
+                    key={`${note}-${index}`}
+                    className="rounded border border-phosphor-500/20 bg-phosphor-500/8 p-2 text-xs text-phosphor-100"
+                  >
+                    {note}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </aside>
       </div>
     </div>
   )
