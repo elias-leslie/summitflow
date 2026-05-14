@@ -40,16 +40,6 @@ def _git_branches_module():
     return _git_branches
 
 
-def _orphan_task_branches(branches: list[BranchInfo]) -> list[BranchInfo]:
-    """Return task branches that no longer have active checkpoint metadata."""
-    return [branch for branch in branches if branch.task_id and not branch.has_checkpoint]
-
-
-def _has_node_modules_artifact(diff_paths: list[str]) -> bool:
-    """Return True when branch-only changes include node_modules residue."""
-    return any(path == "node_modules" or path.startswith("node_modules/") for path in diff_paths)
-
-
 def _load_task_status(task_id: str) -> tuple[str | None, str]:
     """Return persisted task status plus assessment token for an orphan branch."""
     from app.storage import tasks as task_store
@@ -66,16 +56,9 @@ def _load_task_status(task_id: str) -> tuple[str | None, str]:
         return None, "task:unreadable"
 
     status = task.get("status")
-    if status is None:
-        return None, "task:unreadable"
-    if not isinstance(status, str):
+    if status is None or not isinstance(status, str):
         return None, "task:unreadable"
     return status, f"task:{status}"
-
-
-def _resolution_for_task_status(task_token: str) -> str:
-    """Classify whether an orphan branch needs salvage or active review."""
-    return "salvage" if task_token == "task:missing" else "review"
 
 
 def _build_orphan_branch_assessment(
@@ -94,12 +77,14 @@ def _build_orphan_branch_assessment(
     return OrphanBranchAssessment(
         branch_name=branch.name,
         task_id=task_id,
-        resolution=_resolution_for_task_status(task_token),
+        resolution="salvage" if task_token == "task:missing" else "review",
         task_status=task_status,
         task_token=task_token,
         commits_ahead=git_branches._branch_commits_ahead(repo_path, branch.name, base_branch),
         files_changed=len(diff_paths),
-        has_node_modules_artifact=_has_node_modules_artifact(diff_paths),
+        has_node_modules_artifact=any(
+            path == "node_modules" or path.startswith("node_modules/") for path in diff_paths
+        ),
         commits_behind=git_branches._branch_commits_behind(repo_path, branch.name, base_branch),
     )
 
@@ -140,86 +125,22 @@ def _prune_branch_list(repo_path: Path, branch_names: list[str], base_branch: st
     """Force-delete a list of branches, checking out base first if any is current."""
     git_branches = _git_branches_module()
     removed: list[str] = []
-    current_branch = _current_branch_name(repo_path)
+    result = git_branches.run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_path)
+    current_branch = result.stdout.strip() if result.returncode == 0 else ""
     for branch_name in branch_names:
-        next_branch = _checkout_base_if_current(
-            repo_path,
-            branch_name,
-            base_branch,
-            current_branch,
-        )
-        if next_branch is None:
-            continue
-        current_branch = next_branch
+        if current_branch == branch_name:
+            if git_branches.run_git(["checkout", base_branch], repo_path).returncode != 0:
+                continue
+            current_branch = base_branch
         if git_branches.run_git(["branch", "-D", branch_name], repo_path).returncode == 0:
             removed.append(branch_name)
     return removed
 
 
-def _current_branch_name(repo_path: Path) -> str:
-    """Return current branch name when available."""
-    git_branches = _git_branches_module()
-    result = git_branches.run_git(["rev-parse", "--abbrev-ref", "HEAD"], repo_path)
-    return result.stdout.strip() if result.returncode == 0 else ""
-
-
-def _checkout_base_if_current(
-    repo_path: Path,
-    branch_name: str,
-    base_branch: str,
-    current_branch: str,
-) -> str | None:
-    """Switch to base branch before pruning current branch."""
-    if current_branch != branch_name:
-        return current_branch
-    git_branches = _git_branches_module()
-    if git_branches.run_git(["checkout", base_branch], repo_path).returncode != 0:
-        return None
-    return base_branch
-
-
-
-def _branch_cleanup_stats(repo_path: Path, branch_name: str, base_branch: str) -> tuple[int, int, int]:
-    """Return ahead count, behind count, and changed file count for a branch."""
-    git_branches = _git_branches_module()
-    return (
-        git_branches._branch_commits_ahead(repo_path, branch_name, base_branch),
-        git_branches._branch_commits_behind(repo_path, branch_name, base_branch),
-        len(git_branches._branch_ahead_diff_paths(repo_path, branch_name, base_branch)),
-    )
-
-
-
-def _apply_branch_cleanup_stats(
-    branch: BranchInfo,
-    *,
-    cleanup_resolution: str,
-    commits_ahead: int,
-    commits_behind: int,
-    files_changed: int,
-) -> None:
-    """Apply shared cleanup fields to a branch row."""
-    branch.cleanup_resolution = cleanup_resolution
-    branch.commits_ahead = commits_ahead
-    branch.commits_behind = commits_behind
-    branch.files_changed = files_changed
-
-
-
-def _apply_assessment(branch: BranchInfo, assessment: OrphanBranchAssessment) -> None:
-    """Apply assessment fields to a branch row."""
-    branch.cleanup_resolution = assessment.resolution
-    branch.task_status = assessment.task_status
-    branch.commits_ahead = assessment.commits_ahead
-    branch.commits_behind = assessment.commits_behind
-    branch.files_changed = assessment.files_changed
-    branch.has_node_modules_artifact = assessment.has_node_modules_artifact
-
-
-
-def _current_checkpoint_task_id(branches: list[BranchInfo]) -> str | None:
-    """Return current checkpoint task id when present."""
-    return next(
+def _dirty_workspace_state(repo_path: Path, branches: list[BranchInfo]) -> tuple[bool, bool, bool]:
+    """Return dirty main/checkpoint state plus cleanup need for dirty checkpoint."""
+    dirty_repo = git_core.has_uncommitted_changes(repo_path)
+    current_checkpoint_task_id = next(
         (
             branch.task_id
             for branch in branches
@@ -227,13 +148,6 @@ def _current_checkpoint_task_id(branches: list[BranchInfo]) -> str | None:
         ),
         None,
     )
-
-
-
-def _dirty_workspace_state(repo_path: Path, branches: list[BranchInfo]) -> tuple[bool, bool, bool]:
-    """Return dirty main/checkpoint state plus cleanup need for dirty checkpoint."""
-    dirty_repo = git_core.has_uncommitted_changes(repo_path)
-    current_checkpoint_task_id = _current_checkpoint_task_id(branches)
     dirty_checkpoint = bool(dirty_repo and current_checkpoint_task_id)
     dirty_checkpoint_status = (
         _load_task_status(current_checkpoint_task_id)[0] if current_checkpoint_task_id else None
@@ -245,40 +159,6 @@ def _dirty_workspace_state(repo_path: Path, branches: list[BranchInfo]) -> tuple
     return dirty_checkpoint, dirty_main_repo, dirty_checkpoint_needs_cleanup
 
 
-
-def _orphan_cleanup_sets(
-    repo_path: Path,
-    branches: list[BranchInfo],
-    base_branch: str,
-) -> tuple[set[str], set[str], dict[str, OrphanBranchAssessment]]:
-    """Return branch-name sets and assessments used by cleanup summaries."""
-    git_branches = _git_branches_module()
-    prunable_names = set(
-        git_branches.list_prunable_task_branches(
-            repo_path,
-            branches=branches,
-            base_branch=base_branch,
-        )
-    )
-    equivalent_names = set(
-        git_branches.list_equivalent_orphan_task_branches(
-            repo_path,
-            branches=branches,
-            base_branch=base_branch,
-        )
-    )
-    assessments = {
-        assessment.branch_name: assessment
-        for assessment in git_branches.assess_orphan_task_branches(
-            repo_path,
-            branches=branches,
-            base_branch=base_branch,
-        )
-    }
-    return prunable_names, equivalent_names, assessments
-
-
-
 def _orphan_summary_inputs(
     repo_path: Path,
     branches: list[BranchInfo],
@@ -286,7 +166,7 @@ def _orphan_summary_inputs(
 ) -> tuple[list[BranchInfo], list[BranchInfo], list[OrphanBranchAssessment]]:
     """Return orphan branches, prunable orphan branches, and assessments."""
     git_branches = _git_branches_module()
-    orphan_branches = _orphan_task_branches(branches)
+    orphan_branches = [branch for branch in branches if branch.task_id and not branch.has_checkpoint]
     equivalent_names = set(
         git_branches.list_equivalent_orphan_task_branches(
             repo_path,
@@ -310,49 +190,6 @@ def _orphan_summary_inputs(
     return orphan_branches, prunable_branches, orphan_assessments
 
 
-
-def _repo_workspace_summary_payload(
-    lane_checkpoints: list,
-    task_branches: list[BranchInfo],
-    orphan_branches: list[BranchInfo],
-    prunable_branches: list[BranchInfo],
-    orphan_assessments: list[OrphanBranchAssessment],
-    dirty_checkpoint: bool,
-    dirty_main_repo: bool,
-    dirty_checkpoint_needs_cleanup: bool,
-) -> dict:
-    """Build RepoWorkspaceSummary kwargs."""
-    return {
-        "active_checkpoints": len(lane_checkpoints),
-        "dirty_checkpoints": 1 if dirty_checkpoint else 0,
-        "dirty_main_repo": dirty_main_repo,
-        "branches_with_checkpoints": sum(1 for branch in task_branches if branch.has_checkpoint),
-        "task_branches": len(task_branches),
-        "orphan_branches": len(orphan_branches),
-        "prunable_branches": len(prunable_branches),
-        "needs_cleanup": bool(
-            dirty_main_repo
-            or dirty_checkpoint_needs_cleanup
-            or orphan_branches
-            or prunable_branches
-        ),
-        "checkpoint_task_ids": [checkpoint.task_id for checkpoint in lane_checkpoints],
-        "orphan_branch_names": [branch.name for branch in orphan_branches[:5]],
-        "prunable_branch_names": [branch.name for branch in prunable_branches[:5]],
-        "salvage_task_ids": [
-            assessment.task_id
-            for assessment in orphan_assessments
-            if assessment.resolution == "salvage"
-        ][:5],
-        "review_orphan_task_ids": [
-            assessment.task_id
-            for assessment in orphan_assessments
-            if assessment.resolution == "review"
-        ][:5],
-        "orphan_details": [_orphan_summary(assessment) for assessment in orphan_assessments[:5]],
-    }
-
-
 def list_prunable_task_branches(
     repo_path: Path,
     *,
@@ -366,7 +203,11 @@ def list_prunable_task_branches(
         repo_path,
         base_branch or git_branches._detect_base_branch(repo_path),
     )
-    return [branch.name for branch in _orphan_task_branches(branches) if branch.name in merged_branches]
+    return [
+        branch.name
+        for branch in branches
+        if branch.task_id and not branch.has_checkpoint and branch.name in merged_branches
+    ]
 
 
 def prune_prunable_task_branches(repo_path: Path) -> list[str]:
@@ -391,9 +232,12 @@ def list_equivalent_orphan_task_branches(
     branches = branches or git_branches.get_all_branches(repo_path)
     return [
         branch.name
-        for branch in _orphan_task_branches(branches)
-        if not git_branches._branch_diff_paths(repo_path, branch.name, base_branch)
-        or not git_branches._branch_has_unapplied_patch(repo_path, branch.name, base_branch)
+        for branch in branches
+        if branch.task_id and not branch.has_checkpoint
+        and (
+            not git_branches._branch_diff_paths(repo_path, branch.name, base_branch)
+            or not git_branches._branch_has_unapplied_patch(repo_path, branch.name, base_branch)
+        )
     ]
 
 
@@ -401,7 +245,9 @@ def prune_equivalent_orphan_task_branches(repo_path: Path) -> list[str]:
     """Delete orphan task branches whose tree matches base exactly."""
     git_branches = _git_branches_module()
     base_branch = git_branches._detect_base_branch(repo_path)
-    return _prune_branch_list(repo_path, git_branches.list_equivalent_orphan_task_branches(repo_path), base_branch)
+    return _prune_branch_list(
+        repo_path, git_branches.list_equivalent_orphan_task_branches(repo_path), base_branch
+    )
 
 
 def list_closed_orphan_task_branches(repo_path: Path) -> list[str]:
@@ -409,8 +255,8 @@ def list_closed_orphan_task_branches(repo_path: Path) -> list[str]:
     git_branches = _git_branches_module()
     return [
         branch.name
-        for branch in _orphan_task_branches(git_branches.get_all_branches(repo_path))
-        if branch.task_id is not None
+        for branch in git_branches.get_all_branches(repo_path)
+        if branch.task_id and not branch.has_checkpoint
         and _load_task_status(branch.task_id)[0] in _CLOSED_TASK_STATUSES
     ]
 
@@ -442,8 +288,10 @@ def assess_orphan_task_branches(
     )
     return [
         _build_orphan_branch_assessment(repo_path, branch, base_branch)
-        for branch in _orphan_task_branches(branches)
-        if branch.name not in merged_branch_names and branch.name not in equivalent_branch_names
+        for branch in branches
+        if branch.task_id and not branch.has_checkpoint
+        and branch.name not in merged_branch_names
+        and branch.name not in equivalent_branch_names
     ]
 
 
@@ -472,46 +320,41 @@ def enrich_branch_cleanup_details(
     """Attach orphan cleanup action details to branch rows."""
     git_branches = _git_branches_module()
     base_branch = base_branch or git_branches._detect_base_branch(repo_path)
-    prunable_names, equivalent_names, assessments = _orphan_cleanup_sets(
-        repo_path,
-        branches,
-        base_branch,
-    )
+    _, prunable_branches, assessments = _orphan_summary_inputs(repo_path, branches, base_branch)
+    prunable_names = {b.name for b in prunable_branches}
+    equivalent_names = {
+        b.name
+        for b in prunable_branches
+        if not git_branches._branch_diff_paths(repo_path, b.name, base_branch)
+        or not git_branches._branch_has_unapplied_patch(repo_path, b.name, base_branch)
+    }
+    assessment_map = {a.branch_name: a for a in assessments}
 
     for branch in branches:
         if not branch.task_id or branch.has_checkpoint:
             continue
         if branch.name in prunable_names:
-            commits_ahead, commits_behind, files_changed = _branch_cleanup_stats(
-                repo_path,
-                branch.name,
-                base_branch,
-            )
-            _apply_branch_cleanup_stats(
-                branch,
-                cleanup_resolution="prunable",
-                commits_ahead=commits_ahead,
-                commits_behind=commits_behind,
-                files_changed=files_changed,
+            branch.cleanup_resolution = "prunable"
+            branch.commits_ahead = git_branches._branch_commits_ahead(repo_path, branch.name, base_branch)
+            branch.commits_behind = git_branches._branch_commits_behind(repo_path, branch.name, base_branch)
+            branch.files_changed = len(
+                git_branches._branch_ahead_diff_paths(repo_path, branch.name, base_branch)
             )
             continue
         if branch.name in equivalent_names:
-            commits_ahead, commits_behind, _files_changed = _branch_cleanup_stats(
-                repo_path,
-                branch.name,
-                base_branch,
-            )
-            _apply_branch_cleanup_stats(
-                branch,
-                cleanup_resolution="equivalent",
-                commits_ahead=commits_ahead,
-                commits_behind=commits_behind,
-                files_changed=0,
-            )
+            branch.cleanup_resolution = "equivalent"
+            branch.commits_ahead = git_branches._branch_commits_ahead(repo_path, branch.name, base_branch)
+            branch.commits_behind = git_branches._branch_commits_behind(repo_path, branch.name, base_branch)
+            branch.files_changed = 0
             continue
-        assessment = assessments.get(branch.name)
+        assessment = assessment_map.get(branch.name)
         if assessment:
-            _apply_assessment(branch, assessment)
+            branch.cleanup_resolution = assessment.resolution
+            branch.task_status = assessment.task_status
+            branch.commits_ahead = assessment.commits_ahead
+            branch.commits_behind = assessment.commits_behind
+            branch.files_changed = assessment.files_changed
+            branch.has_node_modules_artifact = assessment.has_node_modules_artifact
     return branches
 
 
@@ -543,14 +386,31 @@ def build_repo_workspace_summary(
         base_branch,
     )
     return RepoWorkspaceSummary(
-        **_repo_workspace_summary_payload(
-            lane_checkpoints,
-            task_branches,
-            orphan_branches,
-            prunable_branches,
-            orphan_assessments,
-            dirty_checkpoint,
-            dirty_main_repo,
-            dirty_checkpoint_needs_cleanup,
-        )
+        active_checkpoints=len(lane_checkpoints),
+        dirty_checkpoints=1 if dirty_checkpoint else 0,
+        dirty_main_repo=dirty_main_repo,
+        branches_with_checkpoints=sum(1 for branch in task_branches if branch.has_checkpoint),
+        task_branches=len(task_branches),
+        orphan_branches=len(orphan_branches),
+        prunable_branches=len(prunable_branches),
+        needs_cleanup=bool(
+            dirty_main_repo
+            or dirty_checkpoint_needs_cleanup
+            or orphan_branches
+            or prunable_branches
+        ),
+        checkpoint_task_ids=[checkpoint.task_id for checkpoint in lane_checkpoints],
+        orphan_branch_names=[branch.name for branch in orphan_branches[:5]],
+        prunable_branch_names=[branch.name for branch in prunable_branches[:5]],
+        salvage_task_ids=[
+            assessment.task_id
+            for assessment in orphan_assessments
+            if assessment.resolution == "salvage"
+        ][:5],
+        review_orphan_task_ids=[
+            assessment.task_id
+            for assessment in orphan_assessments
+            if assessment.resolution == "review"
+        ][:5],
+        orphan_details=[_orphan_summary(assessment) for assessment in orphan_assessments[:5]],
     )
