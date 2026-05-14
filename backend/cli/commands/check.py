@@ -86,6 +86,7 @@ def _is_pytest_test_path(path: Path) -> bool:
         )
     )
 
+
 app = typer.Typer(
     help=(
         "Quality checks through st. Use st check for repo gates; never run raw "
@@ -188,10 +189,6 @@ def _path_relevant_for_tool(name: str, rel_path: str) -> bool:
     return path.suffix in _TOOL_FILE_SUFFIXES.get(name, set())
 
 
-def _has_relevant_changed_files(name: str, changed_files: list[str]) -> bool:
-    return any(_path_relevant_for_tool(name, rel_path) for rel_path in changed_files)
-
-
 def _changed_args(
     name: str,
     root: Path,
@@ -239,10 +236,6 @@ def _env(root: Path) -> dict[str, str]:
     return env
 
 
-def _tool_output(result: subprocess.CompletedProcess[str]) -> str:
-    return "\n".join(part for part in (result.stdout, result.stderr) if part)
-
-
 def _local_node_binary(root: Path, cwd: Path, binary: str) -> Path | None:
     for directory in (
         cwd / "node_modules" / ".bin",
@@ -270,107 +263,6 @@ def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str]) -
         return [str(local), *base_args]
     resolved = shutil.which(binary)
     return [resolved or binary, *base_args]
-
-
-def _run_tool(name: str, config: dict[str, Any], extra_args: list[str]) -> int:
-    root = _repo_root()
-    cwd = _workdir(root, config)
-    binary = str(config.get("binary") or name)
-    base_args = shlex.split(str(config.get("args") or ""))
-    if name == "biome" and any(not arg.startswith("-") for arg in extra_args):
-        base_args = [arg for arg in base_args if arg != "."]
-    if name == "pytest":
-        extra_args = _pytest_extra_args(extra_args)
-    command = [*_resolve_command(binary, root, cwd, base_args), *extra_args]
-    label = str(config.get("label") or name.upper())
-    print(f"{label}:{name}:start")
-    try:
-        result = subprocess.run(
-            command,
-            cwd=cwd,
-            env=_env(root),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
-    except OSError as exc:
-        output = f"{type(exc).__name__}: {exc}"
-        details = write_details(root, name, output)
-        print(
-            f"{label}:FAIL:127|details:{display_path(root, details)}|hint:{summary_hint(output)}"
-        )
-        return 127
-    output = _tool_output(result)
-    details = write_details(root, name, output)
-    print(
-        f"{label}:{'OK' if result.returncode == 0 else 'FAIL'}:{result.returncode}|"
-        f"details:{display_path(root, details)}|hint:{summary_hint(output)}"
-    )
-    return result.returncode
-
-
-def _pytest_extra_args(extra_args: list[str]) -> list[str]:
-    has_path_arg = any(arg and not arg.startswith("-") for arg in extra_args)
-    has_cov_control = any(arg == "--no-cov" or arg.startswith("--cov") for arg in extra_args)
-    if has_path_arg and not has_cov_control:
-        return ["--no-cov", *extra_args]
-    return extra_args
-
-
-def _skip_reason(
-    name: str,
-    config: dict[str, Any],
-    *,
-    changed_only: bool,
-    changed_files: list[str],
-    scoped_args: list[str],
-    explicit_args: bool = False,
-) -> str | None:
-    if not changed_only or explicit_args:
-        return None
-    if config.get("pass_path"):
-        if not scoped_args and not _has_relevant_changed_files(name, changed_files):
-            return "no_changed_paths"
-        return None
-    if not _has_relevant_changed_files(name, changed_files):
-        return "no_relevant_changed_paths"
-    return None
-
-
-def _skip_tool(name: str, config: dict[str, Any], reason: str) -> int:
-    label = config.get("label") or name.upper()
-    print(f"{label!s}:SKIP:{name}:{reason}")
-    return 0
-
-
-def _run_selected(
-    selected: list[str],
-    configs: dict[str, dict[str, Any]],
-    *,
-    fix: bool,
-    changed_only: bool,
-) -> int:
-    root = _repo_root()
-    changed_files = _changed_files(root) if changed_only else []
-    failures = int(run_architecture_check(root, changed_files if changed_only else None) != 0)
-    for name in selected:
-        config = configs[name]
-        cwd = _workdir(root, config)
-        scoped_args = _changed_args(name, root, cwd, config, changed_files)
-        skip_reason = _skip_reason(
-            name,
-            config,
-            changed_only=changed_only,
-            changed_files=changed_files,
-            scoped_args=scoped_args,
-        )
-        if skip_reason:
-            _skip_tool(name, config, skip_reason)
-            continue
-        failures += int(_run_tool(name, config, [*scoped_args, *(_fix_args(name) if fix else [])]) != 0)
-    return int(failures != 0)
 
 
 def _fix_args(name: str) -> list[str]:
@@ -416,6 +308,107 @@ def _extract_check_options(args: list[str]) -> tuple[list[str], bool, bool]:
     return (["--quick"] if changed_only and not args else args), changed_only, fix
 
 
+def _skip_reason(
+    name: str,
+    config: dict[str, Any],
+    *,
+    changed_only: bool,
+    changed_files: list[str],
+    scoped_args: list[str],
+    explicit_args: bool = False,
+) -> str | None:
+    if not changed_only or explicit_args:
+        return None
+    has_relevant = any(
+        _path_relevant_for_tool(name, rel_path) for rel_path in changed_files
+    )
+    if config.get("pass_path"):
+        if not scoped_args and not has_relevant:
+            return "no_changed_paths"
+        return None
+    if not has_relevant:
+        return "no_relevant_changed_paths"
+    return None
+
+
+def _run_tool(name: str, config: dict[str, Any], extra_args: list[str]) -> int:
+    root = _repo_root()
+    cwd = _workdir(root, config)
+    binary = str(config.get("binary") or name)
+    base_args = shlex.split(str(config.get("args") or ""))
+    if name == "biome" and any(not arg.startswith("-") for arg in extra_args):
+        base_args = [arg for arg in base_args if arg != "."]
+    if name == "pytest":
+        has_path_arg = any(arg and not arg.startswith("-") for arg in extra_args)
+        has_cov_control = any(arg == "--no-cov" or arg.startswith("--cov") for arg in extra_args)
+        if has_path_arg and not has_cov_control:
+            extra_args = ["--no-cov", *extra_args]
+    command = [*_resolve_command(binary, root, cwd, base_args), *extra_args]
+    label = str(config.get("label") or name.upper())
+    print(f"{label}:{name}:start")
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            env=_env(root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except OSError as exc:
+        output = f"{type(exc).__name__}: {exc}"
+        details = write_details(root, name, output)
+        print(
+            f"{label}:FAIL:127|details:{display_path(root, details)}|hint:{summary_hint(output)}"
+        )
+        return 127
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    details = write_details(root, name, output)
+    print(
+        f"{label}:{'OK' if result.returncode == 0 else 'FAIL'}:{result.returncode}|"
+        f"details:{display_path(root, details)}|hint:{summary_hint(output)}"
+    )
+    return result.returncode
+
+
+def _run_selected(
+    selected: list[str],
+    configs: dict[str, dict[str, Any]],
+    *,
+    fix: bool,
+    changed_only: bool,
+) -> int:
+    root = _repo_root()
+    changed_files = _changed_files(root) if changed_only else []
+    failures = int(run_architecture_check(root, changed_files if changed_only else None) != 0)
+    for name in selected:
+        config = configs[name]
+        cwd = _workdir(root, config)
+        scoped_args = _changed_args(name, root, cwd, config, changed_files)
+        skip_reason = _skip_reason(
+            name,
+            config,
+            changed_only=changed_only,
+            changed_files=changed_files,
+            scoped_args=scoped_args,
+        )
+        if skip_reason:
+            label = config.get("label") or name.upper()
+            print(f"{label!s}:SKIP:{name}:{skip_reason}")
+            continue
+        failures += int(
+            _run_tool(
+                name,
+                config,
+                [*scoped_args, *(_fix_args(name) if fix else [])],
+            )
+            != 0
+        )
+    return int(failures != 0)
+
+
 def _run_named_tool(
     first: str,
     args: list[str],
@@ -447,7 +440,9 @@ def _run_named_tool(
         explicit_args=bool(explicit_args),
     )
     if skip_reason:
-        return _skip_tool(first, config, skip_reason)
+        label = config.get("label") or first.upper()
+        print(f"{label!s}:SKIP:{first}:{skip_reason}")
+        return 0
     extra_args = [*explicit_args, *scoped_args, *(_fix_args(first) if fix else [])]
     return _run_tool(first, configs[first], extra_args)
 
