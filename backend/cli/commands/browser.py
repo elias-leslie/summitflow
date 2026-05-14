@@ -55,6 +55,17 @@ _suffixed = browser_support.suffixed
 _json_from_agent_eval = browser_support.json_from_agent_eval
 _close_blank_browser_targets = browser_support.close_blank_browser_targets
 
+_HELP_ARGS = {"-h", "--help", "help"}
+_NAVIGATION_COMMANDS = {"open", "goto", "navigate"}
+_ENDPOINT_FORMATS = {"http", "ws", "json"}
+_DEFAULT_VIEWPORT_WIDTH = "1600"
+_DEFAULT_VIEWPORT_HEIGHT = "900"
+_ENDPOINT_ERROR_TEMPLATE = "Unable to resolve browser CDP endpoint on {host}:{port}"
+_NO_ENGINES_TEMPLATE = "No browser engines available on {host}"
+_CONFIGURED_PORT_UNAVAILABLE_TEMPLATE = "Configured browser port is not available on {host}:{port}"
+_ENDPOINT_USAGE = "Usage: st browser endpoint [--http|--ws|--json|--format http|ws|json]"
+_URL_USAGE = "Usage: st browser url <project-or-url>"
+
 
 def _browser_target_env() -> dict[str, str]:
     return browser_support.browser_target_env(os.environ, default_browser_vm_host=_default_browser_vm_host)
@@ -103,33 +114,27 @@ def _cdp_ws(port: int, *, host: str | None = None) -> str | None:
     return browser_support.cdp_ws(port, host=host or _host())
 
 
+def _port_candidates(engine: str | None) -> tuple[int, ...]:
+    if engine == "lightpanda":
+        return (9223, 9222)
+    if engine == "chrome":
+        return (9222, 9223)
+    return (9222, 9223)
+
+
+
 def _select_port(engine: str | None) -> int:
     host = _host_for_engine(engine)
     explicit_port = _explicit_browser_port(engine)
     if explicit_port:
         if _engine_up(explicit_port, host=host):
             return explicit_port
-        output_error(f"Configured browser port is not available on {host}:{explicit_port}")
+        output_error(_CONFIGURED_PORT_UNAVAILABLE_TEMPLATE.format(host=host, port=explicit_port))
         raise typer.Exit(1) from None
-    if engine == "lightpanda":
-        if _engine_up(9223, host=host):
-            return 9223
-        if _engine_up(9222, host=host):
-            return 9222
-        output_error(f"No browser engines available on {host}")
-        raise typer.Exit(1) from None
-    if engine == "chrome":
-        if _engine_up(9222, host=host):
-            return 9222
-        if _engine_up(9223, host=host):
-            return 9223
-        output_error(f"No browser engines available on {host}")
-        raise typer.Exit(1) from None
-    if _engine_up(9222, host=host):
-        return 9222
-    if _engine_up(9223, host=host):
-        return 9223
-    output_error(f"No browser engines available on {host}")
+    for port in _port_candidates(engine):
+        if _engine_up(port, host=host):
+            return port
+    output_error(_NO_ENGINES_TEMPLATE.format(host=host))
     raise typer.Exit(1) from None
 
 
@@ -203,10 +208,7 @@ def _browser_check(args: list[str]) -> int:
     )
 
 
-def _browser_update() -> int:
-    current = _run_agent(["--version"], capture=True).stdout.strip() or "unknown"
-    latest = subprocess.run(["npm", "view", "agent-browser", "version"], text=True, capture_output=True, check=False)
-    print(f"agent-browser: installed={current} latest={latest.stdout.strip() or '?'}")
+def _print_runtime_details() -> None:
     print("Runtime:")
     try:
         endpoint = _resolve_endpoint()
@@ -216,46 +218,67 @@ def _browser_update() -> int:
     except BrowserTargetError as exc:
         print(f"  host: unavailable ({exc})")
     print(f"  agent-browser-bin: {_agent_browser_bin()}")
+
+
+
+def _browser_update() -> int:
+    current = _run_agent(["--version"], capture=True).stdout.strip() or "unknown"
+    latest = subprocess.run(["npm", "view", "agent-browser", "version"], text=True, capture_output=True, check=False)
+    print(f"agent-browser: installed={current} latest={latest.stdout.strip() or '?'}")
+    _print_runtime_details()
     return 0
 
 
+def _parse_endpoint_format(args: list[str]) -> str | None:
+    if not args:
+        return "http"
+    first = args[0]
+    if first in {"--ws", "ws"}:
+        return "ws"
+    if first in {"--http", "http"}:
+        return "http"
+    if first in {"--json", "json"}:
+        return "json"
+    if first == "--format" and len(args) >= 2:
+        return args[1]
+    return None
+
+
+
+def _print_endpoint(output_format: str, *, engine: str | None, host: str, port: int, ws_url: str) -> None:
+    http_url = f"http://{host}:{port}"
+    if output_format == "ws":
+        print(ws_url)
+        return
+    if output_format == "json":
+        print(json.dumps({"engine": engine or "auto", "host": host, "port": port, "http": http_url, "ws": ws_url}))
+        return
+    print(http_url)
+
+
+
 def _browser_endpoint(args: list[str], engine: str | None) -> int:
-    output_format = "http"
-    if args:
-        if args[0] in {"--ws", "ws"}:
-            output_format = "ws"
-        elif args[0] in {"--http", "http"}:
-            output_format = "http"
-        elif args[0] in {"--json", "json"}:
-            output_format = "json"
-        elif args[0] == "--format" and len(args) >= 2:
-            output_format = args[1]
-        else:
-            output_error("Usage: st browser endpoint [--http|--ws|--json|--format http|ws|json]")
-            return 2
-    if output_format not in {"http", "ws", "json"}:
+    output_format = _parse_endpoint_format(args)
+    if output_format is None:
+        output_error(_ENDPOINT_USAGE)
+        return 2
+    if output_format not in _ENDPOINT_FORMATS:
         output_error("Browser endpoint format must be http, ws, or json")
         return 2
 
     port = _select_port(engine)
     host = _host_for_engine(engine)
-    http_url = f"http://{host}:{port}"
     ws_url = _cdp_ws(port, host=host)
     if not ws_url:
-        output_error(f"Unable to resolve browser CDP endpoint on {host}:{port}")
+        output_error(_ENDPOINT_ERROR_TEMPLATE.format(host=host, port=port))
         return 1
-    if output_format == "ws":
-        print(ws_url)
-    elif output_format == "json":
-        print(json.dumps({"engine": engine or "auto", "host": host, "port": port, "http": http_url, "ws": ws_url}))
-    else:
-        print(http_url)
+    _print_endpoint(output_format, engine=engine, host=host, port=port, ws_url=ws_url)
     return 0
 
 
 def _browser_url(args: list[str]) -> int:
     if not args:
-        output_error("Usage: st browser url <project-or-url>")
+        output_error(_URL_USAGE)
         return 2
     try:
         route = resolve_browser_project_route(args[0])
@@ -267,7 +290,7 @@ def _browser_url(args: list[str]) -> int:
 
 
 def _with_resolved_navigation_target(args: list[str], command: str) -> list[str]:
-    if command not in {"open", "goto", "navigate"}:
+    if command not in _NAVIGATION_COMMANDS:
         return args
     try:
         index = args.index(command)
@@ -318,6 +341,62 @@ Debug local override:
 """
 
 
+def _show_usage_and_exit() -> None:
+    typer.echo(_USAGE)
+    raise typer.Exit(0)
+
+
+
+def _wants_help(args: list[str]) -> bool:
+    return not args or args[0] in _HELP_ARGS or (len(args) > 1 and args[1] in _HELP_ARGS)
+
+
+
+def _handle_builtin_command(command: str, browser_args: list[str], engine: str | None) -> int | None:
+    if command == "health":
+        _print_health()
+        return 0
+    if command == "url":
+        return _browser_url(browser_args[1:])
+    if command == "check":
+        return _browser_check(browser_args[1:])
+    if command == "endpoint":
+        return _browser_endpoint(browser_args[1:], engine)
+    if command == "update":
+        return _browser_update()
+    return None
+
+
+
+def _viewport_args(scoped_browser_args: list[str]) -> list[str]:
+    return [
+        *_session_args(scoped_browser_args),
+        "set",
+        "viewport",
+        os.environ.get("ST_BROWSER_VIEWPORT_WIDTH", _DEFAULT_VIEWPORT_WIDTH),
+        os.environ.get("ST_BROWSER_VIEWPORT_HEIGHT", _DEFAULT_VIEWPORT_HEIGHT),
+    ]
+
+
+
+def _run_browser_command(command: str, browser_args: list[str], *, engine: str | None) -> int:
+    port = _select_port(engine)
+    host = _host_for_engine(engine)
+    ws = _cdp_ws(port, host=host)
+    if not ws:
+        output_error(_ENDPOINT_ERROR_TEMPLATE.format(host=host, port=port))
+        return 1
+    scoped_browser_args = _with_default_session(_with_resolved_navigation_target(browser_args, command))
+    if command == "open" and os.environ.get("ST_BROWSER_DISABLE_DEFAULT_VIEWPORT") != "1":
+        _run_agent(_viewport_args(scoped_browser_args), cdp=ws)
+    result = _run_agent(scoped_browser_args, cdp=ws, capture=True)
+    emit_result_or_details(current_root(), f"browser-{command or 'command'}", "BROWSER", result)
+    _run_browser_reaper()
+    if command not in _NAVIGATION_COMMANDS:
+        _close_blank_browser_targets(host, port)
+    return result.returncode
+
+
 @app.callback(invoke_without_command=True)
 @usage(
     surface="st.browser",
@@ -341,47 +420,11 @@ def browser(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
     args = list(ctx.args)
-    if not args or args[0] in {"-h", "--help", "help"}:
-        typer.echo(_USAGE)
-        raise typer.Exit(0)
-    if len(args) > 1 and args[1] in {"-h", "--help", "help"}:
-        typer.echo(_USAGE)
-        raise typer.Exit(0)
+    if _wants_help(args):
+        _show_usage_and_exit()
     engine, browser_args = _parse_engine_args(args)
     command = _agent_command(browser_args)
-    if command == "health":
-        _print_health()
-        raise typer.Exit(0)
-    if command == "url":
-        raise typer.Exit(_browser_url(browser_args[1:]))
-    if command == "check":
-        raise typer.Exit(_browser_check(browser_args[1:]))
-    if command == "endpoint":
-        raise typer.Exit(_browser_endpoint(browser_args[1:], engine))
-    if command == "update":
-        raise typer.Exit(_browser_update())
-
-    port = _select_port(engine)
-    host = _host_for_engine(engine)
-    ws = _cdp_ws(port, host=host)
-    if not ws:
-        output_error(f"Unable to resolve browser CDP endpoint on {host}:{port}")
-        raise typer.Exit(1) from None
-    scoped_browser_args = _with_default_session(_with_resolved_navigation_target(browser_args, command))
-    if command == "open" and os.environ.get("ST_BROWSER_DISABLE_DEFAULT_VIEWPORT") != "1":
-        _run_agent(
-            [
-                *_session_args(scoped_browser_args),
-                "set",
-                "viewport",
-                os.environ.get("ST_BROWSER_VIEWPORT_WIDTH", "1600"),
-                os.environ.get("ST_BROWSER_VIEWPORT_HEIGHT", "900"),
-            ],
-            cdp=ws,
-        )
-    result = _run_agent(scoped_browser_args, cdp=ws, capture=True)
-    emit_result_or_details(current_root(), f"browser-{command or 'command'}", "BROWSER", result)
-    _run_browser_reaper()
-    if command not in {"open", "goto", "navigate"}:
-        _close_blank_browser_targets(host, port)
-    raise typer.Exit(result.returncode)
+    builtin_result = _handle_builtin_command(command, browser_args, engine)
+    if builtin_result is not None:
+        raise typer.Exit(builtin_result)
+    raise typer.Exit(_run_browser_command(command, browser_args, engine=engine))
