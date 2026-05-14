@@ -12,7 +12,11 @@ from ..output import handle_api_error, is_compact, output_json
 from ._session_resolver import resolve_session_id as _resolve_session_id
 from .session_events_follow import follow_session_events
 from .session_events_formatter import format_event
-from .sessions_list import _normalize_status_filter, _session_live_state, _session_matches_status_alias
+from .sessions_list import (
+    _normalize_status_filter,
+    _session_live_state,
+    _session_matches_status_alias,
+)
 
 _ERROR_TEXT_MARKERS = (
     "traceback",

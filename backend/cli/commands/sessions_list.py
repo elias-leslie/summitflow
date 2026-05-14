@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
-
-from .._observability import refresh_agent_observability
-from ..client import APIError, STClient
-from ..config import get_project_override
-from typing import Callable
 
 from ..client import APIError
 from ..config import get_project_override
