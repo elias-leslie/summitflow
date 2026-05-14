@@ -152,48 +152,80 @@ def _project_arg(project_id: str | None) -> str:
     return f" -P {project_id}" if project_id and project_id != "-" else ""
 
 
+def _session_value(session: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = session.get(key)
+        if value:
+            return str(value)
+    return "-"
+
+
+def _live_summary_fields(live: dict[str, Any]) -> dict[str, str]:
+    command = str(
+        live.get("current_command")
+        or live.get("last_command")
+        or live.get("last_validation_command")
+        or "-"
+    )
+    if len(command) > 120:
+        command = command[:117] + "..."
+
+    files = "-"
+    touched = live.get("files_touched")
+    if isinstance(touched, list) and touched:
+        files = ",".join(str(path) for path in touched[-3:])[:140]
+
+    reason_codes = "-"
+    codes = live.get("lifecycle_reason_codes")
+    if isinstance(codes, list) and codes:
+        reason_codes = ",".join(str(code) for code in codes[:4])
+
+    quiet = "-"
+    if live.get("quiet_for_seconds") is not None:
+        quiet = f"{live.get('quiet_for_seconds')}s"
+
+    error_excerpt = live.get("last_tool_error_excerpt") or live.get("stall_reason")
+    return {
+        "phase": str(live.get("phase") or "-"),
+        "health": str(live.get("health") or live.get("status") or "-"),
+        "quiet": quiet,
+        "tool": str(live.get("current_tool_name") or live.get("last_tool_name") or "-"),
+        "command": command,
+        "topic": str(live.get("current_topic") or live.get("last_topic") or "-"),
+        "files": files,
+        "reason_codes": reason_codes,
+        "error": f"|err={str(error_excerpt)[:120]}" if error_excerpt else "",
+    }
+
+
 def _session_monitor_summary(session: dict[str, Any]) -> str:
     session_id = str(session.get("id") or "-")
     project_id = str(session.get("project_id") or "-")
     status = str(session.get("status") or "-")
     agent = str(session.get("agent_slug") or "-")
-    provider = str(session.get("effective_provider") or session.get("requested_provider") or session.get("provider") or "-")
-    model = str(session.get("effective_model") or session.get("requested_model") or session.get("model") or "-").split("/")[-1]
+    provider = _session_value(session, "effective_provider", "requested_provider", "provider")
+    model = _session_value(session, "effective_model", "requested_model", "model").split("/")[-1]
+    summary = {
+        "phase": "-",
+        "health": "-",
+        "quiet": "-",
+        "tool": "-",
+        "command": "-",
+        "topic": "-",
+        "files": "-",
+        "reason_codes": "-",
+        "error": "",
+    }
     live = session.get("live_activity")
-    state = _session_live_state(session)
-    phase = "-"
-    health = "-"
-    quiet = "-"
-    tool = "-"
-    command = "-"
-    topic = "-"
-    files = "-"
-    reason_codes = "-"
-    error = ""
     if isinstance(live, dict):
-        phase = str(live.get("phase") or "-")
-        health = str(live.get("health") or live.get("status") or "-")
-        if live.get("quiet_for_seconds") is not None:
-            quiet = f"{live.get('quiet_for_seconds')}s"
-        tool = str(live.get("current_tool_name") or live.get("last_tool_name") or "-")
-        command = str(live.get("current_command") or live.get("last_command") or live.get("last_validation_command") or "-")
-        if len(command) > 120:
-            command = command[:117] + "..."
-        topic = str(live.get("current_topic") or live.get("last_topic") or "-")
-        touched = live.get("files_touched")
-        if isinstance(touched, list) and touched:
-            files = ",".join(str(path) for path in touched[-3:])[:140]
-        codes = live.get("lifecycle_reason_codes")
-        if isinstance(codes, list) and codes:
-            reason_codes = ",".join(str(code) for code in codes[:4])
-        error_excerpt = live.get("last_tool_error_excerpt") or live.get("stall_reason")
-        if error_excerpt:
-            error = f"|err={str(error_excerpt)[:120]}"
-    task_id = str(session.get("task_id") or session.get("external_id") or "-")
+        summary.update(_live_summary_fields(live))
+    task_id = _session_value(session, "task_id", "external_id")
+    state = _session_live_state(session)
     return (
         f"MON {project_id}|{agent}|{session_id[:8]}|{status}/{state}|"
-        f"{health}/{phase}|model={provider}/{model}|task={task_id}|quiet={quiet}|"
-        f"tool={tool}|cmd={command}|topic={topic}|files={files}|codes={reason_codes}{error}"
+        f"{summary['health']}/{summary['phase']}|model={provider}/{model}|task={task_id}|quiet={summary['quiet']}|"
+        f"tool={summary['tool']}|cmd={summary['command']}|topic={summary['topic']}|files={summary['files']}|"
+        f"codes={summary['reason_codes']}{summary['error']}"
     )
 
 
@@ -260,43 +292,55 @@ def _is_error_like(event: dict[str, Any], signature: str) -> bool:
     return any(marker in lower for marker in _ERROR_TEXT_MARKERS)
 
 
-def _render_session_diagnostics(session_id: str, *, limit: int) -> None:
-    sample_limit = max(min(limit * 25, 500), min(limit, 500), 100)
-    events = _recent_session_events(session_id, limit=sample_limit, event_type=None)
-    signatures = [_event_signature(event) for event in events if _event_signature(event) != "-"]
-    counts = Counter(signatures)
+def _diagnostic_rows(
+    events: list[dict[str, Any]],
+) -> tuple[
+    list[tuple[str, int, dict[str, Any]]],
+    list[tuple[str, int, dict[str, Any]]],
+]:
+    signatures: list[str] = []
     first_by_signature: dict[str, dict[str, Any]] = {}
     for event in events:
         signature = _event_signature(event)
-        if signature != "-":
-            first_by_signature.setdefault(signature, event)
+        if signature == "-":
+            continue
+        signatures.append(signature)
+        first_by_signature.setdefault(signature, event)
 
+    counts = Counter(signatures)
     error_rows = [
         (signature, count, first_by_signature[signature])
         for signature, count in counts.items()
         if _is_error_like(first_by_signature[signature], signature)
     ]
+    error_rows.sort(key=lambda row: (-row[1], row[0]))
     repeat_rows = [
         (signature, count, first_by_signature[signature])
         for signature, count in counts.most_common()
         if count >= 3
     ]
-    error_rows.sort(key=lambda row: (-row[1], row[0]))
+    return error_rows, repeat_rows
 
+
+def _print_diagnostic_rows(prefix: str, rows: list[tuple[str, int, dict[str, Any]]]) -> None:
+    for signature, count, event in rows:
+        event_type = str(event.get("event_type") or "-")
+        tool = str(event.get("tool_name") or "-")
+        print(f"{prefix} x{count}|type={event_type}|tool={tool}|{signature}")
+
+
+def _render_session_diagnostics(session_id: str, *, limit: int) -> None:
+    sample_limit = max(min(limit * 25, 500), min(limit, 500), 100)
+    events = _recent_session_events(session_id, limit=sample_limit, event_type=None)
+    error_rows, repeat_rows = _diagnostic_rows(events)
     row_limit = max(limit, 1)
     print(
         f"DIAG session={session_id[:8]} events_sampled={len(events)} "
         f"errors={len(error_rows)} repeats={len(repeat_rows)}"
     )
-    for signature, count, event in error_rows[:row_limit]:
-        event_type = str(event.get("event_type") or "-")
-        tool = str(event.get("tool_name") or "-")
-        print(f"ERR x{count}|type={event_type}|tool={tool}|{signature}")
+    _print_diagnostic_rows("ERR", error_rows[:row_limit])
     remaining = row_limit - min(len(error_rows), row_limit)
-    for signature, count, event in repeat_rows[: max(remaining, 0)]:
-        event_type = str(event.get("event_type") or "-")
-        tool = str(event.get("tool_name") or "-")
-        print(f"REPEAT x{count}|type={event_type}|tool={tool}|{signature}")
+    _print_diagnostic_rows("REPEAT", repeat_rows[: max(remaining, 0)])
 
 
 def _monitor_single_session(
@@ -462,6 +506,74 @@ def close_session(
     output_json(result)
 
 
+def _monitor_task_target(
+    ctx: typer.Context,
+    target: str,
+    *,
+    follow: bool,
+    limit: int,
+    debug: bool,
+    history: bool,
+    json_output: bool,
+) -> None:
+    from .exec_monitor import exec_log_command
+
+    exec_log_command(
+        ctx,
+        task_id=target,
+        follow=follow,
+        limit=limit,
+        debug=debug,
+        history=history,
+        json_output=json_output,
+    )
+
+
+
+def _render_or_output_monitor_sessions(
+    sessions: list[dict[str, Any]],
+    *,
+    json_output: bool,
+) -> bool:
+    if json_output or not is_compact():
+        output_json(sessions)
+        return True
+    _render_monitor_sessions(sessions)
+    return False
+
+
+
+def _monitor_overview(
+    client: STClient,
+    *,
+    project_id: str | None,
+    status_filter: str,
+    limit: int,
+    agent_slug: str | None,
+    json_output: bool,
+    follow: bool,
+) -> None:
+    sessions = _list_monitor_sessions(
+        client,
+        status_filter=status_filter,
+        limit=limit,
+        agent_slug=agent_slug,
+        project_id=project_id,
+    )
+    if _render_or_output_monitor_sessions(sessions, json_output=json_output) or not follow:
+        return
+    while True:
+        time.sleep(2)
+        sessions = _list_monitor_sessions(
+            client,
+            status_filter=status_filter,
+            limit=limit,
+            agent_slug=agent_slug,
+            project_id=project_id,
+        )
+        _render_monitor_sessions(sessions)
+
+
 @app.command("monitor")
 def monitor_sessions(
     ctx: typer.Context,
@@ -487,12 +599,10 @@ def monitor_sessions(
     model, task/external id, quiet time, tool/command, topic, touched files,
     lifecycle codes, and error/stall excerpt when present.
     """
-    from .exec_monitor import exec_log_command
-
     if target and target.startswith("task-"):
-        exec_log_command(
+        _monitor_task_target(
             ctx,
-            task_id=target,
+            target,
             follow=follow,
             limit=limit,
             debug=debug,
@@ -515,33 +625,18 @@ def monitor_sessions(
     client = STClient(require_project=False)
     resolved_project_id = project_id or get_project_override()
     try:
-        sessions = _list_monitor_sessions(
+        _monitor_overview(
             client,
+            project_id=resolved_project_id,
             status_filter=status_filter,
             limit=limit,
             agent_slug=agent_slug,
-            project_id=resolved_project_id,
+            json_output=json_output,
+            follow=follow,
         )
     except APIError as e:
         handle_api_error(e)
         return
-    if json_output or not is_compact():
-        output_json(sessions)
-        return
-    _render_monitor_sessions(sessions)
-    if not follow:
-        return
-    try:
-        while True:
-            time.sleep(2)
-            sessions = _list_monitor_sessions(
-                client,
-                status_filter=status_filter,
-                limit=limit,
-                agent_slug=agent_slug,
-                project_id=resolved_project_id,
-            )
-            _render_monitor_sessions(sessions)
     except KeyboardInterrupt:
         print("[Stopped]")
 
