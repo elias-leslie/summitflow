@@ -65,6 +65,17 @@ _TOOL_CONFIG_PATHS: dict[str, set[str]] = {
     },
 }
 
+_TOOL_SELECTIONS: dict[str, tuple[tuple[str, ...], bool]] = {
+    "--fix": (("ruff", "biome"), True),
+    "--check": (("ruff", "types", "pytest", "biome", "tsc", "vitest"), False),
+    "-c": (("ruff", "types", "pytest", "biome", "tsc", "vitest"), False),
+    "--quick": (("ruff", "types", "pytest", "biome", "tsc"), False),
+    "-q": (("ruff", "types", "pytest", "biome", "tsc"), False),
+    "--frontend-only": (("biome", "tsc", "vitest"), False),
+    "--fe": (("biome", "tsc", "vitest"), False),
+}
+
+
 def _is_pytest_test_path(path: Path) -> bool:
     return (
         path.suffix in {".py", ".pyi"}
@@ -309,6 +320,32 @@ def _pytest_extra_args(extra_args: list[str]) -> list[str]:
     return extra_args
 
 
+def _skip_reason(
+    name: str,
+    config: dict[str, Any],
+    *,
+    changed_only: bool,
+    changed_files: list[str],
+    scoped_args: list[str],
+    explicit_args: bool = False,
+) -> str | None:
+    if not changed_only or explicit_args:
+        return None
+    if config.get("pass_path"):
+        if not scoped_args and not _has_relevant_changed_files(name, changed_files):
+            return "no_changed_paths"
+        return None
+    if not _has_relevant_changed_files(name, changed_files):
+        return "no_relevant_changed_paths"
+    return None
+
+
+def _skip_tool(name: str, config: dict[str, Any], reason: str) -> int:
+    label = config.get("label") or name.upper()
+    print(f"{label!s}:SKIP:{name}:{reason}")
+    return 0
+
+
 def _run_selected(
     selected: list[str],
     configs: dict[str, dict[str, Any]],
@@ -323,21 +360,15 @@ def _run_selected(
         config = configs[name]
         cwd = _workdir(root, config)
         scoped_args = _changed_args(name, root, cwd, config, changed_files)
-        if (
-            changed_only
-            and config.get("pass_path")
-            and not scoped_args
-            and not _has_relevant_changed_files(name, changed_files)
-        ):
-            print(f"{config.get('label') or name.upper()!s}:SKIP:{name}:no_changed_paths")
-            continue
-        if (
-            changed_only
-            and not config.get("pass_path")
-            and not _has_relevant_changed_files(name, changed_files)
-        ):
-            label = config.get("label") or name.upper()
-            print(f"{label!s}:SKIP:{name}:no_relevant_changed_paths")
+        skip_reason = _skip_reason(
+            name,
+            config,
+            changed_only=changed_only,
+            changed_files=changed_files,
+            scoped_args=scoped_args,
+        )
+        if skip_reason:
+            _skip_tool(name, config, skip_reason)
             continue
         failures += _run_tool(name, config, [*scoped_args, *(_fix_args(name) if fix else [])]) != 0
     return 1 if failures else 0
@@ -410,25 +441,16 @@ def _run_named_tool(
         config,
         changed_files,
     )
-    if (
-        changed_only
-        and config.get("pass_path")
-        and not explicit_args
-        and not scoped_args
-        and not _has_relevant_changed_files(first, changed_files)
-    ):
-        label = config.get("label") or first.upper()
-        print(f"{label!s}:SKIP:{first}:no_changed_paths")
-        return 0
-    if (
-        changed_only
-        and not config.get("pass_path")
-        and not explicit_args
-        and not _has_relevant_changed_files(first, changed_files)
-    ):
-        label = config.get("label") or first.upper()
-        print(f"{label!s}:SKIP:{first}:no_relevant_changed_paths")
-        return 0
+    skip_reason = _skip_reason(
+        first,
+        config,
+        changed_only=changed_only,
+        changed_files=changed_files,
+        scoped_args=scoped_args,
+        explicit_args=bool(explicit_args),
+    )
+    if skip_reason:
+        return _skip_tool(first, config, skip_reason)
     extra_args = [*explicit_args, *scoped_args, *(_fix_args(first) if fix else [])]
     return _run_tool(first, configs[first], extra_args)
 
@@ -437,15 +459,11 @@ def _selected_tools(
     first: str,
     configs: dict[str, dict[str, Any]],
 ) -> tuple[list[str], bool] | None:
-    if first == "--fix":
-        return [name for name in ("ruff", "biome") if name in configs], True
-    if first in {"--check", "-c"}:
-        return [name for name in ("ruff", "types", "pytest", "biome", "tsc", "vitest") if name in configs], False
-    if first in {"--quick", "-q"}:
-        return [name for name in ("ruff", "types", "pytest", "biome", "tsc") if name in configs], False
-    if first in {"--frontend-only", "--fe"}:
-        return [name for name in ("biome", "tsc", "vitest") if name in configs], False
-    return None
+    selection = _TOOL_SELECTIONS.get(first)
+    if selection is None:
+        return None
+    names, selected_fix = selection
+    return [name for name in names if name in configs], selected_fix
 
 
 def _usage(configs: dict[str, dict[str, Any]]) -> None:
