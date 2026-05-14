@@ -28,6 +28,7 @@ from .merge_operations_impl import (
     safe_finalize_branch_without_checkout_impl,
 )
 from .merge_types import MergeFailed, MergeResult
+from .validation import auto_rollback, run_post_merge_validation
 
 logger = get_logger(__name__)
 _SNAPSHOT_REF_PREFIX = "refs/summitflow/snapshots/pre-merge/"
@@ -136,6 +137,7 @@ def is_task_running(task_id: str) -> bool:
 
 def _merge_deps() -> dict[str, Any]:
     return {
+        "auto_rollback": auto_rollback,
         "build_merge_failure_result": _build_merge_failure_result,
         "capture_pre_merge_snapshot": _capture_pre_merge_snapshot,
         "checkout_base_branch": checkout_base_branch,
@@ -157,9 +159,14 @@ def _merge_deps() -> dict[str, Any]:
         "normalize_base_branch": normalize_base_branch,
         "publish_mainline_result": _publish_mainline_result,
         "remove_task_checkout": remove_task_checkout,
+        "run_post_merge_validation": run_post_merge_validation,
         "safe_finalize_branch_without_checkout": _safe_finalize_branch_without_checkout,
         "snapshot_ref_prefix": _SNAPSHOT_REF_PREFIX,
         "task_store": task_store,
         "update_task_fields": update_task_fields,
         "update_task_status": update_task_status,
     }
+
+
+_auto_rollback = auto_rollback
+_run_post_merge_validation = run_post_merge_validation
