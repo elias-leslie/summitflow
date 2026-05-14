@@ -176,6 +176,54 @@ def _git_remote_default_branch(repo_path: Path) -> str:
     return branch
 
 
+def _make_skipped_sync(repo_path: Path, branch: str) -> SyncResult:
+    from ..api.models.git_models import SyncResult
+
+    return SyncResult(
+        path=str(repo_path),
+        name=repo_path.name,
+        branch=branch,
+        status=_STATUS_SKIPPED,
+        reason=_REASON_UNCOMMITTED,
+    )
+
+
+def _resolve_pull_branch(repo_path: Path, branch: str) -> str:
+    if branch != "HEAD":
+        return branch
+    return _git_remote_default_branch(repo_path)
+
+
+def _can_rebase_empty_jj_working_copy(status_result, current, parent, target) -> bool:
+    return (
+        status_result.returncode == 0
+        and current is not None
+        and parent is not None
+        and target is not None
+        and "The working copy has no changes." in status_result.stdout
+        and current.empty
+        and not current.description.strip()
+        and not current.conflict
+        and target.commit_id not in {current.commit_id, parent.commit_id}
+    )
+
+
+def _maybe_rebase_jj_working_copy(repo_path: Path, branch: str, run_jj, current_revision_info, revision_info, jj_error) -> bool | SyncResult:
+    status_result = run_jj(repo_path, ["status"])
+    try:
+        current = current_revision_info(repo_path)
+        parent = revision_info(repo_path, "@-")
+        target = revision_info(repo_path, branch)
+    except jj_error:
+        current = parent = target = None
+    if not _can_rebase_empty_jj_working_copy(status_result, current, parent, target):
+        return False
+    rebase = run_jj(repo_path, ["rebase", "-r", "@", "-d", branch])
+    if rebase.returncode != 0:
+        return _make_failed_sync(repo_path, branch, (rebase.stderr or rebase.stdout).strip())
+    return True
+
+
 def _pull_jj_repository(repo_path: Path, repo_status: RepoStatus) -> SyncResult | None:
     """Fetch a colocated jj repo and keep a clean empty workspace on its bookmark."""
     from ..api.models.git_models import SyncResult
@@ -187,43 +235,26 @@ def _pull_jj_repository(repo_path: Path, repo_status: RepoStatus) -> SyncResult 
     if not is_colocated(repo_path):
         return None
     if repo_status.uncommitted > 0:
-        return SyncResult(
-            path=str(repo_path),
-            name=repo_path.name,
-            branch=repo_status.branch,
-            status=_STATUS_SKIPPED,
-            reason=_REASON_UNCOMMITTED,
-        )
+        return _make_skipped_sync(repo_path, repo_status.branch)
 
     fetch = run_jj(repo_path, ["git", "fetch", "--remote", "origin"])
     if fetch.returncode != 0:
         return _make_failed_sync(repo_path, repo_status.branch, (fetch.stderr or fetch.stdout).strip())
 
-    branch = repo_status.branch if repo_status.branch != "HEAD" else _git_remote_default_branch(repo_path)
+    branch = _resolve_pull_branch(repo_path, repo_status.branch)
     rebased = False
     if branch:
-        status = run_jj(repo_path, ["status"])
-        try:
-            current = current_revision_info(repo_path)
-            parent = revision_info(repo_path, "@-")
-            target = revision_info(repo_path, branch)
-        except JJError:
-            current = parent = target = None
-        if (
-            status.returncode == 0
-            and current is not None
-            and parent is not None
-            and target is not None
-            and "The working copy has no changes." in status.stdout
-            and current.empty
-            and not current.description.strip()
-            and not current.conflict
-            and target.commit_id not in {current.commit_id, parent.commit_id}
-        ):
-            rebase = run_jj(repo_path, ["rebase", "-r", "@", "-d", branch])
-            if rebase.returncode != 0:
-                return _make_failed_sync(repo_path, branch, (rebase.stderr or rebase.stdout).strip())
-            rebased = True
+        rebase_result = _maybe_rebase_jj_working_copy(
+            repo_path,
+            branch,
+            run_jj,
+            current_revision_info,
+            revision_info,
+            JJError,
+        )
+        if isinstance(rebase_result, SyncResult):
+            return rebase_result
+        rebased = rebase_result
 
     detail = "\n".join(part for part in (fetch.stdout, fetch.stderr) if part)
     status_name = _STATUS_UP_TO_DATE if not rebased and "Nothing changed" in detail else _STATUS_UPDATED
@@ -246,6 +277,27 @@ def _classify_state(uncommitted: int, behind: int, ahead: int) -> str:
     return _STATE_CLEAN
 
 
+def _repo_branch_and_uncommitted(repo_path: Path, jj_status) -> tuple[str | None, int]:
+    if jj_status is not None:
+        uncommitted = 0 if jj_status.state in {_STATE_CLEAN, "unpublished"} else 1
+        return jj_status.branch, uncommitted
+    branch = _get_current_branch(repo_path)
+    if branch is None:
+        return None, 0
+    return branch, _count_uncommitted(repo_path)
+
+
+
+def _active_checkpoints_for_project(
+    resolved_project_id: str | None,
+    active_checkpoints_by_project: dict[str, list] | None,
+) -> list | None:
+    if active_checkpoints_by_project is None or not resolved_project_id:
+        return None
+    return active_checkpoints_by_project.get(resolved_project_id, [])
+
+
+
 def get_repo_status(
     repo_path: Path,
     project_id: str | None = None,
@@ -260,23 +312,17 @@ def get_repo_status(
         return None
 
     jj_status = _get_jj_status(repo_path)
-    if jj_status is not None:
-        branch = jj_status.branch
-        uncommitted = 0 if jj_status.state in {_STATE_CLEAN, "unpublished"} else 1
-    else:
-        branch = _get_current_branch(repo_path)
-        if branch is None:
-            return None
-        uncommitted = _count_uncommitted(repo_path)
+    branch, uncommitted = _repo_branch_and_uncommitted(repo_path, jj_status)
+    if branch is None:
+        return None
     ahead, behind = _get_ahead_behind(repo_path, branch)
     if jj_status is not None:
         ahead = max(ahead, jj_status.unpublished)
     state = _classify_state(uncommitted, behind, ahead)
     resolved_project_id = _resolve_project_id(repo_path, project_id)
-    active_checkpoints = (
-        active_checkpoints_by_project.get(resolved_project_id, [])
-        if active_checkpoints_by_project is not None and resolved_project_id
-        else None
+    active_checkpoints = _active_checkpoints_for_project(
+        resolved_project_id,
+        active_checkpoints_by_project,
     )
     branches = get_all_branches(
         repo_path,
