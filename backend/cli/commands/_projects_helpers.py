@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 ENV_API_BASE = "ST_API_BASE"
 ENV_PROJECT_ID = "ST_PROJECT_ID"
 DEFAULT_HEALTH_ENDPOINT = "/health"
+PROJECTS_BASE_PATH = "/projects"
+SUMMITFLOW_PROJECTS_ROOT = "/srv/workspaces/projects"
 NO_PROJECTS_MSG = "No projects found or API unavailable"
 UNEXPECTED_RESPONSE_MSG = "Unexpected API response"
 CREATE_FIELDS_MSG = (
@@ -47,6 +49,101 @@ def _build_onboarding_payload(
     }
 
 
+def _project_path(path: str = "") -> str:
+    return f"{PROJECTS_BASE_PATH}{path}"
+
+
+def _normalize_fields(fields: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in fields.items() if value is not None}
+
+
+def _project_update_fields(
+    *,
+    name: str | None,
+    base_url: str | None,
+    root_path: str | None,
+    health_endpoint: str | None,
+) -> dict[str, Any]:
+    return _normalize_fields(
+        {
+            "name": name,
+            "base_url": base_url,
+            "root_path": root_path,
+            "health_endpoint": health_endpoint,
+        }
+    )
+
+
+def _permission_payload(
+    *,
+    permission_tier: str | None,
+    auto_exec_enabled: bool | None,
+    execution_start_hour: int | None,
+    execution_end_hour: int | None,
+) -> dict[str, Any]:
+    return _normalize_fields(
+        {
+            "permission_tier": permission_tier,
+            "auto_exec_enabled": auto_exec_enabled,
+            "execution_start_hour": execution_start_hour,
+            "execution_end_hour": execution_end_hour,
+        }
+    )
+
+
+def _create_project_body(
+    *,
+    project_id: str,
+    name: str,
+    base_url: str | None,
+    root_path: str | None,
+    health_endpoint: str,
+    summitflow_hosted: bool,
+    permission_tier: str | None,
+    auto_exec_enabled: bool | None,
+    execution_start_hour: int | None,
+    execution_end_hour: int | None,
+    onboarding: bool,
+    backup_frequency: str,
+    backup_retention_days: int,
+    queue_initial_backup: bool,
+) -> dict[str, Any]:
+    effective_root_path = root_path
+    if summitflow_hosted:
+        effective_root_path = effective_root_path or f"{SUMMITFLOW_PROJECTS_ROOT}/{project_id}"
+
+    body: dict[str, Any] = {
+        "id": project_id,
+        "name": name,
+        "health_endpoint": health_endpoint,
+    }
+    optional_fields = _normalize_fields(
+        {
+            "base_url": base_url,
+            "root_path": effective_root_path,
+        }
+    )
+    body.update(optional_fields)
+    if summitflow_hosted:
+        body["summitflow_hosted"] = True
+
+    permission_payload = _permission_payload(
+        permission_tier=permission_tier,
+        auto_exec_enabled=auto_exec_enabled,
+        execution_start_hour=execution_start_hour,
+        execution_end_hour=execution_end_hour,
+    )
+    if permission_payload:
+        body["agent_hub_permission"] = permission_payload
+    if onboarding:
+        body["onboarding"] = _build_onboarding_payload(
+            backup_frequency=backup_frequency,
+            backup_retention_days=backup_retention_days,
+            queue_initial_backup=queue_initial_backup,
+        )
+    return body
+
+
 def get_api_base() -> str:
     """Return the configured API base URL."""
     return os.getenv(ENV_API_BASE, DEFAULT_API_BASE)
@@ -70,7 +167,7 @@ def projects_api(
     Raises:
         typer.Exit: On any HTTP or connection error.
     """
-    url = f"{get_api_base()}/projects{path}"
+    url = f"{get_api_base()}{_project_path(path)}"
     try:
         with httpx.Client(timeout=10.0) as client:
             response = client.request(method, url, **kwargs)
@@ -193,40 +290,26 @@ def run_create(
     queue_initial_backup: bool = True,
 ) -> None:
     """Implementation for `projects create`."""
-    effective_root_path = root_path
-    if summitflow_hosted:
-        effective_root_path = effective_root_path or f"/srv/workspaces/projects/{project_id}"
     if not base_url and not summitflow_hosted:
         output_error(CREATE_FIELDS_MSG)
         raise typer.Exit(1)
-    body: dict[str, Any] = {
-        "id": project_id,
-        "name": name,
-        "health_endpoint": health_endpoint,
-    }
-    if base_url is not None:
-        body["base_url"] = base_url
-    if effective_root_path is not None:
-        body["root_path"] = effective_root_path
-    if summitflow_hosted:
-        body["summitflow_hosted"] = True
-    permission_payload = {
-        "permission_tier": permission_tier,
-        "auto_exec_enabled": auto_exec_enabled,
-        "execution_start_hour": execution_start_hour,
-        "execution_end_hour": execution_end_hour,
-    }
-    normalized_permission_payload = {
-        key: value for key, value in permission_payload.items() if value is not None
-    }
-    if normalized_permission_payload:
-        body["agent_hub_permission"] = normalized_permission_payload
-    if onboarding:
-        body["onboarding"] = _build_onboarding_payload(
-            backup_frequency=backup_frequency,
-            backup_retention_days=backup_retention_days,
-            queue_initial_backup=queue_initial_backup,
-        )
+
+    body = _create_project_body(
+        project_id=project_id,
+        name=name,
+        base_url=base_url,
+        root_path=root_path,
+        health_endpoint=health_endpoint,
+        summitflow_hosted=summitflow_hosted,
+        permission_tier=permission_tier,
+        auto_exec_enabled=auto_exec_enabled,
+        execution_start_hour=execution_start_hour,
+        execution_end_hour=execution_end_hour,
+        onboarding=onboarding,
+        backup_frequency=backup_frequency,
+        backup_retention_days=backup_retention_days,
+        queue_initial_backup=queue_initial_backup,
+    )
     result = projects_api("POST", json=body)
     output_success(f"Created project '{project_id}'")
     if onboarding:
@@ -242,16 +325,12 @@ def run_update(
     health_endpoint: str | None,
 ) -> None:
     """Implementation for `projects update`."""
-    fields: dict[str, Any] = {
-        k: v
-        for k, v in {
-            "name": name,
-            "base_url": base_url,
-            "root_path": root_path,
-            "health_endpoint": health_endpoint,
-        }.items()
-        if v is not None
-    }
+    fields = _project_update_fields(
+        name=name,
+        base_url=base_url,
+        root_path=root_path,
+        health_endpoint=health_endpoint,
+    )
     if not fields:
         output_error(UPDATE_FIELDS_MSG)
         raise typer.Exit(1)
