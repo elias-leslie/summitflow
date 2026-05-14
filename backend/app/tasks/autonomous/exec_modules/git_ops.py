@@ -178,6 +178,27 @@ def _build_commit_failure_detail(
     return "; ".join(parts)
 
 
+def _base_result(
+    *,
+    success: bool,
+    args: list[str],
+    command_display: str,
+    returncode: int | None,
+    detail: str,
+    stdout: str,
+    stderr: str,
+) -> dict[str, Any]:
+    return {
+        "success": success,
+        "command": args,
+        "command_display": command_display,
+        "returncode": returncode,
+        "detail": detail,
+        "stdout": stdout,
+        "stderr": stderr,
+    }
+
+
 def _success_result(
     *,
     args: list[str],
@@ -187,15 +208,50 @@ def _success_result(
     detail: str = "",
 ) -> dict[str, Any]:
     return {
-        "success": True,
-        "command": args,
-        "command_display": command_display,
-        "returncode": result.returncode,
-        "detail": detail,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
+        **_base_result(
+            success=True,
+            args=args,
+            command_display=command_display,
+            returncode=result.returncode,
+            detail=detail,
+            stdout=result.stdout,
+            stderr=result.stderr,
+        ),
         "published": published,
     }
+
+
+def _failure_result(
+    *,
+    args: list[str],
+    command_display: str,
+    returncode: int | None,
+    detail: str,
+    stdout: str,
+    stderr: str,
+) -> dict[str, Any]:
+    return _base_result(
+        success=False,
+        args=args,
+        command_display=command_display,
+        returncode=returncode,
+        detail=detail,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+def _run_commit_helper(
+    project_path: str,
+    args: list[str],
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        args,
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
 
 
 def _run_local_recovery_commit(
@@ -215,30 +271,22 @@ def _run_local_recovery_commit(
     if not fallback_args:
         return None
     command_display = _format_command(fallback_args)
-    fallback = subprocess.run(
-        fallback_args,
-        cwd=project_path,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
+    fallback = _run_commit_helper(project_path, fallback_args)
     if fallback.returncode != 0:
-        return {
-            "success": False,
-            "command": fallback_args,
-            "command_display": command_display,
-            "returncode": fallback.returncode,
-            "detail": _build_commit_failure_detail(
+        return _failure_result(
+            args=fallback_args,
+            command_display=command_display,
+            returncode=fallback.returncode,
+            detail=_build_commit_failure_detail(
                 command_display,
                 returncode=fallback.returncode,
                 stdout=fallback.stdout,
                 stderr=fallback.stderr,
                 note=f"push recovery refused first: {original_stderr.strip()[:200]}",
             ),
-            "stdout": fallback.stdout,
-            "stderr": fallback.stderr,
-            "published": False,
-        }
+            stdout=fallback.stdout,
+            stderr=fallback.stderr,
+        )
     return _success_result(
         args=fallback_args,
         command_display=command_display,
@@ -258,6 +306,114 @@ def _should_retry_recovery_commit_locally(
 
 
 
+def _no_changes_result() -> dict[str, Any]:
+    return _base_result(
+        success=True,
+        args=[],
+        command_display="",
+        returncode=0,
+        detail="",
+        stdout="",
+        stderr="",
+    )
+
+
+
+def _missing_helper_result() -> dict[str, Any]:
+    logger.warning("smart_commit_missing_st")
+    return _failure_result(
+        args=[],
+        command_display="",
+        returncode=None,
+        detail="commit helper failed: st could not be resolved",
+        stdout="",
+        stderr="",
+    )
+
+
+
+def _published_after_commit(project_path: str, *, push: bool, returncode: int) -> bool:
+    if returncode != 0 or not push:
+        return True
+    return not has_unpublished_commits(project_path)
+
+
+
+def _commit_failure_result(
+    *,
+    args: list[str],
+    command_display: str,
+    result: subprocess.CompletedProcess[str],
+    published: bool,
+) -> dict[str, Any]:
+    logger.warning(
+        "smart_commit_failed",
+        returncode=result.returncode,
+        stderr=result.stderr[:200],
+    )
+    return _failure_result(
+        args=args,
+        command_display=command_display,
+        returncode=result.returncode,
+        detail=_build_commit_failure_detail(
+            command_display,
+            returncode=result.returncode,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            note=None if published else "branch still has unpublished commits after helper completed",
+        ),
+        stdout=result.stdout,
+        stderr=result.stderr,
+    )
+
+
+
+def _timeout_output(value: Any) -> str:
+    return value if isinstance(value, str) else ""
+
+
+
+def _timeout_failure_result(
+    args: list[str],
+    command_display: str,
+    exc: subprocess.TimeoutExpired,
+) -> dict[str, Any]:
+    logger.warning("smart_commit_timeout")
+    stdout = _timeout_output(exc.stdout)
+    stderr = _timeout_output(exc.stderr)
+    return _failure_result(
+        args=args,
+        command_display=command_display,
+        returncode=None,
+        detail=_build_commit_failure_detail(
+            command_display,
+            note=f"timed out after {exc.timeout}s",
+            stdout=stdout,
+            stderr=stderr,
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+
+def _exception_failure_result(
+    args: list[str],
+    command_display: str,
+    exc: Exception,
+) -> dict[str, Any]:
+    logger.warning("smart_commit_exception", error=str(exc))
+    return _failure_result(
+        args=args,
+        command_display=command_display,
+        returncode=None,
+        detail=f"commit helper failed: {command_display}; exception: {exc}",
+        stdout="",
+        stderr=str(exc),
+    )
+
+
+
 def smart_commit_result(
     project_path: str,
     message: str,
@@ -267,41 +423,16 @@ def smart_commit_result(
 ) -> dict[str, Any]:
     """Run the canonical commit helper and preserve failure detail."""
     if not has_uncommitted_changes(project_path):
-        return {
-            "success": True,
-            "command": [],
-            "command_display": "",
-            "returncode": 0,
-            "detail": "",
-            "stdout": "",
-            "stderr": "",
-        }
+        return _no_changes_result()
 
     args = _build_smart_commit_args(project_path, message, task_id, push, skip_checks)
     if not args:
-        logger.warning("smart_commit_missing_st")
-        return {
-            "success": False,
-            "command": [],
-            "command_display": "",
-            "returncode": None,
-            "detail": "commit helper failed: st could not be resolved",
-            "stdout": "",
-            "stderr": "",
-        }
+        return _missing_helper_result()
 
     command_display = _format_command(args)
     try:
-        result = subprocess.run(
-            args,
-            cwd=project_path,
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-        published = True
-        if result.returncode == 0 and push:
-            published = not has_unpublished_commits(project_path)
+        result = _run_commit_helper(project_path, args)
+        published = _published_after_commit(project_path, push=push, returncode=result.returncode)
         if result.returncode == 0 and published:
             logger.info("smart_commit_success", message=message[:80])
             return _success_result(
@@ -326,55 +457,16 @@ def smart_commit_result(
                 logger.info("smart_commit_local_recovery", message=message[:80])
                 return local_result
 
-        detail = _build_commit_failure_detail(
-            command_display,
-            returncode=result.returncode,
-            stdout=result.stdout,
-            stderr=result.stderr,
-            note=None if published else "branch still has unpublished commits after helper completed",
+        return _commit_failure_result(
+            args=args,
+            command_display=command_display,
+            result=result,
+            published=published,
         )
-        logger.warning(
-            "smart_commit_failed",
-            returncode=result.returncode,
-            stderr=result.stderr[:200],
-        )
-        return {
-            "success": False,
-            "command": args,
-            "command_display": command_display,
-            "returncode": result.returncode,
-            "detail": detail,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        }
     except subprocess.TimeoutExpired as exc:
-        logger.warning("smart_commit_timeout")
-        detail = _build_commit_failure_detail(
-            command_display,
-            note=f"timed out after {exc.timeout}s",
-            stdout=(exc.stdout or "") if isinstance(exc.stdout, str) else "",
-            stderr=(exc.stderr or "") if isinstance(exc.stderr, str) else "",
-        )
-        return {
-            "success": False,
-            "command": args,
-            "command_display": command_display,
-            "returncode": None,
-            "detail": detail,
-            "stdout": (exc.stdout or "") if isinstance(exc.stdout, str) else "",
-            "stderr": (exc.stderr or "") if isinstance(exc.stderr, str) else "",
-        }
-    except Exception as e:
-        logger.warning("smart_commit_exception", error=str(e))
-        return {
-            "success": False,
-            "command": args,
-            "command_display": command_display,
-            "returncode": None,
-            "detail": f"commit helper failed: {command_display}; exception: {e}",
-            "stdout": "",
-            "stderr": str(e),
-        }
+        return _timeout_failure_result(args, command_display, exc)
+    except Exception as exc:
+        return _exception_failure_result(args, command_display, exc)
 
 
 
