@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import subprocess
 
+from app.storage.agent_configs_quality import build_st_check_command
+
 from .events import emit_log
 from .quality_utils import find_check_tool
 
@@ -72,8 +74,9 @@ def _run_gate_subprocess(
 
 
 def build_final_quality_gate_command(st_cmd: str, project_id: str) -> list[str]:
-    """Build the closeout check for work changed by this task."""
-    return [st_cmd, "-P", project_id, "check", "--quick", "--changed-only"]
+    """Build the same configured check used by post-merge validation."""
+    cmd = build_st_check_command(st_cmd, project_id)
+    return [cmd[0], "-P", project_id, *cmd[1:]]
 
 
 def run_final_quality_gate(
