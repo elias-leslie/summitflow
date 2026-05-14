@@ -40,6 +40,10 @@ def _checkout_branch(branch: str, cwd: str | None = None) -> None:
         sys.exit(1)
 
 
+def _clean_branch_lines(output: str) -> list[str]:
+    return [line.strip().lstrip("*+ ") for line in output.splitlines() if line.strip()]
+
+
 def _abort_merge(cwd: str | None = None) -> None:
     """Abort an in-progress merge to restore clean working tree state."""
     _run_git(["git", "merge", "--abort"], cwd=cwd, check=False)
@@ -54,25 +58,15 @@ def _merge_failure_output(error: subprocess.CalledProcessError) -> str:
     return "\n".join(parts)
 
 
-def _conflict_paths_from_output(output: str) -> list[str]:
-    paths: list[str] = []
-    for line in output.splitlines():
-        match = _CONFLICT_RE.search(line)
-        if match:
-            paths.append(match.group(1).strip())
-    return list(dict.fromkeys(paths))
-
-
-def _conflict_paths_from_index(cwd: str | None = None) -> list[str]:
+def _merge_conflict_paths(error: subprocess.CalledProcessError, cwd: str | None) -> list[str]:
+    output = _merge_failure_output(error)
+    paths = [match.group(1).strip() for line in output.splitlines() if (match := _CONFLICT_RE.search(line))]
+    if paths:
+        return list(dict.fromkeys(paths))
     result = _run_git(["git", "diff", "--name-only", "--diff-filter=U"], cwd=cwd, check=False)
     if result.returncode != 0:
         return []
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
-
-
-def _merge_conflict_paths(error: subprocess.CalledProcessError, cwd: str | None) -> list[str]:
-    output = _merge_failure_output(error)
-    return _conflict_paths_from_output(output) or _conflict_paths_from_index(cwd)
 
 
 def _format_merge_failure(
@@ -133,17 +127,6 @@ def _record_task_merge_conflict(
         print(f"Warning: Failed to record merge conflict metadata: {exc}", file=sys.stderr)
 
 
-def _get_current_branch(cwd: str | None = None) -> str:
-    """Get current branch name."""
-    return current_branch(cwd) or ""
-
-
-def _branch_exists(branch: str, cwd: str | None = None) -> bool:
-    """Check if branch exists."""
-    result = _run_git(["git", "rev-parse", "--verify", branch], cwd=cwd, check=False)
-    return result.returncode == 0
-
-
 def _classify_branch(branch: str) -> dict[str, str]:
     """Classify a task-family branch as task or subtask type."""
     task_id = branch.split("/", 1)[0]
@@ -166,8 +149,7 @@ def get_task_branches(task_id: str, project_id: str | None = None) -> list[dict[
         except subprocess.CalledProcessError:
             continue
 
-        for line in result.stdout.splitlines():
-            branch = line.strip().lstrip("*+ ")
+        for branch in _clean_branch_lines(result.stdout):
             if branch and branch not in seen:
                 seen.add(branch)
                 branches.append(_classify_branch(branch))
@@ -178,12 +160,12 @@ def resolve_task_branch(task_id: str, project_id: str | None = None) -> str:
     """Return the concrete task branch name for a task id."""
     cwd = _get_repo_cwd(project_id)
     committed_task_branch = f"task/{task_id}"
-    if _branch_exists(committed_task_branch, cwd):
+    if _run_git(["git", "rev-parse", "--verify", committed_task_branch], cwd=cwd, check=False).returncode == 0:
         return committed_task_branch
     preferred = f"{task_id}/main"
-    if _branch_exists(preferred, cwd):
+    if _run_git(["git", "rev-parse", "--verify", preferred], cwd=cwd, check=False).returncode == 0:
         return preferred
-    if _branch_exists(task_id, cwd):
+    if _run_git(["git", "rev-parse", "--verify", task_id], cwd=cwd, check=False).returncode == 0:
         return task_id
     task_branch = next(
         (branch["branch"] for branch in get_task_branches(task_id, project_id=project_id) if branch.get("type") == "task"),
@@ -209,11 +191,11 @@ def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None =
     task_branch = resolve_task_branch(task_id, project_id=project_id)
     cwd = _get_repo_cwd(project_id)
 
-    if not _branch_exists(subtask_branch, cwd):
+    if _run_git(["git", "rev-parse", "--verify", subtask_branch], cwd=cwd, check=False).returncode != 0:
         print(f"No subtask branch {subtask_branch} found - work done on task branch")
         return False
 
-    if _get_current_branch(cwd) != task_branch:
+    if (current_branch(cwd) or "") != task_branch:
         _checkout_branch(task_branch, cwd)
 
     try:
@@ -253,7 +235,7 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
     base_branch = normalize_base_branch(meta.base_branch if meta else "main", repo_cwd)
     task_branch = resolve_task_branch(task_id, project_id=project_id)
 
-    if _get_current_branch(repo_cwd) != base_branch:
+    if (current_branch(repo_cwd) or "") != base_branch:
         _checkout_branch(base_branch, repo_cwd)
 
     try:
@@ -317,15 +299,11 @@ def get_remote_task_branches(task_id: str, project_id: str | None = None, remote
     if result.returncode != 0:
         return []
     prefix = f"{remote}/"
-    branches: list[str] = []
-    for line in result.stdout.splitlines():
-        remote_ref = line.strip()
-        if not remote_ref.startswith(prefix):
-            continue
-        branch = remote_ref.removeprefix(prefix)
-        if branch:
-            branches.append(branch)
-    return branches
+    return [
+        ref.removeprefix(prefix)
+        for ref in (line.strip() for line in result.stdout.splitlines())
+        if ref.startswith(prefix) and ref.removeprefix(prefix)
+    ]
 
 
 def _delete_remote_task_branches(task_id: str, repo_cwd: str | None, remote: str = "origin") -> int:
@@ -341,7 +319,7 @@ def _delete_remote_task_branches(task_id: str, repo_cwd: str | None, remote: str
     remote_branches = [
         ref.removeprefix(prefix)
         for ref in (line.strip() for line in result.stdout.splitlines())
-        if ref.startswith(prefix)
+        if ref.startswith(prefix) and ref.removeprefix(prefix)
     ]
     deleted = 0
     for branch in remote_branches:
@@ -370,8 +348,7 @@ def delete_task_branches(task_id: str, project_id: str | None = None) -> bool:
 
     try:
         result = _run_git(["git", "branch", "--list", f"{task_id}*"], repo_cwd)
-        branches = [b.strip().lstrip("*+ ") for b in result.stdout.splitlines() if b.strip()]
-        for branch in branches:
+        for branch in _clean_branch_lines(result.stdout):
             with contextlib.suppress(subprocess.CalledProcessError):
                 _run_git(["git", "branch", "-D", branch], repo_cwd)
                 print(f"Deleted branch: {branch}")
