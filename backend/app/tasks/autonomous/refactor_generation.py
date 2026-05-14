@@ -20,7 +20,7 @@ from app.storage.explorer_analysis import (
 from app.storage.projects import get_project_root_path
 from app.storage.task_spirit import get_task_spirit, update_task_spirit
 from app.tasks.autonomous._issue_builder import create_refactor_issue
-from app.tasks.autonomous.step_builders import build_refactor_steps, calculate_target_lines
+from app.tasks.autonomous.step_builders import calculate_target_lines
 from app.tasks.autonomous.task_builders import create_refactor_task
 from app.tasks.autonomous.upkeep_prune import close_obsolete_generated_task
 from app.tasks.explorer_resolution import check_and_close_resolved_issues
@@ -142,15 +142,11 @@ def _build_and_create_task(
         )
         return False, retired_count
 
-    steps = build_refactor_steps(
-        relative_path, file_path, lines, target_lines,
-        relative_path.startswith("frontend/"), refactor_issues=refactor_issues,
-    )
     task_id, issue_id = create_refactor_task(
         project_id=project_id, relative_path=relative_path, file_path=file_path,
         reason=target.get("reason", "High complexity"), complexity=complexity,
         lines=lines, target_lines=target_lines, priority=target.get("priority", "medium"),
-        tier=calculate_task_tier(complexity, lines), steps=steps, refactor_issues=refactor_issues,
+        tier=calculate_task_tier(complexity, lines), steps=[], refactor_issues=refactor_issues,
         promotion_reasons=target.get("promotion_reasons"),
         promotion_confidence=target.get("confidence"),
         issue_id=issue_id,

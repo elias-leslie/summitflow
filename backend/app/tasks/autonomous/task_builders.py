@@ -57,7 +57,7 @@ def create_refactor_task(
     promotion_confidence: str | None = None,
     issue_id: int | None = None,
 ) -> tuple[str | None, int | None]:
-    """Create refactor task with spirit, subtasks, and steps."""
+    """Create a lean refactor task."""
     issues = refactor_issues or []
     category = "backend" if relative_path.endswith(".py") else "frontend"
     title = f"Refactor: {relative_path} ({reason})"
@@ -92,12 +92,7 @@ def create_refactor_task(
         return None, None
 
     link_task_to_issue(task_id, issue_id)
-    create_single_subtask_with_steps(
-        task_id=task_id, subtask_id="1.1", phase=category,
-        description=f"Refactor {relative_path} - simplify structure and reduce size where that improves clarity", steps=steps,
-        subtask_type="refactor",
-    )
-    logger.info("Created refactor task %s with targeted verification: %s", task_id, title)
+    logger.info("Created refactor task %s: %s", task_id, title)
     return task_id, issue_id
 
 

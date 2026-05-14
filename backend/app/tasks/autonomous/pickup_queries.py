@@ -17,6 +17,10 @@ from app.storage.task_spirit import get_task_spirit
 _PLANNING_FIELDS = frozenset({"description", "done_when", "subtasks"})
 
 
+def _is_auto_generated(task: dict[str, Any]) -> bool:
+    return "auto-generated" in (task.get("labels") or [])
+
+
 def determine_next_stage(task_id: str) -> str:
     """Determine which pipeline stage a queued task needs.
 
@@ -35,6 +39,9 @@ def determine_next_stage(task_id: str) -> str:
 
     if not spirit or not task.get("description"):
         return "triage"
+
+    if not subtasks and _is_auto_generated(task):
+        return "execution"
 
     if not subtasks:
         return "planning"

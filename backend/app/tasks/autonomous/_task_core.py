@@ -34,17 +34,6 @@ _ISSUE_LABELS: dict[str, str] = {
 
 _SIZE_ISSUES = frozenset({"oversized", "large_file", "bloat_critical", "bloat_warning"})
 
-_STRUCTURAL_CRITERIA: dict[str, str] = {
-    "has_long_functions": "Largest functions are measured and split where that reduces complexity",
-    "deep_nesting": "Deep nesting is measured and flattened where that improves clarity",
-    "too_many_functions": "Function count is measured and grouped or extracted where that improves cohesion",
-    "too_many_classes": "Class count is measured and simplified where that improves cohesion",
-    "has_large_classes": "Large classes are measured and split where that reduces responsibility",
-    "magic_strings": "Repeated magic strings are extracted when it improves readability",
-    "too_many_imports": "Imports are measured and reduced where unused or overly broad",
-}
-
-
 def _build_issue_aware_objective(
     relative_path: str,
     lines: int,
@@ -72,25 +61,12 @@ def _build_issue_aware_done_when(
     refactor_issues: list[str],
     is_frontend: bool,
 ) -> list[str]:
-    """Build done_when criteria from actual issues."""
-    criteria = ["All configured quality gates pass"]
-
-    if any(i in _SIZE_ISSUES for i in refactor_issues):
-        criteria.append(
-            "File structure is meaningfully simplified where size was the issue"
-        )
-
-    criteria.extend(
-        criterion
-        for issue_key, criterion in _STRUCTURAL_CRITERIA.items()
-        if issue_key in refactor_issues
-    )
-
-    criteria.append("No regressions - all existing tests pass")
-    if is_frontend:
-        criteria.append("No console errors in browser")
-
-    return criteria
+    """Build lean success criteria for generated refactor work."""
+    return [
+        "Existing behavior is preserved.",
+        "Relevant checks pass.",
+        "The file is simpler where the change is worthwhile.",
+    ]
 
 
 def _create_base_task(

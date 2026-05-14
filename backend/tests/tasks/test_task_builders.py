@@ -51,71 +51,31 @@ class TestBuildIssueAwareObjective:
 class TestBuildIssueAwareDoneWhen:
     """Tests for _build_issue_aware_done_when."""
 
-    def test_always_includes_quality_gates(self) -> None:
+    def test_always_includes_behavior_preservation(self) -> None:
         criteria = _build_issue_aware_done_when(400, 200, ["large_file"], False)
-        assert any("quality gates" in c.lower() for c in criteria)
+        assert any("behavior" in c.lower() and "preserved" in c.lower() for c in criteria)
 
-    def test_always_includes_no_regressions(self) -> None:
-        criteria = _build_issue_aware_done_when(400, 200, ["large_file"], False)
-        assert any("regressions" in c.lower() for c in criteria)
-
-    def test_size_issue_keeps_line_count_out_of_acceptance(self) -> None:
+    def test_uses_relevant_checks_without_line_targets(self) -> None:
         criteria = _build_issue_aware_done_when(400, 200, ["large_file"], False)
         assert not any("200" in c for c in criteria)
-        assert any("meaningfully simplified" in c.lower() for c in criteria)
+        assert any("relevant checks pass" in c.lower() for c in criteria)
 
-    def test_no_size_issue_omits_line_count_criterion(self) -> None:
-        criteria = _build_issue_aware_done_when(200, 150, ["deep_nesting"], False)
-        assert not any("reduced to" in c.lower() for c in criteria)
-
-    def test_long_functions_criterion(self) -> None:
-        criteria = _build_issue_aware_done_when(200, 150, ["has_long_functions"], False)
-        assert any("largest functions" in c.lower() for c in criteria)
-
-    def test_deep_nesting_criterion(self) -> None:
-        criteria = _build_issue_aware_done_when(200, 150, ["deep_nesting"], False)
-        assert any("deep nesting" in c.lower() for c in criteria)
-
-    def test_too_many_functions_criterion(self) -> None:
-        criteria = _build_issue_aware_done_when(200, 150, ["too_many_functions"], False)
-        assert any("function count" in c.lower() for c in criteria)
-
-    def test_too_many_classes_criterion(self) -> None:
-        criteria = _build_issue_aware_done_when(200, 150, ["too_many_classes"], False)
-        assert any("class count" in c.lower() for c in criteria)
-
-    def test_large_classes_criterion(self) -> None:
-        criteria = _build_issue_aware_done_when(200, 150, ["has_large_classes"], False)
-        assert any("large classes" in c.lower() for c in criteria)
-
-    def test_magic_strings_criterion(self) -> None:
-        criteria = _build_issue_aware_done_when(200, 150, ["magic_strings"], False)
-        assert any("magic strings" in c.lower() for c in criteria)
-
-    def test_too_many_imports_criterion(self) -> None:
-        criteria = _build_issue_aware_done_when(200, 150, ["too_many_imports"], False)
-        assert any("imports" in c.lower() and "measured" in c.lower() for c in criteria)
-
-    def test_frontend_includes_browser_check(self) -> None:
+    def test_keeps_criteria_lean_for_frontend_too(self) -> None:
         criteria = _build_issue_aware_done_when(400, 200, ["large_file"], True)
-        assert any("console errors" in c.lower() for c in criteria)
+        assert criteria == [
+            "Existing behavior is preserved.",
+            "Relevant checks pass.",
+            "The file is simpler where the change is worthwhile.",
+        ]
 
-    def test_backend_omits_browser_check(self) -> None:
-        criteria = _build_issue_aware_done_when(400, 200, ["large_file"], False)
-        assert not any("console errors" in c.lower() for c in criteria)
-
-    def test_multiple_issues_all_covered(self) -> None:
-        """Multiple issues all generate their own criteria."""
+    def test_multiple_issues_do_not_expand_into_measurement_theatre(self) -> None:
         criteria = _build_issue_aware_done_when(
             400, 200,
             ["large_file", "has_long_functions", "deep_nesting", "too_many_functions"],
             False,
         )
-        assert not any("200" in c for c in criteria)
-        assert any("meaningfully simplified" in c.lower() for c in criteria)
-        assert any("largest functions" in c.lower() for c in criteria)
-        assert any("deep nesting" in c.lower() for c in criteria)
-        assert any("function count" in c.lower() for c in criteria)
+        assert len(criteria) == 3
+        assert not any("measured" in c.lower() or "count" in c.lower() for c in criteria)
 
 
 class TestBuildRefactorDescription:
@@ -145,16 +105,14 @@ class TestBuildRefactorDescription:
 class TestCreateRefactorTask:
     """Tests for create_refactor_task wiring."""
 
-    @patch("app.tasks.autonomous.task_builders.create_single_subtask_with_steps")
     @patch("app.tasks.autonomous.task_builders.link_task_to_issue")
     @patch("app.tasks.autonomous.task_builders.create_task_with_spirit")
     @patch("app.tasks.autonomous.task_builders.create_refactor_issue")
-    def test_uses_full_relative_path_and_refactor_subtask_type(
+    def test_uses_full_relative_path_and_no_generated_subtask(
         self,
         mock_issue: MagicMock,
         mock_create_task: MagicMock,
         mock_link: MagicMock,
-        mock_create_subtask: MagicMock,
     ) -> None:
         mock_issue.return_value = 42
         mock_create_task.return_value = "task-123"
@@ -185,21 +143,17 @@ class TestCreateRefactorTask:
                 "signal_type": "refactors",
             },
         }
-        assert mock_create_subtask.call_args.kwargs["subtask_type"] == "refactor"
-        assert "reduce size where that improves clarity" in mock_create_subtask.call_args.kwargs["description"]
         assert "preserving all existing behavior" in mock_create_task.call_args.kwargs["description"]
         mock_link.assert_called_once_with("task-123", 42)
 
-    @patch("app.tasks.autonomous.task_builders.create_single_subtask_with_steps")
     @patch("app.tasks.autonomous.task_builders.link_task_to_issue")
     @patch("app.tasks.autonomous.task_builders.create_task_with_spirit")
     @patch("app.tasks.autonomous.task_builders.create_refactor_issue")
-    def test_passes_generated_steps_to_subtask_creation(
+    def test_ignores_generated_steps_for_refactor_tasks(
         self,
         mock_issue: MagicMock,
         mock_create_task: MagicMock,
         _mock_link: MagicMock,
-        mock_create_subtask: MagicMock,
     ) -> None:
         mock_issue.return_value = 42
         mock_create_task.return_value = "task-123"
@@ -225,7 +179,7 @@ class TestCreateRefactorTask:
             refactor_issues=["large_file"],
         )
 
-        assert mock_create_subtask.call_args.kwargs["steps"] == steps
+        assert mock_create_task.called
 
 
 class TestCreateSingleSubtaskWithSteps:

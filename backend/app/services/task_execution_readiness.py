@@ -50,6 +50,10 @@ def _requires_nontrivial_plan(task: dict[str, Any], complexity: str) -> bool:
     return complexity in {"STANDARD", "COMPLEX"} or task.get("task_type") in _NONTRIVIAL_TASK_TYPES
 
 
+def _is_auto_generated(task: dict[str, Any]) -> bool:
+    return "auto-generated" in (task.get("labels") or [])
+
+
 def assess_task_execution_readiness(
     task: dict[str, Any],
     spirit: dict[str, Any] | None = None,
@@ -78,7 +82,7 @@ def assess_task_execution_readiness(
         issues.append("Missing done_when success criteria")
         missing_fields.append("done_when")
 
-    if requires_nontrivial_plan and not subtasks:
+    if requires_nontrivial_plan and not subtasks and not _is_auto_generated(task):
         issues.append("Missing subtasks for non-trivial coding work")
         missing_fields.append("subtasks")
 
