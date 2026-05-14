@@ -224,6 +224,40 @@ def _build_prompt(task: dict, complexity: str, git_diff: str, task_id: str) -> s
     )
 
 
+def _run_review_completion(task_id: str, project_id: str, complexity: str, prompt: str) -> dict[str, Any]:
+    client = get_sync_client()
+    response = client.complete(
+        messages=[{"role": "user", "content": prompt}],
+        project_id=project_id,
+        agent_slug="reviewer",
+        execute_tools=False,
+    )
+    review_result = parse_review_response(response.content)
+    route_based_on_verdict(task_id, complexity, review_result)
+    return review_result
+
+
+def _handle_review_failure(
+    task_id: str,
+    project_id: str,
+    task: dict[str, Any],
+    error: Exception,
+) -> dict[str, Any]:
+    logger.warning("AI review failed", task_id=task_id, error=str(error))
+    current_status = str((task_store.get_task(task_id) or {}).get("status") or "")
+    if current_status == "completed":
+        log_task_event(
+            task_id,
+            f"AI review failed while task stayed completed: {error}",
+            source="review",
+            level="warning",
+        )
+    else:
+        task_store.update_task_status(task_id, "failed")
+        _notify_failure(project_id, task_id, task, f"AI review failed: {error}")
+    return {"task_id": task_id, "status": "error", "message": str(error)}
+
+
 def ai_review(
     task_id: str,
     project_id: str,
@@ -243,41 +277,25 @@ def ai_review(
         task_store.update_task_status(task_id, "running")
     if not _ensure_review_checkout(task_id, project_id, task):
         return {"task_id": task_id, "status": "error", "message": f"Review could not switch to {task_id}/main"}
-    git_diff = get_git_diff(task_id, project_id)
 
+    git_diff = get_git_diff(task_id, project_id)
     early = _check_diff_issues(task_id, project_id, task, git_diff)
     if early:
         return early
 
     complexity = task.get("complexity") or "STANDARD"
     prompt = _build_prompt(task, complexity, git_diff, task_id)
-
     try:
-        client = get_sync_client()
-        response = client.complete(
-            messages=[{"role": "user", "content": prompt}],
-            project_id=project_id,
-            agent_slug="reviewer",
-            execute_tools=False,
-        )
-        review_result = parse_review_response(response.content)
-        route_based_on_verdict(task_id, complexity, review_result)
-        return {"task_id": task_id, "status": "reviewed",
-                "verdict": review_result.get("verdict"), "complexity": complexity}
-    except Exception as e:
-        logger.warning("AI review failed", task_id=task_id, error=str(e))
-        current_status = str((task_store.get_task(task_id) or {}).get("status") or "")
-        if current_status == "completed":
-            log_task_event(
-                task_id,
-                f"AI review failed while task stayed completed: {e}",
-                source="review",
-                level="warning",
-            )
-        else:
-            task_store.update_task_status(task_id, "failed")
-            _notify_failure(project_id, task_id, task, f"AI review failed: {e}")
-        return {"task_id": task_id, "status": "error", "message": str(e)}
+        review_result = _run_review_completion(task_id, project_id, complexity, prompt)
+    except Exception as error:
+        return _handle_review_failure(task_id, project_id, task, error)
+
+    return {
+        "task_id": task_id,
+        "status": "reviewed",
+        "verdict": review_result.get("verdict"),
+        "complexity": complexity,
+    }
 
 
 # Backward compatibility: expose private functions for tests
