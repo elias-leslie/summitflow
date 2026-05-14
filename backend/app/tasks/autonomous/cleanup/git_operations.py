@@ -166,27 +166,3 @@ def delete_task_branch(
         )
         return False
     return True
-
-
-def revert_merge_commit(task_id: str, project_root: str) -> bool:
-    """Revert most recent merge commit."""
-    from app.storage import log_task_event
-
-    result = subprocess.run(
-        ["git", "revert", "--no-edit", "-m", "1", "HEAD"],
-        cwd=project_root,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if result.returncode != 0:
-        log_task_event(
-            task_id,
-            f"Auto-rollback FAILED: could not revert merge: {result.stderr[:200]}",
-        )
-        logger.error(
-            "Auto-rollback failed",
-            extra={"task_id": task_id, "error": result.stderr[:200]},
-        )
-        return False
-    return True

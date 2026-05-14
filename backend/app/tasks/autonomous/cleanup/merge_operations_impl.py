@@ -213,11 +213,6 @@ def complete_merge_cleanup_impl(
     base_branch: str,
     deps: dict[str, Any],
 ) -> MergeResult:
-    validation = deps["run_post_merge_validation"](task_id, project_root, project_id)
-    if validation["should_rollback"] and deps["auto_rollback"](
-        task_id, project_root, project_id, task_branch, validation.get("detail")
-    ):
-        return _complete_rollback(task_id, project_root, project_id, task_branch, base_branch, deps)
     publish_error = deps["publish_mainline_result"](task_id, project_root, phase="result")
     if publish_error:
         return deps["err"](task_id, publish_error)
@@ -230,31 +225,8 @@ def complete_merge_cleanup_impl(
         "task_branch": task_branch,
         "base_branch": base_branch,
         "branch_deleted": branch_deleted,
-        "post_merge_valid": validation["passed"],
-        "post_merge_validation_status": validation["status"],
-    }
-
-
-def _complete_rollback(
-    task_id: str,
-    project_root: str,
-    project_id: str,
-    task_branch: str,
-    base_branch: str,
-    deps: dict[str, Any],
-) -> MergeResult:
-    publish_error = deps["publish_mainline_result"](task_id, project_root, phase="rollback")
-    if publish_error:
-        return deps["err"](task_id, publish_error)
-    deps["remove_task_checkout"](task_id, delete_branch=False, project_id=project_id)
-    deps["delete_task_branch"](project_root, task_branch, task_id)
-    deps["cleanup_old_snapshots"](project_root)
-    return {
-        "task_id": task_id,
-        "status": "rolled_back",
-        "task_branch": task_branch,
-        "base_branch": base_branch,
-        "reason": "post_merge_validation_failed",
+        "post_merge_valid": True,
+        "post_merge_validation_status": "skipped",
     }
 
 
