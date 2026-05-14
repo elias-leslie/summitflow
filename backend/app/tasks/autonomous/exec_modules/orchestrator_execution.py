@@ -51,7 +51,6 @@ def handle_completion(
     wind_down_state: Any,
     *,
     handle_successful_completion: Callable[..., bool],
-    handle_partial_completion: Callable[..., bool],
     handle_failed_execution: Callable[..., Any],
 ) -> str | None:
     """Route to appropriate completion handler based on subtask results."""
@@ -59,14 +58,8 @@ def handle_completion(
         return "paused"
 
     all_passed = all(r.get("status") == "passed" for r in results)
-    any_passed = any(r.get("status") == "passed" for r in results)
     if all_passed and len(results) == len(incomplete):
         return "passed" if handle_successful_completion(task_id, project_id, project_path, results, dispatch) else "failed"
-    if any_passed:
-        if handle_partial_completion(task_id, project_id, project_path, results, dispatch):
-            return "partial"
-        handle_failed_execution(task_id, project_id, results=results)
-        return "failed"
     handle_failed_execution(task_id, project_id, results=results)
     return "failed"
 

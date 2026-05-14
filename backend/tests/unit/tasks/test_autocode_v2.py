@@ -2,8 +2,7 @@
 
 Tests cover:
 - T3: _determine_next_stage routing (pickup.py)
-- T4: Model escalation logic (retry_loop.py)
-- T5: Cross-agent fallback routing (agent_routing.py)
+- T5: Agent routing (agent_routing.py)
 - T8: Memory write points (memory_writes.py)
 - T9: Resume context builder (prompts.py)
 """
@@ -346,44 +345,12 @@ class TestQueuedAutonomousTasks:
 
 
 # =============================================================================
-# T5: Cross-agent fallback routing
+# T5: Agent routing
 # =============================================================================
 
 
-class TestCrossAgentFallback:
-    """Tests for agent routing fallback in agent_routing.py."""
-
-    def test_get_fallback_agents_backend(self) -> None:
-        """Backend subtask type → fallback agents excluding current."""
-        from app.tasks.autonomous.exec_modules.agent_routing import get_fallback_agents
-
-        result = get_fallback_agents("backend", "coder")
-        assert isinstance(result, list)
-        assert "coder" not in result
-        assert len(result) > 0
-
-    def test_get_fallback_agents_excludes_current(self) -> None:
-        """Fallback list should exclude the current agent."""
-        from app.tasks.autonomous.exec_modules.agent_routing import get_fallback_agents
-
-        result = get_fallback_agents("bug-fix", "coder")
-        assert "coder" not in result
-        # bug-fix fallbacks are ["coder", "refactor"] minus "coder"
-        assert "refactor" in result
-
-    def test_get_fallback_agents_unknown_type(self) -> None:
-        """Unknown subtask type → empty fallback list."""
-        from app.tasks.autonomous.exec_modules.agent_routing import get_fallback_agents
-
-        result = get_fallback_agents("nonexistent-type", "coder")
-        assert result == []
-
-    def test_get_fallback_agents_none_type(self) -> None:
-        """None subtask type → empty fallback list."""
-        from app.tasks.autonomous.exec_modules.agent_routing import get_fallback_agents
-
-        result = get_fallback_agents(None, "coder")
-        assert result == []
+class TestAgentRouting:
+    """Tests for direct agent routing."""
 
     def test_get_agent_for_subtask_known_types(self) -> None:
         """Known subtask types map to correct agents."""
@@ -434,142 +401,6 @@ class TestCrossAgentFallback:
 
         result = get_agent_for_subtask("unknown", task_type="unknown")
         assert result == DEFAULT_AGENT
-
-    def test_fallback_map_covers_all_subtask_types(self) -> None:
-        """Every subtask type in the agent map has a fallback entry."""
-        from app.tasks.autonomous.exec_modules.agent_routing import (
-            CROSS_AGENT_FALLBACK_MAP,
-            SUBTASK_TYPE_AGENT_MAP,
-        )
-
-        for subtask_type in SUBTASK_TYPE_AGENT_MAP:
-            assert subtask_type in CROSS_AGENT_FALLBACK_MAP, (
-                f"Missing fallback for subtask type: {subtask_type}"
-            )
-
-
-# =============================================================================
-# T4: Agent routing owns model selection
-# =============================================================================
-
-
-class TestAgentRoutedRetries:
-    """Tests for Agent Hub agent-routed retry_loop.py calls."""
-
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.execute_fix_attempt")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.determine_fix_prompt")
-    @patch(
-        "app.tasks.autonomous.exec_modules.retry_loop.handle_infrastructure_failures"
-    )
-    @patch(
-        "app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check"
-    )
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.get_checkout_health_failure")
-    def test_retry_omits_model_override_during_self_heal(
-        self,
-        mock_checkout_failure: MagicMock,
-        mock_assert_runnable: MagicMock,
-        mock_verify: MagicMock,
-        mock_infra: MagicMock,
-        mock_prompt: MagicMock,
-        mock_fix: MagicMock,
-    ) -> None:
-        """During self-heal phase, model selection stays inside Agent Hub."""
-        from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
-
-        steps = [{"step_number": 1, "description": "Test"}]
-        mock_checkout_failure.return_value = None
-        mock_assert_runnable.return_value = None
-        # First verify → fail, second → pass (heal succeeds on first try)
-        mock_verify.side_effect = [
-            (False, [{"step_number": 1, "passed": False, "reason": "err"}]),
-            (True, [{"step_number": 1, "passed": True}]),
-        ]
-        mock_infra.return_value = [
-            {"step_number": 1, "passed": False, "reason": "err"}
-        ]
-        mock_prompt.return_value = ("Fix the issue", None)
-        mock_fix.return_value = ("Fixed it", "session-2")
-
-        run_self_healing_loop(
-            task_id="task-1",
-            subtask_id="task-1-1.1",
-            subtask_short_id="1.1",
-            subtask={"subtask_id": "1.1", "description": "Test", "steps_from_table": steps},
-            steps=steps,
-            project_path="/tmp/test",
-            project_id="test-project",
-            agent_slug="coder",
-            agent_session_id="session-1",
-            initial_response_content="Initial response",
-        )
-
-        fix_call = mock_fix.call_args
-        assert fix_call is not None
-        assert "model_override" not in fix_call.kwargs
-
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.execute_fix_attempt")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.determine_fix_prompt")
-    @patch(
-        "app.tasks.autonomous.exec_modules.retry_loop.handle_infrastructure_failures"
-    )
-    @patch(
-        "app.tasks.autonomous.exec_modules.retry_loop.run_execution_quality_check"
-    )
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.assert_task_runnable")
-    @patch("app.tasks.autonomous.exec_modules.retry_loop.get_checkout_health_failure")
-    def test_retry_omits_model_override_after_threshold(
-        self,
-        mock_checkout_failure: MagicMock,
-        mock_assert_runnable: MagicMock,
-        mock_verify: MagicMock,
-        mock_infra: MagicMock,
-        mock_prompt: MagicMock,
-        mock_fix: MagicMock,
-    ) -> None:
-        """After self-heal exhausted, escalation remains agent-slug routed."""
-        from app.constants import SELF_HEAL_MAX_ATTEMPTS
-        from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
-
-        steps = [{"step_number": 1, "description": "Test"}]
-        mock_checkout_failure.return_value = None
-        mock_assert_runnable.return_value = None
-        # Always fail verification until we've exhausted self-heal + 1 supervisor attempt
-        fail_result = (
-            False,
-            [{"step_number": 1, "passed": False, "reason": "still broken"}],
-        )
-        pass_result = (True, [{"step_number": 1, "passed": True}])
-        # Fail for SELF_HEAL_MAX + 1, then pass
-        mock_verify.side_effect = [fail_result] * (SELF_HEAL_MAX_ATTEMPTS + 1) + [
-            pass_result
-        ]
-        mock_infra.return_value = [
-            {"step_number": 1, "passed": False, "reason": "still broken"}
-        ]
-        mock_prompt.return_value = ("Fix the issue", None)
-        mock_fix.return_value = ("Fixed it", "session-2")
-
-        run_self_healing_loop(
-            task_id="task-1",
-            subtask_id="task-1-1.1",
-            subtask_short_id="1.1",
-            subtask={"subtask_id": "1.1", "description": "Test", "steps_from_table": steps},
-            steps=steps,
-            project_path="/tmp/test",
-            project_id="test-project",
-            agent_slug="coder",
-            agent_session_id="session-1",
-            initial_response_content="Initial response",
-        )
-
-        calls = mock_fix.call_args_list
-        assert len(calls) >= SELF_HEAL_MAX_ATTEMPTS + 1
-
-        for call in calls:
-            assert "model_override" not in call.kwargs
-
 
 # =============================================================================
 # T8: Memory write points

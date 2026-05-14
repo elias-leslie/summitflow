@@ -7,8 +7,7 @@ Tests the FULL flows with real database state and mocked Agent Hub:
 4. Review: PR Created → AI review → auto-merge (SIMPLE) or human review
 5. Escalation: Failures → supervisor guidance → human escalation
 6. Ideation: Raw idea → agent expansion → task_spirit + enriched description
-7. Partial merge: Mixed results → follow-up task → QA review for passing work
-8. Auto-rollback: Merge + failed validation → revert → regression task
+7. Auto-rollback: Merge + failed validation → revert → regression task
 
 Each test creates real database records, mocks Agent Hub, and verifies state transitions.
 """
@@ -29,7 +28,6 @@ from app.storage.subtasks import create_subtask, get_subtasks_for_task
 from app.storage.task_spirit import create_task_spirit, get_task_spirit
 from app.tasks.autonomous.cleanup import merge_and_cleanup_task_checkpoint
 from app.tasks.autonomous.escalation import check_escalation_needed
-from app.tasks.autonomous.exec_modules.completion_handler import handle_partial_completion
 from app.tasks.autonomous.execution import start_execution
 from app.tasks.autonomous.ideation import ideate_task
 from app.tasks.autonomous.planning import create_plan
@@ -1025,146 +1023,6 @@ class TestIdeationE2E:
 
 
 @pytest.mark.e2e
-class TestPartialMergeE2E:
-    """End-to-end tests for partial merge completion flow."""
-
-    def test_partial_completion_creates_followup_task(
-        self, test_project_id: str, cleanup_tasks: list[str]
-    ) -> None:
-        """Partial completion should create follow-up task and dispatch for review."""
-        task = task_store.create_task(
-            project_id=test_project_id,
-            title="Multi-step feature",
-            description="A feature with multiple subtasks",
-            task_type="feature",
-        )
-        task_id = task["id"]
-        cleanup_tasks.append(task_id)
-        task_store.update_task_status(task_id, "running")
-
-        # Create two subtasks (one will pass, one will fail)
-        create_subtask(
-            task_id=task_id,
-            subtask_id="1.1",
-            description="Add API endpoint",
-            display_order=0,
-            phase="backend",
-            steps=[{"description": "Create endpoint"}],
-        )
-        create_subtask(
-            task_id=task_id,
-            subtask_id="1.2",
-            description="Add frontend component",
-            display_order=1,
-            phase="frontend",
-            steps=[{"description": "Create component"}],
-        )
-
-        # Simulate mixed execution results
-        results = [
-            {
-                "subtask_id": "1.1",
-                "status": "passed",
-                "self_fix_attempts": 0,
-                "supervisor_guided_attempts": 0,
-            },
-            {
-                "subtask_id": "1.2",
-                "status": "failed",
-                "error": "Component tests failing",
-                "self_fix_attempts": 3,
-                "supervisor_guided_attempts": 2,
-            },
-        ]
-
-        dispatch = MagicMock()
-        success = handle_partial_completion(
-            task_id, test_project_id, "/tmp/e2e-test", results, dispatch
-        )
-
-        assert success
-
-        # Verify original task moved to ai_reviewing
-        updated_task = task_store.get_task(task_id)
-        assert updated_task is not None
-        assert updated_task["status"] == "ai_reviewing"
-
-        # Verify verification_result has partial merge info
-        vr = updated_task.get("verification_result") or {}
-        assert vr.get("partial_merge")
-        assert vr.get("passed_count") == 1
-        assert vr.get("failed_count") == 1
-
-        # Verify dispatch was called for review
-        dispatch.assert_called_once_with("review", task_id, test_project_id)
-
-        # Verify follow-up task was created
-        with get_connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT id, title, parent_task_id, priority FROM tasks WHERE parent_task_id = %s",
-                (task_id,),
-            )
-            follow_ups = cur.fetchall()
-
-        assert len(follow_ups) == 1
-        follow_up_id, follow_up_title, parent_id, priority = follow_ups[0]
-        cleanup_tasks.append(follow_up_id)
-        assert "stuck subtasks" in follow_up_title.lower() or task_id in follow_up_title
-        assert parent_id == task_id
-        assert priority == 1  # High priority
-
-    def test_partial_completion_all_passed_returns_false(
-        self, test_project_id: str, cleanup_tasks: list[str]
-    ) -> None:
-        """When all results passed, partial completion should return False (nothing to do)."""
-        task = task_store.create_task(
-            project_id=test_project_id,
-            title="All-pass task",
-            description="Everything works",
-            task_type="task",
-        )
-        task_id = task["id"]
-        cleanup_tasks.append(task_id)
-        task_store.update_task_status(task_id, "running")
-
-        results = [
-            {"subtask_id": "1.1", "status": "passed"},
-            {"subtask_id": "1.2", "status": "passed"},
-        ]
-
-        success = handle_partial_completion(
-            task_id, test_project_id, "/tmp/e2e-test", results
-        )
-
-        assert not success
-
-    def test_partial_completion_all_failed_returns_false(
-        self, test_project_id: str, cleanup_tasks: list[str]
-    ) -> None:
-        """When all results failed, partial completion should return False."""
-        task = task_store.create_task(
-            project_id=test_project_id,
-            title="All-fail task",
-            description="Nothing works",
-            task_type="task",
-        )
-        task_id = task["id"]
-        cleanup_tasks.append(task_id)
-        task_store.update_task_status(task_id, "running")
-
-        results = [
-            {"subtask_id": "1.1", "status": "failed", "error": "timeout"},
-            {"subtask_id": "1.2", "status": "failed", "error": "crash"},
-        ]
-
-        success = handle_partial_completion(
-            task_id, test_project_id, "/tmp/e2e-test", results
-        )
-
-        assert not success
-
-
-@pytest.mark.e2e
 class TestAutoRollbackE2E:
     """End-to-end tests for merge + auto-rollback on post-merge validation failure."""
 
@@ -1423,9 +1281,6 @@ class TestIntentOnlyAcceptanceE2E:
                 return_value=True,
             ),
             patch(
-                "app.tasks.autonomous.exec_modules.completion_handler.wake_persona",
-            ),
-            patch(
                 "app.storage.agent_configs.get_require_review",
                 return_value=False,
             ),
@@ -1491,9 +1346,6 @@ class TestIntentOnlyAcceptanceE2E:
             patch(
                 "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate",
                 return_value=True,
-            ),
-            patch(
-                "app.tasks.autonomous.exec_modules.completion_handler.wake_persona",
             ),
             patch(
                 "app.storage.agent_configs.get_require_review",
@@ -1577,9 +1429,6 @@ class TestIntentOnlyAcceptanceE2E:
             patch(
                 "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate",
                 return_value=True,
-            ),
-            patch(
-                "app.tasks.autonomous.exec_modules.completion_handler.wake_persona",
             ),
             patch(
                 "app.storage.agent_configs.get_require_review",

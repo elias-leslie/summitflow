@@ -13,7 +13,6 @@ from ....storage.notifications import (
     create_task_failure_notification,
 )
 from .events import emit_log
-from .failure_summaries import summarize_subtask_failure
 
 logger = get_logger(__name__)
 
@@ -91,40 +90,6 @@ def build_successful_completion_verification(
         "total_extensions_granted": total_extensions,
     }
     return result
-
-
-def _extract_failure_summary(result: dict[str, Any]) -> str:
-    """Extract a concise failure reason from a subtask result."""
-    return summarize_subtask_failure(result)
-
-
-def build_partial_completion_verification(
-    results: list[dict[str, Any]],
-    passed: list[dict[str, Any]],
-    failed: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """Build verification result when only some subtasks pass (partial merge)."""
-    failed_details = [
-        {
-            "subtask_id": r.get("subtask_id", ""),
-            "failure_reason": _extract_failure_summary(r),
-        }
-        for r in failed
-    ]
-    failed_ids = [d["subtask_id"] for d in failed_details]
-
-    return {
-        "partial_merge": True,
-        "subtask_count": len(results),
-        "passed_count": len(passed),
-        "failed_count": len(failed),
-        "failed_subtasks": failed_ids,
-        "failed_details": failed_details,
-        "total_self_fix_attempts": sum(r.get("self_fix_attempts", 0) for r in results),
-        "total_supervisor_attempts": sum(
-            r.get("supervisor_guided_attempts", 0) for r in results
-        ),
-    }
 
 
 def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> str:

@@ -5,14 +5,14 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from app.tasks.autonomous.exec_modules.completion_status import (
-    transition_to_review_or_complete,
+    transition_to_complete,
 )
 
 MODULE = "app.tasks.autonomous.exec_modules.completion_status"
 
 
-class TestTransitionToReviewOrComplete:
-    """Tests for transition_to_review_or_complete.
+class TestTransitionToComplete:
+    """Tests for transition_to_complete.
 
     The AI-Review tier has been removed; this function now always routes through
     the deterministic complete-and-merge path regardless of project config.
@@ -28,7 +28,7 @@ class TestTransitionToReviewOrComplete:
         mock_configs.get_auto_merge_enabled.return_value = False
         mock_cleanup.return_value = {"status": "cleaned", "checkout_path": "/tmp/wt"}
 
-        result = transition_to_review_or_complete("t-1", "proj", "test")
+        result = transition_to_complete("t-1", "proj", "test")
 
         assert result == "completed"
         mock_store.update_task_status.assert_called_with("t-1", "completed")
@@ -43,7 +43,7 @@ class TestTransitionToReviewOrComplete:
         mock_configs.get_auto_merge_enabled.return_value = True
         mock_merge_cleanup.return_value = {"status": "merged"}
 
-        result = transition_to_review_or_complete("t-1", "proj", "test")
+        result = transition_to_complete("t-1", "proj", "test")
 
         assert result == "completed"
         mock_store.update_task_status.assert_called_once_with(
@@ -60,7 +60,7 @@ class TestTransitionToReviewOrComplete:
         mock_configs.get_auto_merge_enabled.return_value = True
         mock_merge_cleanup.return_value = {"status": "conflicted"}
 
-        result = transition_to_review_or_complete("t-1", "proj", "test")
+        result = transition_to_complete("t-1", "proj", "test")
 
         assert result == "failed"
 
@@ -75,7 +75,7 @@ class TestTransitionToReviewOrComplete:
         mock_cleanup.return_value = {"status": "cleaned", "checkout_path": "/tmp/wt"}
         dispatch = MagicMock()
 
-        result = transition_to_review_or_complete("t-1", "proj", "test", dispatch)
+        result = transition_to_complete("t-1", "proj", "test", dispatch)
 
         assert result == "completed"
         dispatch.assert_not_called()

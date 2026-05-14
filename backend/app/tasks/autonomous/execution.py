@@ -13,15 +13,6 @@ from collections.abc import Callable
 from typing import Any
 
 # Re-export commonly used exceptions and utilities for backward compatibility
-from .exec_modules.agent_routing import (
-    detect_progress as _detect_progress,
-)
-from .exec_modules.agent_routing import (
-    request_extension as _request_extension,
-)
-from .exec_modules.agent_routing import (
-    supervisor_circuit_breaker_triage as _supervisor_circuit_breaker_triage,
-)
 from .exec_modules.checkout import (
     check_checkout_health as _check_checkout_health,
 )
@@ -67,13 +58,10 @@ __all__ = [
     "PristineCheckError",
     "_check_checkout_health",
     "_check_main_repo_leakage",
-    "_detect_progress",
     "_execute_subtask",
     "_get_checkout_health_failure",
     "_is_infrastructure_failure",
     "_parse_error_count",
-    "_request_extension",
-    "_supervisor_circuit_breaker_triage",
     "check_pristine_codebase",
     "pristine_self_heal",
     "start_execution",

@@ -25,24 +25,3 @@ SUBTASK_TYPE_AGENT_MAP: dict[str, str] = {
     "design-review": "designer",
     "exploration": "explorer",
 }
-
-VALID_SUBTASK_TYPES: set[str] = set(SUBTASK_TYPE_AGENT_MAP.keys())
-
-# Cross-agent fallback: when primary agent fails after escalation,
-# try these alternative agents (in order)
-CROSS_AGENT_FALLBACK_MAP: dict[str, list[str]] = {
-    "backend": ["debugger", "refactor"],
-    "frontend": ["debugger", "ux-polisher"],
-    "ui-design": ["coder"],
-    "bug-fix": ["coder", "refactor"],
-    "test": ["coder"],
-    "performance": ["coder", "debugger"],
-    "refactor": ["coder"],
-    "config": ["debugger"],
-    "devops": ["coder"],
-    "database": ["debugger"],
-    "image-gen": ["coder"],
-    "game-design": ["debugger", "coder"],
-    "design-review": ["ux-polisher", "coder"],
-    "exploration": ["coder"],
-}

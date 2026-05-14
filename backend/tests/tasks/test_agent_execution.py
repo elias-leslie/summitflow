@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.tasks.autonomous.exec_modules.agent_execution import (
-    execute_agent_fix,
     execute_agent_initial,
 )
 from app.tasks.autonomous.exec_modules.agent_helpers import (
@@ -324,30 +323,4 @@ def test_execute_agent_initial_does_not_set_request_timeout() -> None:
 
     assert result is response
     assert session_id == "sess-1"
-    assert "timeout_seconds" not in call_complete_mock.call_args.kwargs
-
-
-def test_execute_agent_fix_does_not_set_request_timeout() -> None:
-    """Fix attempts should not impose a local HTTP timeout ceiling."""
-    response = SimpleNamespace(session_id="sess-2", content="done")
-
-    with (
-        patch("app.tasks.autonomous.exec_modules.agent_execution.get_sync_client", return_value=MagicMock()),
-        patch("app.tasks.autonomous.exec_modules.agent_execution.call_complete", return_value=response) as call_complete_mock,
-        patch("app.tasks.autonomous.exec_modules.agent_execution.update_session_if_changed", return_value="sess-2"),
-        patch("app.tasks.autonomous.exec_modules.agent_execution.post_fix_response", return_value="sess-2"),
-        patch("app.tasks.autonomous.exec_modules.agent_execution.emit_log"),
-    ):
-        result, session_id = execute_agent_fix(
-            task_id="task-123",
-            subtask_short_id="1.1",
-            fix_prompt="Try again",
-            agent_slug="refactor",
-            project_path="/tmp/task",
-            project_id="summitflow",
-            agent_session_id="sess-1",
-        )
-
-    assert result is response
-    assert session_id == "sess-2"
     assert "timeout_seconds" not in call_complete_mock.call_args.kwargs

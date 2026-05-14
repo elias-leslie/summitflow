@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 import httpx
@@ -21,7 +20,6 @@ logger = get_logger(__name__)
 DEFAULT_REQUEST_SOURCE = "summitflow-observability"
 HTTP_TIMEOUT = 30.0
 EMPTY_SESSION_RESULT: dict[str, Any] = {"events": [], "total": 0, "max_turn": 0}
-_TASK_ID_PATH_RE = re.compile(r"(?:^|[\\/])(task-[A-Za-z0-9]+)(?=[^A-Za-z0-9]|$)")
 
 
 def _get_client_id() -> str:
@@ -89,28 +87,10 @@ def _fetch_session_summary(session_id: str) -> dict[str, Any] | None:
         return None
 
 
-def _task_id_from_path(path: object) -> str | None:
-    if not isinstance(path, str) or not path:
-        return None
-    match = _TASK_ID_PATH_RE.search(path)
-    return match.group(1) if match else None
-
-
 def _infer_session_task_id(session: dict[str, Any]) -> str | None:
     external_id = session.get("external_id")
     if isinstance(external_id, str) and external_id.startswith("task-"):
         return external_id
-
-    current_branch = session.get("current_branch")
-    if isinstance(current_branch, str) and current_branch:
-        branch_prefix = current_branch.split("/", 1)[0]
-        if branch_prefix.startswith("task-"):
-            return branch_prefix
-
-    for key in ("working_dir", "repo_root"):
-        task_id = _task_id_from_path(session.get(key))
-        if task_id:
-            return task_id
     return None
 
 
@@ -119,13 +99,19 @@ def _fetch_task_sessions_by_external_id(
     task_id: str,
     page_size: int = 100,
 ) -> list[dict[str, Any]]:
-    """Fetch Agent Hub sessions linked to a task by explicit or lane-derived task ID.
+    """Fetch Agent Hub sessions linked to a task by explicit external_id.
 
-    This is the canonical fallback when SummitFlow has not yet persisted
-    `agent_hub_session_ids` for a task-scoped wake session.
+    Branch/path inference can attach unrelated operator sessions after a checkout
+    switches to a task branch, so only Agent Hub's explicit external_id link is
+    used here.
     """
     url = f"{AGENT_HUB_URL}/api/sessions"
-    params = {"project_id": project_id, "status": "active", "page": 1, "page_size": page_size}
+    params = {
+        "project_id": project_id,
+        "external_id": task_id,
+        "page": 1,
+        "page_size": page_size,
+    }
     try:
         with httpx.Client(timeout=HTTP_TIMEOUT) as client:
             response = client.get(url, headers=_build_headers(), params=params)

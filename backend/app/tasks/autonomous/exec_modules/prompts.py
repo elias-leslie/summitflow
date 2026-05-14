@@ -17,22 +17,17 @@ from ....storage.events import get_events_by_trace
 from ....storage.projects import get_project_root_path
 from ....storage.subtasks import get_handoff_context
 from ....storage.task_spirit import get_task_spirit
-from ...autonomous.pickup_guards import check_system_health
 from ._prompt_blocks import (
     EVENTS_FETCH_LIMIT,
-    FEEDBACK_PROMPT,
     MAX_PRIOR_ERRORS,
-    build_failures_block,
     build_steps_block,
     classify_events,
 )
 from ._prompt_fetch import PromptFetchError, TransientPromptFetchError, get_prompt_template
-from .failure_summaries import summarize_failed_steps, summarize_subtask_failure
 
 logger = get_logger(__name__)
 
 _SLUG_AUTOCODE_SUBTASK = "autocode-subtask"
-_SLUG_AUTOCODE_FIX = "autocode-fix"
 _TRANSIENT_SUBTASK_TEMPLATE = """# Task Objective
 {objective}{spirit_anti_block}{done_when_block}{scope_block}{contract_block}{handoff_block}
 
@@ -46,14 +41,6 @@ _TRANSIENT_SUBTASK_TEMPLATE = """# Task Objective
 {project_path}
 
 Preserve existing behavior. Keep the scope tight to this subtask and run the relevant verification before finishing."""
-_TRANSIENT_FIX_TEMPLATE = """The previous attempt did not satisfy verification for subtask {subtask_id}: {description}
-
-{failures_block}{supervisor_block}
-
-# Steps
-{steps_block}
-
-Revise the implementation in place. Address the failed steps directly without broadening scope, then rerun the relevant verification before finishing."""
 
 
 def _get_template_with_transient_fallback(slug: str, fallback_template: str) -> str:
@@ -68,26 +55,6 @@ def _get_template_with_transient_fallback(slug: str, fallback_template: str) -> 
         return fallback_template
     except PromptFetchError:
         raise
-
-
-def build_health_context(project_id: str) -> str:
-    """Build system health summary for agent prompt context."""
-    try:
-        health_error = check_system_health(project_id)
-        if health_error is None:
-            return ""
-        details = health_error.get("details", {})
-        failing = health_error.get("failing_services", [])
-        lines = ["## System Health Warning"]
-        for service, _status in details.items():
-            indicator = "unhealthy" if service in failing else "healthy"
-            lines.append(f"- {service}: {indicator}")
-        lines.append("")
-        lines.append("Some services are degraded. Avoid operations that depend on unhealthy services.")
-        return "\n".join(lines)
-    except Exception:
-        logger.debug("Failed to build health context", exc_info=True)
-        return ""
 
 
 def build_resume_context(task_id: str) -> str:
@@ -418,8 +385,6 @@ def build_subtask_prompt_payload(
     prompt = _append_block(prompt, "Precision Code Search", _build_precision_code_search_block(project_id, objective, subtask), snapshot_sections)
     prompt = _append_block(prompt, "Resume Context", build_resume_context(task_id), snapshot_sections)
     prompt = _append_block(prompt, "Merge Conflict Context", build_conflict_context(task_id), snapshot_sections)
-    prompt = _append_block(prompt, "System Health Warning", build_health_context(project_id), snapshot_sections, separator="\n\n")
-
     contract_summary = summarize_execution_contract(context.get("execution_contract"))
     return prompt, {
         "mode": contract_summary.get("mode", "code_only"),
@@ -438,59 +403,3 @@ def build_subtask_prompt(
     prompt, _snapshot = build_subtask_prompt_payload(task_id, subtask, project_id, project_path)
     return prompt
 
-
-def _summarize_failure(step_results: list[dict[str, Any]]) -> str:
-    """Extract a concise failure reason from step results."""
-    return summarize_failed_steps(step_results, max_items=3)
-
-
-def _format_subtask_result_line(r: dict[str, Any]) -> str:
-    """Format a single subtask result with failure context when applicable."""
-    subtask_id = r.get("subtask_id", "?")
-    status = r.get("status", "unknown")
-    total_attempts = 1 + r.get("self_fix_attempts", 0) + r.get("supervisor_guided_attempts", 0)
-    line = f"- Subtask {subtask_id}: {status} ({total_attempts} attempts)"
-
-    if status != "passed":
-        step_results = r.get("step_results", [])
-        failure_reason = _summarize_failure(step_results) if step_results else summarize_subtask_failure(r)
-        line += f"\n  Failure: {failure_reason}"
-        # Surface affected area from failed steps
-        failed_steps = [s for s in step_results if not s.get("passed")]
-        if failed_steps:
-            step_ids = [str(s.get("step_number", "?")) for s in failed_steps[:5]]
-            line += f"\n  Affected steps: {', '.join(step_ids)}"
-        line += "\n  Next: investigate failure root cause, then re-run or adjust approach"
-
-    return line
-
-
-def build_feedback_prompt(results: list[dict[str, Any]], feedback_session_id: str) -> str:
-    """Build a feedback prompt with task execution summary."""
-    parts = [_format_subtask_result_line(r) for r in results]
-    task_summary = "\n".join(parts) if parts else "No subtask results"
-    return FEEDBACK_PROMPT.format(
-        task_summary=task_summary,
-        feedback_session_id=feedback_session_id,
-    )
-
-
-def build_fix_prompt(
-    subtask: dict[str, Any],
-    failed_steps: list[dict[str, Any]],
-    previous_response: str,
-    supervisor_guidance: str | None = None,
-) -> str:
-    """Build a fix prompt with error context for self-healing."""
-    supervisor_block = f"\n## Supervisor Guidance\n{supervisor_guidance}" if supervisor_guidance else ""
-    template = _get_template_with_transient_fallback(
-        _SLUG_AUTOCODE_FIX,
-        _TRANSIENT_FIX_TEMPLATE,
-    )
-    return template.format_map({
-        "subtask_id": subtask.get("subtask_id", ""),
-        "description": subtask.get("description", ""),
-        "failures_block": build_failures_block(failed_steps),
-        "supervisor_block": supervisor_block,
-        "steps_block": build_steps_block(_get_subtask_steps(subtask)),
-    })

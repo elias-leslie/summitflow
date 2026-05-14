@@ -133,7 +133,6 @@ def route_based_on_verdict(task_id: str, complexity: str, review_result: Mapping
 
 def _handle_approved(task_id: str, complexity: str) -> None:
     from ..cleanup.checkpoint_cleanup import cleanup_task_checkpoint
-    from ..exec_modules.completion_status import wake_persona
 
     project_id = _get_project_id(task_id)
     _prepare_auto_merge_closeout(task_id, project_id)
@@ -147,12 +146,6 @@ def _handle_approved(task_id: str, complexity: str) -> None:
         else:
             reason = str(cleanup_result.get("reason") or cleanup_result.get("error") or "unknown")
             log_task_event(task_id, f"Manual cleanup review needed: {reason}")
-            wake_persona(
-                task_id,
-                project_id,
-                "cleanup_needed",
-                f"Approved task {task_id} needs cleanup review: {reason}. Branch is kept for manual merge.",
-            )
         current_status = STATUS_COMPLETED
     emit_task_transition(task_id, current_status, f"APPROVED — {label}")
     log_task_event(task_id, f"AI Review: APPROVED - {label} ({complexity})")
@@ -163,7 +156,6 @@ def _handle_approved(task_id: str, complexity: str) -> None:
 
 def _handle_needs_fix(task_id: str, review_result: Mapping[str, Any]) -> None:
     from ..cleanup.checkpoint_cleanup import cleanup_task_checkpoint
-    from ..exec_modules.completion_status import wake_persona
 
     concerns = [str(c) for c in review_result.get("concerns", [])]
     verdict = str(review_result.get("verdict", VERDICT_NEEDS_FIX))
@@ -178,12 +170,6 @@ def _handle_needs_fix(task_id: str, review_result: Mapping[str, Any]) -> None:
             if cleanup_result.get("status") != "cleaned":
                 reason = str(cleanup_result.get("reason") or cleanup_result.get("error") or "unknown")
                 log_task_event(task_id, f"Manual cleanup review needed: {reason}")
-                wake_persona(
-                    task_id,
-                    project_id,
-                    "cleanup_needed",
-                    f"Approved task {task_id} needs cleanup review: {reason}. Branch is kept for manual merge.",
-                )
         logger.info("QA no concerns", task_id=task_id, merge_status=(merge_result or {}).get("status"))
         if _task_status(task_id) == STATUS_COMPLETED:
             _send_notification(task_id, project_id, create_task_completion_notification, detail=f"QA passed with no concerns ({merge_label}).")

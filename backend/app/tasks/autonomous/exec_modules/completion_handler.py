@@ -80,29 +80,6 @@ def handle_successful_completion(
         return False
 
 
-def handle_partial_completion(
-    task_id: str,
-    project_id: str,
-    project_path: str,
-    results: list[dict[str, Any]],
-    dispatch: Callable[[str, str, str], None] | None = None,
-) -> bool:
-    """Partial completion is disabled; mixed results fail normally."""
-    passed = [r for r in results if r.get("status") == "passed"]
-    failed = [r for r in results if r.get("status") != "passed"]
-
-    if not passed or not failed:
-        return False
-
-    emit_log(
-        task_id, "info",
-        f"Partial completion: {len(passed)}/{len(results)} subtasks passed. "
-        "Partial merge disabled; task will fail normally.",
-        project_id=project_id,
-    )
-    return False
-
-
 def handle_failed_execution(
     task_id: str,
     project_id: str,

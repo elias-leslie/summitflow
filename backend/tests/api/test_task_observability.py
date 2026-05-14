@@ -14,14 +14,20 @@ from app.storage.events import create_event
 class TestTaskObservability:
     """Project scoping and event aggregation regressions."""
 
-    def test_infer_session_task_id_uses_repo_root_path(self) -> None:
+    def test_infer_session_task_id_uses_only_external_id(self) -> None:
         assert _infer_session_task_id(
             {
-                "external_id": None,
-                "current_branch": None,
+                "external_id": "task-bc3ed9c0",
                 "repo_root": "/srv/workspaces/projects/agent-hub/task-bc3ed9c0",
             }
         ) == "task-bc3ed9c0"
+        assert _infer_session_task_id(
+            {
+                "external_id": None,
+                "current_branch": "task-bc3ed9c0/main",
+                "repo_root": "/srv/workspaces/projects/agent-hub/task-bc3ed9c0",
+            }
+        ) is None
 
     def test_get_agent_events_wrong_project_returns_404(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
@@ -61,6 +67,7 @@ class TestTaskObservability:
             return_value={
                 "id": "sess-1",
                 "status": "active",
+                "external_id": task_id,
                 "effective_model": "served-model",
                 "updated_at": "2026-03-07T00:00:00Z",
                 "live_activity": {
@@ -100,6 +107,45 @@ class TestTaskObservability:
         assert body["sessions"][0]["live_activity"]["phase"] == "reading_file"
         assert body["total"] == 1
         assert body["events"][0]["id"] == "evt-1"
+
+    def test_get_agent_events_filters_stored_non_task_sessions(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        """Stored task links must still match Agent Hub external_id."""
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={"title": "Observed task", "task_type": "task"},
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        def session_summary(session_id: str) -> dict[str, Any]:
+            return {
+                "id": session_id,
+                "status": "active",
+                "external_id": task_id if session_id == "sess-task" else None,
+                "updated_at": "2026-03-07T00:00:00Z",
+                "live_activity": None,
+            }
+
+        with patch(
+            "app.api.tasks.observability.get_agent_hub_sessions",
+            return_value=["sess-task", "sess-codex-transcript"],
+        ), patch(
+            "app.api.tasks.observability._fetch_session_summary",
+            side_effect=session_summary,
+        ), patch(
+            "app.api.tasks.observability._fetch_session_events",
+            return_value={"events": [], "total": 0, "max_turn": 0},
+        ) as mock_fetch_events:
+            response = client.get(
+                f"/api/projects/{test_project_id}/tasks/{task_id}/agent-events?include_history=true"
+            )
+
+        assert response.status_code == 200
+        assert response.json()["session_ids"] == ["sess-task"]
+        mock_fetch_events.assert_called_once()
 
     def test_get_agent_events_falls_back_to_external_id_sessions_and_backfills(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
@@ -165,10 +211,10 @@ class TestTaskObservability:
         assert body["events"][0]["id"] == "evt-fallback"
         mock_add_session.assert_called_once_with(task_id, "sess-fallback")
 
-    def test_get_agent_events_falls_back_to_repo_root_linked_sessions_and_backfills(
+    def test_get_agent_events_ignores_branch_or_path_only_sessions(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
     ) -> None:
-        """Fallback should also recover task-linked sessions from checkout metadata."""
+        """Fallback must not attach unrelated operator sessions by branch/path alone."""
         response = client.post(
             f"/api/projects/{test_project_id}/tasks",
             json={"title": "Observed task", "task_type": "task"},
@@ -226,10 +272,10 @@ class TestTaskObservability:
 
         assert response.status_code == 200
         body = response.json()
-        assert body["session_ids"] == ["sess-repo-root"]
-        assert body["sessions"][0]["id"] == "sess-repo-root"
-        assert body["events"][0]["id"] == "evt-repo-root"
-        mock_add_session.assert_called_once_with(task_id, "sess-repo-root")
+        assert body["session_ids"] == []
+        assert body["sessions"] == []
+        assert body["events"] == []
+        mock_add_session.assert_not_called()
 
     def test_get_agent_events_defaults_to_current_attempt_sessions(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
@@ -269,6 +315,7 @@ class TestTaskObservability:
             side_effect=lambda sid: {
                 "id": sid,
                 "status": "active",
+                "external_id": task_id,
                 "effective_model": "served-model",
                 "updated_at": "2026-05-08T20:02:00Z",
                 "live_activity": {
@@ -304,6 +351,7 @@ class TestTaskObservability:
             side_effect=lambda sid: {
                 "id": sid,
                 "status": "active",
+                "external_id": task_id,
                 "updated_at": "2026-05-08T20:02:00Z",
                 "live_activity": None,
             },

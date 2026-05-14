@@ -4,61 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 _PROMPTS = "app.tasks.autonomous.exec_modules.prompts"
 
 
 class TestPromptTemplateFallbacks:
-    @patch(f"{_PROMPTS}.logger")
-    @patch(f"{_PROMPTS}.get_prompt_template")
-    def test_build_fix_prompt_uses_transient_fallback_template(
-        self,
-        mock_get_prompt_template: MagicMock,
-        mock_logger: MagicMock,
-    ) -> None:
-        from app.tasks.autonomous.exec_modules._prompt_fetch import TransientPromptFetchError
-        from app.tasks.autonomous.exec_modules.prompts import build_fix_prompt
-
-        mock_get_prompt_template.side_effect = TransientPromptFetchError("connection refused")
-
-        prompt = build_fix_prompt(
-            subtask={
-                "subtask_id": "1.1",
-                "description": "Refactor the activity timeline",
-                "steps_from_table": [{"step_number": 1, "description": "Preserve behavior"}],
-            },
-            failed_steps=[{"step_number": 1, "reason": "TypeScript error"}],
-            previous_response="irrelevant",
-        )
-
-        assert "Refactor the activity timeline" in prompt
-        # build_failures_block returns empty string (steps layer removed)
-        assert "subtask 1.1" in prompt
-        mock_logger.warning.assert_called_once()
-
-    @patch(f"{_PROMPTS}.get_prompt_template")
-    def test_build_fix_prompt_raises_for_non_transient_prompt_failure(
-        self,
-        mock_get_prompt_template: MagicMock,
-    ) -> None:
-        from app.tasks.autonomous.exec_modules._prompt_fetch import PromptFetchError
-        from app.tasks.autonomous.exec_modules.prompts import build_fix_prompt
-
-        mock_get_prompt_template.side_effect = PromptFetchError("prompt missing")
-
-        with pytest.raises(PromptFetchError, match="prompt missing"):
-            build_fix_prompt(
-                subtask={
-                    "subtask_id": "1.1",
-                    "description": "Refactor the activity timeline",
-                    "steps_from_table": [],
-                },
-                failed_steps=[{"step_number": 1, "reason": "TypeScript error"}],
-                previous_response="irrelevant",
-            )
-
-    @patch(f"{_PROMPTS}.build_health_context", return_value="")
     @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
     @patch(f"{_PROMPTS}.build_resume_context", return_value="")
     @patch(
@@ -85,7 +34,6 @@ class TestPromptTemplateFallbacks:
         _mock_precision: MagicMock,
         _mock_resume: MagicMock,
         _mock_conflict: MagicMock,
-        _mock_health: MagicMock,
     ) -> None:
         from app.tasks.autonomous.exec_modules._prompt_fetch import TransientPromptFetchError
         from app.tasks.autonomous.exec_modules.prompts import build_subtask_prompt
@@ -125,7 +73,6 @@ class TestPromptTemplateFallbacks:
         assert "Use the Precision Code Search block as the first code-navigation pass." in prompt
         mock_logger.warning.assert_called_once()
 
-    @patch(f"{_PROMPTS}.build_health_context", return_value="")
     @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
     @patch(f"{_PROMPTS}.build_resume_context", return_value="")
     @patch(f"{_PROMPTS}._build_precision_code_search_block", return_value="")
@@ -144,7 +91,6 @@ class TestPromptTemplateFallbacks:
         _mock_precision: MagicMock,
         _mock_resume: MagicMock,
         _mock_conflict: MagicMock,
-        _mock_health: MagicMock,
     ) -> None:
         from app.tasks.autonomous.exec_modules.prompts import build_subtask_prompt
 
@@ -187,7 +133,6 @@ class TestPromptTemplateFallbacks:
         assert "backend/app/services/tools/tool_handler.py" in prompt
         assert "task-1/main" in prompt
 
-    @patch(f"{_PROMPTS}.build_health_context", return_value="")
     @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
     @patch(f"{_PROMPTS}.build_resume_context", return_value="")
     @patch(f"{_PROMPTS}._build_precision_code_search_block", return_value="")
@@ -209,7 +154,6 @@ class TestPromptTemplateFallbacks:
         _mock_precision: MagicMock,
         _mock_resume: MagicMock,
         _mock_conflict: MagicMock,
-        _mock_health: MagicMock,
     ) -> None:
         from app.tasks.autonomous.exec_modules.prompts import build_subtask_prompt
 
@@ -252,7 +196,6 @@ class TestPromptTemplateFallbacks:
         assert "Open dashboard" in prompt
         assert "Dense card layout can regress visually" in prompt
 
-    @patch(f"{_PROMPTS}.build_health_context", return_value="")
     @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
     @patch(f"{_PROMPTS}.build_resume_context", return_value="")
     @patch(f"{_PROMPTS}._build_precision_code_search_block", return_value="")
@@ -274,7 +217,6 @@ class TestPromptTemplateFallbacks:
         _mock_precision: MagicMock,
         _mock_resume: MagicMock,
         _mock_conflict: MagicMock,
-        _mock_health: MagicMock,
     ) -> None:
         from app.tasks.autonomous.exec_modules.prompts import build_subtask_prompt
 

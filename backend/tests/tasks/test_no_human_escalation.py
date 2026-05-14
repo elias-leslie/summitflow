@@ -1,10 +1,9 @@
 """Tests for supervisor-based escalation replacing human review gates.
 
-Verifies the 4 new supervisor functions:
+Verifies the remaining supervisor functions:
 1. _supervisor_validate_plan (planning.py)
-2. _supervisor_circuit_breaker_triage (execution.py)
-3. _supervisor_resolve_escalation (review.py)
-4. _block_with_recommendation (escalation.py)
+2. _supervisor_resolve_escalation (review.py)
+3. _block_with_recommendation (escalation.py)
 """
 
 from __future__ import annotations
@@ -67,36 +66,6 @@ class TestSupervisorValidatePlan:
             ComplexityTier.COMPLEX,
             "reasoning",
         )
-
-
-class TestSupervisorCircuitBreakerTriage:
-    """Test _supervisor_circuit_breaker_triage in execution.py."""
-
-    @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
-    def test_continue_returns_true(self, mock_client: MagicMock) -> None:
-        from app.tasks.autonomous.execution import _supervisor_circuit_breaker_triage
-
-        mock_client.return_value.complete.return_value = MagicMock(
-            content="CONTINUE - the remaining subtasks are independent"
-        )
-        assert _supervisor_circuit_breaker_triage("task-1", "abc123", 2, "test-project")
-
-    @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
-    def test_block_returns_false(self, mock_client: MagicMock) -> None:
-        from app.tasks.autonomous.execution import _supervisor_circuit_breaker_triage
-
-        mock_client.return_value.complete.return_value = MagicMock(
-            content="BLOCK - same env issue will affect all remaining subtasks"
-        )
-        assert not _supervisor_circuit_breaker_triage("task-1", "abc123", 2, "test-project")
-
-    @patch("app.tasks.autonomous.exec_modules.agent_routing.get_sync_client")
-    def test_exception_defaults_to_continue(self, mock_client: MagicMock) -> None:
-        """On exception, autonomous-first policy defaults to CONTINUE."""
-        from app.tasks.autonomous.execution import _supervisor_circuit_breaker_triage
-
-        mock_client.return_value.complete.side_effect = RuntimeError("API down")
-        assert _supervisor_circuit_breaker_triage("task-1", "abc123", 2, "test-project")
 
 
 class TestSupervisorResolveEscalation:

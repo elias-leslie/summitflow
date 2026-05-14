@@ -12,7 +12,6 @@ from .checkout_setup import setup_task_checkout
 from .completion_handler import (
     handle_early_completion,
     handle_failed_execution,
-    handle_partial_completion,
     handle_successful_completion,
 )
 from .events import emit_error, emit_log, emit_progress
@@ -119,6 +118,5 @@ def _handle_completion_with_deps(
         dispatch,
         wind_down_state,
         handle_successful_completion=handle_successful_completion,
-        handle_partial_completion=handle_partial_completion,
         handle_failed_execution=handle_failed_execution,
     )

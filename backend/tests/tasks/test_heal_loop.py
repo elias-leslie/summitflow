@@ -14,7 +14,6 @@ from unittest.mock import MagicMock, patch
 # ---------------------------------------------------------------------------
 # Module path constants for patching
 # ---------------------------------------------------------------------------
-_RETRY_LOOP = "app.tasks.autonomous.exec_modules.retry_loop"
 _CHECKOUT = "app.tasks.autonomous.exec_modules.checkout"
 _SUBTASK_VALIDATION = "app.tasks.autonomous.exec_modules.subtask_validation"
 _CLEANUP = "app.tasks.autonomous.cleanup.merge_operations"
@@ -208,59 +207,6 @@ class TestCheckoutHealthCheck:
         assert "expected task-1/main" in reason
         assert "got task-other/main" in reason
         mock_log.assert_called_once()
-
-
-class TestHealLoopAbortsOnInvalidCheckout:
-    """Bug #2, Layer B: Heal loop breaks immediately on checkout destruction."""
-
-    @patch(f"{_RETRY_LOOP}.agent_configs")
-    @patch(f"{_RETRY_LOOP}.run_execution_quality_check")
-    @patch(f"{_RETRY_LOOP}.get_checkout_health_failure")
-    @patch(f"{_RETRY_LOOP}.assert_task_runnable")
-    def test_heal_loop_aborts_on_invalid_checkout(
-        self,
-        mock_assert_task_runnable: MagicMock,
-        mock_checkout_failure: MagicMock,
-        mock_verify: MagicMock,
-        mock_agent_configs: MagicMock,
-    ) -> None:
-        """Subtask fails immediately when checkout is destroyed."""
-        from app.tasks.autonomous.exec_modules.retry_loop import run_self_healing_loop
-
-        mock_agent_configs.get_max_self_fix_attempts.return_value = 0
-        mock_agent_configs.get_max_supervisor_attempts.return_value = 0
-
-        # Checkout check fails on first iteration (heal_attempt=0)
-        mock_checkout_failure.return_value = "CHECKOUT GONE: /tmp/test-checkout removed during execution"
-
-        subtask = {
-            "id": "sub-1",
-            "subtask_id": "1.1",
-            "description": "test subtask",
-        }
-
-        result = run_self_healing_loop(
-            task_id="task-1",
-            subtask_id="sub-1",
-            subtask_short_id="1.1",
-            subtask=subtask,
-            steps=[{"step_number": 1, "description": "test"}],
-            project_path="/tmp/test-checkout",
-            project_id="test-project",
-            agent_slug="coder",
-            agent_session_id="session-1",
-            initial_response_content="done",
-        )
-
-        all_passed = result[0]
-        step_results = result[1]
-        assert not all_passed
-        assert step_results[0]["reason"] == "checkout_destroyed"
-        assert "CHECKOUT GONE" in step_results[0]["output"]
-        assert "boundary=self_heal_attempt_0" in step_results[0]["output"]
-        assert "task=task-1" in step_results[0]["output"]
-        assert "subtask=1.1" in step_results[0]["output"]
-        assert "session=session-1" in step_results[0]["output"]
 
 
 class TestInitialCheckoutGuard:
@@ -601,7 +547,6 @@ class TestWorkProductDetection:
 
         assert not _has_work_product("/tmp/test-checkout")
 
-    @patch("app.tasks.autonomous.exec_modules.quality_check._run_smoke_and_targeted_tests")
     @patch("app.tasks.autonomous.exec_modules.quality_check.get_task_spirit")
     @patch("app.tasks.autonomous.exec_modules.quality_check.get_task")
     @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
@@ -610,7 +555,6 @@ class TestWorkProductDetection:
         mock_run: MagicMock,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_smoke: MagicMock,
     ) -> None:
         """Explicit workflow-only validation tasks should not fail on missing commits."""
         from app.tasks.autonomous.exec_modules.quality_check import run_execution_quality_check
@@ -629,7 +573,6 @@ class TestWorkProductDetection:
             "objective": "Run a workflow-only validation task.",
             "constraints": ["Do not require product code edits as part of the task outcome"],
         }
-        mock_smoke.return_value = True
 
         all_passed, _results = run_execution_quality_check(
             "task-1",
@@ -640,9 +583,7 @@ class TestWorkProductDetection:
         )
 
         assert all_passed
-        mock_smoke.assert_called_once()
 
-    @patch("app.tasks.autonomous.exec_modules.quality_check._run_smoke_and_targeted_tests")
     @patch("app.tasks.autonomous.exec_modules.quality_check.get_task_spirit")
     @patch("app.tasks.autonomous.exec_modules.quality_check.get_task")
     @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
@@ -651,7 +592,6 @@ class TestWorkProductDetection:
         mock_run: MagicMock,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_smoke: MagicMock,
     ) -> None:
         """Inspect-only subtasks should not loop on missing commits."""
         from app.tasks.autonomous.exec_modules.quality_check import run_execution_quality_check
@@ -667,7 +607,6 @@ class TestWorkProductDetection:
             "description": "Confirm the current behavior before deciding on a fix.",
         }
         mock_get_spirit.return_value = {}
-        mock_smoke.return_value = True
 
         all_passed, _results = run_execution_quality_check(
             "task-1",
@@ -678,9 +617,7 @@ class TestWorkProductDetection:
         )
 
         assert all_passed
-        mock_smoke.assert_called_once()
 
-    @patch("app.tasks.autonomous.exec_modules.quality_check._run_smoke_and_targeted_tests")
     @patch("app.tasks.autonomous.exec_modules.quality_check.get_task_spirit")
     @patch("app.tasks.autonomous.exec_modules.quality_check.get_task")
     @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
@@ -689,7 +626,6 @@ class TestWorkProductDetection:
         mock_run: MagicMock,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_smoke: MagicMock,
     ) -> None:
         """Feedback cleanup can resolve external state without producing commits."""
         from app.tasks.autonomous.exec_modules.quality_check import run_execution_quality_check
@@ -709,7 +645,6 @@ class TestWorkProductDetection:
                 "The underlying upkeep signal is resolved or explicitly marked obsolete with evidence"
             ],
         }
-        mock_smoke.return_value = True
 
         all_passed, _results = run_execution_quality_check(
             "task-feedback",
@@ -720,7 +655,6 @@ class TestWorkProductDetection:
         )
 
         assert all_passed
-        mock_smoke.assert_called_once()
 
     @patch("app.tasks.autonomous.exec_modules.quality_check.get_task_spirit")
     @patch("app.tasks.autonomous.exec_modules.quality_check.get_task")

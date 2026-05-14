@@ -203,25 +203,6 @@ def log_context_usage(
         )
 
 
-def check_context_reset_needed(
-    task_id: str, response: CompletionResponse, project_id: str
-) -> bool:
-    """Check if context window needs reset; create new session if so."""
-    ctx = response.context_usage
-    if not ctx or ctx.percent_used < CONTEXT_FRESHNESS_THRESHOLD:
-        return False
-    emit_log(
-        task_id, "warn",
-        f"Context window at {ctx.percent_used:.0f}% "
-        f"({ctx.used_tokens}/{ctx.limit_tokens} tokens). "
-        "Starting fresh session for next attempt.",
-        source="orchestrator", project_id=project_id,
-    )
-    new_session_id = str(uuid.uuid4())
-    add_agent_hub_session(task_id, new_session_id)
-    return True
-
-
 def log_memory_citations(
     task_id: str, response: CompletionResponse, project_id: str
 ) -> None:
@@ -367,22 +348,3 @@ def post_initial_response(
     log_context_usage(task_id, response, project_id, phase="initial")
     log_memory_citations(task_id, response, project_id)
     record_citations(task_id, subtask_short_id, response)
-
-
-def post_fix_response(
-    task_id: str,
-    subtask_short_id: str,
-    response: CompletionResponse,
-    project_id: str,
-    current_session_id: str,
-) -> str:
-    """Handle post-response logic for fix execution; returns (possibly reset) session ID."""
-    handle_progress_log(task_id, subtask_short_id, response, project_id)
-    emit_log(
-        task_id, "info", "Agent fix attempt completed",
-        source="agent", project_id=project_id,
-    )
-    if check_context_reset_needed(task_id, response, project_id):
-        return create_session(task_id)
-    log_context_usage(task_id, response, project_id, phase="check")
-    return current_session_id

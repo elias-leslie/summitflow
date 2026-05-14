@@ -24,7 +24,6 @@ from ._observability_helpers import (  # noqa: F401
     _fetch_session_summary,
     _fetch_task_sessions_by_external_id,
     _infer_session_task_id,
-    _task_id_from_path,
 )
 from ._observability_models import (
     AgentHubEvent,
@@ -55,6 +54,11 @@ def _build_session_summary(session: dict[str, Any]) -> AgentHubSessionSummary:
         updated_at=session.get("updated_at", ""),
         live_activity=AgentHubLiveActivity(**live_activity) if isinstance(live_activity, dict) else None,
     )
+
+
+def _is_task_session(session: dict[str, Any], task_id: str) -> bool:
+    """Return true only for sessions explicitly linked to this task."""
+    return session.get("external_id") == task_id
 
 
 def _collect_session_events(
@@ -128,7 +132,7 @@ def _resolve_task_sessions(
     discovered_by_id = {
         str(sid): s
         for s in discovered_sessions
-        if isinstance((sid := s.get("id")), str) and sid
+        if isinstance((sid := s.get("id")), str) and sid and _is_task_session(s, task_id)
     }
     for session_id in discovered_by_id:
         if session_id not in stored_session_ids:
@@ -138,12 +142,17 @@ def _resolve_task_sessions(
         current_attempt_seen, current_session_ids = _current_attempt_session_ids(task_id)
         if current_attempt_seen:
             session_ids = current_session_ids
+    resolved_session_ids: list[str] = []
     summaries: list[AgentHubSessionSummary] = []
     for sid in session_ids:
         payload = discovered_by_id.get(sid) or _fetch_session_summary(sid)
         if isinstance(payload, dict):
+            if not _is_task_session(payload, task_id):
+                logger.warning("Skipping non-task Agent Hub session linked to task", task_id=task_id, session_id=sid)
+                continue
             summaries.append(_build_session_summary(payload))
-    return session_ids, summaries
+        resolved_session_ids.append(sid)
+    return resolved_session_ids, summaries
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}/agent-events", response_model=AgentHubEventsResponse)
