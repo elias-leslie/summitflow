@@ -7,10 +7,6 @@ from typing import Any
 
 from ....logging_config import get_logger
 from ....services._lane_scope import normalize_scope_values
-from ....services.context_gatherer import (
-    PRECISION_CODE_SEARCH_GUIDANCE,
-    collect_precision_code_search_context,
-)
 from ....services.task_harness import estimate_prompt_tokens, summarize_execution_contract
 from ....storage import tasks as task_store
 from ....storage.events import get_events_by_trace
@@ -266,30 +262,6 @@ def _build_execution_contract_block(context: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _build_precision_code_search_block(
-    project_id: str,
-    objective: str,
-    subtask: dict[str, Any],
-) -> str:
-    steps = _get_subtask_steps(subtask)
-    queries = [
-        objective,
-        str(subtask.get("description", "")),
-        *(str(step.get("description", "")) for step in steps),
-    ]
-    result = collect_precision_code_search_context(
-        project_id,
-        queries,
-        budget_tokens=1500,
-    )
-    if not result.prompt_context:
-        return ""
-    return (
-        f"\n# Precision Code Search\n{result.prompt_context}\n\n"
-        f"{PRECISION_CODE_SEARCH_GUIDANCE}"
-    )
-
-
 def _get_subtask_steps(subtask: dict[str, Any]) -> list[dict[str, Any]]:
     steps_from_table = subtask.get("steps_from_table")
     if isinstance(steps_from_table, list) and steps_from_table:
@@ -382,7 +354,6 @@ def build_subtask_prompt_payload(
     snapshot_sections = _build_snapshot_sections(
         objective, done_when_block, scope_block, contract_block, handoff_block, subtask, project_path
     )
-    prompt = _append_block(prompt, "Precision Code Search", _build_precision_code_search_block(project_id, objective, subtask), snapshot_sections)
     prompt = _append_block(prompt, "Resume Context", build_resume_context(task_id), snapshot_sections)
     prompt = _append_block(prompt, "Merge Conflict Context", build_conflict_context(task_id), snapshot_sections)
     contract_summary = summarize_execution_contract(context.get("execution_contract"))
@@ -402,4 +373,3 @@ def build_subtask_prompt(
     """Build subtask prompt with fresh context: description + done_when + subtask + handoff."""
     prompt, _snapshot = build_subtask_prompt_payload(task_id, subtask, project_id, project_path)
     return prompt
-

@@ -10,13 +10,6 @@ _PROMPTS = "app.tasks.autonomous.exec_modules.prompts"
 class TestPromptTemplateFallbacks:
     @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
     @patch(f"{_PROMPTS}.build_resume_context", return_value="")
-    @patch(
-        f"{_PROMPTS}._build_precision_code_search_block",
-        return_value=(
-            "\n# Precision Code Search\nPrecision Code Search: symbol-first\n\n"
-            "Use the Precision Code Search block as the first code-navigation pass."
-        ),
-    )
     @patch(f"{_PROMPTS}.get_project_root_path", return_value="/srv/workspaces/projects/agent-hub")
     @patch(f"{_PROMPTS}.get_handoff_context", return_value={})
     @patch(f"{_PROMPTS}.task_store")
@@ -31,7 +24,6 @@ class TestPromptTemplateFallbacks:
         mock_task_store: MagicMock,
         _mock_project_root: MagicMock,
         _mock_handoff: MagicMock,
-        _mock_precision: MagicMock,
         _mock_resume: MagicMock,
         _mock_conflict: MagicMock,
     ) -> None:
@@ -69,13 +61,11 @@ class TestPromptTemplateFallbacks:
         assert "frontend/components/ActivityTimeline.tsx" in prompt
         assert "Extract reusable ActivityTimeline helpers" in prompt
         assert "/tmp/checkout" in prompt
-        assert "Precision Code Search: symbol-first" in prompt
-        assert "Use the Precision Code Search block as the first code-navigation pass." in prompt
+        assert "Precision Code Search" not in prompt
         mock_logger.warning.assert_called_once()
 
     @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
     @patch(f"{_PROMPTS}.build_resume_context", return_value="")
-    @patch(f"{_PROMPTS}._build_precision_code_search_block", return_value="")
     @patch(f"{_PROMPTS}.get_project_root_path", return_value="/srv/workspaces/projects/agent-hub")
     @patch(f"{_PROMPTS}.get_handoff_context", return_value={})
     @patch(f"{_PROMPTS}.task_store")
@@ -88,7 +78,6 @@ class TestPromptTemplateFallbacks:
         mock_task_store: MagicMock,
         _mock_project_root: MagicMock,
         _mock_handoff: MagicMock,
-        _mock_precision: MagicMock,
         _mock_resume: MagicMock,
         _mock_conflict: MagicMock,
     ) -> None:
@@ -135,7 +124,6 @@ class TestPromptTemplateFallbacks:
 
     @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
     @patch(f"{_PROMPTS}.build_resume_context", return_value="")
-    @patch(f"{_PROMPTS}._build_precision_code_search_block", return_value="")
     @patch(f"{_PROMPTS}.get_project_root_path", return_value="/srv/workspaces/projects/summitflow")
     @patch(f"{_PROMPTS}.get_handoff_context", return_value={})
     @patch(f"{_PROMPTS}.task_store")
@@ -151,7 +139,6 @@ class TestPromptTemplateFallbacks:
         mock_task_store: MagicMock,
         _mock_project_root: MagicMock,
         _mock_handoff: MagicMock,
-        _mock_precision: MagicMock,
         _mock_resume: MagicMock,
         _mock_conflict: MagicMock,
     ) -> None:
@@ -198,7 +185,6 @@ class TestPromptTemplateFallbacks:
 
     @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
     @patch(f"{_PROMPTS}.build_resume_context", return_value="")
-    @patch(f"{_PROMPTS}._build_precision_code_search_block", return_value="")
     @patch(f"{_PROMPTS}.get_project_root_path", return_value="/srv/workspaces/projects/test2")
     @patch(f"{_PROMPTS}.get_handoff_context", return_value={})
     @patch(f"{_PROMPTS}.task_store")
@@ -214,7 +200,6 @@ class TestPromptTemplateFallbacks:
         mock_task_store: MagicMock,
         _mock_project_root: MagicMock,
         _mock_handoff: MagicMock,
-        _mock_precision: MagicMock,
         _mock_resume: MagicMock,
         _mock_conflict: MagicMock,
     ) -> None:
