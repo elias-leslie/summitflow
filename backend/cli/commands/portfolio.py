@@ -31,6 +31,13 @@ from .._portfolio_client import (
 )
 from ..output import output_error, output_json
 
+SCHEMA_VERSION = 1
+HTTP_OK = "200"
+JSON_CONTENT_TYPE = "application/json"
+DEFAULT_SCOPE = "default"
+VALID_SCOPES = ("household", "account")
+INVALID_SCOPE_MSG = "--scope must be 'household' or 'account', got {!r}"
+
 app = typer.Typer(help="Agent-facing portfolio analytics (TLH, IPS, drift, catalysts, retirement)")
 tlh_app = typer.Typer(help="Tax-loss harvesting + wash-sale detection")
 ips_app = typer.Typer(help="Investment Policy Statement targets (allocation goals)")
@@ -97,32 +104,88 @@ def _emit(data: Any, *, human: bool, summary_text: str | None = None) -> None:
     output_json(data)
 
 
+def _get(remote: bool, path: str, *, params: dict[str, Any] | None = None) -> Any:
+    try:
+        with _client(remote)[0] as client:
+            return client.get(path, params=params)
+    except PortfolioConnectError as exc:
+        _handle_connect(exc)
+    except APIError as exc:
+        _handle_api_error(exc)
+
+
+def _post(remote: bool, path: str, *, json_body: dict[str, Any]) -> Any:
+    try:
+        with _client(remote)[0] as client:
+            return client.post(path, json_body=json_body)
+    except PortfolioConnectError as exc:
+        _handle_connect(exc)
+    except APIError as exc:
+        _handle_api_error(exc)
+
+
+def _put(remote: bool, path: str, *, json_body: dict[str, Any]) -> Any:
+    try:
+        with _client(remote)[0] as client:
+            return client.put(path, json_body=json_body)
+    except PortfolioConnectError as exc:
+        _handle_connect(exc)
+    except APIError as exc:
+        _handle_api_error(exc)
+
+
+def _success_envelope(data: Any, meta: dict[str, Any]) -> dict[str, Any]:
+    return {"ok": True, "schema_version": SCHEMA_VERSION, "data": data, "meta": meta}
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [row for row in value if isinstance(row, dict)]
+
+
+def _friendly_class_name(value: Any) -> Any:
+    return _FRIENDLY_CLASS.get(value, value)
+
+
+def _bool_param(value: bool) -> str:
+    return str(value).lower()
+
+
+def _require_scope(scope: str) -> None:
+    if scope not in VALID_SCOPES:
+        output_error(INVALID_SCOPE_MSG.format(scope))
+        raise typer.Exit(3)
+
+
+def _candidate_lines(row: dict[str, Any]) -> list[str]:
+    symbol = row.get("symbol", "?")
+    loss = float(row.get("unrealized_loss", 0) or 0)
+    loss_pct = float(row.get("unrealized_loss_pct", 0) or 0) * 100
+    account = row.get("account_id", "?")
+    lines = [f"  - {symbol}: paper loss ${loss:,.2f} ({loss_pct:+.2f}%) in account {account}"]
+    if row.get("wash_sale_blocked"):
+        reason = row.get("wash_sale_reason") or "recent buys block this sale"
+        lines.append(f"      blocked: {reason}")
+    replacement = row.get("replacement")
+    if isinstance(replacement, dict):
+        to_symbol = replacement.get("to_symbol")
+        confidence = replacement.get("confidence")
+        if to_symbol:
+            lines.append(f"      possible replacement: {to_symbol} ({confidence})")
+    return lines
+
+
 def _human_candidates(rows: list[dict[str, Any]]) -> str:
     if not rows:
         return "No tax-saving sales found."
-    lines = [
-        f"Found {len(rows)} sale(s) that could lower this year's taxes:",
-        "",
-    ]
+    lines = [f"Found {len(rows)} sale(s) that could lower this year's taxes:", ""]
     for row in rows:
-        symbol = row.get("symbol", "?")
-        loss = float(row.get("unrealized_loss", 0) or 0)
-        loss_pct = float(row.get("unrealized_loss_pct", 0) or 0) * 100
-        account = row.get("account_id", "?")
-        prefix = "  - "
-        lines.append(
-            f"{prefix}{symbol}: paper loss ${loss:,.2f} ({loss_pct:+.2f}%) "
-            f"in account {account}"
-        )
-        if row.get("wash_sale_blocked"):
-            reason = row.get("wash_sale_reason") or "recent buys block this sale"
-            lines.append(f"      blocked: {reason}")
-        replacement = row.get("replacement")
-        if isinstance(replacement, dict):
-            to_symbol = replacement.get("to_symbol")
-            confidence = replacement.get("confidence")
-            if to_symbol:
-                lines.append(f"      possible replacement: {to_symbol} ({confidence})")
+        lines.extend(_candidate_lines(row))
     return "\n".join(lines)
 
 
@@ -148,6 +211,15 @@ def _human_wash_sale(verdict: dict[str, Any]) -> str:
     return f"Selling {symbol} on {sell_date} is clear: no conflicting buys in the 61-day window."
 
 
+def _candidate_digest(rows: list[dict[str, Any]], limit: int) -> dict[str, Any]:
+    data = {
+        "count": len(rows),
+        "total_loss": round(sum(float(r.get("unrealized_loss", 0) or 0) for r in rows), 2),
+        "blocked_count": sum(1 for r in rows if r.get("wash_sale_blocked")),
+    }
+    return _success_envelope(data, {"limit": limit})
+
+
 @tlh_app.command("candidates")
 def tlh_candidates(
     limit: Annotated[int, typer.Option("--limit", min=1, max=100, help="Maximum candidates to return")] = 20,
@@ -163,47 +235,26 @@ def tlh_candidates(
     Compact JSON by default. ``--detail`` adds replacement, holding
     period, ST/LT loss split, and wash-sale annotations.
     """
-    params: dict[str, Any] = {
+    params = {
         "limit": limit,
         "min_loss": min_loss,
         "min_loss_pct": min_loss_pct,
-        "detail": str(detail).lower(),
+        "detail": _bool_param(detail),
     }
-    try:
-        with _client(remote)[0] as client:
-            rows = client.get("/api/portfolio/tlh/candidates", params=params)
-    except PortfolioConnectError as exc:
-        _handle_connect(exc)
-    except APIError as exc:
-        _handle_api_error(exc)
-
-    if not isinstance(rows, list):
-        rows = []
-
+    rows = _as_list(_get(remote, "/api/portfolio/tlh/candidates", params=params))
     if summary:
-        digest = {
-            "ok": True,
-            "schema_version": 1,
-            "data": {
-                "count": len(rows),
-                "total_loss": round(sum(float(r.get("unrealized_loss", 0) or 0) for r in rows), 2),
-                "blocked_count": sum(1 for r in rows if r.get("wash_sale_blocked")),
-            },
-            "meta": {"limit": limit},
-        }
-        _emit(digest, human=human, summary_text=(
-            f"{digest['data']['count']} candidate(s); "
-            f"total paper loss ${digest['data']['total_loss']:,.2f}; "
-            f"{digest['data']['blocked_count']} blocked by recent buys"
-        ))
+        digest = _candidate_digest(rows, limit)
+        _emit(
+            digest,
+            human=human,
+            summary_text=(
+                f"{digest['data']['count']} candidate(s); "
+                f"total paper loss ${digest['data']['total_loss']:,.2f}; "
+                f"{digest['data']['blocked_count']} blocked by recent buys"
+            ),
+        )
         return
-
-    envelope = {
-        "ok": True,
-        "schema_version": 1,
-        "data": rows,
-        "meta": {"count": len(rows), "limit": limit, "next_cursor": None},
-    }
+    envelope = _success_envelope(rows, {"count": len(rows), "limit": limit, "next_cursor": None})
     _emit(envelope, human=human, summary_text=_human_candidates(rows))
 
 
@@ -227,23 +278,8 @@ def tlh_wash_sale_check(
         raise typer.Exit(3) from None
 
     body = {"symbol": symbol, "sell_date": sell_date, "household_id": household_id}
-    try:
-        with _client(remote)[0] as client:
-            verdict = client.post("/api/portfolio/tlh/wash-sale-check", json_body=body)
-    except PortfolioConnectError as exc:
-        _handle_connect(exc)
-    except APIError as exc:
-        _handle_api_error(exc)
-
-    if not isinstance(verdict, dict):
-        verdict = {}
-
-    envelope = {
-        "ok": True,
-        "schema_version": 1,
-        "data": verdict,
-        "meta": {"symbol": symbol, "sell_date": sell_date},
-    }
+    verdict = _as_dict(_post(remote, "/api/portfolio/tlh/wash-sale-check", json_body=body))
+    envelope = _success_envelope(verdict, {"symbol": symbol, "sell_date": sell_date})
     _emit(envelope, human=human, summary_text=_human_wash_sale(verdict))
 
 
@@ -265,15 +301,8 @@ def schema(
         raise typer.Exit(3)
 
     path, method = _SCHEMA_PATHS[command]
-    try:
-        with _client(remote)[0] as client:
-            spec = client.get("/openapi.json")
-    except PortfolioConnectError as exc:
-        _handle_connect(exc)
-    except APIError as exc:
-        _handle_api_error(exc)
-
-    if not isinstance(spec, dict):
+    spec = _as_dict(_get(remote, "/openapi.json"))
+    if not spec:
         output_error("portfolio-ai /openapi.json did not return a JSON object")
         raise typer.Exit(1)
 
@@ -285,9 +314,9 @@ def schema(
 
     response = (
         operation.get("responses", {})
-        .get("200", {})
+        .get(HTTP_OK, {})
         .get("content", {})
-        .get("application/json", {})
+        .get(JSON_CONTENT_TYPE, {})
     )
     schema_obj = response.get("schema") or {}
     components = spec.get("components", {}).get("schemas", {})
@@ -330,7 +359,7 @@ def _human_drift_report(report: dict[str, Any]) -> str:
     total = float(report.get("total_value", 0) or 0)
     lines = [f"Allocation snapshot for {report.get('snapshot_date')} — total ${total:,.0f}:", ""]
     for row in rows:
-        klass = _FRIENDLY_CLASS.get(row.get("asset_class"), row.get("asset_class"))
+        klass = _friendly_class_name(row.get("asset_class"))
         actual = float(row.get("actual_pct", 0) or 0) * 100
         target = float(row.get("target_pct", 0) or 0) * 100
         drift = float(row.get("drift_pct", 0) or 0) * 100
@@ -341,7 +370,7 @@ def _human_drift_report(report: dict[str, Any]) -> str:
     missing = report.get("classes_missing_targets") or []
     if missing:
         lines.append("")
-        lines.append("Held but no goal set: " + ", ".join(_FRIENDLY_CLASS.get(c, c) for c in missing))
+        lines.append("Held but no goal set: " + ", ".join(_friendly_class_name(c) for c in missing))
     return "\n".join(lines)
 
 
@@ -358,7 +387,7 @@ def _human_rebalance_plan(plan: dict[str, Any]) -> str:
     for trade in trades:
         action = "BUY " if trade.get("action") == "buy" else "SELL"
         symbol = trade.get("symbol", "?")
-        klass = _FRIENDLY_CLASS.get(trade.get("asset_class"), trade.get("asset_class"))
+        klass = _friendly_class_name(trade.get("asset_class"))
         amount = float(trade.get("estimated_value", 0) or 0)
         account = trade.get("account_type", trade.get("account_id"))
         suffix = ""
@@ -378,7 +407,7 @@ def _human_rebalance_plan(plan: dict[str, Any]) -> str:
 @app.command("drift")
 def drift(
     scope: Annotated[str, typer.Option("--scope", help="household | account")] = "household",
-    scope_id: Annotated[str, typer.Option("--scope-id", help="Scope identifier")] = "default",
+    scope_id: Annotated[str, typer.Option("--scope-id", help="Scope identifier")] = DEFAULT_SCOPE,
     summary: Annotated[bool, typer.Option("--summary/--no-summary", help="Compact digest (default) vs full row table")] = True,
     human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
     remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
@@ -388,26 +417,10 @@ def drift(
     Default response is a single-line digest. Pass ``--no-summary`` for
     the full per-class table.
     """
-    if scope not in ("household", "account"):
-        output_error(f"--scope must be 'household' or 'account', got {scope!r}")
-        raise typer.Exit(3)
-    params: dict[str, Any] = {"scope": scope, "scope_id": scope_id, "summary": str(summary).lower()}
-    try:
-        with _client(remote)[0] as client:
-            data = client.get("/api/portfolio/ips/drift", params=params)
-    except PortfolioConnectError as exc:
-        _handle_connect(exc)
-    except APIError as exc:
-        _handle_api_error(exc)
-
-    if not isinstance(data, dict):
-        data = {}
-    envelope = {
-        "ok": True,
-        "schema_version": 1,
-        "data": data,
-        "meta": {"scope": scope, "scope_id": scope_id, "summary": summary},
-    }
+    _require_scope(scope)
+    params = {"scope": scope, "scope_id": scope_id, "summary": _bool_param(summary)}
+    data = _as_dict(_get(remote, "/api/portfolio/ips/drift", params=params))
+    envelope = _success_envelope(data, {"scope": scope, "scope_id": scope_id, "summary": summary})
     summary_text = _human_drift_summary(data) if summary else _human_drift_report(data)
     _emit(envelope, human=human, summary_text=summary_text)
 
@@ -415,7 +428,7 @@ def drift(
 @app.command("rebalance")
 def rebalance(
     scope: Annotated[str, typer.Option("--scope", help="household | account")] = "household",
-    scope_id: Annotated[str, typer.Option("--scope-id", help="Scope identifier")] = "default",
+    scope_id: Annotated[str, typer.Option("--scope-id", help="Scope identifier")] = DEFAULT_SCOPE,
     prefer_tax_advantaged: Annotated[bool, typer.Option("--prefer-tax-advantaged/--no-prefer-tax-advantaged", help="Route buys to Roth/IRA/401k first")] = True,
     prefer_ltcg: Annotated[bool, typer.Option("--prefer-ltcg/--no-prefer-ltcg", help="Prefer long-term over short-term gains on sells")] = True,
     human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
@@ -427,68 +440,37 @@ def rebalance(
     long-term losses/gains over short-term on sells, run wash-sale
     check on every taxable sell and reroute or flag conflicts.
     """
-    if scope not in ("household", "account"):
-        output_error(f"--scope must be 'household' or 'account', got {scope!r}")
-        raise typer.Exit(3)
+    _require_scope(scope)
     body = {
         "scope": scope,
         "scope_id": scope_id,
         "prefer_tax_advantaged": prefer_tax_advantaged,
         "prefer_ltcg": prefer_ltcg,
     }
-    try:
-        with _client(remote)[0] as client:
-            plan = client.post("/api/portfolio/ips/rebalance", json_body=body)
-    except PortfolioConnectError as exc:
-        _handle_connect(exc)
-    except APIError as exc:
-        _handle_api_error(exc)
-
-    if not isinstance(plan, dict):
-        plan = {}
-    envelope = {
-        "ok": True,
-        "schema_version": 1,
-        "data": plan,
-        "meta": {"scope": scope, "scope_id": scope_id},
-    }
+    plan = _as_dict(_post(remote, "/api/portfolio/ips/rebalance", json_body=body))
+    envelope = _success_envelope(plan, {"scope": scope, "scope_id": scope_id})
     _emit(envelope, human=human, summary_text=_human_rebalance_plan(plan))
 
 
 @ips_app.command("list")
 def ips_list(
     scope: Annotated[str, typer.Option("--scope", help="household | account")] = "household",
-    scope_id: Annotated[str, typer.Option("--scope-id", help="Scope identifier")] = "default",
+    scope_id: Annotated[str, typer.Option("--scope-id", help="Scope identifier")] = DEFAULT_SCOPE,
     human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
     remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
 ) -> None:
     """List allocation goals for one scope."""
-    if scope not in ("household", "account"):
-        output_error(f"--scope must be 'household' or 'account', got {scope!r}")
-        raise typer.Exit(3)
-    params: dict[str, Any] = {"scope": scope, "scope_id": scope_id}
-    try:
-        with _client(remote)[0] as client:
-            rows = client.get("/api/portfolio/ips/targets", params=params)
-    except PortfolioConnectError as exc:
-        _handle_connect(exc)
-    except APIError as exc:
-        _handle_api_error(exc)
-    if not isinstance(rows, list):
-        rows = []
-    envelope = {
-        "ok": True,
-        "schema_version": 1,
-        "data": rows,
-        "meta": {"count": len(rows), "scope": scope, "scope_id": scope_id},
-    }
+    _require_scope(scope)
+    params = {"scope": scope, "scope_id": scope_id}
+    rows = _as_list(_get(remote, "/api/portfolio/ips/targets", params=params))
+    envelope = _success_envelope(rows, {"count": len(rows), "scope": scope, "scope_id": scope_id})
     if human:
         if not rows:
             text = "No allocation goals set yet."
         else:
             lines = ["Allocation goals:"]
             for row in rows:
-                klass = _FRIENDLY_CLASS.get(row.get("asset_class"), row.get("asset_class"))
+                klass = _friendly_class_name(row.get("asset_class"))
                 target = float(row.get("target_pct", 0) or 0) * 100
                 band = float(row.get("drift_band_pct", 0) or 0) * 100
                 lines.append(f"  - {klass}: {target:.1f}% (wiggle room ±{band:.1f}%)")
@@ -505,14 +487,12 @@ def ips_set(
     band: Annotated[float, typer.Option("--band", min=0.0, max=1.0, help="Wiggle room ± (0-1)")] = 0.05,
     notes: Annotated[str | None, typer.Option("--notes", help="Optional rationale")] = None,
     scope: Annotated[str, typer.Option("--scope", help="household | account")] = "household",
-    scope_id: Annotated[str, typer.Option("--scope-id", help="Scope identifier")] = "default",
+    scope_id: Annotated[str, typer.Option("--scope-id", help="Scope identifier")] = DEFAULT_SCOPE,
     human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
     remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
 ) -> None:
     """Set or update one allocation goal (upsert)."""
-    if scope not in ("household", "account"):
-        output_error(f"--scope must be 'household' or 'account', got {scope!r}")
-        raise typer.Exit(3)
+    _require_scope(scope)
     body = {
         "scope": scope,
         "scope_id": scope_id,
@@ -521,19 +501,10 @@ def ips_set(
         "drift_band_pct": band,
         "notes": notes,
     }
-    try:
-        with _client(remote)[0] as client:
-            row = client.put("/api/portfolio/ips/targets", json_body=body)
-    except PortfolioConnectError as exc:
-        _handle_connect(exc)
-    except APIError as exc:
-        _handle_api_error(exc)
-
-    if not isinstance(row, dict):
-        row = {}
-    envelope = {"ok": True, "schema_version": 1, "data": row, "meta": {"upsert": True}}
+    row = _as_dict(_put(remote, "/api/portfolio/ips/targets", json_body=body))
+    envelope = _success_envelope(row, {"upsert": True})
     if human:
-        klass = _FRIENDLY_CLASS.get(asset_class, asset_class)
+        klass = _friendly_class_name(asset_class)
         text = f"Set {klass} goal to {target * 100:.1f}% (wiggle room ±{band * 100:.1f}%)."
         _emit(envelope, human=True, summary_text=text)
     else:
@@ -601,33 +572,19 @@ def catalysts(
     ``confirmed``, and ``source`` fields. ``--kinds`` narrows the merge
     to a subset.
     """
-    params: dict[str, Any] = {
+    params = {
         "days": days,
         "limit": limit,
-        "include_watchlist": str(include_watchlist).lower(),
-        "detail": str(detail).lower(),
+        "include_watchlist": _bool_param(include_watchlist),
+        "detail": _bool_param(detail),
     }
     if kinds:
         params["kinds"] = kinds
     if symbols:
         params["symbols"] = symbols
-    try:
-        with _client(remote)[0] as client:
-            data = client.get("/api/catalysts/upcoming", params=params)
-    except PortfolioConnectError as exc:
-        _handle_connect(exc)
-    except APIError as exc:
-        _handle_api_error(exc)
-
-    if not isinstance(data, dict):
-        data = {}
+    data = _as_dict(_get(remote, "/api/catalysts/upcoming", params=params))
     rows = data.get("catalysts") or []
-    envelope = {
-        "ok": True,
-        "schema_version": 1,
-        "data": data,
-        "meta": {"count": len(rows), "limit": limit, "days": days},
-    }
+    envelope = _success_envelope(data, {"count": len(rows), "limit": limit, "days": days})
     _emit(envelope, human=human, summary_text=_human_catalysts(rows))
 
 
@@ -702,22 +659,8 @@ def retirement_run(
         body["retirement_age"] = retirement_age
     if horizon_years is not None:
         body["horizon_years"] = horizon_years
-    try:
-        with _client(remote)[0] as client:
-            results = client.post("/api/retirement/scenarios", json_body=body)
-    except PortfolioConnectError as exc:
-        _handle_connect(exc)
-    except APIError as exc:
-        _handle_api_error(exc)
-
-    if not isinstance(results, dict):
-        results = {}
-    envelope = {
-        "ok": True,
-        "schema_version": 1,
-        "data": results,
-        "meta": {"household_id": household_id, "trials": trials},
-    }
+    results = _as_dict(_post(remote, "/api/retirement/scenarios", json_body=body))
+    envelope = _success_envelope(results, {"household_id": household_id, "trials": trials})
     _emit(envelope, human=human, summary_text=_human_retirement_show(results))
 
 
@@ -730,22 +673,8 @@ def retirement_list(
 ) -> None:
     """List recent retirement scenarios for one household."""
     params = {"household_id": household_id, "limit": limit}
-    try:
-        with _client(remote)[0] as client:
-            rows = client.get("/api/retirement/scenarios", params=params)
-    except PortfolioConnectError as exc:
-        _handle_connect(exc)
-    except APIError as exc:
-        _handle_api_error(exc)
-
-    if not isinstance(rows, list):
-        rows = []
-    envelope = {
-        "ok": True,
-        "schema_version": 1,
-        "data": rows,
-        "meta": {"count": len(rows), "limit": limit, "household_id": household_id},
-    }
+    rows = _as_list(_get(remote, "/api/retirement/scenarios", params=params))
+    envelope = _success_envelope(rows, {"count": len(rows), "limit": limit, "household_id": household_id})
     if human:
         if not rows:
             text = f"No retirement scenarios saved for household {household_id}."
@@ -765,23 +694,7 @@ def retirement_show(
     remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
 ) -> None:
     """Show one retirement scenario by id."""
-    params = {"detail": str(detail).lower()}
-    try:
-        with _client(remote)[0] as client:
-            results = client.get(
-                f"/api/retirement/scenarios/{scenario_id}", params=params
-            )
-    except PortfolioConnectError as exc:
-        _handle_connect(exc)
-    except APIError as exc:
-        _handle_api_error(exc)
-
-    if not isinstance(results, dict):
-        results = {}
-    envelope = {
-        "ok": True,
-        "schema_version": 1,
-        "data": results,
-        "meta": {"scenario_id": scenario_id, "detail": detail},
-    }
+    params = {"detail": _bool_param(detail)}
+    results = _as_dict(_get(remote, f"/api/retirement/scenarios/{scenario_id}", params=params))
+    envelope = _success_envelope(results, {"scenario_id": scenario_id, "detail": detail})
     _emit(envelope, human=human, summary_text=_human_retirement_show(results))
