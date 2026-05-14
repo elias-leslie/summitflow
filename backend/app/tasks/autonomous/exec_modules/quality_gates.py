@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
+from pathlib import Path
 
 from app.storage.agent_configs_quality import build_st_check_command
 
 from .events import emit_log
 from .quality_utils import find_check_tool
+
+_TASK_SCOPED_MODES = {"--quick", "-q", "--check", "-c", "--frontend-only", "--fe"}
 
 
 def _emit_gate_start(task_id: str, cmd: list[str], project_id: str) -> None:
@@ -53,9 +57,11 @@ def _run_gate_subprocess(
         True if subprocess exits with returncode 0, False on failure.
     """
     try:
+        env = _task_scoped_env(project_path)
         result = subprocess.run(
             cmd,
             cwd=project_path,
+            env=env,
             capture_output=True,
             text=True,
         )
@@ -73,10 +79,54 @@ def _run_gate_subprocess(
         return False
 
 
+def _task_changed_files(project_path: str) -> list[str]:
+    root = Path(project_path)
+    merge_base = subprocess.run(
+        ["git", "merge-base", "main", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if merge_base.returncode != 0 or not merge_base.stdout.strip():
+        return []
+
+    diff = subprocess.run(
+        [
+            "git",
+            "diff",
+            "--name-only",
+            "--diff-filter=ACMRTUXB",
+            merge_base.stdout.strip(),
+            "HEAD",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if diff.returncode != 0:
+        return []
+    return [line.strip() for line in diff.stdout.splitlines() if line.strip()]
+
+
+def _task_scoped_env(project_path: str) -> dict[str, str]:
+    env = os.environ.copy()
+    changed_files = _task_changed_files(project_path)
+    if changed_files:
+        env["ST_CHECK_CHANGED_FILES"] = "\n".join(changed_files)
+    return env
+
+
 def build_final_quality_gate_command(st_cmd: str, project_id: str) -> list[str]:
-    """Build the same configured check used by post-merge validation."""
+    """Build the configured check as a task-scoped pre-merge gate."""
     cmd = build_st_check_command(st_cmd, project_id)
-    return [cmd[0], "-P", project_id, *cmd[1:]]
+    scoped_cmd = [cmd[0], "-P", project_id, *cmd[1:]]
+    if not {"--changed-only", "-d"}.intersection(scoped_cmd) and any(
+        mode in scoped_cmd for mode in _TASK_SCOPED_MODES
+    ):
+        scoped_cmd.append("--changed-only")
+    return scoped_cmd
 
 
 def run_final_quality_gate(
