@@ -49,6 +49,14 @@ def _abort_merge(cwd: str | None = None) -> None:
     _run_git(["git", "merge", "--abort"], cwd=cwd, check=False)
 
 
+def _get_current_branch(cwd: str | None = None) -> str:
+    return current_branch(cwd) or ""
+
+
+def _branch_exists(branch: str, cwd: str | None = None) -> bool:
+    return _run_git(["git", "rev-parse", "--verify", branch], cwd=cwd, check=False).returncode == 0
+
+
 def _merge_failure_output(error: subprocess.CalledProcessError) -> str:
     parts = [
         str(part).strip()
@@ -160,12 +168,12 @@ def resolve_task_branch(task_id: str, project_id: str | None = None) -> str:
     """Return the concrete task branch name for a task id."""
     cwd = _get_repo_cwd(project_id)
     committed_task_branch = f"task/{task_id}"
-    if _run_git(["git", "rev-parse", "--verify", committed_task_branch], cwd=cwd, check=False).returncode == 0:
+    if _branch_exists(committed_task_branch, cwd):
         return committed_task_branch
     preferred = f"{task_id}/main"
-    if _run_git(["git", "rev-parse", "--verify", preferred], cwd=cwd, check=False).returncode == 0:
+    if _branch_exists(preferred, cwd):
         return preferred
-    if _run_git(["git", "rev-parse", "--verify", task_id], cwd=cwd, check=False).returncode == 0:
+    if _branch_exists(task_id, cwd):
         return task_id
     task_branch = next(
         (branch["branch"] for branch in get_task_branches(task_id, project_id=project_id) if branch.get("type") == "task"),
@@ -195,7 +203,7 @@ def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None =
         print(f"No subtask branch {subtask_branch} found - work done on task branch")
         return False
 
-    if (current_branch(cwd) or "") != task_branch:
+    if _get_current_branch(cwd) != task_branch:
         _checkout_branch(task_branch, cwd)
 
     try:
@@ -235,7 +243,7 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
     base_branch = normalize_base_branch(meta.base_branch if meta else "main", repo_cwd)
     task_branch = resolve_task_branch(task_id, project_id=project_id)
 
-    if (current_branch(repo_cwd) or "") != base_branch:
+    if _get_current_branch(repo_cwd) != base_branch:
         _checkout_branch(base_branch, repo_cwd)
 
     try:
