@@ -78,10 +78,7 @@ function getDefaultTab(task: Task): TaskModalTab {
 }
 
 function getVisibleTabs(task: Task): TaskModalTab[] {
-  const tabs: TaskModalTab[] = ['overview', 'activity']
-  if (hasExecutionData(task)) {
-    tabs.push('execution')
-  }
+  const tabs: TaskModalTab[] = ['overview', 'activity', 'execution']
   if (task.branch_name || task.status === 'running') {
     tabs.push('git')
   }
