@@ -325,23 +325,17 @@ function buildEditorMetadata(
   }
 }
 
-function toolbarButtonClass(active: boolean) {
-  return clsx(
-    'inline-flex h-8 items-center gap-1.5 rounded border px-2 text-xs transition-colors',
-    active
-      ? 'border-phosphor-500/50 bg-phosphor-500/12 text-phosphor-200'
-      : 'border-slate-700 bg-slate-950/70 text-slate-400 hover:border-slate-600 hover:text-slate-200',
-  )
-}
-
-function compareButtonClass(active: boolean) {
-  return clsx(
-    'h-8 rounded border px-2 text-xs capitalize transition-colors',
-    active
-      ? 'border-slate-500 bg-slate-800 text-slate-100'
-      : 'border-slate-800 bg-slate-950/70 text-slate-500 hover:text-slate-300',
-  )
-}
+const TOOLBAR_BUTTON_BASE =
+  'inline-flex h-8 items-center gap-1.5 rounded border px-2 text-xs transition-colors'
+const TOOLBAR_BUTTON_ACTIVE =
+  'border-phosphor-500/50 bg-phosphor-500/12 text-phosphor-200'
+const TOOLBAR_BUTTON_IDLE =
+  'border-slate-700 bg-slate-950/70 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+const COMPARE_BUTTON_BASE =
+  'h-8 rounded border px-2 text-xs capitalize transition-colors'
+const COMPARE_BUTTON_ACTIVE = 'border-slate-500 bg-slate-800 text-slate-100'
+const COMPARE_BUTTON_IDLE =
+  'border-slate-800 bg-slate-950/70 text-slate-500 hover:text-slate-300'
 
 function EditorToolbar({
   mode,
@@ -361,7 +355,10 @@ function EditorToolbar({
           key={value}
           type="button"
           onClick={() => onModeChange(value)}
-          className={toolbarButtonClass(mode === value)}
+          className={clsx(
+            TOOLBAR_BUTTON_BASE,
+            mode === value ? TOOLBAR_BUTTON_ACTIVE : TOOLBAR_BUTTON_IDLE,
+          )}
         >
           <Icon className="h-3.5 w-3.5" />
           {label}
@@ -375,7 +372,10 @@ function EditorToolbar({
           key={item}
           type="button"
           onClick={() => onCompareModeChange(item)}
-          className={compareButtonClass(compareMode === item)}
+          className={clsx(
+            COMPARE_BUTTON_BASE,
+            compareMode === item ? COMPARE_BUTTON_ACTIVE : COMPARE_BUTTON_IDLE,
+          )}
         >
           {item}
         </button>
@@ -863,33 +863,45 @@ export function MockupSurfaceEditor({
     },
   })
 
-  const updateSelectedText = (value: string) => {
-    const element = getSelectedElement()
-    if (!element) return
-    element.textContent = value
-    element.dataset.sfMockNoteText = element.classList.contains('sf-mock-note')
-      ? value
-      : (element.dataset.sfMockNoteText ?? '')
-    if (element.dataset.sfMockNoteId) {
-      setAnnotations((current) =>
-        current.map((item) =>
-          item.id === element.dataset.sfMockNoteId
-            ? { ...item, note: value }
-            : item,
-        ),
+  const updateSelectedText = useCallback(
+    (value: string) => {
+      const element = getSelectedElement()
+      if (!element) return
+      element.textContent = value
+      element.dataset.sfMockNoteText = element.classList.contains(
+        'sf-mock-note',
       )
-    }
-    setSelected((current) => (current ? { ...current, text: value } : current))
-    setDirty(true)
-  }
+        ? value
+        : (element.dataset.sfMockNoteText ?? '')
+      if (element.dataset.sfMockNoteId) {
+        setAnnotations((current) =>
+          current.map((item) =>
+            item.id === element.dataset.sfMockNoteId
+              ? { ...item, note: value }
+              : item,
+          ),
+        )
+      }
+      setSelected((current) =>
+        current ? { ...current, text: value } : current,
+      )
+      setDirty(true)
+    },
+    [getSelectedElement],
+  )
 
-  const updateStyle = (key: EditableStyleKey, value: string) => {
-    const element = getSelectedElement()
-    if (!element) return
-    element.style[key] = value
-    setSelected((current) => (current ? { ...current, [key]: value } : current))
-    setDirty(true)
-  }
+  const updateStyle = useCallback(
+    (key: EditableStyleKey, value: string) => {
+      const element = getSelectedElement()
+      if (!element) return
+      element.style[key] = value
+      setSelected((current) =>
+        current ? { ...current, [key]: value } : current,
+      )
+      setDirty(true)
+    },
+    [getSelectedElement],
+  )
 
   const removeSelected = () => {
     const elements = getSelectedElements()
