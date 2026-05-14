@@ -14,6 +14,7 @@ def build_agent_payload(
     primary_model: str | None,
     escalation_model: str | None,
     temperature: float | None,
+    timeout_seconds: float | None,
     thinking_level: str | None,
     active: bool | None,
     coding_agent: bool | None,
@@ -27,7 +28,7 @@ def build_agent_payload(
     for key, val in [
         ("name", name), ("description", description), ("primary_model_id", primary_model),
         ("escalation_model_id", escalation_model),
-        ("temperature", temperature), ("thinking_level", thinking_level),
+        ("temperature", temperature), ("timeout_seconds", timeout_seconds), ("thinking_level", thinking_level),
         ("is_active", active), ("is_coding_agent", coding_agent),
         ("fallback_models", fallback_model), ("change_reason", change_reason),
     ]:

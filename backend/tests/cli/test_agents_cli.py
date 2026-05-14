@@ -430,6 +430,8 @@ def test_create_agent_posts_full_payload(tmp_path: Path) -> None:
                 "served-code-model",
                 "--temperature",
                 "0.1",
+                "--timeout-seconds",
+                "300",
                 "--thinking-level",
                 "high",
                 "--verbosity-level",
@@ -450,6 +452,7 @@ def test_create_agent_posts_full_payload(tmp_path: Path) -> None:
         "system_prompt": "You are purpose built.",
         "primary_model_id": "served-scout-model",
         "temperature": 0.1,
+        "timeout_seconds": 300.0,
         "is_active": True,
         "is_coding_agent": False,
         "thinking_level": "high",
@@ -482,6 +485,8 @@ def test_update_agent_model_flags_update_assignment_and_routing_mode_only() -> N
                 "claude-opus-4-7",
                 "--escalation-model",
                 "claude-opus-4-7",
+                "--timeout-seconds",
+                "300",
                 "--routing-mode",
                 "manual_locked",
                 "--change-reason",
@@ -494,6 +499,7 @@ def test_update_agent_model_flags_update_assignment_and_routing_mode_only() -> N
     assert mock_agents_api.call_args_list[0].kwargs["json"] == {
         "primary_model_id": "codex/gpt-5.5",
         "escalation_model_id": "claude-opus-4-7",
+        "timeout_seconds": 300.0,
         "fallback_models": ["claude-opus-4-7"],
         "change_reason": "critical verification route",
     }

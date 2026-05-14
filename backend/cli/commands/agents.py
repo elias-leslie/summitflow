@@ -196,6 +196,7 @@ def create_agent(
     system_prompt_file: Annotated[Path, typer.Option("--system-prompt-file", help="System prompt file.")],
     description: Annotated[str | None, typer.Option("--description")] = None,
     temperature: Annotated[float, typer.Option("--temperature", min=0.0, max=2.0)] = 0.1,
+    timeout_seconds: Annotated[float | None, typer.Option("--timeout-seconds", min=1.0)] = None,
     thinking_level: Annotated[str | None, typer.Option("--thinking-level")] = None,
     verbosity_level: Annotated[str | None, typer.Option("--verbosity-level")] = None,
     active: Annotated[bool, typer.Option("--active/--inactive")] = True,
@@ -220,6 +221,7 @@ def create_agent(
         ("verbosity_level", verbosity_level),
         ("fallback_models", fallback_model),
         ("escalation_model_id", escalation_model),
+        ("timeout_seconds", timeout_seconds),
     ]:
         if val is not None:
             payload[key] = val
@@ -275,6 +277,7 @@ def update_agent(
     escalation_model: Annotated[str | None, typer.Option("--escalation-model")] = None,
     routing_mode: Annotated[str | None, typer.Option("--routing-mode")] = None,
     temperature: Annotated[float | None, typer.Option("--temperature", min=0.0, max=2.0)] = None,
+    timeout_seconds: Annotated[float | None, typer.Option("--timeout-seconds", min=1.0)] = None,
     thinking_level: Annotated[str | None, typer.Option("--thinking-level")] = None,
     active: Annotated[bool | None, typer.Option("--active/--inactive")] = None,
     coding_agent: Annotated[bool | None, typer.Option("--coding-agent/--non-coding-agent")] = None,
@@ -305,7 +308,7 @@ def update_agent(
         raise typer.Exit(1)
     effective_fallback_model = [] if clear_fallback_models else fallback_model
     payload = build_agent_payload(
-        name=name, description=description, primary_model=primary_model, temperature=temperature,
+        name=name, description=description, primary_model=primary_model, temperature=temperature, timeout_seconds=timeout_seconds,
         escalation_model=escalation_model, thinking_level=thinking_level, active=active, coding_agent=coding_agent,
         fallback_model=effective_fallback_model, change_reason=change_reason, system_prompt_file=system_prompt_file,
         load_text_file=_load_text_file,
