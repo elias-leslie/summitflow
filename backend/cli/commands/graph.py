@@ -131,7 +131,6 @@ def _status_for_project_root(
         return status
     if not auto_refresh or not graphify_code_refresh_needed(status):
         return status
-
     timer = _start_delayed_status_timer(f"st graph: refreshing Graphify code graph before {action}.")
     try:
         refresh_graph(root)
@@ -143,7 +142,6 @@ def _status_for_project_root(
         return status
     finally:
         timer.cancel()
-
     _emit_status(f"st graph: refreshed Graphify code graph before {action}.")
     return graphify_status(project_id, root)
 
@@ -153,7 +151,6 @@ def _fresh_root_for_project(project_id: str, *, action: str) -> Path:
     status = graphify_status(project_id, root)
     if not graphify_code_refresh_needed(status):
         return root
-
     timer = _start_delayed_status_timer(f"st graph: refreshing Graphify code graph before {action}.")
     try:
         refresh_graph(root)
@@ -165,7 +162,6 @@ def _fresh_root_for_project(project_id: str, *, action: str) -> Path:
         return root
     finally:
         timer.cancel()
-
     _emit_status(f"st graph: refreshed Graphify code graph before {action}.")
     return root
 
@@ -325,10 +321,7 @@ def _semantic_batches(root: Path, sources: list[tuple[str, Path]]) -> list[list[
         source_type, path = item
         text, _ = _semantic_source_text(root, source_type, path)
         size = len(text)
-        if current and (
-            len(current) >= _SEMANTIC_BATCH_MAX_FILES
-            or current_chars + size > _SEMANTIC_BATCH_MAX_CHARS
-        ):
+        if current and (len(current) >= _SEMANTIC_BATCH_MAX_FILES or current_chars + size > _SEMANTIC_BATCH_MAX_CHARS):
             batches.append(current)
             current = []
             current_chars = 0
@@ -356,7 +349,7 @@ def _semantic_batch_prompt(root: Path, batch: list[tuple[str, Path]]) -> tuple[s
         "Schema:\n"
         '{"nodes":[{"id":"source_entity","label":"Human Name","file_type":"document|paper|image|concept",'
         '"source_file":"relative/path","source_location":null}],'
-        '"edges":[{"source":"node_id","target":"node_id","relation":"references|cites|conceptually_related_to|shares_data_with|semantically_similar_to",'
+        '{"edges":[{"source":"node_id","target":"node_id","relation":"references|cites|conceptually_related_to|shares_data_with|semantically_similar_to",'
         '"confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],'
         '"hyperedges":[]}\n\n'
         "Rules:\n"
@@ -410,6 +403,50 @@ def _dedupe_node_id(node_id: str, used: set[str]) -> str:
     return candidate
 
 
+def _sanitize_semantic_node(root: Path, batch: list[tuple[str, Path]], raw_node: dict[str, Any], used: set[str], allowed_sources: dict[str, str], id_map: dict[str, str]) -> dict[str, Any] | None:
+    source_file = str(raw_node.get("source_file") or "")
+    if source_file not in allowed_sources:
+        return None
+    label = str(raw_node.get("label") or raw_node.get("id") or Path(source_file).stem)
+    original_id = str(raw_node.get("id") or f"{Path(source_file).stem}_{label}")
+    node_id = _dedupe_node_id(original_id, used)
+    id_map[_safe_node_id(original_id)] = node_id
+    file_type = str(raw_node.get("file_type") or allowed_sources[source_file])
+    if file_type in _CODE_ONLY_NODE_TYPES:
+        file_type = allowed_sources[source_file]
+    return {
+        **raw_node,
+        "id": node_id,
+        "label": label[:160],
+        "file_type": file_type,
+        "source_file": source_file,
+        "source_location": raw_node.get("source_location"),
+    }
+
+
+def _sanitize_semantic_edge(raw_edge: dict[str, Any], allowed_sources: dict[str, str], id_map: dict[str, str], valid_ids: set[str]) -> dict[str, Any] | None:
+    source = id_map.get(_safe_node_id(str(raw_edge.get("source") or "")), str(raw_edge.get("source") or ""))
+    target = id_map.get(_safe_node_id(str(raw_edge.get("target") or "")), str(raw_edge.get("target") or ""))
+    if source not in valid_ids or target not in valid_ids or source == target:
+        return None
+    source_file = str(raw_edge.get("source_file") or "")
+    if source_file not in allowed_sources:
+        source_file = next(iter(allowed_sources))
+    return {
+        **raw_edge,
+        "source": source,
+        "target": target,
+        "_src": source,
+        "_tgt": target,
+        "relation": str(raw_edge.get("relation") or "conceptually_related_to"),
+        "confidence": str(raw_edge.get("confidence") or "INFERRED"),
+        "confidence_score": float(raw_edge.get("confidence_score") or 0.8),
+        "source_file": source_file,
+        "source_location": raw_edge.get("source_location"),
+        "weight": float(raw_edge.get("weight") or 1.0),
+    }
+
+
 def _sanitize_semantic_fragment(root: Path, batch: list[tuple[str, Path]], fragment: dict[str, Any], used: set[str]) -> dict[str, list[dict[str, Any]]]:
     allowed_sources = {_rel_source(root, path): source_type for source_type, path in batch}
     nodes: list[dict[str, Any]] = []
@@ -417,49 +454,17 @@ def _sanitize_semantic_fragment(root: Path, batch: list[tuple[str, Path]], fragm
     for raw_node in fragment.get("nodes", []):
         if not isinstance(raw_node, dict):
             continue
-        source_file = str(raw_node.get("source_file") or "")
-        if source_file not in allowed_sources:
-            continue
-        label = str(raw_node.get("label") or raw_node.get("id") or Path(source_file).stem)
-        original_id = str(raw_node.get("id") or f"{Path(source_file).stem}_{label}")
-        node_id = _dedupe_node_id(original_id, used)
-        id_map[_safe_node_id(original_id)] = node_id
-        file_type = str(raw_node.get("file_type") or allowed_sources[source_file])
-        if file_type in _CODE_ONLY_NODE_TYPES:
-            file_type = allowed_sources[source_file]
-        nodes.append({
-            **raw_node,
-            "id": node_id,
-            "label": label[:160],
-            "file_type": file_type,
-            "source_file": source_file,
-            "source_location": raw_node.get("source_location"),
-        })
+        node = _sanitize_semantic_node(root, batch, raw_node, used, allowed_sources, id_map)
+        if node is not None:
+            nodes.append(node)
     valid_ids = set(used)
     edges: list[dict[str, Any]] = []
     for raw_edge in fragment.get("edges", []):
         if not isinstance(raw_edge, dict):
             continue
-        source = id_map.get(_safe_node_id(str(raw_edge.get("source") or "")), str(raw_edge.get("source") or ""))
-        target = id_map.get(_safe_node_id(str(raw_edge.get("target") or "")), str(raw_edge.get("target") or ""))
-        if source not in valid_ids or target not in valid_ids or source == target:
-            continue
-        source_file = str(raw_edge.get("source_file") or "")
-        if source_file not in allowed_sources:
-            source_file = next(iter(allowed_sources))
-        edges.append({
-            **raw_edge,
-            "source": source,
-            "target": target,
-            "_src": source,
-            "_tgt": target,
-            "relation": str(raw_edge.get("relation") or "conceptually_related_to"),
-            "confidence": str(raw_edge.get("confidence") or "INFERRED"),
-            "confidence_score": float(raw_edge.get("confidence_score") or 0.8),
-            "source_file": source_file,
-            "source_location": raw_edge.get("source_location"),
-            "weight": float(raw_edge.get("weight") or 1.0),
-        })
+        edge = _sanitize_semantic_edge(raw_edge, allowed_sources, id_map, valid_ids)
+        if edge is not None:
+            edges.append(edge)
     return {"nodes": nodes, "edges": edges, "hyperedges": []}
 
 
@@ -476,12 +481,10 @@ def _merge_semantic_fragments(root: Path, fragments: list[dict[str, list[dict[st
         and str(node.get("file_type") or "") not in _CODE_ONLY_NODE_TYPES
         and str(node.get("source_file") or "") in semantic_rel_sources
     }
-    nodes = [
-        node for node in old_nodes
-        if not (isinstance(node, dict) and str(node.get("id")) in removed_ids)
-    ]
+    nodes = [node for node in old_nodes if not (isinstance(node, dict) and str(node.get("id")) in removed_ids)]
     links = [
-        edge for edge in old_links
+        edge
+        for edge in old_links
         if isinstance(edge, dict)
         and str(edge.get("source") or edge.get("_src") or "") not in removed_ids
         and str(edge.get("target") or edge.get("_tgt") or "") not in removed_ids
@@ -495,6 +498,58 @@ def _merge_semantic_fragments(root: Path, fragments: list[dict[str, list[dict[st
     if "edges" in data:
         data.pop("edges", None)
     graph_path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _semantic_refresh_batch_result(
+    project_id: str,
+    root: Path,
+    *,
+    agent: str,
+    model: str | None,
+    timeout: int,
+    batch_index: int,
+    batch_count: int,
+    batch: list[tuple[str, Path]],
+    st_bin: str,
+    used_ids: set[str],
+) -> tuple[dict[str, list[dict[str, Any]]], str, list[Path]]:
+    prompt, images = _semantic_batch_prompt(root, batch)
+    prompt_path = write_details(root, f"graphify-semantic-batch-{batch_index:03d}-prompt", prompt)
+    command = [
+        st_bin,
+        "complete",
+        "--agent",
+        agent,
+        "--project",
+        project_id,
+        "--roles",
+        "agent_system_prompt",
+        "--file",
+        str(prompt_path),
+        "--timeout",
+        str(timeout),
+        "--skip-cache",
+    ]
+    if model:
+        command[4:4] = ["-M", model]
+    for image in images:
+        command.extend(["--image", str(image)])
+    output = ""
+    for attempt in range(1, 4):
+        result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=timeout + 30, check=False)
+        output = "\n".join(part for part in ((result.stdout or "").strip(), (result.stderr or "").strip()) if part)
+        if result.returncode == 0 and not output.startswith("Error:"):
+            break
+        if attempt == 3 or "Internal server error" not in output:
+            raise RuntimeError(output[-4000:] or f"batch {batch_index} exited {result.returncode}")
+        time.sleep(2 * attempt)
+    fragment = _parse_semantic_fragment(output)
+    sanitized = _sanitize_semantic_fragment(root, batch, fragment, used_ids)
+    return sanitized, output, images
+
+
+def _semantic_refresh_summary_line(batch_index: int, batch_count: int, batch: list[tuple[str, Path]], sanitized: dict[str, list[dict[str, Any]]]) -> str:
+    return f"batch={batch_index}/{batch_count} files={len(batch)} nodes={len(sanitized['nodes'])} edges={len(sanitized['edges'])}"
 
 
 def _run_semantic_refresh_batches(
@@ -524,42 +579,20 @@ def _run_semantic_refresh_batches(
     details_lines = [f"semantic_sources={len(sources)} batches={len(batches)} agent={agent} model={model or 'agent-default'}"]
     try:
         for index, batch in enumerate(batches, start=1):
-            prompt, images = _semantic_batch_prompt(root, batch)
-            prompt_path = write_details(root, f"graphify-semantic-batch-{index:03d}-prompt", prompt)
-            command = [
-                st_bin,
-                "complete",
-                "--agent",
-                agent,
-                "--project",
+            sanitized, _, _ = _semantic_refresh_batch_result(
                 project_id,
-                "--roles",
-                "agent_system_prompt",
-                "--file",
-                str(prompt_path),
-                "--timeout",
-                str(timeout),
-                "--skip-cache",
-            ]
-            if model:
-                command[4:4] = ["-M", model]
-            for image in images:
-                command.extend(["--image", str(image)])
-            output = ""
-            for attempt in range(1, 4):
-                result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=timeout + 30, check=False)
-                output = "\n".join(part for part in ((result.stdout or "").strip(), (result.stderr or "").strip()) if part)
-                if result.returncode == 0 and not output.startswith("Error:"):
-                    break
-                if attempt == 3 or "Internal server error" not in output:
-                    raise RuntimeError(output[-4000:] or f"batch {index} exited {result.returncode}")
-                time.sleep(2 * attempt)
-            fragment = _parse_semantic_fragment(output)
-            sanitized = _sanitize_semantic_fragment(root, batch, fragment, used_ids)
-            fragments.append(sanitized)
-            details_lines.append(
-                f"batch={index}/{len(batches)} files={len(batch)} nodes={len(sanitized['nodes'])} edges={len(sanitized['edges'])}"
+                root,
+                agent=agent,
+                model=model,
+                timeout=timeout,
+                batch_index=index,
+                batch_count=len(batches),
+                batch=batch,
+                st_bin=st_bin,
+                used_ids=used_ids,
             )
+            fragments.append(sanitized)
+            details_lines.append(_semantic_refresh_summary_line(index, len(batches), batch, sanitized))
         _merge_semantic_fragments(root, fragments, sources)
         refresh_result = run_graphify(root, ["cluster-only", str(root)], timeout=timeout)
         details_lines.append(refresh_result.output)
@@ -621,14 +654,7 @@ def _run_semantic_refresh_agent(
         command[5:5] = ["-M", model]
     start = time.perf_counter()
     try:
-        result = subprocess.run(
-            command,
-            cwd=root,
-            text=True,
-            capture_output=True,
-            timeout=timeout + 30,
-            check=False,
-        )
+        result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=timeout + 30, check=False)
         output = "\n".join(part for part in ((result.stdout or "").strip(), (result.stderr or "").strip()) if part)
         exit_code = result.returncode
         if output.startswith("Error:"):
@@ -642,9 +668,7 @@ def _run_semantic_refresh_agent(
     semantic_source_count = int(refreshed_status.get("semantic_source_count", 0) or 0)
     semantic_node_count = int(refreshed_status.get("semantic_node_count", 0) or 0)
     diagnostics = [str(item) for item in refreshed_status.get("diagnostics", [])]
-    if semantic_source_count and (
-        semantic_node_count == 0 or "semantic_sources_not_extracted" in diagnostics
-    ):
+    if semantic_source_count and (semantic_node_count == 0 or "semantic_sources_not_extracted" in diagnostics):
         exit_code = exit_code or 1
     print(
         f"GRAPH_SEMANTIC_REFRESH:{'OK' if exit_code == 0 else 'FAIL'}:{exit_code}|"
@@ -694,9 +718,7 @@ def doctor(
     """Report Graphify issues that affect agent usefulness."""
     if project:
         project_id = _project_id(project)
-        statuses = [
-            _status_for_project(project_id, auto_refresh=refresh, action="doctor", create_missing=True)
-        ]
+        statuses = [_status_for_project(project_id, auto_refresh=refresh, action="doctor", create_missing=True)]
     else:
         projects = _all_projects()
         statuses = [
@@ -713,11 +735,7 @@ def doctor(
     issues = [
         {
             "project_id": item["project_id"],
-            "diagnostics": [
-                diagnostic
-                for diagnostic in item["diagnostics"]
-                if diagnostic in _DOCTOR_BLOCKING_DIAGNOSTICS
-            ],
+            "diagnostics": [diagnostic for diagnostic in item["diagnostics"] if diagnostic in _DOCTOR_BLOCKING_DIAGNOSTICS],
             "changed_files_since_graph": item["changed_files_since_graph"],
         }
         for item in statuses
@@ -726,11 +744,7 @@ def doctor(
     warnings = [
         {
             "project_id": item["project_id"],
-            "diagnostics": [
-                diagnostic
-                for diagnostic in item["diagnostics"]
-                if diagnostic not in _DOCTOR_BLOCKING_DIAGNOSTICS
-            ],
+            "diagnostics": [diagnostic for diagnostic in item["diagnostics"] if diagnostic not in _DOCTOR_BLOCKING_DIAGNOSTICS],
             "changed_files_since_graph": item["changed_files_since_graph"],
         }
         for item in statuses
@@ -887,10 +901,7 @@ def profile(
     project_id = _project_id(project)
     root = _fresh_root_for_project(project_id, action="profile")
     st_bin = shutil.which("st") or sys.argv[0]
-    runs = [
-        _run_measured([st_bin, "-P", project_id, "search", question], cwd=root),
-        _command_payload(query_graph(root, question, budget=budget)),
-    ]
+    runs = [_run_measured([st_bin, "-P", project_id, "search", question], cwd=root), _command_payload(query_graph(root, question, budget=budget))]
     tool_probes: list[dict[str, Any]] = []
     if codex:
         codex_bin = shutil.which("codex")
