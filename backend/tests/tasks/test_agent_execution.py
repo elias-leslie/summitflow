@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import MagicMock, patch
+
+from agent_hub import CompletionResponse
 
 from app.tasks.autonomous.exec_modules.agent_execution import (
     execute_agent_initial,
@@ -12,6 +15,7 @@ from app.tasks.autonomous.exec_modules.agent_helpers import (
     agent_completion_failure,
     call_complete,
     log_initial_completion_fallback,
+    record_citations,
 )
 from app.tasks.autonomous.exec_modules.interruption import ExecutionInterrupted
 
@@ -298,6 +302,20 @@ def test_log_initial_completion_fallback_does_not_mark_interrupted_session_compl
     messages = [call.args[2] for call in emit_log.call_args_list]
     assert any("Agent interrupted subtask 1.1" in message for message in messages)
     assert not any(message == "Agent completed subtask 1.1" for message in messages)
+
+
+def test_record_citations_skips_synthetic_task_unit() -> None:
+    response = cast(CompletionResponse, SimpleNamespace(cited_uuids=["M:abc12345"]))
+
+    with (
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.get_subtask", return_value=None),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.log_citations") as log_citations,
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.acknowledge_no_citations") as acknowledge,
+    ):
+        record_citations("task-123", "task", response)
+
+    log_citations.assert_not_called()
+    acknowledge.assert_not_called()
 
 
 def test_execute_agent_initial_does_not_set_request_timeout() -> None:

@@ -6,7 +6,7 @@ from typing import Any
 
 from ....core.debug import debug_error, debug_success
 from ....logging_config import get_logger
-from ....storage.subtasks import update_subtask_passes
+from ....storage.subtasks import get_subtask, update_subtask_passes
 from .events import emit_log
 from .memory_writes import save_subtask_learning
 from .session import extract_handoff_summary
@@ -28,8 +28,9 @@ def _handle_passed_result(
 ) -> None:
     """Handle logging and side-effects when all checks passed."""
     duration_str = f"{duration:.1f}s"
-    update_subtask_passes(task_id, subtask_short_id, passes=True)
-    extract_handoff_summary(subtask_id, response_content)
+    if get_subtask(task_id, subtask_short_id) is not None:
+        update_subtask_passes(task_id, subtask_short_id, passes=True)
+        extract_handoff_summary(subtask_id, response_content)
     attempt_info = f" (after {total_attempts} attempts)" if total_attempts > 1 else ""
     emit_log(
         task_id,

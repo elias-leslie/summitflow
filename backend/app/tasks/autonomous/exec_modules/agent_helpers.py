@@ -10,7 +10,7 @@ import httpx
 from agent_hub import CompletionResponse
 
 from ....constants import CONTEXT_FRESHNESS_THRESHOLD
-from ....storage.subtasks import acknowledge_no_citations, log_citations
+from ....storage.subtasks import acknowledge_no_citations, get_subtask, log_citations
 from ....storage.tasks.core import add_agent_hub_session, get_task
 from ._agent_kwargs import build_complete_kwargs  # re-exported for callers
 from .events import emit_log, emit_progress_log
@@ -224,6 +224,8 @@ def record_citations(
     """Record citations from Agent Hub response for ACE-aligned feedback."""
     from ....services.agent_hub_client import get_sync_client
 
+    if get_subtask(task_id, subtask_short_id) is None:
+        return
     if response.cited_uuids:
         client = get_sync_client()
         log_citations(task_id, subtask_short_id, response.cited_uuids, client=client)
