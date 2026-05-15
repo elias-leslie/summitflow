@@ -62,8 +62,12 @@ async def test_execute_wf_excludes_current_preclaimed_task_from_concurrency_guar
     assert result["status"] == "executed"
 
 
+@pytest.mark.parametrize("execution_status", ["executed", "failed"])
 @pytest.mark.asyncio
-async def test_execute_wf_drains_queue_after_execution(monkeypatch) -> None:
+async def test_execute_wf_drains_queue_after_terminal_execution(
+    monkeypatch,
+    execution_status: str,
+) -> None:
     from app.workflows.models import TaskInput
     from app.workflows.pipeline import execute_wf
 
@@ -80,7 +84,11 @@ async def test_execute_wf_drains_queue_after_execution(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "app.tasks.autonomous.execution.start_execution",
-        lambda task_id, project_id, dispatch=None: {"task_id": task_id, "project_id": project_id, "status": "executed"},
+        lambda task_id, project_id, dispatch=None: {
+            "task_id": task_id,
+            "project_id": project_id,
+            "status": execution_status,
+        },
     )
 
     async def fake_drain(project_id: str, *, manual_dispatch: bool) -> None:
@@ -95,7 +103,7 @@ async def test_execute_wf_drains_queue_after_execution(monkeypatch) -> None:
         await runner(TaskInput(task_id="task-177f0dec", project_id="agent-hub", manual_dispatch=True), None),
     )
 
-    assert result["status"] == "executed"
+    assert result["status"] == execution_status
     assert drained == {"project_id": "agent-hub", "manual_dispatch": True}
 
 
