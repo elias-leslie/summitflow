@@ -81,7 +81,6 @@ import {
 import {
   agentName,
   buildArtifactOptions,
-  extractMockupIds,
   layoutClass,
   makePane,
   paneAgentLabel,
@@ -677,6 +676,18 @@ function PaneChrome({
       ) : null}
     </div>
   )
+}
+function extractMockupIds(content: string): string[] {
+  const ids = [...(content.match(/\bmk-[a-z0-9]{8,}\b/gi) ?? [])]
+  const encodedIds =
+    content.match(
+      /(?:mockup_id|design_id|artifact_id|artifact)[:="'\s]+(mk-[a-z0-9]{8,})/gi,
+    ) ?? []
+  encodedIds.forEach((value) => {
+    const id = value.match(/\bmk-[a-z0-9]{8,}\b/i)?.[0]
+    if (id) ids.push(id)
+  })
+  return Array.from(new Set(ids))
 }
 
 function MockupMentionCards({
