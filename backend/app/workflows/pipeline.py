@@ -63,13 +63,15 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str, *, manual
     raise ValueError(f"Unknown workflow stage: {stage}")
 
 
-def _make_dispatch_callback() -> Any:
+def _make_dispatch_callback(*, manual_dispatch: bool = False) -> Any:
     """Create a dispatch callback for use inside asyncio.to_thread."""
     def dispatch(stage: str, task_id: str, project_id: str) -> None:
         loop = asyncio.new_event_loop()
         try:
             try:
-                loop.run_until_complete(_trigger_workflow(stage, task_id, project_id))
+                loop.run_until_complete(
+                    _trigger_workflow(stage, task_id, project_id, manual_dispatch=manual_dispatch)
+                )
             except ValueError:
                 raise
             except Exception:
@@ -83,7 +85,7 @@ async def _drain_project_queue_after_execution(project_id: str, *, manual_dispat
     """Start queued autonomous work after a task frees project capacity."""
     from ..tasks.autonomous.pickup import autonomous_work_pickup
 
-    dispatch = _make_dispatch_callback()
+    dispatch = _make_dispatch_callback(manual_dispatch=manual_dispatch)
     try:
         result = await asyncio.to_thread(
             autonomous_work_pickup,
@@ -247,6 +249,7 @@ async def execute_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
         task_type,
         require_enabled=not input.manual_dispatch,
         exclude_task_id=input.task_id,
+        skip_concurrency=True,
     ):
         status = str(guard_error.get("status") or "blocked")
         logger.warning(
