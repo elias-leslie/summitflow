@@ -18,7 +18,6 @@ from .complete import _completion_failed, _resolve_message
 
 app = typer.Typer(help="Run Agent Hub agents with tools", no_args_is_help=True)
 
-DEFAULT_AGENT_MAX_TURNS = 5000
 NORMAL_TERMINATION_REASONS = {"streaming_one_shot_closed"}
 
 ADHOC_WORKLOAD_CAPABILITIES: dict[str, dict[str, float]] = {
@@ -287,7 +286,7 @@ def run_agent(
         skip_cache=skip_cache,
         session_id=session_id,
         thinking_level=thinking_level,
-        max_turns=DEFAULT_AGENT_MAX_TURNS,
+        max_turns=None,
         stream=stream,
         trace_id=trace_id,
         include_roles=_roles(include_roles),

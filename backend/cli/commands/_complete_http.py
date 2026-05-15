@@ -215,7 +215,7 @@ def call_complete(
     memory_group_id: str | None = None, execute_tools: bool = False,
     working_dir: str | None = None, timeout: float | None = None,
     skip_cache: bool = False, session_id: str | None = None,
-    thinking_level: str | None = None, max_turns: int | None = 1,
+    thinking_level: str | None = None, max_turns: int | None = None,
     stream: bool = False, trace_id: str | None = None,
     include_roles: list[str] | None = None,
     task_type: str | None = None,

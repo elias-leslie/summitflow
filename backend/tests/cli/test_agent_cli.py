@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
-from cli.commands.agent import DEFAULT_AGENT_MAX_TURNS, app
+from cli.commands.agent import app
 
 runner = CliRunner()
 
@@ -40,7 +40,7 @@ def test_agent_run_defaults_to_tool_loop_with_cwd(tmp_path: Path) -> None:
     assert kwargs["project_id"] == "portfolio-ai"
     assert kwargs["execute_tools"] is True
     assert kwargs["working_dir"] == str(cwd)
-    assert kwargs["max_turns"] == DEFAULT_AGENT_MAX_TURNS
+    assert kwargs["max_turns"] is None
     assert kwargs["tool_name"] == "st agent"
     assert "AGENT status=ok" in result.stderr
 

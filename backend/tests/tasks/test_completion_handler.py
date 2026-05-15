@@ -86,3 +86,53 @@ def test_handle_successful_completion_blocks_when_quality_gate_fails(
     mock_transition.assert_called_once_with("task-1", "failed", "Quality gate failed")
     mock_emit_error.assert_called_once()
     mock_notify_failure.assert_called_once()
+
+
+@patch("app.tasks.autonomous.exec_modules.completion_handler.notify_failure")
+@patch("app.tasks.autonomous.exec_modules.completion_handler.emit_log")
+@patch("app.tasks.autonomous.exec_modules.completion_handler.emit_task_transition")
+@patch("app.tasks.autonomous.exec_modules.completion_handler.task_store")
+def test_handle_failed_execution_leaves_completed_task_terminal(
+    mock_task_store: MagicMock,
+    mock_transition: MagicMock,
+    mock_emit_log: MagicMock,
+    mock_notify_failure: MagicMock,
+) -> None:
+    from app.tasks.autonomous.exec_modules.completion_handler import handle_failed_execution
+
+    mock_task_store.get_task.return_value = {"id": "task-1", "status": "completed"}
+
+    handle_failed_execution("task-1", "summitflow", results=[{"status": "failed"}])
+
+    mock_task_store.update_task_status.assert_not_called()
+    mock_transition.assert_not_called()
+    mock_notify_failure.assert_not_called()
+    mock_emit_log.assert_called_once()
+
+
+@patch("app.tasks.autonomous.exec_modules.completion_handler.notify_failure")
+@patch("app.tasks.autonomous.exec_modules.completion_handler.emit_log")
+@patch("app.tasks.autonomous.exec_modules.completion_handler.emit_task_transition")
+@patch("app.tasks.autonomous.exec_modules.completion_handler.task_store")
+def test_handle_failed_execution_tolerates_terminal_status_race(
+    mock_task_store: MagicMock,
+    mock_transition: MagicMock,
+    mock_emit_log: MagicMock,
+    mock_notify_failure: MagicMock,
+) -> None:
+    from app.tasks.autonomous.exec_modules.completion_handler import handle_failed_execution
+
+    mock_task_store.get_task.side_effect = [
+        {"id": "task-1", "status": "running"},
+        {"id": "task-1", "status": "completed"},
+    ]
+    mock_task_store.update_task_status.side_effect = ValueError(
+        "Invalid transition from 'completed' to 'failed'"
+    )
+
+    handle_failed_execution("task-1", "summitflow", results=[{"status": "failed"}])
+
+    mock_task_store.update_task_status.assert_called_once_with("task-1", "failed")
+    mock_transition.assert_not_called()
+    mock_notify_failure.assert_not_called()
+    mock_emit_log.assert_called_once()
