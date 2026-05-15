@@ -163,6 +163,31 @@ def _close_task_safely(client: STClient, task_id: str, message: str | None) -> N
         raise typer.Exit(1) from None
 
 
+def _finalize_completed_task_status(
+    client: STClient,
+    task_id: str,
+    *,
+    message: str | None,
+) -> bool:
+    skip_gates = _completion_skip_gates(client, task_id)
+    try:
+        client.update_status(task_id, "completed", skip_gates=skip_gates)
+        return False
+    except APIError as e:
+        if not skip_gates:
+            try:
+                client.close_task(task_id, reason=message, skip_gates=True)
+                output_warning(
+                    "Status finalize needed forced close after merge cleanup; "
+                    "completion gates already passed but transition drifted."
+                )
+                return True
+            except APIError:
+                pass
+        output_warning(f"Code merged but status update failed: {e.detail}\n  Recovery: st done {task_id} --admin")
+        return False
+
+
 def _capture_and_remove_snapshot(task_id: str, project_id: str | None) -> None:
     repo_root = _checkpoint_repo_root(project_id)
     lifecycle_snapshot = capture_lifecycle_baseline(project_id=project_id, cwd=repo_root)
@@ -273,10 +298,7 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
         if not strict:
             _run_smart_prereqs(client, task_id, project_id)
         merge_task_branch(task_id, project_id=project_id)
-        try:
-            client.update_status(task_id, "completed", skip_gates=_completion_skip_gates(client, task_id))
-        except APIError as e:
-            output_warning(f"Code merged but status update failed: {e.detail}\n  Recovery: st done {task_id} --admin")
+        _finalize_completed_task_status(client, task_id, message=message)
         _capture_and_remove_snapshot(task_id, project_id)
         if frontend_changed:
             _trigger_health_check(task_id, project_id)
