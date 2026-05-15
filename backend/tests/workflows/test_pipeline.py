@@ -59,7 +59,7 @@ async def test_execute_wf_excludes_current_preclaimed_task_from_concurrency_guar
     monkeypatch.setattr("app.workflows.pipeline.asyncio.to_thread", _run_inline)
     monkeypatch.setattr(
         "app.storage.tasks.get_task",
-        lambda _task_id: {"id": "task-177f0dec", "task_type": "refactor"},
+        lambda _task_id: {"id": "task-177f0dec", "task_type": "refactor", "claimed_by": "pickup-agent-hub"},
     )
 
     def fake_validate(_project_id: str, _task_type: str | None = None, **kwargs: object) -> None:
@@ -90,6 +90,42 @@ async def test_execute_wf_excludes_current_preclaimed_task_from_concurrency_guar
         "skip_concurrency": True,
     }
     assert result["status"] == "executed"
+
+
+@pytest.mark.asyncio
+async def test_execute_wf_keeps_concurrency_guard_for_unclaimed_auto_advance(monkeypatch) -> None:
+    from app.workflows.models import TaskInput
+    from app.workflows.pipeline import execute_wf
+
+    seen_kwargs: dict[str, object] = {}
+    released: list[str] = []
+
+    monkeypatch.setattr("app.workflows.pipeline.asyncio.to_thread", _run_inline)
+    monkeypatch.setattr(
+        "app.storage.tasks.get_task",
+        lambda _task_id: {"id": "task-177f0dec", "task_type": "refactor", "claimed_by": None},
+    )
+    monkeypatch.setattr("app.storage.tasks.release_task", lambda task_id: released.append(task_id))
+
+    def fake_validate(_project_id: str, _task_type: str | None = None, **kwargs: object) -> dict[str, object]:
+        seen_kwargs.update(kwargs)
+        return {"status": "concurrency_limit"}
+
+    monkeypatch.setattr("app.tasks.autonomous.pickup_guards.validate_autonomous_dispatch", fake_validate)
+
+    runner = cast(Any, getattr(getattr(execute_wf, "_task", None), "fn", execute_wf))
+    result = cast(
+        dict[str, Any],
+        await runner(TaskInput(task_id="task-177f0dec", project_id="summitflow", manual_dispatch=True), None),
+    )
+
+    assert seen_kwargs == {
+        "require_enabled": False,
+        "exclude_task_id": "task-177f0dec",
+        "skip_concurrency": False,
+    }
+    assert result["status"] == "concurrency_limit"
+    assert released == ["task-177f0dec"]
 
 
 @pytest.mark.parametrize("execution_status", ["executed", "failed"])
