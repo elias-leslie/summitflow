@@ -6,7 +6,6 @@ import { getApiBaseUrl } from '../api-config'
 import type {
   DeleteTaskResponse,
   ExecuteTaskOptions,
-  ExecuteTaskResponse,
   Task,
   TaskListResponse,
   TaskStatus,
@@ -109,12 +108,36 @@ export async function executeTask(
   projectId: string,
   taskId: string,
   options?: ExecuteTaskOptions,
-): Promise<ExecuteTaskResponse> {
+): Promise<Task> {
   return postJson(
     `${getApiBaseUrl()}/api/projects/${projectId}/tasks/${taskId}/execute`,
     options || {},
     'Failed to start task execution',
   )
+}
+
+export interface ExecuteTasksResult {
+  queued: Task[]
+  failed: Array<{ taskId: string; error: string }>
+}
+
+export async function executeTasks(
+  projectId: string,
+  taskIds: string[],
+  options?: ExecuteTaskOptions,
+): Promise<ExecuteTasksResult> {
+  const result: ExecuteTasksResult = { queued: [], failed: [] }
+  for (const taskId of taskIds) {
+    try {
+      result.queued.push(await executeTask(projectId, taskId, options))
+    } catch (error) {
+      result.failed.push({
+        taskId,
+        error: error instanceof Error ? error.message : 'Failed to queue task',
+      })
+    }
+  }
+  return result
 }
 
 export async function updateTaskStatus(

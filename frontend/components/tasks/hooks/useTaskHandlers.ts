@@ -2,7 +2,7 @@ import { useMutation } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import type { Task } from '@/lib/api'
-import { deleteTask, deleteTasks } from '@/lib/api/tasks'
+import { deleteTask, deleteTasks, executeTasks } from '@/lib/api/tasks'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
 import { getErrorMessage } from '@/lib/utils'
 
@@ -42,6 +42,32 @@ export function useTaskHandlers(projectId: string) {
     },
   })
 
+  const bulkExecuteMutation = useMutation({
+    mutationFn: (taskIds: string[]) => executeTasks(projectId, taskIds),
+    onSuccess: ({ queued, failed }) => {
+      for (const task of queued) {
+        syncUpdatedTask(task)
+      }
+      if (queued.length > 0) {
+        toast.success(
+          queued.length === 1
+            ? 'Task queued for execution'
+            : `${queued.length} tasks queued for execution`,
+        )
+      }
+      if (failed.length > 0) {
+        toast.error(
+          failed.length === 1
+            ? `Failed to queue ${failed[0].taskId}`
+            : `${failed.length} tasks failed to queue`,
+        )
+      }
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, 'Failed to queue selected tasks'))
+    },
+  })
+
   // Task update handler
   const handleTaskUpdated = useCallback(
     (updatedTask: Task) => {
@@ -57,6 +83,7 @@ export function useTaskHandlers(projectId: string) {
     setBulkDeleteConfirm,
     deleteMutation,
     bulkDeleteMutation,
+    bulkExecuteMutation,
     handleTaskUpdated,
   }
 }

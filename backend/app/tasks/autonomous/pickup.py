@@ -85,6 +85,7 @@ def autonomous_work_pickup(
     project_id: str,
     dispatch: Callable[[str, str, str], None] | None = None,
     limit: int = 10,
+    require_enabled: bool = True,
 ) -> dict[str, object]:
     """Pick up pending autonomous tasks and dispatch to appropriate pipeline stage.
 
@@ -97,7 +98,7 @@ def autonomous_work_pickup(
     """
     logger.info("Starting autonomous work pickup", project_id=project_id)
 
-    if error := validate_autonomous_dispatch(project_id):
+    if error := validate_autonomous_dispatch(project_id, require_enabled=require_enabled):
         return error
 
     tasks = get_queued_autonomous_tasks(project_id, limit=limit)

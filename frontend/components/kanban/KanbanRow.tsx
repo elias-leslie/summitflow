@@ -110,7 +110,7 @@ export function KanbanRow({
 
         {showDropHint && (
           <span className="ml-auto text-xs text-slate-400 animate-pulse">
-            Drop to add here
+            {column.id === 'active' ? 'Drop to queue' : 'Drop to add here'}
           </span>
         )}
       </button>

@@ -139,6 +139,56 @@ class TestTaskLifecycleEndpoints:
         assert body["dispatch"]["status"] == "disabled"
         assert body["dispatch"]["reason"] == "not_allowed"
 
+    def test_execute_keeps_task_queued_when_concurrency_full(
+        self,
+        client: Any,
+        test_project_id: str,
+        cleanup_task: Callable[[str], None],
+        mocker: Any,
+    ) -> None:
+        response = client.post(
+            f"/api/projects/{test_project_id}/tasks",
+            json={
+                "title": "Queued execution target",
+                "task_type": "task",
+                "priority": 2,
+                "complexity": "SIMPLE",
+                "objective": "Wait for project execution capacity",
+                "done_when": ["Runs after the active task finishes"],
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        mocker.patch(
+            "app.api.tasks.update_endpoints.validate_task_ready",
+            return_value=SimpleNamespace(ready=True, issues=[], suggestions=[], lane_conflict=None),
+        )
+        mocker.patch("app.api.tasks.update_endpoints.validate_autonomous_dispatch", return_value=None)
+        mock_dispatch = mocker.patch(
+            "app.api.tasks.update_endpoints.dispatch_task",
+            new_callable=AsyncMock,
+            return_value={
+                "task_id": task_id,
+                "project_id": test_project_id,
+                "stage": "blocked",
+                "status": "concurrency_limit",
+                "running_count": 1,
+                "max_concurrent": 1,
+            },
+        )
+
+        response = client.post(f"/api/projects/{test_project_id}/tasks/{task_id}/execute")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == task_id
+        assert data["status"] == "pending"
+        assert data["execution_mode"] == "autonomous"
+        assert data["autonomous"] is True
+        mock_dispatch.assert_awaited_once_with(task_id, test_project_id, manual_dispatch=True)
+
     def test_execute_preflight_guard_blocks_before_dispatch(
         self,
         client: Any,

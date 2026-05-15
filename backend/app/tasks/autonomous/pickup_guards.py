@@ -231,6 +231,7 @@ def validate_autonomous_dispatch(
     *,
     require_enabled: bool = True,
     exclude_task_id: str | None = None,
+    skip_concurrency: bool = False,
 ) -> dict[str, Any] | None:
     """Run all guard checks; return first error dict or None if all pass."""
     def permission_check(project: str) -> dict[str, Any] | None:
@@ -242,12 +243,10 @@ def validate_autonomous_dispatch(
     def concurrency_check(project: str) -> dict[str, Any] | None:
         return check_concurrency_limit(project, exclude_task_id=exclude_task_id)
 
-    checks: list[Callable[[str], dict[str, Any] | None]] = [
-        check_system_health,
-        concurrency_check,
-        check_max_tasks_per_day,
-        check_cooldown_period,
-    ]
+    checks: list[Callable[[str], dict[str, Any] | None]] = [check_system_health]
+    if not skip_concurrency:
+        checks.append(concurrency_check)
+    checks.extend([check_max_tasks_per_day, check_cooldown_period])
     checks.insert(0, permission_check)
     for check in checks:
         if error := check(project_id):

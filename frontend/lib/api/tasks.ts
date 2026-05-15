@@ -65,6 +65,7 @@ export {
   deleteTasks,
   // Execution control
   executeTask,
+  executeTasks,
   // Read operations
   fetchTask,
   fetchTasks,

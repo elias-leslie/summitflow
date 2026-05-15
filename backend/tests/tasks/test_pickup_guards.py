@@ -10,6 +10,7 @@ from app.tasks.autonomous.pickup_guards import (
     check_system_health,
     count_active_agent_hub_sessions,
     get_concurrency_snapshot,
+    validate_autonomous_dispatch,
 )
 
 
@@ -240,3 +241,25 @@ class TestConcurrencySnapshot:
         mock_count_running.assert_called_once_with("agent-hub", exclude_task_id="task-177f0dec")
         assert snapshot["running_count"] == 0
         assert snapshot["remaining_capacity"] == 1
+
+
+class TestValidateAutonomousDispatch:
+    @patch("app.tasks.autonomous.pickup_guards.check_cooldown_period", return_value=None)
+    @patch("app.tasks.autonomous.pickup_guards.check_max_tasks_per_day", return_value=None)
+    @patch("app.tasks.autonomous.pickup_guards.check_concurrency_limit")
+    @patch("app.tasks.autonomous.pickup_guards.check_system_health", return_value=None)
+    @patch("app.tasks.autonomous.pickup_guards.check_agent_hub_execution_permission", return_value=None)
+    def test_skip_concurrency_leaves_queue_request_eligible(
+        self,
+        _mock_permission: MagicMock,
+        _mock_health: MagicMock,
+        mock_concurrency: MagicMock,
+        _mock_daily: MagicMock,
+        _mock_cooldown: MagicMock,
+    ) -> None:
+        mock_concurrency.return_value = {"status": "concurrency_limit"}
+
+        result = validate_autonomous_dispatch("agent-hub", skip_concurrency=True)
+
+        assert result is None
+        mock_concurrency.assert_not_called()

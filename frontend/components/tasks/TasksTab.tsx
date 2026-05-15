@@ -45,6 +45,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     setBulkDeleteConfirm,
     deleteMutation,
     bulkDeleteMutation,
+    bulkExecuteMutation,
     handleTaskUpdated,
   } = useTaskHandlers(projectId)
 
@@ -91,6 +92,19 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     }
   }
 
+  const handleBulkExecute = () => {
+    if (selectedTaskIds.size > 0) {
+      bulkExecuteMutation.mutate(Array.from(selectedTaskIds), {
+        onSuccess: ({ queued }) => {
+          if (queued.length > 0) {
+            clearSelection()
+            refetch()
+          }
+        },
+      })
+    }
+  }
+
   return (
     <div className="space-y-4">
       <TasksTabHeader
@@ -99,7 +113,9 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
         onFiltersChange={setFilters}
         selectedCount={selectedTaskIds.size}
         isFetching={isFetching}
+        isQueueing={bulkExecuteMutation.isPending}
         onRefresh={refetch}
+        onBulkExecute={handleBulkExecute}
         onBulkDelete={() => setBulkDeleteConfirm(true)}
       />
 

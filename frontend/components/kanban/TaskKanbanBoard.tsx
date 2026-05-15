@@ -209,6 +209,11 @@ export function TaskKanbanBoard({
     }
 
     if (fromColumn && toColumn && fromColumn !== toColumn) {
+      if (toColumn === 'active') {
+        void handleExecuteNow(activeTaskId)
+        setActiveId(null)
+        return
+      }
       // Convert column to task status
       const newStatus = columnToStatus[toColumn]
       onStatusChange?.(activeTaskId, newStatus)
