@@ -244,12 +244,13 @@ async def execute_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 
     task = task_store.get_task(input.task_id) or {}
     task_type = str(task.get("task_type") or "").strip() or None
+    preclaimed = bool(task.get("claimed_by"))
     if guard_error := validate_autonomous_dispatch(
         input.project_id,
         task_type,
         require_enabled=not input.manual_dispatch,
         exclude_task_id=input.task_id,
-        skip_concurrency=True,
+        skip_concurrency=preclaimed,
     ):
         status = str(guard_error.get("status") or "blocked")
         logger.warning(
