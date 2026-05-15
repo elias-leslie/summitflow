@@ -19,8 +19,8 @@
       "replaces": ["dt", "dev-tools.sh"],
       "summary": "Quality gates and tool wrappers with TOON output.",
       "safety": "read-mostly",
-      "commands": ["--check", "--quick", "cleanroom", "pytest", "ruff", "types", "biome", "tsc", "vitest"],
-      "examples": ["st check --quick --changed-only", "st check cleanroom -- bash scripts/install.sh --skip-systemd", "st check pytest -- backend/tests/cli/test_tools_cli.py"],
+      "commands": ["--check", "--quick", "cleanroom", "codeql", "pytest", "ruff", "types", "biome", "tsc", "vitest"],
+      "examples": ["st check --quick --changed-only", "st check codeql", "st check cleanroom -- bash scripts/install.sh --skip-systemd", "st check pytest -- backend/tests/cli/test_tools_cli.py"],
       "verify": ["st check --help"]
     },
     {
@@ -208,8 +208,8 @@
       "pass_path": false
       }
     },
-  {
-    "name": "vitest",
+    {
+      "name": "vitest",
       "component_id": "sf.check",
       "redirect_patterns": [
         "(npx\\s+|pnpm(?:\\s+exec)?\\s+)?vitest\\b"
@@ -223,6 +223,21 @@
       "working_dir": "frontend",
       "fallback_global": true,
       "pass_path": false
+      }
+    },
+    {
+      "name": "codeql",
+      "component_id": "sf.check",
+      "redirect_patterns": [],
+      "redirect_message": "Use 'st check codeql' to verify GitHub CodeQL code-scanning alert state.",
+      "check": {
+        "label": "CODEQL",
+        "binary": "codeql",
+        "args": "",
+        "count_method": "json_count",
+        "working_dir": "root",
+        "fallback_global": true,
+        "pass_path": false
       }
     },
     {

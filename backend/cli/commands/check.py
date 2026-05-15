@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import shutil
 import subprocess
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +66,8 @@ _TOOL_CONFIG_PATHS: dict[str, set[str]] = {
         "yarn.lock",
     },
 }
+
+_CODEQL_PAGE_SIZE = 100
 
 _TOOL_SELECTIONS: dict[str, tuple[tuple[str, ...], bool]] = {
     "--fix": (("ruff", "biome"), True),
@@ -373,6 +377,172 @@ def _run_tool(name: str, config: dict[str, Any], extra_args: list[str]) -> int:
     return result.returncode
 
 
+def _normalize_codeql_ref(value: str | None) -> str | None:
+    if not value:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    return stripped if stripped.startswith("refs/") else f"refs/heads/{stripped}"
+
+
+def _current_branch_ref(root: Path) -> str | None:
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    return _normalize_codeql_ref(result.stdout.strip())
+
+
+def _github_repo_name(root: Path) -> str | None:
+    if shutil.which("gh") is None:
+        return None
+    result = subprocess.run(
+        ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return None
+    repo = result.stdout.strip()
+    return repo or None
+
+
+def _codeql_alert_location(alert: dict[str, Any]) -> str:
+    instance = alert.get("most_recent_instance")
+    location = instance.get("location") if isinstance(instance, dict) else None
+    if not isinstance(location, dict):
+        return "unknown"
+    path = location.get("path") or "unknown"
+    line = location.get("start_line")
+    return f"{path}:{line}" if line else str(path)
+
+
+def _codeql_alert_hint(alert: dict[str, Any]) -> str:
+    number = alert.get("number", "?")
+    rule = alert.get("rule")
+    rule_id = rule.get("id") if isinstance(rule, dict) else "unknown"
+    return f"#{number} {rule_id} {_codeql_alert_location(alert)}"
+
+
+def _fetch_open_codeql_alerts(root: Path, repo: str, ref: str | None) -> tuple[int, list[dict[str, Any]], str]:
+    alerts: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        params = {
+            "state": "open",
+            "per_page": str(_CODEQL_PAGE_SIZE),
+            "page": str(page),
+        }
+        if ref:
+            params["ref"] = ref
+        endpoint = f"repos/{repo}/code-scanning/alerts?{urllib.parse.urlencode(params)}"
+        result = subprocess.run(
+            ["gh", "api", endpoint],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            return result.returncode, [], result.stderr or result.stdout
+        try:
+            page_alerts = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            return 1, [], f"Unable to parse gh api response: {exc}"
+        if not isinstance(page_alerts, list):
+            return 1, [], "GitHub code scanning response was not a list"
+        alerts.extend(
+            alert
+            for alert in page_alerts
+            if isinstance(alert, dict)
+            and isinstance(alert.get("tool"), dict)
+            and alert["tool"].get("name") == "CodeQL"
+        )
+        if len(page_alerts) < _CODEQL_PAGE_SIZE:
+            return 0, alerts, ""
+        page += 1
+
+
+def _parse_codeql_args(args: list[str]) -> tuple[int | None, str | None]:
+    explicit_ref: str | None = None
+    remaining = _strip_separator(args)
+    index = 0
+    while index < len(remaining):
+        arg = remaining[index]
+        if arg in {"-h", "--help"}:
+            print("Usage: st check codeql [--ref refs/heads/main]")
+            return 0, explicit_ref
+        if arg == "--ref":
+            if index + 1 >= len(remaining):
+                output_error("--ref requires a value")
+                return 2, explicit_ref
+            explicit_ref = _normalize_codeql_ref(remaining[index + 1])
+            index += 2
+            continue
+        output_error(f"Unknown st check codeql option: {arg}")
+        return 2, explicit_ref
+    return None, explicit_ref
+
+
+def _run_codeql_alert_check(args: list[str]) -> int:
+    parsed_result, explicit_ref = _parse_codeql_args(args)
+    if parsed_result is not None:
+        return parsed_result
+
+    root = _repo_root()
+    repo = _github_repo_name(root)
+    if repo is None:
+        details = write_details(
+            root,
+            "codeql",
+            "GitHub CLI is unavailable, unauthenticated, or cannot resolve this repository.",
+        )
+        print(
+            f"CODEQL:FAIL:127|details:{display_path(root, details)}|"
+            "hint:install/auth gh and run from a GitHub repository"
+        )
+        return 127
+
+    ref = explicit_ref or _current_branch_ref(root)
+    exit_code, alerts, error = _fetch_open_codeql_alerts(root, repo, ref)
+    details_payload = {
+        "repository": repo,
+        "ref": ref,
+        "alerts": alerts,
+        "error": error or None,
+    }
+    details = write_details(root, "codeql", json.dumps(details_payload, indent=2))
+    if exit_code != 0:
+        print(
+            f"CODEQL:FAIL:{exit_code}|details:{display_path(root, details)}|"
+            f"hint:{summary_hint(error)}"
+        )
+        return exit_code
+    if alerts:
+        hint = "; ".join(_codeql_alert_hint(alert) for alert in alerts[:3])
+        print(
+            f"CODEQL:FAIL:1|details:{display_path(root, details)}|"
+            f"hint:{len(alerts)} open CodeQL alerts: {hint}"
+        )
+        return 1
+    ref_hint = ref or "default ref"
+    print(
+        f"CODEQL:OK:0|details:{display_path(root, details)}|"
+        f"hint:0 open CodeQL alerts for {repo} {ref_hint}"
+    )
+    return 0
+
+
 def _run_selected(
     selected: list[str],
     configs: dict[str, dict[str, Any]],
@@ -417,6 +587,8 @@ def _run_named_tool(
     changed_only: bool,
     fix: bool,
 ) -> int | None:
+    if first == "codeql":
+        return _run_codeql_alert_check(args[1:])
     if first not in configs:
         return None
     root = _repo_root()
@@ -472,6 +644,7 @@ Usage:
   st check --changed-only
   st check --quick [--changed-only]
   st check --frontend-only
+  st check codeql [--ref refs/heads/main]
   st check cleanroom -- <command>
   st check <{names}> [-- <tool args>]
 """
@@ -485,6 +658,7 @@ Usage:
     when="pre-edit gates; pre-commit; before reporting done",
     precautions=(
         "use st check for all quality gates (ruff/biome/tsc/types/pytest)",
+        "use st check codeql to verify GitHub CodeQL alert state after code-scanning work",
         "never run raw pytest/vitest/biome/tsc/ruff/sqlfluff/squawk",
     ),
     tier="mandate",
