@@ -7,6 +7,27 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from app.constants import TASK_TYPE_VALUES
+
+QUEUE_TARGET_PROJECTS = ("summitflow", "agent-hub")
+
+
+def _ensure_project(project_id: str) -> None:
+    from app.storage.connection import get_connection
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO projects (id, name, base_url)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (project_id, project_id, "http://localhost:3001"),
+        )
+        conn.commit()
+
 
 class TestTaskLifecycleEndpoints:
     """Covers validate-ready, execute, claim, and release contracts."""
@@ -188,6 +209,65 @@ class TestTaskLifecycleEndpoints:
         assert data["execution_mode"] == "autonomous"
         assert data["autonomous"] is True
         mock_dispatch.assert_awaited_once_with(task_id, test_project_id, manual_dispatch=True)
+
+    @pytest.mark.parametrize("project_id", QUEUE_TARGET_PROJECTS)
+    @pytest.mark.parametrize("task_type", TASK_TYPE_VALUES)
+    def test_execute_queues_every_task_type_for_manual_ui_dispatch(
+        self,
+        client: Any,
+        project_id: str,
+        task_type: str,
+        cleanup_task: Callable[[str], None],
+        mocker: Any,
+    ) -> None:
+        _ensure_project(project_id)
+        response = client.post(
+            f"/api/projects/{project_id}/tasks",
+            json={
+                "title": f"Queue {task_type}",
+                "task_type": task_type,
+                "priority": 2,
+                "complexity": "SIMPLE",
+                "objective": f"Queue {task_type} work from UI",
+                "done_when": ["The task remains queued until capacity is available"],
+            },
+        )
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+
+        mocker.patch(
+            "app.api.tasks.update_endpoints.validate_task_ready",
+            return_value=SimpleNamespace(ready=True, issues=[], suggestions=[], lane_conflict=None),
+        )
+        mock_guard = mocker.patch("app.api.tasks.update_endpoints.validate_autonomous_dispatch", return_value=None)
+        mock_dispatch = mocker.patch(
+            "app.api.tasks.update_endpoints.dispatch_task",
+            new_callable=AsyncMock,
+            return_value={
+                "task_id": task_id,
+                "project_id": project_id,
+                "stage": "execution",
+                "status": "dispatched",
+            },
+        )
+
+        response = client.post(f"/api/projects/{project_id}/tasks/{task_id}/execute")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == task_id
+        assert data["status"] == "pending"
+        assert data["task_type"] == task_type
+        assert data["execution_mode"] == "autonomous"
+        assert data["autonomous"] is True
+        mock_guard.assert_called_once_with(
+            project_id,
+            task_type,
+            require_enabled=False,
+            skip_concurrency=True,
+        )
+        mock_dispatch.assert_awaited_once_with(task_id, project_id, manual_dispatch=True)
 
     def test_execute_preflight_guard_blocks_before_dispatch(
         self,
