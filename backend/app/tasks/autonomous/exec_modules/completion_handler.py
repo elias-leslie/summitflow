@@ -18,6 +18,8 @@ from .diff_gate import check_diff_gate
 from .events import emit_error, emit_log
 from .quality_gate import run_quality_gate
 
+_TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled", "abandoned", "closed"}
+
 
 def handle_early_completion(
     task_id: str,
@@ -86,6 +88,17 @@ def handle_failed_execution(
     results: list[dict[str, Any]] | None = None,
 ) -> None:
     """Handle case where subtasks failed."""
+    task = task_store.get_task(task_id) or {}
+    current_status = str(task.get("status") or "").strip().lower()
+    if current_status in _TERMINAL_TASK_STATUSES:
+        emit_log(
+            task_id,
+            "warn",
+            f"Execution failure arrived after terminal status {current_status}; leaving task unchanged",
+            project_id=project_id,
+        )
+        return
+
     subtask_id: str | None = None
     blocker_summary: str | None = None
     if results:
@@ -101,6 +114,19 @@ def handle_failed_execution(
         emit_log(task_id, "info", "Execution paused - subtask verification failed", project_id=project_id)
         notify_failure(task_id, project_id, "All subtasks failed verification.",
                        subtask_id=subtask_id, blocker_summary=blocker_summary)
+    except ValueError as e:
+        task = task_store.get_task(task_id) or {}
+        current_status = str(task.get("status") or "").strip().lower()
+        if current_status in _TERMINAL_TASK_STATUSES:
+            emit_log(
+                task_id,
+                "warn",
+                f"Execution failure raced terminal status {current_status}; leaving task unchanged",
+                project_id=project_id,
+            )
+            return
+        emit_log(task_id, "error", f"Failed to set blocked status: {type(e).__name__}: {e!s}",
+                 project_id=project_id)
     except Exception as e:
         emit_log(task_id, "error", f"Failed to set blocked status: {type(e).__name__}: {e!s}",
                  project_id=project_id)
