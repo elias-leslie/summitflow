@@ -92,8 +92,9 @@ async def test_execute_wf_excludes_current_preclaimed_task_from_concurrency_guar
     assert result["status"] == "executed"
 
 
+@pytest.mark.parametrize("claimed_by", [None, "planner-agent", "triage-agent"])
 @pytest.mark.asyncio
-async def test_execute_wf_keeps_concurrency_guard_for_unclaimed_auto_advance(monkeypatch) -> None:
+async def test_execute_wf_keeps_concurrency_guard_for_non_pickup_claims(monkeypatch, claimed_by: str | None) -> None:
     from app.workflows.models import TaskInput
     from app.workflows.pipeline import execute_wf
 
@@ -103,7 +104,7 @@ async def test_execute_wf_keeps_concurrency_guard_for_unclaimed_auto_advance(mon
     monkeypatch.setattr("app.workflows.pipeline.asyncio.to_thread", _run_inline)
     monkeypatch.setattr(
         "app.storage.tasks.get_task",
-        lambda _task_id: {"id": "task-177f0dec", "task_type": "refactor", "claimed_by": None},
+        lambda _task_id: {"id": "task-177f0dec", "task_type": "refactor", "claimed_by": claimed_by},
     )
     monkeypatch.setattr("app.storage.tasks.release_task", lambda task_id: released.append(task_id))
 
@@ -126,6 +127,51 @@ async def test_execute_wf_keeps_concurrency_guard_for_unclaimed_auto_advance(mon
     }
     assert result["status"] == "concurrency_limit"
     assert released == ["task-177f0dec"]
+
+
+@pytest.mark.parametrize("claimed_by", ["pickup-agent-hub", "dispatch-agent-hub"])
+@pytest.mark.asyncio
+async def test_execute_wf_skips_concurrency_guard_only_for_pickup_execution_claims(
+    monkeypatch,
+    claimed_by: str,
+) -> None:
+    from app.workflows.models import TaskInput
+    from app.workflows.pipeline import execute_wf
+
+    seen_kwargs: dict[str, object] = {}
+
+    monkeypatch.setattr("app.workflows.pipeline.asyncio.to_thread", _run_inline)
+    monkeypatch.setattr(
+        "app.storage.tasks.get_task",
+        lambda _task_id: {"id": "task-177f0dec", "task_type": "refactor", "claimed_by": claimed_by},
+    )
+
+    def fake_validate(_project_id: str, _task_type: str | None = None, **kwargs: object) -> None:
+        seen_kwargs.update(kwargs)
+        return None
+
+    monkeypatch.setattr("app.tasks.autonomous.pickup_guards.validate_autonomous_dispatch", fake_validate)
+    monkeypatch.setattr(
+        "app.tasks.autonomous.execution.start_execution",
+        lambda task_id, project_id, dispatch=None: {"task_id": task_id, "project_id": project_id, "status": "executed"},
+    )
+    monkeypatch.setattr(
+        "app.workflows.pipeline._drain_project_queue_after_execution",
+        _noop_async,
+    )
+
+    runner = cast(Any, getattr(getattr(execute_wf, "_task", None), "fn", execute_wf))
+    result = cast(
+        dict[str, Any],
+        await runner(TaskInput(task_id="task-177f0dec", project_id="summitflow", manual_dispatch=True), None),
+    )
+
+    assert seen_kwargs == {
+        "require_enabled": False,
+        "exclude_task_id": "task-177f0dec",
+        "skip_concurrency": True,
+    }
+    assert result["status"] == "executed"
 
 
 @pytest.mark.parametrize("execution_status", ["executed", "failed"])
