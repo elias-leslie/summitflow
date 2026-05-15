@@ -21,7 +21,7 @@ from ...services.dispatch import dispatch_task
 from ...services.task_validation import validate_task_ready
 from ...storage import log_task_event
 from ...storage import tasks as task_store
-from ...storage.tasks.execution_mode import is_manual_only_mode
+from ...storage.tasks.execution_mode import EXECUTION_MODE_AUTONOMOUS, is_manual_only_mode
 from ...tasks.autonomous.pickup_guards import validate_autonomous_dispatch
 from .helpers import (
     dispatch_autonomous_task,
@@ -33,6 +33,8 @@ from .response import task_to_response
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+_DEFERRED_DISPATCH_STATUSES = {"concurrency_limit", "concurrency_unavailable"}
 
 
 def _dispatch_failure_status_code(status: str) -> int:
@@ -53,6 +55,10 @@ def _raise_dispatch_failure(dispatch_result: Mapping[str, Any]) -> NoReturn:
             "dispatch": dict(dispatch_result),
         },
     )
+
+
+def _is_deferred_dispatch(dispatch_result: Mapping[str, Any]) -> bool:
+    return str(dispatch_result.get("status") or "") in _DEFERRED_DISPATCH_STATUSES
 
 
 @router.patch("/projects/{project_id}/tasks/{task_id}", response_model=TaskResponse)
@@ -211,6 +217,16 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
             status_code=400,
             detail="Task is manual-only and cannot be queued for autonomous execution",
         )
+    if existing.get("status") == "running":
+        _raise_dispatch_failure(
+            {
+                "task_id": task_id,
+                "project_id": project_id,
+                "stage": "blocked",
+                "status": "already_running",
+                "reason": "task_already_running",
+            }
+        )
     readiness = await asyncio.to_thread(validate_task_ready, task_id, project_id)
     if not readiness.ready:
         readiness_detail: dict[str, Any] = {
@@ -233,6 +249,7 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
         project_id,
         task_type,
         require_enabled=False,
+        skip_concurrency=True,
     )
     if guard_error:
         status = str(guard_error.get("status") or "blocked")
@@ -250,14 +267,20 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
 
     try:
         updated = await asyncio.to_thread(task_store.update_task_status, task_id, "pending")
+        updated = await asyncio.to_thread(
+            task_store.update_task,
+            task_id,
+            execution_mode=EXECUTION_MODE_AUTONOMOUS,
+            autonomous=True,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     if not updated:
-        raise HTTPException(status_code=500, detail="Failed to start execution")
+        raise HTTPException(status_code=500, detail="Failed to queue execution")
 
     dispatch_result = await dispatch_task(task_id, project_id, manual_dispatch=True)
-    if dispatch_result.get("status") != "dispatched":
+    if dispatch_result.get("status") != "dispatched" and not _is_deferred_dispatch(dispatch_result):
         _raise_dispatch_failure(dispatch_result)
 
     return task_to_response(updated)

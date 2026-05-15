@@ -79,6 +79,23 @@ def _make_dispatch_callback() -> Any:
     return dispatch
 
 
+async def _drain_project_queue_after_execution(project_id: str, *, manual_dispatch: bool) -> None:
+    """Start queued autonomous work after a task frees project capacity."""
+    from ..tasks.autonomous.pickup import autonomous_work_pickup
+
+    dispatch = _make_dispatch_callback()
+    try:
+        result = await asyncio.to_thread(
+            autonomous_work_pickup,
+            project_id,
+            dispatch=dispatch,
+            require_enabled=not manual_dispatch,
+        )
+        logger.info("execution_queue_drain_complete", project_id=project_id, result=result)
+    except Exception:
+        logger.exception("execution_queue_drain_failed", project_id=project_id)
+
+
 @hatchet.task(
     name="summitflow-dispatch",
     input_validator=TaskInput,
@@ -239,6 +256,7 @@ async def execute_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
             status=status,
             details=guard_error,
         )
+        task_store.release_task(input.task_id)
         return {
             "task_id": input.task_id,
             "project_id": input.project_id,
@@ -248,7 +266,9 @@ async def execute_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
         }
 
     dispatch = _make_dispatch_callback()
-    return await asyncio.to_thread(start_execution, input.task_id, input.project_id, dispatch=dispatch)
+    result = await asyncio.to_thread(start_execution, input.task_id, input.project_id, dispatch=dispatch)
+    await _drain_project_queue_after_execution(input.project_id, manual_dispatch=input.manual_dispatch)
+    return result
 
 
 @hatchet.task(
