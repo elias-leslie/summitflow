@@ -66,6 +66,36 @@ def test_checkout_setup_preserves_dirty_checkout_before_branch_switch() -> None:
     assert smart_commit.call_args.kwargs["skip_checks"] is True
 
 
+def test_checkout_setup_preserves_prior_branch_residue_under_branch_owner() -> None:
+    from app.tasks.autonomous.exec_modules.checkout_setup import setup_task_checkout
+
+    checkout = MagicMock(branch="task-next/main")
+    with (
+        patch("app.tasks.autonomous.exec_modules.checkout_setup.create_task_checkout", return_value=checkout),
+        patch("app.tasks.autonomous.exec_modules.checkout_setup.get_project_path", return_value="/repo"),
+        patch("app.tasks.autonomous.exec_modules.checkout_setup.current_branch", return_value="task-prior/main"),
+        patch(
+            "app.tasks.autonomous.exec_modules.checkout_setup.has_uncommitted_changes",
+            side_effect=[True, False],
+        ),
+        patch(
+            "app.tasks.autonomous.exec_modules.checkout_setup.smart_commit_result",
+            return_value={"success": True},
+        ) as smart_commit,
+        patch("app.tasks.autonomous.exec_modules.checkout_setup.emit_log"),
+    ):
+        result = setup_task_checkout("task-next", "agent-hub")
+
+    assert result == "/repo"
+    smart_commit.assert_called_once_with(
+        "/repo",
+        "wip(task-prior): recover prior shared-checkout changes",
+        task_id="task-prior",
+        push=True,
+        skip_checks=True,
+    )
+
+
 def test_subtask_commit_logs_preservation_failure_detail() -> None:
     from app.tasks.autonomous.exec_modules.execution_loop import _commit_subtask_changes
 

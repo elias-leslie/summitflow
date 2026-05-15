@@ -22,6 +22,7 @@ _DISPATCHABLE_STATUSES = ("pending", "failed")
 _IGNORED_CONCURRENCY_SOURCES = {"codex-transcript-sync"}
 _STALE_LIFECYCLE_STATES = {"dead_candidate", "reapable"}
 _FINAL_HEALTH_STATES = {"completed", "failed", "error"}
+_FINAL_TASK_STATUSES = {"completed", "failed", "cancelled", "abandoned", "closed"}
 
 
 def check_agent_hub_execution_permission(
@@ -58,9 +59,28 @@ def check_autonomous_enabled(project_id: str) -> dict[str, Any] | None:
     return check_agent_hub_execution_permission(project_id, require_enabled=True)
 
 
-def _session_counts_for_concurrency(session: dict[str, Any], *, exclude_task_id: str | None = None) -> bool:
+def _session_task_is_terminal(session: dict[str, Any], project_id: str | None) -> bool:
+    external_id = str(session.get("external_id") or "").strip()
+    if not external_id.startswith("task-"):
+        return False
+    try:
+        task = task_store.get_task(external_id)
+    except Exception:
+        return False
+    if not task or (project_id and task.get("project_id") != project_id):
+        return False
+    return str(task.get("status") or "").strip().lower() in _FINAL_TASK_STATUSES
+
+
+def _session_counts_for_concurrency(
+    session: dict[str, Any],
+    *,
+    project_id: str | None = None,
+    exclude_task_id: str | None = None,
+) -> bool:
     if str(session.get("status") or "").lower() != "active":
         return False
+    external_id = str(session.get("external_id") or "").strip()
     live_activity = session.get("live_activity")
     if isinstance(live_activity, dict):
         lifecycle_state = str(live_activity.get("lifecycle_state") or "").strip().lower()
@@ -69,7 +89,11 @@ def _session_counts_for_concurrency(session: dict[str, Any], *, exclude_task_id:
         health = str(live_activity.get("health") or "").strip().lower()
         if health in _FINAL_HEALTH_STATES:
             return False
-    if exclude_task_id and str(session.get("external_id") or "") == exclude_task_id:
+    if exclude_task_id and external_id == exclude_task_id:
+        return False
+    if not external_id.startswith("task-"):
+        return False
+    if _session_task_is_terminal(session, project_id):
         return False
     request_source = str(session.get("request_source") or "").strip().lower()
     return request_source not in _IGNORED_CONCURRENCY_SOURCES
@@ -94,7 +118,7 @@ def count_active_agent_hub_sessions(project_id: str, *, exclude_task_id: str | N
         1
         for session in sessions
         if isinstance(session, dict)
-        and _session_counts_for_concurrency(session, exclude_task_id=exclude_task_id)
+        and _session_counts_for_concurrency(session, project_id=project_id, exclude_task_id=exclude_task_id)
     )
 
 

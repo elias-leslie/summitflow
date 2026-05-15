@@ -179,10 +179,12 @@ class TestCheckSystemHealth:
 class TestConcurrencySnapshot:
     """Tests for project concurrency accounting."""
 
+    @patch("app.tasks.autonomous.pickup_guards.task_store.get_task", return_value=None)
     @patch("httpx.get")
     def test_active_session_count_excludes_current_task_and_transcript_sync(
         self,
         mock_get: MagicMock,
+        _mock_get_task: MagicMock,
     ) -> None:
         mock_get.return_value = _mock_response(
             {
@@ -221,11 +223,44 @@ class TestConcurrencySnapshot:
                         "request_source": "summitflow",
                         "live_activity": {"lifecycle_state": "quiet", "health": "quiet"},
                     },
+                    {
+                        "status": "active",
+                        "external_id": None,
+                        "request_source": "summitflow",
+                        "live_activity": {"lifecycle_state": "quiet", "health": "active"},
+                    },
                 ]
             }
         )
 
         assert count_active_agent_hub_sessions("agent-hub", exclude_task_id="task-current") == 1
+
+    @patch("app.tasks.autonomous.pickup_guards.task_store.get_task")
+    @patch("httpx.get")
+    def test_active_session_for_terminal_task_does_not_consume_capacity(
+        self,
+        mock_get: MagicMock,
+        mock_get_task: MagicMock,
+    ) -> None:
+        mock_get.return_value = _mock_response(
+            {
+                "sessions": [
+                    {
+                        "status": "active",
+                        "external_id": "task-finished",
+                        "request_source": "summitflow",
+                        "live_activity": {"lifecycle_state": "quiet", "health": "quiet"},
+                    },
+                ]
+            }
+        )
+        mock_get_task.return_value = {
+            "id": "task-finished",
+            "project_id": "agent-hub",
+            "status": "failed",
+        }
+
+        assert count_active_agent_hub_sessions("agent-hub") == 0
 
     @patch("app.tasks.autonomous.pickup_guards.count_active_agent_hub_sessions", return_value=0)
     @patch("app.tasks.autonomous.pickup_guards.task_store.count_running_tasks", return_value=0)

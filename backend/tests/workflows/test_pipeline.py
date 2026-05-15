@@ -15,6 +15,32 @@ def test_dispatch_callback_raises_on_unknown_stage() -> None:
         dispatch("missing-stage", "task-123", "project-123")
 
 
+def test_dispatch_callback_preserves_manual_dispatch(monkeypatch) -> None:
+    from app.workflows.pipeline import _make_dispatch_callback
+
+    seen: dict[str, object] = {}
+
+    async def fake_trigger(stage: str, task_id: str, project_id: str, *, manual_dispatch: bool) -> None:
+        seen.update(
+            stage=stage,
+            task_id=task_id,
+            project_id=project_id,
+            manual_dispatch=manual_dispatch,
+        )
+
+    monkeypatch.setattr("app.workflows.pipeline._trigger_workflow", fake_trigger)
+
+    dispatch = _make_dispatch_callback(manual_dispatch=True)
+    dispatch("execute", "task-123", "agent-hub")
+
+    assert seen == {
+        "stage": "execute",
+        "task_id": "task-123",
+        "project_id": "agent-hub",
+        "manual_dispatch": True,
+    }
+
+
 async def _run_inline(func, *args, **kwargs):
     return func(*args, **kwargs)
 
@@ -58,7 +84,11 @@ async def test_execute_wf_excludes_current_preclaimed_task_from_concurrency_guar
     assert isinstance(call, Awaitable)
     result = cast(dict[str, Any], await call)
 
-    assert seen_kwargs == {"require_enabled": False, "exclude_task_id": "task-177f0dec"}
+    assert seen_kwargs == {
+        "require_enabled": False,
+        "exclude_task_id": "task-177f0dec",
+        "skip_concurrency": True,
+    }
     assert result["status"] == "executed"
 
 

@@ -5,11 +5,20 @@ from __future__ import annotations
 from ....logging_config import get_logger
 from ....services.task_checkout import create_task_checkout
 from ....storage import tasks as task_store
+from ....utils._git_branches import extract_task_id_from_branch
+from ....utils.git_base import current_branch
 from .checkout import get_project_path
 from .events import emit_error, emit_log
 from .git_ops import has_uncommitted_changes, smart_commit_result
 
 logger = get_logger(__name__)
+
+
+def _preservation_task_id(task_id: str, project_path: str, *, before_checkout: bool) -> str:
+    if not before_checkout:
+        return task_id
+    branch = current_branch(project_path)
+    return extract_task_id_from_branch(branch or "") or task_id
 
 
 def _preserve_uncommitted_changes(
@@ -22,6 +31,7 @@ def _preserve_uncommitted_changes(
     if not has_uncommitted_changes(project_path):
         return
 
+    owner_task_id = _preservation_task_id(task_id, project_path, before_checkout=before_checkout)
     message = (
         "Found uncommitted changes before task branch setup, preserving them on remote"
         if before_checkout
@@ -30,8 +40,8 @@ def _preserve_uncommitted_changes(
     emit_log(task_id, "warn", message, project_id=project_id)
     commit_result = smart_commit_result(
         project_path,
-        f"wip({task_id}): recover prior shared-checkout changes",
-        task_id=task_id,
+        f"wip({owner_task_id}): recover prior shared-checkout changes",
+        task_id=owner_task_id,
         push=True,
         skip_checks=True,
     )

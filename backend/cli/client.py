@@ -10,11 +10,13 @@ from ._client_mixins import (
     TaskOperationsMixin,
     TestOperationsMixin,
 )
+from ._client_mixins_tasks import _TaskWorkflowMixin
 
 
 class STClient(
     BaseHTTPClient,
     TaskOperationsMixin,
+    _TaskWorkflowMixin,
     DependencyOperationsMixin,
     TestOperationsMixin,
     SubtaskOperationsMixin,
