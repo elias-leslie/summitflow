@@ -162,7 +162,7 @@ def _run_debugger(
         get_sync_client().complete(
             messages=[{"role": "user", "content": fix_prompt}],
             agent_slug="debugger", project_id=project_id,
-            working_dir=project_path, execute_tools=True, max_turns=25,
+            working_dir=project_path, execute_tools=True,
         )
         return True
     except Exception as e:

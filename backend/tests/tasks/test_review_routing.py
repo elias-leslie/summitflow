@@ -344,6 +344,7 @@ class TestRunQALoop:
 
         assert result == "APPROVED"
         assert client.complete.call_count == 2  # debugger + reviewer
+        assert "max_turns" not in client.complete.call_args_list[0].kwargs
         mock_save.assert_called_once()
 
     @patch("app.tasks.autonomous.review_modules.actions._run_reviewer")

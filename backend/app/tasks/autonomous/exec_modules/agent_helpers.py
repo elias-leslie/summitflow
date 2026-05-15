@@ -17,7 +17,6 @@ from .events import emit_log, emit_progress_log
 from .interruption import ExecutionInterrupted
 
 _AGENT_FAILURE_FINISH_REASONS = {"error", "failed", "cancelled"}
-_COMPLETE_RETRY_ATTEMPTS = 5
 _COMPLETE_RETRY_DELAYS_SECONDS = (2.0, 4.0, 8.0, 16.0)
 _TRANSIENT_COMPLETE_ERROR_TEXT = (
     "connection refused",
@@ -245,10 +244,7 @@ def _retry_after_exception(
     exc: Exception,
 ) -> float:
     """Validate transient exception is retryable and return delay."""
-    if (
-        attempt == _COMPLETE_RETRY_ATTEMPTS - 1
-        or not _is_transient_agent_hub_complete_error(exc)
-    ):
+    if not _is_transient_agent_hub_complete_error(exc):
         raise exc
     delay = _complete_retry_delay(attempt)
     _abort_retry_if_task_stopped(task_id, project_id, "agent_hub_complete_error_retry")
@@ -256,7 +252,7 @@ def _retry_after_exception(
         task_id,
         "warn",
         "Agent Hub complete unavailable; "
-        f"retrying in {delay:g}s (attempt {attempt + 2}/{_COMPLETE_RETRY_ATTEMPTS}): "
+        f"retrying in {delay:g}s (attempt {attempt + 2}): "
         f"{str(exc)[:160]}",
         source="orchestrator",
         project_id=project_id,
@@ -273,8 +269,6 @@ def _retry_after_transient_response(
     current_session_id: str,
 ) -> tuple[str, float]:
     """Rotate session, validate retryable, and return (new_session_id, delay)."""
-    if attempt == _COMPLETE_RETRY_ATTEMPTS - 1:
-        return current_session_id, 0.0
     delay = _complete_retry_delay(attempt)
     failure = agent_completion_failure(response) or "transient interruption"
     _abort_retry_if_task_stopped(task_id, project_id, "agent_hub_interruption_retry")
@@ -285,7 +279,7 @@ def _retry_after_transient_response(
         task_id,
         "warn",
         "Agent Hub complete returned transient interruption; "
-        f"retrying in {delay:g}s (attempt {attempt + 2}/{_COMPLETE_RETRY_ATTEMPTS}): "
+        f"retrying in {delay:g}s (attempt {attempt + 2}): "
         f"{failure[:160]} Fresh session: {new_session_id}",
         source="orchestrator",
         project_id=project_id,
@@ -303,7 +297,6 @@ def call_complete(
     session_id: str,
     max_turns: int | None = None,
     include_roles: list[str] | None = None,
-    timeout_seconds: float | None = None,
 ) -> CompletionResponse:
     """Invoke client.complete with standard kwargs and transient service retry."""
     kwargs = build_complete_kwargs(
@@ -316,15 +309,15 @@ def call_complete(
         max_turns=max_turns,
         include_roles=include_roles,
     )
-    if timeout_seconds is not None:
-        kwargs["timeout_seconds"] = timeout_seconds
     current_session_id = session_id
-    for attempt in range(_COMPLETE_RETRY_ATTEMPTS):
+    attempt = 0
+    while True:
         try:
             response = _try_complete(client, kwargs)
         except Exception as exc:
             delay = _retry_after_exception(task_id, project_id, attempt, exc)
             sleep(delay)
+            attempt += 1
             continue
         if not _is_transient_agent_hub_failure_response(response):
             return response
@@ -335,7 +328,7 @@ def call_complete(
             return response
         current_session_id = new_session_id
         sleep(delay)
-    raise RuntimeError("unreachable Agent Hub complete retry state")
+        attempt += 1
 
 
 def post_initial_response(
