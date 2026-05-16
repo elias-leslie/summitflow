@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from hashlib import sha1
+from ipaddress import ip_address
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import typer
 
@@ -65,6 +68,7 @@ _NO_ENGINES_TEMPLATE = "No browser engines available on {host}"
 _CONFIGURED_PORT_UNAVAILABLE_TEMPLATE = "Configured browser port is not available on {host}:{port}"
 _ENDPOINT_USAGE = "Usage: st browser endpoint [--http|--ws|--json|--format http|ws|json]"
 _URL_USAGE = "Usage: st browser url <project-or-url>"
+_LOCAL_URL_CONFIRM_ENV = "ST_BROWSER_CONFIRM_LOCAL_URL"
 
 
 def _browser_target_env() -> dict[str, str]:
@@ -138,6 +142,66 @@ def _select_port(engine: str | None) -> int:
     raise typer.Exit(1) from None
 
 
+def _url_hostname(value: str) -> str | None:
+    try:
+        hostname = urlsplit(value.strip()).hostname
+    except ValueError:
+        return None
+    return hostname.lower().rstrip(".") if hostname else None
+
+
+def _is_local_browser_url(value: str) -> bool:
+    hostname = _url_hostname(value)
+    if not hostname:
+        return False
+    if hostname == "localhost":
+        return True
+    try:
+        return ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def _local_url_display_host(value: str) -> str:
+    try:
+        parsed = urlsplit(value.strip())
+        hostname = parsed.hostname or "unknown"
+        try:
+            port = parsed.port
+        except ValueError:
+            port = None
+    except ValueError:
+        return "unknown"
+    return f"{hostname}:{port}" if port else hostname
+
+
+def _local_url_confirmation_token(value: str) -> str:
+    host = _local_url_display_host(value)
+    return sha1(f"st-browser-local-url:{host}".encode()).hexdigest()[:8]
+
+
+def _local_browser_url_error(value: str) -> str | None:
+    if not _is_local_browser_url(value):
+        return None
+    token = _local_url_confirmation_token(value)
+    if os.environ.get(_LOCAL_URL_CONFIRM_ENV, "").strip() == token:
+        return None
+    host = _local_url_display_host(value)
+    return (
+        f"LOCAL_BROWSER_URL_BLOCKED target_host={host}: st browser runs from browser VM "
+        f"{_DEFAULT_BROWSER_VM_ID} by default; localhost/127.0.0.1 is that VM, not this server. "
+        f"Use `st browser url <project>` or a reachable LAN/prod URL. "
+        f"To confirm intentional local target: {_LOCAL_URL_CONFIRM_ENV}={token}"
+    )
+
+
+def _resolve_guarded_browser_location(value: str) -> str:
+    resolved = resolve_browser_location(value)
+    if message := _local_browser_url_error(resolved):
+        raise BrowserRouteError(message)
+    return resolved
+
+
 def _run_agent(args: list[str], *, cdp: str | None = None, capture: bool = False) -> subprocess.CompletedProcess[str]:
     command = [_agent_browser_bin()]
     if cdp:
@@ -194,7 +258,7 @@ def _browser_check(args: list[str]) -> int:
     return browser_check.run_browser_check(
         args,
         output_error=output_error,
-        resolve_browser_location=resolve_browser_location,
+        resolve_browser_location=_resolve_guarded_browser_location,
         select_port=_select_port,
         host_for_engine=_host_for_engine,
         cdp_ws=_cdp_ws,
@@ -300,7 +364,7 @@ def _with_resolved_navigation_target(args: list[str], command: str) -> list[str]
         return args
     resolved = [*args]
     try:
-        resolved[index + 1] = resolve_browser_location(resolved[index + 1])
+        resolved[index + 1] = _resolve_guarded_browser_location(resolved[index + 1])
     except BrowserRouteError as exc:
         output_error(str(exc))
         raise typer.Exit(2) from None
@@ -334,9 +398,13 @@ Examples:
   st browser endpoint --ws
   st vm status <browser-vm-id>
   ST_BROWSER_HOST=<browser-vm-or-connector> st browser health
-  ST_BROWSER_HOST=<browser-vm-or-connector> st browser check http://localhost:3001 /tmp/page.png
+  ST_BROWSER_HOST=<browser-vm-or-connector> st browser check http://app.lan:3001 /tmp/page.png
 
-Debug local override:
+Local page URL guard:
+  localhost/127.0.0.1 page targets are blocked because they point at the browser VM.
+  Use st browser url <project>; intentional local targets print a confirmation token.
+
+Debug local CDP override:
   ST_BROWSER_HOST=127.0.0.1 ST_BROWSER_ALLOW_LOCAL=1 st browser health
 """
 
@@ -380,13 +448,14 @@ def _viewport_args(scoped_browser_args: list[str]) -> list[str]:
 
 
 def _run_browser_command(command: str, browser_args: list[str], *, engine: str | None) -> int:
+    resolved_browser_args = _with_resolved_navigation_target(browser_args, command)
     port = _select_port(engine)
     host = _host_for_engine(engine)
     ws = _cdp_ws(port, host=host)
     if not ws:
         output_error(_ENDPOINT_ERROR_TEMPLATE.format(host=host, port=port))
         return 1
-    scoped_browser_args = _with_default_session(_with_resolved_navigation_target(browser_args, command))
+    scoped_browser_args = _with_default_session(resolved_browser_args)
     if command == "open" and os.environ.get("ST_BROWSER_DISABLE_DEFAULT_VIEWPORT") != "1":
         _run_agent(_viewport_args(scoped_browser_args), cdp=ws)
     result = _run_agent(scoped_browser_args, cdp=ws, capture=True)
@@ -415,7 +484,7 @@ def browser(ctx: typer.Context) -> None:
 
     Examples:
       st browser health
-      st browser check http://localhost:3001 /tmp/summitflow.png
+      st browser check summitflow /tmp/summitflow.png
     """
     if ctx.invoked_subcommand is not None:
         return

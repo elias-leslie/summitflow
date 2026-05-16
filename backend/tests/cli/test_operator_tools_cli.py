@@ -933,6 +933,20 @@ def test_browser_open_uses_repo_scoped_session(monkeypatch) -> None:
     close_blank.assert_not_called()
 
 
+def test_browser_open_blocks_loopback_url_before_selecting_browser(monkeypatch) -> None:
+    monkeypatch.delenv("ST_BROWSER_CONFIRM_LOCAL_URL", raising=False)
+
+    with patch("cli.commands.browser._select_port") as select_port:
+        result = runner.invoke(main_app, ["browser", "open", "http://127.0.0.1:3000/money"])
+
+    assert result.exit_code == 2
+    assert "LOCAL_BROWSER_URL_BLOCKED" in result.output
+    assert "browser VM 100" in result.output
+    assert "st browser url <project>" in result.output
+    assert "ST_BROWSER_CONFIRM_LOCAL_URL=" in result.output
+    select_port.assert_not_called()
+
+
 def test_browser_open_resolves_project_target(monkeypatch) -> None:
     monkeypatch.delenv("AGENT_BROWSER_SESSION", raising=False)
     monkeypatch.delenv("ST_BROWSER_SESSION", raising=False)
@@ -1026,6 +1040,33 @@ def test_browser_check_closes_session_and_runs_reaper() -> None:
     assert calls[-1][2:] == ["close"]
     reaper.assert_called_once()
     close_targets.assert_called_once_with("browser", 9222, {"after"})
+
+
+def test_browser_check_blocks_localhost_url_before_selecting_browser(monkeypatch) -> None:
+    monkeypatch.delenv("ST_BROWSER_CONFIRM_LOCAL_URL", raising=False)
+
+    with patch("cli.commands.browser._select_port") as select_port:
+        result = runner.invoke(main_app, ["browser", "check", "http://localhost:3000/money", "/tmp/check.png"])
+
+    assert result.exit_code == 2
+    assert "LOCAL_BROWSER_URL_BLOCKED" in result.output
+    assert "target_host=localhost:3000" in result.output
+    assert "localhost/127.0.0.1 is that VM" in result.output
+    assert "ST_BROWSER_CONFIRM_LOCAL_URL=" in result.output
+    select_port.assert_not_called()
+
+
+def test_browser_local_url_confirmation_token_allows_intentional_target(monkeypatch) -> None:
+    target = "http://localhost:3000/money?token=secret"
+    message = browser._local_browser_url_error(target)
+
+    assert message is not None
+    assert "target_host=localhost:3000" in message
+    assert "token=secret" not in message
+
+    monkeypatch.setenv("ST_BROWSER_CONFIRM_LOCAL_URL", browser._local_url_confirmation_token(target))
+
+    assert browser._local_browser_url_error(target) is None
 
 
 def test_browser_check_treats_screenshot_timeout_as_warning(tmp_path: Path) -> None:
