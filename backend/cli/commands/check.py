@@ -416,21 +416,19 @@ def _github_repo_name(root: Path) -> str | None:
     return repo or None
 
 
-def _codeql_alert_location(alert: dict[str, Any]) -> str:
-    instance = alert.get("most_recent_instance")
-    location = instance.get("location") if isinstance(instance, dict) else None
-    if not isinstance(location, dict):
-        return "unknown"
-    path = location.get("path") or "unknown"
-    line = location.get("start_line")
-    return f"{path}:{line}" if line else str(path)
-
-
 def _codeql_alert_hint(alert: dict[str, Any]) -> str:
     number = alert.get("number", "?")
     rule = alert.get("rule")
     rule_id = rule.get("id") if isinstance(rule, dict) else "unknown"
-    return f"#{number} {rule_id} {_codeql_alert_location(alert)}"
+    instance = alert.get("most_recent_instance")
+    location = instance.get("location") if isinstance(instance, dict) else None
+    if isinstance(location, dict):
+        path = location.get("path") or "unknown"
+        line = location.get("start_line")
+        loc = f"{path}:{line}" if line else str(path)
+    else:
+        loc = "unknown"
+    return f"#{number} {rule_id} {loc}"
 
 
 def _fetch_open_codeql_alerts(root: Path, repo: str, ref: str | None) -> tuple[int, list[dict[str, Any]], str]:
@@ -495,9 +493,23 @@ def _parse_codeql_args(args: list[str]) -> tuple[int | None, str | None]:
 
 
 def _run_codeql_alert_check(args: list[str]) -> int:
-    parsed_result, explicit_ref = _parse_codeql_args(args)
-    if parsed_result is not None:
-        return parsed_result
+    explicit_ref: str | None = None
+    remaining = _strip_separator(args)
+    index = 0
+    while index < len(remaining):
+        arg = remaining[index]
+        if arg in {"-h", "--help"}:
+            print("Usage: st check codeql [--ref refs/heads/main]")
+            return 0
+        if arg == "--ref":
+            if index + 1 >= len(remaining):
+                output_error("--ref requires a value")
+                return 2
+            explicit_ref = _normalize_codeql_ref(remaining[index + 1])
+            index += 2
+            continue
+        output_error(f"Unknown st check codeql option: {arg}")
+        return 2
 
     root = _repo_root()
     repo = _github_repo_name(root)
