@@ -271,7 +271,6 @@ async def execute_task(project_id: str, task_id: str) -> TaskResponse:
             task_store.update_task,
             task_id,
             execution_mode=EXECUTION_MODE_AUTONOMOUS,
-            autonomous=True,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

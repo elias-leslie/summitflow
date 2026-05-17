@@ -49,8 +49,8 @@ def _insert_task(params: tuple[Any, ...]) -> dict[str, Any]:
             INSERT INTO tasks (id, project_id, capability_id, title, description,
                                priority, task_type, parent_task_id, tier,
                                current_phase, raw_request, enrichment_status,
-                               complexity, execution_mode, autonomous, labels, ai_review)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                               complexity, execution_mode, labels, ai_review)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING {TASK_COLUMNS}
             """,
             params,
@@ -75,7 +75,6 @@ def create_task(
     enrichment_status: str = "none",
     complexity: str | None = None,
     execution_mode: str | None = None,
-    autonomous: bool = False,
     labels: list[str] | None = None,
     ai_review: bool = True,
 ) -> dict[str, Any]:
@@ -88,13 +87,13 @@ def create_task(
     execution_fields = normalize_execution_fields(
         task_type=task_type,
         execution_mode=execution_mode,
-        autonomous=autonomous,
+        autonomous=None,
     )
     params = (
         task_id, project_id, capability_id, title, description,
         priority, task_type, parent_task_id, tier,
         current_phase, raw_request, enrichment_status,
-        complexity, execution_fields["execution_mode"], execution_fields["autonomous"],
+        complexity, execution_fields["execution_mode"],
         labels or [], ai_review,
     )
     return _insert_task(params)
@@ -118,17 +117,18 @@ def update_task(task_id: str, **fields: Any) -> dict[str, Any] | None:
         ValueError: If no fields provided or invalid field name.
     """
     resolved_task_id = canonicalize_task_id(task_id)
-    if "execution_mode" in fields or "autonomous" in fields or "task_type" in fields:
+    # `autonomous` is no longer a column; map any legacy callers to execution_mode.
+    legacy_autonomous = fields.pop("autonomous", None)
+    if "execution_mode" in fields or legacy_autonomous is not None or "task_type" in fields:
         existing = get_task(resolved_task_id)
         if existing is None:
             return None
         execution_fields = normalize_execution_fields(
             task_type=str(fields.get("task_type", existing.get("task_type", "task"))),
             execution_mode=fields.get("execution_mode", existing.get("execution_mode")),
-            autonomous=fields.get("autonomous", existing.get("autonomous")),
+            autonomous=legacy_autonomous if legacy_autonomous is not None else existing.get("autonomous"),
         )
         fields["execution_mode"] = execution_fields["execution_mode"]
-        fields["autonomous"] = execution_fields["autonomous"]
     return update_task_fields(resolved_task_id, **fields)
 
 

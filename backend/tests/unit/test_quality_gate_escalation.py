@@ -37,6 +37,6 @@ def test_escalation_creates_autonomous_bug_task() -> None:
     kwargs = mock_create.call_args.kwargs
     assert kwargs["task_type"] == "bug"
     assert kwargs["execution_mode"] == "autonomous"
-    assert kwargs["autonomous"] is True
+    assert "autonomous" not in kwargs  # column dropped; mode is canonical
     mock_mark.assert_called_once_with(conn, 123, "task-quality")
     conn.commit.assert_called_once()

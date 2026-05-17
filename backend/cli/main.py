@@ -22,8 +22,8 @@ atexit.register(close_pool)
 
 CLI_REFERENCE = """ST CLI - SummitFlow Tasks.
 
-Core loop: pulse --gate | ready | claim <id> | context <id> | done <id>.
-Pause/resume: pause <id> [-r reason] | resume <id> [-r reason].
+Core loop: pulse --gate | ready | create "<title>" | claim <id> | context <id> | done <id>.
+Lifecycle: pause <id> | reopen <id> | cancel <id> | update <id> | abandon <id>.
 VCS: vcs doctor | vcs reconcile | commit -m MSG [--task T] | jj diff | jj show.
 Tools: check | graph | service | runtime | db | browser | web | wiki | sessions | agent | cleanup | logs.
 Use `<command> --help` for command-specific syntax."""
@@ -39,7 +39,7 @@ COMMIT_COMPACT_TEMPLATE = "COMMIT[1]:status={status} pushed={pushed} detail={det
 PROGRESS_ALIAS_MESSAGE = (
     "Command 'st progress' does not exist. Did you mean:\n"
     "  st sync-progress <task-id>              Sync objectively complete, step-backed subtasks\n"
-    "  st subtask pass <subtask-id> -t <task>   Mark individual subtask complete"
+    "  st done <subtask-id> -t <task-id>       Mark individual subtask complete"
 )
 FORWARD_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True, "help_option_names": []}
 

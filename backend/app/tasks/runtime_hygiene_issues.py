@@ -210,7 +210,6 @@ def _create_issue_task(
         task_type=_task_type(issue_data),
         complexity="STANDARD",
         execution_mode="autonomous",
-        autonomous=True,
         labels=labels,
     )
     task_id = str(created["id"])

@@ -32,7 +32,8 @@ _SQL_DELETE_ALL = """
 """
 _SQL_GET_DEPS = """
     SELECT d.id, d.task_id, d.depends_on_task_id, d.dependency_type, d.created_at,
-           t.title as depends_on_title, t.status as depends_on_status
+           t.title as depends_on_title, t.status as depends_on_status,
+           t.task_type as depends_on_task_type
     FROM task_dependencies d
     JOIN tasks t ON d.depends_on_task_id = t.id
     WHERE d.task_id = %s
@@ -133,7 +134,8 @@ def get_dependencies(task_id: str) -> list[dict[str, Any]]:
         rows = cur.fetchall()
     return [
         {"id": r[0], "task_id": r[1], "depends_on_task_id": r[2], "dependency_type": r[3],
-         "created_at": r[4], "depends_on_title": r[5], "depends_on_status": r[6]}
+         "created_at": r[4], "depends_on_title": r[5], "depends_on_status": r[6],
+         "depends_on_task_type": r[7]}
         for r in rows
     ]
 

@@ -5,11 +5,11 @@ Checkpoint-aware task and subtask claiming with git+metadata checkpoints.
 
 from __future__ import annotations
 
+import os
 from typing import Annotated, Any
 
 import typer
 
-from app.services.task_lane_preflight import check_task_lane_conflicts
 from app.storage.tasks import canonicalize_task_id
 
 from ..client import APIError, STClient
@@ -28,21 +28,61 @@ from .claim_helpers import (
     print_resumed,
     require_claim_safe_tree,
 )
-from .pulse import require_pulse_gate
+from .preflight import preflight
 
 app = typer.Typer(help="Claim task or subtask to start work")
 
 
-def _require_task_lane_clear(task_id: str, project_id: str | None) -> None:
-    """Block only exact task-lane conflicts, not project-level session presence."""
-    if not project_id:
-        return
-    lane_check = check_task_lane_conflicts(task_id, project_id)
-    if lane_check.disposition != "block":
-        return
-    for issue in lane_check.issues:
-        output_error(issue)
-    raise typer.Exit(2)
+def _current_caller_id() -> str:
+    """Identify the current caller for idempotent re-claim detection.
+
+    Matches the worker_id convention used by `client.claim_task` (AGENT_ID env
+    or whoami fallback). When both match the existing `claimed_by`, a re-claim
+    is treated as a resumed success rather than a conflict.
+    """
+    explicit = os.getenv("AGENT_ID")
+    if explicit:
+        return explicit
+    user = os.getenv("USER") or os.getenv("LOGNAME") or ""
+    return user or "unknown"
+
+
+def _is_same_caller(claimed_by: object) -> bool:
+    if not isinstance(claimed_by, str) or not claimed_by:
+        return False
+    me = _current_caller_id()
+    return bool(me) and (claimed_by == me)
+
+
+def _enforce_plan_status_gate(task: dict[str, Any]) -> None:
+    """Binary plan-status gate.
+
+    - draft + autonomous → auto-promote to approved (autocode self-approval).
+    - rejected → block with a resolution hint pointing at st context/update.
+    - other states → pass-through.
+    """
+    plan_status = str(task.get("plan_status") or "draft")
+    execution_mode = str(task.get("execution_mode") or "manual")
+    task_id = str(task.get("id") or "")
+
+    if plan_status == "rejected":
+        output_error(
+            f"Task {task_id} plan is rejected.\n"
+            f"Resolution: st context {task_id} to review rejection, "
+            f"then st update {task_id} --plan <new.json>"
+        )
+        raise typer.Exit(2)
+
+    if plan_status == "draft" and execution_mode == "autonomous":
+        try:
+            from app.storage.task_spirit import approve_plan
+        except Exception:
+            return
+        try:
+            approve_plan(task_id, approved_by="st-claim-auto-promote")
+            task["plan_status"] = "approved"
+        except Exception as exc:
+            output_warning(f"Plan auto-promotion failed for {task_id}: {exc}")
 
 
 def _claim_task(
@@ -52,24 +92,47 @@ def _claim_task(
 ) -> dict[str, Any]:
     """Claim a task with checkpoint creation.
 
-    Creates checkpoint metadata, a git branch, and sets task status to running.
+    Idempotency: re-claiming a running task that is already claimed by the same
+    caller returns a `resumed` success. Cross-agent conflicts still block.
     """
     task_id = canonicalize_task_id(task_id)
     task = client.get_task(task_id)
     task_id = str(task.get("id", task_id))
     project_id = task.get("project_id", "")
+    pid_str = str(project_id) if project_id else None
+
+    _enforce_plan_status_gate(task)
 
     status = task.get("status", "")
-    claimable = ("pending", "paused", "failed")
+    existing = get_snapshot_info(task_id)
+
+    # Idempotent re-claim: same caller, already running, existing checkpoint → resume.
+    if status == "running" and existing and _is_same_caller(task.get("claimed_by")):
+        return {
+            "task_id": task_id,
+            "action": "resumed",
+            "branch": f"{task_id}/main",
+            "base_branch": str(existing.get("base_branch", "main")),
+        }
+
+    if status == "running" and not force and not _is_same_caller(task.get("claimed_by")):
+        claimed_by = task.get("claimed_by") or "another agent"
+        output_error(
+            f"Task {task_id} is already claimed by {claimed_by}.\n"
+            f"Resolution: st pulse to inspect, or wait/coordinate with the holder."
+        )
+        raise typer.Exit(2)
+
+    claimable = ("pending", "paused", "failed", "running")
     if status not in claimable and not force:
-        output_error(f"Task {task_id} cannot be claimed (status={status}). Expected one of: {', '.join(claimable)}")
+        output_error(
+            f"Task {task_id} cannot be claimed (status={status}).\n"
+            f"Resolution: st reopen {task_id} to move it back to pending, or pick a different task."
+        )
         raise typer.Exit(1)
 
-    existing = get_snapshot_info(task_id)
     if existing and not force:
-        require_pulse_gate(str(project_id) if project_id else None)
-        _require_task_lane_clear(task_id, str(project_id) if project_id else None)
-        require_claim_safe_tree()
+        preflight(task_id, pid_str, op="claim")
         try:
             client.claim_task(task_id)
         except APIError as e:
@@ -77,9 +140,7 @@ def _claim_task(
             raise typer.Exit(1) from None
         return handle_existing_checkpoint(task_id, existing)
 
-    require_pulse_gate(str(project_id) if project_id else None)
-    _require_task_lane_clear(task_id, str(project_id) if project_id else None)
-    require_claim_safe_tree()
+    preflight(task_id, pid_str, op="claim")
 
     try:
         client.claim_task(task_id)
@@ -122,7 +183,7 @@ def _claim_subtask(
     if status != "running":
         output_error(
             f"Parent task {task_id} not claimed (status={status}).\n"
-            f"Run: st claim {task_id}"
+            f"Resolution: st claim {task_id}"
         )
         raise typer.Exit(1)
 
@@ -144,8 +205,8 @@ def _claim_subtask(
     when="before any work on a task; after st ready picks one",
     precautions=(
         "subtask form uses dotted ID like 1.2; pass --task <parent> when claiming subtask",
-        "claim creates a checkpoint and branch; one claim per agent at a time",
-        "if blocked by lane conflict, fix the conflict — do not --force without reason",
+        "claim creates a checkpoint and branch; re-claim by same caller is a no-op resume",
+        "cross-agent conflicts print a Resolution hint pointing at st pulse",
     ),
     tier="mandate",
 )
@@ -162,13 +223,8 @@ def claim_command(
 ) -> None:
     """Claim a task or subtask to start work.
 
-    Check global lane truth before claiming:
-        st pulse
-
-    For tasks: Creates checkpoint metadata and a git branch.
-    For subtasks: Creates git branch only (parent task must be claimed first).
-
-    This creates a checkpoint that enables safe rollback via 'st abandon'.
+    Re-claiming by the same caller is idempotent (returns `resumed`). Use --force
+    only to take over a stale claim from another agent.
 
     Examples:
         st claim task-abc123         # Claim task, create checkpoint

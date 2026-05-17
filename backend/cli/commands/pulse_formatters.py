@@ -262,6 +262,22 @@ def _format_vcs_review(project_id: Any, cleanup: dict[str, Any], jj_status: JJRe
     )
 
 
+_RESOLUTION_HINTS: dict[str, str] = {
+    "jj_conflicts": "st vcs reconcile",
+    "active_nonwriter_write_session": (
+        "st pulse --sessions to inspect, or wait for the writer to release"
+    ),
+    "task_lane_conflict": (
+        "st abandon <conflicting-task-id> or rebase the conflicting checkpoint branch"
+    ),
+}
+
+
+def resolution_hint(reason: str) -> str | None:
+    """Return the resolution command for a typed preflight reason, if known."""
+    return _RESOLUTION_HINTS.get(reason)
+
+
 def _preflight_reasons(
     summary: dict[str, Any],
     cleanup: dict[str, Any],

@@ -38,11 +38,11 @@ PROJECT_AGENT_HUB = "agent-hub"
 
 # Common commands per project
 SUMMITFLOW_COMMON_COMMANDS = [
-    "st work <task-id>  # Set active task context",
-    "st context         # Show current task details",
-    "st step pass <subtask> <N>  # Mark step as passed",
-    "st subtask pass    # Mark subtask as passed",
-    "st done <task-id>  # Complete task (merge + cleanup)",
+    "st claim <task-id>            # Claim task and create checkpoint",
+    "st context <task-id>          # Show current task details",
+    "st log <task-id> \"note\"       # Record progress on a claimed task",
+    "st done <subtask-id> -t <task-id>  # Complete a subtask",
+    "st done <task-id>             # Complete task (merge + cleanup)",
 ]
 
 AGENT_HUB_COMMON_COMMANDS = [

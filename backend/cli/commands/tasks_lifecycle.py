@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from typing import Any
+
+import typer
+
 from ..client import APIError, STClient
 from ..context import require_task_id
-from ..output import handle_api_error, output_success, output_task
+from ..output import handle_api_error, output_error, output_success, output_task
 
 
 def _cleanup_safe_pause_residue(task_id: str, project_id: str | None) -> str | None:
@@ -29,17 +35,7 @@ def cancel_task_command(
     task_id: str | None,
     reason: str,
 ) -> None:
-    """Cancel a task (mark as cancelled from any state).
-
-    Use this for tasks that are invalid, obsolete, or no longer needed.
-    Works from any non-terminal state (pending, running, paused, failed).
-
-    If no task_id is provided, uses the active context from 'st work'.
-
-    Examples:
-        st cancel task-abc123 -r "Invalid: file doesn't exist"
-        st cancel -r "Obsolete: already fixed"    # Uses active context
-    """
+    """Cancel a task (mark as cancelled from any state)."""
     task_id = require_task_id(task_id)
     client = STClient()
 
@@ -75,35 +71,10 @@ def pause_task_command(
         output_success(cleanup_result)
 
 
-def resume_task_command(
-    task_id: str | None,
-    reason: str,
-) -> None:
-    """Resume a paused task by moving it back to pending."""
-    task_id = require_task_id(task_id)
-    client = STClient()
-
-    try:
-        task = client.resume_task(task_id, reason=reason or None)
-    except APIError as e:
-        handle_api_error(e)
-        return
-
-    if reason:
-        task["resume_reason"] = reason
-    output_task(task)
-
-
 def delete_task_command(
     task_id: str | None,
 ) -> None:
-    """Delete a task.
-
-    If no task_id is provided, uses the active context from 'st work'.
-
-    Examples:
-        st delete task-abc123
-    """
+    """Delete a task."""
     task_id = require_task_id(task_id)
     client = STClient()
 
@@ -122,11 +93,7 @@ def reopen_task_command(
 ) -> None:
     """Reopen a task by moving it back to pending.
 
-    Use this when a task was closed incorrectly or needs another execution pass.
-
-    Examples:
-        st reopen task-abc123 -r "False completion during reconcile"
-        st reopen task-abc123
+    Accepts any non-pending state (paused, completed, cancelled, failed).
     """
     task_id = require_task_id(task_id)
     client = STClient()
@@ -140,3 +107,68 @@ def reopen_task_command(
     if reason:
         task["reopen_reason"] = reason
     output_task(task)
+
+
+def update_task_command(
+    task_id: str,
+    *,
+    title: str | None = None,
+    priority: int | None = None,
+    labels: str | None = None,
+    description: str | None = None,
+    plan: Path | None = None,
+) -> None:
+    """Update in-flight task fields. Refuses status changes (use lifecycle verbs)."""
+    task_id = require_task_id(task_id)
+    fields: dict[str, Any] = {}
+    if title is not None:
+        fields["title"] = title
+    if priority is not None:
+        fields["priority"] = priority
+    if labels is not None:
+        fields["labels"] = [item.strip() for item in labels.split(",") if item.strip()]
+    if description is not None:
+        fields["description"] = description
+
+    if not fields and plan is None:
+        output_error(
+            "st update needs at least one field to change.\n"
+            "Resolution: pass --title, --priority, --labels, --description, or --plan"
+        )
+        raise typer.Exit(1)
+
+    client = STClient()
+    try:
+        task = client.update_task(task_id, **fields) if fields else client.get_task(task_id)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    if plan is not None:
+        _apply_plan_swap(task_id, plan)
+        try:
+            task = client.get_task(task_id)
+        except APIError as e:
+            handle_api_error(e)
+            return
+        task["plan_swapped"] = True
+
+    output_task(task)
+
+
+def _apply_plan_swap(task_id: str, plan: Path) -> None:
+    """Replace the task's spirit plan and reset plan_status to draft."""
+    try:
+        raw = json.loads(plan.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        output_error(
+            f"Failed to read plan {plan}: {e}\n"
+            "Resolution: pass a JSON plan file with at least {title, subtasks}"
+        )
+        raise typer.Exit(1) from None
+
+    from app.storage import task_spirit as spirit_store
+
+    from .tasks_helpers import upsert_task_spirit_from_plan
+    upsert_task_spirit_from_plan(task_id, raw)
+    spirit_store.set_plan_status(task_id, "draft", actor="st-update-plan")

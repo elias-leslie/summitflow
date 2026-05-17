@@ -958,45 +958,49 @@ def test_require_pulse_gate_keeps_other_task_write_session_blocking() -> None:
 
 
 def test_claim_task_runs_pulse_gate_before_checkpoint_creation() -> None:
+    """Single preflight() call ahead of checkpoint creation; no duplicated gates."""
     from cli.commands import claim
 
     client = MagicMock()
     client.get_task.return_value = {"id": "task-1", "status": "pending", "project_id": "summitflow"}
     with (
         patch.object(claim, "get_snapshot_info", return_value=None),
-        patch.object(claim, "require_pulse_gate") as mock_gate,
-        patch.object(claim, "_require_task_lane_clear") as mock_lane,
-        patch.object(claim, "require_claim_safe_tree") as mock_safe,
+        patch.object(claim, "preflight") as mock_preflight,
         patch.object(claim, "create_task_snapshot") as mock_snapshot,
     ):
         mock_snapshot.return_value = MagicMock(base_branch="main")
         result = claim._claim_task(client, "task-1")
 
-    mock_gate.assert_called_once_with("summitflow")
-    mock_lane.assert_called_once_with("task-1", "summitflow")
-    mock_safe.assert_called_once()
+    mock_preflight.assert_called_once_with("task-1", "summitflow", op="claim")
     assert result["action"] == "claimed"
 
 
 def test_done_task_runs_pulse_gate_before_completion() -> None:
+    """Single preflight per operation: one preflight() call before complete_task."""
     from cli.commands import done
 
     events: list[str] = []
     client = MagicMock()
-    client.get_task.return_value = {"id": "task-1", "project_id": "summitflow"}
+    client.get_task.return_value = {
+        "id": "task-1",
+        "project_id": "summitflow",
+        "status": "running",
+    }
 
     with (
-        patch.object(done, "require_pulse_gate", side_effect=lambda *_args, **_kwargs: events.append("gate")) as mock_gate,
+        patch.object(done, "preflight", side_effect=lambda *_args, **_kwargs: events.append("gate")) as mock_gate,
         patch.object(
             done,
             "complete_task",
             side_effect=lambda *_args, **_kwargs: events.append("complete")
             or {"project_id": "summitflow", "merged": False},
         ) as mock_complete,
+        patch.object(done, "STClient"),
     ):
-        done._handle_task_completion(client, "task-1", None, strict=False, admin=False)
+        done._handle_task_completion(client, "task-1", None)
 
-    assert events == ["gate", "complete", "gate"]
-    assert mock_gate.call_args_list[0].args == ("summitflow",)
-    assert mock_gate.call_args_list[0].kwargs == {"allow_task_id": "task-1"}
+    assert events == ["gate", "complete"]
+    assert mock_gate.call_count == 1
+    assert mock_gate.call_args_list[0].args == ("task-1", "summitflow")
+    assert mock_gate.call_args_list[0].kwargs == {"op": "done"}
     mock_complete.assert_called_once()

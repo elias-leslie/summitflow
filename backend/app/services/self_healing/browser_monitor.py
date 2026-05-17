@@ -158,7 +158,7 @@ def create_browser_error_task(
     task = create_task(
         project_id=project_id, title=title,
         description=_build_error_description(error),
-        priority=2, task_type="bug", complexity="STANDARD", autonomous=True,
+        priority=2, task_type="bug", complexity="STANDARD", execution_mode="autonomous",
     )
     logger.info("created_browser_error_task", task_id=task["id"], error_hash=error.error_hash, page_path=error.page_path)
     return task

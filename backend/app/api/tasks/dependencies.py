@@ -30,6 +30,7 @@ def _to_dependency_response(d: dict[str, Any]) -> DependencyResponse:
         created_at=d["created_at"].isoformat() if d["created_at"] else None,
         depends_on_title=d.get("depends_on_title"),
         depends_on_status=d.get("depends_on_status"),
+        depends_on_task_type=d.get("depends_on_task_type"),
     )
 
 

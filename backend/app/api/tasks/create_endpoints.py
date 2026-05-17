@@ -105,7 +105,6 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
         parent_task_id=task.parent_task_id,
         complexity=task.complexity,
         execution_mode=execution_fields["execution_mode"],
-        autonomous=execution_fields["autonomous"],
         labels=task.labels,
         ai_review=task.ai_review,
     )
@@ -137,7 +136,6 @@ async def create_task_from_ideation(
         task_type=body.task_type,
         complexity=body.to_db_complexity(),
         execution_mode=EXECUTION_MODE_AUTONOMOUS if body.auto_dispatch else None,
-        autonomous=body.auto_dispatch,
         labels=body.labels,
     )
 

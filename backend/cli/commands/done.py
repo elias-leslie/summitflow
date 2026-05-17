@@ -19,7 +19,7 @@ from ..output import output_error, output_success
 from .done_subtask import complete_subtask
 from .done_task import complete_task
 from .done_validators import is_subtask_id
-from .pulse import require_pulse_gate
+from .preflight import preflight
 
 app = typer.Typer(help="Complete task or subtask work")
 
@@ -34,27 +34,30 @@ def _handle_subtask_completion(
     id: str,
     task_id: str | None,
     message: str | None,
+    citations: list[str] | None = None,
+    acknowledge_none: bool = False,
 ) -> None:
-    """Handle subtask completion."""
+    """Handle subtask completion (idempotent; records citations if provided)."""
     from ..context import require_task_id
 
     resolved_task_id = require_task_id(task_id)
-    complete_subtask(client, id, resolved_task_id, message)
+    result = complete_subtask(
+        client, id, resolved_task_id, message,
+        citations=citations, acknowledge_none=acknowledge_none,
+    )
+    if result.get("action") == "noop":
+        output_success(f"Subtask {id} already complete (no-op).")
+        return
     output_success(f"Subtask {id} completed. Branch merged.")
 
 
-def _refuse_if_autocode_owned(task: dict[str, object], task_id: str, admin: bool) -> None:
+def _refuse_if_autocode_owned(task: dict[str, object], task_id: str) -> None:
     """Refuse st done while an autocode dispatcher actively owns the claim.
 
-    The autocode orchestrator owns terminal-status transitions for tasks it
-    runs. When an autocode agent reflexively calls `st done` as its closing
-    move, it races the orchestrator and strands the work product on the task
-    branch (see F2 'stuck-after-success'). The agent declares done by
-    returning control; the orchestrator runs the diff/quality/runtime gates
-    and transitions.
+    The autocode orchestrator owns terminal-status transitions for tasks it runs.
+    When an autocode agent reflexively calls `st done` as its closing move, it
+    races the orchestrator and strands the work product on the task branch.
     """
-    if admin:
-        return
     claimed_by = task.get("claimed_by")
     if not _is_autocode_dispatch_claim(claimed_by):
         return
@@ -65,7 +68,6 @@ def _refuse_if_autocode_owned(task: dict[str, object], task_id: str, admin: bool
         + (f" (lock expires {expires})." if expires else ".")
         + "\n  The autocode dispatcher owns completion for this task."
         + "\n  Return control and let the post-execution gates run."
-        + "\n  Override with --admin only if the claim is known stale."
     )
     raise typer.Exit(1)
 
@@ -74,24 +76,24 @@ def _handle_task_completion(
     client: STClient,
     id: str,
     message: str | None,
-    strict: bool,
-    admin: bool,
-    skip_diff_gate: bool = False,
 ) -> None:
-    """Handle task completion."""
+    """Handle task completion (idempotent; docs/admin auto-routed)."""
     task = client.get_task(id)
-    _refuse_if_autocode_owned(task, id, admin)
+    status = str(task.get("status") or "")
+    if status == "completed":
+        output_success(f"Task {id} already complete (no-op).")
+        return
+    _refuse_if_autocode_owned(task, id)
     project_id = str(task.get("project_id") or "") or None
-    require_pulse_gate(project_id, allow_task_id=id)
+    preflight(id, project_id, op="done")
     task_client = STClient(project_id=project_id) if project_id else client
-    result = complete_task(task_client, id, message, strict=strict, admin=admin, skip_diff_gate=skip_diff_gate)
+    result = complete_task(task_client, id, message)
     if result.get("merged"):
         base_branch = result.get("base_branch", "main")
         output_success(f"Task {id} completed. Checkpoint removed.")
         typer.echo(f"  Merged to: {base_branch}")
     else:
         output_success(f"Task {id} completed without checkpoint merge.")
-    require_pulse_gate(str(result.get("project_id") or project_id or "") or None, allow_task_id=id)
 
 
 @app.command(name="done")
@@ -115,33 +117,42 @@ def done_command(
         str | None,
         typer.Option("--message", "-m", help="Completion message"),
     ] = None,
-    strict: Annotated[
-        bool,
-        typer.Option("--strict", help="Strict mode: fail on unpassed gates (old behavior)"),
-    ] = False,
-    admin: Annotated[
-        bool,
+    citation: Annotated[
+        list[str] | None,
         typer.Option(
-            "--admin",
-            help="Close task without checkpoint merge requirements (for meta/planning tasks)",
+            "--citation",
+            help=(
+                "Memory citation (subtask form): M:abc12345, G:abc12345, "
+                "or 'Applied: [M:abc12345]'. Repeat for multiple."
+            ),
         ),
-    ] = False,
-    skip_diff_gate: Annotated[
+    ] = None,
+    acknowledge_none: Annotated[
         bool,
-        typer.Option(
-            "--skip-diff-gate",
-            help="Skip diff gate check (for non-code tasks like docs or config)",
-        ),
+        typer.Option("--none", help="Acknowledge no memories were needed (subtask form)."),
     ] = False,
 ) -> None:
     """Complete a task or subtask.
 
-    Smart mode (default): auto-verifies, checkpoints, publishes, closes, and cleans up.
-    Strict mode (--strict): fails if gates not pre-passed or main dirty.
+    Auto-verifies, checkpoints, publishes, closes, and cleans up. Docs/config-only
+    diffs are detected automatically; admin/no-merge paths are routed by DB state.
+    Escape hatch: `ST_DIFF_GATE=off` for emergencies.
+
+    Subtasks: pass --citation or --none to record memory citations before close.
+    Already-completed task/subtask is a no-op (exit 0).
     """
     if is_subtask_id(id):
         client = STClient()
-        _handle_subtask_completion(client, id, task_id, message)
+        _handle_subtask_completion(
+            client, id, task_id, message,
+            citations=citation, acknowledge_none=acknowledge_none,
+        )
     else:
+        if citation or acknowledge_none:
+            output_error(
+                "--citation / --none only apply to subtask completion.\n"
+                "Resolution: pass them with a subtask id, e.g. st done 1.2 -t <task-id> --citation M:abc12345"
+            )
+            raise typer.Exit(1)
         client = STClient(require_project=False)
-        _handle_task_completion(client, id, message, strict, admin, skip_diff_gate)
+        _handle_task_completion(client, id, message)

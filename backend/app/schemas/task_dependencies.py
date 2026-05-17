@@ -27,3 +27,4 @@ class DependencyResponse(BaseModel):
     created_at: datetime | None
     depends_on_title: str | None = None
     depends_on_status: str | None = None
+    depends_on_task_type: str | None = None

@@ -6,7 +6,7 @@ PLAN_SCHEMA_ENDPOINT = "/schemas/plan"
 PLAN_SCHEMA_SOURCE = "backend/app/schemas/plan.schema.json"
 PLAN_SCHEMA_ID = "https://summitflow.dev/schemas/plan.json"
 PLAN_VERIFY_EXAMPLE = "st verify plan.json"
-PLAN_CREATE_EXAMPLE = "st -P <project> create --plan plan.json"
+PLAN_CREATE_EXAMPLE = "st create --plan plan.json"
 MINIMAL_PLAN_SHAPE = (
     '{"title":"...","objective":"...","task_type":"task","complexity":"SIMPLE",'
     '"subtasks":[{"id":"1.1","description":"..."}]}'
@@ -18,9 +18,9 @@ PLAN_DISCOVERY_HINT = (
     f"(source: `{PLAN_SCHEMA_SOURCE}`, id: `{PLAN_SCHEMA_ID}`)."
 )
 
-CREATE_COMMAND_HELP = f"""Create an execution-ready task from plan or batch import tasks from file.
+CREATE_COMMAND_HELP = f"""Create a task. Bare title auto-enriches; --draft skips enrichment.
 
-Use `st capture` for lightweight task intake that still needs shaping.
+Use `--type bug|idea` for typed kernels and `--plan plan.json` for structured imports.
 
 {PLAN_DISCOVERY_HINT}
 """
@@ -46,9 +46,3 @@ VERIFY_FILE_ARGUMENT_HELP = (
     f"`{PLAN_SCHEMA_ENDPOINT}`. Minimal shape: {MINIMAL_PLAN_SHAPE}"
 )
 
-CREATE_ERROR_HINT = (
-    "st create requires --plan for single-task creation. "
-    f"Use `{PLAN_CREATE_EXAMPLE}` for execution-ready work after "
-    f"`{PLAN_VERIFY_EXAMPLE}`, or `st -P <project> capture <task|bug|idea> "
-    '"..."` for lightweight intake.'
-)
