@@ -50,7 +50,11 @@ class TaskCreate(BaseModel):
     )
     autonomous: bool = Field(
         default=False,
-        description="Compatibility shorthand for execution_mode='autonomous'",
+        description=(
+            "Compatibility shorthand for execution_mode='autonomous'. "
+            "The boolean is collapsed into execution_mode at write time; the column "
+            "itself was dropped in migration a9c4e1b7d2e8."
+        ),
     )
     ai_review: bool = Field(
         default=True,
@@ -94,7 +98,13 @@ class TaskUpdate(BaseModel):
     done_when: list[str] | None = None
     complexity: Literal["SIMPLE", "STANDARD", "COMPLEX"] | None = None
     execution_mode: ExecutionModeLiteral | None = None
-    autonomous: bool | None = None
+    autonomous: bool | None = Field(
+        default=None,
+        description=(
+            "Legacy shorthand. Collapses into execution_mode at write time. "
+            "Column dropped in migration a9c4e1b7d2e8."
+        ),
+    )
     ai_review: bool | None = None
     # Agent override for autonomous execution
     agent_override: str | None = Field(

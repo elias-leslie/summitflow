@@ -66,40 +66,21 @@ def create_subtask(
     output_success(subtask_id)
 
 
-@app.command("pass")
-@usage(
-    surface="st.subtask.pass",
-    cmd='st subtask pass 1.2 --citation "M:abc12345" --citation "G:def01234"',
-    when="close a subtask after its verification gates clear",
-    precautions=(
-        "must cite memories that informed the work, OR pass --none if no memories applied",
-        "every passed subtask should leave a verifiable artifact (test, screenshot, log)",
-    ),
-    tier="mandate",
-)
-def pass_subtask(
+def pass_subtask_internal(
     subtask_id: str,
-    task_id: Annotated[str | None, typer.Option("--task", "-t")] = None,
-    citations: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--citation",
-            help="Memory citations: M:abc12345, G:abc12345, or Applied: [M:abc12345]",
-        ),
-    ] = None,
-    acknowledge_none: Annotated[
-        bool,
-        typer.Option("--none", help="Acknowledge that no memories were needed"),
-    ] = False,
+    task_id: str,
+    citations: list[str] | None = None,
+    acknowledge_none: bool = False,
 ) -> None:
-    """Mark a subtask as passed."""
-    from ..context import require_task_id
+    """Internal helper used by `st done <subtask-id> -t <task-id>`.
 
-    task_id = require_task_id(task_id)
+    Records citations (or acknowledges none) and marks the subtask passed.
+    The standalone `st subtask pass` verb is gone — use `st done` instead.
+    """
     client = STClient()
 
     if citations and acknowledge_none:
-        output_error("Use either --citation or --none, not both.")
+        output_error("Use either citations or acknowledge_none, not both.")
         raise typer.Exit(1)
 
     try:
@@ -185,12 +166,3 @@ def list_subtasks(
 
 # Register citations command
 app.command("citations")(log_citations_cmd)
-
-
-@app.command("show", hidden=True)
-def show_removed() -> None:
-    """Removed: use st context --subtask instead."""
-    typer.echo("Command 'subtask show' has been removed.\n", err=True)
-    typer.echo("Use instead:", err=True)
-    typer.echo("  st context <task-id> --subtask X.Y    - Subtask-scoped context", err=True)
-    raise typer.Exit(1)

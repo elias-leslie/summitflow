@@ -7,9 +7,8 @@ from typing import Annotated
 import typer
 
 from ..client import APIError, STClient
-from ..config import get_config
 from ..lib.usage import usage
-from ..output import require_explicit_project, set_compact_output
+from ..output import set_compact_output
 from .task_plan_contract import (
     CREATE_COMMAND_HELP,
     FROM_FILE_OPTION_HELP,
@@ -17,55 +16,28 @@ from .task_plan_contract import (
     VERIFY_COMMAND_HELP,
     VERIFY_FILE_ARGUMENT_HELP,
 )
-from .tasks_bug import create_bug_task
-from .tasks_helpers import (
-    default_capture_priority as _default_capture_priority,
-)
-from .tasks_helpers import (
-    merge_label_strings as _merge_label_strings,
-)
-from .tasks_helpers import (
-    normalize_capture_kind as _normalize_capture_kind,
-)
-from .tasks_helpers import (
-    removed_command as _removed_command,
-)
 from .tasks_helpers import (
     resolve_log_inputs as _resolve_log_inputs,
 )
 
 app = typer.Typer(help="Task management commands")
 
-# Magic string constants
 _DEFAULT_TASK_TYPE = "task"
-_IDEA_LABELS = "crowdsourced"
-_IDEA_EXECUTION_MODE = "autonomous"
 _DEFAULT_CRITIQUE_STAGE = "task_shape"
 _DEFAULT_CRITIQUE_AGENT = "specifier"
-
-
-def _create_bug_capture(
-    title: str,
-    description: str | None,
-    priority: int,
-    labels: str | None,
-    from_task: str | None,
-) -> None:
-    require_explicit_project(get_config())
-    create_bug_task(title, description, priority, labels, from_task, STClient())
 
 
 @app.command(help=CREATE_COMMAND_HELP)
 @usage(
     surface="st.create",
-    cmd='st create "title" --plan plan.md',
-    when="create a new task with a structured plan",
+    cmd='st create "title"',
+    when="create a task; project auto-detected from cwd",
     precautions=(
-        "use --plan plan.md or --from-file for non-trivial scope; bare title only for tiny tasks",
-        "set --parent for subtask-of-task relations",
-        "--dry-run to preview before writing",
+        "bare title triggers auto-enrichment; pass --draft for kernel-only intake",
+        "--plan plan.md for pre-validated structured plans",
+        "--type bug|idea for typed kernels",
     ),
-    tier="reference",
+    tier="mandate",
 )
 def create(
     title: Annotated[str | None, typer.Argument()] = None,
@@ -74,26 +46,37 @@ def create(
         typer.Option("--from-file", help=FROM_FILE_OPTION_HELP),
     ] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-    description: Annotated[str | None, typer.Option("-d", "--description", hidden=True)] = None,
-    priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4, hidden=True)] = 2,
-    labels: Annotated[str | None, typer.Option("-l", "--labels", hidden=True)] = None,
-    task_type: Annotated[str, typer.Option("-t", "--type", hidden=True)] = _DEFAULT_TASK_TYPE,
-    parent: Annotated[str | None, typer.Option("--parent", hidden=True)] = None,
+    draft: Annotated[
+        bool,
+        typer.Option("--draft", help="Create kernel only; skip auto-enrichment pipeline."),
+    ] = False,
+    description: Annotated[str | None, typer.Option("-d", "--description")] = None,
+    priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4)] = 2,
+    labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
+    task_type: Annotated[
+        str,
+        typer.Option("-t", "--type", help="Task type: task, bug, idea, refactor, ..."),
+    ] = _DEFAULT_TASK_TYPE,
+    parent: Annotated[str | None, typer.Option("--parent")] = None,
     plan: Annotated[
         Path | None,
         typer.Option("--plan", help=PLAN_OPTION_HELP),
     ] = None,
     task_id: Annotated[str | None, typer.Option("--task")] = None,
-    blocked_by: Annotated[str | None, typer.Option("--blocked-by", hidden=True)] = None,
+    blocked_by: Annotated[str | None, typer.Option("--blocked-by")] = None,
     execution_mode: Annotated[str | None, typer.Option("--execution-mode", hidden=True)] = None,
     manual_only: Annotated[bool, typer.Option("--manual-only", hidden=True)] = False,
-    autonomous: Annotated[bool, typer.Option("--autonomous", hidden=True)] = False,
+    autonomous: Annotated[
+        bool,
+        typer.Option("--autonomous", help="Shorthand for --execution-mode autonomous."),
+    ] = False,
 ) -> None:
     from .tasks_create import create_task_command
 
     create_task_command(
         title, from_file, dry_run, description, priority, labels,
-        task_type, parent, plan, blocked_by, execution_mode, manual_only, autonomous, task_id
+        task_type, parent, plan, blocked_by, execution_mode, manual_only, autonomous,
+        draft=draft, task_id=task_id,
     )
 
 
@@ -119,10 +102,10 @@ def list_tasks(
 @app.command()
 @usage(
     surface="st.ready",
-    cmd="st -P <project> ready --limit N",
-    when="find next claimable task in this project",
+    cmd="st ready --limit N",
+    when="find next claimable task in the current project (cwd auto-detected)",
     precautions=(
-        "always pass -P <project>; default project may not be yours",
+        "blockers render inline as {id} (status, type); no follow-up context call needed",
         "use st ready-all for cross-project overview",
     ),
     tier="mandate",
@@ -181,16 +164,6 @@ def context(
     _context_command(task_id, subtask, compact)
 
 
-@app.command("get", hidden=True)
-def get_context_alias(
-    task_id: Annotated[str, typer.Argument()],
-    subtask: Annotated[str | None, typer.Option("--subtask", "-s")] = None,
-    compact: Annotated[bool | None, typer.Option("--compact/--no-compact")] = None,
-) -> None:
-    """Compatibility alias for `st task context`."""
-    _context_command(task_id, subtask, compact)
-
-
 def _context_command(task_id: str, subtask: str | None, compact: bool | None) -> None:
     from .tasks_context import get_task_context
 
@@ -238,7 +211,7 @@ def cancel(
     when="stop work but plan to return; releases claim so others can pick up",
     precautions=(
         "commit/push work-in-progress before pausing; pause does not preserve dirty state",
-        "use st resume to pick back up",
+        "use st reopen to return; reopen accepts any non-pending state",
     ),
     tier="reference",
 )
@@ -254,28 +227,17 @@ def pause(
 
 @app.command()
 @usage(
-    surface="st.resume",
-    cmd='st resume <task-id> -r "reason"',
-    when="return to a paused task",
-    precautions=("must st claim again after resume; resume only moves to pending",),
+    surface="st.reopen",
+    cmd='st reopen <task-id> -r "reason"',
+    when="return a paused/completed/cancelled task to the ready queue",
+    precautions=("must st claim again after reopen; reopen only moves to pending",),
     tier="reference",
 )
-def resume(
-    task_id: Annotated[str | None, typer.Argument()] = None,
-    reason: Annotated[str, typer.Option("-r", "--reason")] = "",
-) -> None:
-    """Resume a paused task (move it back to pending)."""
-    from .tasks_lifecycle import resume_task_command
-
-    resume_task_command(task_id, reason)
-
-
-@app.command()
 def reopen(
     task_id: Annotated[str | None, typer.Argument()] = None,
     reason: Annotated[str, typer.Option("-r", "--reason")] = "",
 ) -> None:
-    """Reopen a task (move it back to pending)."""
+    """Reopen a task (move it back to pending). Accepts any non-pending state."""
     from .tasks_lifecycle import reopen_task_command
 
     reopen_task_command(task_id, reason)
@@ -292,70 +254,29 @@ def delete(
 
 
 @app.command()
-def capture(
-    kind: Annotated[str, typer.Argument(help="Capture kind: task, bug, or idea")],
-    title: Annotated[str, typer.Argument(help="Short task kernel to store")],
-    description: Annotated[str | None, typer.Option("-d", "--description")] = None,
-    priority: Annotated[int | None, typer.Option("-p", "--priority", min=0, max=4)] = None,
-    labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
-    from_task: Annotated[
-        str | None,
-        typer.Option("--from", help="Source task when capturing a bug discovered from existing work"),
-    ] = None,
+@usage(
+    surface="st.update",
+    cmd='st update <task-id> --title "..." --priority 1',
+    when="fix in-flight task fields (title, priority, labels, description, plan); not for lifecycle changes",
+    precautions=(
+        "--plan swaps the spirit plan content and resets plan_status to draft",
+        "use st cancel/pause/reopen/abandon for status transitions, not st update",
+    ),
+    tier="reference",
+)
+def update(
+    task_id: Annotated[str, typer.Argument()],
+    title: Annotated[str | None, typer.Option("--title")] = None,
+    priority: Annotated[int | None, typer.Option("--priority", min=0, max=4)] = None,
+    labels: Annotated[str | None, typer.Option("--labels", help="Comma-separated label list")] = None,
+    description: Annotated[str | None, typer.Option("--description", "-d")] = None,
+    plan: Annotated[Path | None, typer.Option("--plan", help="Swap the task plan from a plan.json")] = None,
 ) -> None:
-    """Capture a lightweight task kernel for later ideation, triage, or planning.
+    """Update in-flight task fields."""
+    from .tasks_lifecycle import update_task_command
 
-    Use `st create --plan` when the work is already execution-ready.
-    """
-    from .tasks_create import create_capture_task_command
-
-    resolved_kind = _normalize_capture_kind(kind)
-    resolved_priority = priority if priority is not None else _default_capture_priority(resolved_kind)
-
-    if resolved_kind == "bug":
-        _create_bug_capture(title, description, resolved_priority, labels, from_task)
-        return
-
-    if from_task:
-        typer.echo("Error: --from only applies to `st capture bug ...`", err=True)
-        raise typer.Exit(1)
-
-    merged_labels = labels
-    execution_mode: str | None = None
-    autonomous = False
-    if resolved_kind == "idea":
-        merged_labels = _merge_label_strings(labels, _IDEA_LABELS)
-        execution_mode = _IDEA_EXECUTION_MODE
-        autonomous = True
-
-    create_capture_task_command(
-        title=title,
-        description=description,
-        priority=resolved_priority,
-        labels=merged_labels,
-        task_type=_DEFAULT_TASK_TYPE,
-        parent=None,
-        blocked_by=None,
-        execution_mode=execution_mode,
-        manual_only=False,
-        autonomous=autonomous,
-    )
-
-
-@app.command(hidden=True)
-def bug(
-    title: str,
-    description: Annotated[str | None, typer.Option("-d", "--description")] = None,
-    priority: Annotated[int | None, typer.Option("-p", "--priority", min=0, max=4)] = None,
-    labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
-    from_task: Annotated[str | None, typer.Option("--from")] = None,
-) -> None:
-    """Removed: use `st capture bug` instead."""
-    _ = (title, description, priority, labels)
-    hint = 'st capture bug "Fix: X"'
-    if from_task:
-        hint = f'{hint} --from {from_task}'
-    _removed_command("bug", hint)
+    update_task_command(task_id, title=title, priority=priority, labels=labels,
+                        description=description, plan=plan)
 
 
 @app.command()
@@ -402,16 +323,6 @@ def verify_plan(
     verify_plan_file(file_path, STClient(require_project=False))
 
 
-@app.command(hidden=True)
-def idea(
-    description: Annotated[str, typer.Argument()],
-    priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4)] = 3,
-) -> None:
-    """Removed: use `st capture idea` instead."""
-    _ = priority
-    _removed_command("idea", f'st capture idea "{description}"')
-
-
 @app.command()
 def autocode(
     task_id: Annotated[str | None, typer.Argument()] = None,
@@ -448,31 +359,3 @@ def critique(
     from .tasks_critique import critique_task_command
 
     critique_task_command(task_id, stage, agent, force)
-
-
-# Register stubs for removed commands so old scripts get a clear error.
-# Uses a loop to avoid one named function per removed command.
-_REMOVED: list[tuple[str, str]] = [
-    ("import", "st create --plan plan.json"),
-    ("work", "st claim <id>' and 'st context <id>"),
-    ("show", "st context <task-id>"),
-    ("close", "st done <id>"),
-    ("update", "st claim/done/abandon"),
-]
-for _cmd, _replacement in _REMOVED:
-
-    def _make_stub(
-        args: Annotated[list[str] | None, typer.Argument(hidden=True)] = None,
-        *,
-        name: str = _cmd,
-        repl: str = _replacement,
-    ) -> None:
-        hint = repl
-        if args:
-            # Substitute placeholder with the provided positional arg
-            task_id = args[0]
-            hint = repl.replace("<task-id>", task_id).replace("<id>", task_id)
-        _removed_command(name, hint)
-
-    _make_stub.__doc__ = f"Removed: use {_replacement} instead."
-    app.command(_cmd, hidden=True)(_make_stub)

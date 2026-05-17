@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -146,11 +147,53 @@ def _close_missing_checkpoint_active_task(client: STClient, task_id: str, task: 
     return _done_result(task_id, merged=False, snapshot_removed=True, base_branch=base_branch, project_id=project_id)
 
 
+_DOC_OR_CONFIG_SUFFIXES = (".md", ".txt", ".rst", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".json")
+_DOC_OR_CONFIG_FILENAMES = {"CHANGELOG", "CHANGES", "NOTICE", "AUTHORS", "LICENSE", "README"}
+
+
+def _is_doc_or_config_path(path: str) -> bool:
+    p = path.strip().lower()
+    if not p:
+        return False
+    if "/docs/" in p or p.startswith("docs/"):
+        return True
+    if any(p.endswith(suffix) for suffix in _DOC_OR_CONFIG_SUFFIXES):
+        return True
+    basename = p.rsplit("/", 1)[-1].split(".", 1)[0].upper()
+    return basename in _DOC_OR_CONFIG_FILENAMES
+
+
+def _is_diff_docs_or_config_only(repo_root: str, head_ref: str, base_branch: str) -> bool:
+    """Return True if every changed file in the task branch is docs/config."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", repo_root, "diff", "--name-only", f"{base_branch}...{head_ref}"],
+            capture_output=True, text=True, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if result.returncode != 0:
+        return False
+    paths = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return bool(paths) and all(_is_doc_or_config_path(p) for p in paths)
+
+
 def _run_diff_gate(repo_root: str, task_id: str, project_id: str | None, base_branch: str) -> None:
-    diff_result = check_diff_gate(repo_root, head_ref=resolve_task_branch(task_id, project_id=project_id), base_ref=base_branch)
+    # Emergency escape: ST_DIFF_GATE=off disables the gate entirely.
+    if (os.environ.get("ST_DIFF_GATE") or "").strip().lower() == "off":
+        return
+    head_ref = resolve_task_branch(task_id, project_id=project_id)
+    # Auto-route: docs/config-only changes skip the code-quality slice.
+    if _is_diff_docs_or_config_only(repo_root, head_ref, base_branch):
+        output_success("Diff gate auto-skipped: changes are docs/config only.")
+        return
+    diff_result = check_diff_gate(repo_root, head_ref=head_ref, base_ref=base_branch)
     if diff_result.passed:
         return
-    output_error(f"Diff gate blocked completion: {diff_result.summary}\n  Use --skip-diff-gate for non-code tasks (docs, config).")
+    output_error(
+        f"Diff gate blocked completion: {diff_result.summary}\n"
+        f"Resolution: address the gate findings, or set ST_DIFF_GATE=off for an emergency override."
+    )
     raise typer.Exit(1)
 
 
@@ -291,6 +334,7 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
         output_success("Main branch dirty, stashing changes before merge...")
         git_stash_push()
         stashed = True
+    publish_failed = False
     try:
         frontend_changed = _task_branch_touched_frontend(task_id, project_id, base_branch=base_branch)
         if repo_root and not skip_diff_gate:
@@ -299,13 +343,28 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
             _run_smart_prereqs(client, task_id, project_id)
         merge_task_branch(task_id, project_id=project_id)
         _finalize_completed_task_status(client, task_id, message=message)
+        # Publish FIRST so a failed publish leaves the snapshot intact for safe retry.
+        try:
+            _publish_completed_work(task_id, project_id)
+        except Exception as publish_exc:
+            publish_failed = True
+            output_warning(
+                f"Publish failed mid-done: {publish_exc}\n"
+                f"Resolution: checkpoint preserved; rerun `st done {task_id}` to retry publish."
+            )
+            raise typer.Exit(1) from None
         _capture_and_remove_snapshot(task_id, project_id)
         if frontend_changed:
             _trigger_health_check(task_id, project_id)
-        _publish_completed_work(task_id, project_id)
     except SystemExit as exc:
         raise typer.Exit(exc.code if isinstance(exc.code, int) else 1) from None
     finally:
         if stashed:
             git_stash_pop()
-    return _done_result(task_id, merged=True, snapshot_removed=True, base_branch=base_branch, project_id=project_id)
+    return _done_result(
+        task_id,
+        merged=True,
+        snapshot_removed=not publish_failed,
+        base_branch=base_branch,
+        project_id=project_id,
+    )

@@ -107,16 +107,21 @@ async def _create_subtasks_with_deps(task_id: str, item: BatchTaskCreate) -> lis
 
 async def _create_single_task(project_id: str, item: BatchTaskCreate) -> TaskResponse:
     """Create one task with its spirit fields and subtasks; return its TaskResponse."""
+    payload = item.model_dump(
+        include={
+            "title", "description", "capability_id", "priority",
+            "task_type", "parent_task_id", "complexity", "execution_mode", "autonomous",
+            "labels",
+        }
+    )
+    # `autonomous` is collapsed into execution_mode by the storage layer.
+    if payload.get("autonomous") and not payload.get("execution_mode"):
+        payload["execution_mode"] = "autonomous"
+    payload.pop("autonomous", None)
     task = await asyncio.to_thread(
         task_store.create_task,
         project_id=project_id,
-        **item.model_dump(
-            include={
-                "title", "description", "capability_id", "priority",
-                "task_type", "parent_task_id", "complexity", "execution_mode", "autonomous",
-                "labels",
-            }
-        ),
+        **payload,
     )
 
     await _save_task_spirit(task["id"], item)
@@ -153,7 +158,7 @@ async def validate_completion_gates(task_id: str) -> None:
             detail={
                 "message": "Cannot complete task with incomplete subtasks",
                 "incomplete_subtasks": incomplete,
-                "what_to_do": [f"Complete subtask {s} using: st subtask pass {task_id} {s}" for s in incomplete[:5]],
+                "what_to_do": [f"Complete subtask {s} using: st done {s} -t {task_id}" for s in incomplete[:5]],
                 "remaining": len(incomplete),
             },
         )

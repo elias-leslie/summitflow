@@ -118,7 +118,7 @@ def _create_error_task(
         priority=2,
         task_type="bug",
         complexity="STANDARD",
-        autonomous=True,
+        execution_mode="autonomous",
     )
 
     logger.info(

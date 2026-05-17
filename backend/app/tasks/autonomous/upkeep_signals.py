@@ -76,7 +76,6 @@ def create_signal_task(project_id: str, spec: SignalTaskSpec) -> str:
         task_type=spec.task_type,
         complexity=spec.complexity,
         execution_mode=EXECUTION_MODE_AUTONOMOUS,
-        autonomous=True,
         labels=[*UPKEEP_LABELS, spec.signal_type],
     )
     task_id = str(task["id"])

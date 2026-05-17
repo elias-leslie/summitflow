@@ -1,4 +1,4 @@
-"""Tests for subtask pass helpers and command behavior."""
+"""Tests for subtask completion via `st done` (replaces the retired `st subtask pass`)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,9 @@ import typer
 from typer.testing import CliRunner
 
 from cli.client import APIError
+from cli.commands.done_subtask import _resolve_citations_for_subtask, complete_subtask
 from cli.commands.subtask import app as subtask_app
-from cli.commands.subtask import clear_subtask, list_subtasks, pass_subtask
+from cli.commands.subtask import clear_subtask, list_subtasks
 from cli.commands.subtask_validation import is_step_resolved
 
 runner = CliRunner()
@@ -32,83 +33,69 @@ class TestIsStepResolved:
         assert not is_step_resolved(step, {1: False})
 
 
-class TestPassSubtaskCommand:
-    def test_pass_subtask_help_shows_accepted_citation_formats(self) -> None:
+class TestSubtaskSurface:
+    """The retired `st subtask pass` command must not reappear."""
+
+    def test_subtask_app_no_longer_exposes_pass(self) -> None:
         result = runner.invoke(subtask_app, ["pass", "--help"])
+        assert result.exit_code != 0
 
-        assert result.exit_code == 0
-        assert "M:abc12345" in result.output
-        assert "Applied: [M:abc12345]" in result.output
 
-    def test_pass_subtask_can_acknowledge_none_inline(self) -> None:
+class TestDoneSubtaskCompletion:
+    """Subtask completion + citation flow now lives in `complete_subtask`."""
+
+    def test_acknowledges_none_when_flag_set(self) -> None:
         client = MagicMock()
-        client.get_subtasks.return_value = {
-            "subtasks": [
-                {
-                    "subtask_id": "1.1",
-                    "steps_from_table": [{"step_number": 1, "passes": True}],
-                }
-            ]
-        }
-
-        with (
-            patch("cli.commands.subtask.STClient", return_value=client),
-            patch("cli.commands.subtask.output_success"),
-        ):
-            pass_subtask("1.1", "task-1", None, True)
-
+        _resolve_citations_for_subtask(client, "task-1", "1.1", None, True)
         client.acknowledge_no_citations.assert_called_once_with("task-1", "1.1")
-        client.update_subtask.assert_called_once_with("task-1", "1.1", passes=True)
+        client.log_citations.assert_not_called()
 
-    def test_pass_subtask_can_log_inline_citations(self) -> None:
+    def test_logs_inline_citations(self) -> None:
         client = MagicMock()
-        client.get_subtasks.return_value = {
-            "subtasks": [
-                {
-                    "subtask_id": "1.1",
-                    "steps_from_table": [{"step_number": 1, "passes": True}],
-                }
-            ]
-        }
-
-        with (
-            patch("cli.commands.subtask.STClient", return_value=client),
-            patch("cli.commands.subtask.output_success"),
-        ):
-            pass_subtask("1.1", "task-1", ["M:abc12345+"], False)
-
-        client.log_citations.assert_called_once_with("task-1", "1.1", ["M:abc12345+"])
-        client.update_subtask.assert_called_once_with("task-1", "1.1", passes=True)
-
-    def test_pass_subtask_extracts_citations_from_applied_text(self) -> None:
-        client = MagicMock()
-
-        with (
-            patch("cli.commands.subtask.STClient", return_value=client),
-            patch("cli.commands.subtask.output_success"),
-        ):
-            pass_subtask(
-                "1.1",
-                "task-1",
-                ["Verified refactor. Applied: [M:42dae24e] [M:c918f298]."],
-                False,
-            )
-
+        _resolve_citations_for_subtask(client, "task-1", "1.1", ["M:abc12345+"], False)
         client.log_citations.assert_called_once_with(
+            "task-1", "1.1", ["M:abc12345+"],
+        )
+        client.acknowledge_no_citations.assert_not_called()
+
+    def test_extracts_citations_from_applied_text(self) -> None:
+        client = MagicMock()
+        _resolve_citations_for_subtask(
+            client,
             "task-1",
             "1.1",
-            ["M:42dae24e", "M:c918f298"],
+            ["Verified refactor. Applied: [M:42dae24e] [M:c918f298]."],
+            False,
         )
-        client.update_subtask.assert_called_once_with("task-1", "1.1", passes=True)
+        client.log_citations.assert_called_once_with(
+            "task-1", "1.1", ["M:42dae24e", "M:c918f298"],
+        )
 
-    def test_pass_subtask_rejects_conflicting_citation_flags(self) -> None:
+    def test_rejects_conflicting_citation_flags(self) -> None:
+        client = MagicMock()
         with pytest.raises(typer.Exit) as exc_info:
-            pass_subtask("1.1", "task-1", ["M:abc12345+"], True)
-
+            _resolve_citations_for_subtask(client, "task-1", "1.1", ["M:abc12345+"], True)
         assert exc_info.value.exit_code == 1
 
-    def test_pass_subtask_dependency_blocker_outputs_clean_error(self, capsys) -> None:
+    def test_complete_subtask_is_idempotent_when_already_passed(self) -> None:
         client = MagicMock()
+        client.get_subtasks.return_value = {
+            "subtasks": [{"subtask_id": "1.1", "passes": True}]
+        }
+        result = complete_subtask(client, "1.1", "task-1")
+        assert result == {
+            "task_id": "task-1",
+            "subtask_id": "1.1",
+            "action": "noop",
+            "merged": False,
+        }
+        client.update_subtask.assert_not_called()
+
+    def test_complete_subtask_surfaces_dependency_blocker_cleanly(self, capsys) -> None:
+        client = MagicMock()
+        client.get_subtasks.return_value = {
+            "subtasks": [{"subtask_id": "1.2", "passes": False}]
+        }
         client.update_subtask.side_effect = APIError(
             400,
             {
@@ -118,10 +105,12 @@ class TestPassSubtaskCommand:
         )
 
         with (
-            patch("cli.commands.subtask.STClient", return_value=client),
+            patch("cli.commands.done_subtask._validate_working_tree_clean"),
+            patch("cli.commands.done_subtask._get_project_id", return_value=None),
+            patch("cli.commands.done_subtask._merge_subtask"),
             pytest.raises(typer.Exit) as exc_info,
         ):
-            pass_subtask("1.2", "task-1", None, True)
+            complete_subtask(client, "1.2", "task-1", acknowledge_none=True)
 
         assert exc_info.value.exit_code == 1
         stderr = capsys.readouterr().err

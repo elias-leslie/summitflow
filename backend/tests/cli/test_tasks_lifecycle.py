@@ -51,23 +51,13 @@ class TestPauseTaskCommand:
         mock_success.assert_called_once_with("checkpoint_cleaned")
 
 
-class TestResumeTaskCommand:
-    def test_resume_task_updates_status_to_pending_with_reason(self) -> None:
-        from cli.commands.tasks_lifecycle import resume_task_command
+class TestResumeRemoved:
+    """`st resume` collapsed into `st reopen`; the command must not be importable."""
 
-        client = MagicMock()
-        client.resume_task.return_value = {"id": "task-123", "status": "pending"}
+    def test_resume_task_command_no_longer_exists(self) -> None:
+        import cli.commands.tasks_lifecycle as lifecycle
 
-        with (
-            patch("cli.commands.tasks_lifecycle.STClient", return_value=client),
-            patch("cli.commands.tasks_lifecycle.output_task") as mock_output,
-        ):
-            resume_task_command("task-123", "Ready again")
-
-        client.resume_task.assert_called_once_with("task-123", reason="Ready again")
-        rendered = mock_output.call_args.args[0]
-        assert rendered["status"] == "pending"
-        assert rendered["resume_reason"] == "Ready again"
+        assert not hasattr(lifecycle, "resume_task_command")
 
 
 class TestReopenTaskCommand:

@@ -144,6 +144,7 @@ def create_task_with_spirit(
     Returns:
         Task ID or None if creation failed
     """
+    resolved_mode = execution_mode or ("autonomous" if autonomous else None)
     task = task_store.create_task(
         project_id=project_id,
         title=title,
@@ -152,8 +153,7 @@ def create_task_with_spirit(
         task_type=task_type,
         tier=tier,
         ai_review=ai_review,
-        execution_mode=execution_mode,
-        autonomous=autonomous,
+        execution_mode=resolved_mode,
         labels=labels,
     )
     task_id = cast(str, task["id"]) if task else None

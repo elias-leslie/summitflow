@@ -17,6 +17,7 @@ from .pulse_formatters import (
     _payload_for_allowed_task,
     _preflight_reasons,
     print_compact_payload,
+    resolution_hint,
 )
 
 app = typer.Typer(help="Cross-agent coordination pulse")
@@ -100,7 +101,19 @@ def require_pulse_gate(project_id: str | None, *, allow_task_id: str | None = No
     reasons = preflight_reasons_for_payload(payload, allow_task_id=allow_task_id)
     if not reasons:
         return
-    output_error(f"Pulse gate blocked: {project_id} {','.join(reasons)}")
+    hint_lines: list[str] = []
+    for reason in reasons:
+        hint = resolution_hint(reason)
+        if hint:
+            hint_lines.append(f"  - {reason}: {hint}")
+    detail = ",".join(reasons)
+    if hint_lines:
+        output_error(
+            f"Pulse gate blocked: {project_id} {detail}\nResolution:\n"
+            + "\n".join(hint_lines)
+        )
+    else:
+        output_error(f"Pulse gate blocked: {project_id} {detail}")
     raise typer.Exit(2)
 
 

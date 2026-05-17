@@ -156,7 +156,6 @@ class TestExecutionModeDefaults:
             title="Manual bug override",
             task_type="bug",
             execution_mode="manual",
-            autonomous=False,
         )
         cleanup_task(task["id"])
 

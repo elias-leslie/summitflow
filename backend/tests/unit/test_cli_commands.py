@@ -201,12 +201,6 @@ class TestCreateFromFile:
     Uses mock_st_client to avoid hitting the real API.
     """
 
-    @pytest.fixture(autouse=True)
-    def _bypass_project_check(self) -> Generator[None]:
-        """Bypass require_explicit_project since tests invoke tasks_app directly."""
-        with patch("cli.commands.tasks_import.require_explicit_project"):
-            yield
-
     def test_from_file_valid_json(self, mock_st_client: tuple[MagicMock, dict[str, dict[str, Any]]]) -> None:
         """Test creating tasks from a valid JSON file."""
         tasks_data = {
@@ -411,16 +405,16 @@ class TestAutocodeValidation:
 class TestTaskCliErgonomics:
     """Tests for task CLI friction fixes."""
 
-    def test_create_help_hides_legacy_single_task_options(self) -> None:
+    def test_create_help_exposes_unified_surface(self) -> None:
         result = runner.invoke(tasks_app, ["create", "--help"])
 
         assert result.exit_code == 0
         assert "--plan" in result.output
         assert "--from-file" in result.output
+        assert "--draft" in result.output
+        assert "--type" in result.output
         assert "st verify plan.json" in result.output
         assert "/schemas/plan" in result.output
-        assert "--description" not in result.output
-        assert "--autonomous" not in result.output
 
     def test_subtask_create_help_does_not_advertise_steps(self) -> None:
         result = runner.invoke(subtask_app, ["create", "--help"])
@@ -441,16 +435,34 @@ class TestTaskCliErgonomics:
         assert "backend/app/schemas/plan.schema.json" in result.output
         assert '"complexity":"SIMPLE"' in result.output
 
-    def test_create_rejects_plain_single_task_without_plan(self) -> None:
-        result = runner.invoke(tasks_app, ["create", "Draft task"])
+    def test_create_bare_title_triggers_auto_enrichment(self) -> None:
+        """Bare title creates an execution-ready task with auto_dispatch=true."""
+        mock_client = MagicMock()
+        mock_client.create_task.return_value = _make_mock_task(
+            "task-mock-bare",
+            title="Draft task",
+        )
 
-        assert result.exit_code == 1
-        assert "requires --plan" in result.output
-        assert "st verify plan.json" in result.output
-        assert "capture <task|bug|idea>" in result.output
-        assert "lightweight intake" in result.output
+        with patch("cli.commands.tasks_create.STClient", return_value=mock_client):
+            result = runner.invoke(tasks_app, ["create", "Draft task"])
 
-    def test_capture_idea_uses_raw_capture_path(self) -> None:
+        assert result.exit_code == 0
+        payload = mock_client.create_task.call_args.args[0]
+        assert payload["title"] == "Draft task"
+        assert payload["auto_dispatch"] is True
+
+    def test_create_draft_skips_auto_enrichment(self) -> None:
+        mock_client = MagicMock()
+        mock_client.create_task.return_value = _make_mock_task("task-mock-draft")
+
+        with patch("cli.commands.tasks_create.STClient", return_value=mock_client):
+            result = runner.invoke(tasks_app, ["create", "Stash this", "--draft"])
+
+        assert result.exit_code == 0
+        payload = mock_client.create_task.call_args.args[0]
+        assert "auto_dispatch" not in payload
+
+    def test_create_idea_type_marks_autonomous_with_label(self) -> None:
         mock_client = MagicMock()
         mock_client.create_task.return_value = _make_mock_task(
             "task-mock-idea",
@@ -461,28 +473,16 @@ class TestTaskCliErgonomics:
             autonomous=True,
         )
 
-        with (
-            patch("cli.commands.tasks_create.require_explicit_project"),
-            patch("cli.commands.tasks_create.STClient", return_value=mock_client),
-        ):
-            result = runner.invoke(tasks_app, ["capture", "idea", "Add dark mode"])
+        with patch("cli.commands.tasks_create.STClient", return_value=mock_client):
+            result = runner.invoke(tasks_app, ["create", "Add dark mode", "--type", "idea"])
 
         assert result.exit_code == 0
-        mock_client.create_task.assert_called_once()
         payload = mock_client.create_task.call_args.args[0]
         assert payload["title"] == "Add dark mode"
-        assert payload["labels"] == ["crowdsourced"]
+        assert "crowdsourced" in payload["labels"]
         assert payload["execution_mode"] == "autonomous"
-        assert payload["autonomous"] is True
 
-    def test_capture_bug_routes_to_bug_creator(self) -> None:
-        with patch("cli.commands.tasks._create_bug_capture") as mock_capture_bug:
-            result = runner.invoke(tasks_app, ["capture", "bug", "Fix auth", "--from", "task-123"])
-
-        assert result.exit_code == 0
-        mock_capture_bug.assert_called_once_with("Fix auth", None, 2, None, "task-123")
-
-    def test_capture_bug_marks_bug_autonomous(self) -> None:
+    def test_create_bug_type_routes_to_bug_creator(self) -> None:
         mock_client = MagicMock()
         mock_client.create_task.return_value = _make_mock_task(
             "task-mock-bug",
@@ -493,11 +493,10 @@ class TestTaskCliErgonomics:
         )
 
         with (
-            patch("cli.commands.tasks.require_explicit_project"),
-            patch("cli.commands.tasks.STClient", return_value=mock_client),
+            patch("cli.commands.tasks_create.STClient", return_value=mock_client),
             patch("cli.commands.tasks_bug.output_task"),
         ):
-            result = runner.invoke(tasks_app, ["capture", "bug", "Fix auth"])
+            result = runner.invoke(tasks_app, ["create", "Fix auth", "--type", "bug"])
 
         assert result.exit_code == 0
         payload = mock_client.create_task.call_args.args[0]
@@ -505,26 +504,19 @@ class TestTaskCliErgonomics:
         assert payload["description"] == "Fix auth"
         assert len(payload["done_when"]) == 3
         assert payload["execution_mode"] == "autonomous"
-        assert payload["autonomous"] is True
-        mock_client.create_subtask.assert_called_once_with(
-            task_id="task-mock-bug",
-            subtask_id="1.1",
-            description="Reproduce, fix, and verify bug.",
-            phase="debugging",
-            steps=[
-                "Confirm reproduction or recorded failure evidence.",
-                "Implement the smallest root-cause fix.",
-                "Verify the original symptom and run st check --quick --changed-only.",
-            ],
-            subtask_type="bug-fix",
-        )
+        mock_client.create_subtask.assert_called_once()
 
-    def test_legacy_idea_redirects_to_capture(self) -> None:
+    def test_legacy_capture_command_no_longer_registered(self) -> None:
+        result = runner.invoke(tasks_app, ["capture", "idea", "Add dark mode"])
+        assert result.exit_code != 0
+
+    def test_legacy_idea_command_no_longer_registered(self) -> None:
         result = runner.invoke(tasks_app, ["idea", "Add dark mode"])
+        assert result.exit_code != 0
 
-        assert result.exit_code == 1
-        assert "removed" in result.output
-        assert 'st capture idea "Add dark mode"' in result.output
+    def test_legacy_bug_command_no_longer_registered(self) -> None:
+        result = runner.invoke(tasks_app, ["bug", "Fix auth"])
+        assert result.exit_code != 0
 
     def test_list_accepts_local_compact_flag(self) -> None:
         with patch("cli.commands.tasks_list.list_tasks_command") as mock_list:
@@ -642,7 +634,6 @@ class TestTaskCliErgonomics:
 
     def test_plan_import_output_surfaces_pending_second_opinion(self) -> None:
         with (
-            patch("cli.commands.tasks_create.require_explicit_project"),
             patch("cli.commands.tasks_create.STClient"),
             patch(
                 "cli.commands.tasks_create.import_plan_file",
@@ -1361,7 +1352,6 @@ class TestPlanSchemaConsistency:
         )
 
         with (
-            patch("cli.commands.tasks_create.require_explicit_project"),
             patch("cli.commands.tasks_create.STClient", return_value=mock_client),
             patch("cli.commands.tasks_import.upsert_task_spirit_from_plan", return_value=None),
         ):
@@ -1430,12 +1420,6 @@ class TestCreateFromFileErrors:
 
     These tests verify validation errors - no mocking needed since they fail before API calls.
     """
-
-    @pytest.fixture(autouse=True)
-    def _bypass_project_check(self) -> Generator[None]:
-        """Bypass require_explicit_project since tests invoke tasks_app directly."""
-        with patch("cli.commands.tasks_import.require_explicit_project"):
-            yield
 
     def test_invalid_json_syntax(self) -> None:
         """Test handling of invalid JSON syntax."""

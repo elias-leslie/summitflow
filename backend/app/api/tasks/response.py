@@ -111,7 +111,7 @@ def _parse_subtasks(task: dict[str, Any]) -> list[SubtaskResponse] | None:
 
 def task_to_response(task: dict[str, Any]) -> TaskResponse:
     blockers, blocked_by_incomplete = _parse_blockers(task)
-    execution_mode = task.get("execution_mode") or ("autonomous" if task.get("autonomous") else "manual")
+    execution_mode = task.get("execution_mode") or "manual"
     return TaskResponse(
         id=task["id"],
         project_id=task["project_id"],

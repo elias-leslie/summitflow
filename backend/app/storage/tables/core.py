@@ -128,10 +128,10 @@ def _create_tasks_table(cur: psycopg.Cursor) -> None:
             enrichment_status TEXT,
             enriched_by TEXT,
             enriched_at TIMESTAMPTZ,
-            -- Autonomous execution mode
+            -- Autonomous execution mode (canonical; the legacy `autonomous`
+            -- boolean was dropped in migration a9c4e1b7d2e8 and is now derived).
             execution_mode VARCHAR(20) DEFAULT 'manual'
                 CHECK (execution_mode IN ('manual', 'autonomous', 'manual_only')),
-            autonomous BOOLEAN DEFAULT FALSE,
             agent_override VARCHAR(50),
             agent_hub_session_ids TEXT[] DEFAULT '{}',
             labels TEXT[] DEFAULT '{}',

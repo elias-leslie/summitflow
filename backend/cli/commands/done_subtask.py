@@ -166,19 +166,64 @@ def _merge_subtask(
         raise typer.Exit(1) from None
 
 
+def _resolve_citations_for_subtask(
+    client: STClient,
+    task_id: str,
+    subtask_id: str,
+    citations: list[str] | None,
+    acknowledge_none: bool,
+) -> None:
+    """Record subtask citations before marking it passed.
+
+    Replaces the old `st subtask pass` flow — citations now live with `st done`.
+    """
+    if citations and acknowledge_none:
+        output_error("Use either --citation or --none, not both.")
+        raise typer.Exit(1)
+    if not citations and not acknowledge_none:
+        # No-op: API will accept the pass if citations are already on file.
+        return
+    from .subtask import _normalize_inline_citations  # local import to avoid cycle
+
+    try:
+        if citations:
+            client.log_citations(task_id, subtask_id, _normalize_inline_citations(citations))
+        else:
+            client.acknowledge_no_citations(task_id, subtask_id)
+    except APIError as e:
+        output_error(f"Failed to record citations: {e.detail}")
+        raise typer.Exit(1) from None
+
+
 def complete_subtask(
     client: STClient,
     subtask_id: str,
     task_id: str,
     message: str | None = None,
+    citations: list[str] | None = None,
+    acknowledge_none: bool = False,
 ) -> dict[str, str | bool]:
     """Complete a subtask with git branch merge.
 
-    DB triggers verify all steps passed.
+    Already-passed subtasks return a `resumed` no-op (idempotent close).
     """
+    subtasks = client.get_subtasks(task_id).get("subtasks", [])
+    already_passed = any(
+        (str(sub.get("subtask_id") or sub.get("id")) == subtask_id) and sub.get("passes") is True
+        for sub in subtasks
+    )
+    if already_passed:
+        return {
+            "task_id": task_id,
+            "subtask_id": subtask_id,
+            "action": "noop",
+            "merged": False,
+        }
+
     _validate_working_tree_clean()
     project_id = _get_project_id(task_id)
 
+    _resolve_citations_for_subtask(client, task_id, subtask_id, citations, acknowledge_none)
     _update_subtask_status(client, task_id, subtask_id)
     _merge_subtask(task_id, subtask_id, project_id)
 

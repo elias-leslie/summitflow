@@ -75,19 +75,9 @@ def handle_api_error(e: APIError) -> None:
 
 
 def require_explicit_project(config: Config) -> None:
-    """Exit with error if project was resolved from cwd (not explicit flag/env)."""
-    if config.source not in ("cwd",):
-        return
+    """No-op: cwd auto-detection is canonical; -P stays an override.
 
-    from .config import get_available_projects
-
-    available = get_available_projects()
-    available_str = ", ".join(available) if available else "(could not fetch)"
-    print(
-        f"Error: Write commands require explicit project.\n"
-        f"Usage: st -P <project> <command> ...\n"
-        f"Detected: {config.project_id} (from cwd)\n"
-        f"Available: {available_str}",
-        file=sys.stderr,
-    )
-    raise typer.Exit(1)
+    Kept for backward compatibility with call sites and tests that still
+    import this symbol. Project resolution itself is enforced by get_config().
+    """
+    _ = config

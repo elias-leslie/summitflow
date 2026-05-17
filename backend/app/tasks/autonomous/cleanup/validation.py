@@ -311,7 +311,7 @@ def create_regression_fix_task(
             task_type="regression",
             priority=1,
             parent_task_id=task_id,
-            autonomous=True,
+            execution_mode="autonomous",
             labels=["regression", "rollback"],
         )
     except Exception as exc:

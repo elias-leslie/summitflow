@@ -355,18 +355,15 @@ def _create_misc_indexes(cur: psycopg.Cursor) -> None:
 
 
 def _backfill_execution_mode(cur: psycopg.Cursor) -> None:
-    """Align execution_mode with the legacy autonomous flag when bootstrapping old DBs."""
-    with contextlib.suppress(psycopg.errors.UndefinedColumn):
-        cur.execute(
-            """
-            UPDATE tasks
-            SET execution_mode = CASE
-                WHEN autonomous IS TRUE THEN 'autonomous'
-                ELSE 'manual'
-            END
-            WHERE execution_mode IS NULL
-            """
-        )
+    """Default any null execution_mode to manual; the `autonomous` boolean column was
+    dropped in migration a9c4e1b7d2e8, so derived backfill from that column is gone."""
+    cur.execute(
+        """
+        UPDATE tasks
+        SET execution_mode = 'manual'
+        WHERE execution_mode IS NULL
+        """
+    )
 
 
 def _ensure_execution_mode_constraint(cur: psycopg.Cursor) -> None:

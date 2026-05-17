@@ -22,12 +22,8 @@ from .lib.execution_context import canonical_repo_root
 logger = logging.getLogger(__name__)
 _RETRY_DELAY = 0.5
 _PROJECT_NOT_FOUND_MSG = (
-    "Error: Could not determine project.\n\n"
-    "Options:\n"
-    "  1. Run from within a registered project directory\n"
-    "  2. Set ST_PROJECT_ID environment variable\n"
-    "  3. Use --project / -P flag: st -P myproject list\n\n"
-    "List available projects: st projects"
+    "No project for cwd. Run from a registered project tree, or pass -P <id>.\n"
+    "Resolution: st projects (list known projects)"
 )
 
 
