@@ -100,10 +100,10 @@ def _is_transient_agent_hub_failure_response(response: CompletionResponse) -> bo
     return any(marker in text for marker in _TRANSIENT_COMPLETION_FAILURE_TEXT)
 
 
-def _complete_retry_delay(attempt: int) -> float:
-    return _COMPLETE_RETRY_DELAYS_SECONDS[
-        min(attempt, len(_COMPLETE_RETRY_DELAYS_SECONDS) - 1)
-    ]
+def _complete_retry_delay(attempt: int) -> float | None:
+    if attempt >= len(_COMPLETE_RETRY_DELAYS_SECONDS):
+        return None
+    return _COMPLETE_RETRY_DELAYS_SECONDS[attempt]
 
 
 def create_session(task_id: str, session_id: str | None = None) -> str:
@@ -248,6 +248,16 @@ def _retry_after_exception(
         raise exc
     delay = _complete_retry_delay(attempt)
     _abort_retry_if_task_stopped(task_id, project_id, "agent_hub_complete_error_retry")
+    if delay is None:
+        emit_log(
+            task_id,
+            "error",
+            "Agent Hub complete unavailable after "
+            f"{attempt + 1} attempts: {str(exc)[:160]}",
+            source="orchestrator",
+            project_id=project_id,
+        )
+        raise exc
     emit_log(
         task_id,
         "warn",
@@ -272,6 +282,16 @@ def _retry_after_transient_response(
     delay = _complete_retry_delay(attempt)
     failure = agent_completion_failure(response) or "transient interruption"
     _abort_retry_if_task_stopped(task_id, project_id, "agent_hub_interruption_retry")
+    if delay is None:
+        emit_log(
+            task_id,
+            "error",
+            "Agent Hub complete returned transient interruption after "
+            f"{attempt + 1} attempts: {failure[:160]}",
+            source="orchestrator",
+            project_id=project_id,
+        )
+        return current_session_id, 0.0
     new_session_id = _rotate_session_after_interruption(
         task_id, kwargs, current_session_id
     )

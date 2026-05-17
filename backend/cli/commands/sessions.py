@@ -32,7 +32,6 @@ app = typer.Typer(
     no_args_is_help=False,
 )
 
-_ACTIVE_STATUS_ALIASES = {"running", "stale", "reapable"}
 _LIVE_STATUS_ALIASES = {"stale", "reapable"}
 _ERROR_TEXT_MARKERS = (
     "traceback",
@@ -51,7 +50,7 @@ def _normalize_status_filter(status_filter: str | None) -> str | None:
     if not status_filter:
         return None
     normalized = status_filter.strip().lower()
-    if normalized in _ACTIVE_STATUS_ALIASES:
+    if normalized in {"running", "stale", "reapable"}:
         return "active"
     return normalized
 
@@ -62,19 +61,25 @@ def _session_matches_status_alias(session: dict[str, Any], status_filter: str | 
     normalized = status_filter.strip().lower()
     if normalized not in _LIVE_STATUS_ALIASES:
         return True
-
     live = session.get("live_activity")
     if not isinstance(live, dict):
         return False
-
-    state = _session_live_state(session).strip().lower()
+    live_state = str(live.get("lifecycle_state") or live.get("status") or live.get("state") or session.get("status") or "-").strip().lower()
     if normalized == "reapable":
-        return bool(live.get("reapable")) or state == "reapable"
-    return bool(live.get("is_stale")) or bool(live.get("reapable")) or state in {
+        return bool(live.get("reapable")) or live_state == "reapable"
+    return bool(live.get("is_stale")) or bool(live.get("reapable")) or live_state in {
         "reapable",
         "stale",
         "stalled",
     }
+
+
+def _session_field(session: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = session.get(key)
+        if value:
+            return str(value)
+    return "-"
 
 
 def _render_session_list(
@@ -113,54 +118,26 @@ def _render_session_list(
         sessions = [session for session in sessions if session.get("agent_slug")]
 
     if is_compact():
-        _output_session_list_compact(sessions)
+        print(f"SESSIONS[{len(sessions)}]")
+        for session in sessions:
+            session_id = str(session.get("id") or "-")
+            project_id = str(session.get("project_id") or "-")
+            status = str(session.get("status") or "-")
+            agent = str(session.get("agent_slug") or "-")
+            task_id = str(session.get("task_id") or "-")
+            live_activity = session.get("live_activity", {})
+            live_state = str(live_activity.get("lifecycle_state") or live_activity.get("status") or live_activity.get("state") or session.get("status") or "-").strip()
+            updated = str(session.get("updated_at") or "-")
+            print(
+                f"SES {project_id} | {status} | {agent} | {session_id[:8]} | "
+                f"task={task_id} state={live_state} updated={updated}"
+            )
         return
     output_json(sessions)
 
 
-def _session_live_state(session: dict[str, Any]) -> str:
-    live = session.get("live_activity")
-    if isinstance(live, dict):
-        raw = live.get("lifecycle_state") or live.get("status") or live.get("state")
-        if raw:
-            return str(raw)
-    return str(session.get("status") or "-")
-
-
-def _session_line(session: dict[str, Any]) -> str:
-    session_id = str(session.get("id") or "-")
-    short_id = session_id[:8]
-    project_id = str(session.get("project_id") or "-")
-    status = str(session.get("status") or "-")
-    agent = str(session.get("agent_slug") or "-")
-    task_id = str(session.get("task_id") or "-")
-    live_state = _session_live_state(session)
-    updated = str(session.get("updated_at") or "-")
-    return (
-        f"SES {project_id} | {status} | {agent} | {short_id} | "
-        f"task={task_id} state={live_state} updated={updated}"
-    )
-
-
-def _output_session_list_compact(sessions: list[dict[str, Any]]) -> None:
-    print(f"SESSIONS[{len(sessions)}]")
-    for session in sessions:
-        print(_session_line(session))
-
-
-def _project_arg(project_id: str | None) -> str:
-    return f" -P {project_id}" if project_id and project_id != "-" else ""
-
-
-def _session_value(session: dict[str, Any], *keys: str) -> str:
-    for key in keys:
-        value = session.get(key)
-        if value:
-            return str(value)
-    return "-"
-
-
-def _live_summary_fields(live: dict[str, Any]) -> dict[str, str]:
+def _live_activity_summary(live: dict[str, Any]) -> dict[str, Any]:
+    """Extract compact summary fields from live_activity dict."""
     command = str(
         live.get("current_command")
         or live.get("last_command")
@@ -169,21 +146,15 @@ def _live_summary_fields(live: dict[str, Any]) -> dict[str, str]:
     )
     if len(command) > 120:
         command = command[:117] + "..."
-
-    files = "-"
     touched = live.get("files_touched")
-    if isinstance(touched, list) and touched:
-        files = ",".join(str(path) for path in touched[-3:])[:140]
-
-    reason_codes = "-"
+    files = (
+        ",".join(str(p) for p in touched[-3:])[:140]
+        if isinstance(touched, list) and touched
+        else "-"
+    )
     codes = live.get("lifecycle_reason_codes")
-    if isinstance(codes, list) and codes:
-        reason_codes = ",".join(str(code) for code in codes[:4])
-
-    quiet = "-"
-    if live.get("quiet_for_seconds") is not None:
-        quiet = f"{live.get('quiet_for_seconds')}s"
-
+    reason_codes = ",".join(str(c) for c in codes[:4]) if isinstance(codes, list) and codes else "-"
+    quiet = f"{live['quiet_for_seconds']}s" if live.get("quiet_for_seconds") is not None else "-"
     error_excerpt = live.get("last_tool_error_excerpt") or live.get("stall_reason")
     return {
         "phase": str(live.get("phase") or "-"),
@@ -198,31 +169,22 @@ def _live_summary_fields(live: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def _session_monitor_summary(session: dict[str, Any]) -> str:
+def _monitor_summary(session: dict[str, Any]) -> str:
     session_id = str(session.get("id") or "-")
     project_id = str(session.get("project_id") or "-")
     status = str(session.get("status") or "-")
     agent = str(session.get("agent_slug") or "-")
-    provider = _session_value(session, "effective_provider", "requested_provider", "provider")
-    model = _session_value(session, "effective_model", "requested_model", "model").split("/")[-1]
-    summary = {
-        "phase": "-",
-        "health": "-",
-        "quiet": "-",
-        "tool": "-",
-        "command": "-",
-        "topic": "-",
-        "files": "-",
-        "reason_codes": "-",
-        "error": "",
-    }
+    provider = _session_field(session, "effective_provider", "requested_provider", "provider")
+    model = _session_field(session, "effective_model", "requested_model", "model").split("/")[-1]
     live = session.get("live_activity")
-    if isinstance(live, dict):
-        summary.update(_live_summary_fields(live))
-    task_id = _session_value(session, "task_id", "external_id")
-    state = _session_live_state(session)
+    live_state = str(live.get("lifecycle_state") or live.get("status") or live.get("state") or session.get("status") or "-").strip() if isinstance(live, dict) else str(session.get("status") or "-")
+    summary = _live_activity_summary(cast(dict[str, Any], live)) if isinstance(live, dict) else {
+        "phase": "-", "health": "-", "quiet": "-", "tool": "-",
+        "command": "-", "topic": "-", "files": "-", "reason_codes": "-", "error": "",
+    }
+    task_id = _session_field(session, "task_id", "external_id")
     return (
-        f"MON {project_id}|{agent}|{session_id[:8]}|{status}/{state}|"
+        f"MON {project_id}|{agent}|{session_id[:8]}|{status}/{live_state}|"
         f"{summary['health']}/{summary['phase']}|model={provider}/{model}|task={task_id}|quiet={summary['quiet']}|"
         f"tool={summary['tool']}|cmd={summary['command']}|topic={summary['topic']}|files={summary['files']}|"
         f"codes={summary['reason_codes']}{summary['error']}"
@@ -232,11 +194,11 @@ def _session_monitor_summary(session: dict[str, Any]) -> str:
 def _render_monitor_sessions(sessions: list[dict[str, Any]]) -> None:
     print(f"MONITOR[{len(sessions)}]")
     for session in sessions:
-        print(_session_monitor_summary(session))
+        print(_monitor_summary(session))
     project = next((str(s.get("project_id")) for s in sessions if s.get("project_id")), None)
-    project_flag = _project_arg(project)
+    project_flag = f" -P {project}" if project and project != "-" else ""
     print(
-        "MORE:"
+        f"MORE:"
         f"detail=st sessions monitor <sid>{project_flag} -n 20; "
         f"full=st session-events <sid>{project_flag} --verbose; "
         f"errors=st sessions monitor <sid>{project_flag} --errors; "
@@ -253,13 +215,6 @@ def _recent_session_events(session_id: str, *, limit: int, event_type: str | Non
     page = max(math.ceil(total / page_size), 1)
     latest = get_session_events(session_id, event_type=event_type, page=page, page_size=page_size)
     return list(latest.get("events") or [])
-
-
-def _clip(text: str, length: int = 180) -> str:
-    normalized = " ".join(text.replace("\n", " ").split())
-    if len(normalized) <= length:
-        return normalized
-    return normalized[: length - 3] + "..."
 
 
 def _event_text(event: dict[str, Any]) -> str:
@@ -282,7 +237,8 @@ def _event_signature(event: dict[str, Any]) -> str:
     text = _event_text(event)
     if not text:
         return "-"
-    return _clip(text, 180)
+    normalized = " ".join(text.replace("\n", " ").split())
+    return normalized if len(normalized) <= 180 else normalized[:177] + "..."
 
 
 def _is_error_like(event: dict[str, Any], signature: str) -> bool:
@@ -322,13 +278,6 @@ def _diagnostic_rows(
     return error_rows, repeat_rows
 
 
-def _print_diagnostic_rows(prefix: str, rows: list[tuple[str, int, dict[str, Any]]]) -> None:
-    for signature, count, event in rows:
-        event_type = str(event.get("event_type") or "-")
-        tool = str(event.get("tool_name") or "-")
-        print(f"{prefix} x{count}|type={event_type}|tool={tool}|{signature}")
-
-
 def _render_session_diagnostics(session_id: str, *, limit: int) -> None:
     sample_limit = max(min(limit * 25, 500), min(limit, 500), 100)
     events = _recent_session_events(session_id, limit=sample_limit, event_type=None)
@@ -338,9 +287,10 @@ def _render_session_diagnostics(session_id: str, *, limit: int) -> None:
         f"DIAG session={session_id[:8]} events_sampled={len(events)} "
         f"errors={len(error_rows)} repeats={len(repeat_rows)}"
     )
-    _print_diagnostic_rows("ERR", error_rows[:row_limit])
-    remaining = row_limit - min(len(error_rows), row_limit)
-    _print_diagnostic_rows("REPEAT", repeat_rows[: max(remaining, 0)])
+    for signature, count, event in error_rows[:row_limit]:
+        print(f"ERR x{count}|type={event.get('event_type', '-')}|tool={event.get('tool_name', '-')}|{signature}")
+    for signature, count, event in repeat_rows[: max(row_limit - min(len(error_rows), row_limit), 0)]:
+        print(f"REPEAT x{count}|type={event.get('event_type', '-')}|tool={event.get('tool_name', '-')}|{signature}")
 
 
 def _monitor_single_session(
@@ -359,9 +309,9 @@ def _monitor_single_session(
     except APIError as e:
         handle_api_error(e)
         return
-    print(_session_monitor_summary(session))
+    print(_monitor_summary(session))
     session_project = str(session.get("project_id") or project_id or "-")
-    project_flag = _project_arg(session_project)
+    project_flag = f" -P {session_project}" if session_project and session_project != "-" else ""
     short_id = resolved_id[:8]
     print(
         "MORE:"

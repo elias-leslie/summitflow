@@ -85,7 +85,7 @@ def test_call_complete_retries_transient_agent_hub_disconnect() -> None:
     assert emit_log_mock.call_count == 2
 
 
-def test_call_complete_keeps_retrying_transient_agent_hub_disconnect_past_old_cap() -> None:
+def test_call_complete_stops_retrying_transient_agent_hub_disconnect_after_backoff_budget() -> None:
     client = MagicMock()
     client.complete.side_effect = [
         ConnectionError("Server disconnected without sending a response."),
@@ -93,8 +93,6 @@ def test_call_complete_keeps_retrying_transient_agent_hub_disconnect_past_old_ca
         ConnectionError("Server disconnected without sending a response."),
         ConnectionError("Server disconnected without sending a response."),
         ConnectionError("Server disconnected without sending a response."),
-        ConnectionError("Server disconnected without sending a response."),
-        SimpleNamespace(content="done"),
     ]
     built_kwargs = {"messages": [{"role": "user", "content": "hi"}], "project_id": "agent-hub"}
 
@@ -105,21 +103,27 @@ def test_call_complete_keeps_retrying_transient_agent_hub_disconnect_past_old_ca
         ),
         patch("app.tasks.autonomous.exec_modules.agent_helpers.get_task", return_value={"status": "running"}),
         patch("app.tasks.autonomous.exec_modules.agent_helpers.sleep") as sleep_mock,
-        patch("app.tasks.autonomous.exec_modules.agent_helpers.emit_log"),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.emit_log") as emit_log_mock,
     ):
-        response = call_complete(
-            client,
-            prompt="Fix ownership",
-            agent_slug="coder",
-            project_path="/tmp/task",
-            project_id="agent-hub",
-            task_id="task-123",
-            session_id="sess-1",
-        )
+        try:
+            call_complete(
+                client,
+                prompt="Fix ownership",
+                agent_slug="coder",
+                project_path="/tmp/task",
+                project_id="agent-hub",
+                task_id="task-123",
+                session_id="sess-1",
+            )
+        except ConnectionError:
+            pass
+        else:
+            raise AssertionError("expected ConnectionError")
 
-    assert response.content == "done"
-    assert client.complete.call_count == 7
-    assert [call.args[0] for call in sleep_mock.call_args_list] == [2.0, 4.0, 8.0, 16.0, 16.0, 16.0]
+    assert client.complete.call_count == 5
+    assert [call.args[0] for call in sleep_mock.call_args_list] == [2.0, 4.0, 8.0, 16.0]
+    assert emit_log_mock.call_args.args[1] == "error"
+    assert "unavailable after 5 attempts" in emit_log_mock.call_args.args[2]
 
 
 def test_call_complete_retries_transient_interrupted_response() -> None:
@@ -199,6 +203,47 @@ def test_call_complete_retries_missing_final_summary_response() -> None:
     assert response.content == "done"
     assert client.complete.call_count == 2
     sleep_mock.assert_called_once_with(2.0)
+
+
+def test_call_complete_returns_transient_response_after_backoff_budget() -> None:
+    response = SimpleNamespace(
+        content="Tool activity recorded without a final assistant summary. Tools: bash.",
+        finish_reason="end_turn",
+    )
+    client = MagicMock()
+    client.complete.side_effect = [response, response, response, response, response]
+    built_kwargs = {
+        "messages": [{"role": "user", "content": "hi"}],
+        "project_id": "agent-hub",
+        "session_id": "sess-1",
+    }
+
+    with (
+        patch(
+            "app.tasks.autonomous.exec_modules.agent_helpers.build_complete_kwargs",
+            return_value=built_kwargs,
+        ),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.get_task", return_value={"status": "running"}),
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.add_agent_hub_session") as add_session_mock,
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.sleep") as sleep_mock,
+        patch("app.tasks.autonomous.exec_modules.agent_helpers.emit_log") as emit_log_mock,
+    ):
+        result = call_complete(
+            client,
+            prompt="Fix ownership",
+            agent_slug="coder",
+            project_path="/tmp/task",
+            project_id="agent-hub",
+            task_id="task-123",
+            session_id="sess-1",
+        )
+
+    assert result is response
+    assert client.complete.call_count == 5
+    assert add_session_mock.call_count == 4
+    assert [call.args[0] for call in sleep_mock.call_args_list] == [2.0, 4.0, 8.0, 16.0]
+    assert emit_log_mock.call_args.args[1] == "error"
+    assert "transient interruption after 5 attempts" in emit_log_mock.call_args.args[2]
 
 
 def test_call_complete_aborts_transient_retry_when_task_is_paused() -> None:
