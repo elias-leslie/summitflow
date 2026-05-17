@@ -74,12 +74,27 @@ def _session_matches_status_alias(session: dict[str, Any], status_filter: str | 
     }
 
 
-def _session_field(session: dict[str, Any], *keys: str) -> str:
-    for key in keys:
-        value = session.get(key)
-        if value:
-            return str(value)
-    return "-"
+def _live_state(session: dict[str, Any]) -> str:
+    live = session.get("live_activity")
+    if not isinstance(live, dict):
+        return str(session.get("status") or "-")
+    return str(
+        live.get("lifecycle_state") or live.get("status") or live.get("state") or session.get("status") or "-"
+    ).strip()
+
+
+def _compact_session_line(session: dict[str, Any]) -> str:
+    session_id = str(session.get("id") or "-")
+    project_id = str(session.get("project_id") or "-")
+    status = str(session.get("status") or "-")
+    agent = str(session.get("agent_slug") or "-")
+    task_id = str(session.get("task_id") or "-")
+    live_state = _live_state(session)
+    updated = str(session.get("updated_at") or "-")
+    return (
+        f"SES {project_id} | {status} | {agent} | {session_id[:8]} | "
+        f"task={task_id} state={live_state} updated={updated}"
+    )
 
 
 def _render_session_list(
@@ -108,50 +123,31 @@ def _render_session_list(
         handle_api_error(e)
         return
 
-    sessions = [
-        session
-        for session in sessions
-        if _session_matches_status_alias(session, status_filter)
-    ]
-
+    sessions = [s for s in sessions if _session_matches_status_alias(s, status_filter)]
     if not include_unassigned:
-        sessions = [session for session in sessions if session.get("agent_slug")]
+        sessions = [s for s in sessions if s.get("agent_slug")]
 
     if is_compact():
         print(f"SESSIONS[{len(sessions)}]")
         for session in sessions:
-            session_id = str(session.get("id") or "-")
-            project_id = str(session.get("project_id") or "-")
-            status = str(session.get("status") or "-")
-            agent = str(session.get("agent_slug") or "-")
-            task_id = str(session.get("task_id") or "-")
-            live_activity = session.get("live_activity", {})
-            live_state = str(live_activity.get("lifecycle_state") or live_activity.get("status") or live_activity.get("state") or session.get("status") or "-").strip()
-            updated = str(session.get("updated_at") or "-")
-            print(
-                f"SES {project_id} | {status} | {agent} | {session_id[:8]} | "
-                f"task={task_id} state={live_state} updated={updated}"
-            )
+            print(_compact_session_line(session))
         return
     output_json(sessions)
 
 
-def _live_activity_summary(live: dict[str, Any]) -> dict[str, Any]:
-    """Extract compact summary fields from live_activity dict."""
-    command = str(
-        live.get("current_command")
-        or live.get("last_command")
-        or live.get("last_validation_command")
-        or "-"
-    )
-    if len(command) > 120:
-        command = command[:117] + "..."
+def _session_field(session: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        if value := session.get(key):
+            return str(value)
+    return "-"
+
+
+def _live_activity_summary(live: dict[str, Any]) -> dict[str, str]:
+    cmd = str(live.get("current_command") or live.get("last_command") or live.get("last_validation_command") or "-")
+    if len(cmd) > 120:
+        cmd = cmd[:117] + "..."
     touched = live.get("files_touched")
-    files = (
-        ",".join(str(p) for p in touched[-3:])[:140]
-        if isinstance(touched, list) and touched
-        else "-"
-    )
+    files = ",".join(str(p) for p in touched[-3:])[:140] if isinstance(touched, list) and touched else "-"
     codes = live.get("lifecycle_reason_codes")
     reason_codes = ",".join(str(c) for c in codes[:4]) if isinstance(codes, list) and codes else "-"
     quiet = f"{live['quiet_for_seconds']}s" if live.get("quiet_for_seconds") is not None else "-"
@@ -161,7 +157,7 @@ def _live_activity_summary(live: dict[str, Any]) -> dict[str, Any]:
         "health": str(live.get("health") or live.get("status") or "-"),
         "quiet": quiet,
         "tool": str(live.get("current_tool_name") or live.get("last_tool_name") or "-"),
-        "command": command,
+        "command": cmd,
         "topic": str(live.get("current_topic") or live.get("last_topic") or "-"),
         "files": files,
         "reason_codes": reason_codes,
@@ -174,10 +170,10 @@ def _monitor_summary(session: dict[str, Any]) -> str:
     project_id = str(session.get("project_id") or "-")
     status = str(session.get("status") or "-")
     agent = str(session.get("agent_slug") or "-")
+    live = session.get("live_activity")
     provider = _session_field(session, "effective_provider", "requested_provider", "provider")
     model = _session_field(session, "effective_model", "requested_model", "model").split("/")[-1]
-    live = session.get("live_activity")
-    live_state = str(live.get("lifecycle_state") or live.get("status") or live.get("state") or session.get("status") or "-").strip() if isinstance(live, dict) else str(session.get("status") or "-")
+    live_state = _live_state(session)
     summary = _live_activity_summary(cast(dict[str, Any], live)) if isinstance(live, dict) else {
         "phase": "-", "health": "-", "quiet": "-", "tool": "-",
         "command": "-", "topic": "-", "files": "-", "reason_codes": "-", "error": "",
@@ -189,6 +185,138 @@ def _monitor_summary(session: dict[str, Any]) -> str:
         f"tool={summary['tool']}|cmd={summary['command']}|topic={summary['topic']}|files={summary['files']}|"
         f"codes={summary['reason_codes']}{summary['error']}"
     )
+
+
+@app.callback()
+def sessions_callback(
+    ctx: typer.Context,
+    status_filter: Annotated[str | None, typer.Option("-s", "--status")] = None,
+    limit: Annotated[int, typer.Option("--limit")] = 20,
+    agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
+    parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
+    project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
+) -> None:
+    """List agent sessions when no subcommand is provided."""
+    if ctx.invoked_subcommand is not None:
+        return
+    _render_session_list(
+        status_filter,
+        limit,
+        agent_slug,
+        parent_session_id,
+        project_id,
+        include_unassigned=True,
+    )
+
+
+@app.command("list")
+def list_sessions(
+    status_filter: Annotated[str | None, typer.Option("-s", "--status")] = None,
+    include_unassigned: Annotated[
+        bool,
+        typer.Option(
+            "--include-unassigned",
+            help="Include imported/unassigned sessions without an agent slug",
+        ),
+    ] = True,
+    limit: Annotated[int, typer.Option("--limit")] = 20,
+    agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
+    parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
+    project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
+) -> None:
+    """List agent sessions.
+
+    Works from any directory; use --project to filter by project.
+
+    Examples:
+        st sessions
+        st sessions list
+        st sessions list --status active
+        st sessions list -s active --include-unassigned
+    """
+    _render_session_list(
+        status_filter,
+        limit,
+        agent_slug,
+        parent_session_id,
+        project_id,
+        include_unassigned=include_unassigned,
+    )
+
+
+@app.command("show")
+def show_session(
+    session_id: str,
+    project_id: Annotated[str | None, typer.Option("--project", "-P", help="Project scope for short session ID lookup.")] = None,
+    raw: Annotated[bool, typer.Option("--raw", help="Print full raw session JSON.")] = False,
+) -> None:
+    """Show details of a specific session.
+
+    Works from any directory — no project context required.
+
+    Examples:
+        st sessions show abc123
+    """
+    client = STClient(require_project=False)
+    resolved_id = _resolve_session_id(session_id, client, project_id=project_id)
+
+    try:
+        session = client.get_session(resolved_id)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    if raw or not is_compact():
+        output_json(session)
+        return
+    root = current_root()
+    details = write_details(root, f"session-{resolved_id[:8]}", json.dumps(session, default=str, indent=2))
+    print(f"SESSION:{session.get('id', resolved_id)}|project={session.get('project_id', '-')}|status={session.get('status', '-')}|details:{display_path(root, details)}")
+
+
+@app.command("close")
+def close_session(
+    session_id: str,
+    project_id: Annotated[str | None, typer.Option("--project", "-P", help="Project scope for short session ID lookup.")] = None,
+) -> None:
+    """Close an active session.
+
+    Works from any directory — no project context required.
+    """
+    client = STClient(require_project=False)
+    resolved_id = _resolve_session_id(session_id, client, project_id=project_id)
+
+    try:
+        result = client.close_session(resolved_id)
+    except APIError as e:
+        handle_api_error(e)
+        return
+
+    output_json(result)
+
+
+def _monitor_task_target(
+    ctx: typer.Context,
+    target: str,
+    *,
+    follow: bool,
+    limit: int,
+    debug: bool,
+    history: bool,
+    json_output: bool,
+) -> None:
+    from .exec_monitor import exec_log_command
+
+    exec_log_command(
+        ctx,
+        task_id=target,
+        follow=follow,
+        limit=limit,
+        debug=debug,
+        history=history,
+        json_output=json_output,
+    )
+
 
 
 def _render_monitor_sessions(sessions: list[dict[str, Any]]) -> None:
@@ -348,151 +476,6 @@ def _list_monitor_sessions(
     return [s for s in sessions if _session_matches_status_alias(s, status_filter)]
 
 
-@app.callback()
-def sessions_callback(
-    ctx: typer.Context,
-    status_filter: Annotated[str | None, typer.Option("-s", "--status")] = None,
-    limit: Annotated[int, typer.Option("--limit")] = 20,
-    agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
-    parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
-    project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
-) -> None:
-    """List agent sessions when no subcommand is provided."""
-    if ctx.invoked_subcommand is not None:
-        return
-    _render_session_list(
-        status_filter,
-        limit,
-        agent_slug,
-        parent_session_id,
-        project_id,
-        include_unassigned=True,
-    )
-
-
-@app.command("list")
-def list_sessions(
-    status_filter: Annotated[str | None, typer.Option("-s", "--status")] = None,
-    include_unassigned: Annotated[
-        bool,
-        typer.Option(
-            "--include-unassigned",
-            help="Include imported/unassigned sessions without an agent slug",
-        ),
-    ] = True,
-    limit: Annotated[int, typer.Option("--limit")] = 20,
-    agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
-    parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
-    project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
-) -> None:
-    """List agent sessions.
-
-    Works from any directory; use --project to filter by project.
-
-    Examples:
-        st sessions
-        st sessions list
-        st sessions list --status active
-        st sessions list -s active --include-unassigned
-    """
-    _render_session_list(
-        status_filter,
-        limit,
-        agent_slug,
-        parent_session_id,
-        project_id,
-        include_unassigned=include_unassigned,
-    )
-
-
-@app.command("show")
-def show_session(
-    session_id: str,
-    project_id: Annotated[str | None, typer.Option("--project", "-P", help="Project scope for short session ID lookup.")] = None,
-    raw: Annotated[bool, typer.Option("--raw", help="Print full raw session JSON.")] = False,
-) -> None:
-    """Show details of a specific session.
-
-    Works from any directory — no project context required.
-
-    Examples:
-        st sessions show abc123
-    """
-    client = STClient(require_project=False)
-    resolved_id = _resolve_session_id(session_id, client, project_id=project_id)
-
-    try:
-        session = client.get_session(resolved_id)
-    except APIError as e:
-        handle_api_error(e)
-        return
-
-    if raw or not is_compact():
-        output_json(session)
-        return
-    root = current_root()
-    details = write_details(root, f"session-{resolved_id[:8]}", json.dumps(session, default=str, indent=2))
-    print(f"SESSION:{session.get('id', resolved_id)}|project={session.get('project_id', '-')}|status={session.get('status', '-')}|details:{display_path(root, details)}")
-
-
-@app.command("close")
-def close_session(
-    session_id: str,
-    project_id: Annotated[str | None, typer.Option("--project", "-P", help="Project scope for short session ID lookup.")] = None,
-) -> None:
-    """Close an active session.
-
-    Works from any directory — no project context required.
-    """
-    client = STClient(require_project=False)
-    resolved_id = _resolve_session_id(session_id, client, project_id=project_id)
-
-    try:
-        result = client.close_session(resolved_id)
-    except APIError as e:
-        handle_api_error(e)
-        return
-
-    output_json(result)
-
-
-def _monitor_task_target(
-    ctx: typer.Context,
-    target: str,
-    *,
-    follow: bool,
-    limit: int,
-    debug: bool,
-    history: bool,
-    json_output: bool,
-) -> None:
-    from .exec_monitor import exec_log_command
-
-    exec_log_command(
-        ctx,
-        task_id=target,
-        follow=follow,
-        limit=limit,
-        debug=debug,
-        history=history,
-        json_output=json_output,
-    )
-
-
-
-def _render_or_output_monitor_sessions(
-    sessions: list[dict[str, Any]],
-    *,
-    json_output: bool,
-) -> bool:
-    if json_output or not is_compact():
-        output_json(sessions)
-        return True
-    _render_monitor_sessions(sessions)
-    return False
-
-
-
 def _monitor_overview(
     client: STClient,
     *,
@@ -503,23 +486,22 @@ def _monitor_overview(
     json_output: bool,
     follow: bool,
 ) -> None:
+    def _render_or_output(sessions: list[dict[str, Any]]) -> bool:
+        if json_output or not is_compact():
+            output_json(sessions)
+            return True
+        _render_monitor_sessions(sessions)
+        return False
+
     sessions = _list_monitor_sessions(
-        client,
-        status_filter=status_filter,
-        limit=limit,
-        agent_slug=agent_slug,
-        project_id=project_id,
+        client, status_filter=status_filter, limit=limit, agent_slug=agent_slug, project_id=project_id
     )
-    if _render_or_output_monitor_sessions(sessions, json_output=json_output) or not follow:
+    if _render_or_output(sessions) or not follow:
         return
     while True:
         time.sleep(2)
         sessions = _list_monitor_sessions(
-            client,
-            status_filter=status_filter,
-            limit=limit,
-            agent_slug=agent_slug,
-            project_id=project_id,
+            client, status_filter=status_filter, limit=limit, agent_slug=agent_slug, project_id=project_id
         )
         _render_monitor_sessions(sessions)
 
