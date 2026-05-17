@@ -255,6 +255,14 @@ function applySelection(doc: Document, ids: string[]) {
   })
 }
 
+function clearSelectionState(doc: Document) {
+  applySelection(doc, [])
+}
+
+function clearDragState() {
+  dragRef = null
+}
+
 function toggleSelectedIds(
   currentIds: string[],
   id: string,
@@ -300,6 +308,16 @@ function buildEditorSummary(
     })
   }
   return lines.join('\n')
+}
+
+function serializeDraftDocument(doc: Document | null, fallback: string) {
+  if (!doc?.documentElement) return fallback
+  const clone = doc.cloneNode(true) as Document
+  return stripEditorState(clone)
+}
+
+function removeElements(elements: HTMLElement[]) {
+  elements.forEach((element) => element.remove())
 }
 
 function buildEditorMetadata(
@@ -662,7 +680,7 @@ export function MockupSurfaceEditor({
         setSelectedId(null)
         setSelectedIds([])
         setSelected(null)
-        applySelection(doc, [])
+        clearSelectionState(doc)
         return
       }
 
@@ -782,7 +800,7 @@ export function MockupSurfaceEditor({
     }
 
     const onPointerUp = () => {
-      dragRef = null
+      clearDragState()
       refreshSelected()
     }
 
@@ -791,7 +809,7 @@ export function MockupSurfaceEditor({
       const elements = getSelectedElements()
       if (!elements.length) return
       event.preventDefault()
-      elements.forEach((element) => element.remove())
+      removeElements(elements)
       selectElement(null)
       setDirty(true)
     }
@@ -823,12 +841,10 @@ export function MockupSurfaceEditor({
     selectedIds,
   ])
 
-  const serializeDraft = useCallback(() => {
-    const doc = getDoc()
-    if (!doc?.documentElement) return content
-    const clone = doc.cloneNode(true) as Document
-    return stripEditorState(clone)
-  }, [content, getDoc])
+  const serializeDraft = useCallback(
+    () => serializeDraftDocument(getDoc(), content),
+    [content, getDoc],
+  )
 
   const saveMutation = useMutation({
     mutationFn: async () => {
