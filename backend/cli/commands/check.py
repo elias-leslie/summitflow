@@ -170,25 +170,7 @@ def _is_pytest_test_path(path: Path) -> bool:
 
 
 def _path_relevant_for_tool(name: str, rel_path: str) -> bool:
-    return _path_matches_tool(name, Path(rel_path))
-
-
-def _relative_changed_paths(root: Path, cwd: Path, changed_files: list[str]) -> list[Path]:
-    cwd_resolved = cwd.resolve()
-    paths: list[Path] = []
-    for rel_path in changed_files:
-        absolute = (root / rel_path).resolve()
-        if not absolute.exists() or not absolute.is_file():
-            continue
-        if not absolute.is_relative_to(cwd_resolved):
-            continue
-        relative = absolute.relative_to(cwd)
-        if relative not in paths:
-            paths.append(relative)
-    return paths
-
-
-def _path_matches_tool(name: str, path: Path) -> bool:
+    path = Path(rel_path)
     if path.name in _TOOL_CONFIG_PATHS.get(name, set()):
         return True
     if name == "pytest":
@@ -206,9 +188,22 @@ def _changed_args(
     if not changed_files or (name != "pytest" and not config.get("pass_path")):
         return []
     paths: list[str] = []
-    for relative in _relative_changed_paths(root, cwd, changed_files):
-        if not _path_matches_tool(name, relative):
+    cwd_resolved = cwd.resolve()
+    for rel_path in changed_files:
+        if Path(rel_path).name in _TOOL_CONFIG_PATHS.get(name, set()):
             continue
+        absolute = (root / rel_path).resolve()
+        if not absolute.exists() or not absolute.is_file():
+            continue
+        if name == "pytest":
+            path = Path(rel_path)
+            if not _is_pytest_test_path(path):
+                continue
+            if absolute.name == "conftest.py":
+                absolute = absolute.parent
+        if not absolute.is_relative_to(cwd_resolved):
+            continue
+        relative = absolute.relative_to(cwd)
         if name in {"ruff", "types"} and relative.suffix not in {".py", ".pyi"}:
             continue
         if name in {"sqlfluff", "squawk"} and relative.suffix != ".sql":
