@@ -337,6 +337,14 @@ const COMPARE_BUTTON_ACTIVE = 'border-slate-500 bg-slate-800 text-slate-100'
 const COMPARE_BUTTON_IDLE =
   'border-slate-800 bg-slate-950/70 text-slate-500 hover:text-slate-300'
 
+// --- Shared drag state for move mode ---
+interface DragState {
+  elements: Array<{ element: HTMLElement; baseX: number; baseY: number }>
+  startX: number
+  startY: number
+}
+let dragRef: DragState | null = null
+
 function EditorToolbar({
   mode,
   compareMode,
@@ -704,16 +712,6 @@ export function MockupSurfaceEditor({
     const doc = getDoc()
     if (!doc?.body) return
 
-    let drag: {
-      elements: Array<{
-        element: HTMLElement
-        baseX: number
-        baseY: number
-      }>
-      startX: number
-      startY: number
-    } | null = null
-
     const isEditableTarget = (
       target: HTMLElement | null,
     ): target is HTMLElement =>
@@ -759,7 +757,7 @@ export function MockupSurfaceEditor({
         element.style.position ||= 'relative'
         element.style.zIndex ||= '2'
       })
-      drag = {
+      dragRef = {
         elements: selectedForDrag.map((element) => ({
           element,
           baseX: Number.parseFloat(element.dataset.sfOffsetX ?? '0') || 0,
@@ -771,11 +769,11 @@ export function MockupSurfaceEditor({
     }
 
     const onPointerMove = (event: PointerEvent) => {
-      if (!drag) return
-      const activeDrag = drag
-      activeDrag.elements.forEach(({ element, baseX, baseY }) => {
-        const x = Math.round(baseX + event.clientX - activeDrag.startX)
-        const y = Math.round(baseY + event.clientY - activeDrag.startY)
+      if (!dragRef) return
+      const d = dragRef
+      d.elements.forEach(({ element, baseX, baseY }) => {
+        const x = Math.round(baseX + event.clientX - d.startX)
+        const y = Math.round(baseY + event.clientY - d.startY)
         element.dataset.sfOffsetX = String(x)
         element.dataset.sfOffsetY = String(y)
         element.style.transform = `translate(${x}px, ${y}px)`
@@ -784,7 +782,7 @@ export function MockupSurfaceEditor({
     }
 
     const onPointerUp = () => {
-      drag = null
+      dragRef = null
       refreshSelected()
     }
 
