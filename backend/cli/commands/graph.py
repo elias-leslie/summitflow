@@ -118,6 +118,27 @@ def _status_for_project(
     )
 
 
+def _refresh_graphify_status(
+    project_id: str,
+    root: Path,
+    *,
+    action: str,
+    status: dict[str, Any],
+) -> dict[str, Any]:
+    timer = _start_delayed_status_timer(f"st graph: refreshing Graphify code graph before {action}.")
+    try:
+        refresh_graph(root)
+    except (FileNotFoundError, RuntimeError, subprocess.SubprocessError, OSError) as exc:
+        if not status.get("graph_exists") or "graph_unreadable" in status.get("diagnostics", []):
+            raise
+        _emit_status(f"st graph: auto-refresh failed before {action}; using existing graph. reason={exc}")
+        return status
+    finally:
+        timer.cancel()
+    _emit_status(f"st graph: refreshed Graphify code graph before {action}.")
+    return graphify_status(project_id, root)
+
+
 def _status_for_project_root(
     project_id: str,
     root: Path,
@@ -131,19 +152,7 @@ def _status_for_project_root(
         return status
     if not auto_refresh or not graphify_code_refresh_needed(status):
         return status
-    timer = _start_delayed_status_timer(f"st graph: refreshing Graphify code graph before {action}.")
-    try:
-        refresh_graph(root)
-    except (FileNotFoundError, RuntimeError, subprocess.SubprocessError, OSError) as exc:
-        timer.cancel()
-        if not status.get("graph_exists") or "graph_unreadable" in status.get("diagnostics", []):
-            raise
-        _emit_status(f"st graph: auto-refresh failed before {action}; using existing graph. reason={exc}")
-        return status
-    finally:
-        timer.cancel()
-    _emit_status(f"st graph: refreshed Graphify code graph before {action}.")
-    return graphify_status(project_id, root)
+    return _refresh_graphify_status(project_id, root, action=action, status=status)
 
 
 def _fresh_root_for_project(project_id: str, *, action: str) -> Path:
@@ -168,6 +177,10 @@ def _fresh_root_for_project(project_id: str, *, action: str) -> Path:
 
 def _command_payload(result: GraphifyCommandResult) -> dict[str, Any]:
     return asdict(result)
+
+
+def _command_output(result: subprocess.CompletedProcess[str]) -> str:
+    return "\n".join(part for part in ((result.stdout or "").strip(), (result.stderr or "").strip()) if part)
 
 
 def _issue_count(status: dict[str, Any]) -> int:
@@ -313,14 +326,18 @@ def _semantic_source_text(root: Path, source_type: str, path: Path) -> tuple[str
     return f"=== {rel} ({source_type}) ===\nBinary source. Extract only filename-level concept if content is unavailable.", False
 
 
+def _semantic_batch_size(root: Path, source_type: str, path: Path) -> int:
+    text, _ = _semantic_source_text(root, source_type, path)
+    return len(text)
+
+
 def _semantic_batches(root: Path, sources: list[tuple[str, Path]]) -> list[list[tuple[str, Path]]]:
     batches: list[list[tuple[str, Path]]] = []
     current: list[tuple[str, Path]] = []
     current_chars = 0
     for item in sources:
         source_type, path = item
-        text, _ = _semantic_source_text(root, source_type, path)
-        size = len(text)
+        size = _semantic_batch_size(root, source_type, path)
         if current and (len(current) >= _SEMANTIC_BATCH_MAX_FILES or current_chars + size > _SEMANTIC_BATCH_MAX_CHARS):
             batches.append(current)
             current = []
@@ -403,6 +420,17 @@ def _dedupe_node_id(node_id: str, used: set[str]) -> str:
     return candidate
 
 
+def _semantic_source_label(root: Path, path: Path) -> str:
+    return _rel_source(root, path)
+
+
+def _semantic_node_source_type(source_file: str, allowed_sources: dict[str, str]) -> str:
+    file_type = allowed_sources[source_file]
+    if file_type in _CODE_ONLY_NODE_TYPES:
+        return allowed_sources[source_file]
+    return file_type
+
+
 def _sanitize_semantic_node(root: Path, batch: list[tuple[str, Path]], raw_node: dict[str, Any], used: set[str], allowed_sources: dict[str, str], id_map: dict[str, str]) -> dict[str, Any] | None:
     source_file = str(raw_node.get("source_file") or "")
     if source_file not in allowed_sources:
@@ -411,9 +439,7 @@ def _sanitize_semantic_node(root: Path, batch: list[tuple[str, Path]], raw_node:
     original_id = str(raw_node.get("id") or f"{Path(source_file).stem}_{label}")
     node_id = _dedupe_node_id(original_id, used)
     id_map[_safe_node_id(original_id)] = node_id
-    file_type = str(raw_node.get("file_type") or allowed_sources[source_file])
-    if file_type in _CODE_ONLY_NODE_TYPES:
-        file_type = allowed_sources[source_file]
+    file_type = _semantic_node_source_type(source_file, allowed_sources)
     return {
         **raw_node,
         "id": node_id,
@@ -448,7 +474,7 @@ def _sanitize_semantic_edge(raw_edge: dict[str, Any], allowed_sources: dict[str,
 
 
 def _sanitize_semantic_fragment(root: Path, batch: list[tuple[str, Path]], fragment: dict[str, Any], used: set[str]) -> dict[str, list[dict[str, Any]]]:
-    allowed_sources = {_rel_source(root, path): source_type for source_type, path in batch}
+    allowed_sources = {_semantic_source_label(root, path): source_type for source_type, path in batch}
     nodes: list[dict[str, Any]] = []
     id_map: dict[str, str] = {}
     for raw_node in fragment.get("nodes", []):
@@ -500,21 +526,15 @@ def _merge_semantic_fragments(root: Path, fragments: list[dict[str, list[dict[st
     graph_path.write_text(json.dumps(data), encoding="utf-8")
 
 
-def _semantic_refresh_batch_result(
+def _semantic_batch_command(
+    st_bin: str,
     project_id: str,
-    root: Path,
-    *,
     agent: str,
     model: str | None,
     timeout: int,
-    batch_index: int,
-    batch_count: int,
-    batch: list[tuple[str, Path]],
-    st_bin: str,
-    used_ids: set[str],
-) -> tuple[dict[str, list[dict[str, Any]]], str, list[Path]]:
-    prompt, images = _semantic_batch_prompt(root, batch)
-    prompt_path = write_details(root, f"graphify-semantic-batch-{batch_index:03d}-prompt", prompt)
+    prompt_path: Path,
+    images: list[Path],
+) -> list[str]:
     command = [
         st_bin,
         "complete",
@@ -534,15 +554,39 @@ def _semantic_refresh_batch_result(
         command[4:4] = ["-M", model]
     for image in images:
         command.extend(["--image", str(image)])
+    return command
+
+
+def _run_semantic_batch_command(command: list[str], root: Path, timeout: int, batch_index: int) -> str:
     output = ""
     for attempt in range(1, 4):
         result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=timeout + 30, check=False)
-        output = "\n".join(part for part in ((result.stdout or "").strip(), (result.stderr or "").strip()) if part)
+        output = _command_output(result)
         if result.returncode == 0 and not output.startswith("Error:"):
-            break
+            return output
         if attempt == 3 or "Internal server error" not in output:
             raise RuntimeError(output[-4000:] or f"batch {batch_index} exited {result.returncode}")
         time.sleep(2 * attempt)
+    return output
+
+
+def _semantic_refresh_batch_result(
+    project_id: str,
+    root: Path,
+    *,
+    agent: str,
+    model: str | None,
+    timeout: int,
+    batch_index: int,
+    batch_count: int,
+    batch: list[tuple[str, Path]],
+    st_bin: str,
+    used_ids: set[str],
+) -> tuple[dict[str, list[dict[str, Any]]], str, list[Path]]:
+    prompt, images = _semantic_batch_prompt(root, batch)
+    prompt_path = write_details(root, f"graphify-semantic-batch-{batch_index:03d}-prompt", prompt)
+    command = _semantic_batch_command(st_bin, project_id, agent, model, timeout, prompt_path, images)
+    output = _run_semantic_batch_command(command, root, timeout, batch_index)
     fragment = _parse_semantic_fragment(output)
     sanitized = _sanitize_semantic_fragment(root, batch, fragment, used_ids)
     return sanitized, output, images
@@ -550,6 +594,42 @@ def _semantic_refresh_batch_result(
 
 def _semantic_refresh_summary_line(batch_index: int, batch_count: int, batch: list[tuple[str, Path]], sanitized: dict[str, list[dict[str, Any]]]) -> str:
     return f"batch={batch_index}/{batch_count} files={len(batch)} nodes={len(sanitized['nodes'])} edges={len(sanitized['edges'])}"
+
+
+def _semantic_refresh_initial_state(project_id: str, root: Path, agent: str | None, model: str | None) -> tuple[dict[str, Any], list[tuple[str, Path]], list[list[tuple[str, Path]]], str]:
+    status = _status_for_project_root(project_id, root, auto_refresh=True, action="semantic-refresh")
+    sources = _semantic_sources(root)
+    batches = _semantic_batches(root, sources) if sources else []
+    st_bin = shutil.which("st") or sys.argv[0]
+    return status, sources, batches, st_bin
+
+
+def _semantic_refresh_used_ids(root: Path) -> set[str]:
+    return {
+        str(node.get("id"))
+        for node in json.loads((root / "graphify-out" / "graph.json").read_text(encoding="utf-8")).get("nodes", [])
+        if isinstance(node, dict) and node.get("id")
+    }
+
+
+def _semantic_refresh_result_counts(refreshed_status: dict[str, Any]) -> tuple[int, int, list[str]]:
+    semantic_source_count = int(refreshed_status.get("semantic_source_count", 0) or 0)
+    semantic_node_count = int(refreshed_status.get("semantic_node_count", 0) or 0)
+    diagnostics = [str(item) for item in refreshed_status.get("diagnostics", [])]
+    return semantic_source_count, semantic_node_count, diagnostics
+
+
+def _semantic_refresh_write_summary(root: Path, start: float, batches: list[list[tuple[str, Path]]], details_lines: list[str], exit_code: int, refreshed_status: dict[str, Any]) -> int:
+    semantic_source_count, semantic_node_count, diagnostics = _semantic_refresh_result_counts(refreshed_status)
+    elapsed_ms = round((time.perf_counter() - start) * 1000)
+    details = write_details(root, "graphify-semantic-refresh", "\n".join(details_lines))
+    print(
+        f"GRAPH_SEMANTIC_REFRESH:{'OK' if exit_code == 0 else 'FAIL'}:{exit_code}|"
+        f"elapsed_ms={elapsed_ms}|batches={len(batches)}|semantic={semantic_node_count}/"
+        f"{semantic_source_count}|diagnostics={','.join(diagnostics) or '-'}|"
+        f"details:{display_path(root, details)}"
+    )
+    return exit_code
 
 
 def _run_semantic_refresh_batches(
@@ -562,19 +642,12 @@ def _run_semantic_refresh_batches(
 ) -> int:
     if not agent:
         raise typer.BadParameter("semantic-refresh requires --agent with a purpose-built Agent Hub agent slug")
-    status = _status_for_project_root(project_id, root, auto_refresh=True, action="semantic-refresh")
-    sources = _semantic_sources(root)
+    status, sources, batches, st_bin = _semantic_refresh_initial_state(project_id, root, agent, model)
     if not sources:
         print(f"GRAPH_SEMANTIC_REFRESH:OK:0|semantic=0/0|diagnostics={','.join(status.get('diagnostics', [])) or '-'}")
         return 0
-    batches = _semantic_batches(root, sources)
-    st_bin = shutil.which("st") or sys.argv[0]
     fragments: list[dict[str, list[dict[str, Any]]]] = []
-    used_ids = {
-        str(node.get("id"))
-        for node in json.loads((root / "graphify-out" / "graph.json").read_text(encoding="utf-8")).get("nodes", [])
-        if isinstance(node, dict) and node.get("id")
-    }
+    used_ids = _semantic_refresh_used_ids(root)
     start = time.perf_counter()
     details_lines = [f"semantic_sources={len(sources)} batches={len(batches)} agent={agent} model={model or 'agent-default'}"]
     try:
@@ -597,26 +670,43 @@ def _run_semantic_refresh_batches(
         refresh_result = run_graphify(root, ["cluster-only", str(root)], timeout=timeout)
         details_lines.append(refresh_result.output)
         refreshed_status = graphify_status(project_id, root)
-        semantic_source_count = int(refreshed_status.get("semantic_source_count", 0) or 0)
-        semantic_node_count = int(refreshed_status.get("semantic_node_count", 0) or 0)
-        diagnostics = [str(item) for item in refreshed_status.get("diagnostics", [])]
+        _, semantic_node_count, diagnostics = _semantic_refresh_result_counts(refreshed_status)
         exit_code = 0 if semantic_node_count > 0 and "semantic_sources_not_extracted" not in diagnostics else 1
     except (OSError, RuntimeError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
         refreshed_status = graphify_status(project_id, root)
-        semantic_source_count = int(refreshed_status.get("semantic_source_count", 0) or 0)
-        semantic_node_count = int(refreshed_status.get("semantic_node_count", 0) or 0)
-        diagnostics = [str(item) for item in refreshed_status.get("diagnostics", [])]
+        _, semantic_node_count, diagnostics = _semantic_refresh_result_counts(refreshed_status)
         details_lines.append(f"ERROR: {type(exc).__name__}: {exc}")
         exit_code = 1
-    elapsed_ms = round((time.perf_counter() - start) * 1000)
-    details = write_details(root, "graphify-semantic-refresh", "\n".join(details_lines))
-    print(
-        f"GRAPH_SEMANTIC_REFRESH:{'OK' if exit_code == 0 else 'FAIL'}:{exit_code}|"
-        f"elapsed_ms={elapsed_ms}|batches={len(batches)}|semantic={semantic_node_count}/"
-        f"{semantic_source_count}|diagnostics={','.join(diagnostics) or '-'}|"
-        f"details:{display_path(root, details)}"
-    )
-    return exit_code
+    return _semantic_refresh_write_summary(root, start, batches, details_lines, exit_code, refreshed_status)
+
+
+def _semantic_refresh_agent_command(
+    st_bin: str,
+    project_id: str,
+    root: Path,
+    agent: str,
+    model: str | None,
+    timeout: int,
+    prompt_path: Path,
+) -> list[str]:
+    command = [
+        st_bin,
+        "agent",
+        "run",
+        "--agent",
+        agent,
+        "--project",
+        project_id,
+        "--working-dir",
+        str(root),
+        "--file",
+        str(prompt_path),
+        "--timeout",
+        str(timeout),
+    ]
+    if model:
+        command[5:5] = ["-M", model]
+    return command
 
 
 def _run_semantic_refresh_agent(
@@ -635,27 +725,11 @@ def _run_semantic_refresh_agent(
     st_bin = shutil.which("st") or sys.argv[0]
     if not agent:
         raise typer.BadParameter("semantic-refresh requires --agent with a purpose-built Agent Hub agent slug")
-    command = [
-        st_bin,
-        "agent",
-        "run",
-        "--agent",
-        agent,
-        "--project",
-        project_id,
-        "--working-dir",
-        str(root),
-        "--file",
-        str(prompt_path),
-        "--timeout",
-        str(timeout),
-    ]
-    if model:
-        command[5:5] = ["-M", model]
+    command = _semantic_refresh_agent_command(st_bin, project_id, root, agent, model, timeout, prompt_path)
     start = time.perf_counter()
     try:
         result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=timeout + 30, check=False)
-        output = "\n".join(part for part in ((result.stdout or "").strip(), (result.stderr or "").strip()) if part)
+        output = _command_output(result)
         exit_code = result.returncode
         if output.startswith("Error:"):
             exit_code = exit_code or 1
@@ -665,9 +739,7 @@ def _run_semantic_refresh_agent(
     elapsed_ms = round((time.perf_counter() - start) * 1000)
     details = write_details(root, "graphify-semantic-refresh", output)
     refreshed_status = graphify_status(project_id, root)
-    semantic_source_count = int(refreshed_status.get("semantic_source_count", 0) or 0)
-    semantic_node_count = int(refreshed_status.get("semantic_node_count", 0) or 0)
-    diagnostics = [str(item) for item in refreshed_status.get("diagnostics", [])]
+    semantic_source_count, semantic_node_count, diagnostics = _semantic_refresh_result_counts(refreshed_status)
     if semantic_source_count and (semantic_node_count == 0 or "semantic_sources_not_extracted" in diagnostics):
         exit_code = exit_code or 1
     print(
@@ -681,15 +753,10 @@ def _run_semantic_refresh_agent(
 
 
 @app.command("status")
-def status(
-    project: Annotated[str | None, typer.Option("--project", "-p", help="Project id. Defaults to current project.")] = None,
-    all_projects: Annotated[bool, typer.Option("--all", help="Show every registered project.")] = False,
-    refresh: Annotated[bool, typer.Option("--refresh/--no-refresh", help="Refresh stale code graphs before reporting.")] = True,
-) -> None:
-    """Show Graphify status and diagnostics."""
+def _status_payload(all_projects: bool, refresh: bool, project: str | None) -> dict[str, Any] | list[dict[str, Any]]:
     if all_projects:
         projects = _all_projects()
-        output_json([
+        return [
             _status_for_project_root(
                 str(item["id"]),
                 _root_from_project_payload(str(item["id"]), item),
@@ -698,9 +765,18 @@ def status(
             )
             for item in projects
             if item.get("id")
-        ])
-        return
-    output_json(_status_for_project(_project_id(project), auto_refresh=refresh))
+        ]
+    return _status_for_project(_project_id(project), auto_refresh=refresh)
+
+
+@app.command("status")
+def status(
+    project: Annotated[str | None, typer.Option("--project", "-p", help="Project id. Defaults to current project.")] = None,
+    all_projects: Annotated[bool, typer.Option("--all", help="Show every registered project.")] = False,
+    refresh: Annotated[bool, typer.Option("--refresh/--no-refresh", help="Refresh stale code graphs before reporting.")] = True,
+) -> None:
+    """Show Graphify status and diagnostics."""
+    output_json(_status_payload(all_projects, refresh, project))
 
 
 @app.command("doctor")
@@ -711,46 +787,44 @@ def status(
     task_types=("exploration", "refactor", "backend"),
     tier="reference",
 )
-def doctor(
-    project: Annotated[str | None, typer.Option("--project", "-p", help="Project id. Defaults to every project.")] = None,
-    refresh: Annotated[bool, typer.Option("--refresh/--no-refresh", help="Refresh stale code graphs before diagnosis.")] = True,
-) -> None:
-    """Report Graphify issues that affect agent usefulness."""
+def _doctor_statuses(project: str | None, refresh: bool) -> list[dict[str, Any]]:
     if project:
         project_id = _project_id(project)
-        statuses = [_status_for_project(project_id, auto_refresh=refresh, action="doctor", create_missing=True)]
-    else:
-        projects = _all_projects()
-        statuses = [
-            _status_for_project_root(
-                str(item["id"]),
-                _root_from_project_payload(str(item["id"]), item),
-                auto_refresh=refresh,
-                action="doctor",
-                create_missing=False,
-            )
-            for item in projects
-            if item.get("id")
-        ]
-    issues = [
+        return [_status_for_project(project_id, auto_refresh=refresh, action="doctor", create_missing=True)]
+    projects = _all_projects()
+    return [
+        _status_for_project_root(
+            str(item["id"]),
+            _root_from_project_payload(str(item["id"]), item),
+            auto_refresh=refresh,
+            action="doctor",
+            create_missing=False,
+        )
+        for item in projects
+        if item.get("id")
+    ]
+
+
+def _doctor_items(statuses: list[dict[str, Any]], *, blocking: bool) -> list[dict[str, Any]]:
+    return [
         {
             "project_id": item["project_id"],
-            "diagnostics": [diagnostic for diagnostic in item["diagnostics"] if diagnostic in _DOCTOR_BLOCKING_DIAGNOSTICS],
+            "diagnostics": [
+                diagnostic
+                for diagnostic in item["diagnostics"]
+                if (diagnostic in _DOCTOR_BLOCKING_DIAGNOSTICS) is blocking
+            ],
             "changed_files_since_graph": item["changed_files_since_graph"],
         }
         for item in statuses
-        if _issue_count(item)
+        if (_issue_count(item) if blocking else _warning_count(item))
     ]
-    warnings = [
-        {
-            "project_id": item["project_id"],
-            "diagnostics": [diagnostic for diagnostic in item["diagnostics"] if diagnostic not in _DOCTOR_BLOCKING_DIAGNOSTICS],
-            "changed_files_since_graph": item["changed_files_since_graph"],
-        }
-        for item in statuses
-        if _warning_count(item)
-    ]
-    payload = {
+
+
+def _doctor_result(statuses: list[dict[str, Any]]) -> dict[str, Any]:
+    issues = _doctor_items(statuses, blocking=True)
+    warnings = _doctor_items(statuses, blocking=False)
+    return {
         "status": "ISSUES" if issues else "OK",
         "projects": len(statuses),
         "issues": issues,
@@ -758,8 +832,18 @@ def doctor(
         "issue_count": sum(_issue_count(item) for item in statuses),
         "warning_count": sum(_warning_count(item) for item in statuses),
     }
-    output_json(payload)
-    if issues:
+
+
+@app.command("doctor")
+def doctor(
+    project: Annotated[str | None, typer.Option("--project", "-p", help="Project id. Defaults to every project.")] = None,
+    refresh: Annotated[bool, typer.Option("--refresh/--no-refresh", help="Refresh stale code graphs before diagnosis.")] = True,
+) -> None:
+    """Report Graphify issues that affect agent usefulness."""
+    statuses = _doctor_statuses(project, refresh)
+    result = _doctor_result(statuses)
+    output_json(result)
+    if result["issues"]:
         raise typer.Exit(2)
 
 
@@ -879,6 +963,44 @@ def fallow(
 
 
 @app.command("profile")
+def _profile_runs(project_id: str, root: Path, question: str, budget: int, st_bin: str) -> list[dict[str, Any]]:
+    return [
+        _run_measured([st_bin, "-P", project_id, "search", question], cwd=root),
+        _command_payload(query_graph(root, question, budget=budget)),
+    ]
+
+
+def _profile_codex_probes(root: Path) -> list[dict[str, Any]]:
+    codex_bin = shutil.which("codex")
+    if not codex_bin:
+        return [{"tool": "codex", "available": False}]
+    return [
+        _run_measured([codex_bin, "--version"], cwd=root, timeout=30),
+        _run_measured([codex_bin, "exec", "--help"], cwd=root, timeout=30),
+    ]
+
+
+def _profile_agent_hub_probe(st_bin: str, project_id: str, question: str, root: Path) -> dict[str, Any]:
+    return _run_measured(
+        [
+            st_bin,
+            "-P",
+            "agent-hub",
+            "agents",
+            "preview",
+            "explorer",
+            "-P",
+            project_id,
+            "--input",
+            question,
+            "--json",
+        ],
+        cwd=root,
+        timeout=90,
+    )
+
+
+@app.command("profile")
 def profile(
     question: Annotated[
         str,
@@ -901,35 +1023,12 @@ def profile(
     project_id = _project_id(project)
     root = _fresh_root_for_project(project_id, action="profile")
     st_bin = shutil.which("st") or sys.argv[0]
-    runs = [_run_measured([st_bin, "-P", project_id, "search", question], cwd=root), _command_payload(query_graph(root, question, budget=budget))]
+    runs = _profile_runs(project_id, root, question, budget, st_bin)
     tool_probes: list[dict[str, Any]] = []
     if codex:
-        codex_bin = shutil.which("codex")
-        if codex_bin:
-            tool_probes.append(_run_measured([codex_bin, "--version"], cwd=root, timeout=30))
-            tool_probes.append(_run_measured([codex_bin, "exec", "--help"], cwd=root, timeout=30))
-        else:
-            tool_probes.append({"tool": "codex", "available": False})
+        tool_probes.extend(_profile_codex_probes(root))
     if agent_hub:
-        tool_probes.append(
-            _run_measured(
-                [
-                    st_bin,
-                    "-P",
-                    "agent-hub",
-                    "agents",
-                    "preview",
-                    "explorer",
-                    "-P",
-                    project_id,
-                    "--input",
-                    question,
-                    "--json",
-                ],
-                cwd=root,
-                timeout=90,
-            )
-        )
+        tool_probes.append(_profile_agent_hub_probe(st_bin, project_id, question, root))
     if gitnexus:
         tool_probes.append(_gitnexus_profile(root))
     if fallow:
