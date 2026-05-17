@@ -14,6 +14,10 @@ vi.mock('@/lib/api/tasks', () => ({
   getSubtasksWithSteps: taskApiMocks.getSubtasksWithSteps,
 }))
 
+vi.mock('@/lib/polling', () => ({
+  POLL_FAST: 100,
+}))
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -98,6 +102,39 @@ describe('useTaskData', () => {
       expect(result.current.task?.id).toBe(task.id)
       expect(result.current.subtasksError).toBe('Subtasks unavailable')
       expect(result.current.subtasks).toEqual([])
+    })
+  })
+
+  it('refreshes open non-terminal task details without manual reload', async () => {
+    const runningTask = makeTask({
+      id: 'task-live',
+      status: 'running',
+      title: 'Running task',
+    })
+    const completedTask = makeTask({
+      id: 'task-live',
+      status: 'completed',
+      title: 'Completed task',
+    })
+
+    taskApiMocks.fetchTask
+      .mockResolvedValueOnce(runningTask)
+      .mockResolvedValueOnce(completedTask)
+    taskApiMocks.getSubtasksWithSteps.mockResolvedValue({ subtasks: [] })
+
+    const { result } = renderHook(() =>
+      useTaskData({
+        taskId: runningTask.id,
+        projectId: 'summitflow',
+        open: true,
+        initialTask: null,
+      }),
+    )
+
+    await waitFor(() => {
+      expect(taskApiMocks.fetchTask).toHaveBeenCalledTimes(2)
+      expect(result.current.task?.status).toBe('completed')
+      expect(result.current.task?.title).toBe('Completed task')
     })
   })
 })
