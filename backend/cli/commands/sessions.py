@@ -235,6 +235,10 @@ def _monitor_summary(session: dict[str, Any]) -> str:
 def _monitor_summary_fields(live: object) -> dict[str, str]:
     if isinstance(live, dict):
         return _live_activity_summary(cast(dict[str, Any], live))
+    return _empty_monitor_summary()
+
+
+def _empty_monitor_summary() -> dict[str, str]:
     return {"phase": "-", "health": "-", "quiet": "-", "tool": "-", "command": "-", "topic": "-", "files": "-", "reason_codes": "-", "error": ""}
 
 
@@ -374,9 +378,12 @@ def _render_monitor_sessions(sessions: list[dict[str, Any]]) -> None:
     print(f"MONITOR[{len(sessions)}]")
     for session in sessions:
         print(_monitor_summary(session))
+    print(_monitor_more(_monitor_project_flag(sessions)))
+
+
+def _monitor_project_flag(sessions: list[dict[str, Any]]) -> str:
     project = next((str(s.get("project_id")) for s in sessions if s.get("project_id")), None)
-    project_flag = f" -P {project}" if project and project != "-" else ""
-    print(_monitor_more(project_flag))
+    return f" -P {project}" if project and project != "-" else ""
 
 
 def _recent_session_events(session_id: str, *, limit: int, event_type: str | None) -> list[dict[str, Any]]:
