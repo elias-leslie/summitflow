@@ -143,26 +143,41 @@ def _session_field(session: dict[str, Any], *keys: str) -> str:
 
 
 def _live_activity_summary(live: dict[str, Any]) -> dict[str, str]:
-    cmd = str(live.get("current_command") or live.get("last_command") or live.get("last_validation_command") or "-")
-    if len(cmd) > 120:
-        cmd = cmd[:117] + "..."
-    touched = live.get("files_touched")
-    files = ",".join(str(p) for p in touched[-3:])[:140] if isinstance(touched, list) and touched else "-"
-    codes = live.get("lifecycle_reason_codes")
-    reason_codes = ",".join(str(c) for c in codes[:4]) if isinstance(codes, list) and codes else "-"
-    quiet = f"{live['quiet_for_seconds']}s" if live.get("quiet_for_seconds") is not None else "-"
-    error_excerpt = live.get("last_tool_error_excerpt") or live.get("stall_reason")
     return {
         "phase": str(live.get("phase") or "-"),
         "health": str(live.get("health") or live.get("status") or "-"),
-        "quiet": quiet,
+        "quiet": _live_activity_quiet(live),
         "tool": str(live.get("current_tool_name") or live.get("last_tool_name") or "-"),
-        "command": cmd,
+        "command": _live_activity_command(live),
         "topic": str(live.get("current_topic") or live.get("last_topic") or "-"),
-        "files": files,
-        "reason_codes": reason_codes,
-        "error": f"|err={str(error_excerpt)[:120]}" if error_excerpt else "",
+        "files": _live_activity_files(live),
+        "reason_codes": _live_activity_reason_codes(live),
+        "error": _live_activity_error(live),
     }
+
+
+def _live_activity_command(live: dict[str, Any]) -> str:
+    cmd = str(live.get("current_command") or live.get("last_command") or live.get("last_validation_command") or "-")
+    return cmd[:117] + "..." if len(cmd) > 120 else cmd
+
+
+def _live_activity_files(live: dict[str, Any]) -> str:
+    touched = live.get("files_touched")
+    return ",".join(str(p) for p in touched[-3:])[:140] if isinstance(touched, list) and touched else "-"
+
+
+def _live_activity_reason_codes(live: dict[str, Any]) -> str:
+    codes = live.get("lifecycle_reason_codes")
+    return ",".join(str(c) for c in codes[:4]) if isinstance(codes, list) and codes else "-"
+
+
+def _live_activity_quiet(live: dict[str, Any]) -> str:
+    return f"{live['quiet_for_seconds']}s" if live.get("quiet_for_seconds") is not None else "-"
+
+
+def _live_activity_error(live: dict[str, Any]) -> str:
+    error_excerpt = live.get("last_tool_error_excerpt") or live.get("stall_reason")
+    return f"|err={str(error_excerpt)[:120]}" if error_excerpt else ""
 
 
 def _monitor_more(project_flag: str) -> str:
@@ -207,10 +222,7 @@ def _monitor_summary(session: dict[str, Any]) -> str:
     provider = _session_field(session, "effective_provider", "requested_provider", "provider")
     model = _session_field(session, "effective_model", "requested_model", "model").split("/")[-1]
     live_state = _live_state(session)
-    summary = _live_activity_summary(cast(dict[str, Any], live)) if isinstance(live, dict) else {
-        "phase": "-", "health": "-", "quiet": "-", "tool": "-",
-        "command": "-", "topic": "-", "files": "-", "reason_codes": "-", "error": "",
-    }
+    summary = _monitor_summary_fields(live)
     task_id = _session_field(session, "task_id", "external_id")
     return (
         f"MON {project_id}|{agent}|{session_id[:8]}|{status}/{live_state}|"
@@ -218,6 +230,12 @@ def _monitor_summary(session: dict[str, Any]) -> str:
         f"tool={summary['tool']}|cmd={summary['command']}|topic={summary['topic']}|files={summary['files']}|"
         f"codes={summary['reason_codes']}{summary['error']}"
     )
+
+
+def _monitor_summary_fields(live: object) -> dict[str, str]:
+    if isinstance(live, dict):
+        return _live_activity_summary(cast(dict[str, Any], live))
+    return {"phase": "-", "health": "-", "quiet": "-", "tool": "-", "command": "-", "topic": "-", "files": "-", "reason_codes": "-", "error": ""}
 
 
 @app.callback()
@@ -438,14 +456,29 @@ def _render_session_diagnostics(session_id: str, *, limit: int) -> None:
     events = _recent_session_events(session_id, limit=sample_limit, event_type=None)
     error_rows, repeat_rows = _diagnostic_rows(events)
     row_limit = max(limit, 1)
-    print(
+    print(_diagnostic_header(session_id, events, error_rows, repeat_rows))
+    _print_diagnostic_rows("ERR", error_rows[:row_limit])
+    _print_diagnostic_rows(
+        "REPEAT",
+        repeat_rows[: max(row_limit - min(len(error_rows), row_limit), 0)],
+    )
+
+
+def _diagnostic_header(
+    session_id: str,
+    events: list[dict[str, Any]],
+    error_rows: list[tuple[str, int, dict[str, Any]]],
+    repeat_rows: list[tuple[str, int, dict[str, Any]]],
+) -> str:
+    return (
         f"DIAG session={session_id[:8]} events_sampled={len(events)} "
         f"errors={len(error_rows)} repeats={len(repeat_rows)}"
     )
-    for signature, count, event in error_rows[:row_limit]:
-        print(f"ERR x{count}|type={event.get('event_type', '-')}|tool={event.get('tool_name', '-')}|{signature}")
-    for signature, count, event in repeat_rows[: max(row_limit - min(len(error_rows), row_limit), 0)]:
-        print(f"REPEAT x{count}|type={event.get('event_type', '-')}|tool={event.get('tool_name', '-')}|{signature}")
+
+
+def _print_diagnostic_rows(prefix: str, rows: list[tuple[str, int, dict[str, Any]]]) -> None:
+    for signature, count, event in rows:
+        print(f"{prefix} x{count}|type={event.get('event_type', '-')}|tool={event.get('tool_name', '-')}|{signature}")
 
 
 def _monitor_single_session(
@@ -507,17 +540,10 @@ def _monitor_overview(
     json_output: bool,
     follow: bool,
 ) -> None:
-    def _render_or_output(sessions: list[dict[str, Any]]) -> bool:
-        if json_output or not is_compact():
-            output_json(sessions)
-            return True
-        _render_monitor_sessions(sessions)
-        return False
-
     sessions = _list_monitor_sessions(
         client, status_filter=status_filter, limit=limit, agent_slug=agent_slug, project_id=project_id
     )
-    if _render_or_output(sessions) or not follow:
+    if _render_or_output_monitor_sessions(sessions, json_output=json_output) or not follow:
         return
     while True:
         time.sleep(2)
@@ -525,6 +551,14 @@ def _monitor_overview(
             client, status_filter=status_filter, limit=limit, agent_slug=agent_slug, project_id=project_id
         )
         _render_monitor_sessions(sessions)
+
+
+def _render_or_output_monitor_sessions(sessions: list[dict[str, Any]], *, json_output: bool) -> bool:
+    if json_output or not is_compact():
+        output_json(sessions)
+        return True
+    _render_monitor_sessions(sessions)
+    return False
 
 
 @app.command("monitor")
@@ -695,8 +729,12 @@ def _close_reapable_sessions(client: STClient, candidates: list[dict[str, object
         try:
             closed.append(client.close_session(session_id))
         except APIError as e:
-            failed.append({"id": session_id, "error": str(e.detail)})
+            failed.append(_reapable_session_failure(session_id, e))
     return closed, failed
+
+
+def _reapable_session_failure(session_id: str, error: APIError) -> dict[str, object]:
+    return {"id": session_id, "error": str(error.detail)}
 
 
 @app.command("ownership")
