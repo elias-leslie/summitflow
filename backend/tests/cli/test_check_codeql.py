@@ -30,7 +30,7 @@ def _patch_codeql_subprocess(
             return _completed(command, json.dumps(api_payload))
         raise AssertionError(f"unexpected command: {command}")
 
-    monkeypatch.setattr(check_command, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(check_command, "_resolve_repo_root", lambda: tmp_path)
     monkeypatch.setattr(check_command.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(check_command.subprocess, "run", fake_run)
 

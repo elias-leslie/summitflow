@@ -394,7 +394,7 @@ def test_check_changed_only_targets_changed_pytest_files() -> None:
         },
     }
     with (
-        patch("cli.commands.check._repo_root", return_value=Path("/repo")),
+        patch("cli.commands.check._resolve_repo_root", return_value=Path("/repo")),
         patch("cli.commands.check.Path.exists", return_value=True),
         patch("cli.commands.check.Path.is_file", return_value=True),
         patch("cli.commands.check._tool_configs", return_value=configs),
@@ -434,7 +434,7 @@ def test_check_changed_only_targets_biome_override_paths(tmp_path: Path, monkeyp
     }
     monkeypatch.setenv("ST_CHECK_CHANGED_FILES", "frontend/components/runtime/ServiceCard.tsx")
     with (
-        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
         patch("cli.commands.check._tool_configs", return_value=configs),
         patch("cli.commands.check._run_tool", return_value=0) as run_tool,
     ):
@@ -487,7 +487,7 @@ def test_check_architecture_blocks_raw_subprocess_in_web_app(tmp_path: Path) -> 
     )
 
     with (
-        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
         patch("cli.commands.check._tool_configs", return_value={}),
         patch("cli.commands.check._changed_files", return_value=["backend/app/api/unsafe.py"]),
     ):
@@ -507,7 +507,7 @@ def test_check_architecture_blocks_async_subprocess_in_web_app(tmp_path: Path) -
     )
 
     with (
-        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
         patch("cli.commands.check._tool_configs", return_value={}),
         patch("cli.commands.check._changed_files", return_value=["backend/app/services/unsafe_async.py"]),
     ):
@@ -526,7 +526,7 @@ def test_check_architecture_allows_safe_subprocess_wrapper(tmp_path: Path) -> No
     )
 
     with (
-        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
         patch("cli.commands.check._tool_configs", return_value={}),
         patch("cli.commands.check._changed_files", return_value=["backend/app/api/safe.py"]),
     ):
@@ -548,7 +548,7 @@ def test_check_normalizes_repo_relative_explicit_paths(tmp_path: Path) -> None:
     }
 
     with (
-        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
         patch("cli.commands.check._tool_configs", return_value=configs),
         patch("cli.commands.check._run_tool", return_value=0) as run_tool,
     ):
@@ -570,7 +570,7 @@ def test_check_normalizes_repo_root_explicit_paths_outside_tool_cwd(tmp_path: Pa
     }
 
     with (
-        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
         patch("cli.commands.check._tool_configs", return_value=configs),
         patch("cli.commands.check._run_tool", return_value=0) as run_tool,
     ):
@@ -607,7 +607,7 @@ def test_check_biome_explicit_paths_replace_default_dot(
         stderr="",
     )
     with (
-        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
         patch("cli.commands.check.subprocess.run", return_value=completed) as run,
     ):
         exit_code = check._run_tool(
@@ -640,7 +640,7 @@ def test_check_tool_output_goes_to_details_file(tmp_path: Path, capsys: pytest.C
         stderr="",
     )
     with (
-        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
         patch("cli.commands.check.subprocess.run", return_value=result),
     ):
         exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
@@ -659,7 +659,7 @@ def test_check_pytest_scoped_paths_disable_configured_coverage(
 ) -> None:
     result = subprocess.CompletedProcess(args=["pytest"], returncode=0, stdout="1 passed\n", stderr="")
     with (
-        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
         patch("cli.commands.check.subprocess.run", return_value=result) as run,
     ):
         exit_code = check._run_tool(
@@ -689,7 +689,7 @@ def test_check_tool_hint_prefers_result_summary_over_late_runtime_warning(
         stderr="",
     )
     with (
-        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
         patch("cli.commands.check.subprocess.run", return_value=result),
     ):
         exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
@@ -710,7 +710,7 @@ def test_check_tool_failure_prints_only_hint_and_details_path(
         stderr="traceback details\n",
     )
     with (
-        patch("cli.commands.check._repo_root", return_value=tmp_path),
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
         patch("cli.commands.check.subprocess.run", return_value=result),
     ):
         exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
