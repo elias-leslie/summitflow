@@ -178,7 +178,6 @@ def test_create_quality_failure_task_uses_source_key_and_marks_escalated(mocker)
 
     assert created == ["task-quality"]
     assert create_task.call_args.kwargs["execution_mode"] == "autonomous"
-    assert create_task.call_args.kwargs["autonomous"] is True
     assert create_task.call_args.kwargs["priority"] == 2
     assert create_task.call_args.kwargs["complexity"] == "SIMPLE"
     context = create_spirit.call_args.kwargs["context"]

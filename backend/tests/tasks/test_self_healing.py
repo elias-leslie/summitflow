@@ -56,7 +56,7 @@ class TestSystemdMonitorIntegration:
         assert call_kwargs["project_id"] == "summitflow"
         assert call_kwargs["task_type"] == "bug"
         assert call_kwargs["priority"] == 2
-        assert call_kwargs["autonomous"]
+        assert call_kwargs["execution_mode"] == "autonomous"
         assert "Database connection refused" in call_kwargs["title"]
 
     @patch("app.services.self_healing.monitor.create_task")

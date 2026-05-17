@@ -55,12 +55,6 @@ class TestTaskToResponse:
         response = task_to_response(task)
         assert response.ai_review
 
-    def test_autonomous_propagated(self) -> None:
-        """autonomous field also propagates (sanity check for similar fields)."""
-        task = _minimal_task(autonomous=True)
-        response = task_to_response(task)
-        assert response.autonomous
-
     def test_execution_mode_propagated(self) -> None:
         """execution_mode is the source-of-truth task execution control."""
         task = _minimal_task(execution_mode="manual")

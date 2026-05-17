@@ -162,7 +162,7 @@ class TestCreateBrowserErrorTask:
         assert call_kwargs["project_id"] == "test-project"
         assert call_kwargs["task_type"] == "bug"
         assert call_kwargs["priority"] == 2
-        assert call_kwargs["autonomous"]
+        assert call_kwargs["execution_mode"] == "autonomous"
         assert "Fix console error" in call_kwargs["title"]
         assert "TypeError" in call_kwargs["title"]
 
