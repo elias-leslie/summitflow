@@ -1,4 +1,25 @@
-"""Design Ops commands for UI mockups and production assets."""
+"""Design Ops commands for UI mockups and production assets.
+
+Use this when... matrix:
+
+    Goal                                              | Command
+    --------------------------------------------------+-----------------------
+    Store hand-authored HTML as a new mockup          | st design ui create
+    Add a hand-authored revision to an existing one   | st design ui attach
+    Have an AI agent inspect a live URL and design    | st design ui analyze
+    Have an AI agent regenerate an existing mockup    | st design ui rerun
+    Generate a sprite / portrait / game art asset     | st design asset generate
+    Export sprite-sheet frames                        | st design asset export
+
+`ui create` and `ui attach` are the right tools when an agent (Claude Code,
+Codex CLI, etc.) wants to hand-author the HTML itself and just have it stored.
+They never call an AI image / mockup agent.
+
+`asset generate` is for game / marketing artwork only — even with
+`--workflow ui` it routes to image generation (Cloudflare flux / Leonardo) and
+will silently prepend "Create a polished marketing mockup for a game production
+pipeline." to the prompt. Don't use it for UI screen mockups.
+"""
 
 from __future__ import annotations
 
@@ -12,9 +33,25 @@ from ..client import APIError, STClient
 from ..config import get_config
 from ..output import handle_api_error, output_json, require_explicit_project
 
-app = typer.Typer(help="Design Ops commands for UI design and asset studio")
-asset_app = typer.Typer(help="Asset Studio generation and export commands")
-ui_app = typer.Typer(help="UI Design mockup generation commands")
+app = typer.Typer(
+    help=(
+        "Design Ops: UI mockups (hand-authored or AI) and game/marketing assets. "
+        "Run `st design` for the full subcommand matrix."
+    )
+)
+asset_app = typer.Typer(
+    help=(
+        "Asset Studio: generate and export game / marketing artwork via image "
+        "agents (Cloudflare flux, Leonardo). NOT for UI screen mockups — use "
+        "`st design ui create` / `attach` for those."
+    )
+)
+ui_app = typer.Typer(
+    help=(
+        "UI Design mockups. `create` / `attach` store hand-authored HTML. "
+        "`analyze` / `rerun` invoke the AI ui-mockup-designer agent."
+    )
+)
 
 # ---------------------------------------------------------------------------
 # Annotated type aliases — keeps command signatures readable and concise
@@ -70,7 +107,17 @@ def generate_asset(
     reference_image_path: Annotated[str | None, typer.Option("--reference-image-path", help="Path to a PNG/JPEG/WebP reference image for sprite consistency")] = None,
     reference_mime_type: Annotated[str | None, typer.Option("--reference-mime-type", help="Reference image MIME type override")] = None,
 ) -> None:
-    """Generate a Design Ops asset in Asset Studio for the active project.
+    """Generate a game / marketing artwork asset via an image agent.
+
+    Routes the prompt to Cloudflare flux / Leonardo through Agent Hub. The
+    server silently prepends "Create a polished marketing mockup for a game
+    production pipeline." to your prompt, so this is the wrong tool for UI
+    screen mockups — even with `--workflow ui` or `--type marketing_mockup`,
+    output is game art (sprites, illustrations, marketing renders), often with
+    garbled placeholder text.
+
+    For hand-authored UI HTML, use `st design ui create` / `attach`.
+    For AI-generated UI mockups from a live URL, use `st design ui analyze`.
 
     Requires explicit project: st -P <project> design asset generate ...
     """
@@ -131,7 +178,15 @@ def analyze_ui(
         typer.Option("--page-path", help="Optional project page path metadata"),
     ] = None,
 ) -> None:
-    """Generate a UI design review artifact for the active project."""
+    """AI-analyze a live URL and produce a UI mockup via the design agent.
+
+    Requires the page to be reachable. Invokes the `ui-mockup-designer` agent
+    through Agent Hub, which screenshots the page and proposes a redesign.
+    Use this when you want AI-generated suggestions from a live reference.
+
+    Use `st design ui create` instead when you (or another agent) want to
+    hand-author the HTML and just have it stored without AI regeneration.
+    """
     require_explicit_project(get_config())
     client = STClient()
 
@@ -159,7 +214,15 @@ def rerun_ui_mockup(
         typer.Option("--notes-file", help="Path to a file containing revision notes"),
     ] = None,
 ) -> None:
-    """Rerun a stored UI mockup through Agent Hub and save the next version."""
+    """Rerun a stored UI mockup through the AI design agent.
+
+    Always invokes the `ui-mockup-designer` agent and saves the regenerated
+    HTML as a child version. The agent rewrites the HTML — your exact markup
+    will not survive.
+
+    Use `st design ui attach` instead when you want to save a hand-authored
+    revision under an existing mockup without AI regeneration.
+    """
     require_explicit_project(get_config())
     revision_notes = _resolve_notes(notes, notes_file)
     client = STClient()
@@ -174,6 +237,213 @@ def rerun_ui_mockup(
         raise typer.Exit(1) from None
 
     output_json(result)
+
+
+@ui_app.command("create")
+def create_ui_mockup(
+    name: Annotated[str, typer.Argument(help="Mockup display name")],
+    html: Annotated[
+        str | None,
+        typer.Option("--html", help="Inline HTML content for the mockup"),
+    ] = None,
+    html_file: Annotated[
+        Path | None,
+        typer.Option("--html-file", help="Path to a file containing the HTML mockup"),
+    ] = None,
+    description: Annotated[
+        str | None,
+        typer.Option("--description", "-d", help="Optional description stored with the mockup"),
+    ] = None,
+    mockup_type: Annotated[
+        str,
+        typer.Option(
+            "--mockup-type",
+            help="Mockup classification: page, component, layout, flow, system",
+        ),
+    ] = "page",
+    reference_url: Annotated[
+        str | None,
+        typer.Option("--reference-url", help="Live page URL this mockup references (stored as page_path)"),
+    ] = None,
+    reference_image: Annotated[
+        Path | None,
+        typer.Option(
+            "--reference-image",
+            help="Path to a reference screenshot; stored in metadata as reference_image_path",
+        ),
+    ] = None,
+    tags: Annotated[
+        str | None,
+        typer.Option("--tags", help="Comma-separated tags stored in metadata"),
+    ] = None,
+    task_id: Annotated[
+        str | None,
+        typer.Option("--task-id", help="Optional task id to associate with the mockup"),
+    ] = None,
+) -> None:
+    """Store hand-authored HTML as a new mockup (no AI regeneration).
+
+    Use this when you (or another agent) want to commit a specific HTML
+    layout and have it appear in the project's design gallery exactly as
+    written. The HTML is saved verbatim with generator="manual-html".
+
+    Don't use this for AI-driven mockup generation — use `ui analyze` for
+    a fresh AI proposal from a live URL, or `ui rerun` to revise an existing
+    mockup with the AI agent.
+
+    Examples:
+        st -P portfolio-ai design ui create today-layout-a \\
+            --html-file /tmp/layout-a.html \\
+            --reference-url https://port.summitflow.dev/ \\
+            --reference-image /tmp/today.png \\
+            -d "Balanced /today layout: hero + digest"
+
+        st -P portfolio-ai design ui create signal-card --html "<section>...</section>" \\
+            --mockup-type component --tags "signals,deterministic"
+    """
+    require_explicit_project(get_config())
+    content = _resolve_html(html, html_file)
+    client = STClient()
+
+    payload = _build_manual_mockup_payload(
+        name=name,
+        content=content,
+        description=description,
+        mockup_type=mockup_type,
+        reference_url=reference_url,
+        reference_image=reference_image,
+        tags=tags,
+        task_id=task_id,
+    )
+
+    try:
+        result = client.post(client._url("/mockups"), json=payload)
+    except APIError as exc:
+        handle_api_error(exc)
+        raise typer.Exit(1) from None
+
+    output_json(result)
+
+
+@ui_app.command("attach")
+def attach_ui_mockup(
+    mockup_id: Annotated[
+        str,
+        typer.Argument(help="Existing mockup id (e.g. mk-abc123) to attach a revision to"),
+    ],
+    html: Annotated[
+        str | None,
+        typer.Option("--html", help="Inline HTML content for the revision"),
+    ] = None,
+    html_file: Annotated[
+        Path | None,
+        typer.Option("--html-file", help="Path to a file containing the revision HTML"),
+    ] = None,
+    description: Annotated[
+        str | None,
+        typer.Option("--description", "-d", help="Optional description stored with the revision"),
+    ] = None,
+    reference_url: Annotated[
+        str | None,
+        typer.Option("--reference-url", help="Live page URL this revision references"),
+    ] = None,
+    reference_image: Annotated[
+        Path | None,
+        typer.Option(
+            "--reference-image",
+            help="Path to a reference screenshot; stored in metadata as reference_image_path",
+        ),
+    ] = None,
+) -> None:
+    """Attach a hand-authored HTML revision to an existing mockup.
+
+    Resolves the public mockup id (string) to its DB row id and creates a
+    child mockup linked via parent_mockup_id, preserving the iteration chain
+    in the gallery. The HTML is stored verbatim — no AI regeneration.
+
+    Use `st design ui rerun` instead when you want the AI ui-mockup-designer
+    agent to generate the next iteration for you.
+
+    Example:
+        st -P portfolio-ai design ui attach mk-abc123 \\
+            --html-file /tmp/layout-a-v2.html \\
+            -d "Tightened spacing, added deterministic badge"
+    """
+    require_explicit_project(get_config())
+    content = _resolve_html(html, html_file)
+    client = STClient()
+
+    try:
+        parent = client.get(client._url(f"/mockups/{mockup_id}"))
+    except APIError as exc:
+        handle_api_error(exc)
+        raise typer.Exit(1) from None
+
+    parent_db_id = parent.get("id")
+    if not isinstance(parent_db_id, int):
+        raise typer.BadParameter(
+            f"Could not resolve parent mockup id from {mockup_id} (no integer 'id' field)"
+        )
+
+    name = parent.get("name") or mockup_id
+    payload = _build_manual_mockup_payload(
+        name=name,
+        content=content,
+        description=description,
+        mockup_type=parent.get("mockup_type") or "page",
+        reference_url=reference_url or parent.get("page_path"),
+        reference_image=reference_image,
+        tags=None,
+        task_id=parent.get("task_id"),
+        parent_mockup_id=parent_db_id,
+    )
+
+    try:
+        result = client.post(client._url("/mockups"), json=payload)
+    except APIError as exc:
+        handle_api_error(exc)
+        raise typer.Exit(1) from None
+
+    output_json(result)
+
+
+def _build_manual_mockup_payload(
+    *,
+    name: str,
+    content: str,
+    description: str | None,
+    mockup_type: str,
+    reference_url: str | None,
+    reference_image: Path | None,
+    tags: str | None,
+    task_id: str | None,
+    parent_mockup_id: int | None = None,
+) -> dict[str, Any]:
+    """Build a POST /mockups payload for hand-authored HTML."""
+    metadata: dict[str, Any] = {}
+    if reference_image is not None:
+        metadata["reference_image_path"] = str(reference_image)
+    parsed_tags = _split_csv(tags)
+    if parsed_tags:
+        metadata["tags"] = parsed_tags
+
+    payload: dict[str, Any] = {
+        "name": name,
+        "mockup_type": mockup_type,
+        "content": content,
+        "generator": "manual-html",
+    }
+    if description:
+        payload["description"] = description
+    if reference_url:
+        payload["page_path"] = reference_url
+    if task_id:
+        payload["task_id"] = task_id
+    if parent_mockup_id is not None:
+        payload["parent_mockup_id"] = parent_mockup_id
+    if metadata:
+        payload["metadata"] = metadata
+    return payload
 
 
 def _build_asset_payload(
@@ -297,6 +567,16 @@ def _resolve_notes(notes: str | None, notes_file: Path | None) -> str:
     value = notes_file.read_text(encoding="utf-8").strip() if notes_file else (notes or "").strip()
     if not value:
         raise typer.BadParameter("Revision notes are required")
+    return value
+
+
+def _resolve_html(html: str | None, html_file: Path | None) -> str:
+    """Resolve mockup HTML content from an inline option or file."""
+    if html and html_file:
+        raise typer.BadParameter("Use either --html or --html-file, not both")
+    value = html_file.read_text(encoding="utf-8") if html_file else (html or "")
+    if not value.strip():
+        raise typer.BadParameter("HTML content is required (use --html or --html-file)")
     return value
 
 

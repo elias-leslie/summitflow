@@ -158,6 +158,136 @@ def test_design_ui_analyze_posts_to_mockups_endpoint() -> None:
     assert called_json["page_path"] == "/projects/summitflow"
 
 
+def test_design_ui_create_posts_manual_html_to_mockups_endpoint(tmp_path: Path) -> None:
+    """`ui create` should POST hand-authored HTML to the mockups endpoint with generator=manual-html."""
+    html_path = tmp_path / "layout-a.html"
+    html_path.write_text("<section>layout a</section>", encoding="utf-8")
+
+    mock_client = MagicMock()
+    mock_client._url.side_effect = lambda path: f"http://localhost:8001/api/projects/summitflow{path}"
+    mock_client.post.return_value = {"success": True, "mockup_id": "mk-new"}
+
+    with (
+        patch("cli.commands.design.require_explicit_project"),
+        patch("cli.commands.design.get_config"),
+        patch("cli.commands.design.STClient", return_value=mock_client),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "-P",
+                "summitflow",
+                "design",
+                "ui",
+                "create",
+                "today-layout-a",
+                "--html-file",
+                str(html_path),
+                "--description",
+                "Balanced layout",
+                "--mockup-type",
+                "page",
+                "--reference-url",
+                "https://port.summitflow.dev/",
+                "--reference-image",
+                "/tmp/today.png",
+                "--tags",
+                "signals,deterministic",
+                "--task-id",
+                "task-123",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_client.post.assert_called_once()
+    called_url = mock_client.post.call_args.args[0]
+    called_json = mock_client.post.call_args.kwargs["json"]
+    assert called_url.endswith("/mockups")
+    assert called_json["name"] == "today-layout-a"
+    assert called_json["content"] == "<section>layout a</section>"
+    assert called_json["generator"] == "manual-html"
+    assert called_json["mockup_type"] == "page"
+    assert called_json["page_path"] == "https://port.summitflow.dev/"
+    assert called_json["task_id"] == "task-123"
+    assert called_json["description"] == "Balanced layout"
+    assert called_json["metadata"]["reference_image_path"] == "/tmp/today.png"
+    assert called_json["metadata"]["tags"] == ["signals", "deterministic"]
+    assert "parent_mockup_id" not in called_json
+
+
+def test_design_ui_create_rejects_empty_html(tmp_path: Path) -> None:
+    """`ui create` should fail when no HTML content is provided."""
+    mock_client = MagicMock()
+    with (
+        patch("cli.commands.design.require_explicit_project"),
+        patch("cli.commands.design.get_config"),
+        patch("cli.commands.design.STClient", return_value=mock_client),
+    ):
+        result = runner.invoke(
+            app,
+            ["-P", "summitflow", "design", "ui", "create", "missing-html"],
+        )
+    assert result.exit_code != 0
+    mock_client.post.assert_not_called()
+
+
+def test_design_ui_attach_resolves_parent_id_and_posts_revision(tmp_path: Path) -> None:
+    """`ui attach` should GET the parent mockup, then POST a child mockup with parent_mockup_id."""
+    html_path = tmp_path / "layout-a-v2.html"
+    html_path.write_text("<section>v2</section>", encoding="utf-8")
+
+    mock_client = MagicMock()
+    mock_client._url.side_effect = lambda path: f"http://localhost:8001/api/projects/summitflow{path}"
+    mock_client.get.return_value = {
+        "id": 42,
+        "mockup_id": "mk-parent",
+        "name": "today-layout-a",
+        "mockup_type": "page",
+        "page_path": "https://port.summitflow.dev/",
+        "task_id": "task-123",
+    }
+    mock_client.post.return_value = {"success": True, "mockup_id": "mk-child"}
+
+    with (
+        patch("cli.commands.design.require_explicit_project"),
+        patch("cli.commands.design.get_config"),
+        patch("cli.commands.design.STClient", return_value=mock_client),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "-P",
+                "summitflow",
+                "design",
+                "ui",
+                "attach",
+                "mk-parent",
+                "--html-file",
+                str(html_path),
+                "-d",
+                "v2 tightened spacing",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_client.get.assert_called_once()
+    called_get_url = mock_client.get.call_args.args[0]
+    assert called_get_url.endswith("/mockups/mk-parent")
+
+    mock_client.post.assert_called_once()
+    called_post_url = mock_client.post.call_args.args[0]
+    called_json = mock_client.post.call_args.kwargs["json"]
+    assert called_post_url.endswith("/mockups")
+    assert called_json["parent_mockup_id"] == 42
+    assert called_json["name"] == "today-layout-a"
+    assert called_json["content"] == "<section>v2</section>"
+    assert called_json["generator"] == "manual-html"
+    assert called_json["mockup_type"] == "page"
+    assert called_json["page_path"] == "https://port.summitflow.dev/"
+    assert called_json["task_id"] == "task-123"
+    assert called_json["description"] == "v2 tightened spacing"
+
+
 def test_design_ui_rerun_posts_notes_to_mockup_endpoint() -> None:
     """CLI should route mockup reruns to the project mockup revision endpoint."""
     mock_client = MagicMock()
