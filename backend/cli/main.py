@@ -67,6 +67,7 @@ OPTIONAL_COMMANDS = (
     "graph",
     "health",
     "jj",
+    "lease",
     "logs",
     "memory",
     "models",
@@ -273,6 +274,7 @@ app.command(SESSION_EVENTS_COMMAND, help="Agent Hub session events (observabilit
     _COMMANDS["session_events"].show_events
 )
 app.command("pulse")(_COMMANDS["pulse"].pulse)
+app.command("lease")(_COMMANDS["lease"].lease_command)
 app.command("search")(_COMMANDS["search"].search)
 app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
 
