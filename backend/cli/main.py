@@ -70,6 +70,7 @@ OPTIONAL_COMMANDS = (
     "lease",
     "logs",
     "memory",
+    "migrate_branches",
     "models",
     "persona",
     "portfolio",
@@ -275,6 +276,7 @@ app.command(SESSION_EVENTS_COMMAND, help="Agent Hub session events (observabilit
 )
 app.command("pulse")(_COMMANDS["pulse"].pulse)
 app.command("lease")(_COMMANDS["lease"].lease_command)
+app.command("migrate-branches")(_COMMANDS["migrate_branches"].migrate_branches_command)
 app.command("search")(_COMMANDS["search"].search)
 app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
 

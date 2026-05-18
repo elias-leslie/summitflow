@@ -88,12 +88,12 @@ def _handle_task_completion(
     preflight(id, project_id, op="done")
     task_client = STClient(project_id=project_id) if project_id else client
     result = complete_task(task_client, id, message)
-    if result.get("merged"):
-        base_branch = result.get("base_branch", "main")
+    base_branch = result.get("base_branch", "main")
+    if result.get("snapshot_removed"):
         output_success(f"Task {id} completed. Checkpoint removed.")
-        typer.echo(f"  Merged to: {base_branch}")
+        typer.echo(f"  Closed on: {base_branch}")
     else:
-        output_success(f"Task {id} completed without checkpoint merge.")
+        output_success(f"Task {id} completed.")
 
 
 @app.command(name="done")

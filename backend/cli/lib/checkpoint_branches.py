@@ -183,99 +183,29 @@ def resolve_task_branch(task_id: str, project_id: str | None = None) -> str:
 
 
 def create_subtask_branch(task_id: str, subtask_id: str) -> str:
-    """Create git branch for subtask. Format: {task_id}/{subtask_id}"""
-    branch_name = f"{task_id}/{subtask_id}"
-    try:
-        _run_git(["git", "checkout", "-b", branch_name])
-    except subprocess.CalledProcessError as e:
-        print(f"Error: Failed to create branch {branch_name}: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
-    return branch_name
+    """No-op. Subtask work commits direct to main; parallel coordination via st lease."""
+    return f"{task_id}/{subtask_id}"
 
 
 def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None = None) -> bool:
-    """Merge subtask branch into the task branch in the shared checkout."""
-    subtask_branch = f"{task_id}/{subtask_id}"
-    task_branch = resolve_task_branch(task_id, project_id=project_id)
-    cwd = _get_repo_cwd(project_id)
+    """No-op. Subtask work is committed direct to main via st commit; nothing to merge.
 
-    if _run_git(["git", "rev-parse", "--verify", subtask_branch], cwd=cwd, check=False).returncode != 0:
-        print(f"No subtask branch {subtask_branch} found - work done on task branch")
-        return False
-
-    if _get_current_branch(cwd) != task_branch:
-        _checkout_branch(task_branch, cwd)
-
-    try:
-        _run_git(["git", "merge", "--no-ff", subtask_branch, "-m", f"Merge subtask {subtask_id}"], cwd)
-    except subprocess.CalledProcessError as e:
-        conflicts = _merge_conflict_paths(e, cwd)
-        message = _format_merge_failure(
-            subtask_branch,
-            e,
-            cwd,
-            f"resolve conflicts, then rerun st done {subtask_id} -t {task_id}",
-            conflicts=conflicts,
-        )
-        _abort_merge(cwd)
-        print(message, file=sys.stderr)
-        sys.exit(1)
-
-    with contextlib.suppress(subprocess.CalledProcessError):
-        _run_git(["git", "branch", "-d", subtask_branch], cwd)
-
-    print(f"Merged subtask branch {subtask_branch} into {task_branch}")
-    return True
+    Returns False to signal "no merge happened" so existing callers handle it
+    as the already-on-main path.
+    """
+    del task_id, subtask_id, project_id
+    return False
 
 
 def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
-    """Merge task branch to base branch, then delete the task branch."""
-    from app.storage import tasks as task_store
+    """No-op. Task work is committed direct to main via st commit; nothing to merge.
 
-    task = task_store.get_task(task_id)
-    if task and task.get("status") in ("completed", "cancelled"):
-        print(f"Error: Cannot merge - task {task_id} is already {task['status']}", file=sys.stderr)
-        sys.exit(1)
-
-    meta = load_snapshot_meta(task_id)
-    project_id = project_id or (meta.project_id if meta else None)
-    repo_cwd = _get_repo_cwd(project_id)
-    base_branch = normalize_base_branch(meta.base_branch if meta else "main", repo_cwd)
-    task_branch = resolve_task_branch(task_id, project_id=project_id)
-
-    if _get_current_branch(repo_cwd) != base_branch:
-        _checkout_branch(base_branch, repo_cwd)
-
-    try:
-        _run_git(["git", "merge", "--no-ff", task_branch, "-m", f"Merge task {task_id}"], repo_cwd)
-        print(f"Merged {task_branch} into {base_branch}")
-    except subprocess.CalledProcessError as e:
-        conflicts = _merge_conflict_paths(e, repo_cwd)
-        _record_task_merge_conflict(
-            task_id,
-            task_branch,
-            base_branch,
-            conflicts,
-            _merge_failure_output(e),
-        )
-        message = _format_merge_failure(
-            task_branch,
-            e,
-            repo_cwd,
-            f"st git resolve-conflict {task_id}",
-            conflicts=conflicts,
-        )
-        _abort_merge(repo_cwd)
-        print(message, file=sys.stderr)
-        sys.exit(1)
-
-    with contextlib.suppress(subprocess.CalledProcessError):
-        _run_git(["git", "branch", "-d", task_branch], repo_cwd)
-        print(f"Deleted branch {task_branch}")
-
-    with contextlib.suppress(subprocess.CalledProcessError):
-        _run_git(["git", "push"], repo_cwd)
-
+    Returns True so existing callers (done_task) treat the closeout as
+    "code already on base branch" and proceed to status finalize + publish +
+    snapshot cleanup. Legacy task-XXX branches from before the cutover are
+    cleaned up by `st migrate-branches`.
+    """
+    del task_id, project_id
     return True
 
 

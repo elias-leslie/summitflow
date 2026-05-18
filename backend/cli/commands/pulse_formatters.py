@@ -406,8 +406,26 @@ def print_compact_payload(
         print(_format_jj_state(project_id, jj_status))
     print(_format_preflight(project_id, summary, cleanup, jj_status, payload))
     _print_review_lines(project_id, summary, cleanup, jj_status, payload)
+    _print_leases(project_id)
     if details:
         _print_detail_rows(payload)
+
+
+def _print_leases(project_id: Any) -> None:
+    """Print active file leases for the project. Silent on empty or any error."""
+    try:
+        from ..lib.leases import format_pulse_line, list_active
+    except ImportError:
+        return
+    try:
+        leases = list_active(str(project_id))
+    except Exception:
+        return
+    if not leases:
+        return
+    print(f"LEASES:{project_id}|count={len(leases)}")
+    for lease in leases:
+        print("LEASE " + format_pulse_line(lease))
 
 
 def _print_summary_line(project_id: Any, summary: dict[str, Any], cleanup: dict[str, Any]) -> None:

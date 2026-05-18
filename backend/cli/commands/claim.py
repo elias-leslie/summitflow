@@ -205,7 +205,7 @@ def _claim_subtask(
     when="before any work on a task; after st ready picks one",
     precautions=(
         "subtask form uses dotted ID like 1.2; pass --task <parent> when claiming subtask",
-        "claim creates a checkpoint and branch; re-claim by same caller is a no-op resume",
+        "claim records a checkpoint; work commits direct to main, no branch is created",
         "cross-agent conflicts print a Resolution hint pointing at st pulse",
     ),
     tier="mandate",

@@ -2,17 +2,9 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
-
 
 def create_legacy_branch(task_id: str) -> None:
-    """Create an in-repo branch for task_id."""
-    try:
-        subprocess.run(
-            ["git", "checkout", "-b", f"{task_id}/main"],
-            check=True, capture_output=True, text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Error: Failed to create git branch: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
+    """No-op. Per-task branches were fake isolation in a shared checkout;
+    parallel coordination is now file-level via st lease. Kept as a callable
+    to avoid touching every caller during the cutover."""
+    return None

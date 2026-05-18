@@ -18,7 +18,6 @@ from .checkpoint_branches import (
     delete_subtask_branch,
     delete_task_branches,
     get_remote_task_branches,
-    get_task_branches,
     merge_subtask_branch,
     merge_task_branch,
 )
@@ -131,8 +130,13 @@ def get_snapshot_info(task_id: str) -> dict[str, str | int | None] | None:
 
 
 def _checkpoint_is_active(checkpoint: SnapshotMeta) -> bool:
-    """Return True when checkpoint metadata still has a live branch."""
-    return bool(get_task_branches(checkpoint.task_id, project_id=checkpoint.project_id))
+    """Return True for any present snapshot metadata.
+
+    Pre-cutover this checked for a live task branch. With branches gone,
+    snapshot metadata is the canonical active marker until removed by st done.
+    """
+    del checkpoint
+    return True
 
 
 def _iter_checkpoint_meta(project_id: str | None = None) -> list[SnapshotMeta]:
