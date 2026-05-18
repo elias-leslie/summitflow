@@ -15,12 +15,10 @@ from pathlib import Path
 from app.storage.projects import get_project_root_path
 
 from .checkpoint_branches import (
-    create_subtask_branch,
     delete_subtask_branch,
     delete_task_branches,
     get_remote_task_branches,
     get_task_branches,
-    merge_subtask_branch,
 )
 from .checkpoint_metadata import (
     SnapshotMeta,
@@ -35,13 +33,11 @@ from .checkpoint_metadata import (
 
 __all__ = [
     "SnapshotMeta",
-    "create_subtask_branch",
     "create_task_snapshot",
     "delete_subtask_branch", "delete_task_branches",
     "get_active_checkpoints", "get_remote_task_branches", "get_snapshot_info",
     "get_stale_checkpoints",
     "has_active_task",
-    "merge_subtask_branch",
     "remove_snapshot",
 ]
 
