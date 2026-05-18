@@ -77,11 +77,12 @@ st list                        # List tasks
 st -P summitflow create --plan plan.json  # Create execution-ready task (requires -P)
 st -P summitflow capture bug "Fix login bug"  # Capture a lightweight bug kernel
 st -P summitflow capture idea "Add SSO"       # Capture a lightweight idea kernel
-st claim <task-id>             # Claim task (creates checkpoint checkpoint)
+st claim <task-id>             # Claim task (records snapshot metadata; work commits direct to main)
 st context                     # Show current task details
 st step pass <subtask> <step>  # Mark step as passed
 st subtask pass <subtask-id>   # Pass a subtask
-st done <task-id>              # Complete task (merge + cleanup)
+st done <task-id>              # Complete task (publish + status close + cleanup; no branch merge)
+st lease '<glob>...'           # Declare file scope for parallel-agent coordination
 st abandon <task-id>           # Abandon task
 st autocode <task-id>          # Queue for autonomous execution
 st checkpoints                 # List active checkpoints
