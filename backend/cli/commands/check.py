@@ -68,6 +68,7 @@ _TOOL_CONFIG_PATHS: dict[str, set[str]] = {
 }
 
 _CODEQL_PAGE_SIZE = 100
+_FIX_ARGS = {"ruff": ["--fix"], "biome": ["--write"]}
 
 _TOOL_SELECTIONS: dict[str, tuple[tuple[str, ...], bool]] = {
     "--fix": (("ruff", "biome"), True),
@@ -169,15 +170,6 @@ def _is_pytest_test_path(path: Path) -> bool:
     )
 
 
-def _path_relevant_for_tool(name: str, rel_path: str) -> bool:
-    path = Path(rel_path)
-    if path.name in _TOOL_CONFIG_PATHS.get(name, set()):
-        return True
-    if name == "pytest":
-        return _is_pytest_test_path(path)
-    return path.suffix in _TOOL_FILE_SUFFIXES.get(name, set())
-
-
 def _changed_args(
     name: str,
     root: Path,
@@ -214,20 +206,6 @@ def _changed_args(
     return paths
 
 
-def _bin_candidates(search_root: Path, binary: str) -> list[Path]:
-    return [
-        search_root / "node_modules" / ".bin" / binary,
-        search_root / ".venv" / "bin" / binary,
-    ]
-
-
-def _first_existing(paths: list[Path]) -> Path | None:
-    for candidate in paths:
-        if candidate.exists():
-            return candidate
-    return None
-
-
 def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str]) -> list[str]:
     # npx foo -> search node_modules for foo, not for npx itself.
     if binary == "npx" and base_args:
@@ -239,14 +217,13 @@ def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str]) -
         npx = shutil.which("npx")
         return [npx or "npx", "--no-install", *base_args]
 
-    found = _first_existing(_bin_candidates(cwd, binary))
-    if found:
-        return [str(found), *base_args]
-
-    for search_root in (root / "frontend", root):
-        found = _first_existing(_bin_candidates(search_root, binary))
-        if found:
-            return [str(found), *base_args]
+    for search_root in (cwd, root / "frontend", root):
+        for candidate in (
+            search_root / "node_modules" / ".bin" / binary,
+            search_root / ".venv" / "bin" / binary,
+        ):
+            if candidate.exists():
+                return [str(candidate), *base_args]
 
     resolved = shutil.which(binary)
     return [resolved or binary, *base_args]
@@ -294,9 +271,15 @@ def _skip_reason(
 ) -> str | None:
     if not changed_only or explicit_args:
         return None
-    has_relevant = any(
-        _path_relevant_for_tool(name, rel_path) for rel_path in changed_files
-    )
+    def is_relevant(rel_path: str) -> bool:
+        path = Path(rel_path)
+        if path.name in _TOOL_CONFIG_PATHS.get(name, set()):
+            return True
+        if name == "pytest":
+            return _is_pytest_test_path(path)
+        return path.suffix in _TOOL_FILE_SUFFIXES.get(name, set())
+
+    has_relevant = any(is_relevant(rel_path) for rel_path in changed_files)
     if config.get("pass_path"):
         if not scoped_args and not has_relevant:
             return "no_changed_paths"
@@ -519,16 +502,6 @@ def _run_codeql_alert_check(args: list[str]) -> int:
     return 0
 
 
-def _fix_args(name: str, fix: bool) -> list[str]:
-    if not fix:
-        return []
-    return {"ruff": ["--fix"], "biome": ["--write"]}.get(name, [])
-
-
-def _tool_failed(name: str, config: dict[str, Any], args: list[str]) -> bool:
-    return _run_tool(name, config, args) != 0
-
-
 def _run_selected(
     selected: list[str],
     configs: dict[str, dict[str, Any]],
@@ -554,7 +527,7 @@ def _run_selected(
             label = config.get("label") or name.upper()
             print(f"{label!s}:SKIP:{name}:{skip_reason}")
             continue
-        failures += int(_tool_failed(name, config, [*scoped_args, *_fix_args(name, fix)]))
+        failures += int(_run_tool(name, config, [*scoped_args, *(_FIX_ARGS.get(name, []) if fix else [])]) != 0)
     return int(failures != 0)
 
 
@@ -583,7 +556,7 @@ def _selected_tool_args(
         label = config.get("label") or name.upper()
         print(f"{label!s}:SKIP:{name}:{skip_reason}")
         return [], True
-    return [*explicit_args, *scoped_args, *_fix_args(name, fix)], False
+    return [*explicit_args, *scoped_args, *(_FIX_ARGS.get(name, []) if fix else [])], False
 
 
 def _run_named_tool(
@@ -640,10 +613,6 @@ Usage:
     )
 
 
-def _run_cleanroom(args: list[str]) -> int:
-    return cleanroom_main(["--project-root", str(_resolve_repo_root()), *args[1:]])
-
-
 def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, Any]]) -> int:
     args = list(ctx.args)
     if not args or args[0] in {"-h", "--help", "help"}:
@@ -653,7 +622,7 @@ def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, Any]]) -
     args, changed_only, fix = _extract_check_options(args)
     first = args[0]
     if first == "cleanroom":
-        return _run_cleanroom(args)
+        return cleanroom_main(["--project-root", str(_resolve_repo_root()), *args[1:]])
 
     if first == "codeql":
         return _run_codeql_alert_check(args[1:])
