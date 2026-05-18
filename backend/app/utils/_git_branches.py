@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..api.models.git_models import BranchInfo, CheckpointInfo
+    from ..api.models.git_models import BranchInfo
 
 from ._git_core import _resolve_project_id, run_git
 from .git_base import detect_base_branch
@@ -179,24 +179,6 @@ def prune_checkout_registrations(repo_path: Path) -> int:
     return pruned
 
 
-def get_checkpoint_info(task_id: str) -> CheckpointInfo | None:
-    """Get information about an active checkpoint."""
-    from cli.lib.checkpoint import get_active_checkpoints
-
-    from ..api.models.git_models import CheckpointInfo
-
-    for checkpoint in get_active_checkpoints():
-        if checkpoint.task_id == task_id:
-            return CheckpointInfo(
-                task_id=checkpoint.task_id,
-                branch=f"{checkpoint.task_id}/main",
-                base_branch=checkpoint.base_branch,
-                is_active=True,
-                project_id=checkpoint.project_id,
-            )
-    return None
-
-
 # Re-export cleanup helpers from a dedicated module to keep branch/query helpers compact.
 from ._git_branch_cleanup import (  # noqa: E402
     OrphanBranchAssessment,
@@ -222,7 +204,6 @@ __all__ = [
     "get_all_branches",
     "get_branch_commit_info",
     "get_checkpoint_branches",
-    "get_checkpoint_info",
     "list_closed_orphan_task_branches",
     "list_equivalent_orphan_task_branches",
     "list_prunable_task_branches",

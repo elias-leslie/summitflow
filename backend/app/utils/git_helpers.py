@@ -16,7 +16,6 @@ from ._git_branches import (
     get_all_branches,
     get_branch_commit_info,
     get_checkpoint_branches,
-    get_checkpoint_info,
 )
 from ._git_core import (
     CONFIG_REPOS,
@@ -45,7 +44,6 @@ __all__ = [
     "get_all_branches",
     "get_branch_commit_info",
     "get_checkpoint_branches",
-    "get_checkpoint_info",
     "get_diff_stats",
     "get_managed_repos",
     "get_recent_commits",
