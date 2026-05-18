@@ -20,8 +20,9 @@ export function CheckpointCompact({
           {checkpoint.task_id}
         </span>
         <div className="flex items-center gap-2 text-[10px] text-slate-500">
-          <GitBranch className="w-2.5 h-2.5" />
-          <span className="font-mono text-violet-300">{checkpoint.branch}</span>
+          <span className="font-mono text-violet-300">
+            base: {checkpoint.base_branch}
+          </span>
         </div>
       </div>
       <span

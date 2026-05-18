@@ -12,7 +12,6 @@ export interface ConflictInfo {
   task_title: string
   project_id: string
   conflicting_files: string[]
-  task_branch: string
   base_branch: string
   detected_at: string
   error_output?: string
@@ -91,7 +90,6 @@ export interface SnapshotInfo {
 
 export interface CheckpointInfo {
   task_id: string
-  branch: string
   base_branch: string
   is_active: boolean
   project_id?: string
@@ -145,15 +143,6 @@ export async function fetchConflicts(
   return fetchWithErrorHandling<ConflictsResponse>(
     `${getApiBaseUrl()}/api/git/conflicts${buildQueryString({ project_id: projectId })}`,
     { errorMessage: 'Failed to fetch conflicts' },
-  )
-}
-
-export async function retryMerge(
-  taskId: string,
-): Promise<Record<string, unknown>> {
-  return fetchWithErrorHandling<Record<string, unknown>>(
-    `${getApiBaseUrl()}/api/git/tasks/${taskId}/retry-merge`,
-    { method: 'POST', errorMessage: 'Failed to retry merge' },
   )
 }
 

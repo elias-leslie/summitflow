@@ -77,7 +77,7 @@ describe('DashboardContent', () => {
     expect(
       screen.getByText('Branches', { selector: 'span' }),
     ).toBeInTheDocument()
-    expect(screen.getAllByText('task-123/main')).toHaveLength(2)
+    expect(screen.getAllByText('task-123/main')).toHaveLength(1)
     expect(screen.getByText('Review')).toBeInTheDocument()
     expect(
       screen.getByText('task running / 2 ahead / 5 files'),

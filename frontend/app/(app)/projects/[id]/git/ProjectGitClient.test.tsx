@@ -69,7 +69,6 @@ describe('ProjectGitClient', () => {
             active_checkpoints: 1,
             dirty_checkpoints: 0,
             branches_with_checkpoints: 1,
-            task_branches: 1,
             orphan_branches: 0,
             prunable_branches: 0,
             needs_cleanup: false,

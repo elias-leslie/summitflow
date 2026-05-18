@@ -6,7 +6,6 @@ import {
   ChevronDown,
   ChevronRight,
   Database,
-  GitBranch,
   Loader2,
   User,
 } from 'lucide-react'
@@ -48,9 +47,6 @@ export function CheckpointStatus({
     )
   }
   if (!checkpoint) return null
-
-  const activeBranches = checkpoint.branches.filter((b) => b.type === 'subtask')
-  const taskBranch = checkpoint.branches.find((b) => b.type === 'task')
 
   return (
     <motion.div
@@ -97,11 +93,6 @@ export function CheckpointStatus({
           Branch checkpoint
         </span>
         <span className="flex items-center gap-1">
-          <GitBranch className="w-3 h-3" />
-          {checkpoint.branches.length} branch
-          {checkpoint.branches.length !== 1 ? 'es' : ''}
-        </span>
-        <span className="flex items-center gap-1">
           <User className="w-3 h-3" />
           {checkpoint.claimed_by}
         </span>
@@ -125,59 +116,13 @@ export function CheckpointStatus({
                 </span>
               </div>
 
-              {/* Task branch */}
-              {taskBranch && (
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-500">Task branch</span>
-                  <span className="text-xs font-mono text-cyan-400">
-                    {taskBranch.branch}
-                  </span>
-                </div>
-              )}
-
-              {/* Active subtask branches */}
-              {activeBranches.length > 0 && (
-                <div>
-                  <span className="text-xs text-slate-500">
-                    Subtask branches ({activeBranches.length})
-                  </span>
-                  <div className="mt-1 space-y-1">
-                    {activeBranches.map((branch) => (
-                      <div
-                        key={branch.branch}
-                        className="flex items-center gap-2 text-xs"
-                      >
-                        <span className="w-2 h-2 rounded-full bg-green-500" />
-                        <span className="font-mono text-slate-300">
-                          {branch.subtask_id}
-                        </span>
-                        <span className="text-slate-600">→</span>
-                        <span className="font-mono text-slate-500 truncate">
-                          {branch.branch}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Checkpoint branch */}
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-500">
-                  Checkpoint branch
-                </span>
-                <span className="text-xs text-slate-300 font-mono">
-                  {checkpoint.task_branch}
-                </span>
-              </div>
-
               {/* Warning */}
               <div className="flex items-start gap-2 p-2 bg-amber-950/30 border border-amber-800/30 rounded">
                 <AlertTriangle className="w-3 h-3 text-amber-500 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-amber-400">
                   If the task fails, use{' '}
                   <code className="font-mono">st abandon</code> to discard the
-                  checkpoint branch and close the task.
+                  checkpoint and close the task.
                 </p>
               </div>
             </div>

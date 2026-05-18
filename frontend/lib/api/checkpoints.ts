@@ -6,21 +6,13 @@
 
 import { buildQueryString, throwFromResponse } from './utils'
 
-export interface BranchInfo {
-  branch: string
-  subtask_id: string
-  type: 'task' | 'subtask'
-}
-
 export interface Checkpoint {
   task_id: string
   project_id: string
-  task_branch: string
   base_branch: string
   created_at: string
   claimed_by: string
   age: string
-  branches: BranchInfo[]
 }
 
 /**

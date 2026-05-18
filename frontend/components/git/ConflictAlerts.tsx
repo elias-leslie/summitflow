@@ -2,35 +2,17 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import {
-  AlertTriangle,
-  FileWarning,
-  GitBranch,
-  Loader2,
-  RefreshCw,
-  X,
-} from 'lucide-react'
+import { AlertTriangle, FileWarning, Loader2, X } from 'lucide-react'
 import {
   type ConflictInfo,
   dismissConflict,
   fetchConflicts,
-  retryMerge,
 } from '@/lib/api/git-enhanced'
 import { formatTimeAgo } from '@/lib/format'
 import { POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
 
 function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
   const queryClient = useQueryClient()
-
-  const retryMut = useMutation({
-    mutationFn: () => retryMerge(conflict.task_id),
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['git-conflicts'] })
-      queryClient.invalidateQueries({
-        queryKey: ['project-dashboard', conflict.project_id],
-      })
-    },
-  })
 
   const dismissMut = useMutation({
     mutationFn: () => dismissConflict(conflict.task_id),
@@ -42,7 +24,7 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
     },
   })
 
-  const isWorking = retryMut.isPending || dismissMut.isPending
+  const isWorking = dismissMut.isPending
 
   return (
     <div
@@ -78,11 +60,7 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
                 {conflict.task_title}
               </h3>
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <GitBranch className="h-3 w-3 shrink-0" />
-                <span className="truncate font-mono text-rose-300/70">
-                  {conflict.task_branch}
-                </span>
-                <span className="text-slate-600 shrink-0">
+                <span className="truncate text-slate-600">
                   {formatTimeAgo(conflict.detected_at)}
                 </span>
               </div>
@@ -119,47 +97,22 @@ function ConflictCard({ conflict }: { conflict: ConflictInfo }) {
           <button
             type="button"
             disabled={isWorking}
-            onClick={() => retryMut.mutate()}
-            className={clsx(
-              'flex flex-1 items-center justify-center gap-1.5 rounded-2xl border px-3 py-2 text-xs font-medium transition-all',
-              isWorking
-                ? 'cursor-not-allowed border-slate-800 bg-slate-800 text-slate-500'
-                : 'border-rose-500/30 bg-rose-500/15 text-rose-200 hover:border-rose-500/50 hover:bg-rose-500/25 hover:shadow-[0_0_10px_rgba(244,63,94,0.2)]',
-            )}
-          >
-            {retryMut.isPending ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3 w-3" />
-            )}
-            Retry Merge
-          </button>
-          <button
-            type="button"
-            disabled={isWorking}
             onClick={() => dismissMut.mutate()}
             className={clsx(
-              'flex items-center justify-center gap-1 rounded-2xl border border-slate-800/70 px-3 py-2 text-xs transition-all',
+              'flex flex-1 items-center justify-center gap-1.5 rounded-2xl border px-3 py-2 text-xs transition-all',
               isWorking
-                ? 'text-slate-600 cursor-not-allowed'
-                : 'text-slate-500 hover:border-slate-700 hover:bg-slate-800/50 hover:text-slate-300',
+                ? 'cursor-not-allowed border-slate-800 bg-slate-800 text-slate-500'
+                : 'border-slate-800/70 text-slate-500 hover:border-slate-700 hover:bg-slate-800/50 hover:text-slate-300',
             )}
           >
-            <X className="h-3 w-3" />
+            {dismissMut.isPending ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <X className="h-3 w-3" />
+            )}
             Dismiss
           </button>
         </div>
-
-        {retryMut.isSuccess && (
-          <div className="mt-3 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[10px] font-mono text-emerald-300">
-            Merge retry completed
-          </div>
-        )}
-        {retryMut.isError && (
-          <div className="mt-3 rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1 text-[10px] font-mono text-rose-300">
-            Retry failed — conflict may still exist
-          </div>
-        )}
       </div>
     </div>
   )

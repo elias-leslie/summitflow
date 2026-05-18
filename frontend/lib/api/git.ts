@@ -10,7 +10,6 @@ export interface RepoWorkspaceSummary {
   dirty_checkpoints: number
   dirty_main_repo?: boolean
   branches_with_checkpoints: number
-  task_branches: number
   orphan_branches: number
   prunable_branches: number
   needs_cleanup: boolean
@@ -57,8 +56,6 @@ export interface GitCleanupSummary {
   dirty_checkpoints: number
   stale_checkpoints: number
   snapshot_residue: number
-  orphan_task_branches: number
-  prunable_task_branches: number
 }
 
 export interface GitCleanupRepository {
@@ -69,8 +66,6 @@ export interface GitCleanupRepository {
   dirty_main_repo?: boolean
   stale_checkpoints: number
   snapshot_residue: number
-  orphan_task_branches: number
-  prunable_task_branches: number
   needs_merge_count: number
   conflict_count: number
   review_count: number
@@ -83,7 +78,6 @@ export interface GitCleanupPayload {
   repositories: GitCleanupRepository[]
   checkpoints: Array<{
     task_id: string
-    branch: string
     base_branch: string
     project_id?: string | null
   }>
