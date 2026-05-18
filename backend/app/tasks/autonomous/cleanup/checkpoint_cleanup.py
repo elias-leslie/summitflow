@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from typing import Literal, TypedDict
 
-from app.services.task_checkout import get_task_checkout, remove_task_checkout
-from app.utils._git_core import has_uncommitted_changes
-
 from ....logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -17,9 +14,6 @@ class CheckpointCleanupSuccess(TypedDict):
 
     task_id: str
     status: Literal["cleaned"]
-    checkout_path: str
-    branch: str
-    branch_deleted: bool
 
 
 class CheckpointCleanupSkipped(TypedDict):
@@ -49,69 +43,50 @@ def cleanup_task_checkpoint(
     delete_branch: bool = False,
     project_id: str | None = None,
 ) -> CheckpointCleanupResult:
-    """Clean up checkpoint state for a completed or cancelled task.
+    """Remove checkpoint metadata for a completed or cancelled task.
 
-    Called when a task reaches a terminal state (completed, cancelled, failed).
-    Removes checkpoint metadata and preserves the branch by default.
+    With task branches retired, this is just a small wrapper around the global
+    checkpoint metadata store: delete the meta json so `st checkpoints` /
+    `st cleanup` no longer show the task as active.
 
     Args:
-        task_id: Task ID whose checkpoint should be cleaned up
-        delete_branch: Whether to also delete the task branch (default: False)
+        task_id: Task ID whose checkpoint metadata should be removed.
+        delete_branch: Unused; retained for call-site compatibility.
+        project_id: Project scope for the checkpoint metadata file.
 
     Returns:
-        Dict with cleanup result
+        Dict with cleanup result.
     """
+    del delete_branch
+
     try:
-        checkout = get_task_checkout(task_id, project_id)
-        if not checkout:
+        from cli.lib.checkpoint_metadata import get_meta_path
+
+        if not project_id:
+            return {
+                "task_id": task_id,
+                "status": "skipped",
+                "reason": "missing_project_id",
+            }
+
+        meta_path = get_meta_path(task_id, project_id=project_id)
+        if not meta_path.exists():
             return {
                 "task_id": task_id,
                 "status": "skipped",
                 "reason": "no_checkpoint",
             }
 
-        if has_uncommitted_changes(checkout.path):
-            return {
-                "task_id": task_id,
-                "status": "skipped",
-                "reason": "dirty_checkout",
-            }
-
-        checkout_path = str(checkout.path)
-        branch = checkout.branch
-
-        removed = remove_task_checkout(
-            task_id,
-            delete_branch=delete_branch,
-            project_id=project_id,
-        )
-
-        if not removed:
-            return {
-                "task_id": task_id,
-                "status": "failed",
-                "reason": "removal_failed",
-                "error": None,
-            }
-
+        meta_path.unlink()
         logger.info(
-            "Cleaned up checkpoint for task %s",
+            "Cleaned up checkpoint metadata for task %s",
             task_id,
-            extra={
-                "task_id": task_id,
-                "checkout_path": checkout_path,
-                "branch": branch,
-                "branch_deleted": delete_branch,
-            },
+            extra={"task_id": task_id, "project_id": project_id},
         )
         return {
             "task_id": task_id,
             "status": "cleaned",
-            "checkout_path": checkout_path,
-            "branch": branch,
-            "branch_deleted": delete_branch,
         }
-
     except Exception as e:
         logger.error("Error cleaning up checkpoint for task %s: %s", task_id, e)
         return {

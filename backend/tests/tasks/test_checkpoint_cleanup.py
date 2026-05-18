@@ -2,57 +2,45 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from app.tasks.autonomous.cleanup.checkpoint_cleanup import cleanup_task_checkpoint
 
 
-@patch("app.tasks.autonomous.cleanup.checkpoint_cleanup.remove_task_checkout")
-@patch("app.tasks.autonomous.cleanup.checkpoint_cleanup.has_uncommitted_changes")
-@patch("app.tasks.autonomous.cleanup.checkpoint_cleanup.get_task_checkout")
-def test_cleanup_task_checkpoint_skips_dirty_checkout(
-    mock_get_checkout: MagicMock,
-    mock_dirty: MagicMock,
-    mock_remove: MagicMock,
+@patch("cli.lib.checkpoint_metadata.get_meta_path")
+def test_cleanup_task_checkpoint_skips_when_metadata_missing(
+    mock_meta_path: MagicMock,
+    tmp_path: Path,
 ) -> None:
-    mock_checkout = MagicMock()
-    mock_checkout.path = "/tmp/task-1"
-    mock_checkout.branch = "task-1/main"
-    mock_get_checkout.return_value = mock_checkout
-    mock_dirty.return_value = True
+    missing = tmp_path / "missing.meta.json"
+    mock_meta_path.return_value = missing
 
     result = cleanup_task_checkpoint("task-1", project_id="proj")
 
-    assert result == {"task_id": "task-1", "status": "skipped", "reason": "dirty_checkout"}
-    mock_remove.assert_not_called()
+    assert result == {"task_id": "task-1", "status": "skipped", "reason": "no_checkpoint"}
+    assert not missing.exists()
 
 
-@patch("app.tasks.autonomous.cleanup.checkpoint_cleanup.remove_task_checkout")
-@patch("app.tasks.autonomous.cleanup.checkpoint_cleanup.has_uncommitted_changes")
-@patch("app.tasks.autonomous.cleanup.checkpoint_cleanup.get_task_checkout")
-def test_cleanup_task_checkpoint_removes_clean_checkout(
-    mock_get_checkout: MagicMock,
-    mock_dirty: MagicMock,
-    mock_remove: MagicMock,
+@patch("cli.lib.checkpoint_metadata.get_meta_path")
+def test_cleanup_task_checkpoint_removes_metadata_when_present(
+    mock_meta_path: MagicMock,
+    tmp_path: Path,
 ) -> None:
-    mock_checkout = MagicMock()
-    mock_checkout.path = "/tmp/task-1"
-    mock_checkout.branch = "task-1/main"
-    mock_get_checkout.return_value = mock_checkout
-    mock_dirty.return_value = False
-    mock_remove.return_value = True
+    meta_path = tmp_path / "task-1.meta.json"
+    meta_path.write_text("{}")
+    mock_meta_path.return_value = meta_path
 
     result = cleanup_task_checkpoint("task-1", project_id="proj")
 
+    assert result == {"task_id": "task-1", "status": "cleaned"}
+    assert not meta_path.exists()
+
+
+def test_cleanup_task_checkpoint_skips_when_project_id_missing() -> None:
+    result = cleanup_task_checkpoint("task-1", project_id=None)
     assert result == {
         "task_id": "task-1",
-        "status": "cleaned",
-        "checkout_path": "/tmp/task-1",
-        "branch": "task-1/main",
-        "branch_deleted": False,
+        "status": "skipped",
+        "reason": "missing_project_id",
     }
-    mock_remove.assert_called_once_with(
-        "task-1",
-        delete_branch=False,
-        project_id="proj",
-    )

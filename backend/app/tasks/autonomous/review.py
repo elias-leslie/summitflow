@@ -1,10 +1,10 @@
 """AI Review task using Agent Hub complete() with reviewer agent.
 
 Reviews git diffs and routes tasks based on verdict:
-- APPROVED: Always auto-merge
-- NEEDS_FIX with no concerns: Treat as APPROVED, auto-merge
-- NEEDS_FIX with concerns: Create fix subtask and retry
-- ESCALATE/unknown: Supervisor triage → approve, fix, or block
+- APPROVED: Completes the task.
+- NEEDS_FIX with no concerns: Treat as APPROVED.
+- NEEDS_FIX with concerns: Create fix subtask and retry.
+- ESCALATE/unknown: Supervisor triage → approve, fix, or block.
 """
 
 from __future__ import annotations
@@ -16,15 +16,12 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...services.agent_hub_client import get_sync_client
-from ...services.task_checkout import create_task_checkout, get_execution_path
-from ...services.task_checkout.operations import _checkout
 from ...services.task_harness import summarize_execution_contract
 from ...storage import log_task_event
 from ...storage import tasks as task_store
 from ...storage.notifications import create_task_failure_notification
 from ...storage.projects import get_project_root_path
 from ...storage.task_spirit import get_task_spirit
-from ...utils.git_base import normalize_base_branch
 from .review_modules.actions import (
     create_fix_subtask,
     handle_plan_defect,
@@ -40,6 +37,14 @@ from .verification_helpers import get_diff_range
 logger = get_logger(__name__)
 _MAX_REVIEW_FILES = 5
 _MAX_SNAPSHOT_CHARS = 3000
+
+
+def _resolve_project_path(task_id: str, project_id: str) -> str:
+    del task_id
+    project_root = get_project_root_path(project_id)
+    if not project_root:
+        raise ValueError(f"Project {project_id} has no root_path configured")
+    return project_root
 
 
 def _get_spirit_context(task_id: str) -> dict[str, Any]:
@@ -58,7 +63,7 @@ def _collect_touched_files(task_id: str, project_id: str) -> list[str]:
     ]
     discovered_paths: list[str] = []
     try:
-        project_path = get_execution_path(task_id, project_id)
+        project_path = _resolve_project_path(task_id, project_id)
         result = subprocess.run(
             ["git", "diff", "--name-only", get_diff_range(project_path)],
             cwd=project_path,
@@ -95,7 +100,7 @@ def _build_snapshot_block(task_id: str, project_id: str) -> str:
         return ""
 
     try:
-        project_root = Path(get_execution_path(task_id, project_id)).resolve()
+        project_root = Path(_resolve_project_path(task_id, project_id)).resolve()
     except Exception:
         logger.debug("review_snapshot_path_resolve_failed", task_id=task_id, exc_info=True)
         return ""
@@ -149,31 +154,6 @@ def _notify_failure(project_id: str, task_id: str, task: dict, error_message: st
         )
     except Exception:
         logger.exception("Failed to create notification", task_id=task_id)
-
-
-def _ensure_review_checkout(task_id: str, project_id: str, task: dict[str, Any]) -> bool:
-    """Prefer task branch for review, but fall back to merged/base state if branch is gone."""
-    project_root = get_project_root_path(project_id)
-    base_branch = normalize_base_branch(str(task.get("base_branch") or "main"), project_root)
-    checkout = create_task_checkout(task_id, project_id, base_branch=base_branch)
-    if checkout:
-        return True
-
-    try:
-        project_path = get_execution_path(task_id, project_id)
-        _checkout(base_branch, Path(project_path))
-        logger.warning(
-            "review_checkout_branch_missing_using_base",
-            task_id=task_id,
-            project_id=project_id,
-            base_branch=base_branch,
-        )
-        return True
-    except Exception:
-        logger.warning("review_checkout_unavailable", task_id=task_id, project_id=project_id, exc_info=True)
-        task_store.update_task_status(task_id, "failed")
-        _notify_failure(project_id, task_id, task, f"Review could not switch to {task_id}/main or {base_branch}")
-        return False
 
 
 def _check_diff_issues(task_id: str, project_id: str, task: dict, git_diff: str) -> dict | None:
@@ -274,8 +254,6 @@ def ai_review(
 
     if task.get("status") != "completed":
         task_store.update_task_status(task_id, "running")
-    if not _ensure_review_checkout(task_id, project_id, task):
-        return {"task_id": task_id, "status": "error", "message": f"Review could not switch to {task_id}/main"}
 
     git_diff = get_git_diff(task_id, project_id)
     early = _check_diff_issues(task_id, project_id, task, git_diff)

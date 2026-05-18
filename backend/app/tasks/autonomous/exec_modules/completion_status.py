@@ -105,15 +105,7 @@ def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> 
     _notify_completion(task_id, project_id)
 
     cleanup_result = cleanup_task_checkpoint(task_id, delete_branch=False, project_id=project_id)
-    if cleanup_result.get("status") == "cleaned":
-        checkout_path = str(cleanup_result.get("checkout_path") or "unknown")
-        emit_log(
-            task_id,
-            "info",
-            f"Cleaned task checkpoint state in checkout: {checkout_path}",
-            project_id=project_id,
-        )
-    else:
+    if cleanup_result.get("status") != "cleaned":
         reason = str(cleanup_result.get("reason") or cleanup_result.get("error") or "unknown")
         emit_log(
             task_id,

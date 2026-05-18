@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +25,6 @@ class SnapshotMeta:
     base_branch: str
     created_at: str  # ISO format
     claimed_by: str
-    main_repo_dirty_paths: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -35,13 +34,11 @@ class SnapshotMeta:
     def from_dict(cls, data: dict[str, Any]) -> SnapshotMeta:
         """Create from dictionary."""
         d = data.copy()
-        # Ignore legacy lane-era fields when loading old metadata.
+        # Ignore legacy fields when loading old metadata.
         d.pop("snapshot_path", None)
         d.pop("backend_port", None)
         d.pop("frontend_port", None)
-
-        raw_dirty = d.get("main_repo_dirty_paths") or []
-        dirty_paths = [str(p) for p in raw_dirty if str(p)] if isinstance(raw_dirty, list) else []
+        d.pop("main_repo_dirty_paths", None)
 
         # Cast to required types to satisfy LSP
         return cls(
@@ -50,7 +47,6 @@ class SnapshotMeta:
             base_branch=normalize_base_branch(str(d["base_branch"])),
             created_at=str(d["created_at"]),
             claimed_by=str(d["claimed_by"]),
-            main_repo_dirty_paths=dirty_paths,
         )
 
 
