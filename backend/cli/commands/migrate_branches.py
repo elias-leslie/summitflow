@@ -101,35 +101,24 @@ def _checkout(branch: str, cwd: str | None = None) -> None:
 
 
 def _migrate_local_branch(branch: str, base: str, cwd: str | None, dry_run: bool) -> str:
+    """Force-delete the legacy ref. Commits remain in git reflog for 90 days.
+
+    Pre-cutover task-XXX branches are typically tangled (cross-referenced
+    'wip recover prior shared-checkout changes' commits + stale code state);
+    auto cherry-pick produces high-rate conflicts. Reflog-backed delete is
+    safer for the bulk case. Use `git reflog` + `git cherry-pick <sha>` to
+    recover any specific commit by hand.
+    """
     if _on_branch(branch, cwd):
         if dry_run:
             return f"WOULD switch off {branch} → {base} before delete"
         _checkout(base, cwd)
-    if _branch_is_merged(branch, base, cwd):
-        if dry_run:
-            return f"WOULD delete merged {branch}"
-        return f"deleted (merged) {branch}" if _delete_local(branch, cwd) else f"FAIL delete {branch}"
     ahead = _commits_ahead(branch, base, cwd)
-    if not ahead:
-        if dry_run:
-            return f"WOULD delete empty {branch}"
-        return f"deleted (empty) {branch}" if _delete_local(branch, cwd) else f"FAIL delete {branch}"
+    n = len(ahead)
+    marker = "merged" if _branch_is_merged(branch, base, cwd) else f"{n} commit(s) in reflog"
     if dry_run:
-        return f"WOULD cherry-pick {len(ahead)} commit(s) from {branch} to {base}, then delete"
-    if not _on_branch(base, cwd):
-        _checkout(base, cwd)
-    failures: list[str] = []
-    for sha in ahead:
-        result = _run(["git", "cherry-pick", "--allow-empty", sha], cwd=cwd, check=False)
-        if result.returncode != 0:
-            _run(["git", "cherry-pick", "--abort"], cwd=cwd, check=False)
-            failures.append(sha[:8])
-            break
-    if failures:
-        return f"FAIL cherry-pick {branch} (conflict at {failures[0]}); branch preserved"
-    if not _delete_local(branch, cwd):
-        return f"cherry-picked {len(ahead)} commit(s) from {branch}; FAIL delete"
-    return f"cherry-picked {len(ahead)} commit(s) from {branch}, deleted"
+        return f"WOULD delete {branch} ({marker})"
+    return f"deleted {branch} ({marker})" if _delete_local(branch, cwd) else f"FAIL delete {branch}"
 
 
 def _migrate_remote_branch(branch: str, cwd: str | None, dry_run: bool) -> str:
