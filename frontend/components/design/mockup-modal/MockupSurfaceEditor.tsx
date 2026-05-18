@@ -170,177 +170,163 @@ const editorCss = `
   }
 `
 
-function labelForElement(element: HTMLElement): string {
-  return describeMockupElement(element)
-}
+const editorDom = {
+  getEditableElements(doc: Document): HTMLElement[] {
+    return Array.from(
+      doc.body?.querySelectorAll<HTMLElement>('*') ?? [],
+    ).filter(
+      (element) =>
+        element.tagName !== 'SCRIPT' &&
+        element.tagName !== 'STYLE' &&
+        !element.closest(`[data-sf-editor-ui="true"]`),
+    )
+  },
 
-function getEditableElements(doc: Document): HTMLElement[] {
-  return Array.from(doc.body?.querySelectorAll<HTMLElement>('*') ?? []).filter(
-    (element) =>
-      element.tagName !== 'SCRIPT' &&
-      element.tagName !== 'STYLE' &&
-      !element.closest(`[data-sf-editor-ui="true"]`),
-  )
-}
+  selectedStateFromElement(element: HTMLElement): SelectedElementState {
+    return {
+      id: element.dataset.sfEditorId ?? '',
+      path: buildMockupElementPath(element),
+      tag: element.tagName.toLowerCase(),
+      label: describeMockupElement(element),
+      text: element.textContent?.trim().slice(0, 2000) ?? '',
+      color: element.style.color,
+      backgroundColor: element.style.backgroundColor,
+      margin: element.style.margin,
+      padding: element.style.padding,
+      borderRadius: element.style.borderRadius,
+    }
+  },
 
-function selectedStateFromElement(element: HTMLElement): SelectedElementState {
-  return {
-    id: element.dataset.sfEditorId ?? '',
-    path: buildMockupElementPath(element),
-    tag: element.tagName.toLowerCase(),
-    label: labelForElement(element),
-    text: element.textContent?.trim().slice(0, 2000) ?? '',
-    color: element.style.color,
-    backgroundColor: element.style.backgroundColor,
-    margin: element.style.margin,
-    padding: element.style.padding,
-    borderRadius: element.style.borderRadius,
-  }
-}
-
-function stripEditorState(doc: Document): string {
-  doc.getElementById(EDITOR_STYLE_ID)?.remove()
-  doc
-    .querySelectorAll(`.${SELECTED_CLASS}, .${HOVER_CLASS}`)
-    .forEach((element) => {
+  stripEditorState(doc: Document): string {
+    doc.getElementById(EDITOR_STYLE_ID)?.remove()
+    for (const element of Array.from(
+      doc.querySelectorAll(`.${SELECTED_CLASS}, .${HOVER_CLASS}`),
+    )) {
       element.classList.remove(SELECTED_CLASS, HOVER_CLASS)
       element.removeAttribute('contenteditable')
-    })
-  doc.querySelectorAll('[data-sf-editor-id]').forEach((element) => {
-    element.removeAttribute('data-sf-editor-id')
-  })
-  return `<!doctype html>\n${doc.documentElement.outerHTML}`
-}
+    }
+    for (const element of Array.from(
+      doc.querySelectorAll('[data-sf-editor-id]'),
+    )) {
+      element.removeAttribute('data-sf-editor-id')
+    }
+    return `<!doctype html>\n${doc.documentElement.outerHTML}`
+  },
 
-function buildVersionPayload(
-  source: Mockup,
-  content: string,
-  summary: string,
-  metadata: Record<string, unknown>,
-): CreateMockupRequest {
-  return {
-    name: `${source.name} edited`,
-    description: `Surface-edited version of ${source.name}`,
-    mockup_type: source.mockup_type,
-    content,
-    task_id: source.task_id ?? undefined,
-    page_path: source.page_path ?? undefined,
-    parent_mockup_id: source.id,
-    generator: 'surface-editor',
-    generation_prompt: summary,
-    metadata,
-  }
-}
+  buildVersionPayload(
+    source: Mockup,
+    content: string,
+    summary: string,
+    metadata: Record<string, unknown>,
+  ): CreateMockupRequest {
+    return {
+      name: `${source.name} edited`,
+      description: `Surface-edited version of ${source.name}`,
+      mockup_type: source.mockup_type,
+      content,
+      task_id: source.task_id ?? undefined,
+      page_path: source.page_path ?? undefined,
+      parent_mockup_id: source.id,
+      generator: 'surface-editor',
+      generation_prompt: summary,
+      metadata,
+    }
+  },
 
-function getElementByEditorId(doc: Document | null, id: string | null) {
-  if (!doc || !id) return null
-  return doc.querySelector<HTMLElement>(
-    `[data-sf-editor-id="${CSS.escape(id)}"]`,
-  )
-}
+  getElementByEditorId(doc: Document | null, id: string | null) {
+    if (!doc || !id) return null
+    return doc.querySelector<HTMLElement>(
+      `[data-sf-editor-id="${CSS.escape(id)}"]`,
+    )
+  },
 
-function getElementsByEditorIds(doc: Document | null, ids: string[]) {
-  if (!doc || !ids.length) return []
-  return ids
-    .map((id) => getElementByEditorId(doc, id))
-    .filter((element): element is HTMLElement => Boolean(element))
-}
+  getElementsByEditorIds(doc: Document | null, ids: string[]) {
+    if (!doc || !ids.length) return []
+    return ids
+      .map((id) => editorDom.getElementByEditorId(doc, id))
+      .filter((element): element is HTMLElement => Boolean(element))
+  },
 
-function applySelection(doc: Document, ids: string[]) {
-  doc
-    .querySelectorAll(`.${SELECTED_CLASS}`)
-    .forEach((item) => item.classList.remove(SELECTED_CLASS))
-  ids.forEach((id) => {
-    getElementByEditorId(doc, id)?.classList.add(SELECTED_CLASS)
-  })
-}
+  applySelection(doc: Document, ids: string[]) {
+    for (const item of Array.from(doc.querySelectorAll(`.${SELECTED_CLASS}`))) {
+      item.classList.remove(SELECTED_CLASS)
+    }
+    for (const id of ids) {
+      editorDom.getElementByEditorId(doc, id)?.classList.add(SELECTED_CLASS)
+    }
+  },
 
-function clearSelectionState(doc: Document) {
-  applySelection(doc, [])
-}
+  toggleSelectedIds(currentIds: string[], id: string, additive: boolean) {
+    if (!additive || !currentIds.length) return [id]
+    return currentIds.includes(id)
+      ? currentIds.filter((item) => item !== id)
+      : [...currentIds, id]
+  },
 
-function clearDragState() {
-  dragRef = null
-}
+  extractAnnotationsForDraft(
+    annotations: MockupAnnotation[],
+    draftContent: string,
+    metadata: Mockup['metadata'],
+  ) {
+    return annotations.length
+      ? annotations
+      : extractStructuredMockupAnnotations(draftContent, metadata)
+  },
 
-function toggleSelectedIds(
-  currentIds: string[],
-  id: string,
-  additive: boolean,
-) {
-  if (!additive || !currentIds.length) return [id]
-  return currentIds.includes(id)
-    ? currentIds.filter((item) => item !== id)
-    : [...currentIds, id]
-}
-
-function extractAnnotationsForDraft(
-  annotations: MockupAnnotation[],
-  draftContent: string,
-  metadata: Mockup['metadata'],
-) {
-  return annotations.length
-    ? annotations
-    : extractStructuredMockupAnnotations(draftContent, metadata)
-}
-
-function buildEditorSummary(
-  mockup: Mockup,
-  annotations: MockupAnnotation[],
-  dirty: boolean,
-  draftContent: string,
-) {
-  const draftNotes = extractAnnotationsForDraft(
-    annotations,
-    draftContent,
-    mockup.metadata,
-  )
-  const lines = [
-    `Surface-edited mockup ${mockup.mockup_id} v${mockup.version}.`,
-  ]
-  if (dirty) lines.push('User made direct surface edits.')
-  if (draftNotes.length) {
-    lines.push('Anchored notes:')
-    draftNotes.forEach((item) => {
-      lines.push(
-        `- ${item.element_label ?? item.element_path ?? 'surface'}: ${item.note}`,
-      )
-    })
-  }
-  return lines.join('\n')
-}
-
-function serializeDraftDocument(doc: Document | null, fallback: string) {
-  if (!doc?.documentElement) return fallback
-  const clone = doc.cloneNode(true) as Document
-  return stripEditorState(clone)
-}
-
-function removeElements(elements: HTMLElement[]) {
-  elements.forEach((element) => element.remove())
-}
-
-function buildEditorMetadata(
-  mockup: Mockup,
-  annotations: MockupAnnotation[],
-  draftContent: string,
-): Record<string, unknown> {
-  return {
-    ...(mockup.metadata ?? {}),
-    annotations: extractAnnotationsForDraft(
+  buildEditorSummary(
+    mockup: Mockup,
+    annotations: MockupAnnotation[],
+    dirty: boolean,
+    draftContent: string,
+  ) {
+    const draftNotes = editorDom.extractAnnotationsForDraft(
       annotations,
       draftContent,
       mockup.metadata,
-    ),
-    edited_by: 'surface-editor',
-    source_mockup_id: mockup.mockup_id,
-    source_version: mockup.version,
-    summary_version: 1,
-    token_policy: {
-      default_context: 'compact',
-      full_html: 'on_request',
-    },
-  }
+    )
+    const lines = [
+      `Surface-edited mockup ${mockup.mockup_id} v${mockup.version}.`,
+    ]
+    if (dirty) lines.push('User made direct surface edits.')
+    if (draftNotes.length) {
+      lines.push('Anchored notes:')
+      for (const item of draftNotes) {
+        lines.push(
+          `- ${item.element_label ?? item.element_path ?? 'surface'}: ${item.note}`,
+        )
+      }
+    }
+    return lines.join('\n')
+  },
+
+  serializeDraftDocument(doc: Document | null, fallback: string) {
+    if (!doc?.documentElement) return fallback
+    const clone = doc.cloneNode(true) as Document
+    return editorDom.stripEditorState(clone)
+  },
+
+  buildEditorMetadata(
+    mockup: Mockup,
+    annotations: MockupAnnotation[],
+    draftContent: string,
+  ): Record<string, unknown> {
+    return {
+      ...(mockup.metadata ?? {}),
+      annotations: editorDom.extractAnnotationsForDraft(
+        annotations,
+        draftContent,
+        mockup.metadata,
+      ),
+      edited_by: 'surface-editor',
+      source_mockup_id: mockup.mockup_id,
+      source_version: mockup.version,
+      summary_version: 1,
+      token_policy: {
+        default_context: 'compact',
+        full_html: 'on_request',
+      },
+    }
+  },
 }
 
 const TOOLBAR_BUTTON_BASE =
@@ -654,19 +640,19 @@ export function MockupSurfaceEditor({
   )
 
   const getSelectedElement = useCallback(
-    () => getElementByEditorId(getDoc(), selectedId),
+    () => editorDom.getElementByEditorId(getDoc(), selectedId),
     [getDoc, selectedId],
   )
 
   const getSelectedElements = useCallback(
-    () => getElementsByEditorIds(getDoc(), selectedIds),
+    () => editorDom.getElementsByEditorIds(getDoc(), selectedIds),
     [getDoc, selectedIds],
   )
 
   const refreshSelected = useCallback(
     (id: string | null = selectedId) => {
-      const element = getElementByEditorId(getDoc(), id)
-      setSelected(element ? selectedStateFromElement(element) : null)
+      const element = editorDom.getElementByEditorId(getDoc(), id)
+      setSelected(element ? editorDom.selectedStateFromElement(element) : null)
     },
     [getDoc, selectedId],
   )
@@ -680,18 +666,20 @@ export function MockupSurfaceEditor({
         setSelectedId(null)
         setSelectedIds([])
         setSelected(null)
-        clearSelectionState(doc)
+        editorDom.applySelection(doc, [])
         return
       }
 
       const id = element.dataset.sfEditorId
       if (!id) return
-      const nextIds = toggleSelectedIds(selectedIds, id, additive)
-      applySelection(doc, nextIds)
+      const nextIds = editorDom.toggleSelectedIds(selectedIds, id, additive)
+      editorDom.applySelection(doc, nextIds)
       setSelectedId(id)
       setSelectedIds(nextIds)
       setSelected(
-        nextIds.includes(id) ? selectedStateFromElement(element) : null,
+        nextIds.includes(id)
+          ? editorDom.selectedStateFromElement(element)
+          : null,
       )
     },
     [getDoc, selectedIds],
@@ -707,7 +695,7 @@ export function MockupSurfaceEditor({
     style.textContent = editorCss
     doc.head.appendChild(style)
 
-    getEditableElements(doc).forEach((element, index) => {
+    editorDom.getEditableElements(doc).forEach((element, index) => {
       element.dataset.sfEditorId = `el-${index}`
       element.classList.remove(SELECTED_CLASS, HOVER_CLASS)
     })
@@ -735,101 +723,103 @@ export function MockupSurfaceEditor({
     ): target is HTMLElement =>
       Boolean(target && target !== doc.body && target !== doc.documentElement)
 
-    const onPointerOver = (event: PointerEvent) => {
-      const target = event.target as HTMLElement | null
-      if (!isEditableTarget(target)) return
-      target.classList.add(HOVER_CLASS)
+    const handlers = {
+      onPointerOver(event: PointerEvent) {
+        const target = event.target as HTMLElement | null
+        if (!isEditableTarget(target)) return
+        target.classList.add(HOVER_CLASS)
+      },
+
+      onPointerOut(event: PointerEvent) {
+        const target = event.target as HTMLElement | null
+        if (!target) return
+        target.classList.remove(HOVER_CLASS)
+      },
+
+      onClick(event: MouseEvent) {
+        const target = event.target as HTMLElement | null
+        if (!isEditableTarget(target)) return
+        event.preventDefault()
+        event.stopPropagation()
+        selectElement(target, event.shiftKey || event.metaKey || event.ctrlKey)
+        if (mode === 'note') {
+          setNoteText(target.dataset.sfMockNoteText ?? '')
+        }
+      },
+
+      onPointerDown(event: PointerEvent) {
+        if (mode !== 'move') return
+        const target = event.target as HTMLElement | null
+        if (!isEditableTarget(target)) return
+        event.preventDefault()
+        event.stopPropagation()
+        const targetId = target.dataset.sfEditorId
+        if (!targetId) return
+        const selectedForDrag: HTMLElement[] =
+          selectedIds.includes(targetId) && selectedIds.length > 1
+            ? getSelectedElements()
+            : [target]
+        selectElement(target, event.shiftKey || event.metaKey || event.ctrlKey)
+        for (const element of selectedForDrag) {
+          element.style.position ||= 'relative'
+          element.style.zIndex ||= '2'
+        }
+        dragRef = {
+          elements: selectedForDrag.map((element) => ({
+            element,
+            baseX: Number.parseFloat(element.dataset.sfOffsetX ?? '0') || 0,
+            baseY: Number.parseFloat(element.dataset.sfOffsetY ?? '0') || 0,
+          })),
+          startX: event.clientX,
+          startY: event.clientY,
+        }
+      },
+
+      onPointerMove(event: PointerEvent) {
+        if (!dragRef) return
+        const d = dragRef
+        for (const { element, baseX, baseY } of d.elements) {
+          const x = Math.round(baseX + event.clientX - d.startX)
+          const y = Math.round(baseY + event.clientY - d.startY)
+          element.dataset.sfOffsetX = String(x)
+          element.dataset.sfOffsetY = String(y)
+          element.style.transform = `translate(${x}px, ${y}px)`
+        }
+        setDirty(true)
+      },
+
+      onPointerUp() {
+        dragRef = null
+        refreshSelected()
+      },
+
+      onKeyDown(event: KeyboardEvent) {
+        if (event.key !== 'Delete' && event.key !== 'Backspace') return
+        const elements = getSelectedElements()
+        if (!elements.length) return
+        event.preventDefault()
+        elements.forEach((element) => element.remove())
+        selectElement(null)
+        setDirty(true)
+      },
     }
 
-    const onPointerOut = (event: PointerEvent) => {
-      const target = event.target as HTMLElement | null
-      if (!target) return
-      target.classList.remove(HOVER_CLASS)
-    }
-
-    const onClick = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null
-      if (!isEditableTarget(target)) return
-      event.preventDefault()
-      event.stopPropagation()
-      selectElement(target, event.shiftKey || event.metaKey || event.ctrlKey)
-      if (mode === 'note') {
-        setNoteText(target.dataset.sfMockNoteText ?? '')
-      }
-    }
-
-    const onPointerDown = (event: PointerEvent) => {
-      if (mode !== 'move') return
-      const target = event.target as HTMLElement | null
-      if (!isEditableTarget(target)) return
-      event.preventDefault()
-      event.stopPropagation()
-      const targetId = target.dataset.sfEditorId
-      if (!targetId) return
-      const selectedForDrag: HTMLElement[] =
-        selectedIds.includes(targetId) && selectedIds.length > 1
-          ? getSelectedElements()
-          : [target]
-      selectElement(target, event.shiftKey || event.metaKey || event.ctrlKey)
-      selectedForDrag.forEach((element) => {
-        element.style.position ||= 'relative'
-        element.style.zIndex ||= '2'
-      })
-      dragRef = {
-        elements: selectedForDrag.map((element) => ({
-          element,
-          baseX: Number.parseFloat(element.dataset.sfOffsetX ?? '0') || 0,
-          baseY: Number.parseFloat(element.dataset.sfOffsetY ?? '0') || 0,
-        })),
-        startX: event.clientX,
-        startY: event.clientY,
-      }
-    }
-
-    const onPointerMove = (event: PointerEvent) => {
-      if (!dragRef) return
-      const d = dragRef
-      d.elements.forEach(({ element, baseX, baseY }) => {
-        const x = Math.round(baseX + event.clientX - d.startX)
-        const y = Math.round(baseY + event.clientY - d.startY)
-        element.dataset.sfOffsetX = String(x)
-        element.dataset.sfOffsetY = String(y)
-        element.style.transform = `translate(${x}px, ${y}px)`
-      })
-      setDirty(true)
-    }
-
-    const onPointerUp = () => {
-      clearDragState()
-      refreshSelected()
-    }
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Delete' && event.key !== 'Backspace') return
-      const elements = getSelectedElements()
-      if (!elements.length) return
-      event.preventDefault()
-      removeElements(elements)
-      selectElement(null)
-      setDirty(true)
-    }
-
-    doc.addEventListener('pointerover', onPointerOver)
-    doc.addEventListener('pointerout', onPointerOut)
-    doc.addEventListener('click', onClick, true)
-    doc.addEventListener('pointerdown', onPointerDown, true)
-    doc.addEventListener('pointermove', onPointerMove, true)
-    doc.addEventListener('pointerup', onPointerUp, true)
-    doc.addEventListener('keydown', onKeyDown)
+    doc.addEventListener('pointerover', handlers.onPointerOver)
+    doc.addEventListener('pointerout', handlers.onPointerOut)
+    doc.addEventListener('click', handlers.onClick, true)
+    doc.addEventListener('pointerdown', handlers.onPointerDown, true)
+    doc.addEventListener('pointermove', handlers.onPointerMove, true)
+    doc.addEventListener('pointerup', handlers.onPointerUp, true)
+    doc.addEventListener('keydown', handlers.onKeyDown)
 
     return () => {
-      doc.removeEventListener('pointerover', onPointerOver)
-      doc.removeEventListener('pointerout', onPointerOut)
-      doc.removeEventListener('click', onClick, true)
-      doc.removeEventListener('pointerdown', onPointerDown, true)
-      doc.removeEventListener('pointermove', onPointerMove, true)
-      doc.removeEventListener('pointerup', onPointerUp, true)
-      doc.removeEventListener('keydown', onKeyDown)
+      doc.removeEventListener('pointerover', handlers.onPointerOver)
+      doc.removeEventListener('pointerout', handlers.onPointerOut)
+      doc.removeEventListener('click', handlers.onClick, true)
+      doc.removeEventListener('pointerdown', handlers.onPointerDown, true)
+      doc.removeEventListener('pointermove', handlers.onPointerMove, true)
+      doc.removeEventListener('pointerup', handlers.onPointerUp, true)
+      doc.removeEventListener('keydown', handlers.onKeyDown)
     }
   }, [
     frameRevision,
@@ -842,23 +832,27 @@ export function MockupSurfaceEditor({
   ])
 
   const serializeDraft = useCallback(
-    () => serializeDraftDocument(getDoc(), content),
+    () => editorDom.serializeDraftDocument(getDoc(), content),
     [content, getDoc],
   )
 
   const saveMutation = useMutation({
     mutationFn: async () => {
       const draftContent = serializeDraft()
-      const summary = buildEditorSummary(
+      const summary = editorDom.buildEditorSummary(
         mockup,
         annotations,
         dirty,
         draftContent,
       )
-      const metadata = buildEditorMetadata(mockup, annotations, draftContent)
+      const metadata = editorDom.buildEditorMetadata(
+        mockup,
+        annotations,
+        draftContent,
+      )
       return createMockup(
         projectId,
-        buildVersionPayload(mockup, draftContent, summary, metadata),
+        editorDom.buildVersionPayload(mockup, draftContent, summary, metadata),
       )
     },
     onSuccess: (saved) => {
@@ -877,8 +871,8 @@ export function MockupSurfaceEditor({
     },
   })
 
-  const updateSelectedText = useCallback(
-    (value: string) => {
+  const actions = {
+    updateSelectedText(value: string) {
       const element = getSelectedElement()
       if (!element) return
       element.textContent = value
@@ -901,11 +895,8 @@ export function MockupSurfaceEditor({
       )
       setDirty(true)
     },
-    [getSelectedElement],
-  )
 
-  const updateStyle = useCallback(
-    (key: EditableStyleKey, value: string) => {
+    updateStyle(key: EditableStyleKey, value: string) {
       const element = getSelectedElement()
       if (!element) return
       element.style[key] = value
@@ -914,90 +905,89 @@ export function MockupSurfaceEditor({
       )
       setDirty(true)
     },
-    [getSelectedElement],
-  )
 
-  const removeSelected = () => {
-    const elements = getSelectedElements()
-    if (!elements.length) return
-    const removedNoteIds = elements
-      .map((element) => element.dataset.sfMockNoteId)
-      .filter((id): id is string => Boolean(id))
-    elements.forEach((element) => element.remove())
-    if (removedNoteIds.length) {
-      setAnnotations((current) =>
-        current.filter((item) => !removedNoteIds.includes(item.id ?? '')),
-      )
-    }
-    selectElement(null)
-    setDirty(true)
-  }
+    removeSelected() {
+      const elements = getSelectedElements()
+      if (!elements.length) return
+      const removedNoteIds = elements
+        .map((element) => element.dataset.sfMockNoteId)
+        .filter((id): id is string => Boolean(id))
+      elements.forEach((element) => element.remove())
+      if (removedNoteIds.length) {
+        setAnnotations((current) =>
+          current.filter((item) => !removedNoteIds.includes(item.id ?? '')),
+        )
+      }
+      selectElement(null)
+      setDirty(true)
+    },
 
-  const moveSelectedSibling = (direction: 'before' | 'after') => {
-    const element = getSelectedElement()
-    if (!element?.parentElement) return
-    const sibling =
-      direction === 'before'
-        ? element.previousElementSibling
-        : element.nextElementSibling
-    if (!sibling) return
-    if (direction === 'before') {
-      element.parentElement.insertBefore(element, sibling)
-    } else {
-      element.parentElement.insertBefore(sibling, element)
-    }
-    setDirty(true)
-  }
+    moveSelectedSibling(direction: 'before' | 'after') {
+      const element = getSelectedElement()
+      if (!element?.parentElement) return
+      const sibling =
+        direction === 'before'
+          ? element.previousElementSibling
+          : element.nextElementSibling
+      if (!sibling) return
+      if (direction === 'before') {
+        element.parentElement.insertBefore(element, sibling)
+      } else {
+        element.parentElement.insertBefore(sibling, element)
+      }
+      setDirty(true)
+    },
 
-  const addNote = () => {
-    const doc = getDoc()
-    const element = getSelectedElement()
-    const note = noteText.trim()
-    if (!doc?.body || !element || !note) return
-    const rect = element.getBoundingClientRect()
-    const annotation: MockupAnnotation = {
-      id: `ann-${Date.now()}`,
-      note,
-      element_path: buildMockupElementPath(element),
-      element_label: describeMockupElement(element),
-      rect: {
-        left: Math.round(rect.left),
-        top: Math.round(rect.top),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
-      },
-      created_at: new Date().toISOString(),
-      source: 'surface-editor',
-    }
-    const bubble = doc.createElement('div')
-    bubble.className = 'sf-mock-note'
-    bubble.dataset.sfMockNoteText = note
-    bubble.dataset.sfMockNoteId = annotation.id ?? ''
-    bubble.dataset.sfMockTargetPath = annotation.element_path ?? ''
-    bubble.textContent = note
-    bubble.style.left = `${Math.max(12, rect.right + doc.defaultView!.scrollX + 52)}px`
-    bubble.style.top = `${Math.max(12, rect.top + doc.defaultView!.scrollY)}px`
-    doc.body.appendChild(bubble)
-    bubble.dataset.sfEditorId = `note-${Date.now()}`
-    setAnnotations((current) => [...current, annotation].slice(-20))
-    selectElement(bubble)
-    setDirty(true)
-  }
+    addNote() {
+      const doc = getDoc()
+      const element = getSelectedElement()
+      const note = noteText.trim()
+      if (!doc?.body || !element || !note) return
+      const rect = element.getBoundingClientRect()
+      const annotation: MockupAnnotation = {
+        id: `ann-${Date.now()}`,
+        note,
+        element_path: buildMockupElementPath(element),
+        element_label: describeMockupElement(element),
+        rect: {
+          left: Math.round(rect.left),
+          top: Math.round(rect.top),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        },
+        created_at: new Date().toISOString(),
+        source: 'surface-editor',
+      }
+      const bubble = doc.createElement('div')
+      bubble.className = 'sf-mock-note'
+      bubble.dataset.sfMockNoteText = note
+      bubble.dataset.sfMockNoteId = annotation.id ?? ''
+      bubble.dataset.sfMockTargetPath = annotation.element_path ?? ''
+      bubble.textContent = note
+      bubble.style.left = `${Math.max(12, rect.right + doc.defaultView!.scrollX + 52)}px`
+      bubble.style.top = `${Math.max(12, rect.top + doc.defaultView!.scrollY)}px`
+      doc.body.appendChild(bubble)
+      bubble.dataset.sfEditorId = `note-${Date.now()}`
+      setAnnotations((current) => [...current, annotation].slice(-20))
+      selectElement(bubble)
+      setDirty(true)
+    },
 
-  const sendToJenny = () => {
-    const draftContent = serializeDraft()
-    const savedMockup = lastSavedMockup ?? undefined
-    const summary = [
-      buildEditorSummary(mockup, annotations, dirty, draftContent),
-      '',
-      `Current artifact summary: ${summarizeMockupForWorkContext(savedMockup ?? mockup)}`,
-      'Full HTML is stored in the Design artifact and should be fetched only when needed.',
-    ].join('\n')
-    onSendToJenny?.({
-      sourceMockup: mockup,
-      savedMockup,
-      summary,
-    })
+    sendToJenny() {
+      const draftContent = serializeDraft()
+      const savedMockup = lastSavedMockup ?? undefined
+      const summary = [
+        editorDom.buildEditorSummary(mockup, annotations, dirty, draftContent),
+        '',
+        `Current artifact summary: ${summarizeMockupForWorkContext(savedMockup ?? mockup)}`,
+        'Full HTML is stored in the Design artifact and should be fetched only when needed.',
+      ].join('\n')
+      onSendToJenny?.({
+        sourceMockup: mockup,
+        savedMockup,
+        summary,
+      })
+    },
   }
 
   return (
@@ -1012,7 +1002,7 @@ export function MockupSurfaceEditor({
             isSaving={saveMutation.isPending}
             onModeChange={setMode}
             onCompareModeChange={setCompareMode}
-            onSendToJenny={sendToJenny}
+            onSendToJenny={actions.sendToJenny}
             onSave={() => saveMutation.mutate()}
           />
 
@@ -1031,12 +1021,12 @@ export function MockupSurfaceEditor({
           selectedCount={selectedIds.length}
           noteText={noteText}
           notes={notes}
-          onTextChange={updateSelectedText}
-          onMoveSibling={moveSelectedSibling}
-          onStyleChange={updateStyle}
+          onTextChange={actions.updateSelectedText}
+          onMoveSibling={actions.moveSelectedSibling}
+          onStyleChange={actions.updateStyle}
           onNoteTextChange={setNoteText}
-          onAddNote={addNote}
-          onRemoveSelected={removeSelected}
+          onAddNote={actions.addNote}
+          onRemoveSelected={actions.removeSelected}
         />
       </div>
     </div>
