@@ -120,11 +120,6 @@ class _TaskWorkflowMixin(_MixinBase):
             self._client, self._global_url, self._handle_response, task_id,
         )
 
-    def resolve_task_conflict(self, task_id: str) -> dict[str, Any]:
-        return tasks_ops.resolve_task_conflict(
-            self._client, self._global_url, self._handle_response, task_id,
-        )
-
 
 class TaskOperationsMixin(_TaskCrudMixin, _TaskWorkflowMixin):
     """Mixin providing task-related operations."""

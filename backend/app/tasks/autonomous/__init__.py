@@ -5,13 +5,13 @@ Plain functions called by Hatchet workflow wrappers:
 - Planning with run_agent()
 - Subtask execution with fresh context
 - 3-2-1 escalation pattern
-- AI review and auto-merge
+- AI review
 - Scheduled pickup and dispatch
 """
 
 from __future__ import annotations
 
-from .cleanup import merge_and_cleanup_task_checkpoint, reset_expired_task_claims
+from .cleanup import reset_expired_task_claims
 from .escalation import check_worker_stuck, supervisor_guidance
 from .execution import start_execution
 from .pickup import (
@@ -31,7 +31,6 @@ __all__ = [
     "create_plan",
     "dispatch_task_immediate",
     "generate_tasks_from_scan",
-    "merge_and_cleanup_task_checkpoint",
     "regenerate_refactor_tasks",
     "reset_expired_task_claims",
     "run_routine_upkeep",

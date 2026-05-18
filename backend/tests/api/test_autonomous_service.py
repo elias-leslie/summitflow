@@ -35,7 +35,6 @@ def test_get_autonomous_settings_reads_extended_agent_config() -> None:
             "autonomous_max_self_fix_attempts": 4,
             "autonomous_max_supervisor_attempts": 5,
             "autonomous_max_extensions": 2,
-            "autonomous_auto_merge_enabled": False,
             "autonomous_require_review": False,
             "quality_gate_tools": ["ruff", "types"],
             "quality_gate_mode": "check",
@@ -58,7 +57,6 @@ def test_get_autonomous_settings_reads_extended_agent_config() -> None:
     assert settings.max_self_fix_attempts == 4
     assert settings.max_supervisor_attempts == 5
     assert settings.max_extensions == 2
-    assert not settings.auto_merge_enabled
     assert not settings.require_review
     assert settings.quality_gate_tools == ["ruff", "types"]
     assert settings.quality_gate_mode == "check"
@@ -102,7 +100,6 @@ def test_update_autonomous_settings_writes_partial_agent_config() -> None:
             "autonomous_frequency_minutes": 60,
             "upkeep_enabled": True,
             "upkeep_batch_limit": 6,
-            "autonomous_auto_merge_enabled": False,
             "quality_gate_mode": "check",
         }
     )
@@ -117,7 +114,6 @@ def test_update_autonomous_settings_writes_partial_agent_config() -> None:
                 frequency_minutes=60,
                 upkeep_enabled=True,
                 upkeep_batch_limit=6,
-                auto_merge_enabled=False,
                 quality_gate_mode="check",
             ),
         )
@@ -128,12 +124,10 @@ def test_update_autonomous_settings_writes_partial_agent_config() -> None:
             "autonomous_frequency_minutes": 60,
             "upkeep_enabled": True,
             "upkeep_batch_limit": 6,
-            "autonomous_auto_merge_enabled": False,
             "quality_gate_mode": "check",
         },
     )
     assert settings.frequency_minutes == 60
-    assert not settings.auto_merge_enabled
     assert settings.quality_gate_mode == "check"
 
 

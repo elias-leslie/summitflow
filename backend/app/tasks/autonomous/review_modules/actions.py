@@ -1,22 +1,18 @@
-"""Review actions: auto-merge, create fix subtasks, handle defects, QA loop."""
+"""Review actions: create fix subtasks, handle defects, QA loop."""
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 from ....logging_config import get_logger
 from ....services.agent_hub_client import get_sync_client
-from ....services.smoke_test import HEALTH_URLS
 from ....services.task_checkout import create_task_checkout
 from ....storage import log_task_event
 from ....storage import tasks as task_store
 from ....storage.projects import get_project_root_path
 from ....utils.git_base import normalize_base_branch
-from ....utils.shared_paths import get_repo_root
-from ..cleanup.merge_types import MergeResult
 from ..exec_modules.memory_writes import save_qa_fix_pattern
 from ..verification_helpers import get_diff_range
 from .parsing import parse_review_response
@@ -31,59 +27,6 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
         return []
     return [str(item) for item in value]
-
-
-def auto_merge(task_id: str) -> MergeResult:
-    """Auto-merge changes to main branch and return merge result."""
-    from ..cleanup import merge_and_cleanup_task_checkpoint
-
-    task = task_store.get_task(task_id)
-    if not task:
-        logger.warning("Cannot auto-merge: task not found", task_id=task_id)
-        return cast(MergeResult, {"task_id": task_id, "status": "error", "error": "task_not_found"})
-    project_id = task.get("project_id")
-    if not project_id:
-        logger.warning("Cannot auto-merge: no project_id", task_id=task_id)
-        return cast(MergeResult, {"task_id": task_id, "status": "error", "error": "missing_project_id"})
-    logger.info("Triggering auto-merge", task_id=task_id, project_id=project_id)
-    merge_result = merge_and_cleanup_task_checkpoint(task_id, project_id)
-    if merge_result.get("status") == "merged" and merge_result.get("post_merge_valid"):
-        _deploy_and_verify(task_id, project_id)
-    return merge_result
-
-
-def _deploy_and_verify(task_id: str, project_id: str) -> None:
-    """Run st service rebuild and verify production health via CF Access."""
-    project_root = get_project_root_path(project_id)
-    if not project_root:
-        return
-    st_path = shutil.which("st") or str(get_repo_root() / "backend" / ".venv" / "bin" / "st")
-    try:
-        result = subprocess.run(
-            [st_path, "service", "rebuild", project_id], cwd=project_root, capture_output=True, text=True, timeout=300
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
-        log_task_event(task_id, f"Auto-deploy failed: {e}", level="error")
-        return
-    if result.returncode != 0:
-        log_task_event(task_id, f"Auto-deploy failed: {result.stderr[-200:]}", level="error")
-        return
-    log_task_event(task_id, "Auto-deploy: st service rebuild succeeded")
-    prod_url = HEALTH_URLS.get(project_id)
-    if not prod_url:
-        return
-    try:
-        verify = subprocess.run(
-            ["cf-curl", "-sf", prod_url], capture_output=True, text=True, timeout=30
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
-        log_task_event(task_id, f"Production check error: {e}", level="warning")
-        return
-    ok = verify.returncode == 0
-    if ok:
-        log_task_event(task_id, f"Production verified: {prod_url}")
-    else:
-        log_task_event(task_id, f"Production check failed: {prod_url}", level="warning")
 
 
 def create_fix_subtask(task_id: str, review_result: Mapping[str, Any]) -> None:

@@ -6,7 +6,6 @@ from collections.abc import Callable
 from typing import Any
 
 from ....logging_config import get_logger
-from ....storage import agent_configs
 from ....storage import tasks as task_store
 from ....storage.notifications import (
     create_task_completion_notification,
@@ -95,26 +94,6 @@ def build_successful_completion_verification(
 def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> str:
     """Set task to completed and send a completion notification."""
     from ....tasks.autonomous.cleanup.checkpoint_cleanup import cleanup_task_checkpoint
-    from ....tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_checkpoint
-
-    if agent_configs.get_auto_merge_enabled(project_id):
-        # Move out of running before merge orchestration so merge cleanup does not
-        # self-block on the task's pre-merge status.
-        task_store.update_task_status(task_id, "completed", validate_transition=False)
-        merge_result = merge_and_cleanup_task_checkpoint(task_id, project_id)
-        merge_status = str(merge_result.get("status") or "failed")
-        emit_log(
-            task_id,
-            "info",
-            f"{log_message}, skipping review (require_review=false); merge-cleanup status={merge_status}",
-            project_id=project_id,
-        )
-        if merge_status in {"merged", "skipped"}:
-            _notify_completion(task_id, project_id)
-            return "completed"
-        if merge_status in ("conflicted", "rolled_back"):
-            return "failed"
-        return "failed"
 
     task_store.update_task_status(task_id, "completed")
     emit_log(

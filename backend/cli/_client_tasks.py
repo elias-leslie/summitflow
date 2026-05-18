@@ -189,9 +189,3 @@ def execute_task(
     return cast(dict[str, Any], handle_response(response))
 
 
-def resolve_task_conflict(
-    client: httpx.Client, global_url_fn: Any, handle_response: Any, task_id: str
-) -> dict[str, Any]:
-    """Reopen a residue task for conflict-resolution execution."""
-    response = client.post(global_url_fn(f"/git/tasks/{canonicalize_task_id(task_id)}/resolve-conflict"))
-    return cast(dict[str, Any], handle_response(response))

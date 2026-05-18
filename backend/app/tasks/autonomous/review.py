@@ -26,7 +26,6 @@ from ...storage.projects import get_project_root_path
 from ...storage.task_spirit import get_task_spirit
 from ...utils.git_base import normalize_base_branch
 from .review_modules.actions import (
-    auto_merge,
     create_fix_subtask,
     handle_plan_defect,
 )
@@ -299,7 +298,6 @@ def ai_review(
 
 
 # Backward compatibility: expose private functions for tests
-_auto_merge = auto_merge
 _create_fix_subtask = create_fix_subtask
 _get_git_diff = get_git_diff
 _handle_plan_defect = handle_plan_defect
@@ -308,7 +306,6 @@ _route_based_on_verdict = route_based_on_verdict
 _supervisor_resolve_escalation = supervisor_resolve_escalation
 
 __all__ = [
-    "_auto_merge",
     "_create_fix_subtask",
     "_get_git_diff",
     "_handle_plan_defect",

@@ -1,6 +1,6 @@
 """Pipeline workflows for autonomous task execution.
 
-7 workflows: dispatch, triage, plan, execute, review, merge-cleanup, escalation.
+6 workflows: dispatch, triage, plan, execute, review, escalation.
 Each is a thin async wrapper around existing business logic in tasks/.
 """
 
@@ -34,7 +34,6 @@ async def _trigger_workflow(stage: str, task_id: str, project_id: str, *, manual
         "critique": critique_wf,
         "execute": execute_wf,
         "review": review_wf,
-        "merge": merge_cleanup_wf,
     }
     wf = workflow_map.get(stage)
     if wf:
@@ -292,22 +291,6 @@ async def review_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
 
     dispatch = _make_dispatch_callback()
     return await asyncio.to_thread(ai_review, input.task_id, input.project_id, dispatch=dispatch)
-
-
-@hatchet.task(
-    name="summitflow-merge-cleanup",
-    input_validator=TaskInput,
-    execution_timeout="300s",
-    retries=3,
-    backoff_factor=2.0,
-)
-async def merge_cleanup_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
-    from typing import cast
-
-    from ..tasks.autonomous.cleanup import merge_and_cleanup_task_checkpoint
-
-    result = await asyncio.to_thread(merge_and_cleanup_task_checkpoint, input.task_id, input.project_id)
-    return cast(dict[str, Any], result)
 
 
 @hatchet.task(

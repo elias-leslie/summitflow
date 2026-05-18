@@ -25,7 +25,6 @@ from app.storage.connection import get_connection
 from app.storage.events import get_events_by_trace
 from app.storage.subtasks import create_subtask, get_subtasks_for_task
 from app.storage.task_spirit import create_task_spirit, get_task_spirit
-from app.tasks.autonomous.cleanup import merge_and_cleanup_task_checkpoint
 from app.tasks.autonomous.escalation import check_escalation_needed
 from app.tasks.autonomous.execution import start_execution
 from app.tasks.autonomous.ideation import ideate_task
@@ -1019,76 +1018,6 @@ class TestIdeationE2E:
         assert result["status"] == "error"
         assert "Agent Hub down" in result["error"]
         assert task_events_contain(task_id, "Ideation failed")
-
-
-@pytest.mark.e2e
-class TestAutoRollbackE2E:
-    """End-to-end tests for merge cleanup."""
-
-    def test_successful_merge_completes(
-        self, test_project_id: str, cleanup_tasks: list[str]
-    ) -> None:
-        """Successful merge with passing validation should return merged status."""
-        task = task_store.create_task(
-            project_id=test_project_id,
-            title="Merge-ready task",
-            description="A completed task ready to merge",
-            task_type="task",
-        )
-        task_id = task["id"]
-        cleanup_tasks.append(task_id)
-        task_store.update_task_status(task_id, "running")
-        task_store.update_task_status(task_id, "completed")
-
-        mock_checkout = MagicMock()
-        mock_checkout.branch = f"{task_id}/main"
-        mock_checkout.base_branch = "main"
-        mock_checkout.path = f"/tmp/lanes/{task_id}"
-
-        mock_subprocess_success = MagicMock(returncode=0, stdout="", stderr="")
-
-        with (
-            patch(
-                "app.tasks.autonomous.cleanup.get_task_checkout",
-                return_value=mock_checkout,
-            ),
-            patch(
-                "app.tasks.autonomous.cleanup.get_project_root_path",
-                return_value="/tmp/e2e-test",
-            ),
-            patch(
-                "app.tasks.autonomous.cleanup.subprocess.run",
-                return_value=mock_subprocess_success,
-            ),
-            patch(
-                "app.tasks.autonomous.cleanup.remove_task_checkout",
-            ),
-        ):
-            result = merge_and_cleanup_task_checkpoint(task_id, test_project_id)
-
-        assert result["status"] == "merged"
-        assert result["task_branch"] == f"{task_id}/main"
-        assert result["base_branch"] == "main"
-        assert result["post_merge_valid"]
-
-    def test_merge_blocked_when_task_running(
-        self, test_project_id: str, cleanup_tasks: list[str]
-    ) -> None:
-        """Should not merge when task is still running."""
-        task = task_store.create_task(
-            project_id=test_project_id,
-            title="Still running task",
-            description="Not ready for merge",
-            task_type="task",
-        )
-        task_id = task["id"]
-        cleanup_tasks.append(task_id)
-        task_store.update_task_status(task_id, "running")
-
-        result = merge_and_cleanup_task_checkpoint(task_id, test_project_id)
-
-        assert result["status"] == "blocked"
-        assert result["reason"] == "task_still_running"
 
 
 @pytest.mark.e2e

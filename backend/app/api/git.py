@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import cast
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -11,9 +10,6 @@ from cli.commands.cleanup import build_cleanup_status_payload
 from cli.commands.cleanup_display import render_cleanup_status_compact
 from cli.lib.checkpoint import get_active_checkpoints
 
-from ..storage import tasks as task_store
-from ..storage.tasks.update import update_task_fields
-from ..tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_checkpoint
 from ..utils.git_helpers import (
     enrich_branch_cleanup_details,
     get_all_branches,
@@ -40,7 +36,6 @@ from .git_helpers.endpoints import (
     execute_project_publish,
     find_repo_for_sha,
     handle_dismiss_conflict,
-    handle_resolve_conflict,
     handle_revert_snapshot,
 )
 from .git_helpers.response_builders import aggregate_sync_results, build_sync_response_from_result
@@ -217,24 +212,6 @@ async def get_conflicts(
     """Get all tasks with active merge conflicts, optionally filtered by project."""
     conflicts = build_conflicts_response(project_id)
     return ConflictsResponse(conflicts=conflicts, count=len(conflicts))
-
-
-@router.post("/git/tasks/{task_id}/retry-merge", tags=["git"])
-async def retry_merge(task_id: str) -> dict[str, object]:
-    """Retry merging a conflicted task."""
-    task = task_store.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    if task["status"] != "failed":
-        raise HTTPException(status_code=400, detail="Task is not in failed state")
-    update_task_fields(task_id, conflict_info=None)
-    return cast(dict[str, object], merge_and_cleanup_task_checkpoint(task_id, task["project_id"]))
-
-
-@router.post("/git/tasks/{task_id}/resolve-conflict", tags=["git"])
-async def resolve_conflict(task_id: str) -> dict[str, object]:
-    """Reopen a residue task and dispatch execution to resolve its merge conflict."""
-    return await handle_resolve_conflict(task_id)
 
 
 @router.post("/git/tasks/{task_id}/dismiss-conflict", tags=["git"])

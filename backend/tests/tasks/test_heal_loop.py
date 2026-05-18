@@ -8,7 +8,6 @@ Covers:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
@@ -16,77 +15,6 @@ from unittest.mock import MagicMock, patch
 # ---------------------------------------------------------------------------
 _CHECKOUT = "app.tasks.autonomous.exec_modules.checkout"
 _SUBTASK_VALIDATION = "app.tasks.autonomous.exec_modules.subtask_validation"
-_CLEANUP = "app.tasks.autonomous.cleanup.merge_operations"
-
-
-class TestMergeBlockedWhenTaskRunning:
-    """Bug #2, Layer A: Merge operations blocked when task is running."""
-
-    @patch(f"{_CLEANUP}.get_project_root_path")
-    @patch(f"{_CLEANUP}.get_task_checkout")
-    @patch(f"{_CLEANUP}.task_store")
-    def test_merge_blocked_when_task_running(
-        self,
-        mock_store: MagicMock,
-        mock_checkout: MagicMock,
-        mock_root: MagicMock,
-    ) -> None:
-        """merge_and_cleanup_task_checkpoint returns blocked when status=running."""
-        from app.tasks.autonomous.cleanup import merge_and_cleanup_task_checkpoint
-
-        mock_store.get_task.return_value = {"id": "task-1", "status": "running"}
-
-        result = cast(dict[str, object], merge_and_cleanup_task_checkpoint("task-1", "test-project"))
-
-        assert result["status"] == "failed"
-        assert result["reason"] == "task_still_running"
-        mock_checkout.assert_not_called()
-
-    @patch(f"{_CLEANUP}._git")
-    @patch(f"{_CLEANUP}.publish_existing_commits")
-    @patch(f"{_CLEANUP}.update_task_fields")
-    @patch(f"{_CLEANUP}.delete_task_branch")
-    @patch(f"{_CLEANUP}.merge_task_branch")
-    @patch(f"{_CLEANUP}.checkout_base_branch")
-    @patch(f"{_CLEANUP}.get_project_root_path")
-    @patch(f"{_CLEANUP}.remove_task_checkout")
-    @patch(f"{_CLEANUP}.get_task_checkout")
-    @patch(f"{_CLEANUP}.task_store")
-    def test_merge_allowed_when_task_completed(
-        self,
-        mock_store: MagicMock,
-        mock_get_checkout: MagicMock,
-        mock_remove: MagicMock,
-        mock_root: MagicMock,
-        mock_checkout_base: MagicMock,
-        mock_merge: MagicMock,
-        mock_delete_branch: MagicMock,
-        mock_fields: MagicMock,
-        mock_publish: MagicMock,
-        mock_git: MagicMock,
-    ) -> None:
-        """merge_and_cleanup_task_checkpoint proceeds when status != running."""
-        from app.tasks.autonomous.cleanup import merge_and_cleanup_task_checkpoint
-
-        mock_store.get_task.return_value = {"id": "task-1", "status": "completed"}
-
-        checkout_obj = MagicMock()
-        checkout_obj.branch = "task-1/main"
-        checkout_obj.base_branch = "main"
-        mock_get_checkout.return_value = checkout_obj
-
-        mock_root.return_value = "/home/test/project"
-
-        # All git operations succeed
-        mock_checkout_base.return_value = None
-        mock_merge.return_value = MagicMock(success=True, merge_sha="abc123", conflicting_files=None)
-        mock_delete_branch.return_value = True
-        mock_publish.return_value = True
-        mock_git.return_value = MagicMock(returncode=0, stdout="")
-
-        result = merge_and_cleanup_task_checkpoint("task-1", "test-project")
-
-        assert result["status"] == "merged"
 
 
 class TestCheckoutHealthCheck:

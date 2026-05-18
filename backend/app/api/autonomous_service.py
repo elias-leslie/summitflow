@@ -33,7 +33,6 @@ class _AdvancedSettingsPayload(TypedDict):
     max_self_fix_attempts: int
     max_supervisor_attempts: int
     max_extensions: int
-    auto_merge_enabled: bool
     require_review: bool
     quality_gate_tools: list[str]
     quality_gate_mode: str
@@ -74,7 +73,6 @@ def _parse_advanced_settings(config: AgentConfig) -> _AdvancedSettingsPayload:
         "max_self_fix_attempts": int(str(config.get("autonomous_max_self_fix_attempts", 3))),
         "max_supervisor_attempts": int(str(config.get("autonomous_max_supervisor_attempts", 3))),
         "max_extensions": int(str(config.get("autonomous_max_extensions", 3))),
-        "auto_merge_enabled": bool(config.get("autonomous_auto_merge_enabled", True)),
         "require_review": bool(config.get("autonomous_require_review", False)),
         "quality_gate_tools": list(qg_tools_raw) if qg_tools_raw else [],
         "quality_gate_mode": str(config.get("quality_gate_mode", "quick")),
@@ -118,8 +116,6 @@ def _build_updates(settings: AutonomousSettingsUpdate) -> AgentConfig:
         updates["autonomous_max_supervisor_attempts"] = settings.max_supervisor_attempts
     if settings.max_extensions is not None:
         updates["autonomous_max_extensions"] = settings.max_extensions
-    if settings.auto_merge_enabled is not None:
-        updates["autonomous_auto_merge_enabled"] = settings.auto_merge_enabled
     if settings.require_review is not None:
         updates["autonomous_require_review"] = settings.require_review
     if settings.quality_gate_tools is not None:

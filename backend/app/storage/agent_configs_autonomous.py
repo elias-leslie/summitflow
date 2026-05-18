@@ -112,19 +112,6 @@ def get_max_extensions(project_id: str) -> int:
     return int(str(value)) if value is not None else 3
 
 
-def get_auto_merge_enabled(project_id: str) -> bool:
-    """Check if auto-merge is enabled for autonomous execution.
-
-    Args:
-        project_id: Project ID
-
-    Returns:
-        True if auto-merge is enabled (default: True)
-    """
-    config = get_agent_config(project_id)
-    return bool(config.get("autonomous_auto_merge_enabled", True))
-
-
 def get_require_review(project_id: str) -> bool:
     """Check if AI review is required before merge.
 

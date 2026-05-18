@@ -97,10 +97,6 @@ class AutonomousSettings(BaseModel):
         default=3, ge=0, le=10, description="Max extension requests when retry budget exhausted"
     )
 
-    # Auto-merge control
-    auto_merge_enabled: bool = Field(
-        default=True, description="Enable automatic merging of completed tasks"
-    )
     require_review: bool = Field(
         default=False,
         description="Deprecated. AI review tier removed; deterministic gates decide.",
@@ -146,8 +142,6 @@ class AutonomousSettingsUpdate(BaseModel):
     max_supervisor_attempts: int | None = Field(default=None, ge=0, le=10)
     max_extensions: int | None = Field(default=None, ge=0, le=10)
 
-    # Auto-merge control
-    auto_merge_enabled: bool | None = None
     require_review: bool | None = None
 
     # Quality gate configuration

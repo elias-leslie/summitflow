@@ -7,14 +7,13 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from fastapi import HTTPException
 
 from ...logging_config import get_logger
 from ...storage import tasks as task_store
 from ...storage.tasks.update import update_task_fields
-from ...tasks.autonomous.cleanup.merge_types import MergeResult
 from ...utils import safe_subprocess
 from ...utils.git_helpers import (
     enrich_branch_cleanup_details,
@@ -353,72 +352,6 @@ async def build_project_dashboard(
         snapshots=snapshots,
         conflicts=conflicts,
     )
-
-
-# --- Conflict resolution helpers ---
-
-
-def _resolve_conflict_response(
-    task_id: str, project_id: str, checkout: Any, files: list[str], status: str
-) -> dict[str, object]:
-    return {
-        "task_id": task_id,
-        "status": status,
-        "project_id": project_id,
-        "checkout_path": str(checkout.path),
-        "task_branch": checkout.branch,
-        "base_branch": checkout.base_branch,
-        "conflicting_files": files,
-    }
-
-
-async def handle_resolve_conflict(task_id: str) -> dict[str, object]:
-    """Reopen a residue task and dispatch execution to resolve its merge conflict."""
-    from ...services.task_checkout import create_task_checkout, get_task_checkout
-    from ...storage import log_task_event
-    from ...storage.subtasks import get_subtasks_for_task, update_subtask_passes
-    from ...storage.tasks.claims import claim_task
-    from ...storage.tasks.status import update_task_status
-    from ...tasks.autonomous.cleanup.merge_operations import merge_and_cleanup_task_checkpoint
-    from ...workflows.models import TaskInput
-    from ...workflows.pipeline import execute_wf
-
-    task = task_store.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    status = str(task.get("status") or "")
-    if status != "failed":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Task status {status!r} is not eligible for conflict resolution",
-        )
-    conflict_info = task.get("conflict_info") or {}
-    if (not isinstance(conflict_info, dict) or not conflict_info) and status == "failed":
-        merge_result: MergeResult = merge_and_cleanup_task_checkpoint(task_id, str(task["project_id"]))
-        if str(merge_result.get("status") or "") != "failed":
-            return cast(dict[str, object], merge_result)
-        task = task_store.get_task(task_id) or task
-        conflict_info = task.get("conflict_info") or {}
-    if not isinstance(conflict_info, dict) or not conflict_info:
-        raise HTTPException(status_code=400, detail="Task does not have conflict metadata to resolve")
-
-    project_id = str(task["project_id"])
-    checkout = get_task_checkout(task_id, project_id) or create_task_checkout(task_id, project_id)
-    if not checkout:
-        raise HTTPException(status_code=500, detail="Unable to prepare task branch for conflict resolution")
-    files = conflict_info.get("conflicting_files") or []
-    message = "Resolve merge conflict against current main" + (f" in {', '.join(files[:5])}" if files else "")
-    update_task_status(task_id, "failed", error_message=message, validate_transition=False)
-    for subtask in get_subtasks_for_task(task_id):
-        short_id = str(subtask.get("subtask_id") or "")
-        if short_id and subtask.get("passes"):
-            update_subtask_passes(task_id, short_id, False)
-    log_task_event(task_id, f"Conflict resolution reopened for autocode: {message}")
-    worker_id = f"resolve-conflict-{project_id}"
-    if not claim_task(task_id, worker_id, lock_duration_minutes=60):
-        return _resolve_conflict_response(task_id, project_id, checkout, files, "already_claimed")
-    await execute_wf.aio_run_no_wait(TaskInput(task_id=task_id, project_id=project_id))
-    return _resolve_conflict_response(task_id, project_id, checkout, files, "dispatched_for_conflict_resolution")
 
 
 # --- Collection helpers ---

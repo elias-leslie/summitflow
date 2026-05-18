@@ -12,7 +12,6 @@ from app.workflows.pipeline import (
     escalation_wf,
     execute_wf,
     ideate_wf,
-    merge_cleanup_wf,
     plan_wf,
     review_wf,
     triage_wf,
@@ -52,14 +51,13 @@ def main() -> None:
     worker = hatchet.worker(
         "summitflow-worker",
         workflows=[
-            # Pipeline (8)
+            # Pipeline (7)
             dispatch_wf,
             ideate_wf,
             triage_wf,
             plan_wf,
             execute_wf,
             review_wf,
-            merge_cleanup_wf,
             escalation_wf,
             # Scheduled (15)
             work_pickup_wf,

@@ -56,7 +56,6 @@ class AgentConfig(TypedDict, total=False):
     autonomous_max_self_fix_attempts: int  # Max self-fix attempts
     autonomous_max_supervisor_attempts: int  # Max supervisor attempts
     autonomous_max_extensions: int  # Max extension requests
-    autonomous_auto_merge_enabled: bool  # Enable automatic merging
     autonomous_require_review: bool  # Require review before merge
 
     # Quality gate configuration
@@ -102,7 +101,6 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "autonomous_max_self_fix_attempts": 3,
     "autonomous_max_supervisor_attempts": 3,
     "autonomous_max_extensions": 3,
-    "autonomous_auto_merge_enabled": True,
     "autonomous_require_review": False,
     # Quality gate defaults
     "quality_gate_tools": [],  # Empty = use st check --quick (default behavior)
@@ -193,7 +191,6 @@ from .agent_configs_agents import (  # noqa: E402
 )
 from .agent_configs_autonomous import (  # noqa: E402
     get_allowed_task_types,
-    get_auto_merge_enabled,
     get_cooldown_minutes,
     get_max_extensions,
     get_max_self_fix_attempts,
@@ -223,7 +220,6 @@ __all__ = [
     "enable_agent",
     "get_agent_config",
     "get_allowed_task_types",
-    "get_auto_merge_enabled",
     "get_component_source",
     "get_cooldown_minutes",
     "get_enabled_agents",

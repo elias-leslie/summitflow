@@ -89,5 +89,3 @@ def test_pipeline_open_ended_stages_inherit_hatchet_defaults(monkeypatch) -> Non
     ):
         assert registered[task_name]["execution_timeout"] == DEFAULT_TASK_EXECUTION_TIMEOUT
         assert registered[task_name]["schedule_timeout"] == DEFAULT_TASK_SCHEDULE_TIMEOUT
-
-    assert registered["summitflow-merge-cleanup"]["execution_timeout"] == "300s"

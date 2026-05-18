@@ -6,9 +6,7 @@ from typing import Annotated, Any
 
 import typer
 
-from .._client_base import APIError
-from ..client import STClient
-from ..output import output_error, output_json
+from ..output import output_json
 from ..output_context import OutputContext
 from ._git_helpers import (
     _format_compact_repo,
@@ -80,13 +78,3 @@ def sync(
         output_json({"results": results, "total": len(results)})
 
 
-@app.command("resolve-conflict")
-def resolve_conflict(task_id: str) -> None:
-    """Reopen a residue task for conflict-resolution autocode in its shared task checkout."""
-    client = STClient(require_project=False)
-    try:
-        result = client.resolve_task_conflict(task_id)
-    except APIError as e:
-        output_error(f"Failed to prepare conflict resolution: {e.detail}")
-        raise typer.Exit(1) from None
-    output_json(result)
