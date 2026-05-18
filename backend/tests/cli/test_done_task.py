@@ -139,7 +139,6 @@ def test_complete_task_missing_checkpoint_active_task_closes_after_pushed_commit
         patch("cli.commands.done_task._task_has_published_commit_event", return_value=True),
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task.merge_task_branch") as mock_merge,
         patch("cli.commands.done_task._publish_completed_work") as mock_publish,
         patch("cli.commands.done_task._run_smart_prereqs") as mock_prereqs,
         patch("cli.commands.done_task.output_success"),
@@ -152,10 +151,7 @@ def test_complete_task_missing_checkpoint_active_task_closes_after_pushed_commit
         head_ref="task/task-789",
         base_ref="main",
     )
-    mock_prereqs.assert_called_once_with(
-        client, "task-789", "summitflow", merge_subtask_branches=False
-    )
-    mock_merge.assert_not_called()
+    mock_prereqs.assert_called_once_with(client, "task-789", "summitflow")
     mock_publish.assert_called_once_with("task-789", "summitflow")
     client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
     assert result["merged"] is False
@@ -192,7 +188,6 @@ def test_complete_task_missing_checkpoint_active_task_auto_commits_dirty_work() 
         patch("app.storage.events.log_task_event") as mock_log,
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task.merge_task_branch") as mock_merge,
         patch("cli.commands.done_task._publish_completed_work") as mock_publish,
         patch("cli.commands.done_task._run_smart_prereqs") as mock_prereqs,
         patch("cli.commands.done_task.output_success"),
@@ -212,10 +207,7 @@ def test_complete_task_missing_checkpoint_active_task_auto_commits_dirty_work() 
     mock_log.assert_called_once()
     assert mock_log.call_args.args[0] == "task-789"
     client.export_task_data.assert_called_once_with("task-789")
-    mock_prereqs.assert_called_once_with(
-        client, "task-789", "summitflow", merge_subtask_branches=False
-    )
-    mock_merge.assert_not_called()
+    mock_prereqs.assert_called_once_with(client, "task-789", "summitflow")
     mock_publish.assert_called_once_with("task-789", "summitflow")
     client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
     assert result["merged"] is False
@@ -246,7 +238,6 @@ def test_complete_task_missing_checkpoint_active_task_commits_combined_dirty_che
         patch("app.storage.events.log_task_event") as mock_log,
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task.merge_task_branch") as mock_merge,
         patch("cli.commands.done_task._publish_completed_work") as mock_publish,
         patch("cli.commands.done_task._run_smart_prereqs") as mock_prereqs,
         patch("cli.commands.done_task.output_success"),
@@ -265,17 +256,14 @@ def test_complete_task_missing_checkpoint_active_task_commits_combined_dirty_che
     assert mock_commit.call_args.kwargs["push"] is True
     mock_log.assert_called_once()
     assert mock_log.call_args.args[0] == "task-789"
-    mock_prereqs.assert_called_once_with(
-        client, "task-789", "summitflow", merge_subtask_branches=False
-    )
-    mock_merge.assert_not_called()
+    mock_prereqs.assert_called_once_with(client, "task-789", "summitflow")
     mock_publish.assert_called_once_with("task-789", "summitflow")
     client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
     assert result["merged"] is False
     assert result["snapshot_removed"] is True
 
 
-def test_complete_task_claimed_checkpoint_auto_commits_dirty_branch_before_merge() -> None:
+def test_complete_task_claimed_checkpoint_auto_commits_dirty_checkpoint() -> None:
     client = MagicMock()
     client.get_subtasks.return_value = {"subtasks": []}
     client.get_task_completion_readiness.return_value = {"ready": True}
@@ -295,7 +283,6 @@ def test_complete_task_claimed_checkpoint_auto_commits_dirty_branch_before_merge
         patch("cli.commands.done_task._task_branch_touched_frontend", return_value=False),
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-1"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task.merge_task_branch") as mock_merge,
         patch("cli.commands.done_task._capture_and_remove_snapshot"),
         patch("cli.commands.done_task._publish_completed_work"),
         patch("cli.commands.done_task.output_success"),
@@ -315,12 +302,11 @@ def test_complete_task_claimed_checkpoint_auto_commits_dirty_branch_before_merge
     assert mock_commit.call_args.kwargs["push"] is True
     mock_log.assert_called_once()
     assert mock_log.call_args.args[0] == "task-1"
-    mock_merge.assert_called_once_with("task-1", project_id="summitflow")
     client.update_status.assert_called_once_with("task-1", "completed", skip_gates=False)
     assert result["merged"] is True
 
 
-def test_complete_task_claimed_checkpoint_forces_close_after_merge_when_status_transition_drifts() -> None:
+def test_complete_task_claimed_checkpoint_forces_close_when_status_transition_drifts() -> None:
     client = MagicMock()
     client.get_subtasks.return_value = {"subtasks": []}
     client.get_task_completion_readiness.return_value = {"ready": True}
@@ -342,7 +328,6 @@ def test_complete_task_claimed_checkpoint_forces_close_after_merge_when_status_t
         patch("cli.commands.done_task._task_branch_touched_frontend", return_value=False),
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-1"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task.merge_task_branch") as mock_merge,
         patch("cli.commands.done_task._capture_and_remove_snapshot") as mock_cleanup,
         patch("cli.commands.done_task._publish_completed_work") as mock_publish,
         patch("cli.commands.done_task.output_warning") as mock_warning,
@@ -351,7 +336,6 @@ def test_complete_task_claimed_checkpoint_forces_close_after_merge_when_status_t
 
         result = complete_task(client, "task-1", message="finish task")
 
-    mock_merge.assert_called_once_with("task-1", project_id="summitflow")
     client.update_status.assert_called_once_with("task-1", "completed", skip_gates=False)
     client.close_task.assert_called_once_with("task-1", reason="finish task", skip_gates=True)
     mock_cleanup.assert_called_once_with("task-1", "summitflow")
@@ -360,26 +344,20 @@ def test_complete_task_claimed_checkpoint_forces_close_after_merge_when_status_t
     assert result["merged"] is True
 
 
-def test_run_smart_prereqs_can_pass_subtasks_without_branch_merge() -> None:
+def test_run_smart_prereqs_auto_closes_unpassed_subtasks() -> None:
     client = MagicMock()
     client.get_subtasks.return_value = {
         "subtasks": [{"subtask_id": "1.1", "passes": False, "citations_status": "acknowledged"}]
     }
     client.get_task_completion_readiness.return_value = {"ready": True}
 
-    with (
-        patch("cli.commands.done_task.sync_completed_subtasks") as mock_sync,
-        patch("cli.commands.done_subtask.merge_subtask_branch") as mock_merge,
-    ):
+    with patch("cli.commands.done_task.sync_completed_subtasks") as mock_sync:
         mock_sync.return_value.synced = []
         from cli.commands.done_task import _run_smart_prereqs
 
-        _run_smart_prereqs(
-            client, "task-789", "summitflow", merge_subtask_branches=False
-        )
+        _run_smart_prereqs(client, "task-789", "summitflow")
 
     client.update_subtask.assert_called_once_with("task-789", "1.1", passes=True)
-    mock_merge.assert_not_called()
 
 
 def test_run_smart_prereqs_auto_closes_subtasks_in_dependency_order() -> None:
@@ -393,16 +371,11 @@ def test_run_smart_prereqs_auto_closes_subtasks_in_dependency_order() -> None:
     }
     client.get_task_completion_readiness.return_value = {"ready": True}
 
-    with (
-        patch("cli.commands.done_task.sync_completed_subtasks") as mock_sync,
-        patch("cli.commands.done_subtask.merge_subtask_branch"),
-    ):
+    with patch("cli.commands.done_task.sync_completed_subtasks") as mock_sync:
         mock_sync.return_value.synced = []
         from cli.commands.done_task import _run_smart_prereqs
 
-        _run_smart_prereqs(
-            client, "task-789", "summitflow", merge_subtask_branches=False
-        )
+        _run_smart_prereqs(client, "task-789", "summitflow")
 
     assert [call.args[1] for call in client.update_subtask.call_args_list] == ["1.1", "2.1", "3.1"]
 
@@ -454,7 +427,6 @@ def test_complete_task_diff_gate_checks_task_branch_not_current_head() -> None:
         patch("cli.commands.done_task._task_branch_touched_frontend", return_value=False),
         patch("cli.commands.done_task.resolve_task_branch", return_value="task-1/main") as mock_resolve,
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task.merge_task_branch"),
         patch("cli.commands.done_task._capture_and_remove_snapshot"),
         patch("cli.commands.done_task._publish_completed_work"),
     ):
@@ -488,7 +460,6 @@ def test_complete_task_diff_gate_checks_published_task_bookmark() -> None:
         patch("cli.commands.done_task._task_branch_touched_frontend", return_value=False),
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-1") as mock_resolve,
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task.merge_task_branch"),
         patch("cli.commands.done_task._capture_and_remove_snapshot"),
         patch("cli.commands.done_task._publish_completed_work"),
     ):
@@ -522,7 +493,6 @@ def test_complete_task_normalizes_head_base_branch_before_diff_gate() -> None:
         patch("cli.commands.done_task._task_branch_touched_frontend", return_value=False),
         patch("cli.commands.done_task.resolve_task_branch", return_value="task-1/main"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task.merge_task_branch"),
         patch("cli.commands.done_task._capture_and_remove_snapshot"),
         patch("cli.commands.done_task._publish_completed_work"),
         patch("cli.commands.done_task.normalize_base_branch", return_value="main") as mock_normalize,

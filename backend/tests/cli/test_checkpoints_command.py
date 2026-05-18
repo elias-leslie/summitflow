@@ -6,8 +6,6 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -134,121 +132,6 @@ def test_cleanup_checkpoints_auto_deletes_stale_metadata_when_no_active(
     assert not stale_meta.exists()
 
 
-def test_merge_task_branch_reports_conflict_paths(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    from app.storage import tasks as task_store
-    from cli.lib import checkpoint_branches
-
-    conflict_output = "\n".join(
-        [
-            "Auto-merging backend/app/example.py",
-            "CONFLICT (content): Merge conflict in backend/app/example.py",
-            "Automatic merge failed; fix conflicts and then commit the result.",
-        ]
-    )
-
-    def fake_run_git(
-        args: list[str],
-        cwd: str | None = None,
-        check: bool = True,
-    ) -> subprocess.CompletedProcess[str]:
-        if args[:3] == ["git", "rev-parse", "--verify"]:
-            return subprocess.CompletedProcess(
-                args,
-                0 if args[3] == "task-1/main" else 1,
-                stdout="",
-                stderr="",
-            )
-        if args[:2] == ["git", "merge"] and "--abort" not in args:
-            raise subprocess.CalledProcessError(1, args, output=conflict_output, stderr="")
-        if args == ["git", "diff", "--name-only", "--diff-filter=U"]:
-            return subprocess.CompletedProcess(args, 0, stdout="backend/app/example.py\n", stderr="")
-        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-
-    recorded_fields: dict[str, Any] = {}
-    status_updates: list[tuple[str, str, str | None, bool]] = []
-    events: list[tuple[str, str]] = []
-
-    def record_status_update(
-        task_id: str,
-        status: str,
-        error_message: str | None = None,
-        validate_transition: bool = True,
-    ) -> None:
-        status_updates.append((task_id, status, error_message, validate_transition))
-
-    monkeypatch.setattr(task_store, "get_task", lambda task_id: {"status": "running"})
-    monkeypatch.setattr(
-        "app.storage.tasks.update.update_task_fields",
-        lambda task_id, **fields: recorded_fields.update(fields),
-    )
-    monkeypatch.setattr(
-        "app.storage.tasks.status.update_task_status",
-        record_status_update,
-    )
-    monkeypatch.setattr(
-        "app.storage.log_task_event",
-        lambda task_id, message: events.append((task_id, message)),
-    )
-    monkeypatch.setattr(
-        checkpoint_branches,
-        "load_snapshot_meta",
-        lambda task_id: SimpleNamespace(project_id="summitflow", base_branch="main"),
-    )
-    monkeypatch.setattr(checkpoint_branches, "_get_repo_cwd", lambda project_id: "/repo")
-    monkeypatch.setattr(checkpoint_branches, "_get_current_branch", lambda cwd: "main")
-    monkeypatch.setattr(checkpoint_branches, "_run_git", fake_run_git)
-
-    with pytest.raises(SystemExit) as exc_info:
-        checkpoint_branches.merge_task_branch("task-1", project_id="summitflow")
-
-    assert exc_info.value.code == 1
-    stderr = capsys.readouterr().err
-    assert "Failed to merge task-1/main" in stderr
-    assert "backend/app/example.py" in stderr
-    assert "Recovery: st git resolve-conflict task-1" in stderr
-    assert recorded_fields["conflict_info"]["conflicting_files"] == ["backend/app/example.py"]
-    assert status_updates == [("task-1", "failed", "Merge conflict in 1 file(s)", False)]
-    assert events == [
-        ("task-1", "Merge conflict detected in 1 file(s): backend/app/example.py")
-    ]
-
-
-def test_merge_task_branch_normalizes_head_base_branch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from app.storage import tasks as task_store
-    from cli.lib import checkpoint_branches
-
-    commands: list[list[str]] = []
-
-    def fake_run_git(
-        args: list[str],
-        cwd: str | None = None,
-        check: bool = True,
-    ) -> subprocess.CompletedProcess[str]:
-        commands.append(args)
-        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-
-    monkeypatch.setattr(task_store, "get_task", lambda task_id: {"status": "running"})
-    monkeypatch.setattr(
-        checkpoint_branches,
-        "load_snapshot_meta",
-        lambda task_id: SimpleNamespace(project_id="summitflow", base_branch="HEAD"),
-    )
-    monkeypatch.setattr(checkpoint_branches, "_get_repo_cwd", lambda project_id: "/repo")
-    monkeypatch.setattr(checkpoint_branches, "_get_current_branch", lambda cwd: "")
-    monkeypatch.setattr(checkpoint_branches, "resolve_task_branch", lambda task_id, project_id=None: "task-1/main")
-    monkeypatch.setattr(checkpoint_branches, "normalize_base_branch", lambda branch, repo_path=None: "main")
-    monkeypatch.setattr(checkpoint_branches, "_run_git", fake_run_git)
-
-    assert checkpoint_branches.merge_task_branch("task-1", project_id="summitflow")
-    assert ["git", "checkout", "main"] in commands
-    assert ["git", "merge", "--no-ff", "task-1/main", "-m", "Merge task task-1"] in commands
-
-
 def test_task_branch_resolution_supports_recovered_short_branch(
     repo_with_checkpoints: Path,
 ) -> None:
@@ -260,22 +143,3 @@ def test_task_branch_resolution_supports_recovered_short_branch(
 
     assert branches == [{"branch": "task-short", "subtask_id": "", "type": "task"}]
     assert resolve_task_branch("task-short", project_id="summitflow") == "task-short"
-
-
-def test_merge_task_branch_uses_recovered_short_branch(
-    repo_with_checkpoints: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from app.storage import tasks as task_store
-    from cli.lib import checkpoint_branches
-
-    _git(repo_with_checkpoints, "branch", "task-short")
-    monkeypatch.setattr(task_store, "get_task", lambda task_id: {"status": "running"})
-    monkeypatch.setattr(
-        checkpoint_branches,
-        "load_snapshot_meta",
-        lambda task_id: SimpleNamespace(project_id="summitflow", base_branch="main"),
-    )
-
-    assert checkpoint_branches.merge_task_branch("task-short", project_id="summitflow")
-    assert _git(repo_with_checkpoints, "branch", "--list", "task-short").stdout == ""
