@@ -2,300 +2,31 @@
 
 Covers:
 - Bug #1: Steps re-read from DB after heal attempts (st step defect picked up)
-- Bug #2: Checkout race condition protection (merge blocked, health check)
+- Bug #2: Validation of execution environment before agent call.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
 # Module path constants for patching
 # ---------------------------------------------------------------------------
-_CHECKOUT = "app.tasks.autonomous.exec_modules.checkout"
 _SUBTASK_VALIDATION = "app.tasks.autonomous.exec_modules.subtask_validation"
-
-
-class TestCheckoutHealthCheck:
-    """Bug #2, Layer B: Checkout health check function."""
-
-    @patch(f"{_CHECKOUT}.emit_log")
-    def test_checkout_health_check_missing_dir(
-        self,
-        mock_log: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Returns False and logs error when directory doesn't exist."""
-        from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
-
-        missing = str(tmp_path / "nonexistent")
-        result = check_checkout_health(missing, "task-1", "test-project")
-
-        assert not result
-        mock_log.assert_called_once()
-        assert "CHECKOUT GONE" in mock_log.call_args[0][2]
-
-    @patch(f"{_CHECKOUT}.emit_log")
-    def test_checkout_health_check_no_git_marker(
-        self,
-        mock_log: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Returns False when directory exists but has no .git marker."""
-        from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
-
-        result = check_checkout_health(str(tmp_path), "task-1", "test-project")
-
-        assert not result
-        mock_log.assert_called_once()
-        assert "CHECKOUT CORRUPTED" in mock_log.call_args[0][2]
-
-    @patch(f"{_CHECKOUT}.subprocess.run")
-    @patch(f"{_CHECKOUT}.emit_log")
-    def test_checkout_health_check_valid(
-        self,
-        mock_log: MagicMock,
-        mock_run: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Returns True for a valid checkout directory with .git marker."""
-        from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
-
-        (tmp_path / ".git").mkdir()
-        mock_run.return_value = MagicMock(returncode=0, stdout="task-1/main\n")
-        result = check_checkout_health(str(tmp_path), "task-1", "test-project")
-
-        assert result
-        mock_log.assert_not_called()
-
-    @patch(f"{_CHECKOUT}.subprocess.run")
-    @patch(f"{_CHECKOUT}.emit_log")
-    def test_checkout_health_check_valid_git_file(
-        self,
-        mock_log: MagicMock,
-        mock_run: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Returns True when .git is a file-backed checkout."""
-        from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
-
-        (tmp_path / ".git").write_text("gitdir: /path/to/main/.git/checkouts/task-1")
-        mock_run.return_value = MagicMock(returncode=0, stdout="task-1/main\n")
-        result = check_checkout_health(str(tmp_path), "task-1", "test-project")
-
-        assert result
-        mock_log.assert_not_called()
-
-    @patch(f"{_CHECKOUT}.subprocess.run")
-    @patch(f"{_CHECKOUT}.emit_log")
-    def test_checkout_health_check_branch_mismatch(
-        self,
-        mock_log: MagicMock,
-        mock_run: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Returns False when shared checkout drifts onto another task branch."""
-        from app.tasks.autonomous.exec_modules.checkout import check_checkout_health
-
-        (tmp_path / ".git").mkdir()
-        mock_run.return_value = MagicMock(returncode=0, stdout="task-other/main\n")
-
-        result = check_checkout_health(str(tmp_path), "task-1", "test-project")
-
-        assert not result
-        mock_log.assert_called_once()
-        assert "CHECKOUT BRANCH MISMATCH" in mock_log.call_args[0][2]
-
-    @patch(f"{_CHECKOUT}.subprocess.run")
-    @patch(f"{_CHECKOUT}.emit_log")
-    def test_checkout_health_failure_includes_branch_mismatch_reason(
-        self,
-        mock_log: MagicMock,
-        mock_run: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Returns the concrete checkout failure reason for execution diagnostics."""
-        from app.tasks.autonomous.exec_modules.checkout import get_checkout_health_failure
-
-        (tmp_path / ".git").mkdir()
-        mock_run.return_value = MagicMock(returncode=0, stdout="task-other/main\n")
-
-        reason = get_checkout_health_failure(str(tmp_path), "task-1", "test-project")
-
-        assert reason is not None
-        assert "expected task-1/main" in reason
-        assert "got task-other/main" in reason
-        mock_log.assert_called_once()
-
-
-class TestInitialCheckoutGuard:
-    """Bug #2, Layer C: Initial checkout check before agent call."""
-
-    @patch(f"{_SUBTASK_VALIDATION}.emit_log")
-    @patch(f"{_SUBTASK_VALIDATION}.get_checkout_health_failure")
-    def test_execute_subtask_fails_on_invalid_checkout(
-        self,
-        mock_checkout_failure: MagicMock,
-        mock_log: MagicMock,
-    ) -> None:
-        """validate_subtask_environment returns failed when checkout is invalid at start."""
-        from app.tasks.autonomous.exec_modules.subtask_validation import (
-            validate_subtask_environment,
-        )
-
-        mock_checkout_failure.return_value = "CHECKOUT CORRUPTED: /tmp/nonexistent not a git checkout"
-
-        subtask = {
-            "id": "sub-1",
-            "subtask_id": "1.1",
-            "description": "test subtask",
-            "steps_from_table": [],
-        }
-
-        result = validate_subtask_environment(
-            "task-1", subtask, "1.1", "/tmp/nonexistent", "test-project"
-        )
-
-        assert result is not None
-        assert result["status"] == "failed"
-        assert result["reason"] == "checkout_invalid"
-        assert "CHECKOUT CORRUPTED" in result["output"]
-
-
-class TestMainRepoLeakageDetection:
-    """Detect when agent writes files to main repo instead of checkout."""
-
-    @patch(f"{_CHECKOUT}._load_main_repo_dirty_baseline")
-    @patch(f"{_CHECKOUT}.emit_log")
-    @patch(f"{_CHECKOUT}.subprocess")
-    @patch(f"{_CHECKOUT}.get_project_root_path")
-    def test_leakage_detected_when_main_repo_dirty(
-        self,
-        mock_root: MagicMock,
-        mock_subprocess: MagicMock,
-        mock_log: MagicMock,
-        mock_baseline: MagicMock,
-    ) -> None:
-        """Returns True and logs warning when main repo has uncommitted changes."""
-        from app.tasks.autonomous.exec_modules.checkout import check_main_repo_leakage
-
-        mock_root.return_value = "/home/test/project"
-        mock_baseline.return_value = []
-        result_obj = MagicMock()
-        result_obj.stdout = " M leaked_file.py\n"
-        mock_subprocess.run.return_value = result_obj
-
-        detected = check_main_repo_leakage("task-1", "test-project", "/tmp/checkout")
-
-        assert detected
-        assert any("CHECKOUT LEAKAGE" in str(c) for c in mock_log.call_args_list)
-
-    @patch(f"{_CHECKOUT}._load_main_repo_dirty_baseline")
-    @patch(f"{_CHECKOUT}.emit_log")
-    @patch(f"{_CHECKOUT}.subprocess")
-    @patch(f"{_CHECKOUT}.get_project_root_path")
-    def test_no_leakage_when_only_preexisting_dirty_files_remain(
-        self,
-        mock_root: MagicMock,
-        mock_subprocess: MagicMock,
-        mock_log: MagicMock,
-        mock_baseline: MagicMock,
-    ) -> None:
-        """Returns False when current dirt matches the recorded baseline."""
-        from app.tasks.autonomous.exec_modules.checkout import check_main_repo_leakage
-
-        mock_root.return_value = "/home/test/project"
-        mock_baseline.return_value = ["existing_file.py"]
-        result_obj = MagicMock()
-        result_obj.stdout = " M existing_file.py\n"
-        mock_subprocess.run.return_value = result_obj
-
-        detected = check_main_repo_leakage("task-1", "test-project", "/tmp/checkout")
-
-        assert not detected
-        mock_log.assert_not_called()
-
-    @patch(f"{_CHECKOUT}._load_main_repo_dirty_baseline")
-    @patch(f"{_CHECKOUT}.emit_log")
-    @patch(f"{_CHECKOUT}.subprocess")
-    @patch(f"{_CHECKOUT}.get_project_root_path")
-    def test_leakage_detected_when_new_dirty_file_added_beyond_baseline(
-        self,
-        mock_root: MagicMock,
-        mock_subprocess: MagicMock,
-        mock_log: MagicMock,
-        mock_baseline: MagicMock,
-    ) -> None:
-        """Returns True when execution dirt exceeds the recorded baseline."""
-        from app.tasks.autonomous.exec_modules.checkout import check_main_repo_leakage
-
-        mock_root.return_value = "/home/test/project"
-        mock_baseline.return_value = ["existing_file.py"]
-        result_obj = MagicMock()
-        result_obj.stdout = " M existing_file.py\n M leaked_file.py\n"
-        mock_subprocess.run.return_value = result_obj
-
-        detected = check_main_repo_leakage("task-1", "test-project", "/tmp/checkout")
-
-        assert detected
-        assert any("leaked_file.py" in str(c) for c in mock_log.call_args_list)
-
-    @patch(f"{_CHECKOUT}.emit_log")
-    @patch(f"{_CHECKOUT}.subprocess")
-    @patch(f"{_CHECKOUT}.get_project_root_path")
-    def test_no_leakage_when_main_repo_clean(
-        self,
-        mock_root: MagicMock,
-        mock_subprocess: MagicMock,
-        mock_log: MagicMock,
-    ) -> None:
-        """Returns False when main repo is clean."""
-        from app.tasks.autonomous.exec_modules.checkout import check_main_repo_leakage
-
-        mock_root.return_value = "/home/test/project"
-        result_obj = MagicMock()
-        result_obj.stdout = ""
-        mock_subprocess.run.return_value = result_obj
-
-        detected = check_main_repo_leakage("task-1", "test-project", "/tmp/checkout")
-
-        assert not detected
-
-    @patch(f"{_CHECKOUT}.emit_log")
-    @patch(f"{_CHECKOUT}.get_project_root_path")
-    def test_skipped_when_same_path(
-        self,
-        mock_root: MagicMock,
-        mock_log: MagicMock,
-    ) -> None:
-        """Returns False immediately when project_path equals main root."""
-        from app.tasks.autonomous.exec_modules.checkout import check_main_repo_leakage
-
-        mock_root.return_value = "/home/test/project"
-
-        detected = check_main_repo_leakage("task-1", "test-project", "/home/test/project")
-
-        assert not detected
-        mock_log.assert_not_called()
 
 
 class TestZeroStepSubtask:
     """Zero-step subtask logs a warning but does not fail — uses smoke tests only."""
 
     @patch(f"{_SUBTASK_VALIDATION}.emit_log")
-    @patch(f"{_SUBTASK_VALIDATION}.get_checkout_health_failure")
     def test_zero_steps_returns_none(
         self,
-        mock_checkout_failure: MagicMock,
         mock_log: MagicMock,
     ) -> None:
         """Subtask with 0 steps returns None (passes env check) and logs an info message."""
         from app.tasks.autonomous.exec_modules.subtask_validation import (
             validate_subtask_environment,
         )
-
-        mock_checkout_failure.return_value = None
 
         subtask = {
             "id": "sub-1",

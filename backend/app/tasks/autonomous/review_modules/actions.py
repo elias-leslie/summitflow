@@ -8,11 +8,7 @@ from typing import Any, cast
 
 from ....logging_config import get_logger
 from ....services.agent_hub_client import get_sync_client
-from ....services.task_checkout import create_task_checkout
 from ....storage import log_task_event
-from ....storage import tasks as task_store
-from ....storage.projects import get_project_root_path
-from ....utils.git_base import normalize_base_branch
 from ..exec_modules.memory_writes import save_qa_fix_pattern
 from ..verification_helpers import get_diff_range
 from .parsing import parse_review_response
@@ -113,17 +109,6 @@ def _run_debugger(
         return False
 
 
-def _ensure_qa_checkout(task_id: str, project_id: str, fallback_path: str) -> str:
-    """Run QA fixes from the task branch, not whichever branch is currently checked out."""
-    task = task_store.get_task(task_id) or {}
-    base_branch = normalize_base_branch(str(task.get("base_branch") or "main"), get_project_root_path(project_id))
-    checkout = create_task_checkout(task_id, project_id, base_branch=base_branch)
-    if checkout and checkout.path:
-        return str(checkout.path)
-    logger.warning("qa_loop_checkout_unavailable", task_id=task_id, project_id=project_id)
-    return fallback_path
-
-
 def _run_reviewer(
     task_id: str, project_id: str, iteration: int, diff_text: str, concerns: list[str]
 ) -> tuple[dict[str, Any], str]:
@@ -162,12 +147,11 @@ def run_qa_loop(
             f"Recommendation: {recommendation}\n\nConcerns:\n{concerns_text}"
             "\n\nFix these issues. Run verify commands after each fix."
         )
-        qa_project_path = _ensure_qa_checkout(task_id, project_id, project_path)
-        if not _run_debugger(task_id, project_id, qa_project_path, fix_prompt, iteration):
+        if not _run_debugger(task_id, project_id, project_path, fix_prompt, iteration):
             return "ESCALATE"
         try:
             current_review, verdict = _run_reviewer(
-                task_id, project_id, iteration, _get_diff_text(qa_project_path), concerns
+                task_id, project_id, iteration, _get_diff_text(project_path), concerns
             )
         except Exception as e:
             logger.warning("QA loop re-review failed", task_id=task_id, iteration=iteration, error=str(e))

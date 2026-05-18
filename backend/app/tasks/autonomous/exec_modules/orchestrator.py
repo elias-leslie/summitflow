@@ -5,10 +5,8 @@ from typing import Any
 
 from ....core.debug import debug_section
 from ....logging_config import get_logger
-from ....services.task_checkout import get_task_checkout
 from ....storage import tasks as task_store
-from .checkout import check_main_repo_leakage
-from .checkout_setup import setup_task_checkout
+from .checkout import get_project_path
 from .completion_handler import (
     handle_early_completion,
     handle_failed_execution,
@@ -29,9 +27,8 @@ def prepare_execution(
     task_store: Any,
     emit_error: Callable[..., None],
     validate_pristine_codebase: Callable[[str, str], bool],
-    setup_task_checkout: Callable[[str, str], str | None],
 ) -> tuple[dict[str, Any] | None, str | None, str | None, str | None]:
-    """Validate task and set up shared checkout."""
+    """Validate task and resolve project root."""
     task = task_store.get_task(task_id)
     if not task:
         emit_error(task_id, "Task not found", recoverable=False, project_id=project_id)
@@ -40,17 +37,13 @@ def prepare_execution(
     if not validate_pristine_codebase(task_id, project_id):
         return _setup_failed_result(task_id, "Blocked by baseline quality gate", "quality_gate_blocked"), None, None, None
 
-    project_path = setup_task_checkout(task_id, project_id)
-    if not project_path:
-        return _setup_failed_result(task_id, "Task branch setup failed", "task_branch_setup_failed"), None, None, None
+    try:
+        project_path = get_project_path(project_id)
+    except ValueError as exc:
+        emit_error(task_id, str(exc), recoverable=False, project_id=project_id)
+        return _setup_failed_result(task_id, str(exc), "project_root_missing"), None, None, None
 
     return None, project_path, task.get("task_type"), task.get("agent_override")
-
-
-def active_task_checkpoint(task_id: str, project_id: str, *, load_snapshot_meta: Callable[[str], Any]) -> bool:
-    """Return whether task still has active checkpoint metadata to clean up."""
-    meta = load_snapshot_meta(task_id)
-    return meta is not None and meta.project_id == project_id
 
 
 def prepare_completed_task_closeout(
@@ -58,37 +51,13 @@ def prepare_completed_task_closeout(
     project_id: str,
     *,
     validate_pristine_codebase: Callable[[str, str], bool],
-    has_active_task_checkpoint: Callable[[str, str], bool],
-    get_task_checkout: Callable[[str, str], Any],
-    setup_task_checkout: Callable[[str, str], str | None],
     emit_log: Callable[..., None],
 ) -> dict[str, Any] | None:
     """Run safety checks before early-completing a task whose subtasks already passed."""
     if not validate_pristine_codebase(task_id, project_id):
         return _setup_failed_result(task_id, "Blocked by baseline quality gate", "quality_gate_blocked")
-
-    if not has_active_task_checkpoint(task_id, project_id):
-        emit_log(task_id, "info", "All subtasks already complete; skipping checkout setup", project_id=project_id)
-        return None
-
-    if not get_task_checkout(task_id, project_id):
-        emit_log(
-            task_id,
-            "warning",
-            "All subtasks already complete; active checkpoint metadata remains but no task branch exists, skipping checkout recovery",
-            project_id=project_id,
-        )
-        return None
-
-    emit_log(
-        task_id,
-        "info",
-        "All subtasks already complete; reusing existing task branch to recover residue before closeout",
-        project_id=project_id,
-    )
-    if setup_task_checkout(task_id, project_id):
-        return None
-    return _setup_failed_result(task_id, "Task branch setup failed", "task_branch_setup_failed")
+    emit_log(task_id, "info", "All subtasks already complete; nothing to set up", project_id=project_id)
+    return None
 
 
 def _setup_failed_result(task_id: str, error: str, reason: str) -> dict[str, Any]:
@@ -113,14 +82,7 @@ def _prepare_execution(task_id: str, project_id: str) -> tuple[dict[str, Any] | 
         task_store=task_store,
         emit_error=emit_error,
         validate_pristine_codebase=validate_pristine_codebase,
-        setup_task_checkout=setup_task_checkout,
     )
-
-
-def _has_active_task_checkpoint(task_id: str, project_id: str) -> bool:
-    from cli.lib.checkpoint_metadata import load_snapshot_meta
-
-    return active_task_checkpoint(task_id, project_id, load_snapshot_meta=load_snapshot_meta)
 
 
 def _prepare_completed_task_closeout(task_id: str, project_id: str) -> dict[str, Any] | None:
@@ -128,9 +90,6 @@ def _prepare_completed_task_closeout(task_id: str, project_id: str) -> dict[str,
         task_id,
         project_id,
         validate_pristine_codebase=validate_pristine_codebase,
-        has_active_task_checkpoint=_has_active_task_checkpoint,
-        get_task_checkout=get_task_checkout,
-        setup_task_checkout=setup_task_checkout,
         emit_log=emit_log,
     )
 
@@ -153,7 +112,6 @@ def _execution_deps() -> dict[str, Any]:
         "handle_early_completion": handle_early_completion,
         "prepare_execution": _prepare_execution,
         "execute_subtask_loop": execute_subtask_loop,
-        "check_main_repo_leakage": check_main_repo_leakage,
         "handle_completion": _handle_completion_with_deps,
     }
 

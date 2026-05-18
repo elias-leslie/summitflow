@@ -136,7 +136,6 @@ def _finish_execution(
     wind_down_state: Any,
     deps: dict[str, Any],
 ) -> dict[str, Any]:
-    deps["check_main_repo_leakage"](task_id, project_id, project_path)
     deps["handle_completion"](task_id, project_id, project_path, results, incomplete, dispatch, wind_down_state)
     return {"task_id": task_id, "status": "executed", "subtask_results": results}
 

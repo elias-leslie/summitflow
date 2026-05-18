@@ -293,18 +293,13 @@ class TestRunQALoop:
     @patch("app.tasks.autonomous.review_modules.actions._run_reviewer")
     @patch("app.tasks.autonomous.review_modules.actions._get_diff_text", return_value="diff")
     @patch("app.tasks.autonomous.review_modules.actions._run_debugger", return_value=True)
-    @patch("app.tasks.autonomous.review_modules.actions.create_task_checkout")
-    def test_qa_loop_reacquires_task_checkout_before_debugger(
+    def test_qa_loop_runs_debugger_against_project_root(
         self,
-        mock_checkout: MagicMock,
         mock_run_debugger: MagicMock,
         mock_diff_text: MagicMock,
         mock_run_reviewer: MagicMock,
         tmp_path: Any,
     ) -> None:
-        checkout = MagicMock()
-        checkout.path = "/tmp/task-checkout"
-        mock_checkout.return_value = checkout
         mock_run_reviewer.return_value = ({"verdict": "APPROVED", "concerns": []}, "APPROVED")
 
         result = run_qa_loop(
@@ -315,9 +310,9 @@ class TestRunQALoop:
 
         assert result == "APPROVED"
         mock_run_debugger.assert_called_once_with(
-            "task-1", "test-project", "/tmp/task-checkout", ANY, 1
+            "task-1", "test-project", str(tmp_path), ANY, 1
         )
-        mock_diff_text.assert_called_once_with("/tmp/task-checkout")
+        mock_diff_text.assert_called_once_with(str(tmp_path))
 
     @patch("app.tasks.autonomous.review_modules.actions.save_qa_fix_pattern")
     @patch("app.tasks.autonomous.review_modules.actions.log_task_event")

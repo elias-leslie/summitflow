@@ -471,15 +471,12 @@ class TestExecutionE2E:
                 "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
             ) as mock_client,
             patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout",
+                "app.tasks.autonomous.exec_modules.orchestrator.get_project_path",
                 return_value="/tmp/e2e-test",
             ),
             patch(
                 "app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase",
                 return_value=True,
-            ),
-            patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
             ),
             patch(
                 "app.tasks.autonomous.exec_modules.completion_handler.handle_successful_completion",
@@ -545,15 +542,12 @@ class TestExecutionE2E:
                 "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
             ) as mock_client,
             patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout",
+                "app.tasks.autonomous.exec_modules.orchestrator.get_project_path",
                 return_value="/tmp/e2e-test",
             ),
             patch(
                 "app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase",
                 return_value=True,
-            ),
-            patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
             ),
             patch(
                 "app.tasks.autonomous.escalation.get_supervisor_guidance_sync",
@@ -846,15 +840,12 @@ class TestFullAutonomousPipeline:
                 "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
             ) as mock_client,
             patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout",
+                "app.tasks.autonomous.exec_modules.orchestrator.get_project_path",
                 return_value="/tmp/e2e-test",
             ),
             patch(
                 "app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase",
                 return_value=True,
-            ),
-            patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
             ),
             patch(
                 "app.tasks.autonomous.exec_modules.completion_handler.handle_successful_completion",
@@ -1068,15 +1059,12 @@ class TestIntentOnlyAcceptanceE2E:
                 "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
             ) as mock_client,
             patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout",
+                "app.tasks.autonomous.exec_modules.orchestrator.get_project_path",
                 return_value="/tmp/e2e-test",
             ),
             patch(
                 "app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase",
                 return_value=True,
-            ),
-            patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
             ),
             patch(
                 "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate",
@@ -1135,15 +1123,12 @@ class TestIntentOnlyAcceptanceE2E:
                 "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
             ) as mock_client,
             patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout",
+                "app.tasks.autonomous.exec_modules.orchestrator.get_project_path",
                 return_value="/tmp/e2e-test",
             ),
             patch(
                 "app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase",
                 return_value=True,
-            ),
-            patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
             ),
             patch(
                 "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate",
@@ -1218,15 +1203,12 @@ class TestIntentOnlyAcceptanceE2E:
                 "app.tasks.autonomous.exec_modules.agent_execution.get_sync_client"
             ) as mock_exec_client,
             patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.setup_task_checkout",
+                "app.tasks.autonomous.exec_modules.orchestrator.get_project_path",
                 return_value="/tmp/e2e-test",
             ),
             patch(
                 "app.tasks.autonomous.exec_modules.orchestrator.validate_pristine_codebase",
                 return_value=True,
-            ),
-            patch(
-                "app.tasks.autonomous.exec_modules.orchestrator.check_main_repo_leakage",
             ),
             patch(
                 "app.tasks.autonomous.exec_modules.completion_handler.run_quality_gate",

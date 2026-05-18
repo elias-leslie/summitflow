@@ -13,15 +13,6 @@ from collections.abc import Callable
 from typing import Any
 
 # Re-export commonly used exceptions and utilities for backward compatibility
-from .exec_modules.checkout import (
-    check_checkout_health as _check_checkout_health,
-)
-from .exec_modules.checkout import (
-    check_main_repo_leakage as _check_main_repo_leakage,
-)
-from .exec_modules.checkout import (
-    get_checkout_health_failure as _get_checkout_health_failure,
-)
 from .exec_modules.pristine import (
     PristineCheckError,
     check_pristine_codebase,
@@ -56,10 +47,7 @@ def _is_infrastructure_failure(output: str, reason: str, returncode: int) -> boo
 
 __all__ = [
     "PristineCheckError",
-    "_check_checkout_health",
-    "_check_main_repo_leakage",
     "_execute_subtask",
-    "_get_checkout_health_failure",
     "_is_infrastructure_failure",
     "_parse_error_count",
     "check_pristine_codebase",
