@@ -128,11 +128,23 @@ def _purge_stale(leases: list[Lease]) -> list[Lease]:
     return [lease for lease in leases if not lease.is_stale()]
 
 
-def acquire(project_id: str, globs: list[str], task_id: str | None = None) -> Lease:
+def acquire(
+    project_id: str,
+    globs: list[str],
+    task_id: str | None = None,
+    project_root: str | None = None,
+) -> Lease:
     """Acquire or extend a lease for the current agent.
 
     Same agent + same glob set → heartbeat refresh (no duplicate row).
+
+    Relative globs are resolved against project_root before storage so
+    Lease.matches() (which compares against absolute paths from the hook)
+    works regardless of which cwd the caller used.
     """
+    if project_root:
+        root_path = Path(project_root)
+        globs = [g if Path(g).is_absolute() else str(root_path / g) for g in globs]
     agent_id, slug, sid, provider = identify_agent()
     now = datetime.now(UTC).isoformat()
     with _lock(project_id):

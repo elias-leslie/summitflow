@@ -29,13 +29,13 @@ from ..output import output_error, output_success
 app = typer.Typer(help="File-level lease coordination across parallel agents")
 
 
-def _resolve_project_id() -> str:
+def _resolve_project() -> tuple[str, str | None]:
     cfg = get_config_optional()
     pid = cfg.project_id if cfg else ""
     if not pid:
         output_error("No project detected. Run inside a registered project or set ST_PROJECT_ID.")
         raise typer.Exit(2)
-    return pid
+    return pid, cfg.project_root if cfg else None
 
 
 @app.command(name="lease")
@@ -44,7 +44,8 @@ def _resolve_project_id() -> str:
     cmd="st lease '<glob>...' | --check <path> | --list | --release | --take <path> | --wait <path>",
     when="declare sweep scope before refactor; check before edit; release on completion",
     precautions=(
-        "implicit acquire happens on Edit/Write via the PreToolUse hook",
+        "declare scope explicitly before broad edits — hook only blocks, doesn't acquire",
+        "relative globs are normalized against project root at acquire time",
         "stale leases auto-release after 30min idle",
         "--check exits 2 when another agent holds the path",
     ),
@@ -89,7 +90,7 @@ def lease_command(
     ] = None,
 ) -> None:
     """File-level lease for parallel-agent coordination."""
-    pid = _resolve_project_id()
+    pid, project_root = _resolve_project()
 
     if list_flag:
         leases = list_active(pid)
@@ -139,5 +140,5 @@ def lease_command(
             "Provide globs to acquire, or use --list / --check / --take / --wait / --release."
         )
         raise typer.Exit(2)
-    lease = acquire(pid, list(globs), task_id=task_id)
+    lease = acquire(pid, list(globs), task_id=task_id, project_root=project_root)
     output_success(f"Acquired lease {lease.lease_id} on: {', '.join(lease.globs)}")
