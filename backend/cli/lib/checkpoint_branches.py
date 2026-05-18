@@ -204,6 +204,8 @@ def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
     repo_cwd = _get_repo_cwd(resolved_project_id)
     base_branch = normalize_base_branch(meta.base_branch if meta else "main", repo_cwd)
     branch_name = resolve_task_branch(task_id, project_id=resolved_project_id)
+    if not _branch_exists(branch_name, repo_cwd):
+        return True
     current = _get_current_branch(repo_cwd)
 
     if current != base_branch:
