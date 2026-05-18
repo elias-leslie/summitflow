@@ -301,7 +301,10 @@ class _Reaper:
         result: list[dict[str, object]] = []
         for session in sessions:
             live = session.get("live_activity")
-            if isinstance(live, dict) and (bool(live.get("reapable")) or live.get("lifecycle_state") == "reapable"):
+            if not isinstance(live, dict):
+                continue
+            live_dict = cast(dict[str, Any], live)
+            if bool(live_dict.get("reapable")) or live_dict.get("lifecycle_state") == "reapable":
                 result.append(session)
         return result
 
@@ -354,7 +357,7 @@ def sessions_callback(
     """List agent sessions when no subcommand is provided."""
     if ctx.invoked_subcommand is not None:
         return
-    _render_session_list(
+    _SessionListView.render(
         status_filter,
         limit,
         agent_slug,
@@ -389,7 +392,7 @@ def list_sessions(
         st sessions list --status active
         st sessions list -s active --include-unassigned
     """
-    _render_session_list(
+    _SessionListView.render(
         status_filter,
         limit,
         agent_slug,
@@ -477,115 +480,13 @@ def _monitor_task_target(
 def _render_monitor_sessions(sessions: list[dict[str, Any]]) -> None:
     print(f"MONITOR[{len(sessions)}]")
     for session in sessions:
-        print(_monitor_summary(session))
-    print(_monitor_more(_monitor_project_flag(sessions)))
+        print(_MonitorFormat.monitor_summary(session))
+    print(_MonitorFormat.monitor_more(_monitor_project_flag(sessions)))
 
 
 def _monitor_project_flag(sessions: list[dict[str, Any]]) -> str:
     project = next((str(s.get("project_id")) for s in sessions if s.get("project_id")), None)
     return f" -P {project}" if project and project != "-" else ""
-
-
-def _recent_session_events(session_id: str, *, limit: int, event_type: str | None) -> list[dict[str, Any]]:
-    page_size = max(min(limit, 500), 1)
-    first = get_session_events(session_id, event_type=event_type, page=1, page_size=page_size)
-    total = int(first.get("total") or 0)
-    if total <= page_size:
-        return list(first.get("events") or [])
-    page = max(math.ceil(total / page_size), 1)
-    latest = get_session_events(session_id, event_type=event_type, page=page, page_size=page_size)
-    return list(latest.get("events") or [])
-
-
-def _event_text(event: dict[str, Any]) -> str:
-    parts: list[str] = []
-    for key in ("content", "tool_output", "message", "error"):
-        value = event.get(key)
-        if value is None:
-            continue
-        if isinstance(value, str):
-            parts.append(value)
-        else:
-            try:
-                parts.append(json.dumps(value, default=str, sort_keys=True))
-            except TypeError:
-                parts.append(str(value))
-    return "\n".join(parts)
-
-
-def _event_signature(event: dict[str, Any]) -> str:
-    text = _event_text(event)
-    if not text:
-        return "-"
-    normalized = " ".join(text.replace("\n", " ").split())
-    return normalized if len(normalized) <= 180 else normalized[:177] + "..."
-
-
-def _is_error_like(event: dict[str, Any], signature: str) -> bool:
-    if str(event.get("event_type") or "").lower() == "error":
-        return True
-    lower = signature.lower()
-    return any(marker in lower for marker in _ERROR_TEXT_MARKERS)
-
-
-def _diagnostic_rows(
-    events: list[dict[str, Any]],
-) -> tuple[
-    list[tuple[str, int, dict[str, Any]]],
-    list[tuple[str, int, dict[str, Any]]],
-]:
-    signatures: list[str] = []
-    first_by_signature: dict[str, dict[str, Any]] = {}
-    for event in events:
-        signature = _event_signature(event)
-        if signature == "-":
-            continue
-        signatures.append(signature)
-        first_by_signature.setdefault(signature, event)
-
-    counts = Counter(signatures)
-    error_rows = [
-        (signature, count, first_by_signature[signature])
-        for signature, count in counts.items()
-        if _is_error_like(first_by_signature[signature], signature)
-    ]
-    error_rows.sort(key=lambda row: (-row[1], row[0]))
-    repeat_rows = [
-        (signature, count, first_by_signature[signature])
-        for signature, count in counts.most_common()
-        if count >= 3
-    ]
-    return error_rows, repeat_rows
-
-
-def _render_session_diagnostics(session_id: str, *, limit: int) -> None:
-    sample_limit = max(min(limit * 25, 500), min(limit, 500), 100)
-    events = _recent_session_events(session_id, limit=sample_limit, event_type=None)
-    error_rows, repeat_rows = _diagnostic_rows(events)
-    row_limit = max(limit, 1)
-    print(_diagnostic_header(session_id, events, error_rows, repeat_rows))
-    _print_diagnostic_rows("ERR", error_rows[:row_limit])
-    _print_diagnostic_rows(
-        "REPEAT",
-        repeat_rows[: max(row_limit - min(len(error_rows), row_limit), 0)],
-    )
-
-
-def _diagnostic_header(
-    session_id: str,
-    events: list[dict[str, Any]],
-    error_rows: list[tuple[str, int, dict[str, Any]]],
-    repeat_rows: list[tuple[str, int, dict[str, Any]]],
-) -> str:
-    return (
-        f"DIAG session={session_id[:8]} events_sampled={len(events)} "
-        f"errors={len(error_rows)} repeats={len(repeat_rows)}"
-    )
-
-
-def _print_diagnostic_rows(prefix: str, rows: list[tuple[str, int, dict[str, Any]]]) -> None:
-    for signature, count, event in rows:
-        print(f"{prefix} x{count}|type={event.get('event_type', '-')}|tool={event.get('tool_name', '-')}|{signature}")
 
 
 def _monitor_single_session(
@@ -604,18 +505,18 @@ def _monitor_single_session(
     except APIError as e:
         handle_api_error(e)
         return
-    print(_monitor_summary(session))
+    print(_MonitorFormat.monitor_summary(session))
     session_project = str(session.get("project_id") or project_id or "-")
     project_flag = f" -P {session_project}" if session_project and session_project != "-" else ""
     short_id = resolved_id[:8]
-    print(_monitor_detail_more(short_id, project_flag))
+    print(_MonitorFormat.monitor_detail_more(short_id, project_flag))
     if errors:
-        _render_session_diagnostics(resolved_id, limit=limit)
+        _SessionDiagnostics.render(resolved_id, limit=limit)
         return
     if follow:
         follow_session_events(resolved_id, None, debug, limit)
         return
-    for event in _recent_session_events(resolved_id, limit=limit, event_type=None):
+    for event in _SessionDiagnostics.recent_events(resolved_id, limit=limit, event_type=None):
         print(format_event(event, verbose=debug))
 
 
@@ -628,13 +529,13 @@ def _list_monitor_sessions(
     project_id: str | None,
 ) -> list[dict[str, Any]]:
     sessions = client.list_sessions(
-        status=_normalize_status_filter(status_filter),
+        status=_SessionListView.normalize_status_filter(status_filter),
         limit=limit,
         page=1,
         agent_slug=agent_slug,
         project_id=project_id,
     )
-    return [s for s in sessions if _session_matches_status_alias(s, status_filter)]
+    return [s for s in sessions if _SessionListView.matches_status_alias(s, status_filter)]
 
 
 def _monitor_overview(
@@ -668,6 +569,39 @@ def _render_or_output_monitor_sessions(sessions: list[dict[str, Any]], *, json_o
     return False
 
 
+def _monitor_target(
+    ctx: typer.Context,
+    target: str,
+    *,
+    project_id: str | None,
+    follow: bool,
+    limit: int,
+    debug: bool,
+    errors: bool,
+    history: bool,
+    json_output: bool,
+) -> None:
+    if target.startswith("task-"):
+        _monitor_task_target(
+            ctx,
+            target,
+            follow=follow,
+            limit=limit,
+            debug=debug,
+            history=history,
+            json_output=json_output,
+        )
+        return
+    _monitor_single_session(
+        target,
+        project_id=project_id,
+        limit=limit,
+        debug=debug,
+        errors=errors,
+        follow=follow,
+    )
+
+
 @app.command("monitor")
 def monitor_sessions(
     ctx: typer.Context,
@@ -682,37 +616,18 @@ def monitor_sessions(
     history: Annotated[bool, typer.Option("--history", help="Include older linked Agent Hub sessions")] = False,
     json_output: Annotated[bool, typer.Option("--json", help="Output as JSON")] = False,
 ) -> None:
-    """Monitor agentic work: active sessions, one session, or one task.
-
-    Default examples:
-      st sessions monitor -P agent-hub
-      st sessions monitor task-abc123
-      st sessions monitor 1bc090d2 -P agent-hub
-
-    Output is compact and diagnostic-first: status/lifecycle, health/phase,
-    model, task/external id, quiet time, tool/command, topic, touched files,
-    lifecycle codes, and error/stall excerpt when present.
-    """
-    if target and target.startswith("task-"):
-        _monitor_task_target(
+    """Monitor active sessions, one session, or one task."""
+    if target:
+        _monitor_target(
             ctx,
             target,
-            follow=follow,
-            limit=limit,
-            debug=debug,
-            history=history,
-            json_output=json_output,
-        )
-        return
-
-    if target:
-        _monitor_single_session(
-            target,
             project_id=project_id,
+            follow=follow,
             limit=limit,
             debug=debug,
             errors=errors,
-            follow=follow,
+            history=history,
+            json_output=json_output,
         )
         return
 
@@ -741,50 +656,8 @@ def _list_all_active_sessions(
     project_id: str | None,
     page_size: int = 100,
 ) -> list[dict[str, object]]:
-    refresh_agent_observability()
-    sessions: list[dict[str, object]] = []
-    page = 1
-    while True:
-        batch = client.list_sessions(
-            status="active",
-            limit=page_size,
-            page=page,
-            project_id=project_id,
-        )
-        if not batch:
-            break
-        sessions.extend(batch)
-        if len(batch) < page_size:
-            break
-        page += 1
-    return sessions
+    return _Reaper.list_all_active(client, project_id=project_id, page_size=page_size)
 
-
-def _reapable_sessions(sessions: list[dict[str, object]]) -> list[dict[str, object]]:
-    result: list[dict[str, object]] = []
-    for session in sessions:
-        live = session.get("live_activity")
-        if not isinstance(live, dict):
-            continue
-        live_dict = cast(dict[str, Any], live)
-        if bool(live_dict.get("reapable")) or live_dict.get("lifecycle_state") == "reapable":
-            result.append(session)
-    return result
-
-
-def _output_dry_run(
-    project_id: str | None,
-    candidates: list[dict[str, object]],
-) -> None:
-    """Render the dry-run preview of reapable sessions as JSON."""
-    output_json(
-        {
-            "project_id": project_id,
-            "dry_run": True,
-            "reapable_count": len(candidates),
-            "reapable_sessions": [_reapable_session_payload(session) for session in candidates],
-        }
-    )
 
 
 @app.command("reap")
@@ -800,7 +673,7 @@ def reap_sessions(
     target_project_id = project_id or getattr(client, "project_id", None)
 
     try:
-        candidates = _reapable_sessions(
+        candidates = _Reaper.reapable(
             _list_all_active_sessions(client, project_id=target_project_id)
         )
     except APIError as e:
@@ -808,10 +681,10 @@ def reap_sessions(
         return
 
     if dry_run:
-        _output_dry_run(target_project_id, candidates)
+        _Reaper.output_dry_run(target_project_id, candidates)
         return
 
-    closed, failed = _close_reapable_sessions(client, candidates)
+    closed, failed = _Reaper.close(client, candidates)
 
     output_json(
         {
