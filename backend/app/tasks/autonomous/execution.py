@@ -22,12 +22,12 @@ from .exec_modules.checkout import (
 from .exec_modules.checkout import (
     get_checkout_health_failure as _get_checkout_health_failure,
 )
-from .exec_modules.quality import (
+from .exec_modules.pristine import (
     PristineCheckError,
     check_pristine_codebase,
     pristine_self_heal,
 )
-from .exec_modules.quality import (
+from .exec_modules.quality_utils import (
     parse_error_count as _parse_error_count,
 )
 from .exec_modules.subtask_executor import execute_subtask as _execute_subtask
