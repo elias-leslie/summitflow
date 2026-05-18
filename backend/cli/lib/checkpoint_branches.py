@@ -198,14 +198,37 @@ def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None =
 
 
 def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
-    """No-op. Task work is committed direct to main via st commit; nothing to merge.
+    """Merge legacy task branch into base, then delete it."""
+    meta = load_snapshot_meta(task_id)
+    resolved_project_id = project_id or (meta.project_id if meta else None)
+    repo_cwd = _get_repo_cwd(resolved_project_id)
+    base_branch = normalize_base_branch(meta.base_branch if meta else "main", repo_cwd)
+    branch_name = resolve_task_branch(task_id, project_id=resolved_project_id)
+    current = _get_current_branch(repo_cwd)
 
-    Returns True so existing callers (done_task) treat the closeout as
-    "code already on base branch" and proceed to status finalize + publish +
-    snapshot cleanup. Legacy task-XXX branches from before the cutover are
-    cleaned up by `st migrate-branches`.
-    """
-    del task_id, project_id
+    if current != base_branch:
+        _checkout_branch(base_branch, repo_cwd)
+
+    try:
+        _run_git(["git", "merge", "--no-ff", branch_name, "-m", f"Merge task {task_id}"], repo_cwd)
+    except subprocess.CalledProcessError as exc:
+        conflicts = _merge_conflict_paths(exc, repo_cwd)
+        _record_task_merge_conflict(task_id, branch_name, base_branch, conflicts, _merge_failure_output(exc))
+        _abort_merge(repo_cwd)
+        print(
+            _format_merge_failure(
+                branch_name,
+                exc,
+                repo_cwd,
+                recovery=f"st git resolve-conflict {task_id}",
+                conflicts=conflicts,
+            ),
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    with contextlib.suppress(subprocess.CalledProcessError):
+        _run_git(["git", "branch", "-D", branch_name], repo_cwd)
     return True
 
 
