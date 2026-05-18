@@ -12,7 +12,6 @@ import typer
 
 from ..client import APIError, STClient
 from ..lib.checkpoint import get_snapshot_info
-from ..lib.checkpoint_branches import merge_subtask_branch
 from ..output import output_error
 from .done_git import is_working_tree_clean
 from .done_validators import parse_db_error
@@ -35,10 +34,9 @@ def _close_subtask(
     task_id: str,
     subtask_id: str,
     project_id: str | None,
-    *,
-    merge_branch: bool = True,
 ) -> None:
-    """Close subtask and merge its branch if needed."""
+    """Close subtask via API."""
+    del project_id
     try:
         client.update_subtask(task_id, subtask_id, passes=True)
     except APIError as e:
@@ -52,22 +50,11 @@ def _close_subtask(
             output_error(f"Failed to close subtask {subtask_id}: {e.detail}")
         raise typer.Exit(1) from None
 
-    if not merge_branch:
-        return
-
-    try:
-        merge_subtask_branch(task_id, subtask_id, project_id=project_id)
-    except SystemExit:
-        output_error(f"Subtask {subtask_id} merge failed. Resolve conflicts manually.")
-        raise typer.Exit(1) from None
-
 
 def auto_close_subtasks(
     client: STClient,
     task_id: str,
     project_id: str | None,
-    *,
-    merge_branches: bool = True,
 ) -> None:
     """Auto-close all unpassed subtasks in dependency order."""
     subtasks_resp = client.get_subtasks(task_id)
@@ -103,7 +90,7 @@ def auto_close_subtasks(
                 "citations_acknowledged"
             )
             _acknowledge_citations(client, task_id, str(subtask_id), citations_status)
-            _close_subtask(client, task_id, str(subtask_id), project_id, merge_branch=merge_branches)
+            _close_subtask(client, task_id, str(subtask_id), project_id)
             passed_ids.add(str(subtask_id))
             progressed = True
         if not progressed:
@@ -146,15 +133,6 @@ def _update_subtask_status(
             output_error(helpful)
         else:
             output_error(f"Failed to complete subtask: {e.detail}")
-        raise typer.Exit(1) from None
-
-
-def _merge_subtask(task_id: str, subtask_id: str, project_id: str | None) -> None:
-    """Merge subtask branch."""
-    try:
-        merge_subtask_branch(task_id, subtask_id, project_id=project_id)
-    except SystemExit:
-        output_error("Merge failed. Resolve conflicts manually, then retry.")
         raise typer.Exit(1) from None
 
 
@@ -214,15 +192,14 @@ def complete_subtask(
         }
 
     _validate_working_tree_clean()
-    project_id = _get_project_id(task_id)
+    _get_project_id(task_id)
 
     _resolve_citations_for_subtask(client, task_id, subtask_id, citations, acknowledge_none)
     _update_subtask_status(client, task_id, subtask_id)
-    _merge_subtask(task_id, subtask_id, project_id)
 
     return {
         "task_id": task_id,
         "subtask_id": subtask_id,
         "action": "completed",
-        "merged": True,
+        "merged": False,
     }

@@ -216,7 +216,6 @@ class TestPublishBeforeCleanup:
             patch.object(done_task, "_task_branch_touched_frontend", return_value=False),
             patch.object(done_task, "_run_diff_gate"),
             patch.object(done_task, "_run_smart_prereqs"),
-            patch.object(done_task, "merge_task_branch"),
             patch.object(done_task, "_finalize_completed_task_status", return_value=False),
             patch.object(
                 done_task, "_publish_completed_work",
@@ -248,7 +247,6 @@ class TestPublishBeforeCleanup:
             patch.object(done_task, "_task_branch_touched_frontend", return_value=False),
             patch.object(done_task, "_run_diff_gate"),
             patch.object(done_task, "_run_smart_prereqs"),
-            patch.object(done_task, "merge_task_branch"),
             patch.object(done_task, "_finalize_completed_task_status", return_value=False),
             patch.object(
                 done_task, "_publish_completed_work",

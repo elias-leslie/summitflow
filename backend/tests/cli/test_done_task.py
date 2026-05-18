@@ -151,7 +151,7 @@ def test_complete_task_missing_checkpoint_active_task_closes_after_pushed_commit
         head_ref="task/task-789",
         base_ref="main",
     )
-    mock_prereqs.assert_called_once_with(client, "task-789", "summitflow", merge_subtask_branches=False)
+    mock_prereqs.assert_called_once_with(client, "task-789", "summitflow")
     mock_publish.assert_called_once_with("task-789", "summitflow")
     client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
     assert result["merged"] is False
@@ -207,7 +207,7 @@ def test_complete_task_missing_checkpoint_active_task_auto_commits_dirty_work() 
     mock_log.assert_called_once()
     assert mock_log.call_args.args[0] == "task-789"
     client.export_task_data.assert_called_once_with("task-789")
-    mock_prereqs.assert_called_once_with(client, "task-789", "summitflow", merge_subtask_branches=False)
+    mock_prereqs.assert_called_once_with(client, "task-789", "summitflow")
     mock_publish.assert_called_once_with("task-789", "summitflow")
     client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
     assert result["merged"] is False
@@ -256,7 +256,7 @@ def test_complete_task_missing_checkpoint_active_task_commits_combined_dirty_che
     assert mock_commit.call_args.kwargs["push"] is True
     mock_log.assert_called_once()
     assert mock_log.call_args.args[0] == "task-789"
-    mock_prereqs.assert_called_once_with(client, "task-789", "summitflow", merge_subtask_branches=False)
+    mock_prereqs.assert_called_once_with(client, "task-789", "summitflow")
     mock_publish.assert_called_once_with("task-789", "summitflow")
     client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
     assert result["merged"] is False
