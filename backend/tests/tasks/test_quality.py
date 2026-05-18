@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from app.tasks.autonomous.exec_modules.quality_gates import (
+from app.tasks.autonomous.exec_modules.quality import (
     _run_gate_subprocess,
     build_final_quality_gate_command,
     run_final_quality_gate,
@@ -13,7 +13,7 @@ from app.tasks.autonomous.exec_modules.quality_gates import (
 
 def test_final_quality_gate_command_scopes_configured_aggregate_check() -> None:
     with patch(
-        "app.tasks.autonomous.exec_modules.quality_gates.build_st_check_command",
+        "app.tasks.autonomous.exec_modules.quality.build_st_check_command",
         return_value=["st", "check", "--quick"],
     ):
         assert build_final_quality_gate_command("st", "summitflow") == [
@@ -28,7 +28,7 @@ def test_final_quality_gate_command_scopes_configured_aggregate_check() -> None:
 
 def test_final_quality_gate_command_preserves_explicit_tool_config() -> None:
     with patch(
-        "app.tasks.autonomous.exec_modules.quality_gates.build_st_check_command",
+        "app.tasks.autonomous.exec_modules.quality.build_st_check_command",
         return_value=["st", "check", "ruff"],
     ):
         assert build_final_quality_gate_command("st", "summitflow") == [
@@ -40,9 +40,9 @@ def test_final_quality_gate_command_preserves_explicit_tool_config() -> None:
         ]
 
 
-@patch("app.tasks.autonomous.exec_modules.quality_gates._run_gate_subprocess")
-@patch("app.tasks.autonomous.exec_modules.quality_gates._emit_gate_start")
-@patch("app.tasks.autonomous.exec_modules.quality_gates.find_check_tool")
+@patch("app.tasks.autonomous.exec_modules.quality._run_gate_subprocess")
+@patch("app.tasks.autonomous.exec_modules.quality._emit_gate_start")
+@patch("app.tasks.autonomous.exec_modules.quality.find_check_tool")
 def test_run_final_quality_gate_uses_configured_closeout(
     mock_find: MagicMock,
     _mock_emit: MagicMock,
@@ -52,7 +52,7 @@ def test_run_final_quality_gate_uses_configured_closeout(
     mock_run.return_value = True
 
     with patch(
-        "app.tasks.autonomous.exec_modules.quality_gates.build_st_check_command",
+        "app.tasks.autonomous.exec_modules.quality.build_st_check_command",
         return_value=["st", "check", "--quick"],
     ):
         assert run_final_quality_gate("task-1", "/workspace/project", "summitflow") is True
@@ -65,9 +65,9 @@ def test_run_final_quality_gate_uses_configured_closeout(
     )
 
 
-@patch("app.tasks.autonomous.exec_modules.quality_gates.emit_log")
-@patch("app.tasks.autonomous.exec_modules.quality_gates._task_changed_files")
-@patch("app.tasks.autonomous.exec_modules.quality_gates.subprocess.run")
+@patch("app.tasks.autonomous.exec_modules.quality.emit_log")
+@patch("app.tasks.autonomous.exec_modules.quality._task_changed_files")
+@patch("app.tasks.autonomous.exec_modules.quality.subprocess.run")
 def test_run_gate_subprocess_passes_committed_task_file_scope(
     mock_run: MagicMock,
     mock_changed_files: MagicMock,

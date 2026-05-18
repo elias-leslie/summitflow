@@ -16,7 +16,7 @@ from .completion_status import (
 )
 from .diff_gate import check_diff_gate
 from .events import emit_error, emit_log
-from .quality_gate import run_quality_gate
+from .quality import run_quality_gate
 
 _TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled", "abandoned", "closed"}
 
