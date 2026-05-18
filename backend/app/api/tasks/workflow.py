@@ -13,7 +13,9 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel
 
+from ...logging_config import get_logger
 from ...services.task_continuity import build_continuity
 from ...services.task_execution_readiness import (
     assess_task_execution_readiness,
@@ -21,16 +23,70 @@ from ...services.task_execution_readiness import (
 )
 from ...services.task_lane_preflight import check_task_lane_conflicts
 from ...storage import task_dependencies as dep_store
+from ...storage import tasks as task_store
 from ...storage.events import get_events_by_trace
 from ...storage.subtasks import get_subtask_summary, get_subtasks_for_task
-from ...storage.task_spirit import get_task_spirit
+from ...storage.task_spirit import approve_plan, create_task_spirit, get_task_spirit
 from .helpers import get_task_or_404, verify_task_project
-from .workflow_approval import approve_task_plan_impl
 from .workflow_export import build_export_data
 from .workflow_formatters import build_context_json, format_logs_toon, format_toon_context
-from .workflow_models import PlanApproveRequest, PlanApproveResponse
 
+logger = get_logger(__name__)
 router = APIRouter()
+
+
+# --- Models ---
+
+
+class PlanApproveRequest(BaseModel):
+    """Request body for plan approval."""
+
+    approved_by: str = "user"
+    notes: str | None = None
+
+
+class PlanApproveResponse(BaseModel):
+    """Response for plan approval."""
+
+    task_id: str
+    plan_status: str
+    plan_approved_at: str | None
+    plan_approved_by: str | None
+    message: str
+
+
+# --- Approval impl ---
+
+
+def approve_task_plan_impl(task_id: str, approved_by: str, notes: str | None) -> dict[str, Any]:
+    """Approve task plan, creating task_spirit if needed.
+
+    Args:
+        task_id: Task ID
+        approved_by: User who approved the plan
+        notes: Optional approval notes
+
+    Returns:
+        Approval result with plan_status, plan_approved_at, plan_approved_by
+
+    Raises:
+        RuntimeError: If approval fails
+    """
+    result = approve_plan(task_id, approved_by=approved_by, notes=notes)
+
+    if not result:
+        try:
+            task_data = task_store.get_task(task_id)
+            if task_data:
+                create_task_spirit(task_id=task_id)
+                result = approve_plan(task_id, approved_by=approved_by, notes=notes)
+        except Exception as e:
+            logger.warning("Failed to create task_spirit for approval: %s", e)
+
+    if not result:
+        raise RuntimeError(f"Failed to approve plan for task {task_id}")
+
+    return result
 
 
 # Endpoints

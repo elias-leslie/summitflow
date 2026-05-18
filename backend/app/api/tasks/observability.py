@@ -9,33 +9,224 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from fastapi import APIRouter, Query
+import httpx
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from ...logging_config import get_logger
+from ...services._agent_hub_config import (
+    AGENT_HUB_URL,
+    SUMMITFLOW_CLIENT_ID,
+    build_agent_hub_headers,
+)
 from ...storage.events import get_events_by_trace
 from ...storage.tasks.core import add_agent_hub_session, get_agent_hub_sessions
-
-# Re-export helpers so existing patch targets (tests) remain valid
-from ._observability_helpers import (  # noqa: F401
-    DEFAULT_REQUEST_SOURCE,
-    EMPTY_SESSION_RESULT,
-    HTTP_TIMEOUT,
-    _fetch_session_events,
-    _fetch_session_summary,
-    _fetch_task_sessions_by_external_id,
-    _infer_session_task_id,
-)
-from ._observability_models import (
-    AgentHubEvent,
-    AgentHubEventsResponse,
-    AgentHubLiveActivity,
-    AgentHubSessionSummary,
-)
 from .helpers import verify_task_project
 
 logger = get_logger(__name__)
 router = APIRouter()
 _SESSION_STARTED_RE = re.compile(r"Agent session started:\s+([A-Za-z0-9][A-Za-z0-9_-]{2,120})")
+
+
+# --- Models ---
+
+
+class AgentHubEvent(BaseModel):
+    """Single event from Agent Hub session."""
+
+    id: str
+    session_id: str | None = None
+    session_index: int = 0
+    turn: int
+    sequence: int
+    event_type: str
+    role: str | None = None
+    content: str | None = None
+    tool_name: str | None = None
+    tool_input: dict[str, Any] | None = None
+    tool_output: dict[str, Any] | None = None
+    tokens: int | None = None
+    duration_ms: int | None = None
+    model_used: str | None = None
+    agent_id: str | None = None
+    agent_name: str | None = None
+    created_at: str
+
+
+class AgentHubLiveActivity(BaseModel):
+    """Live execution state mirrored from Agent Hub session responses."""
+
+    phase: str
+    status: str
+    summary: str | None = None
+    health: str
+    stalled: bool = False
+    stall_reason: str | None = None
+    quiet_for_seconds: int | None = None
+    current_tool_name: str | None = None
+    last_tool_name: str | None = None
+    last_read_path: str | None = None
+    last_write_path: str | None = None
+    last_command: str | None = None
+    last_validation_command: str | None = None
+    last_command_exit_code: int | None = None
+    outstanding_tool_calls: int = 0
+    tool_calls_count: int = 0
+    termination_reason: str | None = None
+    files_touched: list[str] = Field(default_factory=list)
+
+
+class AgentHubSessionSummary(BaseModel):
+    """Task-linked Agent Hub session summary."""
+
+    id: str
+    status: str
+    agent_slug: str | None = None
+    requested_model: str | None = None
+    effective_model: str | None = None
+    requested_provider: str | None = None
+    effective_provider: str | None = None
+    fallback_used: bool = False
+    fallback_reason: str | None = None
+    updated_at: str
+    live_activity: AgentHubLiveActivity | None = None
+
+
+class AgentHubEventsResponse(BaseModel):
+    """Response containing Agent Hub events for a task."""
+
+    task_id: str
+    session_ids: list[str]
+    sessions: list[AgentHubSessionSummary]
+    events: list[AgentHubEvent]
+    total: int
+    max_turn: int
+
+
+# --- Agent Hub HTTP helpers ---
+
+DEFAULT_REQUEST_SOURCE = "summitflow-observability"
+HTTP_TIMEOUT = 30.0
+EMPTY_SESSION_RESULT: dict[str, Any] = {"events": [], "total": 0, "max_turn": 0}
+
+
+def _get_client_id() -> str:
+    """Get Agent Hub client ID from centralized config."""
+    if not SUMMITFLOW_CLIENT_ID:
+        raise HTTPException(status_code=500, detail="Missing SUMMITFLOW_CLIENT_ID credential for Agent Hub")
+    return SUMMITFLOW_CLIENT_ID
+
+
+def _build_headers() -> dict[str, str]:
+    return build_agent_hub_headers(
+        client_id=_get_client_id(),
+        default_request_source=DEFAULT_REQUEST_SOURCE,
+    )
+
+
+def _fetch_session_events(
+    session_id: str,
+    event_type: str | None = None,
+    turn: int | None = None,
+    page: int = 1,
+    page_size: int = 500,
+) -> dict[str, Any]:
+    """Fetch events from Agent Hub for a single session."""
+    params: dict[str, Any] = {"page": page, "page_size": page_size}
+    if event_type:
+        params["event_type"] = event_type
+    if turn is not None:
+        params["turn"] = turn
+    url = f"{AGENT_HUB_URL}/api/sessions/{session_id}/events"
+    try:
+        with httpx.Client(timeout=HTTP_TIMEOUT) as client:
+            response = client.get(url, headers=_build_headers(), params=params)
+        if response.status_code == 404:
+            return EMPTY_SESSION_RESULT
+        if response.status_code >= 400:
+            logger.warning("Agent Hub API error", session_id=session_id, status=response.status_code, detail=response.text[:200])
+            return EMPTY_SESSION_RESULT
+        return dict(response.json())
+    except httpx.ConnectError:
+        logger.warning("Cannot connect to Agent Hub", url=AGENT_HUB_URL)
+        return EMPTY_SESSION_RESULT
+    except Exception as e:
+        logger.error("Failed to fetch Agent Hub events", error=str(e))
+        return EMPTY_SESSION_RESULT
+
+
+def _fetch_session_summary(session_id: str) -> dict[str, Any] | None:
+    """Fetch a single Agent Hub session summary."""
+    url = f"{AGENT_HUB_URL}/api/sessions/{session_id}"
+    try:
+        with httpx.Client(timeout=HTTP_TIMEOUT) as client:
+            response = client.get(url, headers=_build_headers())
+        if response.status_code == 404:
+            return None
+        if response.status_code >= 400:
+            logger.warning("Agent Hub session API error", session_id=session_id, status=response.status_code, detail=response.text[:200])
+            return None
+        return dict(response.json())
+    except httpx.ConnectError:
+        logger.warning("Cannot connect to Agent Hub", url=AGENT_HUB_URL)
+        return None
+    except Exception as e:
+        logger.error("Failed to fetch Agent Hub session summary", error=str(e))
+        return None
+
+
+def _infer_session_task_id(session: dict[str, Any]) -> str | None:
+    external_id = session.get("external_id")
+    if isinstance(external_id, str) and external_id.startswith("task-"):
+        return external_id
+    return None
+
+
+def _fetch_task_sessions_by_external_id(
+    project_id: str,
+    task_id: str,
+    page_size: int = 100,
+) -> list[dict[str, Any]]:
+    """Fetch Agent Hub sessions linked to a task by explicit external_id.
+
+    Branch/path inference can attach unrelated operator sessions after a checkout
+    switches to a task branch, so only Agent Hub's explicit external_id link is
+    used here.
+    """
+    url = f"{AGENT_HUB_URL}/api/sessions"
+    params = {
+        "project_id": project_id,
+        "external_id": task_id,
+        "page": 1,
+        "page_size": page_size,
+    }
+    try:
+        with httpx.Client(timeout=HTTP_TIMEOUT) as client:
+            response = client.get(url, headers=_build_headers(), params=params)
+        if response.status_code >= 400:
+            logger.warning("Agent Hub session list API error", task_id=task_id, project_id=project_id, status=response.status_code, detail=response.text[:200])
+            return []
+        raw_sessions = dict(response.json()).get("sessions", [])
+        if not isinstance(raw_sessions, list):
+            return []
+        sessions = [dict(s) for s in raw_sessions if isinstance(s, dict)]
+    except httpx.ConnectError:
+        logger.warning("Cannot connect to Agent Hub", url=AGENT_HUB_URL)
+        return []
+    except Exception as e:
+        logger.error("Failed to fetch Agent Hub sessions by external_id", error=str(e))
+        return []
+
+    linked: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for session in sessions:
+        session_id = session.get("id")
+        if _infer_session_task_id(session) != task_id or not isinstance(session_id, str) or not session_id:
+            continue
+        if session_id not in seen:
+            seen.add(session_id)
+            linked.append(session)
+    return linked
 
 
 def _build_session_summary(session: dict[str, Any]) -> AgentHubSessionSummary:
