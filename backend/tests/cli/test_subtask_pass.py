@@ -106,6 +106,8 @@ class TestDoneSubtaskCompletion:
 
         with (
             patch("cli.commands.done_subtask._validate_working_tree_clean"),
+            patch("cli.commands.done_subtask._get_project_id", return_value=None),
+            patch("cli.commands.done_subtask._merge_subtask"),
             pytest.raises(typer.Exit) as exc_info,
         ):
             complete_subtask(client, "1.2", "task-1", acknowledge_none=True)

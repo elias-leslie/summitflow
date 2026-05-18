@@ -531,6 +531,34 @@ def _run_selected(
     return int(failures != 0)
 
 
+def _selected_tool_args(
+    name: str,
+    root: Path,
+    cwd: Path,
+    config: dict[str, Any],
+    changed_only: bool,
+    fix: bool,
+    args: list[str],
+) -> tuple[list[str], bool]:
+    stripped = args[1:]
+    explicit_args = _normalize_explicit_args(root, cwd, stripped)
+    changed_files = _changed_files(root) if changed_only else []
+    scoped_args = [] if explicit_args else _changed_args(name, root, cwd, config, changed_files)
+    skip_reason = _skip_reason(
+        name,
+        config,
+        changed_only=changed_only,
+        changed_files=changed_files,
+        scoped_args=scoped_args,
+        explicit_args=bool(explicit_args),
+    )
+    if skip_reason:
+        label = config.get("label") or name.upper()
+        print(f"{label!s}:SKIP:{name}:{skip_reason}")
+        return [], True
+    return [*explicit_args, *scoped_args, *(_FIX_ARGS.get(name, []) if fix else [])], False
+
+
 def _run_named_tool(
     first: str,
     args: list[str],
@@ -546,22 +574,9 @@ def _run_named_tool(
     root = _resolve_repo_root()
     config = configs[first]
     cwd = _workdir(root, config)
-    explicit_args = _normalize_explicit_args(root, cwd, args[1:])
-    changed_files = _changed_files(root) if changed_only else []
-    scoped_args = [] if explicit_args else _changed_args(first, root, cwd, config, changed_files)
-    skip_reason = _skip_reason(
-        first,
-        config,
-        changed_only=changed_only,
-        changed_files=changed_files,
-        scoped_args=scoped_args,
-        explicit_args=bool(explicit_args),
-    )
-    if skip_reason:
-        label = config.get("label") or first.upper()
-        print(f"{label!s}:SKIP:{first}:{skip_reason}")
+    extra_args, skipped = _selected_tool_args(first, root, cwd, config, changed_only, fix, args)
+    if skipped:
         return 0
-    extra_args = [*explicit_args, *scoped_args, *(_FIX_ARGS.get(first, []) if fix else [])]
     return _run_tool(first, config, extra_args)
 
 
