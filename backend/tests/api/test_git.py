@@ -37,7 +37,6 @@ class TestGitStatus:
                 active_checkpoints=1,
                 dirty_checkpoints=1,
                 branches_with_checkpoints=1,
-                task_branches=2,
                 orphan_branches=1,
                 prunable_branches=1,
                 needs_cleanup=True,
@@ -213,14 +212,12 @@ class TestProjectDashboard:
             return_value=[
                 CheckpointInfo(
                     task_id="task-1",
-                    branch="task-1/main",
                     base_branch="main",
                     is_active=True,
                     project_id="project-123",
                 ),
                 CheckpointInfo(
                     task_id="task-2",
-                    branch="task-2/main",
                     base_branch="main",
                     is_active=True,
                     project_id="other-project",
@@ -303,7 +300,6 @@ class TestProjectDashboard:
                     task_title="Resolve merge",
                     project_id="project-123",
                     conflicting_files=["backend/app/api/git.py"],
-                    task_branch="task-9/main",
                     base_branch="main",
                     detected_at="2026-03-17T12:00:00Z",
                 ),

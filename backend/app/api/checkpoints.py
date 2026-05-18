@@ -17,10 +17,9 @@ from .checkpoint_helpers import (
     find_checkpoint_in_all_projects,
     get_project_checkpoints,
 )
-from .checkpoint_models import BranchInfo, CheckpointResponse, CheckpointsListResponse
+from .checkpoint_models import CheckpointResponse, CheckpointsListResponse
 
 __all__ = [
-    "BranchInfo",
     "CheckpointResponse",
     "CheckpointsListResponse",
     "router",

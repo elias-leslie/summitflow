@@ -9,13 +9,12 @@ from ..models.git_models import CheckpointInfo, SnapshotInfo
 
 
 def collect_checkpoints() -> list[CheckpointInfo]:
-    """Collect active checkpoint branches from the CLI checkpoint registry."""
+    """Collect active checkpoint metadata from the CLI checkpoint registry."""
     from cli.lib.checkpoint import get_active_checkpoints
 
     return [
         CheckpointInfo(
             task_id=checkpoint.task_id,
-            branch=f"{checkpoint.task_id}/main",
             base_branch=checkpoint.base_branch,
             is_active=True,
             project_id=checkpoint.project_id,

@@ -285,7 +285,6 @@ def build_conflicts_response(project_id: str | None = None) -> list[ConflictInfo
             task_title=row["title"] or "",
             project_id=row["project_id"] or "",
             conflicting_files=ci.get("conflicting_files", []),
-            task_branch=ci.get("task_branch", ""),
             base_branch=ci.get("base_branch", "main"),
             detected_at=ci.get("detected_at", ""),
             error_output=ci.get("error_output"),

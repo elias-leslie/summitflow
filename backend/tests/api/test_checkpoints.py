@@ -76,8 +76,7 @@ def test_get_project_checkpoints_reads_canonical_active_metadata(
     checkpoints = get_project_checkpoints("summitflow")
 
     assert [checkpoint["task_id"] for checkpoint in checkpoints] == ["task-live"]
-    assert checkpoints[0]["task_branch"] == "task-live/main"
-    assert checkpoints[0]["branches"][0]["branch"] == "task-live/main"
+    assert checkpoints[0]["base_branch"] == "main"
 
 
 def test_list_checkpoints_endpoint_omits_stale_metadata(mocker: MockerFixture) -> None:
@@ -87,12 +86,10 @@ def test_list_checkpoints_endpoint_omits_stale_metadata(mocker: MockerFixture) -
             {
                 "task_id": "task-live",
                 "project_id": "summitflow",
-                "task_branch": "task-live/main",
                 "base_branch": "main",
                 "created_at": "2026-03-24T06:00:00+00:00",
                 "claimed_by": "Test",
                 "age": "1h ago",
-                "branches": [{"branch": "task-live/main", "subtask_id": "", "type": "task"}],
             }
         ],
     )

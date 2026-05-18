@@ -390,7 +390,6 @@ def build_repo_workspace_summary(
         dirty_checkpoints=1 if dirty_checkpoint else 0,
         dirty_main_repo=dirty_main_repo,
         branches_with_checkpoints=sum(1 for branch in task_branches if branch.has_checkpoint),
-        task_branches=len(task_branches),
         orphan_branches=len(orphan_branches),
         prunable_branches=len(prunable_branches),
         needs_cleanup=bool(

@@ -6,9 +6,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from cli.lib.checkpoint import SnapshotMeta, get_active_checkpoints
-from cli.lib.checkpoint_branches import get_task_branches
 
-from .checkpoint_models import BranchInfo, CheckpointResponse
+from .checkpoint_models import CheckpointResponse
 
 
 def _format_age(created_at: str) -> str:
@@ -32,12 +31,10 @@ def _serialize_checkpoint(meta: SnapshotMeta) -> dict[str, Any]:
     return {
         "task_id": meta.task_id,
         "project_id": meta.project_id,
-        "task_branch": f"{meta.task_id}/main",
         "base_branch": meta.base_branch,
         "created_at": meta.created_at,
         "claimed_by": meta.claimed_by,
         "age": _format_age(meta.created_at),
-        "branches": get_task_branches(meta.task_id, project_id=meta.project_id),
     }
 
 
@@ -46,12 +43,10 @@ def _build_response(info: dict[str, Any]) -> CheckpointResponse:
     return CheckpointResponse(
         task_id=info["task_id"],
         project_id=info["project_id"],
-        task_branch=info["task_branch"],
         base_branch=info["base_branch"],
         created_at=info["created_at"],
         claimed_by=info["claimed_by"],
         age=info["age"],
-        branches=[BranchInfo(**b) for b in info.get("branches", [])],
     )
 
 

@@ -39,7 +39,6 @@ class RepoWorkspaceSummary(BaseModel):
     dirty_checkpoints: int = 0
     dirty_main_repo: bool = False
     branches_with_checkpoints: int = 0
-    task_branches: int = 0
     orphan_branches: int = 0
     prunable_branches: int = 0
     needs_cleanup: bool = False
@@ -82,7 +81,6 @@ class CheckpointInfo(BaseModel):
     """Information about an active task checkpoint."""
 
     task_id: str
-    branch: str
     base_branch: str
     is_active: bool
     project_id: str | None = None
@@ -131,7 +129,6 @@ class ConflictInfo(BaseModel):
     task_title: str
     project_id: str
     conflicting_files: list[str]
-    task_branch: str
     base_branch: str
     detected_at: str
     error_output: str | None = None
