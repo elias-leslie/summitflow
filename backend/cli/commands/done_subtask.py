@@ -1,7 +1,7 @@
 """Subtask completion logic for done command.
 
-Handles subtask completion with git branch merging.
-Steps layer removed — subtasks complete when the completion gate passes.
+Subtasks complete when the completion gate passes; work has already been
+committed to main with file-level coordination via `st lease`.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ import contextlib
 import typer
 
 from ..client import APIError, STClient
-from ..lib.checkpoint import get_snapshot_info, merge_subtask_branch
+from ..lib.checkpoint import get_snapshot_info
 from ..output import output_error
 from .done_git import is_working_tree_clean
 from .done_validators import parse_db_error
@@ -34,10 +34,9 @@ def _close_subtask(
     task_id: str,
     subtask_id: str,
     project_id: str | None,
-    *,
-    merge_branch: bool = True,
 ) -> None:
-    """Close subtask and merge its branch."""
+    """Close subtask via API."""
+    del project_id
     try:
         client.update_subtask(task_id, subtask_id, passes=True)
     except APIError as e:
@@ -51,29 +50,13 @@ def _close_subtask(
             output_error(f"Failed to close subtask {subtask_id}: {e.detail}")
         raise typer.Exit(1) from None
 
-    if not merge_branch:
-        return
-
-    try:
-        merge_subtask_branch(task_id, subtask_id, project_id=project_id)
-    except SystemExit:
-        output_error(f"Subtask {subtask_id} merge failed. Resolve conflicts manually.")
-        raise typer.Exit(1) from None
-
 
 def auto_close_subtasks(
     client: STClient,
     task_id: str,
     project_id: str | None,
-    *,
-    merge_branches: bool = True,
 ) -> None:
-    """Auto-close all unpassed subtasks and merge their branches.
-
-    For each subtask not yet passed:
-    1. Acknowledge citations if not already done
-    2. Close the subtask and merge its branch
-    """
+    """Auto-close all unpassed subtasks in dependency order."""
     subtasks_resp = client.get_subtasks(task_id)
     subtasks = subtasks_resp.get("subtasks", [])
     all_ids = {
@@ -107,7 +90,7 @@ def auto_close_subtasks(
                 "citations_acknowledged"
             )
             _acknowledge_citations(client, task_id, str(subtask_id), citations_status)
-            _close_subtask(client, task_id, str(subtask_id), project_id, merge_branch=merge_branches)
+            _close_subtask(client, task_id, str(subtask_id), project_id)
             passed_ids.add(str(subtask_id))
             progressed = True
         if not progressed:
@@ -153,19 +136,6 @@ def _update_subtask_status(
         raise typer.Exit(1) from None
 
 
-def _merge_subtask(
-    task_id: str,
-    subtask_id: str,
-    project_id: str | None,
-) -> None:
-    """Merge subtask branch."""
-    try:
-        merge_subtask_branch(task_id, subtask_id, project_id=project_id)
-    except SystemExit:
-        output_error("Merge failed. Resolve conflicts manually, then retry.")
-        raise typer.Exit(1) from None
-
-
 def _resolve_citations_for_subtask(
     client: STClient,
     task_id: str,
@@ -203,10 +173,11 @@ def complete_subtask(
     citations: list[str] | None = None,
     acknowledge_none: bool = False,
 ) -> dict[str, str | bool]:
-    """Complete a subtask with git branch merge.
+    """Complete a subtask.
 
     Already-passed subtasks return a `resumed` no-op (idempotent close).
     """
+    del message
     subtasks = client.get_subtasks(task_id).get("subtasks", [])
     already_passed = any(
         (str(sub.get("subtask_id") or sub.get("id")) == subtask_id) and sub.get("passes") is True
@@ -221,15 +192,14 @@ def complete_subtask(
         }
 
     _validate_working_tree_clean()
-    project_id = _get_project_id(task_id)
+    _get_project_id(task_id)
 
     _resolve_citations_for_subtask(client, task_id, subtask_id, citations, acknowledge_none)
     _update_subtask_status(client, task_id, subtask_id)
-    _merge_subtask(task_id, subtask_id, project_id)
 
     return {
         "task_id": task_id,
         "subtask_id": subtask_id,
         "action": "completed",
-        "merged": True,
+        "merged": False,
     }

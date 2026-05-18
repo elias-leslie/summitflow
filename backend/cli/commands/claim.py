@@ -14,7 +14,6 @@ from app.storage.tasks import canonicalize_task_id
 
 from ..client import APIError, STClient
 from ..lib.checkpoint import (
-    create_subtask_branch,
     create_task_snapshot,
     get_snapshot_info,
     remove_snapshot,
@@ -172,9 +171,10 @@ def _claim_subtask(
     subtask_id: str,
     task_id: str,
 ) -> dict[str, Any]:
-    """Claim a subtask with git branch creation.
+    """Claim a subtask.
 
-    Parent task must be claimed first.
+    Parent task must be claimed first. No branch is created; subtask work
+    commits direct to main with file-level coordination via `st lease`.
     """
     task_id = canonicalize_task_id(task_id)
     task = client.get_task(task_id)
@@ -188,13 +188,12 @@ def _claim_subtask(
         raise typer.Exit(1)
 
     require_claim_safe_tree()
-    branch_name = create_subtask_branch(task_id, subtask_id)
 
     return {
         "task_id": task_id,
         "subtask_id": subtask_id,
         "action": "claimed",
-        "branch": branch_name,
+        "branch": f"{task_id}/{subtask_id}",
     }
 
 

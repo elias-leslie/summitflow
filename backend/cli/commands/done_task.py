@@ -17,7 +17,7 @@ from .._client_base import APIError
 from ..client import STClient
 from ..lib.autosnapshot import capture_lifecycle_baseline
 from ..lib.checkpoint import get_snapshot_info, remove_snapshot
-from ..lib.checkpoint_branches import merge_task_branch, resolve_task_branch
+from ..lib.checkpoint_branches import resolve_task_branch
 from ..lib.commit_workflow import CommitError, commit_repo
 from ..output import output_error, output_success, output_warning
 from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
@@ -341,7 +341,6 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
             _run_diff_gate(repo_root, task_id, project_id, base_branch)
         if not strict:
             _run_smart_prereqs(client, task_id, project_id)
-        merge_task_branch(task_id, project_id=project_id)
         _finalize_completed_task_status(client, task_id, message=message)
         # Publish FIRST so a failed publish leaves the snapshot intact for safe retry.
         try:

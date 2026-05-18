@@ -1,21 +1,19 @@
 """Git branch operations for checkpoint system.
 
-Handles creation, merging, and deletion of task and subtask branches.
+Reads and deletes task-family branches left over from the legacy
+branch-checkpoint era. Work commits direct to main; parallel coordination is
+file-level via `st lease`. No branch creation or merge code lives here.
 """
 
 from __future__ import annotations
 
 import contextlib
-import re
 import subprocess
 import sys
-from datetime import UTC, datetime
 
-from app.utils.git_base import current_branch, normalize_base_branch
+from app.utils.git_base import normalize_base_branch
 
 from .checkpoint_metadata import load_snapshot_meta
-
-_CONFLICT_RE = re.compile(r"CONFLICT \([^)]*\): Merge conflict in (.+)")
 
 
 def _run_git(args: list[str], cwd: str | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -31,108 +29,12 @@ def _get_repo_cwd(project_id: str | None) -> str | None:
     return get_project_root_path(project_id)
 
 
-def _checkout_branch(branch: str, cwd: str | None = None) -> None:
-    """Checkout branch with error handling."""
-    try:
-        _run_git(["git", "checkout", branch], cwd=cwd)
-    except subprocess.CalledProcessError as e:
-        print(f"Error: Failed to checkout {branch}: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
-
-
 def _clean_branch_lines(output: str) -> list[str]:
     return [line.strip().lstrip("*+ ") for line in output.splitlines() if line.strip()]
 
 
-def _abort_merge(cwd: str | None = None) -> None:
-    """Abort an in-progress merge to restore clean working tree state."""
-    _run_git(["git", "merge", "--abort"], cwd=cwd, check=False)
-
-
-def _get_current_branch(cwd: str | None = None) -> str:
-    return current_branch(cwd) or ""
-
-
 def _branch_exists(branch: str, cwd: str | None = None) -> bool:
     return _run_git(["git", "rev-parse", "--verify", branch], cwd=cwd, check=False).returncode == 0
-
-
-def _merge_failure_output(error: subprocess.CalledProcessError) -> str:
-    parts = [
-        str(part).strip()
-        for part in (error.stderr, error.stdout)
-        if str(part or "").strip()
-    ]
-    return "\n".join(parts)
-
-
-def _merge_conflict_paths(error: subprocess.CalledProcessError, cwd: str | None) -> list[str]:
-    output = _merge_failure_output(error)
-    paths = [match.group(1).strip() for line in output.splitlines() if (match := _CONFLICT_RE.search(line))]
-    if paths:
-        return list(dict.fromkeys(paths))
-    result = _run_git(["git", "diff", "--name-only", "--diff-filter=U"], cwd=cwd, check=False)
-    if result.returncode != 0:
-        return []
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
-
-
-def _format_merge_failure(
-    branch: str,
-    error: subprocess.CalledProcessError,
-    cwd: str | None,
-    recovery: str,
-    conflicts: list[str] | None = None,
-) -> str:
-    output = _merge_failure_output(error)
-    detail = output or f"git exited {error.returncode}"
-    conflicts = conflicts if conflicts is not None else _merge_conflict_paths(error, cwd)
-    lines = [f"Error: Failed to merge {branch}: {detail}"]
-    if conflicts:
-        shown = ", ".join(conflicts[:10])
-        lines.append(f"Conflicts: {shown}")
-        if len(conflicts) > 10:
-            lines.append(f"Conflicts omitted: {len(conflicts) - 10}")
-    lines.append(f"Recovery: {recovery}")
-    return "\n".join(lines)
-
-
-def _record_task_merge_conflict(
-    task_id: str,
-    task_branch: str,
-    base_branch: str,
-    conflicts: list[str],
-    error_output: str,
-) -> None:
-    if not conflicts:
-        return
-    try:
-        from app.storage import log_task_event
-        from app.storage.tasks.status import update_task_status
-        from app.storage.tasks.update import update_task_fields
-
-        update_task_fields(
-            task_id,
-            conflict_info={
-                "conflicting_files": conflicts,
-                "task_branch": task_branch,
-                "base_branch": base_branch,
-                "detected_at": datetime.now(UTC).isoformat(),
-                "error_output": error_output[:500],
-            },
-        )
-        update_task_status(
-            task_id,
-            "failed",
-            error_message=f"Merge conflict in {len(conflicts)} file(s)",
-            validate_transition=False,
-        )
-        log_task_event(
-            task_id,
-            f"Merge conflict detected in {len(conflicts)} file(s): {', '.join(conflicts[:5])}",
-        )
-    except Exception as exc:
-        print(f"Warning: Failed to record merge conflict metadata: {exc}", file=sys.stderr)
 
 
 def _classify_branch(branch: str) -> dict[str, str]:
@@ -180,58 +82,6 @@ def resolve_task_branch(task_id: str, project_id: str | None = None) -> str:
         None,
     )
     return task_branch or preferred
-
-
-def create_subtask_branch(task_id: str, subtask_id: str) -> str:
-    """No-op. Subtask work commits direct to main; parallel coordination via st lease."""
-    return f"{task_id}/{subtask_id}"
-
-
-def merge_subtask_branch(task_id: str, subtask_id: str, project_id: str | None = None) -> bool:
-    """No-op. Subtask work is committed direct to main via st commit; nothing to merge.
-
-    Returns False to signal "no merge happened" so existing callers handle it
-    as the already-on-main path.
-    """
-    del task_id, subtask_id, project_id
-    return False
-
-
-def merge_task_branch(task_id: str, project_id: str | None = None) -> bool:
-    """Merge legacy task branch into base, then delete it."""
-    meta = load_snapshot_meta(task_id)
-    resolved_project_id = project_id or (meta.project_id if meta else None)
-    repo_cwd = _get_repo_cwd(resolved_project_id)
-    base_branch = normalize_base_branch(meta.base_branch if meta else "main", repo_cwd)
-    branch_name = resolve_task_branch(task_id, project_id=resolved_project_id)
-    if not _branch_exists(branch_name, repo_cwd):
-        return True
-    current = _get_current_branch(repo_cwd)
-
-    if current != base_branch:
-        _checkout_branch(base_branch, repo_cwd)
-
-    try:
-        _run_git(["git", "merge", "--no-ff", branch_name, "-m", f"Merge task {task_id}"], repo_cwd)
-    except subprocess.CalledProcessError as exc:
-        conflicts = _merge_conflict_paths(exc, repo_cwd)
-        _record_task_merge_conflict(task_id, branch_name, base_branch, conflicts, _merge_failure_output(exc))
-        _abort_merge(repo_cwd)
-        print(
-            _format_merge_failure(
-                branch_name,
-                exc,
-                repo_cwd,
-                recovery=f"st git resolve-conflict {task_id}",
-                conflicts=conflicts,
-            ),
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    with contextlib.suppress(subprocess.CalledProcessError):
-        _run_git(["git", "branch", "-D", branch_name], repo_cwd)
-    return True
 
 
 def delete_subtask_branch(task_id: str, subtask_id: str) -> bool:
