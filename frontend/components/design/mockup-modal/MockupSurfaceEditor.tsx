@@ -639,6 +639,24 @@ export function MockupSurfaceEditor({
     [],
   )
 
+  const getSelectedElement = useCallback(
+    () => editorDom.getElementByEditorId(getDoc(), selectedId),
+    [getDoc, selectedId],
+  )
+
+  const getSelectedElements = useCallback(
+    () => editorDom.getElementsByEditorIds(getDoc(), selectedIds),
+    [getDoc, selectedIds],
+  )
+
+  const refreshSelected = useCallback(
+    (id: string | null = selectedId) => {
+      const element = editorDom.getElementByEditorId(getDoc(), id)
+      setSelected(element ? editorDom.selectedStateFromElement(element) : null)
+    },
+    [getDoc, selectedId],
+  )
+
   const selectElement = useCallback(
     (element: HTMLElement | null, additive = false) => {
       const doc = getDoc()
@@ -700,80 +718,48 @@ export function MockupSurfaceEditor({
     const doc = getDoc()
     if (!doc?.body) return
 
-    const handleFrameEvent = (event: Event) => {
-      const target = event.target as HTMLElement | null
-      const isEditableTarget = Boolean(
-        target && target !== doc.body && target !== doc.documentElement,
-      )
+    const isEditableTarget = (
+      target: HTMLElement | null,
+    ): target is HTMLElement =>
+      Boolean(target && target !== doc.body && target !== doc.documentElement)
 
-      if (event.type === 'pointerover') {
-        if (isEditableTarget) target?.classList.add(HOVER_CLASS)
-        return
-      }
-      if (event.type === 'pointerout') {
-        target?.classList.remove(HOVER_CLASS)
-        return
-      }
-      if (event.type === 'pointerup') {
-        dragRef = null
-        const element = editorDom.getElementByEditorId(getDoc(), selectedId)
-        setSelected(
-          element ? editorDom.selectedStateFromElement(element) : null,
-        )
-        return
-      }
-      if (event.type === 'keydown') {
-        const keyEvent = event as KeyboardEvent
-        if (keyEvent.key !== 'Delete' && keyEvent.key !== 'Backspace') return
-        const elements = editorDom.getElementsByEditorIds(getDoc(), selectedIds)
-        if (!elements.length) return
-        keyEvent.preventDefault()
-        elements.forEach((element) => element.remove())
-        selectElement(null)
-        setDirty(true)
-        return
-      }
-      if (event.type === 'pointermove' && dragRef) {
-        const pointerEvent = event as PointerEvent
-        const d = dragRef
-        for (const { element, baseX, baseY } of d.elements) {
-          const x = Math.round(baseX + pointerEvent.clientX - d.startX)
-          const y = Math.round(baseY + pointerEvent.clientY - d.startY)
-          element.dataset.sfOffsetX = String(x)
-          element.dataset.sfOffsetY = String(y)
-          element.style.transform = `translate(${x}px, ${y}px)`
+    const handlers = {
+      onPointerOver(event: PointerEvent) {
+        const target = event.target as HTMLElement | null
+        if (!isEditableTarget(target)) return
+        target.classList.add(HOVER_CLASS)
+      },
+
+      onPointerOut(event: PointerEvent) {
+        const target = event.target as HTMLElement | null
+        if (!target) return
+        target.classList.remove(HOVER_CLASS)
+      },
+
+      onClick(event: MouseEvent) {
+        const target = event.target as HTMLElement | null
+        if (!isEditableTarget(target)) return
+        event.preventDefault()
+        event.stopPropagation()
+        selectElement(target, event.shiftKey || event.metaKey || event.ctrlKey)
+        if (mode === 'note') {
+          setNoteText(target.dataset.sfMockNoteText ?? '')
         }
-        setDirty(true)
-        return
-      }
-      if (!isEditableTarget || !target) return
+      },
 
-      if (event.type === 'click') {
-        const mouseEvent = event as MouseEvent
-        mouseEvent.preventDefault()
-        mouseEvent.stopPropagation()
-        selectElement(
-          target,
-          mouseEvent.shiftKey || mouseEvent.metaKey || mouseEvent.ctrlKey,
-        )
-        if (mode === 'note') setNoteText(target.dataset.sfMockNoteText ?? '')
-        return
-      }
-      if (event.type === 'pointerdown') {
+      onPointerDown(event: PointerEvent) {
         if (mode !== 'move') return
-        const pointerEvent = event as PointerEvent
-        pointerEvent.preventDefault()
-        pointerEvent.stopPropagation()
+        const target = event.target as HTMLElement | null
+        if (!isEditableTarget(target)) return
+        event.preventDefault()
+        event.stopPropagation()
         const targetId = target.dataset.sfEditorId
         if (!targetId) return
         const selectedForDrag: HTMLElement[] =
           selectedIds.includes(targetId) && selectedIds.length > 1
-            ? editorDom.getElementsByEditorIds(getDoc(), selectedIds)
+            ? getSelectedElements()
             : [target]
-        selectElement(
-          target,
-          pointerEvent.shiftKey || pointerEvent.metaKey || pointerEvent.ctrlKey,
-        )
+        selectElement(target, event.shiftKey || event.metaKey || event.ctrlKey)
         for (const element of selectedForDrag) {
           element.style.position ||= 'relative'
           element.style.zIndex ||= '2'
@@ -784,34 +770,75 @@ export function MockupSurfaceEditor({
             baseX: Number.parseFloat(element.dataset.sfOffsetX ?? '0') || 0,
             baseY: Number.parseFloat(element.dataset.sfOffsetY ?? '0') || 0,
           })),
-          startX: pointerEvent.clientX,
-          startY: pointerEvent.clientY,
+          startX: event.clientX,
+          startY: event.clientY,
         }
-      }
+      },
+
+      onPointerMove(event: PointerEvent) {
+        if (!dragRef) return
+        const d = dragRef
+        for (const { element, baseX, baseY } of d.elements) {
+          const x = Math.round(baseX + event.clientX - d.startX)
+          const y = Math.round(baseY + event.clientY - d.startY)
+          element.dataset.sfOffsetX = String(x)
+          element.dataset.sfOffsetY = String(y)
+          element.style.transform = `translate(${x}px, ${y}px)`
+        }
+        setDirty(true)
+      },
+
+      onPointerUp() {
+        dragRef = null
+        refreshSelected()
+      },
+
+      onKeyDown(event: KeyboardEvent) {
+        if (event.key !== 'Delete' && event.key !== 'Backspace') return
+        const elements = getSelectedElements()
+        if (!elements.length) return
+        event.preventDefault()
+        elements.forEach((element) => element.remove())
+        selectElement(null)
+        setDirty(true)
+      },
     }
 
-    doc.addEventListener('pointerover', handleFrameEvent)
-    doc.addEventListener('pointerout', handleFrameEvent)
-    doc.addEventListener('click', handleFrameEvent, true)
-    doc.addEventListener('pointerdown', handleFrameEvent, true)
-    doc.addEventListener('pointermove', handleFrameEvent, true)
-    doc.addEventListener('pointerup', handleFrameEvent, true)
-    doc.addEventListener('keydown', handleFrameEvent)
+    doc.addEventListener('pointerover', handlers.onPointerOver)
+    doc.addEventListener('pointerout', handlers.onPointerOut)
+    doc.addEventListener('click', handlers.onClick, true)
+    doc.addEventListener('pointerdown', handlers.onPointerDown, true)
+    doc.addEventListener('pointermove', handlers.onPointerMove, true)
+    doc.addEventListener('pointerup', handlers.onPointerUp, true)
+    doc.addEventListener('keydown', handlers.onKeyDown)
 
     return () => {
-      doc.removeEventListener('pointerover', handleFrameEvent)
-      doc.removeEventListener('pointerout', handleFrameEvent)
-      doc.removeEventListener('click', handleFrameEvent, true)
-      doc.removeEventListener('pointerdown', handleFrameEvent, true)
-      doc.removeEventListener('pointermove', handleFrameEvent, true)
-      doc.removeEventListener('pointerup', handleFrameEvent, true)
-      doc.removeEventListener('keydown', handleFrameEvent)
+      doc.removeEventListener('pointerover', handlers.onPointerOver)
+      doc.removeEventListener('pointerout', handlers.onPointerOut)
+      doc.removeEventListener('click', handlers.onClick, true)
+      doc.removeEventListener('pointerdown', handlers.onPointerDown, true)
+      doc.removeEventListener('pointermove', handlers.onPointerMove, true)
+      doc.removeEventListener('pointerup', handlers.onPointerUp, true)
+      doc.removeEventListener('keydown', handlers.onKeyDown)
     }
-  }, [frameRevision, getDoc, mode, selectElement, selectedId, selectedIds])
+  }, [
+    frameRevision,
+    getDoc,
+    getSelectedElements,
+    mode,
+    refreshSelected,
+    selectElement,
+    selectedIds,
+  ])
+
+  const serializeDraft = useCallback(
+    () => editorDom.serializeDraftDocument(getDoc(), content),
+    [content, getDoc],
+  )
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const draftContent = editorDom.serializeDraftDocument(getDoc(), content)
+      const draftContent = serializeDraft()
       const summary = editorDom.buildEditorSummary(
         mockup,
         annotations,
@@ -846,7 +873,7 @@ export function MockupSurfaceEditor({
 
   const actions = {
     updateSelectedText(value: string) {
-      const element = editorDom.getElementByEditorId(getDoc(), selectedId)
+      const element = getSelectedElement()
       if (!element) return
       element.textContent = value
       element.dataset.sfMockNoteText = element.classList.contains(
@@ -870,7 +897,7 @@ export function MockupSurfaceEditor({
     },
 
     updateStyle(key: EditableStyleKey, value: string) {
-      const element = editorDom.getElementByEditorId(getDoc(), selectedId)
+      const element = getSelectedElement()
       if (!element) return
       element.style[key] = value
       setSelected((current) =>
@@ -880,7 +907,7 @@ export function MockupSurfaceEditor({
     },
 
     removeSelected() {
-      const elements = editorDom.getElementsByEditorIds(getDoc(), selectedIds)
+      const elements = getSelectedElements()
       if (!elements.length) return
       const removedNoteIds = elements
         .map((element) => element.dataset.sfMockNoteId)
@@ -896,7 +923,7 @@ export function MockupSurfaceEditor({
     },
 
     moveSelectedSibling(direction: 'before' | 'after') {
-      const element = editorDom.getElementByEditorId(getDoc(), selectedId)
+      const element = getSelectedElement()
       if (!element?.parentElement) return
       const sibling =
         direction === 'before'
@@ -913,7 +940,7 @@ export function MockupSurfaceEditor({
 
     addNote() {
       const doc = getDoc()
-      const element = editorDom.getElementByEditorId(getDoc(), selectedId)
+      const element = getSelectedElement()
       const note = noteText.trim()
       if (!doc?.body || !element || !note) return
       const rect = element.getBoundingClientRect()
@@ -947,7 +974,7 @@ export function MockupSurfaceEditor({
     },
 
     sendToJenny() {
-      const draftContent = editorDom.serializeDraftDocument(getDoc(), content)
+      const draftContent = serializeDraft()
       const savedMockup = lastSavedMockup ?? undefined
       const summary = [
         editorDom.buildEditorSummary(mockup, annotations, dirty, draftContent),
