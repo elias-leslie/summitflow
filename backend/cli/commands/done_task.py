@@ -163,11 +163,18 @@ def _is_doc_or_config_path(path: str) -> bool:
     return basename in _DOC_OR_CONFIG_FILENAMES
 
 
-def _is_diff_docs_or_config_only(repo_root: str, head_ref: str, base_branch: str) -> bool:
+def _is_diff_docs_or_config_only(
+    repo_root: str,
+    head_ref: str,
+    base_branch: str,
+    *,
+    base_commit: str | None = None,
+) -> bool:
     """Return True if every changed file in the task branch is docs/config."""
     try:
+        diff_ref = f"{base_commit}..{head_ref}" if base_commit else f"{base_branch}...{head_ref}"
         result = subprocess.run(
-            ["git", "-C", repo_root, "diff", "--name-only", f"{base_branch}...{head_ref}"],
+            ["git", "-C", repo_root, "diff", "--name-only", diff_ref],
             capture_output=True, text=True, check=False,
         )
     except (OSError, subprocess.SubprocessError):
@@ -178,16 +185,23 @@ def _is_diff_docs_or_config_only(repo_root: str, head_ref: str, base_branch: str
     return bool(paths) and all(_is_doc_or_config_path(p) for p in paths)
 
 
-def _run_diff_gate(repo_root: str, task_id: str, project_id: str | None, base_branch: str) -> None:
+def _run_diff_gate(
+    repo_root: str,
+    task_id: str,
+    project_id: str | None,
+    base_branch: str,
+    *,
+    base_commit: str | None = None,
+) -> None:
     # Emergency escape: ST_DIFF_GATE=off disables the gate entirely.
     if (os.environ.get("ST_DIFF_GATE") or "").strip().lower() == "off":
         return
-    head_ref = resolve_task_branch(task_id, project_id=project_id)
+    head_ref = "HEAD" if base_commit else resolve_task_branch(task_id, project_id=project_id)
     # Auto-route: docs/config-only changes skip the code-quality slice.
-    if _is_diff_docs_or_config_only(repo_root, head_ref, base_branch):
+    if _is_diff_docs_or_config_only(repo_root, head_ref, base_branch, base_commit=base_commit):
         output_success("Diff gate auto-skipped: changes are docs/config only.")
         return
-    diff_result = check_diff_gate(repo_root, head_ref=head_ref, base_ref=base_branch)
+    diff_result = check_diff_gate(repo_root, head_ref=head_ref, base_ref=base_commit or base_branch)
     if diff_result.passed:
         return
     output_error(
@@ -336,9 +350,15 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
         stashed = True
     publish_failed = False
     try:
-        frontend_changed = _task_branch_touched_frontend(task_id, project_id, base_branch=base_branch)
+        base_commit = str(snapshot_info.get("base_commit") or "") or None
+        frontend_changed = _task_branch_touched_frontend(
+            task_id,
+            project_id,
+            base_branch=base_branch,
+            base_commit=base_commit,
+        )
         if repo_root and not skip_diff_gate:
-            _run_diff_gate(repo_root, task_id, project_id, base_branch)
+            _run_diff_gate(repo_root, task_id, project_id, base_branch, base_commit=base_commit)
         if not strict:
             _run_smart_prereqs(client, task_id, project_id)
         _finalize_completed_task_status(client, task_id, message=message)

@@ -11,7 +11,6 @@ from typing import Annotated
 import typer
 
 from ..lib.checkpoint import SnapshotMeta, get_active_checkpoints, get_snapshot_info
-from ..lib.checkpoint_branches import get_task_branches
 from ..output import output_json
 from ..output_context import OutputContext
 from .checkpoints_cleanup import auto_cleanup_safe_items
@@ -29,11 +28,10 @@ def _checkpoint_to_dict(cp: SnapshotMeta) -> dict:
     return {
         "task_id": cp.task_id,
         "project_id": cp.project_id,
-        "task_branch": f"{cp.task_id}/main",
         "base_branch": cp.base_branch,
+        "base_commit": cp.base_commit,
         "created_at": cp.created_at,
         "claimed_by": cp.claimed_by,
-        "branches": get_task_branches(cp.task_id, project_id=cp.project_id),
     }
 
 

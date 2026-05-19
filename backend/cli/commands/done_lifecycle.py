@@ -35,8 +35,9 @@ def _task_branch_touched_frontend(
     project_id: str | None,
     *,
     base_branch: str = "main",
+    base_commit: str | None = None,
 ) -> bool:
-    """Return True when the task branch touched the project's configured frontend tree."""
+    """Return True when task work touched the project's configured frontend tree."""
     if not project_id:
         return False
 
@@ -50,11 +51,15 @@ def _task_branch_touched_frontend(
     if not frontend_cwd:
         return False
 
-    from ..lib.checkpoint_branches import resolve_task_branch
+    if base_commit:
+        diff_ref = f"{base_commit}..HEAD"
+    else:
+        from ..lib.checkpoint_branches import resolve_task_branch
 
-    task_branch = resolve_task_branch(task_id, project_id=project_id)
+        task_branch = resolve_task_branch(task_id, project_id=project_id)
+        diff_ref = f"{base_branch}...{task_branch}"
     result = subprocess.run(
-        ["git", "diff", "--name-only", f"{base_branch}...{task_branch}"],
+        ["git", "diff", "--name-only", diff_ref],
         cwd=project_root,
         capture_output=True,
         text=True,

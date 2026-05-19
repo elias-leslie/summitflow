@@ -8,6 +8,7 @@ file-level coordination via `st lease`.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -46,13 +47,14 @@ def create_task_snapshot(task_id: str, project_id: str) -> SnapshotMeta:
     """Create a checkpoint record for a task."""
     meta_path = get_meta_path(task_id, project_id=project_id)
     base_branch = get_current_branch()
+    project_root = get_project_root_path(project_id)
+    base_commit = _current_head(project_root) if project_root else None
 
     if meta_path.exists():
         print(f"Error: Checkpoint already exists for {task_id}", file=sys.stderr)
         print("Use 'st abandon' to remove existing checkpoint first.", file=sys.stderr)
         sys.exit(1)
 
-    project_root = get_project_root_path(project_id)
     if project_root:
         try:
             from .autosnapshot import ensure_baseline
@@ -64,6 +66,7 @@ def create_task_snapshot(task_id: str, project_id: str) -> SnapshotMeta:
     meta = SnapshotMeta(
         task_id=task_id, project_id=project_id, base_branch=base_branch,
         created_at=datetime.now(UTC).isoformat(), claimed_by=get_claimed_by(),
+        base_commit=base_commit,
     )
     save_snapshot_meta(meta)
     return meta
@@ -121,13 +124,64 @@ def get_snapshot_info(task_id: str) -> dict[str, str | int | None] | None:
         return None
 
     info: dict[str, str | int | None] = dict(meta.to_dict())
-    info["branch"] = f"{task_id}/main"
+    task_branch = next(
+        (
+            branch["branch"]
+            for branch in get_task_branches(task_id, project_id=meta.project_id)
+            if branch.get("type") == "task"
+        ),
+        None,
+    )
+    info["branch"] = task_branch
     return info
 
 
 def _checkpoint_is_active(checkpoint: SnapshotMeta) -> bool:
-    """Return True when checkpoint metadata still has a live branch."""
-    return bool(get_task_branches(checkpoint.task_id, project_id=checkpoint.project_id))
+    """Return True when checkpoint metadata still represents an open claim."""
+    return _task_status(checkpoint.task_id) not in _TERMINAL_TASK_STATUSES
+
+
+_MISSING_TASK_STATUS = "__missing__"
+_TERMINAL_TASK_STATUSES = {
+    "completed",
+    "failed",
+    "cancelled",
+    "abandoned",
+    "closed",
+    _MISSING_TASK_STATUS,
+}
+
+
+def _task_status(task_id: str) -> str | None:
+    try:
+        from app.storage.tasks import get_task
+    except Exception:
+        return None
+    try:
+        task = get_task(task_id)
+    except Exception:
+        return None
+    if not task:
+        return _MISSING_TASK_STATUS
+    return str(task.get("status") or "").strip().lower() or None
+
+
+def _current_head(project_root: str | None) -> str | None:
+    if not project_root:
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
 
 
 def _iter_checkpoint_meta(project_id: str | None = None) -> list[SnapshotMeta]:

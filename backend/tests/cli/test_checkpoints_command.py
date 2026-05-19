@@ -75,23 +75,44 @@ def repo_with_checkpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Pa
     return repo
 
 
-def test_get_active_checkpoints_filters_stale_global_metadata(repo_with_checkpoints: Path) -> None:
+def test_get_active_checkpoints_includes_metadata_only_claims(
+    repo_with_checkpoints: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     home = Path(os.environ["HOME"])
-    _git(repo_with_checkpoints, "branch", "task-live/main")
     _write_checkpoint(home, "summitflow", "task-live")
-    stale_meta = _write_checkpoint(home, "summitflow", "task-stale")
+    monkeypatch.setattr("cli.lib.checkpoint._task_status", lambda _task_id: "running")
 
     active = get_active_checkpoints("summitflow")
-    stale = get_stale_checkpoints("summitflow")
 
     assert [checkpoint.task_id for checkpoint in active] == ["task-live"]
+
+
+def test_get_stale_checkpoints_filters_terminal_metadata(
+    repo_with_checkpoints: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = Path(os.environ["HOME"])
+    _write_checkpoint(home, "summitflow", "task-live")
+    stale_meta = _write_checkpoint(home, "summitflow", "task-stale")
+    monkeypatch.setattr(
+        "cli.lib.checkpoint._task_status",
+        lambda task_id: "completed" if task_id == "task-stale" else "running",
+    )
+
+    stale = get_stale_checkpoints("summitflow")
+
     assert [checkpoint.task_id for checkpoint in stale] == ["task-stale"]
     assert stale_meta.exists()
 
 
-def test_auto_cleanup_safe_items_deletes_global_stale_metadata(repo_with_checkpoints: Path) -> None:
+def test_auto_cleanup_safe_items_deletes_global_stale_metadata(
+    repo_with_checkpoints: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     home = Path(os.environ["HOME"])
     stale_meta = _write_checkpoint(home, "summitflow", "task-stale")
+    monkeypatch.setattr("cli.lib.checkpoint._task_status", lambda _task_id: "completed")
 
     cleaned_meta, cleaned_sql, cleaned_branches, review = auto_cleanup_safe_items("summitflow")
 
@@ -102,11 +123,17 @@ def test_auto_cleanup_safe_items_deletes_global_stale_metadata(repo_with_checkpo
     assert not stale_meta.exists()
 
 
-def test_checkpoints_command_omits_and_cleans_stale_metadata(repo_with_checkpoints: Path) -> None:
+def test_checkpoints_command_omits_and_cleans_stale_metadata(
+    repo_with_checkpoints: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     home = Path(os.environ["HOME"])
-    _git(repo_with_checkpoints, "branch", "task-live/main")
     _write_checkpoint(home, "summitflow", "task-live")
     stale_meta = _write_checkpoint(home, "summitflow", "task-stale")
+    monkeypatch.setattr(
+        "cli.lib.checkpoint._task_status",
+        lambda task_id: "completed" if task_id == "task-stale" else "running",
+    )
 
     result = runner.invoke(app, ["--project", "summitflow"])
 
@@ -124,6 +151,7 @@ def test_cleanup_checkpoints_auto_deletes_stale_metadata_when_no_active(
     stale_meta = _write_checkpoint(home, "summitflow", "task-stale")
     monkeypatch.setattr(cleanup_cmd, "get_project_id", lambda all_projects: "summitflow")
     monkeypatch.setattr(cleanup_cmd, "_iter_target_repos", lambda all_projects: [repo_with_checkpoints])
+    monkeypatch.setattr("cli.lib.checkpoint._task_status", lambda _task_id: "completed")
 
     result = runner.invoke(cleanup_cmd.app, ["checkpoints", "--auto"])
 

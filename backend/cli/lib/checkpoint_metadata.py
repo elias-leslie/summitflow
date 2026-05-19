@@ -25,10 +25,14 @@ class SnapshotMeta:
     base_branch: str
     created_at: str  # ISO format
     claimed_by: str
+    base_commit: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        return asdict(self)
+        data = asdict(self)
+        if data.get("base_commit") is None:
+            data.pop("base_commit", None)
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SnapshotMeta:
@@ -47,6 +51,7 @@ class SnapshotMeta:
             base_branch=normalize_base_branch(str(d["base_branch"])),
             created_at=str(d["created_at"]),
             claimed_by=str(d["claimed_by"]),
+            base_commit=str(d["base_commit"]) if d.get("base_commit") else None,
         )
 
 

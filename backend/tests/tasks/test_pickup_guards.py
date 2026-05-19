@@ -8,6 +8,7 @@ from app.tasks.autonomous.pickup_guards import (
     check_allowed_task_type,
     check_autonomous_enabled,
     check_system_health,
+    check_work_pickup_enabled,
     count_active_agent_hub_sessions,
     get_concurrency_snapshot,
     validate_autonomous_dispatch,
@@ -108,6 +109,22 @@ class TestCheckAllowedTaskType:
     )
     def test_ready_ranked_generic_task_type_is_allowed(self, _mock_allowed: MagicMock) -> None:
         assert check_allowed_task_type("agent-hub", "task") is None
+
+
+class TestCheckWorkPickupEnabled:
+    @patch("app.tasks.autonomous.pickup_guards.agent_configs.get_agent_config")
+    def test_disabled_work_pickup_blocks_dispatch(self, mock_config: MagicMock) -> None:
+        mock_config.return_value = {"work_pickup_enabled": False}
+
+        result = check_work_pickup_enabled("agent-hub")
+
+        assert result == {"status": "disabled", "reason": "work_pickup_disabled"}
+
+    @patch("app.tasks.autonomous.pickup_guards.agent_configs.get_agent_config")
+    def test_enabled_work_pickup_allows_dispatch(self, mock_config: MagicMock) -> None:
+        mock_config.return_value = {"work_pickup_enabled": True}
+
+        assert check_work_pickup_enabled("agent-hub") is None
 
 
 def _mock_healthy_infra() -> tuple:
@@ -279,14 +296,31 @@ class TestConcurrencySnapshot:
 
 
 class TestValidateAutonomousDispatch:
+    @patch("app.tasks.autonomous.pickup_guards.check_agent_hub_execution_permission", return_value=None)
+    @patch(
+        "app.tasks.autonomous.pickup_guards.check_work_pickup_enabled",
+        return_value={"status": "disabled", "reason": "work_pickup_disabled"},
+    )
+    def test_disabled_work_pickup_blocks_even_manual_guard(
+        self,
+        mock_work_pickup: MagicMock,
+        _mock_permission: MagicMock,
+    ) -> None:
+        result = validate_autonomous_dispatch("agent-hub", require_enabled=False)
+
+        assert result == {"status": "disabled", "reason": "work_pickup_disabled"}
+        mock_work_pickup.assert_called_once_with("agent-hub")
+
     @patch("app.tasks.autonomous.pickup_guards.check_cooldown_period", return_value=None)
     @patch("app.tasks.autonomous.pickup_guards.check_max_tasks_per_day", return_value=None)
     @patch("app.tasks.autonomous.pickup_guards.check_concurrency_limit")
     @patch("app.tasks.autonomous.pickup_guards.check_system_health", return_value=None)
+    @patch("app.tasks.autonomous.pickup_guards.check_work_pickup_enabled", return_value=None)
     @patch("app.tasks.autonomous.pickup_guards.check_agent_hub_execution_permission", return_value=None)
     def test_skip_concurrency_leaves_queue_request_eligible(
         self,
         _mock_permission: MagicMock,
+        _mock_work_pickup: MagicMock,
         _mock_health: MagicMock,
         mock_concurrency: MagicMock,
         _mock_daily: MagicMock,

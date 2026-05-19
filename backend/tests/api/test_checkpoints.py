@@ -67,11 +67,10 @@ def test_get_project_checkpoints_reads_canonical_active_metadata(
     repo.mkdir()
     monkeypatch.setenv("HOME", str(home))
     _init_repo(repo)
-    _git(repo, "branch", "task-live/main")
     _write_checkpoint(home, "summitflow", "task-live")
-    _write_checkpoint(home, "summitflow", "task-stale")
     monkeypatch.setattr("app.storage.projects.get_project_root_path", lambda project_id: str(repo))
     monkeypatch.setattr("cli.lib.checkpoint_branches._get_repo_cwd", lambda project_id: str(repo))
+    monkeypatch.setattr("cli.lib.checkpoint._task_status", lambda _task_id: "running")
 
     checkpoints = get_project_checkpoints("summitflow")
 

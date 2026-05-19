@@ -59,6 +59,14 @@ def check_autonomous_enabled(project_id: str) -> dict[str, Any] | None:
     return check_agent_hub_execution_permission(project_id, require_enabled=True)
 
 
+def check_work_pickup_enabled(project_id: str) -> dict[str, Any] | None:
+    """Return error dict if project autonomous dispatch is not explicitly enabled."""
+    config = agent_configs.get_agent_config(project_id)
+    if bool(config.get("work_pickup_enabled", False)):
+        return None
+    return {"status": "disabled", "reason": "work_pickup_disabled"}
+
+
 def _session_task_is_terminal(session: dict[str, Any], project_id: str | None) -> bool:
     external_id = str(session.get("external_id") or "").strip()
     if not external_id.startswith("task-"):
@@ -267,11 +275,14 @@ def validate_autonomous_dispatch(
     def concurrency_check(project: str) -> dict[str, Any] | None:
         return check_concurrency_limit(project, exclude_task_id=exclude_task_id)
 
-    checks: list[Callable[[str], dict[str, Any] | None]] = [check_system_health]
+    checks: list[Callable[[str], dict[str, Any] | None]] = [
+        permission_check,
+        check_work_pickup_enabled,
+        check_system_health,
+    ]
     if not skip_concurrency:
         checks.append(concurrency_check)
     checks.extend([check_max_tasks_per_day, check_cooldown_period])
-    checks.insert(0, permission_check)
     for check in checks:
         if error := check(project_id):
             return error

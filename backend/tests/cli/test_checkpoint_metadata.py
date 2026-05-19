@@ -59,3 +59,19 @@ def test_snapshot_meta_from_dict_ignores_legacy_dirty_paths_field() -> None:
         "created_at": "2026-03-07T06:00:00+00:00",
         "claimed_by": "tester",
     }
+
+
+def test_snapshot_meta_preserves_base_commit() -> None:
+    payload = {
+        "task_id": "task-789",
+        "project_id": "summitflow",
+        "base_branch": "main",
+        "created_at": "2026-03-07T06:00:00+00:00",
+        "claimed_by": "tester",
+        "base_commit": "abc123",
+    }
+
+    loaded = SnapshotMeta.from_dict(payload)
+
+    assert loaded.base_commit == "abc123"
+    assert loaded.to_dict()["base_commit"] == "abc123"

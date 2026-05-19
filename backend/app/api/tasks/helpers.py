@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 
 
 def get_checkpoint_branch(task_id: str, project_id: str | None = None) -> str | None:
-    """Return the active checkpoint branch for a task, if one exists."""
+    """Return the legacy checkpoint branch for a task, if one exists."""
     from cli.lib.checkpoint import get_snapshot_info
 
     info = get_snapshot_info(task_id)
@@ -28,8 +28,13 @@ def get_checkpoint_branch(task_id: str, project_id: str | None = None) -> str | 
 
 
 def has_active_checkpoint(task_id: str, project_id: str | None = None) -> bool:
-    """Return True when a task has active checkpoint metadata and branch state."""
-    return get_checkpoint_branch(task_id, project_id) is not None
+    """Return True when a task has active checkpoint metadata."""
+    from cli.lib.checkpoint import get_snapshot_info
+
+    info = get_snapshot_info(task_id)
+    if not info:
+        return False
+    return not (project_id and str(info.get("project_id") or "") != project_id)
 
 
 def verify_task_project(task_id: str, project_id: str) -> dict[str, Any]:
