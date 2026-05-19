@@ -7,11 +7,8 @@ branches can still be inspected and deleted safely.
 
 from __future__ import annotations
 
-import contextlib
 import subprocess
 import sys
-
-from app.utils.git_base import normalize_base_branch
 
 from .checkpoint_metadata import load_snapshot_meta
 
@@ -35,6 +32,11 @@ def _clean_branch_lines(output: str) -> list[str]:
 
 def _branch_exists(branch: str, cwd: str | None = None) -> bool:
     return _run_git(["git", "rev-parse", "--verify", branch], cwd=cwd, check=False).returncode == 0
+
+
+def _current_branch(cwd: str | None = None) -> str | None:
+    result = _run_git(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd, check=False)
+    return result.stdout.strip() if result.returncode == 0 else None
 
 
 def _classify_branch(branch: str) -> dict[str, str]:
@@ -67,7 +69,7 @@ def get_task_branches(task_id: str, project_id: str | None = None) -> list[dict[
 
 
 def resolve_task_branch(task_id: str, project_id: str | None = None) -> str:
-    """Return the concrete task branch name for a task id."""
+    """Return the concrete legacy task ref for a task id."""
     cwd = _get_repo_cwd(project_id)
     committed_task_branch = f"task/{task_id}"
     if _branch_exists(committed_task_branch, cwd):
@@ -84,17 +86,19 @@ def resolve_task_branch(task_id: str, project_id: str | None = None) -> str:
     return task_branch or preferred
 
 
-def delete_subtask_branch(task_id: str, subtask_id: str) -> bool:
-    """Delete subtask branch without merging (used when abandoning)."""
-    from .checkpoint_metadata import get_current_branch
-
+def delete_subtask_branch(task_id: str, subtask_id: str, project_id: str | None = None) -> bool:
+    """Delete a legacy subtask branch without switching HEAD."""
     branch_name = f"{task_id}/{subtask_id}"
-    if get_current_branch() == branch_name:
-        with contextlib.suppress(subprocess.CalledProcessError):
-            _run_git(["git", "checkout", f"{task_id}/main"])
+    repo_cwd = _get_repo_cwd(project_id)
+    if _current_branch(repo_cwd) == branch_name:
+        print(
+            f"Warning: Refusing to delete checked-out branch {branch_name}; switch manually if this legacy ref still matters.",
+            file=sys.stderr,
+        )
+        return False
 
     try:
-        _run_git(["git", "branch", "-D", branch_name])
+        _run_git(["git", "branch", "-D", branch_name], repo_cwd)
         return True
     except subprocess.CalledProcessError as e:
         print(f"Warning: Failed to delete {branch_name}: {e.stderr}", file=sys.stderr)
@@ -149,24 +153,30 @@ def _delete_remote_task_branches(task_id: str, repo_cwd: str | None, remote: str
 
 
 def delete_task_branches(task_id: str, project_id: str | None = None) -> bool:
-    """Delete task branch and all subtask branches (used when abandoning task)."""
+    """Delete legacy task-family branches without switching HEAD."""
     meta = load_snapshot_meta(task_id)
     resolved_project_id = project_id or (meta.project_id if meta else None)
     repo_cwd = _get_repo_cwd(resolved_project_id)
-    base_branch = normalize_base_branch(meta.base_branch if meta else "main", repo_cwd)
-
-    with contextlib.suppress(subprocess.CalledProcessError):
-        _run_git(["git", "checkout", base_branch], repo_cwd)
-        _run_git(["git", "checkout", "."], repo_cwd)
-
+    ok = True
+    current = _current_branch(repo_cwd)
     try:
-        result = _run_git(["git", "branch", "--list", f"{task_id}*"], repo_cwd)
-        for branch in _clean_branch_lines(result.stdout):
-            with contextlib.suppress(subprocess.CalledProcessError):
+        for branch_info in get_task_branches(task_id, project_id=resolved_project_id):
+            branch = branch_info["branch"]
+            if branch == current:
+                ok = False
+                print(
+                    f"Warning: Refusing to delete checked-out branch {branch}; switch manually if this legacy ref still matters.",
+                    file=sys.stderr,
+                )
+                continue
+            try:
                 _run_git(["git", "branch", "-D", branch], repo_cwd)
                 print(f"Deleted branch: {branch}")
+            except subprocess.CalledProcessError:
+                ok = False
     except subprocess.CalledProcessError as e:
         print(f"Warning: Failed to list branches: {e.stderr}", file=sys.stderr)
+        ok = False
 
     _delete_remote_task_branches(task_id, repo_cwd)
-    return True
+    return ok

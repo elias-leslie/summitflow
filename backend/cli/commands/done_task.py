@@ -23,7 +23,7 @@ from ..output import output_error, output_success, output_warning
 from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
 from .done_lifecycle import (
     _reconstruct_snapshot_info,
-    _task_branch_touched_frontend,
+    _task_work_touched_frontend,
     _trigger_health_check,
 )
 from .done_subtask import auto_close_subtasks
@@ -39,8 +39,23 @@ from .done_task_scope import task_with_export_context as _task_with_export_conte
 from .tasks_progress import sync_completed_subtasks
 
 
-def _done_result(task_id: str, merged: bool = False, snapshot_removed: bool = False, base_branch: str = "main", project_id: str | None = None) -> dict[str, str | bool]:
-    return {"task_id": task_id, "action": "completed", "merged": merged, "snapshot_removed": snapshot_removed, "base_branch": base_branch, "project_id": project_id or ""}
+def _done_result(
+    task_id: str,
+    merged: bool = False,
+    snapshot_removed: bool = False,
+    base_branch: str = "main",
+    project_id: str | None = None,
+    published: bool = False,
+) -> dict[str, str | bool]:
+    return {
+        "task_id": task_id,
+        "action": "completed",
+        "merged": merged,
+        "published": published,
+        "snapshot_removed": snapshot_removed,
+        "base_branch": base_branch,
+        "project_id": project_id or "",
+    }
 
 
 def _checkpoint_repo_root(project_id: str | None) -> str | None:
@@ -68,7 +83,7 @@ def ensure_checkpoint_clean(snapshot_info: dict[str, str | int | None], *, task_
         _commit_active_task_work(repo_root, task_id, message)
         if is_working_tree_clean(repo_root):
             return
-    output_error(f"Claimed checkpoint branch has uncommitted changes.\n  Path: {repo_root}\n  Smart mode could not create a clean checkpoint. Fix the reported closeout blocker, then rerun st done.")
+    output_error(f"Claimed checkpoint has uncommitted changes.\n  Path: {repo_root}\n  Smart mode could not create a clean checkpoint. Fix the reported closeout blocker, then rerun st done.")
     raise typer.Exit(1)
 
 
@@ -144,7 +159,14 @@ def _close_missing_checkpoint_active_task(client: STClient, task_id: str, task: 
     if repo_is_clean:
         _publish_completed_work(task_id, project_id)
     output_success(f"No checkpoint for {task_id}; closed from clean/task-committed checkout.")
-    return _done_result(task_id, merged=False, snapshot_removed=True, base_branch=base_branch, project_id=project_id)
+    return _done_result(
+        task_id,
+        merged=False,
+        snapshot_removed=True,
+        base_branch=base_branch,
+        project_id=project_id,
+        published=repo_is_clean,
+    )
 
 
 _DOC_OR_CONFIG_SUFFIXES = (".md", ".txt", ".rst", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".json")
@@ -170,7 +192,7 @@ def _is_diff_docs_or_config_only(
     *,
     base_commit: str | None = None,
 ) -> bool:
-    """Return True if every changed file in the task branch is docs/config."""
+    """Return True if every changed file in the task work diff is docs/config."""
     try:
         diff_ref = f"{base_commit}..{head_ref}" if base_commit else f"{base_branch}...{head_ref}"
         result = subprocess.run(
@@ -235,13 +257,13 @@ def _finalize_completed_task_status(
             try:
                 client.close_task(task_id, reason=message, skip_gates=True)
                 output_warning(
-                    "Status finalize needed forced close after merge cleanup; "
+                    "Status finalize needed forced close after direct-main finalization; "
                     "completion gates already passed but transition drifted."
                 )
                 return True
             except APIError:
                 pass
-        output_warning(f"Code merged but status update failed: {e.detail}\n  Recovery: st done {task_id} --admin")
+        output_warning(f"Work published but status update failed: {e.detail}\n  Recovery: st done {task_id} --admin")
         return False
 
 
@@ -269,7 +291,7 @@ def _publish_completed_work(task_id: str, project_id: str | None) -> None:
 
 
 def complete_task(client: STClient, task_id: str, message: str | None = None, strict: bool = False, admin: bool = False, skip_diff_gate: bool = False) -> dict[str, str | bool]:
-    """Complete a task with branch merge and snapshot cleanup.
+    """Complete a task with direct-main publish and checkpoint cleanup.
 
     Smart mode (default): auto-verifies, checkpoints, publishes, closes, and cleans up.
     Strict mode: fails if gates not pre-passed or main dirty.
@@ -345,13 +367,13 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
         if strict:
             output_error("Main branch has uncommitted changes. Commit/stash them first or use smart mode.")
             raise typer.Exit(1)
-        output_success("Main branch dirty, stashing changes before merge...")
+        output_success("Main checkout dirty, stashing changes before finalization...")
         git_stash_push()
         stashed = True
     publish_failed = False
     try:
         base_commit = str(snapshot_info.get("base_commit") or "") or None
-        frontend_changed = _task_branch_touched_frontend(
+        frontend_changed = _task_work_touched_frontend(
             task_id,
             project_id,
             base_branch=base_branch,
@@ -382,7 +404,8 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
             git_stash_pop()
     return _done_result(
         task_id,
-        merged=True,
+        merged=False,
+        published=not publish_failed,
         snapshot_removed=not publish_failed,
         base_branch=base_branch,
         project_id=project_id,

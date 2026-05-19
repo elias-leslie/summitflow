@@ -1,7 +1,7 @@
 """Done command for st CLI.
 
 Checkpoint-aware completion for tasks and subtasks.
-Merges git branches and cleans up DB snapshots.
+Publishes direct-main work and cleans up checkpoint metadata.
 
 Smart default: auto-verifies, checkpoints, publishes, closes, and cleans up.
 Use --strict for old gate-check-only behavior.
@@ -48,7 +48,7 @@ def _handle_subtask_completion(
     if result.get("action") == "noop":
         output_success(f"Subtask {id} already complete (no-op).")
         return
-    output_success(f"Subtask {id} completed. Branch merged.")
+    output_success(f"Subtask {id} completed. Metadata updated.")
 
 
 def _refuse_if_autocode_owned(task: dict[str, object], task_id: str) -> None:
@@ -56,7 +56,7 @@ def _refuse_if_autocode_owned(task: dict[str, object], task_id: str) -> None:
 
     The autocode orchestrator owns terminal-status transitions for tasks it runs.
     When an autocode agent reflexively calls `st done` as its closing move, it
-    races the orchestrator and strands the work product on the task branch.
+    races the orchestrator's closeout gates and publish step.
     """
     claimed_by = task.get("claimed_by")
     if not _is_autocode_dispatch_claim(claimed_by):

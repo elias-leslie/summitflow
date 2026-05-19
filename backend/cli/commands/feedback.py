@@ -75,6 +75,7 @@ def report(
 ) -> None:
     """Report new feedback on a component.
 
+    \b
     Examples:
       st feedback report sf.cli "Error message unhelpful" --type friction --severity medium
       st feedback report ah.memory "Pre-load cross-project context" --type idea
@@ -123,6 +124,7 @@ def search(
 ) -> None:
     """Search feedback items by keyword.
 
+    \b
     Examples:
       st feedback search "memory injection"
       st feedback search --query "--frontend-only compiler flag"
@@ -165,6 +167,7 @@ def list_feedback(
 ) -> None:
     """List feedback items with filters.
 
+    \b
     Examples:
       st feedback list
       st feedback list --component ah.memory --type idea
@@ -187,6 +190,7 @@ def get(
 ) -> None:
     """Get full details of a feedback item including votes.
 
+    \b
     Examples:
       st feedback get a1b2c3d4-...
     """
@@ -211,6 +215,7 @@ def vote(
 ) -> None:
     """Vote on an existing feedback item.
 
+    \b
     Examples:
       st feedback vote a1b2c3d4 --session sess-123
       st feedback vote a1b2c3d4 --session sess-123 --comment "Hit this during autocode"
@@ -233,6 +238,7 @@ def resolve(
 ) -> None:
     """Resolve a feedback item.
 
+    \b
     Examples:
       st feedback resolve a1b2c3d4 --note "Fixed in commit abc123"
       st feedback resolve a1b2c3d4 -m "Fixed in commit abc123"
@@ -266,6 +272,7 @@ def delete(
 ) -> None:
     """Delete a feedback item and all its votes.
 
+    \b
     Examples:
       st feedback delete a1b2c3d4-...
     """
@@ -281,6 +288,7 @@ def summary(
 ) -> None:
     """Get aggregated feedback summary.
 
+    \b
     Examples:
       st feedback summary
       st feedback summary --project summitflow --days 7

@@ -14,7 +14,7 @@ def warn_on_publish_failure(result: Any, output_warning: Any) -> None:
         payload = json.loads(stdout) if stdout else {}
     except json.JSONDecodeError:
         detail = stderr or stdout[:200] or "unknown st commit output"
-        output_warning(f"Task merged but publish status was unreadable: {detail}")
+        output_warning(f"Task completed but publish status was unreadable: {detail}")
         return
     repo_result = payload.get("repos", [{}])[0] if payload.get("repos") else {}
     status = str(repo_result.get("status", payload.get("status", "UNKNOWN")))
@@ -23,7 +23,7 @@ def warn_on_publish_failure(result: Any, output_warning: Any) -> None:
     if result.returncode == 0 and status in {"SUCCESS", "SKIP"}:
         return
     detail = detail_text or reason or stderr or stdout[:200] or "unknown publish failure"
-    output_warning(f"Task merged but publish did not complete cleanly: {status} ({detail})")
+    output_warning(f"Task completed but publish did not complete cleanly: {status} ({detail})")
 
 
 def cleanup_completed_bookmark(
@@ -51,11 +51,11 @@ def cleanup_completed_bookmark(
             command, cwd=project_root, capture_output=True, text=True, check=False, timeout=300
         )
     except (subprocess_module.SubprocessError, OSError) as exc:
-        output_warning(f"Task merged but bookmark cleanup failed to start: {exc}")
+        output_warning(f"Task completed but bookmark cleanup failed to start: {exc}")
         return
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown bookmark cleanup failure"
-        output_warning(f"Task merged but bookmark cleanup failed: {detail[:200]}")
+        output_warning(f"Task completed but bookmark cleanup failed: {detail[:200]}")
 
 
 def publish_completed_work(
@@ -64,7 +64,7 @@ def publish_completed_work(
     *,
     deps: dict[str, Any],
 ) -> None:
-    """Publish merged main-branch work so completed tasks do not leave repos ahead/dirty."""
+    """Publish direct-main work so completed tasks do not leave repos ahead/dirty."""
     if not project_id:
         return
     try:
@@ -73,7 +73,7 @@ def publish_completed_work(
         return
     project_root = get_project_root_path(project_id)
     if not project_root:
-        deps["output_warning"](f"Task merged but publish skipped: unknown project root for {project_id}")
+        deps["output_warning"](f"Task completed but publish skipped: unknown project root for {project_id}")
         return
     st_path = deps["shutil"].which("st") or str(
         deps["get_repo_root"]() / "backend" / ".venv" / "bin" / "st"
@@ -93,7 +93,7 @@ def publish_completed_work(
             command, cwd=project_root, capture_output=True, text=True, check=False, timeout=600
         )
     except (deps["subprocess"].SubprocessError, OSError) as exc:
-        deps["output_warning"](f"Task merged but publish failed to start: {exc}")
+        deps["output_warning"](f"Task completed but publish failed to start: {exc}")
         return
     deps["warn_on_publish_failure"](result)
     if result.returncode == 0:

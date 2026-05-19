@@ -222,10 +222,11 @@ def claim_command(
     Re-claiming by the same caller is idempotent (returns `resumed`). Use --force
     only to take over a stale claim from another agent.
 
+    \b
     Examples:
-        st claim task-abc123         # Claim task, create checkpoint
-        st claim 1.1 -t task-abc123  # Claim subtask 1.1
-        st claim task-abc123 --force # Overwrite existing checkpoint
+      st claim task-abc123          # Claim task and record checkpoint metadata
+      st claim 1.1 -t task-abc123   # Claim subtask 1.1
+      st claim task-abc123 --force  # Take over a stale claim
     """
     from ..context import require_task_id
 

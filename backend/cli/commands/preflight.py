@@ -29,7 +29,7 @@ def _project_lane_clear(task_id: str, project_id: str | None) -> None:
     for issue in lane_check.issues:
         output_error(
             f"{issue}\n"
-            f"Resolution: st abandon <conflicting-task-id> or rebase its checkpoint branch."
+            f"Resolution: st pulse --gate, then coordinate with the holder or st abandon <conflicting-task-id>."
         )
     raise typer.Exit(2)
 

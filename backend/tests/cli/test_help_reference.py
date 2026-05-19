@@ -34,3 +34,18 @@ class TestCLIReferenceCompact:
         assert result.exit_code == 0
         assert "--plan" in result.output
         assert "--from-file" in result.output
+
+    def test_claim_and_abandon_help_keep_examples_readable(self) -> None:
+        claim = runner.invoke(app, ["claim", "--help"])
+        abandon = runner.invoke(app, ["abandon", "--help"])
+        feedback_resolve = runner.invoke(app, ["feedback", "resolve", "--help"])
+
+        assert claim.exit_code == 0
+        assert abandon.exit_code == 0
+        assert feedback_resolve.exit_code == 0
+        assert "Examples:\n    st claim task-abc123" in claim.output
+        assert "Examples:\n    st abandon 1.1 -t task-abc123" in abandon.output
+        assert "Examples:\n    st feedback resolve a1b2c3d4" in feedback_resolve.output
+        assert "Examples:   st claim" not in claim.output
+        assert "Examples:   st abandon" not in abandon.output
+        assert "Examples:   st feedback resolve" not in feedback_resolve.output

@@ -268,7 +268,7 @@ _RESOLUTION_HINTS: dict[str, str] = {
         "st pulse --sessions to inspect, or wait for the writer to release"
     ),
     "task_lane_conflict": (
-        "st abandon <conflicting-task-id> or rebase the conflicting checkpoint branch"
+        "st pulse --gate, then coordinate with the holder or st abandon <conflicting-task-id>"
     ),
 }
 

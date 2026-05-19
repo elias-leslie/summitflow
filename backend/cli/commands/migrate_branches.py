@@ -1,13 +1,11 @@
 """One-shot migration of legacy task-XXX/* branches.
 
 Walks local and remote refs matching the per-task branch naming from before the
-no-branch cutover (`task-<id>/main`, `task-<id>/<subtask>`). For each branch:
+direct-main cutover (`task-<id>/main`, `task-<id>/<subtask>`). For each branch:
 
-- If fully merged into main → delete the ref.
-- If has commits not on main → fast-forward those commits onto main (the
-  branches diverged from main only by being aliases or by carrying task work
-  that wasn't merged at done-time), then delete the ref. Conflicts surface as
-  a per-branch error; the script continues with the rest.
+- If fully merged into main, delete the ref.
+- If it has commits not on main, force-delete the ref and report the count.
+  Those commits remain recoverable through git reflog until reflog expiry.
 
 Remote branches (`origin/task-*/*`) get `git push --delete` followed by a prune.
 
@@ -133,8 +131,8 @@ def _migrate_remote_branch(branch: str, cwd: str | None, dry_run: bool) -> str:
     cmd="st migrate-branches [--dry-run] [--remote-only] [--local-only]",
     when="one-shot cleanup of pre-cutover task-XXX branches; rerun if more appear",
     precautions=(
-        "fast-forwards or cherry-picks any unmerged commits to main before delete",
-        "conflicts during cherry-pick preserve the branch and surface a per-branch error",
+        "deletes legacy task refs; does not fast-forward or cherry-pick commits",
+        "local unmerged commits remain recoverable through git reflog until expiry",
         "uncommitted working-tree changes will block; commit or stash first",
     ),
     tier="reference",
@@ -145,7 +143,7 @@ def migrate_branches_command(
     local_only: Annotated[bool, typer.Option("--local-only", help="Skip remote branch cleanup")] = False,
     remote_only: Annotated[bool, typer.Option("--remote-only", help="Skip local branch cleanup")] = False,
 ) -> None:
-    """Migrate legacy task-XXX branches: fast-forward unmerged commits to main, then delete."""
+    """Delete legacy task-XXX refs left over from the pre-direct-main workflow."""
     if local_only and remote_only:
         output_error("--local-only and --remote-only are mutually exclusive.")
         raise typer.Exit(2)

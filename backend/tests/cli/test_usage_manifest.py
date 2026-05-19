@@ -123,6 +123,17 @@ def test_manifest_command_emits_json_with_version() -> None:
     assert payload["tools"][0]["surface"] == "st.service.rebuild"
 
 
+def test_migrate_branches_manifest_matches_delete_only_behavior() -> None:
+    result = runner.invoke(tools_app, ["manifest", "--surface", "st.migrate-branches", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    tool = json.loads(result.output)["tools"][0]
+    precautions = " ".join(tool["precautions"])
+    assert "does not fast-forward or cherry-pick" in precautions
+    assert "reflog" in precautions
+    assert "cherry-picks any unmerged commits" not in precautions
+
+
 def test_manifest_command_filter_excludes_task_specific_surfaces() -> None:
     """A task filter retains universal (empty task_types) surfaces and any
     surface that explicitly declares the requested task type. Surfaces tagged

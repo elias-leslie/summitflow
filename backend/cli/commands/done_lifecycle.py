@@ -30,7 +30,7 @@ def _trigger_health_check(task_id: str, project_id: str | None) -> None:
         pass  # Never block completion on health check trigger failure
 
 
-def _task_branch_touched_frontend(
+def _task_work_touched_frontend(
     task_id: str,
     project_id: str | None,
     *,
@@ -56,8 +56,8 @@ def _task_branch_touched_frontend(
     else:
         from ..lib.checkpoint_branches import resolve_task_branch
 
-        task_branch = resolve_task_branch(task_id, project_id=project_id)
-        diff_ref = f"{base_branch}...{task_branch}"
+        legacy_task_ref = resolve_task_branch(task_id, project_id=project_id)
+        diff_ref = f"{base_branch}...{legacy_task_ref}"
     result = subprocess.run(
         ["git", "diff", "--name-only", diff_ref],
         cwd=project_root,
@@ -77,10 +77,10 @@ def _reconstruct_snapshot_info(
     client: STClient,
     task_id: str,
 ) -> dict[str, str | int | None] | None:
-    """Attempt to reconstruct checkpoint metadata from task API and task branch.
+    """Attempt to reconstruct checkpoint metadata from task API and legacy task refs.
 
     When the .meta.json file is missing but the task is still active and the
-    task branch exists, rebuild the metadata so ``st done`` can proceed.
+    legacy task ref exists, rebuild the metadata so ``st done`` can proceed.
     """
     from ..lib.checkpoint_branches import get_task_branches
 
@@ -93,13 +93,13 @@ def _reconstruct_snapshot_info(
     if not isinstance(project_id, str) or not project_id:
         return None
 
-    # Recovered orphan branches may still be pending but need closeout.
+    # Recovered legacy refs may still be pending but need closeout.
     if task.get("status") not in ("in_progress", "claimed", "pending"):
         return None
 
     branches = get_task_branches(task_id, project_id=project_id)
-    task_branch = next((branch for branch in branches if branch.get("type") == "task"), None)
-    if not task_branch:
+    task_ref = next((branch for branch in branches if branch.get("type") == "task"), None)
+    if not task_ref:
         return None
 
     project_root = get_project_root_path(project_id)
@@ -118,6 +118,6 @@ def _reconstruct_snapshot_info(
     )
     save_snapshot_meta(meta)
     output_warning(
-        f"Checkpoint metadata was missing for {task_id} — reconstructed from task branch."
+        f"Checkpoint metadata was missing for {task_id} — reconstructed from legacy task ref."
     )
     return get_snapshot_info(task_id)
