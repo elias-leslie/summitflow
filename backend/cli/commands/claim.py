@@ -110,7 +110,6 @@ def _claim_task(
         return {
             "task_id": task_id,
             "action": "resumed",
-            "branch": f"{task_id}/main",
             "base_branch": str(existing.get("base_branch", "main")),
         }
 
@@ -161,7 +160,6 @@ def _claim_task(
     return {
         "task_id": task_id,
         "action": "claimed",
-        "branch": f"{task_id}/main",
         "base_branch": meta.base_branch,
     }
 
@@ -193,7 +191,6 @@ def _claim_subtask(
         "task_id": task_id,
         "subtask_id": subtask_id,
         "action": "claimed",
-        "branch": f"{task_id}/{subtask_id}",
     }
 
 
@@ -236,8 +233,8 @@ def claim_command(
 
     if is_subtask_id(id):
         resolved_task_id = require_task_id(task_id)
-        result = _claim_subtask(client, id, resolved_task_id)
-        output_success(f"Subtask {id} claimed. Branch: {result['branch']}")
+        _claim_subtask(client, id, resolved_task_id)
+        output_success(f"Subtask {id} claimed. Work commits direct to main.")
         return
 
     result = _claim_task(client, canonicalize_task_id(id), force)

@@ -136,16 +136,11 @@ def build_conflict_context(task_id: str) -> str:
         files = conflict_info.get("conflicting_files") or []
         lines = [
             "\n# Merge Conflict Context",
-            "This task previously passed verification but failed to merge cleanly into the current main branch.",
-            "Resolve the conflict in this existing task checkout, preserve the task intent, and rerun the relevant verification.",
+            "A previous attempt left conflicting state on the project checkout. Resolve the conflict on main, preserve the task intent, and rerun the relevant verification.",
         ]
         if files:
             lines.append("Conflicting files:")
             lines.extend(f"- {path}" for path in files[:10])
-        task_branch = conflict_info.get("task_branch")
-        base_branch = conflict_info.get("base_branch")
-        if task_branch or base_branch:
-            lines.append(f"Branch: {task_branch or 'task branch'} -> {base_branch or 'main'}")
         error_output = str(conflict_info.get("error_output") or "").strip()
         if error_output:
             lines.append(f"Git reported: {error_output[:300]}")

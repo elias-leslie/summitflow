@@ -60,12 +60,6 @@ def _resolve_commit_script(project_path: str) -> str | None:
     return None
 
 
-def _has_branch_commits(project_path: str) -> bool:
-    """Return True when the current branch is ahead of main."""
-    result = _run_git(project_path, "log", "--oneline", "main..HEAD")
-    return bool(result.stdout and result.stdout.strip())
-
-
 def has_unpublished_commits(project_path: str) -> bool:
     """Return True when HEAD contains local-only commits not on remote."""
     upstream = _run_git(
@@ -76,7 +70,7 @@ def has_unpublished_commits(project_path: str) -> bool:
         "@{upstream}",
     )
     if upstream.returncode != 0 or not upstream.stdout.strip():
-        return _has_branch_commits(project_path)
+        return False
 
     ahead = _run_git(
         project_path,

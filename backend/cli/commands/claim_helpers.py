@@ -94,35 +94,18 @@ def _format_age(created_at: str) -> str:
     return f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
 
 
-def _resume_via_branch(task_id: str) -> dict[str, Any]:
-    """Resume a task by checking out its branch."""
-    task_branch = f"{task_id}/main"
-    try:
-        subprocess.run(
-            ["git", "checkout", task_branch],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        output_error(f"Failed to checkout branch: {e.stderr}")
-        raise typer.Exit(1) from None
-    return {"task_id": task_id, "action": "resumed", "branch": task_branch}
-
-
 def handle_existing_checkpoint(task_id: str, existing: dict[str, Any]) -> dict[str, Any]:
-    """Prompt user about an existing checkpoint and either resume or abort."""
+    """Acknowledge existing checkpoint and resume on the current checkout."""
     age_str = _format_age(str(existing["created_at"]))
     typer.echo(f"Existing checkpoint found for {task_id} (created {age_str} ago).")
-    return _resume_via_branch(task_id)
+    return {"task_id": task_id, "action": "resumed"}
 
 
-def print_resumed(task_id: str, result: dict[str, Any]) -> None:
+def print_resumed(task_id: str, _result: dict[str, Any]) -> None:
     """Print output for a resumed task."""
-    output_success(f"Task {task_id} resumed. Branch: {result['branch']}")
+    output_success(f"Task {task_id} resumed on current checkout.")
 
 
-def print_claimed(task_id: str, result: dict[str, Any]) -> None:
+def print_claimed(task_id: str, _result: dict[str, Any]) -> None:
     """Print output for a newly claimed task."""
-    output_success(f"Task {task_id} claimed. Checkpoint created.")
-    typer.echo(f"  Branch: {result['branch']}")
+    output_success(f"Task {task_id} claimed. Checkpoint recorded; work commits direct to main.")

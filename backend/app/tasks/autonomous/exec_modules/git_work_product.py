@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
-
 from .events import emit_log
 from .git_ops import (
     has_uncommitted_changes,
@@ -12,25 +10,6 @@ from .git_ops import (
     smart_commit_result,
 )
 
-_COMMIT_TIMEOUT_SECONDS = 30
-
-
-def _git(project_path: str, *args: str) -> subprocess.CompletedProcess[str]:
-    """Run a git command inside the shared task checkout."""
-    return subprocess.run(
-        ["git", *args],
-        cwd=project_path,
-        capture_output=True,
-        text=True,
-        timeout=_COMMIT_TIMEOUT_SECONDS,
-    )
-
-
-def _has_branch_commits(project_path: str) -> bool:
-    """Return True when the task branch is ahead of main."""
-    result = _git(project_path, "log", "--oneline", "main..HEAD")
-    return bool(result.stdout and result.stdout.strip())
-
 
 def ensure_committed_work_product(
     task_id: str,
@@ -38,17 +17,17 @@ def ensure_committed_work_product(
     project_path: str,
     project_id: str,
 ) -> str | None:
-    """Ensure verified autonomous work exists as a branch commit.
+    """Ensure verified autonomous work is committed and pushed to main.
 
     Returns:
         None on success, or an error string when the work product could not be
-        preserved on the task branch remote.
+        preserved on the remote.
     """
-    if _has_branch_commits(project_path):
-        return None if publish_existing_commits(project_path) else "Failed to publish existing branch commits"
+    if has_unpublished_commits(project_path):
+        return None if publish_existing_commits(project_path) else "Failed to publish existing commits"
 
     if not has_uncommitted_changes(project_path):
-        return "No committed or dirty work product remains to merge"
+        return "No committed or dirty work product remains to publish"
 
     commit_message = f"autocode({task_id}): complete subtask {subtask_short_id}"
     commit_result = smart_commit_result(
@@ -68,6 +47,6 @@ def ensure_committed_work_product(
         project_id=project_id,
     )
 
-    if _has_branch_commits(project_path) and not has_unpublished_commits(project_path):
+    if not has_unpublished_commits(project_path):
         return None
-    return "Commit completed but branch work is still unpublished"
+    return "Commit completed but work is still unpublished"

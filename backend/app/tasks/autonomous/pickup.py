@@ -6,10 +6,9 @@ Supports two dispatch modes:
 
 The event-driven path is preferred for low-latency dispatch.
 
-Shared Checkout Model:
-When dispatching tasks to execution, SummitFlow now uses the project checkout
-directly and switches onto branch `<task-id>/main`. Coordination must prevent
-multiple same-project coding runs from fighting over the shared checkout.
+Execution runs against the project root on `main`; checkpoints are
+metadata-only and work commits direct to main. File-level coordination
+between same-project agents is handled by `st lease`.
 """
 
 from __future__ import annotations

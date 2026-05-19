@@ -110,8 +110,6 @@ class TestPromptTemplateFallbacks:
             "id": "task-1",
             "conflict_info": {
                 "conflicting_files": ["backend/app/services/tools/tool_handler.py"],
-                "task_branch": "task-1/main",
-                "base_branch": "main",
                 "error_output": "CONFLICT (content): Merge conflict in backend/app/services/tools/tool_handler.py",
             },
         }
@@ -120,7 +118,7 @@ class TestPromptTemplateFallbacks:
 
         assert "Merge Conflict Context" in prompt
         assert "backend/app/services/tools/tool_handler.py" in prompt
-        assert "task-1/main" in prompt
+        assert "CONFLICT" in prompt
 
     @patch(f"{_PROMPTS}.build_conflict_context", return_value="")
     @patch(f"{_PROMPTS}.build_resume_context", return_value="")
