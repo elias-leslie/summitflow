@@ -285,9 +285,10 @@ app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
 @usage(
     surface="st.commit",
     cmd='st commit -m "msg" --push',
-    when="user-requested work complete; off-task or residue commits",
+    when="user-requested work complete; off-task or residue commits; any time the working tree is dirty and a commit point is reached — never leave residue for the next session",
     precautions=(
-        "use repeated --paths flags for scoped commits: --paths a --paths b",
+        "default: commit the ENTIRE working tree with one message — do not pre-audit files, do not propose --paths scoping, do not ask which subset to include",
+        "--paths is opt-in ONLY when the user explicitly asks to split a commit; never volunteer it",
         "after publish, trust printed COMMIT summary not local-clean state",
         "commit before destructive ops (abandon, rollback)",
     ),
