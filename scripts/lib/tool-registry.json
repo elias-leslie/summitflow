@@ -184,7 +184,7 @@
     "check": {
       "label": "BIOME",
       "binary": "npx",
-      "args": "biome check . --max-diagnostics=100",
+      "args": "biome check . --max-diagnostics=100 --no-errors-on-unmatched",
       "count_method": "biome_parse",
       "working_dir": "frontend",
       "fallback_global": true,
