@@ -15,6 +15,8 @@ import typer
 
 from app.services.db_workbench import (
     DbWorkbenchError,
+    project_db_url,
+    project_env_var,
     start_workbench,
     status_workbench,
     stop_workbench,
@@ -31,34 +33,6 @@ app = typer.Typer(
     add_help_option=False,
 )
 
-_DEFAULT_DB_URLS = {
-    "summitflow": "postgresql://summitflow_app@localhost:5432/summitflow",
-    "agent-hub": "postgresql://agent_hub_app@localhost:5432/agent_hub",
-    "portfolio-ai": "postgresql://portfolio_app@localhost:5432/portfolio_ai",
-    "a-term": "postgresql://summitflow_app@localhost:5432/summitflow",
-    "hatchet": "postgresql://db_admin@localhost:5432/hatchet?sslmode=disable",
-}
-
-
-def _load_env_file(path: Path) -> dict[str, str]:
-    if not path.exists():
-        return {}
-    values: dict[str, str] = {}
-    for raw_line in path.read_text().splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip('"').strip("'")
-    return values
-
-
-def _project_env_var(project: str) -> str:
-    if project == "summitflow":
-        return "DATABASE_URL"
-    return f"{project.replace('-', '_').upper()}_DB_URL"
-
-
 def _detect_project(explicit: str | None) -> str:
     if explicit:
         return explicit
@@ -72,18 +46,10 @@ def _detect_project(explicit: str | None) -> str:
 
 
 def _db_url(project: str) -> str:
-    env_file = _load_env_file(Path.home() / ".env.local")
-    candidates = [
-        os.environ.get(_project_env_var(project)),
-        env_file.get(_project_env_var(project)),
-        os.environ.get("DATABASE_URL") if project == "summitflow" else None,
-        env_file.get("DATABASE_URL") if project == "summitflow" else None,
-        _DEFAULT_DB_URLS.get(project),
-    ]
-    for candidate in candidates:
-        if candidate:
-            return candidate
-    output_error(f"Unknown project database for {project}; set {_project_env_var(project)}")
+    db_url = project_db_url(project)
+    if db_url:
+        return db_url
+    output_error(f"Unknown project database for {project}; set {project_env_var(project)}")
     raise typer.Exit(1) from None
 
 

@@ -197,6 +197,15 @@ def test_db_detail_name_hashes_query_without_literals() -> None:
     assert len(name.rsplit("-", 1)[1]) == 8
 
 
+def test_db_url_uses_canonical_project_resolver() -> None:
+    resolved = "postgresql://summitflow_app:pw@localhost/summitflow"
+
+    with patch("cli.commands.db.project_db_url", return_value=resolved) as resolver:
+        assert db._db_url("a-term") == resolved
+
+    resolver.assert_called_once_with("a-term")
+
+
 def test_run_psql_serializes_before_subprocess_and_sets_app_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
