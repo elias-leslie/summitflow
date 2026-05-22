@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Iterable
-from typing import Annotated, cast
+from typing import cast
 
 import typer
 
@@ -31,6 +31,27 @@ from .sessions_monitor import (
 from .sessions_monitor import (
     monitor_task_target as _monitor_task_target,
 )
+from .sessions_options import (
+    IncludeUnassignedOption,
+    JsonOutputOption,
+    MonitorAgentOption,
+    MonitorDebugOption,
+    MonitorErrorsOption,
+    MonitorFollowOption,
+    MonitorHistoryOption,
+    MonitorLimitOption,
+    MonitorProjectOption,
+    MonitorStatusOption,
+    MonitorTargetArg,
+    ParentSessionOption,
+    ProjectLookupOption,
+    ProjectOption,
+    RawSessionOption,
+    ReapDryRunOption,
+    SessionAgentOption,
+    SessionLimitOption,
+    SessionStatusOption,
+)
 from .sessions_overlap import render_overlap_list
 from .sessions_ownership import render_ownership_list
 from .sessions_reap import (
@@ -45,62 +66,6 @@ from .sessions_reap import (
 from .sessions_reap import (
     reapable_sessions as _reapable_sessions,
 )
-
-SessionStatusOption = Annotated[str | None, typer.Option("-s", "--status")]
-SessionLimitOption = Annotated[int, typer.Option("--limit")]
-SessionAgentOption = Annotated[str | None, typer.Option("--agent")]
-ParentSessionOption = Annotated[str | None, typer.Option("--parent-session")]
-ProjectOption = Annotated[str | None, typer.Option("--project", "-P")]
-ProjectLookupOption = Annotated[
-    str | None,
-    typer.Option("--project", "-P", help="Project scope for short session ID lookup."),
-]
-IncludeUnassignedOption = Annotated[
-    bool,
-    typer.Option(
-        "--include-unassigned",
-        help="Include imported/unassigned sessions without an agent slug",
-    ),
-]
-RawSessionOption = Annotated[bool, typer.Option("--raw", help="Print full raw session JSON.")]
-MonitorTargetArg = Annotated[
-    str | None,
-    typer.Argument(help="Task ID, session ID/prefix, or empty for active sessions"),
-]
-MonitorProjectOption = Annotated[str | None, typer.Option("--project", "-P", help="Project scope")]
-MonitorStatusOption = Annotated[
-    str,
-    typer.Option("--status", "-s", help="Session status for overview"),
-]
-MonitorAgentOption = Annotated[
-    str | None,
-    typer.Option("--agent", help="Agent slug filter for overview"),
-]
-MonitorFollowOption = Annotated[
-    bool,
-    typer.Option("-f", "--follow", help="Follow events in real time"),
-]
-MonitorLimitOption = Annotated[
-    int,
-    typer.Option("-n", "--limit", help="Maximum events to show"),
-]
-MonitorDebugOption = Annotated[
-    bool,
-    typer.Option("--debug", help="Include debug-level events"),
-]
-MonitorErrorsOption = Annotated[
-    bool,
-    typer.Option("--errors", help="Show only error events for a session target"),
-]
-MonitorHistoryOption = Annotated[
-    bool,
-    typer.Option("--history", help="Include older linked Agent Hub sessions"),
-]
-JsonOutputOption = Annotated[bool, typer.Option("--json", help="Output as JSON")]
-ReapDryRunOption = Annotated[
-    bool,
-    typer.Option("--dry-run", help="Preview reapable sessions without closing them"),
-]
 
 app = typer.Typer(
     help=(
