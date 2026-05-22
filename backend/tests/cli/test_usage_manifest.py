@@ -123,6 +123,14 @@ def test_manifest_command_emits_json_with_version() -> None:
     assert payload["tools"][0]["surface"] == "st.service.rebuild"
 
 
+def test_manifest_command_orders_root_task_surfaces_deterministically() -> None:
+    result = runner.invoke(tools_app, ["manifest", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    surfaces = [tool["surface"] for tool in json.loads(result.output)["tools"]]
+    assert surfaces.index("st.claim") < surfaces.index("st.done") < surfaces.index("st.abandon")
+
+
 def test_migrate_branches_manifest_matches_delete_only_behavior() -> None:
     result = runner.invoke(tools_app, ["manifest", "--surface", "st.migrate-branches", "--format", "json"])
 

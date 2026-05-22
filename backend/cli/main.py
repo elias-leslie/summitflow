@@ -146,7 +146,7 @@ FORWARDED_ROOT_COMMANDS = (
 )
 
 SNAPSHOT_COMMAND_NAMES = {"snap", "snaps", "recover", "rollback", "prune"}
-ROOT_TASK_COMMAND_NAMES = {"claim", "done", "abandon"}
+ROOT_TASK_COMMAND_NAMES = ("claim", "done", "abandon")
 
 
 class _FailedCommandModule:
@@ -368,7 +368,9 @@ app.add_typer(_COMMANDS["checkpoints"].app, name="checkpoints")
 app.add_typer(_COMMANDS["skills"].app, name="skills")
 _register_snapshot_commands()
 app.add_typer(_COMMANDS["autosnapshot"].app, name="autosnap", hidden=True)
-for command_name in ROOT_TASK_COMMAND_NAMES - {"claim"}:
+for command_name in ROOT_TASK_COMMAND_NAMES:
+    if command_name == "claim":
+        continue
     _register_named_command(_COMMANDS[command_name].app, command_name)
 
 
