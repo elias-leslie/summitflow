@@ -234,6 +234,24 @@ def release(project_id: str, glob: str | None = None) -> int:
         return before - len(leases)
 
 
+def release_task(project_id: str, task_id: str) -> int:
+    """Release every lease tied to a task, regardless of holding agent.
+
+    Called on `st done` so a completed task never leaves stale leases behind —
+    including leases acquired by subagents under a different agent identity than
+    the one closing the task (an orchestrator closes the subagent's task, but the
+    subagent held the lease). Returns count released.
+    """
+    if not task_id:
+        return 0
+    with _lock(project_id):
+        leases = _purge_stale(_load(project_id))
+        before = len(leases)
+        leases = [lease for lease in leases if lease.task_id != task_id]
+        _save(project_id, leases)
+        return before - len(leases)
+
+
 def take(project_id: str, path: str) -> Lease:
     """Forcibly claim a path. Drops other agents' matching leases, logs takeover, then acquires."""
     agent_id, _, _, _ = identify_agent()

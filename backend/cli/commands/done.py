@@ -72,6 +72,23 @@ def _refuse_if_autocode_owned(task: dict[str, object], task_id: str) -> None:
     raise typer.Exit(1)
 
 
+def _release_task_leases(project_id: str | None, task_id: str) -> None:
+    """Best-effort release of leases tied to a completed task.
+
+    Never blocks closeout: a lease-store hiccup must not fail a finished task.
+    """
+    if not project_id:
+        return
+    try:
+        from ..lib.leases import release_task
+
+        released = release_task(project_id, task_id)
+    except Exception:
+        return
+    if released:
+        output_success(f"Released {released} lease(s) held for {task_id}.")
+
+
 def _handle_task_completion(
     client: STClient,
     id: str,
@@ -94,6 +111,7 @@ def _handle_task_completion(
         typer.echo(f"  Closed on: {base_branch}")
     else:
         output_success(f"Task {id} completed.")
+    _release_task_leases(project_id, id)
 
 
 @app.command(name="done")
