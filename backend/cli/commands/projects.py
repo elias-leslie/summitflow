@@ -116,7 +116,7 @@ def switch_project(
     """
     project = projects_api("GET", f"/{project_id}")
     root = project.get("root_path") if isinstance(project, dict) else None
-    output_json({**_write_active_project(project_id, root), "switched": True})
+    output_json(_write_active_project(project_id, root))
 
 
 @app.command("active")
