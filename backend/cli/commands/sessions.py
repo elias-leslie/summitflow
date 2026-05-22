@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-from collections import Counter
 from typing import Annotated, Any
 
 import typer
@@ -19,6 +18,7 @@ from ._session_resolver import resolve_session_id as _resolve_session_id
 from .session_events_client import get_session_events
 from .session_events_follow import follow_session_events
 from .session_events_formatter import format_event
+from .sessions_diagnostics import render_diagnostics as _render_diagnostics
 from .sessions_filter import normalize_status_filter, session_matches_status_alias
 from .sessions_format import compact_session_line, monitor_summary
 from .sessions_monitor import (
@@ -53,18 +53,6 @@ app = typer.Typer(
     invoke_without_command=True,
     no_args_is_help=False,
 )
-
-_ERROR_TEXT_MARKERS = (
-    "traceback",
-    "error",
-    "exception",
-    "failed",
-    "test:fail",
-    "valueerror",
-    "typeerror",
-    "use 'st check",
-)
-
 
 def _render_session_list(
     status_filter: str | None,
@@ -118,100 +106,6 @@ def _recent_session_events(
     return list(latest.get("events") or [])
 
 
-def _event_text(event: dict[str, Any]) -> str:
-    parts: list[str] = []
-    for key in ("content", "tool_output", "message", "error"):
-        value = event.get(key)
-        if value is None:
-            continue
-        if isinstance(value, str):
-            parts.append(value)
-        else:
-            try:
-                parts.append(json.dumps(value, default=str, sort_keys=True))
-            except TypeError:
-                parts.append(str(value))
-    return "\n".join(parts)
-
-
-def _event_signature(event: dict[str, Any]) -> str:
-    text = _event_text(event)
-    if not text:
-        return "-"
-    normalized = " ".join(text.replace("\n", " ").split())
-    return normalized if len(normalized) <= 180 else normalized[:177] + "..."
-
-
-def _is_error_like(event: dict[str, Any], signature: str) -> bool:
-    if str(event.get("event_type") or "").lower() == "error":
-        return True
-    lower = signature.lower()
-    return any(marker in lower for marker in _ERROR_TEXT_MARKERS)
-
-
-def _diagnostic_rows(
-    events: list[dict[str, Any]],
-) -> tuple[
-    list[tuple[str, int, dict[str, Any]]],
-    list[tuple[str, int, dict[str, Any]]],
-]:
-    signatures: list[str] = []
-    first_by_signature: dict[str, dict[str, Any]] = {}
-    for event in events:
-        signature = _event_signature(event)
-        if signature == "-":
-            continue
-        signatures.append(signature)
-        first_by_signature.setdefault(signature, event)
-
-    counts = Counter(signatures)
-    error_rows = [
-        (sig, count, first_by_signature[sig])
-        for sig, count in counts.items()
-        if _is_error_like(first_by_signature[sig], sig)
-    ]
-    error_rows.sort(key=lambda row: (-row[1], row[0]))
-    repeat_rows = [
-        (sig, count, first_by_signature[sig])
-        for sig, count in counts.most_common()
-        if count >= 3
-    ]
-    return error_rows, repeat_rows
-
-
-def _render_session_diagnostics(session_id: str, *, limit: int) -> None:
-    sample_limit = max(min(limit * 25, 500), min(limit, 500), 100)
-    events = _recent_session_events(session_id, limit=sample_limit, event_type=None)
-    error_rows, repeat_rows = _diagnostic_rows(events)
-    row_limit = max(limit, 1)
-    print(_diagnostic_header(session_id, events, error_rows, repeat_rows))
-    _print_diagnostic_rows("ERR", error_rows[:row_limit])
-    _print_diagnostic_rows(
-        "REPEAT",
-        repeat_rows[: max(row_limit - min(len(error_rows), row_limit), 0)],
-    )
-
-
-def _diagnostic_header(
-    session_id: str,
-    events: list[dict[str, Any]],
-    error_rows: list[tuple[str, int, dict[str, Any]]],
-    repeat_rows: list[tuple[str, int, dict[str, Any]]],
-) -> str:
-    return (
-        f"DIAG session={session_id[:8]} events_sampled={len(events)} "
-        f"errors={len(error_rows)} repeats={len(repeat_rows)}"
-    )
-
-
-def _print_diagnostic_rows(prefix: str, rows: list[tuple[str, int, dict[str, Any]]]) -> None:
-    for signature, count, event in rows:
-        print(
-            f"{prefix} x{count}|type={event.get('event_type', '-')}|"
-            f"tool={event.get('tool_name', '-')}|{signature}"
-        )
-
-
 def _monitor_single_session(
     session_id: str,
     *,
@@ -236,7 +130,9 @@ def _monitor_single_session(
     short_id = resolved_id[:8]
     print(_monitor_detail_more(short_id, project_flag))
     if errors:
-        _render_session_diagnostics(resolved_id, limit=limit)
+        sample_limit = max(min(limit * 25, 500), min(limit, 500), 100)
+        events = _recent_session_events(resolved_id, limit=sample_limit, event_type=None)
+        _render_diagnostics(resolved_id, events, limit=limit)
         return
     if follow:
         follow_session_events(resolved_id, None, debug, limit)
