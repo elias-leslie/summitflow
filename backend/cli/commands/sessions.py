@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Annotated, Any
+from collections.abc import Iterable
+from typing import Annotated, cast
 
 import typer
 
@@ -45,6 +46,62 @@ from .sessions_reap import (
     reapable_sessions as _reapable_sessions,
 )
 
+SessionStatusOption = Annotated[str | None, typer.Option("-s", "--status")]
+SessionLimitOption = Annotated[int, typer.Option("--limit")]
+SessionAgentOption = Annotated[str | None, typer.Option("--agent")]
+ParentSessionOption = Annotated[str | None, typer.Option("--parent-session")]
+ProjectOption = Annotated[str | None, typer.Option("--project", "-P")]
+ProjectLookupOption = Annotated[
+    str | None,
+    typer.Option("--project", "-P", help="Project scope for short session ID lookup."),
+]
+IncludeUnassignedOption = Annotated[
+    bool,
+    typer.Option(
+        "--include-unassigned",
+        help="Include imported/unassigned sessions without an agent slug",
+    ),
+]
+RawSessionOption = Annotated[bool, typer.Option("--raw", help="Print full raw session JSON.")]
+MonitorTargetArg = Annotated[
+    str | None,
+    typer.Argument(help="Task ID, session ID/prefix, or empty for active sessions"),
+]
+MonitorProjectOption = Annotated[str | None, typer.Option("--project", "-P", help="Project scope")]
+MonitorStatusOption = Annotated[
+    str,
+    typer.Option("--status", "-s", help="Session status for overview"),
+]
+MonitorAgentOption = Annotated[
+    str | None,
+    typer.Option("--agent", help="Agent slug filter for overview"),
+]
+MonitorFollowOption = Annotated[
+    bool,
+    typer.Option("-f", "--follow", help="Follow events in real time"),
+]
+MonitorLimitOption = Annotated[
+    int,
+    typer.Option("-n", "--limit", help="Maximum events to show"),
+]
+MonitorDebugOption = Annotated[
+    bool,
+    typer.Option("--debug", help="Include debug-level events"),
+]
+MonitorErrorsOption = Annotated[
+    bool,
+    typer.Option("--errors", help="Show only error events for a session target"),
+]
+MonitorHistoryOption = Annotated[
+    bool,
+    typer.Option("--history", help="Include older linked Agent Hub sessions"),
+]
+JsonOutputOption = Annotated[bool, typer.Option("--json", help="Output as JSON")]
+ReapDryRunOption = Annotated[
+    bool,
+    typer.Option("--dry-run", help="Preview reapable sessions without closing them"),
+]
+
 app = typer.Typer(
     help=(
         "Agent session management. Use `st sessions monitor` for agentic "
@@ -53,6 +110,14 @@ app = typer.Typer(
     invoke_without_command=True,
     no_args_is_help=False,
 )
+
+def _event_total(payload: dict[str, object]) -> int:
+    return int(cast(int | str | bytes | bytearray, payload.get("total") or 0))
+
+
+def _event_records(payload: dict[str, object]) -> list[dict[str, object]]:
+    return list(cast(Iterable[dict[str, object]], payload.get("events") or []))
+
 
 def _render_session_list(
     status_filter: str | None,
@@ -94,16 +159,22 @@ def _render_session_list(
 
 def _recent_session_events(
     session_id: str, *, limit: int, event_type: str | None
-) -> list[dict[str, Any]]:
+) -> list[dict[str, object]]:
     """Return the most recent session events, fetching the last page if needed."""
     page_size = max(min(limit, 500), 1)
-    first = get_session_events(session_id, event_type=event_type, page=1, page_size=page_size)
-    total = int(first.get("total") or 0)
+    first = cast(
+        dict[str, object],
+        get_session_events(session_id, event_type=event_type, page=1, page_size=page_size),
+    )
+    total = _event_total(first)
     if total <= page_size:
-        return list(first.get("events") or [])
+        return _event_records(first)
     page = max(math.ceil(total / page_size), 1)
-    latest = get_session_events(session_id, event_type=event_type, page=page, page_size=page_size)
-    return list(latest.get("events") or [])
+    latest = cast(
+        dict[str, object],
+        get_session_events(session_id, event_type=event_type, page=page, page_size=page_size),
+    )
+    return _event_records(latest)
 
 
 def _monitor_single_session(
@@ -141,14 +212,74 @@ def _monitor_single_session(
         print(format_event(event, verbose=debug))
 
 
+def _monitor_target(
+    ctx: typer.Context,
+    target: str,
+    *,
+    project_id: str | None,
+    follow: bool,
+    limit: int,
+    debug: bool,
+    errors: bool,
+    history: bool,
+    json_output: bool,
+) -> None:
+    if target.startswith("task-"):
+        _monitor_task_target(
+            ctx,
+            target,
+            follow=follow,
+            limit=limit,
+            debug=debug,
+            history=history,
+            json_output=json_output,
+        )
+        return
+    _monitor_single_session(
+        target,
+        project_id=project_id,
+        limit=limit,
+        debug=debug,
+        errors=errors,
+        follow=follow,
+    )
+
+
+def _monitor_overview_command(
+    project_id: str | None,
+    *,
+    status_filter: str,
+    limit: int,
+    agent_slug: str | None,
+    json_output: bool,
+    follow: bool,
+) -> None:
+    client = STClient(require_project=False)
+    resolved_project_id = project_id or get_project_override()
+    try:
+        _monitor_overview(
+            client,
+            project_id=resolved_project_id,
+            status_filter=status_filter,
+            limit=limit,
+            agent_slug=agent_slug,
+            json_output=json_output,
+            follow=follow,
+        )
+    except APIError as e:
+        handle_api_error(e)
+    except KeyboardInterrupt:
+        print("[Stopped]")
+
+
 @app.callback()
 def sessions_callback(
     ctx: typer.Context,
-    status_filter: Annotated[str | None, typer.Option("-s", "--status")] = None,
-    limit: Annotated[int, typer.Option("--limit")] = 20,
-    agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
-    parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
-    project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
+    status_filter: SessionStatusOption = None,
+    limit: SessionLimitOption = 20,
+    agent_slug: SessionAgentOption = None,
+    parent_session_id: ParentSessionOption = None,
+    project_id: ProjectOption = None,
 ) -> None:
     """List agent sessions when no subcommand is provided."""
     if ctx.invoked_subcommand is not None:
@@ -165,18 +296,12 @@ def sessions_callback(
 
 @app.command("list")
 def list_sessions(
-    status_filter: Annotated[str | None, typer.Option("-s", "--status")] = None,
-    include_unassigned: Annotated[
-        bool,
-        typer.Option(
-            "--include-unassigned",
-            help="Include imported/unassigned sessions without an agent slug",
-        ),
-    ] = True,
-    limit: Annotated[int, typer.Option("--limit")] = 20,
-    agent_slug: Annotated[str | None, typer.Option("--agent")] = None,
-    parent_session_id: Annotated[str | None, typer.Option("--parent-session")] = None,
-    project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
+    status_filter: SessionStatusOption = None,
+    include_unassigned: IncludeUnassignedOption = True,
+    limit: SessionLimitOption = 20,
+    agent_slug: SessionAgentOption = None,
+    parent_session_id: ParentSessionOption = None,
+    project_id: ProjectOption = None,
 ) -> None:
     """List agent sessions.
 
@@ -201,11 +326,8 @@ def list_sessions(
 @app.command("show")
 def show_session(
     session_id: str,
-    project_id: Annotated[
-        str | None,
-        typer.Option("--project", "-P", help="Project scope for short session ID lookup."),
-    ] = None,
-    raw: Annotated[bool, typer.Option("--raw", help="Print full raw session JSON.")] = False,
+    project_id: ProjectLookupOption = None,
+    raw: RawSessionOption = False,
 ) -> None:
     """Show details of a specific session.
 
@@ -239,10 +361,7 @@ def show_session(
 @app.command("close")
 def close_session(
     session_id: str,
-    project_id: Annotated[
-        str | None,
-        typer.Option("--project", "-P", help="Project scope for short session ID lookup."),
-    ] = None,
+    project_id: ProjectLookupOption = None,
 ) -> None:
     """Close an active session.
 
@@ -263,37 +382,16 @@ def close_session(
 @app.command("monitor")
 def monitor_sessions(
     ctx: typer.Context,
-    target: Annotated[
-        str | None,
-        typer.Argument(help="Task ID, session ID/prefix, or empty for active sessions"),
-    ] = None,
-    project_id: Annotated[
-        str | None, typer.Option("--project", "-P", help="Project scope")
-    ] = None,
-    status_filter: Annotated[
-        str, typer.Option("--status", "-s", help="Session status for overview")
-    ] = "active",
-    agent_slug: Annotated[
-        str | None, typer.Option("--agent", help="Agent slug filter for overview")
-    ] = None,
-    follow: Annotated[
-        bool, typer.Option("-f", "--follow", help="Follow events in real time")
-    ] = False,
-    limit: Annotated[
-        int, typer.Option("-n", "--limit", help="Maximum events to show")
-    ] = 20,
-    debug: Annotated[
-        bool, typer.Option("--debug", help="Include debug-level events")
-    ] = False,
-    errors: Annotated[
-        bool, typer.Option("--errors", help="Show only error events for a session target")
-    ] = False,
-    history: Annotated[
-        bool, typer.Option("--history", help="Include older linked Agent Hub sessions")
-    ] = False,
-    json_output: Annotated[
-        bool, typer.Option("--json", help="Output as JSON")
-    ] = False,
+    target: MonitorTargetArg = None,
+    project_id: MonitorProjectOption = None,
+    status_filter: MonitorStatusOption = "active",
+    agent_slug: MonitorAgentOption = None,
+    follow: MonitorFollowOption = False,
+    limit: MonitorLimitOption = 20,
+    debug: MonitorDebugOption = False,
+    errors: MonitorErrorsOption = False,
+    history: MonitorHistoryOption = False,
+    json_output: JsonOutputOption = False,
 ) -> None:
     """Monitor agentic work: active sessions, one session, or one task.
 
@@ -306,55 +404,34 @@ def monitor_sessions(
     model, task/external id, quiet time, tool/command, topic, touched files,
     lifecycle codes, and error/stall excerpt when present.
     """
-    if target and target.startswith("task-"):
-        _monitor_task_target(
+    if target:
+        _monitor_target(
             ctx,
             target,
+            project_id=project_id,
             follow=follow,
             limit=limit,
             debug=debug,
+            errors=errors,
             history=history,
             json_output=json_output,
         )
         return
 
-    if target:
-        _monitor_single_session(
-            target,
-            project_id=project_id,
-            limit=limit,
-            debug=debug,
-            errors=errors,
-            follow=follow,
-        )
-        return
-
-    client = STClient(require_project=False)
-    resolved_project_id = project_id or get_project_override()
-    try:
-        _monitor_overview(
-            client,
-            project_id=resolved_project_id,
-            status_filter=status_filter,
-            limit=limit,
-            agent_slug=agent_slug,
-            json_output=json_output,
-            follow=follow,
-        )
-    except APIError as e:
-        handle_api_error(e)
-        return
-    except KeyboardInterrupt:
-        print("[Stopped]")
+    _monitor_overview_command(
+        project_id,
+        status_filter=status_filter,
+        limit=limit,
+        agent_slug=agent_slug,
+        json_output=json_output,
+        follow=follow,
+    )
 
 
 @app.command("reap")
 def reap_sessions(
-    project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
-    dry_run: Annotated[
-        bool,
-        typer.Option("--dry-run", help="Preview reapable sessions without closing them"),
-    ] = False,
+    project_id: ProjectOption = None,
+    dry_run: ReapDryRunOption = False,
 ) -> None:
     """Close only sessions already marked reapable by Agent Hub lifecycle state."""
     client = STClient(require_project=False)
@@ -404,7 +481,7 @@ def reap_sessions(
     tier="reference",
 )
 def list_ownership(
-    project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
+    project_id: ProjectOption = None,
 ) -> None:
     """List live active ownership lanes across projects or for one project."""
     render_ownership_list(STClient(require_project=False), project_id)
@@ -412,7 +489,7 @@ def list_ownership(
 
 @app.command("overlap")
 def list_overlaps(
-    project_id: Annotated[str | None, typer.Option("--project", "-P")] = None,
+    project_id: ProjectOption = None,
 ) -> None:
     """List current scope overlaps across active ownership lanes."""
     render_overlap_list(STClient(require_project=False), project_id)
