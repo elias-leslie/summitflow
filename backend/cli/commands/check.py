@@ -24,6 +24,21 @@ from .check_codeql import (
     _parse_codeql_args,
 )
 from .check_constants import _FIX_ARGS, _TOOL_SELECTIONS
+from .check_dispatch import (
+    CheckRuntime,
+    extract_check_options,
+    handle_check_args,
+    help_text,
+    run_named_tool,
+    run_selected,
+    selected_tool_args,
+)
+from .check_execution import (
+    adjusted_tool_args,
+    tool_env,
+    tool_output,
+    tool_result_line,
+)
 from .check_runner import (
     _normalize_explicit_args,
     _resolve_repo_root,
@@ -43,18 +58,6 @@ app = typer.Typer(
     },
     add_help_option=False,
 )
-
-
-def _extract_check_options(args: list[str]) -> tuple[list[str], bool, bool]:
-    changed_only = False
-    args = [
-        arg
-        for arg in args
-        if not (arg in {"--changed-only", "-d"} and (changed_only := True))
-    ]
-    fix = "--fix" in args
-    args = ["--fix"] if args == ["--fix"] else [arg for arg in args if arg != "--fix"]
-    return (["--quick"] if changed_only and not args else args), changed_only, fix
 
 
 def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str]) -> list[str]:
@@ -85,35 +88,16 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
     cwd = _workdir(root, config)
     binary = str(config.get("binary") or name)
     base_args = shlex.split(str(config.get("args") or ""))
-    if name == "biome" and any(not arg.startswith("-") for arg in extra_args):
-        base_args = [arg for arg in base_args if arg != "."]
-    if name == "pytest":
-        has_path_arg = any(arg and not arg.startswith("-") for arg in extra_args)
-        has_cov_control = any(arg == "--no-cov" or arg.startswith("--cov") for arg in extra_args)
-        if has_path_arg and not has_cov_control:
-            extra_args = ["--no-cov", *extra_args]
+    base_args, extra_args = adjusted_tool_args(name, base_args, extra_args)
     command = [*_resolve_command(binary, root, cwd, base_args), *extra_args]
     label = str(config.get("label") or name.upper())
     print(f"{label}:{name}:start")
-
-    env = os.environ.copy()
-    paths: list[str] = []
-    for candidate in (
-        root / "backend" / ".venv" / "bin",
-        root / ".venv" / "bin",
-        root / "frontend" / "node_modules" / ".bin",
-        root / "node_modules" / ".bin",
-    ):
-        if candidate.exists():
-            paths.append(str(candidate))
-    if paths:
-        env["PATH"] = ":".join([*paths, env.get("PATH", "")])
 
     try:
         result = subprocess.run(
             command,
             cwd=cwd,
-            env=env,
+            env=tool_env(root, os.environ),
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -124,14 +108,25 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
         output = f"{type(exc).__name__}: {exc}"
         details = write_details(root, name, output)
         print(
-            f"{label}:FAIL:127|details:{display_path(root, details)}|hint:{summary_hint(output)}"
+            tool_result_line(
+                label,
+                name,
+                127,
+                display_path(root, details),
+                summary_hint(output),
+            )
         )
         return 127
-    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    output = tool_output(result.stdout, result.stderr)
     details = write_details(root, name, output)
     print(
-        f"{label}:{'OK' if result.returncode == 0 else 'FAIL'}:{result.returncode}|"
-        f"details:{display_path(root, details)}|hint:{summary_hint(output)}"
+        tool_result_line(
+            label,
+            name,
+            result.returncode,
+            display_path(root, details),
+            summary_hint(output),
+        )
     )
     return result.returncode
 
@@ -146,7 +141,6 @@ def _run_codeql_alert_check(args: list[str]) -> int:
     root = _resolve_repo_root()
     repo = _fetch_codeql_repo(root)
     if repo is None:
-        from ..details import display_path, write_details
         details = write_details(
             root,
             "codeql",
@@ -162,6 +156,28 @@ def _run_codeql_alert_check(args: list[str]) -> int:
     return _emit_codeql_result(root, repo, ref, alerts, error, exit_code)
 
 
+def _runtime() -> CheckRuntime:
+    return CheckRuntime(
+        fix_args=_FIX_ARGS,
+        tool_selections=_TOOL_SELECTIONS,
+        cleanroom_main=cleanroom_main,
+        run_architecture_check=run_architecture_check,
+        output_error=output_error,
+        resolve_repo_root=_resolve_repo_root,
+        workdir=_workdir,
+        normalize_explicit_args=_normalize_explicit_args,
+        changed_files=_changed_files,
+        changed_args=_changed_args,
+        skip_reason=_skip_reason,
+        run_tool=_run_tool,
+        run_codeql_alert_check=_run_codeql_alert_check,
+    )
+
+
+def _extract_check_options(args: list[str]) -> tuple[list[str], bool, bool]:
+    return extract_check_options(args)
+
+
 def _run_selected(
     selected: list[str],
     configs: dict[str, dict[str, object]],
@@ -169,28 +185,7 @@ def _run_selected(
     fix: bool,
     changed_only: bool,
 ) -> int:
-    root = _resolve_repo_root()
-    changed_files = _changed_files(root) if changed_only else []
-    failures = int(run_architecture_check(root, changed_files if changed_only else None) != 0)
-    for name in selected:
-        config = configs[name]
-        cwd = _workdir(root, config)
-        scoped_args = _changed_args(name, root, cwd, config, changed_files)
-        skip_reason = _skip_reason(
-            name,
-            config,
-            changed_only=changed_only,
-            changed_files=changed_files,
-            scoped_args=scoped_args,
-        )
-        if skip_reason:
-            label = config.get("label") or name.upper()
-            print(f"{label!s}:SKIP:{name}:{skip_reason}")
-            continue
-        failures += int(
-            _run_tool(name, config, [*scoped_args, *(_FIX_ARGS.get(name, []) if fix else [])]) != 0
-        )
-    return int(failures != 0)
+    return run_selected(selected, configs, fix=fix, changed_only=changed_only, runtime=_runtime())
 
 
 def _selected_tool_args(
@@ -202,23 +197,16 @@ def _selected_tool_args(
     fix: bool,
     args: list[str],
 ) -> tuple[list[str], bool]:
-    stripped = args[1:]
-    explicit_args = _normalize_explicit_args(root, cwd, stripped)
-    changed_files = _changed_files(root) if changed_only else []
-    scoped_args = [] if explicit_args else _changed_args(name, root, cwd, config, changed_files)
-    skip_reason = _skip_reason(
+    return selected_tool_args(
         name,
+        root,
+        cwd,
         config,
-        changed_only=changed_only,
-        changed_files=changed_files,
-        scoped_args=scoped_args,
-        explicit_args=bool(explicit_args),
+        changed_only,
+        fix,
+        args,
+        runtime=_runtime(),
     )
-    if skip_reason:
-        label = config.get("label") or name.upper()
-        print(f"{label!s}:SKIP:{name}:{skip_reason}")
-        return [], True
-    return [*explicit_args, *scoped_args, *(_FIX_ARGS.get(name, []) if fix else [])], False
 
 
 def _run_named_tool(
@@ -229,17 +217,14 @@ def _run_named_tool(
     changed_only: bool,
     fix: bool,
 ) -> int:
-    if first == "codeql":
-        return _run_codeql_alert_check(args[1:])
-    if first not in configs:
-        return 2
-    root = _resolve_repo_root()
-    config = configs[first]
-    cwd = _workdir(root, config)
-    extra_args, skipped = _selected_tool_args(first, root, cwd, config, changed_only, fix, args)
-    if skipped:
-        return 0
-    return _run_tool(first, config, extra_args)
+    return run_named_tool(
+        first,
+        args,
+        configs,
+        changed_only=changed_only,
+        fix=fix,
+        runtime=_runtime(),
+    )
 
 
 @app.callback(invoke_without_command=True)
@@ -255,49 +240,11 @@ def _run_named_tool(
     tier="mandate",
 )
 def _help_text(names: str) -> str:
-    return (
-        """Quality checks through st
-
-Required path:
-  Use st check for repo gates.
-  Never run raw pytest, Vitest, Biome, TSC, Ruff, SQLFluff, Squawk, or legacy dt first.
-
-Usage:
-  st check --check
-  st check --changed-only
-  st check --quick [--changed-only]
-  st check --frontend-only
-  st check codeql [--ref refs/heads/main]
-  st check cleanroom -- <command>
-  st check <"""
-        + names
-        + "> [-- <tool args>]\n"
-    )
+    return help_text(names)
 
 
 def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]) -> int:
-    args = list(ctx.args)
-    if not args or args[0] in {"-h", "--help", "help"}:
-        print(_help_text("|".join(sorted(configs))))
-        return 0
-
-    args, changed_only, fix = _extract_check_options(args)
-    first = args[0]
-    if first == "cleanroom":
-        return cleanroom_main(["--project-root", str(_resolve_repo_root()), *args[1:]])
-
-    if first == "codeql":
-        return _run_codeql_alert_check(args[1:])
-    if first in configs:
-        return _run_named_tool(first, args, configs, changed_only=changed_only, fix=fix)
-
-    selection = _TOOL_SELECTIONS.get(first)
-    if selection is None:
-        output_error(f"Unknown st check mode/tool: {first}")
-        return 2
-    names, selected_fix = selection
-    selected = [name for name in names if name in configs]
-    return _run_selected(selected, configs, fix=fix or selected_fix, changed_only=changed_only)
+    return handle_check_args(ctx, configs, runtime=_runtime())
 
 
 def check(ctx: typer.Context) -> None:
