@@ -69,6 +69,7 @@ OPTIONAL_COMMANDS = (
     "jj",
     "lease",
     "logs",
+    "mandates",
     "memory",
     "migrate_branches",
     "models",
@@ -80,6 +81,7 @@ OPTIONAL_COMMANDS = (
     "refactor",
     "runtime",
     "search",
+    "selection",
     "service",
     "session_events",
     "sessions",
@@ -131,6 +133,7 @@ SUBCOMMAND_GROUPS = (
     ("vm", "vm"),
     ("wiki", "wiki"),
     ("ui", "ui"),
+    ("selection", "selection"),
 )
 
 FORWARDED_ROOT_COMMANDS = (
@@ -281,6 +284,7 @@ app.command("lease")(_COMMANDS["lease"].lease_command)
 app.command("migrate-branches")(_COMMANDS["migrate_branches"].migrate_branches_command)
 app.command("search")(_COMMANDS["search"].search)
 app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
+app.command("mandates")(_COMMANDS["mandates"].mandates)
 
 
 @app.command("commit")
