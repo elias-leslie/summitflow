@@ -1,8 +1,8 @@
 """Tests for the Aico-supporting st surface: `st selection` and `st mandates`.
 
-Selection is a Phase-1 stub (always empty); mandates is real and fetches the
-mandate block from Agent Hub's progressive-context endpoint. Both follow the
-frozen bare-payload output contract (docs/contracts/01-output-conventions.md).
+Selection reads Aico's sidecar selection bus over HTTP (Phase 2); mandates
+fetches the mandate block from Agent Hub's progressive-context endpoint. Both
+follow the frozen bare-payload output contract (docs/contracts/01-output-conventions.md).
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 from cli.commands import mandates as mandates_mod
 from cli.commands import note as note_mod
 from cli.commands import projects as projects_mod
+from cli.commands import selection as selection_mod
 from cli.commands.projects import app as projects_app
 from cli.commands.selection import app as selection_app
 from cli.output_context import OutputContext
@@ -31,26 +32,57 @@ _note_app = typer.Typer()
 _note_app.command("note")(note_mod.note)
 
 
+_DOM = {
+    "kind": "dom",
+    "snippet": "the selected text",
+    "captured_at": "2026-05-22T20:00:00.000Z",
+    "widget": None,
+    "project": None,
+    "meta": {"url": "http://x", "title": "X"},
+}
+
+
 class TestSelection:
-    def test_current_compact(self) -> None:
-        result = runner.invoke(selection_app, ["current"])
+    """`st selection` reads Aico's bus over HTTP; tests stub `_sidecar_get`."""
+
+    def test_current_empty_compact(self) -> None:
+        with patch.object(selection_mod, "_sidecar_get", return_value={"kind": "empty"}):
+            result = runner.invoke(selection_app, ["current"])
         assert result.exit_code == 0
         assert "selection:kind=empty" in result.stdout
 
-    def test_current_json_is_bare(self) -> None:
-        result = runner.invoke(selection_app, ["current"], obj=OutputContext(compact=False))
+    def test_current_empty_json_is_bare(self) -> None:
+        # A sidecar that is down returns {} from _sidecar_get → still empty.
+        with patch.object(selection_mod, "_sidecar_get", return_value={}):
+            result = runner.invoke(selection_app, ["current"], obj=OutputContext(compact=False))
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {"kind": "empty"}
 
-    def test_history_compact(self) -> None:
-        result = runner.invoke(selection_app, ["history", "--n", "5"])
+    def test_current_dom_compact_shows_snippet(self) -> None:
+        with patch.object(selection_mod, "_sidecar_get", return_value=_DOM):
+            result = runner.invoke(selection_app, ["current"])
+        assert result.exit_code == 0
+        assert "kind=dom" in result.stdout
+        assert "the selected text" in result.stdout
+
+    def test_current_dom_json_is_bare_record(self) -> None:
+        with patch.object(selection_mod, "_sidecar_get", return_value=_DOM):
+            result = runner.invoke(selection_app, ["current"], obj=OutputContext(compact=False))
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == _DOM
+
+    def test_history_empty_compact(self) -> None:
+        with patch.object(selection_mod, "_sidecar_get", return_value={"items": [], "count": 0}):
+            result = runner.invoke(selection_app, ["history", "--n", "5"])
         assert result.exit_code == 0
         assert "selection-history[0]" in result.stdout
 
-    def test_history_json_is_bare(self) -> None:
-        result = runner.invoke(selection_app, ["history"], obj=OutputContext(compact=False))
+    def test_history_json_has_items_and_count(self) -> None:
+        payload = {"items": [_DOM], "count": 1}
+        with patch.object(selection_mod, "_sidecar_get", return_value=payload):
+            result = runner.invoke(selection_app, ["history"], obj=OutputContext(compact=False))
         assert result.exit_code == 0
-        assert json.loads(result.stdout) == {"items": []}
+        assert json.loads(result.stdout) == payload
 
 
 class TestMandates:
@@ -107,7 +139,9 @@ class TestProjectsActive:
         with (
             patch.object(projects_mod, "_active_project_path", return_value=state_file),
             patch.object(
-                projects_mod, "projects_api", return_value={"root_path": "/srv/workspaces/projects/aico"}
+                projects_mod,
+                "projects_api",
+                return_value={"root_path": "/srv/workspaces/projects/aico"},
             ) as api,
         ):
             result = runner.invoke(projects_app, ["switch", "aico"])
@@ -128,7 +162,9 @@ class TestProjectsActive:
         assert json.loads(result.stdout) == {"project_id": "aico", "project_root": "/x"}
 
     def test_active_returns_null_when_unset(self, tmp_path) -> None:
-        with patch.object(projects_mod, "_active_project_path", return_value=tmp_path / "none.json"):
+        with patch.object(
+            projects_mod, "_active_project_path", return_value=tmp_path / "none.json"
+        ):
             result = runner.invoke(projects_app, ["active"])
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {"project_id": None, "project_root": None}
