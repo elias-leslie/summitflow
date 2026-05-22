@@ -25,7 +25,7 @@ CLI_REFERENCE = """ST CLI - SummitFlow Tasks.
 Core loop: pulse --gate | ready | create "<title>" | claim <id> | context <id> | done <id>.
 Lifecycle: pause <id> | reopen <id> | cancel <id> | update <id> | abandon <id>.
 VCS: vcs doctor | vcs reconcile | commit -m MSG [--task T] | jj diff | jj show.
-Tools: check | graph | service | runtime | db | browser | web | wiki | sessions | agent | cleanup | logs.
+Tools: check | graph | service | runtime | db | browser | web | wiki | sessions | agent | cleanup | logs | ui.
 Use `<command> --help` for command-specific syntax."""
 
 SESSION_EVENTS_COMMAND = "session-events"
@@ -89,6 +89,7 @@ OPTIONAL_COMMANDS = (
     "tasks",
     "tests",
     "tools",
+    "ui",
     "vcs",
     "vm",
     "web",
@@ -129,6 +130,7 @@ SUBCOMMAND_GROUPS = (
     ("setup", "setup"),
     ("vm", "vm"),
     ("wiki", "wiki"),
+    ("ui", "ui"),
 )
 
 FORWARDED_ROOT_COMMANDS = (

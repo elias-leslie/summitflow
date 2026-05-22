@@ -112,6 +112,16 @@
       "commands": ["services", "browser", "agent-tooling", "test-dbs"],
       "examples": ["st setup services --dry-run", "st setup browser --dry-run"],
       "verify": ["st setup --help"]
+    },
+    {
+      "id": "ui",
+      "canonical": "st ui",
+      "replaces": ["scrot", "import", "tesseract", "wmctrl", "xdotool", "ydotool", "xclip", "compare"],
+      "summary": "Desktop UI control on X11: list windows, screenshot, OCR, image diff, window move/resize/activate/close, click/type/key, and clipboard. TOON-compact output. Use to self-verify GUI changes.",
+      "safety": "mutating",
+      "commands": ["windows", "shot", "ocr", "diff", "activate", "move", "resize", "close", "click", "type", "key", "clip"],
+      "examples": ["st ui windows", "st ui shot -w aico -o /tmp/aico.png", "st ui ocr aico", "st ui diff a.png b.png"],
+      "verify": ["st ui windows"]
     }
   ],
   "wrapper_allowlist": [
