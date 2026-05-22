@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -26,6 +28,30 @@ from ._projects_helpers import (
 logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="Project management commands")
+
+
+def _active_project_path() -> Path:
+    """Per-user file holding the persisted active-project pointer."""
+    return Path.home() / ".local" / "share" / "st" / "active-project.json"
+
+
+def _read_active_project() -> dict[str, str | None]:
+    path = _active_project_path()
+    if not path.exists():
+        return {"project_id": None, "project_root": None}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {"project_id": None, "project_root": None}
+    return {"project_id": data.get("project_id"), "project_root": data.get("project_root")}
+
+
+def _write_active_project(project_id: str, project_root: str | None) -> dict[str, str | None]:
+    path = _active_project_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    state: dict[str, str | None] = {"project_id": project_id, "project_root": project_root}
+    path.write_text(json.dumps(state))
+    return state
 
 
 @app.callback(invoke_without_command=True)
@@ -72,6 +98,35 @@ def current() -> None:
         )
     except SystemExit:
         raise
+
+
+@app.command("switch")
+def switch_project(
+    project_id: Annotated[str, typer.Argument(help="Project ID (slug) to make active")],
+) -> None:
+    """Set the persisted active project (consumed by Aico for widget cwd).
+
+    Validates the slug against the registry, then writes the active-project
+    pointer to ~/.local/share/st/active-project.json. Does not change st's own
+    cwd-based project resolution.
+
+    Examples:
+        st projects switch aico
+        st projects switch summitflow
+    """
+    project = projects_api("GET", f"/{project_id}")
+    root = project.get("root_path") if isinstance(project, dict) else None
+    output_json(_write_active_project(project_id, root))
+
+
+@app.command("active")
+def active_project() -> None:
+    """Show the persisted active project, or null if none is set.
+
+    Examples:
+        st projects active
+    """
+    output_json(_read_active_project())
 
 
 @app.command("get")

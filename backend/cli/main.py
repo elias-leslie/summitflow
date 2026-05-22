@@ -73,6 +73,7 @@ OPTIONAL_COMMANDS = (
     "memory",
     "migrate_branches",
     "models",
+    "note",
     "persona",
     "portfolio",
     "projects",
@@ -285,6 +286,7 @@ app.command("migrate-branches")(_COMMANDS["migrate_branches"].migrate_branches_c
 app.command("search")(_COMMANDS["search"].search)
 app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
 app.command("mandates")(_COMMANDS["mandates"].mandates)
+app.command("note")(_COMMANDS["note"].note)
 
 
 @app.command("commit")

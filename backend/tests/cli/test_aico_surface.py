@@ -14,16 +14,21 @@ import typer
 from typer.testing import CliRunner
 
 from cli.commands import mandates as mandates_mod
+from cli.commands import note as note_mod
+from cli.commands import projects as projects_mod
+from cli.commands.projects import app as projects_app
 from cli.commands.selection import app as selection_app
 from cli.output_context import OutputContext
 
 runner = CliRunner()
 
-# Wrap the root-registered `mandates` leaf in a throwaway app so it can be
-# driven through CliRunner with a real typer.Context (matching how main.py
-# registers it via app.command("mandates")(...)).
+# Wrap the root-registered leaf commands in throwaway apps so they can be driven
+# through CliRunner with a real typer.Context (matching how main.py registers
+# them via app.command("mandates")(...) / app.command("note")(...)).
 _mandates_app = typer.Typer()
 _mandates_app.command("mandates")(mandates_mod.mandates)
+_note_app = typer.Typer()
+_note_app.command("note")(note_mod.note)
 
 
 class TestSelection:
@@ -72,3 +77,58 @@ class TestMandates:
             result = runner.invoke(_mandates_app, [], obj=OutputContext(compact=False))
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {"items": [], "count": 0}
+
+
+class TestNote:
+    def test_saves_as_formatted_note_episode(self) -> None:
+        with patch.object(note_mod, "save_impl") as save:
+            result = runner.invoke(_note_app, ["Check the deploy after merge"])
+        assert result.exit_code == 0
+        args = save.call_args.args
+        content, summary, tier = args[1], args[2], args[3]
+        tags = args[16]
+        assert content == "**Note**: Check the deploy after merge."
+        assert tier == "reference"
+        assert 10 <= len(summary) <= 40
+        assert tags == "#kind:note"
+
+    def test_merges_extra_tags_after_kind_note(self) -> None:
+        with patch.object(note_mod, "save_impl") as save:
+            result = runner.invoke(
+                _note_app, ["Check the deploy after merge", "--tags", "#widget:claude-code"]
+            )
+        assert result.exit_code == 0
+        assert save.call_args.args[16] == "#kind:note,#widget:claude-code"
+
+
+class TestProjectsActive:
+    def test_switch_validates_slug_and_persists_pointer(self, tmp_path) -> None:
+        state_file = tmp_path / "active-project.json"
+        with (
+            patch.object(projects_mod, "_active_project_path", return_value=state_file),
+            patch.object(
+                projects_mod, "projects_api", return_value={"root_path": "/srv/workspaces/projects/aico"}
+            ) as api,
+        ):
+            result = runner.invoke(projects_app, ["switch", "aico"])
+        assert result.exit_code == 0
+        api.assert_called_once_with("GET", "/aico")
+        assert json.loads(result.stdout) == {
+            "project_id": "aico",
+            "project_root": "/srv/workspaces/projects/aico",
+        }
+        assert json.loads(state_file.read_text())["project_id"] == "aico"
+
+    def test_active_returns_persisted_pointer(self, tmp_path) -> None:
+        state_file = tmp_path / "active-project.json"
+        state_file.write_text(json.dumps({"project_id": "aico", "project_root": "/x"}))
+        with patch.object(projects_mod, "_active_project_path", return_value=state_file):
+            result = runner.invoke(projects_app, ["active"])
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"project_id": "aico", "project_root": "/x"}
+
+    def test_active_returns_null_when_unset(self, tmp_path) -> None:
+        with patch.object(projects_mod, "_active_project_path", return_value=tmp_path / "none.json"):
+            result = runner.invoke(projects_app, ["active"])
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"project_id": None, "project_root": None}
