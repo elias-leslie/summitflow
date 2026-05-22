@@ -266,10 +266,16 @@ def run_routine_upkeep(
 
     ``dispatch`` is accepted for legacy callers but intentionally ignored.
     Work pickup is owned by the separate autonomous_work_pickup workflow.
+
+    ``force`` is the manual-operator path: it bypasses both the schedule's
+    ``upkeep_enabled`` gate and the ``_is_due`` interval so an on-demand
+    ``st autonomous upkeep`` run discovers tasks even when the recurring
+    schedule is disabled. Scheduled callers never pass ``force``, so this
+    does not re-enable any automation.
     """
     started_at = datetime.now(UTC)
     settings = get_routine_upkeep_settings(project_id)
-    if not settings.enabled:
+    if not settings.enabled and not force:
         return _upkeep_result(project_id, STATUS_DISABLED)
     if not force and not _is_due(project_id, settings):
         return _upkeep_result(project_id, STATUS_SKIPPED, reason=REASON_NOT_DUE)

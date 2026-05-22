@@ -34,6 +34,33 @@ def test_run_routine_upkeep_skips_disabled_without_history(mocker) -> None:
     record_run.assert_not_called()
 
 
+def test_run_routine_upkeep_force_runs_even_when_disabled(mocker) -> None:
+    """Manual `st autonomous upkeep` (force=True) bypasses the disabled schedule gate."""
+    from app.tasks.autonomous.upkeep import RoutineUpkeepSettings, run_routine_upkeep
+
+    mocker.patch(
+        "app.tasks.autonomous.upkeep.get_routine_upkeep_settings",
+        return_value=RoutineUpkeepSettings(enabled=False, batch_limit=5),
+    )
+    is_due = mocker.patch("app.tasks.autonomous.upkeep._is_due", return_value=False)
+    mocker.patch("app.tasks.autonomous.upkeep._routine_upkeep_lock", return_value=_acquired_lock())
+    run_refactors = mocker.patch(
+        "app.tasks.autonomous.upkeep._run_refactor_source",
+        return_value={"created_count": 1, "retired_count": 0, "scanned_count": 1},
+    )
+    mocker.patch("app.tasks.autonomous.upkeep._create_quality_failure_tasks", return_value=[])
+    mocker.patch("app.tasks.autonomous.upkeep._create_feedback_tasks", return_value=[])
+    mocker.patch("app.tasks.autonomous.upkeep.maintenance_store.record_maintenance_run")
+
+    result = run_routine_upkeep("summitflow", force=True)
+
+    # Disabled schedule did not short-circuit; the due-interval was never consulted.
+    assert result["status"] == "completed"
+    assert result["tasks_created"] == 1
+    run_refactors.assert_called_once_with("summitflow", 5)
+    is_due.assert_not_called()
+
+
 def test_run_routine_upkeep_records_completed_no_work(mocker) -> None:
     from app.tasks.autonomous.upkeep import RoutineUpkeepSettings, run_routine_upkeep
 

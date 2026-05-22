@@ -87,6 +87,7 @@ OPTIONAL_COMMANDS = (
     "session_events",
     "sessions",
     "setup",
+    "skills",
     "snapshots",
     "subtask",
     "tasks",
@@ -364,6 +365,7 @@ def progress_alias(
 # These are defined with @app.command() in their modules, so access via module.app
 _register_named_command(_COMMANDS["claim"].app, "claim")
 app.add_typer(_COMMANDS["checkpoints"].app, name="checkpoints")
+app.add_typer(_COMMANDS["skills"].app, name="skills")
 _register_snapshot_commands()
 app.add_typer(_COMMANDS["autosnapshot"].app, name="autosnap", hidden=True)
 for command_name in ROOT_TASK_COMMAND_NAMES - {"claim"}:
