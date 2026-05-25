@@ -19,6 +19,7 @@ latter must clear a substantially higher corroboration bar.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -660,6 +661,17 @@ class DuplicateCluster:
     @property
     def paths(self) -> list[str]:
         return [str(m.get("file_path")) for m in self.members]
+
+
+def cluster_signature(cluster: DuplicateCluster) -> str:
+    """Stable identity for a cluster across scans.
+
+    Keyed on the sorted ``name@file_path`` of every member so the same set of
+    duplicate sites maps to the same signature on a later scan (enabling dedupe
+    and stale-task retirement), independent of symbol_id churn or member order.
+    """
+    parts = sorted(f"{m.get('name')}@{m.get('file_path')}" for m in cluster.members)
+    return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16]
 
 
 def find_duplicate_pairs(

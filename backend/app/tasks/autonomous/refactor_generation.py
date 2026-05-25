@@ -6,23 +6,29 @@ from pathlib import Path
 from typing import Any
 
 from app.services.explorer import scan
+from app.services.explorer.redundancy import cluster_signature
 from app.services.refactor_promotion import assess_refactor_target
 from app.services.task_issue_mapper import link_issue_to_task
 from app.storage import qa_issues as qa_storage
 from app.storage import tasks as task_store
-from app.storage.connection import get_connection
+from app.storage.connection import get_connection, get_cursor
 from app.storage.events import log_task_event
 from app.storage.explorer_analysis import (
     DEFAULT_REFACTOR_TARGET_LIMIT,
     get_promotable_refactor_paths,
     get_refactor_targets,
 )
+from app.storage.explorer_symbols import find_redundancy_candidates
 from app.storage.projects import get_project_root_path
 from app.storage.task_spirit import get_task_spirit, update_task_spirit
 from app.tasks.autonomous._issue_builder import create_refactor_issue
 from app.tasks.autonomous.step_builders import calculate_target_lines
-from app.tasks.autonomous.task_builders import create_refactor_task
-from app.tasks.autonomous.upkeep_prune import close_obsolete_generated_task
+from app.tasks.autonomous.task_builders import create_consolidation_task, create_refactor_task
+from app.tasks.autonomous.upkeep_constants import SOURCE_CONSOLIDATE
+from app.tasks.autonomous.upkeep_prune import (
+    close_obsolete_generated_task,
+    prune_obsolete_upkeep_signal_tasks,
+)
 from app.tasks.explorer_resolution import check_and_close_resolved_issues
 
 from ...logging_config import get_logger
@@ -31,6 +37,8 @@ logger = get_logger(__name__)
 
 _SIZE_ISSUES = {"oversized", "large_file", "bloat_critical", "bloat_warning"}
 _REFACTOR_PRUNE_STATUSES = ("pending", "paused", "failed")
+# Per-scan cap on new consolidate-duplicate tasks: precision-first, never spam.
+DEFAULT_CONSOLIDATION_CREATE_LIMIT = 5
 
 
 def _ensure_refactor_scope(task_id: str, relative_path: str) -> None:
@@ -249,6 +257,7 @@ def _candidate_generated_refactor_tasks(project_id: str) -> list[dict[str, Any]]
               AND t.task_type = 'refactor'
               AND t.status = ANY(%s)
               AND (q.id IS NOT NULL OR 'auto-generated' = ANY(t.labels))
+              AND (ts.context -> 'upkeep' ->> 'signal_type') IS DISTINCT FROM 'consolidate-duplicate'
             """,
             (project_id, list(_REFACTOR_PRUNE_STATUSES)),
         )
@@ -341,6 +350,76 @@ def generate_refactor_tasks_internal(
     }
 
 
+def _open_consolidation_source_keys(project_id: str) -> set[str]:
+    """Source keys of consolidation tasks that still hold an open (non-terminal) slot."""
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT ts.context -> 'upkeep' ->> 'source_key'
+            FROM tasks t
+            JOIN task_spirit ts ON ts.task_id = t.id
+            WHERE t.project_id = %s
+              AND t.status NOT IN ('completed', 'cancelled')
+              AND (ts.context -> 'upkeep' ->> 'signal_type') = %s
+            """,
+            (project_id, SOURCE_CONSOLIDATE),
+        )
+        return {str(row[0]) for row in cur.fetchall() if row[0]}
+
+
+def _member_files_present(project_root: str | None, paths: set[str]) -> int:
+    """Count how many of a cluster's member files still exist on disk."""
+    present = 0
+    for relative_path in paths:
+        file_path = Path(project_root, relative_path) if project_root else Path(relative_path)
+        if file_path.exists():
+            present += 1
+    return present
+
+
+def generate_consolidation_tasks_internal(
+    project_id: str,
+    project_root: str | None = None,
+    create_limit: int | None = DEFAULT_CONSOLIDATION_CREATE_LIMIT,
+) -> dict[str, int]:
+    """Create/retire consolidate-duplicate tasks from the redundancy detector.
+
+    The detector's proven precision + the 2-3-member cap (in
+    ``find_redundancy_candidates``) are the gate; the routine-upkeep
+    source_key/signal_type contract gives dedupe and stale-task retirement for
+    free via ``prune_obsolete_upkeep_signal_tasks``.
+    """
+    fresh: dict[str, list[dict[str, Any]]] = {}
+    for cluster in find_redundancy_candidates(project_id):
+        paths = {str(m.get("file_path")) for m in cluster.members if m.get("file_path")}
+        if _member_files_present(project_root, paths) < 2:
+            continue  # duplication already resolved on disk — not a live cluster
+        source_key = f"upkeep:{SOURCE_CONSOLIDATE}:{cluster_signature(cluster)}"
+        fresh[source_key] = cluster.members
+
+    pruned = prune_obsolete_upkeep_signal_tasks(
+        project_id, SOURCE_CONSOLIDATE, active_source_keys=set(fresh),
+    )
+
+    open_keys = _open_consolidation_source_keys(project_id)
+    created = 0
+    for source_key, members in fresh.items():
+        if create_limit is not None and created >= create_limit:
+            break
+        if source_key in open_keys:
+            continue  # already has an open consolidation task
+        if create_consolidation_task(project_id, members, source_key):
+            created += 1
+
+    return {
+        "consolidation_created": created,
+        "consolidation_candidates": len(fresh),
+        "consolidation_pruned": (
+            pruned["deleted"] + pruned["completed"] + pruned["cancelled"]
+        ),
+    }
+
+
 def regenerate_refactor_tasks_impl(
     project_id: str,
     create_limit: int | None = None,
@@ -367,9 +446,12 @@ def regenerate_refactor_tasks_impl(
         project_root=project_root,
         create_limit=create_limit,
     )
+    consolidation = generate_consolidation_tasks_internal(project_id, project_root)
     logger.info(
-        "Refactor task sync complete for %s: closed=%d, created=%d, retired=%d, scanned=%d, skipped=%d",
+        "Refactor task sync complete for %s: closed=%d, created=%d, retired=%d, scanned=%d, "
+        "skipped=%d, consolidation_created=%d, consolidation_pruned=%d",
         project_id, closed_count, result['created_count'],
         result['retired_count'], result['scanned_count'], result['skipped_count'],
+        consolidation['consolidation_created'], consolidation['consolidation_pruned'],
     )
-    return {"closed_count": closed_count, **result}
+    return {"closed_count": closed_count, **result, **consolidation}

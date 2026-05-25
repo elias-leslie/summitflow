@@ -22,6 +22,7 @@ from app.tasks.autonomous._task_core import (
 )
 from app.tasks.autonomous.upkeep_constants import (
     EXECUTION_MODE_AUTONOMOUS,
+    SOURCE_CONSOLIDATE,
     SOURCE_REFACTORS,
     UPKEEP_LABELS,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "_build_issue_aware_objective",
     "build_refactor_description",
     "create_architecture_task",
+    "create_consolidation_task",
     "create_refactor_task",
     "create_schema_task",
 ]
@@ -94,6 +96,63 @@ def create_refactor_task(
     link_task_to_issue(task_id, issue_id)
     logger.info("Created refactor task %s: %s", task_id, title)
     return task_id, issue_id
+
+
+def create_consolidation_task(
+    project_id: str,
+    members: list[dict[str, Any]],
+    source_key: str,
+) -> str | None:
+    """Create a lean task to consolidate a cluster of near-duplicate symbols.
+
+    Reuses the refactor task_type and the routine-upkeep source_key/signal_type
+    contract so the existing dedupe + stale-task retirement
+    (``prune_obsolete_upkeep_signal_tasks``) governs it. No new TaskType.
+    """
+    paths = sorted({str(m.get("file_path")) for m in members if m.get("file_path")})
+    names = sorted({str(m.get("name")) for m in members if m.get("name")})
+    label = names[0] if len(names) == 1 else "/".join(names[:3])
+    title = f"Consolidate duplicate: {label} ({len(members)} sites)"
+
+    sites = "\n".join(
+        f"- {m.get('kind')} `{m.get('name')}` in {m.get('file_path')}" for m in members
+    )
+    description = (
+        "Auto-generated from Explorer redundancy scan.\n\n"
+        f"These {len(members)} symbols look like near-duplicate implementations of the "
+        "same thing:\n"
+        f"{sites}\n\n"
+        "Pick one canonical implementation, have the other sites delegate to or import "
+        "it, and remove the duplicated logic — preserving behavior. If they are NOT "
+        "actually duplicates (intentional per-context copies), close this task with that "
+        "rationale."
+    )
+
+    task_id = create_task_with_spirit(
+        project_id=project_id, title=title, description=description,
+        priority=3, task_type="refactor", tier=2,
+        done_when=[
+            "A single canonical implementation remains; other sites delegate to it or are removed.",
+            "Existing behavior is preserved and relevant checks pass.",
+            "If the symbols are intentionally distinct, the task is closed with that rationale instead.",
+        ],
+        context={
+            "files_to_modify": paths,
+            "upkeep": {
+                "source_key": source_key,
+                "signal_type": SOURCE_CONSOLIDATE,
+            },
+        },
+        complexity="SIMPLE", auto_approve=True, ai_review=False,
+        execution_mode=EXECUTION_MODE_AUTONOMOUS,
+        autonomous=True,
+        labels=[*UPKEEP_LABELS, SOURCE_CONSOLIDATE],
+    )
+
+    if not task_id:
+        return None
+    logger.info("Created consolidation task %s: %s", task_id, title)
+    return task_id
 
 
 def create_schema_task(

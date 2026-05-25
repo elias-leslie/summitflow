@@ -10,6 +10,7 @@ TOOL_NAME = "routine-upkeep"
 SOURCE_QUALITY = "quality"
 SOURCE_FEEDBACK = "feedback"
 SOURCE_REFACTORS = "refactors"
+SOURCE_CONSOLIDATE = "consolidate-duplicate"
 SOURCES = (SOURCE_REFACTORS, SOURCE_QUALITY, SOURCE_FEEDBACK)
 STATUS_ACTIVE = "active"
 STATUS_COMPLETED = "completed"

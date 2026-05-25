@@ -242,8 +242,11 @@ def _emit_query_output(query: str, result: dict[str, Any], text: bool, symbols: 
 @usage(
     surface="st.search",
     cmd='st search "query"',
-    when="repo/code discovery",
-    precautions=("prefer over rg/grep/find/st memory search",),
+    when="repo/code discovery; before adding any function/endpoint/command/component — search first and extend a close match instead of writing new",
+    precautions=(
+        "prefer over rg/grep/find/st memory search",
+        "on a close match, extend/reuse it rather than adding a near-duplicate",
+    ),
     tier="mandate",
 )
 def search(

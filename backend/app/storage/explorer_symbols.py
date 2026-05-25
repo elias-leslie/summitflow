@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
 from psycopg import sql
+
+from app.services.explorer.redundancy import (
+    DEFAULT_CONFIG,
+    DuplicateCluster,
+    SimilarityConfig,
+    cluster_duplicates,
+    is_eligible,
+    tokenize_name,
+)
 
 from ._sql import join_static_sql
 from .connection import get_connection, get_cursor
@@ -272,6 +282,70 @@ def search_symbols(
         cur.execute(query_sql, (*ranking_params, *params, limit))
         rows = cur.fetchall()
         return [_row_to_symbol(row[:-1]) for row in rows]
+
+
+def _load_symbols_for_detection(project_id: str) -> list[dict[str, Any]]:
+    """Load the symbol fields the redundancy detector scores, for one project."""
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT file_path, symbol_id, qualified_name, name, kind,
+                   signature, language, summary, keywords
+            FROM explorer_symbols
+            WHERE project_id = %s
+            """,
+            (project_id,),
+        )
+        rows = cur.fetchall()
+    return [
+        {
+            "file_path": r[0],
+            "symbol_id": r[1],
+            "qualified_name": r[2],
+            "name": r[3],
+            "kind": r[4],
+            "signature": r[5],
+            "language": r[6],
+            "summary": r[7],
+            "keywords": r[8] or [],
+        }
+        for r in rows
+    ]
+
+
+def find_redundancy_candidates(
+    project_id: str,
+    *,
+    max_cluster_size: int = 3,
+    config: SimilarityConfig = DEFAULT_CONFIG,
+) -> list[DuplicateCluster]:
+    """Find near-duplicate symbol clusters for a project (precision-first).
+
+    Narrows to eligible symbols that share a name token with at least one other
+    (an inverted-index stand-in for per-symbol ``search_symbols`` that avoids the
+    detector's O(n^2) full pairwise scan), then runs the pure clusterer. Clusters
+    outside the 2..``max_cluster_size`` range are dropped: large N-way name
+    collisions are dominated by framework conventions, not actionable copies.
+    """
+    symbols = _load_symbols_for_detection(project_id)
+    eligible = [i for i, s in enumerate(symbols) if is_eligible(s, config)]
+
+    token_index: dict[str, list[int]] = defaultdict(list)
+    for i in eligible:
+        for tok in tokenize_name(str(symbols[i].get("name") or "")):
+            token_index[tok].append(i)
+
+    candidate_idx: set[int] = set()
+    for members in token_index.values():
+        if len(members) > 1:
+            candidate_idx.update(members)
+    candidates = [symbols[i] for i in sorted(candidate_idx)]
+
+    return [
+        cluster
+        for cluster in cluster_duplicates(candidates, config)
+        if 2 <= len(cluster.members) <= max_cluster_size
+    ]
 
 
 def cleanup_stale_symbols(project_id: str, current_paths: set[str]) -> int:
