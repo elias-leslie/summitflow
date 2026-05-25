@@ -27,14 +27,10 @@ from ._git_repo_sources import (  # noqa: F401
     _registered_project_roots,
     _resolve_project_id_from_sources,
     _translate_path,
+    is_valid_git_repo,
 )
 
 logger = get_logger(__name__)
-
-
-def is_valid_git_repo(path: Path) -> bool:
-    """Return True if path exists and has a .git directory."""
-    return path.exists() and (path / ".git").exists()
 
 
 CONFIG_REPOS: list[Path] = _load_repo_paths_from_file(FALLBACK_FILE)

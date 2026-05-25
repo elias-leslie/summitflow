@@ -10,6 +10,7 @@ from typing import Any
 import typer
 
 from ..output import output_error, output_success, output_warning
+from .done_validators import is_subtask_id  # noqa: F401  # re-exported for claim.py
 
 _UNMERGED_PREFIXES = {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}
 _IN_PROGRESS_FILES = (
@@ -21,12 +22,6 @@ _IN_PROGRESS_DIRS = (
     "rebase-merge",
     "rebase-apply",
 )
-def is_subtask_id(id_str: str) -> bool:
-    """Check if the ID looks like a subtask (e.g., 1.1, 2.3)."""
-    if "." not in id_str:
-        return False
-    parts = id_str.split(".")
-    return len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit()
 
 
 def _git_status_lines() -> list[str]:

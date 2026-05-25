@@ -21,6 +21,7 @@ from ..lib.checkpoint import (
 from ..lib.checkpoint_branches import get_task_branches
 from ..lib.confirm_token import confirm_gate
 from ..output import output_error
+from .done_validators import is_subtask_id  # noqa: F401  # re-exported for abandon.py
 
 
 def count_unmerged_commits(task_id: str, project_id: str | None = None) -> int:
@@ -47,16 +48,6 @@ def _count_branch_commits_ahead(branch_name: str, cwd: str | None = None) -> int
         except (subprocess.CalledProcessError, ValueError):
             continue
     return 0
-
-
-def is_subtask_id(id_str: str) -> bool:
-    """Check if the ID looks like a subtask (e.g., 1.1, 2.3)."""
-    if "." not in id_str:
-        return False
-    parts = id_str.split(".")
-    if len(parts) != 2:
-        return False
-    return parts[0].isdigit() and parts[1].isdigit()
 
 
 def _legacy_local_branches(task_id: str, project_id: str | None = None) -> list[str]:
