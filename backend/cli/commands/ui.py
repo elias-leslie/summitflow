@@ -105,6 +105,15 @@ def _resolve_window(target: str) -> int:
     return int(ids[-1])
 
 
+def _focused_window() -> str:
+    """Active window id as a string, or 'root' if it can't be determined.
+
+    The same resolution `st ui shot` uses for its default (focused) target.
+    """
+    act = _run(["xdotool", "getactivewindow"]) if shutil.which("xdotool") else None
+    return act.stdout.strip() if act and act.returncode == 0 and act.stdout.strip() else "root"
+
+
 def _identify_dims(path: str) -> tuple[int, int]:
     _require("identify")
     res = _run(["identify", "-format", "%w %h", path])
@@ -175,8 +184,7 @@ def shot(
     elif window:
         wid = str(_resolve_window(window))
     else:
-        act = _run(["xdotool", "getactivewindow"]) if shutil.which("xdotool") else None
-        wid = act.stdout.strip() if act and act.returncode == 0 and act.stdout.strip() else "root"
+        wid = _focused_window()
     cmd = ["import", "-window", wid]
     if region:
         cmd += ["-crop", region, "+repage"]
@@ -194,19 +202,22 @@ def shot(
 @app.command()
 def ocr(
     ctx: typer.Context,
-    target: Annotated[str, typer.Argument(help="Window id/name or image path")],
+    target: Annotated[
+        str | None,
+        typer.Argument(help="Window id/name or image path; default = focused window"),
+    ] = None,
 ) -> None:
-    """Read text from a window or image via OCR.
+    """Read text from a window or image via OCR. Default target is the focused window.
 
-    Examples: st ui ocr aico | st ui ocr /tmp/shot.png
+    Examples: st ui ocr | st ui ocr aico | st ui ocr /tmp/shot.png
     """
     octx = _ctx(ctx)
     _require("tesseract")
-    if Path(target).is_file():
+    if target is not None and Path(target).is_file():
         img = target
     else:
         _require("import")
-        wid = str(_resolve_window(target))
+        wid = _focused_window() if target is None else str(_resolve_window(target))
         img = str(_SHOT_DIR / f"st-ui-ocr-{int(time.time())}.png")
         cap = _run(["import", "-window", wid, img])
         if cap.returncode != 0:
