@@ -12,13 +12,15 @@ Bare payloads per docs/contracts/01-output-conventions.md: `current` →
 
 from __future__ import annotations
 
+import json
 import os
+import sys
 from typing import Annotated, Any
 
 import httpx
 import typer
 
-from ..output import output_json
+from ..output import output_error, output_json
 from ..output_context import OutputContext
 
 app = typer.Typer(help="Selection bus: current selection and recent history (Aico).")
@@ -40,6 +42,15 @@ def _sidecar_get(path: str) -> dict[str, Any]:
         return data if isinstance(data, dict) else {}
     except (httpx.HTTPError, ValueError):
         return {}
+
+
+def _sidecar_post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """POST JSON to the Aico sidecar. Unlike the best-effort reads, an explicit
+    send must surface failures, so this raises on transport/HTTP errors."""
+    resp = httpx.post(f"{_sidecar_base()}{path}", json=payload, timeout=5.0)
+    resp.raise_for_status()
+    data = resp.json()
+    return data if isinstance(data, dict) else {}
 
 
 def _ctx(ctx: typer.Context) -> OutputContext:
@@ -100,3 +111,65 @@ def history(
             )
     else:
         output_json({"items": items, "count": count})
+
+
+@app.command()
+def send(
+    ctx: typer.Context,
+    kind: Annotated[str, typer.Argument(help="Selection kind: dom | a11y | region")],
+    snippet: Annotated[
+        str | None, typer.Option("--snippet", "-s", help="Snippet text or file path")
+    ] = None,
+    stdin: Annotated[bool, typer.Option("--stdin", help="Read the snippet from stdin")] = False,
+    meta: Annotated[
+        str | None, typer.Option("--meta", help="Extra meta as a JSON object")
+    ] = None,
+    no_deliver: Annotated[
+        bool, typer.Option("--no-deliver", help="Store only; do not push to the active widget")
+    ] = False,
+) -> None:
+    """Write a capture to the selection bus — the CLI/desktop source.
+
+    Captures come from `st ui`; this verb puts one on the bus. Default delivers
+    to the active Aico widget (the explicit-gesture path); --no-deliver stores
+    only (harvested later via the hotkey). The kind is validated by the sidecar.
+
+    Examples:
+      st ui shot -w aico -o /tmp/x.png && st selection send region -s /tmp/x.png
+      st ui ocr aico | st selection send region --stdin
+    """
+    out = _ctx(ctx)
+    text = (sys.stdin.read() if stdin else (snippet or "")).strip()
+    if not text:
+        output_error("nothing to send (provide --snippet or --stdin)")
+        raise typer.Exit(1)
+    extra: dict[str, Any] = {}
+    if meta:
+        try:
+            parsed = json.loads(meta)
+        except ValueError as exc:
+            output_error(f"--meta is not valid JSON: {exc}")
+            raise typer.Exit(1) from exc
+        if not isinstance(parsed, dict):
+            output_error("--meta must be a JSON object")
+            raise typer.Exit(1)
+        extra = parsed
+    item = {"kind": kind, "snippet": text, "meta": extra}
+    # Store-only hits the bare endpoint; deliver hits the batch send endpoint
+    # that also emits the SSE deliver event (mirrors the store-vs-deliver split).
+    path, payload = ("/selection", item) if no_deliver else ("/selection/send", {"items": [item]})
+    try:
+        data = _sidecar_post(path, payload)
+    except httpx.HTTPError as exc:
+        output_error(f"sidecar unreachable or rejected the send: {exc}")
+        raise typer.Exit(1) from exc
+    # /selection returns the record; /selection/send returns {records, count}.
+    rec = (data.get("records") or [data])[0] if isinstance(data, dict) else {}
+    if out.is_compact:
+        print(
+            f"selection-send:kind={rec.get('kind', kind)} "
+            f"delivered={str(not no_deliver).lower()} "
+            f'snippet="{_clip(rec.get("snippet", text), 80)}"'
+        )
+    else:
+        output_json(data)

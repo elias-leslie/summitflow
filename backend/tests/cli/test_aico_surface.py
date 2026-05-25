@@ -85,6 +85,62 @@ class TestSelection:
         assert json.loads(result.stdout) == payload
 
 
+class TestSelectionSend:
+    """`st selection send` writes to the bus; tests stub `_sidecar_post`."""
+
+    def test_deliver_posts_batch_to_send_endpoint(self) -> None:
+        record = {"kind": "region", "snippet": "/tmp/x.png", "meta": {}}
+        with patch.object(
+            selection_mod, "_sidecar_post", return_value={"records": [record], "count": 1}
+        ) as post:
+            result = runner.invoke(selection_app, ["send", "region", "-s", "/tmp/x.png"])
+        assert result.exit_code == 0
+        path, payload = post.call_args.args
+        assert path == "/selection/send"
+        assert payload == {"items": [{"kind": "region", "snippet": "/tmp/x.png", "meta": {}}]}
+        assert "delivered=true" in result.stdout
+
+    def test_no_deliver_posts_bare_to_store_endpoint(self) -> None:
+        record = {"kind": "region", "snippet": "hi", "meta": {}}
+        with patch.object(selection_mod, "_sidecar_post", return_value=record) as post:
+            result = runner.invoke(selection_app, ["send", "region", "-s", "hi", "--no-deliver"])
+        assert result.exit_code == 0
+        path, payload = post.call_args.args
+        assert path == "/selection"
+        assert payload == {"kind": "region", "snippet": "hi", "meta": {}}
+        assert "delivered=false" in result.stdout
+
+    def test_stdin_supplies_snippet(self) -> None:
+        with patch.object(
+            selection_mod, "_sidecar_post", return_value={"records": [{}], "count": 1}
+        ) as post:
+            result = runner.invoke(selection_app, ["send", "region", "--stdin"], input="ocr text")
+        assert result.exit_code == 0
+        assert post.call_args.args[1]["items"][0]["snippet"] == "ocr text"
+
+    def test_meta_json_merged_into_record(self) -> None:
+        with patch.object(
+            selection_mod, "_sidecar_post", return_value={"records": [{}], "count": 1}
+        ) as post:
+            result = runner.invoke(
+                selection_app, ["send", "region", "-s", "x", "--meta", '{"type":"window"}']
+            )
+        assert result.exit_code == 0
+        assert post.call_args.args[1]["items"][0]["meta"] == {"type": "window"}
+
+    def test_empty_snippet_errors_without_posting(self) -> None:
+        with patch.object(selection_mod, "_sidecar_post") as post:
+            result = runner.invoke(selection_app, ["send", "region", "-s", "   "])
+        assert result.exit_code == 1
+        post.assert_not_called()
+
+    def test_invalid_meta_json_errors_without_posting(self) -> None:
+        with patch.object(selection_mod, "_sidecar_post") as post:
+            result = runner.invoke(selection_app, ["send", "region", "-s", "x", "--meta", "{nope"])
+        assert result.exit_code == 1
+        post.assert_not_called()
+
+
 class TestMandates:
     def test_compact_prints_rendered_union(self) -> None:
         fake = {"mandates": {"items": ["**A**: do x.", "**B**: do y."], "count": 2}}
