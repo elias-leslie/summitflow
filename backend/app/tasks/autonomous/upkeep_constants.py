@@ -11,6 +11,16 @@ SOURCE_QUALITY = "quality"
 SOURCE_FEEDBACK = "feedback"
 SOURCE_REFACTORS = "refactors"
 SOURCE_CONSOLIDATE = "consolidate-duplicate"
+# Rollout gate for consolidate-duplicate filing. The redundancy detector is
+# precision-proven on well-layered backend/frontend apps but domain-ambiguous on
+# codebases with heavy per-entity polymorphism (e.g. monkey-fight's game engine,
+# where getFramePose/drawDetails/darken legitimately recur per character/scene).
+# Until the cross-project review signs off on global rollout, only file
+# consolidation tasks for allowlisted projects. Override with the
+# CONSOLIDATION_PROJECT_ALLOWLIST env var: a comma-separated project list, or "*"
+# to enable everywhere.
+CONSOLIDATION_ALLOWLIST_ENV = "CONSOLIDATION_PROJECT_ALLOWLIST"
+DEFAULT_CONSOLIDATION_ALLOWLIST = frozenset({"summitflow", "agent-hub", "portfolio-ai"})
 SOURCES = (SOURCE_REFACTORS, SOURCE_QUALITY, SOURCE_FEEDBACK)
 STATUS_ACTIVE = "active"
 STATUS_COMPLETED = "completed"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,11 @@ from app.storage.task_spirit import get_task_spirit, update_task_spirit
 from app.tasks.autonomous._issue_builder import create_refactor_issue
 from app.tasks.autonomous.step_builders import calculate_target_lines
 from app.tasks.autonomous.task_builders import create_consolidation_task, create_refactor_task
-from app.tasks.autonomous.upkeep_constants import SOURCE_CONSOLIDATE
+from app.tasks.autonomous.upkeep_constants import (
+    CONSOLIDATION_ALLOWLIST_ENV,
+    DEFAULT_CONSOLIDATION_ALLOWLIST,
+    SOURCE_CONSOLIDATE,
+)
 from app.tasks.autonomous.upkeep_prune import (
     close_obsolete_generated_task,
     prune_obsolete_upkeep_signal_tasks,
@@ -377,6 +382,22 @@ def _member_files_present(project_root: str | None, paths: set[str]) -> int:
     return present
 
 
+def _consolidation_enabled(project_id: str) -> bool:
+    """Whether consolidate-duplicate filing is rolled out to this project.
+
+    Reads ``CONSOLIDATION_PROJECT_ALLOWLIST``: unset → conservative default
+    allowlist; ``"*"`` → every project; otherwise a comma-separated list.
+    """
+    raw = os.getenv(CONSOLIDATION_ALLOWLIST_ENV)
+    if raw is None:
+        allowed: frozenset[str] = DEFAULT_CONSOLIDATION_ALLOWLIST
+    elif raw.strip() == "*":
+        return True
+    else:
+        allowed = frozenset(p.strip() for p in raw.split(",") if p.strip())
+    return project_id in allowed
+
+
 def generate_consolidation_tasks_internal(
     project_id: str,
     project_root: str | None = None,
@@ -388,7 +409,22 @@ def generate_consolidation_tasks_internal(
     ``find_redundancy_candidates``) are the gate; the routine-upkeep
     source_key/signal_type contract gives dedupe and stale-task retirement for
     free via ``prune_obsolete_upkeep_signal_tasks``.
+
+    Gated by a per-project rollout allowlist (see ``_consolidation_enabled``)
+    so the pipeline does not auto-file on projects where the detector's
+    precision has not yet been reviewed.
     """
+    if not _consolidation_enabled(project_id):
+        logger.info(
+            "consolidate-duplicate filing skipped for %s (not in rollout allowlist)",
+            project_id,
+        )
+        return {
+            "consolidation_created": 0,
+            "consolidation_candidates": 0,
+            "consolidation_pruned": 0,
+        }
+
     fresh: dict[str, list[dict[str, Any]]] = {}
     for cluster in find_redundancy_candidates(project_id):
         paths = {str(m.get("file_path")) for m in cluster.members if m.get("file_path")}

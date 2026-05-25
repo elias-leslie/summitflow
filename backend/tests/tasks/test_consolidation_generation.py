@@ -12,8 +12,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.services.explorer.redundancy import DuplicateCluster, cluster_signature
 from app.tasks.autonomous.refactor_generation import (
+    _consolidation_enabled,
     generate_consolidation_tasks_internal,
 )
 
@@ -47,6 +50,51 @@ class TestClusterSignature:
 
     def test_distinct_clusters_differ(self) -> None:
         assert cluster_signature(_CLUSTER_A) != cluster_signature(_CLUSTER_B)
+
+
+class TestConsolidationRolloutGate:
+    """The per-project allowlist that gates consolidate-duplicate filing."""
+
+    def test_default_allowlist_admits_proven_projects(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("CONSOLIDATION_PROJECT_ALLOWLIST", raising=False)
+        assert _consolidation_enabled("summitflow") is True
+        assert _consolidation_enabled("agent-hub") is True
+
+    def test_default_allowlist_excludes_domain_ambiguous_projects(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("CONSOLIDATION_PROJECT_ALLOWLIST", raising=False)
+        assert _consolidation_enabled("monkey-fight") is False
+        assert _consolidation_enabled("vantage") is False
+
+    def test_wildcard_enables_every_project(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CONSOLIDATION_PROJECT_ALLOWLIST", "*")
+        assert _consolidation_enabled("monkey-fight") is True
+
+    def test_explicit_list_overrides_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CONSOLIDATION_PROJECT_ALLOWLIST", "monkey-fight, vantage")
+        assert _consolidation_enabled("monkey-fight") is True
+        assert _consolidation_enabled("summitflow") is False  # no longer in the list
+
+    def test_gated_project_files_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CONSOLIDATION_PROJECT_ALLOWLIST", "summitflow")
+        with patch(
+            "app.tasks.autonomous.refactor_generation.find_redundancy_candidates"
+        ) as mock_find:
+            result = generate_consolidation_tasks_internal("monkey-fight", project_root="/tmp/mf")
+        assert result == {
+            "consolidation_created": 0,
+            "consolidation_candidates": 0,
+            "consolidation_pruned": 0,
+        }
+        mock_find.assert_not_called()  # gated out before the detector even runs
+
+
+@pytest.fixture(autouse=True)
+def _open_rollout_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pipeline-contract tests below use the placeholder project "proj"; open the
+    rollout gate so they exercise filing rather than the allowlist short-circuit."""
+    monkeypatch.setenv("CONSOLIDATION_PROJECT_ALLOWLIST", "*")
 
 
 @patch("app.tasks.autonomous.refactor_generation.create_consolidation_task")
