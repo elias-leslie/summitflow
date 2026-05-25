@@ -26,8 +26,8 @@ from app.tasks.autonomous._issue_builder import create_refactor_issue
 from app.tasks.autonomous.step_builders import calculate_target_lines
 from app.tasks.autonomous.task_builders import create_consolidation_task, create_refactor_task
 from app.tasks.autonomous.upkeep_constants import (
-    CONSOLIDATION_ALLOWLIST_ENV,
-    DEFAULT_CONSOLIDATION_ALLOWLIST,
+    CONSOLIDATION_DENYLIST_ENV,
+    DEFAULT_CONSOLIDATION_DENYLIST,
     SOURCE_CONSOLIDATE,
 )
 from app.tasks.autonomous.upkeep_prune import (
@@ -385,17 +385,16 @@ def _member_files_present(project_root: str | None, paths: set[str]) -> int:
 def _consolidation_enabled(project_id: str) -> bool:
     """Whether consolidate-duplicate filing is rolled out to this project.
 
-    Reads ``CONSOLIDATION_PROJECT_ALLOWLIST``: unset → conservative default
-    allowlist; ``"*"`` → every project; otherwise a comma-separated list.
+    Global by default; reads ``CONSOLIDATION_PROJECT_DENYLIST`` to suppress filing
+    on projects whose architecture produces systematic false positives. Unset →
+    the conservative default denylist; set (even to empty) → that exact denylist.
     """
-    raw = os.getenv(CONSOLIDATION_ALLOWLIST_ENV)
+    raw = os.getenv(CONSOLIDATION_DENYLIST_ENV)
     if raw is None:
-        allowed: frozenset[str] = DEFAULT_CONSOLIDATION_ALLOWLIST
-    elif raw.strip() == "*":
-        return True
+        denied = DEFAULT_CONSOLIDATION_DENYLIST
     else:
-        allowed = frozenset(p.strip() for p in raw.split(",") if p.strip())
-    return project_id in allowed
+        denied = frozenset(p.strip() for p in raw.split(",") if p.strip())
+    return project_id not in denied
 
 
 def generate_consolidation_tasks_internal(

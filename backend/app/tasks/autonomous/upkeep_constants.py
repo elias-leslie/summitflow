@@ -11,16 +11,18 @@ SOURCE_QUALITY = "quality"
 SOURCE_FEEDBACK = "feedback"
 SOURCE_REFACTORS = "refactors"
 SOURCE_CONSOLIDATE = "consolidate-duplicate"
-# Rollout gate for consolidate-duplicate filing. The redundancy detector is
-# precision-proven on well-layered backend/frontend apps but domain-ambiguous on
-# codebases with heavy per-entity polymorphism (e.g. monkey-fight's game engine,
-# where getFramePose/drawDetails/darken legitimately recur per character/scene).
-# Until the cross-project review signs off on global rollout, only file
-# consolidation tasks for allowlisted projects. Override with the
-# CONSOLIDATION_PROJECT_ALLOWLIST env var: a comma-separated project list, or "*"
-# to enable everywhere.
-CONSOLIDATION_ALLOWLIST_ENV = "CONSOLIDATION_PROJECT_ALLOWLIST"
-DEFAULT_CONSOLIDATION_ALLOWLIST = frozenset({"summitflow", "agent-hub", "portfolio-ai"})
+# Rollout for consolidate-duplicate filing. Global by default — the redundancy
+# detector is precision-proven on conventional layered apps (cross-project review
+# confirmed genuine duplicates on summitflow/agent-hub/portfolio-ai/a-term). It is
+# denied only on codebases architected around per-entity polymorphism, where the
+# same public surface legitimately recurs per entity and reads as duplication:
+# monkey-fight's game engine (getFramePose per character, drawDetails/drawEyes per
+# character, darken/lighten per scene) would file false consolidations an
+# autonomous worker could wrongly act on. Override with the
+# CONSOLIDATION_PROJECT_DENYLIST env var (comma-separated); set it empty to file
+# everywhere.
+CONSOLIDATION_DENYLIST_ENV = "CONSOLIDATION_PROJECT_DENYLIST"
+DEFAULT_CONSOLIDATION_DENYLIST = frozenset({"monkey-fight"})
 SOURCES = (SOURCE_REFACTORS, SOURCE_QUALITY, SOURCE_FEEDBACK)
 STATUS_ACTIVE = "active"
 STATUS_COMPLETED = "completed"

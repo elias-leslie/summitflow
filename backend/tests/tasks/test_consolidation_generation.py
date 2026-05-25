@@ -53,31 +53,31 @@ class TestClusterSignature:
 
 
 class TestConsolidationRolloutGate:
-    """The per-project allowlist that gates consolidate-duplicate filing."""
+    """The per-project denylist that gates consolidate-duplicate filing."""
 
-    def test_default_allowlist_admits_proven_projects(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("CONSOLIDATION_PROJECT_ALLOWLIST", raising=False)
+    def test_global_by_default_for_layered_apps(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("CONSOLIDATION_PROJECT_DENYLIST", raising=False)
         assert _consolidation_enabled("summitflow") is True
         assert _consolidation_enabled("agent-hub") is True
+        assert _consolidation_enabled("portfolio-ai") is True
 
-    def test_default_allowlist_excludes_domain_ambiguous_projects(
+    def test_default_denylist_excludes_domain_ambiguous_project(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.delenv("CONSOLIDATION_PROJECT_ALLOWLIST", raising=False)
+        monkeypatch.delenv("CONSOLIDATION_PROJECT_DENYLIST", raising=False)
         assert _consolidation_enabled("monkey-fight") is False
+
+    def test_empty_denylist_enables_every_project(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CONSOLIDATION_PROJECT_DENYLIST", "")
+        assert _consolidation_enabled("monkey-fight") is True
+
+    def test_explicit_denylist_overrides_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CONSOLIDATION_PROJECT_DENYLIST", "vantage, sha")
         assert _consolidation_enabled("vantage") is False
+        assert _consolidation_enabled("monkey-fight") is True  # no longer denied
 
-    def test_wildcard_enables_every_project(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("CONSOLIDATION_PROJECT_ALLOWLIST", "*")
-        assert _consolidation_enabled("monkey-fight") is True
-
-    def test_explicit_list_overrides_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("CONSOLIDATION_PROJECT_ALLOWLIST", "monkey-fight, vantage")
-        assert _consolidation_enabled("monkey-fight") is True
-        assert _consolidation_enabled("summitflow") is False  # no longer in the list
-
-    def test_gated_project_files_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("CONSOLIDATION_PROJECT_ALLOWLIST", "summitflow")
+    def test_denied_project_files_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("CONSOLIDATION_PROJECT_DENYLIST", raising=False)
         with patch(
             "app.tasks.autonomous.refactor_generation.find_redundancy_candidates"
         ) as mock_find:
@@ -92,9 +92,9 @@ class TestConsolidationRolloutGate:
 
 @pytest.fixture(autouse=True)
 def _open_rollout_gate(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Pipeline-contract tests below use the placeholder project "proj"; open the
-    rollout gate so they exercise filing rather than the allowlist short-circuit."""
-    monkeypatch.setenv("CONSOLIDATION_PROJECT_ALLOWLIST", "*")
+    """Pipeline-contract tests below use the placeholder project "proj"; pin an
+    empty denylist so they exercise filing rather than the gate short-circuit."""
+    monkeypatch.setenv("CONSOLIDATION_PROJECT_DENYLIST", "")
 
 
 @patch("app.tasks.autonomous.refactor_generation.create_consolidation_task")
