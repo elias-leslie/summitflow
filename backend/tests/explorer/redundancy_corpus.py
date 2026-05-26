@@ -627,6 +627,240 @@ SYMBOLS: list[dict[str, Any]] = [
         summary="Build a customer from a json dict.",
         keywords=["from", "json", "customer", "dict"],
     ),
+
+    # --- LIVE FP CLASS 1: same-name wire-model classes, matching OUTER shape but
+    #     different fields / inner element types, in different API domains. The
+    #     index stores class signatures declaration-only (``class X(BaseModel)``),
+    #     so fields are invisible — name + framework boilerplate is all that's
+    #     shared. Must be rejected on weak domain corroboration. (agent-hub
+    #     ``ClientListResponse`` scored the detector's MAX 1.000 before this.) ---
+    _sym(
+        "client_list_resp_a",
+        "ClientListResponse",
+        "backend/app/api/clients/schemas.py",
+        kind="class",
+        signature="class ClientListResponse(BaseModel)",
+        summary="List of clients.",
+        keywords=["client", "list", "response"],
+    ),
+    _sym(
+        "client_list_resp_b",
+        "ClientListResponse",
+        "backend/app/api/control/schemas.py",
+        kind="class",
+        signature="class ClientListResponse(BaseModel)",
+        summary="List of client controls.",
+        keywords=["client", "list", "response"],
+    ),
+    # Same FP class: ``HealthResponse`` — disjoint field sets, only the name and
+    # framework base are shared in the index.
+    _sym(
+        "health_resp_a",
+        "HealthResponse",
+        "backend/app/api/health.py",
+        kind="class",
+        signature="class HealthResponse(BaseModel)",
+        summary="Service health check response.",
+        keywords=["health", "response"],
+    ),
+    _sym(
+        "health_resp_b",
+        "HealthResponse",
+        "backend/app/api/memory/schemas.py",
+        kind="class",
+        signature="class HealthResponse(BaseModel)",
+        summary="Memory subsystem health response.",
+        keywords=["health", "response"],
+    ),
+    # Same FP class: ``VariantMetrics`` — a stdlib ``dataclass`` deliberately kept
+    # separate from the app's Pydantic model (the script copy avoids importing the
+    # app's Pydantic chain). Disjoint fields; only name shared.
+    _sym(
+        "variant_metrics_a",
+        "VariantMetrics",
+        "scripts/experiments/variant_report.py",
+        kind="class",
+        signature="class VariantMetrics",
+        summary="Metrics for one experiment variant.",
+        keywords=["variant", "metrics"],
+    ),
+    _sym(
+        "variant_metrics_b",
+        "VariantMetrics",
+        "backend/app/api/experiments/schemas.py",
+        kind="class",
+        signature="class VariantMetrics(BaseModel)",
+        summary="Variant metrics wire model.",
+        keywords=["variant", "metrics"],
+    ),
+
+    # --- LIVE FP CLASS 2: facade/impl pairs with DIFFERENT parameter arity. A
+    #     high-level facade resolves args then delegates to a same-named low-level
+    #     impl; the arg lists differ. These sit in the SAME package/tree, so the
+    #     cross-layer rule does not catch them — the arity gate must. ---
+    _sym(
+        "get_eff_rules_facade",
+        "get_effective_rules",
+        "backend/app/storage/design_standards.py",
+        signature="def get_effective_rules(project_id: str, category: str) -> list[dict]",
+        summary="Resolve effective rules for a project and category.",
+        keywords=["effective", "rules", "project", "category"],
+    ),
+    _sym(
+        "get_eff_rules_impl",
+        "get_effective_rules",
+        "backend/app/storage/design_rules.py",
+        signature=(
+            "def get_effective_rules(base_standard_id: str, "
+            "project_standard_id: str, category: str) -> list[dict]"
+        ),
+        summary="Merge base and project standard rules for a category.",
+        keywords=["effective", "rules", "standard", "category"],
+    ),
+    _sym(
+        "validate_rules_facade",
+        "validate_against_rules",
+        "backend/app/storage/design_standards.py",
+        signature=(
+            "def validate_against_rules(project_id: str, "
+            "element_data: dict, category: str) -> list[dict]"
+        ),
+        summary="Validate an element against a project's effective rules.",
+        keywords=["validate", "rules", "project", "element"],
+    ),
+    _sym(
+        "validate_rules_impl",
+        "validate_against_rules",
+        "backend/app/storage/design_validation.py",
+        signature="def validate_against_rules(rules: list[dict], element_data: dict) -> list[dict]",
+        summary="Validate element data against a list of rules.",
+        keywords=["validate", "rules", "element", "data"],
+    ),
+    _sym(
+        "run_scan_facade",
+        "run_scan_with_tracking",
+        "backend/app/services/explorer/__init__.py",
+        signature="def run_scan_with_tracking(project_id: str, paths: list[str]) -> dict",
+        summary="Run an explorer scan with progress tracking.",
+        keywords=["run", "scan", "tracking", "project"],
+    ),
+    _sym(
+        "run_scan_impl",
+        "run_scan_with_tracking",
+        "backend/app/services/explorer/_scan_tracking.py",
+        signature=(
+            "def run_scan_with_tracking(project_id: str, paths: list[str], "
+            "scan_fn: Callable) -> dict"
+        ),
+        summary="Run a scan with tracking using an injectable scan function.",
+        keywords=["run", "scan", "tracking", "inject"],
+    ),
+
+    # --- NEW POSITIVE: a genuinely copy-pasted schema CLASS that shares concrete
+    #     DOMAIN corroboration beyond name + framework boilerplate (``hmac``,
+    #     ``signature``). The class domain-corroboration gate must NOT suppress
+    #     this — proving the gate rejects only framework-shaped name collisions,
+    #     not real class copies. ---
+    _sym(
+        "webhook_payload_a",
+        "WebhookPayload",
+        "backend/app/api/billing/webhooks.py",
+        kind="class",
+        signature="class WebhookPayload(BaseModel)",
+        summary="Incoming webhook payload verified by an hmac signature.",
+        keywords=["webhook", "payload", "hmac", "signature", "verify"],
+    ),
+    _sym(
+        "webhook_payload_b",
+        "WebhookPayload",
+        "backend/app/api/notifications/webhooks.py",
+        kind="class",
+        signature="class WebhookPayload(BaseModel)",
+        summary="Webhook payload with an hmac signature for verification.",
+        keywords=["webhook", "payload", "hmac", "signature", "verify"],
+    ),
+    # --- LIVE FP CLASS 3: same-package hub/spoke facade. A hub module
+    #     (``subtasks.py``) aggregates and delegates to same-directory split-outs
+    #     (``subtasks_crud.py``); the same-named symbol in the hub is a thin facade
+    #     over the spoke's impl, with the SAME parameter arity — so the arity gate
+    #     misses it. The sibling-module gate must reject it. ---
+    _sym(
+        "get_subtask_hub",
+        "get_subtask",
+        "backend/app/storage/subtasks.py",
+        signature="def get_subtask(task_id: str, subtask_id: str) -> dict | None",
+        summary="Return a subtask by task and subtask id.",
+        keywords=["get", "subtask", "task", "id"],
+    ),
+    _sym(
+        "get_subtask_spoke",
+        "get_subtask",
+        "backend/app/storage/subtasks_crud.py",
+        signature="def get_subtask(task_id: str, subtask_id: str) -> dict | None",
+        summary="Fetch a subtask row by task and subtask id.",
+        keywords=["get", "subtask", "task", "id"],
+    ),
+    # Hub/spoke with no params (db_workbench pattern) — still rejected by the
+    # sibling gate, not the arity gate.
+    _sym(
+        "project_db_url_hub",
+        "project_db_url",
+        "backend/app/services/db_workbench.py",
+        signature="def project_db_url() -> str",
+        summary="Return the project database url.",
+        keywords=["project", "db", "url", "database"],
+    ),
+    _sym(
+        "project_db_url_spoke",
+        "project_db_url",
+        "backend/app/services/db_workbench_targets.py",
+        signature="def project_db_url() -> str",
+        summary="Resolve the project database url from targets.",
+        keywords=["project", "db", "url", "database"],
+    ),
+
+    # --- NEW POSITIVE: a CONSTANT re-declared across sibling modules. Unlike a
+    #     callable facade, a constant cannot delegate — the sibling that
+    #     re-declares it should import the shared value, so this IS a genuine
+    #     duplicate and must stay flagged (the sibling-module gate is callable-only). ---
+    _sym(
+        "default_ttl_a",
+        "DEFAULT_INDEX_TTL_SECONDS",
+        "backend/app/services/memory/adaptive_index.py",
+        kind="constant",
+        signature="DEFAULT_INDEX_TTL_SECONDS = 300",
+        summary=None,
+        keywords=["default", "index", "ttl", "seconds"],
+    ),
+    _sym(
+        "default_ttl_b",
+        "DEFAULT_INDEX_TTL_SECONDS",
+        "backend/app/services/memory/adaptive_index_models.py",
+        kind="constant",
+        signature="DEFAULT_INDEX_TTL_SECONDS = 300",
+        summary=None,
+        keywords=["default", "index", "ttl", "seconds"],
+    ),
+
+    # --- NEW POSITIVE: a genuine function copy whose params were RENAMED but arity
+    #     PRESERVED. The arity gate must not fire here (same arity), so it stays a
+    #     true positive — guards against the gate over-rejecting real copies. ---
+    _sym(
+        "slugify_a",
+        "slugify_title",
+        "backend/app/utils/text.py",
+        signature="def slugify_title(title: str) -> str",
+        summary="Turn a title into a url-safe slug.",
+        keywords=["slugify", "title", "slug", "url"],
+    ),
+    _sym(
+        "slugify_b",
+        "slugify_title",
+        "backend/app/services/publishing/slugs.py",
+        signature="def slugify_title(heading: str) -> str",
+        summary="Convert a heading into a url-safe slug.",
+        keywords=["slugify", "title", "slug", "url"],
+    ),
 ]
 
 
@@ -642,6 +876,9 @@ GOLD_CLUSTERS: list[set[str]] = [
     {"ser_payload_a", "ser_payload_b"},  # copy via _new suffix
     {"gen_mockup_a", "gen_mockup_b"},  # genuine same-layer (storage<->storage) dup
     {"collapsible_a", "collapsible_b"},  # genuine copy-pasted React component
+    {"webhook_payload_a", "webhook_payload_b"},  # real schema-class copy w/ domain corroboration
+    {"slugify_a", "slugify_b"},  # real function copy, params renamed but arity preserved
+    {"default_ttl_a", "default_ttl_b"},  # constant re-declared in sibling module (genuine dup)
 ]
 
 # Out of scope for v1: a genuine method duplicate. The detector deliberately does

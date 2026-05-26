@@ -194,6 +194,26 @@ _CLASS_SCOPED_KINDS: frozenset[str] = frozenset(
     }
 )
 
+# Base-class / framework / primitive-type vocabulary that recurs across every
+# schema or model declaration by convention (``class X(BaseModel)`` ->
+# ``basemodel``; ``response``/``request``/``schema`` suffixes; primitive field
+# types). Like the conversion vocab for methods, these echo the *kind* of symbol
+# rather than its domain, so they must not count as independent corroboration
+# when judging whether two same-named CLASSES are a real duplicate. Without this,
+# two unrelated API wire-models (``ClientListResponse`` in different domains)
+# share only their name + framework boilerplate and would score the detector's
+# max — the single largest live false-positive class for class/type kinds.
+_SCHEMA_FRAMEWORK_VOCAB: frozenset[str] = frozenset(
+    {
+        "basemodel", "base", "model", "models", "schema", "schemas",
+        "response", "request", "dto", "config", "settings", "mixin",
+        "dataclass", "dataclasses", "enum", "intenum", "strenum", "typeddict",
+        "namedtuple", "pydantic", "typing", "optional", "field", "fields",
+        "str", "int", "float", "bool", "bytes", "dict", "list", "tuple",
+        "set", "object", "any", "none", "type", "class",
+    }
+)
+
 # English stopwords that appear constantly in docstrings/summaries. They are
 # not design intent, so they must not count as *domain* corroboration when
 # deciding whether a same-named class member is a real duplicate vs polymorphism.
@@ -204,6 +224,39 @@ _STOPWORDS: frozenset[str] = frozenset(
         "it", "its", "their", "given", "return", "returns",
     }
 )
+
+# Generic descriptor vocabulary: filler adjectives/nouns that pepper docstrings
+# but carry no *domain identity* (a ``HealthResponse`` summarised as "Basic health
+# check response" shares ``check`` with another ``HealthResponse`` without that
+# being evidence of a real duplicate). Stripped from domain corroboration so that
+# two same-named schema classes must share a CONCRETE domain word (``backoff``,
+# ``hmac``) — not boilerplate — to qualify. Deliberately limited to clearly-
+# generic words, not domain nouns.
+_GENERIC_DESCRIPTOR_VOCAB: frozenset[str] = frozenset(
+    {
+        "basic", "simple", "single", "multiple", "aggregated", "combined",
+        "default", "generic", "common", "shared", "full", "partial", "raw",
+        "main", "optional", "required", "current", "check", "checks", "value",
+        "item", "items", "entry", "entries", "detail", "details", "info",
+        "body", "content", "contents", "wrapper", "helper", "internal",
+        "result", "results", "summary", "listing",
+    }
+)
+
+
+def _stem(token: str) -> str:
+    """Crude suffix-stripping stem so morphological variants collapse.
+
+    ``clients`` -> ``client``, ``listing`` -> ``list``, ``metrics`` ->
+    ``metric``. Used only to recognise that a candidate corroboration token is
+    really a restatement of a *name* token (``ClientListResponse`` summarised as
+    "listing clients"), never to alter scoring. Intentionally conservative — it
+    only trims a short suffix when the stem stays a reasonable length.
+    """
+    for suffix, repl in (("ies", "y"), ("ing", ""), ("es", ""), ("ed", ""), ("s", "")):
+        if token.endswith(suffix) and len(token) - len(suffix) >= 3:
+            return token[: len(token) - len(suffix)] + repl
+    return token
 
 _CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 _SPLIT_NONWORD = re.compile(r"[^A-Za-z0-9]+")
@@ -299,7 +352,15 @@ class SimilarityConfig:
         default_factory=lambda: {
             # Module-level surface: highest-value, most-reliable. Standard bar.
             "function": KindPolicy(),
-            "class": KindPolicy(),
+            # Classes/types: standard bar, but they must clear a minimum of
+            # concrete *domain* corroboration beyond name + framework boilerplate.
+            # Class signatures are declaration-only in the index (``class
+            # X(BaseModel)`` — fields are NOT captured), so two unrelated
+            # same-named wire-models are otherwise indistinguishable from a real
+            # copy and score the detector's max. Requiring one shared domain token
+            # (after stripping name + schema/framework vocab) rejects those while
+            # keeping genuine copies that share real domain words.
+            "class": KindPolicy(min_domain_corroboration=1),
             # Class members (method/property/...): OUT OF SCOPE for v1. The plan's
             # target is top-level public surface (functions/classes/constants/
             # endpoints/commands). On the live index, same-named methods are
@@ -318,6 +379,20 @@ class SimilarityConfig:
             ),
         }
     )
+
+    # Reject same-named callables whose parameter arity differs. A facade that
+    # resolves args and delegates to a same-named lower-level impl has a DIFFERENT
+    # arg list (e.g. ``get_effective_rules(project_id, category)`` ->
+    # ``get_effective_rules(base_standard_id, project_standard_id, category)``);
+    # genuine copies preserve arity. Restricted to Python signatures (clean
+    # ``ast.unparse`` output) and fires only when BOTH arities parse confidently.
+    reject_signature_arity_mismatch: bool = True
+
+    # Reject same-named symbols where one file is a hub module and the other a
+    # same-directory split-out it delegates to (``subtasks.py`` vs
+    # ``subtasks_crud.py``). A version/copy suffix (``_v2``) is exempt — that is a
+    # genuine module copy, not a domain split.
+    reject_sibling_module_delegation: bool = True
 
     # Reject same-named symbols that span two different delegation-stack layers
     # (api/services/storage/tasks) — the layered-call pattern, not duplication.
@@ -491,6 +566,113 @@ def _layer_of(file_path: str | None) -> str | None:
     return None
 
 
+def _module_stem(file_path: str) -> tuple[str, str]:
+    """(directory, filename-without-extension) for a path, posix-normalised."""
+    norm = file_path.replace("\\", "/")
+    directory, _, filename = norm.rpartition("/")
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return directory, stem
+
+
+def _is_sibling_module_delegation(path_a: str | None, path_b: str | None) -> bool:
+    """True for a hub module and a same-directory split-out it delegates to.
+
+    A module ``foo.py`` that aggregates and re-exports/delegates to sibling
+    split-outs ``foo_crud.py`` / ``foo_summaries.py`` (same directory, the spoke's
+    stem is the hub's stem + ``_<domain>``) is the textbook decomposition idiom:
+    the same-named symbol in the hub is a thin facade over the spoke's impl, not
+    an independent copy (verified on the live index — ``subtasks.py`` /
+    ``db_workbench.py`` / ``context_injector.py`` hubs). The arity gate misses
+    these because a pass-through facade preserves arity.
+
+    A *version/copy* suffix (``foo_v2.py``, ``foo_new.py``) is deliberately NOT
+    treated as delegation — that is a later copy of the whole module and its
+    same-named symbols ARE genuine duplicates to consolidate.
+    """
+    if not path_a or not path_b:
+        return False
+    dir_a, stem_a = _module_stem(path_a)
+    dir_b, stem_b = _module_stem(path_b)
+    if dir_a != dir_b or stem_a == stem_b:
+        return False
+    hub, spoke = (stem_a, stem_b) if len(stem_a) <= len(stem_b) else (stem_b, stem_a)
+    if not spoke.startswith(hub + "_"):
+        return False
+    # Tokenize the differentiating suffix WITHOUT tokenize_name's degenerate
+    # fallback (which would keep a lone version marker). If the suffix is purely
+    # version/copy noise (``_v2``, ``_new``) it is a later copy of the module, so
+    # its same-named symbols are genuine duplicates — NOT delegation.
+    raw_suffix: set[str] = set()
+    for chunk in _SPLIT_NONWORD.split(spoke[len(hub) + 1 :]):
+        if not chunk:
+            continue
+        camel = _DIGIT_RUN.sub(" ", _CAMEL_BOUNDARY.sub(" ", chunk))
+        raw_suffix.update(p.lower() for p in camel.split() if p)
+    return bool(_strip_version_copy(raw_suffix))
+
+
+# Bracket pairs whose nesting must be tracked when counting callable params, so a
+# comma inside a type annotation or default (``dict[str, int]``, ``f(x=g(1, 2))``)
+# is not mistaken for a parameter separator. Angle brackets are deliberately NOT
+# tracked (``->`` return arrows, ``=>`` arrows, comparisons make ``<``/``>``
+# ambiguous); the arity gate is therefore restricted to Python signatures, which
+# come from ``ast.unparse`` and never use ``<...>`` for parameter types.
+_ARITY_OPENERS: dict[str, str] = {"(": ")", "[": "]", "{": "}"}
+_ARITY_CLOSERS: frozenset[str] = frozenset({")", "]", "}"})
+
+
+def _param_arity(signature: str | None) -> int | None:
+    """Count top-level parameters in a callable signature, or None if unparseable.
+
+    Parses the first balanced ``(...)`` of the signature, counting depth-0 commas
+    so nested brackets in annotations/defaults do not inflate the count. A leading
+    ``self``/``cls`` receiver is dropped. Returns ``None`` when there is no
+    parenthesised argument list (a class/constant/type signature) so callers can
+    treat "unknown arity" distinctly from "zero arity" — only two *confidently
+    parsed* arities are ever compared.
+    """
+    if not signature:
+        return None
+    start = signature.find("(")
+    if start == -1:
+        return None
+    depth = 0
+    params: list[str] = []
+    current: list[str] = []
+    closed = False
+    for ch in signature[start:]:
+        if ch in _ARITY_OPENERS:
+            if depth > 0:  # keep the outermost '(' out of the captured params
+                current.append(ch)
+            depth += 1
+        elif ch in _ARITY_CLOSERS:
+            depth -= 1
+            if depth <= 0:
+                closed = True
+                break
+            current.append(ch)
+        elif ch == "," and depth == 1:
+            params.append("".join(current))
+            current = []
+        elif depth >= 1:
+            current.append(ch)
+    if not closed:
+        return None
+    tail = "".join(current).strip()
+    if tail or params:
+        params.append(tail)
+    arity = 0
+    for raw in params:
+        token = raw.strip()
+        if not token:
+            continue  # empty arg list -> 0 params
+        head = token.lstrip("*").split(":", 1)[0].split("=", 1)[0].strip()
+        if head in {"self", "cls"}:
+            continue
+        arity += 1
+    return arity
+
+
 def is_public_symbol(symbol: dict[str, Any], config: SimilarityConfig = DEFAULT_CONFIG) -> bool:
     """True when a symbol is public design surface worth de-duplicating."""
     name = str(symbol.get("name") or "")
@@ -550,6 +732,44 @@ def _owner_of(symbol: dict[str, Any]) -> str:
     return ""
 
 
+def _domain_corroboration(
+    name_a: set[str],
+    name_b: set[str],
+    raw_name_a: str,
+    raw_name_b: str,
+    kw_a: set[str],
+    kw_b: set[str],
+    sum_a: set[str],
+    sum_b: set[str],
+) -> set[str]:
+    """Shared tokens that are *concrete domain* evidence, not name/boilerplate.
+
+    Independent corroboration that two same-named symbols are a real duplicate:
+    the tokens both share via keywords/summary, after removing everything that
+    merely restates the name (the name's subtokens, their crude stems, and the
+    whole lowercased identifier — extractors store ``ClientListResponse`` itself
+    as a keyword) or is generic vocabulary (conversion verbs, schema/framework
+    boilerplate, stopwords, filler descriptors). What remains — ``backoff`` for a
+    ``RetryPolicy`` copy, ``hmac`` for a ``WebhookPayload`` copy — is real signal.
+    """
+    shared = (kw_a & kw_b) | (sum_a & sum_b)
+    name_tokens = name_a | name_b
+    whole_names = {raw_name_a.lower(), raw_name_b.lower()}
+    generic = _CONVERSION_VOCAB | _SCHEMA_FRAMEWORK_VOCAB | _STOPWORDS | _GENERIC_DESCRIPTOR_VOCAB
+    # Stems of everything that does NOT count, so a plural/gerund variant
+    # (``clients``/``listing``/``requests``) is recognised as a restatement of a
+    # name token or generic word, not independent domain evidence.
+    ignore_stems = {_stem(t) for t in (name_tokens | generic)}
+    domain: set[str] = set()
+    for tok in shared:
+        if tok in name_tokens or tok in whole_names or tok in generic:
+            continue
+        if _stem(tok) in ignore_stems:
+            continue
+        domain.add(tok)
+    return domain
+
+
 @dataclass(frozen=True)
 class PairScore:
     """A scored pair with the breakdown that produced it."""
@@ -604,6 +824,37 @@ def score_pair(
     ):
         return PairScore(0.0, name_sim, 0.0, 0.0, 0.0, "specialization")
 
+    # Arity gate: a facade and the same-named lower-level impl it delegates to
+    # have different parameter lists (the largest live FP class that the
+    # cross-layer rule misses, because facade and impl often sit in the SAME
+    # package/tree). Python-only: ``ast.unparse`` signatures are clean enough to
+    # count params unambiguously; fires only when both sides parse confidently.
+    if (
+        config.reject_signature_arity_mismatch
+        and str(a.get("language") or "").lower() == "python"
+    ):
+        arity_a = _param_arity(str(a.get("signature") or ""))
+        arity_b = _param_arity(str(b.get("signature") or ""))
+        if arity_a is not None and arity_b is not None and arity_a != arity_b:
+            return PairScore(0.0, name_sim, 0.0, 0.0, 0.0, "signature-arity-mismatch")
+
+    # Sibling-module delegation: same symbol name in a hub module and a same-dir
+    # split-out it delegates to (``subtasks.py`` -> ``subtasks_crud.py``). Checked
+    # after specialization so a genuinely different name (``load_config`` vs
+    # ``load_config_overrides``) is classed as specialization, not delegation.
+    # Restricted to CALLABLE kinds: delegation is a call relationship, so a hub
+    # function is a facade over the spoke's impl — but a CONSTANT or TYPE
+    # re-declared in a sibling module is genuine duplication (it should import the
+    # shared definition), not delegation, and must stay flagged.
+    kind_l = str(a.get("kind") or "").lower()
+    is_callable = kind_l == "function" or kind_l in _CLASS_SCOPED_KINDS
+    if (
+        config.reject_sibling_module_delegation
+        and is_callable
+        and _is_sibling_module_delegation(a.get("file_path"), b.get("file_path"))
+    ):
+        return PairScore(0.0, name_sim, 0.0, 0.0, 0.0, "sibling-module-delegation")
+
     kw_a, kw_b = _keyword_set(a.get("keywords")), _keyword_set(b.get("keywords"))
     sum_a, sum_b = _token_set(a.get("summary")), _token_set(b.get("summary"))
     kw_sim = jaccard(kw_a, kw_b)
@@ -630,10 +881,17 @@ def score_pair(
         return PairScore(0.0, name_sim, kw_sim, sum_sim, sig_sim, "needs-strong-corroboration")
 
     if policy.min_domain_corroboration > 0:
-        shared = (kw_a & kw_b) | (sum_a & sum_b)
-        domain = shared - name_a - name_b - _CONVERSION_VOCAB - _STOPWORDS
+        domain = _domain_corroboration(
+            name_a, name_b,
+            str(a.get("name") or ""), str(b.get("name") or ""),
+            kw_a, kw_b, sum_a, sum_b,
+        )
         if len(domain) < policy.min_domain_corroboration:
-            return PairScore(0.0, name_sim, kw_sim, sum_sim, sig_sim, "polymorphism")
+            # Same name + only generic boilerplate in common: polymorphism for a
+            # class member, framework-shaped name collision for a class/type.
+            kind_l = str(a.get("kind") or "").lower()
+            reason = "polymorphism" if kind_l in _CLASS_SCOPED_KINDS else "weak-domain-corroboration"
+            return PairScore(0.0, name_sim, kw_sim, sum_sim, sig_sim, reason)
 
     score = (
         config.weight_name * name_sim
