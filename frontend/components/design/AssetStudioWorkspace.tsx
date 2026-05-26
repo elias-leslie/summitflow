@@ -10,7 +10,6 @@ import {
   Tags,
   X,
 } from 'lucide-react'
-import Image from 'next/image'
 import { useState } from 'react'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import { useClampedPagination } from '@/hooks/useClampedPagination'
@@ -317,25 +316,18 @@ export function AssetStudioWorkspace({
                       viewMode === 'list' && 'flex items-center gap-4 p-3',
                     )}
                   >
-                    <div
+                    <AssetPreview
+                      asset={asset}
+                      projectId={projectId}
+                      compact={viewMode === 'list'}
+                      showWorkflowBadge
                       className={clsx(
                         'relative overflow-hidden rounded-xl bg-slate-900',
                         viewMode === 'grid'
                           ? 'aspect-video'
                           : 'h-24 w-40 flex-shrink-0',
                       )}
-                    >
-                      <Image
-                        src={getDesignAssetImageUrl(projectId, asset.asset_id)}
-                        alt={asset.name}
-                        fill
-                        className="object-cover"
-                        unoptimized
-                      />
-                      <div className="absolute left-2 top-2 rounded-full bg-slate-950/70 px-2 py-1 text-2xs uppercase tracking-[0.18em] text-cyan-200">
-                        {asset.workflow}
-                      </div>
-                    </div>
+                    />
                     <div className={viewMode === 'grid' ? 'p-4' : 'min-w-0'}>
                       <div className="flex items-center justify-between gap-3">
                         <h3 className="truncate text-slate-100 font-medium">
@@ -456,6 +448,70 @@ function StudioStat({
   )
 }
 
+function AssetPreview({
+  asset,
+  projectId,
+  className,
+  compact = false,
+  large = false,
+  showWorkflowBadge = false,
+}: {
+  asset: DesignAsset
+  projectId: string
+  className: string
+  compact?: boolean
+  large?: boolean
+  showWorkflowBadge?: boolean
+}): React.ReactElement {
+  const isVector = isSvgAsset(asset)
+  const iconLike = asset.asset_type === 'icon' || isVector
+  const paddingClass = compact ? 'p-3' : large ? 'p-8' : 'p-5'
+
+  return (
+    <div className={clsx(className, iconLike && 'bg-slate-950')}>
+      {iconLike && (
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(229,166,71,0.18),rgba(15,23,42,0.2)_48%,rgba(2,6,23,0.86)_100%)]" />
+      )}
+      {/* biome-ignore lint/performance/noImgElement: Design assets may be SVGs from the local API; direct img keeps vector previews reliable. */}
+      <img
+        src={getDesignAssetImageUrl(projectId, asset.asset_id)}
+        alt={asset.name}
+        draggable={false}
+        className={clsx(
+          'relative h-full w-full',
+          iconLike ? ['object-contain', paddingClass] : 'object-cover',
+          isVector && 'drop-shadow-[0_0_18px_rgba(229,166,71,0.24)]',
+        )}
+      />
+      {showWorkflowBadge && (
+        <div className="absolute left-2 top-2 rounded-full bg-slate-950/70 px-2 py-1 text-2xs uppercase tracking-[0.18em] text-cyan-200">
+          {asset.workflow}
+        </div>
+      )}
+      {isVector && (
+        <div className="absolute right-2 top-2 rounded-full bg-amber-500/15 px-2 py-1 text-2xs uppercase tracking-[0.18em] text-amber-100 ring-1 ring-amber-300/20">
+          SVG
+        </div>
+      )}
+    </div>
+  )
+}
+
+function isSvgAsset(asset: DesignAsset): boolean {
+  const format = metadataString(asset, 'format')
+  const mimeType = metadataString(asset, 'mime_type')
+  return (
+    format === 'svg' ||
+    mimeType === 'image/svg+xml' ||
+    asset.file_path?.toLowerCase().endsWith('.svg') === true
+  )
+}
+
+function metadataString(asset: DesignAsset, key: string): string {
+  const value = asset.metadata[key]
+  return typeof value === 'string' ? value.toLowerCase() : ''
+}
+
 function AssetInspector({
   asset,
   projectId,
@@ -519,15 +575,12 @@ function AssetInspector({
         </button>
       </div>
 
-      <div className="relative mt-4 aspect-video overflow-hidden rounded-2xl bg-slate-900">
-        <Image
-          src={getDesignAssetImageUrl(projectId, asset.asset_id)}
-          alt={asset.name}
-          fill
-          className="object-cover"
-          unoptimized
-        />
-      </div>
+      <AssetPreview
+        asset={asset}
+        projectId={projectId}
+        large
+        className="relative mt-4 aspect-video overflow-hidden rounded-2xl bg-slate-900"
+      />
 
       {asset.description && (
         <p className="mt-4 text-sm text-slate-300">{asset.description}</p>

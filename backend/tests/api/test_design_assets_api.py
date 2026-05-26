@@ -75,6 +75,34 @@ def test_generate_design_asset_uses_project_scope(
     assert mock_client.generate_image.call_args.kwargs["project_id"] == ensure_test_project
 
 
+def test_get_design_asset_image_serves_svg_media_type(
+    client: Any,
+    ensure_test_project: str,
+    tmp_path: Path,
+) -> None:
+    """SVG design assets should be served with the browser-safe media type."""
+    svg_path = tmp_path / "asset.svg"
+    svg_path.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>',
+        encoding="utf-8",
+    )
+
+    with (
+        patch("app.api.design_assets.design_assets.get_asset") as mock_get_asset,
+        patch("app.api.design_assets.validate_mockup_path", return_value=svg_path),
+    ):
+        mock_get_asset.return_value = {
+            "asset_id": "asset-svg",
+            "file_path": str(svg_path),
+        }
+        response = client.get(
+            f"/api/projects/{ensure_test_project}/design-assets/asset-svg/image"
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+
+
 def test_export_sprite_frames_creates_manifest(
     client: Any,
     ensure_test_project: str,

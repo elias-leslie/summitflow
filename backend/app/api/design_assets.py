@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -22,6 +23,20 @@ from .design_assets_utils import asset_to_response, export_to_response
 from .mockups_validation import validate_mockup_path
 
 router = APIRouter(tags=["design-assets"])
+
+_IMAGE_MEDIA_TYPES = {
+    ".gif": "image/gif",
+    ".jpeg": "image/jpeg",
+    ".jpg": "image/jpeg",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".webp": "image/webp",
+}
+
+
+def _image_media_type(image_path: Path) -> str:
+    """Return the response media type for a stored image asset."""
+    return _IMAGE_MEDIA_TYPES.get(image_path.suffix.lower(), "image/png")
 
 
 @router.get("/projects/{project_id}/design-assets", response_model=DesignAssetListResponse)
@@ -76,7 +91,7 @@ async def get_design_asset_image(project_id: str, asset_id: str) -> FileResponse
     if not asset or not asset.get("file_path"):
         raise HTTPException(status_code=404, detail="Design asset image not found")
     image_path = validate_mockup_path(asset["file_path"])
-    media_type = f"image/{image_path.suffix.lstrip('.') or 'png'}"
+    media_type = _image_media_type(image_path)
     return FileResponse(path=image_path, media_type=media_type, filename=image_path.name)
 
 
