@@ -11,6 +11,7 @@ shot, ocr, diff, and clip get are read-only.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -123,6 +124,47 @@ def _identify_dims(path: str) -> tuple[int, int]:
     return int(w), int(h)
 
 
+# Claude clamps an image's long edge before charging tokens; a capture taller/
+# wider than this is downscaled, which is exactly what makes small text (the
+# "96%→50%" misread) illegible. We mirror the clamp so the package index can warn.
+_VISION_LONG_EDGE = 1568  # conservative across models (Opus 4.7 allows 2576)
+
+
+def _est_image_tokens(w: int, h: int) -> tuple[int, bool]:
+    """Estimate the tokens an image costs Claude, and whether it gets downscaled.
+
+    Claude bills ~`pixels / 750` after clamping the long edge to ~1568px. Returns
+    `(tokens, downscaled)` so the index can flag captures whose text will blur.
+    """
+    long_edge = max(w, h)
+    downscaled = long_edge > _VISION_LONG_EDGE
+    if downscaled:
+        scale = _VISION_LONG_EDGE / long_edge
+        w, h = round(w * scale), round(h * scale)
+    return max(1, round(w * h / 750)), downscaled
+
+
+def _est_text_tokens(text: str) -> int:
+    """Rough token estimate for text (~4 chars/token)."""
+    return max(1, round(len(text) / 4))
+
+
+def _window_title(wid: str) -> str:
+    """Best-effort window title for a numeric/hex window id ('' if unknown)."""
+    if not shutil.which("xdotool"):
+        return ""
+    res = _run(["xdotool", "getwindowname", wid])
+    return res.stdout.strip() if res.returncode == 0 else ""
+
+
+def _human_bytes(n: int) -> str:
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 * 1024:
+        return f"{n / 1024:.1f} KB"
+    return f"{n / (1024 * 1024):.1f} MB"
+
+
 @app.command()
 def windows(ctx: typer.Context) -> None:
     """List visible windows: id, name, geometry, focused.
@@ -195,6 +237,202 @@ def shot(
     w, h = _identify_dims(dest)
     if octx.is_compact:
         print(f"shot:path={dest}|w={w}|h={h}")
+    else:
+        output_json({"path": dest, "w": w, "h": h})
+
+
+def _write_index(
+    pkg: Path, source: str, items: list[dict[str, object]], hint: str
+) -> Path:
+    """Write the package manifest: items cheapest-first with size + token cost.
+
+    An agent reads this first, then the cheap text/meta, and only opens the image
+    when pixels are actually needed. Items arrive pre-sorted by estimated tokens.
+    """
+    lines = [
+        f"# Aico capture — {source}",
+        "",
+        "Read items cheapest-first. The text + metadata usually answer the question;",
+        "open the image only when you need pixel detail (layout, charts, an icon).",
+        "The text is OCR — it may scramble columns or garble exact figures (money,",
+        "small digits), so crop the image to confirm any precise value it implies.",
+        "",
+        "| item | kind | what it is | size | ~tokens |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for it in items:
+        lines.append(
+            f"| `{it['file']}` | {it['kind']} | {it['desc']} | {it['size']} | {it['tokens']} |"
+        )
+    if hint:
+        lines += ["", hint]
+    lines.append("")
+    index = pkg / "index.md"
+    index.write_text("\n".join(lines), encoding="utf-8")
+    return index
+
+
+@app.command()
+def grab(
+    ctx: typer.Context,
+    window: Annotated[str | None, typer.Option("--window", "-w", help="Window id or name substring")] = None,
+    full: Annotated[bool, typer.Option("--full", help="Capture the whole screen")] = False,
+    region: Annotated[str | None, typer.Option("--region", help="Crop region WxH+X+Y")] = None,
+    out_dir: Annotated[str | None, typer.Option("--out", "-o", help="Output package directory")] = None,
+    ocr: Annotated[bool, typer.Option("--ocr/--no-ocr", help="Include an OCR text representation")] = True,
+) -> None:
+    """Capture a screenshot *package*: native image + OCR text + metadata + an
+    index that ranks each item by token cost (cheapest first).
+
+    Solves the "agent misreads a downscaled screenshot" problem: the native image
+    is preserved for `st ui crop`, but the cheap text/meta come first so the agent
+    rarely needs to spend tokens (or risk a blurry read) on the full image.
+
+    Examples: st ui grab -w aico | st ui grab --region 800x600+100+100 -o /tmp/cap
+    """
+    octx = _ctx(ctx)
+    _require("import")
+    pkg = Path(out_dir) if out_dir else _SHOT_DIR / f"st-ui-grab-{int(time.time())}"
+    pkg.mkdir(parents=True, exist_ok=True)
+
+    if full:
+        wid, source = "root", "full screen"
+    elif window:
+        wid = str(_resolve_window(window))
+        source = f'window "{_window_title(wid) or window}"'
+    else:
+        wid = _focused_window()
+        source = f'focused window "{_window_title(wid)}"'.replace(' ""', "")
+    if region:
+        source += f" (region {region})"
+
+    image = pkg / "image.png"
+    cmd = ["import", "-window", wid]
+    if region:
+        cmd += ["-crop", region, "+repage"]
+    cmd.append(str(image))
+    res = _run(cmd)
+    if res.returncode != 0:
+        _fail(f"capture failed: {res.stderr.strip()}")
+    w, h = _identify_dims(str(image))
+    img_tokens, downscaled = _est_image_tokens(w, h)
+
+    items: list[dict[str, object]] = []
+
+    text = ""
+    if ocr and shutil.which("tesseract"):
+        ocr_res = _run(["tesseract", str(image), "stdout"])
+        if ocr_res.returncode == 0:
+            text = ocr_res.stdout.strip()
+            text_path = pkg / "text.txt"
+            text_path.write_text(text, encoding="utf-8")
+            items.append(
+                {
+                    "file": "text.txt",
+                    "kind": "text",
+                    "desc": "OCR transcription of all readable text",
+                    "size": _human_bytes(len(text.encode())),
+                    "tokens": f"~{_est_text_tokens(text)}",
+                    "_t": _est_text_tokens(text),
+                }
+            )
+
+    captured_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+    meta = {
+        "captured_at": captured_at,
+        "source": source,
+        "window": wid,
+        "region": region,
+        "image": "image.png",
+        "width": w,
+        "height": h,
+        "downscaled_for_vision": downscaled,
+        "has_text": bool(text),
+    }
+    meta_path = pkg / "meta.json"
+    meta_blob = json.dumps(meta, indent=2)
+    meta_path.write_text(meta_blob, encoding="utf-8")
+    items.append(
+        {
+            "file": "meta.json",
+            "kind": "json",
+            "desc": "source window, geometry, dimensions, capture time",
+            "size": _human_bytes(len(meta_blob.encode())),
+            "tokens": f"~{_est_text_tokens(meta_blob)}",
+            "_t": _est_text_tokens(meta_blob),
+        }
+    )
+
+    img_note = f"native screenshot {w}x{h}"
+    if downscaled:
+        img_note += (
+            " — DOWNSCALED for vision; small/body text may blur (large headline"
+            " numbers usually survive), crop for detail"
+        )
+    items.append(
+        {
+            "file": "image.png",
+            "kind": "image",
+            "desc": img_note,
+            "size": _human_bytes(image.stat().st_size),
+            "tokens": f"~{img_tokens}",
+            "_t": img_tokens,
+        }
+    )
+
+    items.sort(key=lambda it: it["_t"])  # cheapest first
+    hint = ""
+    if downscaled:
+        hint = (
+            "The image is larger than the vision long-edge limit, so reading it whole "
+            "loses small-text detail. To read a region at full resolution:\n"
+            f"  `st ui crop {image} <WxH+X+Y> -o /tmp/roi.png`"
+        )
+    for it in items:
+        it.pop("_t", None)
+    index = _write_index(pkg, source, items, hint)
+
+    if octx.is_compact:
+        print(f"grab:index={index}|items={len(items)}|w={w}|h={h}|downscaled={str(downscaled).lower()}")
+    else:
+        output_json(
+            {
+                "index": str(index),
+                "dir": str(pkg),
+                "items": len(items),
+                "w": w,
+                "h": h,
+                "downscaled": downscaled,
+                "image_tokens": img_tokens,
+            }
+        )
+
+
+@app.command()
+def crop(
+    ctx: typer.Context,
+    image: Annotated[str, typer.Argument(help="Source image path")],
+    region: Annotated[str, typer.Argument(help="Crop region WxH+X+Y (pixels in the source image)")],
+    out_path: Annotated[str | None, typer.Option("--out", "-o", help="Output PNG path")] = None,
+) -> None:
+    """Crop a region out of a saved image at full resolution.
+
+    The companion to `st ui grab`: when the package image is downscaled for vision,
+    crop the region of interest from the native file so its text reads cleanly.
+
+    Examples: st ui crop /tmp/cap/image.png 600x300+1200+800 -o /tmp/roi.png
+    """
+    octx = _ctx(ctx)
+    _require("convert")
+    if not Path(image).is_file():
+        _fail(f"not a file: {image}")
+    dest = out_path or str(_SHOT_DIR / f"st-ui-crop-{int(time.time())}.png")
+    res = _run(["convert", image, "-crop", region, "+repage", dest])
+    if res.returncode != 0:
+        _fail(f"crop failed: {res.stderr.strip()}")
+    w, h = _identify_dims(dest)
+    if octx.is_compact:
+        print(f"crop:path={dest}|w={w}|h={h}")
     else:
         output_json({"path": dest, "w": w, "h": h})
 

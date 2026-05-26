@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import time
 from hashlib import sha1
 from ipaddress import ip_address
 from pathlib import Path
@@ -63,6 +65,14 @@ _NAVIGATION_COMMANDS = {"open", "goto", "navigate"}
 _ENDPOINT_FORMATS = {"http", "ws", "json"}
 _DEFAULT_VIEWPORT_WIDTH = "1600"
 _DEFAULT_VIEWPORT_HEIGHT = "900"
+_LOCAL_AI_FLAG = "--local-ai"
+_LOCAL_AI_COMMAND = "local-ai"
+_PROXMOX_FLAG = "--proxmox"
+_PROXMOX_COMMAND = "proxmox"
+_LOCAL_AI_PROFILE_ENV = "ST_BROWSER_LOCAL_AI_PROFILE"
+_LOCAL_AI_CHROME_ENV = "ST_BROWSER_LOCAL_CHROME"
+_DEFAULT_LOCAL_AI_PROFILE = "AI"
+_LOCAL_CHROME_CANDIDATES = ("google-chrome-stable", "google-chrome", "chromium", "chromium-browser")
 _ENDPOINT_ERROR_TEMPLATE = "Unable to resolve browser CDP endpoint on {host}:{port}"
 _NO_ENGINES_TEMPLATE = "No browser engines available on {host}"
 _CONFIGURED_PORT_UNAVAILABLE_TEMPLATE = "Configured browser port is not available on {host}:{port}"
@@ -208,6 +218,85 @@ def _run_agent(args: list[str], *, cdp: str | None = None, capture: bool = False
         command.extend(["--cdp", cdp])
     command.extend(args)
     return subprocess.run(command, text=True, capture_output=capture, check=False)
+
+
+def _parse_browser_target_args(args: list[str]) -> tuple[str, list[str]]:
+    target = os.environ.get("ST_BROWSER_TARGET", "").strip().lower() or "local-ai"
+    if os.environ.get("ST_BROWSER_LOCAL_AI", "").strip() == "1":
+        target = "local-ai"
+    if os.environ.get("ST_BROWSER_FORCE_PROXMOX", "").strip() == "1":
+        target = "proxmox"
+    remaining: list[str] = []
+    for index, arg in enumerate(args):
+        if arg == _LOCAL_AI_FLAG or (index == 0 and arg == _LOCAL_AI_COMMAND):
+            target = "local-ai"
+            continue
+        if arg == _PROXMOX_FLAG or (index == 0 and arg == _PROXMOX_COMMAND):
+            target = "proxmox"
+            continue
+        remaining.append(arg)
+    if target in {"vm", "browser-vm", "remote"}:
+        target = "proxmox"
+    if target not in {"local-ai", "proxmox"}:
+        target = "local-ai"
+    return target, remaining
+
+
+def _agent_command_index(args: list[str]) -> int | None:
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if not arg.startswith("-"):
+            return index
+        if arg in _AGENT_BROWSER_OPTIONS_WITH_VALUE:
+            index += 2
+        else:
+            index += 1
+    return None
+
+
+def _has_agent_option(args: list[str], option: str) -> bool:
+    return any(arg == option or arg.startswith(f"{option}=") for arg in args)
+
+
+def _system_chrome_path() -> str:
+    configured = os.environ.get(_LOCAL_AI_CHROME_ENV, "").strip()
+    if configured:
+        return configured
+    for candidate in _LOCAL_CHROME_CANDIDATES:
+        if path := shutil.which(candidate):
+            return path
+    return ""
+
+
+def _local_ai_agent_args(args: list[str]) -> list[str]:
+    prefix: list[str] = []
+    if not _has_agent_option(args, "--profile") and not os.environ.get("AGENT_BROWSER_PROFILE", "").strip():
+        prefix.extend(["--profile", os.environ.get(_LOCAL_AI_PROFILE_ENV, "").strip() or _DEFAULT_LOCAL_AI_PROFILE])
+    if not _has_agent_option(args, "--executable-path") and not os.environ.get(
+        "AGENT_BROWSER_EXECUTABLE_PATH", ""
+    ).strip():
+        chrome = _system_chrome_path()
+        if not chrome:
+            output_error(
+                "Local system Chrome not found; set ST_BROWSER_LOCAL_CHROME or use plain st browser for the VM target"
+            )
+            raise typer.Exit(1) from None
+        prefix.extend(["--executable-path", chrome])
+    if (
+        os.environ.get("ST_BROWSER_LOCAL_AI_HEADLESS", "").strip() != "1"
+        and not _has_agent_option(args, "--headed")
+        and not os.environ.get("AGENT_BROWSER_HEADED", "").strip()
+    ):
+        prefix.append("--headed")
+    return [*prefix, *args]
+
+
+def _print_local_ai_health() -> None:
+    print("Target: local system Chrome (AI profile)")
+    print(f"chrome: {_system_chrome_path() or 'not found'}")
+    print(f"profile: {os.environ.get(_LOCAL_AI_PROFILE_ENV, '').strip() or _DEFAULT_LOCAL_AI_PROFILE}")
+    print(f"agent-browser-bin: {_agent_browser_bin()}")
 
 
 def _agent_browser_reaper() -> str:
@@ -371,41 +460,264 @@ def _with_resolved_navigation_target(args: list[str], command: str) -> list[str]
     return resolved
 
 
+def _with_resolved_local_navigation_target(args: list[str], command: str) -> list[str]:
+    if command not in _NAVIGATION_COMMANDS:
+        return args
+    index = _agent_command_index(args)
+    if index is None or index + 1 >= len(args):
+        return args
+    resolved = [*args]
+    try:
+        resolved[index + 1] = resolve_browser_location(resolved[index + 1])
+    except BrowserRouteError as exc:
+        output_error(str(exc))
+        raise typer.Exit(2) from None
+    return resolved
+
+
+def _run_local_ai_agent(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return _run_agent(_local_ai_agent_args(args), capture=True)
+
+
+def _local_agent_failure(label: str, result: subprocess.CompletedProcess[str]) -> str | None:
+    if result.returncode == 0:
+        return None
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    return f"{label}: rc={result.returncode} hint={summary_hint(output) if output else '-'}"
+
+
+def _local_check_viewports(screenshot_path: str) -> list[tuple[str, int, int, str]]:
+    viewports = [
+        (
+            "desktop",
+            int(os.environ.get("ST_BROWSER_CHECK_DESKTOP_WIDTH", "1600")),
+            int(os.environ.get("ST_BROWSER_CHECK_DESKTOP_HEIGHT", "900")),
+            screenshot_path,
+        ),
+        (
+            "narrow",
+            int(os.environ.get("ST_BROWSER_CHECK_NARROW_WIDTH", "1180")),
+            int(os.environ.get("ST_BROWSER_CHECK_NARROW_HEIGHT", "900")),
+            _suffixed(screenshot_path, "-narrow"),
+        ),
+        (
+            "mobile",
+            int(os.environ.get("ST_BROWSER_CHECK_MOBILE_WIDTH", "390")),
+            int(os.environ.get("ST_BROWSER_CHECK_MOBILE_HEIGHT", "844")),
+            _suffixed(screenshot_path, "-mobile"),
+        ),
+    ]
+    return viewports[:1] if os.environ.get("ST_BROWSER_CHECK_RESPONSIVE") == "0" else viewports
+
+
+def _local_check_items(parsed: dict[str, object] | list[object], key: str) -> list[object]:
+    if not isinstance(parsed, dict):
+        return []
+    value = parsed.get(key)
+    return list(value) if isinstance(value, list) else []
+
+
+def _browser_local_ai_check(args: list[str]) -> int:
+    session = None
+    if args[:1] == ["--session"]:
+        if len(args) < 2:
+            output_error("--session requires a name")
+            return 2
+        session = args[1]
+        args = args[2:]
+    if not args:
+        output_error("Usage: st browser --local-ai check [--session <name>] <url> [screenshot-path]")
+        return 2
+    try:
+        url = resolve_browser_location(args[0])
+    except BrowserRouteError as exc:
+        output_error(str(exc))
+        return 2
+    screenshot_path = args[1] if len(args) > 1 else "/tmp/st-browser-local-ai-check.png"
+    session_args = ["--session", session or f"st-browser-local-ai-check-{os.getpid()}-{time.time_ns()}"]
+    command_warnings: list[str] = []
+    error_result = subprocess.CompletedProcess([], 0, stdout="{}", stderr="")
+    network_result = subprocess.CompletedProcess([], 0, stdout="[]", stderr="")
+    viewports = _local_check_viewports(screenshot_path)
+    try:
+        first_viewport = _run_local_ai_agent(
+            [*session_args, "set", "viewport", str(viewports[0][1]), str(viewports[0][2])]
+        )
+        if warning := _local_agent_failure("initial viewport", first_viewport):
+            command_warnings.append(warning)
+        open_result = _run_local_ai_agent([*session_args, "open", url])
+        if open_result.returncode != 0:
+            if warning := _local_agent_failure("open", open_result):
+                output_error(warning)
+            return open_result.returncode
+        load_wait = _run_local_ai_agent([*session_args, "wait", os.environ.get("ST_BROWSER_CHECK_WAIT", "5000")])
+        if warning := _local_agent_failure("load wait", load_wait):
+            command_warnings.append(warning)
+        hook_result = _run_local_ai_agent(
+            [
+                *session_args,
+                "eval",
+                "window.__sfErrors=[];window.__sfWarnings=[];"
+                "const oe=console.error;console.error=(...a)=>{window.__sfErrors.push(a.map(String).join(' '));oe.apply(console,a)};"
+                "const ow=console.warn;console.warn=(...a)=>{window.__sfWarnings.push(a.map(String).join(' '));ow.apply(console,a)};'capturing'",
+            ]
+        )
+        if warning := _local_agent_failure("console hook", hook_result):
+            command_warnings.append(warning)
+        settle = _run_local_ai_agent([*session_args, "wait", "2000"])
+        if warning := _local_agent_failure("settle wait", settle):
+            command_warnings.append(warning)
+
+        for label, width, height, path in viewports:
+            viewport = _run_local_ai_agent([*session_args, "set", "viewport", str(width), str(height)])
+            if warning := _local_agent_failure(f"{label} viewport", viewport):
+                command_warnings.append(warning)
+            viewport_wait = _run_local_ai_agent(
+                [*session_args, "wait", os.environ.get("ST_BROWSER_CHECK_VIEWPORT_SETTLE_MS", "350")]
+            )
+            if warning := _local_agent_failure(f"{label} wait", viewport_wait):
+                command_warnings.append(warning)
+            screenshot = _run_local_ai_agent([*session_args, "screenshot", path])
+            if warning := _local_agent_failure(f"{label} screenshot", screenshot):
+                command_warnings.append(warning)
+        error_result = _run_local_ai_agent(
+            [
+                *session_args,
+                "eval",
+                "JSON.stringify({errors:window.__sfErrors||[],warnings:window.__sfWarnings||[],url:location.href,title:document.title})",
+            ]
+        )
+        if warning := _local_agent_failure("console read", error_result):
+            command_warnings.append(warning)
+        network_result = _run_local_ai_agent(
+            [
+                *session_args,
+                "eval",
+                "JSON.stringify(performance.getEntriesByType('resource').filter(e=>e.responseStatus>=400).map(e=>e.responseStatus+' '+e.name.split('/').pop()))",
+            ]
+        )
+        if warning := _local_agent_failure("network read", network_result):
+            command_warnings.append(warning)
+    finally:
+        close_result = _run_local_ai_agent([*session_args, "close"])
+        if warning := _local_agent_failure("close", close_result):
+            command_warnings.append(warning)
+
+    detail_lines = [
+        "Target: local-ai",
+        f"Screenshot: {screenshot_path}",
+        "Responsive set: " + ", ".join(f"{label} {width}x{height}" for label, width, height, _ in viewports),
+    ]
+    if len(viewports) > 1:
+        detail_lines.append("Additional screenshots:")
+        for label, _, _, path in viewports[1:]:
+            detail_lines.append(f"  {label}: {path}")
+    errors = _json_from_agent_eval(error_result.stdout)
+    network = _json_from_agent_eval(network_result.stdout)
+    error_items = _local_check_items(errors, "errors")
+    warning_items = _local_check_items(errors, "warnings")
+    network_items = list(network) if isinstance(network, list) else []
+    if isinstance(errors, dict):
+        detail_lines.append(f"Page: {errors.get('url', 'unknown')}")
+        detail_lines.append(f"Title: {errors.get('title', 'unknown')}")
+    if error_items:
+        detail_lines.append(f"\nConsole errors ({len(error_items)}):")
+        detail_lines.extend(str(item) for item in error_items)
+    if warning_items:
+        detail_lines.append(f"\nConsole warnings ({len(warning_items)}):")
+        detail_lines.extend(str(item) for item in warning_items)
+    if network_items:
+        detail_lines.append(f"\nFailed network requests ({len(network_items)}):")
+        detail_lines.extend(str(item) for item in network_items)
+    if command_warnings:
+        detail_lines.append(f"\nBrowser command warnings ({len(command_warnings)}):")
+        detail_lines.extend(command_warnings)
+    root = current_root()
+    details = write_details(root, "browser-check-local-ai", "\n".join(detail_lines))
+    status = "OK" if not error_items and not warning_items and not network_items else "ISSUES"
+    print(
+        f"BROWSER_CHECK:{status}|target=local-ai|errors={len(error_items)}|warnings={len(warning_items)}|"
+        f"network={len(network_items)}|command_warnings={len(command_warnings)}|"
+        f"screenshot={screenshot_path}|details:{display_path(root, details)}"
+    )
+    return 0
+
+
+def _run_local_ai_browser_command(command: str, browser_args: list[str]) -> int:
+    if command == "health":
+        _print_local_ai_health()
+        return 0
+    if command == "url":
+        index = _agent_command_index(browser_args)
+        return _browser_url(browser_args[index + 1 :] if index is not None else [])
+    if command == "endpoint":
+        output_error("st browser endpoint targets Proxmox/VM CDP; rerun with `st browser --proxmox endpoint`")
+        return 2
+    if command == "update":
+        return _browser_update()
+    if command == "check":
+        index = _agent_command_index(browser_args)
+        return _browser_local_ai_check(browser_args[index + 1 :] if index is not None else [])
+    if not command:
+        output_error("Usage: st browser --local-ai <agent-browser command> [args...]")
+        return 2
+    resolved_browser_args = _with_resolved_local_navigation_target(browser_args, command)
+    result = _run_agent(_local_ai_agent_args(resolved_browser_args), capture=True)
+    emit_result_or_details(current_root(), f"browser-local-ai-{command or 'command'}", "BROWSER", result)
+    return result.returncode
+
+
 _USAGE = """Remote browser automation through st
 
 Default target:
-  Plain st browser commands use approved browser VM 100 via st vm ip.
-  Override with ST_BROWSER_HOST, ST_BROWSER_DEFAULT_HOST, or ST_BROWSER_VM_ID.
-  Do not start Chrome, CDP proxies, or agent-browser on the project/server host.
+  Plain st browser commands use local system Chrome profile AI.
+  Force Proxmox/VM with --proxmox or ST_BROWSER_TARGET=proxmox when VM isolation is better.
+  Override VM with ST_BROWSER_HOST, ST_BROWSER_DEFAULT_HOST, or ST_BROWSER_VM_ID.
+  Do not start arbitrary Chrome, CDP proxies, or agent-browser on the project/server host.
+  The approved local default is the local-AI profile flow.
   Set ST_BROWSER_DISABLE_DEFAULT_VM_HOST=1 to require explicit host config.
 
 Usage:
   st browser health
+  st browser --local-ai health
+  st browser --local-ai open <project-or-url>
+  st browser --proxmox check <project-or-url> [screenshot-path]
   st browser url <project>
   st browser check [--session <name>] <project-or-url> [screenshot-path]
   st browser open <project-or-url>
   st browser screenshot [path]
   st browser snapshot
   st browser eval <js>
-  st browser endpoint [--http|--ws|--json]
+  st browser --proxmox endpoint [--http|--ws|--json]
   st browser update
   st browser [--chrome|--lp|--engine <name>] <agent-browser command> [args...]
 
 Examples:
+  st browser --local-ai open portfolio-ai
+  st browser --local-ai check portfolio-ai /tmp/portfolio-ai.png
   st browser health
   st browser url a-term
   st browser check a-term /tmp/a-term.png
-  st browser endpoint --ws
+  st browser --proxmox endpoint --ws
   st vm status <browser-vm-id>
   ST_BROWSER_HOST=<browser-vm-or-connector> st browser health
   ST_BROWSER_HOST=<browser-vm-or-connector> st browser check http://app.lan:3001 /tmp/page.png
+  st browser --proxmox snapshot
 
-Local page URL guard:
-  localhost/127.0.0.1 page targets are blocked because they point at the browser VM.
-  Use st browser url <project>; intentional local targets print a confirmation token.
+Proxmox local page URL guard:
+  With --proxmox, localhost/127.0.0.1 targets are blocked because they point at the browser VM.
+  Use st browser url <project>; intentional Proxmox local targets print a confirmation token.
 
 Debug local CDP override:
   ST_BROWSER_HOST=127.0.0.1 ST_BROWSER_ALLOW_LOCAL=1 st browser health
+
+Local system Chrome:
+  Default mode uses system Chrome, profile `AI`, and headed mode.
+  Override local Chrome with ST_BROWSER_LOCAL_CHROME, ST_BROWSER_LOCAL_AI_PROFILE,
+  or ST_BROWSER_LOCAL_AI_HEADLESS=1.
+
+Local desktop UI:
+  Use st ui when the already-open desktop/PWA is the right evidence source or browser automation is not enough.
 """
 
 
@@ -472,8 +784,10 @@ def _run_browser_command(command: str, browser_args: list[str], *, engine: str |
     cmd="st browser check <url> <png>",
     when="UI render verification; screenshots; DOM snapshots",
     precautions=(
-        "use plain st browser; it auto-resolves approved browser VM 100",
-        "never start chrome/CDP/agent-browser on project or server host by default",
+        "plain st browser uses local Chrome AI profile by default",
+        "use --proxmox or ST_BROWSER_TARGET=proxmox when VM isolation is better for the task",
+        "use st ui when the open desktop/PWA is the right evidence source",
+        "never start arbitrary chrome/CDP on project or server host; local-AI is the approved local profile flow",
         "only set ST_BROWSER_HOST / ST_BROWSER_VM_ID for explicit approved override",
     ),
     task_types=("frontend", "ui-design", "design-review", "verification"),
@@ -491,8 +805,11 @@ def browser(ctx: typer.Context) -> None:
     args = list(ctx.args)
     if _wants_help(args):
         _show_usage_and_exit()
+    target, args = _parse_browser_target_args(args)
     engine, browser_args = _parse_engine_args(args)
     command = _agent_command(browser_args)
+    if target == "local-ai":
+        raise typer.Exit(_run_local_ai_browser_command(command, browser_args))
     builtin_result = _handle_builtin_command(command, browser_args, engine)
     if builtin_result is not None:
         raise typer.Exit(builtin_result)

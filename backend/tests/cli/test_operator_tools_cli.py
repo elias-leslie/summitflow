@@ -755,6 +755,14 @@ def test_db_tables_counts_uses_exact_counts_not_pg_stats() -> None:
 
 def test_browser_health_uses_native_health() -> None:
     with patch("cli.commands.browser._print_health") as health:
+        result = runner.invoke(main_app, ["browser", "--proxmox", "health"])
+
+    assert result.exit_code == 0
+    health.assert_called_once()
+
+
+def test_browser_health_defaults_to_local_ai() -> None:
+    with patch("cli.commands.browser._print_local_ai_health") as health:
         result = runner.invoke(main_app, ["browser", "health"])
 
     assert result.exit_code == 0
@@ -765,10 +773,12 @@ def test_browser_help_explains_isolated_target() -> None:
     result = runner.invoke(main_app, ["browser", "--help"])
 
     assert result.exit_code == 0
-    assert "Plain st browser commands use approved browser VM 100" in result.output
+    assert "Plain st browser commands use local system Chrome profile AI." in result.output
+    assert "Force Proxmox/VM with --proxmox" in result.output
     assert "st browser url <project>" in result.output
     assert "st browser check a-term" in result.output
-    assert "Override with ST_BROWSER_HOST" in result.output
+    assert "st browser --local-ai open portfolio-ai" in result.output
+    assert "Override VM with ST_BROWSER_HOST" in result.output
     assert "ST_BROWSER_DISABLE_DEFAULT_VM_HOST=1" in result.output
     assert "ST_BROWSER_ALLOW_LOCAL=1" in result.output
 
@@ -778,7 +788,7 @@ def test_browser_subcommand_help_does_not_run_health() -> None:
         result = runner.invoke(main_app, ["browser", "health", "--help"])
 
     assert result.exit_code == 0
-    assert "Plain st browser commands use approved browser VM 100" in result.output
+    assert "Plain st browser commands use local system Chrome profile AI." in result.output
     health.assert_not_called()
 
 
@@ -881,7 +891,7 @@ def test_browser_endpoint_prints_canonical_http_url() -> None:
         patch("cli.commands.browser._host_for_engine", return_value="browser-vm"),
         patch("cli.commands.browser._cdp_ws", return_value="ws://browser-vm/devtools/browser/abc"),
     ):
-        result = runner.invoke(main_app, ["browser", "endpoint"])
+        result = runner.invoke(main_app, ["browser", "--proxmox", "endpoint"])
 
     assert result.exit_code == 0
     assert result.output == "http://browser-vm:9222\n"
@@ -893,10 +903,58 @@ def test_browser_endpoint_prints_canonical_ws_url() -> None:
         patch("cli.commands.browser._host_for_engine", return_value="browser-vm"),
         patch("cli.commands.browser._cdp_ws", return_value="ws://browser-vm/devtools/browser/abc"),
     ):
-        result = runner.invoke(main_app, ["browser", "endpoint", "--ws"])
+        result = runner.invoke(main_app, ["browser", "--proxmox", "endpoint", "--ws"])
 
     assert result.exit_code == 0
     assert result.output == "ws://browser-vm/devtools/browser/abc\n"
+
+
+def test_browser_auto_open_prefers_local_ai_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AGENT_BROWSER_PROFILE", raising=False)
+    monkeypatch.delenv("AGENT_BROWSER_EXECUTABLE_PATH", raising=False)
+    with (
+        patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
+        patch("cli.commands.browser.resolve_browser_location", return_value="http://app.lan:3005/"),
+        patch("cli.commands.browser._select_port") as select_port,
+        patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0, stdout="", stderr="")) as run_agent,
+    ):
+        result = runner.invoke(main_app, ["browser", "open", "portfolio-ai"])
+
+    assert result.exit_code == 0
+    select_port.assert_not_called()
+    assert run_agent.call_args.args[0] == [
+        "--profile",
+        "AI",
+        "--executable-path",
+        "/usr/bin/google-chrome-stable",
+        "--headed",
+        "open",
+        "http://app.lan:3005/",
+    ]
+
+
+def test_browser_force_proxmox_skips_local_ai(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AGENT_BROWSER_SESSION", raising=False)
+    monkeypatch.delenv("ST_BROWSER_SESSION", raising=False)
+    with (
+        patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
+        patch("cli.commands.browser._select_port", return_value=9222),
+        patch("cli.commands.browser._host_for_engine", return_value="browser"),
+        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
+        patch("cli.commands.browser._default_browser_session", return_value="st-repo-1234"),
+        patch("cli.commands.browser._run_browser_reaper"),
+        patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0)) as run_agent,
+    ):
+        result = runner.invoke(main_app, ["browser", "--proxmox", "open", "https://example.com"])
+
+    assert result.exit_code == 0
+    assert run_agent.call_args_list[1].kwargs["cdp"] == "ws://browser"
+    assert run_agent.call_args_list[1].args[0] == [
+        "--session",
+        "st-repo-1234",
+        "open",
+        "https://example.com",
+    ]
 
 
 def test_browser_select_port_honors_explicit_port(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -922,7 +980,7 @@ def test_browser_open_uses_repo_scoped_session(monkeypatch) -> None:
         patch("cli.commands.browser._close_blank_browser_targets") as close_blank,
         patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0)) as run_agent,
     ):
-        result = runner.invoke(main_app, ["browser", "open", "https://example.com"])
+        result = runner.invoke(main_app, ["browser", "--proxmox", "open", "https://example.com"])
 
     assert result.exit_code == 0
     assert run_agent.call_args_list[0].args[0] == [
@@ -946,7 +1004,7 @@ def test_browser_open_blocks_loopback_url_before_selecting_browser(monkeypatch) 
     monkeypatch.delenv("ST_BROWSER_CONFIRM_LOCAL_URL", raising=False)
 
     with patch("cli.commands.browser._select_port") as select_port:
-        result = runner.invoke(main_app, ["browser", "open", "http://127.0.0.1:3000/money"])
+        result = runner.invoke(main_app, ["browser", "--proxmox", "open", "http://127.0.0.1:3000/money"])
 
     assert result.exit_code == 2
     assert "LOCAL_BROWSER_URL_BLOCKED" in result.output
@@ -969,7 +1027,7 @@ def test_browser_open_resolves_project_target(monkeypatch) -> None:
         patch("cli.commands.browser._run_browser_reaper"),
         patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0)) as run_agent,
     ):
-        result = runner.invoke(main_app, ["browser", "open", "a-term"])
+        result = runner.invoke(main_app, ["browser", "--proxmox", "open", "a-term"])
 
     assert result.exit_code == 0
     assert run_agent.call_args_list[1].args[0] == [
@@ -989,7 +1047,7 @@ def test_browser_open_preserves_explicit_session() -> None:
         patch("cli.commands.browser._close_blank_browser_targets") as close_blank,
         patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0)) as run_agent,
     ):
-        result = runner.invoke(main_app, ["browser", "--session", "operator", "open", "https://example.com"])
+        result = runner.invoke(main_app, ["browser", "--proxmox", "--session", "operator", "open", "https://example.com"])
 
     assert result.exit_code == 0
     assert run_agent.call_args_list[0].args[0] == [
@@ -1019,7 +1077,7 @@ def test_browser_snapshot_prunes_remote_blank_targets(tmp_path: Path) -> None:
         patch("cli.commands.browser._close_blank_browser_targets") as close_blank,
         patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0, stdout="(empty page)", stderr="")),
     ):
-        result = runner.invoke(main_app, ["browser", "snapshot"])
+        result = runner.invoke(main_app, ["browser", "--proxmox", "snapshot"])
 
     assert result.exit_code == 0
     close_blank.assert_called_once_with("browser", 9222)
@@ -1043,7 +1101,7 @@ def test_browser_check_closes_session_and_runs_reaper() -> None:
         patch("cli.lib.browser_check.close_browser_targets") as close_targets,
         patch("cli.commands.browser._run_agent", side_effect=fake_run_agent),
     ):
-        result = runner.invoke(main_app, ["browser", "check", "https://example.com", "/tmp/check.png"])
+        result = runner.invoke(main_app, ["browser", "--proxmox", "check", "https://example.com", "/tmp/check.png"])
 
     assert result.exit_code == 0
     assert calls[-1][2:] == ["close"]
@@ -1055,7 +1113,7 @@ def test_browser_check_blocks_localhost_url_before_selecting_browser(monkeypatch
     monkeypatch.delenv("ST_BROWSER_CONFIRM_LOCAL_URL", raising=False)
 
     with patch("cli.commands.browser._select_port") as select_port:
-        result = runner.invoke(main_app, ["browser", "check", "http://localhost:3000/money", "/tmp/check.png"])
+        result = runner.invoke(main_app, ["browser", "--proxmox", "check", "http://localhost:3000/money", "/tmp/check.png"])
 
     assert result.exit_code == 2
     assert "LOCAL_BROWSER_URL_BLOCKED" in result.output
@@ -1098,7 +1156,7 @@ def test_browser_check_treats_screenshot_timeout_as_warning(tmp_path: Path) -> N
         patch("cli.lib.browser_check.close_browser_targets"),
         patch("cli.commands.browser._run_agent", side_effect=fake_run_agent),
     ):
-        result = runner.invoke(main_app, ["browser", "check", "https://example.com", "/tmp/check.png"])
+        result = runner.invoke(main_app, ["browser", "--proxmox", "check", "https://example.com", "/tmp/check.png"])
 
     assert result.exit_code == 0
     assert "BROWSER_CHECK:OK|errors=0|warnings=0|network=0|command_warnings=3" in result.output
@@ -1117,7 +1175,7 @@ def test_browser_large_forwarded_output_goes_to_details_file(tmp_path: Path) -> 
         patch("cli.commands.browser._close_blank_browser_targets"),
         patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0, stdout=output, stderr="")),
     ):
-        result = runner.invoke(main_app, ["browser", "snapshot"])
+        result = runner.invoke(main_app, ["browser", "--proxmox", "snapshot"])
 
     details = tmp_path / ".dev-tools" / "browser-snapshot-details.txt"
     assert result.exit_code == 0
