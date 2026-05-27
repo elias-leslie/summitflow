@@ -23,7 +23,7 @@ def adjusted_tool_args(
     return base_args, extra_args
 
 
-def tool_env(root: Path, environ: Mapping[str, str]) -> dict[str, str]:
+def tool_env(root: Path, environ: Mapping[str, str], name: str | None = None) -> dict[str, str]:
     env = dict(environ)
     paths = [
         str(candidate)
@@ -37,6 +37,13 @@ def tool_env(root: Path, environ: Mapping[str, str]) -> dict[str, str]:
     ]
     if paths:
         env["PATH"] = ":".join([*paths, env.get("PATH", "")])
+    # Vitest only defaults NODE_ENV to "test" when it is unset; an inherited
+    # NODE_ENV=production (e.g. launched from an electron-vite/npm prod context)
+    # makes it load the production React build, where React.act is undefined and
+    # @testing-library throws "React.act is not a function". Force the value the
+    # test runner would otherwise pick itself.
+    if name == "vitest":
+        env["NODE_ENV"] = "test"
     return env
 
 

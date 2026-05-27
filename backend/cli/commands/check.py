@@ -97,7 +97,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
         result = subprocess.run(
             command,
             cwd=cwd,
-            env=tool_env(root, os.environ),
+            env=tool_env(root, os.environ, name),
             capture_output=True,
             text=True,
             encoding="utf-8",
