@@ -107,6 +107,50 @@ def test_select_specs_for_task_density_adds_matching_task_surfaces() -> None:
     assert [s.surface for s in out] == ["st.search", "st.browser", "st.details"]
 
 
+def test_select_specs_adaptive_floor_always_present() -> None:
+    specs = [
+        UsageSpec(surface="st.pulse"),
+        UsageSpec(surface="st.check"),
+        UsageSpec(surface="st.backup.veeam"),  # non-floor, no score -> dropped
+    ]
+
+    out = select_specs_for_density(specs, density="adaptive", scores=None)
+
+    surfaces = [s.surface for s in out]
+    assert "st.pulse" in surfaces
+    assert "st.check" in surfaces
+    assert "st.backup.veeam" not in surfaces
+    assert "st.details" in surfaces
+
+
+def test_select_specs_adaptive_includes_high_score_surface() -> None:
+    specs = [
+        UsageSpec(surface="st.pulse"),  # floor
+        UsageSpec(surface="st.browser"),  # non-floor, scored high
+        UsageSpec(surface="st.backup.veeam"),  # non-floor, scored low
+    ]
+    # usage-key granularity: "browser eval" maps to surface st.browser via prefix.
+    scores = {"browser eval": 90.0, "backup veeam": 5.0}
+
+    out = select_specs_for_density(specs, density="adaptive", scores=scores)
+
+    surfaces = [s.surface for s in out]
+    assert "st.pulse" in surfaces  # floor
+    assert "st.browser" in surfaces  # score >= threshold
+    assert "st.backup.veeam" not in surfaces  # score below threshold
+
+
+def test_select_specs_adaptive_includes_task_surface() -> None:
+    specs = [
+        UsageSpec(surface="st.search"),  # floor
+        UsageSpec(surface="st.browser", task_types=("frontend",)),
+    ]
+
+    out = select_specs_for_density(specs, density="adaptive", task_type="frontend", scores=None)
+
+    assert "st.browser" in [s.surface for s in out]
+
+
 def test_manifest_command_emits_service_rebuild_yaml() -> None:
     result = runner.invoke(tools_app, ["manifest", "--surface", "st.service.rebuild", "--format", "yaml"])
     assert result.exit_code == 0, result.output

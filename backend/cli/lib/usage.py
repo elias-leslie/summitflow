@@ -17,7 +17,7 @@ from typing import Any
 import typer
 
 USAGE_ATTR = "__st_usage__"
-VALID_MANIFEST_DENSITIES = ("core", "task", "full")
+VALID_MANIFEST_DENSITIES = ("core", "task", "full", "adaptive")
 
 _CORE_SURFACES = {
     "st.pulse",
@@ -33,6 +33,53 @@ _CORE_SURFACES = {
     "st.feedback.report",
     "st.agents.preview",
 }
+
+# Always-on floor for the `adaptive` density: lifecycle/destructive surfaces that
+# must inject regardless of usage telemetry (telemetry-independent safety net).
+_FLOOR_SURFACES = {
+    "st.pulse",
+    "st.search",
+    "st.context",
+    "st.check",
+    "st.db",
+    "st.service.rebuild",
+    "st.commit",
+    "st.create",
+    "st.claim",
+    "st.done",
+    "st.memory.search",
+}
+
+# Normalized (0-100) decay score at or above which a non-floor surface is
+# injected by the adaptive density. Curation by signal, not a hardcoded count.
+_ADAPTIVE_SCORE_THRESHOLD = 15.0
+
+
+def _surface_score(surface: str, scores: dict[str, float] | None) -> float:
+    """Look up a surface's usage score from a usage-key-keyed scores map.
+
+    Scores are produced upstream keyed by `parse_st_command` keys ("db query",
+    "pulse", "memory search"), which sit at a different granularity than manifest
+    surfaces. Map the surface to its usage prefix ("st.db" -> "db",
+    "st.memory.search" -> "memory search") and take the max score over matching
+    keys, so a surface aggregates all of its sub-command traffic.
+    """
+    if not scores:
+        return 0.0
+    prefix = surface
+    if prefix.startswith("st."):
+        prefix = prefix[3:]
+    prefix = prefix.replace(".", " ")
+    best = 0.0
+    for key, value in scores.items():
+        if key == prefix or key.startswith(prefix + " "):
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                continue
+            if numeric > best:
+                best = numeric
+    return best
 
 
 @dataclass(frozen=True)
@@ -127,6 +174,16 @@ def usage(
 
 
 def _walk(app: typer.Typer, seen: set[int]) -> Iterable[UsageSpec]:
+    # The app's own callback can carry a UsageSpec: callback-style commands like
+    # `st check` use @app.callback(invoke_without_command=True), so their @usage
+    # lives on registered_callback, not in registered_commands.
+    callback_info = getattr(app, "registered_callback", None)
+    cb = getattr(callback_info, "callback", None) if callback_info is not None else None
+    if cb is not None:
+        spec = getattr(cb, USAGE_ATTR, None)
+        if isinstance(spec, UsageSpec) and id(cb) not in seen:
+            seen.add(id(cb))
+            yield spec
     for cmd in getattr(app, "registered_commands", []):
         callback = getattr(cmd, "callback", None)
         if callback is None:
@@ -182,8 +239,15 @@ def select_specs_for_density(
     *,
     density: str = "full",
     task_type: str | None = None,
+    scores: dict[str, float] | None = None,
+    score_threshold: float = _ADAPTIVE_SCORE_THRESHOLD,
 ) -> list[UsageSpec]:
-    """Select a context-density slice while keeping @usage as the source of truth."""
+    """Select a context-density slice while keeping @usage as the source of truth.
+
+    `adaptive` injects the always-on floor, plus task-matched surfaces, plus any
+    surface whose usage score (from `scores`) clears `score_threshold`. The
+    result is lean by curation, not by a hardcoded count.
+    """
     if density not in VALID_MANIFEST_DENSITIES:
         expected = "|".join(VALID_MANIFEST_DENSITIES)
         raise ValueError(f"density must be {expected}, got {density!r}")
@@ -195,9 +259,17 @@ def select_specs_for_density(
     out: list[UsageSpec] = []
     seen: set[str] = set()
     for spec in spec_list:
-        include_core = spec.surface in _CORE_SURFACES
         include_task = bool(task_type and spec.task_types and task_type in spec.task_types)
-        if not include_core and (density == "core" or not include_task):
+        if density == "adaptive":
+            include = (
+                spec.surface in _FLOOR_SURFACES
+                or include_task
+                or _surface_score(spec.surface, scores) >= score_threshold
+            )
+        else:
+            include_core = spec.surface in _CORE_SURFACES
+            include = include_core or (density != "core" and include_task)
+        if not include:
             continue
         if spec.surface in seen:
             continue

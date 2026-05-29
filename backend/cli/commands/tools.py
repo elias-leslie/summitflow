@@ -953,6 +953,37 @@ def _emit_manifest_yaml(payload: dict[str, Any]) -> None:
     print(yaml.safe_dump(payload, default_flow_style=False, sort_keys=False).strip())
 
 
+def _load_scores_file(scores_file: str | None) -> dict[str, float] | None:
+    """Load a {usage_key: score} map for adaptive density. Fail-soft to None.
+
+    A missing/unreadable/malformed file never errors the manifest — adaptive then
+    falls back to floor + task surfaces only.
+    """
+    if not scores_file:
+        return None
+    try:
+        import json
+        import sys
+
+        if scores_file == "-":
+            raw = sys.stdin.read()
+        else:
+            with open(scores_file, encoding="utf-8") as handle:
+                raw = handle.read()
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return None
+        out: dict[str, float] = {}
+        for key, value in data.items():
+            try:
+                out[str(key)] = float(value)
+            except (TypeError, ValueError):
+                continue
+        return out or None
+    except Exception:
+        return None
+
+
 def _manifest_specs(
     root_app: typer.Typer,
     *,
@@ -961,6 +992,7 @@ def _manifest_specs(
     agent: str | None,
     profile: str | None,
     density: str,
+    scores: dict[str, float] | None = None,
 ) -> list[Any]:
     all_specs = collect_usage_specs(root_app)
     if surface is not None:
@@ -974,7 +1006,7 @@ def _manifest_specs(
     specs = filter_specs(all_specs, agent_slug=agent, consumer_profile=profile)
     if density == "full":
         return filter_specs(specs, task_type=task)
-    return select_specs_for_density(specs, density=density, task_type=task)
+    return select_specs_for_density(specs, density=density, task_type=task, scores=scores)
 
 
 def _emit_manifest_payload(
@@ -1018,11 +1050,18 @@ def manifest(
         str | None, typer.Option("--profile", help="Filter to surfaces declaring this consumer_profile")
     ] = None,
     density: Annotated[
-        str, typer.Option("--density", help="core | task | full")
+        str, typer.Option("--density", help="core | task | full | adaptive")
     ] = "full",
     fmt: Annotated[
         str, typer.Option("--format", help="inject | yaml | json | markdown")
     ] = INJECT_FORMAT,
+    scores_file: Annotated[
+        str | None,
+        typer.Option(
+            "--scores-file",
+            help="JSON {usage_key: 0-100 score} for --density adaptive ('-' for stdin)",
+        ),
+    ] = None,
 ) -> None:
     """Emit the registered tool-usage manifest for injection into agentic surfaces.
 
@@ -1032,6 +1071,7 @@ def manifest(
         st tools manifest --task devops                    # inject form (default)
         st tools manifest --density core                   # compact generic context
         st tools manifest --task frontend --density task    # compact task context
+        st tools manifest --density adaptive --scores-file scores.json
         st tools manifest --surface st.service.rebuild --format yaml
         st tools manifest --profile claude-code --format json
     """
@@ -1042,6 +1082,8 @@ def manifest(
         output_error(f"Unknown --density {density!r}; expected {expected}")
         raise typer.Exit(1)
 
+    scores = _load_scores_file(scores_file)
+
     specs = _manifest_specs(
         root_app,
         surface=surface,
@@ -1049,6 +1091,7 @@ def manifest(
         agent=agent,
         profile=profile,
         density=density,
+        scores=scores,
     )
     _emit_manifest_payload(specs, density=density, fmt=fmt)
 

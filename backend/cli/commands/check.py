@@ -228,6 +228,14 @@ def _run_named_tool(
 
 
 @app.callback(invoke_without_command=True)
+def _help_text(names: str) -> str:
+    return help_text(names)
+
+
+def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]) -> int:
+    return handle_check_args(ctx, configs, runtime=_runtime())
+
+
 @usage(
     surface="st.check",
     cmd="st check --quick --changed-only",
@@ -239,14 +247,6 @@ def _run_named_tool(
     ),
     tier="mandate",
 )
-def _help_text(names: str) -> str:
-    return help_text(names)
-
-
-def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]) -> int:
-    return handle_check_args(ctx, configs, runtime=_runtime())
-
-
 def check(ctx: typer.Context) -> None:
     """Run quality gates or named check subcommands."""
     if ctx.invoked_subcommand is not None:
