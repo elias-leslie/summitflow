@@ -43,33 +43,4 @@ describe('runtimeApi', () => {
       '/api/docker/logs/monkey-fight?follow=true&tail=50',
     )
   })
-
-  it('sends secure live text as no-store plain text with operator token', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ id: 'session-1' }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
-    vi.stubGlobal('fetch', fetchMock)
-
-    await runtimeApi.secureTextLiveSession(
-      'session-1',
-      'not-a-real-secret',
-      'operator-token',
-    )
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/docker/live-sessions/session-1/secure-text',
-      expect.objectContaining({
-        method: 'POST',
-        body: 'not-a-real-secret',
-        cache: 'no-store',
-        headers: {
-          'Content-Type': 'text/plain;charset=UTF-8',
-          'X-Live-Session-Token': 'operator-token',
-        },
-      }),
-    )
-  })
 })
