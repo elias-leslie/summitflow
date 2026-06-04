@@ -71,8 +71,27 @@ _PROXMOX_FLAG = "--proxmox"
 _PROXMOX_COMMAND = "proxmox"
 _LOCAL_AI_PROFILE_ENV = "ST_BROWSER_LOCAL_AI_PROFILE"
 _LOCAL_AI_CHROME_ENV = "ST_BROWSER_LOCAL_CHROME"
+_LOCAL_AI_HEADLESS_ENV = "ST_BROWSER_LOCAL_AI_HEADLESS"
+_LOCAL_AI_VISIBLE_ENV = "ST_BROWSER_LOCAL_AI_VISIBLE"
 _DEFAULT_LOCAL_AI_PROFILE = "AI"
 _LOCAL_CHROME_CANDIDATES = ("google-chrome-stable", "google-chrome", "chromium", "chromium-browser")
+_LOCAL_AI_WINDOW_CLASS = "st-browser-ai"
+# Chrome launch flags for the minimized local-AI window, comma-joined for
+# agent-browser's --args. agent-browser splits --args on commas/newlines, so no
+# single flag here may contain a comma (rules out --window-position/--window-size).
+# --class tags the agent's own window so we iconify only it, never the user's
+# personal Chrome; the disable-* flags stop Chrome throttling a minimized window
+# so screenshots keep capturing live content.
+_LOCAL_AI_MINIMIZED_CHROME_ARGS = (
+    f"--class={_LOCAL_AI_WINDOW_CLASS}"
+    ",--disable-renderer-backgrounding"
+    ",--disable-backgrounding-occluded-windows"
+    ",--disable-background-timer-throttling"
+    ",--disable-features=CalculateNativeWinOcclusion"
+)
+# Process-level guard: iconify the local-AI window at most once per st invocation
+# so we don't fight the user if they restore it to watch mid-run.
+_local_ai_minimized = False
 _ENDPOINT_ERROR_TEMPLATE = "Unable to resolve browser CDP endpoint on {host}:{port}"
 _NO_ENGINES_TEMPLATE = "No browser engines available on {host}"
 _CONFIGURED_PORT_UNAVAILABLE_TEMPLATE = "Configured browser port is not available on {host}:{port}"
@@ -269,6 +288,20 @@ def _system_chrome_path() -> str:
     return ""
 
 
+def _local_ai_window_mode() -> str:
+    """Resolve how the local-AI Chrome window should present.
+
+    "headless" -> no window (ST_BROWSER_LOCAL_AI_HEADLESS=1)
+    "visible"  -> normal headed window for watching (ST_BROWSER_LOCAL_AI_VISIBLE=1)
+    "minimized"-> default: headed but iconified out of the way.
+    """
+    if os.environ.get(_LOCAL_AI_HEADLESS_ENV, "").strip() == "1":
+        return "headless"
+    if os.environ.get(_LOCAL_AI_VISIBLE_ENV, "").strip() == "1":
+        return "visible"
+    return "minimized"
+
+
 def _local_ai_agent_args(args: list[str]) -> list[str]:
     prefix: list[str] = []
     if not _has_agent_option(args, "--profile") and not os.environ.get("AGENT_BROWSER_PROFILE", "").strip():
@@ -283,13 +316,57 @@ def _local_ai_agent_args(args: list[str]) -> list[str]:
             )
             raise typer.Exit(1) from None
         prefix.extend(["--executable-path", chrome])
+    mode = _local_ai_window_mode()
     if (
-        os.environ.get("ST_BROWSER_LOCAL_AI_HEADLESS", "").strip() != "1"
+        mode != "headless"
         and not _has_agent_option(args, "--headed")
         and not os.environ.get("AGENT_BROWSER_HEADED", "").strip()
     ):
         prefix.append("--headed")
+    if (
+        mode == "minimized"
+        and not _has_agent_option(args, "--args")
+        and not os.environ.get("AGENT_BROWSER_ARGS", "").strip()
+    ):
+        prefix.extend(["--args", _LOCAL_AI_MINIMIZED_CHROME_ARGS])
     return [*prefix, *args]
+
+
+def _maybe_minimize_local_ai_window() -> None:
+    """Iconify the agent's own local-AI Chrome window, best-effort, once per run.
+
+    Matches only our unique WM class (set via --class) so the user's personal
+    Chrome is never touched. No-op outside minimized mode, when xdotool is
+    missing (e.g. CI/headless host), or once a window has already been minimized
+    this invocation.
+    """
+    global _local_ai_minimized
+    if _local_ai_minimized or _local_ai_window_mode() != "minimized":
+        return
+    if not shutil.which("xdotool"):
+        return
+    try:
+        found = subprocess.run(
+            ["xdotool", "search", "--class", _LOCAL_AI_WINDOW_CLASS],
+            text=True,
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+    window_ids = [wid for wid in found.stdout.split() if wid.strip()]
+    if not window_ids:
+        return
+    for wid in window_ids:
+        subprocess.run(
+            ["xdotool", "windowminimize", wid],
+            text=True,
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+    _local_ai_minimized = True
 
 
 def _print_local_ai_health() -> None:
@@ -476,7 +553,9 @@ def _with_resolved_local_navigation_target(args: list[str], command: str) -> lis
 
 
 def _run_local_ai_agent(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return _run_agent(_local_ai_agent_args(args), capture=True)
+    result = _run_agent(_local_ai_agent_args(args), capture=True)
+    _maybe_minimize_local_ai_window()
+    return result
 
 
 def _local_agent_failure(label: str, result: subprocess.CompletedProcess[str]) -> str | None:
@@ -662,7 +741,7 @@ def _run_local_ai_browser_command(command: str, browser_args: list[str]) -> int:
         output_error("Usage: st browser --local-ai <agent-browser command> [args...]")
         return 2
     resolved_browser_args = _with_resolved_local_navigation_target(browser_args, command)
-    result = _run_agent(_local_ai_agent_args(resolved_browser_args), capture=True)
+    result = _run_local_ai_agent(resolved_browser_args)
     emit_result_or_details(current_root(), f"browser-local-ai-{command or 'command'}", "BROWSER", result)
     return result.returncode
 
@@ -712,9 +791,11 @@ Debug local CDP override:
   ST_BROWSER_HOST=127.0.0.1 ST_BROWSER_ALLOW_LOCAL=1 st browser health
 
 Local system Chrome:
-  Default mode uses system Chrome, profile `AI`, and headed mode.
-  Override local Chrome with ST_BROWSER_LOCAL_CHROME, ST_BROWSER_LOCAL_AI_PROFILE,
-  or ST_BROWSER_LOCAL_AI_HEADLESS=1.
+  Default mode uses system Chrome, profile `AI`, headed but started minimized
+  (out of the way; screenshots still work). Restore the window to watch it live.
+  Window control: ST_BROWSER_LOCAL_AI_VISIBLE=1 keeps a normal on-screen window;
+  ST_BROWSER_LOCAL_AI_HEADLESS=1 runs with no window at all.
+  Override local Chrome with ST_BROWSER_LOCAL_CHROME, ST_BROWSER_LOCAL_AI_PROFILE.
 
 Local desktop UI:
   Use st ui when the already-open desktop/PWA is the right evidence source or browser automation is not enough.

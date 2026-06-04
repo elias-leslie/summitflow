@@ -909,12 +909,31 @@ def test_browser_endpoint_prints_canonical_ws_url() -> None:
     assert result.output == "ws://browser-vm/devtools/browser/abc\n"
 
 
+def _clear_local_ai_window_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "AGENT_BROWSER_PROFILE",
+        "AGENT_BROWSER_EXECUTABLE_PATH",
+        "AGENT_BROWSER_HEADED",
+        "AGENT_BROWSER_ARGS",
+        "ST_BROWSER_LOCAL_AI_VISIBLE",
+        "ST_BROWSER_LOCAL_AI_HEADLESS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
+_LOCAL_AI_MINIMIZED_ARGS = (
+    "--class=st-browser-ai,--disable-renderer-backgrounding,"
+    "--disable-backgrounding-occluded-windows,--disable-background-timer-throttling,"
+    "--disable-features=CalculateNativeWinOcclusion"
+)
+
+
 def test_browser_auto_open_prefers_local_ai_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("AGENT_BROWSER_PROFILE", raising=False)
-    monkeypatch.delenv("AGENT_BROWSER_EXECUTABLE_PATH", raising=False)
+    _clear_local_ai_window_env(monkeypatch)
     with (
         patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
         patch("cli.commands.browser.resolve_browser_location", return_value="http://app.lan:3005/"),
+        patch("cli.commands.browser._maybe_minimize_local_ai_window"),
         patch("cli.commands.browser._select_port") as select_port,
         patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0, stdout="", stderr="")) as run_agent,
     ):
@@ -928,9 +947,78 @@ def test_browser_auto_open_prefers_local_ai_profile(monkeypatch: pytest.MonkeyPa
         "--executable-path",
         "/usr/bin/google-chrome-stable",
         "--headed",
+        "--args",
+        _LOCAL_AI_MINIMIZED_ARGS,
         "open",
         "http://app.lan:3005/",
     ]
+
+
+def test_local_ai_agent_args_minimized_is_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    with patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
+        args = browser._local_ai_agent_args(["open", "http://app.lan/"])
+    assert "--headed" in args
+    assert args[args.index("--args") + 1] == _LOCAL_AI_MINIMIZED_ARGS
+    # No injected Chrome flag may contain a comma (agent-browser splits --args on commas).
+    for flag in _LOCAL_AI_MINIMIZED_ARGS.split(","):
+        assert flag.count(",") == 0 and flag.startswith("--")
+
+
+def test_local_ai_agent_args_visible_keeps_window_without_minimize_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    monkeypatch.setenv("ST_BROWSER_LOCAL_AI_VISIBLE", "1")
+    with patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
+        args = browser._local_ai_agent_args(["open", "http://app.lan/"])
+    assert "--headed" in args
+    assert "--args" not in args
+
+
+def test_local_ai_agent_args_headless_omits_headed(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    monkeypatch.setenv("ST_BROWSER_LOCAL_AI_HEADLESS", "1")
+    with patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
+        args = browser._local_ai_agent_args(["open", "http://app.lan/"])
+    assert "--headed" not in args
+    assert "--args" not in args
+
+
+def test_local_ai_agent_args_respects_user_supplied_args(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    with patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
+        args = browser._local_ai_agent_args(["--args", "--no-sandbox", "open", "http://app.lan/"])
+    assert args.count("--args") == 1
+    assert _LOCAL_AI_MINIMIZED_ARGS not in args
+
+
+def test_maybe_minimize_local_ai_window_targets_only_our_class(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    monkeypatch.setattr(browser, "_local_ai_minimized", False, raising=False)
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(cmd)
+        stdout = "44040197\n" if cmd[:2] == ["xdotool", "search"] else ""
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+    with (
+        patch("cli.commands.browser.shutil.which", return_value="/usr/bin/xdotool"),
+        patch("cli.commands.browser.subprocess.run", side_effect=fake_run),
+    ):
+        browser._maybe_minimize_local_ai_window()
+
+    assert ["xdotool", "search", "--class", "st-browser-ai"] in calls
+    assert ["xdotool", "windowminimize", "44040197"] in calls
+    assert browser._local_ai_minimized is True
+
+
+def test_maybe_minimize_local_ai_window_noop_when_visible(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    monkeypatch.setenv("ST_BROWSER_LOCAL_AI_VISIBLE", "1")
+    monkeypatch.setattr(browser, "_local_ai_minimized", False, raising=False)
+    with patch("cli.commands.browser.subprocess.run") as run:
+        browser._maybe_minimize_local_ai_window()
+    run.assert_not_called()
 
 
 def test_browser_force_proxmox_skips_local_ai(monkeypatch: pytest.MonkeyPatch) -> None:
