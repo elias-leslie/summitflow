@@ -108,18 +108,6 @@ def save(
     )
 
 
-def list_episodes(
-    out: OutputContext,
-    limit: int,
-    cursor: str | None,
-    tier: str | None,
-    scope: str,
-    scope_id: str | None,
-) -> None:
-    """List memory episodes."""
-    list_impl(out, limit, cursor, tier, scope, scope_id)
-
-
 def search(
     out: OutputContext,
     query: str,
@@ -218,11 +206,6 @@ def export(
 ) -> None:
     """Export memory episodes."""
     export_impl(tier, uuids, output, scope, scope_id, full)
-
-
-def import_episodes(out: OutputContext, input_path: Path, dry_run: bool) -> None:
-    """Import memory episodes."""
-    import_impl(out, input_path, dry_run)
 
 
 def cleanup(

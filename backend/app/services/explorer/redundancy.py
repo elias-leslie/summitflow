@@ -715,23 +715,6 @@ def _is_specialization(tokens_a: set[str], tokens_b: set[str]) -> bool:
     return bool(tokens_a < tokens_b or tokens_b < tokens_a)
 
 
-def _owner_of(symbol: dict[str, Any]) -> str:
-    """The qualifying owner (class) of a member, from its qualified name.
-
-    ``Task.to_dict`` -> ``task``; a bare/unqualified name -> "" (unknown owner).
-    """
-    qn = str(symbol.get("qualified_name") or "")
-    name = str(symbol.get("name") or "")
-    if "." in qn:
-        owner = qn.rsplit(".", 1)[0]
-        # take the last path segment, e.g. ``pkg.Task`` -> ``Task``
-        owner = owner.rsplit(".", 1)[-1]
-        return owner.lower()
-    if qn and qn.lower() != name.lower():
-        return qn.lower()
-    return ""
-
-
 def _domain_corroboration(
     name_a: set[str],
     name_b: set[str],

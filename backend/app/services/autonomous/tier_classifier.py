@@ -118,15 +118,6 @@ def select_model_for_tier(tier: int, manual: bool = False) -> AgentRouteConfig:
     return AUTONOMOUS_ROUTES.get(tier, AUTONOMOUS_ROUTES[4]).copy()
 
 
-def get_review_model() -> AgentRouteConfig:
-    """Get the route configuration for the review gate.
-
-    Returns:
-        AgentRouteConfig for reviewer
-    """
-    return REVIEW_ROUTE.copy()
-
-
 # Backwards-compatible names for imports that have not moved yet.
 ModelConfig = AgentRouteConfig
 AUTONOMOUS_MODELS = AUTONOMOUS_ROUTES

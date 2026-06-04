@@ -69,30 +69,6 @@ def _build_issue_aware_done_when(
     ]
 
 
-def _create_base_task(
-    project_id: str,
-    title: str,
-    description: str,
-    priority: int,
-    task_type: str,
-    tier: int,
-    ai_review: bool,
-) -> str | None:
-    """Create the base task record and return its ID, or None on failure."""
-    task = task_store.create_task(
-        project_id=project_id,
-        title=title,
-        description=description,
-        priority=priority,
-        task_type=task_type,
-        tier=tier,
-        ai_review=ai_review,
-    )
-    if not task:
-        return None
-    return cast(str, task["id"])
-
-
 def _attach_spirit_and_approve(
     task_id: str,
     done_when: list[str],
@@ -215,33 +191,4 @@ def build_refactor_description(
             "Promotion evidence:\n- "
             + "\n- ".join(reasons[:4])
         )
-    return description
-
-
-def build_architecture_description(
-    violation_type: str,
-    affected_files: list[str],
-    violations_count: int,
-) -> str:
-    """Build description for architecture task.
-
-    Args:
-        violation_type: Type of violation
-        affected_files: List of affected files
-        violations_count: Number of violations
-
-    Returns:
-        Task description
-    """
-    description = (
-        f"Auto-generated from Explorer architecture scan.\n\n"
-        f"**Violation Type:** {violation_type.replace('_', ' ').title()}\n"
-        f"**Affected Files:** {len(affected_files)}\n"
-        f"**Total Violations:** {violations_count}\n\n"
-        f"### Files to fix:\n"
-    )
-    file_lines = [f"- {f}\n" for f in affected_files[:15]]
-    if len(affected_files) > 15:
-        file_lines.append(f"- ... and {len(affected_files) - 15} more files\n")
-    description += "".join(file_lines)
     return description

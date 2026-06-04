@@ -15,10 +15,7 @@ from ._sql import static_sql
 from ._subtask_dep_helpers import (
     DEP_SELECT,
     CycleError,
-    build_graph,
     fetch_inserted_deps,
-    fetch_task_subtasks_and_deps,
-    kahn_sort,
     row_to_dict,
 )
 from .connection import get_connection
@@ -156,30 +153,3 @@ def bulk_add_dependencies(dependencies: list[tuple[str, str]]) -> list[dict[str,
             if "Circular dependency detected" in str(e):
                 raise CycleError(str(e)) from e
             raise
-
-
-def topological_sort(task_id: str) -> list[str]:
-    """Return subtask IDs in execution order (dependencies first).
-
-    Uses Kahn's algorithm. Raises CycleError if a cycle exists.
-    """
-    all_subtasks, deps = fetch_task_subtasks_and_deps(task_id)
-    if not all_subtasks:
-        return []
-    in_degree, dep_map = build_graph(all_subtasks, deps)
-    return kahn_sort(all_subtasks, in_degree, dep_map, task_id)
-
-
-def delete_dependencies_for_subtask(subtask_id: str) -> int:
-    """Delete all dependencies involving subtask_id. Returns count deleted."""
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "DELETE FROM subtask_dependencies WHERE subtask_id = %s OR depends_on_subtask_id = %s",
-            (subtask_id, subtask_id),
-        )
-        deleted = cur.rowcount
-        conn.commit()
-        if deleted:
-            logger.info("Deleted %d dependencies for subtask %s", deleted, subtask_id)
-        return deleted

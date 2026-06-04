@@ -178,34 +178,3 @@ def is_circular_fix(
             return True
 
     return False
-
-
-def find_similar_errors(
-    current_error: str,
-    previous_errors: Iterable[str],
-    threshold: float = CIRCULAR_THRESHOLD,
-) -> list[tuple[int, float]]:
-    """Find all previous errors similar to current.
-
-    Args:
-        current_error: Current error text
-        previous_errors: List of previous error texts
-        threshold: Minimum similarity to report
-
-    Returns:
-        List of (index, similarity) tuples for errors above threshold.
-    """
-    current_keywords = extract_keywords(current_error)
-    similar: list[tuple[int, float]] = []
-
-    if not current_keywords:
-        return similar
-
-    for i, prev_error in enumerate(previous_errors):
-        prev_keywords = extract_keywords(prev_error)
-        similarity = jaccard_similarity(current_keywords, prev_keywords)
-
-        if similarity >= threshold:
-            similar.append((i, similarity))
-
-    return sorted(similar, key=lambda x: x[1], reverse=True)
