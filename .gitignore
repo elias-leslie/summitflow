@@ -87,6 +87,9 @@ references/
 .fallow/
 graphify-out/
 
+# Per-task worktree port residue (canonical ports are 8001/3001)
+ports.json
+
 # Checkpoint data
 .st/
 .summitflow/
