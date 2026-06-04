@@ -769,6 +769,22 @@ def test_browser_health_defaults_to_local_ai() -> None:
     health.assert_called_once()
 
 
+def test_local_ai_health_shows_window_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    with (
+        patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
+        patch("cli.commands.browser._agent_browser_bin", return_value="/usr/bin/agent-browser"),
+    ):
+        browser._print_local_ai_health()
+
+    output = capsys.readouterr().out
+    assert "window-mode: minimized" in output
+    assert "restore the st-browser-ai window from the taskbar" in output
+
+
 def test_browser_help_explains_isolated_target() -> None:
     result = runner.invoke(main_app, ["browser", "--help"])
 
@@ -922,7 +938,7 @@ def _clear_local_ai_window_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 _LOCAL_AI_MINIMIZED_ARGS = (
-    "--class=st-browser-ai,--disable-renderer-backgrounding,"
+    "--class=st-browser-ai,--start-minimized,--disable-renderer-backgrounding,"
     "--disable-backgrounding-occluded-windows,--disable-background-timer-throttling,"
     "--disable-features=CalculateNativeWinOcclusion"
 )
@@ -963,6 +979,53 @@ def test_local_ai_agent_args_minimized_is_default(monkeypatch: pytest.MonkeyPatc
     # No injected Chrome flag may contain a comma (agent-browser splits --args on commas).
     for flag in _LOCAL_AI_MINIMIZED_ARGS.split(","):
         assert flag.count(",") == 0 and flag.startswith("--")
+
+
+def test_local_ai_agent_filters_default_daemon_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    warning = "⚠ --executable-path, --profile, --args, --headed ignored: daemon already running. Use 'agent-browser close' first to restart with new options.\n"
+    with (
+        patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
+        patch("cli.commands.browser._maybe_minimize_local_ai_window"),
+        patch(
+            "cli.commands.browser._run_agent",
+            return_value=subprocess.CompletedProcess([], 0, stdout=f"{warning}snapshot\n", stderr=warning),
+        ),
+    ):
+        result = browser._run_local_ai_agent(["snapshot"])
+
+    assert result.stdout == "snapshot\n"
+    assert result.stderr == ""
+
+
+def test_local_ai_agent_keeps_custom_launch_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    warning = "⚠ --profile ignored: daemon already running. Use 'agent-browser close' first to restart with new options.\n"
+    with (
+        patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
+        patch("cli.commands.browser._maybe_minimize_local_ai_window"),
+        patch(
+            "cli.commands.browser._run_agent",
+            return_value=subprocess.CompletedProcess([], 0, stdout=warning, stderr=""),
+        ),
+    ):
+        result = browser._run_local_ai_agent(["--profile", "Debug", "snapshot"])
+
+    assert result.stdout == warning
+
+
+def test_local_ai_screenshot_path_resolves_relative_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    args = browser._with_resolved_local_screenshot_path(
+        ["screenshot", "nested/page.png"],
+        "screenshot",
+    )
+    assert Path(args[1]).is_absolute()
+    assert args[1] == str(tmp_path / "nested/page.png")
+    assert (tmp_path / "nested").is_dir()
 
 
 def test_local_ai_agent_args_visible_keeps_window_without_minimize_flags(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -84,6 +84,7 @@ _LOCAL_AI_WINDOW_CLASS = "st-browser-ai"
 # so screenshots keep capturing live content.
 _LOCAL_AI_MINIMIZED_CHROME_ARGS = (
     f"--class={_LOCAL_AI_WINDOW_CLASS}"
+    ",--start-minimized"
     ",--disable-renderer-backgrounding"
     ",--disable-backgrounding-occluded-windows"
     ",--disable-background-timer-throttling"
@@ -332,6 +333,69 @@ def _local_ai_agent_args(args: list[str]) -> list[str]:
     return [*prefix, *args]
 
 
+def _local_ai_uses_default_launch(args: list[str]) -> bool:
+    if _local_ai_window_mode() != "minimized":
+        return False
+    launch_options = ("--profile", "--executable-path", "--args", "--headed")
+    if any(_has_agent_option(args, option) for option in launch_options):
+        return False
+    launch_envs = (
+        "AGENT_BROWSER_PROFILE",
+        "AGENT_BROWSER_EXECUTABLE_PATH",
+        "AGENT_BROWSER_ARGS",
+        "AGENT_BROWSER_HEADED",
+        _LOCAL_AI_PROFILE_ENV,
+        _LOCAL_AI_CHROME_ENV,
+    )
+    return not any(os.environ.get(name, "").strip() for name in launch_envs)
+
+
+def _is_default_daemon_warning(line: str) -> bool:
+    stripped = line.strip()
+    return stripped.startswith("⚠ ") and "ignored: daemon already running" in stripped
+
+
+def _without_default_daemon_warning(
+    result: subprocess.CompletedProcess[str],
+    *,
+    default_launch: bool,
+) -> subprocess.CompletedProcess[str]:
+    if not default_launch:
+        return result
+
+    def strip_warnings(output: str | None) -> str:
+        if not output:
+            return output or ""
+        lines = [line for line in output.splitlines() if not _is_default_daemon_warning(line)]
+        return "\n".join(lines) + ("\n" if lines and output.endswith("\n") else "")
+
+    return subprocess.CompletedProcess(
+        result.args,
+        result.returncode,
+        stdout=strip_warnings(result.stdout),
+        stderr=strip_warnings(result.stderr),
+    )
+
+
+def _absolute_local_output_path(path: str) -> str:
+    target = Path(path).expanduser()
+    if not target.is_absolute():
+        target = Path.cwd() / target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return str(target)
+
+
+def _with_resolved_local_screenshot_path(args: list[str], command: str) -> list[str]:
+    if command != "screenshot":
+        return args
+    index = _agent_command_index(args)
+    if index is None or index + 1 >= len(args):
+        return args
+    resolved = [*args]
+    resolved[index + 1] = _absolute_local_output_path(resolved[index + 1])
+    return resolved
+
+
 def _maybe_minimize_local_ai_window() -> None:
     """Iconify the agent's own local-AI Chrome window, best-effort, once per run.
 
@@ -370,9 +434,13 @@ def _maybe_minimize_local_ai_window() -> None:
 
 
 def _print_local_ai_health() -> None:
+    mode = _local_ai_window_mode()
     print("Target: local system Chrome (AI profile)")
     print(f"chrome: {_system_chrome_path() or 'not found'}")
     print(f"profile: {os.environ.get(_LOCAL_AI_PROFILE_ENV, '').strip() or _DEFAULT_LOCAL_AI_PROFILE}")
+    print(f"window-mode: {mode}")
+    if mode == "minimized":
+        print("window-behavior: starts minimized/iconified; restore the st-browser-ai window from the taskbar to watch")
     print(f"agent-browser-bin: {_agent_browser_bin()}")
 
 
@@ -553,7 +621,9 @@ def _with_resolved_local_navigation_target(args: list[str], command: str) -> lis
 
 
 def _run_local_ai_agent(args: list[str]) -> subprocess.CompletedProcess[str]:
+    default_launch = _local_ai_uses_default_launch(args)
     result = _run_agent(_local_ai_agent_args(args), capture=True)
+    result = _without_default_daemon_warning(result, default_launch=default_launch)
     _maybe_minimize_local_ai_window()
     return result
 
@@ -612,7 +682,9 @@ def _browser_local_ai_check(args: list[str]) -> int:
     except BrowserRouteError as exc:
         output_error(str(exc))
         return 2
-    screenshot_path = args[1] if len(args) > 1 else "/tmp/st-browser-local-ai-check.png"
+    screenshot_path = _absolute_local_output_path(
+        args[1] if len(args) > 1 else "/tmp/st-browser-local-ai-check.png"
+    )
     session_args = ["--session", session or f"st-browser-local-ai-check-{os.getpid()}-{time.time_ns()}"]
     command_warnings: list[str] = []
     error_result = subprocess.CompletedProcess([], 0, stdout="{}", stderr="")
@@ -682,15 +754,16 @@ def _browser_local_ai_check(args: list[str]) -> int:
         if warning := _local_agent_failure("close", close_result):
             command_warnings.append(warning)
 
+    root = current_root()
     detail_lines = [
         "Target: local-ai",
-        f"Screenshot: {screenshot_path}",
+        f"Screenshot: {display_path(root, Path(screenshot_path))}",
         "Responsive set: " + ", ".join(f"{label} {width}x{height}" for label, width, height, _ in viewports),
     ]
     if len(viewports) > 1:
         detail_lines.append("Additional screenshots:")
         for label, _, _, path in viewports[1:]:
-            detail_lines.append(f"  {label}: {path}")
+            detail_lines.append(f"  {label}: {display_path(root, Path(path))}")
     errors = _json_from_agent_eval(error_result.stdout)
     network = _json_from_agent_eval(network_result.stdout)
     error_items = _local_check_items(errors, "errors")
@@ -711,13 +784,12 @@ def _browser_local_ai_check(args: list[str]) -> int:
     if command_warnings:
         detail_lines.append(f"\nBrowser command warnings ({len(command_warnings)}):")
         detail_lines.extend(command_warnings)
-    root = current_root()
     details = write_details(root, "browser-check-local-ai", "\n".join(detail_lines))
     status = "OK" if not error_items and not warning_items and not network_items else "ISSUES"
     print(
         f"BROWSER_CHECK:{status}|target=local-ai|errors={len(error_items)}|warnings={len(warning_items)}|"
         f"network={len(network_items)}|command_warnings={len(command_warnings)}|"
-        f"screenshot={screenshot_path}|details:{display_path(root, details)}"
+        f"screenshot={display_path(root, Path(screenshot_path))}|details:{display_path(root, details)}"
     )
     return 0
 
@@ -741,6 +813,7 @@ def _run_local_ai_browser_command(command: str, browser_args: list[str]) -> int:
         output_error("Usage: st browser --local-ai <agent-browser command> [args...]")
         return 2
     resolved_browser_args = _with_resolved_local_navigation_target(browser_args, command)
+    resolved_browser_args = _with_resolved_local_screenshot_path(resolved_browser_args, command)
     result = _run_local_ai_agent(resolved_browser_args)
     emit_result_or_details(current_root(), f"browser-local-ai-{command or 'command'}", "BROWSER", result)
     return result.returncode
