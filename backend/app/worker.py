@@ -17,6 +17,7 @@ from app.workflows.pipeline import (
     triage_wf,
 )
 from app.workflows.scheduled import (
+    hatchet_retention_wf,
     health_monitor_wf,
     pending_drain_wf,
     prod_smoke_test_wf,
@@ -59,7 +60,7 @@ def main() -> None:
             execute_wf,
             review_wf,
             escalation_wf,
-            # Scheduled (15)
+            # Scheduled (16)
             work_pickup_wf,
             reset_claims_wf,
             scan_projects_wf,
@@ -67,6 +68,7 @@ def main() -> None:
             refresh_graphify_graphs_wf,
             scheduled_backups_wf,
             stale_cleanup_wf,
+            hatchet_retention_wf,
             task_generation_wf,
             self_healing_wf,
             prod_smoke_test_wf,

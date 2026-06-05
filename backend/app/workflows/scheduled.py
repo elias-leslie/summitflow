@@ -1,6 +1,6 @@
 """Scheduled (cron) workflows for SummitFlow.
 
-15 cron workflows on Hatchet schedule; 12 enabled by default.
+16 cron workflows on Hatchet schedule; 13 enabled by default.
 Autonomous work pickup is explicit opt-in so missing project config cannot dispatch work.
 Most use ConcurrencyExpression with CANCEL_IN_PROGRESS; explorer maintenance shares
 CANCEL_NEWEST concurrency so scan/index jobs do not overlap.
@@ -318,6 +318,27 @@ async def stale_cleanup_wf(input: StaleCleanupInput, ctx: Context) -> dict[str, 
         return _disabled_schedule_result("stale_cleanup")
 
     return await asyncio.to_thread(run_daily_maintenance, input.max_age_days)
+
+
+@hatchet.task(
+    name="summitflow-hatchet-retention",
+    input_validator=EmptyInput,
+    execution_timeout="7200s",
+    retries=1,
+    on_crons=["45 4 * * 0"],
+    concurrency=ConcurrencyExpression(
+        expression="'summitflow-hatchet-retention'",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+    ),
+)
+async def hatchet_retention_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from ..tasks.hatchet_retention import run_hatchet_retention_guard
+
+    if not _system_schedule_enabled("hatchet_retention"):
+        return _disabled_schedule_result("hatchet_retention")
+
+    return await asyncio.to_thread(run_hatchet_retention_guard)
 
 
 @hatchet.task(

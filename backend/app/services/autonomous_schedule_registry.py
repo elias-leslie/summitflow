@@ -103,6 +103,14 @@ SCHEDULE_DEFINITIONS: tuple[AutonomousScheduleDefinition, ...] = (
         scope="system",
     ),
     AutonomousScheduleDefinition(
+        schedule_id="hatchet_retention",
+        config_key="hatchet_retention_enabled",
+        label="Hatchet retention guard",
+        description="Prunes Hatchet OLAP and lookup tables after a backup using the Hatchet tenant retention period.",
+        cron="45 4 * * 0",
+        scope="system",
+    ),
+    AutonomousScheduleDefinition(
         schedule_id="self_healing",
         config_key="self_healing_enabled",
         label="Self-healing",

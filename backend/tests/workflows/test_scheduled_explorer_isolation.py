@@ -9,6 +9,7 @@ from hatchet_sdk import ConcurrencyLimitStrategy
 from app.workflows.models import EmptyInput
 from app.workflows.scheduled import (
     _explorer_schedule_concurrency,
+    hatchet_retention_wf,
     refresh_graphify_graphs_wf,
     refresh_precision_indexes_wf,
     scan_projects_wf,
@@ -26,6 +27,17 @@ def test_explorer_schedule_concurrency_uses_shared_cancel_newest() -> None:
     assert concurrency.expression == "'summitflow-explorer-maintenance'"
     assert concurrency.max_runs == 1
     assert concurrency.limit_strategy == ConcurrencyLimitStrategy.CANCEL_NEWEST
+
+
+def test_hatchet_retention_schedule_is_registry_managed() -> None:
+    from app.services.autonomous_schedule_registry import get_autonomous_schedule_definition
+
+    definition = get_autonomous_schedule_definition("hatchet_retention")
+
+    assert definition.config_key == "hatchet_retention_enabled"
+    assert definition.cron == "45 4 * * 0"
+    assert definition.scope == "system"
+    assert definition.default_enabled is True
 
 
 @pytest.mark.asyncio
@@ -104,3 +116,22 @@ async def test_tool_governance_wf_runs_scheduled_scan(monkeypatch) -> None:
 
     assert result == {"status": "completed", "audit_events": 2}
     run_tool_governance_scan.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_hatchet_retention_wf_runs_retention_guard(monkeypatch) -> None:
+    run_hatchet_retention_guard = Mock(return_value={"status": "success", "total_deleted": 4})
+
+    monkeypatch.setattr("app.workflows.scheduled._system_schedule_enabled", lambda _schedule_id: True)
+    monkeypatch.setattr("app.workflows.scheduled.asyncio.to_thread", _run_inline)
+    monkeypatch.setattr(
+        "app.tasks.hatchet_retention.run_hatchet_retention_guard",
+        run_hatchet_retention_guard,
+    )
+
+    call = hatchet_retention_wf._task.fn(EmptyInput(), None)
+    assert isinstance(call, Awaitable)
+    result = await call
+
+    assert result == {"status": "success", "total_deleted": 4}
+    run_hatchet_retention_guard.assert_called_once_with()
