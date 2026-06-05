@@ -10,6 +10,8 @@ export interface RuntimeServiceStatus {
   health: string
   status: string
   ports: string[]
+  // systemd boot auto-start: true=enabled, false=disabled, null=not togglable.
+  auto_start: boolean | null
 }
 
 export interface RuntimeServiceMetrics {
@@ -74,6 +76,36 @@ export interface HealthSummary {
 export interface RuntimeActionResult {
   success: boolean
   message: string
+}
+
+export interface GpuProcess {
+  pid: number
+  name: string
+  command: string | null
+  used_mb: number | null
+  type: string
+}
+
+export interface GpuDevice {
+  index: number
+  name: string
+  utilization_percent: number | null
+  memory_total_mb: number
+  memory_used_mb: number
+  memory_free_mb: number
+  memory_percent_used: number
+  temperature_c: number | null
+  power_draw_w: number | null
+  power_limit_w: number | null
+  status: 'ok' | 'warning' | 'critical'
+  processes: GpuProcess[]
+}
+
+export interface GpuStatus {
+  available: boolean
+  error: string | null
+  devices: GpuDevice[]
+  timestamp: string
 }
 
 export interface RuntimeModeStatus {
@@ -259,6 +291,26 @@ export const runtimeApi = {
         errorMessage: 'Failed to start service',
       },
     ),
+  enableAutostart: (service: string) =>
+    fetchWithErrorHandling<RuntimeActionResult>(
+      apiUrl(`/api/docker/enable/${service}`),
+      {
+        method: 'POST',
+        errorMessage: 'Failed to enable auto-start',
+      },
+    ),
+  disableAutostart: (service: string) =>
+    fetchWithErrorHandling<RuntimeActionResult>(
+      apiUrl(`/api/docker/disable/${service}`),
+      {
+        method: 'POST',
+        errorMessage: 'Failed to disable auto-start',
+      },
+    ),
+  getGpuStatus: () =>
+    fetchWithErrorHandling<GpuStatus>(apiUrl('/api/system/gpu'), {
+      errorMessage: 'Failed to fetch GPU status',
+    }),
   switchRuntimeMode: (mode: 'dev' | 'prod') =>
     postJson<RuntimeActionResult>(
       apiUrl('/api/docker/runtime'),

@@ -12,6 +12,7 @@ from ..services.resource_monitor import (
     get_cpu_usage,
     get_disk_usage,
     get_disk_usages,
+    get_gpu_usage,
     get_memory_usage,
 )
 from ..storage import maintenance_runs as maintenance_store
@@ -70,6 +71,42 @@ class ResourcesResponse(BaseModel):
     )
 
 
+class GpuProcessResponse(BaseModel):
+    """A process holding GPU memory."""
+
+    pid: int
+    name: str
+    command: str | None = None
+    used_mb: int | None = None
+    type: str
+
+
+class GpuDeviceResponse(BaseModel):
+    """Per-device GPU utilization and memory."""
+
+    index: int
+    name: str
+    utilization_percent: float | None = None
+    memory_total_mb: int
+    memory_used_mb: int
+    memory_free_mb: int
+    memory_percent_used: float
+    temperature_c: float | None = None
+    power_draw_w: float | None = None
+    power_limit_w: float | None = None
+    status: str
+    processes: list[GpuProcessResponse] = Field(default_factory=list)
+
+
+class GpuStatusResponse(BaseModel):
+    """GPU status across all devices (or availability info when absent)."""
+
+    available: bool
+    error: str | None = None
+    devices: list[GpuDeviceResponse] = Field(default_factory=list)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class MaintenanceRunResponse(BaseModel):
     """One recorded maintenance workflow run."""
 
@@ -124,6 +161,21 @@ def get_system_resources() -> ResourcesResponse:
         raise HTTPException(
             status_code=500, detail=f"Error retrieving system resources: {e!s}"
         ) from e
+
+
+@router.get("/gpu", response_model=GpuStatusResponse)
+def get_gpu_status() -> GpuStatusResponse:
+    """Get NVIDIA GPU utilization, memory, and the processes using the GPU.
+
+    Returns available=False (not an error) when no GPU/driver is present, so the
+    UI can show a graceful "no GPU" state and operators can see what to offload.
+    """
+    gpu = get_gpu_usage()
+    return GpuStatusResponse(
+        available=gpu["available"],
+        error=gpu["error"],
+        devices=[GpuDeviceResponse.model_validate(device) for device in gpu["devices"]],
+    )
 
 
 @router.get("/maintenance", response_model=MaintenanceStatusResponse)

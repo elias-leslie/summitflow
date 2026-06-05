@@ -15,6 +15,7 @@ import type {
   RuntimeServiceMetrics,
   RuntimeServiceStatus,
 } from '@/lib/api/runtime'
+import { AutostartToggle } from './AutostartToggle'
 import {
   healthDotClass,
   healthLabel,
@@ -167,6 +168,11 @@ export function ServiceListView({
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <ActionCell service={s.service} isRunning={isRunning} />
+                      <AutostartToggle
+                        service={s.service}
+                        autoStart={s.auto_start}
+                        variant="chip"
+                      />
                       <button
                         onClick={() => setLogService(s.service)}
                         className="text-2xs px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-400 hover:bg-slate-700 hover:text-slate-300 transition-colors"

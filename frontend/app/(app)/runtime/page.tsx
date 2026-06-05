@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Boxes } from 'lucide-react'
 import { motion } from 'motion/react'
 import { SystemHealthWidget } from '@/components/dashboard/SystemHealthWidget'
+import { GpuStatusCard } from '@/components/runtime/GpuStatusCard'
 import { HealthBar } from '@/components/runtime/HealthBar'
 import { MaintenanceStatusCard } from '@/components/runtime/MaintenanceStatusCard'
 import { ProxmoxStatusCard } from '@/components/runtime/ProxmoxStatusCard'
@@ -83,6 +84,9 @@ export default function RuntimePage() {
 
       {/* System resources */}
       <SystemHealthWidget />
+
+      {/* GPU utilization + what's using VRAM */}
+      <GpuStatusCard />
 
       {/* Health visualization bar */}
       {services && services.length > 0 && <HealthBar services={services} />}

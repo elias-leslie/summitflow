@@ -13,6 +13,7 @@ from .constants import _HTTP_PROBE_TIMEOUT_SECONDS, _RUNTIME_SERVICE_DEFS
 from .models import RuntimeServiceStatus
 
 __all__ = [
+    "_auto_start_from_unit_file_state",
     "_classify_systemd_state",
     "_docker_status",
     "_fill_timeout_defaults",
@@ -26,11 +27,25 @@ __all__ = [
 ]
 
 
+def _auto_start_from_unit_file_state(unit_file_state: str) -> bool | None:
+    """Map systemd UnitFileState to a tri-state auto-start flag.
+
+    enabled/enabled-runtime -> True, disabled -> False. Everything else
+    (static, masked, generated, transient, unknown) is not user-togglable -> None.
+    """
+    if unit_file_state in {"enabled", "enabled-runtime"}:
+        return True
+    if unit_file_state == "disabled":
+        return False
+    return None
+
+
 async def _systemd_unit_state(unit: str) -> dict[str, str]:
     stdout, stderr, rc = await _h._run_systemctl_user(
         "show", unit,
         "-p", "Id", "-p", "LoadState", "-p", "ActiveState",
         "-p", "SubState", "-p", "MainPID", "-p", "ExecMainStatus",
+        "-p", "UnitFileState",
     )
     data = _h._parse_systemctl_show(stdout)
     data.setdefault("Id", unit)
@@ -144,6 +159,7 @@ async def _systemd_status(svc: dict[str, Any]) -> RuntimeServiceStatus:
         health=health,
         status=status,
         ports=list(svc["ports"]),
+        auto_start=_auto_start_from_unit_file_state(unit_state.get("UnitFileState", "")),
     )
 
 

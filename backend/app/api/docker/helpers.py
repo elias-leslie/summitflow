@@ -190,11 +190,13 @@ from ._runtime_control import (  # noqa: E402,F401
     _launch_runtime_switch,
     _persisted_runtime_mode,
     _service_action,
+    _set_service_autostart,
     _st_cli_path,
     _systemd_service_action,
     _write_runtime_mode,
 )
 from ._status_probing import (  # noqa: E402,F401
+    _auto_start_from_unit_file_state,
     _classify_systemd_state,
     _docker_status,
     _fill_timeout_defaults,

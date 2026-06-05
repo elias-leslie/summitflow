@@ -22,6 +22,7 @@ __all__ = [
     "_launch_runtime_switch",
     "_persisted_runtime_mode",
     "_service_action",
+    "_set_service_autostart",
     "_st_cli_path",
     "_systemd_service_action",
     "_write_runtime_mode",
@@ -230,6 +231,33 @@ def _systemd_stop_service_defs(svc: dict[str, Any]) -> list[dict[str, Any]]:
         )
     ]
     return [*siblings, svc]
+
+
+async def _set_service_autostart(service: str, enabled: bool) -> ActionResult:
+    """Enable or disable boot auto-start for a systemd-managed service.
+
+    Toggles UnitFileState via `systemctl --user enable/disable`. This only
+    changes whether the unit starts on boot/login; it does not start or stop
+    the running service. Docker infra has no per-unit auto-start toggle.
+    """
+    svc = _h._service_definition(service)
+    if svc["manager"] != "systemd":
+        return ActionResult(
+            success=False,
+            message=f"{service} is Docker infra; auto-start is governed by the compose stack",
+        )
+
+    verb = "enable" if enabled else "disable"
+    _stdout, stderr, rc = await _h._run_systemctl_user(
+        verb, svc["unit"], timeout=_COMMAND_TIMEOUT_SECONDS,
+    )
+    if rc != 0:
+        return ActionResult(
+            success=False,
+            message=(stderr or f"Failed to {verb} auto-start for {service}").strip(),
+        )
+    state = "enabled" if enabled else "disabled"
+    return ActionResult(success=True, message=f"Auto-start {state} for {service}")
 
 
 async def _systemd_service_action(svc: dict[str, Any], action: Literal["start", "stop", "restart"]) -> ActionResult:

@@ -27,6 +27,7 @@ from .helpers import (
     _sanitize_note,
     _service_action,
     _service_definition,
+    _set_service_autostart,
     _st_cli_path,
     _systemctl_user_env,
     _write_runtime_mode,
@@ -253,6 +254,18 @@ async def stop_service(service: str) -> ActionResult:
 async def start_service(service: str) -> ActionResult:
     """Start a managed service."""
     return await _service_action(service, "start")
+
+
+@router.post("/enable/{service}", response_model=ActionResult, dependencies=[Depends(_require_auth)])
+async def enable_service(service: str) -> ActionResult:
+    """Enable boot auto-start for a managed service (does not start it now)."""
+    return await _set_service_autostart(service, True)
+
+
+@router.post("/disable/{service}", response_model=ActionResult, dependencies=[Depends(_require_auth)])
+async def disable_service(service: str) -> ActionResult:
+    """Disable boot auto-start for a managed service (does not stop it now)."""
+    return await _set_service_autostart(service, False)
 
 
 @router.post("/backup", response_model=ActionResult, dependencies=[Depends(_require_auth)])

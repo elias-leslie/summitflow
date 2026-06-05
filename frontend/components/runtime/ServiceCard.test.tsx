@@ -38,6 +38,7 @@ describe('ServiceCard', () => {
           health: 'healthy',
           status: 'Up 10 minutes (healthy)',
           ports: ['8000'],
+          auto_start: true,
         }}
         metric={{
           name: 'summitflow-backend.service',

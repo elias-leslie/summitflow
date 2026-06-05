@@ -18,6 +18,9 @@ class RuntimeServiceStatus(BaseModel):
     health: str
     status: str
     ports: list[str]
+    # systemd auto-start (UnitFileState): True=enabled, False=disabled,
+    # None=not togglable (docker infra, or static/masked units).
+    auto_start: bool | None = None
 
 
 class RuntimeServiceMetrics(BaseModel):

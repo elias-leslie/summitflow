@@ -7,6 +7,7 @@ import type {
   RuntimeServiceMetrics,
   RuntimeServiceStatus,
 } from '@/lib/api/runtime'
+import { AutostartToggle } from './AutostartToggle'
 import {
   healthAccentClass,
   healthDotClass,
@@ -122,6 +123,17 @@ export function ServiceCard({
             series={metricSeries}
           />
         </div>
+
+        {/* Auto-start (boot) toggle — only for togglable systemd units */}
+        {container.auto_start !== null && (
+          <div className="mb-2.5 flex items-center justify-between rounded-md bg-slate-950/40 px-2.5 py-1.5 border border-slate-800/50">
+            <AutostartToggle
+              service={container.service}
+              autoStart={container.auto_start}
+            />
+            <span className="text-[10px] text-slate-600">on reboot</span>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex gap-1.5">
