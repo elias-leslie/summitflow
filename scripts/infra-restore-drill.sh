@@ -61,7 +61,12 @@ if [ -n "$PG_DUMP" ]; then
         sleep 1
     done
 
-    if gunzip -c "$PG_DUMP" | docker exec -i "$DRILL_PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres >/dev/null 2>&1; then
+    # The disposable postgres image already creates the bootstrap postgres role.
+    # pg_dumpall includes that role, so drop only the bootstrap role statements
+    # and keep ON_ERROR_STOP for real restore failures.
+    if gunzip -c "$PG_DUMP" \
+        | sed -e '/^CREATE ROLE postgres;$/d' -e '/^ALTER ROLE postgres /d' \
+        | docker exec -i "$DRILL_PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres >/dev/null 2>&1; then
         db_count=$(docker exec "$DRILL_PG_CONTAINER" psql -U postgres -d postgres -tAc \
             "SELECT count(*) FROM pg_database WHERE datistemplate = false AND datname != 'postgres'" 2>/dev/null || echo "0")
         db_count=$(echo "$db_count" | tr -d '[:space:]')
