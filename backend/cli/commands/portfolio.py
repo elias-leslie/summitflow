@@ -29,6 +29,7 @@ from .._portfolio_client import (
     ResolvedURL,
     resolve_portfolio_api_url,
 )
+from ..lib.usage import usage
 from ..output import output_error, output_json
 
 SCHEMA_VERSION = 1
@@ -45,6 +46,10 @@ EP_IPS_DRIFT = "/api/portfolio/ips/drift"
 EP_IPS_REBALANCE = "/api/portfolio/ips/rebalance"
 EP_IPS_TARGETS = "/api/portfolio/ips/targets"
 EP_CATALYSTS = "/api/catalysts/upcoming"
+EP_PORTFOLIO = "/api/portfolio"
+EP_PORTFOLIO_ANALYTICS = "/api/portfolio/analytics"
+EP_PORTFOLIO_JENNY = "/api/portfolio/jenny"
+EP_MARKET_STATUS = "/api/market/status"
 EP_RETIREMENT_SCENARIOS = "/api/retirement/scenarios"
 EP_OPENAPI = "/openapi.json"
 
@@ -87,6 +92,9 @@ _SCHEMA_PATHS: dict[str, tuple[str, str]] = {
     "rebalance": (EP_IPS_REBALANCE, "post"),
     "ips-targets": (EP_IPS_TARGETS, "get"),
     "catalysts-upcoming": (EP_CATALYSTS, "get"),
+    "positions": (EP_PORTFOLIO, "get"),
+    "briefing-context": (EP_PORTFOLIO, "get"),
+    "market-status": (EP_MARKET_STATUS, "get"),
     "retirement-run": (EP_RETIREMENT_SCENARIOS, "post"),
     "retirement-list": (EP_RETIREMENT_SCENARIOS, "get"),
     "retirement-show": (f"{EP_RETIREMENT_SCENARIOS}/{{scenario_id}}", "get"),
@@ -210,6 +218,151 @@ def _require_scope(scope: str) -> None:
         raise typer.Exit(3)
 
 
+def _num(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _position_value(position: dict[str, Any]) -> float:
+    value = _num(position.get("current_value"))
+    if value is not None:
+        return value
+    price = _num(position.get("current_price"))
+    shares = _num(position.get("shares"))
+    if price is not None and shares is not None:
+        return price * shares
+    return 0.0
+
+
+def _position_digest(position: dict[str, Any], total_value: float) -> dict[str, Any]:
+    current_value = _position_value(position)
+    weight = current_value / total_value if total_value > 0 else None
+    return {
+        "symbol": position.get("symbol"),
+        "account_id": position.get("account_id"),
+        "position_type": position.get("position_type"),
+        "shares": position.get("shares"),
+        "current_price": position.get("current_price"),
+        "current_value": current_value,
+        "weight_pct": round(weight * 100, 2) if weight is not None else None,
+        "gain_pct": position.get("gain_pct"),
+        "gain": position.get("gain"),
+        "price_updated_at": position.get("price_updated_at"),
+        "price_source": position.get("price_source"),
+    }
+
+
+def _portfolio_position_payload(portfolio: dict[str, Any], *, limit: int) -> dict[str, Any]:
+    positions = _as_list(portfolio.get("positions"))
+    total_value = _num(portfolio.get("effective_total_value")) or _num(portfolio.get("total_value")) or 0.0
+    rows = [_position_digest(position, total_value) for position in positions]
+    rows.sort(key=lambda row: abs(_num(row.get("current_value")) or 0.0), reverse=True)
+    return {
+        "as_of": portfolio.get("quotes_updated_at"),
+        "quote_freshness_status": portfolio.get("quote_freshness_status"),
+        "quote_freshness_label": portfolio.get("quote_freshness_label"),
+        "total_value": total_value,
+        "total_gain": portfolio.get("total_gain"),
+        "total_gain_pct": portfolio.get("total_gain_pct"),
+        "cash_balance_total": portfolio.get("cash_balance_total"),
+        "num_positions": len(positions),
+        "positions": rows[:limit],
+    }
+
+
+def _jenny_position_views(jenny: dict[str, Any], symbols: set[str]) -> list[dict[str, Any]]:
+    rows = []
+    for review in _as_list(jenny.get("symbol_reviews")):
+        symbol = str(review.get("symbol") or "").upper()
+        if symbols and symbol not in symbols:
+            continue
+        rows.append({
+            "symbol": symbol,
+            "final_verdict": review.get("final_verdict"),
+            "average_confidence": review.get("average_confidence"),
+            "thesis_status": review.get("thesis_status"),
+            "thesis_action": review.get("thesis_action"),
+            "management_action": review.get("management_action"),
+            "position_gain_pct": review.get("position_gain_pct"),
+            "position_weight_pct": review.get("position_weight_pct"),
+            "reasons": (review.get("reasons") or [])[:4],
+        })
+    return rows
+
+
+def _impact_watchlist(
+    positions: list[dict[str, Any]],
+    jenny_views: list[dict[str, Any]],
+    catalysts: list[dict[str, Any]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    by_symbol: dict[str, dict[str, Any]] = {}
+    for row in positions:
+        symbol = str(row.get("symbol") or "").upper()
+        if not symbol:
+            continue
+        current = by_symbol.setdefault(symbol, {"symbol": symbol, "accounts": [], "current_value": 0.0})
+        current["accounts"].append(row)
+        current["current_value"] = float(current.get("current_value") or 0.0) + float(_num(row.get("current_value")) or 0.0)
+        if current.get("weight_pct") is None and row.get("weight_pct") is not None:
+            current["weight_pct"] = 0.0
+        if row.get("weight_pct") is not None:
+            current["weight_pct"] = round(float(current.get("weight_pct") or 0.0) + float(row.get("weight_pct") or 0.0), 2)
+    for view in jenny_views:
+        symbol = str(view.get("symbol") or "").upper()
+        by_symbol.setdefault(symbol, {"symbol": symbol}).update({"jenny_review": view})
+    for catalyst in catalysts:
+        symbol = str(catalyst.get("symbol") or "").upper()
+        if not symbol:
+            continue
+        by_symbol.setdefault(symbol, {"symbol": symbol}).setdefault("upcoming_catalysts", []).append(catalyst)
+    rows = list(by_symbol.values())
+    rows.sort(
+        key=lambda row: (
+            bool(row.get("upcoming_catalysts")),
+            bool(row.get("jenny_review")),
+            abs(_num(row.get("current_value")) or 0.0),
+        ),
+        reverse=True,
+    )
+    return rows[:limit]
+
+
+def _human_positions(snapshot: dict[str, Any]) -> str:
+    lines = [
+        f"Portfolio ${float(snapshot.get('total_value') or 0):,.0f}; "
+        f"{snapshot.get('num_positions')} positions; quotes {snapshot.get('quote_freshness_label') or snapshot.get('quote_freshness_status') or 'unknown'}",
+        "",
+    ]
+    for row in snapshot.get("positions", []):
+        weight = row.get("weight_pct")
+        gain_pct = row.get("gain_pct")
+        lines.append(
+            f"  - {row.get('symbol')}: ${float(row.get('current_value') or 0):,.0f}"
+            f" ({weight if weight is not None else '?'}% weight, gain {gain_pct if gain_pct is not None else '?'}%)"
+        )
+    return "\n".join(lines)
+
+
+def _human_briefing_context(data: dict[str, Any]) -> str:
+    lines = [_human_positions(data.get("portfolio") or {}), "", "Pulse impact watchlist:"]
+    for row in data.get("impact_watchlist", []):
+        bits = []
+        if row.get("upcoming_catalysts"):
+            bits.append(f"{len(row['upcoming_catalysts'])} catalyst(s)")
+        if row.get("jenny_review"):
+            bits.append(f"Jenny {row['jenny_review'].get('final_verdict')}")
+        if row.get("weight_pct") is not None:
+            bits.append(f"{row.get('weight_pct')}% weight")
+        lines.append(f"  - {row.get('symbol')}: " + (", ".join(bits) if bits else "position context only"))
+    return "\n".join(lines)
+
+
 def _scope_klass(value: Any) -> Any:
     """Friendly asset-class label (or raw value if unknown)."""
     return FRIENDLY_CLASS.get(value, value)
@@ -266,6 +419,100 @@ def _human_wash_sale(verdict: dict[str, Any]) -> str:
 
 def _candidate_digest(rows: list[dict[str, Any]], limit: int) -> dict[str, Any]:
     return _envelope(rows, {"limit": limit}, digest=True)
+
+
+@app.command("positions")
+@usage(
+    surface="st.portfolio.positions",
+    cmd="st portfolio positions --limit 25",
+    when="inspect current held positions and weights before market-aware briefings or portfolio impact analysis",
+    precautions=("read-only; uses portfolio-ai API and excludes raw credentials",),
+    task_types=("portfolio", "briefing", "market"),
+    tier="mandate",
+)
+def positions(
+    limit: Annotated[int, typer.Option("--limit", min=1, max=200, help="Maximum positions to return")] = 25,
+    include_paper: Annotated[bool, typer.Option("--include-paper/--no-include-paper", help="Include paper positions")]= False,
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """Return current portfolio holdings, values, weights, and quote freshness."""
+    portfolio = _as_dict(_get(remote, EP_PORTFOLIO, params={"include_paper": _bool_param(include_paper)}))
+    snapshot = _portfolio_position_payload(portfolio, limit=limit)
+    envelope = _success_envelope(snapshot, {"limit": limit, "include_paper": include_paper})
+    _emit(envelope, human=human, summary_text=_human_positions(snapshot))
+
+
+@app.command("market-status")
+@usage(
+    surface="st.portfolio.market-status",
+    cmd="st portfolio market-status",
+    when="determine current NYSE trading-day/open/closed state for market-specific Pulse runs",
+    precautions=("read-only; if portfolio-ai is down do not guess holiday/open status",),
+    task_types=("portfolio", "market", "briefing"),
+    tier="mandate",
+)
+def market_status(
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """Return portfolio-ai's market calendar/status contract."""
+    data = _as_dict(_get(remote, EP_MARKET_STATUS))
+    envelope = _success_envelope(data, {})
+    text = (
+        f"Market {data.get('status')} at {data.get('current_time_et')}; "
+        f"last_trading_day={data.get('last_trading_day')} next_trading_day={data.get('next_trading_day')}"
+    )
+    _emit(envelope, human=human, summary_text=text)
+
+
+@app.command("briefing-context")
+@usage(
+    surface="st.portfolio.briefing-context",
+    cmd="st portfolio briefing-context --limit 25 --catalyst-days 14",
+    when="gather portfolio-aware context for Pulse agents so market news can be tied to held positions and likely impact",
+    precautions=("read-only; outputs context and watchlist, not investment advice or trade execution",),
+    task_types=("portfolio", "briefing", "market"),
+    tier="mandate",
+)
+def briefing_context(
+    limit: Annotated[int, typer.Option("--limit", min=1, max=200, help="Maximum positions/watchlist rows")] = 25,
+    catalyst_days: Annotated[int, typer.Option("--catalyst-days", min=1, max=365, help="Upcoming catalyst lookahead")] = 14,
+    include_jenny: Annotated[bool, typer.Option("--include-jenny/--no-include-jenny", help="Include Jenny position review context")] = True,
+    include_paper: Annotated[bool, typer.Option("--include-paper/--no-include-paper", help="Include paper positions")]= False,
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """Compose holdings, analytics, catalysts, Jenny reviews, and market status for Pulse."""
+    portfolio_raw = _as_dict(_get(remote, EP_PORTFOLIO, params={"include_paper": _bool_param(include_paper)}))
+    portfolio = _portfolio_position_payload(portfolio_raw, limit=limit)
+    symbols = {str(row.get("symbol") or "").upper() for row in portfolio.get("positions", []) if row.get("symbol")}
+    analytics = _as_dict(_get(remote, EP_PORTFOLIO_ANALYTICS, params={"include_paper": _bool_param(include_paper)}))
+    market = _as_dict(_get(remote, EP_MARKET_STATUS))
+    catalysts_data = _as_dict(_get(remote, EP_CATALYSTS, params={"days": catalyst_days, "limit": min(200, max(limit * 2, 20)), "include_watchlist": "true", "detail": "true"}))
+    catalysts = [row for row in _as_list(catalysts_data.get("catalysts")) if str(row.get("symbol") or "").upper() in symbols]
+    jenny = _as_dict(_get(remote, EP_PORTFOLIO_JENNY)) if include_jenny else {}
+    jenny_views = _jenny_position_views(jenny, symbols) if include_jenny else []
+    data = {
+        "portfolio": portfolio,
+        "market_status": market,
+        "analytics": {
+            "portfolio_beta": analytics.get("portfolio_beta"),
+            "portfolio_volatility": analytics.get("portfolio_volatility"),
+            "sharpe_ratio": analytics.get("sharpe_ratio"),
+            "sector_exposure": analytics.get("sector_exposure"),
+            "risk_profile": analytics.get("risk_profile"),
+            "diversification_score": analytics.get("diversification_score"),
+            "top_performers": (analytics.get("top_performers") or [])[:5],
+            "bottom_performers": (analytics.get("bottom_performers") or [])[:5],
+        },
+        "position_reviews": jenny_views,
+        "position_catalysts": catalysts,
+        "impact_watchlist": _impact_watchlist(portfolio.get("positions", []), jenny_views, catalysts, limit=limit),
+        "agent_instruction": "Use this context to predict likely directional/volatility impact of briefing items on held positions. Treat predictions as probabilistic analysis, not trading advice.",
+    }
+    envelope = _success_envelope(data, {"limit": limit, "catalyst_days": catalyst_days, "include_jenny": include_jenny, "include_paper": include_paper})
+    _emit(envelope, human=human, summary_text=_human_briefing_context(data))
 
 
 @tlh_app.command("candidates")

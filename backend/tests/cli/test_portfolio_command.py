@@ -861,3 +861,67 @@ def test_schema_catalysts_upcoming_known(monkeypatch) -> None:
     assert payload["command"] == "catalysts-upcoming"
     assert payload["path"] == "/api/catalysts/upcoming"
     assert payload["method"] == "GET"
+
+
+def test_positions_returns_weighted_snapshot(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    fake = _fake_client(get_return={
+        "positions": [
+            {"symbol": "AAA", "shares": 2, "current_price": 50, "current_value": 100, "gain_pct": 10},
+            {"symbol": "BBB", "shares": 1, "current_price": 300, "current_value": 300, "gain_pct": -5},
+        ],
+        "total_value": 500,
+        "total_gain": 20,
+        "total_gain_pct": 4,
+        "cash_balance_total": 100,
+        "quote_freshness_status": "fresh",
+    })
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "positions", "--limit", "2"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout.strip())
+    assert payload["data"]["positions"][0]["symbol"] == "BBB"
+    assert payload["data"]["positions"][0]["weight_pct"] == 60.0
+    fake.get.assert_called_once_with("/api/portfolio", params={"include_paper": "false"})
+
+
+def test_market_status_calls_portfolio_ai_status(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    fake = _fake_client(get_return={"status": "pre_market", "last_trading_day": "2026-06-05", "next_trading_day": "2026-06-08"})
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "market-status"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout.strip())
+    assert payload["data"]["status"] == "pre_market"
+    fake.get.assert_called_once_with("/api/market/status", params=None)
+
+
+def test_briefing_context_composes_position_impact_inputs(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    returns = [
+        {
+            "positions": [{"symbol": "AAA", "shares": 2, "current_price": 50, "current_value": 100}],
+            "total_value": 100,
+            "quote_freshness_status": "fresh",
+        },
+        {"portfolio_beta": 1.1, "sector_exposure": {"Technology": 1.0}, "top_performers": [], "bottom_performers": []},
+        {"status": "open", "last_trading_day": "2026-06-05", "next_trading_day": "2026-06-08"},
+        {"catalysts": [{"symbol": "AAA", "kind": "earnings", "date": "2026-06-09"}, {"symbol": "ZZZ", "kind": "earnings", "date": "2026-06-09"}]},
+        {"symbol_reviews": [{"symbol": "AAA", "final_verdict": "watch", "reasons": ["large position"]}]},
+    ]
+    fake = _fake_client()
+    fake.get.side_effect = returns
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "briefing-context", "--limit", "5", "--catalyst-days", "7"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout.strip())
+    assert payload["data"]["impact_watchlist"][0]["symbol"] == "AAA"
+    assert payload["data"]["impact_watchlist"][0]["upcoming_catalysts"][0]["kind"] == "earnings"
+    assert payload["data"]["impact_watchlist"][0]["jenny_review"]["final_verdict"] == "watch"
+    assert [call.args[0] for call in fake.get.call_args_list] == [
+        "/api/portfolio",
+        "/api/portfolio/analytics",
+        "/api/market/status",
+        "/api/catalysts/upcoming",
+        "/api/portfolio/jenny",
+    ]
