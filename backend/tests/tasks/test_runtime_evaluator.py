@@ -60,7 +60,7 @@ def test_run_runtime_evaluator_uses_host_ip_urls_and_design_critic(
 
     with (
         patch("app.tasks.autonomous.exec_modules.runtime_evaluator._check_browser_health", return_value=(True, "ok")),
-        patch("app.tasks.autonomous.exec_modules.runtime_evaluator._get_runtime_host", return_value="192.168.8.244"),
+        patch("app.tasks.autonomous.exec_modules.runtime_evaluator._get_runtime_host", return_value="192.0.2.44"),
         patch("app.tasks.autonomous.exec_modules.runtime_evaluator._make_screenshot_path", return_value=screenshot_path),
         patch("app.tasks.autonomous.exec_modules.runtime_evaluator._evaluate_user_flow_with_screenshot", return_value={"passed": True, "summary": "flow pass", "evidence": [str(screenshot_path)]}),
         patch("app.tasks.autonomous.exec_modules.runtime_evaluator._probe_frontend_target", return_value={"ok": True, "status_code": 200, "error": None}),
@@ -70,9 +70,9 @@ def test_run_runtime_evaluator_uses_host_ip_urls_and_design_critic(
     assert result.passed
     assert result.mode == "runtime_eval_plus_design"
     assert result.design_result is not None
-    mock_capture_screenshot.assert_awaited_once_with("http://192.168.8.244:3001/app/dashboard", screenshot_path)
+    mock_capture_screenshot.assert_awaited_once_with("http://192.0.2.44:3001/app/dashboard", screenshot_path)
     mock_http_request.assert_called_once()
-    assert mock_http_request.call_args.args[1] == "http://192.168.8.244:8001/api/health"
+    assert mock_http_request.call_args.args[1] == "http://192.0.2.44:8001/api/health"
     mock_design_critic.assert_called_once()
 
 
@@ -119,7 +119,7 @@ def test_run_runtime_evaluator_supports_running_event_loop(
     async def _run_inside_loop() -> RuntimeEvaluationResult:
         with (
             patch("app.tasks.autonomous.exec_modules.runtime_evaluator._check_browser_health", return_value=(True, "ok")),
-            patch("app.tasks.autonomous.exec_modules.runtime_evaluator._get_runtime_host", return_value="192.168.8.244"),
+            patch("app.tasks.autonomous.exec_modules.runtime_evaluator._get_runtime_host", return_value="192.0.2.44"),
             patch("app.tasks.autonomous.exec_modules.runtime_evaluator._make_screenshot_path", return_value=screenshot_path),
             patch("app.tasks.autonomous.exec_modules.runtime_evaluator._evaluate_user_flow_with_screenshot", return_value={"passed": True, "summary": "flow pass", "evidence": [str(screenshot_path)]}),
             patch("app.tasks.autonomous.exec_modules.runtime_evaluator._probe_frontend_target", return_value={"ok": True, "status_code": 200, "error": None}),
@@ -129,7 +129,7 @@ def test_run_runtime_evaluator_supports_running_event_loop(
     result = asyncio.run(_run_inside_loop())
 
     assert result.passed
-    mock_capture_screenshot.assert_awaited_once_with("http://192.168.8.244:3001/app", screenshot_path)
+    mock_capture_screenshot.assert_awaited_once_with("http://192.0.2.44:3001/app", screenshot_path)
 
 
 def test_capture_runtime_page_retries_transient_browser_failure_when_frontend_is_reachable(tmp_path: Path) -> None:
@@ -149,14 +149,14 @@ def test_capture_runtime_page_retries_transient_browser_failure_when_frontend_is
         patch("app.tasks.autonomous.exec_modules.runtime_evaluator.time.sleep") as mock_sleep,
     ):
         success, error, details = _capture_runtime_page(
-            "http://192.168.8.244:3001/",
+            "http://192.0.2.44:3001/",
             screenshot_path,
             "chrome UP; lightpanda UP",
         )
 
     assert success is True
     assert error is None
-    assert details["resolved_target"] == "http://192.168.8.244:3001/"
+    assert details["resolved_target"] == "http://192.0.2.44:3001/"
     assert details["attempt"] == 2
     assert details["probe"]["status_code"] == 200
     assert mock_probe.call_count == 2
@@ -197,7 +197,7 @@ def test_run_runtime_evaluator_reports_probe_details_when_browser_fails_but_fron
 
     with (
         patch("app.tasks.autonomous.exec_modules.runtime_evaluator._check_browser_health", return_value=(True, "chrome UP; lightpanda UP")),
-        patch("app.tasks.autonomous.exec_modules.runtime_evaluator._get_runtime_host", return_value="192.168.8.244"),
+        patch("app.tasks.autonomous.exec_modules.runtime_evaluator._get_runtime_host", return_value="192.0.2.44"),
         patch("app.tasks.autonomous.exec_modules.runtime_evaluator._make_screenshot_path", return_value=screenshot_path),
         patch(
             "app.tasks.autonomous.exec_modules.runtime_evaluator._probe_frontend_target",
@@ -218,9 +218,9 @@ def test_run_runtime_evaluator_reports_probe_details_when_browser_fails_but_fron
     assert result.passed is False
     browser_criterion = result.criteria[0]
     assert browser_criterion["category"] == "browser"
-    assert "resolved target http://192.168.8.244:3001/" in browser_criterion["summary"]
+    assert "resolved target http://192.0.2.44:3001/" in browser_criterion["summary"]
     assert "attempt 3/3" in browser_criterion["summary"]
-    assert "direct GET http://192.168.8.244:3001/ -> 200" in browser_criterion["summary"]
+    assert "direct GET http://192.0.2.44:3001/ -> 200" in browser_criterion["summary"]
     assert "browser health: chrome UP; lightpanda UP" in browser_criterion["summary"]
     assert browser_criterion["details"]["probe"]["status_code"] == 200
     assert browser_criterion["details"]["attempts"] == 3

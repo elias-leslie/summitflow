@@ -25,8 +25,8 @@
     "optional_workers": []
   },
   "hosts": {
-    "production_frontend": "dev.summitflow.dev",
-    "production_api": "devapi.summitflow.dev"
+    "production_frontend": "localhost:3001",
+    "production_api": "localhost:8001"
   },
   "repository": {
     "owner": "elias-leslie",

@@ -59,7 +59,7 @@ def find_legacy_snapshot_roots(
     *,
     project_id: str | None = None,
 ) -> list[SnapshotResidue]:
-    """Find unmanaged top-level snapshot roots under /srv/workspaces/.snapshots."""
+    """Find unmanaged top-level snapshot roots under the configured workspace root/.snapshots."""
     _require_workspaces()
     snapshots_root = get_workspace_snapshots_base_dir()
     managed = set(managed_project_ids)

@@ -11,6 +11,7 @@ from cli.commands._projects_helpers import detect_current_project
 from cli.commands.projects import app
 
 runner = CliRunner()
+PUBLIC_PROJECTS_ROOT = Path.home() / ".local" / "share" / "summitflow" / "workspaces" / "projects"
 
 
 def test_projects_root_prints_canonical_root_path() -> None:
@@ -70,7 +71,7 @@ def test_projects_create_sends_permission_bootstrap_fields() -> None:
                 "test2",
                 "Testbed",
                 "--base-url",
-                "https://test2.summitflow.dev",
+                "https://test2.example.com",
                 "--root-path",
                 "/srv/workspaces/projects/test2",
                 "--permission-tier",
@@ -85,7 +86,7 @@ def test_projects_create_sends_permission_bootstrap_fields() -> None:
         json={
             "id": "test2",
             "name": "Testbed",
-            "base_url": "https://test2.summitflow.dev",
+            "base_url": "https://test2.example.com",
             "health_endpoint": "/health",
             "root_path": "/srv/workspaces/projects/test2",
             "agent_hub_permission": {
@@ -149,7 +150,7 @@ def test_projects_create_derives_hosted_defaults() -> None:
             "id": "test3",
             "name": "Testbed 3",
             "health_endpoint": "/health",
-            "root_path": "/srv/workspaces/projects/test3",
+            "root_path": str(PUBLIC_PROJECTS_ROOT / "test3"),
             "summitflow_hosted": True,
             "onboarding": {
                 "enable_backup_schedule": True,
@@ -184,7 +185,7 @@ def test_projects_create_can_disable_hosted_onboarding() -> None:
             "id": "test3",
             "name": "Testbed 3",
             "health_endpoint": "/health",
-            "root_path": "/srv/workspaces/projects/test3",
+            "root_path": str(PUBLIC_PROJECTS_ROOT / "test3"),
             "summitflow_hosted": True,
         },
     )
@@ -212,7 +213,7 @@ def test_projects_create_marks_hosted_alias_projects_without_baking_domains() ->
             "id": "monkey-fight",
             "name": "Monkey Fight",
             "health_endpoint": "/health",
-            "root_path": "/srv/workspaces/projects/monkey-fight",
+            "root_path": str(PUBLIC_PROJECTS_ROOT / "monkey-fight"),
             "summitflow_hosted": True,
             "onboarding": {
                 "enable_backup_schedule": True,

@@ -39,7 +39,7 @@ vi.mock('@/lib/api', () => ({
 const TEST_PROJECT = {
   id: 'summitflow',
   name: 'SummitFlow',
-  base_url: 'https://dev.summitflow.dev',
+  base_url: 'https://summitflow.example.com',
   public_url: 'https://app.example.test',
   health_endpoint: '/health',
   root_path: '/home/testuser/summitflow',
@@ -82,7 +82,7 @@ describe('ProjectSettingsClient', () => {
     apiMocks.updateProject.mockResolvedValue({
       id: 'summitflow',
       name: 'SummitFlow Ops',
-      base_url: 'https://dev.summitflow.dev',
+      base_url: 'https://summitflow.example.com',
       public_url: 'https://app.example.test',
       health_endpoint: '/healthz',
       root_path: '/home/testuser/summitflow',
@@ -136,7 +136,7 @@ describe('ProjectSettingsClient', () => {
       target: { value: ' SummitFlow Ops ' },
     })
     fireEvent.change(screen.getByLabelText('Base URL *'), {
-      target: { value: 'https://dev.summitflow.dev///' },
+      target: { value: 'https://summitflow.example.com///' },
     })
     fireEvent.change(screen.getByLabelText('Health Endpoint'), {
       target: { value: 'healthz' },
@@ -152,7 +152,7 @@ describe('ProjectSettingsClient', () => {
     await waitFor(() => {
       expect(apiMocks.updateProject).toHaveBeenCalledWith('summitflow', {
         name: 'SummitFlow Ops',
-        base_url: 'https://dev.summitflow.dev',
+        base_url: 'https://summitflow.example.com',
         health_endpoint: '/healthz',
         root_path: '/home/testuser/summitflow',
         category: 'testing',

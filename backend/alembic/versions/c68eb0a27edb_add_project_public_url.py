@@ -13,6 +13,7 @@ import os
 import re
 from collections.abc import Sequence
 from ipaddress import ip_address
+from pathlib import Path
 from urllib.parse import urlparse
 
 import sqlalchemy as sa
@@ -28,7 +29,7 @@ depends_on: str | Sequence[str] | None = None
 _ENV_PUBLIC_BASE_DOMAIN = "SUMMITFLOW_PROJECT_PUBLIC_BASE_DOMAIN"
 _ENV_PUBLIC_HOST_ALIASES = "SUMMITFLOW_PROJECT_PUBLIC_HOST_ALIASES"
 _ENV_MANAGED_PROJECTS_ROOT = "SUMMITFLOW_MANAGED_PROJECTS_ROOT"
-_DEFAULT_MANAGED_PROJECTS_ROOT = "/srv/workspaces/projects"
+_DEFAULT_MANAGED_PROJECTS_ROOT = str(Path.home() / ".local" / "share" / "summitflow" / "workspaces" / "projects")
 _LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 
 

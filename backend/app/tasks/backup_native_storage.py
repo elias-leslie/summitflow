@@ -57,7 +57,7 @@ def copy_to_local_backend(
 
 
 def backup_state_root() -> Path:
-    cache = Path(os.environ.get("ST_WORKSPACES_ROOT", "/srv/workspaces")) / "cache"
+    cache = Path(os.environ.get("ST_WORKSPACES_ROOT", Path.home() / ".local" / "share" / "summitflow" / "workspaces")) / "cache"
     if cache.exists() and os.access(cache, os.W_OK):
         return cache / "backup-indexes"
     return Path.home() / ".local" / "share" / "summitflow" / "backup-indexes"

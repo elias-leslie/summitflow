@@ -18,9 +18,6 @@ importers:
       '@agent-hub/chat-ui':
         specifier: file:../docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz
         version: file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      '@agent-hub/push-client':
-        specifier: file:../docker/workspace-packages/agent-hub-push-client-0.1.0.tgz
-        version: file:docker/workspace-packages/agent-hub-push-client-0.1.0.tgz
       '@codemirror/lang-cpp':
         specifier: ^6.0.3
         version: 6.0.3
@@ -213,7 +210,7 @@ packages:
     resolution: {integrity: sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg==}
 
   '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz':
-    resolution: {integrity: sha512-DyBifkrWG9Mc70tuzIm9MLS3jokgoa4LEFz+RWiH8Jt5vJ8MR8lMo+9LRAZTEG7V72cwWEZbuzjNK84mqzl+BQ==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz}
+    resolution: {integrity: sha512-+p8LzddOat2b9g9D5Hdk2N9TL3Zoc432ADnnGQAoRlC+ay/5rXmPD4LvGawv+j1lokBZsSv+/x1F8yyosFy+TQ==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz}
     version: 0.1.0
     peerDependencies:
       react: '>=18 || ^19.0.0'
@@ -225,10 +222,6 @@ packages:
     peerDependencies:
       react: '>=18 || ^19.0.0'
       react-dom: '>=18 || ^19.0.0'
-
-  '@agent-hub/push-client@file:docker/workspace-packages/agent-hub-push-client-0.1.0.tgz':
-    resolution: {integrity: sha512-fWHMj2ud/S8WOb214pVfZ1kx0UTjOr6Qjw+YfZ2pkAyDk4dpUxl+6T+GcgKM5JmP6rjDa0brgQ2yGOtGPwvyBg==, tarball: file:docker/workspace-packages/agent-hub-push-client-0.1.0.tgz}
-    version: 0.1.0
 
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
@@ -3093,8 +3086,6 @@ snapshots:
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
       tailwind-merge: 2.6.1
-
-  '@agent-hub/push-client@file:docker/workspace-packages/agent-hub-push-client-0.1.0.tgz': {}
 
   '@alloc/quick-lru@5.2.0': {}
 

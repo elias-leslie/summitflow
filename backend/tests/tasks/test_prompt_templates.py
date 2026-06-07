@@ -225,7 +225,7 @@ class TestPromptTemplateFallbacks:
                 "steps_from_table": [{"step_number": 1, "description": "Keep lane-safe scope paths"}],
             },
             project_id="test2",
-            project_path="/home/kasadis//.local/share/st/checkpoints/test2/task-1",
+            project_path="/home/demo//.local/share/st/checkpoints/test2/task-1",
         )
 
         assert "backend/app/main.py" in prompt

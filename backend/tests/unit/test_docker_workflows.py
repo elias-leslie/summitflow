@@ -22,7 +22,7 @@ def test_docker_integration_workflow_packs_with_agent_hub_checkout_and_uv() -> N
         step for step in steps if step.get("with", {}).get("repository") == "elias-leslie/agent-hub"
     )
     assert agent_hub_checkout["with"]["path"] == "agent-hub-repo"
-    assert agent_hub_checkout["with"]["token"] == "${{ secrets.AGENT_HUB_REPO_TOKEN }}"
+    assert "token" not in agent_hub_checkout["with"]
     assert any(step.get("uses", "").startswith("astral-sh/setup-uv@") for step in steps)
 
     pack_step = next(step for step in steps if step.get("name") == "Pack workspace packages")
@@ -36,7 +36,7 @@ def test_docker_build_workflow_uploads_wheels_and_marks_backend_as_needing_packa
         step for step in pack_steps if step.get("with", {}).get("repository") == "elias-leslie/agent-hub"
     )
     assert agent_hub_checkout["with"]["path"] == "agent-hub-repo"
-    assert agent_hub_checkout["with"]["token"] == "${{ secrets.AGENT_HUB_REPO_TOKEN }}"
+    assert "token" not in agent_hub_checkout["with"]
 
     upload_step = next(
         step for step in pack_steps if str(step.get("uses", "")).startswith("actions/upload-artifact@")

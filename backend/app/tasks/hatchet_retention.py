@@ -106,7 +106,7 @@ def _hatchet_pg_env(conninfo: str) -> dict[str, str]:
 
 
 def _default_backup_dir() -> Path:
-    cache_root = Path(os.environ.get("ST_WORKSPACES_ROOT", "/srv/workspaces")) / "cache"
+    cache_root = Path(os.environ.get("ST_WORKSPACES_ROOT", Path.home() / ".local" / "share" / "summitflow" / "workspaces")) / "cache"
     if cache_root.exists() and os.access(cache_root, os.W_OK):
         return cache_root / "hatchet-retention-backups"
     return Path.home() / ".local" / "share" / "summitflow" / "hatchet-retention-backups"

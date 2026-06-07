@@ -18,17 +18,24 @@ decisions are handled on a best-effort basis.
 
 Project setup and service commands are documented in [README.md](README.md).
 
-Quality checks should use the project wrappers:
+Backend checks:
 
 ```bash
-dt --check --changed-only
+cd backend
+uv sync --all-extras --dev
+uv run ruff check .
+uv run pytest
+uv build
 ```
 
-Use the repo service scripts when you need to verify runtime behavior:
+Frontend checks:
 
 ```bash
-bash scripts/restart.sh
-bash scripts/rebuild.sh
+pnpm install --frozen-lockfile
+pnpm --filter summitflow-frontend lint
+pnpm --filter summitflow-frontend exec tsc --noEmit
+pnpm --filter summitflow-frontend exec vitest run
+pnpm --filter summitflow-frontend build
 ```
 
 ## Licensing

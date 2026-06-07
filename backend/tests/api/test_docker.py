@@ -534,7 +534,7 @@ class TestDockerRuntime:
             _runtime_proxmox,
             "_proxmox_config",
             return_value={
-                "api_url": "https://192.168.8.233:8006",
+                "api_url": "https://192.0.2.33:8006",
                 "token_id": "root@pam!automation",
                 "token_secret": "secret",
                 "verify_ssl": False,
@@ -577,7 +577,7 @@ class TestDockerRuntime:
         assert response.json() == {
             "configured": True,
             "reachable": True,
-            "api_url": "https://192.168.8.233:8006",
+            "api_url": "https://192.0.2.33:8006",
             "error": None,
             "nodes": [
                 {

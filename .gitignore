@@ -99,3 +99,11 @@ ports.json
 .tmp/
 .task-findings.md
 .index.yaml
+
+# Local/internal agent state and release artifacts
+.claude/
+.fallow/
+artifacts/
+logs/
+docs/release-audit/
+docs/tasks/

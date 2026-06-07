@@ -13,23 +13,26 @@ def _usage(total_gb: int, used_gb: int) -> SimpleNamespace:
     return SimpleNamespace(total=total, used=used, free=total - used)
 
 
-def test_get_disk_usages_includes_workspace_mount_when_present(mocker) -> None:
+def test_get_disk_usages_includes_workspace_mount_when_present(mocker, monkeypatch) -> None:
     usages = {
         "/": _usage(total_gb=100, used_gb=45),
-        "/srv/workspaces": _usage(total_gb=200, used_gb=8),
+        "/home/demo/workspaces": _usage(total_gb=200, used_gb=8),
     }
     mocker.patch(
         "app.services.resource_monitor.os.path.ismount",
-        side_effect=lambda path: path == "/srv/workspaces",
+        side_effect=lambda path: path == "/home/demo/workspaces",
     )
     mocker.patch(
         "app.services.resource_monitor.shutil.disk_usage",
         side_effect=lambda path: usages[path],
     )
 
+    monkeypatch.setattr(resource_monitor, "MONITORED_DISK_PATHS", ("/", "/home/demo/workspaces"))
+    monkeypatch.setattr(resource_monitor, "DISK_LABELS", {"/": "Root", "/home/demo/workspaces": "Workspaces"})
+
     disks = resource_monitor.get_disk_usages()
 
-    assert [disk["mount_path"] for disk in disks] == ["/", "/srv/workspaces"]
+    assert [disk["mount_path"] for disk in disks] == ["/", "/home/demo/workspaces"]
     assert disks[0]["label"] == "Root"
     assert disks[1]["label"] == "Workspaces"
     assert disks[1]["percent_used"] == 4.0

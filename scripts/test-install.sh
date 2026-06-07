@@ -20,10 +20,10 @@ if [[ -f "$ENV_FILE" ]]; then
     eval "$(grep -E '^(PROXMOX_|TEST_VM_)' "$ENV_FILE" | sed 's/^/export /')"
 fi
 
-PVE_HOST="${PROXMOX_API_URL:-https://192.168.8.233:8006}"
-PVE_TOKEN="${PROXMOX_TOKEN_ID:-root@pam!automation}"
+PVE_HOST="${PROXMOX_API_URL:-}"
+PVE_TOKEN="${PROXMOX_TOKEN_ID:-}"
 PVE_SECRET="${PROXMOX_TOKEN_SECRET:-}"
-PVE_NODE="davion-gem"
+PVE_NODE="${PROXMOX_NODE:-}"
 TEMPLATE_ID="${PROXMOX_TEST_TEMPLATE:-9000}"
 DEFAULT_VM_ID=101
 VM_NAME="install-test-$(date +%Y%m%d-%H%M%S)"
@@ -32,6 +32,11 @@ EXISTING=false
 VM_ID=""
 TEST_IMAGE_TAG="${TEST_IMAGE_TAG:-installtest}"
 INSTALL_CHOICE="${INSTALL_CHOICE:-3}"
+if [[ -z "$PVE_HOST" || -z "$PVE_TOKEN" || -z "$PVE_SECRET" || -z "$PVE_NODE" ]]; then
+    echo "Set PROXMOX_API_URL, PROXMOX_TOKEN_ID, PROXMOX_TOKEN_SECRET, and PROXMOX_NODE." >&2
+    exit 1
+fi
+
 SSH_OPTS=(
     -o BatchMode=yes
     -o ConnectTimeout=10
@@ -46,12 +51,12 @@ SSH_OPTS=(
 ssh_vm() {
     local host="$1"
     shift
-    ssh "${SSH_OPTS[@]}" "kasadis@${host}" "$@"
+    ssh "${SSH_OPTS[@]}" "${TEST_VM_USER:-$USER}@${host}" "$@"
 }
 
 scp_vm() {
     local src="$1" host="$2" dest="$3"
-    scp "${SSH_OPTS[@]}" -r "$src" "kasadis@${host}:${dest}"
+    scp "${SSH_OPTS[@]}" -r "$src" "${TEST_VM_USER:-$USER}@${host}:${dest}"
 }
 
 build_project_images() {
@@ -138,7 +143,7 @@ wait_for_ssh() {
     local start=$SECONDS
     echo -n "  Waiting for SSH on ${host}..."
     while (( SECONDS - start < timeout )); do
-        if timeout 15s ssh "${SSH_OPTS[@]}" "kasadis@${host}" 'echo ok' &>/dev/null; then
+        if timeout 15s ssh "${SSH_OPTS[@]}" "${TEST_VM_USER:-$USER}@${host}" 'echo ok' &>/dev/null; then
             echo " ready ($(( SECONDS - start ))s)"
             return 0
         fi
@@ -239,7 +244,11 @@ echo ""
 
 if [[ "$EXISTING" == true ]]; then
     echo "Using existing VM ${VM_ID}"
-    VM_IP="${TEST_VM_HOST:-192.168.8.234}"
+    VM_IP="${TEST_VM_HOST:-}"
+        if [[ -z "$VM_IP" ]]; then
+            echo "Set TEST_VM_HOST when using --existing." >&2
+            exit 1
+        fi
 else
     # Clone from template
     echo "Cloning template ${TEMPLATE_ID} → VM ${VM_ID} (${VM_NAME})..."

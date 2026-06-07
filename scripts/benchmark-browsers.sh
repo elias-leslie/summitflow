@@ -19,7 +19,11 @@ if [[ -f "$ENV_FILE" ]]; then
     eval "$(grep -E '^TEST_VM_HOST=' "$ENV_FILE" | sed 's/^/export /')"
 fi
 
-TEST_HOST="${TEST_VM_HOST:-192.168.8.234}"
+TEST_HOST="${TEST_VM_HOST:-}"
+if [[ -z "$TEST_HOST" ]]; then
+    echo "Set TEST_VM_HOST or pass --host." >&2
+    exit 1
+fi
 ITERATIONS=3
 RUN_CHROME=true
 RUN_LIGHTPANDA=true
@@ -44,7 +48,7 @@ BROWSERS=""
 [[ "$RUN_LIGHTPANDA" == true ]] && BROWSERS="${BROWSERS}lightpanda,"
 BROWSERS="${BROWSERS%,}"
 
-RAW=$(ssh "kasadis@${TEST_HOST}" "cd ~/benchmark && ITERATIONS=${ITERATIONS} BROWSERS=${BROWSERS} node run.js 2>&1")
+RAW=$(ssh "${TEST_VM_USER:-$USER}@${TEST_HOST}" "cd ~/benchmark && ITERATIONS=${ITERATIONS} BROWSERS=${BROWSERS} node run.js 2>&1")
 
 # Parse and display results
 echo "$RAW" | jq -r 'select(.event == "stats_before") | "Container Resources (before):\n" + (.stats | map("  \(.name): \(.cpu) CPU, \(.mem) RAM") | join("\n"))' 2>/dev/null || true

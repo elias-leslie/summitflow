@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_DEFAULT_WORKSPACES_ROOT = Path("/srv/workspaces")
+_DEFAULT_WORKSPACES_ROOT = Path.home() / ".local" / "share" / "summitflow" / "workspaces"
 
 
 def get_repo_root() -> Path:

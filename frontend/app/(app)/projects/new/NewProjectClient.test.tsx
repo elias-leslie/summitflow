@@ -109,7 +109,7 @@ describe('NewProjectClient', () => {
     })
 
     expect(screen.getByLabelText('Root Path')).toHaveValue(
-      '/srv/workspaces/projects/hosted-example',
+      '/home/demo/projects/hosted-example',
     )
 
     expect(await submitProject()).toEqual({
@@ -117,7 +117,7 @@ describe('NewProjectClient', () => {
       name: 'Hosted Example',
       base_url: undefined,
       health_endpoint: '/health',
-      root_path: '/srv/workspaces/projects/hosted-example',
+      root_path: '/home/demo/projects/hosted-example',
       category: 'dev',
       summitflow_hosted: true,
       agent_hub_permission: {
@@ -172,7 +172,7 @@ describe('NewProjectClient', () => {
       name: 'No Bootstrap',
       base_url: 'https://example.com',
       health_endpoint: '/health',
-      root_path: '/srv/workspaces/projects/no-bootstrap',
+      root_path: '/home/demo/projects/no-bootstrap',
       category: 'dev',
       summitflow_hosted: true,
       agent_hub_permission: undefined,

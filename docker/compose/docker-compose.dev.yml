@@ -47,7 +47,7 @@ services:
       dockerfile: docker/backend.Dockerfile
     volumes:
       - ../../../agent-hub/backend/app:/app/app:cached
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003", "--reload", "--reload-dir", "/app/app"]
+    command: ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload --reload-dir /app/app"]
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
 
@@ -57,7 +57,7 @@ services:
       dockerfile: docker/frontend.Dockerfile
       target: dev
     volumes:
-      - ../../../agent-hub/frontend/src:/app/src:cached
+      - ../../../agent-hub/frontend/src:/workspace/frontend/src:cached
     command: ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3003"]
 
   agent-hub-worker:
@@ -71,6 +71,7 @@ services:
 
   # ─── A-Term ────────────────────────────────────────────────────
   a-term-api:
+    profiles: [a-term, full]
     build:
       context: ../../../a-term
       dockerfile: docker/backend.Dockerfile

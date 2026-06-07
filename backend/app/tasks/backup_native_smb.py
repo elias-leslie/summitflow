@@ -64,8 +64,8 @@ def _storage_config(project_name: str, env: dict[str, str]) -> StorageConfig:
     merged = {**env_file, **env}
     remote_path = _source_remote_path(project_name, merged.get("SMB_PATH"))
     return StorageConfig(
-        host=merged.get("SMB_HOST", "nas.local"),
-        share=merged.get("SMB_SHARE", "backups"),
+        host=merged.get("SMB_HOST", ""),
+        share=merged.get("SMB_SHARE", ""),
         remote_path=remote_path,
         user=merged.get("SMB_USER", "backup-svc"),
         credentials_file=Path(
@@ -239,8 +239,8 @@ def _storage_from_pending_meta(meta: dict[str, Any], archive: Path) -> StorageCo
     source_id = str(meta.get("project") or archive.stem.rsplit("-", 2)[0] or archive.stem)
     remote_path = _source_remote_path(source_id, meta.get("smb_path"))
     return StorageConfig(
-        host=str(meta.get("smb_host") or "nas.local"),
-        share=str(meta.get("smb_share") or "backups"),
+        host=str(meta.get("smb_host") or ""),
+        share=str(meta.get("smb_share") or ""),
         remote_path=remote_path,
         user=os.environ.get("SMB_USER", "backup-svc"),
         credentials_file=Path.home() / ".smbcredentials",

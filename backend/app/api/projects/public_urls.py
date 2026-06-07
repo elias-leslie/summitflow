@@ -7,12 +7,13 @@ import os
 import re
 from functools import lru_cache
 from ipaddress import ip_address
+from pathlib import Path
 from urllib.parse import urlparse
 
 ENV_PUBLIC_BASE_DOMAIN = "SUMMITFLOW_PROJECT_PUBLIC_BASE_DOMAIN"
 ENV_PUBLIC_HOST_ALIASES = "SUMMITFLOW_PROJECT_PUBLIC_HOST_ALIASES"
 ENV_MANAGED_PROJECTS_ROOT = "SUMMITFLOW_MANAGED_PROJECTS_ROOT"
-DEFAULT_MANAGED_PROJECTS_ROOT = "/srv/workspaces/projects"
+DEFAULT_MANAGED_PROJECTS_ROOT = str(Path.home() / ".local" / "share" / "summitflow" / "workspaces" / "projects")
 _LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 
 

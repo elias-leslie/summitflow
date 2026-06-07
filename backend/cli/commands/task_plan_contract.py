@@ -4,7 +4,7 @@ from __future__ import annotations
 
 PLAN_SCHEMA_ENDPOINT = "/schemas/plan"
 PLAN_SCHEMA_SOURCE = "backend/app/schemas/plan.schema.json"
-PLAN_SCHEMA_ID = "https://summitflow.dev/schemas/plan.json"
+PLAN_SCHEMA_ID = "https://github.com/elias-leslie/summitflow/schemas/plan.json"
 PLAN_VERIFY_EXAMPLE = "st verify plan.json"
 PLAN_CREATE_EXAMPLE = "st create --plan plan.json"
 MINIMAL_PLAN_SHAPE = (

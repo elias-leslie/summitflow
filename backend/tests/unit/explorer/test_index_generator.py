@@ -238,7 +238,7 @@ class TestGetProjectUrls:
             patch("app.services.explorer.base.get_project_config") as mock_config,
             patch("app.services.explorer.index_generator.get_services") as mock_services,
         ):
-            mock_config.return_value = {"base_url": "http://192.168.8.233:8000"}
+            mock_config.return_value = {"base_url": "http://192.0.2.33:8000"}
             mock_services.return_value = {"backend_port": 8000, "frontend_port": 3000}
 
             urls = get_project_urls("portfolio-ai")
@@ -323,14 +323,14 @@ class TestGetNetworkInfo:
         """Test successful hostname -I and socket.gethostname."""
         import subprocess as sp
 
-        mock_result = sp.CompletedProcess(args=[], returncode=0, stdout="192.168.8.244 172.17.0.1\n")
+        mock_result = sp.CompletedProcess(args=[], returncode=0, stdout="192.0.2.44 172.17.0.1\n")
         with (
             patch("app.services.explorer.index_generator.subprocess.run", return_value=mock_result),
             patch("app.services.explorer.index_generator.socket.gethostname", return_value="summitflow-prod"),
         ):
             info = get_network_info()
 
-        assert info["host_ip"] == "192.168.8.244"
+        assert info["host_ip"] == "192.0.2.44"
         assert info["hostname"] == "summitflow-prod"
 
     def test_returns_empty_on_failure(self) -> None:

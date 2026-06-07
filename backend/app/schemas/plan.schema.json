@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://summitflow.dev/schemas/plan.json",
+  "$id": "https://github.com/elias-leslie/summitflow/schemas/plan.json",
   "title": "SummitFlow Plan Schema",
   "description": "Schema for plan.json - the canonical format for task planning. DB schema mirrors this exactly.",
   "type": "object",

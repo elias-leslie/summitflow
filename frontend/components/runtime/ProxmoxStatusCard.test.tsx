@@ -37,7 +37,7 @@ describe('ProxmoxStatusCard', () => {
       data: {
         configured: true,
         reachable: true,
-        api_url: 'https://192.168.8.233:8006',
+        api_url: 'https://192.0.2.33:8006',
         error: null,
         nodes: [
           {

@@ -13,7 +13,7 @@ from urllib import error, request
 AGENT_HUB_API = os.environ.get("AGENT_HUB_API", "http://localhost:8003/api")
 ENV_FILE = Path.home() / ".env.local"
 STATE_PATH = Path.home() / ".local" / "state" / "tmux-agent-session-sync" / "state.json"
-WORKSPACES_ROOT = Path(os.environ.get("ST_WORKSPACES_ROOT", "/srv/workspaces"))
+WORKSPACES_ROOT = Path(os.environ.get("ST_WORKSPACES_ROOT", Path.home() / ".local" / "share" / "summitflow" / "workspaces"))
 # Prefixes that identify agent tmux sessions (convention: {mode}-{project})
 AGENT_PREFIXES = ("claude-", "codex-")
 

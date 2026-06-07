@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-PROJECT_ROOTS_WORKSPACES_ROOT="${ST_WORKSPACES_ROOT:-/srv/workspaces}"
+PROJECT_ROOTS_WORKSPACES_ROOT="${ST_WORKSPACES_ROOT:-$HOME/.local/share/summitflow/workspaces}"
 PROJECT_ROOTS_MANAGED_REPOS_FILE="${PROJECT_ROOTS_MANAGED_REPOS_FILE:-$HOME/.claude/config/managed-repos.txt}"
 SCRIPT_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_LIB_DIR/project-identity.sh"

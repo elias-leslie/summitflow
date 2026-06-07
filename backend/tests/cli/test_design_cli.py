@@ -188,7 +188,7 @@ def test_design_ui_create_posts_manual_html_to_mockups_endpoint(tmp_path: Path) 
                 "--mockup-type",
                 "page",
                 "--reference-url",
-                "https://port.summitflow.dev/",
+                "https://portfolio.example.com/",
                 "--reference-image",
                 "/tmp/today.png",
                 "--tags",
@@ -207,7 +207,7 @@ def test_design_ui_create_posts_manual_html_to_mockups_endpoint(tmp_path: Path) 
     assert called_json["content"] == "<section>layout a</section>"
     assert called_json["generator"] == "manual-html"
     assert called_json["mockup_type"] == "page"
-    assert called_json["page_path"] == "https://port.summitflow.dev/"
+    assert called_json["page_path"] == "https://portfolio.example.com/"
     assert called_json["task_id"] == "task-123"
     assert called_json["description"] == "Balanced layout"
     assert called_json["metadata"]["reference_image_path"] == "/tmp/today.png"
@@ -243,7 +243,7 @@ def test_design_ui_attach_resolves_parent_id_and_posts_revision(tmp_path: Path) 
         "mockup_id": "mk-parent",
         "name": "today-layout-a",
         "mockup_type": "page",
-        "page_path": "https://port.summitflow.dev/",
+        "page_path": "https://portfolio.example.com/",
         "task_id": "task-123",
     }
     mock_client.post.return_value = {"success": True, "mockup_id": "mk-child"}
@@ -283,7 +283,7 @@ def test_design_ui_attach_resolves_parent_id_and_posts_revision(tmp_path: Path) 
     assert called_json["content"] == "<section>v2</section>"
     assert called_json["generator"] == "manual-html"
     assert called_json["mockup_type"] == "page"
-    assert called_json["page_path"] == "https://port.summitflow.dev/"
+    assert called_json["page_path"] == "https://portfolio.example.com/"
     assert called_json["task_id"] == "task-123"
     assert called_json["description"] == "v2 tightened spacing"
 

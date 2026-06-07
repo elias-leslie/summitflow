@@ -15,7 +15,7 @@ def test_has_live_codex_process_detects_wrapper_or_binary(tmp_path: Path) -> Non
     proc_root = tmp_path / "proc"
     proc_dir = proc_root / "123"
     proc_dir.mkdir(parents=True)
-    (proc_dir / "cmdline").write_bytes(b"bash\0/home/kasadis/bin/codex\0--yolo\0")
+    (proc_dir / "cmdline").write_bytes(b"bash\0/home/demo/bin/codex\0--yolo\0")
 
     assert codex_sync_transcripts.has_live_codex_process(proc_root)
 

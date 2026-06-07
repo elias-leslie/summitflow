@@ -24,7 +24,7 @@ dependencies = [
     { name = "pydantic" },
 ]
 wheels = [
-    { filename = "agent_hub_client-0.4.0-py3-none-any.whl", hash = "sha256:99f178082a114172c88d58e295d1d31b3e78d80c71533c380d1e831d5cf58397" },
+    { filename = "agent_hub_client-0.4.0-py3-none-any.whl", hash = "sha256:9e982d61288d1e36e1b5dbd19190f843c10196363208894c4a2b768502d1dd2c" },
 ]
 
 [package.metadata]

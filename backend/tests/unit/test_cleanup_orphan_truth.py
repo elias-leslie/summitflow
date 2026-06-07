@@ -18,6 +18,7 @@ from app.utils.git_helpers import build_repo_workspace_summary
 from cli.commands.cleanup import app as cleanup_app
 from cli.commands.cleanup import build_cleanup_status_payload
 from cli.commands.cleanup_salvage import validate_salvage_candidate
+from cli.lib.quick_snapshots import SnapshotError
 
 runner = CliRunner()
 REPO_PATH = Path("/tmp/test-project")
@@ -383,6 +384,42 @@ def test_cleanup_status_does_not_count_active_checkpoint_as_residue(mocker) -> N
     assert payload["summary"]["active_checkpoints"] == 1
     assert payload["summary"]["repos_needing_cleanup"] == 0
     assert payload["repositories"][0]["needs_cleanup"] is False
+
+
+def test_cleanup_status_ignores_unavailable_workspace_snapshots(mocker) -> None:
+    mocker.patch("cli.commands.cleanup.get_project_id", return_value="test-project")
+    mocker.patch("cli.commands.cleanup._iter_target_repos", return_value=[REPO_PATH])
+    mocker.patch("cli.commands.cleanup.get_active_checkpoints", return_value=[])
+    mocker.patch("cli.commands.cleanup.get_stale_checkpoints", return_value=[])
+    mocker.patch(
+        "cli.commands.cleanup.find_snapshot_residue",
+        side_effect=SnapshotError(
+            "Shared Btrfs workspaces are not available on this host. "
+            "Mount the configured workspace root first."
+        ),
+    )
+    mocker.patch(
+        "cli.commands.cleanup.build_repo_workspace_summary",
+        return_value=SimpleNamespace(
+            active_checkpoints=0,
+            dirty_checkpoints=0,
+            dirty_main_repo=False,
+            needs_cleanup=False,
+            orphan_branches=0,
+            prunable_branches=0,
+            checkpoint_task_ids=[],
+            orphan_branch_names=[],
+            prunable_branch_names=[],
+            salvage_task_ids=[],
+            review_orphan_task_ids=[],
+            orphan_details=[],
+        ),
+    )
+
+    payload = build_cleanup_status_payload(False, project_id_override="test-project")
+
+    assert payload["summary"]["snapshot_residue"] == 0
+    assert payload["repositories"][0]["snapshot_residue"] == 0
 
 
 def test_workspace_summary_does_not_count_running_dirty_checkpoint_as_main_dirty(

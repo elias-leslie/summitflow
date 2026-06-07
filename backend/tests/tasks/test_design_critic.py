@@ -43,7 +43,7 @@ def test_run_design_critic_uses_designer_agent_and_returns_structured_result(
 
     result = run_design_critic(
         "summitflow",
-        "http://192.168.8.244:3001/app",
+        "http://192.0.2.44:3001/app",
         screenshot_path,
         {
             "design_criteria": {"rubric": ["originality", "craft"]},

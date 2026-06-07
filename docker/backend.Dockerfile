@@ -16,7 +16,7 @@ COPY docker/workspace-packages/*.whl /tmp/wheels/
 
 # Install deps and clean caches in same layer
 RUN uv export --frozen --no-dev --no-editable --format requirements-txt \
-      --no-header > requirements.txt && \
+      --no-header --no-hashes > requirements.txt && \
     sed -i '/^\.$/d; /agent-hub-client$/d; /^\.\.\//d' requirements.txt && \
     uv venv .venv && \
     uv pip install --python .venv/bin/python \

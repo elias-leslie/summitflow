@@ -179,7 +179,7 @@ def enumerate_active_scopes() -> list[tuple[str, SnapshotScope]]:
     scopes: list[tuple[str, SnapshotScope]] = []
     root = get_workspaces_root()
 
-    # Projects: /srv/workspaces/projects/<project>/
+    # Projects: the configured workspace root/projects/<project>/
     projects_root = root / "projects"
     if projects_root.is_dir():
         for project_dir in sorted(projects_root.iterdir()):

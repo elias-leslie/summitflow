@@ -72,7 +72,7 @@ export function AutomationModeSection({
           </p>
         </div>
         <a
-          href="https://agent.summitflow.dev/access-control/permissions"
+          href="http://localhost:3003/access-control/permissions"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-xs font-medium text-amber-300 hover:text-amber-200"

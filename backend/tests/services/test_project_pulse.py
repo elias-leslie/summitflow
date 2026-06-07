@@ -81,9 +81,9 @@ async def test_build_project_pulse_prefers_richer_active_session_over_tmux_prese
                 "model": "codex/external-tmux",
                 "session_type": "agent",
                 "current_branch": "main",
-                "working_dir": "/home/kasadis/a-term",
-                "checkout_path": "/home/kasadis/a-term",
-                "repo_root": "/home/kasadis/a-term",
+                "working_dir": "/home/demo/a-term",
+                "checkout_path": "/home/demo/a-term",
+                "repo_root": "/home/demo/a-term",
                 "updated_at": fresh,
                 "live_activity": {"phase": "waiting_for_model", "health": "active", "lifecycle_state": "active"},
             },
@@ -94,9 +94,9 @@ async def test_build_project_pulse_prefers_richer_active_session_over_tmux_prese
                 "model": "served-code-model",
                 "session_type": "agent",
                 "current_branch": "main",
-                "working_dir": "/home/kasadis/a-term",
-                "checkout_path": "/home/kasadis/a-term",
-                "repo_root": "/home/kasadis/a-term",
+                "working_dir": "/home/demo/a-term",
+                "checkout_path": "/home/demo/a-term",
+                "repo_root": "/home/demo/a-term",
                 "updated_at": fresh,
                 "live_activity": {"phase": "waiting_for_model", "health": "active", "lifecycle_state": "active"},
             },
@@ -107,9 +107,9 @@ async def test_build_project_pulse_prefers_richer_active_session_over_tmux_prese
                 "model": "claude/external-tmux",
                 "session_type": "claude_code",
                 "current_branch": "main",
-                "working_dir": "/home/kasadis/a-term",
-                "checkout_path": "/home/kasadis/a-term",
-                "repo_root": "/home/kasadis/a-term",
+                "working_dir": "/home/demo/a-term",
+                "checkout_path": "/home/demo/a-term",
+                "repo_root": "/home/demo/a-term",
                 "updated_at": fresh,
                 "live_activity": {"phase": "waiting_for_model", "health": "active", "lifecycle_state": "active"},
             },
@@ -156,7 +156,7 @@ async def test_build_project_pulse_preserves_session_request_identity_fields() -
                 "session_type": "agent",
                 "request_source": "codex-transcript-sync",
                 "source_client": "summitflow/codex-session-sync",
-                "source_path": "/home/kasadis/bin/codex-session-sync.py",
+                "source_path": "/home/demo/bin/codex-session-sync.py",
                 "updated_at": fresh,
                 "live_activity": {"phase": "waiting_for_model", "health": "quiet", "lifecycle_state": "quiet"},
             }
@@ -186,7 +186,7 @@ async def test_build_project_pulse_preserves_session_request_identity_fields() -
     observer = payload["active_sessions"][0]
     assert observer["request_source"] == "codex-transcript-sync"
     assert observer["source_client"] == "summitflow/codex-session-sync"
-    assert observer["source_path"] == "/home/kasadis/bin/codex-session-sync.py"
+    assert observer["source_path"] == "/home/demo/bin/codex-session-sync.py"
 
 
 @pytest.mark.asyncio

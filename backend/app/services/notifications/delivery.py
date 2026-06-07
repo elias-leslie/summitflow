@@ -20,7 +20,7 @@ from ...logging_config import get_logger
 
 logger = get_logger(__name__)
 
-FRONTEND_URL = os.getenv("SUMMITFLOW_FRONTEND_URL", "https://dev.summitflow.dev")
+FRONTEND_URL = os.getenv("SUMMITFLOW_FRONTEND_URL", "http://localhost:3001")
 
 _PUSH_SEVERITIES = {"critical", "error"}
 _DEFAULT_TITLE = "SummitFlow"

@@ -3,7 +3,11 @@ set -euo pipefail
 
 CLOUDFLARED_CONFIG="${CLOUDFLARED_CONFIG:-/etc/cloudflared/config.yml}"
 CADDY_CONFIG="${CADDY_CONFIG:-/etc/caddy/Caddyfile}"
-HOSTS_CSV="${HOSTS_CSV:-agentapi.summitflow.dev,devapi.summitflow.dev,portapi.summitflow.dev,atermapi.summitflow.dev}"
+HOSTS_CSV="${HOSTS_CSV:-}"
+if [[ -z "$HOSTS_CSV" ]]; then
+  echo "Set HOSTS_CSV to the comma-separated hostnames to remove." >&2
+  exit 1
+fi
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Run this script with sudo." >&2

@@ -163,7 +163,7 @@ export function NewProjectClient() {
             />
             <p className="text-xs text-slate-500">
               Strongly recommended. SummitFlow-hosted projects auto-fill to
-              `/srv/workspaces/projects/&lt;project-id&gt;`.
+              `/home/demo/projects/&lt;project-id&gt;`.
             </p>
             {errors.rootPath && (
               <p className="text-xs text-rose-400">{errors.rootPath}</p>

@@ -5,6 +5,7 @@ Provides checkpoint cleanup, orphan inspection, and minimal salvage recovery.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -16,7 +17,7 @@ from app.utils.git_helpers import build_repo_workspace_summary
 from ..lib.checkpoint import get_active_checkpoints, get_stale_checkpoints, remove_snapshot
 from ..lib.checkpoint_branches import resolve_task_branch
 from ..lib.confirm_token import confirm_gate
-from ..lib.quick_snapshots import find_snapshot_residue
+from ..lib.quick_snapshots import SnapshotError, find_snapshot_residue
 from ..output import output_json, output_success
 from ..output_context import OutputContext
 from .cleanup_analysis import (
@@ -115,6 +116,15 @@ _iter_target_project_ids = iter_target_project_ids
 _execute_snapshot_deletions = execute_snapshot_deletions
 
 
+def _snapshot_residue_for_status(project_id: str) -> Sequence[Any]:
+    try:
+        return find_snapshot_residue([project_id], project_id=project_id)
+    except SnapshotError as exc:
+        if "Shared Btrfs workspaces are not available" in str(exc):
+            return []
+        raise
+
+
 def build_cleanup_status_payload(
     all_projects: bool,
     *,
@@ -131,7 +141,7 @@ def build_cleanup_status_payload(
             branch_name=_checkpoint_branch_name,
             workspace_summary=build_repo_workspace_summary,
             stale_checkpoints=get_stale_checkpoints,
-            snapshot_residue=lambda project_id: find_snapshot_residue([project_id], project_id=project_id),
+            snapshot_residue=_snapshot_residue_for_status,
         ),
     )
 

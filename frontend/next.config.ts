@@ -4,11 +4,11 @@ import { PORTS } from './lib/api-config'
 const nextConfig: NextConfig = {
   output: 'standalone',
   reactStrictMode: true,
-  transpilePackages: ['@agent-hub/chat-ui', '@agent-hub/push-client'],
-  allowedDevOrigins: ['dev.summitflow.dev', '*.summitflow.dev', '192.168.8.10'],
-  // API routing via Next.js rewrites for CF Access compatibility
+  transpilePackages: ['@agent-hub/chat-ui'],
+  allowedDevOrigins: ['localhost', '127.0.0.1'],
+  // API routing via Next.js rewrites for reverse-proxy compatibility
   // Browser requests /api/* and /ws/* -> Next.js rewrites -> localhost backend
-  // This enables same-origin routing, avoiding CF Access cookie issues
+  // This enables same-origin routing, avoiding reverse-proxy cookie issues
   async rewrites() {
     const apiUrl = process.env.API_URL || `http://localhost:${PORTS.backend}`
     const agentHubApiUrl =
@@ -41,7 +41,7 @@ const nextConfig: NextConfig = {
           source: '/api/:path*',
           destination: `${apiUrl}/api/:path*`,
         },
-        // WebSocket paths - same-origin routing for CF Access compatibility
+        // WebSocket paths - same-origin routing for reverse-proxy compatibility
         {
           source: '/ws/:path*',
           destination: `${apiUrl}/ws/:path*`,

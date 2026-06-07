@@ -84,14 +84,9 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: list[str] = [
-        # Local development
         f"http://localhost:{SUMMITFLOW_FRONTEND_PORT}",
         f"http://localhost:{MONKEY_FIGHT_PORT}",
         f"http://localhost:{AGENT_HUB_FRONTEND_PORT}",
-        # Production
-        "https://dev.summitflow.dev",
-        "https://mf.summitflow.dev",
-        "https://agent.summitflow.dev",
     ]
 
 

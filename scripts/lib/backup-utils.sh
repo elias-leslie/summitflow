@@ -34,7 +34,7 @@ default_backup_state_root() {
         fi
     fi
 
-    local workspaces_cache="${ST_WORKSPACES_ROOT:-/srv/workspaces}/cache"
+    local workspaces_cache="${ST_WORKSPACES_ROOT:-$HOME/.local/share/summitflow/workspaces}/cache"
     if [ -d "$workspaces_cache" ] && [ -w "$workspaces_cache" ]; then
         printf '%s\n' "$workspaces_cache/backup-indexes"
         return 0
@@ -47,8 +47,8 @@ default_backup_state_root() {
 if [ -f "$HOME/.env.local" ] && [ -z "${SMB_HOST:-}" ]; then
     eval "$(grep -E '^(SMB_HOST|SMB_SHARE|SMB_USER)=' "$HOME/.env.local" 2>/dev/null)" || true
 fi
-export SMB_HOST="${SMB_HOST:-nas.local}"
-export SMB_SHARE="${SMB_SHARE:-backups}"
+export SMB_HOST="${SMB_HOST:-}"
+export SMB_SHARE="${SMB_SHARE:-}"
 export SMB_PATH="project-backups/$PROJECT_NAME"
 export SMB_USER="${SMB_USER:-backup-svc}"
 export CREDENTIALS_FILE="$HOME/.smbcredentials"

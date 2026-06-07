@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -18,7 +19,7 @@ app = typer.Typer(
     add_help_option=False,
 )
 
-_AGENT_HUB_BACKEND = Path("/srv/workspaces/projects/agent-hub/backend")
+_AGENT_HUB_BACKEND = Path(os.environ.get("AGENT_HUB_BACKEND_PATH", "../agent-hub/backend"))
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -107,6 +108,7 @@ def _run_agent_hub_web(payload: dict[str, object]) -> int:
     code = r"""
 import asyncio
 import json
+import os
 import sys
 
 from app.services.tools._executor_web import fetch_web_page, research_web, search_web

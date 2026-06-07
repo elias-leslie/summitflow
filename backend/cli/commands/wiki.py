@@ -1,7 +1,8 @@
-"""Vault wiki commands — pure filesystem ops against /srv/workspaces/vault/."""
+"""Vault wiki commands — pure filesystem ops against the configured vault root."""
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 from datetime import UTC, datetime
@@ -19,7 +20,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-VAULT_ROOT = Path("/srv/workspaces/vault")
+VAULT_ROOT = Path(os.environ.get("ST_VAULT_ROOT", Path.home() / ".local" / "share" / "summitflow" / "vault"))
 WIKI_ROOT = VAULT_ROOT / "wiki"
 SOURCES_ROOT = VAULT_ROOT / "sources"
 INDEX_PATH = VAULT_ROOT / "index.md"

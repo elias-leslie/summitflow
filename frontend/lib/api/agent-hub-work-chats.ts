@@ -1,4 +1,4 @@
-import type { AdhocWorkSpec, PromptMode } from '@agent-hub/chat-ui'
+import type { PromptMode } from '@agent-hub/chat-ui'
 import { buildAgentHubChatApiConfig } from '@/lib/agent-hub-chat-config'
 import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
 import { buildQueryString, fetchWithErrorHandling, postJson } from './utils'
@@ -38,6 +38,25 @@ export interface AgentHubSessionListItem {
   } | null
   created_at?: string | null
   updated_at?: string | null
+}
+
+export interface AdhocWorkSpec {
+  title: string
+  task_type: string
+  workload_profile: string
+  risk_tier: string
+  tool_mode: string
+  context?: Record<string, unknown>
+  expected_output?: string
+  routing_judgment?: {
+    workload_profile: string
+    risk_tier: string
+    capabilities?: Record<string, number>
+    constraints?: Record<string, unknown>
+    confidence?: number
+    rationale?: string
+  }
+  routing?: Record<string, unknown>
 }
 
 export interface WorkContext extends Record<string, unknown> {

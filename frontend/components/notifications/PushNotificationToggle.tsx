@@ -1,16 +1,16 @@
 'use client'
 
+import clsx from 'clsx'
+import { Bell, BellOff, BellRing } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { FEEDBACK_TIMEOUT, PUSH_NOTIFICATION_TIMEOUT } from '@/lib/polling'
 import {
   getPermissionState,
   isPushSupported,
   isSubscribed,
   subscribe,
   unsubscribe,
-} from '@agent-hub/push-client'
-import clsx from 'clsx'
-import { Bell, BellOff, BellRing } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
-import { FEEDBACK_TIMEOUT, PUSH_NOTIFICATION_TIMEOUT } from '@/lib/polling'
+} from '@/lib/push-client'
 
 type PushState =
   | 'loading'

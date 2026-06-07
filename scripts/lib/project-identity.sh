@@ -13,7 +13,7 @@ project_identity_manifest_from_root() {
 }
 
 project_identity_ids_from_workspace() {
-    local workspace_projects_root="${1:-${PROJECT_ROOTS_WORKSPACES_ROOT:-/srv/workspaces}/projects}"
+    local workspace_projects_root="${1:-${PROJECT_ROOTS_WORKSPACES_ROOT:-$HOME/.local/share/summitflow/workspaces}/projects}"
     [ -d "$workspace_projects_root" ] || return 0
 
     find "$workspace_projects_root" -maxdepth 2 -name "$PROJECT_IDENTITY_FILE_NAME" -print0 2>/dev/null |
@@ -45,7 +45,7 @@ for project_id in sorted(dict.fromkeys(ids)):
 
 project_identity_manifest_for_project() {
     local project="$1"
-    local workspace_projects_root="${2:-${PROJECT_ROOTS_WORKSPACES_ROOT:-/srv/workspaces}/projects}"
+    local workspace_projects_root="${2:-${PROJECT_ROOTS_WORKSPACES_ROOT:-$HOME/.local/share/summitflow/workspaces}/projects}"
     [ -n "$project" ] || return 1
     [ -d "$workspace_projects_root" ] || return 1
 
@@ -93,7 +93,7 @@ INNERPY
 
 project_identity_repo_dir_for_project() {
     local project="$1"
-    local workspace_projects_root="${2:-${PROJECT_ROOTS_WORKSPACES_ROOT:-/srv/workspaces}/projects}"
+    local workspace_projects_root="${2:-${PROJECT_ROOTS_WORKSPACES_ROOT:-$HOME/.local/share/summitflow/workspaces}/projects}"
     local manifest
     manifest="$(project_identity_manifest_for_project "$project" "$workspace_projects_root" 2>/dev/null || true)"
     [ -n "$manifest" ] || return 1

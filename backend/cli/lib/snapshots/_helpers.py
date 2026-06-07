@@ -128,7 +128,7 @@ def _require_workspaces() -> None:
     if not workspaces_root_available():
         raise SnapshotError(
             "Shared Btrfs workspaces are not available on this host. "
-            "Mount /srv/workspaces first."
+            "Mount the configured workspace root first."
         )
 
 
@@ -176,5 +176,5 @@ def _safe_cwd_for_scope(scope_path: Path) -> Path:
     if scope_path.parent.name == "projects":
         candidate = scope_path.parent.parent
         return candidate if candidate.exists() else Path.home()
-    workspaces_root = Path(os.environ.get("ST_WORKSPACES_ROOT", "/srv/workspaces"))
+    workspaces_root = Path(os.environ.get("ST_WORKSPACES_ROOT", Path.home() / ".local" / "share" / "summitflow" / "workspaces"))
     return workspaces_root if workspaces_root.exists() else Path.home()

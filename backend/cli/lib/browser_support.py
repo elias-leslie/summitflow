@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Mapping
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Any, cast
 
@@ -94,10 +95,9 @@ def select_browser_vm_ip(output: str, values: dict[str, str]) -> str:
         for address in addresses:
             if address.startswith(prefix):
                 return address
-    for preferred_prefix in ("192.168.", "10."):
-        for address in addresses:
-            if address.startswith(preferred_prefix):
-                return address
+    for address in addresses:
+        if ip_address(address).is_private:
+            return address
     return addresses[0]
 
 

@@ -66,6 +66,44 @@ def test_get_project_identity_resolves_legacy_ids_via_workspace_scan(tmp_path: P
     assert identity["project"]["display_name"] == "A-Term"
 
 
+def test_get_project_identity_resolves_sibling_checkout_manifest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from app import project_identity
+
+    projects_root = tmp_path / "projects"
+    summitflow_root = projects_root / "summitflow"
+    agent_hub_root = projects_root / "agent-hub"
+    summitflow_root.mkdir(parents=True)
+    agent_hub_root.mkdir()
+    (agent_hub_root / "project.identity.json").write_text(
+        json.dumps(
+            {
+                "project": {
+                    "id": "agent-hub",
+                    "repo_name": "agent-hub",
+                    "display_name": "Agent Hub",
+                }
+            }
+        )
+    )
+
+    monkeypatch.setattr(project_identity, "get_repo_root", lambda: summitflow_root)
+    monkeypatch.setattr(project_identity, "_PROJECTS_ROOT", tmp_path / "unused")
+    project_identity._read_manifest.cache_clear()
+    project_identity._local_manifest_paths.cache_clear()
+    project_identity._workspace_manifest_paths.cache_clear()
+
+    identity = project_identity.get_project_identity("agent-hub")
+
+    assert identity is not None
+    assert identity["project"]["display_name"] == "Agent Hub"
+    assert project_identity.get_project_identity_root("agent-hub") == str(
+        agent_hub_root.resolve()
+    )
+
+
 def test_get_project_aliases_prefers_canonical_id_first(tmp_path: Path, monkeypatch) -> None:
     from app import project_identity
 

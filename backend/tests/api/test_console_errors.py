@@ -62,7 +62,7 @@ class TestCaptureConsoleErrorEndpoint:
         return {
             "error": "TypeError: Cannot read property 'foo' of undefined",
             "stack": "at Bar.render (app.js:123)\nat baz (utils.js:45)",
-            "url": "https://dev.summitflow.dev/tasks",
+            "url": "https://summitflow.example.com/tasks",
             "timestamp": "2026-01-18T10:30:00Z",
             "user_agent": "Mozilla/5.0 (X11; Linux x86_64)",
         }
@@ -124,7 +124,7 @@ class TestCaptureConsoleErrorEndpoint:
 
         assert "TypeError: Cannot read property" in description
         assert "at Bar.render" in description
-        assert "https://dev.summitflow.dev/tasks" in description
+        assert "https://summitflow.example.com/tasks" in description
         assert "2026-01-18T10:30:00Z" in description
         assert "Mozilla/5.0" in description
 

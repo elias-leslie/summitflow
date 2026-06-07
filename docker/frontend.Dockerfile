@@ -1,7 +1,7 @@
 # SummitFlow Web — multi-stage Docker build with standalone output
 # Image: ghcr.io/elias-leslie/summitflow-web
 # Port: 3001
-# Requires: workspace packages (chat-ui, push-client) pre-packed as tarballs
+# Requires: workspace packages (chat-ui) pre-packed as tarballs
 
 # ── Stage 0: Dev Runtime ─────────────────────────────────────────
 FROM node:20-slim AS dev
@@ -14,7 +14,7 @@ COPY frontend/ ./
 COPY docker/workspace-packages/*.tgz /tmp/workspace-packages/
 COPY .npmrc ./
 
-RUN node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.dependencies = { ...pkg.dependencies, '@agent-hub/chat-ui': 'file:/tmp/workspace-packages/agent-hub-chat-ui-0.1.0.tgz', '@agent-hub/push-client': 'file:/tmp/workspace-packages/agent-hub-push-client-0.1.0.tgz', '@summitflow/notes-ui': 'file:/tmp/workspace-packages/summitflow-notes-ui-0.1.0.tgz' }; pkg.pnpm = pkg.pnpm || {}; pkg.pnpm.overrides = { ...(pkg.pnpm.overrides || {}), '@agent-hub/passport-client': 'file:/tmp/workspace-packages/agent-hub-passport-client-0.1.0.tgz' }; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));" && \
+RUN node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.dependencies = { ...pkg.dependencies, '@agent-hub/chat-ui': 'file:/tmp/workspace-packages/agent-hub-chat-ui-0.1.0.tgz', '@summitflow/notes-ui': 'file:/tmp/workspace-packages/summitflow-notes-ui-0.1.0.tgz' }; pkg.pnpm = pkg.pnpm || {}; pkg.pnpm.overrides = { ...(pkg.pnpm.overrides || {}), '@agent-hub/passport-client': 'file:/tmp/workspace-packages/agent-hub-passport-client-0.1.0.tgz' }; pkg.pnpm.onlyBuiltDependencies = Array.from(new Set([...(pkg.pnpm.onlyBuiltDependencies || []), 'esbuild', 'sharp'])); fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));" && \
     CI=true pnpm install --no-frozen-lockfile
 
 ENV NODE_ENV=development
@@ -39,7 +39,7 @@ COPY .npmrc ./
 COPY docker/workspace-packages/*.tgz /tmp/workspace-packages/
 
 # Install dependencies and clean temp files in same layer
-RUN node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.dependencies = { ...pkg.dependencies, '@agent-hub/chat-ui': 'file:/tmp/workspace-packages/agent-hub-chat-ui-0.1.0.tgz', '@agent-hub/push-client': 'file:/tmp/workspace-packages/agent-hub-push-client-0.1.0.tgz', '@summitflow/notes-ui': 'file:/tmp/workspace-packages/summitflow-notes-ui-0.1.0.tgz' }; pkg.pnpm = pkg.pnpm || {}; pkg.pnpm.overrides = { ...(pkg.pnpm.overrides || {}), '@agent-hub/passport-client': 'file:/tmp/workspace-packages/agent-hub-passport-client-0.1.0.tgz' }; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));" && \
+RUN node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.dependencies = { ...pkg.dependencies, '@agent-hub/chat-ui': 'file:/tmp/workspace-packages/agent-hub-chat-ui-0.1.0.tgz', '@summitflow/notes-ui': 'file:/tmp/workspace-packages/summitflow-notes-ui-0.1.0.tgz' }; pkg.pnpm = pkg.pnpm || {}; pkg.pnpm.overrides = { ...(pkg.pnpm.overrides || {}), '@agent-hub/passport-client': 'file:/tmp/workspace-packages/agent-hub-passport-client-0.1.0.tgz' }; pkg.pnpm.onlyBuiltDependencies = Array.from(new Set([...(pkg.pnpm.onlyBuiltDependencies || []), 'esbuild', 'sharp'])); fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));" && \
     CI=true pnpm install --no-frozen-lockfile && \
     rm -rf /tmp/workspace-packages
 

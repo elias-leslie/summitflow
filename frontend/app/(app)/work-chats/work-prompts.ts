@@ -1,6 +1,7 @@
-import type { AdhocWorkSpec, ChatMessage } from '@agent-hub/chat-ui'
+import type { ChatMessage } from '@agent-hub/chat-ui'
 import type { Project } from '@/lib/api'
 import type {
+  AdhocWorkSpec,
   AgentHubSessionListItem,
   WorkContext,
 } from '@/lib/api/agent-hub-work-chats'

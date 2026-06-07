@@ -6,7 +6,7 @@ import os
 import re
 from pathlib import Path
 
-DEFAULT_WORKSPACES_ROOT = Path("/srv/workspaces")
+DEFAULT_WORKSPACES_ROOT = Path.home() / ".local" / "share" / "summitflow" / "workspaces"
 
 
 def get_workspaces_root() -> Path:

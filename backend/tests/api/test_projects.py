@@ -18,7 +18,7 @@ from app.storage.connection import get_connection
 def test_create_project_creates_backup_source(client, monkeypatch) -> None:
     """POST /api/projects should seed a matching project backup source."""
     project_id = f"create-{uuid4().hex[:8]}"
-    root_path = f"/srv/workspaces/projects/{project_id}"
+    root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
     monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
 
     try:
@@ -59,7 +59,7 @@ def test_create_project_creates_backup_source(client, monkeypatch) -> None:
 def test_create_project_syncs_agent_hub_permission_when_requested(client, monkeypatch) -> None:
     """POST /api/projects should provision Agent Hub permission bootstrap when requested."""
     project_id = f"bootstrap-{uuid4().hex[:8]}"
-    root_path = f"/srv/workspaces/projects/{project_id}"
+    root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
     sync_mock = AsyncMock()
     monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.api.projects.sync_agent_hub_project_permission", sync_mock)
@@ -155,7 +155,7 @@ async def test_reconcile_agent_hub_project_identity_renames_legacy_permission(mo
 def test_create_project_queues_standard_onboarding_when_requested(client, monkeypatch) -> None:
     """POST /api/projects should use the shared onboarding flow when requested."""
     project_id = f"onboard-{uuid4().hex[:8]}"
-    root_path = f"/srv/workspaces/projects/{project_id}"
+    root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
     onboarding_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
     monkeypatch.setattr(
@@ -286,7 +286,7 @@ def test_get_project_prefers_manifest_display_name_for_existing_rows(client, tmp
 def test_create_project_rolls_back_when_agent_hub_sync_fails(client, monkeypatch) -> None:
     """POST /api/projects should remove the project record when bootstrap sync fails."""
     project_id = f"rollback-{uuid4().hex[:8]}"
-    root_path = f"/srv/workspaces/projects/{project_id}"
+    root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
 
     async def _fail_sync(*_args, **_kwargs) -> None:
         raise HTTPException(status_code=502, detail="Agent Hub unavailable")
@@ -327,7 +327,7 @@ def test_create_project_rolls_back_when_agent_hub_sync_fails(client, monkeypatch
 def test_onboard_project_queues_standard_onboarding(client, monkeypatch) -> None:
     """POST /api/projects/{project_id}/onboard should queue the shared onboarding helper."""
     project_id = f"manual-onboard-{uuid4().hex[:8]}"
-    root_path = f"/srv/workspaces/projects/{project_id}"
+    root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
     onboarding_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
     with get_connection() as conn, conn.cursor() as cur:
@@ -565,7 +565,7 @@ def test_resolve_project_public_url_preserves_public_base_url() -> None:
 def test_get_project_returns_public_url_for_workspace_project(client, monkeypatch) -> None:
     """GET /api/projects/{id} should expose the canonical public app URL."""
     project_id = f"hosted-{uuid4().hex[:8]}"
-    root_path = f"/srv/workspaces/projects/{project_id}"
+    root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
     monkeypatch.setenv("SUMMITFLOW_PROJECT_PUBLIC_BASE_DOMAIN", "example.test")
     monkeypatch.delenv("SUMMITFLOW_PROJECT_PUBLIC_HOST_ALIASES", raising=False)
     clear_public_url_config_cache()
@@ -606,7 +606,7 @@ def test_get_project_returns_public_url_for_workspace_project(client, monkeypatc
 def test_create_project_derives_hosted_urls_from_private_config(client, monkeypatch) -> None:
     """POST /api/projects should derive hosted URLs without baking domains into code."""
     project_id = f"hosted-create-{uuid4().hex[:8]}"
-    root_path = f"/srv/workspaces/projects/{project_id}"
+    root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
     monkeypatch.setenv("SUMMITFLOW_PROJECT_PUBLIC_BASE_DOMAIN", "example.test")
     monkeypatch.delenv("SUMMITFLOW_PROJECT_PUBLIC_HOST_ALIASES", raising=False)
     monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)

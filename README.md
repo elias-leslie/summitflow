@@ -1,252 +1,253 @@
 # SummitFlow
 
-Task management and orchestration platform for AI-assisted software development.
+Task orchestration and evidence capture for AI-assisted software development.
 
-## Overview
+SummitFlow coordinates development work across projects: task intake, planning,
+subtasks, quality gates, code-health scans, autonomous execution hooks, browser
+checks, backups, and operator-visible evidence. It is designed for developers
+running their own agent tooling, not as a hosted SaaS.
 
-SummitFlow manages the full lifecycle of development tasks across multiple software projects. It provides task creation, planning, autonomous execution, code health analysis, quality gates, and evidence capture. An AI agent pipeline handles triage, planning, execution, and review of tasks via the Hatchet workflow engine.
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.13+-3776ab.svg)](https://python.org)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000.svg)](https://nextjs.org)
 
-Key capabilities:
-- **Task Management** - Tasks with subtasks, steps, verification gates, and dependency tracking
-- **Autonomous Execution** - AI-driven task execution pipeline (triage, plan, execute, review)
-- **Code Health** - Codebase analysis, metrics, and automated refactoring suggestions
-- **Quality Gates** - Verification-based step completion with citation requirements
-- **Evidence Capture** - Screenshots, console logs, and network activity for feature verification
-- **Project Monitoring** - Sitemap discovery, endpoint health checks, and system monitoring
-- **Agentic Browser Runtime** - `st browser` resolves managed project URLs and uses isolated VM Chrome for agent checks
+## What it does
 
-## Tech Stack
+- Tracks tasks, subtasks, steps, dependencies, status, and verification evidence.
+- Provides a FastAPI backend and a Next.js operator UI for project/task state.
+- Runs scheduled and event-driven workflows through Hatchet.
+- Exposes the `st` CLI for task, project, check, database, backup, browser, and
+  workflow operations.
+- Integrates optionally with Agent Hub for routed AI-agent completions and shared
+  agent memory.
+- Captures UI/API smoke-test evidence when a browser runtime is configured.
 
-| Layer | Technology |
-|-------|-----------|
-| Backend | FastAPI, Python 3.13+, SQLAlchemy 2.0, Pydantic 2 |
-| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS 4 |
-| Database | PostgreSQL 15+ (psycopg 3, connection pooling) |
-| Caching | Redis |
-| Workflows | Hatchet (pipeline, scheduled, utility workflows) |
-| CLI | Typer + Rich (`st` command) |
-| Quality | Ruff, Ty, pytest, Vitest, Biome |
+## Requirements
 
-## Architecture
-
-```
-summitflow/
-├── backend/
-│   ├── app/
-│   │   ├── api/           # REST endpoints
-│   │   ├── services/      # Business logic
-│   │   │   ├── autonomous/    # Autonomous execution
-│   │   │   ├── code_health/   # Code health analysis
-│   │   │   ├── explorer/      # Code exploration
-│   │   │   ├── quality_gate/  # Quality gate logic
-│   │   │   └── self_healing/  # Self-healing services
-│   │   ├── models/        # SQLAlchemy models
-│   │   ├── schemas/       # Pydantic models
-│   │   ├── storage/       # Database access layer
-│   │   ├── tasks/         # Background task definitions
-│   │   └── workflows/     # Hatchet workflow definitions
-│   ├── cli/               # st CLI (task management)
-│   │   ├── commands/      # Subcommands
-│   │   └── lib/           # CLI utilities
-│   └── tests/
-├── frontend/
-│   ├── app/               # Pages (App Router)
-│   │   ├── projects/[id]/ # Project detail pages
-│   │   ├── backups/       # Backup management
-│   │   └── git/           # Git operations
-│   ├── components/        # React components
-│   │   ├── tasks/         # Task management UI
-│   │   ├── kanban/        # Kanban board
-│   │   ├── explorer/      # Code explorer
-│   │   ├── health/        # Health monitoring
-│   │   ├── execution/     # Task execution UI
-│   │   └── evidence/      # Evidence capture modal
-│   └── lib/               # API clients, hooks, utilities
-├── scripts/               # Internal support assets; public operator surface is st
-│   ├── systemd/           # Systemd service definitions
-│   └── lib/               # Shared implementation helpers
-└── tasks/                 # Task specifications and state
-```
-
-## CLI (`st`)
-
-SummitFlow includes a Typer-based CLI for task management:
-
-```bash
-st list                        # List tasks
-st -P summitflow create --plan plan.json  # Create execution-ready task (requires -P)
-st -P summitflow capture bug "Fix login bug"  # Capture a lightweight bug kernel
-st -P summitflow capture idea "Add SSO"       # Capture a lightweight idea kernel
-st claim <task-id>             # Claim task (records snapshot metadata; work commits direct to main)
-st context                     # Show current task details
-st step pass <subtask> <step>  # Mark step as passed
-st subtask pass <subtask-id>   # Pass a subtask
-st done <task-id>              # Complete task (publish + status close + cleanup; no branch merge)
-st lease '<glob>...'           # Declare file scope for parallel-agent coordination
-st abandon <task-id>           # Abandon task
-st autocode <task-id>          # Queue for autonomous execution
-st checkpoints                 # List active checkpoints
-st memory search <query>       # Search memory system
-st browser url a-term          # Resolve canonical browser URL from project identity
-st browser check a-term        # Check desktop/narrow/mobile through browser VM 100
-st browser endpoint --ws       # Print canonical CDP WebSocket for optional tools
-```
-
-Browser automation for agents uses browser VM 100 by default. Do not start
-Chrome, CDP proxies, or browser containers on project hosts for normal checks.
-Use `st browser endpoint` when an optional tool needs the managed CDP target.
-See [`docs/agentic-browser-research.md`](docs/agentic-browser-research.md) and
-[`docs/browser-runtime-architecture.md`](docs/browser-runtime-architecture.md).
-
-## Hatchet Workflows
-
-### Pipeline (task lifecycle)
-`triage_wf` → `plan_wf` → `execute_wf` → `review_wf` → `merge_cleanup_wf`
-
-### Scheduled
-| Workflow | Schedule | Description |
-|----------|----------|-------------|
-| `code_health_wf` | Daily 2 AM | Code health scan |
-| `deep_scan_wf` | Sunday 3 AM | Deep analysis |
-| `scan_projects_wf` | Every 6h | Project scanning |
-| `self_healing_wf` | Every 15m | Auto-healing |
-| `work_pickup_wf` | Every 2h | Autonomous work pickup |
-| `task_generation_wf` | Hourly | Routine upkeep signal discovery and autonomous task routing |
-| `scheduled_backups_wf` | 30m past hour | Backup scheduling |
-| `stale_cleanup_wf` | Daily 4 AM | Stale task cleanup |
-
-### Utility
-Backup create/restore, PR review, enrichment, checkpoint cleanup, schema tasks.
-
-## Ports
-
-| Service | Port |
-|---------|------|
-| Frontend (Next.js) | 3001 |
-| Backend (FastAPI) | 8001 |
-
-## Getting Started
-
-### Prerequisites
+Native development:
 
 - Python 3.13+
 - Node.js 20+
+- pnpm 10+
 - PostgreSQL 15+
 - Redis
+- Hatchet, for workflow/worker execution
 
-### Backend
+Container development:
+
+- Docker Engine with Docker Compose v2
+- Node.js 20+, pnpm 10+, and `uv` for packing local workspace packages before
+  Docker builds
+- A sibling `agent-hub` checkout when building the SummitFlow + Agent Hub source
+  stack locally
+
+## Quickstart: local source stack with Docker Compose
+
+This path builds SummitFlow and Agent Hub from adjacent local clones. It is the
+simplest way to test the coupled public source release without private tooling.
+
+```bash
+git clone https://github.com/elias-leslie/summitflow.git
+git clone https://github.com/elias-leslie/agent-hub.git
+cd summitflow/docker/compose
+cp .env.example .env
+```
+
+Edit `.env` and set at least these values:
+
+```bash
+POSTGRES_PASSWORD=change-me-postgres
+SF_DB_PASSWORD=change-me-summitflow
+AH_DB_PASSWORD=change-me-agent-hub
+REDIS_PASSWORD=change-me-redis
+HOST_HOME_PATH=/home/YOUR_USER
+TAG=local
+HATCHET_TAG=v0.84.0
+AGENT_HUB_ENCRYPTION_KEY=<fernet-key>
+AGENT_HUB_SECRET_KEY=<random-secret>
+INTERNAL_SERVICE_SECRET=<random-secret>
+SUMMITFLOW_CLIENT_ID=summitflow
+SUMMITFLOW_REQUEST_SOURCE=summitflow
+AGENT_HUB_DASHBOARD_CLIENT_ID=agent-hub-dashboard
+AGENT_HUB_DASHBOARD_REQUEST_SOURCE=agent-hub-dashboard
+```
+
+Generate the two Agent Hub secrets with:
+
+```bash
+python - <<'PY'
+import base64
+import os
+import secrets
+print('AGENT_HUB_ENCRYPTION_KEY=' + base64.urlsafe_b64encode(os.urandom(32)).decode())
+print('AGENT_HUB_SECRET_KEY=' + secrets.token_urlsafe(32))
+print('INTERNAL_SERVICE_SECRET=' + secrets.token_urlsafe(32))
+PY
+```
+
+Pack the sibling Agent Hub workspace packages used by the SummitFlow frontend:
+
+```bash
+cd ../..
+AGENT_HUB_ROOT=../agent-hub docker/scripts/pack-workspace-packages.sh docker/workspace-packages
+cd docker/compose
+```
+
+Start infrastructure, generate the Hatchet token, then start the apps:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+  --profile summitflow --profile agent-hub \
+  up -d postgres redis docker-socket-proxy hatchet-migrate hatchet-setup-config hatchet
+
+COMPOSE_DIR=$PWD ../scripts/generate-hatchet-token.sh
+
+docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+  --profile summitflow --profile agent-hub up -d --build
+```
+
+Open:
+
+- SummitFlow UI: <http://localhost:3001>
+- SummitFlow API health: <http://localhost:8001/health>
+- Agent Hub UI: <http://localhost:3003>
+- Agent Hub API health: <http://localhost:8003/health>
+
+Stop the stack with:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+  --profile summitflow --profile agent-hub down
+```
+
+Do not use `down --volumes` unless you intentionally want to delete local data.
+
+## Native development
+
+Copy the placeholder environment file and set real local service URLs:
+
+```bash
+cp .env.example .env.local
+```
+
+Backend:
 
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-
-# Run migrations
-alembic upgrade head
-
-# Start server
-uvicorn app.main:app --reload --port 8001
-
-# Start Hatchet worker (separate A-Term)
-python -m app.worker
+uv sync --all-extras --dev
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
-### Frontend
+Worker, in another shell:
 
 ```bash
-cd frontend
+cd backend
+uv run python -m app.worker
+```
+
+Frontend, in another shell from the repo root. SummitFlow consumes a few
+Agent Hub workspace packages, so pack them from the sibling Agent Hub checkout
+before installing dependencies:
+
+```bash
+AGENT_HUB_ROOT=../agent-hub docker/scripts/pack-workspace-packages.sh docker/workspace-packages
 pnpm install
-pnpm run dev
+pnpm --filter summitflow-frontend dev
 ```
 
-### CLI
+CLI:
 
 ```bash
-pip install -e ".[dev]"   # CLI included in backend package
-st --help
+cd backend
+uv run st --help
 ```
 
-### Environment
+## Configuration
 
-Runtime settings are read from `~/.env.local` by default. Use
-[`.env.example`](.env.example) as the placeholder reference for local setup.
-Only `DATABASE_URL` is required for the backend to boot; the rest are optional
-overrides for local integrations and background services.
-
-### Agent Tooling Bootstrap
-
-To provision the shared local agent environment on a new machine, run:
+Start from [`.env.example`](.env.example). Required native values:
 
 ```bash
-st setup agent-tooling
+DATABASE_URL=postgresql://summitflow_app:PASSWORD@localhost:5432/summitflow
+REDIS_URL=redis://localhost:6379/1
 ```
 
-That bootstrap installs the Codex CLI and Claude Code, clones or updates the
-shared `codex-config` and `claude-config` repos, installs the Codex wrapper from
-the config repo, and enables the supporting user services and timers.
+Optional values enable integrations:
 
-### Register a Project
+- `AGENT_HUB_URL`, `SUMMITFLOW_CLIENT_ID`, `SUMMITFLOW_CLIENT_SECRET`, and
+  `SUMMITFLOW_REQUEST_SOURCE` connect SummitFlow to Agent Hub.
+- `HATCHET_CLIENT_TOKEN`, `HATCHET_CLIENT_HOST_PORT`, and
+  `HATCHET_CLIENT_TLS_STRATEGY` enable Hatchet workers.
+- `VAPID_*` values enable web-push notifications.
+- `SMB_*` values enable the optional SMB backup target.
+- Browser-runtime variables are optional; if absent, browser evidence features
+  should fail clearly instead of crashing the core app.
+
+## Architecture
+
+```text
+summitflow/
+├── backend/       FastAPI app, SQLAlchemy models, Alembic migrations, CLI, tests
+├── frontend/      Next.js operator UI, React components, API clients, tests
+├── packages/      Shared workspace packages
+├── docker/        Dockerfiles, compose stack, public source-stack bootstrap
+├── scripts/       Utility scripts and service templates
+└── .github/       Public CI and community templates
+```
+
+Main services:
+
+- Frontend: `http://localhost:3001`
+- Backend/API: `http://localhost:8001`
+- PostgreSQL: task/project/state storage
+- Redis: cache/background coordination
+- Hatchet: workflow engine for scheduled and autonomous jobs
+- Agent Hub: optional companion control plane for routed AI agents
+
+## Testing, linting, type checks, and build
+
+Install dependencies first. From a clean clone, pack the local Agent Hub
+packages before `pnpm install`:
 
 ```bash
-curl -X POST http://localhost:8001/api/projects \
-  -H "Content-Type: application/json" \
-  -d '{"id": "my-project", "name": "My Project", "base_url": "http://localhost:8000"}'
+AGENT_HUB_ROOT=../agent-hub docker/scripts/pack-workspace-packages.sh docker/workspace-packages
+pnpm install --frozen-lockfile
+cd backend && uv sync --all-extras --dev
 ```
 
-## Database
-
-35+ tables including tasks, subtasks, steps, projects, events, explorer entries, backups, quality checks, notifications, and agent sessions. Schema managed via Alembic migrations.
-
-## Operator CLI
-
-`st` is the canonical SummitFlow operator CLI. Do not add new public wrappers; add first-class `st` subcommands instead.
-
-- `st service` - build, migrate, restart, and inspect services
-- `st check` - quality gates and named tool checks
-- `st db` - database inspection and migrations
-- `st jj` - normal Jujutsu-backed version-control workflow
-- `st done` - default task closeout with check, checkpoint, publish, status closure, and cleanup
-- `st commit` - managed repo commit/push workflow for non-task checkpoints and closeout blockers
-- `st backup` - source backups, restores, schedules, and pending drain
-- `st browser` - browser health, screenshots, DOM eval, and page checks
-- `st web` - Agent Hub-backed web search/research/fetch
-
-## Services
-
-Current default runtime is hybrid:
-
-- First-party apps run as `systemd --user` services
-- Shared infra (`postgres`, `redis`, `hatchet`) stays in Docker
-- Full Docker app stacks remain available for parity and container checks
+Backend checks:
 
 ```bash
-st service rebuild summitflow  # Full rebuild, migrations, restart, health check
-st service restart summitflow  # Restart through managed rebuild path
-st service status summitflow   # Check service health
+cd backend
+uv run ruff check .
+uv run pytest
+uv build
 ```
 
-## Testing
+Frontend checks:
 
 ```bash
-# Quality checks
-st check --check                # Full quality check
-st check --quick --changed-only # Quick check on changed files
-st check pytest -- tests/cli    # Targeted backend test run
+pnpm --filter summitflow-frontend lint
+pnpm --filter summitflow-frontend exec tsc --noEmit
+pnpm --filter summitflow-frontend exec vitest run
+pnpm --filter summitflow-frontend build
 ```
+
+Smoke test a running app:
+
+```bash
+curl -fsS http://localhost:8001/health
+curl -fsS http://localhost:3001/ >/dev/null
+```
+
+## Optional and degraded behavior
+
+SummitFlow can boot without provider API keys. Features that need Agent Hub,
+Hatchet, web push, SMB backups, Docker socket access, or a browser runtime should
+show missing-configuration behavior instead of exposing credentials or crashing
+unrelated pages.
 
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
-
-## Security
-
-Please report suspected vulnerabilities privately as described in
-[SECURITY.md](SECURITY.md).
-
-## Commercial
-
-Commercial use is permitted under the Apache 2.0 license.
-
-For commercial support, custom work, partnership discussions, or private
-licensing for future versions, contact `summitflow42@gmail.com`.
+Security reporting is described in [SECURITY.md](SECURITY.md).

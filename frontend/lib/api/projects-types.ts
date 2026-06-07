@@ -171,7 +171,7 @@ export interface FetchQualityResultsOptions {
 
 export interface AutonomousExecutionSettings {
   // Access control (enabled, hours) now managed by Agent Hub project permissions.
-  // See: agent.summitflow.dev/access-control/permissions
+  // See: localhost:3003/access-control/permissions
   enabled: boolean
   execution_allowed: boolean
   execution_in_time_window: boolean

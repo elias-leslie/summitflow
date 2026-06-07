@@ -15,7 +15,7 @@ export interface ProjectFormErrors {
 }
 
 export const DEFAULT_HEALTH_ENDPOINT = '/health'
-export const MANAGED_PROJECTS_ROOT = '/srv/workspaces/projects'
+export const MANAGED_PROJECTS_ROOT = '/home/demo/projects'
 
 export function buildManagedRootPath(projectId: string): string {
   const normalized = normalizeProjectId(projectId)

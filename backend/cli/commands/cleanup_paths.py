@@ -27,7 +27,7 @@ _FORBIDDEN_ROOTS = frozenset({
 })
 _GLOB_CHARS = frozenset({"*", "?"})
 _DEFAULT_ALLOWED_NON_REPO_ROOTS = (
-    "/srv/workspaces/projects",
+    str(Path.home() / ".local" / "share" / "summitflow" / "workspaces" / "projects"),
     str(Path("/media") / Path.home().name / "Backups"),
 )
 

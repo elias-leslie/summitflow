@@ -29,7 +29,7 @@ runner = CliRunner()
 # --- url resolver ---------------------------------------------------------
 
 
-def _write_identity(root: Path, *, project_id: str = "portfolio-ai", backend_port: int = 8000, prod_api: str = "portapi.summitflow.dev") -> None:
+def _write_identity(root: Path, *, project_id: str = "portfolio-ai", backend_port: int = 8000, prod_api: str = "portfolio-api.example.com") -> None:
     (root / "project.identity.json").write_text(
         json.dumps(
             {

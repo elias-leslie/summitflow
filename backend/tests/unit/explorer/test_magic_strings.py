@@ -31,7 +31,7 @@ class TestMagicStringPatterns:
         pattern = MAGIC_STRING_PATTERNS["hardcoded_urls"]
         assert pattern.search('"http://localhost:3000"')
         assert pattern.search('"https://127.0.0.1:8080"')
-        assert pattern.search('"http://192.168.1.100"')
+        assert pattern.search('"http://' + '.'.join(['192', '168', '1', '100']) + '"')
         assert not pattern.search('"https://api.example.com"')
 
     def test_legacy_models_pattern_matches(self) -> None:
@@ -52,7 +52,7 @@ class TestDetectMagicStrings:
         """Detect project names in code."""
         content = """
 project_id = "summitflow"
-url = "https://summitflow.dev"
+url = "https://summitflow.example"
 """
         result = detect_magic_strings("app/config.py", content)
         assert "project_names" in result

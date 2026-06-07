@@ -241,7 +241,7 @@ export function StorageSetupWizard() {
                   type="text"
                   value={host}
                   onChange={(e) => setHost(e.target.value)}
-                  placeholder="192.168.1.100 or nas.local"
+                  placeholder="fileserver.example.local"
                   className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-200
                              placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-phosphor-500"
                 />

@@ -77,7 +77,7 @@ esac
     env = os.environ.copy()
     env["HOME"] = str(home_dir)
     env["PROJECT_DIR"] = str(project_dir)
-    env["SMB_HOST"] = "192.168.8.128"
+    env["SMB_HOST"] = "192.0.2.128"
     env["SMB_SHARE"] = "davion-gem"
     env["SMB_USER"] = "backup-svc"
     env["PATH"] = f"{fake_bin}:{env['PATH']}"

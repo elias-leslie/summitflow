@@ -294,7 +294,7 @@ def create_ui_mockup(
     Examples:
         st -P portfolio-ai design ui create today-layout-a \\
             --html-file /tmp/layout-a.html \\
-            --reference-url https://port.summitflow.dev/ \\
+            --reference-url https://example.com/ \\
             --reference-image /tmp/today.png \\
             -d "Balanced /today layout: hero + digest"
 

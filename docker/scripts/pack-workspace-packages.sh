@@ -1,7 +1,7 @@
 #!/bin/bash
 # Pack workspace packages for Docker builds.
 #
-# JavaScript: @agent-hub/{chat-ui,push-client,passport-client} → .tgz tarballs
+# JavaScript: @agent-hub/{chat-ui,passport-client} → .tgz tarballs
 # Python: agent-hub-client → .whl wheel
 #
 # Docker builds are isolated, so workspace:* and local path deps won't resolve.
@@ -34,7 +34,7 @@ if [ -z "$PACKAGES_DIR" ] && [ -n "$AGENT_HUB_ROOT" ]; then
 fi
 
 remove_dir() {
-  python - "$1" <<'PY'
+  "${PYTHON:-$(command -v python3 || command -v python)}" - "$1" <<'PY'
 import pathlib
 import shutil
 import sys
@@ -142,7 +142,7 @@ pack_js_package() {
 
 # ── JavaScript packages ──────────────────────────────────────────
 if [ -n "$PACKAGES_DIR" ]; then
-  for pkg in chat-ui push-client passport-client; do
+  for pkg in chat-ui passport-client; do
     pack_js_package "@agent-hub/$pkg" "$PACKAGES_DIR/$pkg" "agent-hub-$pkg-0.1.0.tgz"
   done
 else
@@ -155,7 +155,7 @@ pack_js_package "@summitflow/notes-ui" "$SUMMITFLOW_ROOT/packages/notes-ui" "sum
 PYTHON_PKG="${PACKAGES_DIR:+$PACKAGES_DIR/agent-hub-client}"
 if [ -n "$PYTHON_PKG" ] && [ -d "$PYTHON_PKG" ]; then
   echo "Building agent-hub-client wheel..."
-  (cd "$PYTHON_PKG" && uv build --wheel --out-dir "$OUT_DIR" 2>&1)
+  (cd "$PYTHON_PKG" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
 else
   echo "SKIP: agent-hub-client package root not found"
 fi

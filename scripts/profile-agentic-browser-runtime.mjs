@@ -4,10 +4,8 @@ import http from "node:http";
 import https from "node:https";
 
 const DEFAULT_TARGETS = [
-  { name: "terminal", url: "https://terminal.summitflow.dev/" },
-  { name: "summitflow", url: "https://dev.summitflow.dev/" },
-  { name: "agent-hub", url: "https://agent.summitflow.dev/" },
-  { name: "portfolio", url: "https://port.summitflow.dev/" },
+  { name: "summitflow-local", url: "http://localhost:3001/" },
+  { name: "agent-hub-local", url: "http://localhost:3003/" },
   {
     name: "synthetic-action",
     action: true,

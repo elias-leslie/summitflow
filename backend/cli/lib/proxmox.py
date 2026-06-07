@@ -51,14 +51,27 @@ def load_proxmox_config() -> ProxmoxConfig:
     def value(name: str, default: str = "") -> str:
         return os.environ.get(name, file_values.get(name, default)).strip()
 
+    host = value("PROXMOX_API_URL")
+    token_id = value("PROXMOX_TOKEN_ID")
     secret = value("PROXMOX_TOKEN_SECRET")
-    if not secret:
-        raise ProxmoxError("PROXMOX_TOKEN_SECRET is not configured")
+    node = value("PROXMOX_NODE")
+    missing = [
+        name
+        for name, configured in (
+            ("PROXMOX_API_URL", host),
+            ("PROXMOX_TOKEN_ID", token_id),
+            ("PROXMOX_TOKEN_SECRET", secret),
+            ("PROXMOX_NODE", node),
+        )
+        if not configured
+    ]
+    if missing:
+        raise ProxmoxError(f"Missing Proxmox configuration: {', '.join(missing)}")
     return ProxmoxConfig(
-        host=value("PROXMOX_API_URL", "https://192.168.8.233:8006").rstrip("/"),
-        token_id=value("PROXMOX_TOKEN_ID", "root@pam!automation"),
+        host=host.rstrip("/"),
+        token_id=token_id,
         token_secret=secret,
-        node=value("PROXMOX_NODE", "davion-gem"),
+        node=node,
     )
 
 
@@ -162,7 +175,7 @@ class ProxmoxClient:
         with suppress(ProxmoxError):
             self.stop(vmid)
         time.sleep(5)
-        self.request("DELETE", f"/nodes/{self.config.node}/qemu/{vmid}", data={"purge": "1"})
+        self.request("DELETE", f"/nodes/{self.config.node}/qemu/{vmid}?purge=1")
 
 
 def snapshot_name_default() -> str:

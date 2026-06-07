@@ -16,14 +16,14 @@ def test_browser_route_prefers_browser_frontend(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(
         browser_routes,
         "get_project_identity",
-        lambda _project: {"hosts": {"browser_frontend": "terminal.summitflow.dev", "production_frontend": "old.example"}},
+        lambda _project: {"hosts": {"browser_frontend": "terminal.example.com", "production_frontend": "old.example"}},
     )
     monkeypatch.setattr(browser_routes, "get_project_canonical_id", lambda *_args, **_kwargs: "a-term")
 
     route = resolve_browser_project_route("terminal")
 
     assert route.project_id == "a-term"
-    assert route.url == "https://terminal.summitflow.dev/"
+    assert route.url == "https://terminal.example.com/"
     assert route.source == "hosts.browser_frontend"
 
 
@@ -31,13 +31,13 @@ def test_browser_route_falls_back_to_production_frontend(monkeypatch: pytest.Mon
     monkeypatch.setattr(
         browser_routes,
         "get_project_identity",
-        lambda _project: {"hosts": {"production_frontend": "dev.summitflow.dev"}},
+        lambda _project: {"hosts": {"production_frontend": "summitflow.example.com"}},
     )
     monkeypatch.setattr(browser_routes, "get_project_canonical_id", lambda *_args, **_kwargs: "summitflow")
 
     route = resolve_browser_project_route("summitflow")
 
-    assert route.url == "https://dev.summitflow.dev/"
+    assert route.url == "https://summitflow.example.com/"
     assert route.source == "hosts.production_frontend"
 
 

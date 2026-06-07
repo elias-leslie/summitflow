@@ -8,8 +8,8 @@ from app.tasks.explorer_health import _build_check_base, _check_single_page, _re
 
 
 def test_build_check_base_rewrites_localhost_for_remote_browser() -> None:
-    with patch("app.tasks.explorer_health._runtime_host", return_value="192.168.8.244"):
-        assert _build_check_base("http://localhost:3001", 3001) == "http://192.168.8.244:3001"
+    with patch("app.tasks.explorer_health._runtime_host", return_value="192.0.2.44"):
+        assert _build_check_base("http://localhost:3001", 3001) == "http://192.0.2.44:3001"
 
 
 def test_resolve_target_url_rewrites_scanned_loopback_page_url() -> None:
@@ -19,8 +19,8 @@ def test_resolve_target_url_rewrites_scanned_loopback_page_url() -> None:
         "metadata": {"url": "http://127.0.0.1:3110/settings"},
     }
 
-    with patch("app.tasks.explorer_health._runtime_host", return_value="192.168.8.244"):
-        assert _resolve_target_url(page, "http://192.168.8.244:3001") == "http://192.168.8.244:3110/settings"
+    with patch("app.tasks.explorer_health._runtime_host", return_value="192.0.2.44"):
+        assert _resolve_target_url(page, "http://192.0.2.44:3001") == "http://192.0.2.44:3110/settings"
 
 
 def test_check_single_page_prefers_scanned_page_url() -> None:
@@ -33,7 +33,7 @@ def test_check_single_page_prefers_scanned_page_url() -> None:
 
     with patch(
         "app.tasks.explorer_health._runtime_host",
-        return_value="192.168.8.244",
+        return_value="192.0.2.44",
     ), patch(
         "app.tasks.explorer_health.run_ba_check",
         return_value={"pass": True, "checks": {"consoleErrors": {"count": 0, "messages": []}}, "durationMs": 25},
@@ -43,6 +43,6 @@ def test_check_single_page_prefers_scanned_page_url() -> None:
     ) as mock_update:
         result = _check_single_page(page, "http://localhost:3001")
 
-    mock_run.assert_called_once_with("http://192.168.8.244:3110/settings")
+    mock_run.assert_called_once_with("http://192.0.2.44:3110/settings")
     mock_update.assert_called_once()
     assert result == {"path": "/settings", "status": "healthy", "console_errors": 0}

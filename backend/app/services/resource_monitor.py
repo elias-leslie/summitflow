@@ -16,14 +16,13 @@ import psutil
 
 from ..utils import safe_subprocess
 
-MONITORED_DISK_PATHS = ("/", "/srv/workspaces")
+MONITORED_DISK_PATHS = tuple(path for path in ("/", os.environ.get("ST_WORKSPACES_ROOT", "")) if path)
 
 # nvidia-smi can occasionally block on a wedged driver; bound every call.
 _NVIDIA_SMI_TIMEOUT_SECONDS = 4.0
-DISK_LABELS = {
-    "/": "Root",
-    "/srv/workspaces": "Workspaces",
-}
+DISK_LABELS = {"/": "Root"}
+if os.environ.get("ST_WORKSPACES_ROOT"):
+    DISK_LABELS[os.environ["ST_WORKSPACES_ROOT"]] = "Workspaces"
 
 
 class DiskUsageDict(TypedDict):

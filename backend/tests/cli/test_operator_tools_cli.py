@@ -15,6 +15,7 @@ from typer.testing import CliRunner
 
 from cli.commands import browser, check, db, docker, service, setup, vm
 from cli.lib import service_ops
+from cli.lib.proxmox import ProxmoxClient, ProxmoxConfig
 from cli.lib.service_ops import ProjectServices
 from cli.main import app as main_app
 
@@ -880,24 +881,24 @@ def test_browser_host_uses_env_without_probe(monkeypatch) -> None:
 
 
 def test_browser_vm_ip_selection_prefers_management_network() -> None:
-    output = "\n".join(["172.24.0.1", "10.1.2.3", "192.168.8.234"])
+    output = "\n".join(["192.0.2.34", "172.24.0.1", "10.1.2.3"])
 
-    assert browser._select_browser_vm_ip(output, {}) == "192.168.8.234"
+    assert browser._select_browser_vm_ip(output, {}) == "192.0.2.34"
 
 
 def test_browser_vm_ip_selection_honors_prefix() -> None:
-    output = "\n".join(["192.168.8.234", "10.1.2.3"])
+    output = "\n".join(["192.0.2.34", "10.1.2.3"])
 
     assert browser._select_browser_vm_ip(output, {"ST_BROWSER_VM_IP_PREFIX": "10."}) == "10.1.2.3"
 
 
 def test_browser_url_resolves_project() -> None:
-    route = SimpleNamespace(url="https://terminal.summitflow.dev/", project_id="a-term", source="hosts.browser_frontend")
+    route = SimpleNamespace(url="https://terminal.example.com/", project_id="a-term", source="hosts.browser_frontend")
     with patch("cli.commands.browser.resolve_browser_project_route", return_value=route):
         result = runner.invoke(main_app, ["browser", "url", "terminal"])
 
     assert result.exit_code == 0
-    assert "https://terminal.summitflow.dev/" in result.output
+    assert "https://terminal.example.com/" in result.output
     assert "a-term hosts.browser_frontend" in result.output
 
 
@@ -1174,7 +1175,7 @@ def test_browser_open_resolves_project_target(monkeypatch) -> None:
         patch("cli.commands.browser._host_for_engine", return_value="browser"),
         patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
         patch("cli.commands.browser._default_browser_session", return_value="st-repo-1234"),
-        patch("cli.commands.browser.resolve_browser_location", return_value="https://terminal.summitflow.dev/"),
+        patch("cli.commands.browser.resolve_browser_location", return_value="https://terminal.example.com/"),
         patch("cli.commands.browser._run_browser_reaper"),
         patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0)) as run_agent,
     ):
@@ -1185,7 +1186,7 @@ def test_browser_open_resolves_project_target(monkeypatch) -> None:
         "--session",
         "st-repo-1234",
         "open",
-        "https://terminal.summitflow.dev/",
+        "https://terminal.example.com/",
     ]
 
 
@@ -1424,6 +1425,34 @@ def test_vm_destroy_confirms_then_calls_native_destroy() -> None:
     assert result.exit_code == 0
     confirm_gate.assert_called_once()
     assert fake.destroyed == ["101"]
+
+
+def test_proxmox_destroy_sends_purge_as_query_param() -> None:
+    config = ProxmoxConfig(
+        host="https://proxmox.example.test",
+        token_id="user@pam!token",
+        token_secret="secret",
+        node="node1",
+    )
+
+    class Response:
+        status_code = 200
+        text = "{}"
+
+        def json(self) -> dict[str, str]:
+            return {"data": "UPID:test"}
+
+    with (
+        patch("cli.lib.proxmox.httpx.request", return_value=Response()) as request,
+        patch("cli.lib.proxmox.time.sleep"),
+    ):
+        ProxmoxClient(config).destroy("101")
+
+    assert request.call_args_list[-1].args[:2] == (
+        "DELETE",
+        "https://proxmox.example.test/api2/json/nodes/node1/qemu/101?purge=1",
+    )
+    assert request.call_args_list[-1].kwargs["data"] is None
 
 
 def test_setup_services_dry_run_does_not_mutate() -> None:

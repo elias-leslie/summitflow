@@ -8,7 +8,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-_WORKSPACES_ROOT = Path(os.environ.get("ST_WORKSPACES_ROOT", "/srv/workspaces"))
+from app.utils.shared_paths import get_repo_root
+
+_WORKSPACES_ROOT = Path(os.environ.get("ST_WORKSPACES_ROOT", Path.home() / ".local" / "share" / "summitflow" / "workspaces"))
 _PROJECTS_ROOT = _WORKSPACES_ROOT / "projects"
 _MANIFEST_NAME = "project.identity.json"
 
@@ -20,12 +22,26 @@ def _read_manifest(path: str) -> dict[str, Any]:
 
 @lru_cache(maxsize=1)
 def _workspace_manifest_paths() -> tuple[str, ...]:
+    paths: list[str] = []
     if not _PROJECTS_ROOT.is_dir():
-        return ()
-    return tuple(
+        return _local_manifest_paths()
+    paths = [
         str(path)
         for path in sorted(_PROJECTS_ROOT.glob(f"*/{_MANIFEST_NAME}"))
         if path.is_file()
+    ]
+    paths.extend(_local_manifest_paths())
+    return tuple(dict.fromkeys(paths))
+
+
+@lru_cache(maxsize=1)
+def _local_manifest_paths() -> tuple[str, ...]:
+    repo_root = get_repo_root().resolve()
+    candidates = [repo_root / _MANIFEST_NAME]
+    if repo_root.parent.is_dir():
+        candidates.extend(sorted(repo_root.parent.glob(f"*/{_MANIFEST_NAME}")))
+    return tuple(
+        dict.fromkeys(str(path) for path in candidates if path.is_file())
     )
 
 

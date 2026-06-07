@@ -37,29 +37,29 @@ describe('api-config', () => {
     expect(getTtsBaseUrl()).toBe('http://localhost:8003')
   })
 
-  it('uses same-origin routing on summitflow.dev', () => {
-    mockBrowserLocation('https://dev.summitflow.dev')
+  it('uses same-origin routing on production host', () => {
+    mockBrowserLocation('https://summitflow.example.com')
 
     expect(getApiBaseUrl()).toBe('')
     expect(getWsUrl('/ws/execution/task-123')).toBe(
-      'wss://dev.summitflow.dev/ws/execution/task-123',
+      'wss://summitflow.example.com/ws/execution/task-123',
     )
     expect(getVoiceWsUrl()).toBe(
-      'wss://dev.summitflow.dev/api/voice/ws?user_id=summitflow_user&app=summitflow&mode=transcribe',
+      'wss://summitflow.example.com/api/voice/ws?user_id=summitflow_user&app=summitflow&mode=transcribe',
     )
-    expect(getTtsBaseUrl()).toBe('https://dev.summitflow.dev')
+    expect(getTtsBaseUrl()).toBe('https://summitflow.example.com')
   })
 
   it('uses same-origin routing on non-production LAN hosts', () => {
-    mockBrowserLocation('https://192.168.8.244')
+    mockBrowserLocation('https://192.0.2.44')
 
     expect(getApiBaseUrl()).toBe('')
     expect(getWsUrl('/ws/execution/task-123')).toBe(
-      'wss://192.168.8.244/ws/execution/task-123',
+      'wss://192.0.2.44/ws/execution/task-123',
     )
     expect(getVoiceWsUrl()).toBe(
-      'wss://192.168.8.244/api/voice/ws?user_id=summitflow_user&app=summitflow&mode=transcribe',
+      'wss://192.0.2.44/api/voice/ws?user_id=summitflow_user&app=summitflow&mode=transcribe',
     )
-    expect(getTtsBaseUrl()).toBe('https://192.168.8.244')
+    expect(getTtsBaseUrl()).toBe('https://192.0.2.44')
   })
 })

@@ -17,9 +17,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
-      - ./summitflow-schema.sql:/docker-entrypoint-initdb.d/summitflow-schema.sql:ro
-      - ./agent-hub-schema.sql:/docker-entrypoint-initdb.d/agent-hub-schema.sql:ro
-      - ./portfolio-ai-schema.sql:/docker-entrypoint-initdb.d/portfolio-ai-schema.sql:ro
+      - ./summitflow-schema.sql:/docker-entrypoint-initdb.d/summitflow-schema.dump:ro
+      - ./portfolio-ai-schema.sql:/docker-entrypoint-initdb.d/portfolio-ai-schema.dump:ro
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
@@ -247,11 +246,11 @@ services:
       INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
       VAPID_PUBLIC_KEY: "${VAPID_PUBLIC_KEY:-}"
       VAPID_PRIVATE_KEY: "${VAPID_PRIVATE_KEY:-}"
-      VAPID_SUBJECT: "${VAPID_SUBJECT:-mailto:admin@summitflow.dev}"
+      VAPID_SUBJECT: "${VAPID_SUBJECT:-mailto:admin@example.com}"
       HOME: "${HOST_HOME_PATH:?}"
       HOST_HOME_PATH: "${HOST_HOME_PATH:?Set HOST_HOME_PATH in .env}"
       PATH: "/app/.venv/bin:${HOST_HOME_PATH:?}/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-    command: ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8003"]
+    command: ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8003"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -305,7 +304,7 @@ services:
       INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
       VAPID_PUBLIC_KEY: "${VAPID_PUBLIC_KEY:-}"
       VAPID_PRIVATE_KEY: "${VAPID_PRIVATE_KEY:-}"
-      VAPID_SUBJECT: "${VAPID_SUBJECT:-mailto:admin@summitflow.dev}"
+      VAPID_SUBJECT: "${VAPID_SUBJECT:-mailto:admin@example.com}"
       HOME: "${HOST_HOME_PATH:?}"
       HOST_HOME_PATH: "${HOST_HOME_PATH:?Set HOST_HOME_PATH in .env}"
       PATH: "/app/.venv/bin:${HOST_HOME_PATH:?}/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

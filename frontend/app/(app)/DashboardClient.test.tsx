@@ -54,7 +54,7 @@ describe('DashboardClient', () => {
         {
           id: 'summitflow',
           name: 'SummitFlow',
-          base_url: 'https://dev.summitflow.dev',
+          base_url: 'https://summitflow.example.com',
           health_endpoint: '/health',
           created_at: '2026-03-12T12:00:00Z',
           stats: {
