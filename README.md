@@ -7,6 +7,8 @@ subtasks, quality gates, code-health scans, autonomous execution hooks, browser
 checks, backups, and operator-visible evidence. It is designed for developers
 running their own agent tooling, not as a hosted SaaS.
 
+![SummitFlow projects dashboard](docs/screenshots/dashboard.png)
+
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.13+-3776ab.svg)](https://python.org)
 [![Next.js](https://img.shields.io/badge/Next.js-16-000.svg)](https://nextjs.org)
