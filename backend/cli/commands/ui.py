@@ -13,14 +13,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 import typer
 
+from ..lib.usage import usage
 from ..output import output_error, output_json, output_success
 from ..output_context import OutputContext
 
@@ -35,7 +37,7 @@ def _ctx(ctx: typer.Context) -> OutputContext:
     return ctx.obj
 
 
-def _fail(message: str) -> None:
+def _fail(message: str) -> NoReturn:
     output_error(message)
     raise typer.Exit(1)
 
@@ -44,7 +46,7 @@ def _require(binary: str) -> str:
     path = shutil.which(binary)
     if not path:
         _fail(f"{binary} not installed (apt install it on the host)")
-    return path  # type: ignore[return-value]
+    return path
 
 
 def _x_env() -> dict[str, str]:
@@ -113,6 +115,29 @@ def _focused_window() -> str:
     """
     act = _run(["xdotool", "getactivewindow"]) if shutil.which("xdotool") else None
     return act.stdout.strip() if act and act.returncode == 0 and act.stdout.strip() else "root"
+
+
+def _window_geometry(wid: int) -> tuple[int, int, int, int]:
+    """Absolute (x, y, w, h) for a window id, from wmctrl (same source as `windows`)."""
+    _require("wmctrl")
+    res = _run(["wmctrl", "-lG"])
+    if res.returncode != 0:
+        _fail(f"wmctrl failed: {res.stderr.strip()}")
+    for line in res.stdout.splitlines():
+        parts = line.split(None, 7)
+        if len(parts) >= 8 and int(parts[0], 16) == wid:
+            return int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5])
+    _fail(f"window {wid} not found in wmctrl list")
+
+
+def _display_geometry() -> tuple[int, int]:
+    """Whole-display (width, height) for full-screen capture."""
+    _require("xdotool")
+    res = _run(["xdotool", "getdisplaygeometry"])
+    if res.returncode != 0:
+        _fail(f"display geometry failed: {res.stderr.strip()}")
+    w, h = res.stdout.split()[:2]
+    return int(w), int(h)
 
 
 def _identify_dims(path: str) -> tuple[int, int]:
@@ -406,6 +431,112 @@ def grab(
                 "image_tokens": img_tokens,
             }
         )
+
+
+@app.command()
+@usage(
+    surface="st.ui.gif",
+    cmd="st ui gif -w <window> -t <seconds> -o out.gif",
+    when="record a short animated GIF of a window/region — UI demos, bug repros, PR/launch evidence",
+    precautions=(
+        "ffmpeg x11grab + palette encode; -t bounds the recording. For an interaction demo run it backgrounded and drive `st ui click/type/key` during the window",
+        "the GIF is publishable output — pre-stage panes and keep secrets/real paths off-screen",
+        "--width caps output width (default 960; 0 = native), --fps default 12; longer/wider/faster = larger file",
+    ),
+    task_types=("frontend", "verification"),
+    tier="reference",
+)
+def gif(
+    ctx: typer.Context,
+    window: Annotated[str | None, typer.Option("--window", "-w", help="Window id or name substring")] = None,
+    full: Annotated[bool, typer.Option("--full", help="Capture the whole screen")] = False,
+    region: Annotated[str | None, typer.Option("--region", help="Capture region WxH+X+Y")] = None,
+    duration: Annotated[float, typer.Option("--duration", "-t", help="Seconds to record")] = 8.0,
+    fps: Annotated[int, typer.Option("--fps", help="Frames per second")] = 12,
+    width: Annotated[int, typer.Option("--width", help="Output width in px (0 = native, keeps aspect)")] = 960,
+    out_path: Annotated[str | None, typer.Option("--out", "-o", help="Output GIF path")] = None,
+) -> None:
+    """Record a window or region to a looping animated GIF (ffmpeg x11grab + palette).
+
+    `-t` bounds the recording, so for an interaction demo run this backgrounded and
+    drive the UI during the window:
+
+        st ui gif -w "A-Term" -t 12 -o /tmp/demo.gif &    # records 12s, then exits
+        st ui activate "A-Term"; st ui click 200 80; ...  # drive panes within 12s
+
+    Examples: st ui gif -w aico -t 6 -o /tmp/aico.gif |
+    st ui gif --region 1280x720+0+0 -t 10 --fps 15 -o /tmp/clip.gif
+    """
+    octx = _ctx(ctx)
+    _require("ffmpeg")
+    if duration <= 0:
+        _fail("--duration must be > 0")
+    if fps <= 0:
+        _fail("--fps must be > 0")
+    dest = out_path or str(_SHOT_DIR / f"st-ui-gif-{int(time.time())}.gif")
+
+    if region:
+        m = re.fullmatch(r"\s*(\d+)x(\d+)\+(\d+)\+(\d+)\s*", region)
+        if not m:
+            _fail("--region must be WxH+X+Y")
+        gw, gh, gx, gy = (int(g) for g in m.groups())
+    elif full:
+        gw, gh = _display_geometry()
+        gx = gy = 0
+    else:
+        target = str(_resolve_window(window)) if window else _focused_window()
+        if target == "root":
+            gw, gh = _display_geometry()
+            gx = gy = 0
+        else:
+            gx, gy, gw, gh = _window_geometry(int(target))
+
+    # ffmpeg x11grab wants display.screen (":1.0"), not bare ":1".
+    display = _x_env()["DISPLAY"]
+    if "." not in display:
+        display += ".0"
+
+    # Linear chain (fps + optional downscale) feeding a split → per-clip palette,
+    # the standard high-quality ffmpeg GIF path. stats_mode=diff favors the moving
+    # region (most of a screen recording is static), bayer dither keeps it crisp.
+    chain = f"fps={fps}"
+    if width and width > 0:
+        chain += f",scale={width}:-2:flags=lanczos"
+    vf = (
+        f"{chain},split[s0][s1];"
+        "[s0]palettegen=stats_mode=diff[p];"
+        "[s1][p]paletteuse=dither=bayer:bayer_scale=3"
+    )
+    # -t MUST precede -i (input-duration limit): as an output option it never
+    # stops the live x11grab, so palettegen waits for an EOF that never comes and
+    # the whole graph deadlocks. As an input option x11grab stops after `duration`
+    # and EOFs, which is also the wall-clock bound on the capture.
+    cmd = [
+        "ffmpeg", "-y", "-nostdin",
+        "-f", "x11grab",
+        "-draw_mouse", "1",
+        "-framerate", str(fps),
+        "-video_size", f"{gw}x{gh}",
+        "-t", str(duration),
+        "-i", f"{display}+{gx},{gy}",
+        "-vf", vf,
+        "-loop", "0",
+        dest,
+    ]
+    res = _run(cmd)
+    if res.returncode != 0:
+        tail = " / ".join((res.stderr or "").strip().splitlines()[-2:]) or "ffmpeg error"
+        _fail(f"gif capture failed: {tail}")
+    if not Path(dest).is_file() or Path(dest).stat().st_size == 0:
+        _fail("gif capture produced no output")
+    # Frame 0 only — identify on a whole multi-frame GIF concatenates per-frame
+    # dims ("%w %h" repeated), which mangles the parsed height.
+    w, h = _identify_dims(f"{dest}[0]")
+    size = Path(dest).stat().st_size
+    if octx.is_compact:
+        print(f"gif:path={dest}|w={w}|h={h}|fps={fps}|dur={duration}|size={_human_bytes(size)}")
+    else:
+        output_json({"path": dest, "w": w, "h": h, "fps": fps, "duration": duration, "bytes": size})
 
 
 @app.command()
