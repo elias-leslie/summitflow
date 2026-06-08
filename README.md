@@ -7,7 +7,9 @@ subtasks, quality gates, code-health scans, autonomous execution hooks, browser
 checks, backups, and operator-visible evidence. It is designed for developers
 running their own agent tooling, not as a hosted SaaS.
 
-![SummitFlow projects dashboard](docs/screenshots/dashboard.png)
+![SummitFlow — task orchestration and evidence capture for AI-assisted development](docs/images/summitflow-demo.gif)
+
+*One control plane for your projects and agent lanes: the project dashboard, the agent task pipeline, live runtime and GPU health, and a built-in feedback loop.*
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.13+-3776ab.svg)](https://python.org)
