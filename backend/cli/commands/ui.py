@@ -728,6 +728,47 @@ def type_text(
     output_success(f"typed {len(text)} chars")
 
 
+# ydotool 0.1.8 resolves a key name against a curated subset of the Linux KEY_*
+# table; an UNRECOGNIZED token silently degrades to the keycode of its first
+# character (so `key Return` types "r", `key Escape` types "e"). Map the common
+# X11/xdotool keysym names callers actually type onto tokens ydotool recognizes.
+# Every target below is verified to emit its own keycode on ydotool 0.1.8 (e.g.
+# `enter`/`esc`/`pageup` work, but `space`/`leftmeta`/`next` do not — see
+# tests/cli/test_ui_key.py).
+_KEY_ALIASES = {
+    "return": "enter",
+    "escape": "esc",
+    "space": " ",  # ydotool emits space only from a literal " " token, not "space"
+    "spacebar": " ",
+    "del": "delete",
+    "ins": "insert",
+    "prior": "pageup",
+    "page_up": "pageup",
+    "pgup": "pageup",
+    "next": "pagedown",
+    "page_down": "pagedown",
+    "pgdn": "pagedown",
+    "pgdown": "pagedown",
+    "caps_lock": "capslock",
+    "num_lock": "numlock",
+    "scroll_lock": "scrolllock",
+    "win": "meta",
+    "cmd": "meta",
+    "super_l": "super",
+    "super_r": "super",
+}
+
+
+def _ydotool_chord(keys: str) -> str:
+    """Translate X11/xdotool key names to ydotool's recognized tokens.
+
+    Splits on '+' so each modifier and key in a chord is mapped independently;
+    tokens ydotool already handles (single chars, F-keys, native names like
+    `enter`/`tab`/`ctrl`) pass through unchanged.
+    """
+    return "+".join(_KEY_ALIASES.get(p.lower(), p) for p in keys.split("+"))
+
+
 @app.command()
 def key(
     ctx: typer.Context,
@@ -736,9 +777,11 @@ def key(
     """Send a key or chord to the focused window. Example: st ui key ctrl+c
 
     Chord syntax: modifiers and keys joined by '+', e.g. ctrl+c, alt+F4, Return.
-    Goes to the focused window via uinput — run `st ui activate <win>` first.
+    X11/xdotool key names (Return, Escape, Page_Up, space, …) are accepted and
+    translated to ydotool's names. Goes to the focused window via uinput — run
+    `st ui activate <win>` first.
     """
-    _ydotool(["key", keys])
+    _ydotool(["key", _ydotool_chord(keys)])
     output_success(f"sent {keys}")
 
 
