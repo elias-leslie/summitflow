@@ -1015,6 +1015,70 @@ def test_local_ai_agent_keeps_custom_launch_warning(monkeypatch: pytest.MonkeyPa
     assert result.stdout == warning
 
 
+_DAEMON_RUNNING_WARNING = (
+    "⚠ --executable-path, --profile, --headed ignored: daemon already running. "
+    "Use 'agent-browser close' first to restart with new options.\n"
+)
+
+
+def test_visible_window_ignored_emits_hint_when_daemon_running(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    monkeypatch.setenv("ST_BROWSER_LOCAL_AI_VISIBLE", "1")
+    with (
+        patch(
+            "cli.commands.browser._run_local_ai_agent",
+            return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=_DAEMON_RUNNING_WARNING),
+        ),
+        patch("cli.commands.browser.emit_result_or_details"),
+    ):
+        rc = browser._run_local_ai_browser_command("snapshot", ["snapshot"])
+
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "visible window mode requested" in err
+    assert "st browser close" in err
+
+
+def test_visible_window_hint_silent_in_default_minimized_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    with (
+        patch(
+            "cli.commands.browser._run_local_ai_agent",
+            return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=_DAEMON_RUNNING_WARNING),
+        ),
+        patch("cli.commands.browser.emit_result_or_details"),
+    ):
+        rc = browser._run_local_ai_browser_command("snapshot", ["snapshot"])
+
+    assert rc == 0
+    assert "visible window mode requested" not in capsys.readouterr().err
+
+
+def test_visible_window_hint_silent_when_daemon_not_running(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    monkeypatch.setenv("ST_BROWSER_LOCAL_AI_VISIBLE", "1")
+    with (
+        patch(
+            "cli.commands.browser._run_local_ai_agent",
+            return_value=subprocess.CompletedProcess([], 0, stdout="snapshot\n", stderr=""),
+        ),
+        patch("cli.commands.browser.emit_result_or_details"),
+    ):
+        rc = browser._run_local_ai_browser_command("snapshot", ["snapshot"])
+
+    assert rc == 0
+    assert "visible window mode requested" not in capsys.readouterr().err
+
+
 def test_local_ai_screenshot_path_resolves_relative_path(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1045,6 +1109,18 @@ def test_local_ai_agent_args_headless_omits_headed(monkeypatch: pytest.MonkeyPat
         args = browser._local_ai_agent_args(["open", "http://app.lan/"])
     assert "--headed" not in args
     assert "--args" not in args
+
+
+def test_explicit_visible_overrides_ambient_headless(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A host-wide ST_BROWSER_LOCAL_AI_HEADLESS=1 default must not silently swallow
+    # a deliberate per-command ST_BROWSER_LOCAL_AI_VISIBLE=1 request.
+    _clear_local_ai_window_env(monkeypatch)
+    monkeypatch.setenv("ST_BROWSER_LOCAL_AI_HEADLESS", "1")
+    monkeypatch.setenv("ST_BROWSER_LOCAL_AI_VISIBLE", "1")
+    assert browser._local_ai_window_mode() == "visible"
+    with patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
+        args = browser._local_ai_agent_args(["open", "http://app.lan/"])
+    assert "--headed" in args
 
 
 def test_local_ai_agent_args_respects_user_supplied_args(monkeypatch: pytest.MonkeyPatch) -> None:

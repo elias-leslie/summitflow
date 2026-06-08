@@ -34,7 +34,7 @@ from ..details import (
 )
 from ..lib import browser_check, browser_support
 from ..lib.usage import usage
-from ..output import output_error
+from ..output import output_error, output_warning
 
 app = typer.Typer(
     help="Remote browser automation. Uses the managed browser runner.",
@@ -292,14 +292,19 @@ def _system_chrome_path() -> str:
 def _local_ai_window_mode() -> str:
     """Resolve how the local-AI Chrome window should present.
 
-    "headless" -> no window (ST_BROWSER_LOCAL_AI_HEADLESS=1)
     "visible"  -> normal headed window for watching (ST_BROWSER_LOCAL_AI_VISIBLE=1)
+    "headless" -> no window (ST_BROWSER_LOCAL_AI_HEADLESS=1)
     "minimized"-> default: headed but iconified out of the way.
+
+    VISIBLE is resolved before HEADLESS: an explicit per-command
+    ST_BROWSER_LOCAL_AI_VISIBLE=1 is a deliberate "watch this" request and must
+    win over an ambient ST_BROWSER_LOCAL_AI_HEADLESS=1 (commonly exported as a
+    host-wide default), otherwise the documented visible flag is silently ignored.
     """
-    if os.environ.get(_LOCAL_AI_HEADLESS_ENV, "").strip() == "1":
-        return "headless"
     if os.environ.get(_LOCAL_AI_VISIBLE_ENV, "").strip() == "1":
         return "visible"
+    if os.environ.get(_LOCAL_AI_HEADLESS_ENV, "").strip() == "1":
+        return "headless"
     return "minimized"
 
 
@@ -353,6 +358,30 @@ def _local_ai_uses_default_launch(args: list[str]) -> bool:
 def _is_default_daemon_warning(line: str) -> bool:
     stripped = line.strip()
     return stripped.startswith("⚠ ") and "ignored: daemon already running" in stripped
+
+
+def _daemon_already_running(result: subprocess.CompletedProcess[str]) -> bool:
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    return "ignored: daemon already running" in output
+
+
+def _warn_if_visible_window_ignored(result: subprocess.CompletedProcess[str]) -> None:
+    """Surface an explicit hint when an on-screen window was requested but the
+    running daemon swallowed the window flags.
+
+    Visible mode passes --headed/--profile/--executable-path, which the
+    agent-browser daemon ignores once it is already running (in headless or
+    minimized mode). The raw warning only mentions the ignored launch flags, so
+    an agent that needs a watchable/recordable window gets headless with no clear
+    signal. Make the consequence and the st-surface remediation explicit.
+    """
+    if _local_ai_window_mode() != "visible" or not _daemon_already_running(result):
+        return
+    output_warning(
+        "visible window mode requested but a browser daemon is already running in "
+        "another mode — no on-screen window will appear. Run `st browser close` to "
+        "stop it, then retry."
+    )
 
 
 def _without_default_daemon_warning(
@@ -816,6 +845,7 @@ def _run_local_ai_browser_command(command: str, browser_args: list[str]) -> int:
     resolved_browser_args = _with_resolved_local_screenshot_path(resolved_browser_args, command)
     result = _run_local_ai_agent(resolved_browser_args)
     emit_result_or_details(current_root(), f"browser-local-ai-{command or 'command'}", "BROWSER", result)
+    _warn_if_visible_window_ignored(result)
     return result.returncode
 
 
