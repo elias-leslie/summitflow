@@ -26,6 +26,89 @@ running their own agent tooling, not as a hosted SaaS.
   agent memory.
 - Captures UI/API smoke-test evidence when a browser runtime is configured.
 
+## Capabilities
+
+SummitFlow is driven by **`st`**, a single CLI with ~36 command groups and ~290
+subcommands over a FastAPI backend (~33 routers, ~280 routes), a Next.js operator
+UI (~23 pages), and ~36 Hatchet workflows. Output is compact JSON by default, with
+`--human` / `--compact` modes.
+
+**Task lifecycle**
+
+- `st pulse` (cross-agent coordination + preflight gate), `st claim`, `st context`,
+  `st ready`, `st create`/`update`/`list`/`log`/`export`, `st done` (one-shot
+  check + checkpoint + publish + closure), `st abandon` (rollback tracked changes).
+- Tasks/subtasks/steps/dependencies with tiers, complexity, claim leasing, and
+  evidence stored as JSONB (`verification_result`, `review_result`, `ai_review`).
+- `st subtask`, `st dep`, `st note`, `st mandates`, `st critique` (second opinion),
+  `st autocode` (queue a task for autonomous execution).
+
+**Quality gates and code health**
+
+- `st check` wraps ruff, types, pytest, biome, tsc, vitest, sqlfluff, squawk, and
+  GitHub **CodeQL** alert checks, plus an isolated `cleanroom` run — with
+  `--quick` / `--changed-only` / `--frontend-only` profiles.
+- `st health` (quality-gate status), an LLM **auto-fix** agent with pattern memory,
+  `radon` complexity assessment, and a self-healing monitor.
+- `st graph` (Graphify topology + Fallow JS/TS audits) and `st search` (precision
+  code search over symbols/endpoints/tables).
+
+**Version control (jj-first)**
+
+- `st commit` (st-owned commit/publish with check-gate and `--push`), `st jj` (full
+  Jujutsu workflow incl. `revert` to roll back already-pushed work), `st git`
+  (inspection), `st vcs doctor`/`reconcile` (cross-repo hygiene), `st checkpoints`,
+  `st cleanup`.
+
+**Services, runtime, and data**
+
+- `st service` (rebuild = build + migrate + systemd-sync + health), `st runtime`
+  (CPU/mem/GPU metrics), `st docker` (compose control + ephemeral test envs),
+  `st db` (tables/schema/query/ddl/migrate + a Pgweb workbench), `st logs`,
+  `st vm` (Proxmox test-VM lifecycle), `st setup`.
+
+**Browser, UI, and evidence capture (the differentiator)**
+
+- `st browser` (managed remote Chrome: open/check/screenshot/snapshot/eval, local-AI
+  profile by default with optional Proxmox/VM isolation), `st ui` (X11 desktop
+  control: screenshot, OCR, GIF, click/type/key), `st web` (Agent-Hub-routed web
+  search/research/fetch), `st design` (AI or hand-authored HTML mockups + asset
+  generation), `st selection` (Aico selection bus).
+- Autonomous runs capture page screenshots, route/health status, and console-error
+  counts, and analyze screenshots with a vision model — attached to the task.
+
+**Agents and AI (routed through Agent Hub)**
+
+- `st agent` (real tool-loop sessions), `st agents` (agent definitions),
+  `st complete` (completions with memory injection / thinking / streaming),
+  `st claude` (Claude Code dispatch: task / batch / orchestrator), `st models`,
+  `st prompt` (CRUD + revisions + YAML import/export), `st persona` (manage "Jenny"),
+  `st memory` (save/search/tier/export), `st sessions` + `st session-events`
+  (cross-project agent observability and ownership lanes), `st tools` (operator
+  tool catalog + cost/governance telemetry), `st lease` (file-level coordination
+  across parallel agents).
+
+**Autonomous orchestration**
+
+- `st autonomous` and an end-to-end pipeline (ideation → triage → planning →
+  critique → execution → review → verification → escalation) on Hatchet, with
+  scheduled work-pickup, task generation, tool governance, self-healing, and
+  production smoke tests. `st refactor` regenerates refactor tasks from a scan.
+
+**Backups, snapshots, and recovery**
+
+- `st snap` / `snaps` / `recover` / `rollback` (Btrfs per-project snapshots;
+  `recover` clones into a sibling project), and `st backup` (native archive engine
+  with SMB and Veeam targets, `pg_dumpall` infra backups, scheduling, and
+  restore-drill testing).
+
+**Knowledge and coordination**
+
+- `st wiki` (markdown vault), `st skills` (harness-neutral agent skills via symlink
+  distribution), `st feedback` (agent feedback loop), `st pulsebrief`,
+  `st projects`, and `st portfolio` (agent-facing analytics delegated to
+  portfolio-ai).
+
 ## How it compares
 
 Most agent tooling verifies work by trusting the agent's own narration —
@@ -203,7 +286,7 @@ Optional values enable integrations:
   `SUMMITFLOW_REQUEST_SOURCE` connect SummitFlow to Agent Hub.
 - `HATCHET_CLIENT_TOKEN`, `HATCHET_CLIENT_HOST_PORT`, and
   `HATCHET_CLIENT_TLS_STRATEGY` enable Hatchet workers.
-- `VAPID_*` values enable web-push notifications.
+- `VAPID_*` values configure web-push notifications, which are delivered through the Agent Hub push service.
 - `SMB_*` values enable the optional SMB backup target.
 - Browser-runtime variables are optional; if absent, browser evidence features
   should fail clearly instead of crashing the core app.
