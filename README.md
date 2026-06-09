@@ -26,6 +26,27 @@ running their own agent tooling, not as a hosted SaaS.
   agent memory.
 - Captures UI/API smoke-test evidence when a browser runtime is configured.
 
+## How it compares
+
+Most agent tooling verifies work by trusting the agent's own narration —
+*"I changed the files, the tests pass."* SummitFlow treats that as a claim to be
+checked, not proof. Each task captures **evidence that the work actually ran** —
+UI screenshots, check/test output, and route status — attached to the task and
+visible to the operator.
+
+| | SummitFlow | Temporal · Prefect · Hatchet | Devin · OpenHands |
+|---|:---:|:---:|:---:|
+| Purpose-built for AI-assisted dev work | ✅ | generic background jobs | ✅ |
+| Proof-it-ran evidence captured per task | ✅ screenshots · checks · route status | generic logs/artifacts you populate | transcript / trajectory logs |
+| Operator UI over projects **and** task lanes | ✅ | run-level only | ✅ |
+| `st` CLI for tasks, checks, DB, backups, browser | ✅ | — | — |
+| Self-hosted, no SaaS required | ✅ | ✅ | Devin is SaaS |
+
+SummitFlow isn't a general workflow engine — it runs *on* one (Hatchet) and adds
+the AI-dev task model, quality gates, and evidence capture on top.
+
+> ⭐ If this approach resonates, a star helps other developers find it.
+
 ## Requirements
 
 Native development:
