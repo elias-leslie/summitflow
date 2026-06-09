@@ -88,7 +88,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
     cwd = _workdir(root, config)
     binary = str(config.get("binary") or name)
     base_args = shlex.split(str(config.get("args") or ""))
-    base_args, extra_args = adjusted_tool_args(name, base_args, extra_args)
+    base_args, extra_args = adjusted_tool_args(name, base_args, extra_args, root)
     command = [*_resolve_command(binary, root, cwd, base_args), *extra_args]
     label = str(config.get("label") or name.upper())
     print(f"{label}:{name}:start")
