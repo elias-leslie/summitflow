@@ -28,9 +28,9 @@ running their own agent tooling, not as a hosted SaaS.
 
 ## Capabilities
 
-SummitFlow is driven by **`st`**, a single CLI with ~36 command groups and ~290
-subcommands over a FastAPI backend (~33 routers, ~280 routes), a Next.js operator
-UI (~23 pages), and ~36 Hatchet workflows. Output is compact JSON by default, with
+SummitFlow is driven by **`st`**, a single CLI with ~36 command groups and ~266
+subcommands over a FastAPI backend (~29 routers, ~280 routes), a Next.js operator
+UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, with
 `--human` / `--compact` modes.
 
 **Task lifecycle**
