@@ -32,6 +32,7 @@ logger = get_logger(__name__)
 
 _SEARCH_LIMIT = 5
 _ENTRY_LIMIT = 12
+_TEXT_SECTION_BUDGET_SHARE = 0.3
 _PRECISION_INDEX_MAX_AGE = timedelta(minutes=30)
 _INLINE_REFRESH_REASONS = {
     "missing_file_index",
@@ -353,19 +354,38 @@ def _retrieve_and_assemble(
 
     used_symbol_first = bool(symbol_section)
     used_fallback = bool(text_section)
-    body = "\n\n".join(section for section in (symbol_section, text_section) if section)
 
     return _RetrievalState(
         symbols=symbols,
         symbol_section=symbol_section,
         text_results=text_results,
         text_section=text_section,
-        truncated_body=truncate_to_tokens(body, budget_tokens) if body else "",
+        truncated_body=_truncate_sections(symbol_section, text_section, budget_tokens),
         used_symbol_first=used_symbol_first,
         used_fallback=used_fallback,
         index_status=index_status,
         refreshed_index=refreshed_index,
     )
+
+
+def _truncate_sections(symbol_section: str, text_section: str, budget_tokens: int) -> str:
+    """Fit both sections within the budget without losing the text matches.
+
+    Combined mode means symbol coverage was judged weak, so the text matches
+    are the corrective signal; plain tail truncation would cut exactly those
+    lines first. When both sections together exceed the budget, cap the text
+    section at a share of the budget and give symbols the remainder.
+    """
+    if not symbol_section or not text_section:
+        body = symbol_section or text_section
+        return truncate_to_tokens(body, budget_tokens) if body else ""
+    combined = f"{symbol_section}\n\n{text_section}"
+    if estimate_tokens(combined) <= budget_tokens:
+        return combined
+    text_budget = min(estimate_tokens(text_section), int(budget_tokens * _TEXT_SECTION_BUDGET_SHARE))
+    text_part = truncate_to_tokens(text_section, text_budget)
+    symbol_part = truncate_to_tokens(symbol_section, budget_tokens - estimate_tokens(text_part))
+    return f"{symbol_part}\n\n{text_part}"
 
 
 def _make_prompt_context(mode: str, metadata: dict[str, object], truncated_body: str) -> str:

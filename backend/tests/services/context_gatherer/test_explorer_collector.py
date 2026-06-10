@@ -228,6 +228,57 @@ def test_collect_precision_code_search_context_probes_text_for_weak_multiword_sy
     assert "frontend/components/design/UiDesignWorkspace.tsx:762" in result.prompt_context
 
 
+def test_collect_precision_code_search_context_combined_budget_keeps_text_section() -> None:
+    oversized_symbol_section = "## Relevant Symbols\n\n" + "\n".join(
+        f"- `get_explorer_summary_{i}` backend/app/services/explorer/index_generator.py:{i}" for i in range(60)
+    )
+    with (
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_and_rank_symbols",
+            return_value=[
+                {
+                    "symbol_id": "backend/app/services/explorer/index_generator.py::get_explorer_summary#function",
+                    "qualified_name": "get_explorer_summary",
+                    "name": "get_explorer_summary",
+                    "kind": "function",
+                    "file_path": "backend/app/services/explorer/index_generator.py",
+                    "start_line": 122,
+                    "end_line": 141,
+                    "signature": "def get_explorer_summary(project_id: str) -> dict[str, Any]",
+                    "summary": "Get Explorer trust metadata.",
+                }
+            ],
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.build_symbol_section",
+            return_value=oversized_symbol_section,
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_text",
+            return_value={
+                "items": [
+                    {
+                        "path": "frontend/components/design/UiDesignWorkspace.tsx",
+                        "line": 762,
+                        "content": "Pixel audit",
+                        "language": "typescript",
+                    }
+                ],
+                "count": 1,
+                "files_searched": 120,
+                "truncated": False,
+            },
+        ),
+    ):
+        result = collect_precision_code_search_context("project-1", ["Pixel audit"], budget_tokens=300)
+
+    # Symbols alone exceed the budget; the corrective text matches must survive truncation.
+    assert result.metadata["used_symbol_first"] is True
+    assert result.metadata["used_fallback"] is True
+    assert "frontend/components/design/UiDesignWorkspace.tsx:762" in result.prompt_context
+    assert "[... truncated ...]" in result.prompt_context
+
+
 def test_collect_precision_code_search_context_keeps_strong_multiword_symbol_hits() -> None:
     with (
         patch(
