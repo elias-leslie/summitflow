@@ -33,7 +33,7 @@ def generate_hint(query: str, mode: str, metadata: dict[str, Any]) -> str | None
         return "fell back to text search (no symbol match). Try a specific identifier like `FunctionName` or `function_name`."
 
     symbol_count = metadata.get("symbol_count", 0)
-    if mode == "symbol-first" and symbol_count > 0:
+    if mode in ("symbol-first", "combined") and symbol_count > 0:
         if has_path_segments(queries):
             return "path terms in symbol search may favor incidental mentions. Try `st search --path <subtree> --text <query>` for subtree file-content matches."
         if is_short_or_generic(queries):

@@ -245,6 +245,8 @@ def _emit_query_output(query: str, result: dict[str, Any], text: bool, symbols: 
     when="repo/code discovery; before adding any function/endpoint/command/component — search first and extend a close match instead of writing new",
     precautions=(
         "prefer over rg/grep/find/st memory search",
+        "best with 1-4 identifier-shaped terms (CamelCase/snake_case/filenames); for prose questions use --text with a literal phrase",
+        "if mode=text-fallback or empty, reshape the query (different identifier, --text phrase, or --file/--path) — never retry verbatim",
         "on a close match, extend/reuse it rather than adding a near-duplicate",
     ),
     tier="mandate",

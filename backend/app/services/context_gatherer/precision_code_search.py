@@ -15,7 +15,7 @@ from ._precision_query import (
     has_explicit_code_signal,
     is_import_query,
     is_natural_language_query,
-    looks_like_workflow_meta_query,
+    meaningful_terms,
     nl_to_symbol_terms,
     normalize_queries,
     split_path_and_symbol_terms,
@@ -280,7 +280,7 @@ def _symbol_hits_cover_plain_phrase(
 ) -> bool:
     """Return True when at least one symbol covers all plain query words."""
     combined = " ".join(normalized_queries).strip()
-    terms = [term for term in normalize_match_text(combined).split() if len(term) >= 3]
+    terms = meaningful_terms(normalize_match_text(combined))
     if len(terms) < 2 or has_explicit_code_signal(normalized_queries):
         return True
 
@@ -307,9 +307,10 @@ def _text_fallback(
 ) -> tuple[dict[str, Any], str]:
     """Run text search as a fallback when symbol search yields nothing.
 
-    Tries the full phrase first.  When that produces no matches and the
-    query has multiple words, retries with the longest individual term
-    to surface at least *some* relevant content.
+    Searches the full phrase only. Single-word retries surface whichever
+    word is most common in the repo — junk matches that cost tokens and
+    mislead the caller — so a phrase miss returns empty and the CLI hint
+    asks for a reshaped query instead.
     """
     _empty: dict[str, Any] = {"count": 0, "files_searched": 0, "items": [], "truncated": False}
     if symbol_section and not force:
@@ -321,20 +322,6 @@ def _text_fallback(
         text_results = search_text(project_id, text_query, limit=_ENTRY_LIMIT)
     else:
         text_results = search_text(project_id, text_query, limit=_ENTRY_LIMIT, path_prefix=path_prefix)
-
-    # If phrase search found nothing, try individual terms (longest first)
-    if not text_results.get("items") and " " in text_query:
-        terms: list[str] = sorted(text_query.split(), key=lambda term: len(term), reverse=True)
-        for term in terms:
-            if len(term) < 3:
-                continue
-            if path_prefix is None:
-                term_results = search_text(project_id, term, limit=_ENTRY_LIMIT)
-            else:
-                term_results = search_text(project_id, term, limit=_ENTRY_LIMIT, path_prefix=path_prefix)
-            if term_results.get("items"):
-                text_results = term_results
-                break
 
     return text_results, build_text_section(text_results)
 
@@ -364,9 +351,9 @@ def _retrieve_and_assemble(
         and not _symbol_hits_cover_plain_phrase(normalized_queries, symbols),
     )
 
-    used_symbol_first = bool(symbol_section) and not bool(text_section)
-    used_fallback = bool(text_section) and not used_symbol_first
-    body = symbol_section if used_symbol_first else text_section
+    used_symbol_first = bool(symbol_section)
+    used_fallback = bool(text_section)
+    body = "\n\n".join(section for section in (symbol_section, text_section) if section)
 
     return _RetrievalState(
         symbols=symbols,
@@ -402,11 +389,6 @@ def collect_precision_code_search_context(
     normalized_queries = normalize_queries(queries)
     if not normalized_queries:
         return PrecisionCodeSearchResult(prompt_context="", metadata={"query_count": 0})
-    if looks_like_workflow_meta_query(normalized_queries):
-        return PrecisionCodeSearchResult(
-            prompt_context="",
-            metadata={"query_count": len(normalized_queries), "skipped_reason": "workflow_meta_low_signal"},
-        )
 
     state = _retrieve_and_assemble(
         project_id,
@@ -422,7 +404,14 @@ def collect_precision_code_search_context(
         path_prefix=path_prefix,
     )
 
-    mode = "symbol-first" if state.used_symbol_first else ("text-fallback" if state.truncated_body else "empty")
+    if state.used_symbol_first and state.used_fallback:
+        mode = "combined"
+    elif state.used_symbol_first:
+        mode = "symbol-first"
+    elif state.truncated_body:
+        mode = "text-fallback"
+    else:
+        mode = "empty"
     _log_result(project_id, metadata, mode)
 
     if not state.truncated_body:

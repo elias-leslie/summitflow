@@ -6,6 +6,9 @@ import re
 
 _CAMEL_SPLIT_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
+# English function words only. Domain vocabulary (workflow, validation, dispatch,
+# queue, ...) must NOT appear here: those words name real code in indexed projects
+# and filtering them suppresses legitimate searches.
 _STOP_WORDS = {
     "the",
     "and",
@@ -16,27 +19,9 @@ _STOP_WORDS = {
     "from",
     "into",
     "using",
-    "make",
-    "task",
-    "code",
-    "shared",
-    "path",
-    "workflow",
-    "validation",
-    "dispatch",
-    "readiness",
-    "reconciliation",
-    "friction",
-    "signal",
-    "temporary",
-    "queue",
-    "summary",
-    "closure",
-    "ergonomics",
-    "context",
-    "task-system",
     "how",
     "does",
+    "did",
     "what",
     "where",
     "when",
@@ -50,10 +35,29 @@ _STOP_WORDS = {
     "can",
     "not",
     "have",
+    "has",
+    "had",
     "been",
+    "are",
+    "was",
+    "were",
+    "will",
+    "would",
+    "could",
     "should",
     "about",
     "there",
+    "their",
+    "they",
+    "them",
+    "then",
+    "than",
+    "also",
+    "just",
+    "only",
+    "while",
+    "these",
+    "those",
     "after",
     "before",
     "between",
@@ -63,26 +67,6 @@ _STOP_WORDS = {
     "every",
     "some",
     "other",
-}
-_WORKFLOW_META_TERMS = {
-    "workflow",
-    "validation",
-    "dispatch",
-    "readiness",
-    "reconciliation",
-    "cleanup",
-    "status",
-    "coordination",
-    "friction",
-    "signal",
-    "temporary",
-    "queue",
-    "residue",
-    "closure",
-    "citation",
-    "syncable",
-    "lane",
-    "ergonomics",
 }
 _CODE_SIGNAL_TERMS = {
     "api",
@@ -292,10 +276,9 @@ def has_explicit_code_signal(queries: list[str]) -> bool:
     return any(term in combined for term in _CODE_SIGNAL_TERMS)
 
 
-def looks_like_workflow_meta_query(queries: list[str]) -> bool:
-    combined = " ".join(queries).lower()
-    workflow_hits = sum(1 for term in _WORKFLOW_META_TERMS if term in combined)
-    return workflow_hits >= 2 and not has_explicit_code_signal(queries)
+def meaningful_terms(text: str) -> list[str]:
+    """Tokens of *text* with English stop words and short fragments removed."""
+    return [term for term in text.split() if len(term) >= 3 and term not in _STOP_WORDS]
 
 
 # ---------------------------------------------------------------------------

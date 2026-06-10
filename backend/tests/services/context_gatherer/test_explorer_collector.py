@@ -73,16 +73,32 @@ def test_collect_precision_code_search_context_tracks_token_savings() -> None:
     assert "Exact Source Slices" in result.prompt_context
 
 
-def test_collect_precision_code_search_context_skips_workflow_meta_queries() -> None:
-    result = collect_precision_code_search_context(
-        "project-1",
-        [
-            "Run one no-code autonomous validation task through the updated workflow and confirm it no longer fails on missing work product or irrelevant Precision Code Search injection."
-        ],
-    )
+def test_collect_precision_code_search_context_runs_workflow_vocabulary_queries() -> None:
+    """Workflow-vocabulary queries name real code (dispatch, validation, ...) and must search."""
+    with (
+        patch("app.services.context_gatherer._precision_ranking.search_symbols", return_value=[]),
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_text",
+            return_value={
+                "items": [
+                    {
+                        "path": "backend/cli/commands/check_dispatch.py",
+                        "line": 4,
+                        "content": "def dispatch_validation_checks() -> None:",
+                        "language": "python",
+                    }
+                ],
+                "count": 1,
+                "files_searched": 3,
+                "truncated": False,
+            },
+        ) as mock_search_text,
+    ):
+        result = collect_precision_code_search_context("project-1", ["task dispatch validation"])
 
-    assert result.prompt_context == ""
-    assert result.metadata["skipped_reason"] == "workflow_meta_low_signal"
+    mock_search_text.assert_called()
+    assert "skipped_reason" not in result.metadata
+    assert "check_dispatch.py" in result.prompt_context
 
 
 def test_collect_precision_code_search_context_formats_text_fallback_matches() -> None:
@@ -204,9 +220,11 @@ def test_collect_precision_code_search_context_probes_text_for_weak_multiword_sy
         result = collect_precision_code_search_context("project-1", ["Pixel audit"])
 
     mock_search_text.assert_called_once_with("project-1", "Pixel audit", limit=12)
-    assert result.metadata["used_symbol_first"] is False
+    # Weak coverage appends text matches but never discards the symbol hits.
+    assert result.metadata["used_symbol_first"] is True
     assert result.metadata["used_fallback"] is True
     assert result.metadata["text_match_count"] == 1
+    assert "get_explorer_summary" in result.prompt_context
     assert "frontend/components/design/UiDesignWorkspace.tsx:762" in result.prompt_context
 
 
@@ -244,6 +262,42 @@ def test_collect_precision_code_search_context_keeps_strong_multiword_symbol_hit
     assert result.metadata["used_symbol_first"] is True
     assert result.metadata["used_fallback"] is False
     assert "ProjectSelector" in result.prompt_context
+
+
+def test_collect_precision_code_search_context_ignores_stop_words_in_coverage_check() -> None:
+    """English function words in a sentence query must not force a text probe."""
+    with (
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_and_rank_symbols",
+            return_value=[
+                {
+                    "symbol_id": "frontend/components/layout/ProjectSelector.tsx::ProjectSelector#function",
+                    "qualified_name": "ProjectSelector",
+                    "name": "ProjectSelector",
+                    "kind": "function",
+                    "file_path": "frontend/components/layout/ProjectSelector.tsx",
+                    "start_line": 21,
+                    "end_line": 180,
+                    "signature": "export function ProjectSelector({ onProjectChange })",
+                    "summary": "Project selection dropdown component.",
+                }
+            ],
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.build_symbol_section",
+            return_value="## Relevant Symbols\n\n- `ProjectSelector`",
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.estimate_naive_file_tokens",
+            return_value=2000,
+        ),
+        patch("app.services.context_gatherer.precision_code_search.search_text") as mock_search_text,
+    ):
+        result = collect_precision_code_search_context("project-1", ["where is the project selector"])
+
+    mock_search_text.assert_not_called()
+    assert result.metadata["used_symbol_first"] is True
+    assert result.metadata["used_fallback"] is False
 
 
 def test_collect_precision_code_search_context_uses_text_search_primitive_for_fallback() -> None:
@@ -489,19 +543,6 @@ def test_collect_precision_code_search_context_refreshes_missing_index() -> None
     ]
 
 
-def test_collect_precision_code_search_context_skips_refresh_for_workflow_meta_queries() -> None:
-    with patch(
-        "app.services.context_gatherer.precision_code_search.explorer_service.scan"
-    ) as mock_scan:
-        result = collect_precision_code_search_context(
-            "project-1",
-            ["Confirm workflow cleanup status and closeout coordination."],
-        )
-
-    mock_scan.assert_not_called()
-    assert result.metadata["skipped_reason"] == "workflow_meta_low_signal"
-
-
 def test_collect_precision_code_search_context_tracks_fresh_index_telemetry() -> None:
     with (
         patch(
@@ -661,33 +702,8 @@ def test_collect_precision_code_search_context_nl_query_finds_symbols_via_case_v
     assert "ProjectSelector" in result.prompt_context
 
 
-def test_collect_precision_code_search_context_text_fallback_tries_individual_terms() -> None:
-    """When full-phrase text search finds nothing, individual terms should be tried."""
-    call_count = 0
-
-    def _search_text_side_effect(project_id: str, query: str, *, limit: int = 20) -> dict:
-        nonlocal call_count
-        call_count += 1
-        if " " in query:
-            # Full phrase "open settings" finds nothing
-            return {"items": [], "count": 0, "files_searched": 10, "truncated": False}
-        # Individual term "settings" finds results
-        if query == "settings":
-            return {
-                "items": [
-                    {
-                        "path": "backend/app/config.py",
-                        "line": 15,
-                        "content": "class Settings(BaseSettings):",
-                        "language": "python",
-                    }
-                ],
-                "count": 1,
-                "files_searched": 10,
-                "truncated": False,
-            }
-        return {"items": [], "count": 0, "files_searched": 10, "truncated": False}
-
+def test_collect_precision_code_search_context_text_fallback_is_phrase_only() -> None:
+    """A phrase miss returns empty — no single-word retries that surface junk matches."""
     with (
         patch(
             "app.services.context_gatherer._precision_ranking.search_symbols",
@@ -695,12 +711,12 @@ def test_collect_precision_code_search_context_text_fallback_tries_individual_te
         ),
         patch(
             "app.services.context_gatherer.precision_code_search.search_text",
-            side_effect=_search_text_side_effect,
-        ),
+            return_value={"items": [], "count": 0, "files_searched": 10, "truncated": False},
+        ) as mock_search_text,
     ):
         result = collect_precision_code_search_context("project-1", ["open settings"])
 
-    assert call_count >= 2  # At least phrase + one individual term
-    assert result.metadata["used_fallback"] is True
-    assert result.metadata["text_match_count"] == 1
-    assert "config.py" in result.prompt_context
+    mock_search_text.assert_called_once_with("project-1", "open settings", limit=12)
+    assert result.prompt_context == ""
+    assert result.metadata["used_fallback"] is False
+    assert result.metadata["text_match_count"] == 0

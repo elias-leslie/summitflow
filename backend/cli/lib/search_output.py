@@ -26,7 +26,10 @@ def _print_precision_compact(
 ) -> None:
     """Print TOON-style compact output for agent consumption."""
     symbol_count = metadata.get("symbol_count", 0)
-    mode = "symbol-first" if metadata.get("used_symbol_first") else "text-fallback"
+    if metadata.get("used_symbol_first"):
+        mode = "combined" if metadata.get("used_fallback") else "symbol-first"
+    else:
+        mode = "text-fallback"
     tokens_saved = metadata.get("estimated_tokens_saved", 0)
     final_tokens = metadata.get("final_tokens", 0)
     suffix = f"{_scope_suffix(metadata.get('scope'))}{_path_suffix(metadata.get('path_prefix'))}"
