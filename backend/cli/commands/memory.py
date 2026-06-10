@@ -95,7 +95,7 @@ from .memory_validation import (
     build_episode_content,
     emit_save_quickstart_error,
     suggest_summary,
-    validate_content_format,
+    validate_memory_authoring,
 )
 
 app = typer.Typer(help="Memory system commands (Agent Hub)")
@@ -233,9 +233,9 @@ def save(
     resolved_inline_content = content_option if content_option is not None else content
     resolved_content = _resolve_and_validate_save(summary, resolved_inline_content, content_file)
     assert summary is not None
-    if not bypass_compactness:
-        enforce_memory_compactness(summary, resolved_content)
-    validate_content_format(resolved_content, summary, tier)
+    validate_memory_authoring(
+        summary, resolved_content, summary, tier, bypass_compactness=bypass_compactness
+    )
     save_impl(
         ctx.obj, resolved_content, summary, tier, confidence, context, pinned,
         trigger_types, trigger_phases, context_kind, consumer_profiles,
@@ -258,9 +258,9 @@ def format_cmd(
     """Generate a standard memory episode body and compact summary."""
     content = build_episode_content(topic, instruction, prohibition, why)
     resolved_summary = (summary.strip() if summary else suggest_summary(instruction)) or "Memory episode"
-    if not bypass_compactness:
-        enforce_memory_compactness(resolved_summary, content)
-    validate_content_format(content, resolved_summary, tier)
+    validate_memory_authoring(
+        resolved_summary, content, resolved_summary, tier, bypass_compactness=bypass_compactness
+    )
     typer.echo(f"SUMMARY: {resolved_summary}")
     typer.echo("CONTENT:")
     typer.echo(content)

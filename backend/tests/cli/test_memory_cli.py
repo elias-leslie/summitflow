@@ -240,8 +240,7 @@ class TestMemorySaveContentInput:
 
     def test_save_enforces_memory_compactness(self) -> None:
         with (
-            patch("cli.commands.memory.enforce_memory_compactness") as mock_enforce,
-            patch("cli.commands.memory.validate_content_format") as mock_validate,
+            patch("cli.commands.memory.validate_memory_authoring") as mock_validate,
             patch("cli.commands.memory.save_impl") as mock_save_impl,
         ):
             result = runner.invoke(
@@ -255,16 +254,47 @@ class TestMemorySaveContentInput:
             )
 
         assert result.exit_code == 0
-        mock_enforce.assert_called_once_with(
-            "Use dt for checks",
-            "**Quality Checks**: Use dt for all quality checks.\n",
-        )
         mock_validate.assert_called_once_with(
+            "Use dt for checks",
             "**Quality Checks**: Use dt for all quality checks.\n",
             "Use dt for checks",
             "reference",
+            bypass_compactness=False,
         )
         mock_save_impl.assert_called_once()
+
+    def test_save_reports_both_gates_in_one_pass(self) -> None:
+        """A save violating compactness AND format must surface both gate reports at once."""
+        result = runner.invoke(
+            app,
+            [
+                "save",
+                "**Quality Checks**: Know that thoroughness in every single dimension of the "
+                "work at hand is always expected at all times from each and every one of the "
+                "many agents that are operating inside of this very large shared workspace.",
+                "--summary",
+                "Use dt for checks",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "strict Caveman gate failed" in result.output
+        assert "FORMAT_STANDARD violations detected" in result.output
+
+    def test_save_imperative_error_lists_accepted_verbs(self) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "save",
+                "**Quality Checks**: Know dt runs all checks.",
+                "--summary",
+                "Use dt for checks",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "Accepted verbs:" in result.output
+        assert "Treat" in result.output
 
     def test_save_rejects_non_caveman_memory(self) -> None:
         result = runner.invoke(

@@ -33,6 +33,34 @@ CONVERSATIONAL_PATTERNS = [
     "i suggest",
 ]
 
+IMPERATIVE_VERBS = (
+    "Use",
+    "Never",
+    "Always",
+    "Check",
+    "Follow",
+    "Avoid",
+    "Run",
+    "Keep",
+    "Prefer",
+    "Treat",
+    "Record",
+    "Verify",
+    "Fix",
+    "Delete",
+    "Remove",
+    "Commit",
+    "Push",
+    "Restart",
+    "Rebuild",
+)
+ACCEPTED_VERBS_DISPLAY = ", ".join(IMPERATIVE_VERBS)
+IMPERATIVE_PATTERNS = [
+    re.compile(
+        rf"^\*\*[^*\n][^*\n]{{0,78}}\*\*:\s*(?:{'|'.join(IMPERATIVE_VERBS)})\b"
+    ),
+]
+
 SAVE_EXAMPLE = """
 Example:
   st memory save -s project --scope-id a-term -t guardrail -c 90 \\
@@ -72,7 +100,7 @@ FORMAT_STANDARD for memory episodes:
 |---|------|-------|
 | 1 | Topic header | Must start with **Topic**: where Topic is a compact specific subject, not a tier label |
 | 2 | Imperative mood | Commands not suggestions |
-| 3 | Strong verb first | Lead with do / never / use / check / follow / avoid |
+| 3 | Strong verb first | Lead with one of: {ACCEPTED_VERBS_DISPLAY} |
 | 4 | One atomic rule | Single concept per episode |
 | 5 | No custom delimiters | No ::, -> except in tables |
 | 6 | No conversational | No please/remember/note:/you should |
@@ -87,34 +115,6 @@ Example of BAD format:
   When working with git, you should remember to always commit first.
   Please don't use git stash because it might cause lost work.
 """ + SAVE_EXAMPLE
-
-IMPERATIVE_VERBS = (
-    "Use",
-    "Never",
-    "Always",
-    "Check",
-    "Follow",
-    "Avoid",
-    "Run",
-    "Keep",
-    "Prefer",
-    "Treat",
-    "Record",
-    "Verify",
-    "Fix",
-    "Delete",
-    "Remove",
-    "Commit",
-    "Push",
-    "Restart",
-    "Rebuild",
-)
-IMPERATIVE_PATTERNS = [
-    re.compile(
-        rf"^\*\*[^*\n][^*\n]{{0,78}}\*\*:\s*(?:{'|'.join(IMPERATIVE_VERBS)})\b"
-    ),
-]
-
 
 def _normalize_sentence(text: str) -> str:
     """Trim and ensure sentence-ending punctuation."""
@@ -223,7 +223,10 @@ def validate_format_standard(content: str, summary: str, tier: str) -> tuple[lis
 
     # Rule 2/3: Strong imperative opening
     if not any(pattern.match(content) for pattern in IMPERATIVE_PATTERNS):
-        errors.append("[2] imperative: Start with direct instruction after header")
+        errors.append(
+            "[2] imperative: Start with a strong verb right after the header. "
+            f"Accepted verbs: {ACCEPTED_VERBS_DISPLAY}"
+        )
 
     # Rule 4: One atomic rule - reject list-shaped multi-rule content
     if LIST_PATTERN.search(content):
@@ -273,3 +276,28 @@ def validate_content_format(content: str, summary: str, tier: str) -> None:
             typer.echo(f"  {err}", err=True)
         typer.echo(FORMAT_STANDARD_HELP, err=True)
         raise typer.Exit(1)
+
+
+def validate_memory_authoring(
+    label: str, content: str, summary: str, tier: str, *, bypass_compactness: bool = False
+) -> None:
+    """Run the Caveman and FORMAT_STANDARD gates together, reporting all violations in one pass."""
+    from .compactness import analyze_compactness
+
+    validate_episode_content_present(content)
+    compact_errors: list[str] = []
+    if not bypass_compactness:
+        compact_errors = list(analyze_compactness(content, kind="memory").errors)
+    format_errors, _hints = validate_format_standard(content, summary, tier)
+    if not compact_errors and not format_errors:
+        return
+    if compact_errors:
+        output_error(f"memory {label}: strict Caveman gate failed")
+        for error in compact_errors:
+            output_error(f"  - {error}")
+    if format_errors:
+        output_error("FORMAT_STANDARD violations detected:")
+        for err in format_errors:
+            typer.echo(f"  {err}", err=True)
+        typer.echo(FORMAT_STANDARD_HELP, err=True)
+    raise typer.Exit(1)
