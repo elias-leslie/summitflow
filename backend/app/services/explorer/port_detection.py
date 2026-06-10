@@ -22,11 +22,13 @@ INFRASTRUCTURE_PORTS = {
 
 def extract_port_from_service_content(content: str) -> int | None:
     """Extract port from systemd service file content."""
-    port_match = re.search(r"--port\s+(\d+)", content)
+    # Plain `--port 8003` or shell-default `--port "${AGENT_HUB_PORT:-8003}"`.
+    port_match = re.search(r"--port\s+\"?(?:\$\{[A-Za-z_]+:-)?(\d+)\}?\"?", content)
     if port_match:
         return int(port_match.group(1))
 
-    env_match = re.search(r"PORT=(\d+)", content)
+    # Reject host:port values like HATCHET_CLIENT_HOST_PORT=127.0.0.1:7070.
+    env_match = re.search(r"PORT=(\d+)(?![\d.:])", content)
     if env_match:
         return int(env_match.group(1))
 
