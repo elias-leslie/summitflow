@@ -399,6 +399,74 @@ class TestScanHistoryRetention:
         assert status == "failed"
         assert completed_at is not None
 
+    def test_fail_stale_running_scans_recovers_stuck_scan_state(self, ensure_test_project: str) -> None:
+        """A scan_states row stuck in 'running' blocks all future scans
+        (ensure_scan_not_running); maintenance must recover it, not just scan_history."""
+        project_id = ensure_test_project
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO scan_states (project_id, status, started_at, updated_at)
+                VALUES (%s, 'running', NOW() - INTERVAL '8 hours', NOW() - INTERVAL '8 hours')
+                ON CONFLICT (project_id) DO UPDATE SET
+                    status = EXCLUDED.status,
+                    started_at = EXCLUDED.started_at,
+                    completed_at = NULL,
+                    error = NULL,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                (project_id,),
+            )
+            conn.commit()
+
+        updated = fail_stale_running_scans(max_age_hours=6)
+
+        assert updated >= 1
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT status, completed_at, error FROM scan_states WHERE project_id = %s",
+                (project_id,),
+            )
+            row = cur.fetchone()
+            cur.execute("DELETE FROM scan_states WHERE project_id = %s", (project_id,))
+            conn.commit()
+
+        assert row is not None
+        status, completed_at, error = row
+        assert status == "failed"
+        assert completed_at is not None
+        assert "Auto-failed by maintenance" in error
+
+    def test_fail_stale_running_scans_keeps_fresh_running_scan_state(self, ensure_test_project: str) -> None:
+        project_id = ensure_test_project
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO scan_states (project_id, status, started_at, updated_at)
+                VALUES (%s, 'running', NOW() - INTERVAL '5 minutes', NOW())
+                ON CONFLICT (project_id) DO UPDATE SET
+                    status = EXCLUDED.status,
+                    started_at = EXCLUDED.started_at,
+                    completed_at = NULL,
+                    error = NULL,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                (project_id,),
+            )
+            conn.commit()
+
+        fail_stale_running_scans(max_age_hours=6)
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT status FROM scan_states WHERE project_id = %s", (project_id,))
+            row = cur.fetchone()
+            cur.execute("DELETE FROM scan_states WHERE project_id = %s", (project_id,))
+            conn.commit()
+
+        assert row is not None
+        assert row[0] == "running"
+
     def test_cleanup_old_scan_history_preserves_recent_rows(self, ensure_test_project: str) -> None:
         project_id = ensure_test_project
         with get_connection() as conn, conn.cursor() as cur:

@@ -35,6 +35,25 @@ def fail_stale_running_scans(max_age_hours: int = 6) -> int:
             (max_age_hours,),
         )
         count = cur.rowcount
+        # scan_states is the gate ensure_scan_not_running checks; a row stuck in
+        # 'running' blocks every future scan for that project, so recover it too.
+        cur.execute(
+            """
+            UPDATE scan_states
+            SET status = 'failed',
+                completed_at = NOW(),
+                error = CASE
+                    WHEN COALESCE(error, '') = ''
+                        THEN 'Auto-failed by maintenance: stale running scan exceeded retention window.'
+                    ELSE error
+                END,
+                updated_at = NOW()
+            WHERE status = 'running'
+              AND started_at < NOW() - (%s * INTERVAL '1 hour')
+            """,
+            (max_age_hours,),
+        )
+        count += cur.rowcount
         conn.commit()
 
     return count
