@@ -280,7 +280,6 @@ def test_complete_task_claimed_checkpoint_auto_commits_dirty_checkpoint() -> Non
         patch("cli.commands.done_task.is_working_tree_clean", side_effect=[False, True, True]),
         patch("cli.commands.done_task.commit_repo") as mock_commit,
         patch("app.storage.events.log_task_event") as mock_log,
-        patch("cli.commands.done_task._task_work_touched_frontend", return_value=False),
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-1"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
         patch("cli.commands.done_task._capture_and_remove_snapshot"),
@@ -326,7 +325,6 @@ def test_complete_task_claimed_checkpoint_forces_close_when_status_transition_dr
         patch("cli.commands.done_task.get_snapshot_info", return_value=snapshot_info),
         patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
         patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-        patch("cli.commands.done_task._task_work_touched_frontend", return_value=False),
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-1"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
         patch("cli.commands.done_task._capture_and_remove_snapshot") as mock_cleanup,
@@ -426,7 +424,6 @@ def test_complete_task_diff_gate_checks_task_branch_not_current_head() -> None:
         patch("cli.commands.done_task.get_snapshot_info", return_value=snapshot_info),
         patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
         patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-        patch("cli.commands.done_task._task_work_touched_frontend", return_value=False),
         patch("cli.commands.done_task.resolve_task_branch", return_value="task-1/main") as mock_resolve,
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
         patch("cli.commands.done_task._capture_and_remove_snapshot"),
@@ -460,7 +457,6 @@ def test_complete_task_diff_gate_uses_checkpoint_base_commit_for_direct_main() -
         patch("cli.commands.done_task.get_snapshot_info", return_value=snapshot_info),
         patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
         patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-        patch("cli.commands.done_task._task_work_touched_frontend", return_value=False) as mock_frontend,
         patch("cli.commands.done_task.resolve_task_branch") as mock_resolve,
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
         patch("cli.commands.done_task._capture_and_remove_snapshot"),
@@ -470,12 +466,6 @@ def test_complete_task_diff_gate_uses_checkpoint_base_commit_for_direct_main() -
 
         complete_task(client, "task-1")
 
-    mock_frontend.assert_called_once_with(
-        "task-1",
-        "summitflow",
-        base_branch="main",
-        base_commit="abc123",
-    )
     mock_diff_gate.assert_called_once_with(
         "/repo",
         head_ref="HEAD",
@@ -499,7 +489,6 @@ def test_complete_task_diff_gate_checks_published_task_bookmark() -> None:
         patch("cli.commands.done_task.get_snapshot_info", return_value=snapshot_info),
         patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
         patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-        patch("cli.commands.done_task._task_work_touched_frontend", return_value=False),
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-1") as mock_resolve,
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
         patch("cli.commands.done_task._capture_and_remove_snapshot"),
@@ -532,7 +521,6 @@ def test_complete_task_normalizes_head_base_branch_before_diff_gate() -> None:
         patch("cli.commands.done_task.get_snapshot_info", return_value=snapshot_info),
         patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
         patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-        patch("cli.commands.done_task._task_work_touched_frontend", return_value=False),
         patch("cli.commands.done_task.resolve_task_branch", return_value="task-1/main"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
         patch("cli.commands.done_task._capture_and_remove_snapshot"),

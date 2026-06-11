@@ -48,4 +48,3 @@ COMPLETE_PATH = "/api/complete"
 
 # ── Admin ────────────────────────────────────────────────────────────
 ACCESS_CONTROL_METRICS_PATH = "/api/access-control/metrics"
-SITE_HEALTH_CHECK_TRIGGER_PATH = "/api/site-health-check/trigger"

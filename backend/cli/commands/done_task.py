@@ -21,11 +21,7 @@ from ..lib.checkpoint_branches import resolve_task_branch
 from ..lib.commit_workflow import CommitError, commit_repo
 from ..output import output_error, output_success, output_warning
 from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
-from .done_lifecycle import (
-    _reconstruct_snapshot_info,
-    _task_work_touched_frontend,
-    _trigger_health_check,
-)
+from .done_lifecycle import _reconstruct_snapshot_info
 from .done_subtask import auto_close_subtasks
 from .done_task_publish import (
     cleanup_completed_bookmark,
@@ -373,12 +369,6 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
     publish_failed = False
     try:
         base_commit = str(snapshot_info.get("base_commit") or "") or None
-        frontend_changed = _task_work_touched_frontend(
-            task_id,
-            project_id,
-            base_branch=base_branch,
-            base_commit=base_commit,
-        )
         if repo_root and not skip_diff_gate:
             _run_diff_gate(repo_root, task_id, project_id, base_branch, base_commit=base_commit)
         if not strict:
@@ -395,8 +385,6 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
             )
             raise typer.Exit(1) from None
         _capture_and_remove_snapshot(task_id, project_id)
-        if frontend_changed:
-            _trigger_health_check(task_id, project_id)
     except SystemExit as exc:
         raise typer.Exit(exc.code if isinstance(exc.code, int) else 1) from None
     finally:
