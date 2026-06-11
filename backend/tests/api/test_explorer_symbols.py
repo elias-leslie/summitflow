@@ -302,3 +302,36 @@ class TestExplorerSymbolsByFileEndpoint:
         assert data["items"] == []
         assert "candidates" not in data
         assert "resolved_from" not in data
+
+
+class TestSymbolRefreshEndpoint:
+    """Tests for POST /api/projects/{project_id}/explorer/symbols/refresh."""
+
+    def test_refresh_indexes_new_file_without_full_scan(
+        self,
+        client: TestClient,
+        symbol_api_project: str,
+        tmp_path: Path,
+    ) -> None:
+        """A freshly written file becomes symbol-searchable right after refresh."""
+        new_file = tmp_path / "repo" / "backend" / "app" / "api" / "qqzz_fresh.py"
+        new_file.write_text(
+            "def qqzz_route_marker() -> None:\n    return None\n",
+            encoding="utf-8",
+        )
+
+        response = client.post(
+            f"/api/projects/{symbol_api_project}/explorer/symbols/refresh",
+            json={"paths": ["backend/app/api/qqzz_fresh.py", "README.md"]},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "queued", "paths": 2}
+
+        search = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/symbols/search",
+            params={"q": "qqzz_route_marker"},
+        )
+        assert search.status_code == 200
+        assert search.json()["count"] == 1
+        assert search.json()["items"][0]["file_path"] == "backend/app/api/qqzz_fresh.py"

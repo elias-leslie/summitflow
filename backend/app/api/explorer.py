@@ -21,6 +21,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from ..logging_config import get_logger
 from ..services import explorer
@@ -265,6 +266,22 @@ async def trigger_scan(
         + (f" (type: {type})" if type else " (all types)"),
         "type": type,
     }
+
+
+class SymbolRefreshRequest(BaseModel):
+    paths: list[str]
+
+
+@router.post("/{project_id}/explorer/symbols/refresh")
+async def refresh_symbols(
+    project_id: str,
+    payload: SymbolRefreshRequest,
+    background_tasks: BackgroundTasks,
+) -> dict[str, Any]:
+    """Reindex symbols for specific changed files without a full scan."""
+    validate_project_exists(project_id)
+    background_tasks.add_task(explorer.refresh_symbols_for_paths, project_id, payload.paths)
+    return {"status": "queued", "paths": len(payload.paths)}
 
 
 @router.get("/{project_id}/explorer/scan/status")

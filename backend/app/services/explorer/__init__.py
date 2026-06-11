@@ -43,6 +43,7 @@ from .scan_ops import (
     get_scan_overview,
     run_scan_job,
 )
+from .symbol_refresh import refresh_symbols_for_paths
 from .text_search import search_text
 from .types import get_scanner
 
@@ -67,6 +68,7 @@ __all__ = [
     "get_scan_overview",
     "get_scan_status",
     "get_stats",
+    "refresh_symbols_for_paths",
     "run_scan_job",
     "run_scan_with_tracking",
     "scan",

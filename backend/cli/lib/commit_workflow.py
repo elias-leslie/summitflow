@@ -196,6 +196,38 @@ def _cleanup_after_publish(repo: Path, result: dict[str, Any], *, push: bool) ->
     return result
 
 
+def _refresh_symbols_after_publish(repo: Path, result: dict[str, Any]) -> dict[str, Any]:
+    """Queue a targeted symbol reindex of the published commit's files.
+
+    Bridges the bi-hourly sweep gap so fresh symbols are searchable
+    immediately. Best-effort: a completed publish must never fail on this.
+    """
+    if result.get("status") != "SUCCESS" or not result.get("pushed"):
+        return result
+    sha = str(result.get("commit_id") or result.get("sha") or "").strip()
+    if not sha:
+        return result
+    try:
+        from app.services.explorer.types.file_constants import SYMBOL_INDEX_EXTENSIONS
+        from cli.client import STClient
+
+        from .execution_context import resolve_checkout_project_id
+
+        project_id = resolve_checkout_project_id(repo)
+        if not project_id:
+            return result
+        changed = run_git(repo, ["diff-tree", "-r", "--name-only", "--no-commit-id", sha]).stdout.splitlines()
+        paths = [p for p in changed if p and Path(p).suffix.lower() in SYMBOL_INDEX_EXTENSIONS]
+        if not paths:
+            return result
+        client = STClient(project_id=project_id)
+        client.post(client._url("/explorer/symbols/refresh"), json={"paths": paths})
+        result["symbol_refresh_queued"] = len(paths)
+    except Exception:
+        return result
+    return result
+
+
 def commit_repo(
     repo: Path,
     *,
@@ -219,7 +251,7 @@ def commit_repo(
                 bookmark=bookmark,
                 paths=paths,
             )
-            return _cleanup_after_publish(repo, result, push=push)
+            return _refresh_symbols_after_publish(repo, _cleanup_after_publish(repo, result, push=push))
         except JJError as exc:
             raise CommitError(str(exc)) from exc
     result = commit_git_revision(
@@ -230,4 +262,4 @@ def commit_repo(
         skip_checks=skip_checks,
         paths=paths,
     )
-    return _cleanup_after_publish(repo, result, push=push)
+    return _refresh_symbols_after_publish(repo, _cleanup_after_publish(repo, result, push=push))
