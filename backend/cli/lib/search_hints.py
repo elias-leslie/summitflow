@@ -15,8 +15,24 @@ def generate_hint(query: str, mode: str, metadata: dict[str, Any]) -> str | None
     )
 
     queries = [query]
+    missed_terms = (
+        []
+        if metadata.get("checkout_overlay_applied")
+        else list(metadata.get("missed_identifier_terms") or [])
+    )
 
     if mode == "empty":
+        if missed_terms:
+            suppressed = int(metadata.get("suppressed_generic_symbols") or 0)
+            junk_note = (
+                f" ({suppressed} symbols matching only the other words were withheld as junk)"
+                if suppressed
+                else ""
+            )
+            return (
+                f"`{missed_terms[0]}` matched no symbols or text{junk_note} — verify the identifier name; "
+                "if it is brand-new code, rerun with `--scope checkout` or rescan the project."
+            )
         used_fallback = metadata.get("used_fallback", False)
         files_searched = metadata.get("text_files_searched", 0)
         if has_path_segments(queries):
@@ -36,12 +52,22 @@ def generate_hint(query: str, mode: str, metadata: dict[str, Any]) -> str | None
                 f"text matches include a definition of `{definition_terms[0]}` that the symbol index missed{age_note} — "
                 "index likely stale; rerun with `--scope checkout` or rescan the project instead of reshaping the query."
             )
+        if missed_terms and metadata.get("text_per_term_union"):
+            return (
+                f"`{missed_terms[0]}` matched no symbols or text — the matches shown cover only the other "
+                "query words; verify the identifier or rescan if it is brand-new code."
+            )
         if has_path_segments(queries):
             return "fell back to text search (no symbol match). Path-qualified terms are noisy — try just the symbol name or use `--path` with `--text` for subtree content search."
         return "fell back to text search (no symbol match). Try a specific identifier like `FunctionName` or `function_name`."
 
     symbol_count = metadata.get("symbol_count", 0)
     if mode in ("symbol-first", "combined") and symbol_count > 0:
+        if missed_terms:
+            return (
+                f"`{missed_terms[0]}` matched nothing — these results cover only the other query terms; "
+                "verify that identifier or search for it alone."
+            )
         if has_path_segments(queries):
             return "path terms in symbol search may favor incidental mentions. Try `st search --path <subtree> --text <query>` for subtree file-content matches."
         if is_short_or_generic(queries):

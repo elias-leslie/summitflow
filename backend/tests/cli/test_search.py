@@ -901,3 +901,168 @@ def test_search_auto_scope_escalation_keeps_project_result_when_checkout_finds_n
     assert result.exit_code == 0
     assert "mode=empty" in result.output
     assert "## Current Checkout Overrides" not in result.output
+
+
+def test_search_empty_missed_identifier_shows_identifier_hint() -> None:
+    """A nonexistent identifier must produce a verify-the-name hint, not generic advice."""
+    payload = {
+        "prompt_context": "",
+        "metadata": {
+            "symbol_count": 0,
+            "used_symbol_first": False,
+            "estimated_tokens_saved": 0,
+            "final_tokens": 0,
+            "text_files_searched": 2012,
+            "missed_identifier_terms": ["resolve_search_timeout"],
+            "suppressed_generic_symbols": 17,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+        patch("cli.commands.search.resolve_checkout_project_id", return_value=None, create=True),
+    ):
+        result = _invoke(["resolve_search_timeout handler"])
+
+    assert result.exit_code == 0
+    assert "`resolve_search_timeout` matched no symbols or text" in result.output
+    assert "17 symbols matching only the other words were withheld" in result.output
+
+
+def test_search_symbol_first_partial_missed_identifier_hint() -> None:
+    """When one identifier hit and another missed, the hint names the missed one."""
+    payload = {
+        "prompt_context": "Precision Code Search: symbol-first\n\n## Relevant Symbols",
+        "metadata": {
+            "symbol_count": 3,
+            "used_symbol_first": True,
+            "estimated_tokens_saved": 100,
+            "final_tokens": 50,
+            "missed_identifier_terms": ["missing_helper"],
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+        patch("cli.commands.search.resolve_checkout_project_id", return_value=None, create=True),
+    ):
+        result = _invoke(["scan_all_projects missing_helper"])
+
+    assert result.exit_code == 0
+    assert "`missing_helper` matched nothing" in result.output
+
+
+def test_search_missed_identifier_hint_suppressed_when_checkout_overlay_applied() -> None:
+    """Checkout overlay means fresh code answered the query; the missed-index hint would mislead."""
+    payload = {
+        "prompt_context": "## Current Checkout Overrides\n\n- `resolve_search_timeout`",
+        "metadata": {
+            "symbol_count": 1,
+            "used_symbol_first": True,
+            "estimated_tokens_saved": 0,
+            "final_tokens": 50,
+            "missed_identifier_terms": ["resolve_search_timeout"],
+            "checkout_overlay_applied": True,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+        patch("cli.commands.search.resolve_checkout_project_id", return_value=None, create=True),
+    ):
+        result = _invoke(["resolve_search_timeout"])
+
+    assert result.exit_code == 0
+    assert "matched nothing" not in result.output
+    assert "matched no symbols or text" not in result.output
+
+
+def test_search_stale_age_only_warning_does_not_claim_failed_refresh() -> None:
+    """Age-based staleness never attempts a refresh, so the warning must not say one failed."""
+    payload = {
+        "prompt_context": "",
+        "metadata": {
+            "symbol_count": 0,
+            "used_symbol_first": False,
+            "estimated_tokens_saved": 0,
+            "final_tokens": 0,
+            "stale_hit": True,
+            "refreshed_index": False,
+            "refresh_reasons": ["stale_symbol_index", "stale_file_index"],
+            "symbol_index_age_minutes": 95,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+        patch("cli.commands.search.resolve_checkout_project_id", return_value=None, create=True),
+    ):
+        result = _invoke(["stale_symbol"])
+
+    assert result.exit_code == 0
+    assert "refresh did not complete" not in result.output
+    assert "(95m old)" in result.output
+    assert "predates the latest scheduled scan" in result.output
+
+
+def test_search_stale_missing_index_keeps_failed_refresh_warning() -> None:
+    payload = {
+        "prompt_context": "",
+        "metadata": {
+            "symbol_count": 0,
+            "used_symbol_first": False,
+            "estimated_tokens_saved": 0,
+            "final_tokens": 0,
+            "stale_hit": True,
+            "refreshed_index": False,
+            "refresh_reasons": ["missing_symbol_index"],
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+        patch("cli.commands.search.resolve_checkout_project_id", return_value=None, create=True),
+    ):
+        result = _invoke(["stale_symbol"])
+
+    assert result.exit_code == 0
+    assert "refresh did not complete" in result.output
+
+
+def test_without_generic_only_items_drops_junk_when_identifier_missed() -> None:
+    from cli.lib.search_checkout_symbols import _without_generic_only_items
+
+    junk = [
+        {"name": "handler", "qualified_name": "useMediaQuery.handler", "file_path": "frontend/hooks/useMediaQuery.ts"},
+        {"name": "setup_exception_handlers", "qualified_name": "setup_exception_handlers", "file_path": "backend/app/exception_handlers.py"},
+    ]
+    assert _without_generic_only_items(junk, "resolve_search_timeout handler") == []
+
+
+def test_without_generic_only_items_keeps_items_when_identifier_covered() -> None:
+    from cli.lib.search_checkout_symbols import _without_generic_only_items
+
+    items = [
+        {"name": "handler", "qualified_name": "useMediaQuery.handler", "file_path": "frontend/hooks/useMediaQuery.ts"},
+        {"name": "resolve_search_timeout", "qualified_name": "resolve_search_timeout", "file_path": "backend/app/search.py"},
+    ]
+    assert _without_generic_only_items(items, "resolve_search_timeout handler") == items
+
+
+def test_without_generic_only_items_counts_case_variant_as_coverage() -> None:
+    from cli.lib.search_checkout_symbols import _without_generic_only_items
+
+    items = [{"name": "ResolveSearchTimeout", "qualified_name": "ResolveSearchTimeout", "file_path": "frontend/lib/search.ts"}]
+    assert _without_generic_only_items(items, "resolve_search_timeout") == items
+
+
+def test_without_generic_only_items_no_identifier_tokens_keeps_items() -> None:
+    from cli.lib.search_checkout_symbols import _without_generic_only_items
+
+    items = [{"name": "handler", "qualified_name": "handler", "file_path": "frontend/hooks/useMediaQuery.ts"}]
+    assert _without_generic_only_items(items, "project selector") == items

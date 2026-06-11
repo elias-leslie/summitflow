@@ -269,6 +269,30 @@ def nl_to_symbol_terms(queries: list[str]) -> list[str]:
     return terms[:_MAX_TERMS]
 
 
+_IDENTIFIER_SHAPE_RE = re.compile(r"_|[a-z][A-Z]")
+
+
+def identifier_shaped_tokens(queries: list[str]) -> list[str]:
+    """Single query tokens shaped like code identifiers (snake_case/camelCase).
+
+    These are the tokens the user typed deliberately — a search that misses
+    all of them found nothing the user asked for, no matter how many generic
+    words happened to match.
+    """
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for query in queries:
+        for raw in str(query).split():
+            token = raw.strip("()[]{}:.;'\"`,")
+            lowered = token.lower()
+            if len(token) < 3 or lowered in seen:
+                continue
+            if _IDENTIFIER_SHAPE_RE.search(token):
+                tokens.append(token)
+                seen.add(lowered)
+    return tokens
+
+
 def has_explicit_code_signal(queries: list[str]) -> bool:
     combined = " ".join(queries).lower()
     if any(marker in combined for marker in _EXPLICIT_CODE_MARKERS):

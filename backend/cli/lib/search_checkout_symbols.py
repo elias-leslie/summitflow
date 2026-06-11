@@ -98,6 +98,7 @@ def _search_checkout_symbols(
     query_terms = _expand_symbol_queries(query)
     candidate_paths = _candidate_symbol_paths(root, query_terms, limit, normalized_prefix, target_root)
     items = _scored_symbol_items(root, candidate_paths, query_terms, normalized_prefix, limit)
+    items = _without_generic_only_items(items, query)
     return {
         "query": query,
         "count": len(items),
@@ -106,6 +107,32 @@ def _search_checkout_symbols(
         "root_path": str(root),
         "path_prefix": normalized_prefix,
     }
+
+
+def _without_generic_only_items(items: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
+    """Drop ALL items when every user-typed identifier token missed the checkout.
+
+    Scoring takes the max over query words, so a generic word like "handler"
+    surfaces unrelated symbols even when the identifier the user asked for
+    does not exist — junk that stale-index escalation would merge as truth.
+    """
+    from app.services.context_gatherer._precision_query import (
+        expand_case_variants,
+        identifier_shaped_tokens,
+    )
+
+    tokens = identifier_shaped_tokens([query])
+    if not tokens or not items:
+        return items
+    variants = {variant.lower() for token in tokens for variant in expand_case_variants(token)}
+    for item in items:
+        blob = " ".join(
+            str(item.get(key) or "")
+            for key in ("name", "qualified_name", "file_path", "signature", "summary")
+        ).lower()
+        if any(variant in blob for variant in variants):
+            return items
+    return []
 
 
 def _empty_symbol_result(query: str, root: Path, normalized_prefix: str | None) -> dict[str, Any]:

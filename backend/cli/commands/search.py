@@ -112,9 +112,19 @@ def _emit_precision_search_metadata_note(metadata: dict[str, Any]) -> None:
         for key in ("final_tokens", "symbol_count", "text_match_count")
     )
     if metadata.get("stale_hit") and not has_usable_results:
-        _emit_status(
-            "st search: Explorer indexes are stale and refresh did not complete; verify results carefully or rerun after scan."
-        )
+        reasons = {str(reason) for reason in (metadata.get("refresh_reasons") or [])}
+        if reasons - {"stale_file_index", "stale_symbol_index"}:
+            # Missing index or timestamp triggers an inline refresh; reaching here means it failed.
+            _emit_status(
+                "st search: Explorer indexes are stale and refresh did not complete; verify results carefully or rerun after scan."
+            )
+        else:
+            age = metadata.get("symbol_index_age_minutes")
+            age_note = f" ({age}m old)" if isinstance(age, int) and age > 0 else ""
+            _emit_status(
+                f"st search: no matches; the symbol index{age_note} predates the latest scheduled scan — "
+                "brand-new identifiers may not be indexed yet."
+            )
     if metadata.get("checkout_overlay_applied"):
         _emit_status("st search: prepended current checkout results ahead of indexed project context.")
 

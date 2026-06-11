@@ -772,3 +772,37 @@ def test_collect_precision_code_search_context_text_fallback_retries_per_term_th
     assert result.prompt_context == ""
     assert result.metadata["used_fallback"] is False
     assert result.metadata["text_match_count"] == 0
+
+
+def test_collect_precision_code_search_context_reports_missed_identifier_terms() -> None:
+    """Coverage info from ranking must surface in result metadata for the hint layer."""
+
+    def fake_rank(
+        project_id: str,
+        queries: list[str],
+        *,
+        symbol_limit: int = 5,
+        path_prefix: str | None = None,
+        identifier_tokens: list[str] | None = None,
+        coverage: dict[str, object] | None = None,
+    ) -> list[dict[str, object]]:
+        if coverage is not None:
+            coverage["missed_identifier_tokens"] = ["resolve_search_timeout"]
+            coverage["suppressed_generic_symbols"] = 17
+        return []
+
+    with (
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_and_rank_symbols",
+            side_effect=fake_rank,
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_text",
+            return_value={"items": [], "count": 0, "files_searched": 100, "truncated": False},
+        ),
+    ):
+        result = collect_precision_code_search_context("project-1", ["resolve_search_timeout handler"])
+
+    assert result.metadata["missed_identifier_terms"] == ["resolve_search_timeout"]
+    assert result.metadata["suppressed_generic_symbols"] == 17
+    assert result.prompt_context == ""

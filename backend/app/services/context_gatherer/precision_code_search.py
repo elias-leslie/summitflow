@@ -14,6 +14,7 @@ from .. import explorer as explorer_service
 from ..explorer.text_search import search_text
 from ._precision_query import (
     has_explicit_code_signal,
+    identifier_shaped_tokens,
     is_import_query,
     is_natural_language_query,
     meaningful_terms,
@@ -67,6 +68,7 @@ class _RetrievalState:
     used_fallback: bool
     index_status: dict[str, object]
     refreshed_index: bool
+    coverage: dict[str, object]
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +211,8 @@ def _build_result_metadata(
             if state.used_symbol_first
             else _definition_matched_terms(normalized_queries, text_items)
         ),
+        "missed_identifier_terms": state.coverage.get("missed_identifier_tokens") or [],
+        "suppressed_generic_symbols": state.coverage.get("suppressed_generic_symbols") or 0,
         "refreshed_index": state.refreshed_index,
         "used_symbol_first": state.used_symbol_first,
         "used_fallback": state.used_fallback,
@@ -268,15 +272,19 @@ def _search_symbols_for_queries(
     *,
     symbol_limit: int = _SEARCH_LIMIT,
     path_prefix: str | None = None,
-) -> tuple[list[dict[str, object]], str]:
+) -> tuple[list[dict[str, object]], str, dict[str, object]]:
     """Run symbol search and build the symbol section.
 
     Import queries skip symbol search entirely. Natural language queries
     generate CamelCase/snake_case variants and try symbol search before
     falling back (e.g. "project selector" → tries "ProjectSelector").
+
+    Returns (symbols, section, coverage). Coverage reports user-typed
+    identifier tokens that missed the index; it stays empty for import and
+    natural-language queries, whose synthesized variants are expected to miss.
     """
     if is_import_query(normalized_queries):
-        return [], ""
+        return [], "", {}
 
     if is_natural_language_query(normalized_queries):
         # Try symbol search with case-expanded variants from NL words
@@ -293,22 +301,32 @@ def _search_symbols_for_queries(
                 )
             if symbols:
                 section = build_symbol_section(project_id, symbols)
-                return symbols, section
-        return [], ""
+                return symbols, section, {}
+        return [], "", {}
 
     _path_terms, symbol_terms = split_path_and_symbol_terms(normalized_queries)
     symbol_queries = symbol_terms if symbol_terms else normalized_queries
+    identifier_tokens = identifier_shaped_tokens(symbol_queries)
+    coverage: dict[str, object] = {}
     if path_prefix is None:
-        symbols = search_and_rank_symbols(project_id, symbol_queries, symbol_limit=symbol_limit)
+        symbols = search_and_rank_symbols(
+            project_id,
+            symbol_queries,
+            symbol_limit=symbol_limit,
+            identifier_tokens=identifier_tokens,
+            coverage=coverage,
+        )
     else:
         symbols = search_and_rank_symbols(
             project_id,
             symbol_queries,
             symbol_limit=symbol_limit,
             path_prefix=path_prefix,
+            identifier_tokens=identifier_tokens,
+            coverage=coverage,
         )
     section = build_symbol_section(project_id, symbols) if symbols else ""
-    return symbols, section
+    return symbols, section, coverage
 
 
 def _symbol_hits_cover_plain_phrase(
@@ -422,7 +440,7 @@ def _retrieve_and_assemble(
 ) -> _RetrievalState:
     """Retrieve symbols/text matches, assemble sections, return retrieval state."""
     index_status, refreshed_index = _ensure_index(project_id)
-    symbols, symbol_section = _search_symbols_for_queries(
+    symbols, symbol_section, coverage = _search_symbols_for_queries(
         project_id,
         normalized_queries,
         symbol_limit=symbol_limit,
@@ -450,6 +468,7 @@ def _retrieve_and_assemble(
         used_fallback=used_fallback,
         index_status=index_status,
         refreshed_index=refreshed_index,
+        coverage=coverage,
     )
 
 

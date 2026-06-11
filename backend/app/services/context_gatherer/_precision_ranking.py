@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from ...storage.explorer import search_symbols
-from ._precision_query import extract_query_terms
+from ._precision_query import expand_case_variants, extract_query_terms
 
 _CANDIDATE_LIMIT = 50
 _CAMEL_CASE_RE = re.compile(r"([a-z0-9])([A-Z])")
@@ -75,15 +75,38 @@ def symbol_match_rank(
     )
 
 
+def _missed_identifier_tokens(identifier_tokens: list[str], matched_terms: list[str]) -> list[str]:
+    """Identifier tokens absent from every term that returned candidates.
+
+    A case variant counts as a hit, and so does a longer matched term that
+    contains the token (full-phrase terms)."""
+    missed = []
+    for token in identifier_tokens:
+        variants = {variant.lower() for variant in expand_case_variants(token)}
+        if not any(variant in term for term in matched_terms for variant in variants):
+            missed.append(token)
+    return missed
+
+
 def search_and_rank_symbols(
     project_id: str,
     queries: list[str],
     *,
     symbol_limit: int = 5,
     path_prefix: str | None = None,
+    identifier_tokens: list[str] | None = None,
+    coverage: dict[str, object] | None = None,
 ) -> list[dict[str, object]]:
-    """Search for symbol candidates, filter, rank, and return the top matches."""
+    """Search for symbol candidates, filter, rank, and return the top matches.
+
+    When *identifier_tokens* (user-typed identifier-shaped tokens) are given
+    and ALL of them miss the index, candidates that exist only because generic
+    words matched are suppressed — they would read as confident junk for a
+    symbol that does not exist. *coverage*, when given, receives
+    missed_identifier_tokens and suppressed_generic_symbols.
+    """
     candidates: dict[str, dict[str, object]] = {}
+    matched_terms: list[str] = []
     query_terms = extract_query_terms(queries)
 
     for query in query_terms:
@@ -91,8 +114,19 @@ def search_and_rank_symbols(
             rows = search_symbols(project_id, query, limit=_CANDIDATE_LIMIT)
         else:
             rows = search_symbols(project_id, query, limit=_CANDIDATE_LIMIT, path_prefix=path_prefix)
+        if rows:
+            matched_terms.append(query.lower())
         for row in rows:
             candidates.setdefault(str(row["symbol_id"]), row)
+
+    missed_tokens = _missed_identifier_tokens(identifier_tokens or [], matched_terms)
+    if coverage is not None:
+        coverage["missed_identifier_tokens"] = missed_tokens
+        coverage["suppressed_generic_symbols"] = 0
+    if identifier_tokens and len(missed_tokens) == len(identifier_tokens) and candidates:
+        if coverage is not None:
+            coverage["suppressed_generic_symbols"] = len(candidates)
+        return []
 
     if not candidates:
         return []
