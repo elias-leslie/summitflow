@@ -753,8 +753,8 @@ def test_collect_precision_code_search_context_nl_query_finds_symbols_via_case_v
     assert "ProjectSelector" in result.prompt_context
 
 
-def test_collect_precision_code_search_context_text_fallback_is_phrase_only() -> None:
-    """A phrase miss returns empty — no single-word retries that surface junk matches."""
+def test_collect_precision_code_search_context_text_fallback_retries_per_term_then_empty() -> None:
+    """A phrase miss retries each meaningful term once; all-miss still returns empty."""
     with (
         patch(
             "app.services.context_gatherer._precision_ranking.search_symbols",
@@ -767,7 +767,8 @@ def test_collect_precision_code_search_context_text_fallback_is_phrase_only() ->
     ):
         result = collect_precision_code_search_context("project-1", ["open settings"])
 
-    mock_search_text.assert_called_once_with("project-1", "open settings", limit=12)
+    queries = [call.args[1] for call in mock_search_text.call_args_list]
+    assert queries == ["open settings", "open", "settings"]
     assert result.prompt_context == ""
     assert result.metadata["used_fallback"] is False
     assert result.metadata["text_match_count"] == 0

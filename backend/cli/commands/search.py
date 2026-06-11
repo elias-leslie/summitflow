@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import threading
 from pathlib import Path
 from typing import Annotated, Any
@@ -131,7 +132,12 @@ def _resolve_search_roots(project_override: str | None, scope: SearchScope) -> S
     checkout_project_id = resolve_checkout_project_id()
     project_root = _project_root(config.project_root, selected_project_id, checkout_project_id, canonical_root)
     effective_scope = _effective_scope(scope, selected_project_id, checkout_project_id, checkout_root, project_root, checkout_has_changes)
-    return SearchRoots(scope, effective_scope, project_root, checkout_root, checkout_has_changes)
+    checkout_is_project = bool(
+        checkout_root is not None
+        and checkout_project_id is not None
+        and (selected_project_id is None or selected_project_id == checkout_project_id)
+    )
+    return SearchRoots(scope, effective_scope, project_root, checkout_root, checkout_has_changes, checkout_is_project)
 
 
 def _project_root(
@@ -214,7 +220,28 @@ def _precision_result(
     if roots.effective_scope == "combined" and roots.checkout_root is not None:
         checkout_result = _build_checkout_precision_result(query, roots.checkout_root, budget, limit, path_prefix=path_prefix)
         return _merge_precision_results(query, project_result, checkout_result, roots, budget)
+    if roots.checkout_root is not None and _should_escalate_to_checkout(roots, query, project_result):
+        checkout_result = _build_checkout_precision_result(query, roots.checkout_root, budget, limit, path_prefix=path_prefix)
+        if int((checkout_result.get("metadata") or {}).get("symbol_count") or 0) > 0:
+            return _merge_precision_results(query, project_result, checkout_result, roots, budget)
     return project_result
+
+
+def _should_escalate_to_checkout(roots: SearchRoots, query: str, project_result: dict[str, Any]) -> bool:
+    """Escalate to live checkout symbol parsing when the canonical symbol
+    index returned nothing for an identifier-shaped query — the index may
+    simply be stale for fresh code. Prose queries stay out: checkout symbol
+    search fuzzy-matches individual words and would amplify junk."""
+    if roots.scope != SearchScope.AUTO or not roots.checkout_is_project:
+        return False
+    if not _has_identifier_shaped_term(query):
+        return False
+    metadata = project_result.get("metadata") or {}
+    return int(metadata.get("symbol_count") or 0) == 0
+
+
+def _has_identifier_shaped_term(query: str) -> bool:
+    return any("_" in term or re.search(r"[a-z][A-Z]", term) for term in query.split())
 
 
 def _emit_file_output(file_path: str, result: dict[str, Any], raw_json: bool) -> None:
@@ -246,7 +273,7 @@ def _emit_query_output(query: str, result: dict[str, Any], text: bool, symbols: 
     precautions=(
         "prefer over rg/grep/find/st memory search",
         "best with 1-4 identifier-shaped terms (CamelCase/snake_case/filenames); for prose questions use --text with a literal phrase",
-        "if mode=text-fallback or empty, reshape the query (different identifier, --text phrase, or --file/--path) — never retry verbatim",
+        "if mode=text-fallback or empty, reshape the query (different identifier, --text phrase, or --file/--path) — never retry verbatim; if the hint says a definition was missed, the symbol index is stale — follow the hint (--scope checkout or rescan), do not reshape",
         "on a close match, extend/reuse it rather than adding a near-duplicate",
     ),
     tier="mandate",

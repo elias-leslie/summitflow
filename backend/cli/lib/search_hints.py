@@ -28,6 +28,14 @@ def generate_hint(query: str, mode: str, metadata: dict[str, Any]) -> str | None
         return "no symbol matches. Try `st search --text <query>` for content search, or refine to a specific identifier."
 
     if mode == "text-fallback":
+        definition_terms = metadata.get("definition_matched_terms") or []
+        if definition_terms:
+            age = metadata.get("symbol_index_age_minutes")
+            age_note = f" (index age {age}m)" if isinstance(age, int) and age > 0 else ""
+            return (
+                f"text matches include a definition of `{definition_terms[0]}` that the symbol index missed{age_note} — "
+                "index likely stale; rerun with `--scope checkout` or rescan the project instead of reshaping the query."
+            )
         if has_path_segments(queries):
             return "fell back to text search (no symbol match). Path-qualified terms are noisy — try just the symbol name or use `--path` with `--text` for subtree content search."
         return "fell back to text search (no symbol match). Try a specific identifier like `FunctionName` or `function_name`."

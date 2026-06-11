@@ -106,6 +106,7 @@ def test_search_compact_output_reports_empty_results() -> None:
     with (
         patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
         patch("cli.commands.search.is_compact", return_value=True),
+        patch("cli.commands.search.resolve_checkout_project_id", return_value=None, create=True),
     ):
         result = _invoke(["missing_symbol"])
 
@@ -127,6 +128,7 @@ def test_search_empty_result_shows_hint() -> None:
     with (
         patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
         patch("cli.commands.search.is_compact", return_value=True),
+        patch("cli.commands.search.resolve_checkout_project_id", return_value=None, create=True),
     ):
         result = _invoke(["missing_symbol"])
 
@@ -768,3 +770,134 @@ def test_search_auto_scope_skips_checkout_overlay_when_checkout_is_clean() -> No
     assert "scope=combined" not in result.output
     assert "## Current Checkout Overrides" not in result.output
     assert "WorkspaceChatFooter" in result.output
+
+
+def test_search_text_fallback_definition_match_shows_stale_index_hint() -> None:
+    payload = {
+        "prompt_context": "Precision Code Search: text-fallback\n\n## Relevant Text Matches\n\n- check_execution.py:61 - def tool_not_installed(",
+        "metadata": {
+            "symbol_count": 0,
+            "used_symbol_first": False,
+            "used_fallback": True,
+            "definition_matched_terms": ["tool_not_installed"],
+            "symbol_index_age_minutes": 40216,
+            "estimated_tokens_saved": 0,
+            "final_tokens": 100,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = _invoke(["tool_not_installed", "--project", "agent-hub"])
+
+    assert result.exit_code == 0
+    assert "definition of `tool_not_installed` that the symbol index missed" in result.output
+    assert "index age 40216m" in result.output
+    assert "--scope checkout" in result.output
+    assert "Try a specific identifier" not in result.output
+
+
+def _escalation_patches(payload: Mapping[str, Any], checkout_result: Mapping[str, Any] | None):
+    patches = [
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.get_config_optional", return_value=type("Cfg", (), {"project_root": "/srv/workspaces/projects/summitflow", "project_id": "summitflow"})()),
+        patch("cli.commands.search.is_compact", return_value=True),
+        patch("cli.commands.search.resolve_checkout_root", return_value=Path("/srv/workspaces/projects/summitflow"), create=True),
+        patch("cli.commands.search.canonical_repo_root", return_value=Path("/srv/workspaces/projects/summitflow"), create=True),
+        patch("cli.commands.search.resolve_checkout_project_id", return_value="summitflow", create=True),
+        patch("cli.commands.search._checkout_has_local_changes", return_value=False),
+    ]
+    if checkout_result is not None:
+        patches.append(patch("cli.commands.search._build_checkout_precision_result", return_value=checkout_result))
+    return patches
+
+
+def test_search_auto_scope_escalates_to_checkout_when_index_misses_identifier() -> None:
+    """Stale canonical symbol index: identifier query with zero indexed symbols
+    must fall through to live checkout symbol parsing without --scope checkout."""
+    payload = {
+        "prompt_context": "",
+        "metadata": {"symbol_count": 0, "used_symbol_first": False, "estimated_tokens_saved": 0, "final_tokens": 0},
+    }
+    checkout_result = {
+        "query": "tool_not_installed",
+        "prompt_context": "## Current Checkout Overrides\n\n- `tool_not_installed` (function) in backend/cli/commands/check_execution.py:61",
+        "metadata": {"scope": "checkout", "checkout_root": "/srv/workspaces/projects/summitflow", "symbol_count": 1, "used_symbol_first": True, "used_fallback": False, "estimated_tokens_saved": 0, "final_tokens": 30},
+    }
+
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        for p in _escalation_patches(payload, checkout_result):
+            stack.enter_context(p)
+        result = runner.invoke(app, ["tool_not_installed"])
+
+    assert result.exit_code == 0
+    assert "## Current Checkout Overrides" in result.output
+    assert "symbols=1" in result.output
+    assert "prepended current checkout results" in result.output
+
+
+def test_search_auto_scope_does_not_escalate_for_prose_query() -> None:
+    payload = {
+        "prompt_context": "",
+        "metadata": {"symbol_count": 0, "used_symbol_first": False, "estimated_tokens_saved": 0, "final_tokens": 0},
+    }
+
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        for p in _escalation_patches(payload, None):
+            stack.enter_context(p)
+        build_mock = stack.enter_context(
+            patch("cli.commands.search._build_checkout_precision_result")
+        )
+        result = runner.invoke(app, ["campaign mode"])
+
+    assert result.exit_code == 0
+    build_mock.assert_not_called()
+
+
+def test_search_auto_scope_does_not_escalate_for_other_project_override() -> None:
+    payload = {
+        "prompt_context": "",
+        "metadata": {"symbol_count": 0, "used_symbol_first": False, "estimated_tokens_saved": 0, "final_tokens": 0},
+    }
+
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        for p in _escalation_patches(payload, None):
+            stack.enter_context(p)
+        build_mock = stack.enter_context(
+            patch("cli.commands.search._build_checkout_precision_result")
+        )
+        result = runner.invoke(app, ["tool_not_installed", "--project", "agent-hub"])
+
+    assert result.exit_code == 0
+    build_mock.assert_not_called()
+
+
+def test_search_auto_scope_escalation_keeps_project_result_when_checkout_finds_nothing() -> None:
+    payload = {
+        "prompt_context": "",
+        "metadata": {"symbol_count": 0, "used_symbol_first": False, "estimated_tokens_saved": 0, "final_tokens": 0},
+    }
+    checkout_empty = {
+        "query": "missing_thing",
+        "prompt_context": "",
+        "metadata": {"scope": "checkout", "symbol_count": 0, "used_symbol_first": False, "used_fallback": False, "estimated_tokens_saved": 0, "final_tokens": 0},
+    }
+
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        for p in _escalation_patches(payload, checkout_empty):
+            stack.enter_context(p)
+        result = runner.invoke(app, ["missing_thing"])
+
+    assert result.exit_code == 0
+    assert "mode=empty" in result.output
+    assert "## Current Checkout Overrides" not in result.output

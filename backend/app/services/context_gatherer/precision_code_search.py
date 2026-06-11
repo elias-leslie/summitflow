@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -147,6 +148,35 @@ def _refresh_precision_index(project_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+_DEFINITION_PATTERN = (
+    r"\b(?:def|class|function|fn|interface|struct|enum|trait|type|const|let|var|val)\s+{term}\b"
+)
+
+
+def _definition_matched_terms(
+    normalized_queries: list[str],
+    text_items: Any,
+) -> list[str]:
+    """Query terms whose definition line appears in the text matches.
+
+    A `def <term>`/`class <term>` line surfacing only via text fallback means
+    the symbol index should have had this term and missed it — a stale-index
+    signal the hint layer surfaces instead of asking for a reshaped query.
+    """
+    if not isinstance(text_items, list) or not text_items:
+        return []
+    terms = list(dict.fromkeys(
+        term for query in normalized_queries for term in query.split() if len(term) >= 3
+    ))
+    contents = [str(item.get("content", "")) for item in text_items if isinstance(item, dict)]
+    matched = []
+    for term in terms:
+        pattern = re.compile(_DEFINITION_PATTERN.format(term=re.escape(term)))
+        if any(pattern.search(content) for content in contents):
+            matched.append(term)
+    return matched
+
+
 def _build_result_metadata(
     project_id: str,
     normalized_queries: list[str],
@@ -173,6 +203,12 @@ def _build_result_metadata(
         "symbol_count": len(state.symbols),
         "text_match_count": len(text_items) if isinstance(text_items, list) else 0,
         "text_files_searched": state.text_results.get("files_searched", 0),
+        "text_per_term_union": bool(state.text_results.get("per_term_union", False)),
+        "definition_matched_terms": (
+            []
+            if state.used_symbol_first
+            else _definition_matched_terms(normalized_queries, text_items)
+        ),
         "refreshed_index": state.refreshed_index,
         "used_symbol_first": state.used_symbol_first,
         "used_fallback": state.used_fallback,
@@ -308,10 +344,11 @@ def _text_fallback(
 ) -> tuple[dict[str, Any], str]:
     """Run text search as a fallback when symbol search yields nothing.
 
-    Searches the full phrase only. Single-word retries surface whichever
-    word is most common in the repo — junk matches that cost tokens and
-    mislead the caller — so a phrase miss returns empty and the CLI hint
-    asks for a reshaped query instead.
+    Searches the full phrase first. When the phrase misses and the query has
+    multiple meaningful terms, retries per term and unions the matches —
+    dropping terms whose match count hits the cap, since those are the
+    common words whose single-word matches are junk that costs tokens and
+    misleads the caller.
     """
     _empty: dict[str, Any] = {"count": 0, "files_searched": 0, "items": [], "truncated": False}
     if symbol_section and not force:
@@ -324,7 +361,55 @@ def _text_fallback(
     else:
         text_results = search_text(project_id, text_query, limit=_ENTRY_LIMIT, path_prefix=path_prefix)
 
+    if not text_results.get("items"):
+        union = _per_term_text_union(project_id, text_query, path_prefix=path_prefix)
+        if union is not None:
+            text_results = union
+
     return text_results, build_text_section(text_results)
+
+
+def _per_term_text_union(
+    project_id: str,
+    phrase: str,
+    *,
+    path_prefix: str | None = None,
+) -> dict[str, Any] | None:
+    """Union per-term matches when the full phrase has none.
+
+    Terms whose match count reaches the cap are dropped: those are common
+    words whose matches would be junk. Rare identifier-shaped terms — the
+    ones worth surfacing — survive.
+    """
+    terms = list(dict.fromkeys(meaningful_terms(phrase)))
+    if len(terms) < 2:
+        return None
+
+    items: list[dict[str, Any]] = []
+    seen: set[tuple[str, Any]] = set()
+    files_searched = 0
+    for term in terms:
+        result = search_text(project_id, term, limit=_ENTRY_LIMIT, path_prefix=path_prefix)
+        files_searched = max(files_searched, int(result.get("files_searched", 0) or 0))
+        term_items = result.get("items") or []
+        if not term_items or result.get("truncated") or len(term_items) >= _ENTRY_LIMIT:
+            continue
+        for item in term_items:
+            key = (str(item.get("path", "")), item.get("line"))
+            if key not in seen:
+                seen.add(key)
+                items.append(item)
+
+    if not items:
+        return None
+    items = items[:_ENTRY_LIMIT]
+    return {
+        "count": len(items),
+        "files_searched": files_searched,
+        "items": items,
+        "truncated": False,
+        "per_term_union": True,
+    }
 
 
 def _retrieve_and_assemble(

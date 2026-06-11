@@ -24,3 +24,6 @@ class SearchRoots:
     project_root: Path | None
     checkout_root: Path | None
     checkout_has_changes: bool = False
+    # The checkout is a checkout of the project being searched (not e.g. a
+    # -P <other-project> search run from an unrelated working directory).
+    checkout_is_project: bool = False
