@@ -83,21 +83,41 @@ def _print_symbols_compact(query: str, result: dict[str, Any]) -> None:
             )
 
 
-def _print_file_symbols_compact(file_path: str, result: dict[str, Any]) -> None:
+def _print_file_symbols_compact(file_path: str, result: dict[str, Any], *, show_hint: bool = True) -> None:
     """Print TOON-style compact output for file symbol listing."""
     items = result.get("items", [])
     count = result.get("count", len(items) if isinstance(items, list) else 0)
     scope_suffix = _scope_suffix(result.get("scope"))
+    resolved_suffix = f"|resolved_from={result['resolved_from']}" if result.get("resolved_from") else ""
 
     if not items:
-        print(f"SEARCH:--file {file_path}|mode=empty|symbols=0|tokens=0{scope_suffix}")
+        print(f"SEARCH:--file {file_path}|mode=empty|symbols=0|tokens=0{scope_suffix}{resolved_suffix}")
+        if show_hint:
+            _print_file_empty_hint(file_path, result)
         return
 
-    print(f"SEARCH:--file {file_path}|mode=file-symbols|symbols={count}{scope_suffix}")
+    print(f"SEARCH:--file {file_path}|mode=file-symbols|symbols={count}{scope_suffix}{resolved_suffix}")
     print()
     for item in items:
         if isinstance(item, dict):
             print(_format_file_symbol(item))
+
+
+def _print_file_empty_hint(file_path: str, result: dict[str, Any]) -> None:
+    candidates = result.get("candidates") or []
+    if candidates:
+        listed = ", ".join(f"`{c}`" for c in candidates)
+        print(f"{HINT_PREFIX}`{file_path}` matches multiple files — rerun with one exact path: {listed}")
+    elif result.get("file_exists") or result.get("resolved_from"):
+        print(
+            f"{HINT_PREFIX}`{file_path}` has no extractable symbols (unsupported language or no definitions) — "
+            'use `st search --text "<phrase>"` or read the file directly'
+        )
+    else:
+        print(
+            f"{HINT_PREFIX}no file matching `{file_path}` found — a basename or path-suffix fragment also resolves; "
+            "check the spelling, or if the file is brand-new the index may not include it yet"
+        )
 
 
 def _print_hint(query: str, mode: str, metadata: dict[str, Any], show_hint: bool) -> None:

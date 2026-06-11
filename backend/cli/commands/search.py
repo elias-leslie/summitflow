@@ -293,11 +293,11 @@ def _has_identifier_shaped_term(query: str) -> bool:
     return any("_" in term or re.search(r"[a-z][A-Z]", term) for term in query.split())
 
 
-def _emit_file_output(file_path: str, result: dict[str, Any], raw_json: bool) -> None:
+def _emit_file_output(file_path: str, result: dict[str, Any], raw_json: bool, show_hint: bool) -> None:
     if raw_json:
         output_json(result)
     elif is_compact():
-        _print_file_symbols_compact(str(result.get("file_path", file_path)), result)
+        _print_file_symbols_compact(str(result.get("file_path", file_path)), result, show_hint=show_hint)
     else:
         output_json(result)
 
@@ -358,7 +358,7 @@ def search(
 
     try:
         if file:
-            _emit_file_output(file, _file_result(roots, project, file, limit), raw_json)
+            _emit_file_output(file, _file_result(roots, project, file, limit), raw_json, hint)
             return
         result = _text_result(roots, project, q, limit, normalized_path) if text else _query_result(roots, project, q, budget, limit, normalized_path, symbols)
     except APIError as e:

@@ -218,17 +218,48 @@ def _symbol_sort_key(item: tuple[int, dict[str, Any]]) -> tuple[int, str, int, s
 
 
 def _search_checkout_file_symbols(root: Path, file_path: str, *, limit: int) -> dict[str, Any]:
-    """List symbols for a specific file from the current checkout."""
-    absolute_path = (root / file_path).resolve()
+    """List symbols for a specific file from the current checkout.
+
+    A basename or path-suffix fragment resolves to the checkout file when the
+    match is unique; ambiguous fragments return the candidate paths instead.
+    """
+    fragment = file_path.lstrip("/").removeprefix("./")
+    absolute_path = (root / fragment).resolve()
     rel_path = _normalize_rel_path(root, absolute_path)
+    resolved_from: str | None = None
     if rel_path is None or not absolute_path.is_file():
-        return {"file_path": file_path, "count": 0, "items": [], "scope": "checkout", "root_path": str(root)}
+        matches = _resolve_checkout_file_suffix(root, fragment)
+        if len(matches) != 1:
+            result = {"file_path": fragment, "count": 0, "items": [], "scope": "checkout", "root_path": str(root)}
+            if matches:
+                result["candidates"] = [rel for _, rel in matches]
+            return result
+        absolute_path, rel_path = matches[0]
+        resolved_from = fragment
 
     items = [_symbol_record_to_item(symbol, rel_path) for symbol in extract_symbols(absolute_path, rel_path)[:limit]]
-    return {
+    result = {
         "file_path": rel_path,
         "count": len(items),
         "items": items,
         "scope": "checkout",
         "root_path": str(root),
+        "file_exists": True,
     }
+    if resolved_from:
+        result["resolved_from"] = resolved_from
+    return result
+
+
+def _resolve_checkout_file_suffix(root: Path, fragment: str, *, limit: int = 5) -> list[tuple[Path, str]]:
+    """Resolve a basename or path-suffix fragment against the checkout tree."""
+    suffix = f"/{fragment}"
+    matches: list[tuple[Path, str]] = []
+    for path in _iter_checkout_files(root):
+        rel_path = _normalize_rel_path(root, path)
+        if rel_path is not None and (rel_path == fragment or rel_path.endswith(suffix)):
+            matches.append((path, rel_path))
+            if len(matches) >= limit:
+                break
+    matches.sort(key=lambda match: match[1])
+    return matches

@@ -297,3 +297,47 @@ class TestSymbolStats:
 
         assert stats["count"] == 1
         assert stats["last_updated"] is not None
+
+
+class TestResolveSymbolFilePaths:
+    """Tests for basename/path-suffix resolution against indexed file paths."""
+
+    def _index_file(self, project_id: str, file_path: str) -> None:
+        explorer_symbols.replace_file_symbols(
+            project_id,
+            file_path,
+            [_make_symbol(symbol_id=f"{file_path}::sym#function", name="sym")],
+        )
+
+    def test_resolves_basename_and_partial_path(self, cleanup_symbols: str) -> None:
+        self._index_file(cleanup_symbols, "backend/app/api/files.py")
+        self._index_file(cleanup_symbols, "backend/cli/lib/search_hints.py")
+
+        assert explorer_symbols.resolve_symbol_file_paths(cleanup_symbols, "files.py") == [
+            "backend/app/api/files.py"
+        ]
+        assert explorer_symbols.resolve_symbol_file_paths(cleanup_symbols, "cli/lib/search_hints.py") == [
+            "backend/cli/lib/search_hints.py"
+        ]
+
+    def test_suffix_matches_whole_path_segments_only(self, cleanup_symbols: str) -> None:
+        self._index_file(cleanup_symbols, "backend/services/_precision_ranking.py")
+
+        assert explorer_symbols.resolve_symbol_file_paths(cleanup_symbols, "ranking.py") == []
+        assert explorer_symbols.resolve_symbol_file_paths(cleanup_symbols, "_precision_ranking.py") == [
+            "backend/services/_precision_ranking.py"
+        ]
+
+    def test_underscore_in_fragment_is_literal_not_wildcard(self, cleanup_symbols: str) -> None:
+        self._index_file(cleanup_symbols, "backend/lib/searchXhints.py")
+
+        assert explorer_symbols.resolve_symbol_file_paths(cleanup_symbols, "search_hints.py") == []
+
+    def test_ambiguous_basename_returns_all_candidates(self, cleanup_symbols: str) -> None:
+        self._index_file(cleanup_symbols, "backend/app/utils.py")
+        self._index_file(cleanup_symbols, "backend/cli/utils.py")
+
+        assert explorer_symbols.resolve_symbol_file_paths(cleanup_symbols, "utils.py") == [
+            "backend/app/utils.py",
+            "backend/cli/utils.py",
+        ]

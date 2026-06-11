@@ -232,3 +232,73 @@ class TestExplorerSymbolDetailEndpoint:
 
         assert response.status_code == 404
         assert response.json()["message"] == "Symbol not found"
+
+
+class TestExplorerSymbolsByFileEndpoint:
+    """Tests for GET /api/projects/{project_id}/explorer/symbols/by-file."""
+
+    def test_exact_path_returns_symbols_without_resolution(
+        self,
+        client: TestClient,
+        symbol_api_project: str,
+    ) -> None:
+        response = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/symbols/by-file",
+            params={"file_path": "backend/app/api/files.py"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["file_path"] == "backend/app/api/files.py"
+        assert "resolved_from" not in data
+        assert data["count"] >= 1
+
+    def test_unique_basename_resolves_to_indexed_path(
+        self,
+        client: TestClient,
+        symbol_api_project: str,
+    ) -> None:
+        """A bare basename must resolve instead of returning a silent empty."""
+        response = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/symbols/by-file",
+            params={"file_path": "files.py"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["file_path"] == "backend/app/api/files.py"
+        assert data["resolved_from"] == "files.py"
+        assert data["count"] >= 1
+        assert data["items"][0]["file_path"] == "backend/app/api/files.py"
+
+    def test_partial_path_suffix_resolves(
+        self,
+        client: TestClient,
+        symbol_api_project: str,
+    ) -> None:
+        response = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/symbols/by-file",
+            params={"file_path": "api/files.py"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["file_path"] == "backend/app/api/files.py"
+        assert data["resolved_from"] == "api/files.py"
+
+    def test_unknown_fragment_returns_plain_empty(
+        self,
+        client: TestClient,
+        symbol_api_project: str,
+    ) -> None:
+        response = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/symbols/by-file",
+            params={"file_path": "qqzz_not_a_file.py"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["count"] == 0
+        assert data["items"] == []
+        assert "candidates" not in data
+        assert "resolved_from" not in data

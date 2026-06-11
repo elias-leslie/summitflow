@@ -47,6 +47,7 @@ from .explorer_symbols import (
     list_related_entries_for_file,
     list_symbols_for_file,
     replace_file_symbols,
+    resolve_symbol_file_paths,
     search_symbols,
     summarize_symbols_for_file,
 )
@@ -73,6 +74,7 @@ __all__ = [
     "list_related_entries_for_file",
     "list_symbols_for_file",
     "replace_file_symbols",
+    "resolve_symbol_file_paths",
     "search_symbols",
     "summarize_symbols_for_file",
     "update_scan_state",

@@ -121,6 +121,27 @@ def list_symbols_for_file(project_id: str, file_path: str) -> list[dict[str, Any
         return [_row_to_symbol(row) for row in cur.fetchall()]
 
 
+def resolve_symbol_file_paths(project_id: str, fragment: str, *, limit: int = 5) -> list[str]:
+    """Resolve a basename or path-suffix fragment to indexed file paths.
+
+    Matches whole path segments only: `ranking.py` does not match
+    `_precision_ranking.py`.
+    """
+    escaped = fragment.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT file_path
+            FROM explorer_symbols
+            WHERE project_id = %s AND (file_path = %s OR file_path LIKE %s)
+            ORDER BY file_path
+            LIMIT %s
+            """,
+            (project_id, fragment, f"%/{escaped}", limit),
+        )
+        return [row[0] for row in cur.fetchall()]
+
+
 def get_symbol(project_id: str, symbol_id: str) -> dict[str, Any] | None:
     """Fetch one symbol by project and stable symbol id."""
     with get_cursor() as cur:

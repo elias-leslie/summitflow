@@ -1241,3 +1241,129 @@ def test_without_generic_only_items_no_identifier_tokens_keeps_items() -> None:
 
     items = [{"name": "handler", "qualified_name": "handler", "file_path": "frontend/hooks/useMediaQuery.ts"}]
     assert _without_generic_only_items(items, "project selector") == items
+
+
+def test_search_file_mode_empty_shows_not_found_hint() -> None:
+    payload = {"file_path": "qqzz_missing.py", "count": 0, "items": []}
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = _invoke(["dummy", "--file", "qqzz_missing.py"])
+
+    assert result.exit_code == 0
+    assert "mode=empty" in result.output
+    assert "hint: no file matching `qqzz_missing.py` found" in result.output
+
+
+def test_search_file_mode_ambiguous_fragment_lists_candidates() -> None:
+    payload = {
+        "file_path": "utils.py",
+        "count": 0,
+        "items": [],
+        "candidates": ["backend/app/utils.py", "backend/cli/utils.py"],
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = _invoke(["dummy", "--file", "utils.py"])
+
+    assert result.exit_code == 0
+    assert "hint: `utils.py` matches multiple files" in result.output
+    assert "`backend/app/utils.py`" in result.output
+    assert "`backend/cli/utils.py`" in result.output
+
+
+def test_search_file_mode_resolved_basename_notes_resolution() -> None:
+    payload = {
+        "file_path": "backend/app/api/files.py",
+        "resolved_from": "files.py",
+        "count": 1,
+        "items": [
+            {
+                "qualified_name": "get_file_tree",
+                "name": "get_file_tree",
+                "kind": "function",
+                "start_line": 24,
+                "signature": "def get_file_tree(path: str) -> dict",
+            }
+        ],
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = _invoke(["dummy", "--file", "files.py"])
+
+    assert result.exit_code == 0
+    assert (
+        "SEARCH:--file backend/app/api/files.py|mode=file-symbols|symbols=1|resolved_from=files.py"
+        in result.output
+    )
+    assert "`get_file_tree`" in result.output
+
+
+def test_search_file_mode_existing_file_without_symbols_hint() -> None:
+    payload = {"file_path": "README.md", "count": 0, "items": [], "file_exists": True}
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = _invoke(["dummy", "--file", "README.md"])
+
+    assert result.exit_code == 0
+    assert "hint: `README.md` has no extractable symbols" in result.output
+
+
+def test_search_file_mode_scope_checkout_resolves_basename() -> None:
+    with runner.isolated_filesystem():
+        file_path = Path("frontend/src/example.tsx")
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(
+            "export function WorkspaceChatFooter() {\n  return null;\n}\n",
+            encoding="utf-8",
+        )
+
+        with (
+            patch("cli.commands.search.is_compact", return_value=True),
+            patch("cli.commands.search.resolve_checkout_root", return_value=Path.cwd(), create=True),
+            patch("cli.commands.search.canonical_repo_root", return_value=Path("/srv/workspaces/projects/summitflow"), create=True),
+            patch("cli.commands.search.STClient") as mock_client,
+        ):
+            result = _invoke(["dummy", "--file", "example.tsx", "--scope", "checkout"])
+
+    assert result.exit_code == 0
+    assert (
+        "SEARCH:--file frontend/src/example.tsx|mode=file-symbols|symbols=1|scope=checkout|resolved_from=example.tsx"
+        in result.output
+    )
+    assert "`WorkspaceChatFooter`" in result.output
+    mock_client.assert_not_called()
+
+
+def test_search_file_mode_scope_checkout_ambiguous_lists_candidates() -> None:
+    with runner.isolated_filesystem():
+        for parent in ("frontend/src", "frontend/widgets"):
+            file_path = Path(parent) / "example.tsx"
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text("export const x = 1;\n", encoding="utf-8")
+
+        with (
+            patch("cli.commands.search.is_compact", return_value=True),
+            patch("cli.commands.search.resolve_checkout_root", return_value=Path.cwd(), create=True),
+            patch("cli.commands.search.canonical_repo_root", return_value=Path("/srv/workspaces/projects/summitflow"), create=True),
+            patch("cli.commands.search.STClient") as mock_client,
+        ):
+            result = _invoke(["dummy", "--file", "example.tsx", "--scope", "checkout"])
+
+    assert result.exit_code == 0
+    assert "mode=empty" in result.output
+    assert "hint: `example.tsx` matches multiple files" in result.output
+    assert "`frontend/src/example.tsx`" in result.output
+    assert "`frontend/widgets/example.tsx`" in result.output
+    mock_client.assert_not_called()

@@ -172,14 +172,30 @@ async def list_file_symbols(
     file_path: str = Query(..., min_length=1, description="Relative file path within the project"),
     limit: int = Query(100, ge=1, le=500, description="Maximum symbols to return"),
 ) -> dict[str, Any]:
-    """List all symbols in a specific file, ordered by source position."""
+    """List all symbols in a specific file, ordered by source position.
+
+    A basename or path-suffix fragment resolves to the indexed path when the
+    match is unique; ambiguous fragments return the candidate paths instead.
+    """
     validate_project_exists(project_id)
-    rows = explorer_storage.list_symbols_for_file(project_id, file_path)
-    return {
-        "file_path": file_path,
-        "count": len(rows[:limit]),
-        "items": rows[:limit],
-    }
+    fragment = file_path.lstrip("/").removeprefix("./")
+    rows = explorer_storage.list_symbols_for_file(project_id, fragment)
+    payload: dict[str, Any] = {"file_path": fragment, "count": 0, "items": []}
+    if not rows:
+        candidates = explorer_storage.resolve_symbol_file_paths(project_id, fragment)
+        if len(candidates) == 1:
+            rows = explorer_storage.list_symbols_for_file(project_id, candidates[0])
+            payload["file_path"] = candidates[0]
+            payload["resolved_from"] = fragment
+        elif candidates:
+            payload["candidates"] = candidates
+            return payload
+        elif explorer_storage.get_entry(project_id, "file", fragment):
+            payload["file_exists"] = True
+            return payload
+    payload["count"] = len(rows[:limit])
+    payload["items"] = rows[:limit]
+    return payload
 
 
 @router.get("/{project_id}/explorer/symbols/detail")
