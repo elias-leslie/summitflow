@@ -58,6 +58,21 @@ def read_tool_paths(root: Path) -> dict[str, str]:
     return {str(key): str(value) for key, value in paths.items() if isinstance(value, str)}
 
 
+def tool_not_installed(name: str, root: Path) -> bool:
+    """True when the repo has no environment that could contain the tool.
+
+    A declared path in `.st-check.toml` or an existing default candidate dir
+    (e.g. backend/.venv/bin for pytest) means the project intends to have the
+    tool — a missing binary there is a broken env and stays a failure. With
+    neither present (e.g. pytest in a repo with no Python venv), the tool was
+    never installable and the gate should skip instead of fail.
+    """
+    if name in read_tool_paths(root):
+        return False
+    candidates = _DEFAULT_TOOL_PATH_CANDIDATES.get(name, ())
+    return not any((root / candidate).exists() for candidate in candidates)
+
+
 def read_pytest_no_cov(root: Path) -> bool:
     """Return the project's preference for `--no-cov` auto-injection.
 

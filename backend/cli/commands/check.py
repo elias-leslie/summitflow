@@ -36,6 +36,7 @@ from .check_dispatch import (
 from .check_execution import (
     adjusted_tool_args,
     tool_env,
+    tool_not_installed,
     tool_output,
     tool_result_line,
 )
@@ -105,6 +106,9 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
             check=False,
         )
     except OSError as exc:
+        if isinstance(exc, FileNotFoundError) and tool_not_installed(name, root):
+            print(f"{label}:SKIP:{name}:tool_not_installed")
+            return 0
         output = f"{type(exc).__name__}: {exc}"
         details = write_details(root, name, output)
         print(

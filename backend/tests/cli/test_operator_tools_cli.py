@@ -663,6 +663,38 @@ def test_check_tool_output_goes_to_details_file(tmp_path: Path, capsys: pytest.C
     assert "TEST:OK:0|details:.dev-tools/pytest-details.txt|hint:2187 passed in 19.87s" in captured.out
 
 
+def test_check_missing_binary_skips_when_no_project_env(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """No venv anywhere (e.g. pytest in a config repo): skip, don't fail."""
+    with (
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
+        patch("cli.commands.check.subprocess.run", side_effect=FileNotFoundError("pytest")),
+    ):
+        exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
+
+    assert exit_code == 0
+    assert "TEST:SKIP:pytest:tool_not_installed" in capsys.readouterr().out
+
+
+def test_check_missing_binary_fails_when_project_env_exists(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A venv exists but the binary is gone: broken env stays a failure."""
+    (tmp_path / ".venv" / "bin").mkdir(parents=True)
+    with (
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
+        patch("cli.commands.check.subprocess.run", side_effect=FileNotFoundError("pytest")),
+    ):
+        exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
+
+    captured = capsys.readouterr()
+    assert exit_code == 127
+    assert "TEST:FAIL:127" in captured.out
+
+
 def test_check_pytest_scoped_paths_disable_configured_coverage(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
