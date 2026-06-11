@@ -925,3 +925,112 @@ def test_briefing_context_composes_position_impact_inputs(monkeypatch) -> None:
         "/api/catalysts/upcoming",
         "/api/portfolio/jenny",
     ]
+
+
+# --- advisor data surface ---------------------------------------------------
+
+
+def test_household_emits_envelope(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    dashboard = {
+        "generated_at": "2026-06-10T00:00:00Z",
+        "overview": {"net_worth": 1468905.38, "tracked_account_count": 23},
+        "account_control": {"status": "trusted", "issue_count": 0},
+        "accounts": [{"label": "ignored"}],
+        "jenny_needs": [{"id": "should-be-dropped"}],
+    }
+    fake = _fake_client(get_return=dashboard)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "household"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout.strip())
+    assert payload["ok"] is True
+    assert payload["data"]["overview"]["net_worth"] == 1468905.38
+    assert payload["data"]["account_control"]["status"] == "trusted"
+    assert "accounts" not in payload["data"]
+    assert "jenny_needs" not in payload["data"]
+    fake.get.assert_called_once_with("/api/household/dashboard", params=None)
+
+
+def test_accounts_projects_freshness_fields(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    dashboard = {
+        "accounts": [
+            {
+                "label": "Brokerage",
+                "asset_group": "taxable",
+                "current_value": 1000.0,
+                "freshness_status": "fresh",
+                "internal_id": "should-be-dropped",
+            },
+            {
+                "label": "401k",
+                "asset_group": "retirement",
+                "current_value": 2500.0,
+                "freshness_status": "stale",
+            },
+        ]
+    }
+    fake = _fake_client(get_return=dashboard)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "accounts"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout.strip())
+    assert payload["ok"] is True
+    assert payload["meta"]["count"] == 2
+    assert payload["meta"]["stale_count"] == 1
+    assert payload["data"][0]["label"] == "Brokerage"
+    assert "internal_id" not in payload["data"][0]
+    fake.get.assert_called_once_with("/api/household/dashboard", params=None)
+
+
+def test_budget_emits_summary_and_categories(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    spending = {
+        "generated_at": "2026-06-10T00:00:00Z",
+        "summary": {"timeframe_label": "Past 30 days", "average_monthly_spend": 5425.0, "over_budget_count": 1, "savings_rate": 0.25},
+        "categories": [
+            {"category": "Groceries", "average_monthly_spend": 900.0, "budget_status": "over", "raw_rows": ["dropped"]},
+        ],
+        "monthly_trend": [{"month": "2026-05", "total_spend": 5000.0}],
+        "transactions": [{"id": "should-be-dropped"}],
+    }
+    fake = _fake_client(get_return=spending)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "budget"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout.strip())
+    assert payload["ok"] is True
+    assert payload["meta"]["category_count"] == 1
+    assert payload["data"]["summary"]["savings_rate"] == 0.25
+    assert payload["data"]["categories"][0]["category"] == "Groceries"
+    assert "raw_rows" not in payload["data"]["categories"][0]
+    assert "transactions" not in payload["data"]
+    fake.get.assert_called_once_with("/api/household/spending", params=None)
+
+
+def test_symbol_intel_uppercases_and_passes_through(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    intel = {"symbol": "AAPL", "scores": {"signal_type": "HOLD", "overall": 47.2}, "news": []}
+    fake = _fake_client(get_return=intel)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "symbol-intel", "aapl"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout.strip())
+    assert payload["ok"] is True
+    assert payload["data"] == intel
+    assert payload["meta"]["symbol"] == "AAPL"
+    fake.get.assert_called_once_with("/api/symbols/AAPL/intelligence", params=None)
+
+
+def test_macro_emits_conditions(monkeypatch) -> None:
+    monkeypatch.setenv("ST_PORTFOLIO_API_URL", "http://test")
+    conditions = {"state": "Caution", "macro_zone": "REDUCED", "deployment_score": 55.74, "overall_read": "selective"}
+    fake = _fake_client(get_return=conditions)
+    with _patch_client(fake):
+        result = runner.invoke(app, ["portfolio", "macro"])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout.strip())
+    assert payload["ok"] is True
+    assert payload["data"] == conditions
+    fake.get.assert_called_once_with("/api/macro/conditions", params=None)

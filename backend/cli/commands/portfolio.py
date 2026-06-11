@@ -51,6 +51,10 @@ EP_PORTFOLIO_ANALYTICS = "/api/portfolio/analytics"
 EP_PORTFOLIO_JENNY = "/api/portfolio/jenny"
 EP_MARKET_STATUS = "/api/market/status"
 EP_RETIREMENT_SCENARIOS = "/api/retirement/scenarios"
+EP_HOUSEHOLD_DASHBOARD = "/api/household/dashboard"
+EP_HOUSEHOLD_SPENDING = "/api/household/spending"
+EP_SYMBOL_INTELLIGENCE = "/api/symbols/{symbol}/intelligence"
+EP_MACRO_CONDITIONS = "/api/macro/conditions"
 EP_OPENAPI = "/openapi.json"
 
 # Human-readable labels
@@ -513,6 +517,168 @@ def briefing_context(
     }
     envelope = _success_envelope(data, {"limit": limit, "catalyst_days": catalyst_days, "include_jenny": include_jenny, "include_paper": include_paper})
     _emit(envelope, human=human, summary_text=_human_briefing_context(data))
+
+
+_ACCOUNT_FIELDS = (
+    "label",
+    "asset_group",
+    "account_type",
+    "institution_name",
+    "owner_name",
+    "current_value",
+    "balance",
+    "valuation_source",
+    "freshness_status",
+    "freshness_label",
+    "days_since_balance",
+    "last_balance_at",
+    "match_status",
+    "gap_flags",
+)
+
+_BUDGET_CATEGORY_FIELDS = (
+    "category",
+    "essentiality",
+    "total_spend",
+    "average_monthly_spend",
+    "share_of_spend",
+    "found_monthly_budget",
+    "confirmed_monthly_budget",
+    "budget_source",
+    "budget_status",
+)
+
+
+@app.command("household")
+@usage(
+    surface="st.portfolio.household",
+    cmd="st portfolio household",
+    when="answer household money questions: net worth, asset/liability totals, account-control trust status",
+    precautions=("read-only; uses portfolio-ai API and excludes raw credentials",),
+    task_types=("portfolio", "household", "advisor"),
+    tier="reference",
+)
+def household(
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """Return household net worth, asset totals, and account-control status."""
+    dashboard = _as_dict(_get(remote, EP_HOUSEHOLD_DASHBOARD))
+    overview = _as_dict(dashboard.get("overview"))
+    control = _as_dict(dashboard.get("account_control"))
+    data = {"generated_at": dashboard.get("generated_at"), "overview": overview, "account_control": control}
+    envelope = _success_envelope(data, {})
+    text = (
+        f"Net worth ${_num(overview.get('net_worth')) or 0:,.0f}; "
+        f"tracked accounts {overview.get('tracked_account_count')}; "
+        f"account control {control.get('status')} ({control.get('issue_count')} issue(s))"
+    )
+    _emit(envelope, human=human, summary_text=text)
+
+
+@app.command("accounts")
+@usage(
+    surface="st.portfolio.accounts",
+    cmd="st portfolio accounts",
+    when="list household accounts with balances and data-freshness flags before trusting totals or diagnosing stale accounts",
+    precautions=("read-only; uses portfolio-ai API and excludes raw credentials",),
+    task_types=("portfolio", "household", "advisor"),
+    tier="reference",
+)
+def accounts(
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """Return household accounts with balances and freshness flags."""
+    dashboard = _as_dict(_get(remote, EP_HOUSEHOLD_DASHBOARD))
+    rows = [
+        {field: row.get(field) for field in _ACCOUNT_FIELDS}
+        for row in _as_list(dashboard.get("accounts"))
+    ]
+    stale = sum(1 for row in rows if row.get("freshness_status") not in (None, "fresh"))
+    envelope = _success_envelope(rows, {"count": len(rows), "stale_count": stale})
+    total = sum(_num(row.get("current_value")) or 0.0 for row in rows)
+    _emit(envelope, human=human, summary_text=f"{len(rows)} account(s) totalling ${total:,.0f}; {stale} not fresh")
+
+
+@app.command("budget")
+@usage(
+    surface="st.portfolio.budget",
+    cmd="st portfolio budget",
+    when="answer spending questions: budget categories, spend pace, income, savings rate",
+    precautions=("read-only; uses portfolio-ai API and excludes raw credentials",),
+    task_types=("portfolio", "household", "advisor"),
+    tier="reference",
+)
+def budget(
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """Return budget summary, category spend pace, and savings rate."""
+    spending = _as_dict(_get(remote, EP_HOUSEHOLD_SPENDING))
+    summary = _as_dict(spending.get("summary"))
+    categories = [
+        {field: row.get(field) for field in _BUDGET_CATEGORY_FIELDS}
+        for row in _as_list(spending.get("categories"))
+    ]
+    data = {
+        "generated_at": spending.get("generated_at"),
+        "summary": summary,
+        "categories": categories,
+        "monthly_trend": _as_list(spending.get("monthly_trend")),
+    }
+    envelope = _success_envelope(data, {"category_count": len(categories)})
+    text = (
+        f"{summary.get('timeframe_label')}: avg monthly spend ${_num(summary.get('average_monthly_spend')) or 0:,.0f}; "
+        f"{summary.get('over_budget_count')} category(ies) over budget; savings_rate={summary.get('savings_rate')}"
+    )
+    _emit(envelope, human=human, summary_text=text)
+
+
+@app.command("symbol-intel")
+@usage(
+    surface="st.portfolio.symbol-intel",
+    cmd="st portfolio symbol-intel AAPL",
+    when="answer questions about a specific stock: scores, signal, quote, news, portfolio context, recommendation",
+    precautions=("read-only; probabilistic analysis, not trading advice or trade execution",),
+    task_types=("portfolio", "market", "advisor"),
+    tier="reference",
+)
+def symbol_intel(
+    symbol: Annotated[str, typer.Argument(help="Ticker symbol, e.g. AAPL")],
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """Return the full symbol intelligence snapshot for one ticker."""
+    ticker = symbol.strip().upper()
+    data = _as_dict(_get(remote, EP_SYMBOL_INTELLIGENCE.format(symbol=ticker)))
+    envelope = _success_envelope(data, {"symbol": ticker})
+    scores = _as_dict(data.get("scores"))
+    text = f"{ticker}: signal={scores.get('signal_type')} overall={_num(scores.get('overall')) or 0:.1f}"
+    _emit(envelope, human=human, summary_text=text)
+
+
+@app.command("macro")
+@usage(
+    surface="st.portfolio.macro",
+    cmd="st portfolio macro",
+    when="check macro deployment gate and market-conditions snapshot before deployment or market-timing questions",
+    precautions=("read-only; probabilistic market read, not trading advice",),
+    task_types=("portfolio", "market", "advisor"),
+    tier="reference",
+)
+def macro(
+    human: Annotated[bool, typer.Option("--human", help="Plain-English rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use production hosts.production_api endpoint")] = False,
+) -> None:
+    """Return the L1 macro deployment-gate / market-conditions snapshot."""
+    data = _as_dict(_get(remote, EP_MACRO_CONDITIONS))
+    envelope = _success_envelope(data, {})
+    text = (
+        f"Macro {data.get('state')} (zone={data.get('macro_zone')}); "
+        f"deployment_score={data.get('deployment_score')}; {data.get('overall_read')}"
+    )
+    _emit(envelope, human=human, summary_text=text)
 
 
 @tlh_app.command("candidates")
