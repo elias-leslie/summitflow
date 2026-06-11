@@ -32,6 +32,9 @@ Key tests: `backend/tests/cli/test_search.py`, `backend/tests/services/context_g
 
 ## Work log
 
+### 2026-06-11 (session 6, addendum)
+- Updated the jcodemunch-mcp reference clone (`cb57224` → `3dbab7f`, v1.108.54) and reviewed it against Precision Code Search — new "Reference repo" section below documents where we're ahead, what's worth stealing, and what we deliberately skip (with reasons, so future sessions don't re-litigate). Eight prioritized next items added to Open items: SHA-based freshness, import graph + references, confidence score, query suggestions, BM25, batch queries, overload audit, secret-exclusion audit.
+
 ### 2026-06-11 (session 6)
 - **Event-driven symbol refresh built** (open item): publishing via `st commit`/`st done` now queues a targeted reindex of just the commit's changed `.py/.ts/.tsx` files, so fresh symbols are searchable seconds after publish instead of waiting for the bi-hourly sweep. Pieces: `refresh_symbols_for_paths` service (`app/services/explorer/symbol_refresh.py` — parse with existing analyzers, `replace_file_symbols` per file, clear rows for deleted files, traversal-guarded, dedup, per-file parse failures skip), `POST /{project}/explorer/symbols/refresh` endpoint (BackgroundTasks, same pattern as trigger_scan), `_refresh_symbols_after_publish` hook in `cli/lib/commit_workflow.py` (fires on SUCCESS+pushed via `git diff-tree`, resolves project id from checkout, best-effort — publish never fails on it; covers both `st commit` and `st done` via `commit_repo`). Result dict gains `symbol_refresh_queued=<n>`.
 - Tests: +5 service (index new, clear deleted, skip unsupported/traversal/blank, unknown project, dedup), +1 API (fresh file searchable immediately after refresh, doc-path filtered), +4 CLI hook (posts filtered paths + diff-tree args, skips unpushed, skips unregistered repo, swallows API errors).
@@ -69,7 +72,41 @@ Key tests: `backend/tests/cli/test_search.py`, `backend/tests/services/context_g
 - Auto checkout escalation for identifier queries with zero indexed symbols.
 - Budget slice reserved for text section in combined mode.
 
+## Reference repo: jcodemunch-mcp (basis review)
+
+Clone: `/home/kasadis/references/jcodemunch-mcp` — `git pull --ff-only` to update before comparing (last reviewed 2026-06-11 at `3dbab7f`, v1.108.54; previously at `cb57224`). Upstream: https://github.com/jgravelle/jcodemunch-mcp. This repo was the basis for Precision Code Search — our symbol-id format (`{file_path}::{qualified_name}#{kind}`) is theirs verbatim.
+
+### Where we stand vs upstream (2026-06-11)
+
+**Equivalent or ours is stronger:**
+- Symbol index + byte-offset exact retrieval: both store byte offsets and slice source directly (ours in Postgres `explorer_symbols`, theirs SQLite WAL + raw-file cache).
+- Compact output: our `SEARCH:` TOON lines ≈ their MUNCH wire format. MUNCH is fancier (legend interning, typed CSV tables, 15%-savings gate, per-tool tier-1 encoders) but solves the same axis; not worth adopting wholesale — our payloads are already budgeted upstream of encoding.
+- Staleness: ours self-heals (checkout escalation + post-publish event-driven refresh, session 6); theirs reports per-symbol `_freshness` derived from index SHA vs `git rev-parse HEAD` + mtime but makes the *agent* act on it. Their freshness *signal* is sharper (SHA-based, not wall-clock); our *recovery* is stronger.
+- Hints: our decision-grade hint layer (missed identifiers, junk suppression, candidate lists) has no upstream equivalent — their `_meta.tip` is static usage guidance.
+- Text fallback, NL handling, generic-word suppression: ours is more developed.
+
+**They have, we lack (see new open items below):** SHA-based freshness, import graph + reference/importer queries, retrieval confidence score, empty-result query suggestions, BM25/centrality ranking signals, batch queries.
+
+**Deliberately not adopting** (reasons logged so future sessions don't re-litigate):
+- Embeddings/semantic search, online weight tuning, embedding-drift canaries, telemetry rings/ledgers: heavy ML-ops surface for marginal gain at our repo scale; our lexical+structural ranking with decision-grade hints covers the failure modes these exist to patch. Revisit only with evidence of ranking failures hints can't fix.
+- Session/turn tools (`plan_turn`, turn budgets, session snapshots): agent-harness concerns; Agent Hub owns session state here, not the search tool.
+- Watch mode / worktree watchers: our post-publish refresh + checkout escalation covers the same gap with no daemon; uncommitted edits are already served by checkout overlay.
+- MUNCH encoding: see above.
+- Their impact/refactor analytics suite (blast radius, hotspots, coupling, dead code, extraction candidates): overlaps graphify's charter — anything here should extend graphify, not st search ([M:11ec4fd4] search-first applies).
+
 ## Open items / ideas
+
+### Next items from jcodemunch review (priority order for next sessions)
+
+- [ ] **SHA-based index freshness** (highest impact, replaces a heuristic with a fact): stamp the checkout's `git rev-parse HEAD` into scan state at index time; `stale_hit` becomes "indexed SHA ≠ current HEAD of the registered root" instead of the 150m wall-clock proxy. Kills both false-stale (quiet repo, old index, still correct) and false-fresh (sweep ran, then 3 commits landed). Wall-clock stays only as fallback for non-git roots. Touches: scanner (stamp), `precision_code_search.py` staleness calc, hint layer wording, tests.
+- [ ] **Import graph + `find_importers`/`find_references`**: no imports table exists today (`explorer_relationships` is empty/unused — either use it or add `explorer_imports`). Scanner already parses files; add import extraction (upstream does it with regex over 19 languages — `parser/imports.py` is a good crib). Unlocks: "what imports this file", "where is this identifier used", and a file-centrality ranking tiebreaker (log-scaled import count, cheap BM25-adjacent win). Check graphify first — if its graph already stores imports, expose queries from there instead of duplicating [M:9b0e4d1b].
+- [ ] **Retrieval confidence score**: 0–1 score in metadata + SEARCH line (`|conf=0.87`), from top1/top2 score gap, top1 strength, identity-match presence, freshness — upstream's `_meta.confidence` recipe. Lets agents gate "do I trust this or reshape" on one number instead of re-deriving from symbol counts.
+- [ ] **Empty-result query suggestions** (upstream `suggest_queries`, scoped down): on mode=empty with no missed-identifier diagnosis, append nearest indexed symbol names (trigram/levenshtein over `name`) to the hint — "did you mean `scan_all_projects`?" — instead of only generic reshaping advice.
+- [ ] **BM25 over name/signature/summary/keywords**: replace hand-weighted contains-scoring in `_precision_ranking.py` when result sets are large; keep current scoring as the small-N fast path. Only worth it with a probe corpus showing ranking misses — build the probe set first.
+- [ ] **Batch queries**: `st search` accepts one query per invocation; agents fan out searches as separate calls. Accept multiple `-q` terms returning grouped compact sections (upstream batches via array params for round-trip savings). Low complexity, measurable token/latency win for multi-question turns.
+- [ ] **Overload/duplicate symbol-id audit**: upstream disambiguates overloads with `~1`/`~2` suffixes; we have 0 duplicate `(project, symbol_id)` rows today but TS overloads / same-name symbols in one file would silently last-write-win in `replace_file_symbols`. Verify extractor behavior, add suffixing if real.
+- [ ] **Secret-file exclusion audit**: upstream treats secret-file exclusion as a first-class indexing filter. Verify our scanner + text search exclude `.env*`/key material from index and text fallback; add exclusions if missing [M:6084f2a8].
+
 
 - [x] ~~Text-fallback hint recommends "Try a specific identifier" even when the query already is identifier-shaped~~ — fixed 2026-06-11 session 5 follow-up: `generate_hint` text-fallback branch now detects identifier-shaped queries via `identifier_shaped_tokens` and says the term matched text but has no symbol definition (likely literal/key/attribute; matches are usages; `--text` for more, rescan if a definition is expected). Live-verified on `st search stale_hit --path backend/cli`; +1 CLI regression test.
 - [ ] Self-referential contamination: honing artifacts (test strings, this doc) enter the index and text search, making "nonexistent identifier" probes return matches. Use `qqzz_`-prefixed probes for verification.
