@@ -1367,3 +1367,27 @@ def test_search_file_mode_scope_checkout_ambiguous_lists_candidates() -> None:
     assert "`frontend/src/example.tsx`" in result.output
     assert "`frontend/widgets/example.tsx`" in result.output
     mock_client.assert_not_called()
+
+
+def test_search_text_fallback_identifier_query_gets_usage_hint() -> None:
+    """An identifier-shaped query must not be told to 'try a specific identifier'."""
+    payload = {
+        "prompt_context": "Precision Code Search: text-fallback\n\n## Relevant Text Matches\n\n- search.py:114 - stale_hit",
+        "metadata": {
+            "symbol_count": 0,
+            "used_symbol_first": False,
+            "used_fallback": True,
+            "estimated_tokens_saved": 0,
+            "final_tokens": 100,
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+    ):
+        result = _invoke(["stale_hit"])
+
+    assert result.exit_code == 0
+    assert "hint: `stale_hit` matched text but no symbol definition" in result.output
+    assert "Try a specific identifier" not in result.output

@@ -11,6 +11,7 @@ def generate_hint(query: str, mode: str, metadata: dict[str, Any]) -> str | None
     """Return an actionable refinement hint based on result quality, or None."""
     from app.services.context_gatherer._precision_query import (
         has_path_segments,
+        identifier_shaped_tokens,
         is_short_or_generic,
     )
 
@@ -70,6 +71,12 @@ def generate_hint(query: str, mode: str, metadata: dict[str, Any]) -> str | None
             )
         if has_path_segments(queries):
             return "fell back to text search (no symbol match). Path-qualified terms are noisy — try just the symbol name or use `--path` with `--text` for subtree content search."
+        if identifier_terms := identifier_shaped_tokens(queries):
+            return (
+                f"`{identifier_terms[0]}` matched text but no symbol definition — likely a literal/key/attribute "
+                "rather than a defined symbol; the matches shown are usages. Use `--text` for full content "
+                "matches, or rescan if a definition should exist."
+            )
         return "fell back to text search (no symbol match). Try a specific identifier like `FunctionName` or `function_name`."
 
     symbol_count = metadata.get("symbol_count", 0)
