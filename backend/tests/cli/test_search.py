@@ -860,7 +860,39 @@ def test_search_auto_scope_does_not_escalate_for_prose_query() -> None:
     build_mock.assert_not_called()
 
 
-def test_search_auto_scope_does_not_escalate_for_other_project_override() -> None:
+def test_search_auto_scope_other_project_override_escalates_to_target_project_root(tmp_path: Path) -> None:
+    """Cross-project identifier miss escalates to the *target* project's
+    registered root for live parsing — never the local cwd checkout."""
+    payload = {
+        "prompt_context": "",
+        "metadata": {"symbol_count": 0, "used_symbol_first": False, "estimated_tokens_saved": 0, "final_tokens": 0},
+    }
+    checkout_result = {
+        "query": "tool_not_installed",
+        "prompt_context": "## Current Checkout Overrides\n\n- `tool_not_installed` (function) in src/check.py:6",
+        "metadata": {"scope": "checkout", "checkout_root": str(tmp_path), "symbol_count": 1, "used_symbol_first": True, "used_fallback": False, "estimated_tokens_saved": 0, "final_tokens": 30},
+    }
+
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        for p in _escalation_patches(payload, None):
+            stack.enter_context(p)
+        build_mock = stack.enter_context(
+            patch("cli.commands.search._build_checkout_precision_result", return_value=checkout_result)
+        )
+        stack.enter_context(patch("cli.commands.search.get_project_root_path", return_value=str(tmp_path)))
+        result = runner.invoke(app, ["tool_not_installed", "--project", "agent-hub"])
+
+    assert result.exit_code == 0
+    assert "## Current Checkout Overrides" in result.output
+    assert "symbols=1" in result.output
+    assert build_mock.call_args.args[1] == tmp_path
+
+
+def test_search_auto_scope_other_project_override_without_registered_root_does_not_parse_local_tree() -> None:
+    """No registered root for the target project: never fall back to parsing
+    the unrelated local checkout."""
     payload = {
         "prompt_context": "",
         "metadata": {"symbol_count": 0, "used_symbol_first": False, "estimated_tokens_saved": 0, "final_tokens": 0},
@@ -874,10 +906,63 @@ def test_search_auto_scope_does_not_escalate_for_other_project_override() -> Non
         build_mock = stack.enter_context(
             patch("cli.commands.search._build_checkout_precision_result")
         )
+        stack.enter_context(patch("cli.commands.search.get_project_root_path", return_value=None))
         result = runner.invoke(app, ["tool_not_installed", "--project", "agent-hub"])
 
     assert result.exit_code == 0
+    assert "mode=empty" in result.output
     build_mock.assert_not_called()
+
+
+def _cross_project_scope_checkout_patches() -> list[Any]:
+    return [
+        patch("cli.commands.search.is_compact", return_value=True),
+        patch("cli.commands.search.resolve_checkout_root", return_value=Path("/srv/workspaces/projects/summitflow"), create=True),
+        patch("cli.commands.search.canonical_repo_root", return_value=Path("/srv/workspaces/projects/summitflow"), create=True),
+        patch("cli.commands.search.resolve_checkout_project_id", return_value="summitflow", create=True),
+        patch("cli.commands.search.get_config_optional", return_value=type("Cfg", (), {"project_root": "/srv/workspaces/projects/summitflow", "project_id": "summitflow"})()),
+        patch("cli.commands.search._checkout_has_local_changes", return_value=False),
+    ]
+
+
+def test_search_scope_checkout_cross_project_searches_target_root_not_cwd(tmp_path: Path) -> None:
+    """`-P <other-project> --scope checkout` must search the target project's
+    registered root, never the unrelated tree the agent happens to stand in."""
+    target_file = tmp_path / "src" / "remote.py"
+    target_file.parent.mkdir(parents=True)
+    target_file.write_text("def qqzz_cross_project_symbol():\n    return 1\n", encoding="utf-8")
+
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        for p in _cross_project_scope_checkout_patches():
+            stack.enter_context(p)
+        root_mock = stack.enter_context(patch("cli.commands.search.get_project_root_path", return_value=str(tmp_path)))
+        mock_client = stack.enter_context(patch("cli.commands.search.STClient"))
+        result = runner.invoke(app, ["qqzz_cross_project_symbol", "--text", "--scope", "checkout", "--project", "agent-hub"])
+
+    assert result.exit_code == 0
+    assert "src/remote.py:1" in result.output
+    assert "scope=checkout" in result.output
+    root_mock.assert_called_once_with("agent-hub")
+    mock_client.assert_not_called()
+
+
+def test_search_scope_checkout_cross_project_without_registered_root_errors() -> None:
+    """No registered root for the target project: fail with a precise error
+    instead of silently returning wrong-project results from the cwd tree."""
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        for p in _cross_project_scope_checkout_patches():
+            stack.enter_context(p)
+        stack.enter_context(patch("cli.commands.search.get_project_root_path", return_value=None))
+        mock_client = stack.enter_context(patch("cli.commands.search.STClient"))
+        result = runner.invoke(app, ["qqzz_cross_project_symbol", "--text", "--scope", "checkout", "--project", "agent-hub"])
+
+    assert result.exit_code == 1
+    assert "needs a local root for project `agent-hub`" in result.output
+    mock_client.assert_not_called()
 
 
 def test_search_auto_scope_escalation_keeps_project_result_when_checkout_finds_nothing() -> None:

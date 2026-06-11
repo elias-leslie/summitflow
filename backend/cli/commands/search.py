@@ -12,7 +12,7 @@ import typer
 
 from .._output_state import is_compact
 from ..client import APIError, STClient
-from ..config import get_config_optional
+from ..config import get_config_optional, get_project_root_path
 from ..lib.execution_context import (
     canonical_repo_root,
     resolve_checkout_project_id,
@@ -133,13 +133,16 @@ def _resolve_search_roots(project_override: str | None, scope: SearchScope) -> S
     """Resolve canonical project and current-checkout roots for this search."""
     checkout_root = resolve_checkout_root()
     canonical_root = canonical_repo_root()
+    config = get_config_optional()
+    selected_project_id = project_override or config.project_id or None
+    checkout_project_id = resolve_checkout_project_id()
+    if selected_project_id and checkout_project_id and selected_project_id != checkout_project_id:
+        return _resolve_cross_project_roots(selected_project_id, scope)
+
     checkout_has_changes = _checkout_has_local_changes(checkout_root)
     if scope == SearchScope.CHECKOUT:
         return SearchRoots(scope, "checkout" if checkout_root else "project", None, checkout_root, checkout_has_changes)
 
-    config = get_config_optional()
-    selected_project_id = project_override or config.project_id or None
-    checkout_project_id = resolve_checkout_project_id()
     project_root = _project_root(config.project_root, selected_project_id, checkout_project_id, canonical_root)
     effective_scope = _effective_scope(scope, selected_project_id, checkout_project_id, checkout_root, project_root, checkout_has_changes)
     checkout_is_project = bool(
@@ -148,6 +151,33 @@ def _resolve_search_roots(project_override: str | None, scope: SearchScope) -> S
         and (selected_project_id is None or selected_project_id == checkout_project_id)
     )
     return SearchRoots(scope, effective_scope, project_root, checkout_root, checkout_has_changes, checkout_is_project)
+
+
+def _resolve_cross_project_roots(selected_project_id: str, scope: SearchScope) -> SearchRoots:
+    """The cwd checkout belongs to a different project than the one being
+    searched, so it must never be used as the live tree — the only valid
+    live tree is the selected project's registered root."""
+    if scope == SearchScope.CHECKOUT:
+        target_root = _registered_project_root(selected_project_id)
+        if target_root is None:
+            typer.echo(
+                f"Error: --scope checkout needs a local root for project `{selected_project_id}`, but none is "
+                "registered or present on this host — drop --scope checkout to search its index, or rescan the project.",
+                err=True,
+            )
+            raise typer.Exit(1)
+        return SearchRoots(scope, "checkout", target_root, target_root, _checkout_has_local_changes(target_root), True)
+    # Defer the root lookup: AUTO/PROJECT searches only need it if an
+    # identifier miss escalates to a live parse of the target tree.
+    return SearchRoots(scope, "project", None, None, False, False, selected_project_id)
+
+
+def _registered_project_root(project_id: str) -> Path | None:
+    root_path = get_project_root_path(project_id)
+    if not root_path:
+        return None
+    root = Path(root_path).resolve()
+    return root if root.is_dir() else None
 
 
 def _project_root(
@@ -230,19 +260,23 @@ def _precision_result(
     if roots.effective_scope == "combined" and roots.checkout_root is not None:
         checkout_result = _build_checkout_precision_result(query, roots.checkout_root, budget, limit, path_prefix=path_prefix)
         return _merge_precision_results(query, project_result, checkout_result, roots, budget)
-    if roots.checkout_root is not None and _should_escalate_to_checkout(roots, query, project_result):
-        checkout_result = _build_checkout_precision_result(query, roots.checkout_root, budget, limit, path_prefix=path_prefix)
-        if int((checkout_result.get("metadata") or {}).get("symbol_count") or 0) > 0:
-            return _merge_precision_results(query, project_result, checkout_result, roots, budget)
+    if _should_escalate_to_checkout(roots, query, project_result):
+        live_root = roots.checkout_root if roots.checkout_is_project else _registered_project_root(roots.cross_project_id or "")
+        if live_root is not None:
+            checkout_result = _build_checkout_precision_result(query, live_root, budget, limit, path_prefix=path_prefix)
+            if int((checkout_result.get("metadata") or {}).get("symbol_count") or 0) > 0:
+                return _merge_precision_results(query, project_result, checkout_result, roots, budget)
     return project_result
 
 
 def _should_escalate_to_checkout(roots: SearchRoots, query: str, project_result: dict[str, Any]) -> bool:
-    """Escalate to live checkout symbol parsing when the canonical symbol
-    index returned nothing for an identifier-shaped query — the index may
-    simply be stale for fresh code. Prose queries stay out: checkout symbol
-    search fuzzy-matches individual words and would amplify junk."""
-    if roots.scope != SearchScope.AUTO or not roots.checkout_is_project:
+    """Escalate to live symbol parsing when the canonical symbol index
+    returned nothing for an identifier-shaped query — the index may simply
+    be stale for fresh code. The live tree is the cwd checkout when it backs
+    the searched project, or the target project's registered root for
+    cross-project searches. Prose queries stay out: checkout symbol search
+    fuzzy-matches individual words and would amplify junk."""
+    if roots.scope != SearchScope.AUTO or not (roots.checkout_is_project or roots.cross_project_id):
         return False
     if not _has_identifier_shaped_term(query):
         return False

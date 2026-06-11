@@ -32,6 +32,12 @@ Key tests: `backend/tests/cli/test_search.py`, `backend/tests/services/context_g
 
 ## Work log
 
+### 2026-06-11 (session 3)
+- **Cross-project wrong-tree trap killed** (`commands/search.py::_resolve_search_roots`): `st search X -P agent-hub --scope checkout` run from a summitflow cwd silently searched the *summitflow* checkout and presented its files as agent-hub results — and the empty-result hint actively steered agents into this trap ("rerun with `--scope checkout`"). Now `_resolve_cross_project_roots` resolves the target project's registered `root_path` (new `config.get_project_root_path`) and searches *that* tree; if no root is registered/present, it fails with a precise error instead of wrong-project output.
+- **Cross-project escalation** (open item closed): AUTO-scope `-P <other-project>` identifier misses now escalate to a live parse of the target project's registered root (`SearchRoots.cross_project_id`, lazily resolved only when escalation fires — no extra API call on indexed hits). Stale other-project indexes now self-heal like same-project ones.
+- Live-verified both directions with a `qqzz_` probe planted in agent-hub: `--scope checkout` finds it (scope=checkout), AUTO escalates and prepends it (scope=combined), `build_project_pulse -P agent-hub --scope checkout` correctly empty after searching agent-hub's 6554 files (was: returned summitflow source). Same-project probes unchanged.
+- Tests: +4 CLI (target-root search, no-root error, cross-project escalation, no-local-tree-parse without registered root); rewrote `test_search_auto_scope_does_not_escalate_for_other_project_override` to the new contract.
+
 ### 2026-06-11 (session 2)
 - Verified explorer scan self-healing end-to-end: daily maintenance auto-failed scans stuck `running` since 2026-04-2x (agent-hub, a-term, sha); the 16:10 bi-hourly sweep rescanned all three with zero manual help. Watch item closed.
 - **Generic-word junk suppression** (`_precision_ranking.py`): `search_and_rank_symbols` now tracks which query terms produced candidates; when every user-typed identifier token missed, candidates that matched only generic words are suppressed (`identifier_tokens`/`coverage` kwargs). Before: `st search "resolve_search_timeout handler"` → 20 unrelated "handler" symbols, ~1000 tokens. After: mode=empty + hint naming the missed identifier and withheld count.
@@ -52,7 +58,7 @@ Key tests: `backend/tests/cli/test_search.py`, `backend/tests/services/context_g
 
 - [ ] Self-referential contamination: honing artifacts (test strings, this doc) enter the index and text search, making "nonexistent identifier" probes return matches. Use `qqzz_`-prefixed probes for verification.
 - [ ] `_PRECISION_INDEX_MAX_AGE` (30m) vs sweep cadence (2h) means `stale_hit` is true 75% of the time; consider event-driven (post-commit) symbol refresh or aligning the threshold with the cadence.
-- [ ] `-P <other-project>` searches never escalate to checkout (`checkout_is_project` gate) — correct, but means stale *other-project* indexes have no self-heal path beyond the sweep.
+- [x] ~~`-P <other-project>` searches never escalate to checkout (`checkout_is_project` gate)~~ — fixed 2026-06-11 session 3: escalation now targets the other project's registered root; explicit `--scope checkout` cross-project no longer searches the wrong tree.
 - [ ] Hint layer can't tell whether checkout escalation already ran and found nothing; hint still suggests `--scope checkout`. Harmless but slightly redundant.
 
 ## Verification recipe (used after every change)

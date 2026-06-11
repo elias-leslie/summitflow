@@ -243,3 +243,19 @@ def get_available_projects() -> list[str]:
         for p in projects
         if isinstance(p, dict) and isinstance((project_id := cast(dict[str, Any], p).get("id")), str)
     ]
+
+
+def get_project_root_path(project_id: str) -> str | None:
+    """Return the registered root_path for a project id, or None if unknown."""
+    api_base = os.getenv("ST_API_BASE", DEFAULT_API_BASE)
+    projects = _fetch_projects_with_retry(api_base, max_retries=2)
+    if not projects:
+        return None
+    for project in projects:
+        if not isinstance(project, dict):
+            continue
+        project_data = cast(dict[str, Any], project)
+        if project_data.get("id") == project_id:
+            root_path = project_data.get("root_path")
+            return str(root_path) if root_path else None
+    return None
