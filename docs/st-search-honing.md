@@ -32,6 +32,12 @@ Key tests: `backend/tests/cli/test_search.py`, `backend/tests/services/context_g
 
 ## Work log
 
+### 2026-06-11 (session 4)
+- **Futile-retry hint loop closed** (open item): when AUTO escalation already live-parsed the checkout and found nothing, `_precision_result` now stamps `checkout_escalation_empty` into metadata, and the hint layer stops recommending `--scope checkout` — empty-mode hint says the identifier does not exist as written; definition-stale text-fallback hint recommends rescan only. Without an escalation attempt the brand-new-code advice is unchanged.
+- **Stale threshold aligned with sweep cadence** (open item): `_PRECISION_INDEX_MAX_AGE` 30m → 150m (bi-hourly `summitflow-refresh-precision-indexes` cron `10 */2 * * *` + slack), so `stale_hit` only fires when the sweep demonstrably missed a cycle instead of ~75% of the time on a healthy system. Event-driven post-publish refresh added to open items as the next iteration's primary candidate.
+- Hermeticity fix found en route: `test_search_text_fallback_definition_match_shows_stale_index_hint` was silently making a real `/projects` API call + live agent-hub tree parse through the session-3 cross-project escalation path — now pinned with `get_project_root_path=None`.
+- Tests: +2 CLI hint directions, +1 CLI definition-hint variant, +2 collector threshold edges (119m fresh / 151m stale).
+
 ### 2026-06-11 (session 3)
 - **Cross-project wrong-tree trap killed** (`commands/search.py::_resolve_search_roots`): `st search X -P agent-hub --scope checkout` run from a summitflow cwd silently searched the *summitflow* checkout and presented its files as agent-hub results — and the empty-result hint actively steered agents into this trap ("rerun with `--scope checkout`"). Now `_resolve_cross_project_roots` resolves the target project's registered `root_path` (new `config.get_project_root_path`) and searches *that* tree; if no root is registered/present, it fails with a precise error instead of wrong-project output.
 - **Cross-project escalation** (open item closed): AUTO-scope `-P <other-project>` identifier misses now escalate to a live parse of the target project's registered root (`SearchRoots.cross_project_id`, lazily resolved only when escalation fires — no extra API call on indexed hits). Stale other-project indexes now self-heal like same-project ones.
@@ -57,9 +63,10 @@ Key tests: `backend/tests/cli/test_search.py`, `backend/tests/services/context_g
 ## Open items / ideas
 
 - [ ] Self-referential contamination: honing artifacts (test strings, this doc) enter the index and text search, making "nonexistent identifier" probes return matches. Use `qqzz_`-prefixed probes for verification.
-- [ ] `_PRECISION_INDEX_MAX_AGE` (30m) vs sweep cadence (2h) means `stale_hit` is true 75% of the time; consider event-driven (post-commit) symbol refresh or aligning the threshold with the cadence.
+- [x] ~~`_PRECISION_INDEX_MAX_AGE` (30m) vs sweep cadence (2h) means `stale_hit` is true 75% of the time~~ — fixed 2026-06-11 session 4: threshold now 150m (cadence + slack).
+- [ ] **Event-driven symbol refresh** (next highest-impact item): the index only updates on the bi-hourly sweep, so brand-new code is invisible to index searches for up to ~2h. Same-project searches self-heal via checkout escalation, but every escalation is a full live tree parse — repeated cost that a post-publish targeted refresh (e.g. `st commit`/`st done` publish path enqueues a symbol rescan of just the changed files' project) would eliminate. This is in scope for an iteration: design it, build it, verify a fresh commit's symbols are indexed within seconds without escalation.
 - [x] ~~`-P <other-project>` searches never escalate to checkout (`checkout_is_project` gate)~~ — fixed 2026-06-11 session 3: escalation now targets the other project's registered root; explicit `--scope checkout` cross-project no longer searches the wrong tree.
-- [ ] Hint layer can't tell whether checkout escalation already ran and found nothing; hint still suggests `--scope checkout`. Harmless but slightly redundant.
+- [x] ~~Hint layer can't tell whether checkout escalation already ran and found nothing; hint still suggests `--scope checkout`~~ — fixed 2026-06-11 session 4 via `checkout_escalation_empty` metadata marker.
 
 ## Verification recipe (used after every change)
 
@@ -97,13 +104,19 @@ Run one honing iteration on the `st search` feature in /srv/workspaces/projects/
    output be misled, flooded, or left without a next action? Token cost matters —
    junk tokens are the failure mode this effort exists to kill.
 4. Pick the highest-impact deficiency. Reproduce it, find the root cause in the layer map,
-   fix it minimally (no speculative abstractions), add regression tests for both directions.
+   fix it properly, add regression tests for both directions. "Properly" includes redesigns:
+   if the right fix is structural (new trigger path, schema change, replacing a mechanism),
+   do THAT in this iteration — never park it as a "separate design task", "future work",
+   or a created-but-unclaimed task. The only valid reasons to leave a deficiency unfixed
+   are: a higher-impact one was fixed instead (log it as an open item with evidence), or
+   it requires capability this environment genuinely lacks (say exactly what's missing).
 5. Verify: st check --quick --changed-only, then st service rebuild summitflow --detach,
    then re-run the live probes — build/tests alone are not evidence.
 6. Update docs/st-search-honing.md: append a dated work-log entry, update open items,
    add any new invariant. Then commit everything: st commit -m "..." --push.
 
 Constraints: use st tools (st search/check/db/service), never raw pytest/grep-first flows;
-db writes only through app code paths; keep changes surgical; if an open item in the doc
-is stale or already fixed, strike it with evidence instead of re-fixing.
+db writes only through app code paths; surgical means no unrelated churn, NOT small-only —
+the blast radius should match the problem, however large that is; if an open item in the
+doc is stale or already fixed, strike it with evidence instead of re-fixing.
 ```

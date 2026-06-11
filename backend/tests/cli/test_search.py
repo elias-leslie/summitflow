@@ -789,6 +789,8 @@ def test_search_text_fallback_definition_match_shows_stale_index_hint() -> None:
     with (
         patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
         patch("cli.commands.search.is_compact", return_value=True),
+        patch("cli.commands.search.resolve_checkout_project_id", return_value="summitflow", create=True),
+        patch("cli.commands.search.get_project_root_path", return_value=None),
     ):
         result = _invoke(["tool_not_installed", "--project", "agent-hub"])
 
@@ -797,6 +799,39 @@ def test_search_text_fallback_definition_match_shows_stale_index_hint() -> None:
     assert "index age 40216m" in result.output
     assert "--scope checkout" in result.output
     assert "Try a specific identifier" not in result.output
+
+
+def test_search_text_fallback_definition_match_after_empty_escalation_recommends_rescan_only() -> None:
+    """Definition-stale signal plus an already-empty live parse: recommend a
+    rescan, never a futile `--scope checkout` rerun."""
+    payload = {
+        "prompt_context": "Precision Code Search: text-fallback\n\n## Relevant Text Matches\n\n- check_execution.py:61 - def tool_not_installed(",
+        "metadata": {
+            "symbol_count": 0,
+            "used_symbol_first": False,
+            "used_fallback": True,
+            "definition_matched_terms": ["tool_not_installed"],
+            "symbol_index_age_minutes": 40216,
+            "estimated_tokens_saved": 0,
+            "final_tokens": 100,
+        },
+    }
+    checkout_empty = {
+        "query": "tool_not_installed",
+        "prompt_context": "",
+        "metadata": {"scope": "checkout", "symbol_count": 0, "used_symbol_first": False, "used_fallback": False, "estimated_tokens_saved": 0, "final_tokens": 0},
+    }
+
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        for p in _escalation_patches(payload, checkout_empty):
+            stack.enter_context(p)
+        result = runner.invoke(app, ["tool_not_installed"])
+
+    assert result.exit_code == 0
+    assert "live checkout parse also found no symbol" in result.output
+    assert "--scope checkout" not in result.output
 
 
 def _escalation_patches(payload: Mapping[str, Any], checkout_result: Mapping[str, Any] | None):
@@ -986,6 +1021,61 @@ def test_search_auto_scope_escalation_keeps_project_result_when_checkout_finds_n
     assert result.exit_code == 0
     assert "mode=empty" in result.output
     assert "## Current Checkout Overrides" not in result.output
+
+
+def test_search_hint_drops_scope_checkout_advice_after_empty_escalation() -> None:
+    """When the live checkout was already parsed and had nothing, the hint
+    must not recommend a futile `--scope checkout` rerun."""
+    payload = {
+        "prompt_context": "",
+        "metadata": {
+            "symbol_count": 0,
+            "used_symbol_first": False,
+            "estimated_tokens_saved": 0,
+            "final_tokens": 0,
+            "missed_identifier_terms": ["missing_thing"],
+        },
+    }
+    checkout_empty = {
+        "query": "missing_thing",
+        "prompt_context": "",
+        "metadata": {"scope": "checkout", "symbol_count": 0, "used_symbol_first": False, "used_fallback": False, "estimated_tokens_saved": 0, "final_tokens": 0},
+    }
+
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        for p in _escalation_patches(payload, checkout_empty):
+            stack.enter_context(p)
+        result = runner.invoke(app, ["missing_thing"])
+
+    assert result.exit_code == 0
+    assert "live parse of the checkout found no definition" in result.output
+    assert "--scope checkout" not in result.output
+
+
+def test_search_hint_keeps_scope_checkout_advice_when_escalation_did_not_run() -> None:
+    """Without an escalation attempt the brand-new-code advice stays."""
+    payload = {
+        "prompt_context": "",
+        "metadata": {
+            "symbol_count": 0,
+            "used_symbol_first": False,
+            "estimated_tokens_saved": 0,
+            "final_tokens": 0,
+            "missed_identifier_terms": ["missing_thing"],
+        },
+    }
+
+    with (
+        patch("cli.commands.search.STClient", return_value=_mock_client(payload)),
+        patch("cli.commands.search.is_compact", return_value=True),
+        patch("cli.commands.search.resolve_checkout_project_id", return_value=None, create=True),
+    ):
+        result = _invoke(["missing_thing"])
+
+    assert result.exit_code == 0
+    assert "rerun with `--scope checkout` or rescan the project" in result.output
 
 
 def test_search_empty_missed_identifier_shows_identifier_hint() -> None:

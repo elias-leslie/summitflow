@@ -266,6 +266,11 @@ def _precision_result(
             checkout_result = _build_checkout_precision_result(query, live_root, budget, limit, path_prefix=path_prefix)
             if int((checkout_result.get("metadata") or {}).get("symbol_count") or 0) > 0:
                 return _merge_precision_results(query, project_result, checkout_result, roots, budget)
+            # Mark that the live tree was already parsed and had nothing, so
+            # the hint layer never recommends a futile `--scope checkout` rerun.
+            metadata = dict(project_result.get("metadata") or {})
+            metadata["checkout_escalation_empty"] = True
+            return {**project_result, "metadata": metadata}
     return project_result
 
 

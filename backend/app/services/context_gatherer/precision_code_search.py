@@ -35,7 +35,9 @@ logger = get_logger(__name__)
 _SEARCH_LIMIT = 5
 _ENTRY_LIMIT = 12
 _TEXT_SECTION_BUDGET_SHARE = 0.3
-_PRECISION_INDEX_MAX_AGE = timedelta(minutes=30)
+# Stale only when the bi-hourly refresh sweep (summitflow-refresh-precision-indexes,
+# cron "10 */2 * * *") has demonstrably missed a cycle: cadence plus slack for scan time.
+_PRECISION_INDEX_MAX_AGE = timedelta(minutes=150)
 _INLINE_REFRESH_REASONS = {
     "missing_file_index",
     "missing_symbol_index",

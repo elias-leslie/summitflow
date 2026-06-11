@@ -29,6 +29,12 @@ def generate_hint(query: str, mode: str, metadata: dict[str, Any]) -> str | None
                 if suppressed
                 else ""
             )
+            if metadata.get("checkout_escalation_empty"):
+                return (
+                    f"`{missed_terms[0]}` matched no symbols or text{junk_note}, and a live parse of the "
+                    "checkout found no definition either — the identifier does not exist as written; "
+                    "verify the name or search for a different term."
+                )
             return (
                 f"`{missed_terms[0]}` matched no symbols or text{junk_note} — verify the identifier name; "
                 "if it is brand-new code, rerun with `--scope checkout` or rescan the project."
@@ -48,6 +54,11 @@ def generate_hint(query: str, mode: str, metadata: dict[str, Any]) -> str | None
         if definition_terms:
             age = metadata.get("symbol_index_age_minutes")
             age_note = f" (index age {age}m)" if isinstance(age, int) and age > 0 else ""
+            if metadata.get("checkout_escalation_empty"):
+                return (
+                    f"text matches include a definition of `{definition_terms[0]}` that the symbol index missed{age_note}, "
+                    "and a live checkout parse also found no symbol — rescan the project instead of reshaping the query."
+                )
             return (
                 f"text matches include a definition of `{definition_terms[0]}` that the symbol index missed{age_note} — "
                 "index likely stale; rerun with `--scope checkout` or rescan the project instead of reshaping the query."

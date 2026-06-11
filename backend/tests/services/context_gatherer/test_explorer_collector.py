@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import cast
+from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 from unittest.mock import patch
 
 from app.services.context_gatherer.explorer_collector import gather_explorer_context
@@ -620,6 +621,46 @@ def test_collect_precision_code_search_context_tracks_fresh_index_telemetry() ->
     assert result.metadata["file_total"] == 12
     assert result.metadata["file_last_scanned"] == "3026-03-10T17:00:00+00:00"
     assert result.metadata["symbol_last_updated"] == "3026-03-10T17:00:00+00:00"
+
+
+def _collect_with_index_age(age: timedelta) -> Any:
+    stamp = (datetime.now(UTC) - age).isoformat()
+    with (
+        patch(
+            "app.services.context_gatherer.precision_code_search.explorer_service.get_stats",
+            return_value={"total": 12, "last_scanned": stamp},
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.get_symbol_stats",
+            return_value={"count": 4, "last_updated": stamp},
+        ),
+        patch(
+            "app.services.context_gatherer._precision_ranking.search_symbols",
+            return_value=[],
+        ),
+        patch(
+            "app.services.context_gatherer.precision_code_search.search_text",
+            return_value={"items": [], "count": 0, "files_searched": 0, "truncated": False},
+        ),
+    ):
+        return collect_precision_code_search_context("project-1", ["get_file_tree"])
+
+
+def test_collect_precision_code_search_context_index_within_sweep_cadence_is_not_stale() -> None:
+    """The refresh sweep runs bi-hourly; an index younger than a full cycle
+    plus slack must not be flagged stale (was: 30m threshold -> stale_hit
+    true ~75% of the time on a healthy system)."""
+    result = _collect_with_index_age(timedelta(minutes=119))
+
+    assert not result.metadata["stale_hit"]
+    assert result.metadata["refresh_reasons"] == []
+
+
+def test_collect_precision_code_search_context_index_older_than_sweep_cycle_is_stale() -> None:
+    result = _collect_with_index_age(timedelta(minutes=151))
+
+    assert result.metadata["stale_hit"]
+    assert result.metadata["refresh_reasons"] == ["stale_file_index", "stale_symbol_index"]
 
 
 def test_collect_precision_code_search_context_respects_symbol_limit() -> None:
