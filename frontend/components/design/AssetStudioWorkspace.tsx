@@ -135,7 +135,13 @@ export function AssetStudioWorkspace({
     }: {
       assetId: string
       status: string
-    }) => updateDesignAssetStatus(projectId, assetId, status, 'codex'),
+    }) =>
+      updateDesignAssetStatus(
+        projectId,
+        assetId,
+        status,
+        status === 'approved' ? 'codex' : undefined,
+      ),
     onSuccess: (updatedAsset) => {
       setSelectedAsset((current) =>
         current?.asset_id === updatedAsset.asset_id ? updatedAsset : current,
@@ -683,9 +689,12 @@ function AssetStatusActions({
             key={action.status}
             type="button"
             aria-pressed={isActive}
-            onClick={() => onStatusChange(action.status)}
-            disabled={isUpdating || isActive}
+            onClick={() =>
+              onStatusChange(nextAssetReviewStatus(asset.status, action.status))
+            }
+            disabled={isUpdating}
             className={statusActionClass(action.status, isActive)}
+            title={isActive ? 'Click again to clear review status' : undefined}
           >
             {isActive ? action.activeLabel : action.idleLabel}
           </button>
@@ -693,6 +702,13 @@ function AssetStatusActions({
       })}
     </>
   )
+}
+
+export function nextAssetReviewStatus(
+  currentStatus: string,
+  requestedStatus: string,
+): string {
+  return currentStatus === requestedStatus ? 'generated' : requestedStatus
 }
 
 function statusActionClass(status: string, isActive: boolean): string {

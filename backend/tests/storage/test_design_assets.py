@@ -53,6 +53,43 @@ def test_create_and_query_design_asset(asset_project: str) -> None:
     assert fetched["tags"] == ["hero", "player"]
 
 
+
+def test_update_design_asset_status_can_clear_review_state(asset_project: str) -> None:
+    """Approving then resetting an asset clears approval metadata."""
+    asset = design_assets.create_asset(
+        project_id=asset_project,
+        name="Concept Frame",
+        asset_type="concept_art",
+        workflow="concept",
+        prompt="Tactical survival concept frame",
+        width=1024,
+        height=1024,
+        background="scene",
+        transparent_background=False,
+    )
+
+    approved = design_assets.update_asset_status(
+        asset_project,
+        asset["asset_id"],
+        "approved",
+        approved_by="codex",
+    )
+    assert approved is not None
+    assert approved["status"] == "approved"
+    assert approved["approved_by"] == "codex"
+    assert approved["approved_at"] is not None
+
+    reset = design_assets.update_asset_status(
+        asset_project,
+        asset["asset_id"],
+        "generated",
+        approved_by="codex",
+    )
+    assert reset is not None
+    assert reset["status"] == "generated"
+    assert reset["approved_by"] is None
+    assert reset["approved_at"] is None
+
 def test_list_design_assets_filters_by_type(asset_project: str) -> None:
     """List assets by type."""
     design_assets.create_asset(

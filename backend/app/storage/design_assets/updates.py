@@ -22,6 +22,7 @@ def update_asset_status(
     if status not in ASSET_STATUSES:
         raise ValueError(f"Invalid asset status: {status}")
     approved_at_sql = "NOW()" if status == "approved" else "NULL"
+    approved_by_value = approved_by if status == "approved" else None
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             sql.SQL(
@@ -39,7 +40,7 @@ def update_asset_status(
                 approved_at_sql=static_sql(approved_at_sql),
                 returning=static_sql(ASSET_SELECT_COLUMNS),
             ),
-            (status, approved_by, project_id, asset_id),
+            (status, approved_by_value, project_id, asset_id),
         )
         row = cur.fetchone()
         conn.commit()
