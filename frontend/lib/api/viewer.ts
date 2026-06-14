@@ -9,7 +9,7 @@ import type {
   MockupListResponse,
   MockupStats,
 } from './mockups'
-import { buildQueryString, fetchWithErrorHandling } from './utils'
+import { buildQueryString, fetchWithErrorHandling, postJson } from './utils'
 
 export interface ViewerProject {
   id: string
@@ -86,6 +86,7 @@ export interface ViewerDesignAssetFilters {
   status?: string
   search?: string
   tag?: string
+  sort_by?: string
 }
 
 export function fetchViewerDesignAssets(
@@ -100,6 +101,7 @@ export function fetchViewerDesignAssets(
     status: filters.status,
     search: filters.search,
     tag: filters.tag,
+    sort_by: filters.sort_by,
   })
   return fetchWithErrorHandling<DesignAssetListResponse>(
     `/api/viewer/projects/${projectId}/design-assets${query}`,
@@ -131,4 +133,16 @@ export function getViewerDesignAssetImageUrl(
   assetId: string,
 ): string {
   return `/api/viewer/projects/${projectId}/design-assets/${assetId}/image`
+}
+
+export function voteViewerDesignAsset(
+  projectId: string,
+  assetId: string,
+  vote: 'up' | 'down',
+): Promise<DesignAsset> {
+  return postJson<DesignAsset>(
+    `/api/viewer/projects/${projectId}/design-assets/${assetId}/votes`,
+    { vote },
+    'Failed to vote on shared design asset',
+  )
 }

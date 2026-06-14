@@ -19,6 +19,7 @@ from .design_assets_models import (
     DesignAssetListResponse,
     DesignAssetResponse,
     DesignAssetStatsResponse,
+    VoteDesignAssetRequest,
 )
 from .design_assets_utils import asset_to_response, export_to_response
 from .mockups_crud import get_mockup_image, get_mockup_screenshot
@@ -200,6 +201,7 @@ def list_assets(
     status: str | None = Query(None),
     search: str | None = Query(None),
     tag: str | None = Query(None),
+    sort_by: str = Query("created_desc"),
 ) -> DesignAssetListResponse:
     """List shared design assets."""
     _require_design_access(project_id, principal)
@@ -212,6 +214,7 @@ def list_assets(
         status=status,
         search=search,
         tag=tag,
+        sort_by=sort_by,
     )
     return DesignAssetListResponse(
         items=[_sanitize_asset(asset_to_response(item)) for item in items],
@@ -271,3 +274,29 @@ def asset_exports(
         _sanitize_export(export_to_response(item))
         for item in design_assets.list_asset_exports(project_id, asset_id)
     ]
+
+
+@router.post(
+    "/projects/{project_id}/design-assets/{asset_id}/votes",
+    response_model=DesignAssetResponse,
+)
+def vote_asset(
+    project_id: str,
+    asset_id: str,
+    request: VoteDesignAssetRequest,
+    principal: AuthenticatedPrincipal,
+) -> DesignAssetResponse:
+    """Add one cumulative shared-viewer vote to a design asset."""
+    _require_design_access(project_id, principal)
+    try:
+        asset = design_assets.create_asset_vote(
+            project_id,
+            asset_id,
+            request.vote,
+            voter_email=principal.email,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not asset:
+        raise HTTPException(status_code=404, detail="Design asset not found")
+    return _sanitize_asset(asset_to_response(asset))

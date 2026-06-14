@@ -7,6 +7,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from .._sql import static_sql
 from ..connection import get_connection, get_cursor
 
 ASSET_TYPES = frozenset(
@@ -28,11 +29,43 @@ ASSET_STATUSES = frozenset({"generated", "approved", "rejected", "archived", "ex
 ASSET_BACKGROUNDS = frozenset({"transparent", "solid", "scene"})
 EXPORT_TYPES = frozenset({"original", "sprite_frames", "atlas_json"})
 
-ASSET_SELECT_COLUMNS = """id, project_id, asset_id, name, description, asset_type, workflow,
-       status, prompt, negative_prompt, style_prompt, background, width, height,
-       transparent_background, model, generator, file_path, source_asset_id,
-       sheet_columns, sheet_rows, frame_width, frame_height, animation_labels,
-       tags, metadata, approved_at, approved_by, created_at, updated_at"""
+ASSET_COLUMN_NAMES = [
+    "id",
+    "project_id",
+    "asset_id",
+    "name",
+    "description",
+    "asset_type",
+    "workflow",
+    "status",
+    "prompt",
+    "negative_prompt",
+    "style_prompt",
+    "background",
+    "width",
+    "height",
+    "transparent_background",
+    "model",
+    "generator",
+    "file_path",
+    "source_asset_id",
+    "sheet_columns",
+    "sheet_rows",
+    "frame_width",
+    "frame_height",
+    "animation_labels",
+    "tags",
+    "metadata",
+    "approved_at",
+    "approved_by",
+    "created_at",
+    "updated_at",
+]
+ASSET_SELECT_COLUMNS = ", ".join(ASSET_COLUMN_NAMES)
+ASSET_SELECT_COLUMNS_ALIASED = ", ".join(f"a.{column}" for column in ASSET_COLUMN_NAMES)
+ASSET_VOTE_SELECT_COLUMNS = """COALESCE(vote_counts.thumbs_up, 0) AS thumbs_up,
+       COALESCE(vote_counts.thumbs_down, 0) AS thumbs_down,
+       COALESCE(vote_counts.thumbs_up, 0) - COALESCE(vote_counts.thumbs_down, 0) AS vote_score"""
 
 EXPORT_SELECT_COLUMNS = """id, asset_id, export_id, export_type, file_path, manifest_path,
        metadata, created_at"""
@@ -81,6 +114,9 @@ def _row_to_asset(row: tuple[Any, ...]) -> dict[str, Any]:
         "approved_by": row[27],
         "created_at": row[28].isoformat() if row[28] else None,
         "updated_at": row[29].isoformat() if row[29] else None,
+        "thumbs_up": int(row[30] or 0) if len(row) > 30 else 0,
+        "thumbs_down": int(row[31] or 0) if len(row) > 31 else 0,
+        "vote_score": int(row[32] or 0) if len(row) > 32 else 0,
     }
 
 
@@ -101,7 +137,7 @@ def _row_to_export(row: tuple[Any, ...]) -> dict[str, Any]:
 def get_asset_by_db_id(db_id: int) -> dict[str, Any] | None:
     """Get asset by database id."""
     with get_cursor() as cur:
-        cur.execute(f"SELECT {ASSET_SELECT_COLUMNS} FROM design_assets WHERE id = %s", (db_id,))
+        cur.execute(static_sql(f"SELECT {ASSET_SELECT_COLUMNS} FROM design_assets WHERE id = %s"), (db_id,))
         row = cur.fetchone()
     return _row_to_asset(row) if row else None
 
@@ -144,7 +180,8 @@ def create_asset(
     asset_id = asset_id or generate_asset_id()
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            static_sql(
+                f"""
             INSERT INTO design_assets (
                 project_id, asset_id, name, description, asset_type, workflow, status,
                 prompt, negative_prompt, style_prompt, background, width, height,
@@ -160,7 +197,8 @@ def create_asset(
                 %s, %s
             )
             RETURNING {ASSET_SELECT_COLUMNS}
-            """,
+            """
+            ),
             (
                 project_id,
                 asset_id,

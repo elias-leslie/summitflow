@@ -37,6 +37,9 @@ export interface DesignAsset {
   approved_by: string | null
   created_at: string | null
   updated_at: string | null
+  thumbs_up: number
+  thumbs_down: number
+  vote_score: number
 }
 
 export interface DesignAssetListResponse {
@@ -123,6 +126,7 @@ export async function fetchDesignAssets(
     status?: string
     search?: string
     tag?: string
+    sort_by?: string
   } = {},
 ): Promise<DesignAssetListResponse> {
   const query = buildQueryString(filters)
@@ -173,6 +177,18 @@ export async function updateDesignAssetStatus(
     `/api/projects/${projectId}/design-assets/${assetId}/status`,
     { status, approved_by: approvedBy },
     'Failed to update asset status',
+  )
+}
+
+export async function voteDesignAsset(
+  projectId: string,
+  assetId: string,
+  vote: 'up' | 'down',
+): Promise<DesignAsset> {
+  return postJson<DesignAsset>(
+    `/api/projects/${projectId}/design-assets/${assetId}/votes`,
+    { vote },
+    'Failed to vote on asset',
   )
 }
 

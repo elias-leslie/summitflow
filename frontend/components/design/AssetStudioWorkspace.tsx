@@ -12,6 +12,8 @@ import {
   Maximize2,
   Package,
   Tags,
+  ThumbsDown,
+  ThumbsUp,
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -27,11 +29,13 @@ import {
   fetchDesignAssets,
   getDesignAssetImageUrl,
   updateDesignAssetStatus,
+  voteDesignAsset,
 } from '@/lib/api/design-assets'
 import {
   fetchViewerDesignAssetStats,
   fetchViewerDesignAssets,
   getViewerDesignAssetImageUrl,
+  voteViewerDesignAsset,
 } from '@/lib/api/viewer'
 import { DesignHeader, type ViewMode } from './DesignHeader'
 import { GenerateAssetDialog } from './GenerateAssetDialog'
@@ -57,6 +61,12 @@ type AssetTypeFilter =
   | 'tile_set'
   | 'concept_art'
 type WorkflowFilter = 'all' | 'concept' | 'production' | 'marketing' | 'ui'
+type AssetSortFilter =
+  | 'created_desc'
+  | 'thumbs_up'
+  | 'thumbs_down'
+  | 'vote_score'
+type AssetVote = 'up' | 'down'
 
 interface AssetStudioWorkspaceProps {
   projectId: string
@@ -80,6 +90,7 @@ export function AssetStudioWorkspace({
   const [statusFilter, setStatusFilter] = useState<AssetStatusFilter>('all')
   const [typeFilter, setTypeFilter] = useState<AssetTypeFilter>('all')
   const [workflowFilter, setWorkflowFilter] = useState<WorkflowFilter>('all')
+  const [sortBy, setSortBy] = useState<AssetSortFilter>('created_desc')
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -106,6 +117,7 @@ export function AssetStudioWorkspace({
       statusFilter,
       typeFilter,
       workflowFilter,
+      sortBy,
       searchQuery,
       page,
     ],
@@ -117,6 +129,7 @@ export function AssetStudioWorkspace({
         asset_type: typeFilter === 'all' ? undefined : typeFilter,
         workflow: workflowFilter === 'all' ? undefined : workflowFilter,
         search: searchQuery || undefined,
+        sort_by: sortBy,
       }),
   })
 
@@ -127,6 +140,20 @@ export function AssetStudioWorkspace({
         projectId,
       ),
   })
+
+  const applyUpdatedAsset = (updatedAsset: DesignAsset): void => {
+    setSelectedAsset((current) =>
+      current?.asset_id === updatedAsset.asset_id ? updatedAsset : current,
+    )
+    setPreviewAsset((current) =>
+      current?.asset_id === updatedAsset.asset_id ? updatedAsset : current,
+    )
+    queryClient.invalidateQueries({ queryKey: ['design-assets'] })
+    queryClient.invalidateQueries({
+      queryKey: ['design-assets-stats'],
+    })
+    refetch()
+  }
 
   const statusMutation = useMutation({
     mutationFn: async ({
@@ -142,19 +169,23 @@ export function AssetStudioWorkspace({
         status,
         status === 'approved' ? 'codex' : undefined,
       ),
-    onSuccess: (updatedAsset) => {
-      setSelectedAsset((current) =>
-        current?.asset_id === updatedAsset.asset_id ? updatedAsset : current,
-      )
-      setPreviewAsset((current) =>
-        current?.asset_id === updatedAsset.asset_id ? updatedAsset : current,
-      )
-      queryClient.invalidateQueries({ queryKey: ['design-assets'] })
-      queryClient.invalidateQueries({
-        queryKey: ['design-assets-stats'],
-      })
-      refetch()
-    },
+    onSuccess: applyUpdatedAsset,
+  })
+
+  const voteMutation = useMutation({
+    mutationFn: async ({
+      assetId,
+      vote,
+    }: {
+      assetId: string
+      vote: AssetVote
+    }) =>
+      (readOnly ? voteViewerDesignAsset : voteDesignAsset)(
+        projectId,
+        assetId,
+        vote,
+      ),
+    onSuccess: applyUpdatedAsset,
   })
 
   const deleteMutation = useMutation({
@@ -311,7 +342,7 @@ export function AssetStudioWorkspace({
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="card grid grid-cols-1 gap-3 p-4 lg:grid-cols-2 xl:grid-cols-5">
+        <div className="card grid grid-cols-1 gap-3 p-4 lg:grid-cols-2 xl:grid-cols-6">
           <input
             value={searchQuery}
             onChange={(event) => {
@@ -369,6 +400,19 @@ export function AssetStudioWorkspace({
             <option value="production">Production</option>
             <option value="marketing">Marketing</option>
             <option value="ui">UI</option>
+          </select>
+          <select
+            value={sortBy}
+            onChange={(event) => {
+              setSortBy(event.target.value as AssetSortFilter)
+              setPage(0)
+            }}
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
+          >
+            <option value="created_desc">Newest</option>
+            <option value="thumbs_up">Most thumbs up</option>
+            <option value="vote_score">Best net votes</option>
+            <option value="thumbs_down">Most thumbs down</option>
           </select>
         </div>
 
@@ -472,6 +516,9 @@ export function AssetStudioWorkspace({
                         </span>
                         <span>{asset.model ?? 'default model'}</span>
                         <span className="capitalize">{asset.status}</span>
+                        <span>👍 {asset.thumbs_up}</span>
+                        <span>👎 {asset.thumbs_down}</span>
+                        <span>net {asset.vote_score}</span>
                       </div>
                     </div>
                   </button>
@@ -510,6 +557,7 @@ export function AssetStudioWorkspace({
           projectId={projectId}
           isExporting={exportMutation.isPending}
           isUpdating={statusMutation.isPending}
+          isVoting={voteMutation.isPending}
           readOnly={readOnly}
           imageUrl={selectedAsset ? imageUrlForAsset(selectedAsset) : undefined}
           onClose={() => setSelectedAsset(null)}
@@ -521,6 +569,10 @@ export function AssetStudioWorkspace({
           onStatusChange={(status) =>
             selectedAsset &&
             statusMutation.mutate({ assetId: selectedAsset.asset_id, status })
+          }
+          onVote={(vote) =>
+            selectedAsset &&
+            voteMutation.mutate({ assetId: selectedAsset.asset_id, vote })
           }
         />
       </div>
@@ -547,6 +599,7 @@ export function AssetStudioWorkspace({
           asset={previewAsset}
           isExporting={exportMutation.isPending}
           isUpdating={statusMutation.isPending}
+          isVoting={voteMutation.isPending}
           readOnly={readOnly}
           imageUrl={imageUrlForAsset(previewAsset)}
           navigation={previewNavigation}
@@ -559,6 +612,10 @@ export function AssetStudioWorkspace({
           onStatusChange={(status) => {
             setSelectedAsset(previewAsset)
             statusMutation.mutate({ assetId: previewAsset.asset_id, status })
+          }}
+          onVote={(vote) => {
+            setSelectedAsset(previewAsset)
+            voteMutation.mutate({ assetId: previewAsset.asset_id, vote })
           }}
         />
       )}
@@ -704,6 +761,44 @@ function AssetStatusActions({
   )
 }
 
+function AssetVoteActions({
+  asset,
+  isVoting,
+  onVote,
+}: {
+  asset: DesignAsset
+  isVoting: boolean
+  onVote: (vote: AssetVote) => void
+}): React.ReactElement {
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      <button
+        type="button"
+        aria-label={`Vote thumbs up (${asset.thumbs_up})`}
+        onClick={() => onVote('up')}
+        disabled={isVoting}
+        className="btn-secondary flex items-center gap-2"
+      >
+        <ThumbsUp className="h-4 w-4 text-emerald-300" />
+        <span>{asset.thumbs_up}</span>
+      </button>
+      <button
+        type="button"
+        aria-label={`Vote thumbs down (${asset.thumbs_down})`}
+        onClick={() => onVote('down')}
+        disabled={isVoting}
+        className="btn-secondary flex items-center gap-2"
+      >
+        <ThumbsDown className="h-4 w-4 text-rose-300" />
+        <span>{asset.thumbs_down}</span>
+      </button>
+      <span className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300">
+        net {asset.vote_score}
+      </span>
+    </div>
+  )
+}
+
 export function nextAssetReviewStatus(
   currentStatus: string,
   requestedStatus: string,
@@ -732,6 +827,7 @@ function AssetInspector({
   projectId,
   isExporting,
   isUpdating,
+  isVoting,
   readOnly,
   imageUrl,
   onClose,
@@ -739,11 +835,13 @@ function AssetInspector({
   onExport,
   onPreview,
   onStatusChange,
+  onVote,
 }: {
   asset: DesignAsset | null
   projectId: string
   isExporting: boolean
   isUpdating: boolean
+  isVoting: boolean
   readOnly: boolean
   imageUrl?: string
   onClose: () => void
@@ -751,6 +849,7 @@ function AssetInspector({
   onExport: () => void
   onPreview: () => void
   onStatusChange: (status: string) => void
+  onVote: (vote: AssetVote) => void
 }): React.ReactElement {
   const { data: exports } = useQuery({
     queryKey: ['design-asset-exports', projectId, asset?.asset_id],
@@ -823,11 +922,19 @@ function AssetInspector({
           value={asset.asset_type.replace('_', ' ')}
         />
         <InspectorField label="Status" value={asset.status} />
+        <InspectorField label="Vote score" value={String(asset.vote_score)} />
         <InspectorField
           label="Resolution"
           value={`${asset.width}x${asset.height}`}
         />
         <InspectorField label="Background" value={asset.background} />
+      </div>
+
+      <div className="mt-5">
+        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+          Family votes
+        </p>
+        <AssetVoteActions asset={asset} isVoting={isVoting} onVote={onVote} />
       </div>
 
       {asset.tags.length > 0 && (
@@ -943,6 +1050,7 @@ function AssetDetailModal({
   asset,
   isExporting,
   isUpdating,
+  isVoting,
   readOnly,
   imageUrl,
   navigation,
@@ -950,10 +1058,12 @@ function AssetDetailModal({
   onDelete,
   onExport,
   onStatusChange,
+  onVote,
 }: {
   asset: DesignAsset
   isExporting: boolean
   isUpdating: boolean
+  isVoting: boolean
   readOnly: boolean
   imageUrl: string
   navigation?: AssetModalNavigation
@@ -961,6 +1071,7 @@ function AssetDetailModal({
   onDelete: () => void
   onExport: () => void
   onStatusChange: (status: string) => void
+  onVote: (vote: AssetVote) => void
 }): React.ReactElement {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1089,10 +1200,25 @@ function AssetDetailModal({
               />
               <InspectorField label="Status" value={asset.status} />
               <InspectorField
+                label="Vote score"
+                value={String(asset.vote_score)}
+              />
+              <InspectorField
                 label="Resolution"
                 value={`${asset.width}x${asset.height}`}
               />
               <InspectorField label="Background" value={asset.background} />
+            </div>
+
+            <div className="mt-5">
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                Family votes
+              </p>
+              <AssetVoteActions
+                asset={asset}
+                isVoting={isVoting}
+                onVote={onVote}
+              />
             </div>
 
             {asset.tags.length > 0 && (

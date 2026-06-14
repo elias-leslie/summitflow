@@ -8,7 +8,30 @@ from psycopg import sql
 
 from .._sql import join_static_sql, static_sql
 from ..connection import get_cursor
-from .core import ASSET_SELECT_COLUMNS, _row_to_asset, _row_to_export
+from .core import (
+    ASSET_SELECT_COLUMNS_ALIASED,
+    ASSET_VOTE_SELECT_COLUMNS,
+    _row_to_asset,
+    _row_to_export,
+)
+
+_ASSET_VOTE_JOIN_SQL = """
+LEFT JOIN (
+    SELECT
+        asset_id,
+        COUNT(*) FILTER (WHERE vote = 'up') AS thumbs_up,
+        COUNT(*) FILTER (WHERE vote = 'down') AS thumbs_down
+    FROM design_asset_votes
+    GROUP BY asset_id
+) vote_counts ON vote_counts.asset_id = a.id
+"""
+
+_ASSET_SORT_SQL = {
+    "created_desc": "a.created_at DESC",
+    "thumbs_up": "thumbs_up DESC, a.created_at DESC",
+    "thumbs_down": "thumbs_down DESC, a.created_at DESC",
+    "vote_score": "vote_score DESC, thumbs_up DESC, a.created_at DESC",
+}
 
 
 def get_asset(project_id: str, asset_id: str) -> dict[str, Any] | None:
@@ -16,7 +39,12 @@ def get_asset(project_id: str, asset_id: str) -> dict[str, Any] | None:
     with get_cursor() as cur:
         cur.execute(
             static_sql(
-                f"SELECT {ASSET_SELECT_COLUMNS} FROM design_assets WHERE project_id = %s AND asset_id = %s"
+                f"""
+                SELECT {ASSET_SELECT_COLUMNS_ALIASED}, {ASSET_VOTE_SELECT_COLUMNS}
+                FROM design_assets a
+                {_ASSET_VOTE_JOIN_SQL}
+                WHERE a.project_id = %s AND a.asset_id = %s
+                """
             ),
             (project_id, asset_id),
         )
@@ -34,38 +62,55 @@ def list_assets(
     status: str | None = None,
     search: str | None = None,
     tag: str | None = None,
+    sort_by: str = "created_desc",
 ) -> tuple[list[dict[str, Any]], int]:
     """List assets with filters."""
-    clauses = ["project_id = %s"]
+    clauses = ["a.project_id = %s"]
     params: list[Any] = [project_id]
 
     if asset_type:
-        clauses.append("asset_type = %s")
+        clauses.append("a.asset_type = %s")
         params.append(asset_type)
     if workflow:
-        clauses.append("workflow = %s")
+        clauses.append("a.workflow = %s")
         params.append(workflow)
     if status:
-        clauses.append("status = %s")
+        clauses.append("a.status = %s")
         params.append(status)
     if search:
-        clauses.append("(name ILIKE %s OR description ILIKE %s OR prompt ILIKE %s)")
+        clauses.append("(a.name ILIKE %s OR a.description ILIKE %s OR a.prompt ILIKE %s)")
         pattern = f"%{search}%"
         params.extend([pattern, pattern, pattern])
     if tag:
-        clauses.append("%s = ANY(tags)")
+        clauses.append("%s = ANY(a.tags)")
         params.append(tag)
+
+    order_by = _ASSET_SORT_SQL.get(sort_by)
+    if order_by is None:
+        raise ValueError(f"Invalid asset sort: {sort_by}")
 
     where_sql = join_static_sql(clauses, " AND ")
     with get_cursor() as cur:
-        cur.execute(static_sql("SELECT COUNT(*) FROM design_assets WHERE ") + where_sql, params)
+        cur.execute(
+            static_sql("SELECT COUNT(*) FROM design_assets a WHERE ") + where_sql,
+            params,
+        )
         total_row = cur.fetchone()
         total = int(total_row[0]) if total_row and total_row[0] else 0
 
         cur.execute(
-            static_sql(f"SELECT {ASSET_SELECT_COLUMNS} FROM design_assets WHERE ")
+            static_sql(
+                f"""
+                SELECT {ASSET_SELECT_COLUMNS_ALIASED}, {ASSET_VOTE_SELECT_COLUMNS}
+                FROM design_assets a
+                {_ASSET_VOTE_JOIN_SQL}
+                WHERE
+                """
+            )
             + where_sql
-            + sql.SQL(" ORDER BY created_at DESC LIMIT %s OFFSET %s"),
+            + sql.SQL(" ORDER BY ")
+            + static_sql(order_by)
+            + sql.SQL(" LIMIT %s OFFSET %s"),
             [*params, limit, offset],
         )
         rows = cur.fetchall()

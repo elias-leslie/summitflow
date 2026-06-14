@@ -120,6 +120,67 @@ def test_list_design_assets_filters_by_type(asset_project: str) -> None:
     assert all(item["asset_type"] == "environment" for item in items)
 
 
+
+def test_design_asset_votes_are_cumulative_and_sortable(asset_project: str) -> None:
+    """Each click adds a vote; lists can sort by vote aggregates."""
+    first = design_assets.create_asset(
+        project_id=asset_project,
+        name="First Concept",
+        asset_type="concept_art",
+        workflow="concept",
+        prompt="First art direction",
+        width=1024,
+        height=1024,
+        background="scene",
+        transparent_background=False,
+    )
+    second = design_assets.create_asset(
+        project_id=asset_project,
+        name="Second Concept",
+        asset_type="concept_art",
+        workflow="concept",
+        prompt="Second art direction",
+        width=1024,
+        height=1024,
+        background="scene",
+        transparent_background=False,
+    )
+
+    assert design_assets.create_asset_vote(asset_project, first["asset_id"], "up") is not None
+    assert design_assets.create_asset_vote(asset_project, first["asset_id"], "up") is not None
+    assert design_assets.create_asset_vote(asset_project, first["asset_id"], "down") is not None
+    assert design_assets.create_asset_vote(asset_project, second["asset_id"], "up") is not None
+
+    fetched = design_assets.get_asset(asset_project, first["asset_id"])
+    assert fetched is not None
+    assert fetched["thumbs_up"] == 2
+    assert fetched["thumbs_down"] == 1
+    assert fetched["vote_score"] == 1
+
+    by_up, _ = design_assets.list_assets(asset_project, sort_by="thumbs_up")
+    assert by_up[0]["asset_id"] == first["asset_id"]
+
+    by_net, _ = design_assets.list_assets(asset_project, sort_by="vote_score")
+    assert by_net[0]["vote_score"] >= by_net[-1]["vote_score"]
+
+
+def test_design_asset_vote_rejects_invalid_direction(asset_project: str) -> None:
+    """Votes must be thumbs-up or thumbs-down."""
+    asset = design_assets.create_asset(
+        project_id=asset_project,
+        name="Vote Validation Concept",
+        asset_type="concept_art",
+        workflow="concept",
+        prompt="Validate vote",
+        width=1024,
+        height=1024,
+        background="scene",
+        transparent_background=False,
+    )
+
+    with pytest.raises(ValueError, match="Invalid asset vote"):
+        design_assets.create_asset_vote(asset_project, asset["asset_id"], "maybe")
+
 def test_create_export_for_asset(asset_project: str) -> None:
     """Persist export metadata linked to an asset."""
     asset = design_assets.create_asset(

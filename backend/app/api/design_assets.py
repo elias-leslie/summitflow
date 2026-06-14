@@ -23,6 +23,7 @@ from .design_assets_models import (
     GenerateDesignAssetResponse,
     ImportDesignAssetRequest,
     UpdateDesignAssetStatusRequest,
+    VoteDesignAssetRequest,
 )
 from .design_assets_utils import asset_to_response, export_to_response
 from .mockups_validation import validate_mockup_path
@@ -54,6 +55,7 @@ async def list_design_assets(
     status: str | None = Query(None),
     search: str | None = Query(None),
     tag: str | None = Query(None),
+    sort_by: str = Query("created_desc"),
 ) -> DesignAssetListResponse:
     """List first-class design assets."""
     items, total = design_assets.list_assets(
@@ -65,6 +67,7 @@ async def list_design_assets(
         status=status,
         search=search,
         tag=tag,
+        sort_by=sort_by,
     )
     return DesignAssetListResponse(
         items=[asset_to_response(item) for item in items],
@@ -247,6 +250,30 @@ async def update_design_asset_status(
             asset_id,
             request.status,
             approved_by=request.approved_by,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not asset:
+        raise HTTPException(status_code=404, detail="Design asset not found")
+    return asset_to_response(asset)
+
+
+@router.post(
+    "/projects/{project_id}/design-assets/{asset_id}/votes",
+    response_model=DesignAssetResponse,
+)
+async def vote_design_asset(
+    project_id: str,
+    asset_id: str,
+    request: VoteDesignAssetRequest,
+) -> DesignAssetResponse:
+    """Add one cumulative vote to an asset."""
+    try:
+        asset = design_assets.create_asset_vote(
+            project_id,
+            asset_id,
+            request.vote,
+            voter_email="owner",
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
