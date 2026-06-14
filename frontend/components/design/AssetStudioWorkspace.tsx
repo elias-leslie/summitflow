@@ -3,6 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
+  ChevronLeft,
+  ChevronRight,
   Download,
   ExternalLink,
   Image as ImageIcon,
@@ -55,6 +57,15 @@ interface AssetStudioWorkspaceProps {
   projectId: string
 }
 
+interface AssetModalNavigation {
+  currentIndex: number
+  totalCount: number
+  canGoPrevious: boolean
+  canGoNext: boolean
+  onPrevious: () => void
+  onNext: () => void
+}
+
 export function AssetStudioWorkspace({
   projectId,
 }: AssetStudioWorkspaceProps): React.ReactElement {
@@ -67,6 +78,9 @@ export function AssetStudioWorkspace({
   const [dialogOpen, setDialogOpen] = useState(false)
   const [selectedAsset, setSelectedAsset] = useState<DesignAsset | null>(null)
   const [previewAsset, setPreviewAsset] = useState<DesignAsset | null>(null)
+  const [pendingPreviewNavigation, setPendingPreviewNavigation] = useState<
+    'previous' | 'next' | null
+  >(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const pageSize = 24
   const queryClient = useQueryClient()
@@ -74,6 +88,7 @@ export function AssetStudioWorkspace({
   const {
     data: assetData,
     isLoading,
+    isFetching,
     error,
     refetch,
   } = useQuery({
@@ -150,12 +165,76 @@ export function AssetStudioWorkspace({
 
   const assets = assetData?.items ?? []
   const totalCount = assetData?.total ?? 0
+  const previewAssetIndex = previewAsset
+    ? assets.findIndex((asset) => asset.asset_id === previewAsset.asset_id)
+    : -1
+  const previewAssetPosition =
+    previewAssetIndex >= 0 ? page * pageSize + previewAssetIndex + 1 : 0
   const totalPages = useClampedPagination({
     page,
     setPage,
     totalCount,
     pageSize,
   })
+
+  useEffect(() => {
+    if (
+      !previewAsset ||
+      !pendingPreviewNavigation ||
+      isFetching ||
+      assets.length === 0
+    ) {
+      return
+    }
+
+    const nextAsset =
+      pendingPreviewNavigation === 'next'
+        ? assets[0]
+        : assets[assets.length - 1]
+    setSelectedAsset(nextAsset)
+    setPreviewAsset(nextAsset)
+    setPendingPreviewNavigation(null)
+  }, [assets, isFetching, pendingPreviewNavigation, previewAsset])
+
+  const showPreviousPreviewAsset = (): void => {
+    if (previewAssetIndex > 0) {
+      const nextAsset = assets[previewAssetIndex - 1]
+      setSelectedAsset(nextAsset)
+      setPreviewAsset(nextAsset)
+      return
+    }
+
+    if (page > 0) {
+      setPendingPreviewNavigation('previous')
+      setPage(page - 1)
+    }
+  }
+
+  const showNextPreviewAsset = (): void => {
+    if (previewAssetIndex >= 0 && previewAssetIndex < assets.length - 1) {
+      const nextAsset = assets[previewAssetIndex + 1]
+      setSelectedAsset(nextAsset)
+      setPreviewAsset(nextAsset)
+      return
+    }
+
+    if ((page + 1) * pageSize < totalCount) {
+      setPendingPreviewNavigation('next')
+      setPage(page + 1)
+    }
+  }
+
+  const previewNavigation: AssetModalNavigation | undefined =
+    previewAsset && totalCount > 1 && previewAssetPosition > 0
+      ? {
+          currentIndex: previewAssetPosition,
+          totalCount,
+          canGoPrevious: previewAssetPosition > 1,
+          canGoNext: previewAssetPosition < totalCount,
+          onPrevious: showPreviousPreviewAsset,
+          onNext: showNextPreviewAsset,
+        }
+      : undefined
 
   return (
     <div className="flex h-full flex-col min-w-0">
@@ -431,6 +510,7 @@ export function AssetStudioWorkspace({
           projectId={projectId}
           isExporting={exportMutation.isPending}
           isUpdating={statusMutation.isPending}
+          navigation={previewNavigation}
           onClose={() => setPreviewAsset(null)}
           onDelete={() => {
             setSelectedAsset(previewAsset)
@@ -766,6 +846,7 @@ function AssetDetailModal({
   projectId,
   isExporting,
   isUpdating,
+  navigation,
   onClose,
   onDelete,
   onExport,
@@ -775,6 +856,7 @@ function AssetDetailModal({
   projectId: string
   isExporting: boolean
   isUpdating: boolean
+  navigation?: AssetModalNavigation
   onClose: () => void
   onDelete: () => void
   onExport: () => void
@@ -785,10 +867,18 @@ function AssetDetailModal({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
+      if (event.key === 'ArrowLeft' && navigation?.canGoPrevious) {
+        event.preventDefault()
+        navigation.onPrevious()
+      }
+      if (event.key === 'ArrowRight' && navigation?.canGoNext) {
+        event.preventDefault()
+        navigation.onNext()
+      }
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  }, [navigation, onClose])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -809,6 +899,31 @@ function AssetDetailModal({
             </h2>
           </div>
           <div className="flex items-center gap-2">
+            {navigation && (
+              <>
+                <button
+                  type="button"
+                  onClick={navigation.onPrevious}
+                  disabled={!navigation.canGoPrevious}
+                  aria-label="Previous asset"
+                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-slate-500 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <span className="min-w-16 text-center text-xs text-slate-400">
+                  {navigation.currentIndex} of {navigation.totalCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={navigation.onNext}
+                  disabled={!navigation.canGoNext}
+                  aria-label="Next asset"
+                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-slate-500 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </>
+            )}
             <a
               href={imageUrl}
               target="_blank"
@@ -838,7 +953,17 @@ function AssetDetailModal({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-          <div className="flex min-h-0 flex-1 items-center justify-center bg-slate-950 p-4">
+          <div className="relative flex min-h-0 flex-1 items-center justify-center bg-slate-950 p-4">
+            {navigation?.canGoPrevious && (
+              <button
+                type="button"
+                onClick={navigation.onPrevious}
+                aria-label="Previous asset"
+                className="absolute left-4 top-1/2 z-10 flex h-14 w-14 -translate-y-1/2 items-center justify-center rounded-full border border-slate-700 bg-slate-950/70 text-slate-200 backdrop-blur transition hover:border-cyan-400/60 hover:text-cyan-100"
+              >
+                <ChevronLeft className="h-7 w-7" />
+              </button>
+            )}
             {/* biome-ignore lint/performance/noImgElement: Asset previews can be user-imported SVG/PNG files; direct img preserves native rendering. */}
             <img
               src={imageUrl}
@@ -846,6 +971,16 @@ function AssetDetailModal({
               className="max-h-full max-w-full object-contain"
               draggable={false}
             />
+            {navigation?.canGoNext && (
+              <button
+                type="button"
+                onClick={navigation.onNext}
+                aria-label="Next asset"
+                className="absolute right-4 top-1/2 z-10 flex h-14 w-14 -translate-y-1/2 items-center justify-center rounded-full border border-slate-700 bg-slate-950/70 text-slate-200 backdrop-blur transition hover:border-cyan-400/60 hover:text-cyan-100"
+              >
+                <ChevronRight className="h-7 w-7" />
+              </button>
+            )}
           </div>
 
           <aside className="w-full flex-shrink-0 overflow-auto border-t border-slate-800 p-5 lg:w-96 lg:border-l lg:border-t-0">
