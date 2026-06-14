@@ -1,6 +1,13 @@
 'use client'
 
-import { Box, CheckCircle2, Clock, Sparkles, XCircle } from 'lucide-react'
+import {
+  Archive,
+  Box,
+  CheckCircle2,
+  Clock,
+  Sparkles,
+  XCircle,
+} from 'lucide-react'
 
 export type StatusFilter =
   | 'all'
@@ -9,6 +16,7 @@ export type StatusFilter =
   | 'approved'
   | 'rejected'
   | 'applied'
+  | 'archived'
 
 interface MockupStatsGridProps {
   byStatus: Record<string, number>
@@ -21,6 +29,7 @@ const statusIcons: Record<string, React.ReactNode> = {
   approved: <CheckCircle2 className="w-4 h-4 text-emerald-400" />,
   rejected: <XCircle className="w-4 h-4 text-rose-400" />,
   applied: <Box className="w-4 h-4 text-purple-400" />,
+  archived: <Archive className="w-4 h-4 text-slate-400" />,
 }
 
 export function MockupStatsGrid({

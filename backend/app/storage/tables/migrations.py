@@ -27,6 +27,7 @@ def apply_schema_migrations(conn: psycopg.Connection, cur: psycopg.Cursor) -> No
     _add_missing_columns(cur)
     _drop_removed_spirit_columns(cur)
     _drop_removed_design_review_tables(cur)
+    _create_design_vote_tables(cur)
     _backfill_execution_mode(cur)
     _ensure_execution_mode_constraint(cur)
     _create_migration_indexes(cur)
@@ -164,6 +165,50 @@ def _drop_removed_design_review_tables(cur: psycopg.Cursor) -> None:
                     sql.Identifier(table)
                 )
             )
+
+
+def _create_design_vote_tables(cur: psycopg.Cursor) -> None:
+    """Create cumulative design/mockup vote tables for legacy schemas."""
+    with contextlib.suppress(psycopg.errors.UndefinedTable):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS design_asset_votes (
+                id BIGSERIAL PRIMARY KEY,
+                asset_id INTEGER NOT NULL REFERENCES design_assets(id) ON DELETE CASCADE,
+                vote VARCHAR(10) NOT NULL CHECK (vote IN ('up', 'down')),
+                voter_email TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_design_asset_votes_asset "
+            "ON design_asset_votes(asset_id)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_design_asset_votes_vote "
+            "ON design_asset_votes(asset_id, vote)"
+        )
+    with contextlib.suppress(psycopg.errors.UndefinedTable):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mockup_votes (
+                id BIGSERIAL PRIMARY KEY,
+                mockup_id INTEGER NOT NULL REFERENCES mockups(id) ON DELETE CASCADE,
+                vote VARCHAR(10) NOT NULL CHECK (vote IN ('up', 'down')),
+                voter_email TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mockup_votes_mockup "
+            "ON mockup_votes(mockup_id)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mockup_votes_vote "
+            "ON mockup_votes(mockup_id, vote)"
+        )
 
 
 def _project_column_additions() -> list[tuple[str, str]]:

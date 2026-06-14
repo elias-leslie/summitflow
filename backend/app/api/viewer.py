@@ -23,7 +23,12 @@ from .design_assets_models import (
 )
 from .design_assets_utils import asset_to_response, export_to_response
 from .mockups_crud import get_mockup_image, get_mockup_screenshot
-from .mockups_models import MockupListResponse, MockupResponse, MockupStatsResponse
+from .mockups_models import (
+    MockupListResponse,
+    MockupResponse,
+    MockupStatsResponse,
+    VoteMockupRequest,
+)
 from .mockups_utils import to_response
 
 router = APIRouter()
@@ -102,6 +107,7 @@ def list_mockups(
     page_path: str | None = Query(None),
     generator: str | None = Query(None),
     search: str | None = Query(None),
+    sort_by: str = Query("created_desc"),
 ) -> MockupListResponse:
     """List shared mockups for a project."""
     _require_design_access(project_id, principal)
@@ -115,6 +121,7 @@ def list_mockups(
         page_path=page_path,
         generator=generator,
         search=search,
+        sort_by=sort_by,
     )
     return MockupListResponse(
         items=[_sanitize_mockup(to_response(item)) for item in items],
@@ -188,6 +195,29 @@ async def mockup_screenshot(
     """Return a shared mockup screenshot."""
     _require_design_access(project_id, principal)
     return await get_mockup_screenshot(project_id, mockup_id)
+
+
+@router.post("/projects/{project_id}/mockups/{mockup_id}/votes", response_model=MockupResponse)
+def vote_mockup(
+    project_id: str,
+    mockup_id: str,
+    request: VoteMockupRequest,
+    principal: AuthenticatedPrincipal,
+) -> MockupResponse:
+    """Add one cumulative shared-viewer vote to a UI mockup."""
+    _require_design_access(project_id, principal)
+    try:
+        mockup = mockups_storage.create_mockup_vote(
+            project_id,
+            mockup_id,
+            request.vote,
+            voter_email=principal.email,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not mockup:
+        raise HTTPException(status_code=404, detail="Mockup not found")
+    return _sanitize_mockup(to_response(mockup))
 
 
 @router.get("/projects/{project_id}/design-assets", response_model=DesignAssetListResponse)

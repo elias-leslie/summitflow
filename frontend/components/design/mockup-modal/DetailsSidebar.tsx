@@ -1,6 +1,7 @@
 'use client'
 
 import clsx from 'clsx'
+import { ThumbsDown, ThumbsUp } from 'lucide-react'
 import type { Mockup } from '@/lib/api/mockups'
 import { formatDate } from '@/lib/format'
 import { StatusActions } from './StatusActions'
@@ -10,7 +11,9 @@ interface DetailsSidebarProps {
   updating: boolean
   showHistory: boolean
   history?: Mockup[]
+  isVoting: boolean
   onStatusChange: (status: string) => void
+  onVote: (vote: 'up' | 'down') => void
   onSelectHistoryMockup: (mockup: Mockup) => void
   readOnly?: boolean
 }
@@ -20,7 +23,9 @@ export function DetailsSidebar({
   updating,
   showHistory,
   history,
+  isVoting,
   onStatusChange,
+  onVote,
   onSelectHistoryMockup,
   readOnly = false,
 }: DetailsSidebarProps) {
@@ -59,6 +64,21 @@ export function DetailsSidebar({
             </h3>
             <p className="text-slate-100">{mockup.iteration_count}</p>
           </div>
+          <div>
+            <h3 className="text-sm font-medium text-slate-400 mb-1">
+              Vote score
+            </h3>
+            <p className="text-slate-100">{mockup.vote_score}</p>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-medium text-slate-400 mb-2">Votes</h3>
+          <MockupVoteActions
+            mockup={mockup}
+            isVoting={isVoting}
+            onVote={onVote}
+          />
         </div>
 
         <div>
@@ -146,6 +166,44 @@ export function DetailsSidebar({
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function MockupVoteActions({
+  mockup,
+  isVoting,
+  onVote,
+}: {
+  mockup: Mockup
+  isVoting: boolean
+  onVote: (vote: 'up' | 'down') => void
+}): React.ReactElement {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <button
+        type="button"
+        aria-label={`Vote thumbs up (${mockup.thumbs_up})`}
+        onClick={() => onVote('up')}
+        disabled={isVoting}
+        className="btn-secondary flex items-center gap-2"
+      >
+        <ThumbsUp className="h-4 w-4 text-emerald-300" />
+        <span>{mockup.thumbs_up}</span>
+      </button>
+      <button
+        type="button"
+        aria-label={`Vote thumbs down (${mockup.thumbs_down})`}
+        onClick={() => onVote('down')}
+        disabled={isVoting}
+        className="btn-secondary flex items-center gap-2"
+      >
+        <ThumbsDown className="h-4 w-4 text-rose-300" />
+        <span>{mockup.thumbs_down}</span>
+      </button>
+      <span className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300">
+        net {mockup.vote_score}
+      </span>
     </div>
   )
 }

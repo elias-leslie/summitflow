@@ -40,6 +40,12 @@ class MockupStatusUpdate(BaseModel):
     approved_by: str | None = None
 
 
+class VoteMockupRequest(BaseModel):
+    """Request to add a cumulative mockup vote."""
+
+    vote: str
+
+
 class MockupResponse(BaseModel):
     """Response model for a mockup."""
 
@@ -66,6 +72,9 @@ class MockupResponse(BaseModel):
     metadata: dict[str, Any]
     created_at: str | None
     updated_at: str | None
+    thumbs_up: int = 0
+    thumbs_down: int = 0
+    vote_score: int = 0
 
 
 class MockupContextResponse(BaseModel):

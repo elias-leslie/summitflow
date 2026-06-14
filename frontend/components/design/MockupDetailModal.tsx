@@ -20,6 +20,7 @@ interface MockupDetailModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onStatusChange: () => void
+  onVote: (mockupId: string, vote: 'up' | 'down') => void
   onCreateIteration: (mockup: Mockup) => void
   onSelectMockup: (mockup: Mockup) => void
   navigation?: MockupModalNavigation
@@ -27,6 +28,7 @@ interface MockupDetailModalProps {
   fetchHistory?: (projectId: string, mockupId: string) => Promise<Mockup[]>
   getImageUrl?: (projectId: string, mockupId: string) => string
   getScreenshotUrl?: (projectId: string, mockupId: string) => string
+  isVoting?: boolean
 }
 
 export function MockupDetailModal({
@@ -35,6 +37,7 @@ export function MockupDetailModal({
   open,
   onOpenChange,
   onStatusChange,
+  onVote,
   onCreateIteration,
   onSelectMockup,
   navigation,
@@ -42,6 +45,7 @@ export function MockupDetailModal({
   fetchHistory,
   getImageUrl,
   getScreenshotUrl,
+  isVoting = false,
 }: MockupDetailModalProps) {
   const {
     updating,
@@ -145,7 +149,9 @@ export function MockupDetailModal({
               updating={updating}
               showHistory={showHistory}
               history={history}
+              isVoting={isVoting}
               onStatusChange={handleStatusChange}
+              onVote={(vote) => onVote(mockup.mockup_id, vote)}
               onSelectHistoryMockup={onSelectMockup}
               readOnly={readOnly}
             />

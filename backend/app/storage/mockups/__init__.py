@@ -30,6 +30,7 @@ from .queries import (
 )
 from .updates import (
     archive_mockup,
+    create_mockup_vote,
     delete_mockup,
     update_mockup,
     update_mockup_status,
@@ -41,6 +42,7 @@ __all__ = [
     "MOCKUP_TYPES",
     "archive_mockup",
     "create_mockup",
+    "create_mockup_vote",
     "delete_mockup",
     "generate_mockup_id",
     "get_mockup",

@@ -11,6 +11,8 @@ import {
   Image as ImageIcon,
   LayoutTemplate,
   Sparkles,
+  ThumbsDown,
+  ThumbsUp,
   XCircle,
 } from 'lucide-react'
 import Image from 'next/image'
@@ -23,6 +25,7 @@ interface MockupCardProps {
   onClick: () => void
   selectMode?: boolean
   isSelected?: boolean
+  getImageUrl?: (projectId: string, mockupId: string) => string
 }
 
 const statusConfig = {
@@ -112,6 +115,7 @@ export function MockupCard({
   onClick,
   selectMode = false,
   isSelected = false,
+  getImageUrl,
 }: MockupCardProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -206,6 +210,15 @@ export function MockupCard({
         <div className="flex items-center gap-4 text-slate-400 text-xs">
           <span className="capitalize">{mockup.mockup_type}</span>
           <span>v{mockup.version}</span>
+          <span className="flex items-center gap-1">
+            <ThumbsUp className="h-3 w-3 text-emerald-300" />
+            {mockup.thumbs_up}
+          </span>
+          <span className="flex items-center gap-1">
+            <ThumbsDown className="h-3 w-3 text-rose-300" />
+            {mockup.thumbs_down}
+          </span>
+          <span>net {mockup.vote_score}</span>
           <span>{formattedDate}</span>
         </div>
       </div>
@@ -262,7 +275,10 @@ export function MockupCard({
           </div>
         ) : mockup.file_path ? (
           <Image
-            src={`/api/projects/${mockup.project_id}/mockups/${mockup.mockup_id}/image`}
+            src={
+              getImageUrl?.(mockup.project_id, mockup.mockup_id) ??
+              `/api/projects/${mockup.project_id}/mockups/${mockup.mockup_id}/image`
+            }
             alt={mockup.name}
             fill
             className="object-cover"
@@ -315,6 +331,9 @@ export function MockupCard({
         <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
           <span className="capitalize">{mockup.mockup_type}</span>
           {mockup.generator && <span>{mockup.generator}</span>}
+          <span>👍 {mockup.thumbs_up}</span>
+          <span>👎 {mockup.thumbs_down}</span>
+          <span>net {mockup.vote_score}</span>
           <span>{formattedDate}</span>
         </div>
       </div>

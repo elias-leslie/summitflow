@@ -14,6 +14,7 @@ from .mockups_models import (
     MockupStatsResponse,
     MockupStatusUpdate,
     MockupUpdate,
+    VoteMockupRequest,
 )
 from .mockups_utils import compact_context_for_mockup, to_response
 from .mockups_validation import validate_mockup_path
@@ -69,6 +70,7 @@ async def list_mockups(
     page_path: str | None = Query(None, description="Filter by page path"),
     generator: str | None = Query(None, description="Filter by generator"),
     search: str | None = Query(None, description="Search in name/description"),
+    sort_by: str = Query("created_desc", description="Sort order"),
 ) -> MockupListResponse:
     """List mockups for a project with filtering."""
     items, total = mockups_storage.list_mockups(
@@ -81,6 +83,7 @@ async def list_mockups(
         page_path=page_path,
         generator=generator,
         search=search,
+        sort_by=sort_by,
     )
     return MockupListResponse(
         items=[to_response(m) for m in items],
@@ -277,6 +280,30 @@ async def update_mockup_status(
         return to_response(mockup)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post(
+    "/projects/{project_id}/mockups/{mockup_id}/votes",
+    response_model=MockupResponse,
+)
+async def vote_mockup(
+    project_id: str,
+    mockup_id: str,
+    request: VoteMockupRequest,
+) -> MockupResponse:
+    """Add one cumulative vote to a UI mockup."""
+    try:
+        mockup = mockups_storage.create_mockup_vote(
+            project_id,
+            mockup_id,
+            request.vote,
+            voter_email="owner",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not mockup:
+        raise HTTPException(status_code=404, detail="Mockup not found")
+    return to_response(mockup)
 
 
 @router.delete("/projects/{project_id}/mockups/{mockup_id}")

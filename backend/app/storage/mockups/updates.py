@@ -11,6 +11,8 @@ from ..connection import get_connection
 from .core import MOCKUP_SELECT_COLUMNS, MOCKUP_STATUSES, _row_to_mockup
 from .queries import get_mockup
 
+MOCKUP_VOTES = frozenset({"up", "down"})
+
 
 def update_mockup(
     project_id: str,
@@ -101,32 +103,38 @@ def update_mockup_status(
     with get_connection() as conn, conn.cursor() as cur:
         if status == "approved":
             cur.execute(
-                f"""
+                static_sql(
+                    f"""
                 UPDATE mockups
-                SET status = %s, approved_at = NOW(), approved_by = %s
+                SET status = %s, approved_at = NOW(), approved_by = %s, applied_at = NULL
                 WHERE project_id = %s AND mockup_id = %s
                 RETURNING {MOCKUP_SELECT_COLUMNS}
-                """,
+                """
+                ),
                 (status, approved_by, project_id, mockup_id),
             )
         elif status == "applied":
             cur.execute(
-                f"""
+                static_sql(
+                    f"""
                 UPDATE mockups
                 SET status = %s, applied_at = NOW()
                 WHERE project_id = %s AND mockup_id = %s
                 RETURNING {MOCKUP_SELECT_COLUMNS}
-                """,
+                """
+                ),
                 (status, project_id, mockup_id),
             )
         else:
             cur.execute(
-                f"""
+                static_sql(
+                    f"""
                 UPDATE mockups
-                SET status = %s
+                SET status = %s, approved_at = NULL, approved_by = NULL, applied_at = NULL
                 WHERE project_id = %s AND mockup_id = %s
                 RETURNING {MOCKUP_SELECT_COLUMNS}
-                """,
+                """
+                ),
                 (status, project_id, mockup_id),
             )
         row = cur.fetchone()
@@ -136,6 +144,33 @@ def update_mockup_status(
             return None
 
         return _row_to_mockup(row)
+
+
+def create_mockup_vote(
+    project_id: str,
+    mockup_id: str,
+    vote: str,
+    *,
+    voter_email: str | None = None,
+) -> dict[str, Any] | None:
+    """Add one cumulative vote to a mockup and return the updated mockup."""
+    if vote not in MOCKUP_VOTES:
+        raise ValueError(f"Invalid mockup vote: {vote}")
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO mockup_votes (mockup_id, vote, voter_email)
+            SELECT id, %s, %s
+            FROM mockups
+            WHERE project_id = %s AND mockup_id = %s
+            """,
+            (vote, voter_email, project_id, mockup_id),
+        )
+        created = cur.rowcount > 0
+        conn.commit()
+    if not created:
+        return None
+    return get_mockup(project_id, mockup_id)
 
 
 def delete_mockup(project_id: str, mockup_id: str) -> bool:

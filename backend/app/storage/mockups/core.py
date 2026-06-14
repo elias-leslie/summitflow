@@ -7,6 +7,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from .._sql import static_sql
 from ..connection import get_connection, get_cursor
 
 # Mockup type constants
@@ -20,11 +21,38 @@ MOCKUP_STATUSES = frozenset(
 )
 
 # Base SELECT columns for mockup queries
-MOCKUP_SELECT_COLUMNS = """id, project_id, mockup_id, name, description, mockup_type,
-       file_path, content, status, approved_at, approved_by, applied_at,
-       task_id, page_path, version, parent_mockup_id, generator,
-       generation_prompt, generation_time_ms, iteration_count, metadata,
-       created_at, updated_at"""
+MOCKUP_COLUMN_NAMES = (
+    "id",
+    "project_id",
+    "mockup_id",
+    "name",
+    "description",
+    "mockup_type",
+    "file_path",
+    "content",
+    "status",
+    "approved_at",
+    "approved_by",
+    "applied_at",
+    "task_id",
+    "page_path",
+    "version",
+    "parent_mockup_id",
+    "generator",
+    "generation_prompt",
+    "generation_time_ms",
+    "iteration_count",
+    "metadata",
+    "created_at",
+    "updated_at",
+)
+MOCKUP_SELECT_COLUMNS = ", ".join(MOCKUP_COLUMN_NAMES)
+MOCKUP_SELECT_COLUMNS_ALIASED = ", ".join(f"m.{column}" for column in MOCKUP_COLUMN_NAMES)
+MOCKUP_VOTE_SELECT_COLUMNS = """
+       COALESCE(vote_counts.thumbs_up, 0) AS thumbs_up,
+       COALESCE(vote_counts.thumbs_down, 0) AS thumbs_down,
+       COALESCE(vote_counts.thumbs_up, 0) - COALESCE(vote_counts.thumbs_down, 0) AS vote_score
+"""
 
 # Default initial mockup version and iteration count
 _DEFAULT_VERSION = 1
@@ -41,6 +69,8 @@ def generate_mockup_id() -> str:
 
 def _row_to_mockup(row: tuple[Any, ...]) -> dict[str, Any]:
     """Convert database row to mockup dict."""
+    thumbs_up = int(row[23]) if len(row) > 23 and row[23] is not None else 0
+    thumbs_down = int(row[24]) if len(row) > 24 and row[24] is not None else 0
     return {
         "id": row[0],
         "project_id": row[1],
@@ -65,6 +95,9 @@ def _row_to_mockup(row: tuple[Any, ...]) -> dict[str, Any]:
         "metadata": row[20] or {},
         "created_at": row[21].isoformat() if row[21] else None,
         "updated_at": row[22].isoformat() if row[22] else None,
+        "thumbs_up": thumbs_up,
+        "thumbs_down": thumbs_down,
+        "vote_score": int(row[25]) if len(row) > 25 and row[25] is not None else thumbs_up - thumbs_down,
     }
 
 
@@ -72,7 +105,7 @@ def get_mockup_by_db_id(db_id: int) -> dict[str, Any] | None:
     """Get a mockup by database ID (primary key)."""
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups WHERE id = %s",
+            static_sql(f"SELECT {MOCKUP_SELECT_COLUMNS} FROM mockups WHERE id = %s"),
             (db_id,),
         )
         row = cur.fetchone()
@@ -95,7 +128,8 @@ def _insert_mockup_row(params: tuple[Any, ...]) -> dict[str, Any]:
     """Execute the INSERT for a new mockup and return the resulting row dict."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""
+            static_sql(
+                f"""
             INSERT INTO mockups (
                 project_id, mockup_id, name, description, mockup_type,
                 file_path, content, status, task_id, page_path,
@@ -107,7 +141,8 @@ def _insert_mockup_row(params: tuple[Any, ...]) -> dict[str, Any]:
                 %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
             RETURNING {MOCKUP_SELECT_COLUMNS}
-            """,
+            """
+            ),
             params,
         )
         row = cur.fetchone()

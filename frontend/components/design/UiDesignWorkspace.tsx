@@ -5,10 +5,6 @@ import { RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BulkActionBar } from '@/components/design/BulkActionBar'
 import { CreateMockupDialog } from '@/components/design/CreateMockupDialog'
-import {
-  DesignFilters,
-  type TypeFilter,
-} from '@/components/design/DesignFilters'
 import { DesignHeader, type ViewMode } from '@/components/design/DesignHeader'
 import { GenerateMockupDialog } from '@/components/design/GenerateMockupDialog'
 import { MockupDetailModal } from '@/components/design/MockupDetailModal'
@@ -30,6 +26,7 @@ import {
   fetchMockupStats,
   fetchMockups,
   type Mockup,
+  voteMockup,
 } from '@/lib/api/mockups'
 import {
   fetchViewerMockupHistory,
@@ -37,12 +34,29 @@ import {
   fetchViewerMockups,
   getViewerMockupImageUrl,
   getViewerScreenshotUrl,
+  voteViewerMockup,
 } from '@/lib/api/viewer'
 
 interface UiDesignWorkspaceProps {
   projectId: string
   readOnly?: boolean
 }
+
+type TypeFilter =
+  | 'all'
+  | 'component'
+  | 'page'
+  | 'layout'
+  | 'icon'
+  | 'illustration'
+  | 'sprite'
+  | 'sheet'
+type MockupSortFilter =
+  | 'created_desc'
+  | 'thumbs_up'
+  | 'thumbs_down'
+  | 'vote_score'
+type MockupVote = 'up' | 'down'
 
 export function UiDesignWorkspace({
   projectId,
@@ -51,6 +65,7 @@ export function UiDesignWorkspace({
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
+  const [sortBy, setSortBy] = useState<MockupSortFilter>('created_desc')
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(0)
   const [selectedMockup, setSelectedMockup] = useState<Mockup | null>(null)
@@ -81,6 +96,7 @@ export function UiDesignWorkspace({
       projectId,
       statusFilter,
       typeFilter,
+      sortBy,
       searchQuery,
       page,
     ],
@@ -91,6 +107,7 @@ export function UiDesignWorkspace({
         status: statusFilter === 'all' ? undefined : statusFilter,
         mockup_type: typeFilter === 'all' ? undefined : typeFilter,
         search: searchQuery || undefined,
+        sort_by: sortBy,
       }),
   })
 
@@ -111,6 +128,26 @@ export function UiDesignWorkspace({
       setSelectMode(false)
       setShowDeleteConfirm(false)
     },
+  })
+
+  const applyUpdatedMockup = (updatedMockup: Mockup): void => {
+    setSelectedMockup((current) =>
+      current?.mockup_id === updatedMockup.mockup_id ? updatedMockup : current,
+    )
+    queryClient.invalidateQueries({ queryKey: ['mockups'] })
+    queryClient.invalidateQueries({ queryKey: ['mockup-stats'] })
+    refetch()
+  }
+
+  const voteMutation = useMutation({
+    mutationFn: async ({
+      mockupId,
+      vote,
+    }: {
+      mockupId: string
+      vote: MockupVote
+    }) => (readOnly ? voteViewerMockup : voteMockup)(projectId, mockupId, vote),
+    onSuccess: applyUpdatedMockup,
   })
 
   const mockups = mockupsData?.items ?? []
@@ -214,7 +251,7 @@ export function UiDesignWorkspace({
           title="UI Design"
           subtitle={
             readOnly
-              ? 'Browse shared UI mockups and review details without mutation controls.'
+              ? 'Browse shared UI mockups, review details, and vote without owner-only controls.'
               : 'Analyze live pages, capture hand-authored concepts, and move mockups through the normal review flow.'
           }
           totalLabel={
@@ -275,24 +312,66 @@ export function UiDesignWorkspace({
           />
         )}
 
-        <DesignFilters
-          searchQuery={searchQuery}
-          statusFilter={statusFilter}
-          typeFilter={typeFilter}
-          searchPlaceholder="Search UI mockups..."
-          onSearchChange={(query) => {
-            setSearchQuery(query)
-            setPage(0)
-          }}
-          onStatusFilterChange={(status) => {
-            setStatusFilter(status)
-            setPage(0)
-          }}
-          onTypeFilterChange={(type) => {
-            setTypeFilter(type)
-            setPage(0)
-          }}
-        />
+        <div className="card mb-6 grid grid-cols-1 gap-3 p-4 lg:grid-cols-2 xl:grid-cols-4">
+          <input
+            value={searchQuery}
+            onChange={(event) => {
+              setSearchQuery(event.target.value)
+              setPage(0)
+            }}
+            placeholder="Search UI mockups..."
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 xl:col-span-1"
+          />
+          <select
+            value={statusFilter}
+            onChange={(event) => {
+              setStatusFilter(event.target.value as StatusFilter)
+              setPage(0)
+            }}
+            aria-label="Filter by status"
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
+          >
+            <option value="all">All Statuses</option>
+            <option value="generated">Generated</option>
+            <option value="pending_approval">Pending Approval</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="applied">Applied</option>
+            <option value="archived">Archived</option>
+          </select>
+          <select
+            value={typeFilter}
+            onChange={(event) => {
+              setTypeFilter(event.target.value as TypeFilter)
+              setPage(0)
+            }}
+            aria-label="Filter by type"
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
+          >
+            <option value="all">All Types</option>
+            <option value="component">Component</option>
+            <option value="page">Page</option>
+            <option value="layout">Layout</option>
+            <option value="icon">Icon</option>
+            <option value="illustration">Illustration</option>
+            <option value="sprite">Sprite</option>
+            <option value="sheet">Sprite Sheet</option>
+          </select>
+          <select
+            value={sortBy}
+            onChange={(event) => {
+              setSortBy(event.target.value as MockupSortFilter)
+              setPage(0)
+            }}
+            aria-label="Sort UI mockups"
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
+          >
+            <option value="created_desc">Newest</option>
+            <option value="thumbs_up">Most thumbs up</option>
+            <option value="vote_score">Best net votes</option>
+            <option value="thumbs_down">Most thumbs down</option>
+          </select>
+        </div>
 
         {selectMode && selectedMockups.size > 0 && (
           <BulkActionBar
@@ -338,6 +417,7 @@ export function UiDesignWorkspace({
               setModalOpen(true)
             }}
             onPageChange={setPage}
+            getImageUrl={readOnly ? getViewerMockupImageUrl : undefined}
           />
         )}
 
@@ -348,6 +428,7 @@ export function UiDesignWorkspace({
             open={modalOpen}
             onOpenChange={setModalOpen}
             onStatusChange={() => void handleRefresh()}
+            onVote={(mockupId, vote) => voteMutation.mutate({ mockupId, vote })}
             onCreateIteration={(mockup) => {
               setIterationParentMockup(mockup)
               setCreateDialogOpen(true)
@@ -358,6 +439,7 @@ export function UiDesignWorkspace({
             fetchHistory={readOnly ? fetchViewerMockupHistory : undefined}
             getImageUrl={readOnly ? getViewerMockupImageUrl : undefined}
             getScreenshotUrl={readOnly ? getViewerScreenshotUrl : undefined}
+            isVoting={voteMutation.isPending}
           />
         )}
 

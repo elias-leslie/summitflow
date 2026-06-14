@@ -38,6 +38,7 @@ export function fetchViewerMockups(
     page_path: filters.page_path,
     generator: filters.generator,
     search: filters.search,
+    sort_by: filters.sort_by,
   })
   return fetchWithErrorHandling<MockupListResponse>(
     `/api/viewer/projects/${projectId}/mockups${query}`,
@@ -76,6 +77,18 @@ export function getViewerScreenshotUrl(
   mockupId: string,
 ): string {
   return `/api/viewer/projects/${projectId}/mockups/${mockupId}/screenshot`
+}
+
+export function voteViewerMockup(
+  projectId: string,
+  mockupId: string,
+  vote: 'up' | 'down',
+): Promise<Mockup> {
+  return postJson<Mockup>(
+    `/api/viewer/projects/${projectId}/mockups/${mockupId}/votes`,
+    { vote },
+    'Failed to vote on shared mockup',
+  )
 }
 
 export interface ViewerDesignAssetFilters {

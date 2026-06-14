@@ -14,6 +14,7 @@ interface MockupGridProps {
   page: number
   onMockupClick: (mockup: Mockup) => void
   onPageChange: (page: number) => void
+  getImageUrl?: (projectId: string, mockupId: string) => string
 }
 
 export function MockupGrid({
@@ -26,6 +27,7 @@ export function MockupGrid({
   page,
   onMockupClick,
   onPageChange,
+  getImageUrl,
 }: MockupGridProps): React.ReactElement {
   if (mockups.length === 0) {
     return (
@@ -72,6 +74,7 @@ export function MockupGrid({
             onClick={() => onMockupClick(mockup)}
             selectMode={selectMode}
             isSelected={selectedMockups.has(mockup.mockup_id)}
+            getImageUrl={getImageUrl}
           />
         ))}
       </div>

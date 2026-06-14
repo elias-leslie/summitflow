@@ -301,7 +301,7 @@ export function AssetStudioWorkspace({
         title="Asset Studio"
         subtitle={
           readOnly
-            ? 'Browse shared design assets without review, export, generation, or deletion controls.'
+            ? 'Browse shared design assets, review details, and vote without owner-only controls.'
             : 'Import manual/current-agent visuals, generate Agent Hub variants, review candidates, and export approved sprite sheets.'
         }
         totalLabel={
@@ -932,7 +932,7 @@ function AssetInspector({
 
       <div className="mt-5">
         <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
-          Family votes
+          Votes
         </p>
         <AssetVoteActions asset={asset} isVoting={isVoting} onVote={onVote} />
       </div>
@@ -1212,7 +1212,7 @@ function AssetDetailModal({
 
             <div className="mt-5">
               <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                Family votes
+                Votes
               </p>
               <AssetVoteActions
                 asset={asset}

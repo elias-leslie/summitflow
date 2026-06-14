@@ -34,6 +34,9 @@ export interface Mockup {
   metadata?: Record<string, unknown>
   created_at: string | null
   updated_at: string | null
+  thumbs_up: number
+  thumbs_down: number
+  vote_score: number
 }
 
 export interface MockupListResponse {
@@ -107,6 +110,7 @@ export interface MockupFilters {
   page_path?: string
   generator?: string
   search?: string
+  sort_by?: string
 }
 
 /**
@@ -125,6 +129,7 @@ export async function fetchMockups(
     page_path: filters.page_path,
     generator: filters.generator,
     search: filters.search,
+    sort_by: filters.sort_by,
   })
   const url = `/api/projects/${projectId}/mockups${query}`
 
@@ -228,6 +233,21 @@ export async function updateMockupStatus(
     `/api/projects/${projectId}/mockups/${mockupId}/status`,
     { status, approved_by: approvedBy },
     'Failed to update mockup status',
+  )
+}
+
+/**
+ * Add one cumulative thumbs up/down vote to a mockup.
+ */
+export async function voteMockup(
+  projectId: string,
+  mockupId: string,
+  vote: 'up' | 'down',
+): Promise<Mockup> {
+  return postJson<Mockup>(
+    `/api/projects/${projectId}/mockups/${mockupId}/votes`,
+    { vote },
+    'Failed to vote on mockup',
   )
 }
 
