@@ -221,6 +221,100 @@ def test_design_asset_rating_rejects_invalid_value(asset_project: str) -> None:
             voter_key="reviewer-a",
         )
 
+
+def test_design_asset_comments_are_counted_editable_and_deletable(
+    asset_project: str,
+) -> None:
+    """Comments are per-user, counted on assets, and owner-editable."""
+    asset = design_assets.create_asset(
+        project_id=asset_project,
+        name="Commented Concept",
+        asset_type="concept_art",
+        workflow="concept",
+        prompt="Comment target",
+        width=1024,
+        height=1024,
+        background="scene",
+        transparent_background=False,
+    )
+
+    first = design_assets.create_asset_comment(
+        asset_project,
+        asset["asset_id"],
+        "Looks strong.",
+        author_email="reviewer-a@example.com",
+    )
+    second = design_assets.create_asset_comment(
+        asset_project,
+        asset["asset_id"],
+        "Try more contrast.",
+        author_email="reviewer-b@example.com",
+    )
+    assert first is not None
+    assert second is not None
+
+    fetched = design_assets.get_asset(asset_project, asset["asset_id"])
+    assert fetched is not None
+    assert fetched["comment_count"] == 2
+    comments = design_assets.list_asset_comments(asset_project, asset["asset_id"])
+    assert [comment["author_email"] for comment in comments] == [
+        "reviewer-a@example.com",
+        "reviewer-b@example.com",
+    ]
+
+    updated = design_assets.update_asset_comment(
+        asset_project,
+        asset["asset_id"],
+        first["id"],
+        "Looks excellent.",
+        author_email="reviewer-a@example.com",
+    )
+    assert updated is not None
+    assert updated["body"] == "Looks excellent."
+    assert (
+        design_assets.update_asset_comment(
+            asset_project,
+            asset["asset_id"],
+            first["id"],
+            "Wrong owner edit",
+            author_email="reviewer-b@example.com",
+        )
+        is None
+    )
+
+    assert design_assets.delete_asset_comment(
+        asset_project,
+        asset["asset_id"],
+        second["id"],
+        author_email="reviewer-b@example.com",
+    )
+    fetched = design_assets.get_asset(asset_project, asset["asset_id"])
+    assert fetched is not None
+    assert fetched["comment_count"] == 1
+
+
+def test_design_asset_comment_rejects_empty_body(asset_project: str) -> None:
+    """Comments must contain visible text."""
+    asset = design_assets.create_asset(
+        project_id=asset_project,
+        name="Comment Validation Concept",
+        asset_type="concept_art",
+        workflow="concept",
+        prompt="Validate comment",
+        width=1024,
+        height=1024,
+        background="scene",
+        transparent_background=False,
+    )
+
+    with pytest.raises(ValueError, match="Comment cannot be empty"):
+        design_assets.create_asset_comment(
+            asset_project,
+            asset["asset_id"],
+            "   ",
+            author_email="reviewer-a@example.com",
+        )
+
 def test_create_export_for_asset(asset_project: str) -> None:
     """Persist export metadata linked to an asset."""
     asset = design_assets.create_asset(

@@ -9,6 +9,7 @@ from psycopg import sql
 from .._sql import join_static_sql, static_sql
 from ..connection import get_cursor
 from .core import (
+    ASSET_COMMENT_COUNT_SELECT_COLUMN,
     ASSET_RATING_SELECT_COLUMNS,
     ASSET_SELECT_COLUMNS_ALIASED,
     _row_to_asset,
@@ -26,6 +27,14 @@ LEFT JOIN (
 ) rating_counts ON rating_counts.asset_id = a.id
 LEFT JOIN design_asset_ratings user_rating
     ON user_rating.asset_id = a.id AND user_rating.voter_key = %s
+"""
+
+_ASSET_COMMENT_COUNT_JOIN_SQL = """
+LEFT JOIN (
+    SELECT asset_id, COUNT(*) AS comment_count
+    FROM design_asset_comments
+    GROUP BY asset_id
+) comment_counts ON comment_counts.asset_id = a.id
 """
 
 _ASSET_SORT_SQL = {
@@ -46,9 +55,11 @@ def get_asset(
         cur.execute(
             static_sql(
                 f"""
-                SELECT {ASSET_SELECT_COLUMNS_ALIASED}, {ASSET_RATING_SELECT_COLUMNS}
+                SELECT {ASSET_SELECT_COLUMNS_ALIASED}, {ASSET_RATING_SELECT_COLUMNS},
+                       {ASSET_COMMENT_COUNT_SELECT_COLUMN}
                 FROM design_assets a
                 {_ASSET_RATING_JOIN_SQL}
+                {_ASSET_COMMENT_COUNT_JOIN_SQL}
                 WHERE a.project_id = %s AND a.asset_id = %s
                 """
             ),
@@ -108,9 +119,11 @@ def list_assets(
         cur.execute(
             static_sql(
                 f"""
-                SELECT {ASSET_SELECT_COLUMNS_ALIASED}, {ASSET_RATING_SELECT_COLUMNS}
+                SELECT {ASSET_SELECT_COLUMNS_ALIASED}, {ASSET_RATING_SELECT_COLUMNS},
+                       {ASSET_COMMENT_COUNT_SELECT_COLUMN}
                 FROM design_assets a
                 {_ASSET_RATING_JOIN_SQL}
+                {_ASSET_COMMENT_COUNT_JOIN_SQL}
                 WHERE
                 """
             )

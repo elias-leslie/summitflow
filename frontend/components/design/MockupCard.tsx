@@ -10,6 +10,7 @@ import {
   Code2,
   Image as ImageIcon,
   LayoutTemplate,
+  MessageSquare,
   Sparkles,
   XCircle,
 } from 'lucide-react'
@@ -214,6 +215,12 @@ export function MockupCard({
           <span className="capitalize">{mockup.mockup_type}</span>
           <span>v{mockup.version}</span>
           <span>{formattedDate}</span>
+          {mockup.comment_count > 0 && (
+            <span className="flex items-center gap-1 text-cyan-300">
+              <MessageSquare className="h-3.5 w-3.5" />
+              {mockup.comment_count}
+            </span>
+          )}
         </div>
         <div className="mt-2">
           <StarRating
@@ -294,6 +301,12 @@ export function MockupCard({
 
         {/* Badges overlay */}
         <div className="absolute top-2 right-2 flex items-center gap-1.5">
+          {mockup.comment_count > 0 && (
+            <div className="flex items-center gap-1 rounded bg-slate-950/80 px-2 py-1 text-cyan-200 backdrop-blur-sm">
+              <MessageSquare className="h-3 w-3" />
+              <span className="text-xs">{mockup.comment_count}</span>
+            </div>
+          )}
           {isImprovement && (
             <div className="flex items-center gap-1 px-2 py-1 rounded bg-gradient-to-r from-amber-500/20 to-cyan-500/20 backdrop-blur-sm">
               <ArrowUpCircle className="w-3 h-3 text-amber-400" />
@@ -336,6 +349,12 @@ export function MockupCard({
           <span className="capitalize">{mockup.mockup_type}</span>
           {mockup.generator && <span>{mockup.generator}</span>}
           <span>{formattedDate}</span>
+          {mockup.comment_count > 0 && (
+            <span className="flex items-center gap-1 text-cyan-300">
+              <MessageSquare className="h-3.5 w-3.5" />
+              {mockup.comment_count}
+            </span>
+          )}
         </div>
         <div className="mt-3">
           <StarRating

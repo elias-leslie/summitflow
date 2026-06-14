@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
+from ..access_control import get_current_principal
 from ..services.design_asset_pipeline import (
     export_sprite_sheet_frames,
     generate_asset_image,
@@ -15,6 +17,8 @@ from ..services.design_asset_pipeline import (
 )
 from ..storage import design_assets
 from .design_assets_models import (
+    DesignAssetCommentRequest,
+    DesignAssetCommentResponse,
     DesignAssetExportResponse,
     DesignAssetListResponse,
     DesignAssetResponse,
@@ -38,6 +42,15 @@ _IMAGE_MEDIA_TYPES = {
     ".svg": "image/svg+xml",
     ".webp": "image/webp",
 }
+
+
+def _comment_author(request: Request) -> str:
+    principal = get_current_principal(request)
+    return principal.email if principal else "owner@summitflow.local"
+
+
+def _comment_to_response(comment: dict[str, Any]) -> DesignAssetCommentResponse:
+    return DesignAssetCommentResponse(**comment)
 
 
 def _image_media_type(image_path: Path) -> str:
@@ -281,6 +294,95 @@ async def rate_design_asset(
     if not asset:
         raise HTTPException(status_code=404, detail="Design asset not found")
     return asset_to_response(asset)
+
+
+@router.get(
+    "/projects/{project_id}/design-assets/{asset_id}/comments",
+    response_model=list[DesignAssetCommentResponse],
+)
+async def list_design_asset_comments(
+    project_id: str,
+    asset_id: str,
+) -> list[DesignAssetCommentResponse]:
+    """List comments for an asset."""
+    if not design_assets.get_asset(project_id, asset_id, voter_key="owner"):
+        raise HTTPException(status_code=404, detail="Design asset not found")
+    return [
+        _comment_to_response(comment)
+        for comment in design_assets.list_asset_comments(project_id, asset_id)
+    ]
+
+
+@router.post(
+    "/projects/{project_id}/design-assets/{asset_id}/comments",
+    response_model=DesignAssetCommentResponse,
+    status_code=201,
+)
+async def create_design_asset_comment(
+    project_id: str,
+    asset_id: str,
+    request: DesignAssetCommentRequest,
+    http_request: Request,
+) -> DesignAssetCommentResponse:
+    """Create a comment for an asset."""
+    try:
+        comment = design_assets.create_asset_comment(
+            project_id,
+            asset_id,
+            request.body,
+            author_email=_comment_author(http_request),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not comment:
+        raise HTTPException(status_code=404, detail="Design asset not found")
+    return _comment_to_response(comment)
+
+
+@router.put(
+    "/projects/{project_id}/design-assets/{asset_id}/comments/{comment_id}",
+    response_model=DesignAssetCommentResponse,
+)
+async def update_design_asset_comment(
+    project_id: str,
+    asset_id: str,
+    comment_id: int,
+    request: DesignAssetCommentRequest,
+    http_request: Request,
+) -> DesignAssetCommentResponse:
+    """Edit one of the current user's asset comments."""
+    try:
+        comment = design_assets.update_asset_comment(
+            project_id,
+            asset_id,
+            comment_id,
+            request.body,
+            author_email=_comment_author(http_request),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return _comment_to_response(comment)
+
+
+@router.delete("/projects/{project_id}/design-assets/{asset_id}/comments/{comment_id}")
+async def delete_design_asset_comment(
+    project_id: str,
+    asset_id: str,
+    comment_id: int,
+    http_request: Request,
+) -> dict[str, bool]:
+    """Delete one of the current user's asset comments."""
+    deleted = design_assets.delete_asset_comment(
+        project_id,
+        asset_id,
+        comment_id,
+        author_email=_comment_author(http_request),
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return {"deleted": True}
 
 
 @router.delete("/projects/{project_id}/design-assets/{asset_id}")

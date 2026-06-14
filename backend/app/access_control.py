@@ -102,7 +102,9 @@ async def access_control_middleware(
     if principal.is_owner:
         return await call_next(request)
 
-    if principal.is_viewer and request.method == "GET" and path.startswith(VIEWER_API_PREFIX):
+    if principal.is_viewer and path.startswith(VIEWER_API_PREFIX) and (
+        request.method == "GET" or _is_viewer_feedback_mutation(request.method, path)
+    ):
         return await call_next(request)
 
     if principal.is_viewer:
@@ -113,6 +115,22 @@ async def access_control_middleware(
 
 def _is_public_path(path: str) -> bool:
     return path in PUBLIC_PATHS or any(path.startswith(prefix) for prefix in PUBLIC_API_PREFIXES)
+
+
+def _is_viewer_feedback_mutation(method: str, path: str) -> bool:
+    """Allow viewers to leave ratings/comments through scoped viewer routes."""
+    parts = path.split("/")
+    if len(parts) not in {8, 9}:
+        return False
+    if parts[:4] != ["", "api", "viewer", "projects"] or not parts[4]:
+        return False
+    if parts[5] not in {"mockups", "design-assets"}:
+        return False
+    if method == "POST" and len(parts) == 8:
+        return parts[7] in {"rating", "comments"}
+    if method in {"PUT", "DELETE"} and len(parts) == 9:
+        return parts[7] == "comments" and parts[8].isdigit()
+    return False
 
 
 def resolve_principal(request: Request) -> AccessPrincipal | None:

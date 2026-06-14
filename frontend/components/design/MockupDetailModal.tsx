@@ -21,6 +21,7 @@ interface MockupDetailModalProps {
   onOpenChange: (open: boolean) => void
   onStatusChange: () => void
   onRate: (mockupId: string, rating: number) => void
+  onCommentsChanged: () => void
   onCreateIteration: (mockup: Mockup) => void
   onSelectMockup: (mockup: Mockup) => void
   navigation?: MockupModalNavigation
@@ -38,6 +39,7 @@ export function MockupDetailModal({
   onOpenChange,
   onStatusChange,
   onRate,
+  onCommentsChanged,
   onCreateIteration,
   onSelectMockup,
   navigation,
@@ -146,12 +148,14 @@ export function MockupDetailModal({
           {showDetails && (
             <DetailsSidebar
               mockup={mockup}
+              projectId={projectId}
               updating={updating}
               showHistory={showHistory}
               history={history}
               isRating={isRating}
               onStatusChange={handleStatusChange}
               onRate={(rating) => onRate(mockup.mockup_id, rating)}
+              onCommentsChanged={onCommentsChanged}
               onSelectHistoryMockup={onSelectMockup}
               readOnly={readOnly}
             />

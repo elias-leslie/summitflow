@@ -37,6 +37,15 @@ export interface Mockup {
   rating_average: number
   rating_count: number
   user_rating: number
+  comment_count: number
+}
+
+export interface MockupComment {
+  id: number
+  author_email: string
+  body: string
+  created_at: string | null
+  updated_at: string | null
 }
 
 export interface MockupListResponse {
@@ -248,6 +257,52 @@ export async function rateMockup(
     `/api/projects/${projectId}/mockups/${mockupId}/rating`,
     { rating },
     'Failed to rate mockup',
+  )
+}
+
+export async function fetchMockupComments(
+  projectId: string,
+  mockupId: string,
+): Promise<MockupComment[]> {
+  return fetchWithErrorHandling<MockupComment[]>(
+    `/api/projects/${projectId}/mockups/${mockupId}/comments`,
+    { errorMessage: 'Failed to fetch mockup comments' },
+  )
+}
+
+export async function addMockupComment(
+  projectId: string,
+  mockupId: string,
+  body: string,
+): Promise<MockupComment> {
+  return postJson<MockupComment>(
+    `/api/projects/${projectId}/mockups/${mockupId}/comments`,
+    { body },
+    'Failed to add mockup comment',
+  )
+}
+
+export async function updateMockupComment(
+  projectId: string,
+  mockupId: string,
+  commentId: number,
+  body: string,
+): Promise<MockupComment> {
+  return putJson<MockupComment>(
+    `/api/projects/${projectId}/mockups/${mockupId}/comments/${commentId}`,
+    { body },
+    'Failed to update mockup comment',
+  )
+}
+
+export async function deleteMockupComment(
+  projectId: string,
+  mockupId: string,
+  commentId: number,
+): Promise<{ deleted: boolean }> {
+  return deleteJson<{ deleted: boolean }>(
+    `/api/projects/${projectId}/mockups/${mockupId}/comments/${commentId}`,
+    'Failed to delete mockup comment',
   )
 }
 

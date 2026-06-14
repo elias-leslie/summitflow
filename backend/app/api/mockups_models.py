@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MockupCreate(BaseModel):
@@ -46,6 +46,22 @@ class RateMockupRequest(BaseModel):
     rating: int
 
 
+class MockupCommentRequest(BaseModel):
+    """Request to create or edit a mockup comment."""
+
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class MockupCommentResponse(BaseModel):
+    """Response model for a mockup comment."""
+
+    id: int
+    author_email: str
+    body: str
+    created_at: str | None
+    updated_at: str | None
+
+
 class MockupResponse(BaseModel):
     """Response model for a mockup."""
 
@@ -75,6 +91,7 @@ class MockupResponse(BaseModel):
     rating_average: float = 0.0
     rating_count: int = 0
     user_rating: int = 0
+    comment_count: int = 0
 
 
 class MockupContextResponse(BaseModel):

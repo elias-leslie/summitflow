@@ -10,6 +10,7 @@ import {
   Image as ImageIcon,
   Layers3,
   Maximize2,
+  MessageSquare,
   Package,
   Tags,
   X,
@@ -18,23 +19,32 @@ import { useEffect, useState } from 'react'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import { useClampedPagination } from '@/hooks/useClampedPagination'
 import {
+  addDesignAssetComment,
   type DesignAsset,
   type DesignAssetExport,
   deleteDesignAsset,
+  deleteDesignAssetComment,
   exportSpriteFrames,
+  fetchDesignAssetComments,
   fetchDesignAssetExports,
   fetchDesignAssetStats,
   fetchDesignAssets,
   getDesignAssetImageUrl,
   rateDesignAsset,
+  updateDesignAssetComment,
   updateDesignAssetStatus,
 } from '@/lib/api/design-assets'
 import {
+  addViewerDesignAssetComment,
+  deleteViewerDesignAssetComment,
+  fetchViewerDesignAssetComments,
   fetchViewerDesignAssetStats,
   fetchViewerDesignAssets,
   getViewerDesignAssetImageUrl,
   rateViewerDesignAsset,
+  updateViewerDesignAssetComment,
 } from '@/lib/api/viewer'
+import { ArtifactComments } from './ArtifactComments'
 import { DesignHeader, type ViewMode } from './DesignHeader'
 import { GenerateAssetDialog } from './GenerateAssetDialog'
 import { EmptyState, ErrorState, LoadingState } from './MockupStates'
@@ -517,6 +527,12 @@ export function AssetStudioWorkspace({
                         </span>
                         <span>{asset.model ?? 'default model'}</span>
                         <span className="capitalize">{asset.status}</span>
+                        {asset.comment_count > 0 && (
+                          <span className="flex items-center gap-1 text-cyan-300">
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            {asset.comment_count}
+                          </span>
+                        )}
                       </div>
                       <div className="mt-3">
                         <StarRating
@@ -629,6 +645,10 @@ export function AssetStudioWorkspace({
           onRate={(rating) => {
             setSelectedAsset(previewAsset)
             ratingMutation.mutate({ assetId: previewAsset.asset_id, rating })
+          }}
+          onCommentsChanged={() => {
+            queryClient.invalidateQueries({ queryKey: ['design-assets'] })
+            refetch()
           }}
         />
       )}
@@ -1057,6 +1077,7 @@ function AssetDetailModal({
   onExport,
   onStatusChange,
   onRate,
+  onCommentsChanged,
 }: {
   asset: DesignAsset
   isExporting: boolean
@@ -1070,6 +1091,7 @@ function AssetDetailModal({
   onExport: () => void
   onStatusChange: (status: string) => void
   onRate: (rating: number) => void
+  onCommentsChanged: () => void
 }): React.ReactElement {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1218,6 +1240,49 @@ function AssetDetailModal({
                 onRate={onRate}
               />
             </div>
+
+            <ArtifactComments
+              queryKey={[
+                'design-asset-comments',
+                readOnly ? 'viewer' : 'owner',
+                asset.project_id,
+                asset.asset_id,
+              ]}
+              fetchComments={() =>
+                (readOnly
+                  ? fetchViewerDesignAssetComments
+                  : fetchDesignAssetComments)(asset.project_id, asset.asset_id)
+              }
+              addComment={(body) =>
+                (readOnly
+                  ? addViewerDesignAssetComment
+                  : addDesignAssetComment)(
+                  asset.project_id,
+                  asset.asset_id,
+                  body,
+                )
+              }
+              updateComment={(commentId, body) =>
+                (readOnly
+                  ? updateViewerDesignAssetComment
+                  : updateDesignAssetComment)(
+                  asset.project_id,
+                  asset.asset_id,
+                  commentId,
+                  body,
+                )
+              }
+              deleteComment={(commentId) =>
+                (readOnly
+                  ? deleteViewerDesignAssetComment
+                  : deleteDesignAssetComment)(
+                  asset.project_id,
+                  asset.asset_id,
+                  commentId,
+                )
+              }
+              onChanged={onCommentsChanged}
+            />
 
             {asset.tags.length > 0 && (
               <div className="mt-5">

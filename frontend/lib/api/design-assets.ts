@@ -40,6 +40,15 @@ export interface DesignAsset {
   rating_average: number
   rating_count: number
   user_rating: number
+  comment_count: number
+}
+
+export interface DesignAssetComment {
+  id: number
+  author_email: string
+  body: string
+  created_at: string | null
+  updated_at: string | null
 }
 
 export interface DesignAssetListResponse {
@@ -189,6 +198,52 @@ export async function rateDesignAsset(
     `/api/projects/${projectId}/design-assets/${assetId}/rating`,
     { rating },
     'Failed to rate asset',
+  )
+}
+
+export async function fetchDesignAssetComments(
+  projectId: string,
+  assetId: string,
+): Promise<DesignAssetComment[]> {
+  return fetchWithErrorHandling<DesignAssetComment[]>(
+    `/api/projects/${projectId}/design-assets/${assetId}/comments`,
+    { errorMessage: 'Failed to fetch asset comments' },
+  )
+}
+
+export async function addDesignAssetComment(
+  projectId: string,
+  assetId: string,
+  body: string,
+): Promise<DesignAssetComment> {
+  return postJson<DesignAssetComment>(
+    `/api/projects/${projectId}/design-assets/${assetId}/comments`,
+    { body },
+    'Failed to add asset comment',
+  )
+}
+
+export async function updateDesignAssetComment(
+  projectId: string,
+  assetId: string,
+  commentId: number,
+  body: string,
+): Promise<DesignAssetComment> {
+  return putJson<DesignAssetComment>(
+    `/api/projects/${projectId}/design-assets/${assetId}/comments/${commentId}`,
+    { body },
+    'Failed to update asset comment',
+  )
+}
+
+export async function deleteDesignAssetComment(
+  projectId: string,
+  assetId: string,
+  commentId: number,
+): Promise<{ deleted: boolean }> {
+  return deleteJson<{ deleted: boolean }>(
+    `/api/projects/${projectId}/design-assets/${assetId}/comments/${commentId}`,
+    'Failed to delete asset comment',
   )
 }
 

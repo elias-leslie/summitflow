@@ -116,3 +116,87 @@ def test_mockup_rating_rejects_invalid_value(mockup_project: str) -> None:
             6,
             voter_key="reviewer-a",
         )
+
+
+def test_mockup_comments_are_counted_editable_and_deletable(
+    mockup_project: str,
+) -> None:
+    """Comments are per-user, counted on mockups, and owner-editable."""
+    mockup = mockups.create_mockup(
+        project_id=mockup_project,
+        name="Commented UI",
+        mockup_type="page",
+        content="<main>Comment target</main>",
+    )
+
+    first = mockups.create_mockup_comment(
+        mockup_project,
+        mockup["mockup_id"],
+        "Readable layout.",
+        author_email="reviewer-a@example.com",
+    )
+    second = mockups.create_mockup_comment(
+        mockup_project,
+        mockup["mockup_id"],
+        "Needs stronger CTA.",
+        author_email="reviewer-b@example.com",
+    )
+    assert first is not None
+    assert second is not None
+
+    fetched = mockups.get_mockup(mockup_project, mockup["mockup_id"])
+    assert fetched is not None
+    assert fetched["comment_count"] == 2
+    comments = mockups.list_mockup_comments(mockup_project, mockup["mockup_id"])
+    assert [comment["author_email"] for comment in comments] == [
+        "reviewer-a@example.com",
+        "reviewer-b@example.com",
+    ]
+
+    updated = mockups.update_mockup_comment(
+        mockup_project,
+        mockup["mockup_id"],
+        first["id"],
+        "Very readable layout.",
+        author_email="reviewer-a@example.com",
+    )
+    assert updated is not None
+    assert updated["body"] == "Very readable layout."
+    assert (
+        mockups.update_mockup_comment(
+            mockup_project,
+            mockup["mockup_id"],
+            first["id"],
+            "Wrong owner edit",
+            author_email="reviewer-b@example.com",
+        )
+        is None
+    )
+
+    assert mockups.delete_mockup_comment(
+        mockup_project,
+        mockup["mockup_id"],
+        second["id"],
+        author_email="reviewer-b@example.com",
+    )
+    fetched = mockups.get_mockup(mockup_project, mockup["mockup_id"])
+    assert fetched is not None
+    assert fetched["comment_count"] == 1
+
+
+def test_mockup_comment_rejects_empty_body(mockup_project: str) -> None:
+    """Comments must contain visible text."""
+    mockup = mockups.create_mockup(
+        project_id=mockup_project,
+        name="Comment Validation UI",
+        mockup_type="page",
+        content="<main>Validate</main>",
+    )
+
+    with pytest.raises(ValueError, match="Comment cannot be empty"):
+        mockups.create_mockup_comment(
+            mockup_project,
+            mockup["mockup_id"],
+            "   ",
+            author_email="reviewer-a@example.com",
+        )

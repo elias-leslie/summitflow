@@ -253,6 +253,48 @@ def _create_design_vote_tables(cur: psycopg.Cursor) -> None:
             "CREATE INDEX IF NOT EXISTS idx_mockup_ratings_rating "
             "ON mockup_ratings(mockup_id, rating)"
         )
+    with contextlib.suppress(psycopg.errors.UndefinedTable):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS design_asset_comments (
+                id BIGSERIAL PRIMARY KEY,
+                asset_id INTEGER NOT NULL REFERENCES design_assets(id) ON DELETE CASCADE,
+                author_email TEXT NOT NULL,
+                body TEXT NOT NULL CHECK (length(trim(body)) > 0),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_design_asset_comments_asset "
+            "ON design_asset_comments(asset_id)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_design_asset_comments_created "
+            "ON design_asset_comments(asset_id, created_at)"
+        )
+    with contextlib.suppress(psycopg.errors.UndefinedTable):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mockup_comments (
+                id BIGSERIAL PRIMARY KEY,
+                mockup_id INTEGER NOT NULL REFERENCES mockups(id) ON DELETE CASCADE,
+                author_email TEXT NOT NULL,
+                body TEXT NOT NULL CHECK (length(trim(body)) > 0),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mockup_comments_mockup "
+            "ON mockup_comments(mockup_id)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mockup_comments_created "
+            "ON mockup_comments(mockup_id, created_at)"
+        )
 
 
 def _project_column_additions() -> list[tuple[str, str]]:

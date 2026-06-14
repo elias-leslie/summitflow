@@ -41,6 +41,7 @@ class DesignAssetResponse(BaseModel):
     rating_average: float = 0.0
     rating_count: int = 0
     user_rating: int = 0
+    comment_count: int = 0
 
 
 class DesignAssetListResponse(BaseModel):
@@ -144,3 +145,19 @@ class RateDesignAssetRequest(BaseModel):
     """Request to set or clear a star rating."""
 
     rating: int
+
+
+class DesignAssetCommentRequest(BaseModel):
+    """Request to create or edit an asset comment."""
+
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class DesignAssetCommentResponse(BaseModel):
+    """Response model for an asset comment."""
+
+    id: int
+    author_email: str
+    body: str
+    created_at: str | None
+    updated_at: str | None

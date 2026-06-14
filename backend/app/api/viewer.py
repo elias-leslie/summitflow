@@ -15,6 +15,8 @@ from ..storage import design_assets
 from ..storage import mockups as mockups_storage
 from .design_assets import get_design_asset_image
 from .design_assets_models import (
+    DesignAssetCommentRequest,
+    DesignAssetCommentResponse,
     DesignAssetExportResponse,
     DesignAssetListResponse,
     DesignAssetResponse,
@@ -24,6 +26,8 @@ from .design_assets_models import (
 from .design_assets_utils import asset_to_response, export_to_response
 from .mockups_crud import get_mockup_image, get_mockup_screenshot
 from .mockups_models import (
+    MockupCommentRequest,
+    MockupCommentResponse,
     MockupListResponse,
     MockupResponse,
     MockupStatsResponse,
@@ -221,6 +225,100 @@ def rate_mockup(
     return _sanitize_mockup(to_response(mockup))
 
 
+@router.get(
+    "/projects/{project_id}/mockups/{mockup_id}/comments",
+    response_model=list[MockupCommentResponse],
+)
+def list_mockup_comments(
+    project_id: str,
+    mockup_id: str,
+    principal: AuthenticatedPrincipal,
+) -> list[MockupCommentResponse]:
+    """List shared mockup comments."""
+    _require_design_access(project_id, principal)
+    if not mockups_storage.get_mockup(project_id, mockup_id, voter_key=principal.email):
+        raise HTTPException(status_code=404, detail="Mockup not found")
+    return [
+        MockupCommentResponse(**comment)
+        for comment in mockups_storage.list_mockup_comments(project_id, mockup_id)
+    ]
+
+
+@router.post(
+    "/projects/{project_id}/mockups/{mockup_id}/comments",
+    response_model=MockupCommentResponse,
+    status_code=201,
+)
+def create_mockup_comment(
+    project_id: str,
+    mockup_id: str,
+    request: MockupCommentRequest,
+    principal: AuthenticatedPrincipal,
+) -> MockupCommentResponse:
+    """Create a shared viewer mockup comment."""
+    _require_design_access(project_id, principal)
+    try:
+        comment = mockups_storage.create_mockup_comment(
+            project_id,
+            mockup_id,
+            request.body,
+            author_email=principal.email,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not comment:
+        raise HTTPException(status_code=404, detail="Mockup not found")
+    return MockupCommentResponse(**comment)
+
+
+@router.put(
+    "/projects/{project_id}/mockups/{mockup_id}/comments/{comment_id}",
+    response_model=MockupCommentResponse,
+)
+def update_mockup_comment(
+    project_id: str,
+    mockup_id: str,
+    comment_id: int,
+    request: MockupCommentRequest,
+    principal: AuthenticatedPrincipal,
+) -> MockupCommentResponse:
+    """Edit one of the viewer's mockup comments."""
+    _require_design_access(project_id, principal)
+    try:
+        comment = mockups_storage.update_mockup_comment(
+            project_id,
+            mockup_id,
+            comment_id,
+            request.body,
+            author_email=principal.email,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return MockupCommentResponse(**comment)
+
+
+@router.delete("/projects/{project_id}/mockups/{mockup_id}/comments/{comment_id}")
+def delete_mockup_comment(
+    project_id: str,
+    mockup_id: str,
+    comment_id: int,
+    principal: AuthenticatedPrincipal,
+) -> dict[str, bool]:
+    """Delete one of the viewer's mockup comments."""
+    _require_design_access(project_id, principal)
+    deleted = mockups_storage.delete_mockup_comment(
+        project_id,
+        mockup_id,
+        comment_id,
+        author_email=principal.email,
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return {"deleted": True}
+
+
 @router.get("/projects/{project_id}/design-assets", response_model=DesignAssetListResponse)
 def list_assets(
     project_id: str,
@@ -332,3 +430,97 @@ def rate_asset(
     if not asset:
         raise HTTPException(status_code=404, detail="Design asset not found")
     return _sanitize_asset(asset_to_response(asset))
+
+
+@router.get(
+    "/projects/{project_id}/design-assets/{asset_id}/comments",
+    response_model=list[DesignAssetCommentResponse],
+)
+def list_asset_comments(
+    project_id: str,
+    asset_id: str,
+    principal: AuthenticatedPrincipal,
+) -> list[DesignAssetCommentResponse]:
+    """List shared design asset comments."""
+    _require_design_access(project_id, principal)
+    if not design_assets.get_asset(project_id, asset_id, voter_key=principal.email):
+        raise HTTPException(status_code=404, detail="Design asset not found")
+    return [
+        DesignAssetCommentResponse(**comment)
+        for comment in design_assets.list_asset_comments(project_id, asset_id)
+    ]
+
+
+@router.post(
+    "/projects/{project_id}/design-assets/{asset_id}/comments",
+    response_model=DesignAssetCommentResponse,
+    status_code=201,
+)
+def create_asset_comment(
+    project_id: str,
+    asset_id: str,
+    request: DesignAssetCommentRequest,
+    principal: AuthenticatedPrincipal,
+) -> DesignAssetCommentResponse:
+    """Create a shared viewer design asset comment."""
+    _require_design_access(project_id, principal)
+    try:
+        comment = design_assets.create_asset_comment(
+            project_id,
+            asset_id,
+            request.body,
+            author_email=principal.email,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not comment:
+        raise HTTPException(status_code=404, detail="Design asset not found")
+    return DesignAssetCommentResponse(**comment)
+
+
+@router.put(
+    "/projects/{project_id}/design-assets/{asset_id}/comments/{comment_id}",
+    response_model=DesignAssetCommentResponse,
+)
+def update_asset_comment(
+    project_id: str,
+    asset_id: str,
+    comment_id: int,
+    request: DesignAssetCommentRequest,
+    principal: AuthenticatedPrincipal,
+) -> DesignAssetCommentResponse:
+    """Edit one of the viewer's design asset comments."""
+    _require_design_access(project_id, principal)
+    try:
+        comment = design_assets.update_asset_comment(
+            project_id,
+            asset_id,
+            comment_id,
+            request.body,
+            author_email=principal.email,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return DesignAssetCommentResponse(**comment)
+
+
+@router.delete("/projects/{project_id}/design-assets/{asset_id}/comments/{comment_id}")
+def delete_asset_comment(
+    project_id: str,
+    asset_id: str,
+    comment_id: int,
+    principal: AuthenticatedPrincipal,
+) -> dict[str, bool]:
+    """Delete one of the viewer's design asset comments."""
+    _require_design_access(project_id, principal)
+    deleted = design_assets.delete_asset_comment(
+        project_id,
+        asset_id,
+        comment_id,
+        author_email=principal.email,
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return {"deleted": True}

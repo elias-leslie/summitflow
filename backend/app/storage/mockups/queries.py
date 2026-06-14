@@ -9,6 +9,7 @@ from psycopg import sql
 from .._sql import join_static_sql, static_sql
 from ..connection import get_cursor
 from .core import (
+    MOCKUP_COMMENT_COUNT_SELECT_COLUMN,
     MOCKUP_RATING_SELECT_COLUMNS,
     MOCKUP_SELECT_COLUMNS,
     MOCKUP_SELECT_COLUMNS_ALIASED,
@@ -26,6 +27,14 @@ LEFT JOIN (
 ) rating_counts ON rating_counts.mockup_id = m.id
 LEFT JOIN mockup_ratings user_rating
     ON user_rating.mockup_id = m.id AND user_rating.voter_key = %s
+"""
+
+_MOCKUP_COMMENT_COUNT_JOIN_SQL = """
+LEFT JOIN (
+    SELECT mockup_id, COUNT(*) AS comment_count
+    FROM mockup_comments
+    GROUP BY mockup_id
+) comment_counts ON comment_counts.mockup_id = m.id
 """
 
 _MOCKUP_SORT_SQL = {
@@ -46,9 +55,11 @@ def get_mockup(
         cur.execute(
             static_sql(
                 f"""
-                SELECT {MOCKUP_SELECT_COLUMNS_ALIASED}, {MOCKUP_RATING_SELECT_COLUMNS}
+                SELECT {MOCKUP_SELECT_COLUMNS_ALIASED}, {MOCKUP_RATING_SELECT_COLUMNS},
+                       {MOCKUP_COMMENT_COUNT_SELECT_COLUMN}
                 FROM mockups m
                 {_MOCKUP_RATING_JOIN_SQL}
+                {_MOCKUP_COMMENT_COUNT_JOIN_SQL}
                 WHERE m.project_id = %s AND m.mockup_id = %s
                 """
             ),
@@ -153,9 +164,11 @@ def list_mockups(
         cur.execute(
             static_sql(
                 f"""
-                SELECT {MOCKUP_SELECT_COLUMNS_ALIASED}, {MOCKUP_RATING_SELECT_COLUMNS}
+                SELECT {MOCKUP_SELECT_COLUMNS_ALIASED}, {MOCKUP_RATING_SELECT_COLUMNS},
+                       {MOCKUP_COMMENT_COUNT_SELECT_COLUMN}
                 FROM mockups m
                 {_MOCKUP_RATING_JOIN_SQL}
+                {_MOCKUP_COMMENT_COUNT_JOIN_SQL}
                 WHERE
                 """
             )

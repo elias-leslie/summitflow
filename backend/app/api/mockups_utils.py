@@ -164,4 +164,5 @@ def to_response(mockup: dict[str, Any]) -> MockupResponse:
         rating_average=mockup.get("rating_average", 0.0),
         rating_count=mockup.get("rating_count", 0),
         user_rating=mockup.get("user_rating", 0),
+        comment_count=mockup.get("comment_count", 0),
     )

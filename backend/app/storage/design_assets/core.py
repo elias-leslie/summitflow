@@ -66,6 +66,9 @@ ASSET_SELECT_COLUMNS_ALIASED = ", ".join(f"a.{column}" for column in ASSET_COLUM
 ASSET_RATING_SELECT_COLUMNS = """COALESCE(rating_counts.rating_average, 0) AS rating_average,
        COALESCE(rating_counts.rating_count, 0) AS rating_count,
        COALESCE(user_rating.rating, 0) AS user_rating"""
+ASSET_COMMENT_COUNT_SELECT_COLUMN = (
+    "COALESCE(comment_counts.comment_count, 0) AS comment_count"
+)
 
 EXPORT_SELECT_COLUMNS = """id, asset_id, export_id, export_type, file_path, manifest_path,
        metadata, created_at"""
@@ -117,6 +120,7 @@ def _row_to_asset(row: tuple[Any, ...]) -> dict[str, Any]:
         "rating_average": float(row[30] or 0) if len(row) > 30 else 0.0,
         "rating_count": int(row[31] or 0) if len(row) > 31 else 0,
         "user_rating": int(row[32] or 0) if len(row) > 32 else 0,
+        "comment_count": int(row[33] or 0) if len(row) > 33 else 0,
     }
 
 

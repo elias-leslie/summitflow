@@ -2,11 +2,14 @@
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
+from ..access_control import get_current_principal
 from ..storage import mockups as mockups_storage
 from .mockups_models import (
+    MockupCommentRequest,
+    MockupCommentResponse,
     MockupContextResponse,
     MockupCreate,
     MockupListResponse,
@@ -20,6 +23,15 @@ from .mockups_utils import compact_context_for_mockup, to_response
 from .mockups_validation import validate_mockup_path
 
 router = APIRouter()
+
+
+def _comment_author(request: Request) -> str:
+    principal = get_current_principal(request)
+    return principal.email if principal else "owner@summitflow.local"
+
+
+def _comment_to_response(comment: dict[str, Any]) -> MockupCommentResponse:
+    return MockupCommentResponse(**comment)
 
 
 @router.post(
@@ -305,6 +317,95 @@ async def rate_mockup(
     if not mockup:
         raise HTTPException(status_code=404, detail="Mockup not found")
     return to_response(mockup)
+
+
+@router.get(
+    "/projects/{project_id}/mockups/{mockup_id}/comments",
+    response_model=list[MockupCommentResponse],
+)
+async def list_mockup_comments(
+    project_id: str,
+    mockup_id: str,
+) -> list[MockupCommentResponse]:
+    """List comments for a UI mockup."""
+    if not mockups_storage.get_mockup(project_id, mockup_id, voter_key="owner"):
+        raise HTTPException(status_code=404, detail="Mockup not found")
+    return [
+        _comment_to_response(comment)
+        for comment in mockups_storage.list_mockup_comments(project_id, mockup_id)
+    ]
+
+
+@router.post(
+    "/projects/{project_id}/mockups/{mockup_id}/comments",
+    response_model=MockupCommentResponse,
+    status_code=201,
+)
+async def create_mockup_comment(
+    project_id: str,
+    mockup_id: str,
+    request: MockupCommentRequest,
+    http_request: Request,
+) -> MockupCommentResponse:
+    """Create a comment for a UI mockup."""
+    try:
+        comment = mockups_storage.create_mockup_comment(
+            project_id,
+            mockup_id,
+            request.body,
+            author_email=_comment_author(http_request),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not comment:
+        raise HTTPException(status_code=404, detail="Mockup not found")
+    return _comment_to_response(comment)
+
+
+@router.put(
+    "/projects/{project_id}/mockups/{mockup_id}/comments/{comment_id}",
+    response_model=MockupCommentResponse,
+)
+async def update_mockup_comment(
+    project_id: str,
+    mockup_id: str,
+    comment_id: int,
+    request: MockupCommentRequest,
+    http_request: Request,
+) -> MockupCommentResponse:
+    """Edit one of the current user's mockup comments."""
+    try:
+        comment = mockups_storage.update_mockup_comment(
+            project_id,
+            mockup_id,
+            comment_id,
+            request.body,
+            author_email=_comment_author(http_request),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return _comment_to_response(comment)
+
+
+@router.delete("/projects/{project_id}/mockups/{mockup_id}/comments/{comment_id}")
+async def delete_mockup_comment(
+    project_id: str,
+    mockup_id: str,
+    comment_id: int,
+    http_request: Request,
+) -> dict[str, bool]:
+    """Delete one of the current user's mockup comments."""
+    deleted = mockups_storage.delete_mockup_comment(
+        project_id,
+        mockup_id,
+        comment_id,
+        author_email=_comment_author(http_request),
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return {"deleted": True}
 
 
 @router.delete("/projects/{project_id}/mockups/{mockup_id}")

@@ -1,31 +1,48 @@
 'use client'
 
 import clsx from 'clsx'
-import type { Mockup } from '@/lib/api/mockups'
+import {
+  addMockupComment,
+  deleteMockupComment,
+  fetchMockupComments,
+  type Mockup,
+  updateMockupComment,
+} from '@/lib/api/mockups'
+import {
+  addViewerMockupComment,
+  deleteViewerMockupComment,
+  fetchViewerMockupComments,
+  updateViewerMockupComment,
+} from '@/lib/api/viewer'
 import { formatDate } from '@/lib/format'
+import { ArtifactComments } from '../ArtifactComments'
 import { StarRating } from '../StarRating'
 import { StatusActions } from './StatusActions'
 
 interface DetailsSidebarProps {
   mockup: Mockup
+  projectId: string
   updating: boolean
   showHistory: boolean
   history?: Mockup[]
   isRating: boolean
   onStatusChange: (status: string) => void
   onRate: (rating: number) => void
+  onCommentsChanged: () => void
   onSelectHistoryMockup: (mockup: Mockup) => void
   readOnly?: boolean
 }
 
 export function DetailsSidebar({
   mockup,
+  projectId,
   updating,
   showHistory,
   history,
   isRating,
   onStatusChange,
   onRate,
+  onCommentsChanged,
   onSelectHistoryMockup,
   readOnly = false,
 }: DetailsSidebarProps) {
@@ -82,6 +99,44 @@ export function DetailsSidebar({
             onRate={onRate}
           />
         </div>
+
+        <ArtifactComments
+          queryKey={[
+            'mockup-comments',
+            readOnly ? 'viewer' : 'owner',
+            projectId,
+            mockup.mockup_id,
+          ]}
+          fetchComments={() =>
+            (readOnly ? fetchViewerMockupComments : fetchMockupComments)(
+              projectId,
+              mockup.mockup_id,
+            )
+          }
+          addComment={(body) =>
+            (readOnly ? addViewerMockupComment : addMockupComment)(
+              projectId,
+              mockup.mockup_id,
+              body,
+            )
+          }
+          updateComment={(commentId, body) =>
+            (readOnly ? updateViewerMockupComment : updateMockupComment)(
+              projectId,
+              mockup.mockup_id,
+              commentId,
+              body,
+            )
+          }
+          deleteComment={(commentId) =>
+            (readOnly ? deleteViewerMockupComment : deleteMockupComment)(
+              projectId,
+              mockup.mockup_id,
+              commentId,
+            )
+          }
+          onChanged={onCommentsChanged}
+        />
 
         <div>
           <h3 className="text-sm font-medium text-slate-400 mb-2">

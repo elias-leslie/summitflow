@@ -1,15 +1,23 @@
 import type {
   DesignAsset,
+  DesignAssetComment,
   DesignAssetListResponse,
   DesignAssetStats,
 } from './design-assets'
 import type {
   Mockup,
+  MockupComment,
   MockupFilters,
   MockupListResponse,
   MockupStats,
 } from './mockups'
-import { buildQueryString, fetchWithErrorHandling, postJson } from './utils'
+import {
+  buildQueryString,
+  deleteJson,
+  fetchWithErrorHandling,
+  postJson,
+  putJson,
+} from './utils'
 
 export interface ViewerProject {
   id: string
@@ -91,6 +99,52 @@ export function rateViewerMockup(
   )
 }
 
+export function fetchViewerMockupComments(
+  projectId: string,
+  mockupId: string,
+): Promise<MockupComment[]> {
+  return fetchWithErrorHandling<MockupComment[]>(
+    `/api/viewer/projects/${projectId}/mockups/${mockupId}/comments`,
+    { errorMessage: 'Failed to fetch shared mockup comments' },
+  )
+}
+
+export function addViewerMockupComment(
+  projectId: string,
+  mockupId: string,
+  body: string,
+): Promise<MockupComment> {
+  return postJson<MockupComment>(
+    `/api/viewer/projects/${projectId}/mockups/${mockupId}/comments`,
+    { body },
+    'Failed to add shared mockup comment',
+  )
+}
+
+export function updateViewerMockupComment(
+  projectId: string,
+  mockupId: string,
+  commentId: number,
+  body: string,
+): Promise<MockupComment> {
+  return putJson<MockupComment>(
+    `/api/viewer/projects/${projectId}/mockups/${mockupId}/comments/${commentId}`,
+    { body },
+    'Failed to update shared mockup comment',
+  )
+}
+
+export function deleteViewerMockupComment(
+  projectId: string,
+  mockupId: string,
+  commentId: number,
+): Promise<{ deleted: boolean }> {
+  return deleteJson<{ deleted: boolean }>(
+    `/api/viewer/projects/${projectId}/mockups/${mockupId}/comments/${commentId}`,
+    'Failed to delete shared mockup comment',
+  )
+}
+
 export interface ViewerDesignAssetFilters {
   limit?: number
   offset?: number
@@ -157,5 +211,51 @@ export function rateViewerDesignAsset(
     `/api/viewer/projects/${projectId}/design-assets/${assetId}/rating`,
     { rating },
     'Failed to rate shared design asset',
+  )
+}
+
+export function fetchViewerDesignAssetComments(
+  projectId: string,
+  assetId: string,
+): Promise<DesignAssetComment[]> {
+  return fetchWithErrorHandling<DesignAssetComment[]>(
+    `/api/viewer/projects/${projectId}/design-assets/${assetId}/comments`,
+    { errorMessage: 'Failed to fetch shared asset comments' },
+  )
+}
+
+export function addViewerDesignAssetComment(
+  projectId: string,
+  assetId: string,
+  body: string,
+): Promise<DesignAssetComment> {
+  return postJson<DesignAssetComment>(
+    `/api/viewer/projects/${projectId}/design-assets/${assetId}/comments`,
+    { body },
+    'Failed to add shared asset comment',
+  )
+}
+
+export function updateViewerDesignAssetComment(
+  projectId: string,
+  assetId: string,
+  commentId: number,
+  body: string,
+): Promise<DesignAssetComment> {
+  return putJson<DesignAssetComment>(
+    `/api/viewer/projects/${projectId}/design-assets/${assetId}/comments/${commentId}`,
+    { body },
+    'Failed to update shared asset comment',
+  )
+}
+
+export function deleteViewerDesignAssetComment(
+  projectId: string,
+  assetId: string,
+  commentId: number,
+): Promise<{ deleted: boolean }> {
+  return deleteJson<{ deleted: boolean }>(
+    `/api/viewer/projects/${projectId}/design-assets/${assetId}/comments/${commentId}`,
+    'Failed to delete shared asset comment',
   )
 }

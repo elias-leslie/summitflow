@@ -430,6 +430,7 @@ export function UiDesignWorkspace({
             onRate={(mockupId, rating) =>
               ratingMutation.mutate({ mockupId, rating })
             }
+            onCommentsChanged={() => void handleRefresh()}
             onCreateIteration={(mockup) => {
               setIterationParentMockup(mockup)
               setCreateDialogOpen(true)

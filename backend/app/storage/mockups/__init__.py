@@ -13,6 +13,12 @@ Modules:
     history: History tracking and statistics
 """
 
+from .comments import (
+    create_mockup_comment,
+    delete_mockup_comment,
+    list_mockup_comments,
+    update_mockup_comment,
+)
 from .core import (
     MOCKUP_SELECT_COLUMNS,
     MOCKUP_STATUSES,
@@ -42,7 +48,9 @@ __all__ = [
     "MOCKUP_TYPES",
     "archive_mockup",
     "create_mockup",
+    "create_mockup_comment",
     "delete_mockup",
+    "delete_mockup_comment",
     "generate_mockup_id",
     "get_mockup",
     "get_mockup_by_db_id",
@@ -50,8 +58,10 @@ __all__ = [
     "get_mockup_stats",
     "get_mockups_for_page",
     "get_mockups_for_task",
+    "list_mockup_comments",
     "list_mockups",
     "set_mockup_rating",
     "update_mockup",
+    "update_mockup_comment",
     "update_mockup_status",
 ]
