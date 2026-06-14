@@ -125,7 +125,13 @@ export function AssetStudioWorkspace({
       assetId: string
       status: string
     }) => updateDesignAssetStatus(projectId, assetId, status, 'codex'),
-    onSuccess: () => {
+    onSuccess: (updatedAsset) => {
+      setSelectedAsset((current) =>
+        current?.asset_id === updatedAsset.asset_id ? updatedAsset : current,
+      )
+      setPreviewAsset((current) =>
+        current?.asset_id === updatedAsset.asset_id ? updatedAsset : current,
+      )
       queryClient.invalidateQueries({ queryKey: ['design-assets', projectId] })
       queryClient.invalidateQueries({
         queryKey: ['design-assets-stats', projectId],
@@ -623,6 +629,59 @@ function metadataString(asset: DesignAsset, key: string): string {
   return typeof value === 'string' ? value.toLowerCase() : ''
 }
 
+function AssetStatusActions({
+  asset,
+  isUpdating,
+  onStatusChange,
+}: {
+  asset: DesignAsset
+  isUpdating: boolean
+  onStatusChange: (status: string) => void
+}): React.ReactElement {
+  const actions = [
+    { status: 'approved', activeLabel: 'Approved', idleLabel: 'Approve' },
+    { status: 'rejected', activeLabel: 'Rejected', idleLabel: 'Reject' },
+    { status: 'archived', activeLabel: 'Archived', idleLabel: 'Archive' },
+  ]
+
+  return (
+    <>
+      {actions.map((action) => {
+        const isActive = asset.status === action.status
+
+        return (
+          <button
+            key={action.status}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => onStatusChange(action.status)}
+            disabled={isUpdating || isActive}
+            className={statusActionClass(action.status, isActive)}
+          >
+            {isActive ? action.activeLabel : action.idleLabel}
+          </button>
+        )
+      })}
+    </>
+  )
+}
+
+function statusActionClass(status: string, isActive: boolean): string {
+  if (!isActive) {
+    return 'btn-secondary disabled:opacity-50'
+  }
+
+  if (status === 'approved') {
+    return 'rounded-lg border border-emerald-400/60 bg-emerald-500/15 px-3 py-2 text-sm font-medium text-emerald-100 disabled:opacity-100'
+  }
+
+  if (status === 'rejected') {
+    return 'rounded-lg border border-rose-400/60 bg-rose-500/15 px-3 py-2 text-sm font-medium text-rose-100 disabled:opacity-100'
+  }
+
+  return 'rounded-lg border border-amber-400/60 bg-amber-500/15 px-3 py-2 text-sm font-medium text-amber-100 disabled:opacity-100'
+}
+
 function AssetInspector({
   asset,
   projectId,
@@ -763,30 +822,11 @@ function AssetInspector({
       )}
 
       <div className="mt-5 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => onStatusChange('approved')}
-          disabled={isUpdating}
-          className="btn-primary"
-        >
-          Approve
-        </button>
-        <button
-          type="button"
-          onClick={() => onStatusChange('rejected')}
-          disabled={isUpdating}
-          className="btn-secondary"
-        >
-          Reject
-        </button>
-        <button
-          type="button"
-          onClick={() => onStatusChange('archived')}
-          disabled={isUpdating}
-          className="btn-secondary"
-        >
-          Archive
-        </button>
+        <AssetStatusActions
+          asset={asset}
+          isUpdating={isUpdating}
+          onStatusChange={onStatusChange}
+        />
         {asset.asset_type === 'sprite_sheet' && (
           <button
             type="button"
@@ -1040,30 +1080,11 @@ function AssetDetailModal({
             )}
 
             <div className="mt-5 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => onStatusChange('approved')}
-                disabled={isUpdating}
-                className="btn-primary"
-              >
-                Approve
-              </button>
-              <button
-                type="button"
-                onClick={() => onStatusChange('rejected')}
-                disabled={isUpdating}
-                className="btn-secondary"
-              >
-                Reject
-              </button>
-              <button
-                type="button"
-                onClick={() => onStatusChange('archived')}
-                disabled={isUpdating}
-                className="btn-secondary"
-              >
-                Archive
-              </button>
+              <AssetStatusActions
+                asset={asset}
+                isUpdating={isUpdating}
+                onStatusChange={onStatusChange}
+              />
               {asset.asset_type === 'sprite_sheet' && (
                 <button
                   type="button"
