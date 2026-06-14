@@ -313,7 +313,11 @@ export function UiDesignWorkspace({
         {!isLoading && !error && mockups.length === 0 && (
           <EmptyState
             title="No UI mockups yet"
-            description="Use Analyze Page for screenshot-based audits or New Concept for hand-authored HTML mockups and design notes."
+            description={
+              readOnly
+                ? 'No shared UI mockups are available for this project yet.'
+                : 'Use Analyze Page for screenshot-based audits or New Concept for hand-authored HTML mockups and design notes.'
+            }
           />
         )}
         {!isLoading && !error && mockups.length > 0 && (
