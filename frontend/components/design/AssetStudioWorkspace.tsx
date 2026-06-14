@@ -4,13 +4,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   Download,
+  ExternalLink,
   Image as ImageIcon,
   Layers3,
+  Maximize2,
   Package,
   Tags,
   X,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import { useClampedPagination } from '@/hooks/useClampedPagination'
 import {
@@ -64,6 +66,7 @@ export function AssetStudioWorkspace({
   const [page, setPage] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [selectedAsset, setSelectedAsset] = useState<DesignAsset | null>(null)
+  const [previewAsset, setPreviewAsset] = useState<DesignAsset | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const pageSize = 24
   const queryClient = useQueryClient()
@@ -315,7 +318,10 @@ export function AssetStudioWorkspace({
                   <button
                     type="button"
                     key={asset.asset_id}
-                    onClick={() => setSelectedAsset(asset)}
+                    onClick={() => {
+                      setSelectedAsset(asset)
+                      setPreviewAsset(asset)
+                    }}
                     className={clsx(
                       'card overflow-hidden text-left transition hover:ring-1 hover:ring-cyan-400/30',
                       viewMode === 'list' && 'flex items-center gap-4 p-3',
@@ -396,6 +402,7 @@ export function AssetStudioWorkspace({
           onExport={() =>
             selectedAsset && exportMutation.mutate(selectedAsset.asset_id)
           }
+          onPreview={() => selectedAsset && setPreviewAsset(selectedAsset)}
           onStatusChange={(status) =>
             selectedAsset &&
             statusMutation.mutate({ assetId: selectedAsset.asset_id, status })
@@ -418,9 +425,28 @@ export function AssetStudioWorkspace({
         }}
       />
 
+      {previewAsset && (
+        <AssetDetailModal
+          asset={previewAsset}
+          projectId={projectId}
+          isExporting={exportMutation.isPending}
+          isUpdating={statusMutation.isPending}
+          onClose={() => setPreviewAsset(null)}
+          onDelete={() => {
+            setSelectedAsset(previewAsset)
+            setShowDeleteConfirm(true)
+          }}
+          onExport={() => exportMutation.mutate(previewAsset.asset_id)}
+          onStatusChange={(status) => {
+            setSelectedAsset(previewAsset)
+            statusMutation.mutate({ assetId: previewAsset.asset_id, status })
+          }}
+        />
+      )}
+
       {selectedAsset && showDeleteConfirm && (
         <ConfirmDeleteDialog
-          entityType="mockup"
+          entityType="asset"
           entityName={selectedAsset.name}
           isDeleting={deleteMutation.isPending}
           onConfirm={() => deleteMutation.mutate(selectedAsset.asset_id)}
@@ -525,6 +551,7 @@ function AssetInspector({
   onClose,
   onDelete,
   onExport,
+  onPreview,
   onStatusChange,
 }: {
   asset: DesignAsset | null
@@ -534,6 +561,7 @@ function AssetInspector({
   onClose: () => void
   onDelete: () => void
   onExport: () => void
+  onPreview: () => void
   onStatusChange: (status: string) => void
 }): React.ReactElement {
   const { data: exports } = useQuery({
@@ -586,6 +614,15 @@ function AssetInspector({
         large
         className="relative mt-4 aspect-video overflow-hidden rounded-2xl bg-slate-900"
       />
+
+      <button
+        type="button"
+        onClick={onPreview}
+        className="btn-secondary mt-3 flex w-full items-center justify-center gap-2"
+      >
+        <Maximize2 className="h-4 w-4" />
+        Fullscreen Preview
+      </button>
 
       {asset.description && (
         <p className="mt-4 text-sm text-slate-300">{asset.description}</p>
@@ -721,6 +758,200 @@ function AssetInspector({
         </div>
       </div>
     </aside>
+  )
+}
+
+function AssetDetailModal({
+  asset,
+  projectId,
+  isExporting,
+  isUpdating,
+  onClose,
+  onDelete,
+  onExport,
+  onStatusChange,
+}: {
+  asset: DesignAsset
+  projectId: string
+  isExporting: boolean
+  isUpdating: boolean
+  onClose: () => void
+  onDelete: () => void
+  onExport: () => void
+  onStatusChange: (status: string) => void
+}): React.ReactElement {
+  const imageUrl = getDesignAssetImageUrl(projectId, asset.asset_id)
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div
+        className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm"
+        onClick={onClose}
+        role="presentation"
+      />
+
+      <div className="relative mx-2 flex h-[94vh] w-[98vw] flex-col overflow-hidden rounded-xl bg-slate-900">
+        <div className="flex flex-shrink-0 items-center justify-between gap-4 border-b border-slate-800 px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">
+              {asset.workflow}
+            </p>
+            <h2 className="mt-1 truncate text-lg font-semibold text-slate-100">
+              {asset.name}
+            </h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={imageUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-secondary flex items-center gap-2"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Open
+            </a>
+            <a
+              href={imageUrl}
+              download={`${asset.asset_id}.${isSvgAsset(asset) ? 'svg' : 'png'}`}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <Download className="h-4 w-4" />
+              Download
+            </a>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close fullscreen preview"
+              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+          <div className="flex min-h-0 flex-1 items-center justify-center bg-slate-950 p-4">
+            {/* biome-ignore lint/performance/noImgElement: Asset previews can be user-imported SVG/PNG files; direct img preserves native rendering. */}
+            <img
+              src={imageUrl}
+              alt={asset.name}
+              className="max-h-full max-w-full object-contain"
+              draggable={false}
+            />
+          </div>
+
+          <aside className="w-full flex-shrink-0 overflow-auto border-t border-slate-800 p-5 lg:w-96 lg:border-l lg:border-t-0">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <InspectorField
+                label="Type"
+                value={asset.asset_type.replace('_', ' ')}
+              />
+              <InspectorField label="Status" value={asset.status} />
+              <InspectorField
+                label="Resolution"
+                value={`${asset.width}x${asset.height}`}
+              />
+              <InspectorField label="Background" value={asset.background} />
+            </div>
+
+            {asset.tags.length > 0 && (
+              <div className="mt-5">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                  Tags
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {asset.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full bg-cyan-500/10 px-2 py-1 text-xs text-cyan-200"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5">
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                Prompt
+              </p>
+              <div className="mt-2 rounded-xl bg-slate-950 p-3 text-sm text-slate-300 whitespace-pre-wrap">
+                {asset.prompt}
+              </div>
+            </div>
+
+            {asset.asset_type === 'sprite_sheet' && (
+              <div className="mt-5 rounded-xl bg-slate-950 p-3 text-sm text-slate-300">
+                <p>
+                  Grid: {asset.sheet_columns} x {asset.sheet_rows}
+                </p>
+                <p>
+                  Frame: {asset.frame_width} x {asset.frame_height}
+                </p>
+                <p>
+                  Animations:{' '}
+                  {asset.animation_labels.join(', ') || 'Not labeled'}
+                </p>
+              </div>
+            )}
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => onStatusChange('approved')}
+                disabled={isUpdating}
+                className="btn-primary"
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                onClick={() => onStatusChange('rejected')}
+                disabled={isUpdating}
+                className="btn-secondary"
+              >
+                Reject
+              </button>
+              <button
+                type="button"
+                onClick={() => onStatusChange('archived')}
+                disabled={isUpdating}
+                className="btn-secondary"
+              >
+                Archive
+              </button>
+              {asset.asset_type === 'sprite_sheet' && (
+                <button
+                  type="button"
+                  onClick={onExport}
+                  disabled={isExporting}
+                  className="btn-secondary flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export Frames
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onDelete}
+                className="btn-secondary text-rose-300"
+              >
+                Delete
+              </button>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
   )
 }
 

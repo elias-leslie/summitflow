@@ -22,6 +22,11 @@ interface MockupDeleteProps {
   entityName: string
 }
 
+interface AssetDeleteProps {
+  entityType: 'asset'
+  entityName: string
+}
+
 interface MockupsBulkDeleteProps {
   entityType: 'mockups'
   count: number
@@ -36,6 +41,7 @@ type EntityProps =
   | TaskDeleteProps
   | TasksBulkDeleteProps
   | MockupDeleteProps
+  | AssetDeleteProps
   | MockupsBulkDeleteProps
   | FeedbackDeleteProps
 
@@ -67,7 +73,9 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
   } = props
 
   const isDesignEntity =
-    props.entityType === 'mockup' || props.entityType === 'mockups'
+    props.entityType === 'mockup' ||
+    props.entityType === 'mockups' ||
+    props.entityType === 'asset'
 
   // ---- Title ----
   const title = getTitle(props)
@@ -246,6 +254,8 @@ function getTitle(props: EntityProps): string {
     }
     case 'mockup':
       return 'Delete mockup?'
+    case 'asset':
+      return 'Delete asset?'
     case 'mockups': {
       const count = props.count
       return `Delete ${count} mockup${count > 1 ? 's' : ''}?`
@@ -262,6 +272,8 @@ function getDescription(props: EntityProps): string {
     case 'tasks':
       return 'Are you sure you want to delete these tasks?'
     case 'mockup':
+      return `Are you sure you want to delete "${props.entityName}"? This action cannot be undone.`
+    case 'asset':
       return `Are you sure you want to delete "${props.entityName}"? This action cannot be undone.`
     case 'mockups': {
       const count = props.count
@@ -293,6 +305,8 @@ function getErrorMessage(props: EntityProps): string {
       return 'Failed to delete tasks. Please try again.'
     case 'mockup':
       return 'Failed to delete mockup. Please try again.'
+    case 'asset':
+      return 'Failed to delete asset. Please try again.'
     case 'mockups':
       return 'Failed to delete mockups. Please try again.'
     case 'feedback':
@@ -304,6 +318,7 @@ function getDeleteLabel(props: EntityProps): string {
   switch (props.entityType) {
     case 'task':
     case 'mockup':
+    case 'asset':
       return 'Delete'
     case 'tasks':
       return `Delete ${props.taskIds.size}`
