@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import lru_cache
+from ipaddress import ip_address
 from typing import Any
 
 import jwt
@@ -121,6 +122,8 @@ def resolve_principal(request: Request) -> AccessPrincipal | None:
         return _principal_for_email(email)
 
     if _cloudflare_configured():
+        if _is_local_development_request(request):
+            return _local_owner_principal()
         return None
 
     return _local_owner_principal()
@@ -136,6 +139,54 @@ def _access_token(request: Request) -> str | None:
 
 def _cloudflare_configured() -> bool:
     return bool(settings.cloudflare_access_team_domain and settings.cloudflare_access_aud)
+
+
+def _is_local_development_request(request: Request) -> bool:
+    """Allow owner bypass only for true loopback localhost requests."""
+    if not _is_loopback_client(request):
+        return False
+
+    hostnames = _request_hostnames(request)
+    return bool(hostnames) and all(_is_loopback_hostname(hostname) for hostname in hostnames)
+
+
+def _is_loopback_client(request: Request) -> bool:
+    client_host = request.client.host if request.client else ""
+    try:
+        return ip_address(client_host).is_loopback
+    except ValueError:
+        return client_host == "localhost"
+
+
+def _request_hostnames(request: Request) -> set[str]:
+    hostnames: set[str] = set()
+    for value in (
+        request.url.hostname,
+        request.headers.get("host"),
+        request.headers.get("x-forwarded-host"),
+    ):
+        hostname = _hostname(value)
+        if hostname:
+            hostnames.add(hostname)
+    return hostnames
+
+
+def _hostname(value: str | None) -> str:
+    if not value:
+        return ""
+    first_value = value.split(",", 1)[0].strip().lower()
+    if first_value.startswith("[") and "]" in first_value:
+        return first_value[1 : first_value.index("]")]
+    return first_value.rsplit(":", 1)[0]
+
+
+def _is_loopback_hostname(hostname: str) -> bool:
+    if hostname == "localhost":
+        return True
+    try:
+        return ip_address(hostname).is_loopback
+    except ValueError:
+        return False
 
 
 def _email_from_cloudflare_token(token: str) -> str:
