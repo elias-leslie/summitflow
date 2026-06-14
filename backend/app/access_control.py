@@ -25,6 +25,7 @@ from .storage.access import (
 PUBLIC_API_PREFIXES = ("/api/health",)
 PUBLIC_PATHS = {"/health", "/api/auth/me"}
 VIEWER_API_PREFIX = "/api/viewer/"
+LOCAL_BYPASS_HOSTNAMES = {"dev.summitflow.dev"}
 
 
 @dataclass(frozen=True)
@@ -116,23 +117,29 @@ def _is_public_path(path: str) -> bool:
 
 def resolve_principal(request: Request) -> AccessPrincipal | None:
     """Resolve identity from Cloudflare Access or local development bypass."""
-    token = _access_token(request)
-    if token:
-        email = _email_from_cloudflare_token(token)
+    header_token = _access_header_token(request)
+    if header_token:
+        email = _email_from_cloudflare_token(header_token)
         return _principal_for_email(email)
 
     if _cloudflare_configured():
         if _is_local_development_request(request):
             return _local_owner_principal()
+        cookie_token = _access_cookie_token(request)
+        if cookie_token:
+            email = _email_from_cloudflare_token(cookie_token)
+            return _principal_for_email(email)
         return None
 
     return _local_owner_principal()
 
 
-def _access_token(request: Request) -> str | None:
+def _access_header_token(request: Request) -> str | None:
     header_token = request.headers.get("Cf-Access-Jwt-Assertion", "").strip()
-    if header_token:
-        return header_token
+    return header_token or None
+
+
+def _access_cookie_token(request: Request) -> str | None:
     cookie_token = request.cookies.get("CF_Authorization", "").strip()
     return cookie_token or None
 
@@ -142,20 +149,24 @@ def _cloudflare_configured() -> bool:
 
 
 def _is_local_development_request(request: Request) -> bool:
-    """Allow owner bypass only for true loopback localhost requests."""
-    if not _is_loopback_client(request):
+    """Allow owner bypass only through local loopback development routes."""
+    if not _is_local_network_client(request):
         return False
 
     hostnames = _request_hostnames(request)
-    return bool(hostnames) and all(_is_loopback_hostname(hostname) for hostname in hostnames)
+    return bool(hostnames) and all(
+        _is_loopback_hostname(hostname) or hostname in LOCAL_BYPASS_HOSTNAMES
+        for hostname in hostnames
+    )
 
 
-def _is_loopback_client(request: Request) -> bool:
+def _is_local_network_client(request: Request) -> bool:
     client_host = request.client.host if request.client else ""
     try:
-        return ip_address(client_host).is_loopback
+        client_ip = ip_address(client_host)
     except ValueError:
         return client_host == "localhost"
+    return client_ip.is_loopback or client_ip.is_private
 
 
 def _request_hostnames(request: Request) -> set[str]:
