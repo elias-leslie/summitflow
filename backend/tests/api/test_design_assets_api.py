@@ -166,6 +166,30 @@ def test_get_design_asset_image_serves_svg_media_type(
     assert response.headers["content-type"].startswith("image/svg+xml")
 
 
+def test_get_design_asset_image_reports_missing_file(
+    client: Any,
+    ensure_test_project: str,
+    tmp_path: Path,
+) -> None:
+    """Missing files should return a clear API error instead of a 500."""
+    missing_path = tmp_path / "missing.png"
+
+    with (
+        patch("app.api.design_assets.design_assets.get_asset") as mock_get_asset,
+        patch("app.api.design_assets.validate_mockup_path", return_value=missing_path),
+    ):
+        mock_get_asset.return_value = {
+            "asset_id": "asset-missing",
+            "file_path": str(missing_path),
+        }
+        response = client.get(
+            f"/api/projects/{ensure_test_project}/design-assets/asset-missing/image"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Design asset file missing from durable storage"
+
+
 def test_export_sprite_frames_creates_manifest(
     client: Any,
     ensure_test_project: str,

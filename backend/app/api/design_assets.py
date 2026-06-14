@@ -96,6 +96,8 @@ async def get_design_asset_image(project_id: str, asset_id: str) -> FileResponse
     if not asset or not asset.get("file_path"):
         raise HTTPException(status_code=404, detail="Design asset image not found")
     image_path = validate_mockup_path(asset["file_path"])
+    if not image_path.is_file():
+        raise HTTPException(status_code=404, detail="Design asset file missing from durable storage")
     media_type = _image_media_type(image_path)
     return FileResponse(path=image_path, media_type=media_type, filename=image_path.name)
 

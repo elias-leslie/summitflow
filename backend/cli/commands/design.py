@@ -24,6 +24,10 @@ pipeline." to the prompt. Don't use it for UI screen mockups.
 Design source gate: before making a visual artifact, ask the project lead
 whether the current agent/user should create it and import it manually, or
 whether Agent Hub's image / UI design agents should generate it.
+
+Storage gate: Asset Studio and UI Design artifacts are important project
+state. They must be stored through SummitFlow's durable Design Ops storage,
+never in `/tmp` or another temp-only location.
 """
 
 from __future__ import annotations
@@ -49,7 +53,8 @@ asset_app = typer.Typer(
     help=(
         "Asset Studio: import self/user-generated images, generate game / "
         "marketing artwork via Agent Hub image agents, and export sprite "
-        "sheets. Ask the source gate first: manual/current-agent or Agent Hub?"
+        "sheets. Ask the source gate first: manual/current-agent or Agent Hub? "
+        "Storage must be durable; never /tmp."
     )
 )
 ui_app = typer.Typer(
@@ -93,6 +98,7 @@ _VariantCount = Annotated[
         "use st design ui create/attach for hand-authored HTML UI mockups; never route UI screens through asset image generation",
         "use st design asset import for current-agent/user-generated PNG/JPEG/WebP/SVG assets so they still enter Asset Studio approval",
         "use st design asset generate only when the project lead chooses Agent Hub image generation",
+        "Design Ops storage is durable project state; never configure Asset Studio or UI mockup storage under /tmp",
         "do not export or commit visual assets into the repo until approved in Design/Asset Studio",
     ),
     task_types=("design", "implementation"),
