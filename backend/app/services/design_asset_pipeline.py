@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import contextlib
+import io
 import json
 from pathlib import Path
+from xml.etree import ElementTree
 
 from PIL import Image
 
@@ -20,8 +23,11 @@ from .mockup_generator.storage_helpers import get_mockup_directory
 
 _MIME_TO_EXT: dict[str, str] = {
     "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/svg+xml": "svg",
     "image/webp": "webp",
 }
+_IMPORT_MIME_TYPES = frozenset(_MIME_TO_EXT)
 
 _BACKGROUND_TRANSPARENT = "transparent"
 _PURPOSE_DESIGN_ASSET = "design_asset_generation"
@@ -30,6 +36,7 @@ _META_APP = "summitflow"
 # Asset type groups
 _COMPOSITE_ASSET_TYPES = frozenset({"sprite", "icon", "ui_texture", "portrait"})
 _SCENE_ASSET_TYPES = frozenset({"environment", "concept_art", "marketing_mockup"})
+_SVG_DENIED_TAGS = frozenset({"script", "foreignobject"})
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +175,66 @@ def _save_image_file(project_id: str, asset_id: str, image_bytes: bytes, ext: st
     return image_path
 
 
+def _strip_svg_unit(value: str) -> int | None:
+    """Coerce an SVG length like '1024px' to an integer pixel value."""
+    text = value.strip().lower().removesuffix("px")
+    with contextlib.suppress(ValueError):
+        return int(float(text))
+    return None
+
+
+def _xml_local_name(value: str) -> str:
+    """Return a lower-case XML local name without the namespace."""
+    return value.rsplit("}", 1)[-1].lower()
+
+
+def _validate_svg_root(root: ElementTree.Element) -> None:
+    """Reject active SVG content before storing user/manual imports."""
+    for element in root.iter():
+        if _xml_local_name(element.tag) in _SVG_DENIED_TAGS:
+            raise ValueError("SVG asset contains unsupported active content")
+        for attr, value in element.attrib.items():
+            attr_name = _xml_local_name(attr)
+            if attr_name.startswith("on"):
+                raise ValueError("SVG asset contains unsupported active content")
+            if attr_name == "href" and value.strip().lower().startswith("javascript:"):
+                raise ValueError("SVG asset contains unsupported active content")
+
+
+def _svg_dimensions(image_bytes: bytes) -> tuple[int, int]:
+    """Extract SVG dimensions from width/height or viewBox."""
+    try:
+        root = ElementTree.fromstring(image_bytes)
+    except ElementTree.ParseError as exc:
+        raise ValueError("Invalid SVG asset") from exc
+    _validate_svg_root(root)
+
+    width = _strip_svg_unit(root.attrib.get("width", ""))
+    height = _strip_svg_unit(root.attrib.get("height", ""))
+    if width and height:
+        return width, height
+
+    view_box = root.attrib.get("viewBox") or root.attrib.get("viewbox")
+    if view_box:
+        parts = view_box.replace(",", " ").split()
+        if len(parts) == 4:
+            with contextlib.suppress(ValueError):
+                return int(float(parts[2])), int(float(parts[3]))
+
+    raise ValueError("SVG asset needs width/height or viewBox")
+
+
+def _image_dimensions(image_bytes: bytes, mime_type: str) -> tuple[int, int]:
+    """Read image dimensions without trusting caller-provided metadata."""
+    if mime_type == "image/svg+xml":
+        return _svg_dimensions(image_bytes)
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            return image.size
+    except Exception as exc:
+        raise ValueError("Invalid image asset") from exc
+
+
 def _persist_asset(
     project_id: str,
     asset_id: str,
@@ -193,7 +260,7 @@ def _persist_asset(
     frame_height: int | None,
     animation_labels: list[str] | None,
     tags: list[str] | None,
-    extra_metadata: dict[str, str | int],
+    extra_metadata: dict[str, object],
 ) -> dict[str, object]:
     """Write asset record to the database and return it."""
     return design_assets.create_asset(
@@ -234,7 +301,7 @@ def _generate_and_save(
 
 def _make_served_metadata(
     base: dict[str, str | int] | None, agent_slug: str, response: object,
-) -> dict[str, str | int]:
+) -> dict[str, object]:
     """Merge caller metadata with provider telemetry fields."""
     return {
         **(base or {}),
@@ -298,6 +365,76 @@ def generate_asset_image(
         sheet_rows=sheet_rows, frame_width=frame_width, frame_height=frame_height,
         animation_labels=animation_labels, tags=tags,
         extra_metadata=_make_served_metadata(metadata, resolved_agent_slug, rsp),
+    )
+
+
+def import_asset_image(
+    *,
+    project_id: str,
+    name: str,
+    image_base64: str,
+    mime_type: str,
+    original_file_name: str | None,
+    prompt: str,
+    description: str | None,
+    asset_type: str,
+    workflow: str,
+    background: str,
+    transparent_background: bool,
+    source_asset_id: int | None = None,
+    sheet_columns: int | None = None,
+    sheet_rows: int | None = None,
+    frame_width: int | None = None,
+    frame_height: int | None = None,
+    animation_labels: list[str] | None = None,
+    tags: list[str] | None = None,
+    metadata: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Persist a manually supplied image as a Design Studio asset.
+
+    This path is intentionally not routed through Agent Hub. It is for assets
+    generated or authored by the current agent/user and then queued in Asset
+    Studio for the normal approval lifecycle.
+    """
+    normalized_type = normalize_asset_type(asset_type)
+    normalized_mime = mime_type.lower().split(";")[0].strip()
+    if normalized_mime not in _IMPORT_MIME_TYPES:
+        raise ValueError("Manual asset import supports PNG, JPEG, WebP, and SVG images")
+    try:
+        image_bytes = base64.b64decode(image_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("Invalid base64 image payload") from exc
+    width, height = _image_dimensions(image_bytes, normalized_mime)
+    asset_id = design_assets.generate_asset_id()
+    image_path = _save_image_file(project_id, asset_id, image_bytes, _MIME_TO_EXT[normalized_mime])
+    return _persist_asset(
+        project_id, asset_id, image_path,
+        name=name,
+        description=description,
+        normalized_type=normalized_type,
+        workflow=workflow,
+        merged_prompt=prompt,
+        negative_prompt=None,
+        style_prompt=None,
+        background=background,
+        width=width,
+        height=height,
+        transparent_background=transparent_background,
+        served_model="manual",
+        generator="manual-image",
+        source_asset_id=source_asset_id,
+        sheet_columns=sheet_columns,
+        sheet_rows=sheet_rows,
+        frame_width=frame_width,
+        frame_height=frame_height,
+        animation_labels=animation_labels,
+        tags=tags,
+        extra_metadata={
+            **(metadata or {}),
+            "source": "manual-import",
+            "mime_type": normalized_mime,
+            "original_file_name": original_file_name or "",
+        },
     )
 
 

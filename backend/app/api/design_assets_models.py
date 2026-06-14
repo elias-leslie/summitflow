@@ -99,6 +99,29 @@ class GenerateDesignAssetRequest(BaseModel):
     reference_image_path: str | None = None
 
 
+class ImportDesignAssetRequest(BaseModel):
+    """Request payload for a manually provided design asset image."""
+
+    name: str
+    image_base64: str
+    mime_type: str
+    original_file_name: str | None = None
+    prompt: str = "Manual asset import"
+    description: str | None = None
+    asset_type: str = "sprite"
+    workflow: str = "concept"
+    background: str = "transparent"
+    transparent_background: bool = True
+    tags: list[str] = Field(default_factory=list)
+    sheet_columns: int | None = Field(default=None, ge=1, le=16)
+    sheet_rows: int | None = Field(default=None, ge=1, le=16)
+    frame_width: int | None = Field(default=None, ge=1)
+    frame_height: int | None = Field(default=None, ge=1)
+    animation_labels: list[str] = Field(default_factory=list)
+    source_asset_id: int | None = None
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+
 class GenerateDesignAssetResponse(BaseModel):
     """Response for generated assets."""
 

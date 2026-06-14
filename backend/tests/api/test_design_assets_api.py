@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -73,6 +74,68 @@ def test_generate_design_asset_uses_project_scope(
     assert response.status_code == 200
     mock_client.generate_image.assert_called_once()
     assert mock_client.generate_image.call_args.kwargs["project_id"] == ensure_test_project
+
+
+def test_import_design_asset_uses_manual_pipeline(
+    client: Any,
+    ensure_test_project: str,
+) -> None:
+    """Manual asset import should call the import pipeline, not Agent Hub generation."""
+    with patch("app.api.design_assets.import_asset_image") as mock_import_asset:
+        mock_import_asset.return_value = {
+            "id": 1,
+            "project_id": ensure_test_project,
+            "asset_id": "asset-manual",
+            "name": "Manual Scout",
+            "description": "Review candidate",
+            "asset_type": "sprite",
+            "workflow": "concept",
+            "status": "generated",
+            "prompt": "Manual SVG sprite",
+            "negative_prompt": None,
+            "style_prompt": None,
+            "background": "transparent",
+            "width": 64,
+            "height": 64,
+            "transparent_background": True,
+            "model": "manual",
+            "generator": "manual-image",
+            "file_path": "/tmp/asset.svg",
+            "source_asset_id": None,
+            "sheet_columns": None,
+            "sheet_rows": None,
+            "frame_width": None,
+            "frame_height": None,
+            "animation_labels": [],
+            "tags": ["manual"],
+            "metadata": {"source_gate": "manual-current-agent"},
+            "approved_at": None,
+            "approved_by": None,
+            "created_at": None,
+            "updated_at": None,
+        }
+        response = client.post(
+            f"/api/projects/{ensure_test_project}/design-assets/import",
+            json={
+                "name": "Manual Scout",
+                "image_base64": base64.b64encode(b"<svg></svg>").decode(),
+                "mime_type": "image/svg+xml",
+                "original_file_name": "scout.svg",
+                "prompt": "Manual SVG sprite",
+                "description": "Review candidate",
+                "asset_type": "sprite",
+                "workflow": "concept",
+                "tags": ["manual"],
+                "metadata": {"source_gate": "manual-current-agent"},
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["assets"][0]["asset_id"] == "asset-manual"
+    mock_import_asset.assert_called_once()
+    assert mock_import_asset.call_args.kwargs["project_id"] == ensure_test_project
+    assert mock_import_asset.call_args.kwargs["mime_type"] == "image/svg+xml"
 
 
 def test_get_design_asset_image_serves_svg_media_type(

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
-from cli.commands.design import _build_asset_payload
+from cli.commands.design import _build_asset_payload, _build_import_asset_payload
 from cli.main import app
 
 runner = CliRunner()
@@ -90,6 +90,87 @@ def test_design_asset_generate_posts_to_design_assets_endpoint() -> None:
     assert called_url.endswith("/design-assets/generate")
     assert called_json["asset_type"] == "sprite_sheet"
     assert called_json["tags"] == ["kiki", "combat"]
+
+
+def test_build_import_asset_payload_encodes_svg_and_metadata(tmp_path: Path) -> None:
+    """Manual asset imports should encode the image and mark the source gate."""
+    image_path = tmp_path / "icon.svg"
+    image_path.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"></svg>',
+        encoding="utf-8",
+    )
+
+    payload = _build_import_asset_payload(
+        name="AfterTimes Icon",
+        image_file=image_path,
+        prompt="Manual SVG icon candidate",
+        description="Review candidate",
+        asset_type="icon",
+        workflow="concept",
+        background="transparent",
+        tags="aftertimes, icon",
+        sheet_columns=None,
+        sheet_rows=None,
+        frame_width=None,
+        frame_height=None,
+        animation_labels=None,
+        source_asset_id=None,
+        generator_note="codex",
+    )
+
+    assert payload["mime_type"] == "image/svg+xml"
+    assert payload["image_base64"]
+    assert payload["original_file_name"] == "icon.svg"
+    assert payload["metadata"] == {
+        "source_gate": "manual-current-agent",
+        "generator_note": "codex",
+    }
+    assert payload["tags"] == ["aftertimes", "icon"]
+
+
+def test_design_asset_import_posts_to_design_assets_endpoint(tmp_path: Path) -> None:
+    """CLI should post manual import payload to the design-assets import endpoint."""
+    image_path = tmp_path / "scout.svg"
+    image_path.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"></svg>',
+        encoding="utf-8",
+    )
+    mock_client = MagicMock()
+    mock_client._url.side_effect = lambda path: f"http://localhost:8001/api/projects/the-aftertimes{path}"
+    mock_client.post.return_value = {"success": True, "assets": [{"asset_id": "asset-1"}]}
+
+    with (
+        patch("cli.commands.design.require_explicit_project"),
+        patch("cli.commands.design.get_config"),
+        patch("cli.commands.design.STClient", return_value=mock_client),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "-P",
+                "the-aftertimes",
+                "design",
+                "asset",
+                "import",
+                "Scout Sprite",
+                str(image_path),
+                "--type",
+                "sprite",
+                "--workflow",
+                "concept",
+                "--tags",
+                "scout,manual",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_client.post.assert_called_once()
+    called_url = mock_client.post.call_args.args[0]
+    called_json = mock_client.post.call_args.kwargs["json"]
+    assert called_url.endswith("/design-assets/import")
+    assert called_json["asset_type"] == "sprite"
+    assert called_json["mime_type"] == "image/svg+xml"
+    assert called_json["tags"] == ["scout", "manual"]
 
 
 def test_build_asset_payload_includes_reference_image_options(tmp_path: Path) -> None:

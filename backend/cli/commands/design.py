@@ -8,6 +8,7 @@ Use this when... matrix:
     Add a hand-authored revision to an existing one   | st design ui attach
     Have an AI agent inspect a live URL and design    | st design ui analyze
     Have an AI agent regenerate an existing mockup    | st design ui rerun
+    Import self/user-generated image asset            | st design asset import
     Generate a sprite / portrait / game art asset     | st design asset generate
     Export sprite-sheet frames                        | st design asset export
 
@@ -19,6 +20,10 @@ They never call an AI image / mockup agent.
 `--workflow ui` it routes to image generation (Cloudflare flux / Leonardo) and
 will silently prepend "Create a polished marketing mockup for a game production
 pipeline." to the prompt. Don't use it for UI screen mockups.
+
+Design source gate: before making a visual artifact, ask the project lead
+whether the current agent/user should create it and import it manually, or
+whether Agent Hub's image / UI design agents should generate it.
 """
 
 from __future__ import annotations
@@ -31,6 +36,7 @@ import typer
 
 from ..client import APIError, STClient
 from ..config import get_config
+from ..lib.usage import usage
 from ..output import handle_api_error, output_json, require_explicit_project
 
 app = typer.Typer(
@@ -41,9 +47,9 @@ app = typer.Typer(
 )
 asset_app = typer.Typer(
     help=(
-        "Asset Studio: generate and export game / marketing artwork via image "
-        "agents (Cloudflare flux, Leonardo). NOT for UI screen mockups — use "
-        "`st design ui create` / `attach` for those."
+        "Asset Studio: import self/user-generated images, generate game / "
+        "marketing artwork via Agent Hub image agents, and export sprite "
+        "sheets. Ask the source gate first: manual/current-agent or Agent Hub?"
     )
 )
 ui_app = typer.Typer(
@@ -78,6 +84,20 @@ _VariantCount = Annotated[
 
 
 @app.callback(invoke_without_command=True)
+@usage(
+    surface="st.design",
+    cmd="st design ui create | st design asset import | st design asset generate",
+    when="creating UI mockups, game art, sprites, icons, tile sets, portraits, or marketing visuals",
+    precautions=(
+        "before generating visual work, ask the project lead whether the current agent/user should create it manually or Agent Hub design/image agents should generate it",
+        "use st design ui create/attach for hand-authored HTML UI mockups; never route UI screens through asset image generation",
+        "use st design asset import for current-agent/user-generated PNG/JPEG/WebP/SVG assets so they still enter Asset Studio approval",
+        "use st design asset generate only when the project lead chooses Agent Hub image generation",
+        "do not export or commit visual assets into the repo until approved in Design/Asset Studio",
+    ),
+    task_types=("design", "implementation"),
+    tier="guardrail",
+)
 def design_default(ctx: typer.Context) -> None:
     """Design Ops command group."""
     if ctx.invoked_subcommand is None:
@@ -137,6 +157,60 @@ def generate_asset(
 
     try:
         result = client.post(client._url("/design-assets/generate"), json=payload)
+    except APIError as exc:
+        handle_api_error(exc)
+        raise typer.Exit(1) from None
+
+    output_json(result)
+
+
+@asset_app.command("import")
+def import_asset(
+    name: Annotated[str, typer.Argument(help="Asset display name")],
+    image_file: Annotated[Path, typer.Argument(help="PNG/JPEG/WebP/SVG image to store in Asset Studio")],
+    prompt: Annotated[str, typer.Option("--prompt", help="Brief/source note shown with the asset")] = "Manual asset import",
+    description: Annotated[str | None, typer.Option("--description", "-d", help="Optional description stored with the asset")] = None,
+    asset_type: _AssetType = "sprite",
+    workflow: _Workflow = "concept",
+    background: _Background = "transparent",
+    tags: Annotated[str | None, typer.Option("--tags", help="Comma-separated tags")] = None,
+    sheet_columns: Annotated[int | None, typer.Option("--sheet-columns", help="Sprite sheet columns")] = None,
+    sheet_rows: Annotated[int | None, typer.Option("--sheet-rows", help="Sprite sheet rows")] = None,
+    frame_width: Annotated[int | None, typer.Option("--frame-width", help="Sprite sheet frame width")] = None,
+    frame_height: Annotated[int | None, typer.Option("--frame-height", help="Sprite sheet frame height")] = None,
+    animation_labels: Annotated[str | None, typer.Option("--animations", help="Comma-separated animation row labels")] = None,
+    source_asset_id: Annotated[int | None, typer.Option("--source-asset-id", help="Source asset DB id for variant derivation")] = None,
+    generator_note: Annotated[str | None, typer.Option("--generator-note", help="Who/what produced this manual asset")] = None,
+) -> None:
+    """Import a self/user-generated image into Asset Studio for approval.
+
+    This is the manual/current-agent path. It does not invoke Agent Hub image
+    generation. Use it when the project lead chooses for you (or another
+    agent/user) to create the image yourself, while still preserving the
+    Asset Studio review and approval gate.
+    """
+    require_explicit_project(get_config())
+    client = STClient()
+    payload = _build_import_asset_payload(
+        name=name,
+        image_file=image_file,
+        prompt=prompt,
+        description=description,
+        asset_type=asset_type,
+        workflow=workflow,
+        background=background,
+        tags=tags,
+        sheet_columns=sheet_columns,
+        sheet_rows=sheet_rows,
+        frame_width=frame_width,
+        frame_height=frame_height,
+        animation_labels=animation_labels,
+        source_asset_id=source_asset_id,
+        generator_note=generator_note,
+    )
+
+    try:
+        result = client.post(client._url("/design-assets/import"), json=payload)
     except APIError as exc:
         handle_api_error(exc)
         raise typer.Exit(1) from None
@@ -446,6 +520,52 @@ def _build_manual_mockup_payload(
     return payload
 
 
+def _build_import_asset_payload(
+    *,
+    name: str,
+    image_file: Path,
+    prompt: str,
+    description: str | None,
+    asset_type: str,
+    workflow: str,
+    background: str,
+    tags: str | None,
+    sheet_columns: int | None,
+    sheet_rows: int | None,
+    frame_width: int | None,
+    frame_height: int | None,
+    animation_labels: str | None,
+    source_asset_id: int | None,
+    generator_note: str | None,
+) -> dict[str, Any]:
+    """Build a manual asset import payload from a local image file."""
+    if not image_file.exists() or not image_file.is_file():
+        raise typer.BadParameter(f"Image file not found: {image_file}")
+    metadata: dict[str, Any] = {"source_gate": "manual-current-agent"}
+    if generator_note:
+        metadata["generator_note"] = generator_note
+    payload: dict[str, Any] = {
+        "name": name,
+        "image_base64": base64.b64encode(image_file.read_bytes()).decode("utf-8"),
+        "mime_type": _guess_mime_type(image_file),
+        "original_file_name": image_file.name,
+        "prompt": prompt,
+        "asset_type": asset_type,
+        "workflow": workflow,
+        "background": background,
+        "transparent_background": background == "transparent",
+        "metadata": metadata,
+    }
+    if description:
+        payload["description"] = description
+    if source_asset_id is not None:
+        payload["source_asset_id"] = source_asset_id
+    _apply_sheet_fields(payload, tags=tags, animation_labels=animation_labels,
+                        sheet_columns=sheet_columns, sheet_rows=sheet_rows,
+                        frame_width=frame_width, frame_height=frame_height)
+    return payload
+
+
 def _build_asset_payload(
     *,
     name: str,
@@ -585,6 +705,8 @@ def _guess_mime_type(path: Path) -> str:
     suffix = path.suffix.lower()
     if suffix in {".jpg", ".jpeg"}:
         return "image/jpeg"
+    if suffix == ".svg":
+        return "image/svg+xml"
     if suffix == ".webp":
         return "image/webp"
     return "image/png"

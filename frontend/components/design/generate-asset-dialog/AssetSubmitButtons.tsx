@@ -5,12 +5,16 @@ import { Image as ImageIcon, Loader2 } from 'lucide-react'
 interface AssetSubmitButtonsProps {
   isPending: boolean
   isDisabled: boolean
+  pendingLabel?: string
+  submitLabel?: string
   onCancel: () => void
 }
 
 export function AssetSubmitButtons({
   isPending,
   isDisabled,
+  pendingLabel = 'Generating...',
+  submitLabel = 'Generate',
   onCancel,
 }: AssetSubmitButtonsProps) {
   return (
@@ -31,12 +35,12 @@ export function AssetSubmitButtons({
         {isPending ? (
           <>
             <Loader2 className="w-4 h-4 animate-spin" />
-            Generating...
+            {pendingLabel}
           </>
         ) : (
           <>
             <ImageIcon className="w-4 h-4" />
-            Generate
+            {submitLabel}
           </>
         )}
       </button>

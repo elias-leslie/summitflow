@@ -75,6 +75,27 @@ export interface GenerateDesignAssetRequest {
   source_asset_id?: number
 }
 
+export interface ImportDesignAssetRequest {
+  name: string
+  image_base64: string
+  mime_type: string
+  original_file_name?: string
+  prompt?: string
+  description?: string
+  asset_type?: string
+  workflow?: string
+  background?: string
+  transparent_background?: boolean
+  tags?: string[]
+  sheet_columns?: number
+  sheet_rows?: number
+  frame_width?: number
+  frame_height?: number
+  animation_labels?: string[]
+  source_asset_id?: number
+  metadata?: Record<string, unknown>
+}
+
 export interface GenerateDesignAssetResponse {
   success: boolean
   assets: DesignAsset[]
@@ -128,6 +149,17 @@ export async function generateDesignAssets(
     `/api/projects/${projectId}/design-assets/generate`,
     data,
     'Failed to generate design assets',
+  )
+}
+
+export async function importDesignAsset(
+  projectId: string,
+  data: ImportDesignAssetRequest,
+): Promise<GenerateDesignAssetResponse> {
+  return postJson<GenerateDesignAssetResponse>(
+    `/api/projects/${projectId}/design-assets/import`,
+    data,
+    'Failed to import design asset',
   )
 }
 

@@ -158,11 +158,11 @@ export function AssetStudioWorkspace({
     <div className="flex h-full flex-col min-w-0">
       <DesignHeader
         title="Asset Studio"
-        subtitle="Generate production-oriented assets, review variants, and export sprite sheets into frame packs."
+        subtitle="Import manual/current-agent visuals, generate Agent Hub variants, review candidates, and export approved sprite sheets."
         totalLabel={
           stats?.total !== undefined ? `${stats.total} assets` : undefined
         }
-        primaryActionLabel="Generate Assets"
+        primaryActionLabel="Add Assets"
         viewMode={viewMode}
         selectMode={false}
         hasItems={assets.length > 0}
@@ -266,6 +266,11 @@ export function AssetStudioWorkspace({
           </h3>
           <div className="mt-4 space-y-4 text-sm text-slate-300">
             <p>
+              Use the source gate first: manual/current-agent imports stay in
+              Asset Studio review, while Agent Hub generation starts from a
+              prompt.
+            </p>
+            <p>
               Use transparent backgrounds for sprites, icons, portraits, and UI
               textures.
             </p>
@@ -294,7 +299,7 @@ export function AssetStudioWorkspace({
           {!isLoading && !error && assets.length === 0 && (
             <EmptyState
               title="No design assets yet"
-              description="Generate sprites, environments, icon sets, or sprite sheets and review them in a production-focused asset workspace."
+              description="Import manual assets or generate Agent Hub variants, then review sprites, environments, icon sets, tile sets, and sprite sheets here."
             />
           )}
           {!isLoading && !error && assets.length > 0 && (

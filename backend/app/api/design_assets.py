@@ -8,7 +8,11 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
-from ..services.design_asset_pipeline import export_sprite_sheet_frames, generate_asset_image
+from ..services.design_asset_pipeline import (
+    export_sprite_sheet_frames,
+    generate_asset_image,
+    import_asset_image,
+)
 from ..storage import design_assets
 from .design_assets_models import (
     DesignAssetExportResponse,
@@ -17,6 +21,7 @@ from .design_assets_models import (
     DesignAssetStatsResponse,
     GenerateDesignAssetRequest,
     GenerateDesignAssetResponse,
+    ImportDesignAssetRequest,
     UpdateDesignAssetStatusRequest,
 )
 from .design_assets_utils import asset_to_response, export_to_response
@@ -156,6 +161,51 @@ async def generate_design_assets(
     return GenerateDesignAssetResponse(
         success=True,
         assets=[asset_to_response(asset) for asset in created_assets],
+        generation_time_ms=generation_time_ms,
+    )
+
+
+@router.post(
+    "/projects/{project_id}/design-assets/import",
+    response_model=GenerateDesignAssetResponse,
+)
+async def import_design_asset(
+    project_id: str,
+    request: ImportDesignAssetRequest,
+) -> GenerateDesignAssetResponse:
+    """Import a manually supplied image into Asset Studio for approval."""
+    start_time = time.monotonic()
+    try:
+        asset = import_asset_image(
+            project_id=project_id,
+            name=request.name,
+            image_base64=request.image_base64,
+            mime_type=request.mime_type,
+            original_file_name=request.original_file_name,
+            prompt=request.prompt,
+            description=request.description,
+            asset_type=request.asset_type,
+            workflow=request.workflow,
+            background=request.background,
+            transparent_background=request.transparent_background,
+            source_asset_id=request.source_asset_id,
+            sheet_columns=request.sheet_columns,
+            sheet_rows=request.sheet_rows,
+            frame_width=request.frame_width,
+            frame_height=request.frame_height,
+            animation_labels=request.animation_labels,
+            tags=request.tags,
+            metadata=request.metadata,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Asset import failed: {exc}") from exc
+
+    generation_time_ms = int((time.monotonic() - start_time) * 1000)
+    return GenerateDesignAssetResponse(
+        success=True,
+        assets=[asset_to_response(asset)],
         generation_time_ms=generation_time_ms,
     )
 

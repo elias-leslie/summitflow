@@ -3,6 +3,8 @@ export const ASSET_TYPES = [
   { value: 'sprite_sheet', label: 'Sprite Sheet' },
   { value: 'portrait', label: 'Portrait' },
   { value: 'environment', label: 'Environment' },
+  { value: 'tile_set', label: 'Tile Set' },
+  { value: 'concept_art', label: 'Concept Art' },
   { value: 'illustration', label: 'Illustration' },
   { value: 'icon', label: 'Icon' },
   { value: 'ui_texture', label: 'UI Texture' },

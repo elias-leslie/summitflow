@@ -16,6 +16,7 @@ const SELECT_CLASS =
   'w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:ring-2 focus:ring-outrun-500'
 
 interface AssetFormFieldsProps {
+  sourceMode: 'manual' | 'agent_hub'
   prompt: string
   name: string
   mockupType: string
@@ -52,6 +53,7 @@ interface AssetFormFieldsProps {
 }
 
 export function AssetFormFields({
+  sourceMode,
   prompt,
   name,
   mockupType,
@@ -90,12 +92,16 @@ export function AssetFormFields({
     <>
       <div>
         <label className="block text-sm font-medium text-slate-300 mb-2">
-          Prompt
+          {sourceMode === 'manual' ? 'Brief / Source Note' : 'Prompt'}
         </label>
         <textarea
           value={prompt}
           onChange={(e) => onPromptChange(e.target.value)}
-          placeholder="Describe the asset you want to generate..."
+          placeholder={
+            sourceMode === 'manual'
+              ? 'Describe what this manually imported asset is and how it was produced...'
+              : 'Describe the asset you want Agent Hub to generate...'
+          }
           rows={3}
           disabled={isPending}
           className={clsx(INPUT_CLASS, 'resize-none')}
@@ -154,23 +160,25 @@ export function AssetFormFields({
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
-            Size
-          </label>
-          <select
-            value={size}
-            onChange={(e) => onSizeChange(e.target.value)}
-            disabled={isPending}
-            className={SELECT_CLASS}
-          >
-            {SIZES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
+        {sourceMode === 'agent_hub' && (
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Size
+            </label>
+            <select
+              value={size}
+              onChange={(e) => onSizeChange(e.target.value)}
+              disabled={isPending}
+              className={SELECT_CLASS}
+            >
+              {SIZES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">
             Background
@@ -190,74 +198,82 @@ export function AssetFormFields({
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">
-          Agent
-        </label>
-        <div className="grid grid-cols-3 gap-2">
-          {IMAGE_MODELS.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => onModelChange(m.id)}
-              disabled={isPending}
-              className={clsx(
-                'px-3 py-2 rounded-lg border text-sm transition-all',
-                model === m.id
-                  ? 'bg-outrun-500/20 border-outrun-500/50 text-outrun-400'
-                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-slate-100 hover:border-slate-600',
-              )}
-            >
-              <div className="font-medium">{m.name}</div>
-              <div className="text-xs text-slate-500">{m.hint}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">
-          Style <span className="text-slate-500 font-normal">(optional)</span>
-        </label>
-        <input
-          type="text"
-          value={style}
-          onChange={(e) => onStyleChange(e.target.value)}
-          placeholder="e.g. hand-drawn cartoon, bold outlines"
-          disabled={isPending}
-          className={INPUT_CLASS}
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">
-          Negative Prompt
-        </label>
-        <input
-          type="text"
-          value={negativePrompt}
-          onChange={(e) => onNegativePromptChange(e.target.value)}
-          placeholder="e.g. blurry, extra limbs, text, watermark"
-          disabled={isPending}
-          className={INPUT_CLASS}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      {sourceMode === 'agent_hub' && (
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">
-            Variant Count
+            Agent
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            {IMAGE_MODELS.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => onModelChange(m.id)}
+                disabled={isPending}
+                className={clsx(
+                  'px-3 py-2 rounded-lg border text-sm transition-all',
+                  model === m.id
+                    ? 'bg-outrun-500/20 border-outrun-500/50 text-outrun-400'
+                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-slate-100 hover:border-slate-600',
+                )}
+              >
+                <div className="font-medium">{m.name}</div>
+                <div className="text-xs text-slate-500">{m.hint}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sourceMode === 'agent_hub' && (
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">
+            Style <span className="text-slate-500 font-normal">(optional)</span>
           </label>
           <input
-            type="number"
-            min={1}
-            max={4}
-            value={variantCount}
-            onChange={(e) => onVariantCountChange(Number(e.target.value))}
+            type="text"
+            value={style}
+            onChange={(e) => onStyleChange(e.target.value)}
+            placeholder="e.g. hand-drawn cartoon, bold outlines"
             disabled={isPending}
             className={INPUT_CLASS}
           />
         </div>
+      )}
+
+      {sourceMode === 'agent_hub' && (
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">
+            Negative Prompt
+          </label>
+          <input
+            type="text"
+            value={negativePrompt}
+            onChange={(e) => onNegativePromptChange(e.target.value)}
+            placeholder="e.g. blurry, extra limbs, text, watermark"
+            disabled={isPending}
+            className={INPUT_CLASS}
+          />
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {sourceMode === 'agent_hub' && (
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Variant Count
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={4}
+              value={variantCount}
+              onChange={(e) => onVariantCountChange(Number(e.target.value))}
+              disabled={isPending}
+              className={INPUT_CLASS}
+            />
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">
             Tags
