@@ -97,7 +97,7 @@ _VariantCount = Annotated[
         "before generating visual work, ask the project lead whether the current agent/user should create it manually or Agent Hub design/image agents should generate it",
         "use st design ui create/attach for hand-authored HTML UI mockups; never route UI screens through asset image generation",
         "use st design asset import for current-agent/user-generated PNG/JPEG/WebP/SVG assets so they still enter Asset Studio approval",
-        "use st design asset generate only when the project lead chooses Agent Hub image generation",
+        "use the calling agent's native image generator first, then st design asset import; use st design asset generate only as an explicit Agent Hub fallback when the caller has no native image generation",
         "Design Ops storage is durable project state; never configure Asset Studio or UI mockup storage under /tmp",
         "do not export or commit visual assets into the repo until approved in Design/Asset Studio",
     ),
@@ -132,21 +132,33 @@ def generate_asset(
     source_asset_id: Annotated[int | None, typer.Option("--source-asset-id", help="Source asset DB id for variant derivation")] = None,
     reference_image_path: Annotated[str | None, typer.Option("--reference-image-path", help="Path to a PNG/JPEG/WebP reference image for sprite consistency")] = None,
     reference_mime_type: Annotated[str | None, typer.Option("--reference-mime-type", help="Reference image MIME type override")] = None,
+    agent_hub_fallback: Annotated[
+        bool,
+        typer.Option(
+            "--agent-hub-fallback",
+            help="Required: confirm the caller has no native image generation and wants Agent Hub image generation.",
+        ),
+    ] = False,
 ) -> None:
-    """Generate a game / marketing artwork asset via an image agent.
+    """Fallback Agent Hub image generation for callers with no native imagegen.
 
-    Routes the prompt to Cloudflare flux / Leonardo through Agent Hub. The
-    server silently prepends "Create a polished marketing mockup for a game
-    production pipeline." to your prompt, so this is the wrong tool for UI
-    screen mockups — even with `--workflow ui` or `--type marketing_mockup`,
-    output is game art (sprites, illustrations, marketing renders), often with
-    garbled placeholder text.
+    Default rule: use the calling agent's native image generator first, save
+    the result durably, then run `st design asset import` so Asset Studio still
+    owns review/approval. This command is only for agents/surfaces with no
+    native image generation; pass `--agent-hub-fallback` to confirm that.
 
     For hand-authored UI HTML, use `st design ui create` / `attach`.
     For AI-generated UI mockups from a live URL, use `st design ui analyze`.
-
-    Requires explicit project: st -P <project> design asset generate ...
     """
+    if not agent_hub_fallback:
+        typer.echo(
+            "GATE: use the calling agent's native image generator first, then "
+            "`st design asset import`. Rerun with --agent-hub-fallback only "
+            "if this caller has no native image generation.",
+            err=True,
+        )
+        raise typer.Exit(2)
+
     require_explicit_project(get_config())
     client = STClient()
 

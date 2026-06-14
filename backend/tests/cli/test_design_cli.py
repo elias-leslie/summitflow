@@ -41,8 +41,28 @@ def test_build_asset_payload_parses_csv_options() -> None:
     assert payload["transparent_background"]
 
 
-def test_design_asset_generate_posts_to_design_assets_endpoint() -> None:
-    """CLI should post asset generation payload to the design-assets endpoint."""
+def test_design_asset_generate_requires_agent_hub_fallback_flag() -> None:
+    """CLI should point agents at native imagegen + import by default."""
+    result = runner.invoke(
+        app,
+        [
+            "-P",
+            "monkey-fight",
+            "design",
+            "asset",
+            "generate",
+            "Kiki attack sheet",
+            "Capuchin fighter combo sheet",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "native image generator first" in result.output
+    assert "st design asset import" in result.output
+
+
+def test_design_asset_generate_posts_to_design_assets_endpoint_with_fallback_flag() -> None:
+    """Explicit fallback should post asset generation payload to the endpoint."""
     mock_client = MagicMock()
     mock_client._url.side_effect = lambda path: f"http://localhost:8001/api/projects/monkey-fight{path}"
     mock_client.post.return_value = {"success": True, "assets": [{"asset_id": "asset-1"}]}
@@ -62,6 +82,7 @@ def test_design_asset_generate_posts_to_design_assets_endpoint() -> None:
                 "generate",
                 "Kiki attack sheet",
                 "Capuchin fighter combo sheet",
+                "--agent-hub-fallback",
                 "--type",
                 "sprite_sheet",
                 "--workflow",
