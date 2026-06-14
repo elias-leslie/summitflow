@@ -6,6 +6,7 @@ import psycopg
 def create_core_tables(cur: psycopg.Cursor) -> None:
     """Create core tables and their indexes."""
     _create_projects_table(cur)
+    _create_access_tables(cur)
     _create_sitemap_entries_table(cur)
     _create_tasks_table(cur)
     _create_task_deletions_table(cur)
@@ -42,6 +43,37 @@ def _create_projects_table(cur: psycopg.Cursor) -> None:
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
         """
+    )
+
+
+def _create_access_tables(cur: psycopg.Cursor) -> None:
+    """Create in-app access control tables."""
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS share_users (
+            email TEXT PRIMARY KEY,
+            role TEXT NOT NULL CHECK (role IN ('owner', 'viewer')),
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS share_grants (
+            id BIGSERIAL PRIMARY KEY,
+            user_email TEXT NOT NULL REFERENCES share_users(email) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            section TEXT NOT NULL CHECK (section IN ('design')),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(user_email, project_id, section)
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_share_grants_user ON share_grants(user_email)")
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_share_grants_project ON share_grants(project_id)"
     )
 
 

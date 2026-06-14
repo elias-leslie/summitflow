@@ -11,10 +11,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware import Middleware
 
+from .access_control import access_control_middleware, bootstrap_configured_owners
 from .api import (
     activity,
     agent_hub,
     agent_sessions,
+    auth,
     auto_fix,
     autonomous,
     backups,
@@ -39,6 +41,7 @@ from .api import (
     snapshots,
     system,
     tasks,
+    viewer,
     ws_execution,
 )
 from .config import settings
@@ -89,6 +92,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     if not os.environ.get("PYTEST_CURRENT_TEST"):
         open_pool()  # Initialize connection pool
         init_schema()
+        bootstrap_configured_owners()
         runtime_metrics_task = start_runtime_metrics_sampler()
     try:
         yield
@@ -119,7 +123,11 @@ app = FastAPI(
     middleware=_cors_middleware,
 )
 
+app.middleware("http")(access_control_middleware)
+
 # Include routers
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(viewer.router, prefix="/api/viewer", tags=["viewer"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
 app.include_router(files.project_router, prefix="/api/projects", tags=["files"])

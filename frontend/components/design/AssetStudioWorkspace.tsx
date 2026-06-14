@@ -28,6 +28,11 @@ import {
   getDesignAssetImageUrl,
   updateDesignAssetStatus,
 } from '@/lib/api/design-assets'
+import {
+  fetchViewerDesignAssetStats,
+  fetchViewerDesignAssets,
+  getViewerDesignAssetImageUrl,
+} from '@/lib/api/viewer'
 import { DesignHeader, type ViewMode } from './DesignHeader'
 import { GenerateAssetDialog } from './GenerateAssetDialog'
 import { EmptyState, ErrorState, LoadingState } from './MockupStates'
@@ -55,6 +60,7 @@ type WorkflowFilter = 'all' | 'concept' | 'production' | 'marketing' | 'ui'
 
 interface AssetStudioWorkspaceProps {
   projectId: string
+  readOnly?: boolean
 }
 
 interface AssetModalNavigation {
@@ -68,6 +74,7 @@ interface AssetModalNavigation {
 
 export function AssetStudioWorkspace({
   projectId,
+  readOnly = false,
 }: AssetStudioWorkspaceProps): React.ReactElement {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [statusFilter, setStatusFilter] = useState<AssetStatusFilter>('all')
@@ -94,6 +101,7 @@ export function AssetStudioWorkspace({
   } = useQuery({
     queryKey: [
       'design-assets',
+      readOnly ? 'viewer' : 'owner',
       projectId,
       statusFilter,
       typeFilter,
@@ -102,7 +110,7 @@ export function AssetStudioWorkspace({
       page,
     ],
     queryFn: () =>
-      fetchDesignAssets(projectId, {
+      (readOnly ? fetchViewerDesignAssets : fetchDesignAssets)(projectId, {
         limit: pageSize,
         offset: page * pageSize,
         status: statusFilter === 'all' ? undefined : statusFilter,
@@ -113,8 +121,11 @@ export function AssetStudioWorkspace({
   })
 
   const { data: stats } = useQuery({
-    queryKey: ['design-assets-stats', projectId],
-    queryFn: () => fetchDesignAssetStats(projectId),
+    queryKey: ['design-assets-stats', readOnly ? 'viewer' : 'owner', projectId],
+    queryFn: () =>
+      (readOnly ? fetchViewerDesignAssetStats : fetchDesignAssetStats)(
+        projectId,
+      ),
   })
 
   const statusMutation = useMutation({
@@ -132,9 +143,9 @@ export function AssetStudioWorkspace({
       setPreviewAsset((current) =>
         current?.asset_id === updatedAsset.asset_id ? updatedAsset : current,
       )
-      queryClient.invalidateQueries({ queryKey: ['design-assets', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['design-assets'] })
       queryClient.invalidateQueries({
-        queryKey: ['design-assets-stats', projectId],
+        queryKey: ['design-assets-stats'],
       })
       refetch()
     },
@@ -144,9 +155,9 @@ export function AssetStudioWorkspace({
     mutationFn: async (assetId: string) =>
       deleteDesignAsset(projectId, assetId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['design-assets', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['design-assets'] })
       queryClient.invalidateQueries({
-        queryKey: ['design-assets-stats', projectId],
+        queryKey: ['design-assets-stats'],
       })
       setShowDeleteConfirm(false)
       setSelectedAsset(null)
@@ -162,9 +173,9 @@ export function AssetStudioWorkspace({
           queryKey: ['design-asset-exports', projectId, selectedAsset.asset_id],
         })
       }
-      queryClient.invalidateQueries({ queryKey: ['design-assets', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['design-assets'] })
       queryClient.invalidateQueries({
-        queryKey: ['design-assets-stats', projectId],
+        queryKey: ['design-assets-stats'],
       })
     },
   })
@@ -242,11 +253,20 @@ export function AssetStudioWorkspace({
         }
       : undefined
 
+  const imageUrlForAsset = (asset: DesignAsset): string =>
+    readOnly
+      ? getViewerDesignAssetImageUrl(projectId, asset.asset_id)
+      : getDesignAssetImageUrl(projectId, asset.asset_id)
+
   return (
     <div className="flex h-full flex-col min-w-0">
       <DesignHeader
         title="Asset Studio"
-        subtitle="Import manual/current-agent visuals, generate Agent Hub variants, review candidates, and export approved sprite sheets."
+        subtitle={
+          readOnly
+            ? 'Browse shared design assets without review, export, generation, or deletion controls.'
+            : 'Import manual/current-agent visuals, generate Agent Hub variants, review candidates, and export approved sprite sheets.'
+        }
         totalLabel={
           stats?.total !== undefined ? `${stats.total} assets` : undefined
         }
@@ -258,6 +278,7 @@ export function AssetStudioWorkspace({
         onSelectModeToggle={() => undefined}
         onCancelSelectMode={() => undefined}
         onPrimaryAction={() => setDialogOpen(true)}
+        readOnly={readOnly}
       />
 
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-4">
@@ -415,6 +436,7 @@ export function AssetStudioWorkspace({
                     <AssetPreview
                       asset={asset}
                       projectId={projectId}
+                      imageUrl={imageUrlForAsset(asset)}
                       compact={viewMode === 'list'}
                       showWorkflowBadge
                       className={clsx(
@@ -482,6 +504,8 @@ export function AssetStudioWorkspace({
           projectId={projectId}
           isExporting={exportMutation.isPending}
           isUpdating={statusMutation.isPending}
+          readOnly={readOnly}
+          imageUrl={selectedAsset ? imageUrlForAsset(selectedAsset) : undefined}
           onClose={() => setSelectedAsset(null)}
           onDelete={() => setShowDeleteConfirm(true)}
           onExport={() =>
@@ -495,27 +519,30 @@ export function AssetStudioWorkspace({
         />
       </div>
 
-      <GenerateAssetDialog
-        projectId={projectId}
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        onGenerated={async (createdAssets) => {
-          queryClient.invalidateQueries({
-            queryKey: ['design-assets', projectId],
-          })
-          queryClient.invalidateQueries({
-            queryKey: ['design-assets-stats', projectId],
-          })
-          if (createdAssets[0]) setSelectedAsset(createdAssets[0])
-        }}
-      />
+      {!readOnly && (
+        <GenerateAssetDialog
+          projectId={projectId}
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          onGenerated={async (createdAssets) => {
+            queryClient.invalidateQueries({
+              queryKey: ['design-assets'],
+            })
+            queryClient.invalidateQueries({
+              queryKey: ['design-assets-stats'],
+            })
+            if (createdAssets[0]) setSelectedAsset(createdAssets[0])
+          }}
+        />
+      )}
 
       {previewAsset && (
         <AssetDetailModal
           asset={previewAsset}
-          projectId={projectId}
           isExporting={exportMutation.isPending}
           isUpdating={statusMutation.isPending}
+          readOnly={readOnly}
+          imageUrl={imageUrlForAsset(previewAsset)}
           navigation={previewNavigation}
           onClose={() => setPreviewAsset(null)}
           onDelete={() => {
@@ -530,7 +557,7 @@ export function AssetStudioWorkspace({
         />
       )}
 
-      {selectedAsset && showDeleteConfirm && (
+      {!readOnly && selectedAsset && showDeleteConfirm && (
         <ConfirmDeleteDialog
           entityType="asset"
           entityName={selectedAsset.name}
@@ -568,6 +595,7 @@ function StudioStat({
 function AssetPreview({
   asset,
   projectId,
+  imageUrl,
   className,
   compact = false,
   large = false,
@@ -575,6 +603,7 @@ function AssetPreview({
 }: {
   asset: DesignAsset
   projectId: string
+  imageUrl?: string
   className: string
   compact?: boolean
   large?: boolean
@@ -591,7 +620,7 @@ function AssetPreview({
       )}
       {/* biome-ignore lint/performance/noImgElement: Design assets may be SVGs from the local API; direct img keeps vector previews reliable. */}
       <img
-        src={getDesignAssetImageUrl(projectId, asset.asset_id)}
+        src={imageUrl ?? getDesignAssetImageUrl(projectId, asset.asset_id)}
         alt={asset.name}
         draggable={false}
         className={clsx(
@@ -687,6 +716,8 @@ function AssetInspector({
   projectId,
   isExporting,
   isUpdating,
+  readOnly,
+  imageUrl,
   onClose,
   onDelete,
   onExport,
@@ -697,6 +728,8 @@ function AssetInspector({
   projectId: string
   isExporting: boolean
   isUpdating: boolean
+  readOnly: boolean
+  imageUrl?: string
   onClose: () => void
   onDelete: () => void
   onExport: () => void
@@ -706,7 +739,7 @@ function AssetInspector({
   const { data: exports } = useQuery({
     queryKey: ['design-asset-exports', projectId, asset?.asset_id],
     queryFn: () => fetchDesignAssetExports(projectId, asset!.asset_id),
-    enabled: asset != null,
+    enabled: asset != null && !readOnly,
   })
 
   if (!asset) {
@@ -750,6 +783,7 @@ function AssetInspector({
       <AssetPreview
         asset={asset}
         projectId={projectId}
+        imageUrl={imageUrl}
         large
         className="relative mt-4 aspect-video overflow-hidden rounded-2xl bg-slate-900"
       />
@@ -822,70 +856,79 @@ function AssetInspector({
       )}
 
       <div className="mt-5 flex flex-wrap gap-2">
-        <AssetStatusActions
-          asset={asset}
-          isUpdating={isUpdating}
-          onStatusChange={onStatusChange}
-        />
-        {asset.asset_type === 'sprite_sheet' && (
-          <button
-            type="button"
-            onClick={onExport}
-            disabled={isExporting}
-            className="btn-secondary flex items-center gap-2"
-          >
-            <Download className="h-4 w-4" />
-            Export Frames
-          </button>
+        {!readOnly && (
+          <>
+            <AssetStatusActions
+              asset={asset}
+              isUpdating={isUpdating}
+              onStatusChange={onStatusChange}
+            />
+            {asset.asset_type === 'sprite_sheet' && (
+              <button
+                type="button"
+                onClick={onExport}
+                disabled={isExporting}
+                className="btn-secondary flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Export Frames
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onDelete}
+              className="btn-secondary text-rose-300"
+            >
+              Delete
+            </button>
+          </>
         )}
-        <button
-          type="button"
-          onClick={onDelete}
-          className="btn-secondary text-rose-300"
-        >
-          Delete
-        </button>
       </div>
 
-      <div className="mt-6">
-        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
-          Exports
-        </p>
-        <div className="mt-2 space-y-2">
-          {(exports ?? []).length === 0 && (
-            <div className="rounded-xl border border-dashed border-slate-700 p-3 text-sm text-slate-500">
-              No exports generated yet.
-            </div>
-          )}
-          {(exports ?? []).map((assetExport: DesignAssetExport) => (
-            <div
-              key={assetExport.export_id}
-              className="rounded-xl bg-slate-900 p-3 text-sm"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-slate-100">
-                  {assetExport.export_type}
-                </span>
-                <span className="text-slate-500">{assetExport.file_path}</span>
+      {!readOnly && (
+        <div className="mt-6">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+            Exports
+          </p>
+          <div className="mt-2 space-y-2">
+            {(exports ?? []).length === 0 && (
+              <div className="rounded-xl border border-dashed border-slate-700 p-3 text-sm text-slate-500">
+                No exports generated yet.
               </div>
-              {assetExport.manifest_path && (
-                <p className="mt-1 text-xs text-slate-500">
-                  Manifest: {assetExport.manifest_path}
-                </p>
-              )}
-            </div>
-          ))}
+            )}
+            {(exports ?? []).map((assetExport: DesignAssetExport) => (
+              <div
+                key={assetExport.export_id}
+                className="rounded-xl bg-slate-900 p-3 text-sm"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-100">
+                    {assetExport.export_type}
+                  </span>
+                  <span className="text-slate-500">
+                    {assetExport.file_path}
+                  </span>
+                </div>
+                {assetExport.manifest_path && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Manifest: {assetExport.manifest_path}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </aside>
   )
 }
 
 function AssetDetailModal({
   asset,
-  projectId,
   isExporting,
   isUpdating,
+  readOnly,
+  imageUrl,
   navigation,
   onClose,
   onDelete,
@@ -893,17 +936,16 @@ function AssetDetailModal({
   onStatusChange,
 }: {
   asset: DesignAsset
-  projectId: string
   isExporting: boolean
   isUpdating: boolean
+  readOnly: boolean
+  imageUrl: string
   navigation?: AssetModalNavigation
   onClose: () => void
   onDelete: () => void
   onExport: () => void
   onStatusChange: (status: string) => void
 }): React.ReactElement {
-  const imageUrl = getDesignAssetImageUrl(projectId, asset.asset_id)
-
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -1080,29 +1122,33 @@ function AssetDetailModal({
             )}
 
             <div className="mt-5 flex flex-wrap gap-2">
-              <AssetStatusActions
-                asset={asset}
-                isUpdating={isUpdating}
-                onStatusChange={onStatusChange}
-              />
-              {asset.asset_type === 'sprite_sheet' && (
-                <button
-                  type="button"
-                  onClick={onExport}
-                  disabled={isExporting}
-                  className="btn-secondary flex items-center gap-2"
-                >
-                  <Download className="h-4 w-4" />
-                  Export Frames
-                </button>
+              {!readOnly && (
+                <>
+                  <AssetStatusActions
+                    asset={asset}
+                    isUpdating={isUpdating}
+                    onStatusChange={onStatusChange}
+                  />
+                  {asset.asset_type === 'sprite_sheet' && (
+                    <button
+                      type="button"
+                      onClick={onExport}
+                      disabled={isExporting}
+                      className="btn-secondary flex items-center gap-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      Export Frames
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onDelete}
+                    className="btn-secondary text-rose-300"
+                  >
+                    Delete
+                  </button>
+                </>
               )}
-              <button
-                type="button"
-                onClick={onDelete}
-                className="btn-secondary text-rose-300"
-              >
-                Delete
-              </button>
             </div>
           </aside>
         </div>

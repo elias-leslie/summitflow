@@ -8,7 +8,13 @@ import { UiDesignWorkspace } from '@/components/design/UiDesignWorkspace'
 
 type DesignView = 'ui-design' | 'asset-studio'
 
-export function DesignClient(): React.ReactElement {
+interface DesignClientProps {
+  readOnly?: boolean
+}
+
+export function DesignClient({
+  readOnly = false,
+}: DesignClientProps): React.ReactElement {
   const params = useParams()
   const projectId = params.id as string
   const [activeView, setActiveView] = useState<DesignView>('ui-design')
@@ -22,12 +28,14 @@ export function DesignClient(): React.ReactElement {
         <div className="mt-4 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <h1 className="text-3xl font-bold tracking-tight text-slate-100 display">
-              A design workspace for UI review and asset production
+              {readOnly
+                ? 'A read-only design workspace for UI review and asset browsing'
+                : 'A design workspace for UI review and asset production'}
             </h1>
             <p className="mt-3 text-sm leading-6 text-slate-300">
-              Shift between page-level UI analysis and a production-oriented
-              asset studio for sprites, mockups, environments, iconography, and
-              exportable sheets.
+              {readOnly
+                ? 'Browse shared page-level UI concepts and asset candidates without any project mutation controls.'
+                : 'Shift between page-level UI analysis and a production-oriented asset studio for sprites, mockups, environments, iconography, and exportable sheets.'}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -60,9 +68,9 @@ export function DesignClient(): React.ReactElement {
       </section>
 
       {activeView === 'ui-design' ? (
-        <UiDesignWorkspace projectId={projectId} />
+        <UiDesignWorkspace projectId={projectId} readOnly={readOnly} />
       ) : (
-        <AssetStudioWorkspace projectId={projectId} />
+        <AssetStudioWorkspace projectId={projectId} readOnly={readOnly} />
       )}
     </div>
   )

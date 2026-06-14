@@ -26,6 +26,10 @@ export function useMockupModal(
   open: boolean,
   onOpenChange: (open: boolean) => void,
   onStatusChange: () => void,
+  options: {
+    readOnly?: boolean
+    fetchHistory?: (projectId: string, mockupId: string) => Promise<Mockup[]>
+  } = {},
 ) {
   const [updating, setUpdating] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
@@ -65,12 +69,19 @@ export function useMockupModal(
   })
 
   const { data: history } = useQuery({
-    queryKey: ['mockup-history', projectId, mockup.mockup_id],
-    queryFn: () => fetchMockupHistory(projectId, mockup.mockup_id),
+    queryKey: [
+      'mockup-history',
+      options.readOnly ? 'viewer' : 'owner',
+      projectId,
+      mockup.mockup_id,
+    ],
+    queryFn: () =>
+      (options.fetchHistory ?? fetchMockupHistory)(projectId, mockup.mockup_id),
     enabled: open && showHistory,
   })
 
   const handleStatusChange = async (newStatus: string) => {
+    if (options.readOnly) return
     setUpdating(true)
     try {
       await updateMockupStatus(

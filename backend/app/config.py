@@ -89,6 +89,11 @@ class Settings(BaseSettings):
         f"http://localhost:{AGENT_HUB_FRONTEND_PORT}",
     ]
 
+    # Cloudflare Access / SummitFlow identity.
+    cloudflare_access_team_domain: str = ""
+    cloudflare_access_aud: str = ""
+    summitflow_owner_emails: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

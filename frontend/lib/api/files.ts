@@ -119,6 +119,7 @@ export async function uploadFile(
   const qs = buildQueryString({ path: directoryPath || undefined })
   const response = await fetch(`${getFilesApiBase(scope)}/upload${qs}`, {
     method: 'POST',
+    credentials: 'same-origin',
     body: formData,
   })
   if (!response.ok) {

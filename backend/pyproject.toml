@@ -11,6 +11,7 @@ dependencies = [
     "pillow>=11.3.0",
     "psycopg[binary]>=3.2.0",
     "psycopg_pool>=3.2.0",
+    "pyjwt[crypto]>=2.10.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.6.0",
     "hatchet-sdk>=1.22.0",

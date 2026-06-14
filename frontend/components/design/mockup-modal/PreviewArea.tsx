@@ -36,6 +36,9 @@ interface PreviewAreaProps {
     savedMockup?: Mockup
     summary: string
   }) => void
+  readOnly?: boolean
+  getImageUrl?: (projectId: string, mockupId: string) => string
+  getScreenshotUrl?: (projectId: string, mockupId: string) => string
 }
 
 export function PreviewArea({
@@ -51,6 +54,9 @@ export function PreviewArea({
   onDelete,
   onVersionCreated,
   onSendToJenny,
+  readOnly = false,
+  getImageUrl = getMockupImageUrl,
+  getScreenshotUrl: screenshotUrl = getScreenshotUrl,
 }: PreviewAreaProps) {
   const openWorkChat = () => {
     const params = new URLSearchParams({
@@ -61,26 +67,35 @@ export function PreviewArea({
     window.open(`/work-chats?${params.toString()}`, '_blank')
   }
 
+  const imageUrl = getImageUrl(projectId, mockup.mockup_id)
+
   return (
     <div className="flex-1 p-4 flex flex-col min-h-0 min-w-0">
       <div className="flex-1 bg-slate-800 rounded-lg flex items-center justify-center relative min-h-0">
         {showComparison && canCompare ? (
           <ComparisonSlider
-            beforeImageUrl={getScreenshotUrl(projectId, mockup.mockup_id)}
-            afterImageUrl={getMockupImageUrl(projectId, mockup.mockup_id)}
+            beforeImageUrl={screenshotUrl(projectId, mockup.mockup_id)}
+            afterImageUrl={imageUrl}
             beforeAlt="Original screenshot"
             afterAlt={mockup.name}
           />
-        ) : isHtmlMockupContent(mockup.content) ? (
+        ) : isHtmlMockupContent(mockup.content) && !readOnly ? (
           <MockupSurfaceEditor
             mockup={mockup}
             projectId={projectId}
             onSaved={onVersionCreated}
             onSendToJenny={onSendToJenny}
           />
+        ) : isHtmlMockupContent(mockup.content) ? (
+          <iframe
+            title={mockup.name}
+            srcDoc={mockup.content ?? ''}
+            sandbox=""
+            className="h-full w-full rounded-lg border-0 bg-white"
+          />
         ) : mockup.file_path ? (
           <Image
-            src={getMockupImageUrl(projectId, mockup.mockup_id)}
+            src={imageUrl}
             alt={mockup.name}
             fill
             className="object-contain p-2"
@@ -112,7 +127,7 @@ export function PreviewArea({
         {mockup.file_path && (
           <>
             <a
-              href={getMockupImageUrl(projectId, mockup.mockup_id)}
+              href={imageUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="btn-secondary flex items-center gap-2"
@@ -121,7 +136,7 @@ export function PreviewArea({
               Open
             </a>
             <a
-              href={getMockupImageUrl(projectId, mockup.mockup_id)}
+              href={imageUrl}
               download={`${mockup.mockup_id}.png`}
               className="btn-secondary flex items-center gap-2"
             >
@@ -141,39 +156,45 @@ export function PreviewArea({
           <History className="w-4 h-4" />
           History
         </button>
-        <button
-          type="button"
-          onClick={onRerun}
-          className="btn-secondary flex items-center gap-2"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Rerun
-        </button>
-        <button
-          type="button"
-          onClick={onCreateIteration}
-          className="btn-secondary flex items-center gap-2"
-        >
-          <Layers3 className="w-4 h-4" />
-          New Iteration
-        </button>
-        <button
-          type="button"
-          onClick={openWorkChat}
-          className="btn-secondary flex items-center gap-2"
-        >
-          <PanelsTopLeft className="w-4 h-4" />
-          Work Chat
-        </button>
+        {!readOnly && (
+          <>
+            <button
+              type="button"
+              onClick={onRerun}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Rerun
+            </button>
+            <button
+              type="button"
+              onClick={onCreateIteration}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <Layers3 className="w-4 h-4" />
+              New Iteration
+            </button>
+            <button
+              type="button"
+              onClick={openWorkChat}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <PanelsTopLeft className="w-4 h-4" />
+              Work Chat
+            </button>
+          </>
+        )}
         <div className="flex-1" />
-        <button
-          type="button"
-          onClick={onDelete}
-          className="btn-secondary flex items-center gap-2 text-rose-400 hover:bg-rose-500/10 border-rose-500/30"
-        >
-          <Trash2 className="w-4 h-4" />
-          Delete
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="btn-secondary flex items-center gap-2 text-rose-400 hover:bg-rose-500/10 border-rose-500/30"
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete
+          </button>
+        )}
       </div>
     </div>
   )

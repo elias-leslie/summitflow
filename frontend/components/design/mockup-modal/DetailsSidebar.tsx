@@ -12,6 +12,7 @@ interface DetailsSidebarProps {
   history?: Mockup[]
   onStatusChange: (status: string) => void
   onSelectHistoryMockup: (mockup: Mockup) => void
+  readOnly?: boolean
 }
 
 export function DetailsSidebar({
@@ -21,6 +22,7 @@ export function DetailsSidebar({
   history,
   onStatusChange,
   onSelectHistoryMockup,
+  readOnly = false,
 }: DetailsSidebarProps) {
   const formattedDate = mockup.created_at
     ? formatDate(mockup.created_at)
@@ -106,11 +108,13 @@ export function DetailsSidebar({
           </div>
         )}
 
-        <StatusActions
-          mockup={mockup}
-          updating={updating}
-          onStatusChange={onStatusChange}
-        />
+        {!readOnly && (
+          <StatusActions
+            mockup={mockup}
+            updating={updating}
+            onStatusChange={onStatusChange}
+          />
+        )}
 
         {showHistory && history && (
           <div>

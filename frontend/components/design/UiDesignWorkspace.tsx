@@ -31,13 +31,22 @@ import {
   fetchMockups,
   type Mockup,
 } from '@/lib/api/mockups'
+import {
+  fetchViewerMockupHistory,
+  fetchViewerMockupStats,
+  fetchViewerMockups,
+  getViewerMockupImageUrl,
+  getViewerScreenshotUrl,
+} from '@/lib/api/viewer'
 
 interface UiDesignWorkspaceProps {
   projectId: string
+  readOnly?: boolean
 }
 
 export function UiDesignWorkspace({
   projectId,
+  readOnly = false,
 }: UiDesignWorkspaceProps): React.ReactElement {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -68,6 +77,7 @@ export function UiDesignWorkspace({
   } = useQuery({
     queryKey: [
       'mockups',
+      readOnly ? 'viewer' : 'owner',
       projectId,
       statusFilter,
       typeFilter,
@@ -75,7 +85,7 @@ export function UiDesignWorkspace({
       page,
     ],
     queryFn: () =>
-      fetchMockups(projectId, {
+      (readOnly ? fetchViewerMockups : fetchMockups)(projectId, {
         limit: pageSize,
         offset: page * pageSize,
         status: statusFilter === 'all' ? undefined : statusFilter,
@@ -85,8 +95,9 @@ export function UiDesignWorkspace({
   })
 
   const { data: stats, refetch: refetchStats } = useQuery({
-    queryKey: ['mockup-stats', projectId],
-    queryFn: () => fetchMockupStats(projectId),
+    queryKey: ['mockup-stats', readOnly ? 'viewer' : 'owner', projectId],
+    queryFn: () =>
+      (readOnly ? fetchViewerMockupStats : fetchMockupStats)(projectId),
   })
 
   const deleteMutation = useMutation({
@@ -94,8 +105,8 @@ export function UiDesignWorkspace({
       await Promise.all(mockupIds.map((id) => deleteMockup(projectId, id)))
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['mockups', projectId] })
-      queryClient.invalidateQueries({ queryKey: ['mockup-stats', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['mockups'] })
+      queryClient.invalidateQueries({ queryKey: ['mockup-stats'] })
       setSelectedMockups(new Set())
       setSelectMode(false)
       setShowDeleteConfirm(false)
@@ -201,7 +212,11 @@ export function UiDesignWorkspace({
       <div className="flex min-w-0 flex-1 flex-col">
         <DesignHeader
           title="UI Design"
-          subtitle="Analyze live pages, capture hand-authored concepts, and move mockups through the normal review flow."
+          subtitle={
+            readOnly
+              ? 'Browse shared UI mockups and review details without mutation controls.'
+              : 'Analyze live pages, capture hand-authored concepts, and move mockups through the normal review flow.'
+          }
           totalLabel={
             stats?.total !== undefined ? `${stats.total} mockups` : undefined
           }
@@ -216,6 +231,7 @@ export function UiDesignWorkspace({
             setSelectedMockups(new Set())
           }}
           onPrimaryAction={() => setGenerateDialogOpen(true)}
+          readOnly={readOnly}
           extraActions={
             !selectMode ? (
               <>
@@ -232,16 +248,18 @@ export function UiDesignWorkspace({
                   />
                   Refresh
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIterationParentMockup(null)
-                    setCreateDialogOpen(true)
-                  }}
-                  className="btn-secondary"
-                >
-                  New Concept
-                </button>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIterationParentMockup(null)
+                      setCreateDialogOpen(true)
+                    }}
+                    className="btn-secondary"
+                  >
+                    New Concept
+                  </button>
+                )}
               </>
             ) : null
           }
@@ -332,30 +350,38 @@ export function UiDesignWorkspace({
             }}
             onSelectMockup={setSelectedMockup}
             navigation={modalNavigation}
+            readOnly={readOnly}
+            fetchHistory={readOnly ? fetchViewerMockupHistory : undefined}
+            getImageUrl={readOnly ? getViewerMockupImageUrl : undefined}
+            getScreenshotUrl={readOnly ? getViewerScreenshotUrl : undefined}
           />
         )}
 
-        <GenerateMockupDialog
-          projectId={projectId}
-          open={generateDialogOpen}
-          onOpenChange={setGenerateDialogOpen}
-        />
+        {!readOnly && (
+          <GenerateMockupDialog
+            projectId={projectId}
+            open={generateDialogOpen}
+            onOpenChange={setGenerateDialogOpen}
+          />
+        )}
 
-        <CreateMockupDialog
-          projectId={projectId}
-          open={createDialogOpen}
-          onOpenChange={(open) => {
-            setCreateDialogOpen(open)
-            if (!open) {
-              setIterationParentMockup(null)
-            }
-          }}
-          parentMockup={iterationParentMockup}
-          onCreated={(mockup) => {
-            setSelectedMockup(mockup)
-            setModalOpen(true)
-          }}
-        />
+        {!readOnly && (
+          <CreateMockupDialog
+            projectId={projectId}
+            open={createDialogOpen}
+            onOpenChange={(open) => {
+              setCreateDialogOpen(open)
+              if (!open) {
+                setIterationParentMockup(null)
+              }
+            }}
+            parentMockup={iterationParentMockup}
+            onCreated={(mockup) => {
+              setSelectedMockup(mockup)
+              setModalOpen(true)
+            }}
+          />
+        )}
 
         {showDeleteConfirm && (
           <ConfirmDeleteDialog
@@ -368,9 +394,11 @@ export function UiDesignWorkspace({
         )}
       </div>
 
-      <div className="hidden w-80 flex-shrink-0 xl:block">
-        <DesignStandardsPanel projectId={projectId} />
-      </div>
+      {!readOnly && (
+        <div className="hidden w-80 flex-shrink-0 xl:block">
+          <DesignStandardsPanel projectId={projectId} />
+        </div>
+      )}
     </div>
   )
 }

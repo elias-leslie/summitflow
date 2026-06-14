@@ -46,7 +46,10 @@ export async function fetchWithErrorHandling<T>(
   options: RequestInit & { errorMessage?: string } = {},
 ): Promise<T> {
   const { errorMessage = 'Request failed', ...fetchOptions } = options
-  const res = await fetch(url, fetchOptions)
+  const res = await fetch(url, {
+    credentials: 'same-origin',
+    ...fetchOptions,
+  })
   if (!res.ok) {
     await throwFromResponse(res, errorMessage)
   }
