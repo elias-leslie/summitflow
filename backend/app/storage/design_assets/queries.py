@@ -9,44 +9,50 @@ from psycopg import sql
 from .._sql import join_static_sql, static_sql
 from ..connection import get_cursor
 from .core import (
+    ASSET_RATING_SELECT_COLUMNS,
     ASSET_SELECT_COLUMNS_ALIASED,
-    ASSET_VOTE_SELECT_COLUMNS,
     _row_to_asset,
     _row_to_export,
 )
 
-_ASSET_VOTE_JOIN_SQL = """
+_ASSET_RATING_JOIN_SQL = """
 LEFT JOIN (
     SELECT
         asset_id,
-        COUNT(*) FILTER (WHERE vote = 'up') AS thumbs_up,
-        COUNT(*) FILTER (WHERE vote = 'down') AS thumbs_down
-    FROM design_asset_votes
+        AVG(rating)::float AS rating_average,
+        COUNT(*) AS rating_count
+    FROM design_asset_ratings
     GROUP BY asset_id
-) vote_counts ON vote_counts.asset_id = a.id
+) rating_counts ON rating_counts.asset_id = a.id
+LEFT JOIN design_asset_ratings user_rating
+    ON user_rating.asset_id = a.id AND user_rating.voter_key = %s
 """
 
 _ASSET_SORT_SQL = {
     "created_desc": "a.created_at DESC",
-    "thumbs_up": "thumbs_up DESC, a.created_at DESC",
-    "thumbs_down": "thumbs_down DESC, a.created_at DESC",
-    "vote_score": "vote_score DESC, thumbs_up DESC, a.created_at DESC",
+    "rating_average": "rating_average DESC, rating_count DESC, a.created_at DESC",
+    "rating_count": "rating_count DESC, rating_average DESC, a.created_at DESC",
 }
 
 
-def get_asset(project_id: str, asset_id: str) -> dict[str, Any] | None:
+def get_asset(
+    project_id: str,
+    asset_id: str,
+    *,
+    voter_key: str | None = None,
+) -> dict[str, Any] | None:
     """Get a single asset."""
     with get_cursor() as cur:
         cur.execute(
             static_sql(
                 f"""
-                SELECT {ASSET_SELECT_COLUMNS_ALIASED}, {ASSET_VOTE_SELECT_COLUMNS}
+                SELECT {ASSET_SELECT_COLUMNS_ALIASED}, {ASSET_RATING_SELECT_COLUMNS}
                 FROM design_assets a
-                {_ASSET_VOTE_JOIN_SQL}
+                {_ASSET_RATING_JOIN_SQL}
                 WHERE a.project_id = %s AND a.asset_id = %s
                 """
             ),
-            (project_id, asset_id),
+            (voter_key or "", project_id, asset_id),
         )
         row = cur.fetchone()
     return _row_to_asset(row) if row else None
@@ -63,6 +69,7 @@ def list_assets(
     search: str | None = None,
     tag: str | None = None,
     sort_by: str = "created_desc",
+    voter_key: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """List assets with filters."""
     clauses = ["a.project_id = %s"]
@@ -101,9 +108,9 @@ def list_assets(
         cur.execute(
             static_sql(
                 f"""
-                SELECT {ASSET_SELECT_COLUMNS_ALIASED}, {ASSET_VOTE_SELECT_COLUMNS}
+                SELECT {ASSET_SELECT_COLUMNS_ALIASED}, {ASSET_RATING_SELECT_COLUMNS}
                 FROM design_assets a
-                {_ASSET_VOTE_JOIN_SQL}
+                {_ASSET_RATING_JOIN_SQL}
                 WHERE
                 """
             )
@@ -111,7 +118,7 @@ def list_assets(
             + sql.SQL(" ORDER BY ")
             + static_sql(order_by)
             + sql.SQL(" LIMIT %s OFFSET %s"),
-            [*params, limit, offset],
+            [voter_key or "", *params, limit, offset],
         )
         rows = cur.fetchall()
     return [_row_to_asset(row) for row in rows], total

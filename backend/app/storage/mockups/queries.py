@@ -9,44 +9,50 @@ from psycopg import sql
 from .._sql import join_static_sql, static_sql
 from ..connection import get_cursor
 from .core import (
+    MOCKUP_RATING_SELECT_COLUMNS,
     MOCKUP_SELECT_COLUMNS,
     MOCKUP_SELECT_COLUMNS_ALIASED,
-    MOCKUP_VOTE_SELECT_COLUMNS,
     _row_to_mockup,
 )
 
-_MOCKUP_VOTE_JOIN_SQL = """
+_MOCKUP_RATING_JOIN_SQL = """
 LEFT JOIN (
     SELECT
         mockup_id,
-        COUNT(*) FILTER (WHERE vote = 'up') AS thumbs_up,
-        COUNT(*) FILTER (WHERE vote = 'down') AS thumbs_down
-    FROM mockup_votes
+        AVG(rating)::float AS rating_average,
+        COUNT(*) AS rating_count
+    FROM mockup_ratings
     GROUP BY mockup_id
-) vote_counts ON vote_counts.mockup_id = m.id
+) rating_counts ON rating_counts.mockup_id = m.id
+LEFT JOIN mockup_ratings user_rating
+    ON user_rating.mockup_id = m.id AND user_rating.voter_key = %s
 """
 
 _MOCKUP_SORT_SQL = {
     "created_desc": "m.created_at DESC",
-    "thumbs_up": "thumbs_up DESC, m.created_at DESC",
-    "thumbs_down": "thumbs_down DESC, m.created_at DESC",
-    "vote_score": "vote_score DESC, thumbs_up DESC, m.created_at DESC",
+    "rating_average": "rating_average DESC, rating_count DESC, m.created_at DESC",
+    "rating_count": "rating_count DESC, rating_average DESC, m.created_at DESC",
 }
 
 
-def get_mockup(project_id: str, mockup_id: str) -> dict[str, Any] | None:
+def get_mockup(
+    project_id: str,
+    mockup_id: str,
+    *,
+    voter_key: str | None = None,
+) -> dict[str, Any] | None:
     """Get a mockup by project_id and mockup_id."""
     with get_cursor() as cur:
         cur.execute(
             static_sql(
                 f"""
-                SELECT {MOCKUP_SELECT_COLUMNS_ALIASED}, {MOCKUP_VOTE_SELECT_COLUMNS}
+                SELECT {MOCKUP_SELECT_COLUMNS_ALIASED}, {MOCKUP_RATING_SELECT_COLUMNS}
                 FROM mockups m
-                {_MOCKUP_VOTE_JOIN_SQL}
+                {_MOCKUP_RATING_JOIN_SQL}
                 WHERE m.project_id = %s AND m.mockup_id = %s
                 """
             ),
-            (project_id, mockup_id),
+            (voter_key or "", project_id, mockup_id),
         )
         row = cur.fetchone()
 
@@ -120,6 +126,7 @@ def list_mockups(
     generator: str | None = None,
     search: str | None = None,
     sort_by: str = "created_desc",
+    voter_key: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """List mockups for a project with filtering.
 
@@ -146,15 +153,15 @@ def list_mockups(
         cur.execute(
             static_sql(
                 f"""
-                SELECT {MOCKUP_SELECT_COLUMNS_ALIASED}, {MOCKUP_VOTE_SELECT_COLUMNS}
+                SELECT {MOCKUP_SELECT_COLUMNS_ALIASED}, {MOCKUP_RATING_SELECT_COLUMNS}
                 FROM mockups m
-                {_MOCKUP_VOTE_JOIN_SQL}
+                {_MOCKUP_RATING_JOIN_SQL}
                 WHERE
                 """
             )
             + where_sql
             + static_sql(f" ORDER BY {order_by} LIMIT %s OFFSET %s"),
-            [*params, limit, offset],
+            [voter_key or "", *params, limit, offset],
         )
         rows = cur.fetchall()
 

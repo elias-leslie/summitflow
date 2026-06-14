@@ -11,8 +11,6 @@ from ..connection import get_connection
 from .core import MOCKUP_SELECT_COLUMNS, MOCKUP_STATUSES, _row_to_mockup
 from .queries import get_mockup
 
-MOCKUP_VOTES = frozenset({"up", "down"})
-
 
 def update_mockup(
     project_id: str,
@@ -146,31 +144,48 @@ def update_mockup_status(
         return _row_to_mockup(row)
 
 
-def create_mockup_vote(
+def set_mockup_rating(
     project_id: str,
     mockup_id: str,
-    vote: str,
+    rating: int,
     *,
-    voter_email: str | None = None,
+    voter_key: str,
 ) -> dict[str, Any] | None:
-    """Add one cumulative vote to a mockup and return the updated mockup."""
-    if vote not in MOCKUP_VOTES:
-        raise ValueError(f"Invalid mockup vote: {vote}")
+    """Set or clear the current user's star rating and return the updated mockup."""
+    if rating < 0 or rating > 5:
+        raise ValueError(f"Invalid mockup rating: {rating}")
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO mockup_votes (mockup_id, vote, voter_email)
-            SELECT id, %s, %s
-            FROM mockups
-            WHERE project_id = %s AND mockup_id = %s
-            """,
-            (vote, voter_email, project_id, mockup_id),
-        )
-        created = cur.rowcount > 0
+        if rating == 0:
+            cur.execute(
+                """
+                DELETE FROM mockup_ratings r
+                USING mockups m
+                WHERE r.mockup_id = m.id
+                  AND m.project_id = %s
+                  AND m.mockup_id = %s
+                  AND r.voter_key = %s
+                """,
+                (project_id, mockup_id, voter_key),
+            )
+            changed = cur.rowcount > 0
+        else:
+            cur.execute(
+                """
+                INSERT INTO mockup_ratings (mockup_id, voter_key, rating)
+                SELECT id, %s, %s
+                FROM mockups
+                WHERE project_id = %s AND mockup_id = %s
+                ON CONFLICT (mockup_id, voter_key)
+                DO UPDATE SET rating = EXCLUDED.rating, updated_at = NOW()
+                WHERE mockup_ratings.rating IS DISTINCT FROM EXCLUDED.rating
+                """,
+                (voter_key, rating, project_id, mockup_id),
+            )
+            changed = cur.rowcount > 0
         conn.commit()
-    if not created:
+    if not changed and not get_mockup(project_id, mockup_id, voter_key=voter_key):
         return None
-    return get_mockup(project_id, mockup_id)
+    return get_mockup(project_id, mockup_id, voter_key=voter_key)
 
 
 def delete_mockup(project_id: str, mockup_id: str) -> bool:

@@ -14,7 +14,7 @@ from .mockups_models import (
     MockupStatsResponse,
     MockupStatusUpdate,
     MockupUpdate,
-    VoteMockupRequest,
+    RateMockupRequest,
 )
 from .mockups_utils import compact_context_for_mockup, to_response
 from .mockups_validation import validate_mockup_path
@@ -84,6 +84,7 @@ async def list_mockups(
         generator=generator,
         search=search,
         sort_by=sort_by,
+        voter_key="owner",
     )
     return MockupListResponse(
         items=[to_response(m) for m in items],
@@ -117,7 +118,7 @@ async def get_mockup(
     mockup_id: str,
 ) -> MockupResponse:
     """Get a mockup by ID."""
-    mockup = mockups_storage.get_mockup(project_id, mockup_id)
+    mockup = mockups_storage.get_mockup(project_id, mockup_id, voter_key="owner")
     if not mockup:
         raise HTTPException(status_code=404, detail="Mockup not found")
     return to_response(mockup)
@@ -133,7 +134,7 @@ async def get_mockup_context(
     include_content: bool = Query(False, description="Include full HTML content"),
 ) -> MockupContextResponse:
     """Get compact mockup context for Work Chats and agents."""
-    mockup = mockups_storage.get_mockup(project_id, mockup_id)
+    mockup = mockups_storage.get_mockup(project_id, mockup_id, voter_key="owner")
     if not mockup:
         raise HTTPException(status_code=404, detail="Mockup not found")
     return compact_context_for_mockup(mockup, include_content=include_content)
@@ -283,21 +284,21 @@ async def update_mockup_status(
 
 
 @router.post(
-    "/projects/{project_id}/mockups/{mockup_id}/votes",
+    "/projects/{project_id}/mockups/{mockup_id}/rating",
     response_model=MockupResponse,
 )
-async def vote_mockup(
+async def rate_mockup(
     project_id: str,
     mockup_id: str,
-    request: VoteMockupRequest,
+    request: RateMockupRequest,
 ) -> MockupResponse:
-    """Add one cumulative vote to a UI mockup."""
+    """Set or clear the owner's star rating for a UI mockup."""
     try:
-        mockup = mockups_storage.create_mockup_vote(
+        mockup = mockups_storage.set_mockup_rating(
             project_id,
             mockup_id,
-            request.vote,
-            voter_email="owner",
+            request.rating,
+            voter_key="owner",
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

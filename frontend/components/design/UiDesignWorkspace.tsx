@@ -26,7 +26,7 @@ import {
   fetchMockupStats,
   fetchMockups,
   type Mockup,
-  voteMockup,
+  rateMockup,
 } from '@/lib/api/mockups'
 import {
   fetchViewerMockupHistory,
@@ -34,7 +34,7 @@ import {
   fetchViewerMockups,
   getViewerMockupImageUrl,
   getViewerScreenshotUrl,
-  voteViewerMockup,
+  rateViewerMockup,
 } from '@/lib/api/viewer'
 
 interface UiDesignWorkspaceProps {
@@ -51,12 +51,7 @@ type TypeFilter =
   | 'illustration'
   | 'sprite'
   | 'sheet'
-type MockupSortFilter =
-  | 'created_desc'
-  | 'thumbs_up'
-  | 'thumbs_down'
-  | 'vote_score'
-type MockupVote = 'up' | 'down'
+type MockupSortFilter = 'created_desc' | 'rating_average' | 'rating_count'
 
 export function UiDesignWorkspace({
   projectId,
@@ -139,14 +134,15 @@ export function UiDesignWorkspace({
     refetch()
   }
 
-  const voteMutation = useMutation({
+  const ratingMutation = useMutation({
     mutationFn: async ({
       mockupId,
-      vote,
+      rating,
     }: {
       mockupId: string
-      vote: MockupVote
-    }) => (readOnly ? voteViewerMockup : voteMockup)(projectId, mockupId, vote),
+      rating: number
+    }) =>
+      (readOnly ? rateViewerMockup : rateMockup)(projectId, mockupId, rating),
     onSuccess: applyUpdatedMockup,
   })
 
@@ -251,7 +247,7 @@ export function UiDesignWorkspace({
           title="UI Design"
           subtitle={
             readOnly
-              ? 'Browse shared UI mockups, review details, and vote without owner-only controls.'
+              ? 'Browse shared UI mockups, review details, and rate without owner-only controls.'
               : 'Analyze live pages, capture hand-authored concepts, and move mockups through the normal review flow.'
           }
           totalLabel={
@@ -367,9 +363,8 @@ export function UiDesignWorkspace({
             className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
           >
             <option value="created_desc">Newest</option>
-            <option value="thumbs_up">Most thumbs up</option>
-            <option value="vote_score">Best net votes</option>
-            <option value="thumbs_down">Most thumbs down</option>
+            <option value="rating_average">Highest rated</option>
+            <option value="rating_count">Most ratings</option>
           </select>
         </div>
 
@@ -418,6 +413,10 @@ export function UiDesignWorkspace({
             }}
             onPageChange={setPage}
             getImageUrl={readOnly ? getViewerMockupImageUrl : undefined}
+            isRating={ratingMutation.isPending}
+            onRate={(mockupId, rating) =>
+              ratingMutation.mutate({ mockupId, rating })
+            }
           />
         )}
 
@@ -428,7 +427,9 @@ export function UiDesignWorkspace({
             open={modalOpen}
             onOpenChange={setModalOpen}
             onStatusChange={() => void handleRefresh()}
-            onVote={(mockupId, vote) => voteMutation.mutate({ mockupId, vote })}
+            onRate={(mockupId, rating) =>
+              ratingMutation.mutate({ mockupId, rating })
+            }
             onCreateIteration={(mockup) => {
               setIterationParentMockup(mockup)
               setCreateDialogOpen(true)
@@ -439,7 +440,7 @@ export function UiDesignWorkspace({
             fetchHistory={readOnly ? fetchViewerMockupHistory : undefined}
             getImageUrl={readOnly ? getViewerMockupImageUrl : undefined}
             getScreenshotUrl={readOnly ? getViewerScreenshotUrl : undefined}
-            isVoting={voteMutation.isPending}
+            isRating={ratingMutation.isPending}
           />
         )}
 

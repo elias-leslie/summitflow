@@ -22,8 +22,8 @@ from .design_assets_models import (
     GenerateDesignAssetRequest,
     GenerateDesignAssetResponse,
     ImportDesignAssetRequest,
+    RateDesignAssetRequest,
     UpdateDesignAssetStatusRequest,
-    VoteDesignAssetRequest,
 )
 from .design_assets_utils import asset_to_response, export_to_response
 from .mockups_validation import validate_mockup_path
@@ -68,6 +68,7 @@ async def list_design_assets(
         search=search,
         tag=tag,
         sort_by=sort_by,
+        voter_key="owner",
     )
     return DesignAssetListResponse(
         items=[asset_to_response(item) for item in items],
@@ -86,7 +87,7 @@ async def get_design_asset_stats(project_id: str) -> DesignAssetStatsResponse:
 @router.get("/projects/{project_id}/design-assets/{asset_id}", response_model=DesignAssetResponse)
 async def get_design_asset(project_id: str, asset_id: str) -> DesignAssetResponse:
     """Fetch a single asset."""
-    asset = design_assets.get_asset(project_id, asset_id)
+    asset = design_assets.get_asset(project_id, asset_id, voter_key="owner")
     if not asset:
         raise HTTPException(status_code=404, detail="Design asset not found")
     return asset_to_response(asset)
@@ -259,21 +260,21 @@ async def update_design_asset_status(
 
 
 @router.post(
-    "/projects/{project_id}/design-assets/{asset_id}/votes",
+    "/projects/{project_id}/design-assets/{asset_id}/rating",
     response_model=DesignAssetResponse,
 )
-async def vote_design_asset(
+async def rate_design_asset(
     project_id: str,
     asset_id: str,
-    request: VoteDesignAssetRequest,
+    request: RateDesignAssetRequest,
 ) -> DesignAssetResponse:
-    """Add one cumulative vote to an asset."""
+    """Set or clear the owner's star rating for an asset."""
     try:
-        asset = design_assets.create_asset_vote(
+        asset = design_assets.set_asset_rating(
             project_id,
             asset_id,
-            request.vote,
-            voter_email="owner",
+            request.rating,
+            voter_key="owner",
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

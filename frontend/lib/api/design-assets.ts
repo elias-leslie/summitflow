@@ -37,9 +37,9 @@ export interface DesignAsset {
   approved_by: string | null
   created_at: string | null
   updated_at: string | null
-  thumbs_up: number
-  thumbs_down: number
-  vote_score: number
+  rating_average: number
+  rating_count: number
+  user_rating: number
 }
 
 export interface DesignAssetListResponse {
@@ -180,15 +180,15 @@ export async function updateDesignAssetStatus(
   )
 }
 
-export async function voteDesignAsset(
+export async function rateDesignAsset(
   projectId: string,
   assetId: string,
-  vote: 'up' | 'down',
+  rating: number,
 ): Promise<DesignAsset> {
   return postJson<DesignAsset>(
-    `/api/projects/${projectId}/design-assets/${assetId}/votes`,
-    { vote },
-    'Failed to vote on asset',
+    `/api/projects/${projectId}/design-assets/${assetId}/rating`,
+    { rating },
+    'Failed to rate asset',
   )
 }
 

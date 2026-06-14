@@ -11,7 +11,7 @@ from app.storage.connection import get_connection
 
 
 @pytest.fixture
-def asset_project() -> Generator[str]:
+def asset_project(db_schema_initialized: None) -> Generator[str]:
     """Provision a test project for asset tests."""
     project_id = "test-design-assets"
     with get_connection() as conn, conn.cursor() as cur:
@@ -121,8 +121,8 @@ def test_list_design_assets_filters_by_type(asset_project: str) -> None:
 
 
 
-def test_design_asset_votes_are_cumulative_and_sortable(asset_project: str) -> None:
-    """Each click adds a vote; lists can sort by vote aggregates."""
+def test_design_asset_ratings_are_average_based_and_sortable(asset_project: str) -> None:
+    """Each viewer has one star rating; lists can sort by rating aggregates."""
     first = design_assets.create_asset(
         project_id=asset_project,
         name="First Concept",
@@ -146,26 +146,61 @@ def test_design_asset_votes_are_cumulative_and_sortable(asset_project: str) -> N
         transparent_background=False,
     )
 
-    assert design_assets.create_asset_vote(asset_project, first["asset_id"], "up") is not None
-    assert design_assets.create_asset_vote(asset_project, first["asset_id"], "up") is not None
-    assert design_assets.create_asset_vote(asset_project, first["asset_id"], "down") is not None
-    assert design_assets.create_asset_vote(asset_project, second["asset_id"], "up") is not None
+    assert (
+        design_assets.set_asset_rating(
+            asset_project,
+            first["asset_id"],
+            5,
+            voter_key="reviewer-a",
+        )
+        is not None
+    )
+    assert (
+        design_assets.set_asset_rating(
+            asset_project,
+            first["asset_id"],
+            3,
+            voter_key="reviewer-b",
+        )
+        is not None
+    )
+    assert (
+        design_assets.set_asset_rating(
+            asset_project,
+            second["asset_id"],
+            2,
+            voter_key="reviewer-c",
+        )
+        is not None
+    )
 
-    fetched = design_assets.get_asset(asset_project, first["asset_id"])
+    fetched = design_assets.get_asset(
+        asset_project,
+        first["asset_id"],
+        voter_key="reviewer-a",
+    )
     assert fetched is not None
-    assert fetched["thumbs_up"] == 2
-    assert fetched["thumbs_down"] == 1
-    assert fetched["vote_score"] == 1
+    assert fetched["rating_average"] == 4
+    assert fetched["rating_count"] == 2
+    assert fetched["user_rating"] == 5
 
-    by_up, _ = design_assets.list_assets(asset_project, sort_by="thumbs_up")
-    assert by_up[0]["asset_id"] == first["asset_id"]
+    cleared = design_assets.set_asset_rating(
+        asset_project,
+        first["asset_id"],
+        0,
+        voter_key="reviewer-a",
+    )
+    assert cleared is not None
+    assert cleared["rating_average"] == 3
+    assert cleared["rating_count"] == 1
+    assert cleared["user_rating"] == 0
 
-    by_net, _ = design_assets.list_assets(asset_project, sort_by="vote_score")
-    assert by_net[0]["vote_score"] >= by_net[-1]["vote_score"]
+    by_rating, _ = design_assets.list_assets(asset_project, sort_by="rating_average")
+    assert by_rating[0]["asset_id"] == first["asset_id"]
 
 
-def test_design_asset_vote_rejects_invalid_direction(asset_project: str) -> None:
-    """Votes must be thumbs-up or thumbs-down."""
+def test_design_asset_rating_rejects_invalid_value(asset_project: str) -> None:
+    """Ratings must be between 0 and 5."""
     asset = design_assets.create_asset(
         project_id=asset_project,
         name="Vote Validation Concept",
@@ -178,8 +213,13 @@ def test_design_asset_vote_rejects_invalid_direction(asset_project: str) -> None
         transparent_background=False,
     )
 
-    with pytest.raises(ValueError, match="Invalid asset vote"):
-        design_assets.create_asset_vote(asset_project, asset["asset_id"], "maybe")
+    with pytest.raises(ValueError, match="Invalid asset rating"):
+        design_assets.set_asset_rating(
+            asset_project,
+            asset["asset_id"],
+            6,
+            voter_key="reviewer-a",
+        )
 
 def test_create_export_for_asset(asset_project: str) -> None:
     """Persist export metadata linked to an asset."""

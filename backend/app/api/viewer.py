@@ -19,7 +19,7 @@ from .design_assets_models import (
     DesignAssetListResponse,
     DesignAssetResponse,
     DesignAssetStatsResponse,
-    VoteDesignAssetRequest,
+    RateDesignAssetRequest,
 )
 from .design_assets_utils import asset_to_response, export_to_response
 from .mockups_crud import get_mockup_image, get_mockup_screenshot
@@ -27,7 +27,7 @@ from .mockups_models import (
     MockupListResponse,
     MockupResponse,
     MockupStatsResponse,
-    VoteMockupRequest,
+    RateMockupRequest,
 )
 from .mockups_utils import to_response
 
@@ -122,6 +122,7 @@ def list_mockups(
         generator=generator,
         search=search,
         sort_by=sort_by,
+        voter_key=principal.email,
     )
     return MockupListResponse(
         items=[_sanitize_mockup(to_response(item)) for item in items],
@@ -155,7 +156,7 @@ def get_mockup(
 ) -> MockupResponse:
     """Return one shared mockup."""
     _require_design_access(project_id, principal)
-    mockup = mockups_storage.get_mockup(project_id, mockup_id)
+    mockup = mockups_storage.get_mockup(project_id, mockup_id, voter_key=principal.email)
     if not mockup:
         raise HTTPException(status_code=404, detail="Mockup not found")
     return _sanitize_mockup(to_response(mockup))
@@ -197,21 +198,21 @@ async def mockup_screenshot(
     return await get_mockup_screenshot(project_id, mockup_id)
 
 
-@router.post("/projects/{project_id}/mockups/{mockup_id}/votes", response_model=MockupResponse)
-def vote_mockup(
+@router.post("/projects/{project_id}/mockups/{mockup_id}/rating", response_model=MockupResponse)
+def rate_mockup(
     project_id: str,
     mockup_id: str,
-    request: VoteMockupRequest,
+    request: RateMockupRequest,
     principal: AuthenticatedPrincipal,
 ) -> MockupResponse:
-    """Add one cumulative shared-viewer vote to a UI mockup."""
+    """Set or clear the shared viewer's star rating for a UI mockup."""
     _require_design_access(project_id, principal)
     try:
-        mockup = mockups_storage.create_mockup_vote(
+        mockup = mockups_storage.set_mockup_rating(
             project_id,
             mockup_id,
-            request.vote,
-            voter_email=principal.email,
+            request.rating,
+            voter_key=principal.email,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -245,6 +246,7 @@ def list_assets(
         search=search,
         tag=tag,
         sort_by=sort_by,
+        voter_key=principal.email,
     )
     return DesignAssetListResponse(
         items=[_sanitize_asset(asset_to_response(item)) for item in items],
@@ -272,7 +274,7 @@ def get_asset(
 ) -> DesignAssetResponse:
     """Return one shared design asset."""
     _require_design_access(project_id, principal)
-    asset = design_assets.get_asset(project_id, asset_id)
+    asset = design_assets.get_asset(project_id, asset_id, voter_key=principal.email)
     if not asset:
         raise HTTPException(status_code=404, detail="Design asset not found")
     return _sanitize_asset(asset_to_response(asset))
@@ -307,23 +309,23 @@ def asset_exports(
 
 
 @router.post(
-    "/projects/{project_id}/design-assets/{asset_id}/votes",
+    "/projects/{project_id}/design-assets/{asset_id}/rating",
     response_model=DesignAssetResponse,
 )
-def vote_asset(
+def rate_asset(
     project_id: str,
     asset_id: str,
-    request: VoteDesignAssetRequest,
+    request: RateDesignAssetRequest,
     principal: AuthenticatedPrincipal,
 ) -> DesignAssetResponse:
-    """Add one cumulative shared-viewer vote to a design asset."""
+    """Set or clear the shared viewer's star rating for a design asset."""
     _require_design_access(project_id, principal)
     try:
-        asset = design_assets.create_asset_vote(
+        asset = design_assets.set_asset_rating(
             project_id,
             asset_id,
-            request.vote,
-            voter_email=principal.email,
+            request.rating,
+            voter_key=principal.email,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -11,8 +11,6 @@ from ..connection import get_connection
 from .core import ASSET_SELECT_COLUMNS, ASSET_STATUSES, _row_to_asset
 from .queries import get_asset
 
-ASSET_VOTES = frozenset({"up", "down"})
-
 
 def update_asset_status(
     project_id: str,
@@ -50,31 +48,48 @@ def update_asset_status(
     return _row_to_asset(row) if row else None
 
 
-def create_asset_vote(
+def set_asset_rating(
     project_id: str,
     asset_id: str,
-    vote: str,
+    rating: int,
     *,
-    voter_email: str | None = None,
+    voter_key: str,
 ) -> dict[str, Any] | None:
-    """Add one cumulative vote to an asset and return the updated asset."""
-    if vote not in ASSET_VOTES:
-        raise ValueError(f"Invalid asset vote: {vote}")
+    """Set or clear the current user's star rating and return the updated asset."""
+    if rating < 0 or rating > 5:
+        raise ValueError(f"Invalid asset rating: {rating}")
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO design_asset_votes (asset_id, vote, voter_email)
-            SELECT id, %s, %s
-            FROM design_assets
-            WHERE project_id = %s AND asset_id = %s
-            """,
-            (vote, voter_email, project_id, asset_id),
-        )
-        created = cur.rowcount > 0
+        if rating == 0:
+            cur.execute(
+                """
+                DELETE FROM design_asset_ratings r
+                USING design_assets a
+                WHERE r.asset_id = a.id
+                  AND a.project_id = %s
+                  AND a.asset_id = %s
+                  AND r.voter_key = %s
+                """,
+                (project_id, asset_id, voter_key),
+            )
+            changed = cur.rowcount > 0
+        else:
+            cur.execute(
+                """
+                INSERT INTO design_asset_ratings (asset_id, voter_key, rating)
+                SELECT id, %s, %s
+                FROM design_assets
+                WHERE project_id = %s AND asset_id = %s
+                ON CONFLICT (asset_id, voter_key)
+                DO UPDATE SET rating = EXCLUDED.rating, updated_at = NOW()
+                WHERE design_asset_ratings.rating IS DISTINCT FROM EXCLUDED.rating
+                """,
+                (voter_key, rating, project_id, asset_id),
+            )
+            changed = cur.rowcount > 0
         conn.commit()
-    if not created:
+    if not changed and not get_asset(project_id, asset_id, voter_key=voter_key):
         return None
-    return get_asset(project_id, asset_id)
+    return get_asset(project_id, asset_id, voter_key=voter_key)
 
 
 def delete_asset(project_id: str, asset_id: str) -> bool:

@@ -209,6 +209,50 @@ def _create_design_vote_tables(cur: psycopg.Cursor) -> None:
             "CREATE INDEX IF NOT EXISTS idx_mockup_votes_vote "
             "ON mockup_votes(mockup_id, vote)"
         )
+    with contextlib.suppress(psycopg.errors.UndefinedTable):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS design_asset_ratings (
+                id BIGSERIAL PRIMARY KEY,
+                asset_id INTEGER NOT NULL REFERENCES design_assets(id) ON DELETE CASCADE,
+                voter_key TEXT NOT NULL,
+                rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_design_asset_ratings_voter UNIQUE(asset_id, voter_key)
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_design_asset_ratings_asset "
+            "ON design_asset_ratings(asset_id)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_design_asset_ratings_rating "
+            "ON design_asset_ratings(asset_id, rating)"
+        )
+    with contextlib.suppress(psycopg.errors.UndefinedTable):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mockup_ratings (
+                id BIGSERIAL PRIMARY KEY,
+                mockup_id INTEGER NOT NULL REFERENCES mockups(id) ON DELETE CASCADE,
+                voter_key TEXT NOT NULL,
+                rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_mockup_ratings_voter UNIQUE(mockup_id, voter_key)
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mockup_ratings_mockup "
+            "ON mockup_ratings(mockup_id)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mockup_ratings_rating "
+            "ON mockup_ratings(mockup_id, rating)"
+        )
 
 
 def _project_column_additions() -> list[tuple[str, str]]:

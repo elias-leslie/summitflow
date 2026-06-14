@@ -12,7 +12,7 @@ from .core import (
     get_asset_by_db_id,
 )
 from .queries import get_asset, get_asset_stats, list_asset_exports, list_assets
-from .updates import create_asset_vote, delete_asset, update_asset_status
+from .updates import delete_asset, set_asset_rating, update_asset_status
 
 __all__ = [
     "ASSET_BACKGROUNDS",
@@ -22,7 +22,6 @@ __all__ = [
     "EXPORT_TYPES",
     "create_asset",
     "create_asset_export",
-    "create_asset_vote",
     "delete_asset",
     "generate_asset_id",
     "get_asset",
@@ -30,5 +29,6 @@ __all__ = [
     "get_asset_stats",
     "list_asset_exports",
     "list_assets",
+    "set_asset_rating",
     "update_asset_status",
 ]

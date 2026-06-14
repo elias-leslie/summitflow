@@ -38,9 +38,9 @@ class DesignAssetResponse(BaseModel):
     approved_by: str | None
     created_at: str | None
     updated_at: str | None
-    thumbs_up: int = 0
-    thumbs_down: int = 0
-    vote_score: int = 0
+    rating_average: float = 0.0
+    rating_count: int = 0
+    user_rating: int = 0
 
 
 class DesignAssetListResponse(BaseModel):
@@ -140,7 +140,7 @@ class UpdateDesignAssetStatusRequest(BaseModel):
     approved_by: str | None = None
 
 
-class VoteDesignAssetRequest(BaseModel):
-    """Request to add a cumulative asset vote."""
+class RateDesignAssetRequest(BaseModel):
+    """Request to set or clear a star rating."""
 
-    vote: str
+    rating: int

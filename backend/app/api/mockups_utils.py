@@ -161,7 +161,7 @@ def to_response(mockup: dict[str, Any]) -> MockupResponse:
         metadata=mockup.get("metadata") or {},
         created_at=mockup["created_at"],
         updated_at=mockup["updated_at"],
-        thumbs_up=mockup.get("thumbs_up", 0),
-        thumbs_down=mockup.get("thumbs_down", 0),
-        vote_score=mockup.get("vote_score", 0),
+        rating_average=mockup.get("rating_average", 0.0),
+        rating_count=mockup.get("rating_count", 0),
+        user_rating=mockup.get("user_rating", 0),
     )

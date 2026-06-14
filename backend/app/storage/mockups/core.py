@@ -48,10 +48,10 @@ MOCKUP_COLUMN_NAMES = (
 )
 MOCKUP_SELECT_COLUMNS = ", ".join(MOCKUP_COLUMN_NAMES)
 MOCKUP_SELECT_COLUMNS_ALIASED = ", ".join(f"m.{column}" for column in MOCKUP_COLUMN_NAMES)
-MOCKUP_VOTE_SELECT_COLUMNS = """
-       COALESCE(vote_counts.thumbs_up, 0) AS thumbs_up,
-       COALESCE(vote_counts.thumbs_down, 0) AS thumbs_down,
-       COALESCE(vote_counts.thumbs_up, 0) - COALESCE(vote_counts.thumbs_down, 0) AS vote_score
+MOCKUP_RATING_SELECT_COLUMNS = """
+       COALESCE(rating_counts.rating_average, 0) AS rating_average,
+       COALESCE(rating_counts.rating_count, 0) AS rating_count,
+       COALESCE(user_rating.rating, 0) AS user_rating
 """
 
 # Default initial mockup version and iteration count
@@ -69,8 +69,8 @@ def generate_mockup_id() -> str:
 
 def _row_to_mockup(row: tuple[Any, ...]) -> dict[str, Any]:
     """Convert database row to mockup dict."""
-    thumbs_up = int(row[23]) if len(row) > 23 and row[23] is not None else 0
-    thumbs_down = int(row[24]) if len(row) > 24 and row[24] is not None else 0
+    rating_average = float(row[23]) if len(row) > 23 and row[23] is not None else 0.0
+    rating_count = int(row[24]) if len(row) > 24 and row[24] is not None else 0
     return {
         "id": row[0],
         "project_id": row[1],
@@ -95,9 +95,9 @@ def _row_to_mockup(row: tuple[Any, ...]) -> dict[str, Any]:
         "metadata": row[20] or {},
         "created_at": row[21].isoformat() if row[21] else None,
         "updated_at": row[22].isoformat() if row[22] else None,
-        "thumbs_up": thumbs_up,
-        "thumbs_down": thumbs_down,
-        "vote_score": int(row[25]) if len(row) > 25 and row[25] is not None else thumbs_up - thumbs_down,
+        "rating_average": rating_average,
+        "rating_count": rating_count,
+        "user_rating": int(row[25]) if len(row) > 25 and row[25] is not None else 0,
     }
 
 

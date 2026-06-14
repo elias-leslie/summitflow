@@ -79,15 +79,15 @@ export function getViewerScreenshotUrl(
   return `/api/viewer/projects/${projectId}/mockups/${mockupId}/screenshot`
 }
 
-export function voteViewerMockup(
+export function rateViewerMockup(
   projectId: string,
   mockupId: string,
-  vote: 'up' | 'down',
+  rating: number,
 ): Promise<Mockup> {
   return postJson<Mockup>(
-    `/api/viewer/projects/${projectId}/mockups/${mockupId}/votes`,
-    { vote },
-    'Failed to vote on shared mockup',
+    `/api/viewer/projects/${projectId}/mockups/${mockupId}/rating`,
+    { rating },
+    'Failed to rate shared mockup',
   )
 }
 
@@ -148,14 +148,14 @@ export function getViewerDesignAssetImageUrl(
   return `/api/viewer/projects/${projectId}/design-assets/${assetId}/image`
 }
 
-export function voteViewerDesignAsset(
+export function rateViewerDesignAsset(
   projectId: string,
   assetId: string,
-  vote: 'up' | 'down',
+  rating: number,
 ): Promise<DesignAsset> {
   return postJson<DesignAsset>(
-    `/api/viewer/projects/${projectId}/design-assets/${assetId}/votes`,
-    { vote },
-    'Failed to vote on shared design asset',
+    `/api/viewer/projects/${projectId}/design-assets/${assetId}/rating`,
+    { rating },
+    'Failed to rate shared design asset',
   )
 }

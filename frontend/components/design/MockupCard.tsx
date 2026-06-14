@@ -11,13 +11,12 @@ import {
   Image as ImageIcon,
   LayoutTemplate,
   Sparkles,
-  ThumbsDown,
-  ThumbsUp,
   XCircle,
 } from 'lucide-react'
 import Image from 'next/image'
 import { hasScreenshot, type Mockup } from '@/lib/api/mockups'
 import { isHtmlMockupContent } from '@/lib/mockup-html'
+import { StarRating } from './StarRating'
 
 interface MockupCardProps {
   mockup: Mockup
@@ -26,6 +25,8 @@ interface MockupCardProps {
   selectMode?: boolean
   isSelected?: boolean
   getImageUrl?: (projectId: string, mockupId: string) => string
+  isRating?: boolean
+  onRate: (rating: number) => void
 }
 
 const statusConfig = {
@@ -116,6 +117,8 @@ export function MockupCard({
   selectMode = false,
   isSelected = false,
   getImageUrl,
+  isRating = false,
+  onRate,
 }: MockupCardProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -210,16 +213,17 @@ export function MockupCard({
         <div className="flex items-center gap-4 text-slate-400 text-xs">
           <span className="capitalize">{mockup.mockup_type}</span>
           <span>v{mockup.version}</span>
-          <span className="flex items-center gap-1">
-            <ThumbsUp className="h-3 w-3 text-emerald-300" />
-            {mockup.thumbs_up}
-          </span>
-          <span className="flex items-center gap-1">
-            <ThumbsDown className="h-3 w-3 text-rose-300" />
-            {mockup.thumbs_down}
-          </span>
-          <span>net {mockup.vote_score}</span>
           <span>{formattedDate}</span>
+        </div>
+        <div className="mt-2">
+          <StarRating
+            average={mockup.rating_average}
+            count={mockup.rating_count}
+            userRating={mockup.user_rating}
+            disabled={isRating}
+            compact
+            onRate={onRate}
+          />
         </div>
       </div>
     )
@@ -331,10 +335,17 @@ export function MockupCard({
         <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
           <span className="capitalize">{mockup.mockup_type}</span>
           {mockup.generator && <span>{mockup.generator}</span>}
-          <span>👍 {mockup.thumbs_up}</span>
-          <span>👎 {mockup.thumbs_down}</span>
-          <span>net {mockup.vote_score}</span>
           <span>{formattedDate}</span>
+        </div>
+        <div className="mt-3">
+          <StarRating
+            average={mockup.rating_average}
+            count={mockup.rating_count}
+            userRating={mockup.user_rating}
+            disabled={isRating}
+            compact
+            onRate={onRate}
+          />
         </div>
       </div>
     </div>

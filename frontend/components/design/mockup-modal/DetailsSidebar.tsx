@@ -1,9 +1,9 @@
 'use client'
 
 import clsx from 'clsx'
-import { ThumbsDown, ThumbsUp } from 'lucide-react'
 import type { Mockup } from '@/lib/api/mockups'
 import { formatDate } from '@/lib/format'
+import { StarRating } from '../StarRating'
 import { StatusActions } from './StatusActions'
 
 interface DetailsSidebarProps {
@@ -11,9 +11,9 @@ interface DetailsSidebarProps {
   updating: boolean
   showHistory: boolean
   history?: Mockup[]
-  isVoting: boolean
+  isRating: boolean
   onStatusChange: (status: string) => void
-  onVote: (vote: 'up' | 'down') => void
+  onRate: (rating: number) => void
   onSelectHistoryMockup: (mockup: Mockup) => void
   readOnly?: boolean
 }
@@ -23,9 +23,9 @@ export function DetailsSidebar({
   updating,
   showHistory,
   history,
-  isVoting,
+  isRating,
   onStatusChange,
-  onVote,
+  onRate,
   onSelectHistoryMockup,
   readOnly = false,
 }: DetailsSidebarProps) {
@@ -66,18 +66,20 @@ export function DetailsSidebar({
           </div>
           <div>
             <h3 className="text-sm font-medium text-slate-400 mb-1">
-              Vote score
+              Average rating
             </h3>
-            <p className="text-slate-100">{mockup.vote_score}</p>
+            <p className="text-slate-100">
+              {mockup.rating_average.toFixed(1)} / 5
+            </p>
           </div>
         </div>
 
         <div>
-          <h3 className="text-sm font-medium text-slate-400 mb-2">Votes</h3>
-          <MockupVoteActions
+          <h3 className="text-sm font-medium text-slate-400 mb-2">Rating</h3>
+          <MockupRatingActions
             mockup={mockup}
-            isVoting={isVoting}
-            onVote={onVote}
+            isRating={isRating}
+            onRate={onRate}
           />
         </div>
 
@@ -170,40 +172,22 @@ export function DetailsSidebar({
   )
 }
 
-function MockupVoteActions({
+function MockupRatingActions({
   mockup,
-  isVoting,
-  onVote,
+  isRating,
+  onRate,
 }: {
   mockup: Mockup
-  isVoting: boolean
-  onVote: (vote: 'up' | 'down') => void
+  isRating: boolean
+  onRate: (rating: number) => void
 }): React.ReactElement {
   return (
-    <div className="flex flex-wrap gap-2">
-      <button
-        type="button"
-        aria-label={`Vote thumbs up (${mockup.thumbs_up})`}
-        onClick={() => onVote('up')}
-        disabled={isVoting}
-        className="btn-secondary flex items-center gap-2"
-      >
-        <ThumbsUp className="h-4 w-4 text-emerald-300" />
-        <span>{mockup.thumbs_up}</span>
-      </button>
-      <button
-        type="button"
-        aria-label={`Vote thumbs down (${mockup.thumbs_down})`}
-        onClick={() => onVote('down')}
-        disabled={isVoting}
-        className="btn-secondary flex items-center gap-2"
-      >
-        <ThumbsDown className="h-4 w-4 text-rose-300" />
-        <span>{mockup.thumbs_down}</span>
-      </button>
-      <span className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300">
-        net {mockup.vote_score}
-      </span>
-    </div>
+    <StarRating
+      average={mockup.rating_average}
+      count={mockup.rating_count}
+      userRating={mockup.user_rating}
+      disabled={isRating}
+      onRate={onRate}
+    />
   )
 }

@@ -63,9 +63,9 @@ ASSET_COLUMN_NAMES = [
 ]
 ASSET_SELECT_COLUMNS = ", ".join(ASSET_COLUMN_NAMES)
 ASSET_SELECT_COLUMNS_ALIASED = ", ".join(f"a.{column}" for column in ASSET_COLUMN_NAMES)
-ASSET_VOTE_SELECT_COLUMNS = """COALESCE(vote_counts.thumbs_up, 0) AS thumbs_up,
-       COALESCE(vote_counts.thumbs_down, 0) AS thumbs_down,
-       COALESCE(vote_counts.thumbs_up, 0) - COALESCE(vote_counts.thumbs_down, 0) AS vote_score"""
+ASSET_RATING_SELECT_COLUMNS = """COALESCE(rating_counts.rating_average, 0) AS rating_average,
+       COALESCE(rating_counts.rating_count, 0) AS rating_count,
+       COALESCE(user_rating.rating, 0) AS user_rating"""
 
 EXPORT_SELECT_COLUMNS = """id, asset_id, export_id, export_type, file_path, manifest_path,
        metadata, created_at"""
@@ -114,9 +114,9 @@ def _row_to_asset(row: tuple[Any, ...]) -> dict[str, Any]:
         "approved_by": row[27],
         "created_at": row[28].isoformat() if row[28] else None,
         "updated_at": row[29].isoformat() if row[29] else None,
-        "thumbs_up": int(row[30] or 0) if len(row) > 30 else 0,
-        "thumbs_down": int(row[31] or 0) if len(row) > 31 else 0,
-        "vote_score": int(row[32] or 0) if len(row) > 32 else 0,
+        "rating_average": float(row[30] or 0) if len(row) > 30 else 0.0,
+        "rating_count": int(row[31] or 0) if len(row) > 31 else 0,
+        "user_rating": int(row[32] or 0) if len(row) > 32 else 0,
     }
 
 

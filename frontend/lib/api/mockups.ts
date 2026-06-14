@@ -34,9 +34,9 @@ export interface Mockup {
   metadata?: Record<string, unknown>
   created_at: string | null
   updated_at: string | null
-  thumbs_up: number
-  thumbs_down: number
-  vote_score: number
+  rating_average: number
+  rating_count: number
+  user_rating: number
 }
 
 export interface MockupListResponse {
@@ -237,17 +237,17 @@ export async function updateMockupStatus(
 }
 
 /**
- * Add one cumulative thumbs up/down vote to a mockup.
+ * Set or clear the current user's star rating on a mockup.
  */
-export async function voteMockup(
+export async function rateMockup(
   projectId: string,
   mockupId: string,
-  vote: 'up' | 'down',
+  rating: number,
 ): Promise<Mockup> {
   return postJson<Mockup>(
-    `/api/projects/${projectId}/mockups/${mockupId}/votes`,
-    { vote },
-    'Failed to vote on mockup',
+    `/api/projects/${projectId}/mockups/${mockupId}/rating`,
+    { rating },
+    'Failed to rate mockup',
   )
 }
 

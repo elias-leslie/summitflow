@@ -30,8 +30,8 @@ def mockup_project(db_schema_initialized: None) -> Generator[str]:
         conn.commit()
 
 
-def test_mockup_votes_are_cumulative_and_sortable(mockup_project: str) -> None:
-    """Each click adds a vote; lists can sort by vote aggregates."""
+def test_mockup_ratings_are_average_based_and_sortable(mockup_project: str) -> None:
+    """Each viewer has one star rating; lists can sort by rating aggregates."""
     first = mockups.create_mockup(
         project_id=mockup_project,
         name="First UI Direction",
@@ -47,26 +47,61 @@ def test_mockup_votes_are_cumulative_and_sortable(mockup_project: str) -> None:
         content="<main>Second</main>",
     )
 
-    assert mockups.create_mockup_vote(mockup_project, first["mockup_id"], "up") is not None
-    assert mockups.create_mockup_vote(mockup_project, first["mockup_id"], "up") is not None
-    assert mockups.create_mockup_vote(mockup_project, first["mockup_id"], "down") is not None
-    assert mockups.create_mockup_vote(mockup_project, second["mockup_id"], "up") is not None
+    assert (
+        mockups.set_mockup_rating(
+            mockup_project,
+            first["mockup_id"],
+            5,
+            voter_key="reviewer-a",
+        )
+        is not None
+    )
+    assert (
+        mockups.set_mockup_rating(
+            mockup_project,
+            first["mockup_id"],
+            3,
+            voter_key="reviewer-b",
+        )
+        is not None
+    )
+    assert (
+        mockups.set_mockup_rating(
+            mockup_project,
+            second["mockup_id"],
+            2,
+            voter_key="reviewer-c",
+        )
+        is not None
+    )
 
-    fetched = mockups.get_mockup(mockup_project, first["mockup_id"])
+    fetched = mockups.get_mockup(
+        mockup_project,
+        first["mockup_id"],
+        voter_key="reviewer-a",
+    )
     assert fetched is not None
-    assert fetched["thumbs_up"] == 2
-    assert fetched["thumbs_down"] == 1
-    assert fetched["vote_score"] == 1
+    assert fetched["rating_average"] == 4
+    assert fetched["rating_count"] == 2
+    assert fetched["user_rating"] == 5
 
-    by_up, _ = mockups.list_mockups(mockup_project, sort_by="thumbs_up")
-    assert by_up[0]["mockup_id"] == first["mockup_id"]
+    cleared = mockups.set_mockup_rating(
+        mockup_project,
+        first["mockup_id"],
+        0,
+        voter_key="reviewer-a",
+    )
+    assert cleared is not None
+    assert cleared["rating_average"] == 3
+    assert cleared["rating_count"] == 1
+    assert cleared["user_rating"] == 0
 
-    by_net, _ = mockups.list_mockups(mockup_project, sort_by="vote_score")
-    assert by_net[0]["vote_score"] >= by_net[-1]["vote_score"]
+    by_rating, _ = mockups.list_mockups(mockup_project, sort_by="rating_average")
+    assert by_rating[0]["mockup_id"] == first["mockup_id"]
 
 
-def test_mockup_vote_rejects_invalid_direction(mockup_project: str) -> None:
-    """Votes must be thumbs-up or thumbs-down."""
+def test_mockup_rating_rejects_invalid_value(mockup_project: str) -> None:
+    """Ratings must be between 0 and 5."""
     mockup = mockups.create_mockup(
         project_id=mockup_project,
         name="Vote Validation UI",
@@ -74,5 +109,10 @@ def test_mockup_vote_rejects_invalid_direction(mockup_project: str) -> None:
         content="<main>Validate</main>",
     )
 
-    with pytest.raises(ValueError, match="Invalid mockup vote"):
-        mockups.create_mockup_vote(mockup_project, mockup["mockup_id"], "maybe")
+    with pytest.raises(ValueError, match="Invalid mockup rating"):
+        mockups.set_mockup_rating(
+            mockup_project,
+            mockup["mockup_id"],
+            6,
+            voter_key="reviewer-a",
+        )
