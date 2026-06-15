@@ -15,6 +15,7 @@ import {
   Maximize2,
   MessageSquare,
   Package,
+  Play,
   Tags,
   X,
 } from 'lucide-react'
@@ -948,6 +949,12 @@ function ProductionAssetsPanel({
                   <p className="mt-1 truncate font-mono text-xs text-slate-500">
                     {productionAssetFileName(asset)}
                   </p>
+                  <SpriteAnimationShelf
+                    asset={asset}
+                    imageUrl={imageUrlForAsset(asset)}
+                    limit={2}
+                    className="mt-3"
+                  />
                 </div>
               </button>
             ))}
@@ -1065,6 +1072,207 @@ function AssetPreview({
       )}
     </div>
   )
+}
+
+interface SpriteAnimationPreviewItem {
+  name: string
+  row: number
+  sequence: number[]
+  fps: number
+  runtimeEnabled: boolean
+  verificationStatus: string
+}
+
+function SpriteAnimationShelf({
+  asset,
+  imageUrl,
+  limit,
+  className,
+}: {
+  asset: DesignAsset
+  imageUrl: string
+  limit?: number
+  className?: string
+}): React.ReactElement | null {
+  const animations = spriteAnimationPreviews(asset)
+  if (animations.length === 0) return null
+  const shownAnimations =
+    limit === undefined ? animations : animations.slice(0, limit)
+  const hiddenCount = animations.length - shownAnimations.length
+
+  return (
+    <div className={className}>
+      <div className="mb-2 flex items-center gap-2 text-2xs uppercase tracking-[0.18em] text-cyan-300">
+        <Play className="h-3.5 w-3.5" />
+        Animation review
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {shownAnimations.map((animation) => (
+          <SpriteAnimationPreview
+            key={`${asset.asset_id}-${animation.name}`}
+            asset={asset}
+            animation={animation}
+            imageUrl={imageUrl}
+          />
+        ))}
+      </div>
+      {hiddenCount > 0 && (
+        <p className="mt-2 text-xs text-slate-500">
+          +{hiddenCount} more animations in inspector
+        </p>
+      )}
+    </div>
+  )
+}
+
+function SpriteAnimationPreview({
+  asset,
+  animation,
+  imageUrl,
+}: {
+  asset: DesignAsset
+  animation: SpriteAnimationPreviewItem
+  imageUrl: string
+}): React.ReactElement {
+  const [frameIndex, setFrameIndex] = useState(0)
+  const frameWidth = asset.frame_width ?? 1
+  const frameHeight = asset.frame_height ?? 1
+  const safeFps = Math.max(1, animation.fps)
+  const size = 72
+  const scale = Math.min(size / frameWidth, size / frameHeight)
+  const frameColumn = animation.sequence[frameIndex % animation.sequence.length]
+
+  useEffect(() => {
+    setFrameIndex(0)
+    const interval = window.setInterval(
+      () => {
+        setFrameIndex((current) => (current + 1) % animation.sequence.length)
+      },
+      Math.round(1000 / safeFps),
+    )
+    return () => window.clearInterval(interval)
+  }, [animation.name, animation.sequence.length, safeFps])
+
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-2">
+      <div
+        className="mx-auto overflow-hidden rounded-md border border-slate-800 bg-[linear-gradient(45deg,rgba(148,163,184,0.12)_25%,transparent_25%),linear-gradient(-45deg,rgba(148,163,184,0.12)_25%,transparent_25%),linear-gradient(45deg,transparent_75%,rgba(148,163,184,0.12)_75%),linear-gradient(-45deg,transparent_75%,rgba(148,163,184,0.12)_75%)] bg-[length:12px_12px] bg-[position:0_0,0_6px,6px_-6px,-6px_0px]"
+        style={{
+          width: Math.round(frameWidth * scale),
+          height: Math.round(frameHeight * scale),
+        }}
+      >
+        {/* biome-ignore lint/performance/noImgElement: Frame preview needs direct sprite-sheet positioning from the local asset URL. */}
+        <img
+          src={imageUrl}
+          alt={`${asset.name} ${animation.name}`}
+          draggable={false}
+          className="max-w-none select-none"
+          style={{
+            width: Math.round(asset.width * scale),
+            height: Math.round(asset.height * scale),
+            transform: `translate(${-frameColumn * frameWidth * scale}px, ${-animation.row * frameHeight * scale}px)`,
+            imageRendering: 'pixelated',
+          }}
+        />
+      </div>
+      <div className="mt-2 min-w-0">
+        <p className="truncate text-xs font-medium text-slate-200">
+          {animation.name}
+        </p>
+        <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] uppercase tracking-[0.12em] text-slate-500">
+          <span>{animation.fps}fps</span>
+          <span>{animation.sequence.length}fr</span>
+          <span
+            className={clsx(
+              'rounded-full px-1.5 py-0.5',
+              animation.runtimeEnabled
+                ? 'bg-emerald-500/15 text-emerald-200'
+                : 'bg-amber-500/15 text-amber-200',
+            )}
+          >
+            {animation.runtimeEnabled ? 'runtime' : 'review'}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function spriteAnimationPreviews(
+  asset: DesignAsset,
+): SpriteAnimationPreviewItem[] {
+  if (
+    asset.asset_type !== 'sprite_sheet' ||
+    !asset.sheet_columns ||
+    !asset.sheet_rows ||
+    !asset.frame_width ||
+    !asset.frame_height ||
+    asset.sheet_columns <= 0 ||
+    asset.sheet_rows <= 0
+  ) {
+    return []
+  }
+
+  const fromMetadata = spriteAnimationPreviewsFromMetadata(asset)
+  if (fromMetadata.length > 0) return fromMetadata
+
+  return Array.from({ length: asset.sheet_rows }, (_, row) => {
+    const name = asset.animation_labels[row] || `row_${row + 1}`
+    return {
+      name,
+      row,
+      sequence: Array.from(
+        { length: asset.sheet_columns ?? 0 },
+        (_, index) => index,
+      ),
+      fps: 8,
+      runtimeEnabled: false,
+      verificationStatus: 'row_preview',
+    }
+  })
+}
+
+function spriteAnimationPreviewsFromMetadata(
+  asset: DesignAsset,
+): SpriteAnimationPreviewItem[] {
+  const rawAnimations = asset.metadata.animations
+  if (!isRecord(rawAnimations)) return []
+
+  const previews: SpriteAnimationPreviewItem[] = []
+  for (const [name, rawAnimation] of Object.entries(rawAnimations)) {
+    if (!isRecord(rawAnimation)) continue
+    const row = numberFromUnknown(rawAnimation.row)
+    const fps = numberFromUnknown(rawAnimation.fps) ?? 8
+    const rawSequence = rawAnimation.sequence
+    if (row === undefined || !Array.isArray(rawSequence)) continue
+    const sequence = rawSequence
+      .map(numberFromUnknown)
+      .filter((value): value is number => value !== undefined)
+    if (sequence.length === 0) continue
+    previews.push({
+      name,
+      row,
+      sequence,
+      fps,
+      runtimeEnabled: rawAnimation.runtime_enabled === true,
+      verificationStatus:
+        typeof rawAnimation.verification_status === 'string'
+          ? rawAnimation.verification_status
+          : 'metadata_preview',
+    })
+  }
+  return previews
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function numberFromUnknown(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.trunc(value)
+    : undefined
 }
 
 function isSvgAsset(asset: DesignAsset): boolean {
@@ -1326,6 +1534,14 @@ function AssetInspector({
             Animations: {asset.animation_labels.join(', ') || 'Not labeled'}
           </p>
         </div>
+      )}
+
+      {asset.asset_type === 'sprite_sheet' && imageUrl && (
+        <SpriteAnimationShelf
+          asset={asset}
+          imageUrl={imageUrl}
+          className="mt-5 rounded-xl bg-slate-900 p-3"
+        />
       )}
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -1656,6 +1872,14 @@ function AssetDetailModal({
                   {asset.animation_labels.join(', ') || 'Not labeled'}
                 </p>
               </div>
+            )}
+
+            {asset.asset_type === 'sprite_sheet' && (
+              <SpriteAnimationShelf
+                asset={asset}
+                imageUrl={imageUrl}
+                className="mt-5 rounded-xl bg-slate-950 p-3"
+              />
             )}
 
             <div className="mt-5 flex flex-wrap gap-2">
