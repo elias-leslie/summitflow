@@ -7,6 +7,9 @@ import {
   ChevronRight,
   Download,
   ExternalLink,
+  FileImage,
+  Folder,
+  FolderTree,
   Image as ImageIcon,
   Layers3,
   Maximize2,
@@ -15,7 +18,7 @@ import {
   Tags,
   X,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import { useClampedPagination } from '@/hooks/useClampedPagination'
 import {
@@ -71,6 +74,7 @@ type AssetTypeFilter =
   | 'concept_art'
 type WorkflowFilter = 'all' | 'concept' | 'production' | 'marketing' | 'ui'
 type AssetSortFilter = 'created_desc' | 'rating_average' | 'rating_count'
+type AssetStudioSection = 'review' | 'production'
 
 interface AssetStudioWorkspaceProps {
   projectId: string
@@ -97,6 +101,10 @@ export function AssetStudioWorkspace({
   const [sortBy, setSortBy] = useState<AssetSortFilter>('created_desc')
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(0)
+  const [activeSection, setActiveSection] =
+    useState<AssetStudioSection>('review')
+  const [selectedProductionFolder, setSelectedProductionFolder] =
+    useState('all')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [selectedAsset, setSelectedAsset] = useState<DesignAsset | null>(null)
   const [previewAsset, setPreviewAsset] = useState<DesignAsset | null>(null)
@@ -145,6 +153,42 @@ export function AssetStudioWorkspace({
       ),
   })
 
+  const {
+    data: productionAssetData,
+    isLoading: isProductionLoading,
+    error: productionError,
+    refetch: refetchProductionAssets,
+  } = useQuery({
+    queryKey: [
+      'design-assets-production',
+      readOnly ? 'viewer' : 'owner',
+      projectId,
+    ],
+    queryFn: () =>
+      (readOnly ? fetchViewerDesignAssets : fetchDesignAssets)(projectId, {
+        limit: 500,
+        offset: 0,
+        workflow: 'production',
+        sort_by: 'created_desc',
+      }),
+  })
+
+  const productionAssets = productionAssetData?.items ?? []
+  const productionTree = useMemo(
+    () => buildProductionAssetTree(productionAssets),
+    [productionAssets],
+  )
+  const productionPreviewAssets = useMemo(
+    () =>
+      selectedProductionFolder === 'all'
+        ? productionAssets
+        : productionAssets.filter(
+            (asset) =>
+              productionAssetFolderKey(asset) === selectedProductionFolder,
+          ),
+    [productionAssets, selectedProductionFolder],
+  )
+
   const applyUpdatedAsset = (updatedAsset: DesignAsset): void => {
     setSelectedAsset((current) =>
       current?.asset_id === updatedAsset.asset_id ? updatedAsset : current,
@@ -153,10 +197,12 @@ export function AssetStudioWorkspace({
       current?.asset_id === updatedAsset.asset_id ? updatedAsset : current,
     )
     queryClient.invalidateQueries({ queryKey: ['design-assets'] })
+    queryClient.invalidateQueries({ queryKey: ['design-assets-production'] })
     queryClient.invalidateQueries({
       queryKey: ['design-assets-stats'],
     })
     refetch()
+    refetchProductionAssets()
   }
 
   const statusMutation = useMutation({
@@ -197,6 +243,7 @@ export function AssetStudioWorkspace({
       deleteDesignAsset(projectId, assetId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['design-assets'] })
+      queryClient.invalidateQueries({ queryKey: ['design-assets-production'] })
       queryClient.invalidateQueries({
         queryKey: ['design-assets-stats'],
       })
@@ -215,6 +262,7 @@ export function AssetStudioWorkspace({
         })
       }
       queryClient.invalidateQueries({ queryKey: ['design-assets'] })
+      queryClient.invalidateQueries({ queryKey: ['design-assets-production'] })
       queryClient.invalidateQueries({
         queryKey: ['design-assets-stats'],
       })
@@ -322,6 +370,27 @@ export function AssetStudioWorkspace({
         readOnly={readOnly}
       />
 
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setActiveSection('review')}
+          className={assetStudioSectionClass(activeSection === 'review')}
+        >
+          Review Board
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSection('production')}
+          className={assetStudioSectionClass(activeSection === 'production')}
+        >
+          Production Assets
+        </button>
+        <span className="text-sm text-slate-500">
+          Production Assets shows workflow=production records in a file tree
+          with expandable previews.
+        </span>
+      </div>
+
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-4">
         <StudioStat
           icon={<Package className="h-4 w-4 text-cyan-300" />}
@@ -345,239 +414,261 @@ export function AssetStudioWorkspace({
         />
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="card grid grid-cols-1 gap-3 p-4 lg:grid-cols-2 xl:grid-cols-6">
-          <input
-            value={searchQuery}
-            onChange={(event) => {
-              setSearchQuery(event.target.value)
-              setPage(0)
-            }}
-            placeholder="Search generated assets..."
-            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 xl:col-span-2"
-          />
-          <select
-            value={statusFilter}
-            onChange={(event) => {
-              setStatusFilter(event.target.value as AssetStatusFilter)
-              setPage(0)
-            }}
-            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
-          >
-            <option value="all">All Statuses</option>
-            <option value="generated">Generated</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-            <option value="exported">Exported</option>
-            <option value="archived">Archived</option>
-          </select>
-          <select
-            value={typeFilter}
-            onChange={(event) => {
-              setTypeFilter(event.target.value as AssetTypeFilter)
-              setPage(0)
-            }}
-            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
-          >
-            <option value="all">All Asset Types</option>
-            <option value="sprite">Sprite</option>
-            <option value="sprite_sheet">Sprite Sheet</option>
-            <option value="portrait">Portrait</option>
-            <option value="environment">Environment</option>
-            <option value="icon">Icon</option>
-            <option value="illustration">Illustration</option>
-            <option value="ui_texture">UI Texture</option>
-            <option value="marketing_mockup">Marketing Mockup</option>
-            <option value="tile_set">Tile Set</option>
-            <option value="concept_art">Concept Art</option>
-          </select>
-          <select
-            value={workflowFilter}
-            onChange={(event) => {
-              setWorkflowFilter(event.target.value as WorkflowFilter)
-              setPage(0)
-            }}
-            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
-          >
-            <option value="all">All Workflows</option>
-            <option value="concept">Concept</option>
-            <option value="production">Production</option>
-            <option value="marketing">Marketing</option>
-            <option value="ui">UI</option>
-          </select>
-          <select
-            value={sortBy}
-            onChange={(event) => {
-              setSortBy(event.target.value as AssetSortFilter)
-              setPage(0)
-            }}
-            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
-          >
-            <option value="created_desc">Newest</option>
-            <option value="rating_average">Highest rated</option>
-            <option value="rating_count">Most ratings</option>
-          </select>
-        </div>
-
-        <aside className="card p-4">
-          <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">
-            Production Playbook
-          </p>
-          <h3 className="mt-2 text-lg font-semibold text-slate-100">
-            Asset Direction
-          </h3>
-          <div className="mt-4 space-y-4 text-sm text-slate-300">
-            <p>
-              Use the source gate first: manual/current-agent imports stay in
-              Asset Studio review, while Agent Hub generation starts from a
-              prompt.
-            </p>
-            <p>
-              Use transparent backgrounds for sprites, icons, portraits, and UI
-              textures.
-            </p>
-            <p>
-              Use `production` workflow for in-game art, `marketing` for promo
-              mockups, and `ui` for product-facing visuals.
-            </p>
-            <p>
-              Sprite sheets become exportable once rows, columns, frame sizes,
-              and animation labels are defined.
-            </p>
+      {activeSection === 'review' && (
+        <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="card grid grid-cols-1 gap-3 p-4 lg:grid-cols-2 xl:grid-cols-6">
+            <input
+              value={searchQuery}
+              onChange={(event) => {
+                setSearchQuery(event.target.value)
+                setPage(0)
+              }}
+              placeholder="Search generated assets..."
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 xl:col-span-2"
+            />
+            <select
+              value={statusFilter}
+              onChange={(event) => {
+                setStatusFilter(event.target.value as AssetStatusFilter)
+                setPage(0)
+              }}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
+            >
+              <option value="all">All Statuses</option>
+              <option value="generated">Generated</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="exported">Exported</option>
+              <option value="archived">Archived</option>
+            </select>
+            <select
+              value={typeFilter}
+              onChange={(event) => {
+                setTypeFilter(event.target.value as AssetTypeFilter)
+                setPage(0)
+              }}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
+            >
+              <option value="all">All Asset Types</option>
+              <option value="sprite">Sprite</option>
+              <option value="sprite_sheet">Sprite Sheet</option>
+              <option value="portrait">Portrait</option>
+              <option value="environment">Environment</option>
+              <option value="icon">Icon</option>
+              <option value="illustration">Illustration</option>
+              <option value="ui_texture">UI Texture</option>
+              <option value="marketing_mockup">Marketing Mockup</option>
+              <option value="tile_set">Tile Set</option>
+              <option value="concept_art">Concept Art</option>
+            </select>
+            <select
+              value={workflowFilter}
+              onChange={(event) => {
+                setWorkflowFilter(event.target.value as WorkflowFilter)
+                setPage(0)
+              }}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
+            >
+              <option value="all">All Workflows</option>
+              <option value="concept">Concept</option>
+              <option value="production">Production</option>
+              <option value="marketing">Marketing</option>
+              <option value="ui">UI</option>
+            </select>
+            <select
+              value={sortBy}
+              onChange={(event) => {
+                setSortBy(event.target.value as AssetSortFilter)
+                setPage(0)
+              }}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
+            >
+              <option value="created_desc">Newest</option>
+              <option value="rating_average">Highest rated</option>
+              <option value="rating_count">Most ratings</option>
+            </select>
           </div>
-        </aside>
-      </div>
+
+          <aside className="card p-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">
+              Production Playbook
+            </p>
+            <h3 className="mt-2 text-lg font-semibold text-slate-100">
+              Asset Direction
+            </h3>
+            <div className="mt-4 space-y-4 text-sm text-slate-300">
+              <p>
+                Use the source gate first: manual/current-agent imports stay in
+                Asset Studio review, while Agent Hub generation starts from a
+                prompt.
+              </p>
+              <p>
+                Use transparent backgrounds for sprites, icons, portraits, and
+                UI textures.
+              </p>
+              <p>
+                Use `production` workflow for in-game art, `marketing` for promo
+                mockups, and `ui` for product-facing visuals.
+              </p>
+              <p>
+                Sprite sheets become exportable once rows, columns, frame sizes,
+                and animation labels are defined.
+              </p>
+            </div>
+          </aside>
+        </div>
+      )}
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-h-0">
-          {isLoading && <LoadingState />}
-          {error && (
-            <ErrorState
-              error={error}
-              onRetry={() => refetch()}
-              title="Failed to load design assets"
-            />
-          )}
-          {!isLoading && !error && assets.length === 0 && (
-            <EmptyState
-              title="No design assets yet"
-              description="Import manual assets or generate Agent Hub variants, then review sprites, environments, icon sets, tile sets, and sprite sheets here."
-            />
-          )}
-          {!isLoading && !error && assets.length > 0 && (
-            <div className="flex-1 overflow-auto">
-              <div
-                className={
-                  viewMode === 'grid'
-                    ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3'
-                    : 'flex flex-col gap-3'
-                }
-              >
-                {assets.map((asset) => (
+          {activeSection === 'review' ? (
+            <>
+              {isLoading && <LoadingState />}
+              {error && (
+                <ErrorState
+                  error={error}
+                  onRetry={() => refetch()}
+                  title="Failed to load design assets"
+                />
+              )}
+              {!isLoading && !error && assets.length === 0 && (
+                <EmptyState
+                  title="No design assets yet"
+                  description="Import manual assets or generate Agent Hub variants, then review sprites, environments, icon sets, tile sets, and sprite sheets here."
+                />
+              )}
+              {!isLoading && !error && assets.length > 0 && (
+                <div className="flex-1 overflow-auto">
                   <div
-                    role="button"
-                    tabIndex={0}
-                    key={asset.asset_id}
-                    onClick={() => {
-                      setSelectedAsset(asset)
-                      setPreviewAsset(asset)
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault()
-                        setSelectedAsset(asset)
-                        setPreviewAsset(asset)
-                      }
-                    }}
-                    className={clsx(
-                      'card cursor-pointer overflow-hidden text-left transition hover:ring-1 hover:ring-cyan-400/30',
-                      viewMode === 'list' && 'flex items-center gap-4 p-3',
-                    )}
+                    className={
+                      viewMode === 'grid'
+                        ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3'
+                        : 'flex flex-col gap-3'
+                    }
                   >
-                    <AssetPreview
-                      asset={asset}
-                      projectId={projectId}
-                      imageUrl={imageUrlForAsset(asset)}
-                      compact={viewMode === 'list'}
-                      showWorkflowBadge
-                      className={clsx(
-                        'relative overflow-hidden rounded-xl bg-slate-900',
-                        viewMode === 'grid'
-                          ? 'aspect-video'
-                          : 'h-24 w-40 flex-shrink-0',
-                      )}
-                    />
-                    <div className={viewMode === 'grid' ? 'p-4' : 'min-w-0'}>
-                      <div className="flex items-center justify-between gap-3">
-                        <h3 className="truncate text-slate-100 font-medium">
-                          {asset.name}
-                        </h3>
-                        <span className="text-2xs uppercase tracking-[0.18em] text-slate-500">
-                          {asset.asset_type.replace('_', ' ')}
-                        </span>
-                      </div>
-                      {asset.description && (
-                        <p className="mt-2 line-clamp-2 text-sm text-slate-400">
-                          {asset.description}
-                        </p>
-                      )}
-                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-                        <span>
-                          {asset.width}x{asset.height}
-                        </span>
-                        <span>{asset.model ?? 'default model'}</span>
-                        <span className="capitalize">{asset.status}</span>
-                        {asset.comment_count > 0 && (
-                          <span className="flex items-center gap-1 text-cyan-300">
-                            <MessageSquare className="h-3.5 w-3.5" />
-                            {asset.comment_count}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-3">
-                        <StarRating
-                          average={asset.rating_average}
-                          count={asset.rating_count}
-                          userRating={asset.user_rating}
-                          disabled={ratingMutation.isPending}
-                          compact
-                          onRate={(rating) =>
-                            ratingMutation.mutate({
-                              assetId: asset.asset_id,
-                              rating,
-                            })
+                    {assets.map((asset) => (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        key={asset.asset_id}
+                        onClick={() => {
+                          setSelectedAsset(asset)
+                          setPreviewAsset(asset)
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            setSelectedAsset(asset)
+                            setPreviewAsset(asset)
                           }
+                        }}
+                        className={clsx(
+                          'card cursor-pointer overflow-hidden text-left transition hover:ring-1 hover:ring-cyan-400/30',
+                          viewMode === 'list' && 'flex items-center gap-4 p-3',
+                        )}
+                      >
+                        <AssetPreview
+                          asset={asset}
+                          projectId={projectId}
+                          imageUrl={imageUrlForAsset(asset)}
+                          compact={viewMode === 'list'}
+                          showWorkflowBadge
+                          className={clsx(
+                            'relative overflow-hidden rounded-xl bg-slate-900',
+                            viewMode === 'grid'
+                              ? 'aspect-video'
+                              : 'h-24 w-40 flex-shrink-0',
+                          )}
                         />
+                        <div
+                          className={viewMode === 'grid' ? 'p-4' : 'min-w-0'}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <h3 className="truncate text-slate-100 font-medium">
+                              {asset.name}
+                            </h3>
+                            <span className="text-2xs uppercase tracking-[0.18em] text-slate-500">
+                              {asset.asset_type.replace('_', ' ')}
+                            </span>
+                          </div>
+                          {asset.description && (
+                            <p className="mt-2 line-clamp-2 text-sm text-slate-400">
+                              {asset.description}
+                            </p>
+                          )}
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+                            <span>
+                              {asset.width}x{asset.height}
+                            </span>
+                            <span>{asset.model ?? 'default model'}</span>
+                            <span className="capitalize">{asset.status}</span>
+                            {asset.comment_count > 0 && (
+                              <span className="flex items-center gap-1 text-cyan-300">
+                                <MessageSquare className="h-3.5 w-3.5" />
+                                {asset.comment_count}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-3">
+                            <StarRating
+                              average={asset.rating_average}
+                              count={asset.rating_count}
+                              userRating={asset.user_rating}
+                              disabled={ratingMutation.isPending}
+                              compact
+                              onRate={(rating) =>
+                                ratingMutation.mutate({
+                                  assetId: asset.asset_id,
+                                  rating,
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
 
-              {totalCount > pageSize && (
-                <div className="mt-6 flex items-center justify-center gap-4 pb-4">
-                  <button
-                    type="button"
-                    onClick={() => setPage(Math.max(0, page - 1))}
-                    disabled={page === 0}
-                    className="btn-secondary disabled:opacity-50"
-                  >
-                    Previous
-                  </button>
-                  <span className="text-slate-400">
-                    Page {page + 1} of {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setPage(page + 1)}
-                    disabled={(page + 1) * pageSize >= totalCount}
-                    className="btn-secondary disabled:opacity-50"
-                  >
-                    Next
-                  </button>
+                  {totalCount > pageSize && (
+                    <div className="mt-6 flex items-center justify-center gap-4 pb-4">
+                      <button
+                        type="button"
+                        onClick={() => setPage(Math.max(0, page - 1))}
+                        disabled={page === 0}
+                        className="btn-secondary disabled:opacity-50"
+                      >
+                        Previous
+                      </button>
+                      <span className="text-slate-400">
+                        Page {page + 1} of {totalPages}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPage(page + 1)}
+                        disabled={(page + 1) * pageSize >= totalCount}
+                        className="btn-secondary disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+            </>
+          ) : (
+            <ProductionAssetsPanel
+              assets={productionPreviewAssets}
+              error={productionError}
+              imageUrlForAsset={imageUrlForAsset}
+              isLoading={isProductionLoading}
+              projectId={projectId}
+              selectedFolder={selectedProductionFolder}
+              setPreviewAsset={setPreviewAsset}
+              setSelectedAsset={setSelectedAsset}
+              tree={productionTree}
+              onRetry={() => refetchProductionAssets()}
+              onSelectFolder={setSelectedProductionFolder}
+            />
           )}
         </div>
 
@@ -616,9 +707,17 @@ export function AssetStudioWorkspace({
               queryKey: ['design-assets'],
             })
             queryClient.invalidateQueries({
+              queryKey: ['design-assets-production'],
+            })
+            queryClient.invalidateQueries({
               queryKey: ['design-assets-stats'],
             })
-            if (createdAssets[0]) setSelectedAsset(createdAssets[0])
+            if (createdAssets[0]) {
+              setSelectedAsset(createdAssets[0])
+              if (createdAssets[0].workflow === 'production') {
+                setActiveSection('production')
+              }
+            }
           }}
         />
       )}
@@ -648,7 +747,11 @@ export function AssetStudioWorkspace({
           }}
           onCommentsChanged={() => {
             queryClient.invalidateQueries({ queryKey: ['design-assets'] })
+            queryClient.invalidateQueries({
+              queryKey: ['design-assets-production'],
+            })
             refetch()
+            refetchProductionAssets()
           }}
         />
       )}
@@ -685,6 +788,231 @@ function StudioStat({
         </div>
       </div>
     </div>
+  )
+}
+
+function ProductionAssetsPanel({
+  assets,
+  error,
+  imageUrlForAsset,
+  isLoading,
+  projectId,
+  selectedFolder,
+  setPreviewAsset,
+  setSelectedAsset,
+  tree,
+  onRetry,
+  onSelectFolder,
+}: {
+  assets: DesignAsset[]
+  error: Error | null
+  imageUrlForAsset: (asset: DesignAsset) => string
+  isLoading: boolean
+  projectId: string
+  selectedFolder: string
+  setPreviewAsset: (asset: DesignAsset) => void
+  setSelectedAsset: (asset: DesignAsset) => void
+  tree: ProductionAssetFolder[]
+  onRetry: () => void
+  onSelectFolder: (folderKey: string) => void
+}): React.ReactElement {
+  const selectedLabel =
+    selectedFolder === 'all'
+      ? 'assets/production'
+      : (tree.find((folder) => folder.key === selectedFolder)?.path ??
+        selectedFolder)
+
+  if (isLoading) return <LoadingState />
+
+  if (error) {
+    return (
+      <ErrorState
+        error={error}
+        onRetry={onRetry}
+        title="Failed to load production assets"
+      />
+    )
+  }
+
+  return (
+    <div className="grid min-h-0 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <aside className="card min-h-0 overflow-auto p-4">
+        <div className="flex items-center gap-2 text-cyan-300">
+          <FolderTree className="h-4 w-4" />
+          <p className="text-xs uppercase tracking-[0.22em]">Production Tree</p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onSelectFolder('all')}
+          className={productionFolderClass(selectedFolder === 'all')}
+        >
+          <Folder className="h-4 w-4" />
+          <span className="min-w-0 flex-1 truncate">assets/production</span>
+          <span className="text-xs text-slate-500">
+            {tree.reduce((count, folder) => count + folder.assets.length, 0)}
+          </span>
+        </button>
+
+        <div className="mt-3 space-y-2">
+          {tree.map((folder) => (
+            <div key={folder.key}>
+              <button
+                type="button"
+                onClick={() => onSelectFolder(folder.key)}
+                className={productionFolderClass(selectedFolder === folder.key)}
+              >
+                <Folder className="h-4 w-4" />
+                <span className="min-w-0 flex-1 truncate">{folder.path}</span>
+                <span className="text-xs text-slate-500">
+                  {folder.assets.length}
+                </span>
+              </button>
+
+              <div className="ml-4 mt-1 space-y-1 border-l border-slate-800 pl-3">
+                {folder.assets.slice(0, 8).map((asset) => (
+                  <button
+                    type="button"
+                    key={asset.asset_id}
+                    onClick={() => {
+                      setSelectedAsset(asset)
+                      setPreviewAsset(asset)
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-slate-400 transition hover:bg-slate-900 hover:text-slate-100"
+                  >
+                    <FileImage className="h-3.5 w-3.5 flex-shrink-0 text-slate-500" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {productionAssetFileName(asset)}
+                    </span>
+                  </button>
+                ))}
+                {folder.assets.length > 8 && (
+                  <p className="px-2 text-xs text-slate-600">
+                    +{folder.assets.length - 8} more
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </aside>
+
+      <section className="card min-h-0 overflow-auto p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.22em] text-cyan-300">
+              Preview Pane
+            </p>
+            <h3 className="mt-1 text-lg font-semibold text-slate-100">
+              {selectedLabel}
+            </h3>
+          </div>
+          <span className="rounded-full bg-slate-900 px-3 py-1 text-xs uppercase tracking-[0.18em] text-slate-400">
+            {assets.length} thumbnails
+          </span>
+        </div>
+
+        {assets.length === 0 ? (
+          <EmptyState
+            title="No production assets yet"
+            description="Generate or import assets with workflow=production to manage them here."
+          />
+        ) : (
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {assets.map((asset) => (
+              <button
+                type="button"
+                key={asset.asset_id}
+                onClick={() => {
+                  setSelectedAsset(asset)
+                  setPreviewAsset(asset)
+                }}
+                className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 text-left transition hover:border-cyan-400/40 hover:ring-1 hover:ring-cyan-400/20"
+              >
+                <AssetPreview
+                  asset={asset}
+                  projectId={projectId}
+                  imageUrl={imageUrlForAsset(asset)}
+                  showWorkflowBadge
+                  className="relative aspect-video overflow-hidden rounded-t-2xl bg-slate-900"
+                />
+                <div className="p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-sm font-medium text-slate-100">
+                      {asset.name}
+                    </p>
+                    <span className="rounded-full bg-slate-900 px-2 py-0.5 text-2xs uppercase tracking-[0.16em] text-slate-500">
+                      {asset.status}
+                    </span>
+                  </div>
+                  <p className="mt-1 truncate font-mono text-xs text-slate-500">
+                    {productionAssetFileName(asset)}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
+interface ProductionAssetFolder {
+  key: string
+  path: string
+  assets: DesignAsset[]
+}
+
+function buildProductionAssetTree(
+  assets: DesignAsset[],
+): ProductionAssetFolder[] {
+  const folders = new Map<string, ProductionAssetFolder>()
+
+  for (const asset of assets) {
+    const key = productionAssetFolderKey(asset)
+    const existing = folders.get(key)
+    if (existing) {
+      existing.assets.push(asset)
+    } else {
+      folders.set(key, {
+        key,
+        path: `assets/production/${key}`,
+        assets: [asset],
+      })
+    }
+  }
+
+  return Array.from(folders.values()).sort((a, b) =>
+    a.path.localeCompare(b.path),
+  )
+}
+
+function productionAssetFolderKey(asset: DesignAsset): string {
+  return asset.asset_type || 'uncategorized'
+}
+
+function productionAssetFileName(asset: DesignAsset): string {
+  const originalName = metadataText(asset, 'original_file_name')
+  if (originalName) return originalName
+  return `${asset.asset_id}.${isSvgAsset(asset) ? 'svg' : 'png'}`
+}
+
+function productionFolderClass(active: boolean): string {
+  return clsx(
+    'mt-3 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition',
+    active
+      ? 'bg-cyan-500/10 text-cyan-100 ring-1 ring-cyan-400/30'
+      : 'text-slate-300 hover:bg-slate-900 hover:text-slate-100',
+  )
+}
+
+function assetStudioSectionClass(active: boolean): string {
+  return clsx(
+    'rounded-full border px-4 py-2 text-sm font-medium transition',
+    active
+      ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.12)]'
+      : 'border-slate-700 bg-slate-900/70 text-slate-400 hover:border-slate-600 hover:text-slate-100',
   )
 }
 
@@ -750,8 +1078,12 @@ function isSvgAsset(asset: DesignAsset): boolean {
 }
 
 function metadataString(asset: DesignAsset, key: string): string {
+  return metadataText(asset, key).toLowerCase()
+}
+
+function metadataText(asset: DesignAsset, key: string): string {
   const value = asset.metadata[key]
-  return typeof value === 'string' ? value.toLowerCase() : ''
+  return typeof value === 'string' ? value : ''
 }
 
 function AssetStatusActions({
