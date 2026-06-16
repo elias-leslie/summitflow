@@ -7,7 +7,7 @@ import typer
 from ..client import APIError
 from ..lib.confirm_token import confirm_gate
 from ..output import handle_api_error, output_error, output_json
-from .backup_formatters import output_backup_queue, output_source, output_sources
+from .backup_formatters import format_size, output_backup_queue, output_source, output_sources
 
 
 def backup_all_command(source_api) -> None:
@@ -75,6 +75,21 @@ def drain_pending_command(ctx, *, dry_run: bool) -> None:
         result = drain_pending_backups(dry_run=dry_run)
         if ctx.obj.is_compact:
             _print_compact_drain(result)
+        else:
+            output_json(result)
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from None
+
+
+def cleanup_local_command(ctx, *, apply: bool) -> None:
+    """Prune expired local backup archive files no longer referenced in DB."""
+    from app.tasks.backup_local_cleanup import cleanup_local_backup_archives
+
+    try:
+        result = cleanup_local_backup_archives(dry_run=not apply)
+        if ctx.obj.is_compact:
+            _print_compact_cleanup(result)
         else:
             output_json(result)
     except Exception as e:
@@ -157,3 +172,17 @@ def _print_compact_drain(result: dict) -> None:
     detail = str(result.get("script_output") or "").strip()
     if detail:
         print(f"DETAIL {detail.splitlines()[0]}")
+
+
+def _print_compact_cleanup(result: dict) -> None:
+    status = result.get("status", "unknown")
+    scanned = result.get("scanned", 0)
+    candidates = result.get("candidate_count", 0)
+    reclaimable = format_size(result.get("bytes_reclaimable"))
+    deleted = result.get("deleted", 0)
+    deleted_bytes = format_size(result.get("bytes_deleted"))
+    failed = result.get("failed", 0)
+    print(
+        f"LOCAL_BACKUP_CLEANUP {status}|scanned:{scanned}|candidates:{candidates}|"
+        f"reclaimable:{reclaimable}|deleted:{deleted}|deleted_bytes:{deleted_bytes}|failed:{failed}"
+    )

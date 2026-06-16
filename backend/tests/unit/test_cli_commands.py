@@ -1778,6 +1778,46 @@ class TestBackupCommands:
         assert "STORAGE" in result.output
         assert archive.name in result.output
 
+    def test_backup_cleanup_local_uses_dry_run_by_default(self) -> None:
+        """Local cleanup CLI defaults to preview-only mode."""
+        from cli.commands.backup import app as backup_app
+
+        with patch("app.tasks.backup_local_cleanup.cleanup_local_backup_archives") as cleanup:
+            cleanup.return_value = {
+                "status": "dry_run",
+                "scanned": 2,
+                "candidate_count": 1,
+                "bytes_reclaimable": 7,
+                "deleted": 0,
+                "bytes_deleted": 0,
+                "failed": 0,
+            }
+            result = runner.invoke(backup_app, ["cleanup-local"])
+
+        assert result.exit_code == 0
+        cleanup.assert_called_once_with(dry_run=True)
+        assert "LOCAL_BACKUP_CLEANUP dry_run" in result.output
+
+    def test_backup_cleanup_local_apply_deletes_candidates(self) -> None:
+        """Local cleanup CLI passes apply mode to cleanup task."""
+        from cli.commands.backup import app as backup_app
+
+        with patch("app.tasks.backup_local_cleanup.cleanup_local_backup_archives") as cleanup:
+            cleanup.return_value = {
+                "status": "success",
+                "scanned": 2,
+                "candidate_count": 1,
+                "bytes_reclaimable": 7,
+                "deleted": 1,
+                "bytes_deleted": 7,
+                "failed": 0,
+            }
+            result = runner.invoke(backup_app, ["cleanup-local", "--apply"])
+
+        assert result.exit_code == 0
+        cleanup.assert_called_once_with(dry_run=False)
+        assert "deleted:1" in result.output
+
 
 class TestVerifyPlanGates:
     """Test st verify command validates plan structure.

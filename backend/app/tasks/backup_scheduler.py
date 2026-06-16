@@ -9,6 +9,7 @@ from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..storage import maintenance_runs as maintenance_store
 from .backup_executor import create_backup
+from .backup_local_cleanup import cleanup_local_backup_archives
 from .backup_utils import calculate_next_run
 
 logger = get_logger(__name__)
@@ -93,6 +94,23 @@ def _cleanup_expired_records() -> int:
     return expired
 
 
+def _cleanup_local_archives() -> dict[str, Any]:
+    """Remove local archive files whose DB rows already expired."""
+    result = cleanup_local_backup_archives(dry_run=False)
+    if result.get("deleted"):
+        logger.info(
+            "cleaned_local_backup_archives",
+            count=result.get("deleted"),
+            bytes_deleted=result.get("bytes_deleted"),
+        )
+    if result.get("failed"):
+        logger.warning(
+            "local_backup_archive_cleanup_failures",
+            count=result.get("failed"),
+        )
+    return result
+
+
 def run_scheduled_backups() -> dict[str, Any]:
     """Check and run due scheduled backups.
 
@@ -108,6 +126,9 @@ def run_scheduled_backups() -> dict[str, Any]:
         stale_failed = _fail_stale_running_records()
         stale_cleaned = _cleanup_stale_records()
         expired_count = _cleanup_expired_records()
+        local_cleanup = _cleanup_local_archives()
+        local_archives_deleted = int(local_cleanup.get("deleted") or 0)
+        local_bytes_deleted = int(local_cleanup.get("bytes_deleted") or 0)
 
         due_sources = backup_store.list_due_sources()
 
@@ -121,6 +142,8 @@ def run_scheduled_backups() -> dict[str, Any]:
                 "stale_failed": stale_failed,
                 "stale_cleaned": stale_cleaned,
                 "expired_cleaned": expired_count,
+                "local_archives_deleted": local_archives_deleted,
+                "local_bytes_deleted": local_bytes_deleted,
                 "rows_cleaned": stale_failed + stale_cleaned + expired_count,
                 "results": [],
             }
@@ -137,6 +160,8 @@ def run_scheduled_backups() -> dict[str, Any]:
                 stale_failed=stale_failed,
                 stale_cleaned=stale_cleaned,
                 expired_cleaned=expired_count,
+                local_archives_deleted=local_archives_deleted,
+                local_bytes_deleted=local_bytes_deleted,
             )
             return result
 
@@ -167,6 +192,8 @@ def run_scheduled_backups() -> dict[str, Any]:
             "stale_failed": stale_failed,
             "stale_cleaned": stale_cleaned,
             "expired_cleaned": expired_count,
+            "local_archives_deleted": local_archives_deleted,
+            "local_bytes_deleted": local_bytes_deleted,
             "rows_cleaned": stale_failed + stale_cleaned + expired_count,
             "results": results,
         }
@@ -187,6 +214,8 @@ def run_scheduled_backups() -> dict[str, Any]:
             stale_failed=stale_failed,
             stale_cleaned=stale_cleaned,
             expired_cleaned=expired_count,
+            local_archives_deleted=local_archives_deleted,
+            local_bytes_deleted=local_bytes_deleted,
         )
 
         # Run scheduled restore drills after backups complete

@@ -428,11 +428,13 @@ class TestScheduledBackups:
             patch("app.tasks.backup_scheduler.backup_store.fail_stale_running_backups") as mock_stale_fail,
             patch("app.tasks.backup_scheduler.backup_store.cleanup_expired_backup_records") as mock_cleanup,
             patch("app.tasks.backup_scheduler.backup_store.cleanup_stale_backup_records") as mock_stale_cleanup,
+            patch("app.tasks.backup_scheduler.cleanup_local_backup_archives") as mock_local_cleanup,
             patch("app.tasks.backup_scheduler.maintenance_store.record_maintenance_run") as mock_record,
         ):
             mock_stale_fail.return_value = 3
             mock_cleanup.return_value = 4
             mock_stale_cleanup.return_value = 2
+            mock_local_cleanup.return_value = {"deleted": 5, "bytes_deleted": 123}
 
             result = run_scheduled_backups()
 
@@ -441,10 +443,13 @@ class TestScheduledBackups:
         assert result["stale_failed"] == 3
         assert result["stale_cleaned"] == 2
         assert result["expired_cleaned"] == 4
+        assert result["local_archives_deleted"] == 5
+        assert result["local_bytes_deleted"] == 123
         assert result["rows_cleaned"] == 9
         mock_stale_fail.assert_called_once()
         mock_cleanup.assert_called_once()
         mock_stale_cleanup.assert_called_once()
+        mock_local_cleanup.assert_called_once_with(dry_run=False)
         mock_record.assert_called_once()
 
     def test_run_scheduled_backups_with_due(self, cleanup_project: str, conn: Any) -> None:

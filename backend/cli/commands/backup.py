@@ -8,6 +8,7 @@ import typer
 
 from ..client import APIError, STClient
 from ..config import get_config
+from ..lib.usage import usage
 from ..output import handle_api_error, output_error, output_json
 from ..output_context import OutputContext
 from .backup_api import BackupProjectAPI, BackupSourceAPI
@@ -29,6 +30,7 @@ from .backup_infra import app as infra_app
 from .backup_runtime import (
     backup_all_command,
     backup_schedule_command,
+    cleanup_local_command,
     drain_pending_command,
     list_sources_command,
     reject_backup_all_args,
@@ -445,6 +447,28 @@ def drain_pending(
 ) -> None:
     """Upload pending backups to SMB and reconcile DB records."""
     drain_pending_command(ctx, dry_run=dry_run)
+
+
+@app.command("cleanup-local")
+@usage(
+    surface="st.backup.cleanup-local",
+    cmd="st backup cleanup-local",
+    when="prune local backup archive files that are older than source retention and no longer referenced by backup DB records",
+    precautions=(
+        "run without --apply first to preview reclaimable files and bytes",
+        "never delete individual Veeam .vbk/.vib files with this command",
+        "only configured local project-backup archive roots are scanned",
+    ),
+    examples=("st backup cleanup-local", "st backup cleanup-local --apply"),
+    task_types=("devops", "backup", "cleanup"),
+    tier="reference",
+)
+def cleanup_local(
+    ctx: typer.Context,
+    apply: Annotated[bool, typer.Option("--apply", help="Delete candidates instead of dry-run preview")] = False,
+) -> None:
+    """Prune expired local archive files no longer referenced in DB."""
+    cleanup_local_command(ctx, apply=apply)
 
 
 @app.command("sources")
