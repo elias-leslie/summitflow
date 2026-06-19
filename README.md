@@ -73,7 +73,7 @@ UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, wi
   profile by default with optional Proxmox/VM isolation), `st ui` (X11 desktop
   control: screenshot, OCR, GIF, click/type/key), `st web` (Agent-Hub-routed web
   search/research/fetch), `st design` (AI or hand-authored HTML mockups + asset
-  generation), `st selection` (Aico selection bus).
+  generation/import/critique/export), `st selection` (Aico selection bus).
 - Autonomous runs capture page screenshots, route/health status, and console-error
   counts, and analyze screenshots with a vision model — attached to the task.
 

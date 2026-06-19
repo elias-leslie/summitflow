@@ -7,7 +7,12 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
-from cli.commands.design import _build_asset_payload, _build_import_asset_payload
+from cli.commands.design import (
+    _build_asset_critique_prompt,
+    _build_asset_payload,
+    _build_import_asset_payload,
+    _critique_model_plan,
+)
 from cli.main import app
 
 runner = CliRunner()
@@ -192,6 +197,93 @@ def test_design_asset_import_posts_to_design_assets_endpoint(tmp_path: Path) -> 
     assert called_json["asset_type"] == "sprite"
     assert called_json["mime_type"] == "image/svg+xml"
     assert called_json["tags"] == ["scout", "manual"]
+
+
+def test_design_asset_critique_calls_agent_hub_with_default_agent(tmp_path: Path) -> None:
+    """Asset critique should route through Agent Hub, not a project-local silo."""
+    image_path = tmp_path / "ranger.png"
+    image_path.write_bytes(b"fake-png")
+    mock_cfg = MagicMock(project_id="the-aftertimes")
+
+    with (
+        patch("cli.commands.design.require_explicit_project"),
+        patch("cli.commands.design.get_config", return_value=mock_cfg),
+        patch(
+            "cli.commands.design.call_complete",
+            return_value={"content": "1. Vision sanity: hood, lantern", "session_id": "sess-1"},
+        ) as mock_complete,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "-P",
+                "the-aftertimes",
+                "design",
+                "asset",
+                "critique",
+                str(image_path),
+                "--kind",
+                "sprite",
+                "--brief",
+                "Dark ranger player anchor.",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_complete.assert_called_once()
+    kwargs = mock_complete.call_args.kwargs
+    assert kwargs["agent_slug"] == "pixel-art-critic"
+    assert kwargs["project_id"] == "the-aftertimes"
+    assert kwargs["images"] == [str(image_path)]
+    assert kwargs["tool_name"] == "st design asset critique"
+    assert "Dark ranger player anchor" in kwargs["message"]
+
+
+def test_design_asset_critique_ensemble_uses_ranked_model_panel(tmp_path: Path) -> None:
+    """The critique command can run the selected complementary model panel."""
+    image_path = tmp_path / "tile.png"
+    image_path.write_bytes(b"fake-png")
+    mock_cfg = MagicMock(project_id="the-aftertimes")
+
+    with (
+        patch("cli.commands.design.require_explicit_project"),
+        patch("cli.commands.design.get_config", return_value=mock_cfg),
+        patch(
+            "cli.commands.design.call_complete",
+            return_value={"content": "critique", "session_id": "sess-1"},
+        ) as mock_complete,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "-P",
+                "the-aftertimes",
+                "design",
+                "asset",
+                "critique",
+                str(image_path),
+                "--ensemble",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert mock_complete.call_count == 2
+    messages = [call.kwargs["message"] for call in mock_complete.call_args_list]
+    assert messages[0].startswith("@xai/grok-4.20-0309-reasoning ")
+    assert messages[1].startswith("@gemini-3.1-flash-lite ")
+
+
+def test_critique_prompt_and_model_plan_are_agent_friendly() -> None:
+    """Prompt/model helpers should enforce vision sanity and default single-agent mode."""
+    assert _critique_model_plan(None, ensemble=False) == [None]
+    assert _critique_model_plan(["   "], ensemble=False) == [None]
+    assert _critique_model_plan(None, ensemble=True) == [
+        "xai/grok-4.20-0309-reasoning",
+        "gemini-3.1-flash-lite",
+    ]
+    prompt = _build_asset_critique_prompt(asset_kind="sprite", brief="Use gothic player art bar.")
+    assert "If the image is unavailable" in prompt
+    assert "Use gothic player art bar." in prompt
 
 
 def test_build_asset_payload_includes_reference_image_options(tmp_path: Path) -> None:

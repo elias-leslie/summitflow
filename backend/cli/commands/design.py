@@ -10,6 +10,7 @@ Use this when... matrix:
     Have an AI agent regenerate an existing mockup    | st design ui rerun
     Import self/user-generated image asset            | st design asset import
     Generate a sprite / portrait / game art asset     | st design asset generate
+    Critique a sprite / tile / game art image         | st design asset critique
     Export sprite-sheet frames                        | st design asset export
 
 `ui create` and `ui attach` are the right tools when an agent (Claude Code,
@@ -41,7 +42,8 @@ import typer
 from ..client import APIError, STClient
 from ..config import get_config
 from ..lib.usage import usage
-from ..output import handle_api_error, output_json, require_explicit_project
+from ..output import handle_api_error, output_error, output_json, require_explicit_project
+from ._complete_http import call_complete
 
 app = typer.Typer(
     help=(
@@ -86,6 +88,11 @@ _VariantCount = Annotated[
     int,
     typer.Option("--variants", min=1, max=4, help="Number of variants to generate"),
 ]
+DEFAULT_ASSET_CRITIQUE_AGENT = "pixel-art-critic"
+DEFAULT_ASSET_CRITIQUE_MODELS = (
+    "xai/grok-4.20-0309-reasoning",
+    "gemini-3.1-flash-lite",
+)
 
 
 @app.callback(invoke_without_command=True)
@@ -97,6 +104,7 @@ _VariantCount = Annotated[
         "before generating visual work, ask the project lead whether the current agent/user should create it manually or Agent Hub design/image agents should generate it",
         "use st design ui create/attach for hand-authored HTML UI mockups; never route UI screens through asset image generation",
         "use st design asset import for current-agent/user-generated PNG/JPEG/WebP/SVG assets so they still enter Asset Studio approval",
+        "use st design asset critique for Agent Hub-routed visual/design critique before accepting production game assets",
         "use the calling agent's native image generator first, then st design asset import; use st design asset generate only as an explicit Agent Hub fallback when the caller has no native image generation",
         "Design Ops storage is durable project state; never configure Asset Studio or UI mockup storage under /tmp",
         "do not export or commit visual assets into the repo until approved in Design/Asset Studio",
@@ -236,6 +244,99 @@ def import_asset(
     output_json(result)
 
 
+@asset_app.command("critique")
+def critique_asset(
+    image_file: Annotated[Path, typer.Argument(help="PNG/JPEG/GIF/WebP image to critique")],
+    brief: Annotated[str | None, typer.Option("--brief", help="Asset-specific art direction / acceptance criteria")] = None,
+    brief_file: Annotated[Path | None, typer.Option("--brief-file", help="Read art direction / acceptance criteria from a file")] = None,
+    asset_kind: Annotated[
+        str,
+        typer.Option("--kind", help="Asset kind: sprite, animation, tileset, environment, ui, icon, vfx"),
+    ] = "sprite",
+    agent_slug: Annotated[
+        str,
+        typer.Option("--agent", help="Agent Hub visual critique agent slug"),
+    ] = DEFAULT_ASSET_CRITIQUE_AGENT,
+    model_overrides: Annotated[
+        list[str] | None,
+        typer.Option("--model", "-M", help="Model override. Repeat for a critique panel."),
+    ] = None,
+    ensemble: Annotated[
+        bool,
+        typer.Option("--ensemble", help="Run the default complementary critique panel instead of only the agent default."),
+    ] = False,
+    memory: Annotated[bool, typer.Option("--memory/--no-memory", help="Enable Agent Hub memory injection")] = True,
+    timeout: Annotated[float, typer.Option("--timeout", "-t", min=1.0, help="HTTP read-timeout per critique call")] = 120.0,
+) -> None:
+    """Critique a visual game asset through Agent Hub.
+
+    This is the canonical non-siloed game-asset critique surface. It calls an
+    Agent Hub specialist (`pixel-art-critic` by default), can run a multi-model
+    panel, and returns compact structured output suitable for agent workflows.
+
+    Examples:
+        st -P the-aftertimes design asset critique ranger-proof.png --kind sprite
+        st -P the-aftertimes design asset critique ranger-proof.png --ensemble
+        st design asset critique sheet.png -M xai/grok-4.20-0309-reasoning -M gemini-3.1-flash-lite
+    """
+    cfg = get_config()
+    require_explicit_project(cfg)
+    if not image_file.is_file():
+        output_error(f"Image not found: {image_file}")
+        raise typer.Exit(1)
+    resolved_brief = _resolve_optional_text(brief, brief_file)
+    prompt = _build_asset_critique_prompt(asset_kind=asset_kind, brief=resolved_brief)
+    models = _critique_model_plan(model_overrides, ensemble)
+
+    critiques: list[dict[str, Any]] = []
+    for model in models:
+        model_prompt = f"@{model} {prompt}" if model else prompt
+        label = model or f"{agent_slug}:default"
+        try:
+            result = call_complete(
+                agent_slug=agent_slug,
+                message=model_prompt,
+                project_id=cfg.project_id,
+                source_client="st-design-asset-critique",
+                use_memory=memory,
+                timeout=timeout,
+                skip_cache=True,
+                task_type="design_asset_critique",
+                images=[str(image_file)],
+                source_metadata={
+                    "surface": "st.design.asset.critique",
+                    "asset_kind": asset_kind,
+                    "image_file": str(image_file),
+                    "model_override": model,
+                    "ensemble": ensemble,
+                },
+                tool_name="st design asset critique",
+            )
+        except typer.Exit:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive CLI boundary
+            critiques.append({"model": label, "ok": False, "error": str(exc)})
+            continue
+        critiques.append({
+            "model": label,
+            "ok": not bool(result.get("error")),
+            "content": result.get("content", ""),
+            "session_id": result.get("session_id"),
+            "raw_error": result.get("error"),
+        })
+
+    output_json({
+        "success": all(item.get("ok") for item in critiques),
+        "agent": agent_slug,
+        "project_id": cfg.project_id,
+        "image_file": str(image_file),
+        "asset_kind": asset_kind,
+        "ensemble": len(models) > 1,
+        "models": [model or f"{agent_slug}:default" for model in models],
+        "critiques": critiques,
+    })
+
+
 @asset_app.command("export")
 def export_asset(
     asset_id: Annotated[str, typer.Argument(help="Design asset id to export")],
@@ -260,6 +361,59 @@ def export_asset(
         raise typer.Exit(1) from None
 
     output_json(result)
+
+
+def _resolve_optional_text(text: str | None, text_file: Path | None) -> str:
+    """Resolve optional inline/file text."""
+    parts: list[str] = []
+    if text:
+        parts.append(text)
+    if text_file is not None:
+        if not text_file.is_file():
+            raise typer.BadParameter(f"Brief file not found: {text_file}")
+        parts.append(text_file.read_text())
+    return "\n\n".join(part.strip() for part in parts if part.strip())
+
+
+def _critique_model_plan(model_overrides: list[str] | None, ensemble: bool) -> list[str | None]:
+    """Return model overrides to run; None means use the agent default."""
+    if model_overrides:
+        cleaned: list[str | None] = [model.strip() for model in model_overrides if model.strip()]
+        if cleaned:
+            return cleaned
+        return [None]
+    if ensemble:
+        return list(DEFAULT_ASSET_CRITIQUE_MODELS)
+    return [None]
+
+
+def _build_asset_critique_prompt(*, asset_kind: str, brief: str) -> str:
+    """Build the standard game-asset critique prompt."""
+    brief_section = brief or "No extra brief supplied. Apply general production game-asset standards."
+    return f"""You are critiquing a game {asset_kind} image for production use.
+
+First prove you are looking at this exact image by naming 3-5 visible elements. If the image is unavailable, say that and stop; do not hallucinate.
+
+Critique against these standards:
+- strong silhouette/readability at intended game scale;
+- disciplined hard pixel clusters and no blurry pseudo-pixel art when the asset is pixel art;
+- non-generic player/enemy/environment identity;
+- material separation, lighting direction, and beautiful cohesive mood;
+- animation/runtime readiness: pivots, contacts, seams, scale, alpha, and engine export risks;
+- concrete local edits an agent can implement.
+
+Project/user brief:
+{brief_section}
+
+Return only:
+1. Vision sanity: concrete observed elements.
+2. Verdict: approve / approve-with-revisions / reject.
+3. Blocking issues: exact region + why it hurts quality.
+4. Concrete edit instructions: exact local edits.
+5. Animation/engine-readiness risks.
+6. What not to change.
+7. Usefulness score 1-10.
+"""
 
 
 @ui_app.command("analyze")
