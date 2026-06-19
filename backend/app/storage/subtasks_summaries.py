@@ -228,14 +228,21 @@ def get_subtask_summary(task_id: str) -> dict[str, Any]:
     with get_cursor() as cur:
         cur.execute(
             """
+            WITH next_incomplete AS (
+                SELECT subtask_id
+                FROM task_subtasks
+                WHERE task_id = %s AND passes = FALSE
+                ORDER BY display_order ASC, subtask_id ASC
+                LIMIT 1
+            )
             SELECT
-                COUNT(*) as total,
-                COUNT(*) FILTER (WHERE passes = TRUE) as completed,
-                MIN(subtask_id) FILTER (WHERE passes = FALSE) as next_subtask_id
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE passes = TRUE) AS completed,
+                (SELECT subtask_id FROM next_incomplete) AS next_subtask_id
             FROM task_subtasks
             WHERE task_id = %s
             """,
-            (task_id,),
+            (task_id, task_id),
         )
         row = cur.fetchone()
 

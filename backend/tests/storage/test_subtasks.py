@@ -404,6 +404,22 @@ class TestGetSubtaskSummary:
         assert summary["next_subtask_id"] == "1.1"
         assert summary["progress_percent"] == 0
 
+    def test_summary_next_subtask_uses_display_order_before_id(
+        self,
+        test_task: dict[str, Any],
+    ) -> None:
+        """Display order controls active slice when ids are not chronological."""
+        subtask_store.create_subtask(test_task["id"], "1.1", "Broad stale slice", 20)
+        subtask_store.create_subtask(test_task["id"], "1.11", "Player-first slice", -20)
+        subtask_store.create_subtask(test_task["id"], "1.2", "Later slice", 30)
+
+        summary = subtask_store.get_subtask_summary(test_task["id"])
+
+        assert summary["total"] == 3
+        assert summary["completed"] == 0
+        assert summary["next_subtask_id"] == "1.11"
+        assert summary["progress_percent"] == 0
+
     def test_summary_partial(self, test_task: dict[str, Any]) -> None:
         """Test summary with partial completion."""
         subtask_store.create_subtask(test_task["id"], "1.1", "First", 0)
