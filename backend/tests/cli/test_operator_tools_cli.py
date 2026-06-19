@@ -1478,6 +1478,47 @@ def test_web_runs_agent_hub_service_code() -> None:
     assert run_web.call_args.args[0]["query"] == "SummitFlow"
 
 
+def test_web_fetch_passes_backend_to_agent_hub_service_code() -> None:
+    with patch("cli.commands.web._run_agent_hub_web", return_value=0) as run_web:
+        result = runner.invoke(
+            main_app,
+            ["web", "fetch", "--url", "https://example.com", "--backend", "jina", "--max-chars", "500"],
+        )
+
+    assert result.exit_code == 0
+    payload = run_web.call_args.args[0]
+    assert payload["command"] == "fetch"
+    assert payload["backend"] == "jina"
+    assert payload["max_chars"] == 500
+
+
+def test_web_research_passes_backend_to_agent_hub_service_code() -> None:
+    with patch("cli.commands.web._run_agent_hub_web", return_value=0) as run_web:
+        result = runner.invoke(
+            main_app,
+            ["web", "research", "--query", "SummitFlow", "--backend", "direct"],
+        )
+
+    assert result.exit_code == 0
+    payload = run_web.call_args.args[0]
+    assert payload["command"] == "research"
+    assert payload["backend"] == "direct"
+
+
+def test_web_benchmark_payload_is_bounded_and_repeatable() -> None:
+    with patch("cli.commands.web._run_agent_hub_web", return_value=0) as run_web:
+        result = runner.invoke(
+            main_app,
+            ["web", "benchmark", "--iterations", "99", "--max-chars", "100000"],
+        )
+
+    assert result.exit_code == 0
+    payload = run_web.call_args.args[0]
+    assert payload["command"] == "benchmark"
+    assert payload["iterations"] == 10
+    assert payload["max_chars"] == 5000
+
+
 class _FakeVmClient:
     def __init__(self) -> None:
         self.stopped: list[str] = []
