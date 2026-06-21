@@ -88,7 +88,7 @@ _VariantCount = Annotated[
     int,
     typer.Option("--variants", min=1, max=4, help="Number of variants to generate"),
 ]
-DEFAULT_ASSET_CRITIQUE_AGENT = "pixel-art-critic"
+DEFAULT_ASSET_CRITIQUE_AGENT = "game-art-critic"
 DEFAULT_ASSET_CRITIQUE_MODELS = (
     "xai/grok-4.20-0309-reasoning",
     "gemini-3.1-flash-lite",
@@ -271,7 +271,7 @@ def critique_asset(
     """Critique a visual game asset through Agent Hub.
 
     This is the canonical non-siloed game-asset critique surface. It calls an
-    Agent Hub specialist (`pixel-art-critic` by default), can run a multi-model
+    Agent Hub specialist (`game-art-critic` by default), can run a multi-model
     panel, and returns compact structured output suitable for agent workflows.
 
     Examples:
@@ -390,13 +390,15 @@ def _critique_model_plan(model_overrides: list[str] | None, ensemble: bool) -> l
 def _build_asset_critique_prompt(*, asset_kind: str, brief: str) -> str:
     """Build the standard game-asset critique prompt."""
     brief_section = brief or "No extra brief supplied. Apply general production game-asset standards."
-    return f"""You are critiquing a game {asset_kind} image for production use.
+    return f"""You are critiquing a game {asset_kind} image for production use across 2D/3D game art media.
 
 First prove you are looking at this exact image by naming 3-5 visible elements. If the image is unavailable, say that and stop; do not hallucinate.
 
 Critique against these standards:
 - strong silhouette/readability at intended game scale;
 - disciplined hard pixel clusters and no blurry pseudo-pixel art when the asset is pixel art;
+- coherent shape language, value grouping, material/readability, and export-safe edges for non-pixel 2D/UI art;
+- proportions, material/texture read, UV/normal/lighting artifacts when visible, and rig/LOD readiness for 3D/model renders;
 - non-generic player/enemy/environment identity;
 - material separation, lighting direction, and beautiful cohesive mood;
 - animation/runtime readiness: pivots, contacts, seams, scale, alpha, and engine export risks;

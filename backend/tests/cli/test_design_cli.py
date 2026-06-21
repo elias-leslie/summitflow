@@ -232,7 +232,7 @@ def test_design_asset_critique_calls_agent_hub_with_default_agent(tmp_path: Path
     assert result.exit_code == 0, result.output
     mock_complete.assert_called_once()
     kwargs = mock_complete.call_args.kwargs
-    assert kwargs["agent_slug"] == "pixel-art-critic"
+    assert kwargs["agent_slug"] == "game-art-critic"
     assert kwargs["project_id"] == "the-aftertimes"
     assert kwargs["images"] == [str(image_path)]
     assert kwargs["tool_name"] == "st design asset critique"
