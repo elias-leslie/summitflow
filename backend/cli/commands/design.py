@@ -89,6 +89,7 @@ _VariantCount = Annotated[
     typer.Option("--variants", min=1, max=4, help="Number of variants to generate"),
 ]
 DEFAULT_ASSET_CRITIQUE_AGENT = "game-art-critic"
+GEMMA_ASSET_CRITIQUE_AGENT = "game-art-critic-gemma"
 DEFAULT_ASSET_CRITIQUE_MODELS = (
     "xai/grok-4.20-0309-reasoning",
     "gemini-3.1-flash-lite",
@@ -257,6 +258,10 @@ def critique_asset(
         str,
         typer.Option("--agent", help="Agent Hub visual critique agent slug"),
     ] = DEFAULT_ASSET_CRITIQUE_AGENT,
+    gemma: Annotated[
+        bool,
+        typer.Option("--gemma", help="Use local Gemma 4 12B game-art critic agent"),
+    ] = False,
     model_overrides: Annotated[
         list[str] | None,
         typer.Option("--model", "-M", help="Model override. Repeat for a critique panel."),
@@ -276,6 +281,7 @@ def critique_asset(
 
     Examples:
         st -P the-aftertimes design asset critique ranger-proof.png --kind sprite
+        st -P the-aftertimes design asset critique ranger-proof.png --kind sprite --gemma
         st -P the-aftertimes design asset critique ranger-proof.png --ensemble
         st design asset critique sheet.png -M xai/grok-4.20-0309-reasoning -M gemini-3.1-flash-lite
     """
@@ -284,6 +290,7 @@ def critique_asset(
     if not image_file.is_file():
         output_error(f"Image not found: {image_file}")
         raise typer.Exit(1)
+    effective_agent_slug = GEMMA_ASSET_CRITIQUE_AGENT if gemma else agent_slug
     resolved_brief = _resolve_optional_text(brief, brief_file)
     prompt = _build_asset_critique_prompt(asset_kind=asset_kind, brief=resolved_brief)
     models = _critique_model_plan(model_overrides, ensemble)
@@ -291,10 +298,10 @@ def critique_asset(
     critiques: list[dict[str, Any]] = []
     for model in models:
         model_prompt = f"@{model} {prompt}" if model else prompt
-        label = model or f"{agent_slug}:default"
+        label = model or f"{effective_agent_slug}:default"
         try:
             result = call_complete(
-                agent_slug=agent_slug,
+                agent_slug=effective_agent_slug,
                 message=model_prompt,
                 project_id=cfg.project_id,
                 source_client="st-design-asset-critique",
@@ -309,6 +316,7 @@ def critique_asset(
                     "image_file": str(image_file),
                     "model_override": model,
                     "ensemble": ensemble,
+                    "gemma": gemma,
                 },
                 tool_name="st design asset critique",
             )
@@ -327,12 +335,12 @@ def critique_asset(
 
     output_json({
         "success": all(item.get("ok") for item in critiques),
-        "agent": agent_slug,
+        "agent": effective_agent_slug,
         "project_id": cfg.project_id,
         "image_file": str(image_file),
         "asset_kind": asset_kind,
         "ensemble": len(models) > 1,
-        "models": [model or f"{agent_slug}:default" for model in models],
+        "models": [model or f"{effective_agent_slug}:default" for model in models],
         "critiques": critiques,
     })
 
@@ -393,6 +401,8 @@ def _build_asset_critique_prompt(*, asset_kind: str, brief: str) -> str:
     return f"""You are critiquing a game {asset_kind} image for production use across 2D/3D game art media.
 
 First prove you are looking at this exact image by naming 3-5 visible elements. If the image is unavailable, say that and stop; do not hallucinate.
+
+Critique the whole image, not only the checklist. If the supplied brief is narrow, still report any other production issue you observe. For labeled direction sheets or turnaround poses, verify that each label actually faces that direction and flag any duplicate/mislabeled facing.
 
 Critique against these standards:
 - strong silhouette/readability at intended game scale;

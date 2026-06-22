@@ -273,6 +273,39 @@ def test_design_asset_critique_ensemble_uses_ranked_model_panel(tmp_path: Path) 
     assert messages[1].startswith("@gemini-3.1-flash-lite ")
 
 
+def test_design_asset_critique_gemma_routes_to_local_critic(tmp_path: Path) -> None:
+    """The Gemma shorthand should select the dedicated local visual critic agent."""
+    image_path = tmp_path / "turnaround.png"
+    image_path.write_bytes(b"fake-png")
+    mock_cfg = MagicMock(project_id="the-aftertimes")
+
+    with (
+        patch("cli.commands.design.require_explicit_project"),
+        patch("cli.commands.design.get_config", return_value=mock_cfg),
+        patch(
+            "cli.commands.design.call_complete",
+            return_value={"content": "critique", "session_id": "sess-1"},
+        ) as mock_complete,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "-P",
+                "the-aftertimes",
+                "design",
+                "asset",
+                "critique",
+                str(image_path),
+                "--gemma",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    kwargs = mock_complete.call_args.kwargs
+    assert kwargs["agent_slug"] == "game-art-critic-gemma"
+    assert kwargs["source_metadata"]["gemma"] is True
+
+
 def test_critique_prompt_and_model_plan_are_agent_friendly() -> None:
     """Prompt/model helpers should enforce vision sanity and default single-agent mode."""
     assert _critique_model_plan(None, ensemble=False) == [None]
@@ -283,6 +316,8 @@ def test_critique_prompt_and_model_plan_are_agent_friendly() -> None:
     ]
     prompt = _build_asset_critique_prompt(asset_kind="sprite", brief="Use gothic player art bar.")
     assert "If the image is unavailable" in prompt
+    assert "not only the checklist" in prompt
+    assert "each label actually faces that direction" in prompt
     assert "Use gothic player art bar." in prompt
 
 
