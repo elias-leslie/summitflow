@@ -60,6 +60,11 @@ if _test_db_url:
         f"\n[TEST] Using TEST_DATABASE_URL: {_test_db_url.split('@')[1] if '@' in _test_db_url else _test_db_url}"
     )
 
+# Unit/API tests should not inherit an operator's live Cloudflare Access config
+# from ~/.env.local. Tests that need Cloudflare mode patch settings directly.
+os.environ["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = ""
+os.environ["CLOUDFLARE_ACCESS_AUD"] = ""
+
 # =============================================================================
 # NOW safe to import from app modules
 # =============================================================================

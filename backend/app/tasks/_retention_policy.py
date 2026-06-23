@@ -43,6 +43,7 @@ class HostRetentionPolicy:
     hermes_checkpoint_tmp_max_age_hours: int = 2 * 24
     hermes_checkpoint_internal_max_age_hours: int = 3 * 24
     legacy_report_max_age_hours: int = 3 * 24
+    veeam_snapshot_max_age_hours: int = 6
 
     @classmethod
     def from_env(cls) -> HostRetentionPolicy:
@@ -75,5 +76,8 @@ class HostRetentionPolicy:
             ),
             legacy_report_max_age_hours=_int_env(
                 "SF_HOST_RETENTION_LEGACY_REPORT_MAX_AGE_HOURS", 3 * 24
+            ),
+            veeam_snapshot_max_age_hours=_int_env(
+                "SF_HOST_RETENTION_VEEAM_SNAPSHOT_MAX_AGE_HOURS", 6
             ),
         )

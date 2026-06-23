@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 from typing import Literal
 
@@ -11,9 +10,6 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
-
-os.environ["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = ""
-os.environ["CLOUDFLARE_ACCESS_AUD"] = ""
 
 from app.main import app
 

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from ..logging_config import get_logger
 from ._retention_docker import (
@@ -28,6 +30,15 @@ from ._retention_policy import HostRetentionPolicy
 logger = get_logger(__name__)
 
 _BYTES_PER_GB = 1024**3
+
+
+class VeeamSnapshotResult(TypedDict, total=False):
+    status: str
+    deleted: list[str]
+    skipped: list[str]
+    max_age_hours: int
+    reason: str
+    error: str
 
 
 class _DockerSummary(TypedDict):
@@ -84,6 +95,123 @@ def _prune_images(
 ) -> ImageResult:
     """Thin wrapper so tests can patch _run_command via this module's namespace."""
     return prune_images(policy=policy, pressure_mode=pressure_mode, run=_run_command)
+
+
+
+def _active_veeam_session(run: Any = _run_command) -> tuple[bool | None, str | None]:
+    proc = run(["sudo", "-n", "veeamconfig", "session", "list"], timeout=30)
+    if proc.returncode != 0:
+        return None, _tail_output(proc.stderr or proc.stdout)
+    for line in proc.stdout.splitlines():
+        parts = [part.strip() for part in re.split(r"\s{2,}", line.strip()) if part.strip()]
+        if any(part in {"Running", "Pending"} for part in parts):
+            return True, None
+    return False, None
+
+
+def _tail_output(text: str, *, limit: int = 400) -> str:
+    return text.strip()[-limit:] if text else ""
+
+
+def _root_btrfs_source(run: Any = _run_command) -> str | None:
+    proc = run(["findmnt", "-no", "SOURCE,FSTYPE", "/"], timeout=15)
+    if proc.returncode != 0:
+        return None
+    parts = proc.stdout.split()
+    if len(parts) < 2 or parts[-1] != "btrfs":
+        return None
+    return " ".join(parts[:-1]).split("[", 1)[0]
+
+
+def _btrfs_subvolume_paths(mount_point: Path, run: Any = _run_command) -> list[str]:
+    proc = run(["sudo", "-n", "btrfs", "subvolume", "list", str(mount_point)], timeout=60)
+    if proc.returncode != 0:
+        return []
+    paths = []
+    for line in proc.stdout.splitlines():
+        _, marker, path = line.partition(" path ")
+        if marker and path:
+            paths.append(path.strip())
+    return paths
+
+
+def cleanup_stale_veeam_snapshots(
+    *,
+    policy: HostRetentionPolicy,
+    now: datetime,
+    run: Any = _run_command,
+    mount_point: Path | None = None,
+) -> VeeamSnapshotResult:
+    """Delete stale Veeam btrfs temp snapshots that pin freed disk blocks."""
+    active, reason = _active_veeam_session(run)
+    if active is True:
+        return {"status": "skipped", "reason": "veeam_session_active", "deleted": [], "skipped": []}
+    if active is None:
+        return {"status": "skipped", "reason": reason or "veeam_status_unavailable", "deleted": [], "skipped": []}
+
+    mounted_here = False
+    temp_dir: tempfile.TemporaryDirectory[str] | None = None
+    if mount_point is None:
+        source = _root_btrfs_source(run)
+        if not source:
+            return {"status": "skipped", "reason": "root_not_btrfs", "deleted": [], "skipped": []}
+        temp_dir = tempfile.TemporaryDirectory(prefix="summitflow-btrfs-top-")
+        mount_point = Path(temp_dir.name)
+        proc = run(["sudo", "-n", "mount", "-o", "subvolid=5", source, str(mount_point)], timeout=60)
+        if proc.returncode != 0:
+            temp_dir.cleanup()
+            return {
+                "status": "skipped",
+                "reason": "top_level_mount_failed",
+                "error": _tail_output(proc.stderr or proc.stdout),
+                "deleted": [],
+                "skipped": [],
+            }
+        mounted_here = True
+
+    deleted: list[str] = []
+    skipped: list[str] = []
+    try:
+        snapshots_root = mount_point / ".veeam_snapshots"
+        if not snapshots_root.is_dir():
+            return {"status": "success", "deleted": [], "skipped": [], "max_age_hours": policy.veeam_snapshot_max_age_hours}
+
+        subvolume_paths = _btrfs_subvolume_paths(mount_point, run)
+        for snapshot_dir in sorted(path for path in snapshots_root.iterdir() if path.is_dir()):
+            if (now.timestamp() - snapshot_dir.stat().st_mtime) / 3600.0 < policy.veeam_snapshot_max_age_hours:
+                skipped.append(str(snapshot_dir))
+                continue
+            prefix = f".veeam_snapshots/{snapshot_dir.name}/"
+            children = sorted(
+                (path for path in subvolume_paths if path.startswith(prefix)),
+                key=lambda path: path.count("/"),
+                reverse=True,
+            )
+            failed = False
+            for child in children:
+                proc = run(["sudo", "-n", "btrfs", "subvolume", "delete", str(mount_point / child)], timeout=300)
+                if proc.returncode != 0:
+                    failed = True
+                    break
+            if failed:
+                skipped.append(str(snapshot_dir))
+                continue
+            run(["sudo", "-n", "rmdir", str(snapshot_dir)], timeout=30)
+            deleted.append(str(snapshot_dir))
+
+        if deleted:
+            run(["sudo", "-n", "btrfs", "subvolume", "sync", str(mount_point)], timeout=600)
+        return {
+            "status": "success",
+            "deleted": deleted,
+            "skipped": skipped,
+            "max_age_hours": policy.veeam_snapshot_max_age_hours,
+        }
+    finally:
+        if mounted_here and mount_point is not None:
+            run(["sudo", "-n", "umount", str(mount_point)], timeout=60)
+        if temp_dir is not None:
+            temp_dir.cleanup()
 
 
 def _docker_available() -> bool:
@@ -163,6 +291,7 @@ def cleanup_host_artifacts(
     )
 
     docker = _run_docker_cleanup(policy=effective_policy, pressure_mode=pressure_mode, now=effective_now)
+    veeam_snapshots = cleanup_stale_veeam_snapshots(policy=effective_policy, now=effective_now)
 
     after = _disk_snapshot("/")
     bytes_reclaimed = max(int(after["free_bytes"]) - int(before["free_bytes"]), 0)
@@ -199,6 +328,7 @@ def cleanup_host_artifacts(
         "docker_builder_cache": docker["builder_cache"],
         "docker_images": docker["images"],
         "docker_anonymous_volumes": docker["anonymous_volumes"],
+        "veeam_snapshots": veeam_snapshots,
         "review_candidates": review_candidates,
         "errors": errors,
     }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -188,3 +189,71 @@ def test_cleanup_host_artifacts_prunes_stale_tmp_backups_and_hermes_checkpoints(
     assert not tmp_checkpoint.exists()
     assert not internal_checkpoint.exists()
     assert keep_checkpoint.exists()
+
+
+def test_cleanup_stale_veeam_snapshots_deletes_old_btrfs_subvolumes(tmp_path: Path) -> None:
+    from app.tasks.host_retention import HostRetentionPolicy, cleanup_stale_veeam_snapshots
+
+    now = datetime(2026, 6, 23, 12, tzinfo=UTC)
+    snapshot = tmp_path / ".veeam_snapshots" / "{stale}"
+    child = snapshot / "259_@docker"
+    child.mkdir(parents=True)
+    old_time = (now - timedelta(hours=8)).timestamp()
+    os.utime(snapshot, (old_time, old_time))
+    os.utime(child, (old_time, old_time))
+    calls: list[list[str]] = []
+
+    def run(args: list[str], *, timeout: int = 0, cwd: str | None = None):
+        _ = timeout, cwd
+        calls.append(args)
+        if args[:4] == ["sudo", "-n", "veeamconfig", "session"]:
+            return type("Proc", (), {"returncode": 0, "stdout": "State\nSuccess\n", "stderr": ""})()
+        if args[:5] == ["sudo", "-n", "btrfs", "subvolume", "list"]:
+            return type(
+                "Proc",
+                (),
+                {
+                    "returncode": 0,
+                    "stdout": "ID 1 gen 1 top level 5 path .veeam_snapshots/{stale}/259_@docker\n",
+                    "stderr": "",
+                },
+            )()
+        if args[:5] == ["sudo", "-n", "btrfs", "subvolume", "delete"]:
+            shutil.rmtree(args[-1])
+        if args[:3] == ["sudo", "-n", "rmdir"]:
+            Path(args[-1]).rmdir()
+        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    result = cleanup_stale_veeam_snapshots(
+        policy=HostRetentionPolicy(veeam_snapshot_max_age_hours=6),
+        now=now,
+        run=run,
+        mount_point=tmp_path,
+    )
+
+    assert result["status"] == "success"
+    assert result["deleted"] == [str(snapshot)]
+    assert not snapshot.exists()
+    assert any(call[:5] == ["sudo", "-n", "btrfs", "subvolume", "sync"] for call in calls)
+
+
+def test_cleanup_stale_veeam_snapshots_skips_active_session(tmp_path: Path) -> None:
+    from app.tasks.host_retention import HostRetentionPolicy, cleanup_stale_veeam_snapshots
+
+    calls: list[list[str]] = []
+
+    def run(args: list[str], *, timeout: int = 0, cwd: str | None = None):
+        _ = timeout, cwd
+        calls.append(args)
+        return type("Proc", (), {"returncode": 0, "stdout": "Job  Type  ID  Running\n", "stderr": ""})()
+
+    result = cleanup_stale_veeam_snapshots(
+        policy=HostRetentionPolicy(),
+        now=datetime(2026, 6, 23, 12, tzinfo=UTC),
+        run=run,
+        mount_point=tmp_path,
+    )
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "veeam_session_active"
+    assert len(calls) == 1
