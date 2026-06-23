@@ -19,6 +19,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # ---------------------------------------------------------------------------
 SUMMITFLOW_BACKEND_PORT = 8001
 SUMMITFLOW_FRONTEND_PORT = 3001
+ALOOM_BACKEND_PORT = 8012
+ALOOM_FRONTEND_PORT = 3012
 AGENT_HUB_BACKEND_PORT = 8003
 AGENT_HUB_FRONTEND_PORT = 3003
 A_TERM_BACKEND_PORT = 8002

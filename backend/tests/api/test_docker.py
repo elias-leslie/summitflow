@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -10,6 +11,9 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
+
+os.environ["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = ""
+os.environ["CLOUDFLARE_ACCESS_AUD"] = ""
 
 from app.main import app
 
@@ -51,6 +55,10 @@ class TestDockerRuntime:
         assert docker_api._RUNTIME_SERVICE_MAP["agent-hub-worker"]["unit"] == (
             "agent-hub-hatchet-agent-worker.service"
         )
+        assert docker_api._RUNTIME_SERVICE_MAP["a-loom-api"]["unit"] == "a-loom-backend.service"
+        assert docker_api._RUNTIME_SERVICE_MAP["a-loom-api"]["ports"] == ["8012"]
+        assert docker_api._RUNTIME_SERVICE_MAP["a-loom-web"]["unit"] == "a-loom-frontend.service"
+        assert docker_api._RUNTIME_SERVICE_MAP["a-loom-web"]["ports"] == ["3012"]
         assert docker_api._RUNTIME_SERVICE_MAP["agent-hub-ops-worker"]["unit"] == (
             "agent-hub-hatchet-ops-worker.service"
         )
