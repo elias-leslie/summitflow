@@ -164,8 +164,19 @@ def _alembic(project: str, args: list[str]) -> int:
     alembic = venv / "bin" / "alembic"
     command = [str(alembic) if alembic.exists() else "alembic", *args]
     env = os.environ.copy()
+    migration_url = env.pop("ST_DB_MIGRATION_URL", None)
     for key in ("DATABASE_URL", "REDIS_URL", "AGENT_HUB_DB_URL", "AGENT_HUB_REDIS_URL", "PORTFOLIO_DB_URL", "PORTFOLIO_AI_DB_URL", "HATCHET_CLIENT_TOKEN"):
         env.pop(key, None)
+    if migration_url:
+        database_env = {
+            "agent-hub": "AGENT_HUB_DB_URL",
+            "portfolio-ai": "PORTFOLIO_DB_URL",
+            "summitflow": "DATABASE_URL",
+        }.get(project)
+        if not database_env:
+            output_error(f"No migration URL environment mapping for {project}")
+            return 1
+        env[database_env] = migration_url
     result = subprocess.run(
         command,
         cwd=cwd,
@@ -222,7 +233,7 @@ Commands:
   query [-t] "SELECT ..."    Run read-only SQL
   exec "UPDATE ..."          Run write SQL with destructive DDL blocked
   ddl "CREATE INDEX ..."     Run safe DDL only
-  migrate status|upgrade|downgrade|history|create
+  migrate status|upgrade|downgrade|history|create|create-manual
 
 Options:
   -P, --project <id>         Target project DB
@@ -377,6 +388,8 @@ def db(ctx: typer.Context) -> None:
             raise typer.Exit(_alembic(project, ["history", "-r", f"-{rest[1] if len(rest) > 1 else '10'}:current"]))
         if sub == "create" and len(rest) > 1:
             raise typer.Exit(_alembic(project, ["revision", "--autogenerate", "-m", rest[1]]))
+        if sub == "create-manual" and len(rest) > 1:
+            raise typer.Exit(_alembic(project, ["revision", "-m", rest[1]]))
     output_error(f"Unknown or incomplete st db command: {' '.join(args)}")
     raise typer.Exit(2)
 

@@ -776,6 +776,45 @@ def test_db_runs_native_migration_status() -> None:
     alembic.assert_called_once_with("summitflow", ["current", "-v"])
 
 
+def test_db_creates_manual_migration_without_autogenerate() -> None:
+    with (
+        patch("cli.commands.db._detect_project", return_value="portfolio-ai"),
+        patch("cli.commands.db._alembic", return_value=0) as alembic,
+    ):
+        result = runner.invoke(
+            main_app,
+            ["db", "migrate", "create-manual", "prepare squashed baseline"],
+        )
+
+    assert result.exit_code == 0
+    alembic.assert_called_once_with(
+        "portfolio-ai",
+        ["revision", "-m", "prepare squashed baseline"],
+    )
+
+
+def test_db_migration_url_override_targets_ephemeral_database(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    migration_url = "postgresql://portfolio_app:secret@localhost/portfolio_ai_verify"
+    monkeypatch.setenv("ST_DB_MIGRATION_URL", migration_url)
+    monkeypatch.setenv("PORTFOLIO_DB_URL", "postgresql://production")
+    completed = subprocess.CompletedProcess(args=["alembic"], returncode=0, stdout="", stderr="")
+
+    with (
+        patch("cli.commands.db._migration_dir", return_value=tmp_path),
+        patch("cli.commands.db.subprocess.run", return_value=completed) as run,
+        patch("cli.commands.db.emit_result_or_details"),
+    ):
+        exit_code = db._alembic("portfolio-ai", ["upgrade", "head"])
+
+    assert exit_code == 0
+    migration_env = run.call_args.kwargs["env"]
+    assert migration_env["PORTFOLIO_DB_URL"] == migration_url
+    assert "ST_DB_MIGRATION_URL" not in migration_env
+
+
 def test_db_tables_counts_uses_exact_counts_not_pg_stats() -> None:
     sql = db._tables_counts_sql()
 

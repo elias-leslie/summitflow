@@ -43,13 +43,11 @@ apply_schema() {
   fi
 }
 
-# Apply schema dumps that are managed by this stack. Agent Hub runs its
+# Apply only SummitFlow's legacy schema dump. Agent Hub and Portfolio AI run
 # Alembic migrations at app startup so a stale dump cannot mask migration drift.
 apply_schema summitflow summitflow_app "$INIT_DIR/summitflow-schema.dump"
-apply_schema portfolio_ai portfolio_app "$INIT_DIR/portfolio-ai-schema.dump"
 
 # Apply schemas to test databases
 apply_schema summitflow_test summitflow_app "$INIT_DIR/summitflow-schema.dump"
-apply_schema portfolio_ai_test portfolio_app "$INIT_DIR/portfolio-ai-schema.dump"
 
 echo "Database initialization complete (production + test databases)."
