@@ -12,9 +12,12 @@ REPLACEMENTS = {
         "schedulerConcurrencyPollingMinInterval": "1000000000",
     },
     "database.yaml": {
-        "maxConns": "20",
-        "maxQueueConns": "20",
-        "minQueueConns": "3",
+        "ddlPoolMaxConns": "2",
+        "maxConns": "12",
+        "maxQueueConns": "12",
+        "minQueueConns": "2",
+        "readReplicaMaxConns": "4",
+        "readReplicaMinConns": "1",
     },
 }
 

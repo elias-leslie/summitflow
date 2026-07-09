@@ -283,9 +283,12 @@ apply_hatchet_tuning() {
   }
 
   update_yaml_value "$server_file" "schedulerConcurrencyPollingMinInterval" "1000000000"
-  update_yaml_value "$database_file" "maxConns" "20"
-  update_yaml_value "$database_file" "maxQueueConns" "20"
-  update_yaml_value "$database_file" "minQueueConns" "3"
+  update_yaml_value "$database_file" "ddlPoolMaxConns" "2"
+  update_yaml_value "$database_file" "maxConns" "12"
+  update_yaml_value "$database_file" "maxQueueConns" "12"
+  update_yaml_value "$database_file" "minQueueConns" "2"
+  update_yaml_value "$database_file" "readReplicaMaxConns" "4"
+  update_yaml_value "$database_file" "readReplicaMinConns" "1"
 
   if [ "$changed" -eq 0 ]; then
     echo "Hatchet runtime tuning already applied"
