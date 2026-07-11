@@ -53,7 +53,7 @@ def prune_builder_cache(
         policy.builder_cache_pressure_target_gb if pressure_mode else policy.builder_cache_target_gb
     )
     proc = run(
-        ["docker", "builder", "prune", "--force", "--all", "--max-used-space", f"{target_gb}gb"],
+        ["docker", "builder", "prune", "--force", "--all", "--keep-storage", f"{target_gb}gb"],
         timeout=300,
     )
     if proc.returncode != 0:

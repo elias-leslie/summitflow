@@ -41,6 +41,32 @@ def test_prune_images_without_age_grace_prunes_all_unused_images(mocker) -> None
     assert result["max_age_hours"] == 0
 
 
+def test_prune_builder_cache_uses_supported_keep_storage_flag(mocker) -> None:
+    from app.tasks._retention_docker import prune_builder_cache
+    from app.tasks.host_retention import HostRetentionPolicy
+
+    run_command = mocker.Mock(
+        return_value=type("Proc", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+    )
+
+    result = prune_builder_cache(
+        policy=HostRetentionPolicy(builder_cache_target_gb=2),
+        pressure_mode=False,
+        run=run_command,
+    )
+
+    assert run_command.call_args.args[0] == [
+        "docker",
+        "builder",
+        "prune",
+        "--force",
+        "--all",
+        "--keep-storage",
+        "2gb",
+    ]
+    assert result["status"] == "success"
+
+
 def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candidates(
     mocker,
     tmp_path: Path,
