@@ -13,6 +13,7 @@ from app.workflows.scheduled import (
     refresh_graphify_graphs_wf,
     refresh_precision_indexes_wf,
     scan_projects_wf,
+    scheduled_backups_wf,
     tool_governance_wf,
 )
 
@@ -38,6 +39,11 @@ def test_hatchet_retention_schedule_is_registry_managed() -> None:
     assert definition.cron == "45 4 * * 0"
     assert definition.scope == "system"
     assert definition.default_enabled is True
+
+
+def test_scheduled_backups_timeout_covers_a_full_source_sweep() -> None:
+    """Do not retry a partially completed sweep and duplicate large archives."""
+    assert scheduled_backups_wf._task.execution_timeout == "7200s"
 
 
 @pytest.mark.asyncio

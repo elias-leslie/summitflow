@@ -279,7 +279,10 @@ async def refresh_graphify_graphs_wf(input: EmptyInput, ctx: Context) -> dict[st
 @hatchet.task(
     name="summitflow-scheduled-backups",
     input_validator=EmptyInput,
-    execution_timeout="300s",
+    # A full sweep performs verified archives sequentially and routinely takes
+    # longer than five minutes.  Hatchet retries a timed-out step from the
+    # beginning, which duplicated large archives and exhausted the backup disk.
+    execution_timeout="7200s",
     retries=3,
     backoff_factor=2.0,
     on_crons=["30 * * * *"],
