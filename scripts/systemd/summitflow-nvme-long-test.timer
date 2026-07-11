@@ -1,0 +1,12 @@
+[Unit]
+Description=Run an NVMe extended self-test on the first Saturday each month
+
+[Timer]
+OnCalendar=Sat *-*-01..07 00:30:00
+RandomizedDelaySec=10min
+Persistent=true
+Unit=summitflow-nvme-long-test.service
+
+[Install]
+WantedBy=timers.target
+

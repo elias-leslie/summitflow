@@ -1,0 +1,8 @@
+[Unit]
+Description=Start monthly NVMe extended self-test
+ConditionPathExists=/dev/nvme0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/smartctl -t long /dev/nvme0
+

@@ -1,0 +1,14 @@
+[Unit]
+Description=Conservative host cache, log, and Docker retention maintenance
+After=local-fs.target docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/summitflow-host-guardian maintain
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=30min
+StandardOutput=journal
+StandardError=journal
+

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Btrfs checksum scrub on the first Sunday each month
+
+[Timer]
+OnCalendar=Sun *-*-01..07 08:00:00
+RandomizedDelaySec=15min
+Persistent=true
+Unit=summitflow-btrfs-scrub.service
+
+[Install]
+WantedBy=timers.target
+

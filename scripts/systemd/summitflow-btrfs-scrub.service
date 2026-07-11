@@ -1,0 +1,14 @@
+[Unit]
+Description=Monthly Btrfs data and metadata checksum scrub
+ConditionPathIsMountPoint=/
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/btrfs scrub start -Bd /
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=6h
+StandardOutput=journal
+StandardError=journal
+

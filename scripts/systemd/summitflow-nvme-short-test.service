@@ -1,0 +1,8 @@
+[Unit]
+Description=Start weekly NVMe short self-test
+ConditionPathExists=/dev/nvme0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/smartctl -t short /dev/nvme0
+
