@@ -58,6 +58,7 @@ export function TaskListRow({
         <td className="w-8 px-2 py-3" onClick={(e) => e.stopPropagation()}>
           <input
             type="checkbox"
+            aria-label={`Select ${task.title}`}
             checked={isSelected}
             onChange={() => onToggleSelect(task.id)}
             className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-phosphor-500 focus:ring-phosphor-500 focus:ring-offset-0 cursor-pointer"
@@ -66,7 +67,7 @@ export function TaskListRow({
       )}
 
       {/* Expand */}
-      <td className="w-8 px-2 py-3">
+      <td className="hidden w-8 px-2 py-3 lg:table-cell">
         {isExpanded ? (
           <ChevronDown className="w-4 h-4 text-slate-500" />
         ) : (
@@ -75,7 +76,7 @@ export function TaskListRow({
       </td>
 
       {/* Priority */}
-      <td className="px-3 py-3">
+      <td className="hidden px-3 py-3 sm:table-cell">
         <span
           className={clsx(
             'text-xs px-1.5 py-0.5 rounded border mono font-medium',
@@ -87,7 +88,7 @@ export function TaskListRow({
       </td>
 
       {/* Type */}
-      <td className="px-3 py-3">
+      <td className="hidden px-3 py-3 md:table-cell">
         <span
           className={clsx('flex items-center gap-1.5', typeStyle.className)}
         >
@@ -97,14 +98,14 @@ export function TaskListRow({
       </td>
 
       {/* ID */}
-      <td className="px-3 py-3">
+      <td className="hidden px-3 py-3 lg:table-cell">
         <span className="text-xs mono text-slate-500 whitespace-nowrap">
           {task.id}
         </span>
       </td>
 
       {/* Title + Warning */}
-      <td className="px-3 py-3">
+      <td className="min-w-0 px-2 py-3 sm:px-3">
         <div className="flex items-center gap-2">
           <span
             className="text-sm text-slate-200 leading-snug break-words"
@@ -113,10 +114,29 @@ export function TaskListRow({
             {task.title}
           </span>
         </div>
+        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:hidden">
+          <span className="max-w-32 truncate font-mono text-[10px] text-slate-500">
+            {task.id}
+          </span>
+          <span
+            className={clsx(
+              'rounded border px-1 py-0.5 font-mono text-[10px] font-medium',
+              priorityStyle.className,
+            )}
+          >
+            {priorityStyle.label}
+          </span>
+          <span
+            className={clsx('flex items-center gap-1', typeStyle.className)}
+          >
+            <TypeIcon className="h-3 w-3" />
+            <span className="text-[10px]">{typeStyle.label}</span>
+          </span>
+        </div>
       </td>
 
       {/* Progress Indicators */}
-      <td className="px-3 py-3">
+      <td className="hidden px-3 py-3 xl:table-cell">
         <div className="flex items-center gap-3">
           {/* Criteria Progress */}
           {task.acceptance_criteria && task.acceptance_criteria.length > 0 && (
@@ -135,7 +155,7 @@ export function TaskListRow({
       </td>
 
       {/* Status */}
-      <td className="px-3 py-3">
+      <td className="px-2 py-3 sm:px-3">
         <span
           className={clsx('flex items-center gap-1.5', statusStyle.className)}
         >
@@ -145,7 +165,7 @@ export function TaskListRow({
       </td>
 
       {/* Updated */}
-      <td className="px-3 py-3">
+      <td className="hidden px-3 py-3 lg:table-cell">
         <span className="text-xs text-slate-500">
           {task.updated_at
             ? formatTimeAgo(task.updated_at)
@@ -157,11 +177,12 @@ export function TaskListRow({
 
       {/* Actions */}
       {onDelete && (
-        <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+        <td className="px-2 py-3 sm:px-3" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
             onClick={() => onDelete(task.id)}
-            className="p-1 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400 transition-colors"
+            aria-label={`Delete ${task.title}`}
+            className="rounded p-1 text-slate-500 transition-colors hover:bg-red-500/20 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/50"
             title="Delete task"
           >
             <Trash2 className="w-4 h-4" />

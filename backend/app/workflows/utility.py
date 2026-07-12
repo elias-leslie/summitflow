@@ -1,18 +1,19 @@
 """Utility (on-demand) workflows for SummitFlow.
 
-10 workflows for backup/restore, enrichment, PR review, checkout cleanup,
+11 workflows for backup/restore, enrichment, PR review, checkout cleanup,
 and post-scan task generation.
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 
 from hatchet_sdk import ConcurrencyExpression, ConcurrencyLimitStrategy, Context
 
 from ..hatchet_app import hatchet
 from .models import (
+    AutoFixInput,
     BackupInput,
     EnrichInput,
     ProjectInput,
@@ -20,6 +21,37 @@ from .models import (
     ReviewPRInput,
     TaskInput,
 )
+
+
+async def _run_quality_auto_fix_off_thread(input: AutoFixInput) -> dict[str, Any]:
+    """Keep synchronous LLM and subprocess work off the worker event loop."""
+    from ..tasks.quality_auto_fix import run_quality_auto_fix
+
+    return cast(
+        dict[str, Any],
+        await asyncio.to_thread(
+            run_quality_auto_fix,
+            input.project_id,
+            input.check_type,
+            input.limit,
+        ),
+    )
+
+
+@hatchet.task(
+    name="summitflow-quality-auto-fix",
+    input_validator=AutoFixInput,
+    concurrency=[
+        ConcurrencyExpression(
+            expression="input.project_id",
+            max_runs=1,
+            limit_strategy=ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN,
+        ),
+    ],
+)
+async def quality_auto_fix_wf(input: AutoFixInput, ctx: Context) -> dict[str, Any]:
+    """Durably run one project-scoped quality auto-fix batch."""
+    return await _run_quality_auto_fix_off_thread(input)
 
 
 @hatchet.task(

@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import tarfile
+import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -105,6 +106,26 @@ def _validate_archive_layout(members: list[tarfile.TarInfo]) -> tuple[str, str |
     ]
     if len(database_members) > 1:
         raise RuntimeError("Backup archive must contain at most one database dump")
+
+    seen_names: set[str] = set()
+    for _, name in normalized_members:
+        if name in seen_names:
+            raise RuntimeError(f"Backup archive contains duplicate path: {name}")
+        seen_names.add(name)
+
+    regular_file_names = {
+        name for member, name in normalized_members if member.isreg()
+    }
+    for _, name in normalized_members:
+        for parent in PurePosixPath(name).parents:
+            parent_name = parent.as_posix()
+            if parent_name == ".":
+                continue
+            if parent_name in regular_file_names:
+                raise RuntimeError(
+                    f"Backup archive contains file/directory collision: {parent_name}"
+                )
+
     if not database_members:
         return top_level, None
 
@@ -112,6 +133,33 @@ def _validate_archive_layout(members: list[tarfile.TarInfo]) -> tuple[str, str |
     if not database_member.isreg():
         raise RuntimeError("Database dump is not a regular file")
     return top_level, database_member_name
+
+
+def _validate_destination_targets(
+    members: list[tarfile.TarInfo],
+    destination: Path,
+    expected_top_level: str,
+) -> None:
+    """Reject existing symlink escapes before restoring any archive member."""
+    root = destination.resolve()
+    for member in members:
+        parts = _validated_member_parts(member)
+        if parts[0] != expected_top_level:
+            raise RuntimeError(
+                f"Unexpected archive top-level directory: {member.name}"
+            )
+        rel = Path(*parts[1:]) if len(parts) > 1 else Path()
+        target = root / rel
+        if not target.resolve().is_relative_to(root):
+            raise RuntimeError(f"Unsafe archive path: {member.name}")
+        if member.isdir() and target.exists() and not target.is_dir():
+            raise RuntimeError(
+                f"Backup archive directory conflicts with existing file: {member.name}"
+            )
+        if member.isreg() and target.exists() and not target.is_file():
+            raise RuntimeError(
+                f"Backup archive file conflicts with existing directory: {member.name}"
+            )
 
 
 def _safe_extract_member(
@@ -148,11 +196,6 @@ def _restore_database_member(
     *,
     infrastructure: bool,
 ) -> str:
-    src = archive.extractfile(member)
-    if src is None:
-        raise RuntimeError(f"Unable to read database dump: {member.name}")
-    with src:
-        sql_bytes = gzip.decompress(src.read())
     run_env = os.environ.copy()
     if infrastructure:
         command = [
@@ -187,7 +230,22 @@ def _restore_database_member(
             "ON_ERROR_STOP=1",
         ]
         restored = PROJECT_DATABASE_DUMP_NAME
-    result = subprocess.run(command, input=sql_bytes, env=run_env, capture_output=True, timeout=BACKUP_TIMEOUT, check=False)
+
+    src = archive.extractfile(member)
+    if src is None:
+        raise RuntimeError(f"Unable to read database dump: {member.name}")
+    with tempfile.TemporaryFile() as sql_file:
+        with src, gzip.GzipFile(fileobj=src, mode="rb") as decompressed:
+            shutil.copyfileobj(decompressed, sql_file)
+        sql_file.seek(0)
+        result = subprocess.run(
+            command,
+            stdin=sql_file,
+            env=run_env,
+            capture_output=True,
+            timeout=BACKUP_TIMEOUT,
+            check=False,
+        )
     if result.returncode != 0:
         detail = result.stderr.decode(errors="ignore").strip()
         raise RuntimeError(f"Database restore failed: {detail or result.returncode}")
@@ -203,6 +261,17 @@ def restore_archive(path: Path, project_dir: Path, *, dry_run: bool, db_only: bo
     with tarfile.open(path, "r:gz") as archive:
         members = archive.getmembers()
         expected_top_level, database_member_name = _validate_archive_layout(members)
+        extractable_members = [
+            member
+            for member in members
+            if _normalized_member_name(member) != database_member_name
+            and not db_only
+        ]
+        _validate_destination_targets(
+            extractable_members,
+            project_dir,
+            expected_top_level,
+        )
         for member in members:
             is_db = _normalized_member_name(member) == database_member_name
             if db_only and not is_db:

@@ -183,7 +183,7 @@ function cleanCell(value: string): string {
 }
 
 function escapeMarkdownCell(value: string): string {
-    return value.replace(/\|/g, '\\|');
+    return value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
 }
 
 function isMarkdownSeparator(line: string): boolean {

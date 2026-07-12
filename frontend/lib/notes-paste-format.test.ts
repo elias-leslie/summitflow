@@ -41,4 +41,10 @@ describe('formatNotePaste', () => {
 
     expect(formatNotePaste(pasted)).toBe(pasted)
   })
+
+  it('escapes existing backslashes before markdown table separators', () => {
+    const pasted = `Label\tPath\nReport\t${String.raw`C:\temp|report`}`
+
+    expect(formatNotePaste(pasted)).toContain(String.raw`C:\\temp\|report`)
+  })
 })

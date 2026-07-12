@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import gzip
 import io
 import stat
 import tarfile
 from pathlib import Path
+from subprocess import CompletedProcess
 
 import pytest
 
@@ -213,6 +215,124 @@ def test_restore_rejects_duplicate_canonical_database_dump(tmp_path: Path) -> No
             dry_run=False,
             files_only=True,
         )
+
+
+def test_restore_rejects_duplicate_ordinary_path(tmp_path: Path) -> None:
+    archive = _archive_path(
+        tmp_path,
+        [
+            _file("source/docs/readme.txt", b"first"),
+            _file("source/docs/readme.txt", b"second"),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="duplicate path"):
+        restore_archive(
+            archive,
+            tmp_path / "project",
+            dry_run=False,
+            files_only=True,
+        )
+
+
+def test_restore_rejects_file_directory_collision(tmp_path: Path) -> None:
+    archive = _archive_path(
+        tmp_path,
+        [
+            _file("source/config", b"file"),
+            _file("source/config/settings.json", b"{}"),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="file/directory collision"):
+        restore_archive(
+            archive,
+            tmp_path / "project",
+            dry_run=False,
+            files_only=True,
+        )
+
+
+def test_restore_prevalidates_all_destination_targets_before_writing(
+    tmp_path: Path,
+) -> None:
+    archive = _archive_path(
+        tmp_path,
+        [
+            _file("source/first.txt", b"must-not-be-written"),
+            _file("source/linked/pwn.txt", b"pwned"),
+        ],
+    )
+    destination = tmp_path / "project"
+    outside = tmp_path / "outside"
+    destination.mkdir()
+    outside.mkdir()
+    (destination / "linked").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(RuntimeError, match="Unsafe archive path"):
+        restore_archive(archive, destination, dry_run=False, files_only=True)
+
+    assert not (destination / "first.txt").exists()
+    assert not (outside / "pwn.txt").exists()
+
+
+def test_restore_prevalidates_existing_destination_type_collisions(
+    tmp_path: Path,
+) -> None:
+    archive = _archive_path(
+        tmp_path,
+        [
+            _file("source/first.txt", b"must-not-be-written"),
+            ("source/config", tarfile.DIRTYPE, b"", None),
+        ],
+    )
+    destination = tmp_path / "project"
+    destination.mkdir()
+    (destination / "config").write_text("existing file")
+
+    with pytest.raises(RuntimeError, match="directory conflicts with existing file"):
+        restore_archive(archive, destination, dry_run=False, files_only=True)
+
+    assert not (destination / "first.txt").exists()
+
+
+def test_database_restore_streams_decompressed_dump_from_disk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sql = b"CREATE TABLE restored(id integer);\n" * 1000
+    archive = _archive_path(
+        tmp_path,
+        [_file("source/database.sql.gz", gzip.compress(sql))],
+    )
+    observed: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "app.tasks.backup_native_restore._load_db_config",
+        lambda _name, _env: {
+            "user": "summitflow",
+            "password": "secret",
+            "host": "localhost",
+            "port": "5432",
+            "name": "summitflow",
+        },
+    )
+
+    def fake_run(command, **kwargs):
+        observed["command"] = command
+        observed["input"] = kwargs["stdin"].read()
+        assert "input" not in kwargs
+        return CompletedProcess(command, 0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr("app.tasks.backup_native_restore.subprocess.run", fake_run)
+
+    result = restore_archive(archive, tmp_path / "project", dry_run=False)
+
+    assert result["db_restored"] == "database.sql.gz"
+    assert observed["input"] == sql
+    command = observed["command"]
+    assert isinstance(command, list)
+    assert command[-2:] == ["-v", "ON_ERROR_STOP=1"]
 
 
 def test_database_like_suffix_is_restored_as_an_ordinary_file(tmp_path: Path) -> None:

@@ -150,7 +150,8 @@ export function ProjectRow({ repo, remoteCheckedAt }: ProjectRowProps) {
           }
         }}
         aria-expanded={expanded}
-        className="flex items-center gap-3 px-4 py-2.5 cursor-pointer select-none group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-phosphor-500/40"
+        aria-label={`${repo.name} repository details`}
+        className="group flex cursor-pointer select-none flex-wrap items-center gap-2 px-3 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-phosphor-500/40 sm:flex-nowrap sm:gap-3 sm:px-4 sm:py-2.5"
       >
         {/* Chevron */}
         <ChevronRight
@@ -161,7 +162,7 @@ export function ProjectRow({ repo, remoteCheckedAt }: ProjectRowProps) {
         />
 
         {/* Repo name */}
-        <span className="font-semibold text-slate-100 text-sm tracking-tight shrink-0">
+        <span className="min-w-0 max-w-[70%] truncate text-sm font-semibold tracking-tight text-slate-100 sm:max-w-none sm:shrink-0">
           {repo.name}
         </span>
 
@@ -186,7 +187,10 @@ export function ProjectRow({ repo, remoteCheckedAt }: ProjectRowProps) {
         ))}
 
         {/* Right side — status cluster */}
-        <div className="flex items-center gap-2.5 ml-auto shrink-0">
+        <div
+          data-testid="repository-actions"
+          className="order-last flex basis-full flex-wrap items-center gap-2 pl-5 sm:order-none sm:ml-auto sm:basis-auto sm:shrink-0 sm:flex-nowrap sm:gap-2.5 sm:pl-0"
+        >
           {/* State pill */}
           <span
             className={clsx(
@@ -221,7 +225,7 @@ export function ProjectRow({ repo, remoteCheckedAt }: ProjectRowProps) {
             }}
             title="Pull latest remote changes with fast-forward only."
             className={clsx(
-              'flex items-center gap-1 px-2.5 py-1 rounded-md text-2xs font-medium transition-all',
+              'flex min-h-8 items-center gap-1 rounded-md px-2.5 py-1 text-2xs font-medium transition-all',
               syncMutation.isPending
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                 : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 hover:bg-cyan-500/15 hover:border-cyan-500/40',
@@ -245,7 +249,7 @@ export function ProjectRow({ repo, remoteCheckedAt }: ProjectRowProps) {
               }}
               title="Run st commit for this project, then push published work."
               className={clsx(
-                'flex items-center gap-1 px-2.5 py-1 rounded-md text-2xs font-medium transition-all',
+                'flex min-h-8 items-center gap-1 rounded-md px-2.5 py-1 text-2xs font-medium transition-all',
                 publishMutation.isPending
                   ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                   : 'bg-outrun-500/12 text-outrun-400 border border-outrun-500/20 hover:bg-outrun-500/20 hover:border-outrun-500/40',

@@ -1,7 +1,9 @@
 'use client'
 
+import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog'
 import clsx from 'clsx'
 import { AlertCircle, Loader2, Trash2 } from 'lucide-react'
+import { useRef } from 'react'
 
 // ============================================================================
 // Discriminated union props for different entity types
@@ -63,6 +65,13 @@ type ConfirmDeleteDialogProps = EntityProps & CommonProps
 // ============================================================================
 
 export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
+  const cancelButtonRef = useRef<HTMLButtonElement>(null)
+  const restoreFocusRef = useRef<HTMLElement | null>(
+    typeof document !== 'undefined' &&
+      document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  )
   const {
     isDeleting,
     isError,
@@ -92,151 +101,209 @@ export function ConfirmDeleteDialog(props: ConfirmDeleteDialogProps) {
   // ---- Delete button label ----
   const deleteLabel = getDeleteLabel(props)
 
-  if (isDesignEntity) {
-    return (
-      <div
-        className={clsx(
-          positioning,
-          'inset-0 flex items-center justify-center',
-          zIndex,
-          positioning === 'absolute' && 'bg-slate-950/90 backdrop-blur-sm',
-        )}
-      >
-        {/* Backdrop (only for fixed positioning) */}
-        {positioning === 'fixed' && (
-          <div
-            className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm"
-            onClick={onCancel}
-          />
-        )}
-
-        {/* Dialog */}
-        <div
-          className="relative bg-slate-900 rounded-xl w-full max-w-md mx-4 p-6 border border-rose-500/30 shadow-2xl"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-start gap-4">
-            <div className="p-3 bg-rose-500/10 rounded-lg">
-              <Trash2 className="w-6 h-6 text-rose-400" />
-            </div>
-            <div className="flex-1">
-              <h3 className="text-lg font-semibold text-slate-100 mb-2">
-                {title}
-              </h3>
-              <p className="text-slate-400 text-sm mb-6">{description}</p>
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="btn-secondary"
-                  disabled={isDeleting}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={onConfirm}
-                  disabled={isDeleting}
-                  className="bg-rose-500 hover:bg-rose-600 text-slate-50 px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
-                >
-                  {isDeleting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Deleting...
-                    </>
-                  ) : (
-                    <>
-                      <Trash2 className="w-4 h-4" />
-                      Delete
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
+  const handleDismiss = () => {
+    if (!isDeleting) {
+      onCancel()
+    }
   }
 
-  // Task-style layout (AlertCircle, red theme)
-  return (
-    <div
+  const backdrop = (
+    <AlertDialogPrimitive.Overlay
+      data-testid="confirm-delete-backdrop"
+      onClick={handleDismiss}
       className={clsx(
         positioning,
-        'inset-0 flex items-center justify-center bg-slate-950/90 backdrop-blur-sm',
+        'inset-0 bg-slate-950/90 backdrop-blur-sm data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=open]:animate-in data-[state=open]:fade-in motion-reduce:animate-none',
         zIndex,
       )}
-      onClick={onCancel}
+    />
+  )
+
+  const dialog = isDesignEntity ? (
+    <AlertDialogPrimitive.Content
+      onCloseAutoFocus={(event) => {
+        const target = restoreFocusRef.current
+        if (target?.isConnected) {
+          event.preventDefault()
+          target.focus()
+        }
+      }}
+      onEscapeKeyDown={(event) => {
+        if (isDeleting) event.preventDefault()
+      }}
+      className={clsx(
+        positioning,
+        'left-1/2 top-1/2 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-rose-500/30 bg-slate-900 p-6 shadow-2xl focus:outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95 motion-reduce:animate-none',
+        zIndex,
+      )}
     >
-      <div
-        className="bg-slate-800 rounded-lg border border-slate-700 p-6 w-full max-w-md mx-4 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start gap-3 mb-4">
-          <AlertCircle className="w-6 h-6 text-rose-400 shrink-0 mt-0.5" />
-          <div>
-            <h3 className="text-lg font-semibold text-slate-100 mb-2">
-              {title}
-            </h3>
-            <p className="text-sm text-slate-300 mb-3">{description}</p>
-
-            {/* Entity detail block */}
-            {props.entityType === 'task' && (
-              <div className="text-sm font-mono text-slate-400 bg-slate-900 px-3 py-2 rounded mb-3">
-                {props.entityName}
-              </div>
-            )}
-            {props.entityType === 'tasks' && (
-              <div className="text-sm font-mono text-slate-400 bg-slate-900 px-3 py-2 rounded mb-3 max-h-32 overflow-y-auto">
-                {Array.from(props.taskIds)
-                  .slice(0, 5)
-                  .map((id) => (
-                    <div key={id}>{id}</div>
-                  ))}
-                {props.taskIds.size > 5 && (
-                  <div className="text-slate-500 italic">
-                    ...and {props.taskIds.size - 5} more
-                  </div>
-                )}
-              </div>
-            )}
-
-            <p className="text-sm text-rose-400">{warning}</p>
-          </div>
+      <div className="flex items-start gap-4">
+        <div className="rounded-lg bg-rose-500/10 p-3">
+          <Trash2 aria-hidden="true" className="h-6 w-6 text-rose-400" />
         </div>
+        <div className="flex-1">
+          <AlertDialogPrimitive.Title className="mb-2 text-lg font-semibold text-slate-100">
+            {title}
+          </AlertDialogPrimitive.Title>
+          <AlertDialogPrimitive.Description className="mb-6 text-sm text-slate-400">
+            {description}
+          </AlertDialogPrimitive.Description>
+          <div className="flex justify-end gap-3">
+            <AlertDialogPrimitive.Cancel asChild>
+              <button
+                ref={cancelButtonRef}
+                type="button"
+                className="btn-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/50"
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+            </AlertDialogPrimitive.Cancel>
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={isDeleting}
+              className="flex items-center gap-2 rounded-lg bg-rose-500 px-4 py-2 text-slate-50 transition-colors hover:bg-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:opacity-50"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2
+                    aria-hidden="true"
+                    className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                  />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 aria-hidden="true" className="h-4 w-4" />
+                  Delete
+                </>
+              )}
+            </button>
+          </div>
+          {isError && (
+            <p role="alert" className="mt-3 text-sm text-rose-400">
+              {errorMessage}
+            </p>
+          )}
+        </div>
+      </div>
+    </AlertDialogPrimitive.Content>
+  ) : (
+    <AlertDialogPrimitive.Content
+      onCloseAutoFocus={(event) => {
+        const target = restoreFocusRef.current
+        if (target?.isConnected) {
+          event.preventDefault()
+          target.focus()
+        }
+      }}
+      onEscapeKeyDown={(event) => {
+        if (isDeleting) event.preventDefault()
+      }}
+      className={clsx(
+        positioning,
+        'left-1/2 top-1/2 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-slate-700 bg-slate-800 p-6 shadow-xl focus:outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95 motion-reduce:animate-none',
+        zIndex,
+      )}
+    >
+      <div className="mb-4 flex items-start gap-3">
+        <AlertCircle
+          aria-hidden="true"
+          className="mt-0.5 h-6 w-6 shrink-0 text-rose-400"
+        />
+        <div>
+          <AlertDialogPrimitive.Title className="mb-2 text-lg font-semibold text-slate-100">
+            {title}
+          </AlertDialogPrimitive.Title>
+          <AlertDialogPrimitive.Description className="mb-3 text-sm text-slate-300">
+            {description}
+          </AlertDialogPrimitive.Description>
 
-        <div className="flex items-center justify-end gap-3">
+          {/* Entity detail block */}
+          {props.entityType === 'task' && (
+            <div className="text-sm font-mono text-slate-400 bg-slate-900 px-3 py-2 rounded mb-3">
+              {props.entityName}
+            </div>
+          )}
+          {props.entityType === 'tasks' && (
+            <div className="text-sm font-mono text-slate-400 bg-slate-900 px-3 py-2 rounded mb-3 max-h-32 overflow-y-auto">
+              {Array.from(props.taskIds)
+                .slice(0, 5)
+                .map((id) => (
+                  <div key={id}>{id}</div>
+                ))}
+              {props.taskIds.size > 5 && (
+                <div className="text-slate-500 italic">
+                  ...and {props.taskIds.size - 5} more
+                </div>
+              )}
+            </div>
+          )}
+
+          <p className="text-sm text-rose-400">{warning}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-end gap-3">
+        <AlertDialogPrimitive.Cancel asChild>
           <button
+            ref={cancelButtonRef}
             type="button"
-            onClick={onCancel}
             disabled={isDeleting}
-            className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-50"
+            className="px-4 py-2 text-sm text-slate-400 transition-colors hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/50 disabled:opacity-50"
           >
             Cancel
           </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={isDeleting}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-rose-600 text-slate-50 hover:bg-rose-500 rounded-md transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isDeleting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Deleting...
-              </>
-            ) : (
-              deleteLabel
-            )}
-          </button>
-        </div>
-
-        {isError && (
-          <p className="mt-3 text-sm text-rose-400">{errorMessage}</p>
-        )}
+        </AlertDialogPrimitive.Cancel>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={isDeleting}
+          className="flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-slate-50 transition-colors hover:bg-rose-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isDeleting ? (
+            <>
+              <Loader2
+                aria-hidden="true"
+                className="h-4 w-4 animate-spin motion-reduce:animate-none"
+              />
+              Deleting...
+            </>
+          ) : (
+            deleteLabel
+          )}
+        </button>
       </div>
-    </div>
+
+      {isError && (
+        <p role="alert" className="mt-3 text-sm text-rose-400">
+          {errorMessage}
+        </p>
+      )}
+    </AlertDialogPrimitive.Content>
+  )
+
+  const modal = (
+    <>
+      {backdrop}
+      {dialog}
+    </>
+  )
+
+  return (
+    <AlertDialogPrimitive.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) handleDismiss()
+      }}
+    >
+      {positioning === 'fixed' ? (
+        <AlertDialogPrimitive.Portal>{modal}</AlertDialogPrimitive.Portal>
+      ) : (
+        modal
+      )}
+    </AlertDialogPrimitive.Root>
   )
 }
 

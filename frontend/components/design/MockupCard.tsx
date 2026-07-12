@@ -77,7 +77,13 @@ const typeIcons = {
   illustration: ImageIcon,
 }
 
-function buildThumbnailSrcDoc(content: string): string {
+export function buildThumbnailSrcDoc(content: string): string {
+  const previewPolicy = `
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; font-src data:"
+    >
+  `
   const previewCss = `
     <style>
       *, *::before, *::after {
@@ -95,20 +101,11 @@ function buildThumbnailSrcDoc(content: string): string {
       }
     </style>
   `
-  const sanitized = content
-    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
-    .replace(/<link\b[^>]*>/gi, '')
-    .replace(/<iframe\b[\s\S]*?<\/iframe>/gi, '')
-    .replace(/<(object|embed|video|audio|source)\b[\s\S]*?<\/\1>/gi, '')
-    .replace(/\s(?:src|href)=["']https?:\/\/[^"']*["']/gi, '')
-    .replace(/url\(["']?https?:\/\/[^)"']+["']?\)/gi, 'none')
-    .replace(/@import\s+[^;]+;/gi, '')
 
-  if (/<head[^>]*>/i.test(sanitized)) {
-    return sanitized.replace(/<head([^>]*)>/i, `<head$1>${previewCss}`)
-  }
-
-  return `<!doctype html><html><head>${previewCss}</head><body>${sanitized}</body></html>`
+  // The iframe has an empty sandbox and this leading CSP blocks scripts,
+  // nested frames, plugins, and network requests. Keep untrusted markup inert
+  // instead of attempting incomplete HTML sanitization with regular expressions.
+  return `<!doctype html><html><head>${previewPolicy}${previewCss}</head><body>${content}</body></html>`
 }
 
 export function MockupCard({

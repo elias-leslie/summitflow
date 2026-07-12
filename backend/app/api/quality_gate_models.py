@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 QualityCheckType = Literal["pytest", "vitest", "ruff", "types", "biome", "tsc"]
 FixableQualityCheckType = Literal["pytest", "ruff", "types", "biome", "tsc"]
+AutoFixJobStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 
 
 class CheckResultResponse(BaseModel):
@@ -98,7 +99,7 @@ class AutoFixRequest(BaseModel):
     """Request to trigger auto-fix."""
 
     check_type: FixableQualityCheckType | None = None
-    limit: int = 10
+    limit: int = Field(default=10, ge=1, le=50)
 
 
 class AutoFixResponse(BaseModel):
@@ -110,6 +111,8 @@ class AutoFixResponse(BaseModel):
     failed: int
     escalated: int
     message: str
+    job_id: str | None = None
+    status: AutoFixJobStatus = "completed"
 
 
 class ConsoleErrorRequest(BaseModel):

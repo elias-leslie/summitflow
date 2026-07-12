@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
@@ -10,6 +11,8 @@ from ....utils._git_core import _resolve_project_id, get_managed_repos
 from ....utils._git_diff import get_recent_commits
 from ...projects import get_project_root_path
 from ..types import ActivityEvent, GitMetadata
+
+GIT_ACTIVITY_WORKERS = 4
 
 
 def _to_git_event(commit: Any, project_id: str) -> ActivityEvent:
@@ -48,15 +51,35 @@ def _get_project_git_events(project_id: str, limit: int) -> list[ActivityEvent]:
     return [_to_git_event(commit, project_id) for commit in get_recent_commits(repo_path, limit=limit)]
 
 
+def _collect_repo_git_events(
+    repo_and_project: tuple[Path, str],
+    limit: int,
+) -> list[ActivityEvent]:
+    """Collect one repository's events for bounded parallel aggregation."""
+    repo_path, project_id = repo_and_project
+    return [
+        _to_git_event(commit, project_id)
+        for commit in get_recent_commits(repo_path, limit=limit)
+    ]
+
+
 def _get_managed_repo_git_events(limit: int) -> list[ActivityEvent]:
     """Collect and merge recent git activity across all managed repos."""
+    repos = [
+        (repo_path, project_id)
+        for repo_path in get_managed_repos()
+        if (project_id := _resolve_project_id(repo_path))
+    ]
     events: list[ActivityEvent] = []
-    for repo_path in get_managed_repos():
-        project_id = _resolve_project_id(repo_path)
-        if not project_id:
-            continue
-        for commit in get_recent_commits(repo_path, limit=limit):
-            events.append(_to_git_event(commit, project_id))
+    if repos:
+        workers = min(GIT_ACTIVITY_WORKERS, len(repos))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            for repo_events in executor.map(
+                _collect_repo_git_events,
+                repos,
+                [limit] * len(repos),
+            ):
+                events.extend(repo_events)
     events.sort(key=_parse_event_timestamp, reverse=True)
     return events[:limit]
 

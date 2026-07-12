@@ -36,6 +36,18 @@ export function normalizeBaseUrl(value: string): string {
   return value.trim().replace(/\/+$/, '')
 }
 
+export function safeExternalHttpUrl(value: string): string | null {
+  const trimmed = value.trim()
+  try {
+    const parsed = new URL(trimmed)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      ? trimmed
+      : null
+  } catch {
+    return null
+  }
+}
+
 export function normalizeHealthEndpoint(value: string): string {
   const trimmed = value.trim()
   if (!trimmed) return ''

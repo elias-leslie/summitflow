@@ -27,7 +27,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
 
   // Custom hooks
   const { sortField, sortDirection, handleSort, sortTasks } = useTaskSort()
-  const { filteredTasks, isLoading, isFetching, refetch } = useTasksList(
+  const { error, filteredTasks, isLoading, isFetching, refetch } = useTasksList(
     projectId,
     filters,
     sortTasks,
@@ -121,7 +121,9 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
 
       <TasksTabTable
         tasks={filteredTasks}
+        error={error}
         isLoading={isLoading}
+        onRetry={refetch}
         sortField={sortField}
         sortDirection={sortDirection}
         onSort={handleSort}

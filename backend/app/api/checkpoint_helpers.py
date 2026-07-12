@@ -55,6 +55,17 @@ def get_project_checkpoints(project_id: str) -> list[dict[str, Any]]:
     return [_serialize_checkpoint(checkpoint) for checkpoint in get_active_checkpoints(project_id)]
 
 
+def get_active_checkpoint_map() -> dict[str, CheckpointResponse]:
+    """Return the newest active checkpoint per project in one store read."""
+    checkpoints: dict[str, CheckpointResponse] = {}
+    for checkpoint in get_active_checkpoints():
+        checkpoints.setdefault(
+            checkpoint.project_id,
+            CheckpointResponse(**_serialize_checkpoint(checkpoint)),
+        )
+    return checkpoints
+
+
 def find_checkpoint_in_all_projects(task_id: str) -> dict[str, Any] | None:
     """Search all projects for an active checkpoint by task_id."""
     for checkpoint in get_active_checkpoints():

@@ -314,7 +314,11 @@ async def _backup_fallback(note: str, error: Exception) -> ActionResult:
     """Fallback to direct pg_dumpall when workflow system is unavailable."""
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    suffix = f"-{note.replace(' ', '-')}" if note else ""
+    note_slug = "".join(
+        character if character.isalnum() or character in {"-", "_"} else "-"
+        for character in note
+    ).strip("-")[:80]
+    suffix = f"-{note_slug}" if note_slug else ""
     filename = f"docker-pgdump-{timestamp}{suffix}.sql"
     filepath = BACKUP_DIR / filename
 

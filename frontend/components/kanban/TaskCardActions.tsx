@@ -37,7 +37,7 @@ export function TaskCardActions({
             e.stopPropagation()
             onDelete(taskId)
           }}
-          className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400"
+          className="absolute right-2 top-2 z-20 rounded p-1 text-slate-500 opacity-0 transition-opacity hover:bg-red-500/20 hover:text-red-400 group-hover:opacity-100 group-focus-within:opacity-100"
           title="Delete task"
           aria-label="Delete task"
         >
@@ -52,7 +52,7 @@ export function TaskCardActions({
       )}
 
       {isIdea && onExecuteNow && (
-        <div className="mt-3 pt-2 border-t border-slate-700/50">
+        <div className="pointer-events-auto relative z-20 mt-3 border-t border-slate-700/50 pt-2">
           <button
             type="button"
             onClick={(e) => {
@@ -81,7 +81,7 @@ export function TaskCardActions({
         <button
           type="button"
           onClick={onExpandToggle}
-          className="mt-3 flex items-center justify-center gap-1 w-full py-1 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+          className="pointer-events-auto relative z-20 mt-3 flex w-full items-center justify-center gap-1 py-1 text-xs text-slate-400 transition-colors hover:text-slate-200"
         >
           {expanded ? (
             <>

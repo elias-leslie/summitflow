@@ -13,6 +13,7 @@ export function useTasksList(
   // Fetch all tasks
   const {
     data: tasksData,
+    error,
     isLoading: tasksLoading,
     isFetching: tasksFetching,
     refetch: refetchTasks,
@@ -57,6 +58,7 @@ export function useTasksList(
   const isFetching = tasksFetching
 
   return {
+    error,
     filteredTasks,
     isLoading,
     isFetching,

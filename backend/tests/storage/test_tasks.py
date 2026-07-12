@@ -79,7 +79,8 @@ class TestCreateTask:
 
         assert task is not None
         assert task["id"].startswith("task-")
-        assert len(task["id"]) == 13  # "task-" + 8 hex chars
+        assert len(task["id"]) == 21  # "task-" + 16 hex chars
+        int(task["id"].removeprefix("task-"), 16)
         assert task["status"] == "pending"
         assert task["project_id"] == project_id
 

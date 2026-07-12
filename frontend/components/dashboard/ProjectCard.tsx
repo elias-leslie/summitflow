@@ -44,6 +44,19 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const { data: health, isLoading: healthLoading } = useQuery({
     queryKey: ['project-health', project.id],
     queryFn: () => fetchProjectHealth(project.id),
+    enabled: hovered,
+    initialData: project.health_status
+      ? {
+          project_id: project.id,
+          healthy: project.health_status === 'healthy',
+          error:
+            project.health_status === 'healthy'
+              ? undefined
+              : project.health_status,
+          checked_at: project.created_at,
+        }
+      : undefined,
+    initialDataUpdatedAt: 0,
     staleTime: STALE_STANDARD,
     refetchInterval: hovered ? POLL_STANDARD * 2 : false,
   })
@@ -51,6 +64,9 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const { data: qualityGate, isLoading: qualityLoading } = useQuery({
     queryKey: ['quality-gate-health', project.id],
     queryFn: () => fetchQualityGateHealth(project.id),
+    enabled: hovered,
+    initialData: project.quality_gate,
+    initialDataUpdatedAt: 0,
     staleTime: STALE_STANDARD,
     refetchInterval: hovered ? POLL_STANDARD * 2 : false,
   })
@@ -59,6 +75,9 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const { data: checkpoint } = useQuery({
     queryKey: ['active-checkpoint', project.id],
     queryFn: () => getActiveCheckpoint(project.id),
+    enabled: hovered,
+    initialData: project.active_checkpoint ?? null,
+    initialDataUpdatedAt: 0,
     staleTime: STALE_GIT,
   })
 

@@ -57,13 +57,16 @@ def run(args: Sequence[StrPath], **kwargs: Any) -> subprocess.CompletedProcess[A
         raise ValueError("preexec_fn is not safe in ASGI subprocess calls")
     if kwargs.get("start_new_session"):
         raise ValueError("start_new_session is not safe in ASGI subprocess calls")
+    shell = kwargs.pop("shell", False)
+    if shell is not False:
+        raise ValueError("shell execution is not allowed in ASGI subprocess calls")
     close_fds = kwargs.pop("close_fds", False)
     if close_fds is not False:
         raise ValueError("close_fds must be False in ASGI subprocess calls")
     cwd = kwargs.pop("cwd", None)
     env = kwargs.get("env")
     argv = _with_chdir(_argv(args, env), cwd, env)
-    return subprocess.run(argv, close_fds=False, **kwargs)
+    return subprocess.run(argv, close_fds=False, shell=False, **kwargs)
 
 
 async def run_async(args: Sequence[StrPath], **kwargs: Any) -> subprocess.CompletedProcess[Any]:

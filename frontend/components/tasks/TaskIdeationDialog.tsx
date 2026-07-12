@@ -7,6 +7,7 @@ import {
   Dialog,
   DialogClose,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -40,12 +41,15 @@ export function TaskIdeationDialog({
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden">
-        <DialogClose onClose={handleClose} />
+        <DialogClose />
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-mono tracking-wider text-sm uppercase">
             <MessageSquare className="w-4 h-4 text-phosphor-400" />
             {CHAT_TITLE}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Describe a task, review the generated summary, and create it.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 min-h-0 relative">

@@ -5,9 +5,13 @@ import asyncio
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from ...services import explorer
+from ...storage import quality_check_results as qcr_store
+from ...storage.connection import get_connection
 from ...storage.project_identity_sync import (
     sync_project_identity as sync_registered_project_identity,
 )
+from ..checkpoint_helpers import get_active_checkpoint_map
+from ..quality_gate_models import HealthSummaryResponse
 from .agent_hub import (
     delete_agent_hub_project_permission,
     reconcile_agent_hub_project_identity,
@@ -46,6 +50,14 @@ from .onboarding import build_onboarding_response, run_project_onboarding
 from .pulse import router as pulse_router
 
 router = APIRouter()
+
+
+def _get_quality_summaries(project_ids: list[str]) -> dict[str, dict]:
+    """Load dashboard quality summaries on a worker thread."""
+    with get_connection() as conn:
+        return qcr_store.get_projects_health_summaries(conn, project_ids)
+
+
 router.include_router(pulse_router, tags=["projects"])
 
 
@@ -105,18 +117,27 @@ async def list_projects() -> list[ProjectResponse]:
 @router.get("/with-stats", response_model=ProjectsWithStatsResponse)
 async def list_projects_with_stats() -> ProjectsWithStatsResponse:
     """List all projects with aggregated stats (features, tasks, bugs, blocked)."""
-    projects = list_project_rows()
+    projects = await asyncio.to_thread(list_project_rows)
 
     if not projects:
         return ProjectsWithStatsResponse(projects=[], total=0)
 
-    stats_dict = fetch_project_stats([p[0] for p in projects])
-    health_statuses = await _resolve_project_health_statuses(
-        (row[0], row[2], row[4]) for row in projects
+    project_ids = [row[0] for row in projects]
+    stats_dict, quality_summaries, active_checkpoints, health_statuses = await asyncio.gather(
+        asyncio.to_thread(fetch_project_stats, project_ids),
+        asyncio.to_thread(_get_quality_summaries, project_ids),
+        asyncio.to_thread(get_active_checkpoint_map),
+        _resolve_project_health_statuses(
+            (row[0], row[2], row[4]) for row in projects
+        ),
     )
     result = [build_project_with_stats(row, stats_dict[row[0]]) for row in projects]
     for project in result:
         project.health_status = health_statuses.get(project.id)
+        project.quality_gate = HealthSummaryResponse(
+            **quality_summaries[project.id]
+        )
+        project.active_checkpoint = active_checkpoints.get(project.id)
     return ProjectsWithStatsResponse(projects=result, total=len(result))
 
 

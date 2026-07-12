@@ -14,11 +14,12 @@ from ._models_backup import BackupInput, RestoreInput
 from ._models_core import EmptyInput, ProjectInput, TaskInput
 from ._models_maintenance import ScanInput, StaleCleanupInput
 from ._models_monitor import SelfHealingInput
-from ._models_tasks import EnrichInput, ReviewPRInput
+from ._models_tasks import AutoFixInput, EnrichInput, ReviewPRInput
 
 __all__ = [
     "DEFAULT_BACKUP_TYPE",
     "DEFAULT_PROJECT_ID",
+    "AutoFixInput",
     "BackupInput",
     "EmptyInput",
     "EnrichInput",

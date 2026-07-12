@@ -6,6 +6,7 @@ Provides:
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Literal
 
 from fastapi import APIRouter, Query
@@ -94,7 +95,8 @@ async def get_activity_feed(
     Results are sorted by timestamp (newest first) and paginated.
     """
     event_types = _parse_event_types(types)
-    events, total = activity_store.get_aggregated_activity(
+    events, total = await asyncio.to_thread(
+        activity_store.get_aggregated_activity,
         project_id=project_id,
         limit=limit,
         offset=offset,

@@ -16,6 +16,7 @@ _pool: ConnectionPool | None = None
 # Pool configuration
 POOL_MIN_SIZE = 5
 POOL_MAX_SIZE = 20
+PREFIXED_ID_HEX_LENGTH = 16
 
 
 def generate_prefixed_id(prefix: str) -> str:
@@ -25,9 +26,9 @@ def generate_prefixed_id(prefix: str) -> str:
         prefix: ID prefix (e.g., 'task', 'sess', 'notif')
 
     Returns:
-        ID in format "{prefix}-{8_char_uuid}"
+        ID in format "{prefix}-{16_char_uuid}"
     """
-    return f"{prefix}-{uuid.uuid4().hex[:8]}"
+    return f"{prefix}-{uuid.uuid4().hex[:PREFIXED_ID_HEX_LENGTH]}"
 
 
 def get_pool() -> ConnectionPool:

@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
+import pytest
 from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 
+from app.api.activity import get_activity_feed
 from app.main import app
+from app.storage import activity as activity_store
 
 client = TestClient(app)
 
@@ -67,6 +72,33 @@ class TestActivityFeed:
         assert first["type"] == "task"
         assert first["message"] == "Task updated: Fix bug"
         assert first["project_id"] == "proj-123"
+
+    @pytest.mark.asyncio
+    async def test_activity_feed_offloads_git_and_database_aggregation(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        to_thread = mocker.patch(
+            "app.api.activity.asyncio.to_thread",
+            new_callable=AsyncMock,
+            return_value=([], 0),
+        )
+
+        response = await get_activity_feed(
+            project_id=None,
+            limit=50,
+            offset=0,
+            types=None,
+        )
+
+        assert response.items == []
+        to_thread.assert_awaited_once_with(
+            activity_store.get_aggregated_activity,
+            project_id=None,
+            limit=50,
+            offset=0,
+            event_types=None,
+        )
 
     def test_activity_feed_pagination(self, mocker: MockerFixture) -> None:
         """Test pagination parameters are passed correctly."""

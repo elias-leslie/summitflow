@@ -9,6 +9,7 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
@@ -20,8 +21,11 @@ from app.api.ws_execution import (
     ConnectionManager,
     Message,
     MessageType,
+    _ensure_redis_forwarder,
     _forward_redis_events,
     _handle_stop_signal,
+    _redis_forwarders,
+    _release_redis_forwarder_if_unused,
     manager,
     register_stop_handler,
     send_error,
@@ -162,6 +166,64 @@ class TestStopHandlers:
         unregister_stop_handler("task-1")
         # Should not raise on unregister of non-existent
         unregister_stop_handler("task-nonexistent")
+
+
+class TestSharedRedisForwarders:
+    """Tests for one Redis subscription per execution channel."""
+
+    @pytest.mark.asyncio
+    async def test_reuses_one_forwarder_for_same_channel(
+        self, mocker: MockerFixture
+    ) -> None:
+        started = asyncio.Event()
+        finish = asyncio.Event()
+
+        async def wait_for_finish(_task_id: str) -> None:
+            started.set()
+            await finish.wait()
+
+        forward = mocker.patch(
+            "app.api.ws_execution._forward_redis_events", side_effect=wait_for_finish
+        )
+
+        first = await _ensure_redis_forwarder("task-shared-forwarder")
+        await asyncio.wait_for(started.wait(), timeout=1)
+        second = await _ensure_redis_forwarder("task-shared-forwarder")
+
+        assert first is second
+        forward.assert_awaited_once_with("task-shared-forwarder")
+
+        await _release_redis_forwarder_if_unused("task-shared-forwarder")
+        assert first.cancelled()
+        assert "task-shared-forwarder" not in _redis_forwarders
+
+    @pytest.mark.asyncio
+    async def test_keeps_forwarder_until_final_socket_disconnects(
+        self, mocker: MockerFixture
+    ) -> None:
+        started = asyncio.Event()
+        finish = asyncio.Event()
+
+        async def wait_for_finish(_task_id: str) -> None:
+            started.set()
+            await finish.wait()
+
+        mocker.patch(
+            "app.api.ws_execution._forward_redis_events", side_effect=wait_for_finish
+        )
+        websocket = AsyncMock()
+        task_id = "task-forwarder-lifecycle"
+
+        await manager.connect(websocket, task_id)
+        forwarder = await _ensure_redis_forwarder(task_id)
+        await asyncio.wait_for(started.wait(), timeout=1)
+        await _release_redis_forwarder_if_unused(task_id)
+        assert not forwarder.done()
+
+        await manager.disconnect(websocket, task_id)
+        await _release_redis_forwarder_if_unused(task_id)
+        assert forwarder.cancelled()
+        assert task_id not in _redis_forwarders
 
 
 class TestHelperFunctions:

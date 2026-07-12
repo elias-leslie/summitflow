@@ -174,4 +174,17 @@ describe('ProjectSettingsClient', () => {
     const link = await screen.findByRole('link', { name: 'Open app' })
     expect(link).toHaveAttribute('href', 'https://app.example.test')
   })
+
+  it('does not render active links for unsafe stored public URLs', async () => {
+    apiMocks.fetchProject.mockResolvedValue({
+      ...TEST_PROJECT,
+      public_url: 'javascript:alert(document.domain)',
+      base_url: 'javascript:alert(document.domain)',
+    })
+
+    renderClient()
+
+    expect(await screen.findByText('Open app unavailable')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Open app' })).toBeNull()
+  })
 })

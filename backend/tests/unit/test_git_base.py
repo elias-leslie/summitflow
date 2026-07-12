@@ -60,6 +60,8 @@ def test_normalize_base_branch_replaces_task_branch_with_detected_main(monkeypat
 
     assert git_base.normalize_base_branch("task-609864c5/main", Path("/repo")) == "main"
     assert git_base.normalize_base_branch("task/task-609864c5", Path("/repo")) == "main"
+    assert git_base.normalize_base_branch("task-609864c5a40b7192/main", Path("/repo")) == "main"
+    assert git_base.normalize_base_branch("task/task-609864c5a40b7192", Path("/repo")) == "main"
 
 
 def test_current_branch_or_base_replaces_task_branch_with_detected_main(monkeypatch) -> None:

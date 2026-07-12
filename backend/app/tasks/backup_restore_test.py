@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import gzip
 import subprocess
+import tarfile
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +16,7 @@ from .backup_restore import restore_backup
 logger = get_logger(__name__)
 
 
-def test_restore_for_source(source_id: str) -> dict[str, Any]:
+def run_restore_test_for_source(source_id: str) -> dict[str, Any]:
     """Run a dry-run restore of the latest backup for a source and record the result.
 
     For infrastructure sources (no project dir), verifies the archive is
@@ -119,10 +121,10 @@ def _validate_infra_archive(source_id: str, backup: dict[str, Any]) -> dict[str,
     coverage_ok = coverage_result.complete
 
     # 3. Validate pg_dumpall header (quick sanity check)
-    pg_ok = _validate_pgdump_header(archive_path, file_listing)
+    pg_ok = _validate_pgdump_header(archive_path)
 
     # 4. Validate Redis RDB header
-    redis_ok = _validate_redis_header(archive_path, file_listing)
+    redis_ok = _validate_redis_header(archive_path)
 
     # Aggregate result
     errors: list[str] = []
@@ -226,35 +228,62 @@ def _has_file_in_listing(file_listing: list[str], pattern: str) -> bool:
     return any(pattern in f for f in file_listing)
 
 
-def _validate_pgdump_header(archive_path: str, file_listing: list[str]) -> bool:
-    """Extract and validate pg_dumpall header — must start with SQL comment."""
-    dump_entry = next((f for f in file_listing if "pgdumpall.sql.gz" in f), None)
-    if not dump_entry:
-        return False
+def _read_unique_archive_member_prefix(
+    archive_path: str,
+    basename: str,
+    byte_count: int,
+    *,
+    gzip_compressed: bool = False,
+) -> bytes | None:
+    """Read a bounded prefix from one regular archive member without a shell."""
     try:
-        result = subprocess.run(
-            ["bash", "-c", f"tar xzf '{archive_path}' -O '{dump_entry}' | gunzip | head -c 100"],
-            capture_output=True, text=True, timeout=30,
-        )
-        return result.returncode == 0 and result.stdout.startswith("--")
-    except Exception:
-        return False
+        with tarfile.open(archive_path, "r:gz") as archive:
+            matches = [
+                member
+                for member in archive.getmembers()
+                if member.isreg() and Path(member.name).name == basename
+            ]
+            if len(matches) != 1:
+                return None
+            source = archive.extractfile(matches[0])
+            if source is None:
+                return None
+            with source:
+                if gzip_compressed:
+                    with gzip.GzipFile(fileobj=source, mode="rb") as decompressed:
+                        return decompressed.read(byte_count)
+                return source.read(byte_count)
+    except (OSError, EOFError, tarfile.TarError):
+        return None
 
 
-def _validate_redis_header(archive_path: str, file_listing: list[str]) -> bool:
+def _validate_pgdump_header(archive_path: str) -> bool:
+    """Extract and validate pg_dumpall header — must start with SQL comment."""
+    header = _read_unique_archive_member_prefix(
+        archive_path,
+        "pgdumpall.sql.gz",
+        100,
+        gzip_compressed=True,
+    )
+    return bool(header and header.startswith(b"--"))
+
+
+def _validate_redis_header(archive_path: str) -> bool:
     """Extract and validate Redis RDB header — must start with REDIS magic bytes."""
-    rdb_entry = next((f for f in file_listing if "redis-dump.rdb" in f), None)
-    if not rdb_entry:
+    with tarfile.open(archive_path, "r:gz") as archive:
+        has_redis_dump = any(
+            member.isreg() and Path(member.name).name == "redis-dump.rdb"
+            for member in archive.getmembers()
+        )
+    if not has_redis_dump:
         # Redis dump may not exist (optional if Redis was unavailable)
         return True
-    try:
-        result = subprocess.run(
-            ["bash", "-c", f"tar xzf '{archive_path}' -O '{rdb_entry}' | head -c 5"],
-            capture_output=True, timeout=10,
-        )
-        return result.returncode == 0 and result.stdout.startswith(b"REDIS")
-    except Exception:
-        return False
+    header = _read_unique_archive_member_prefix(
+        archive_path,
+        "redis-dump.rdb",
+        5,
+    )
+    return bool(header and header.startswith(b"REDIS"))
 
 
 def run_restore_tests() -> dict[str, Any]:
@@ -275,7 +304,7 @@ def run_restore_tests() -> dict[str, Any]:
     for source in enabled_sources:
         source_id = str(source["id"])
         try:
-            result = test_restore_for_source(source_id)
+            result = run_restore_test_for_source(source_id)
             results.append(result)
         except Exception as e:
             logger.exception("restore_test_unhandled", source_id=source_id)

@@ -81,6 +81,8 @@ export interface ProjectWithStats {
   sidebar_rank: number | null
   created_at: string
   health_status?: string
+  quality_gate?: QualityGateHealth
+  active_checkpoint?: import('./checkpoints').Checkpoint
   stats: ProjectStats
 }
 

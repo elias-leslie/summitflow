@@ -14,21 +14,34 @@ logger = get_logger(__name__)
 _task: asyncio.Task[None] | None = None
 _last_cleanup_monotonic = 0.0
 
+# Persisted metrics are diagnostic history, not a monitoring system of record. A
+# five-minute cadence and two-week window keep enough context for a solo operator
+# while avoiding the millions of mostly redundant rows produced by 30-second
+# sampling for 30 days.
+DEFAULT_INTERVAL_SECONDS = 300
+DEFAULT_RETENTION_DAYS = 14
+
 
 def _interval_seconds() -> int:
-    raw = os.environ.get("SUMMITFLOW_RUNTIME_METRICS_INTERVAL_SECONDS", "30")
+    raw = os.environ.get(
+        "SUMMITFLOW_RUNTIME_METRICS_INTERVAL_SECONDS",
+        str(DEFAULT_INTERVAL_SECONDS),
+    )
     try:
         return max(0, int(raw))
     except ValueError:
-        return 30
+        return DEFAULT_INTERVAL_SECONDS
 
 
 def _retention_days() -> int:
-    raw = os.environ.get("SUMMITFLOW_RUNTIME_METRICS_RETENTION_DAYS", "30")
+    raw = os.environ.get(
+        "SUMMITFLOW_RUNTIME_METRICS_RETENTION_DAYS",
+        str(DEFAULT_RETENTION_DAYS),
+    )
     try:
         return max(1, int(raw))
     except ValueError:
-        return 30
+        return DEFAULT_RETENTION_DAYS
 
 
 async def sample_runtime_metrics_once() -> int:

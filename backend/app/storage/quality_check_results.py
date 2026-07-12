@@ -172,6 +172,71 @@ def get_project_health_summary(conn: psycopg.Connection, project_id: str) -> Che
     }
 
 
+def get_projects_health_summaries(
+    conn: psycopg.Connection,
+    project_ids: list[str],
+) -> dict[str, CheckResult]:
+    """Get quality summaries for many dashboard projects in two queries."""
+    summaries: dict[str, CheckResult] = {
+        project_id: {
+            "project_id": project_id,
+            "checks": {},
+            "overall_pass": True,
+            "total_unfixed": 0,
+        }
+        for project_id in project_ids
+    }
+    if not project_ids:
+        return summaries
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "WITH latest AS ("
+            " SELECT DISTINCT ON (project_id, check_type)"
+            " project_id, check_type, status, error_count, warning_count"
+            " FROM quality_check_results WHERE project_id = ANY(%s)"
+            " ORDER BY project_id, check_type, created_at DESC, id DESC"
+            ") SELECT project_id, check_type, status, error_count, warning_count"
+            " FROM latest",
+            (project_ids,),
+        )
+        for project_id, check_type, status, error_count, warning_count in cur.fetchall():
+            summary = summaries[str(project_id)]
+            summary["checks"][str(check_type)] = {
+                "status": status,
+                "error_count": error_count,
+                "warning_count": warning_count,
+                "unfixed_count": 0,
+            }
+            if status != "pass":
+                summary["overall_pass"] = False
+
+        cur.execute(
+            "SELECT project_id, check_type, COUNT(*)"
+            " FROM quality_check_results"
+            " WHERE project_id = ANY(%s)"
+            " AND status = 'fail' AND fixed_at IS NULL"
+            " GROUP BY project_id, check_type",
+            (project_ids,),
+        )
+        for project_id, check_type, count in cur.fetchall():
+            summary = summaries[str(project_id)]
+            check = summary["checks"].setdefault(
+                str(check_type),
+                {
+                    "status": "fail",
+                    "error_count": 0,
+                    "warning_count": 0,
+                    "unfixed_count": 0,
+                },
+            )
+            check["unfixed_count"] = int(count)
+            summary["total_unfixed"] += int(count)
+            summary["overall_pass"] = False
+
+    return summaries
+
+
 def auto_close_resolved(
     conn: psycopg.Connection, project_id: str, check_type: CheckType
 ) -> tuple[int, list[str]]:

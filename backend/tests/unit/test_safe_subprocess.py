@@ -26,7 +26,7 @@ def test_run_resolves_executable_uses_env_chdir_and_disables_close_fds(monkeypat
     assert calls == [
         (
             ["/usr/bin/env", "-C", "/repo", "/usr/bin/git", "status"],
-            {"capture_output": True, "close_fds": False},
+            {"capture_output": True, "close_fds": False, "shell": False},
         )
     ]
 
@@ -40,3 +40,6 @@ def test_run_rejects_fork_forcing_options() -> None:
 
     with pytest.raises(ValueError, match="close_fds"):
         safe_subprocess.run(["git"], close_fds=True)
+
+    with pytest.raises(ValueError, match="shell execution"):
+        safe_subprocess.run(["git status"], shell=True)

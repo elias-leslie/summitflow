@@ -129,4 +129,17 @@ describe('ProjectRow', () => {
       screen.getByRole('button', { name: 'Commit + Push' }),
     ).toBeInTheDocument()
   })
+
+  it('lets repository status and actions wrap into a mobile-safe second row', () => {
+    renderRow()
+
+    expect(
+      screen.getByRole('button', { name: 'repo-folder repository details' }),
+    ).toHaveClass('flex-wrap', 'sm:flex-nowrap')
+    expect(screen.getByTestId('repository-actions')).toHaveClass(
+      'flex-wrap',
+      'basis-full',
+      'sm:basis-auto',
+    )
+  })
 })

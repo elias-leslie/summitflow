@@ -5,7 +5,13 @@ import { Check, FileText, Loader2, MessageSquare, Trash2 } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogClose, DialogContent } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   acceptTask,
   getSubtasks,
@@ -146,7 +152,11 @@ export function TaskReviewModal({
         className="w-full max-w-4xl h-[85vh] flex flex-col p-0 overflow-hidden"
         data-testid="task-review-modal"
       >
-        <DialogClose onClose={handleClose} />
+        <DialogTitle className="sr-only">Review task</DialogTitle>
+        <DialogDescription className="sr-only">
+          Review the proposed task and discuss changes before accepting it.
+        </DialogDescription>
+        <DialogClose />
 
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-800">

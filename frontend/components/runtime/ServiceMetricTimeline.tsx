@@ -230,7 +230,7 @@ function MetricModal({
           <DialogDescription>
             {service.manager} {service.category} resource history
           </DialogDescription>
-          <DialogClose onClose={() => onOpenChange(false)} />
+          <DialogClose />
         </DialogHeader>
         <div className="space-y-4 overflow-y-auto px-5 py-4">
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4">

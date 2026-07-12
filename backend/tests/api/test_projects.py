@@ -12,6 +12,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.projects.public_urls import clear_public_url_config_cache, resolve_project_public_url
+from app.storage import quality_check_results as qcr_store
 from app.storage.connection import get_connection
 
 
@@ -702,6 +703,13 @@ def test_list_projects_with_stats_returns_feature_task_bug_counts(
                 "bug",
             ),
         )
+        qcr_store.create_check_result(
+            conn,
+            project_id,
+            "ruff",
+            "fail",
+            error_count=2,
+        )
         conn.commit()
 
     try:
@@ -727,8 +735,26 @@ def test_list_projects_with_stats_returns_feature_task_bug_counts(
         assert project["category"] == "dev"
         assert project["sidebar_rank"] is None
         assert project["health_status"] == "healthy"
+        assert project["quality_gate"] == {
+            "project_id": project_id,
+            "overall_pass": False,
+            "total_unfixed": 1,
+            "checks": {
+                "ruff": {
+                    "status": "fail",
+                    "error_count": 2,
+                    "warning_count": 0,
+                    "unfixed_count": 1,
+                }
+            },
+        }
+        assert project["active_checkpoint"] is None
     finally:
         with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM quality_check_results WHERE project_id = %s",
+                (project_id,),
+            )
             cur.execute(
                 "DELETE FROM tasks WHERE id = ANY(%s)",
                 (list(task_ids.values()),),

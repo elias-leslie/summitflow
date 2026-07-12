@@ -21,6 +21,7 @@ import { JennyExecutionStrip } from '@/components/tasks/JennyExecutionStrip'
 import type { TaskFilterValues } from '@/components/tasks/TaskFilters'
 import { TaskIdeationDialog } from '@/components/tasks/TaskIdeationDialog'
 import { TaskModal } from '@/components/tasks/TaskModal'
+import { TaskQueryState } from '@/components/tasks/TaskQueryState'
 import { TasksTab } from '@/components/tasks/TasksTab'
 import { TasksViewToolbar } from '@/components/tasks/TasksViewToolbar'
 import {
@@ -162,7 +163,12 @@ export function ProjectDetailClient() {
   })
 
   // Tasks for Kanban (fetch with feature context)
-  const { data: kanbanTasksData } = useQuery({
+  const {
+    data: kanbanTasksData,
+    error: kanbanTasksError,
+    isLoading: kanbanTasksLoading,
+    refetch: refetchKanbanTasks,
+  } = useQuery({
     queryKey: taskQueryKeys.kanban(projectId),
     queryFn: () => fetchTasks(projectId, { include: 'feature', limit: 500 }),
     staleTime: STALE_GIT,
@@ -315,33 +321,42 @@ export function ProjectDetailClient() {
               onViewModeChange={setViewMode}
               onNewTask={handleNewTask}
             />
-            <JennyExecutionStrip tasks={kanbanTasks} />
             {viewMode === 'board' ? (
-              <>
-                <TaskKanbanBoard
-                  tasks={kanbanTasks}
-                  projectId={projectId}
-                  onStatusChange={handleTaskStatusChange}
-                  onTaskClick={handleTaskClick}
-                  onNewTask={handleNewTask}
-                />
-                <TaskModal
-                  taskId={selectedTaskId}
-                  projectId={projectId}
-                  open={modalOpen}
-                  onOpenChange={handleTaskModalOpenChange}
-                  onTaskUpdate={handleTaskUpdate}
-                  initialTask={selectedTask}
-                />
-                {escalationTask && (
-                  <EscalationPanel
-                    task={escalationTask}
-                    isOpen={escalationOpen}
-                    onClose={() => setEscalationOpen(false)}
-                    onApproveAndResume={handleApproveAndResume}
+              <TaskQueryState
+                error={kanbanTasksError}
+                isLoading={kanbanTasksLoading}
+                loadingLabel="Loading task board..."
+                onRetry={() => {
+                  void refetchKanbanTasks()
+                }}
+              >
+                <div className="space-y-4">
+                  <JennyExecutionStrip tasks={kanbanTasks} />
+                  <TaskKanbanBoard
+                    tasks={kanbanTasks}
+                    projectId={projectId}
+                    onStatusChange={handleTaskStatusChange}
+                    onTaskClick={handleTaskClick}
+                    onNewTask={handleNewTask}
                   />
-                )}
-              </>
+                  <TaskModal
+                    taskId={selectedTaskId}
+                    projectId={projectId}
+                    open={modalOpen}
+                    onOpenChange={handleTaskModalOpenChange}
+                    onTaskUpdate={handleTaskUpdate}
+                    initialTask={selectedTask}
+                  />
+                  {escalationTask && (
+                    <EscalationPanel
+                      task={escalationTask}
+                      isOpen={escalationOpen}
+                      onClose={() => setEscalationOpen(false)}
+                      onApproveAndResume={handleApproveAndResume}
+                    />
+                  )}
+                </div>
+              </TaskQueryState>
             ) : (
               <TasksTab
                 projectId={projectId}

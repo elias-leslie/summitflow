@@ -45,6 +45,33 @@ def _status(
 class TestDockerRuntime:
     """Tests for Docker runtime mode endpoints."""
 
+    @pytest.mark.asyncio
+    async def test_backup_fallback_confines_note_to_safe_filename(
+        self,
+        mocker: MockerFixture,
+        tmp_path: Path,
+    ) -> None:
+        from app.api.docker import routes
+
+        mocker.patch.object(routes, "BACKUP_DIR", tmp_path)
+        mocker.patch.object(routes, "_find_container_name", return_value="postgres")
+        mocker.patch.object(
+            routes,
+            "_run_docker",
+            new=mocker.AsyncMock(return_value=("database dump", "", 0)),
+        )
+
+        result = await routes._backup_fallback(
+            "../../escape; touch owned",
+            RuntimeError("workflow unavailable"),
+        )
+
+        assert result.success is True
+        created = list(tmp_path.glob("*.sql"))
+        assert len(created) == 1
+        assert created[0].parent == tmp_path
+        assert created[0].name.endswith("-escape--touch-owned.sql")
+
     def test_runtime_service_map_includes_registered_native_projects(self) -> None:
         from app.api import docker as docker_api
 

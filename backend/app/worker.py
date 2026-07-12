@@ -43,6 +43,7 @@ from app.workflows.utility import (
     enrich_wf,
     page_health_wf,
     pr_review_wf,
+    quality_auto_fix_wf,
     refactor_regen_wf,
     schema_tasks_wf,
 )
@@ -77,7 +78,7 @@ def main() -> None:
             restore_tests_wf,
             runtime_hygiene_wf,
             tool_governance_wf,
-            # Utility (10)
+            # Utility (11)
             backup_create_wf,
             backup_restore_wf,
             enrich_wf,
@@ -88,6 +89,7 @@ def main() -> None:
             arch_tasks_wf,
             check_resolved_wf,
             page_health_wf,
+            quality_auto_fix_wf,
         ],
     )
     worker.start()

@@ -41,7 +41,8 @@ def fetch_health_data(
     cur.execute(
         "WITH latest AS ("
         " SELECT DISTINCT ON (check_type) check_type, status, error_count, warning_count"
-        " FROM quality_check_results WHERE project_id = %s ORDER BY check_type, created_at DESC"
+        " FROM quality_check_results"
+        " WHERE project_id = %s ORDER BY check_type, created_at DESC, id DESC"
         ") SELECT check_type, status, error_count, warning_count FROM latest",
         (project_id,),
     )

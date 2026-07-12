@@ -42,6 +42,7 @@ import {
   buildHealthPreview,
   normalizeProjectFormValues,
   type ProjectFormErrors,
+  safeExternalHttpUrl,
   validateProjectForm,
 } from '@/lib/project-registration'
 import { getErrorMessage } from '@/lib/utils'
@@ -168,8 +169,9 @@ export function ProjectSettingsClient() {
   const canSave =
     hasChanges && Object.keys(fieldErrors).length === 0 && !mutation.isPending
   const healthPreview = buildHealthPreview(baseUrl, healthEndpoint)
-  const publicAppUrl =
-    project?.public_url || currentValues.baseUrl || project?.base_url || ''
+  const publicAppUrl = safeExternalHttpUrl(
+    project?.public_url || currentValues.baseUrl || project?.base_url || '',
+  )
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()
@@ -530,14 +532,20 @@ export function ProjectSettingsClient() {
                     {healthPreview}
                   </p>
                 </div>
-                <a
-                  href={publicAppUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-phosphor-400 hover:text-phosphor-300"
-                >
-                  <ExternalLink className="h-3 w-3" /> Open app
-                </a>
+                {publicAppUrl ? (
+                  <a
+                    href={publicAppUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-phosphor-400 hover:text-phosphor-300"
+                  >
+                    <ExternalLink className="h-3 w-3" /> Open app
+                  </a>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                    <ExternalLink className="h-3 w-3" /> Open app unavailable
+                  </span>
+                )}
               </div>
             </div>
 

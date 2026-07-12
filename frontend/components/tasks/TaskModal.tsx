@@ -8,7 +8,13 @@ import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import { TaskModalContent } from '@/components/tasks/TaskModalContent'
 import { TaskModalHeader } from '@/components/tasks/TaskModalHeader'
 import { useTaskModal } from '@/components/tasks/useTaskModal'
-import { Dialog, DialogClose, DialogContent } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import type { Task } from '@/lib/api/tasks'
 import { deleteTask } from '@/lib/api/tasks'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
@@ -101,8 +107,13 @@ export function TaskModal({
         className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
         data-testid="task-modal"
       >
-        {/* Close button */}
-        <DialogClose onClose={() => onOpenChange(false)} />
+        <DialogTitle className="sr-only">
+          {task?.title ?? 'Task details'}
+        </DialogTitle>
+        <DialogDescription className="sr-only">
+          View task status, execution details, activity, and editing controls.
+        </DialogDescription>
+        <DialogClose />
 
         {/* Loading state */}
         {isLoading && (

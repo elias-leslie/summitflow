@@ -59,6 +59,13 @@ describe('ProjectCard', () => {
     category: 'production',
     sidebar_rank: 0,
     created_at: '2026-03-10T12:00:00Z',
+    health_status: 'healthy',
+    quality_gate: {
+      project_id: 'summitflow',
+      overall_pass: false,
+      total_unfixed: 3,
+      checks: {},
+    },
     stats: {
       features: 3,
       tasks: 7,
@@ -124,6 +131,16 @@ describe('ProjectCard', () => {
 
     expect(await screen.findByText('Service: 42ms')).toBeInTheDocument()
     expect(screen.getByText('Quality: 3 open')).toBeInTheDocument()
+  })
+
+  it('uses aggregated card status without a per-project mount waterfall', () => {
+    renderCard(project)
+
+    expect(screen.getByText('Service: healthy')).toBeInTheDocument()
+    expect(screen.getByText('Quality: 3 open')).toBeInTheDocument()
+    expect(apiMocks.fetchProjectHealth).not.toHaveBeenCalled()
+    expect(apiMocks.fetchQualityGateHealth).not.toHaveBeenCalled()
+    expect(checkpointMocks.getActiveCheckpoint).not.toHaveBeenCalled()
   })
 
   it('flags projects that are missing a root path', () => {

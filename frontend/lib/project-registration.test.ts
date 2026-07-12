@@ -4,6 +4,7 @@ import {
   DEFAULT_HEALTH_ENDPOINT,
   normalizeProjectFormValues,
   normalizeProjectId,
+  safeExternalHttpUrl,
   validateProjectForm,
 } from './project-registration'
 
@@ -59,5 +60,16 @@ describe('project-registration', () => {
       baseUrl: 'URL must use http or https',
       rootPath: 'Root path must be an absolute path',
     })
+  })
+
+  it('only permits HTTP URLs in external-link sinks', () => {
+    expect(safeExternalHttpUrl(' https://example.com/app ')).toBe(
+      'https://example.com/app',
+    )
+    expect(safeExternalHttpUrl('javascript:alert(document.domain)')).toBeNull()
+    expect(
+      safeExternalHttpUrl('data:text/html,<script>alert(1)</script>'),
+    ).toBeNull()
+    expect(safeExternalHttpUrl('/relative')).toBeNull()
   })
 })

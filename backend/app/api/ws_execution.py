@@ -51,6 +51,12 @@ __all__ = [
 
 router = APIRouter()
 
+# A Redis subscription consumes one connection and broadcasts to every local
+# WebSocket for the task. Sharing it prevents N sockets from each rebroadcasting
+# the same Redis event to all N sockets.
+_redis_forwarders: dict[str, asyncio.Task[None]] = {}
+_redis_forwarders_lock = asyncio.Lock()
+
 
 def _coerce_message_type(value: object) -> MessageType:
     """Convert an untrusted message-type value to a known enum member."""
@@ -105,9 +111,71 @@ async def _forward_redis_events(task_id: str) -> None:
                     data=_as_object_dict(event.get("data")),
                 ),
             )
+            if manager.get_connection_count(task_id) == 0:
+                return
         except Exception:
             logger.debug("Error forwarding Redis event to WebSocket clients", exc_info=True)
             break
+
+
+def _forget_redis_forwarder(task_id: str, task: asyncio.Future[None]) -> None:
+    """Remove a completed forwarder without disturbing a replacement task."""
+    if _redis_forwarders.get(task_id) is task:
+        _redis_forwarders.pop(task_id, None)
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error is not None:
+        logger.warning(
+            "Redis WebSocket forwarder stopped unexpectedly",
+            task_id=task_id,
+            error=str(error),
+        )
+
+
+async def _ensure_redis_forwarder(task_id: str) -> asyncio.Task[None]:
+    """Return the single active Redis fan-out task for an execution channel."""
+    async with _redis_forwarders_lock:
+        existing = _redis_forwarders.get(task_id)
+        if existing is not None and not existing.done():
+            return existing
+
+        forwarder = asyncio.create_task(
+            _forward_redis_events(task_id),
+            name=f"execution-redis-forwarder-{task_id}",
+        )
+        _redis_forwarders[task_id] = forwarder
+        forwarder.add_done_callback(
+            lambda completed, channel=task_id: _forget_redis_forwarder(
+                channel, completed
+            )
+        )
+        return forwarder
+
+
+async def _release_redis_forwarder_if_unused(task_id: str) -> None:
+    """Cancel a channel forwarder after its final local socket disconnects."""
+    forwarder: asyncio.Task[None] | None = None
+    async with _redis_forwarders_lock:
+        # Re-check while holding the lifecycle lock so a concurrent connection
+        # either preserves this forwarder or starts a replacement after cancel.
+        if manager.get_connection_count(task_id) > 0:
+            return
+        forwarder = _redis_forwarders.pop(task_id, None)
+        if forwarder is not None and not forwarder.done():
+            forwarder.cancel()
+
+    if forwarder is not None and not forwarder.done():
+        try:
+            await forwarder
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.warning(
+                "Redis WebSocket forwarder failed during shutdown",
+                task_id=task_id,
+                exc_info=True,
+            )
 
 
 async def _handle_stop_signal(task_id: str) -> None:
@@ -159,14 +227,13 @@ async def websocket_execution(websocket: WebSocket, task_id: str) -> None:
 
     from_sequence = _get_replay_sequence(websocket)
     current_seq = await manager.connect(websocket, task_id)
-    redis_task: asyncio.Task[None] | None = None
 
     try:
         await websocket.send_json(Message(type=MessageType.CONNECTED, task_id=task_id, data={"sequence": current_seq}).to_dict())
         if from_sequence > 0:
             await manager.replay(websocket, task_id, from_sequence)
 
-        redis_task = asyncio.create_task(_forward_redis_events(task_id))
+        await _ensure_redis_forwarder(task_id)
 
         while True:
             data = await websocket.receive_json()
@@ -176,11 +243,8 @@ async def websocket_execution(websocket: WebSocket, task_id: str) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        if redis_task:
-            redis_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await redis_task
         await manager.disconnect(websocket, task_id)
+        await _release_redis_forwarder_if_unused(task_id)
 
 
 # Helper functions for orchestrator to send messages

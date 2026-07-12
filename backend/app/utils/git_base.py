@@ -10,7 +10,8 @@ from . import safe_subprocess
 
 _BASE_BRANCH_CANDIDATES = ("main", "master", "develop")
 _INVALID_BASE_BRANCHES = {"", "HEAD"}
-_TASK_BRANCH_RE = re.compile(r"^(?:task/)?task-[0-9a-f]{8}(?:/main)?$")
+# Accept legacy 32-bit task IDs and wider current/future UUID prefixes.
+_TASK_BRANCH_RE = re.compile(r"^(?:task/)?task-[0-9a-f]{8,32}(?:/main)?$")
 
 
 def _run_git(args: list[str], repo_path: str | Path | None = None) -> subprocess.CompletedProcess[str]:

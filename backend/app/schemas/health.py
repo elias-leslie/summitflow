@@ -29,3 +29,19 @@ class DetailedHealthResponse(BaseModel):
     database: ComponentHealth = Field(..., description="Database connection health")
     cache: ComponentHealth = Field(..., description="Redis cache health")
     version: str = Field(..., description="Application version")
+
+
+class ReadinessResponse(BaseModel):
+    """Fresh dependency and schema checks used to admit application traffic."""
+
+    status: str = Field(..., description="Overall readiness: 'ready' or 'not_ready'")
+    service: str = Field(..., description="Service name")
+    timestamp: datetime = Field(..., description="Readiness check timestamp (UTC)")
+    database: ComponentHealth = Field(..., description="Database connection health")
+    cache: ComponentHealth = Field(..., description="Redis connectivity health")
+    schema_status: ComponentHealth = Field(
+        ...,
+        alias="schema",
+        description="Alembic schema revision health",
+    )
+    version: str = Field(..., description="Application version")
