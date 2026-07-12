@@ -244,6 +244,47 @@ class TestUpdateTaskStatus:
         assert 3500 <= lock_span.total_seconds() <= 3700
         assert claimed["updated_at"] >= claimed["claimed_at"]
 
+    def test_claim_task_clears_stale_verification_result(
+        self, test_task: dict[str, Any]
+    ) -> None:
+        """A new execution must not inherit evidence from an earlier run."""
+        task_store.update_task(
+            test_task["id"],
+            verification_result={"evidence_verified": True},
+        )
+
+        claimed = task_store.claim_task(test_task["id"], "test-worker")
+
+        assert claimed is not None
+        assert claimed["status"] == "running"
+        assert claimed["verification_result"] is None
+
+    def test_release_task_only_releases_expected_worker(
+        self, test_task: dict[str, Any]
+    ) -> None:
+        """Delayed cleanup cannot release a claim now owned by another worker."""
+        claimed = task_store.claim_task(test_task["id"], "current-worker")
+        assert claimed is not None
+
+        stale_release = task_store.release_task(
+            test_task["id"],
+            expected_worker_id="stale-worker",
+        )
+        still_claimed = task_store.get_task(test_task["id"])
+
+        assert stale_release is None
+        assert still_claimed is not None
+        assert still_claimed["status"] == "running"
+        assert still_claimed["claimed_by"] == "current-worker"
+
+        released = task_store.release_task(
+            test_task["id"],
+            expected_worker_id="current-worker",
+        )
+        assert released is not None
+        assert released["status"] == "pending"
+        assert released["claimed_by"] is None
+
     def test_count_running_tasks_can_exclude_current_task(self, test_task: dict[str, Any], project_id: str) -> None:
         """Concurrency checks should ignore the task whose workflow is already starting."""
         claimed = task_store.claim_task(test_task["id"], "test-worker", lock_duration_minutes=60)
@@ -306,8 +347,12 @@ class TestUpdateTaskStatus:
     def test_status_completed_to_pending_clears_completed_at(
         self, test_task: dict[str, Any]
     ) -> None:
-        """Reopened tasks should not retain stale terminal timestamps."""
+        """Reopened tasks should not retain stale terminal state or evidence."""
         task_store.update_task_status(test_task["id"], "running")
+        task_store.update_task(
+            test_task["id"],
+            verification_result={"evidence_verified": True},
+        )
         task_store.update_task_status(test_task["id"], "completed")
 
         result = task_store.update_task_status(test_task["id"], "pending")
@@ -315,6 +360,7 @@ class TestUpdateTaskStatus:
         assert result is not None
         assert result["status"] == "pending"
         assert result["completed_at"] is None
+        assert result["verification_result"] is None
 
     def test_invalid_status_raises_error(self, test_task: dict[str, Any]) -> None:
         """Test that invalid status raises ValueError."""

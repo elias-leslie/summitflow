@@ -64,4 +64,44 @@ describe('TaskCardBody', () => {
 
     expect(screen.queryByText('Some step')).not.toBeInTheDocument()
   })
+
+  it('does not label a direct zero-evidence completion as verified', () => {
+    render(
+      <TaskCardBody
+        task={makeTask({
+          status: 'completed',
+          verification_result: {
+            total: 0,
+            verified: 0,
+            unverified: [],
+            all_verified: true,
+          },
+        })}
+        canExpand={false}
+      />,
+    )
+
+    expect(screen.queryByText('verified')).not.toBeInTheDocument()
+  })
+
+  it('labels autonomous quality-gate evidence as verified', () => {
+    render(
+      <TaskCardBody
+        task={makeTask({
+          status: 'completed',
+          verification_result: {
+            evidence_verified: true,
+            verification_source: 'autonomous_quality_gate',
+            execution_clean: true,
+            subtask_count: 1,
+            total_self_fix_attempts: 0,
+            total_supervisor_attempts: 0,
+          },
+        })}
+        canExpand={false}
+      />,
+    )
+
+    expect(screen.getByText('verified')).toBeInTheDocument()
+  })
 })

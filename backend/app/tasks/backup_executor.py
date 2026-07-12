@@ -5,7 +5,7 @@ from __future__ import annotations
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..storage.notifications import create_notification
-from .backup_lock import acquire_backup_lock, release_backup_lock
+from .backup_lock import acquire_backup_lock, maintain_backup_lock
 from .backup_native import BACKUP_TIMEOUT, run_project_backup
 from .backup_utils import (
     as_mapping,
@@ -16,6 +16,7 @@ from .backup_utils import (
     get_project_root,
     get_source_path,
     get_str_field,
+    require_verified_backup_output,
 )
 
 logger = get_logger(__name__)
@@ -57,23 +58,22 @@ def create_backup(
         logger.error("create_backup_failed", source_id=resolved_source_id, error=error_msg)
         return {"status": "failed", "error": error_msg}
 
-    if not acquire_backup_lock(resolved_source_id):
+    owner_token = acquire_backup_lock(resolved_source_id)
+    if owner_token is None:
         logger.info("create_backup_skipped_locked", source_id=resolved_source_id)
         return {"status": "skipped", "error": f"Backup already running for {resolved_source_id}"}
 
-    try:
-        return _run_backup(
-            project_id,
-            backup_dir,
-            note,
-            backup_type,
-            keep_local,
-            local_only,
-            retention_days,
-            resolved_source_id,
-        )
-    finally:
-        release_backup_lock(resolved_source_id)
+    return _run_backup(
+        project_id,
+        backup_dir,
+        note,
+        backup_type,
+        keep_local,
+        local_only,
+        retention_days,
+        resolved_source_id,
+        owner_token,
+    )
 
 
 def _run_backup(
@@ -85,34 +85,57 @@ def _run_backup(
     local_only: bool,
     retention_days: int | None = None,
     source_id: str | None = None,
+    owner_token: str | None = None,
 ) -> dict[str, object]:
     """Execute backup with lock already held."""
-    backup_record = backup_store.create_backup_record(
-        project_id=project_id, backup_type=backup_type, note=note, source_id=source_id
-    )
-    backup_id = backup_record["id"]
-    backup_store.update_backup_status(backup_id, "running")
-
-    env = build_storage_env(source_id or project_id)
+    resolved_source_id = source_id or project_id
+    backup_id: str | None = None
 
     try:
-        parsed_output = run_project_backup(
-            project_dir=project_dir,
-            source_id=source_id or project_id,
-            env=env,
-            keep_local=keep_local,
-            local_only=local_only,
-            retention_days=retention_days,
-        )
-        if parsed_output.get("pending_path"):
-            return _handle_backup_pending(backup_id, project_id, parsed_output)
-        return _handle_backup_success(backup_id, project_id, parsed_output)
+        if owner_token is None:
+            raise RuntimeError("Backup lock owner token is required")
+        with maintain_backup_lock(resolved_source_id, owner_token):
+            backup_record = backup_store.create_backup_record(
+                project_id=project_id,
+                backup_type=backup_type,
+                note=note,
+                source_id=source_id,
+            )
+            backup_id = str(backup_record["id"])
+            backup_store.update_backup_status(backup_id, "running")
+
+            parsed_output = run_project_backup(
+                project_dir=project_dir,
+                source_id=resolved_source_id,
+                env=build_storage_env(resolved_source_id),
+                keep_local=keep_local,
+                local_only=local_only,
+                retention_days=retention_days,
+            )
+            require_verified_backup_output(parsed_output)
     except TimeoutError:
+        if backup_id is None:
+            return {
+                "status": "failed",
+                "error": f"Backup timed out after {BACKUP_TIMEOUT // 60} minutes",
+                "project_id": project_id,
+            }
         return _handle_backup_failure(
             backup_id, f"Backup timed out after {BACKUP_TIMEOUT // 60} minutes", project_id
         )
     except Exception as e:
+        if backup_id is None:
+            logger.error(
+                "create_backup_failed_before_record",
+                project_id=project_id,
+                error=str(e),
+            )
+            return {"status": "failed", "error": str(e), "project_id": project_id}
         return _handle_backup_failure(backup_id, str(e), project_id)
+
+    if parsed_output.get("pending_path"):
+        return _handle_backup_pending(backup_id, project_id, parsed_output)
+    return _handle_backup_success(backup_id, project_id, parsed_output)
 
 
 def _handle_backup_success(

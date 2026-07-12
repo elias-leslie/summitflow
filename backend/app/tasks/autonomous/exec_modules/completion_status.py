@@ -62,6 +62,8 @@ def notify_failure(
 def build_early_completion_verification(total_subtasks: int) -> dict[str, Any]:
     """Build verification result for early completion (all subtasks already done)."""
     return {
+        "evidence_verified": True,
+        "verification_source": "autonomous_preverified_subtasks",
         "execution_clean": True,
         "subtask_count": total_subtasks,
         "total_self_fix_attempts": 0,
@@ -80,6 +82,8 @@ def build_successful_completion_verification(
     total_extensions = sum(r.get("extensions_granted", 0) for r in results)
 
     result: dict[str, Any] = {
+        "evidence_verified": True,
+        "verification_source": "autonomous_quality_gate",
         "execution_clean": execution_clean,
         "subtask_count": len(results),
         "total_self_fix_attempts": sum(r.get("self_fix_attempts", 0) for r in results),

@@ -14,6 +14,7 @@ from typing import Annotated
 import typer
 
 from ..client import STClient
+from ..lib.checkpoint import get_snapshot_info
 from ..lib.usage import usage
 from ..output import output_error, output_success
 from .done_subtask import complete_subtask
@@ -97,7 +98,7 @@ def _handle_task_completion(
     """Handle task completion (idempotent; docs/admin auto-routed)."""
     task = client.get_task(id)
     status = str(task.get("status") or "")
-    if status == "completed":
+    if status == "completed" and not get_snapshot_info(id):
         output_success(f"Task {id} already complete (no-op).")
         return
     _refuse_if_autocode_owned(task, id)

@@ -48,6 +48,7 @@ def test_already_completed_task_is_noop() -> None:
         "project_id": "portfolio-ai",
     }
     with (
+        patch("cli.commands.done.get_snapshot_info", return_value=None),
         patch("cli.commands.done.STClient") as client_cls,
         patch("cli.commands.done.preflight") as mock_gate,
         patch("cli.commands.done.complete_task") as mock_complete,
@@ -60,6 +61,31 @@ def test_already_completed_task_is_noop() -> None:
     mock_complete.assert_not_called()
     mock_gate.assert_not_called()
     client_cls.assert_not_called()
+
+
+def test_completed_task_with_checkpoint_retries_closeout() -> None:
+    lookup_client = MagicMock()
+    lookup_client.get_task.return_value = {
+        "id": "task-1",
+        "status": "completed",
+        "project_id": "portfolio-ai",
+    }
+    project_client = MagicMock()
+
+    with (
+        patch("cli.commands.done.get_snapshot_info", return_value={"task_id": "task-1"}),
+        patch("cli.commands.done.STClient", return_value=project_client),
+        patch("cli.commands.done.preflight") as mock_gate,
+        patch(
+            "cli.commands.done.complete_task",
+            return_value={"snapshot_removed": True, "base_branch": "main"},
+        ) as mock_complete,
+        patch("cli.commands.done.output_success"),
+    ):
+        _handle_task_completion(lookup_client, "task-1", "retry publish")
+
+    mock_gate.assert_called_once_with("task-1", "portfolio-ai", op="done")
+    mock_complete.assert_called_once_with(project_client, "task-1", "retry publish")
 
 
 def test_task_completion_uses_task_project_client_after_global_lookup() -> None:

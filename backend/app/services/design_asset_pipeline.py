@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from xml.etree import ElementTree
 
+from defusedxml import ElementTree as DefusedElementTree
+from defusedxml.common import DefusedXmlException
 from PIL import Image
 
 from ..constants import AGENT_IMAGE_GEN
@@ -204,8 +206,8 @@ def _validate_svg_root(root: ElementTree.Element) -> None:
 def _svg_dimensions(image_bytes: bytes) -> tuple[int, int]:
     """Extract SVG dimensions from width/height or viewBox."""
     try:
-        root = ElementTree.fromstring(image_bytes)
-    except ElementTree.ParseError as exc:
+        root = DefusedElementTree.fromstring(image_bytes)
+    except (DefusedXmlException, ElementTree.ParseError) as exc:
         raise ValueError("Invalid SVG asset") from exc
     _validate_svg_root(root)
 

@@ -32,4 +32,30 @@ describe('Navigation', () => {
     expect(screen.getAllByText('Work Chats')[0]).toHaveClass('inline')
     expect(container.querySelector('nav')).toHaveClass('justify-start')
   })
+
+  it('renders the existing global destinations as a stacked mobile menu', () => {
+    const { container } = render(<Navigation stacked />)
+
+    expect(container.querySelector('nav')).toHaveClass(
+      'flex-col',
+      'items-stretch',
+    )
+    expect(screen.getByRole('link', { name: /dashboard/i })).toHaveAttribute(
+      'href',
+      '/',
+    )
+    expect(screen.getByRole('link', { name: /work chats/i })).toHaveAttribute(
+      'href',
+      '/work-chats',
+    )
+    expect(screen.getByText('Runtime')).toHaveClass('inline')
+  })
+
+  it('measures labels without rendering a second set of prefetching links', () => {
+    const { container } = render(<Navigation measure />)
+
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('nav > span')).toHaveLength(6)
+    expect(screen.getByText('Runtime')).toBeInTheDocument()
+  })
 })

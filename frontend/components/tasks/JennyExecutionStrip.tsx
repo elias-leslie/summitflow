@@ -9,6 +9,7 @@ import {
   Workflow,
 } from 'lucide-react'
 import type { Task } from '@/lib/api'
+import { hasVerifiedEvidence } from '@/lib/task-verification'
 
 interface JennyExecutionStripProps {
   tasks: Task[]
@@ -24,7 +25,9 @@ function taskTokenBand(tokens: number): string {
 export function JennyExecutionStrip({ tasks }: JennyExecutionStripProps) {
   const readyTasks = tasks.filter((task) => task.status === 'pending')
   const activeTasks = tasks.filter((task) => task.status === 'running')
-  const verifierTasks = tasks.filter((task) => task.verification_result)
+  const verifierTasks = tasks.filter((task) =>
+    hasVerifiedEvidence(task.verification_result),
+  )
   const agentSessions = tasks.reduce(
     (total, task) => total + (task.agent_hub_session_ids?.length ?? 0),
     0,

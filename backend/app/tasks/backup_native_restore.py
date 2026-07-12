@@ -8,10 +8,15 @@ import shutil
 import subprocess
 import tarfile
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
-from .backup_native_archive import BACKUP_TIMEOUT, _load_db_config
+from .backup_native_archive import (
+    BACKUP_TIMEOUT,
+    INFRASTRUCTURE_DATABASE_DUMP_NAME,
+    PROJECT_DATABASE_DUMP_NAME,
+    _load_db_config,
+)
 
 
 def locate_archive(project_dir: Path, backup: dict[str, Any] | None = None, backup_file: str | None = None) -> Path | None:
@@ -37,8 +42,10 @@ def preview_restore_archive(path: Path, *, db_only: bool = False, files_only: bo
     entries: list[str] = []
     omitted = 0
     with tarfile.open(path, "r:gz") as archive:
-        for member in archive.getmembers():
-            is_db = member.name.endswith(("database.sql.gz", "pgdumpall.sql.gz"))
+        members = archive.getmembers()
+        _, database_member_name = _validate_archive_layout(members)
+        for member in members:
+            is_db = _normalized_member_name(member) == database_member_name
             if db_only and not is_db:
                 continue
             if files_only and is_db:
@@ -50,11 +57,77 @@ def preview_restore_archive(path: Path, *, db_only: bool = False, files_only: bo
     return {"status": "completed", "dry_run": True, "archive": str(path), "entries": entries, "omitted": omitted}
 
 
-def _safe_extract_member(archive: tarfile.TarFile, member: tarfile.TarInfo, destination: Path) -> None:
-    parts = Path(member.name).parts
-    rel = Path(*parts[1:]) if len(parts) > 1 else Path(parts[0])
-    target = (destination / rel).resolve()
-    if not str(target).startswith(str(destination.resolve())):
+def _validated_member_parts(member: tarfile.TarInfo) -> tuple[str, ...]:
+    """Return safe POSIX path components for a regular file/directory member."""
+    name = member.name
+    path = PurePosixPath(name)
+    if not name or "\x00" in name or "\\" in name or path.is_absolute():
+        raise RuntimeError(f"Unsafe archive path: {name}")
+    if not (member.isdir() or member.isreg()):
+        raise RuntimeError(f"Unsafe archive member type: {name}")
+
+    parts = path.parts
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise RuntimeError(f"Unsafe archive path: {name}")
+    if len(parts) == 1 and not member.isdir():
+        raise RuntimeError(f"Archive file is missing its top-level directory: {name}")
+    return parts
+
+
+def _normalized_member_name(member: tarfile.TarInfo) -> str:
+    return "/".join(_validated_member_parts(member))
+
+
+def _validate_archive_layout(members: list[tarfile.TarInfo]) -> tuple[str, str | None]:
+    """Validate all members and return the archive root and canonical DB member."""
+    if not members:
+        raise RuntimeError("Backup archive is empty")
+
+    top_levels: set[str] = set()
+    normalized_members: list[tuple[tarfile.TarInfo, str]] = []
+    for member in members:
+        parts = _validated_member_parts(member)
+        top_levels.add(parts[0])
+        normalized_members.append((member, "/".join(parts)))
+
+    if len(top_levels) != 1:
+        raise RuntimeError("Backup archive must contain exactly one top-level directory")
+    top_level = next(iter(top_levels))
+    canonical_database_names = (
+        {f"infrastructure/{INFRASTRUCTURE_DATABASE_DUMP_NAME}"}
+        if top_level == "infrastructure"
+        else {f"{top_level}/{PROJECT_DATABASE_DUMP_NAME}"}
+    )
+    database_members = [
+        (member, name)
+        for member, name in normalized_members
+        if name in canonical_database_names
+    ]
+    if len(database_members) > 1:
+        raise RuntimeError("Backup archive must contain at most one database dump")
+    if not database_members:
+        return top_level, None
+
+    database_member, database_member_name = database_members[0]
+    if not database_member.isreg():
+        raise RuntimeError("Database dump is not a regular file")
+    return top_level, database_member_name
+
+
+def _safe_extract_member(
+    archive: tarfile.TarFile,
+    member: tarfile.TarInfo,
+    destination: Path,
+    expected_top_level: str,
+) -> None:
+    parts = _validated_member_parts(member)
+    if parts[0] != expected_top_level:
+        raise RuntimeError(f"Unexpected archive top-level directory: {member.name}")
+
+    root = destination.resolve()
+    rel = Path(*parts[1:]) if len(parts) > 1 else Path()
+    target = (root / rel).resolve()
+    if not target.is_relative_to(root):
         raise RuntimeError(f"Unsafe archive path: {member.name}")
     if member.isdir():
         target.mkdir(parents=True, exist_ok=True)
@@ -65,16 +138,23 @@ def _safe_extract_member(archive: tarfile.TarFile, member: tarfile.TarInfo, dest
         return
     with src, target.open("wb") as out:
         shutil.copyfileobj(src, out)
+    target.chmod(member.mode & 0o777)
 
 
-def _restore_database_member(archive: tarfile.TarFile, member: tarfile.TarInfo, project_dir: Path) -> str:
+def _restore_database_member(
+    archive: tarfile.TarFile,
+    member: tarfile.TarInfo,
+    project_dir: Path,
+    *,
+    infrastructure: bool,
+) -> str:
     src = archive.extractfile(member)
     if src is None:
         raise RuntimeError(f"Unable to read database dump: {member.name}")
     with src:
         sql_bytes = gzip.decompress(src.read())
     run_env = os.environ.copy()
-    if member.name.endswith("pgdumpall.sql.gz"):
+    if infrastructure:
         command = [
             "psql",
             "-U",
@@ -88,7 +168,7 @@ def _restore_database_member(archive: tarfile.TarFile, member: tarfile.TarInfo, 
             "-v",
             "ON_ERROR_STOP=1",
         ]
-        restored = "pgdumpall.sql.gz"
+        restored = INFRASTRUCTURE_DATABASE_DUMP_NAME
     else:
         db = _load_db_config(project_dir.name, run_env)
         if db["password"]:
@@ -106,7 +186,7 @@ def _restore_database_member(archive: tarfile.TarFile, member: tarfile.TarInfo, 
             "-v",
             "ON_ERROR_STOP=1",
         ]
-        restored = "database.sql.gz"
+        restored = PROJECT_DATABASE_DUMP_NAME
     result = subprocess.run(command, input=sql_bytes, env=run_env, capture_output=True, timeout=BACKUP_TIMEOUT, check=False)
     if result.returncode != 0:
         detail = result.stderr.decode(errors="ignore").strip()
@@ -121,16 +201,24 @@ def restore_archive(path: Path, project_dir: Path, *, dry_run: bool, db_only: bo
     restored = 0
     db_restored: str | None = None
     with tarfile.open(path, "r:gz") as archive:
-        for member in archive.getmembers():
-            is_db = member.name.endswith(("database.sql.gz", "pgdumpall.sql.gz"))
+        members = archive.getmembers()
+        expected_top_level, database_member_name = _validate_archive_layout(members)
+        for member in members:
+            is_db = _normalized_member_name(member) == database_member_name
             if db_only and not is_db:
                 continue
             if files_only and is_db:
                 continue
             if is_db:
-                db_restored = _restore_database_member(archive, member, project_dir)
+                db_restored = _restore_database_member(
+                    archive,
+                    member,
+                    project_dir,
+                    infrastructure=database_member_name
+                    == f"infrastructure/{INFRASTRUCTURE_DATABASE_DUMP_NAME}",
+                )
                 continue
-            _safe_extract_member(archive, member, project_dir)
+            _safe_extract_member(archive, member, project_dir, expected_top_level)
             restored += 1
     if db_only and not db_restored:
         raise RuntimeError("Archive does not contain a database dump")

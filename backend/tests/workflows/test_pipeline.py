@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable
 from typing import Any, cast
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -41,12 +42,77 @@ def test_dispatch_callback_preserves_manual_dispatch(monkeypatch) -> None:
     }
 
 
+def test_dispatch_callback_propagates_enqueue_failure(monkeypatch) -> None:
+    from app.workflows.pipeline import _make_dispatch_callback
+
+    async def fake_trigger(*_args, **_kwargs) -> None:
+        raise RuntimeError("hatchet unavailable")
+
+    monkeypatch.setattr("app.workflows.pipeline._trigger_workflow", fake_trigger)
+
+    dispatch = _make_dispatch_callback()
+
+    with pytest.raises(RuntimeError, match="hatchet unavailable"):
+        dispatch("execute", "task-123", "agent-hub")
+
+
 async def _run_inline(func, *args, **kwargs):
     return func(*args, **kwargs)
 
 
 async def _noop_async(*_args, **_kwargs):
     return None
+
+
+@pytest.mark.asyncio
+async def test_dispatch_workflow_supplies_production_callback(monkeypatch) -> None:
+    from app.workflows import pipeline
+    from app.workflows.models import TaskInput
+
+    captured: dict[str, object] = {}
+    callback = MagicMock()
+
+    def fake_dispatch(
+        task_id: str,
+        project_id: str,
+        dispatch,
+    ) -> dict[str, object]:
+        captured.update(
+            task_id=task_id,
+            project_id=project_id,
+            dispatch=dispatch,
+        )
+        return {"status": "dispatched"}
+
+    monkeypatch.setattr("app.workflows.pipeline.asyncio.to_thread", _run_inline)
+    make_callback = MagicMock(return_value=callback)
+    monkeypatch.setattr(pipeline, "_make_dispatch_callback", make_callback)
+    monkeypatch.setattr(
+        "app.tasks.autonomous.pickup.dispatch_task_immediate",
+        fake_dispatch,
+    )
+
+    runner = cast(
+        Any,
+        getattr(getattr(pipeline.dispatch_wf, "_task", None), "fn", pipeline.dispatch_wf),
+    )
+    result = cast(
+        dict[str, Any],
+        await runner(
+            TaskInput(
+                task_id="task-1",
+                project_id="summitflow",
+                manual_dispatch=True,
+            ),
+            None,
+        ),
+    )
+
+    assert result == {"status": "dispatched"}
+    assert captured["task_id"] == "task-1"
+    assert captured["project_id"] == "summitflow"
+    assert captured["dispatch"] is callback
+    make_callback.assert_called_once_with(manual_dispatch=True)
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Literal
@@ -14,30 +15,14 @@ from ...storage import quality_check_results as qcr_store
 from ...storage.projects import get_project_root_path
 from ...utils import safe_subprocess
 from .escalation import escalate_to_supervisor
+from .fix_execution import apply_fix, capture_file_snapshot, restore_file_snapshot
+from .fix_validation import resolve_repo_contained_path
 
 logger = get_logger(__name__)
 
 TestFixResult = Literal["fixed", "failed", "escalated"]
 
 MAX_FIX_ATTEMPTS = 3
-
-
-def _read_file_content(file_path: Path) -> str | None:
-    """Read file content.
-
-    Args:
-        file_path: Path to file
-
-    Returns:
-        File content or None if file doesn't exist
-    """
-    if not file_path.exists():
-        return None
-    try:
-        return file_path.read_text()
-    except Exception as e:
-        logger.warning("read_file_failed", path=str(file_path), error=str(e))
-        return None
 
 
 def _find_test_subject(test_file: Path, project_path: Path) -> Path | None:
@@ -182,8 +167,13 @@ def _parse_test_fix_response(response_text: str) -> dict[str, Any]:
     if json_match:
         json_str = json_match.group(1)
         try:
-            parsed: dict[str, Any] = json.loads(json_str)
-            return parsed
+            parsed = json.loads(json_str)
+            if isinstance(parsed, dict):
+                return parsed
+            return {
+                "fix_type": "cannot_fix",
+                "reason": "Fix response JSON must be an object",
+            }
         except json.JSONDecodeError as e:
             return {
                 "fix_type": "cannot_fix",
@@ -200,7 +190,12 @@ def _parse_test_fix_response(response_text: str) -> dict[str, Any]:
         }
     try:
         parsed, _ = decoder.raw_decode(response_text, brace_idx)
-        return parsed
+        if isinstance(parsed, dict):
+            return parsed
+        return {
+            "fix_type": "cannot_fix",
+            "reason": "Fix response JSON must be an object",
+        }
     except json.JSONDecodeError as e:
         return {
             "fix_type": "cannot_fix",
@@ -221,7 +216,11 @@ def _verify_test(
     Returns:
         True if the test now passes
     """
-    cmd = ["pytest", "-xvs"]
+    st_cmd = shutil.which("st")
+    if not st_cmd:
+        logger.error("test_verify_unavailable", reason="st executable not found")
+        return False
+    cmd = [st_cmd, "check", "pytest", "--"]
     if test_name:
         cmd.extend(["-k", test_name])
 
@@ -287,7 +286,7 @@ def fix_test_failure(
     if not root_path:
         logger.error("project_not_found", project_id=project_id)
         return "failed"
-    project_path = Path(root_path)
+    project_path = Path(root_path).resolve()
 
     # Get test file path
     test_rel_path = check_result.get("file_path")
@@ -295,15 +294,42 @@ def fix_test_failure(
         logger.warning("no_file_path", result_id=result_id)
         return "failed"
 
-    test_file = project_path / test_rel_path
-    test_content = _read_file_content(test_file)
+    try:
+        test_file = resolve_repo_contained_path(project_path, str(test_rel_path))
+    except (OSError, ValueError) as exc:
+        logger.warning(
+            "unsafe_test_file_path",
+            result_id=result_id,
+            file_path=str(test_rel_path),
+            error=str(exc),
+        )
+        return "failed"
+    try:
+        test_snapshot = capture_file_snapshot(test_file)
+        test_content = test_snapshot.content.decode("utf-8")
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        logger.warning("test_file_unreadable", path=str(test_file), error=str(exc))
+        return "failed"
     if not test_content:
         logger.warning("test_file_not_found", path=str(test_file))
         return "failed"
 
     # Try to find source file
     source_file = _find_test_subject(test_file, project_path)
-    source_content = _read_file_content(source_file) if source_file else None
+    source_snapshot = None
+    source_content = None
+    if source_file:
+        try:
+            source_snapshot = capture_file_snapshot(source_file)
+            source_content = source_snapshot.content.decode("utf-8")
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            logger.warning("test_subject_unreadable", path=str(source_file), error=str(exc))
+            source_file = None
+            source_snapshot = None
+
+    allowed_targets = {test_file: test_snapshot}
+    if source_file is not None and source_snapshot is not None and source_content:
+        allowed_targets[source_file] = source_snapshot
 
     # Record attempt
     qcr_store.record_fix_attempt(conn, result_id)
@@ -332,32 +358,87 @@ def fix_test_failure(
         logger.info("cannot_fix_test", result_id=result_id, reason=reason)
         return "failed"
 
+    fix_type = fix_data.get("fix_type")
+    if fix_type not in {"source", "test"}:
+        logger.warning("invalid_fix_type", result_id=result_id, fix_type=fix_type)
+        return "failed"
+
     # Get the file to fix
     file_to_fix = fix_data.get("file_to_fix")
     fixed_content = fix_data.get("fixed_content")
 
-    if not file_to_fix or not fixed_content:
+    if (
+        not isinstance(file_to_fix, str)
+        or not file_to_fix
+        or not isinstance(fixed_content, str)
+        or not fixed_content
+    ):
         logger.warning("incomplete_fix_response", result_id=result_id)
         return "failed"
 
     # Apply the fix
-    target_file = project_path / file_to_fix
     try:
-        target_file.write_text(fixed_content)
-    except Exception as e:
-        logger.error("apply_fix_failed", path=str(target_file), error=str(e))
+        target_file = resolve_repo_contained_path(project_path, file_to_fix)
+    except (OSError, ValueError) as exc:
+        logger.warning(
+            "unsafe_model_fix_path",
+            result_id=result_id,
+            file_path=file_to_fix,
+            error=str(exc),
+        )
         return "failed"
+
+    snapshot = allowed_targets.get(target_file)
+    expected_target = test_file if fix_type == "test" else source_file
+    if snapshot is None or expected_target is None or target_file != expected_target:
+        logger.warning(
+            "model_fix_target_not_prompted",
+            result_id=result_id,
+            file_path=file_to_fix,
+            fix_type=fix_type,
+        )
+        return "failed"
+
+    if not apply_fix(
+        target_file,
+        fixed_content,
+        expected_current=snapshot.content,
+    ):
+        return "failed"
+    expected_current = fixed_content.encode("utf-8")
 
     # Verify the fix worked
     test_name = check_result.get("check_name")
-    if _verify_test(project_path, test_name):
-        qcr_store.mark_fixed(conn, result_id, fixed_by="agent:debugger")
-        logger.info(
-            "test_fix_successful",
+    try:
+        verified = _verify_test(project_path, test_name)
+        if verified:
+            qcr_store.mark_fixed(conn, result_id, fixed_by="agent:debugger")
+            logger.info(
+                "test_fix_successful",
+                result_id=result_id,
+                fix_type=fix_data.get("fix_type"),
+            )
+            return "fixed"
+    except Exception as exc:
+        logger.exception(
+            "test_fix_verification_failed",
             result_id=result_id,
-            fix_type=fix_data.get("fix_type"),
+            path=str(target_file),
+            error=str(exc),
         )
-        return "fixed"
+        restore_file_snapshot(
+            target_file,
+            snapshot,
+            expected_current=expected_current,
+        )
+        return "failed"
+
+    if not restore_file_snapshot(
+        target_file,
+        snapshot,
+        expected_current=expected_current,
+    ):
+        return "failed"
     logger.info("test_fix_did_not_pass", result_id=result_id)
     # Check if we should escalate
     if current_attempts >= MAX_FIX_ATTEMPTS:

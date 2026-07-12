@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -14,7 +15,12 @@ from typing import Any
 
 from ..logging_config import get_logger
 from ..utils.shared_paths import get_repo_root
-from .backup_native_archive import _run_gzip_stream, verify_archive
+from .backup_native_archive import (
+    INFRASTRUCTURE_DATABASE_DUMP_NAME,
+    _regular_file_filter,
+    _run_gzip_stream,
+    verify_archive,
+)
 from .backup_native_smb import StorageConfig, _save_pending, _smb_upload, _storage_config
 from .backup_native_storage import (
     copy_to_local_backend,
@@ -60,14 +66,44 @@ def _dump_infra_database(destination: Path) -> int:
 
 
 def _copy_if_exists(src: Path, dest: Path) -> int:
-    if not src.exists():
+    try:
+        source_mode = src.lstat().st_mode
+    except FileNotFoundError:
+        return 0
+    if not (stat.S_ISDIR(source_mode) or stat.S_ISREG(source_mode)):
         return 0
     dest.parent.mkdir(parents=True, exist_ok=True)
-    if src.is_dir():
-        shutil.copytree(src, dest, dirs_exist_ok=True)
+    if stat.S_ISDIR(source_mode):
+        shutil.copytree(
+            src,
+            dest,
+            dirs_exist_ok=True,
+            symlinks=True,
+            ignore=_ignore_unsafe_copy_entries,
+        )
     else:
         shutil.copy2(src, dest)
     return 1
+
+
+def _ignore_unsafe_copy_entries(directory: str, names: list[str]) -> list[str]:
+    """Exclude links and special files before copying configuration trees."""
+    ignored: list[str] = []
+    root = Path(directory)
+    for name in names:
+        try:
+            mode = (root / name).lstat().st_mode
+        except OSError:
+            ignored.append(name)
+            continue
+        if not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+            ignored.append(name)
+    return ignored
+
+
+def _safe_config_archive_filter(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
+    """Exclude member types restore rejects."""
+    return member if member.isdir() or member.isreg() else None
 
 
 def _collect_redis_dump(destination: Path) -> None:
@@ -88,7 +124,7 @@ def _collect_redis_dump(destination: Path) -> None:
 def _build_infra_archive(project_dir: Path, staging: Path, archive_name: str) -> tuple[Path, int, dict[str, Any]]:
     configs = staging / "configs"
     configs.mkdir(parents=True, exist_ok=True)
-    db_dump = staging / "pgdumpall.sql.gz"
+    db_dump = staging / INFRASTRUCTURE_DATABASE_DUMP_NAME
     db_size = _dump_infra_database(db_dump)
     _copy_if_exists(Path.home() / ".env.local", configs / "env.local")
     _copy_if_exists(project_dir / "docker" / "compose" / ".env", configs / "compose-env")
@@ -97,9 +133,23 @@ def _build_infra_archive(project_dir: Path, staging: Path, archive_name: str) ->
     _collect_redis_dump(configs / "redis-dump.rdb")
     archive_path = staging / archive_name
     with tarfile.open(archive_path, "w:gz") as archive:
-        archive.add(db_dump, arcname="infrastructure/pgdumpall.sql.gz", recursive=False)
-        archive.add(configs, arcname="infrastructure/configs", recursive=True)
-    verification = verify_archive(archive_path, db_dump_name="pgdumpall.sql.gz", expects_db=True)
+        archive.add(
+            db_dump,
+            arcname=f"infrastructure/{INFRASTRUCTURE_DATABASE_DUMP_NAME}",
+            recursive=False,
+            filter=_regular_file_filter,
+        )
+        archive.add(
+            configs,
+            arcname="infrastructure/configs",
+            recursive=True,
+            filter=_safe_config_archive_filter,
+        )
+    verification = verify_archive(
+        archive_path,
+        db_dump_name=INFRASTRUCTURE_DATABASE_DUMP_NAME,
+        expects_db=True,
+    )
     result = {
         "archive_name": archive_name,
         "archive_path": archive_path,

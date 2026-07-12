@@ -247,6 +247,23 @@ def build_verification_kwargs(verification: Mapping[str, Any]) -> dict[str, Any]
     return vkw
 
 
+def require_verified_backup_output(output: Mapping[str, Any]) -> None:
+    """Fail closed unless a native backup reports successful verification."""
+    verification = as_mapping(output.get("verification"))
+    if verification and get_bool_field(verification, "verified") is True:
+        return
+    errors = verification.get("errors") if verification else None
+    detail = (
+        "; ".join(str(error) for error in errors if error)
+        if isinstance(errors, list)
+        else ""
+    )
+    raise RuntimeError(
+        "Backup archive verification failed"
+        + (f": {detail}" if detail else ": verification result missing or unverified")
+    )
+
+
 _FREQUENCY_DELTAS: dict[str, timedelta] = {
     "hourly": timedelta(hours=1),
     "daily": timedelta(days=1),

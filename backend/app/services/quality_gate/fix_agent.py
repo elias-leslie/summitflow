@@ -17,7 +17,12 @@ from ...logging_config import get_logger
 from ...storage import quality_check_results as qcr_store
 from .escalation import FixAttemptResult, FixResult, escalate_to_supervisor, get_escalation_level
 from .fix_batch import fix_unfixed_errors  # Re-export for backward compatibility
-from .fix_execution import apply_fix, read_file_content
+from .fix_execution import (
+    FileMutationSnapshot,
+    apply_fix,
+    capture_file_snapshot,
+    restore_file_snapshot,
+)
 from .fix_llm import execute_llm_fix, is_cannot_fix_response
 from .fix_prompts import build_fix_prompt
 from .fix_strategies import enhance_prompt_for_supervisor, get_temperature, select_agent
@@ -37,17 +42,32 @@ def _get_check_result_project_id(check_result: dict[str, object]) -> str:
 
 def _get_file_data(
     check_result: dict[str, object], result_id: int
-) -> tuple[Path, Path, str, str] | None:
-    """Return (project_path, file_path, file_rel_path, file_content) or None."""
+) -> tuple[Path, Path, str, str, FileMutationSnapshot] | None:
+    """Return stable pre-LLM file data and its exact mutation snapshot."""
     paths = get_project_file_path(check_result, result_id)
     if not paths:
         return None
     project_path, file_path = paths
-    file_content = read_file_content(file_path)
+    try:
+        snapshot = capture_file_snapshot(file_path)
+    except (OSError, ValueError) as exc:
+        logger.warning("fix_snapshot_failed", path=str(file_path), error=str(exc))
+        return None
+    try:
+        file_content = snapshot.content.decode("utf-8")
+    except UnicodeDecodeError:
+        logger.warning("fix_source_not_utf8", path=str(file_path))
+        return None
     if not file_content:
         logger.warning("file_not_found", path=str(file_path))
         return None
-    return project_path, file_path, str(check_result["file_path"]), file_content
+    return (
+        project_path,
+        file_path,
+        str(check_result["file_path"]),
+        file_content,
+        snapshot,
+    )
 
 
 def _build_prompt(
@@ -74,18 +94,55 @@ def _apply_and_verify(
     new_content: str,
     agent_slug: str,
     level: str,
+    pre_llm_snapshot: FileMutationSnapshot | None = None,
 ) -> FixResult:
     """Apply the fix to disk and run verification; return the outcome."""
-    if not apply_fix(file_path, new_content):
+    if pre_llm_snapshot is None:
+        try:
+            snapshot = capture_file_snapshot(file_path)
+        except (OSError, ValueError) as exc:
+            logger.error("fix_snapshot_failed", path=str(file_path), error=str(exc))
+            return "failed"
+    else:
+        snapshot = pre_llm_snapshot
+
+    if not apply_fix(
+        file_path,
+        new_content,
+        expected_current=snapshot.content if snapshot.existed else None,
+    ):
         return "failed"
+    expected_current = new_content.encode("utf-8")
     project_id = _get_check_result_project_id(check_result)
-    return verify_and_process_fix(
-        conn, result_id, project_id, project_path,
-        str(check_result["check_type"]), file_rel_path, agent_slug, level,
-        str(check_result.get("check_name") or ""),
-        str(check_result.get("error_message") or ""),
-        file_content, new_content,
-    )
+    try:
+        outcome = verify_and_process_fix(
+            conn, result_id, project_id, project_path,
+            str(check_result["check_type"]), file_rel_path, agent_slug, level,
+            str(check_result.get("check_name") or ""),
+            str(check_result.get("error_message") or ""),
+            file_content, new_content,
+        )
+    except Exception as exc:
+        logger.exception(
+            "fix_verification_failed",
+            result_id=result_id,
+            path=str(file_path),
+            error=str(exc),
+        )
+        restore_file_snapshot(
+            file_path,
+            snapshot,
+            expected_current=expected_current,
+        )
+        return "failed"
+
+    if outcome != "fixed" and not restore_file_snapshot(
+        file_path,
+        snapshot,
+        expected_current=expected_current,
+    ):
+        return "failed"
+    return outcome
 
 
 def fix_lint_type_error(
@@ -109,7 +166,7 @@ def fix_lint_type_error(
     file_data = _get_file_data(check_result, result_id)
     if not file_data:
         return FixAttemptResult(outcome="failed", cost_usd=0.0)
-    project_path, file_path, file_rel_path, file_content = file_data
+    project_path, file_path, file_rel_path, file_content, pre_llm_snapshot = file_data
 
     qcr_store.record_fix_attempt(conn, result_id)
     prompt = _build_prompt(check_result, file_content, project_path, level)
@@ -136,5 +193,6 @@ def fix_lint_type_error(
     outcome = _apply_and_verify(
         conn, result_id, check_result, project_path, file_path,
         file_rel_path, file_content, new_content, agent_slug, level,
+        pre_llm_snapshot,
     )
     return FixAttemptResult(outcome=outcome, cost_usd=cost_usd)

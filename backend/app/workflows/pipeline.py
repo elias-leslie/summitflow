@@ -75,6 +75,7 @@ def _make_dispatch_callback(*, manual_dispatch: bool = False) -> Any:
                 raise
             except Exception:
                 logger.exception("dispatch_callback_failed", stage=stage, task_id=task_id)
+                raise
         finally:
             loop.close()
     return dispatch
@@ -111,7 +112,13 @@ async def _drain_project_queue_after_execution(project_id: str, *, manual_dispat
 async def dispatch_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.autonomous.pickup import dispatch_task_immediate
 
-    return await asyncio.to_thread(dispatch_task_immediate, input.task_id, input.project_id)
+    dispatch = _make_dispatch_callback(manual_dispatch=input.manual_dispatch)
+    return await asyncio.to_thread(
+        dispatch_task_immediate,
+        input.task_id,
+        input.project_id,
+        dispatch,
+    )
 
 
 @hatchet.task(

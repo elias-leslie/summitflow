@@ -189,52 +189,49 @@ export function ProjectAccordionItem({
         </button>
       </div>
 
-      {/* Expanded project nav */}
-      <div
-        className={clsx(
-          'overflow-hidden transition-all duration-250 ease-out',
-          isExpanded ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0',
-        )}
-      >
-        <div className="mx-3 mb-3 rounded-2xl border border-slate-800/70 bg-slate-950/40 p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
-          <div className="space-y-1">
-            {projectNavItems.map((item) => {
-              const isItemActive = isActive && activeTab === item.id
-              const href = getProjectNavHref(project.id, item)
+      {/* Keep collapsed links out of the accessibility tree and tab order. */}
+      {isExpanded ? (
+        <div className="animate-in overflow-hidden">
+          <div className="mx-3 mb-3 rounded-2xl border border-slate-800/70 bg-slate-950/40 p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+            <div className="space-y-1">
+              {projectNavItems.map((item) => {
+                const isItemActive = isActive && activeTab === item.id
+                const href = getProjectNavHref(project.id, item)
 
-              return (
-                <ProjectNavItem
-                  key={item.id}
-                  item={item}
-                  href={href}
-                  isActive={isItemActive}
-                />
-              )
-            })}
+                return (
+                  <ProjectNavItem
+                    key={item.id}
+                    item={item}
+                    href={href}
+                    isActive={isItemActive}
+                  />
+                )
+              })}
 
-            {/* Settings link */}
-            <Link
-              href={`/projects/${project.id}/settings`}
-              className={clsx(
-                'group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200',
-                isActive && pathname.includes('/settings')
-                  ? 'bg-slate-500/15 text-slate-300'
-                  : 'text-slate-400 hover:bg-slate-500/10 hover:text-slate-300',
-              )}
-            >
-              <Settings2
+              {/* Settings link */}
+              <Link
+                href={`/projects/${project.id}/settings`}
                 className={clsx(
-                  'w-4 h-4 flex-shrink-0 transition-colors duration-200',
+                  'group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200',
                   isActive && pathname.includes('/settings')
-                    ? 'text-slate-300'
-                    : 'text-slate-500 group-hover:text-slate-300',
+                    ? 'bg-slate-500/15 text-slate-300'
+                    : 'text-slate-400 hover:bg-slate-500/10 hover:text-slate-300',
                 )}
-              />
-              <span className="truncate">Settings</span>
-            </Link>
+              >
+                <Settings2
+                  className={clsx(
+                    'w-4 h-4 flex-shrink-0 transition-colors duration-200',
+                    isActive && pathname.includes('/settings')
+                      ? 'text-slate-300'
+                      : 'text-slate-500 group-hover:text-slate-300',
+                  )}
+                />
+                <span className="truncate">Settings</span>
+              </Link>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
     </div>
   )
 }

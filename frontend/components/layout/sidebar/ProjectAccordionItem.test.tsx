@@ -35,14 +35,16 @@ function renderItem(
   projectOverrides: Partial<Project> = {},
   {
     onToggleExpand = () => {},
+    isExpanded = false,
   }: {
     onToggleExpand?: () => void
+    isExpanded?: boolean
   } = {},
 ) {
   render(
     <ProjectAccordionItem
       project={buildProject(projectOverrides)}
-      isExpanded={false}
+      isExpanded={isExpanded}
       isActive={false}
       activeTab={null}
       onToggleExpand={onToggleExpand}
@@ -108,5 +110,24 @@ describe('ProjectAccordionItem', () => {
     fireEvent.click(screen.getByTestId('project-accordion-toggle-testing-1'))
 
     expect(onToggleExpand).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps collapsed project navigation out of the tab and accessibility order', () => {
+    renderItem()
+
+    expect(
+      screen.queryByRole('link', { name: 'Tasks' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: 'Settings' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('renders project navigation links only after expansion', () => {
+    renderItem({}, { isExpanded: true })
+
+    expect(screen.getByRole('link', { name: 'Tasks' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Explorer' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument()
   })
 })

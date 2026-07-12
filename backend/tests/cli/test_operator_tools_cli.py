@@ -238,6 +238,105 @@ def test_run_psql_serializes_before_subprocess_and_sets_app_name(
     assert emitted[0][1] == "db-summitflow-query-test"
 
 
+def test_run_psql_read_only_uses_one_protected_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "ok\n", "")
+
+    monkeypatch.setattr(db, "_db_url", lambda project: f"postgresql:///{project}")
+    monkeypatch.setattr(db, "_details_root", lambda _project: tmp_path)
+    monkeypatch.setattr(db.subprocess, "run", fake_run)
+    monkeypatch.setattr(db, "emit_result_or_details", lambda *_args: None)
+
+    assert db._run_psql("summitflow", "SELECT 1", read_only=True) == 0
+
+    assert calls == [
+        [
+            "psql",
+            "postgresql:///summitflow",
+            "-X",
+            "-q",
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-c",
+            "BEGIN TRANSACTION READ ONLY;",
+            "-c",
+            "SELECT 1",
+            "-c",
+            "ROLLBACK;",
+        ]
+    ]
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT 1",
+        "SELECT '; DELETE FROM tasks' AS example; -- harmless text",
+        'SELECT "update" FROM tasks',
+        "WITH recent AS (SELECT id FROM tasks) SELECT * FROM recent",
+        "EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM tasks",
+        "SHOW transaction_read_only",
+        "TABLE tasks",
+        "VALUES (1), (2)",
+        "SELECT $$semi; UPDATE tasks$$",
+        "/* nested /* comment */ remains safe */ SELECT 1",
+    ],
+)
+def test_db_query_accepts_single_diagnostic_statement(sql: str) -> None:
+    assert db._is_read_query(sql)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT 1; SELECT 2",
+        "SELECT 1;;",
+        "WITH changed AS (DELETE FROM tasks RETURNING *) SELECT * FROM changed",
+        "WITH changed AS (UPDATE tasks SET title = 'x' RETURNING *) SELECT * FROM changed",
+        "SELECT * FROM tasks FOR UPDATE",
+        "SELECT * FROM tasks FOR NO KEY UPDATE",
+        "SELECT * FROM tasks FOR SHARE",
+        "SELECT * INTO task_copy FROM tasks",
+        "CREATE TEMP TABLE copy AS SELECT * FROM tasks",
+        "EXPLAIN ANALYZE DELETE FROM tasks",
+        "\\! echo unsafe",
+        "SELECT 'unterminated",
+        "/* unterminated SELECT 1",
+    ],
+)
+def test_db_query_rejects_write_capable_or_multiple_statements(sql: str) -> None:
+    assert not db._is_read_query(sql)
+
+
+def test_db_query_executes_validated_sql_in_read_only_transaction() -> None:
+    with (
+        patch("cli.commands.db._detect_project", return_value="summitflow"),
+        patch("cli.commands.db._run_psql", return_value=0) as run_psql,
+    ):
+        result = runner.invoke(main_app, ["db", "query", "EXPLAIN SELECT 1"])
+
+    assert result.exit_code == 0
+    assert run_psql.call_args.args == ("summitflow", "EXPLAIN SELECT 1")
+    assert run_psql.call_args.kwargs["read_only"] is True
+
+
+def test_db_query_rejects_unsafe_sql_before_opening_connection() -> None:
+    with (
+        patch("cli.commands.db._detect_project", return_value="summitflow"),
+        patch("cli.commands.db._run_psql") as run_psql,
+    ):
+        result = runner.invoke(main_app, ["db", "query", "SELECT 1; DELETE FROM tasks"])
+
+    assert result.exit_code == 1
+    assert "Write operations blocked" in result.output
+    run_psql.assert_not_called()
+
+
 def test_db_schema_uses_command_specific_detail_name() -> None:
     with (
         patch("cli.commands.db._detect_project", return_value="summitflow"),
@@ -1408,6 +1507,53 @@ def test_browser_check_closes_session_and_runs_reaper() -> None:
     close_targets.assert_called_once_with("browser", 9222, {"after"})
 
 
+def test_browser_check_reports_console_history_from_initial_render(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run_agent(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        if args[-1] == "console":
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout="[error] initial render failed\n[warning] invalid chart dimensions\n",
+                stderr="",
+            )
+        if args[-1].startswith("JSON.stringify(performance"):
+            return subprocess.CompletedProcess(args, 0, stdout="[]", stderr="")
+        if args[-1].startswith("JSON.stringify"):
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout='{"url":"https://example.com","title":"Example"}',
+                stderr="",
+            )
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    with (
+        patch("cli.commands.browser.current_root", return_value=tmp_path),
+        patch("cli.commands.browser._select_port", return_value=9222),
+        patch("cli.commands.browser._host_for_engine", return_value="browser"),
+        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
+        patch("cli.commands.browser._run_browser_reaper"),
+        patch("cli.lib.browser_check.browser_page_target_ids", return_value=set()),
+        patch("cli.lib.browser_check.close_browser_targets"),
+        patch("cli.commands.browser._run_agent", side_effect=fake_run_agent),
+    ):
+        result = runner.invoke(
+            main_app,
+            ["browser", "--proxmox", "check", "https://example.com", "/tmp/check.png"],
+        )
+
+    assert result.exit_code == 1
+    assert "BROWSER_CHECK:ISSUES|errors=1|warnings=1|network=0" in result.output
+    clear_index = next(index for index, call in enumerate(calls) if call[-2:] == ["console", "--clear"])
+    open_index = next(index for index, call in enumerate(calls) if "open" in call)
+    assert clear_index < open_index
+    details = tmp_path / ".dev-tools" / "browser-check-details.txt"
+    assert "[error] initial render failed" in details.read_text(encoding="utf-8")
+
+
 def test_browser_check_blocks_localhost_url_before_selecting_browser(monkeypatch) -> None:
     monkeypatch.delenv("ST_BROWSER_CONFIRM_LOCAL_URL", raising=False)
 
@@ -1457,10 +1603,93 @@ def test_browser_check_treats_screenshot_timeout_as_warning(tmp_path: Path) -> N
     ):
         result = runner.invoke(main_app, ["browser", "--proxmox", "check", "https://example.com", "/tmp/check.png"])
 
-    assert result.exit_code == 0
-    assert "BROWSER_CHECK:OK|errors=0|warnings=0|network=0|command_warnings=3" in result.output
+    assert result.exit_code == 2
+    assert (
+        "BROWSER_CHECK:INCOMPLETE|errors=0|warnings=0|network=0|command_warnings=3"
+        in result.output
+    )
     details = tmp_path / ".dev-tools" / "browser-check-details.txt"
     assert "Browser command warnings (3):" in details.read_text(encoding="utf-8")
+
+
+def test_browser_check_failed_console_read_is_incomplete(tmp_path: Path) -> None:
+    def fake_run_agent(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+        if args[-1] == "console":
+            return subprocess.CompletedProcess(
+                args,
+                1,
+                stdout="",
+                stderr="console transport unavailable",
+            )
+        if args[-1].startswith("JSON.stringify(performance"):
+            return subprocess.CompletedProcess(args, 0, stdout="[]", stderr="")
+        if args[-1].startswith("JSON.stringify"):
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout='{"url":"https://example.com","title":"Example"}',
+                stderr="",
+            )
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    with (
+        patch("cli.commands.browser.current_root", return_value=tmp_path),
+        patch("cli.commands.browser._select_port", return_value=9222),
+        patch("cli.commands.browser._host_for_engine", return_value="browser"),
+        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
+        patch("cli.commands.browser._run_browser_reaper"),
+        patch("cli.lib.browser_check.browser_page_target_ids", return_value=set()),
+        patch("cli.lib.browser_check.close_browser_targets"),
+        patch("cli.commands.browser._run_agent", side_effect=fake_run_agent),
+    ):
+        result = runner.invoke(
+            main_app,
+            ["browser", "--proxmox", "check", "https://example.com", "/tmp/check.png"],
+        )
+
+    assert result.exit_code == 2
+    assert "BROWSER_CHECK:INCOMPLETE" in result.output
+    assert "command_warnings=1" in result.output
+
+
+def test_local_browser_check_failed_console_read_is_incomplete(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fake_run_agent(args: list[str]) -> subprocess.CompletedProcess[str]:
+        if args[-1] == "console":
+            return subprocess.CompletedProcess(
+                args,
+                1,
+                stdout="",
+                stderr="console transport unavailable",
+            )
+        if args[-1].startswith("JSON.stringify(performance"):
+            return subprocess.CompletedProcess(args, 0, stdout="[]", stderr="")
+        if args[-1].startswith("JSON.stringify"):
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout='{"url":"https://example.com","title":"Example"}',
+                stderr="",
+            )
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    with (
+        patch("cli.commands.browser.current_root", return_value=tmp_path),
+        patch(
+            "cli.commands.browser._run_local_ai_agent",
+            side_effect=fake_run_agent,
+        ),
+    ):
+        result = browser._browser_local_ai_check(
+            ["https://example.com", str(tmp_path / "check.png")]
+        )
+
+    assert result == 2
+    output = capsys.readouterr().out
+    assert "BROWSER_CHECK:INCOMPLETE" in output
+    assert "command_warnings=1" in output
 
 
 def test_browser_large_forwarded_output_goes_to_details_file(tmp_path: Path) -> None:

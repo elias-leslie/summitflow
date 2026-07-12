@@ -41,6 +41,55 @@ def test_browser_route_falls_back_to_production_frontend(monkeypatch: pytest.Mon
     assert route.source == "hosts.production_frontend"
 
 
+def test_browser_route_uses_http_for_localhost(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        browser_routes,
+        "get_project_identity",
+        lambda _project: {"hosts": {"production_frontend": "localhost:3001"}},
+    )
+    monkeypatch.setattr(browser_routes, "get_project_canonical_id", lambda *_args, **_kwargs: "summitflow")
+
+    route = resolve_browser_project_route("summitflow")
+
+    assert route.url == "http://localhost:3001/"
+
+
+def test_browser_route_scheme_override_wins_for_localhost(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        browser_routes,
+        "get_project_identity",
+        lambda _project: {"hosts": {"production_frontend": "localhost:3001"}},
+    )
+    monkeypatch.setattr(browser_routes, "get_project_canonical_id", lambda *_args, **_kwargs: "summitflow")
+
+    route = resolve_browser_project_route(
+        "summitflow",
+        env={"ST_BROWSER_PROJECT_SCHEME": "https"},
+    )
+
+    assert route.url == "https://localhost:3001/"
+
+
+def test_browser_route_explicit_empty_env_ignores_ambient_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        browser_routes,
+        "get_project_identity",
+        lambda _project: {"hosts": {"production_frontend": "localhost:3001"}},
+    )
+    monkeypatch.setattr(
+        browser_routes,
+        "get_project_canonical_id",
+        lambda *_args, **_kwargs: "summitflow",
+    )
+    monkeypatch.setenv("ST_BROWSER_PROJECT_SCHEME", "https")
+
+    route = resolve_browser_project_route("summitflow", env={})
+
+    assert route.url == "http://localhost:3001/"
+
+
 def test_browser_location_passes_url_through() -> None:
     assert resolve_browser_location("https://example.com/path") == "https://example.com/path"
     assert resolve_browser_location("data:text/html,ok") == "data:text/html,ok"

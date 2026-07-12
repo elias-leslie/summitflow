@@ -27,10 +27,17 @@ describe('executeTasks', () => {
         }),
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ detail: 'manual-only' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+        new Response(
+          JSON.stringify({
+            error: 'http_error',
+            message: 'manual-only',
+            details: [],
+          }),
+          {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
       )
 
     const result = await executeTasks('summitflow', ['task-ok', 'task-blocked'])

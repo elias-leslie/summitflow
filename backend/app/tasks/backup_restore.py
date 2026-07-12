@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from .backup_native import locate_archive, restore_archive
+from .backup_native_archive import archive_sha256
 from .backup_utils import get_project_root, get_source_path
 
 logger = get_logger(__name__)
@@ -60,6 +62,17 @@ def restore_backup(
         if archive is None:
             archive_name = _resolve_archive_name(backup_record)
             return _handle_restore_failure(resolved_id, f"Archive not found locally or pending: {archive_name or backup_file}")
+        if not dry_run and _backup_is_explicitly_unverified(backup_record):
+            raise RuntimeError(
+                "Backup failed archive verification and cannot be restored"
+            )
+        expected_checksum = _backup_checksum(backup_record)
+        if expected_checksum:
+            actual_checksum = archive_sha256(archive)
+            if not hmac.compare_digest(actual_checksum, expected_checksum):
+                raise RuntimeError(
+                    "Archive checksum mismatch: refusing to restore modified or corrupted backup"
+                )
         result = restore_archive(
             archive,
             Path(restore_dir),
@@ -71,6 +84,31 @@ def restore_backup(
     except Exception as e:
         logger.error("restore_backup_exception", source_id=resolved_id)
         return {"status": "failed", "error": str(e)}
+
+
+def _backup_checksum(backup: dict[str, Any] | None) -> str:
+    """Return the recorded checksum, including legacy verification metadata."""
+    if not backup:
+        return ""
+    checksum = backup.get("checksum")
+    if isinstance(checksum, str) and checksum.strip():
+        return checksum.strip()
+    verification = backup.get("verification_json")
+    if isinstance(verification, dict):
+        legacy_checksum = verification.get("checksum")
+        if isinstance(legacy_checksum, str):
+            return legacy_checksum.strip()
+    return ""
+
+
+def _backup_is_explicitly_unverified(backup: dict[str, Any] | None) -> bool:
+    """Return whether stored verification explicitly rejected the archive."""
+    if not backup:
+        return False
+    if backup.get("verified") is False:
+        return True
+    verification = backup.get("verification_json")
+    return isinstance(verification, dict) and verification.get("verified") is False
 
 
 def _backup_has_database(backup: dict[str, Any]) -> bool:

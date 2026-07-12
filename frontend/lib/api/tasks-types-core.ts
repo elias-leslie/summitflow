@@ -65,6 +65,9 @@ export interface BlockerInfo {
 }
 
 export interface VerificationResult {
+  /** Explicit evidence attestation emitted by current autonomous completion paths. */
+  evidence_verified?: boolean
+  verification_source?: string
   execution_clean?: boolean
   subtask_count?: number
   total_self_fix_attempts?: number
@@ -76,6 +79,11 @@ export interface VerificationResult {
   failed_count?: number
   failed_subtasks?: string[]
   failed_details?: { subtask_id: string; failure_reason: string }[]
+  // Legacy step-summary fields. A zero-count all_verified payload is not evidence.
+  total?: number
+  verified?: number
+  unverified?: number[]
+  all_verified?: boolean
 }
 
 export interface Task {

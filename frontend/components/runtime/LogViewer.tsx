@@ -82,7 +82,7 @@ export function LogViewer({ service, onClose }: LogViewerProps) {
             <span className="font-mono text-sm">{service}</span>
           </SheetTitle>
           <SheetDescription>Service logs</SheetDescription>
-          <SheetClose onClose={onClose} />
+          <SheetClose />
           <div className="flex gap-2 mt-2">
             <button
               onClick={toggleStream}

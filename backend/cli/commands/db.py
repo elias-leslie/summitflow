@@ -10,6 +10,7 @@ import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Final
 
 import typer
 
@@ -89,11 +90,33 @@ def _run_psql(
     *,
     tuples_only: bool = False,
     detail_name: str | None = None,
+    read_only: bool = False,
 ) -> int:
     args = ["psql", _db_url(project)]
     if tuples_only:
         args.extend(["-t", "-A"])
-    args.extend(["-c", sql])
+    if read_only:
+        # `-X` prevents a local psqlrc from running outside the protected
+        # transaction. Separate `-c` arguments still share one psql session,
+        # so PostgreSQL—not a client-side keyword check—enforces read-only mode
+        # for the diagnostic statement. ON_ERROR_STOP prevents a rejected
+        # statement from being followed by another command in an aborted tx.
+        args.extend(
+            [
+                "-X",
+                "-q",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-c",
+                "BEGIN TRANSACTION READ ONLY;",
+                "-c",
+                sql,
+                "-c",
+                "ROLLBACK;",
+            ]
+        )
+    else:
+        args.extend(["-c", sql])
     env = os.environ.copy()
     env.setdefault("PGAPPNAME", f"st-db-{project}")
     with _psql_project_lock(project):
@@ -121,8 +144,126 @@ def _strip_literals(sql: str) -> str:
     return re.sub(r"\$\$.*?\$\$", "", sql, flags=re.S)
 
 
+_READ_QUERY_ROOTS: Final = frozenset({"EXPLAIN", "SELECT", "SHOW", "TABLE", "VALUES", "WITH"})
+_WRITE_TOKENS: Final = frozenset({"DELETE", "INSERT", "MERGE", "UPDATE"})
+
+
+def _mask_sql_non_code(sql: str) -> str | None:
+    """Mask PostgreSQL literals/comments while preserving executable SQL.
+
+    The mask lets the command reject statement separators and write keywords
+    without treating their appearance inside a string, quoted identifier, or
+    comment as executable input. ``None`` denotes an unterminated construct.
+    """
+    masked = list(sql)
+    length = len(sql)
+    index = 0
+
+    def blank(start: int, end: int) -> None:
+        for offset in range(start, end):
+            if masked[offset] not in {"\n", "\r"}:
+                masked[offset] = " "
+
+    while index < length:
+        if sql.startswith("--", index):
+            end = sql.find("\n", index + 2)
+            end = length if end < 0 else end
+            blank(index, end)
+            index = end
+            continue
+
+        if sql.startswith("/*", index):
+            start = index
+            depth = 1
+            index += 2
+            while index < length and depth:
+                if sql.startswith("/*", index):
+                    depth += 1
+                    index += 2
+                elif sql.startswith("*/", index):
+                    depth -= 1
+                    index += 2
+                else:
+                    index += 1
+            if depth:
+                return None
+            blank(start, index)
+            continue
+
+        dollar_quote = re.match(r"\$(?:[A-Za-z_][A-Za-z_0-9]*)?\$", sql[index:])
+        if dollar_quote:
+            delimiter = dollar_quote.group(0)
+            start = index
+            end = sql.find(delimiter, index + len(delimiter))
+            if end < 0:
+                return None
+            index = end + len(delimiter)
+            blank(start, index)
+            continue
+
+        quote = sql[index]
+        if quote in {"'", '"'}:
+            start = index
+            escape_backslash = (
+                quote == "'"
+                and index > 0
+                and sql[index - 1] in {"e", "E"}
+                and (index < 2 or not (sql[index - 2].isalnum() or sql[index - 2] in {"_", "$"}))
+            )
+            index += 1
+            while index < length:
+                if escape_backslash and sql[index] == "\\":
+                    index += 2
+                    continue
+                if sql[index] == quote:
+                    if index + 1 < length and sql[index + 1] == quote:
+                        index += 2
+                        continue
+                    index += 1
+                    break
+                index += 1
+            else:
+                return None
+            blank(start, min(index, length))
+            continue
+
+        index += 1
+
+    return "".join(masked)
+
+
 def _is_read_query(sql: str) -> bool:
-    return not re.search(r"^\s*(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT|REVOKE)\b", sql, re.I)
+    """Return whether *sql* is one diagnostic statement safe to attempt.
+
+    This is deliberately a conservative input gate, not the security boundary:
+    `_run_psql(..., read_only=True)` also executes the accepted statement inside
+    a PostgreSQL read-only transaction.
+    """
+    masked = _mask_sql_non_code(sql)
+    if masked is None or not masked.strip() or "\\" in masked:
+        return False
+
+    statement = masked.rstrip()
+    semicolons = [match.start() for match in re.finditer(";", statement)]
+    if semicolons:
+        if len(semicolons) != 1 or semicolons[0] != len(statement) - 1:
+            return False
+        statement = statement[:-1].rstrip()
+
+    tokens = re.findall(r"[A-Za-z_][A-Za-z_0-9$]*", statement)
+    if not tokens or tokens[0].upper() not in _READ_QUERY_ROOTS:
+        return False
+
+    upper_tokens = {token.upper() for token in tokens}
+    if upper_tokens & _WRITE_TOKENS:
+        return False
+    if "INTO" in upper_tokens:
+        return False
+    return not re.search(
+        r"\bFOR\s+(?:(?:NO\s+)?KEY\s+)?(?:SHARE|UPDATE)\b",
+        statement,
+        re.I,
+    )
 
 
 def _exec_allowed(sql: str) -> bool:
@@ -360,6 +501,7 @@ def db(ctx: typer.Context) -> None:
                 sql,
                 tuples_only=plain,
                 detail_name=_psql_detail_name(project, "query", sql=sql),
+                read_only=True,
             )
         )
     if command == "exec" and rest:

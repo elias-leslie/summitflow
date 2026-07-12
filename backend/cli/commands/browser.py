@@ -716,7 +716,8 @@ def _browser_local_ai_check(args: list[str]) -> int:
     )
     session_args = ["--session", session or f"st-browser-local-ai-check-{os.getpid()}-{time.time_ns()}"]
     command_warnings: list[str] = []
-    error_result = subprocess.CompletedProcess([], 0, stdout="{}", stderr="")
+    page_result = subprocess.CompletedProcess([], 0, stdout="{}", stderr="")
+    console_result = subprocess.CompletedProcess([], 0, stdout="", stderr="")
     network_result = subprocess.CompletedProcess([], 0, stdout="[]", stderr="")
     viewports = _local_check_viewports(screenshot_path)
     try:
@@ -725,26 +726,20 @@ def _browser_local_ai_check(args: list[str]) -> int:
         )
         if warning := _local_agent_failure("initial viewport", first_viewport):
             command_warnings.append(warning)
+        console_clear = _run_local_ai_agent([*session_args, "console", "--clear"])
+        if warning := _local_agent_failure("console clear", console_clear):
+            command_warnings.append(warning)
         open_result = _run_local_ai_agent([*session_args, "open", url])
         if open_result.returncode != 0:
             if warning := _local_agent_failure("open", open_result):
                 output_error(warning)
             return open_result.returncode
-        load_wait = _run_local_ai_agent([*session_args, "wait", os.environ.get("ST_BROWSER_CHECK_WAIT", "5000")])
+        load_wait = _run_local_ai_agent([*session_args, "wait", "--load", "networkidle"])
         if warning := _local_agent_failure("load wait", load_wait):
             command_warnings.append(warning)
-        hook_result = _run_local_ai_agent(
-            [
-                *session_args,
-                "eval",
-                "window.__sfErrors=[];window.__sfWarnings=[];"
-                "const oe=console.error;console.error=(...a)=>{window.__sfErrors.push(a.map(String).join(' '));oe.apply(console,a)};"
-                "const ow=console.warn;console.warn=(...a)=>{window.__sfWarnings.push(a.map(String).join(' '));ow.apply(console,a)};'capturing'",
-            ]
+        settle = _run_local_ai_agent(
+            [*session_args, "wait", os.environ.get("ST_BROWSER_CHECK_SETTLE_MS", "500")]
         )
-        if warning := _local_agent_failure("console hook", hook_result):
-            command_warnings.append(warning)
-        settle = _run_local_ai_agent([*session_args, "wait", "2000"])
         if warning := _local_agent_failure("settle wait", settle):
             command_warnings.append(warning)
 
@@ -760,14 +755,17 @@ def _browser_local_ai_check(args: list[str]) -> int:
             screenshot = _run_local_ai_agent([*session_args, "screenshot", path])
             if warning := _local_agent_failure(f"{label} screenshot", screenshot):
                 command_warnings.append(warning)
-        error_result = _run_local_ai_agent(
+        console_result = _run_local_ai_agent([*session_args, "console"])
+        if warning := _local_agent_failure("console read", console_result):
+            command_warnings.append(warning)
+        page_result = _run_local_ai_agent(
             [
                 *session_args,
                 "eval",
-                "JSON.stringify({errors:window.__sfErrors||[],warnings:window.__sfWarnings||[],url:location.href,title:document.title})",
+                "JSON.stringify({url:location.href,title:document.title})",
             ]
         )
-        if warning := _local_agent_failure("console read", error_result):
+        if warning := _local_agent_failure("page read", page_result):
             command_warnings.append(warning)
         network_result = _run_local_ai_agent(
             [
@@ -793,7 +791,15 @@ def _browser_local_ai_check(args: list[str]) -> int:
         detail_lines.append("Additional screenshots:")
         for label, _, _, path in viewports[1:]:
             detail_lines.append(f"  {label}: {display_path(root, Path(path))}")
-    errors = _json_from_agent_eval(error_result.stdout)
+    page = _json_from_agent_eval(page_result.stdout)
+    console_errors, console_warnings = browser_support.parse_agent_console(
+        "\n".join(part for part in (console_result.stdout, console_result.stderr) if part)
+    )
+    errors = {
+        **(page if isinstance(page, dict) else {}),
+        "errors": console_errors,
+        "warnings": console_warnings,
+    }
     network = _json_from_agent_eval(network_result.stdout)
     error_items = _local_check_items(errors, "errors")
     warning_items = _local_check_items(errors, "warnings")
@@ -814,13 +820,21 @@ def _browser_local_ai_check(args: list[str]) -> int:
         detail_lines.append(f"\nBrowser command warnings ({len(command_warnings)}):")
         detail_lines.extend(command_warnings)
     details = write_details(root, "browser-check-local-ai", "\n".join(detail_lines))
-    status = "OK" if not error_items and not warning_items and not network_items else "ISSUES"
+    status = (
+        "INCOMPLETE"
+        if command_warnings
+        else "OK"
+        if not error_items and not warning_items and not network_items
+        else "ISSUES"
+    )
     print(
         f"BROWSER_CHECK:{status}|target=local-ai|errors={len(error_items)}|warnings={len(warning_items)}|"
         f"network={len(network_items)}|command_warnings={len(command_warnings)}|"
         f"screenshot={display_path(root, Path(screenshot_path))}|details:{display_path(root, details)}"
     )
-    return 0
+    if command_warnings:
+        return 2
+    return 1 if error_items or warning_items or network_items else 0
 
 
 def _run_local_ai_browser_command(command: str, browser_args: list[str]) -> int:

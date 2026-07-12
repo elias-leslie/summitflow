@@ -108,6 +108,14 @@ def autonomous_work_pickup(
             "message": "No pending autonomous tasks",
         }
 
+    if dispatch is None:
+        logger.error("Autonomous pickup requires a workflow dispatch callback", project_id=project_id)
+        return {
+            "status": "error",
+            "project_id": project_id,
+            "reason": "dispatch_callback_required",
+        }
+
     dispatched: dict[str, int] = {"triage": 0, "planning": 0, "critique": 0, "execution": 0, "skipped": 0}
 
     for task in tasks:
@@ -132,6 +140,18 @@ def dispatch_task_immediate(
 ) -> dict[str, object]:
     """Dispatch a single task immediately (event-driven path from st autocode)."""
     logger.info("Immediate dispatch requested", task_id=task_id, project_id=project_id)
+
+    if dispatch is None:
+        logger.error(
+            "Immediate dispatch requires a workflow callback",
+            task_id=task_id,
+            project_id=project_id,
+        )
+        return {
+            "status": "error",
+            "task_id": task_id,
+            "reason": "dispatch_callback_required",
+        }
 
     task = task_store.get_task(task_id)
     if not task:

@@ -10,24 +10,33 @@ interface NavigationProps {
   compact?: boolean
   dense?: boolean
   measure?: boolean
+  stacked?: boolean
 }
 
 export function Navigation({
   compact = false,
   dense = false,
   measure = false,
+  stacked = false,
 }: NavigationProps) {
   const pathname = usePathname()
   const gitHealth = useGitHealth()
-  const labelClassName = compact ? 'hidden' : 'inline'
-  const externalIconClassName = compact || dense ? 'hidden' : 'block'
+  const labelClassName = compact && !stacked ? 'hidden' : 'inline'
+  const externalIconClassName =
+    compact || (dense && !stacked) ? 'hidden' : 'block'
 
   return (
     <nav
       className={clsx(
-        'flex min-w-0 items-center transition-all duration-300',
-        measure ? 'w-max gap-1 whitespace-nowrap' : 'w-full overflow-hidden',
-        dense ? 'justify-start gap-1' : 'justify-center gap-1.5',
+        'flex min-w-0 transition-all duration-300',
+        stacked
+          ? 'w-full flex-col items-stretch gap-1'
+          : 'items-center overflow-hidden',
+        !stacked &&
+          (measure
+            ? 'w-max gap-1 whitespace-nowrap'
+            : 'w-full overflow-hidden'),
+        !stacked && (dense ? 'justify-start gap-1' : 'justify-center gap-1.5'),
       )}
     >
       {navItems.map((item) => {
@@ -53,12 +62,17 @@ export function Navigation({
 
         const className = clsx(
           'group relative flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full font-medium transition-all duration-200',
-          dense ? 'gap-1 text-[11px]' : 'text-[13px]',
-          compact
-            ? 'p-2'
+          stacked
+            ? 'w-full rounded-xl px-3 py-2.5 text-sm'
             : dense
-              ? 'px-2.5 py-1.5'
-              : 'px-3 py-1.5 lg:px-3.5 lg:py-2',
+              ? 'gap-1 text-[11px]'
+              : 'text-[13px]',
+          !stacked &&
+            (compact
+              ? 'p-2'
+              : dense
+                ? 'px-2.5 py-1.5'
+                : 'px-3 py-1.5 lg:px-3.5 lg:py-2'),
           isActive
             ? `${ac.bg} ${ac.text} shadow-[0_18px_38px_-30px_rgba(0,0,0,0.95)] ring-1 ring-white/5`
             : 'text-slate-400 hover:bg-slate-800/72 hover:text-slate-200',
@@ -84,13 +98,26 @@ export function Navigation({
             )}
             {isActive && (
               <span
-                className="absolute inset-x-3 bottom-1 h-px rounded-full bg-current opacity-65"
+                className={clsx(
+                  'absolute rounded-full bg-current opacity-65',
+                  stacked
+                    ? 'bottom-2 left-1 top-2 w-px'
+                    : 'inset-x-3 bottom-1 h-px',
+                )}
                 style={{ boxShadow: '0 0 12px currentColor' }}
                 aria-hidden="true"
               />
             )}
           </>
         )
+
+        if (measure) {
+          return (
+            <span key={item.id} className={className} aria-hidden="true">
+              {content}
+            </span>
+          )
+        }
 
         if (isExternal) {
           return (

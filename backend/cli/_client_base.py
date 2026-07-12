@@ -37,7 +37,7 @@ class BaseHTTPClient:
         if response.status_code >= 400:
             try:
                 data = response.json()
-                detail = data.get("detail", response.text)
+                detail = data.get("detail", data) if isinstance(data, dict) else data
             except Exception:
                 detail = response.text
             raise APIError(response.status_code, detail)

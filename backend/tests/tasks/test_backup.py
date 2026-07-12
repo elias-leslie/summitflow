@@ -147,6 +147,7 @@ class TestCreateBackupTask:
                 "db_bytes": 50 * 1024 * 1024,
                 "location": "/backup/test.tar.gz",
                 "archive_name": "test.tar.gz",
+                "verification": {"verified": True},
             }
 
             result = create_backup(
@@ -162,6 +163,29 @@ class TestCreateBackupTask:
         assert backup is not None
         assert backup["project_id"] == cleanup_project
         assert backup["status"] == "completed"
+
+    def test_create_backup_quarantines_unverified_archive(
+        self, cleanup_project: str
+    ) -> None:
+        """A produced archive is not success until its integrity gate passes."""
+        with patch("app.tasks.backup_executor.run_project_backup") as mock_run:
+            mock_run.return_value = {
+                "total_bytes": 1024,
+                "location": "/backup/unverified.tar.gz",
+                "archive_name": "unverified.tar.gz",
+                "verification": {
+                    "verified": False,
+                    "errors": ["Critical: database.sql.gz missing"],
+                },
+            }
+
+            result = create_backup(project_id=cleanup_project)
+
+        assert result["status"] == "failed"
+        assert "database.sql.gz missing" in str(result["error"])
+        backup = backup_store.get_backup(str(result["backup_id"]))
+        assert backup is not None
+        assert backup["status"] == "failed"
 
     def test_create_backup_handles_failure(self, cleanup_project: str) -> None:
         """Create backup handles script failure."""
@@ -641,3 +665,66 @@ class TestRestoreBackup:
 
         assert result["status"] == "completed"
         assert mock_restore.call_args.args[0] == archive_path
+
+    def test_restore_backup_rejects_checksum_mismatch(self, tmp_path: Path) -> None:
+        """A modified archive must never reach extraction or database restore."""
+        archive_path = tmp_path / "modified-backup.tar.gz"
+        archive_path.write_bytes(b"modified archive")
+        backup_record = {
+            "id": "bkp-3",
+            "project_id": "summitflow",
+            "source_id": "summitflow",
+            "location": str(archive_path),
+            "name": archive_path.name,
+            "checksum": "sha256:" + "0" * 64,
+        }
+
+        with (
+            patch("app.tasks.backup_restore.get_project_root", return_value=str(tmp_path)),
+            patch(
+                "app.tasks.backup_restore.backup_store.get_backup",
+                return_value=backup_record,
+            ),
+            patch("app.tasks.backup_restore.restore_archive") as mock_restore,
+        ):
+            result = restore_backup(
+                project_id="summitflow",
+                backup_id="bkp-3",
+                dry_run=True,
+            )
+
+        assert result["status"] == "failed"
+        assert "checksum mismatch" in result["error"].lower()
+        mock_restore.assert_not_called()
+
+    def test_restore_backup_refuses_explicitly_unverified_record(
+        self, tmp_path: Path
+    ) -> None:
+        archive_path = tmp_path / "unverified-backup.tar.gz"
+        archive_path.write_bytes(b"archive")
+        backup_record = {
+            "id": "bkp-4",
+            "project_id": "summitflow",
+            "source_id": "summitflow",
+            "location": str(archive_path),
+            "name": archive_path.name,
+            "verified": False,
+        }
+
+        with (
+            patch("app.tasks.backup_restore.get_project_root", return_value=str(tmp_path)),
+            patch(
+                "app.tasks.backup_restore.backup_store.get_backup",
+                return_value=backup_record,
+            ),
+            patch("app.tasks.backup_restore.restore_archive") as mock_restore,
+        ):
+            result = restore_backup(
+                project_id="summitflow",
+                backup_id="bkp-4",
+                dry_run=False,
+            )
+
+        assert result["status"] == "failed"
+        assert "failed archive verification" in result["error"].lower()
+        mock_restore.assert_not_called()

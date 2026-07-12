@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ...logging_config import get_logger
@@ -38,6 +38,9 @@ def _normalize_path_prefix(path_prefix: str | None) -> str | None:
     normalized = str(path_prefix).strip().replace("\\", "/")
     if normalized.startswith("./"):
         normalized = normalized[2:]
+    candidate = PurePosixPath(normalized)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise ValueError("Search path prefix must stay inside the project")
     normalized = normalized.strip("/")
     return normalized or None
 
@@ -81,8 +84,9 @@ def _search_text_with_ripgrep(
 
     normalized_prefix = _normalize_path_prefix(path_prefix)
     if normalized_prefix:
-        target_path = (Path(root_path) / normalized_prefix).resolve()
-        if not target_path.exists():
+        root = Path(root_path).resolve()
+        target_path = (root / normalized_prefix).resolve()
+        if not target_path.is_relative_to(root) or not target_path.exists():
             return {
                 "count": 0,
                 "files_searched": 0,
@@ -260,7 +264,17 @@ def search_text(
 ) -> dict[str, Any]:
     """Search indexed project files for case-insensitive line matches."""
     query_value = query.strip()
-    normalized_prefix = _normalize_path_prefix(path_prefix)
+    try:
+        normalized_prefix = _normalize_path_prefix(path_prefix)
+    except ValueError:
+        return {
+            "count": 0,
+            "files_searched": 0,
+            "items": [],
+            "truncated": False,
+            "path_prefix": None,
+            "error": "invalid_path_prefix",
+        }
     if not query_value:
         return {
             "count": 0,

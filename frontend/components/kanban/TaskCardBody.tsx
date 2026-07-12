@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import { Bot, Link2, Loader2, Palette, ShieldCheck } from 'lucide-react'
 import type { Task } from '@/lib/api'
 import { getTaskStatusCardConfig } from '@/lib/task-config'
+import { hasVerifiedEvidence } from '@/lib/task-verification'
 import { StepProgressIndicator } from './StepProgressIndicator'
 
 interface TaskCardBodyProps {
@@ -25,7 +26,7 @@ export function TaskCardBody({
   const hasDesignWork = task.labels?.some((label) =>
     ['design', 'ui-design', 'mockup'].includes(label.toLowerCase()),
   )
-  const hasVerifier = Boolean(task.verification_result)
+  const hasVerifier = hasVerifiedEvidence(task.verification_result)
 
   return (
     <>

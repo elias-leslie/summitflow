@@ -6,9 +6,10 @@ Handles dispatching tasks to ideation, triage, planning, critique, or execution 
 from __future__ import annotations
 
 from collections.abc import Callable
+from uuid import uuid4
 
 from app.logging_config import get_logger
-from app.storage.tasks.claims import claim_task
+from app.storage.tasks.claims import claim_task, release_task
 
 logger = get_logger(__name__)
 
@@ -128,14 +129,34 @@ def dispatch_to_execution(
     if not _execution_preflight_ok(task_id, project_id):
         return False
 
-    worker_id = f"{worker_id_prefix}-{project_id}"
+    worker_id = f"{worker_id_prefix}-{project_id}-{uuid4().hex[:12]}"
     claimed = claim_task(task_id, worker_id, lock_duration_minutes=60)
     if not claimed:
         logger.info("Task already claimed, skipping", task_id=task_id)
         return False
 
-    if dispatch:
-        dispatch("execute", task_id, project_id)
+    try:
+        if dispatch:
+            dispatch("execute", task_id, project_id)
+    except Exception:
+        try:
+            released = release_task(task_id, expected_worker_id=worker_id)
+        except Exception:
+            logger.exception(
+                "Execution enqueue failed and claim release failed",
+                task_id=task_id,
+                project_id=project_id,
+                worker_id=worker_id,
+            )
+        else:
+            logger.exception(
+                "Execution enqueue failed; claim release attempted",
+                task_id=task_id,
+                project_id=project_id,
+                worker_id=worker_id,
+                released=released is not None,
+            )
+        raise
     logger.info("Dispatched to execution", task_id=task_id)
     return True
 

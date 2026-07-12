@@ -5,7 +5,7 @@ from __future__ import annotations
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..storage.notifications import create_notification
-from .backup_lock import acquire_backup_lock, release_backup_lock
+from .backup_lock import acquire_backup_lock, maintain_backup_lock
 from .backup_native import INFRA_BACKUP_TIMEOUT, run_infra_backup
 from .backup_utils import (
     as_mapping,
@@ -13,6 +13,7 @@ from .backup_utils import (
     build_verification_kwargs,
     get_int_field,
     get_str_field,
+    require_verified_backup_output,
 )
 
 logger = get_logger(__name__)
@@ -27,14 +28,19 @@ def create_infra_backup(
     """Create an infrastructure backup (pg_dumpall + configs)."""
     logger.info("create_infra_backup_started", source_id=source_id, backup_type=backup_type)
 
-    if not acquire_backup_lock(source_id):
+    owner_token = acquire_backup_lock(source_id)
+    if owner_token is None:
         logger.info("create_infra_backup_skipped_locked", source_id=source_id)
         return {"status": "skipped", "error": f"Backup already running for {source_id}"}
 
-    try:
-        return _run_infra_backup(source_id, note, backup_type, keep_local, retention_days)
-    finally:
-        release_backup_lock(source_id)
+    return _run_infra_backup(
+        source_id,
+        note,
+        backup_type,
+        keep_local,
+        retention_days,
+        owner_token,
+    )
 
 
 def _run_infra_backup(
@@ -43,30 +49,48 @@ def _run_infra_backup(
     backup_type: str,
     keep_local: bool,
     retention_days: int | None,
+    owner_token: str | None = None,
 ) -> dict[str, object]:
     """Execute infrastructure backup with lock held."""
     # Use a pseudo project_id for infrastructure
     project_id = "infrastructure"
 
-    backup_record = backup_store.create_backup_record(
-        project_id=project_id, backup_type=backup_type, note=note, source_id=source_id
-    )
-    backup_id = backup_record["id"]
-    backup_store.update_backup_status(backup_id, "running")
+    backup_id: str | None = None
 
     try:
-        parsed_output = run_infra_backup(
-            env=build_storage_env(source_id),
-            keep_local=keep_local,
-            retention_days=retention_days,
-        )
-        if parsed_output.get("pending_path"):
-            return _handle_pending(backup_id, parsed_output)
-        return _handle_success(backup_id, parsed_output)
+        if owner_token is None:
+            raise RuntimeError("Backup lock owner token is required")
+        with maintain_backup_lock(source_id, owner_token):
+            backup_record = backup_store.create_backup_record(
+                project_id=project_id,
+                backup_type=backup_type,
+                note=note,
+                source_id=source_id,
+            )
+            backup_id = str(backup_record["id"])
+            backup_store.update_backup_status(backup_id, "running")
+            parsed_output = run_infra_backup(
+                env=build_storage_env(source_id),
+                keep_local=keep_local,
+                retention_days=retention_days,
+            )
+            require_verified_backup_output(parsed_output)
     except TimeoutError:
+        if backup_id is None:
+            return {
+                "status": "failed",
+                "error": f"Infrastructure backup timed out after {INFRA_BACKUP_TIMEOUT // 60} minutes",
+            }
         return _handle_failure(backup_id, f"Infrastructure backup timed out after {INFRA_BACKUP_TIMEOUT // 60} minutes")
     except Exception as e:
+        if backup_id is None:
+            logger.error("create_infra_backup_failed_before_record", error=str(e))
+            return {"status": "failed", "error": str(e)}
         return _handle_failure(backup_id, str(e))
+
+    if parsed_output.get("pending_path"):
+        return _handle_pending(backup_id, parsed_output)
+    return _handle_success(backup_id, parsed_output)
 
 
 def _handle_success(backup_id: str, parsed: dict[str, object]) -> dict[str, object]:

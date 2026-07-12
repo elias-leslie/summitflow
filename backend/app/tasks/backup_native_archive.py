@@ -5,14 +5,17 @@ import gzip
 import hashlib
 import os
 import shutil
+import stat
 import subprocess
 import tarfile
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
 BACKUP_TIMEOUT = 600
+PROJECT_DATABASE_DUMP_NAME = "database.sql.gz"
+INFRASTRUCTURE_DATABASE_DUMP_NAME = "pgdumpall.sql.gz"
 DEFAULT_EXCLUDES = (
     "backend/.venv",
     "frontend/node_modules",
@@ -184,14 +187,30 @@ def _add_files_from_dir(
     for filename in files:
         full = root_path / filename
         rel = full.relative_to(project_dir).as_posix()
-        if _should_exclude(rel, excludes):
+        is_reserved_database_path = rel == PROJECT_DATABASE_DUMP_NAME or (
+            project_name == "infrastructure"
+            and rel == INFRASTRUCTURE_DATABASE_DUMP_NAME
+        )
+        if _should_exclude(rel, excludes) or is_reserved_database_path:
             continue
         try:
-            archive.add(full, arcname=f"{project_name}/{rel}", recursive=False)
+            if not stat.S_ISREG(full.lstat().st_mode):
+                continue
+            archive.add(
+                full,
+                arcname=f"{project_name}/{rel}",
+                recursive=False,
+                filter=_regular_file_filter,
+            )
             count += 1
         except FileNotFoundError:
             continue
     return count
+
+
+def _regular_file_filter(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
+    """Keep archive creation aligned with the regular-file-only restore policy."""
+    return member if member.isreg() else None
 
 
 def _create_project_archive(
@@ -203,7 +222,7 @@ def _create_project_archive(
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     archive_name = f"{project_name}-{timestamp}.tar.gz"
     archive_path = staging / archive_name
-    db_dump = staging / "database.sql.gz"
+    db_dump = staging / PROJECT_DATABASE_DUMP_NAME
     db_size, expects_db = _dump_database(project_name, db_dump, env)
     if db_size == 0 and expects_db:
         raise RuntimeError(f"Database dump skipped: missing credentials for {project_name}")
@@ -211,9 +230,18 @@ def _create_project_archive(
     with tarfile.open(archive_path, "w:gz") as archive:
         files_count = _add_project_files(archive, project_dir, project_name, excludes)
         if db_dump.exists():
-            archive.add(db_dump, arcname=f"{project_name}/database.sql.gz", recursive=False)
+            archive.add(
+                db_dump,
+                arcname=f"{project_name}/{PROJECT_DATABASE_DUMP_NAME}",
+                recursive=False,
+                filter=_regular_file_filter,
+            )
             files_count += 1
-    verification = verify_archive(archive_path, db_dump_name="database.sql.gz", expects_db=expects_db)
+    verification = verify_archive(
+        archive_path,
+        db_dump_name=PROJECT_DATABASE_DUMP_NAME,
+        expects_db=expects_db,
+    )
     total_size = archive_path.stat().st_size
     return {
         "archive_name": archive_name,
@@ -231,26 +259,78 @@ def verify_archive(path: Path, *, db_dump_name: str, expects_db: bool) -> dict[s
     if error is not None:
         return error
     tree = _archive_tree(names)
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    has_db = any(name.endswith(db_dump_name) for name in names)
-    errors = [f"Critical: {db_dump_name} missing"] if expects_db and not has_db else []
+    checksum = archive_sha256(path)
+    paths = [PurePosixPath(name) for name in names]
+    top_levels = {member_path.parts[0] for member_path in paths if member_path.parts}
+    expected_db_name = (
+        f"infrastructure/{INFRASTRUCTURE_DATABASE_DUMP_NAME}"
+        if db_dump_name == INFRASTRUCTURE_DATABASE_DUMP_NAME
+        else f"{next(iter(top_levels))}/{PROJECT_DATABASE_DUMP_NAME}"
+        if len(top_levels) == 1
+        else ""
+    )
+    canonical_database_names = (
+        {f"infrastructure/{INFRASTRUCTURE_DATABASE_DUMP_NAME}"}
+        if top_levels == {"infrastructure"}
+        else {
+            f"{top_level}/{PROJECT_DATABASE_DUMP_NAME}"
+            for top_level in top_levels
+        }
+    )
+    database_members = [name for name in names if name in canonical_database_names]
+    has_db = database_members == [expected_db_name] and PurePosixPath(expected_db_name).name == db_dump_name
+    errors: list[str] = []
+    if not names:
+        errors.append("Critical: archive contains no regular files")
+    elif any(len(member_path.parts) < 2 for member_path in paths) or len(top_levels) != 1:
+        errors.append("Critical: archive files must use exactly one top-level directory")
+    if len(database_members) > 1:
+        errors.append("Critical: duplicate database dumps")
+    elif database_members and not has_db:
+        errors.append(f"Critical: database dump must use canonical path {expected_db_name}")
+    elif expects_db and not has_db:
+        errors.append(f"Critical: {db_dump_name} missing")
     return {
         "verified": not errors,
         "verified_at": datetime.now(UTC).isoformat(),
         "errors": errors,
         "tree": tree,
         "total_files": len(names),
-        "checksum": f"sha256:{digest}",
+        "checksum": checksum,
         "has_db": has_db,
         "expects_db": expects_db,
     }
 
 
+def archive_sha256(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
+    """Return a bounded-memory SHA-256 checksum for an archive."""
+    digest = hashlib.sha256()
+    with path.open("rb") as archive_file:
+        for chunk in iter(lambda: archive_file.read(chunk_size), b""):
+            digest.update(chunk)
+    return f"sha256:{digest.hexdigest()}"
+
+
 def _archive_member_names(path: Path, expects_db: bool) -> tuple[list[str], dict[str, Any] | None]:
     try:
         with tarfile.open(path, "r:gz") as archive:
-            return [member.name for member in archive.getmembers() if member.isfile()], None
-    except (tarfile.TarError, OSError) as exc:
+            members = archive.getmembers()
+            unsafe_members = [
+                member.name for member in members if not (member.isdir() or member.isreg())
+            ]
+            if unsafe_members:
+                raise RuntimeError(
+                    f"Archive contains unsupported member type: {unsafe_members[0]}"
+                )
+            unsafe_paths = [
+                member.name
+                for member in members
+                if not _is_safe_archive_member_name(member.name)
+            ]
+            if unsafe_paths:
+                raise RuntimeError(f"Archive contains unsafe member path: {unsafe_paths[0]}")
+            return [member.name for member in members if member.isfile()], None
+    except (tarfile.TarError, OSError, RuntimeError) as exc:
         return [], {
             "verified": False,
             "verified_at": datetime.now(UTC).isoformat(),
@@ -261,6 +341,18 @@ def _archive_member_names(path: Path, expects_db: bool) -> tuple[list[str], dict
             "has_db": False,
             "expects_db": expects_db,
         }
+
+
+def _is_safe_archive_member_name(name: str) -> bool:
+    member_path = PurePosixPath(name)
+    return bool(
+        name
+        and "\x00" not in name
+        and "\\" not in name
+        and not member_path.is_absolute()
+        and member_path.parts
+        and all(part not in {"", ".", ".."} for part in member_path.parts)
+    )
 
 
 def _archive_tree(names: list[str]) -> dict[str, dict[str, int]]:

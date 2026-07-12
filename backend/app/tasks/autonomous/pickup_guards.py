@@ -8,6 +8,7 @@ from typing import Any
 
 from app.config import DEFAULT_API_BASE, REDIS_URL
 from app.services._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
+from app.services.redis_pool import create_redis_client
 from app.storage import agent_configs
 from app.storage import tasks as task_store
 from app.storage.connection import get_cursor
@@ -15,7 +16,6 @@ from app.storage.connection import get_cursor
 # Constants
 _AGENT_HUB_URL = f"{AGENT_HUB_URL}/api/projects/{{project_id}}/execution-permission"
 _AGENT_HUB_SESSIONS_URL = f"{AGENT_HUB_URL}/api/sessions"
-_REDIS_URL = f"{REDIS_URL}/1"
 _REDIS_TIMEOUT = 3
 _HTTP_TIMEOUT = 5.0
 _DISPATCHABLE_STATUSES = ("pending", "failed")
@@ -219,8 +219,7 @@ def check_system_health(project_id: str) -> dict[str, Any] | None:
         details["postgres"] = f"unhealthy: {e}"
     # Redis
     try:
-        import redis
-        redis.Redis.from_url(_REDIS_URL, socket_timeout=_REDIS_TIMEOUT).ping()
+        create_redis_client(REDIS_URL, socket_timeout=_REDIS_TIMEOUT).ping()
         details["redis"] = "healthy"
     except Exception as e:
         failing.append("redis")

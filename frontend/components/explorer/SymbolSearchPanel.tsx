@@ -162,7 +162,7 @@ export function SymbolSearchPanel({ projectId }: SymbolSearchPanelProps) {
           className="max-w-3xl border-l border-slate-700 bg-slate-950"
         >
           <SheetHeader>
-            <SheetClose onClose={() => setSelectedSymbolId(null)} />
+            <SheetClose />
             <SheetTitle>
               {detailQuery.data?.symbol.qualified_name ?? 'Symbol detail'}
             </SheetTitle>

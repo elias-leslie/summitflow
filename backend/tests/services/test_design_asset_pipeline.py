@@ -84,3 +84,31 @@ def test_import_asset_image_rejects_active_svg(tmp_path: Path) -> None:
         )
 
     mock_create_asset.assert_not_called()
+
+
+def test_import_asset_image_rejects_svg_entity_expansion(tmp_path: Path) -> None:
+    """Untrusted SVG must not resolve internal entities."""
+    svg = """<!DOCTYPE svg [<!ENTITY payload "expanded">]>
+    <svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">
+      <text>&payload;</text>
+    </svg>"""
+    with (
+        patch("app.services.design_asset_pipeline.get_mockup_directory", return_value=tmp_path),
+        patch("app.services.design_asset_pipeline.design_assets.create_asset") as mock_create_asset,
+        pytest.raises(ValueError, match="Invalid SVG asset"),
+    ):
+        import_asset_image(
+            project_id="the-aftertimes",
+            name="Entity SVG",
+            image_base64=base64.b64encode(svg.encode()).decode(),
+            mime_type="image/svg+xml",
+            original_file_name="entity.svg",
+            prompt="Manual import",
+            description=None,
+            asset_type="icon",
+            workflow="concept",
+            background="transparent",
+            transparent_background=True,
+        )
+
+    mock_create_asset.assert_not_called()

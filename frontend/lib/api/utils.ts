@@ -20,17 +20,35 @@ export function buildQueryString(
 }
 
 /**
- * Standard error response handler.
- * Throws with error.detail if available, otherwise generic message.
+ * Return the most useful message from legacy and canonical API error payloads.
  */
+function messageFromErrorPayload(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined
+
+  const error = payload as Record<string, unknown>
+  if (typeof error.message === 'string' && error.message.trim()) {
+    return error.message
+  }
+  if (typeof error.detail === 'string' && error.detail.trim()) {
+    return error.detail
+  }
+  if (error.detail && typeof error.detail === 'object') {
+    const nested = error.detail as Record<string, unknown>
+    if (typeof nested.message === 'string' && nested.message.trim()) {
+      return nested.message
+    }
+  }
+  return undefined
+}
+
+/** Standard error response handler supporting the canonical {message} shape. */
 export async function throwFromResponse(
   res: Response,
   defaultMessage: string,
 ): Promise<never> {
   let detail: string | undefined
   try {
-    const error = await res.json()
-    detail = error.detail
+    detail = messageFromErrorPayload(await res.json())
   } catch {
     // JSON parse failed — fall through to default
   }

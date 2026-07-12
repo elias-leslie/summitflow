@@ -9,6 +9,7 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -47,7 +48,13 @@ class TestDispatchTaskClaiming:
 
         result = await dispatch_task("task-1", "monkey-fight")
 
-        mock_claim.assert_called_once_with("task-1", "api-dispatch-monkey-fight", lock_duration_minutes=60)
+        claimed_worker_id = mock_claim.call_args.args[1]
+        assert claimed_worker_id.startswith("api-dispatch-monkey-fight-")
+        mock_claim.assert_called_once_with(
+            "task-1",
+            claimed_worker_id,
+            lock_duration_minutes=60,
+        )
         mock_trigger.assert_called_once_with("execution", "task-1", "monkey-fight", manual_dispatch=False)
         assert result["status"] == "dispatched"
         assert result["stage"] == "execution"
@@ -257,7 +264,7 @@ class TestDispatchTaskBasics:
         await dispatch_task("task-1", "monkey-fight")
 
         worker_id = mock_claim.call_args[0][1]
-        assert worker_id == "api-dispatch-monkey-fight"
+        assert worker_id.startswith("api-dispatch-monkey-fight-")
 
     @pytest.mark.asyncio
     @patch("app.services.dispatch._trigger_workflow", new_callable=AsyncMock)
@@ -278,6 +285,40 @@ class TestDispatchTaskBasics:
         await dispatch_task("task-1", "monkey-fight")
 
         assert mock_claim.call_args.kwargs["lock_duration_minutes"] == 60
+
+    @pytest.mark.asyncio
+    async def test_repeated_dispatches_use_unique_claim_owners(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A late failure from attempt A cannot match attempt B's claim owner."""
+        claim = MagicMock(
+            side_effect=lambda task_id, worker_id, **_kwargs: {
+                "id": task_id,
+                "claimed_by": worker_id,
+            }
+        )
+        monkeypatch.setattr(
+            dispatch_service.task_store,
+            "get_task",
+            lambda _task_id: {"id": "task-1", "status": "pending", "task_type": "bug"},
+        )
+        monkeypatch.setattr(dispatch_service, "claim_task", claim)
+        monkeypatch.setattr(
+            dispatch_service,
+            "_determine_next_stage",
+            MagicMock(return_value="execution"),
+        )
+        monkeypatch.setattr(dispatch_service, "_trigger_workflow", AsyncMock())
+
+        await dispatch_task("task-1", "summitflow")
+        await dispatch_task("task-1", "summitflow")
+
+        first_owner = claim.call_args_list[0].args[1]
+        second_owner = claim.call_args_list[1].args[1]
+        assert first_owner.startswith("api-dispatch-summitflow-")
+        assert second_owner.startswith("api-dispatch-summitflow-")
+        assert first_owner != second_owner
 
     @pytest.mark.asyncio
     @patch("app.services.dispatch._trigger_workflow", new_callable=AsyncMock)
@@ -301,3 +342,143 @@ class TestDispatchTaskBasics:
         assert result["project_id"] == "monkey-fight"
         assert result["stage"] == "execution"
         assert result["status"] == "dispatched"
+
+    @pytest.mark.asyncio
+    async def test_execution_dispatch_failure_releases_claim(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A failed Hatchet enqueue must not strand the task's execution claim."""
+        trigger = AsyncMock(side_effect=RuntimeError("hatchet unavailable"))
+        release = MagicMock()
+        claim = MagicMock(
+            return_value={"id": "task-1", "claimed_by": "api-dispatch-summitflow"}
+        )
+
+        monkeypatch.setattr(
+            dispatch_service.task_store,
+            "get_task",
+            lambda _task_id: {"id": "task-1", "status": "pending", "task_type": "bug"},
+        )
+        monkeypatch.setattr(dispatch_service, "_trigger_workflow", trigger)
+        monkeypatch.setattr(dispatch_service, "claim_task", claim)
+        monkeypatch.setattr(dispatch_service, "release_task", release)
+        monkeypatch.setattr(
+            dispatch_service,
+            "_determine_next_stage",
+            MagicMock(return_value="execution"),
+        )
+        monkeypatch.setattr(
+            dispatch_service,
+            "validate_autonomous_dispatch",
+            lambda *_args, **_kwargs: None,
+        )
+
+        with pytest.raises(RuntimeError, match="hatchet unavailable"):
+            await dispatch_task("task-1", "summitflow")
+
+        claimed_worker_id = claim.call_args.args[1]
+        release.assert_called_once_with(
+            "task-1",
+            expected_worker_id=claimed_worker_id,
+        )
+
+    @pytest.mark.asyncio
+    async def test_claim_release_failure_preserves_enqueue_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Cleanup failure must not hide the Hatchet enqueue failure."""
+        monkeypatch.setattr(
+            dispatch_service.task_store,
+            "get_task",
+            lambda _task_id: {"id": "task-1", "status": "pending", "task_type": "bug"},
+        )
+        monkeypatch.setattr(
+            dispatch_service,
+            "_trigger_workflow",
+            AsyncMock(side_effect=RuntimeError("hatchet unavailable")),
+        )
+        monkeypatch.setattr(
+            dispatch_service,
+            "claim_task",
+            MagicMock(return_value={"id": "task-1", "claimed_by": "api-dispatch-summitflow"}),
+        )
+        monkeypatch.setattr(
+            dispatch_service,
+            "release_task",
+            MagicMock(side_effect=RuntimeError("database unavailable")),
+        )
+        monkeypatch.setattr(
+            dispatch_service,
+            "_determine_next_stage",
+            MagicMock(return_value="execution"),
+        )
+
+        with pytest.raises(RuntimeError, match="hatchet unavailable"):
+            await dispatch_task("task-1", "summitflow")
+
+    @pytest.mark.asyncio
+    async def test_non_execution_dispatch_failure_does_not_release_task(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        trigger = AsyncMock(side_effect=RuntimeError("hatchet unavailable"))
+        release = MagicMock()
+
+        monkeypatch.setattr(
+            dispatch_service.task_store,
+            "get_task",
+            lambda _task_id: {"id": "task-1", "status": "pending", "task_type": "bug"},
+        )
+        monkeypatch.setattr(dispatch_service, "_trigger_workflow", trigger)
+        monkeypatch.setattr(dispatch_service, "release_task", release)
+        monkeypatch.setattr(
+            dispatch_service,
+            "_determine_next_stage",
+            MagicMock(return_value="planning"),
+        )
+        monkeypatch.setattr(
+            dispatch_service,
+            "validate_autonomous_dispatch",
+            lambda *_args, **_kwargs: None,
+        )
+
+        with pytest.raises(RuntimeError, match="hatchet unavailable"):
+            await dispatch_task("task-1", "summitflow")
+
+        release.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dispatch_cancellation_preserves_claim(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Cancellation cannot prove the background Hatchet trigger was rejected."""
+        release = MagicMock()
+        monkeypatch.setattr(
+            dispatch_service.task_store,
+            "get_task",
+            lambda _task_id: {"id": "task-1", "status": "pending", "task_type": "bug"},
+        )
+        monkeypatch.setattr(
+            dispatch_service,
+            "_trigger_workflow",
+            AsyncMock(side_effect=asyncio.CancelledError),
+        )
+        monkeypatch.setattr(
+            dispatch_service,
+            "claim_task",
+            MagicMock(return_value={"id": "task-1", "claimed_by": "api-dispatch-summitflow"}),
+        )
+        monkeypatch.setattr(dispatch_service, "release_task", release)
+        monkeypatch.setattr(
+            dispatch_service,
+            "_determine_next_stage",
+            MagicMock(return_value="execution"),
+        )
+
+        with pytest.raises(asyncio.CancelledError):
+            await dispatch_task("task-1", "summitflow")
+
+        release.assert_not_called()

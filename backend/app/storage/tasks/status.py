@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..connection import get_connection
-from .core import TASK_COLUMNS, _row_to_dict, canonicalize_task_id, get_task
+from .core import TASK_COLUMNS, _row_to_dict, canonicalize_task_id
 
 # Valid task status transitions (simplified)
 VALID_TRANSITIONS: dict[str, set[str]] = {
@@ -35,6 +35,7 @@ _UPDATE_SQL = f"""
             ELSE completed_at
         END,
         error_message = CASE WHEN %s IN ('pending','running','paused') THEN NULL WHEN %s IN ('completed','failed','cancelled') THEN %s ELSE error_message END,
+        verification_result = CASE WHEN %s = 'completed' THEN verification_result ELSE NULL END,
         current_phase = CASE WHEN %s = 'completed' THEN 'complete' ELSE current_phase END,
         claimed_by = CASE WHEN %s IN ('completed','failed','cancelled','paused') THEN NULL ELSE claimed_by END,
         claimed_at = CASE WHEN %s IN ('completed','failed','cancelled','paused') THEN NULL ELSE claimed_at END,
@@ -49,16 +50,8 @@ def validate_status_transition(current: str, target: str) -> bool:
     return target in VALID_TRANSITIONS.get(current, set())
 
 
-def _check_transition(task_id: str, status: str) -> None:
-    """Validate that the current task status can transition to *status*.
-
-    Raises:
-        ValueError: If the transition is not allowed.
-    """
-    current_task = get_task(task_id)
-    if not current_task:
-        return
-    current_status = current_task["status"]
+def _check_transition(current_status: str, status: str) -> None:
+    """Validate a locked current status can transition to *status*."""
     if current_status != status and not validate_status_transition(current_status, status):
         raise ValueError(
             f"Invalid transition from '{current_status}' to '{status}'. "
@@ -67,15 +60,41 @@ def _check_transition(task_id: str, status: str) -> None:
 
 
 def _execute_status_update(
-    task_id: str, status: str, error_message: str | None
+    task_id: str,
+    status: str,
+    error_message: str | None,
+    *,
+    validate_transition: bool,
 ) -> dict[str, Any] | None:
-    """Execute the status UPDATE SQL and return the updated row dict or None."""
+    """Validate and update status atomically under a row lock."""
     resolved_task_id = canonicalize_task_id(task_id)
     with get_connection() as conn, conn.cursor() as cur:
+        if validate_transition:
+            cur.execute(
+                "SELECT status FROM tasks WHERE id = %s FOR UPDATE",
+                (resolved_task_id,),
+            )
+            current_row = cur.fetchone()
+            if not current_row:
+                return None
+            _check_transition(str(current_row[0]), status)
         cur.execute(
             _UPDATE_SQL,
-            (status, status, status, status, status, status, error_message,
-             status, status, status, status, resolved_task_id),
+            (
+                status,
+                status,
+                status,
+                status,
+                status,
+                status,
+                error_message,
+                status,
+                status,
+                status,
+                status,
+                status,
+                resolved_task_id,
+            ),
         )
         row = cur.fetchone()
         conn.commit()
@@ -104,9 +123,12 @@ def update_task_status(
     """
     if status not in VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Must be one of: {VALID_STATUSES}")
-    if validate_transition:
-        _check_transition(task_id, status)
-    return _execute_status_update(task_id, status, error_message)
+    return _execute_status_update(
+        task_id,
+        status,
+        error_message,
+        validate_transition=validate_transition,
+    )
 
 
 def add_commit(task_id: str, commit_sha: str) -> dict[str, Any] | None:

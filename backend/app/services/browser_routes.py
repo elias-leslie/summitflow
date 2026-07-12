@@ -11,6 +11,7 @@ from app.project_identity import get_project_canonical_id, get_project_identity
 
 _HOST_KEYS = ("browser_frontend", "lan_frontend", "production_frontend")
 _URL_SCHEME_PREFIXES = ("http://", "https://", "data:", "file:", "about:", "chrome:")
+_LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 
 
 class BrowserRouteError(ValueError):
@@ -42,7 +43,7 @@ def resolve_browser_project_route(
     env: Mapping[str, str] | None = None,
 ) -> BrowserProjectRoute:
     """Resolve a project id or alias to its canonical browser frontend URL."""
-    values = env or os.environ
+    values = os.environ if env is None else env
     identity = get_project_identity(project_ref)
     if not identity:
         raise BrowserRouteError(f"Project identity not found for browser target: {project_ref}")
@@ -75,7 +76,9 @@ def resolve_browser_location(value: str, *, env: Mapping[str, str] | None = None
 def _url_from_host(host: str, values: Mapping[str, str]) -> str:
     if is_url_like(host):
         return host
-    scheme = values.get("ST_BROWSER_PROJECT_SCHEME", "https").strip() or "https"
+    configured_scheme = values.get("ST_BROWSER_PROJECT_SCHEME", "").strip()
+    hostname = urlsplit(f"//{host}").hostname
+    scheme = configured_scheme or ("http" if hostname in _LOCAL_HOSTNAMES else "https")
     path = values.get("ST_BROWSER_PROJECT_PATH", "/").strip() or "/"
     if not path.startswith("/"):
         path = f"/{path}"

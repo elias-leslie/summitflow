@@ -1,9 +1,10 @@
 'use client'
 
+import * as DialogPrimitive from '@radix-ui/react-dialog'
 import clsx from 'clsx'
 import { X } from 'lucide-react'
-import { AnimatePresence, motion } from 'motion/react'
-import { type ReactNode, useCallback, useEffect } from 'react'
+import { motion } from 'motion/react'
+import type { ReactNode } from 'react'
 
 interface SheetProps {
   open: boolean
@@ -33,41 +34,10 @@ interface SheetDescriptionProps {
 }
 
 export function Sheet({ open, onOpenChange, children }: SheetProps) {
-  const handleEscape = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onOpenChange(false)
-    },
-    [onOpenChange],
-  )
-
-  useEffect(() => {
-    if (open) {
-      document.addEventListener('keydown', handleEscape)
-      document.body.style.overflow = 'hidden'
-    }
-    return () => {
-      document.removeEventListener('keydown', handleEscape)
-      document.body.style.overflow = ''
-    }
-  }, [open, handleEscape])
-
   return (
-    <AnimatePresence>
-      {open && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm"
-            onClick={() => onOpenChange(false)}
-          />
-          {children}
-        </>
-      )}
-    </AnimatePresence>
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      {children}
+    </DialogPrimitive.Root>
   )
 }
 
@@ -79,23 +49,31 @@ export function SheetContent({
   const isRight = side === 'right'
 
   return (
-    <motion.div
-      role="dialog"
-      aria-modal="true"
-      initial={{ x: isRight ? '100%' : '-100%' }}
-      animate={{ x: 0 }}
-      exit={{ x: isRight ? '100%' : '-100%' }}
-      transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-      className={clsx(
-        'fixed',
-        isRight ? 'right-0' : 'left-0',
-        'top-0 bottom-0 z-50 w-full max-w-md bg-[linear-gradient(180deg,rgba(15,10,24,0.99),rgba(9,7,16,0.98))] border-l border-slate-700/80 shadow-[0_0_80px_-20px_rgba(0,0,0,0.8)] overflow-y-auto',
-        className,
-      )}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {children}
-    </motion.div>
+    <DialogPrimitive.Portal>
+      <DialogPrimitive.Overlay asChild>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.2 }}
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm"
+        />
+      </DialogPrimitive.Overlay>
+      <DialogPrimitive.Content asChild>
+        <motion.div
+          initial={{ x: isRight ? '100%' : '-100%' }}
+          animate={{ x: 0 }}
+          transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+          className={clsx(
+            'fixed',
+            isRight ? 'right-0' : 'left-0',
+            'top-0 bottom-0 z-50 w-full max-w-md bg-[linear-gradient(180deg,rgba(15,10,24,0.99),rgba(9,7,16,0.98))] border-l border-slate-700/80 shadow-[0_0_80px_-20px_rgba(0,0,0,0.8)] overflow-y-auto focus:outline-none',
+            className,
+          )}
+        >
+          {children}
+        </motion.div>
+      </DialogPrimitive.Content>
+    </DialogPrimitive.Portal>
   )
 }
 
@@ -114,14 +92,16 @@ export function SheetHeader({ children, className = '' }: SheetHeaderProps) {
 
 export function SheetTitle({ children, className = '' }: SheetTitleProps) {
   return (
-    <h2
-      className={clsx(
-        'display text-lg font-semibold text-slate-100',
-        className,
-      )}
-    >
-      {children}
-    </h2>
+    <DialogPrimitive.Title asChild>
+      <h2
+        className={clsx(
+          'display text-lg font-semibold text-slate-100',
+          className,
+        )}
+      >
+        {children}
+      </h2>
+    </DialogPrimitive.Title>
   )
 }
 
@@ -130,27 +110,32 @@ export function SheetDescription({
   className = '',
 }: SheetDescriptionProps) {
   return (
-    <p className={clsx('text-sm text-slate-400 mt-1', className)}>{children}</p>
+    <DialogPrimitive.Description asChild>
+      <p className={clsx('text-sm text-slate-400 mt-1', className)}>
+        {children}
+      </p>
+    </DialogPrimitive.Description>
   )
 }
 
 interface SheetCloseProps {
-  onClose: () => void
   className?: string
 }
 
-export function SheetClose({ onClose, className = '' }: SheetCloseProps) {
+export function SheetClose({ className = '' }: SheetCloseProps) {
   return (
-    <button
-      onClick={onClose}
-      aria-label="Close"
-      className={clsx(
-        'absolute right-4 top-4 p-1.5 rounded-md text-slate-500 hover:text-phosphor-400 hover:bg-slate-800 transition-colors',
-        className,
-      )}
-    >
-      <X className="w-4 h-4" />
-    </button>
+    <DialogPrimitive.Close asChild>
+      <button
+        type="button"
+        aria-label="Close"
+        className={clsx(
+          'absolute right-4 top-4 p-1.5 rounded-md text-slate-500 hover:text-phosphor-400 hover:bg-slate-800 transition-colors',
+          className,
+        )}
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </DialogPrimitive.Close>
   )
 }
 

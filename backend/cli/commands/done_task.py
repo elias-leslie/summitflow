@@ -147,13 +147,20 @@ def _commit_active_task_work(repo_root: str, task_id: str, message: str | None) 
 
 def _close_missing_checkpoint_active_task(client: STClient, task_id: str, task: dict[str, Any], project_id: str | None, *, base_branch: str, repo_is_clean: bool) -> dict[str, str | bool]:
     _run_smart_prereqs(client, task_id, project_id)
+    if repo_is_clean:
+        try:
+            _publish_completed_work(task_id, project_id)
+        except Exception as exc:
+            output_error(
+                f"Task closeout blocked: publish failed: {exc}\n"
+                f"  Task remains active; rerun `st done {task_id}` to retry."
+            )
+            raise typer.Exit(1) from None
     try:
         client.update_status(task_id, "completed", skip_gates=_completion_skip_gates(client, task_id))
     except APIError as e:
         output_error(f"Failed to close task: {e.detail}")
         raise typer.Exit(1) from None
-    if repo_is_clean:
-        _publish_completed_work(task_id, project_id)
     output_success(f"No checkpoint for {task_id}; closed from clean/task-committed checkout.")
     return _done_result(
         task_id,
@@ -259,8 +266,11 @@ def _finalize_completed_task_status(
                 return True
             except APIError:
                 pass
-        output_warning(f"Work published but status update failed: {e.detail}\n  Recovery: st done {task_id} --admin")
-        return False
+        output_error(
+            f"Work published but status update failed: {e.detail}\n"
+            f"  Checkpoint preserved; recovery: st done {task_id}"
+        )
+        raise typer.Exit(1) from None
 
 
 def _capture_and_remove_snapshot(task_id: str, project_id: str | None) -> None:
@@ -284,6 +294,18 @@ def _publish_completed_work(task_id: str, project_id: str | None) -> None:
             "warn_on_publish_failure": lambda result: warn_on_publish_failure(result, output_warning),
         },
     )
+
+
+def _publish_completed_work_or_exit(task_id: str, project_id: str | None) -> None:
+    """Publish residue or block closeout with a concise retry path."""
+    try:
+        _publish_completed_work(task_id, project_id)
+    except Exception as exc:
+        output_error(
+            f"Task closeout blocked: publish failed: {exc}\n"
+            f"  Rerun `st done {task_id}` to retry."
+        )
+        raise typer.Exit(1) from None
 
 
 def complete_task(client: STClient, task_id: str, message: str | None = None, strict: bool = False, admin: bool = False, skip_diff_gate: bool = False) -> dict[str, str | bool]:
@@ -329,7 +351,7 @@ def _complete_without_snapshot(client: STClient, task_id: str, *, message: str |
                 "is_working_tree_clean": is_working_tree_clean,
                 "output_error": output_error,
                 "output_success": output_success,
-                "publish_completed_work": _publish_completed_work,
+                "publish_completed_work": _publish_completed_work_or_exit,
                 "run_diff_gate": _run_diff_gate,
                 "task_base_branch": _task_base_branch,
                 "task_has_published_commit_event": _task_has_published_commit_event,
@@ -352,7 +374,20 @@ def _complete_admin(client: STClient, task_id: str, snapshot_info: dict[str, str
 
 
 def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[str, str | int | None], *, message: str | None, strict: bool, skip_diff_gate: bool) -> dict[str, str | bool]:
-    ensure_checkpoint_clean(snapshot_info, task_id=task_id, message=message, strict=strict)
+    try:
+        already_completed = client.get_task(task_id).get("status") == "completed"
+    except APIError as exc:
+        output_error(
+            f"Task closeout blocked: current task status is unavailable: {exc.detail}\n"
+            f"  Checkpoint preserved; rerun `st done {task_id}` when the API is healthy."
+        )
+        raise typer.Exit(1) from None
+    ensure_checkpoint_clean(
+        snapshot_info,
+        task_id=task_id,
+        message=message,
+        strict=strict or already_completed,
+    )
     pid = snapshot_info.get("project_id")
     project_id = str(pid) if isinstance(pid, str) and pid else None
     repo_root = _checkpoint_repo_root(project_id)
@@ -371,10 +406,10 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
         base_commit = str(snapshot_info.get("base_commit") or "") or None
         if repo_root and not skip_diff_gate:
             _run_diff_gate(repo_root, task_id, project_id, base_branch, base_commit=base_commit)
-        if not strict:
+        if not strict and not already_completed:
             _run_smart_prereqs(client, task_id, project_id)
-        _finalize_completed_task_status(client, task_id, message=message)
-        # Publish FIRST so a failed publish leaves the snapshot intact for safe retry.
+        # Publish before closing so an enqueue/network failure leaves both the task
+        # and checkpoint retryable instead of creating a completed-but-unpublished task.
         try:
             _publish_completed_work(task_id, project_id)
         except Exception as publish_exc:
@@ -384,6 +419,8 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
                 f"Resolution: checkpoint preserved; rerun `st done {task_id}` to retry publish."
             )
             raise typer.Exit(1) from None
+        if not already_completed:
+            _finalize_completed_task_status(client, task_id, message=message)
         _capture_and_remove_snapshot(task_id, project_id)
     except SystemExit as exc:
         raise typer.Exit(exc.code if isinstance(exc.code, int) else 1) from None

@@ -208,3 +208,50 @@ def test_search_text_path_prefix_filters_indexed_fallback(mocker, tmp_path: Path
     assert result["items"][0]["path"] == "packages/notes-ui/src/PromptActions.tsx"
     assert result["path_prefix"] == "packages/notes-ui"
     read_file.assert_called_once_with(str(project_root), "packages/notes-ui/src/PromptActions.tsx")
+
+
+def test_search_text_rejects_path_prefix_traversal_before_subprocess(
+    mocker,
+    tmp_path: Path,
+) -> None:
+    from app.services.explorer.text_search import search_text
+
+    run = mocker.patch("app.services.explorer.text_search.subprocess.run")
+    mocker.patch(
+        "app.services.explorer.text_search.get_project_root",
+        return_value=str(tmp_path),
+    )
+
+    result = search_text("project-1", "secret", path_prefix="../outside")
+
+    assert result["error"] == "invalid_path_prefix"
+    assert result["count"] == 0
+    run.assert_not_called()
+
+
+def test_search_text_rejects_symlink_prefix_outside_project(
+    mocker,
+    tmp_path: Path,
+) -> None:
+    from app.services.explorer.text_search import search_text
+
+    project_root = tmp_path / "project"
+    outside = tmp_path / "outside"
+    project_root.mkdir()
+    outside.mkdir()
+    (project_root / "linked").symlink_to(outside, target_is_directory=True)
+    mocker.patch(
+        "app.services.explorer.text_search.get_project_root",
+        return_value=str(project_root),
+    )
+    mocker.patch(
+        "app.services.explorer.text_search.shutil.which",
+        return_value="/usr/bin/rg",
+    )
+    run = mocker.patch("app.services.explorer.text_search.subprocess.run")
+
+    result = search_text("project-1", "secret", path_prefix="linked")
+
+    assert result["count"] == 0
+    assert result["strategy"] == "ripgrep"
+    run.assert_not_called()

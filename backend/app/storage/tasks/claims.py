@@ -60,6 +60,7 @@ def claim_task(
                 claimed_at = NOW(),
                 lock_expires_at = NOW() + (%s * INTERVAL '1 minute'),
                 status = 'running',
+                verification_result = NULL,
                 started_at = COALESCE(started_at, NOW()),
                 updated_at = NOW()
             WHERE id = %s
@@ -75,13 +76,27 @@ def claim_task(
     return _row_to_dict(row)
 
 
-def release_task(task_id: str) -> dict[str, Any] | None:
+def release_task(
+    task_id: str,
+    *,
+    expected_worker_id: str | None = None,
+) -> dict[str, Any] | None:
     """Release a claimed task back to pending status.
+
+    When ``expected_worker_id`` is provided, the release is compare-and-swap:
+    it succeeds only while that worker still owns the claim. This prevents a
+    delayed dispatch failure from releasing a newer worker's claim.
 
     Returns:
         Updated task dict or None if not found.
     """
     resolved_task_id = canonicalize_task_id(task_id)
+    owner_clause = " AND claimed_by = %s" if expected_worker_id is not None else ""
+    params = (
+        (resolved_task_id,)
+        if expected_worker_id is None
+        else (resolved_task_id, expected_worker_id)
+    )
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
@@ -90,11 +105,13 @@ def release_task(task_id: str) -> dict[str, Any] | None:
                 claimed_at = NULL,
                 lock_expires_at = NULL,
                 status = 'pending',
+                verification_result = NULL,
                 updated_at = NOW()
             WHERE id = %s
+              {owner_clause}
             RETURNING {TASK_COLUMNS}
             """,
-            (resolved_task_id,),
+            params,
         )
         row = cur.fetchone()
         conn.commit()
@@ -118,6 +135,7 @@ def reset_expired_claims() -> int:
                 claimed_at = NULL,
                 lock_expires_at = NULL,
                 status = 'pending',
+                verification_result = NULL,
                 updated_at = NOW()
             WHERE status = 'running'
               AND lock_expires_at IS NOT NULL

@@ -12,6 +12,7 @@ from .browser_support import (
     browser_page_target_ids,
     close_browser_targets,
     json_from_agent_eval,
+    parse_agent_console,
     suffixed,
 )
 
@@ -127,7 +128,8 @@ def run_browser_check(
     baseline_targets = browser_page_target_ids(host, port)
 
     command_warnings: list[str] = []
-    error_result = subprocess.CompletedProcess([], 0, stdout="{}", stderr="")
+    page_result = subprocess.CompletedProcess([], 0, stdout="{}", stderr="")
+    console_result = subprocess.CompletedProcess([], 0, stdout="", stderr="")
     network_result = subprocess.CompletedProcess([], 0, stdout="[]", stderr="")
     viewports = _check_viewports(screenshot_path, env_values)
     try:
@@ -138,28 +140,22 @@ def run_browser_check(
         )
         if warning := _agent_failure("initial viewport", first_viewport, summary_hint):
             command_warnings.append(warning)
+        console_clear = run_agent([*session_args, "console", "--clear"], cdp=ws, capture=True)
+        if warning := _agent_failure("console clear", console_clear, summary_hint):
+            command_warnings.append(warning)
         open_result = run_agent([*session_args, "open", url], cdp=ws, capture=True)
         if open_result.returncode != 0:
             if warning := _agent_failure("open", open_result, summary_hint):
                 output_error(warning)
             return open_result.returncode
-        load_wait = run_agent([*session_args, "wait", env_values.get("ST_BROWSER_CHECK_WAIT", "5000")], cdp=ws, capture=True)
+        load_wait = run_agent([*session_args, "wait", "--load", "networkidle"], cdp=ws, capture=True)
         if warning := _agent_failure("load wait", load_wait, summary_hint):
             command_warnings.append(warning)
-        hook_result = run_agent(
-            [
-                *session_args,
-                "eval",
-                "window.__sfErrors=[];window.__sfWarnings=[];"
-                "const oe=console.error;console.error=(...a)=>{window.__sfErrors.push(a.map(String).join(' '));oe.apply(console,a)};"
-                "const ow=console.warn;console.warn=(...a)=>{window.__sfWarnings.push(a.map(String).join(' '));ow.apply(console,a)};'capturing'",
-            ],
+        settle = run_agent(
+            [*session_args, "wait", env_values.get("ST_BROWSER_CHECK_SETTLE_MS", "500")],
             cdp=ws,
             capture=True,
         )
-        if warning := _agent_failure("console hook", hook_result, summary_hint):
-            command_warnings.append(warning)
-        settle = run_agent([*session_args, "wait", "2000"], cdp=ws, capture=True)
         if warning := _agent_failure("settle wait", settle, summary_hint):
             command_warnings.append(warning)
 
@@ -178,16 +174,19 @@ def run_browser_check(
             if warning := _agent_failure(f"{label} screenshot", screenshot, summary_hint):
                 command_warnings.append(warning)
 
-        error_result = run_agent(
+        console_result = run_agent([*session_args, "console"], cdp=ws, capture=True)
+        if warning := _agent_failure("console read", console_result, summary_hint):
+            command_warnings.append(warning)
+        page_result = run_agent(
             [
                 *session_args,
                 "eval",
-                "JSON.stringify({errors:window.__sfErrors||[],warnings:window.__sfWarnings||[],url:location.href,title:document.title})",
+                "JSON.stringify({url:location.href,title:document.title})",
             ],
             cdp=ws,
             capture=True,
         )
-        if warning := _agent_failure("console read", error_result, summary_hint):
+        if warning := _agent_failure("page read", page_result, summary_hint):
             command_warnings.append(warning)
         network_result = run_agent(
             [
@@ -217,7 +216,15 @@ def run_browser_check(
         detail_lines.append("Additional screenshots:")
         for label, _, _, path in viewports[1:]:
             detail_lines.append(f"  {label}: {path}")
-    errors = json_from_agent_eval(error_result.stdout)
+    page = json_from_agent_eval(page_result.stdout)
+    console_errors, console_warnings = parse_agent_console(
+        "\n".join(part for part in (console_result.stdout, console_result.stderr) if part)
+    )
+    errors = {
+        **(page if isinstance(page, dict) else {}),
+        "errors": console_errors,
+        "warnings": console_warnings,
+    }
     network = json_from_agent_eval(network_result.stdout)
     error_items, warning_items, network_items = _append_collected_details(
         detail_lines,
@@ -227,10 +234,18 @@ def run_browser_check(
     )
     root = current_root()
     details = write_details(root, "browser-check", "\n".join(detail_lines))
-    status = "OK" if not error_items and not warning_items and not network_items else "ISSUES"
+    status = (
+        "INCOMPLETE"
+        if command_warnings
+        else "OK"
+        if not error_items and not warning_items and not network_items
+        else "ISSUES"
+    )
     print(
         f"BROWSER_CHECK:{status}|errors={len(error_items)}|warnings={len(warning_items)}|"
         f"network={len(network_items)}|command_warnings={len(command_warnings)}|"
         f"screenshot={screenshot_path}|details:{display_path(root, details)}"
     )
-    return 0
+    if command_warnings:
+        return 2
+    return 1 if error_items or warning_items or network_items else 0

@@ -1,11 +1,13 @@
 'use client'
 
 import { NotesButton, NotesProvider } from '@summitflow/notes-ui'
+import { Menu } from 'lucide-react'
 import { useParams, usePathname } from 'next/navigation'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { NotificationBell } from '@/components/notifications'
 import { DEFAULT_PROJECT_ID, getProjectIdOrDefault } from '@/lib/project-config'
 
+import { MobileNavigationSheet } from './MobileNavigationSheet'
 import { AnimatedLogo } from './topbar/AnimatedLogo'
 import { DatabaseWorkbenchButton } from './topbar/DatabaseWorkbenchButton'
 import { Navigation } from './topbar/Navigation'
@@ -17,6 +19,8 @@ export function TopBar() {
   const pathname = usePathname()
   const params = useParams<{ id?: string }>()
   const [isSearchExpanded, setIsSearchExpanded] = useState(false)
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
+  const mobileNavigationTriggerRef = useRef<HTMLButtonElement>(null)
   const { compact, measureRef, slotRef } =
     useAdaptiveNavigation(isSearchExpanded)
 
@@ -26,6 +30,13 @@ export function TopBar() {
     }
     return DEFAULT_PROJECT_ID
   }, [params.id, pathname])
+
+  const setMobileNavigation = (open: boolean) => {
+    setMobileNavigationOpen(open)
+    if (!open) {
+      requestAnimationFrame(() => mobileNavigationTriggerRef.current?.focus())
+    }
+  }
 
   return (
     <>
@@ -40,15 +51,28 @@ export function TopBar() {
               ref={slotRef}
               className="relative flex min-w-0 flex-1 items-center"
             >
-              <div
-                ref={measureRef}
-                aria-hidden="true"
-                className="pointer-events-none absolute left-0 top-0 -z-10 invisible overflow-visible whitespace-nowrap"
+              <button
+                ref={mobileNavigationTriggerRef}
+                type="button"
+                onClick={() => setMobileNavigation(true)}
+                aria-label="Open navigation"
+                aria-expanded={mobileNavigationOpen}
+                aria-controls="mobile-navigation"
+                className="mx-auto flex h-10 w-10 items-center justify-center rounded-full border border-slate-700/60 bg-slate-900/82 text-slate-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors hover:border-slate-600 hover:bg-slate-800/80 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outrun-500/40 md:hidden"
               >
-                <Navigation dense={isSearchExpanded} measure />
-              </div>
-              <div className="relative flex min-w-0 flex-1 rounded-full border border-slate-700/60 bg-slate-900/82 px-1.5 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_14px_30px_-24px_rgba(0,0,0,0.9)]">
-                <Navigation compact={compact} dense={isSearchExpanded} />
+                <Menu className="h-5 w-5" />
+              </button>
+              <div className="relative hidden min-w-0 flex-1 items-center md:flex">
+                <div
+                  ref={measureRef}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-0 top-0 -z-10 invisible overflow-visible whitespace-nowrap"
+                >
+                  <Navigation dense={isSearchExpanded} measure />
+                </div>
+                <div className="relative flex min-w-0 flex-1 rounded-full border border-slate-700/60 bg-slate-900/82 px-1.5 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_14px_30px_-24px_rgba(0,0,0,0.9)]">
+                  <Navigation compact={compact} dense={isSearchExpanded} />
+                </div>
               </div>
             </div>
           </div>
@@ -68,6 +92,10 @@ export function TopBar() {
         </div>
       </header>
       <div className="chrome-line" />
+      <MobileNavigationSheet
+        open={mobileNavigationOpen}
+        onOpenChange={setMobileNavigation}
+      />
     </>
   )
 }

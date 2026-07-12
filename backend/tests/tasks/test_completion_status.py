@@ -5,10 +5,36 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from app.tasks.autonomous.exec_modules.completion_status import (
+    build_early_completion_verification,
+    build_successful_completion_verification,
     transition_to_complete,
 )
 
 MODULE = "app.tasks.autonomous.exec_modules.completion_status"
+
+
+class TestCompletionVerificationEvidence:
+    def test_successful_pipeline_marks_quality_gate_evidence(self) -> None:
+        result = build_successful_completion_verification(
+            [
+                {
+                    "self_fix_attempts": 0,
+                    "supervisor_guided_attempts": 0,
+                    "extensions_granted": 0,
+                }
+            ]
+        )
+
+        assert result["evidence_verified"] is True
+        assert result["verification_source"] == "autonomous_quality_gate"
+        assert result["execution_clean"] is True
+
+    def test_early_pipeline_marks_preverified_subtask_evidence(self) -> None:
+        result = build_early_completion_verification(2)
+
+        assert result["evidence_verified"] is True
+        assert result["verification_source"] == "autonomous_preverified_subtasks"
+        assert result["subtask_count"] == 2
 
 
 class TestTransitionToComplete:

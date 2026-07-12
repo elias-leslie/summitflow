@@ -7,10 +7,11 @@ Called from CLI (st autocode) and API endpoints to queue tasks for execution.
 from __future__ import annotations
 
 from typing import Any, NotRequired, TypedDict
+from uuid import uuid4
 
 from ..logging_config import get_logger
 from ..storage import tasks as task_store
-from ..storage.tasks.claims import claim_task
+from ..storage.tasks.claims import claim_task, release_task
 from ..tasks.autonomous.pickup import _determine_next_stage
 from ..tasks.autonomous.pickup_guards import validate_autonomous_dispatch
 
@@ -101,8 +102,11 @@ async def dispatch_task(task_id: str, project_id: str, *, manual_dispatch: bool 
     stage = _determine_next_stage(task_id)
 
     # Claim before execution to match batch-pickup path behavior
+    claimed_for_execution = False
+    dispatch_worker_id: str | None = None
     if stage == "execution":
-        claimed = claim_task(task_id, f"api-dispatch-{project_id}", lock_duration_minutes=60)
+        dispatch_worker_id = f"api-dispatch-{project_id}-{uuid4().hex[:12]}"
+        claimed = claim_task(task_id, dispatch_worker_id, lock_duration_minutes=60)
         if not claimed:
             logger.warning("Task not claimable for execution", task_id=task_id)
             return DispatchResult(
@@ -111,8 +115,35 @@ async def dispatch_task(task_id: str, project_id: str, *, manual_dispatch: bool 
                 stage=stage,
                 status="not_claimable",
             )
+        claimed_for_execution = True
 
-    await _trigger_workflow(stage, task_id, project_id, manual_dispatch=manual_dispatch)
+    try:
+        await _trigger_workflow(stage, task_id, project_id, manual_dispatch=manual_dispatch)
+    except Exception:
+        if claimed_for_execution and dispatch_worker_id is not None:
+            try:
+                released = release_task(
+                    task_id,
+                    expected_worker_id=dispatch_worker_id,
+                )
+            except Exception:
+                logger.exception(
+                    "task_dispatch_claim_release_failed",
+                    task_id=task_id,
+                    project_id=project_id,
+                    stage=stage,
+                    worker_id=dispatch_worker_id,
+                )
+            else:
+                logger.exception(
+                    "task_dispatch_claim_release_result",
+                    task_id=task_id,
+                    project_id=project_id,
+                    stage=stage,
+                    worker_id=dispatch_worker_id,
+                    released=released is not None,
+                )
+        raise
 
     logger.info(
         "task_dispatched",

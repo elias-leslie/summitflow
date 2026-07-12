@@ -312,3 +312,24 @@ def json_from_agent_eval(raw: str) -> dict[str, object] | list[object]:
     except json.JSONDecodeError:
         pass
     return {}
+
+
+def parse_agent_console(raw: str) -> tuple[list[str], list[str]]:
+    """Split agent-browser console history into complete error and warning entries."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    active: list[str] | None = None
+    for line in raw.splitlines():
+        stripped = line.strip()
+        lowered = stripped.lower()
+        if lowered.startswith(("[error]", "[pageerror]")):
+            errors.append(stripped)
+            active = errors
+        elif lowered.startswith(("[warning]", "[warn]")):
+            warnings.append(stripped)
+            active = warnings
+        elif stripped.startswith("["):
+            active = None
+        elif active is not None and stripped and not stripped.startswith("⚠"):
+            active[-1] = f"{active[-1]}\n{stripped}"
+    return errors, warnings

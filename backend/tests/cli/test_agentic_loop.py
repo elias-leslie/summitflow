@@ -21,6 +21,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
+from cli._client_base import APIError
 from cli.commands import claim, done, done_subtask, done_task
 from cli.commands.tasks import app as tasks_app
 from cli.commands.tasks_create import _build_task_data
@@ -167,6 +168,7 @@ class TestDoneIdempotency:
             "project_id": "summitflow",
         }
         with (
+            patch.object(done, "get_snapshot_info", return_value=None),
             patch.object(done, "preflight") as mock_preflight,
             patch.object(done, "complete_task") as mock_complete,
             patch.object(done, "output_success") as mock_success,
@@ -204,6 +206,7 @@ class TestPublishBeforeCleanup:
         client.get_subtasks.return_value = {"subtasks": []}
         client.get_task_completion_readiness.return_value = {"ready": True}
         client.get_task.return_value = {"status": "running"}
+        client.update_status.side_effect = lambda *_args, **_kwargs: order.append("status")
         snapshot_info = {
             "task_id": "task-1",
             "project_id": "summitflow",
@@ -215,7 +218,6 @@ class TestPublishBeforeCleanup:
             patch.object(done_task, "is_working_tree_clean", return_value=True),
             patch.object(done_task, "_run_diff_gate"),
             patch.object(done_task, "_run_smart_prereqs"),
-            patch.object(done_task, "_finalize_completed_task_status", return_value=False),
             patch.object(
                 done_task, "_publish_completed_work",
                 side_effect=lambda *_a, **_kw: order.append("publish"),
@@ -226,7 +228,12 @@ class TestPublishBeforeCleanup:
             ),
         ):
             done_task.complete_task(client, "task-1")
-        assert order == ["publish", "snapshot-remove"]
+        assert order == ["publish", "status", "snapshot-remove"]
+        client.update_status.assert_called_once_with(
+            "task-1",
+            "completed",
+            skip_gates=False,
+        )
 
     def test_publish_failure_preserves_snapshot_and_surfaces_retry(self) -> None:
         client = MagicMock()
@@ -245,7 +252,6 @@ class TestPublishBeforeCleanup:
             patch.object(done_task, "is_working_tree_clean", return_value=True),
             patch.object(done_task, "_run_diff_gate"),
             patch.object(done_task, "_run_smart_prereqs"),
-            patch.object(done_task, "_finalize_completed_task_status", return_value=False),
             patch.object(
                 done_task, "_publish_completed_work",
                 side_effect=RuntimeError("network glitch"),
@@ -257,10 +263,93 @@ class TestPublishBeforeCleanup:
             done_task.complete_task(client, "task-1")
 
         mock_cleanup.assert_not_called()
+        client.update_status.assert_not_called()
         msg = mock_warn.call_args.args[0]
         assert "Publish failed" in msg
         assert "Resolution" in msg
         assert "st done task-1" in msg
+
+    def test_completed_checkpoint_retries_publish_then_cleans_without_reclosing(self) -> None:
+        client = MagicMock()
+        client.get_task.return_value = {"status": "completed"}
+        snapshot_info = {
+            "task_id": "task-1",
+            "project_id": "summitflow",
+            "base_branch": "main",
+        }
+
+        with (
+            patch.object(done_task, "get_snapshot_info", return_value=snapshot_info),
+            patch.object(done_task, "_checkpoint_repo_root", return_value="/repo"),
+            patch.object(done_task, "is_working_tree_clean", return_value=True),
+            patch.object(done_task, "_run_diff_gate"),
+            patch.object(done_task, "_run_smart_prereqs") as mock_prereqs,
+            patch.object(done_task, "_finalize_completed_task_status") as mock_finalize,
+            patch.object(done_task, "_publish_completed_work") as mock_publish,
+            patch.object(done_task, "_capture_and_remove_snapshot") as mock_cleanup,
+        ):
+            result = done_task.complete_task(client, "task-1")
+
+        mock_publish.assert_called_once_with("task-1", "summitflow")
+        mock_cleanup.assert_called_once_with("task-1", "summitflow")
+        mock_prereqs.assert_not_called()
+        mock_finalize.assert_not_called()
+        client.update_status.assert_not_called()
+        assert result["published"] is True
+        assert result["snapshot_removed"] is True
+
+    def test_completed_checkpoint_never_commits_new_dirty_work(self) -> None:
+        client = MagicMock()
+        client.get_task.return_value = {"status": "completed"}
+        snapshot_info = {
+            "task_id": "task-1",
+            "project_id": "summitflow",
+            "base_branch": "main",
+        }
+
+        with (
+            patch.object(done_task, "get_snapshot_info", return_value=snapshot_info),
+            patch.object(done_task, "_checkpoint_repo_root", return_value="/repo"),
+            patch.object(done_task, "is_working_tree_clean", return_value=False),
+            patch.object(done_task, "_commit_active_task_work") as mock_commit,
+            patch.object(done_task, "_publish_completed_work") as mock_publish,
+            patch.object(done_task, "_capture_and_remove_snapshot") as mock_cleanup,
+            pytest.raises(typer.Exit),
+        ):
+            done_task.complete_task(client, "task-1")
+
+        mock_commit.assert_not_called()
+        mock_publish.assert_not_called()
+        mock_cleanup.assert_not_called()
+
+    def test_status_finalize_failure_preserves_checkpoint(self) -> None:
+        client = MagicMock()
+        client.get_task.return_value = {"status": "running"}
+        client.update_status.side_effect = APIError(503, {"message": "database unavailable"})
+        client.close_task.side_effect = APIError(503, {"message": "database unavailable"})
+        snapshot_info = {
+            "task_id": "task-1",
+            "project_id": "summitflow",
+            "base_branch": "main",
+        }
+
+        with (
+            patch.object(done_task, "get_snapshot_info", return_value=snapshot_info),
+            patch.object(done_task, "_checkpoint_repo_root", return_value="/repo"),
+            patch.object(done_task, "is_working_tree_clean", return_value=True),
+            patch.object(done_task, "_run_diff_gate"),
+            patch.object(done_task, "_run_smart_prereqs"),
+            patch.object(done_task, "_publish_completed_work") as mock_publish,
+            patch.object(done_task, "_capture_and_remove_snapshot") as mock_cleanup,
+            patch.object(done_task, "output_error") as mock_error,
+            pytest.raises(typer.Exit),
+        ):
+            done_task.complete_task(client, "task-1")
+
+        mock_publish.assert_called_once_with("task-1", "summitflow")
+        mock_cleanup.assert_not_called()
+        assert "recovery: st done task-1" in mock_error.call_args.args[0]
+        assert "--admin" not in mock_error.call_args.args[0]
 
 
 # ---------------------------------------------------------------------------

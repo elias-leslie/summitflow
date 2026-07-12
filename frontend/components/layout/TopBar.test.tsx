@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TopBar } from './TopBar'
 
@@ -25,6 +25,24 @@ vi.mock('@/components/notifications', () => ({
 
 vi.mock('./topbar/AnimatedLogo', () => ({
   AnimatedLogo: () => <div data-testid="animated-logo" />,
+}))
+
+vi.mock('./MobileNavigationSheet', () => ({
+  MobileNavigationSheet: ({
+    open,
+    onOpenChange,
+  }: {
+    open: boolean
+    onOpenChange: (open: boolean) => void
+  }) => (
+    <div data-testid="mobile-navigation-sheet" data-open={open ? 'yes' : 'no'}>
+      {open ? (
+        <button type="button" onClick={() => onOpenChange(false)}>
+          Close mobile navigation
+        </button>
+      ) : null}
+    </div>
+  ),
 }))
 
 vi.mock('./topbar/useAdaptiveNavigation', () => ({
@@ -128,5 +146,32 @@ describe('TopBar', () => {
       'href',
       '/files',
     )
+  })
+
+  it('opens the mobile navigation from a dedicated labelled control', () => {
+    render(<TopBar />)
+
+    const trigger = screen.getByRole('button', { name: 'Open navigation' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(trigger)
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByTestId('mobile-navigation-sheet')).toHaveAttribute(
+      'data-open',
+      'yes',
+    )
+  })
+
+  it('restores focus to the mobile navigation trigger after close', async () => {
+    render(<TopBar />)
+
+    const trigger = screen.getByRole('button', { name: 'Open navigation' })
+    fireEvent.click(trigger)
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Close mobile navigation' }),
+    )
+
+    await waitFor(() => expect(trigger).toHaveFocus())
   })
 })
