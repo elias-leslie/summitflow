@@ -17,6 +17,12 @@ _SHELL_SEPARATORS = frozenset({";", "&&", "||", "|"})
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
 _COMMAND_WRAPPERS = frozenset({"command", "builtin", "nohup"})
 _OPTION_WRAPPERS = frozenset({"nice", "stdbuf", "timeout"})
+_ENV_OPTIONS_WITH_VALUE = frozenset({"-u", "--unset", "-C", "--chdir", "-S", "--split-string", "--argv0"})
+_SUDO_OPTIONS_WITH_VALUE = frozenset({
+    "-u", "--user", "-g", "--group", "-h", "--host", "-p", "--prompt",
+    "-C", "--close-from", "-T", "--command-timeout", "-R", "--chroot",
+    "-D", "--chdir",
+})
 _GIT_REPO_CHECK = ["git", "rev-parse", "--is-inside-work-tree"]
 
 GIT_ABORT_ACTIONS = frozenset({"--abort", "--continue", "--quit", "--skip"})
@@ -24,7 +30,7 @@ SHELL_EXECUTABLES = frozenset({"bash", "sh", "zsh", "ksh"})
 BASH_INTERCEPT_WORDS: tuple[str, ...] = (
     "git", "jj", "python", "python3", "pytest", "mypy", "ty", "ruff", "biome",
     "npx", "pnpm", "npm", "vitest", "sqlfluff", "squawk",
-    "docker", "env", "nohup", "nice", "stdbuf", "timeout", "bash", "sh",
+    "docker", "env", "nohup", "nice", "stdbuf", "timeout", "sudo", "Xorg", "Xvfb", "bash", "sh",
     "st", "systemctl", "pkill", "killall", "uvicorn", "gunicorn", "next", "psql",
     "rm", "rmdir", "find",
 )
@@ -79,17 +85,37 @@ def split_shell_segments(command: str) -> list[list[str]]:
         segments.append(current)
     return segments
 
-def unwrap_segment(segment: Sequence[str]) -> list[str]:
+def unwrap_segment_with_privilege(segment: Sequence[str]) -> tuple[list[str], bool]:
+    """Remove execution wrappers and report whether sudo elevated the command."""
     tokens = list(segment)
+    privileged = False
     idx = next((i for i, t in enumerate(tokens) if not _ASSIGNMENT_RE.match(t)), len(tokens))
     tokens = tokens[idx:]
     while tokens:
-        lead = tokens[0]
+        lead = Path(tokens[0]).name
         if lead == "env":
             i = 1
             while i < len(tokens):
                 t = tokens[i]
-                if t == "-u" and i + 1 < len(tokens):
+                if t == "--":
+                    i += 1
+                    break
+                if t in _ENV_OPTIONS_WITH_VALUE and i + 1 < len(tokens):
+                    i += 2
+                elif t.startswith("-") or _ASSIGNMENT_RE.match(t):
+                    i += 1
+                else:
+                    break
+            tokens = tokens[i:]
+        elif lead == "sudo":
+            privileged = True
+            i = 1
+            while i < len(tokens):
+                t = tokens[i]
+                if t == "--":
+                    i += 1
+                    break
+                if t in _SUDO_OPTIONS_WITH_VALUE and i + 1 < len(tokens):
                     i += 2
                 elif t.startswith("-") or _ASSIGNMENT_RE.match(t):
                     i += 1
@@ -108,6 +134,11 @@ def unwrap_segment(segment: Sequence[str]) -> list[str]:
             tokens = tokens[i:]
         else:
             break
+    return tokens, privileged
+
+
+def unwrap_segment(segment: Sequence[str]) -> list[str]:
+    tokens, _privileged = unwrap_segment_with_privilege(segment)
     return tokens
 
 def git_has_flag(args: Sequence[str], *flags: str) -> bool:

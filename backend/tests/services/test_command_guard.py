@@ -67,6 +67,63 @@ def test_intercepts_raw_jj() -> None:
 
 
 @pytest.mark.parametrize(
+    "command",
+    [
+        "Xorg :99 -noreset -nolisten tcp -ac",
+        "/usr/lib/xorg/Xorg :99 -noreset -nolisten tcp -ac",
+        "sudo -n /usr/lib/xorg/Xorg :99 -noreset -nolisten tcp -ac "
+        "-config /srv/workspaces/projects/the-aftertimes/.dev-tools/agent_runs/"
+        "2026-07-13-overworld-redesign-performance-final-5d06cb83/xorg-amd.conf",
+        "env -u DISPLAY sudo -n /usr/lib/xorg/Xorg :99 -noreset -nolisten tcp -ac "
+        "-config /tmp/xorg-amd.conf",
+        "nohup env -u DISPLAY sudo -n /usr/lib/xorg/Xorg :99 -noreset "
+        "-nolisten tcp -ac -config /tmp/xorg-amd.conf >/tmp/xorg.log 2>&1 &",
+        "bash -lc 'env -u DISPLAY sudo -n /usr/lib/xorg/Xorg :99 -noreset "
+        "-nolisten tcp -ac -config /tmp/xorg-amd.conf'",
+        "Xorg.wrap :99 -noreset -nolisten tcp -ac",
+    ],
+)
+def test_blocks_direct_xorg_launches(command: str, tmp_path: Path) -> None:
+    decision = evaluate_shell_command(command, tmp_path)
+
+    assert decision.blocked is True
+    assert decision.code == "dangerous"
+    assert "isolated Proxmox VM" in (decision.message or "")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "sudo -n Xvfb :99 -screen 0 1280x720x24 -nolisten tcp",
+        "env -u DISPLAY sudo -n /usr/bin/Xvfb :99 -screen 0 1280x720x24",
+        "nohup sudo -- xvfb-run -a game-test >/tmp/game-test.log 2>&1 &",
+        "sudo -n bash -lc '/usr/bin/Xvfb :99 -screen 0 1280x720x24'",
+    ],
+)
+def test_blocks_privileged_xvfb_launches(command: str, tmp_path: Path) -> None:
+    decision = evaluate_shell_command(command, tmp_path)
+
+    assert decision.blocked is True
+    assert decision.code == "dangerous"
+    assert "Do not run Xvfb or xvfb-run through sudo/root" in (decision.message or "")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "Xvfb :99 -screen 0 1280x720x24 -nolisten tcp",
+        "env -u DISPLAY /usr/bin/Xvfb :99 -screen 0 1280x720x24 -nolisten tcp",
+        "xvfb-run -a -s '-screen 0 1280x720x24 -nolisten tcp' game-test",
+        "env -u DISPLAY xvfb-run -a game-test",
+    ],
+)
+def test_allows_unprivileged_xvfb_launches(command: str, tmp_path: Path) -> None:
+    decision = evaluate_shell_command(command, tmp_path)
+
+    assert decision.blocked is False
+
+
+@pytest.mark.parametrize(
     ("command", "expected"),
     [
         ("rebuild.sh summitflow", "st service"),
@@ -386,5 +443,8 @@ def test_intercept_words_cover_shell_wrappers() -> None:
 
     assert "git" in words
     assert "env" in words
+    assert "sudo" in words
+    assert "Xorg" in words
+    assert "Xvfb" in words
     assert "bash" in words
     assert "st" in words

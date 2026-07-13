@@ -36,6 +36,7 @@ from ._command_guard_helpers import (
     shell_exec_args,
     split_shell_segments,
     unwrap_segment,
+    unwrap_segment_with_privilege,
 )
 from ._command_guard_helpers import (
     repo_root as _repo_root,
@@ -186,7 +187,57 @@ def _registry_redirect_decision(segment: Sequence[str], cwd: Path) -> CommandGua
     return None
 
 
+def _display_server_decision(
+    segment: Sequence[str],
+    *,
+    inherited_privilege: bool = False,
+    outer_command: str | None = None,
+) -> CommandGuardDecision | None:
+    unwrapped, privileged = unwrap_segment_with_privilege(segment)
+    privileged = inherited_privilege or privileged
+    command = outer_command or normalize_segment(segment)
+    executable = Path(unwrapped[0]).name.casefold() if unwrapped else ""
+    if executable in {"xorg", "xorg.wrap"}:
+        return CommandGuardDecision(
+            blocked=True,
+            code="dangerous",
+            message=(
+                "BLOCKED:Xorg:Direct Xorg server launches are forbidden on operator hosts. "
+                "Use unprivileged Xvfb for software rendering or an isolated Proxmox VM for "
+                "GPU, compositor, driver, fullscreen, or performance testing."
+            ),
+            source="dangerous",
+            command=command,
+        )
+    if privileged and executable in {"xvfb", "xvfb-run"}:
+        return CommandGuardDecision(
+            blocked=True,
+            code="dangerous",
+            message=(
+                "BLOCKED:privileged Xvfb:Do not run Xvfb or xvfb-run through sudo/root. "
+                "Use an unprivileged Xvfb display for software-rendering tests."
+            ),
+            source="dangerous",
+            command=command,
+        )
+    if executable in _SHELL_EXECUTABLES:
+        nested = shell_exec_args(unwrapped[1:])
+        if nested:
+            for nested_segment in split_shell_segments(nested):
+                decision = _display_server_decision(
+                    nested_segment,
+                    inherited_privilege=privileged,
+                    outer_command=command,
+                )
+                if decision:
+                    return decision
+    return None
+
+
 def _dangerous_decision(segment: Sequence[str]) -> CommandGuardDecision | None:
+    display_server_decision = _display_server_decision(segment)
+    if display_server_decision:
+        return display_server_decision
     normalized = normalize_segment(unwrap_segment(segment) or list(segment))
     for pattern, message in _DANGEROUS_PATTERNS:
         if pattern.search(normalized.lower()):
