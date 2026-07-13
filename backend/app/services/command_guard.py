@@ -52,6 +52,7 @@ from .destructive_path_guard import (
 _ROOT = Path(__file__).resolve().parents[3]
 _REGISTRY_PATH = _ROOT / "scripts" / "lib" / "tool-registry.json"
 _AGENT_HUB_SESSION_TIMEOUT_SECONDS = 2.0
+_REAL_X_SERVER_LAUNCHERS = frozenset({"x", "xinit", "xorg", "xorg.bin", "xorg.wrap", "startx"})
 _GIT_GLOBAL_OPTIONS_WITH_VALUE = {
     "-c",
     "--config-env",
@@ -197,7 +198,7 @@ def _display_server_decision(
     privileged = inherited_privilege or privileged
     command = outer_command or normalize_segment(segment)
     executable = Path(unwrapped[0]).name.casefold() if unwrapped else ""
-    if executable in {"xorg", "xorg.wrap"}:
+    if executable in _REAL_X_SERVER_LAUNCHERS:
         return CommandGuardDecision(
             blocked=True,
             code="dangerous",

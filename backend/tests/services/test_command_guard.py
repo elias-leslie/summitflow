@@ -81,6 +81,15 @@ def test_intercepts_raw_jj() -> None:
         "bash -lc 'env -u DISPLAY sudo -n /usr/lib/xorg/Xorg :99 -noreset "
         "-nolisten tcp -ac -config /tmp/xorg-amd.conf'",
         "Xorg.wrap :99 -noreset -nolisten tcp -ac",
+        "X :99 -noreset -nolisten tcp -ac",
+        "/usr/bin/X :99 -noreset -nolisten tcp -ac",
+        "/usr/lib/xorg/Xorg.bin :99 -noreset -nolisten tcp -ac",
+        "XORG.BIN :99 -noreset -nolisten tcp -ac",
+        "/usr/bin/xinit /tmp/xinitrc -- /usr/bin/X :99",
+        "bash -lc 'STARTX -- :99'",
+        "nohup env -u DISPLAY sudo -n /usr/bin/startx -- :99 "
+        ">/tmp/startx.log 2>&1 &",
+        "NoHuP EnV -u DISPLAY SuDo -n /usr/bin/X :99 -noreset -nolisten tcp",
     ],
 )
 def test_blocks_direct_xorg_launches(command: str, tmp_path: Path) -> None:
@@ -444,7 +453,11 @@ def test_intercept_words_cover_shell_wrappers() -> None:
     assert "git" in words
     assert "env" in words
     assert "sudo" in words
+    assert "X" in words
     assert "Xorg" in words
+    assert "Xorg.bin" in words
     assert "Xvfb" in words
+    assert "xinit" in words
+    assert "startx" in words
     assert "bash" in words
     assert "st" in words

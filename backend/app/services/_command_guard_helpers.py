@@ -30,7 +30,8 @@ SHELL_EXECUTABLES = frozenset({"bash", "sh", "zsh", "ksh"})
 BASH_INTERCEPT_WORDS: tuple[str, ...] = (
     "git", "jj", "python", "python3", "pytest", "mypy", "ty", "ruff", "biome",
     "npx", "pnpm", "npm", "vitest", "sqlfluff", "squawk",
-    "docker", "env", "nohup", "nice", "stdbuf", "timeout", "sudo", "Xorg", "Xvfb", "bash", "sh",
+    "docker", "env", "nohup", "nice", "stdbuf", "timeout", "sudo",
+    "X", "Xorg", "Xorg.bin", "Xvfb", "xinit", "startx", "bash", "sh",
     "st", "systemctl", "pkill", "killall", "uvicorn", "gunicorn", "next", "psql",
     "rm", "rmdir", "find",
 )
@@ -92,7 +93,7 @@ def unwrap_segment_with_privilege(segment: Sequence[str]) -> tuple[list[str], bo
     idx = next((i for i, t in enumerate(tokens) if not _ASSIGNMENT_RE.match(t)), len(tokens))
     tokens = tokens[idx:]
     while tokens:
-        lead = Path(tokens[0]).name
+        lead = Path(tokens[0]).name.casefold()
         if lead == "env":
             i = 1
             while i < len(tokens):
