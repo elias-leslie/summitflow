@@ -48,6 +48,21 @@ guardian's JSON status, but native maintenance never consumes SummitFlow.
 | NVMe short self-test | Saturday around 03:00 |
 | NVMe extended self-test | first Saturday around 00:30 |
 
+## Capacity and retention policy
+
+- `SummitFlowSystemImage` keeps 7 Veeam restore points. The 1.9 TB backup target
+  is shared with managed project archives, and recent system-image increments
+  are large enough that the former 14-point target did not leave safe headroom.
+- Veeam chain files are retired only by Veeam's supported retention pass. A
+  policy change may spend hours merging a forward-incremental chain even after
+  `df` shows that old chains have already been reclaimed.
+- SummitFlow's daily maintenance removes Btrfs `.veeam_snapshots` only after 6
+  hours and skips the cleanup while a Veeam session is active. These temporary
+  snapshots can pin otherwise-deleted root filesystem blocks.
+- Unreferenced anonymous Docker volumes retain a 48-hour grace period. Do not
+  bypass it during active agent work merely because a volume currently appears
+  dangling.
+
 ## Operator commands
 
 ```bash
@@ -57,6 +72,8 @@ sudo systemctl start summitflow-btrfs-scrub.service
 cat /var/lib/summitflow-host-guardian/status.json
 systemctl list-timers 'summitflow-*'
 journalctl -u summitflow-host-guardian.service -n 100
+st backup veeam status
+st backup veeam start --wait
 ```
 
 Do not manually delete Veeam chain files, named Docker volumes, PostgreSQL data,
