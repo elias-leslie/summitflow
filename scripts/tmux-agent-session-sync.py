@@ -18,17 +18,14 @@ WORKSPACES_ROOT = Path(os.environ.get("ST_WORKSPACES_ROOT", Path.home() / ".loca
 AGENT_PREFIXES = ("claude-", "codex-")
 
 
-def _load_credentials() -> tuple[str, str]:
+def _load_client_id() -> str:
     client_id = ""
-    client_secret = ""
     if not ENV_FILE.exists():
-        return client_id, client_secret
+        return client_id
     for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
         if line.startswith("SUMMITFLOW_CLIENT_ID="):
             client_id = line.split("=", 1)[1].strip().strip('"').strip("'")
-        elif line.startswith("SUMMITFLOW_CLIENT_SECRET="):
-            client_secret = line.split("=", 1)[1].strip().strip('"').strip("'")
-    return client_id, client_secret
+    return client_id
 
 
 def _api_request(
@@ -37,7 +34,6 @@ def _api_request(
     method: str = "GET",
     body: dict[str, Any] | None = None,
     client_id: str = "",
-    client_secret: str = "",
     request_source: str,
 ) -> tuple[int | None, str]:
     headers = {
@@ -47,9 +43,8 @@ def _api_request(
     }
     if body is not None:
         headers["Content-Type"] = "application/json"
-    if client_id and client_secret:
+    if client_id:
         headers["X-Client-Id"] = client_id
-        headers["X-Client-Secret"] = client_secret
     payload = json.dumps(body).encode("utf-8") if body is not None else None
     req = request.Request(url, data=payload, headers=headers, method=method)
     try:
@@ -180,8 +175,8 @@ def _discover_agent_tmux_sessions() -> list[dict[str, Any]]:
 
 
 def main() -> int:
-    client_id, client_secret = _load_credentials()
-    if not client_id or not client_secret:
+    client_id = _load_client_id()
+    if not client_id:
         return 0
 
     external_sessions = _discover_agent_tmux_sessions()
@@ -222,7 +217,6 @@ def main() -> int:
             method="POST",
             body=upsert_body,
             client_id=client_id,
-            client_secret=client_secret,
             request_source="tmux-agent-session-sync",
         )
 
@@ -248,7 +242,6 @@ def main() -> int:
             method="POST",
             body=heartbeat_body,
             client_id=client_id,
-            client_secret=client_secret,
             request_source="tmux-agent-session-sync",
         )
 
@@ -259,7 +252,6 @@ def main() -> int:
             f"{AGENT_HUB_API}/sessions/{stale_session_id}/close",
             method="POST",
             client_id=client_id,
-            client_secret=client_secret,
             request_source="tmux-agent-session-sync",
         )
 

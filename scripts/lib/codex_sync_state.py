@@ -55,6 +55,7 @@ def update_state_entry(
     status: str,
     detail: str,
     checkpoint: str | None = None,
+    preserve_checkpoint: bool = True,
     identity_fingerprint: str | None = None,
     heartbeat_at: str | None = None,
 ) -> None:
@@ -67,7 +68,11 @@ def update_state_entry(
         "size": size,
         "status": status,
         "detail": detail,
-        "checkpoint": checkpoint if checkpoint is not None else previous.get("checkpoint"),
+        "checkpoint": (
+            checkpoint
+            if checkpoint is not None
+            else (previous.get("checkpoint") if preserve_checkpoint else None)
+        ),
         "identity_fingerprint": (
             identity_fingerprint
             if identity_fingerprint is not None
@@ -123,6 +128,8 @@ def should_heartbeat(
         return True
     if entry.get("status") in {"terminal", "skipped", "permanent_error"}:
         return False
+    if entry.get("status") == "error":
+        return _error_retry_due(entry)
     heartbeat_at = entry.get("last_heartbeat_at")
     if not isinstance(heartbeat_at, str) or not heartbeat_at:
         return True

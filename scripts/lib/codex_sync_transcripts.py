@@ -13,6 +13,7 @@ TRANSCRIPTS_ROOT = Path.home() / ".codex" / "sessions"
 PROC_ROOT = Path("/proc")
 DEFAULT_MODEL = "unknown"
 TRANSCRIPT_SCAN_LINES = 100
+AICO_PERSONAL_PROJECT_ID = "__aico_personal_workspace__"
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _AGENT_PATH_RE = re.compile(r"^/[A-Za-z0-9._/-]{1,254}$")
 _AICO_ENV_KEYS = frozenset({
@@ -262,12 +263,16 @@ def _validated_aico_owner(environment: dict[str, str]) -> tuple[AicoProcessOwner
     session_id = _safe_identifier(environment.get("AICO_SESSION_ID"))
     widget_id = _safe_identifier(environment.get("AICO_WIDGET_ID"))
     project_id = environment.get("AICO_PROJECT_ID", "")
-    if project_id and not _safe_identifier(project_id):
+    if (
+        project_id
+        and project_id != AICO_PERSONAL_PROJECT_ID
+        and not _safe_identifier(project_id)
+    ):
         return None, True
     server_id = environment.get("AICO_TMUX_SERVER_ID", "")
     if server_id and not re.fullmatch(r"[a-f0-9]{8,64}", server_id):
         return None, True
-    if not harness or not session_id or not widget_id:
+    if harness != "codex" or not session_id or not widget_id:
         return None, True
     return (
         AicoProcessOwner(

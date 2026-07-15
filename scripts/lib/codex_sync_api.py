@@ -26,6 +26,8 @@ SOURCE_CLIENT = "summitflow/codex-session-sync"
 PROVIDER = "codex"
 SESSION_TYPE = "agent"
 SCOPE_CONFIDENCE = "unknown"
+
+
 def post_json(
     api_url: str,
     endpoint: str,

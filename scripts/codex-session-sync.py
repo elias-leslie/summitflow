@@ -68,16 +68,15 @@ def main(argv: list[str]) -> int:
     if not args.scan and args.transcript is None:
         args.scan = True
 
-    client_id, client_secret = load_env_credentials()
-    if not client_id or not client_secret:
-        log("[WARN] Missing SUMMITFLOW_CLIENT_ID or SUMMITFLOW_CLIENT_SECRET; skipping Codex sync")
+    client_id = load_env_credentials()
+    if not client_id:
+        log("[WARN] Missing SUMMITFLOW_CLIENT_ID; skipping Codex sync")
         return 0
 
     return run_sync(
         args,
         api_url=DEFAULT_API,
         client_id=client_id,
-        client_secret=client_secret,
         source_path=_SOURCE_PATH,
         log_fn=log,
     )
