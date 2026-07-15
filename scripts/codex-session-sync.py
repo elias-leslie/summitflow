@@ -41,6 +41,19 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--recent-hours", type=int, default=24, help="Recent hours to scan")
     parser.add_argument("--cwd", type=Path, help="Only scan transcripts from this working directory")
     parser.add_argument(
+        "--bind-session",
+        help="Bind one live Codex thread id to an explicit registered project",
+    )
+    parser.add_argument(
+        "--bind-project",
+        help="Registered project id for --bind-session",
+    )
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+        help="Canonical registered project root for --bind-session",
+    )
+    parser.add_argument(
         "--close",
         action="store_true",
         help="Close the Agent Hub session after analysis",
@@ -65,20 +78,39 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
+    binding_mode = args.bind_session is not None
+
+    def emit(message: str) -> None:
+        log(message)
+        if binding_mode and message.startswith("[WARN]"):
+            print(message, file=sys.stderr)
+
+    binding_values = (args.bind_session, args.bind_project, args.project_root)
+    if any(value is not None for value in binding_values) and not all(
+        value is not None for value in binding_values
+    ):
+        emit(
+            "[WARN] Binding requires --bind-session, --bind-project, and --project-root"
+        )
+        return 2
+    current_thread_id = (os.environ.get("CODEX_THREAD_ID") or "").strip()
+    if binding_mode and args.bind_session != current_thread_id:
+        emit("[WARN] --bind-session must match the current CODEX_THREAD_ID")
+        return 2
     if not args.scan and args.transcript is None:
         args.scan = True
 
     client_id = load_env_credentials()
     if not client_id:
-        log("[WARN] Missing SUMMITFLOW_CLIENT_ID; skipping Codex sync")
-        return 0
+        emit("[WARN] Missing SUMMITFLOW_CLIENT_ID; skipping Codex sync")
+        return 2 if binding_mode else 0
 
     return run_sync(
         args,
         api_url=DEFAULT_API,
         client_id=client_id,
         source_path=_SOURCE_PATH,
-        log_fn=log,
+        log_fn=emit,
     )
 
 

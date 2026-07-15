@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -17,14 +19,41 @@ def load_state() -> dict[str, object]:
         return {"transcripts": {}}
     try:
         data = json.loads(STATE_PATH.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {"transcripts": {}}
-    except json.JSONDecodeError:
-        return {"transcripts": {}}
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Codex sync state is unreadable") from exc
+    if not isinstance(data, dict):
+        raise ValueError("Codex sync state must be a JSON object")
+    return data
 
 
 def save_state(state: dict[str, object]) -> None:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=STATE_PATH.parent,
+            prefix=f".{STATE_PATH.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            json.dump(state, handle, indent=2, sort_keys=True, allow_nan=False)
+            handle.write("\n")
+            handle.flush()
+            os.fchmod(handle.fileno(), 0o600)
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, STATE_PATH)
+        temporary_path = None
+        directory_fd = os.open(STATE_PATH.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def _transcripts_map(state: dict[str, object], *, create: bool = False) -> dict[str, object] | None:
@@ -57,6 +86,7 @@ def update_state_entry(
     checkpoint: str | None = None,
     preserve_checkpoint: bool = True,
     identity_fingerprint: str | None = None,
+    project_binding_fingerprint: str | None = None,
     heartbeat_at: str | None = None,
 ) -> None:
     transcripts = _transcripts_map(state, create=True)
@@ -77,6 +107,11 @@ def update_state_entry(
             identity_fingerprint
             if identity_fingerprint is not None
             else previous.get("identity_fingerprint")
+        ),
+        "project_binding_fingerprint": (
+            project_binding_fingerprint
+            if project_binding_fingerprint is not None
+            else previous.get("project_binding_fingerprint")
         ),
         "last_heartbeat_at": (
             heartbeat_at if heartbeat_at is not None else previous.get("last_heartbeat_at")

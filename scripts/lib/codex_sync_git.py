@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
+from urllib import error, parse, request
 
 GIT_LOG_SINCE = "12 hours ago"
 GIT_LOG_LIMIT = 10
 GIT_FILTER_PREFIXES = ("chore: auto-fix", "chore(.index")
 PROJECT_IDENTITY_NAME = "project.identity.json"
+DEFAULT_SUMMITFLOW_API = "http://localhost:8001/api"
+REGISTRY_TIMEOUT_SECONDS = 5
 
 
 def _load_project_identity(project_path: Path) -> tuple[str, list[str]]:
@@ -68,3 +72,26 @@ def build_project_context(cwd: Path) -> dict[str, object] | None:
         "repo_root": str(project_path),
         "git_context": "\n".join(git_lines[:GIT_LOG_LIMIT]),
     }
+
+
+def fetch_registered_project_root(
+    project_id: str,
+    api_base: str | None = None,
+) -> Path | None:
+    """Resolve one project's canonical root from SummitFlow's registry API."""
+    safe_characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-"
+    if not project_id or any(char not in safe_characters for char in project_id):
+        return None
+    base = (api_base or os.environ.get("ST_API_BASE") or DEFAULT_SUMMITFLOW_API).rstrip("/")
+    url = f"{base}/projects/{parse.quote(project_id, safe='')}"
+    try:
+        with request.urlopen(url, timeout=REGISTRY_TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (error.HTTPError, error.URLError, OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    root_path = payload.get("root_path")
+    if not isinstance(root_path, str) or not root_path:
+        return None
+    return Path(root_path).expanduser().resolve()

@@ -6,6 +6,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
+import pytest
+
 SCRIPTS_LIB = Path(__file__).resolve().parents[3] / "scripts" / "lib"
 if str(SCRIPTS_LIB) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_LIB))
@@ -109,6 +111,25 @@ def test_update_state_entry_preserves_checkpoint_during_heartbeat_only_update() 
     assert updated["last_heartbeat_at"] == "2026-07-15T00:00:00+00:00"
 
 
+def test_update_state_entry_persists_project_binding_fingerprint() -> None:
+    path = Path("/tmp/transcript.jsonl")
+    state = _state_for(path, status="skipped")
+
+    codex_sync_state.update_state_entry(
+        state,
+        path,
+        "sess-1",
+        10.0,
+        200,
+        "active",
+        "synced",
+        project_binding_fingerprint="binding-sha",
+    )
+
+    transcripts = cast(dict[str, dict[str, object]], state["transcripts"])
+    assert transcripts[str(path)]["project_binding_fingerprint"] == "binding-sha"
+
+
 def test_iter_nonterminal_paths_excludes_closed_and_skipped() -> None:
     active = Path("/tmp/active.jsonl")
     terminal = Path("/tmp/terminal.jsonl")
@@ -122,3 +143,31 @@ def test_iter_nonterminal_paths_excludes_closed_and_skipped() -> None:
     }
 
     assert codex_sync_state.iter_nonterminal_paths(state) == [active]
+
+
+def test_state_round_trip_is_atomic_and_corruption_fails_closed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "state.json"
+    replace_calls: list[tuple[Path, Path]] = []
+    real_replace = codex_sync_state.os.replace
+
+    def recording_replace(source, destination) -> None:
+        replace_calls.append((Path(source), Path(destination)))
+        real_replace(source, destination)
+
+    monkeypatch.setattr(codex_sync_state, "STATE_PATH", state_path)
+    monkeypatch.setattr(codex_sync_state.os, "replace", recording_replace)
+    payload: dict[str, object] = {"transcripts": {"/tmp/a.jsonl": {"status": "active"}}}
+
+    codex_sync_state.save_state(payload)
+
+    assert codex_sync_state.load_state() == payload
+    assert len(replace_calls) == 1
+    assert replace_calls[0][1] == state_path
+    assert not replace_calls[0][0].exists()
+
+    state_path.write_text("{broken", encoding="utf-8")
+    with pytest.raises(ValueError, match="unreadable"):
+        codex_sync_state.load_state()

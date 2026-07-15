@@ -12,7 +12,13 @@ from pathlib import Path
 from typing import Protocol
 
 from codex_sync_api import finalize_and_close, ingest_transcript, send_heartbeat, upsert_session
-from codex_sync_git import build_project_context
+from codex_sync_bindings import (
+    ProjectBinding,
+    load_snapshot as load_project_bindings,
+    save_snapshot_locked as save_project_bindings_locked,
+    sync_lock,
+)
+from codex_sync_git import build_project_context, fetch_registered_project_root
 from codex_sync_state import (
     get_checkpoint,
     get_state_entry,
@@ -24,6 +30,7 @@ from codex_sync_state import (
     update_state_entry,
 )
 from codex_sync_transcripts import (
+    AICO_PERSONAL_PROJECT_ID,
     AicoProcessOwner,
     OpenTranscriptSnapshot,
     discover_open_transcripts,
@@ -60,27 +67,59 @@ def run_sync(
     source_path: str,
     log_fn: LogFn,
 ) -> int:
-    state = load_state()
-    open_snapshot = discover_open_transcripts()
-    infos = _transcript_infos(args, state, open_snapshot, log_fn)
-    live_transcript_paths, saw_live_codex_process = _live_session_context(
-        args,
-        open_snapshot,
-        log_fn,
-    )
-    _sync_infos(
-        args=args,
-        state=state,
-        infos=infos,
-        api_url=api_url,
-        client_id=client_id,
-        source_path=source_path,
-        log_fn=log_fn,
-        live_transcript_paths=live_transcript_paths,
-        saw_live_codex_process=saw_live_codex_process,
-    )
-    save_state(state)
-    return 0
+    with sync_lock():
+        try:
+            state = load_state()
+        except (OSError, ValueError) as exc:
+            log_fn(f"[WARN] Invalid Codex sync state: {exc}")
+            return 2
+        try:
+            project_bindings = load_project_bindings()
+        except (OSError, ValueError) as exc:
+            log_fn(f"[WARN] Invalid Codex project binding snapshot: {exc}")
+            return 2
+        open_snapshot = discover_open_transcripts()
+        infos = _transcript_infos(args, state, open_snapshot, log_fn)
+        binding_request, binding_error = _project_binding_request(args, infos)
+        if binding_error:
+            log_fn(f"[WARN] {binding_error}")
+            return 2
+        bindings_changed, binding_error = _prepare_project_bindings(
+            infos,
+            project_bindings,
+            binding_request,
+        )
+        if binding_error:
+            log_fn(f"[WARN] {binding_error}")
+            return 2
+        if bindings_changed:
+            # The local compare-and-set is the authority for Agent Hub's immutable
+            # project field, so persist it before any remote session mutation.
+            save_project_bindings_locked(project_bindings)
+        live_transcript_paths, saw_live_codex_process = _live_session_context(
+            args,
+            open_snapshot,
+            log_fn,
+        )
+        inherited_bindings_changed, binding_synced = _sync_infos(
+            args=args,
+            state=state,
+            infos=infos,
+            api_url=api_url,
+            client_id=client_id,
+            source_path=source_path,
+            log_fn=log_fn,
+            live_transcript_paths=live_transcript_paths,
+            saw_live_codex_process=saw_live_codex_process,
+            project_bindings=project_bindings,
+            binding_request=binding_request,
+        )
+        if inherited_bindings_changed:
+            save_project_bindings_locked(project_bindings)
+        save_state(state)
+        if binding_request is not None and not binding_synced:
+            return 2
+        return 0
 
 
 def sync_transcript(
@@ -94,17 +133,23 @@ def sync_transcript(
     heartbeat_required: bool,
     log_fn: LogFn,
     verbose: bool,
+    project_binding: ProjectBinding | None = None,
 ) -> tuple[bool, str, int | None]:
-    project_data = build_project_context(info.cwd)
-    if not isinstance(project_data, dict):
-        return False, f"skip unmapped/unregistered cwd={info.cwd}", None
-    project: dict[str, object] = project_data
+    project, effective_cwd, project_error = _resolve_project_context(info, project_binding)
+    if project_error:
+        return False, project_error, None
+    assert project is not None
 
-    mapping_state, mapping_error = _project_mapping_state(info, project)
+    mapping_state, mapping_error = _project_mapping_state(
+        info,
+        project,
+        explicitly_bound=project_binding is not None,
+    )
     if mapping_error:
         return False, mapping_error, None
-    meta = _session_meta(info, project, mapping_state)
+    meta = _session_meta(info, project, mapping_state, effective_cwd)
     identity_fingerprint = _identity_fingerprint(info, project, meta)
+    project_binding_fingerprint = _project_binding_fingerprint(project_binding)
     kw = _sync_keywords(api_url, client_id, source_path)
 
     ok, err, status, project = _ensure_session_upserted(
@@ -113,6 +158,7 @@ def sync_transcript(
         project,
         meta,
         identity_fingerprint,
+        effective_cwd,
         kw,
     )
     if not ok:
@@ -139,7 +185,7 @@ def sync_transcript(
 
     heartbeat_at: str | None = None
     if heartbeat_required and not close_session:
-        ok, err, status = send_heartbeat(info.session_id, info.cwd, project, meta, **kw)
+        ok, err, status = send_heartbeat(info.session_id, effective_cwd, project, meta, **kw)
         if not ok:
             return False, err, status
         heartbeat_at = datetime.now(UTC).isoformat()
@@ -163,6 +209,7 @@ def sync_transcript(
         checkpoint=next_checkpoint,
         preserve_checkpoint=same_transcript_identity,
         identity_fingerprint=identity_fingerprint,
+        project_binding_fingerprint=project_binding_fingerprint,
         heartbeat_at=heartbeat_at,
     )
     if verbose:
@@ -174,15 +221,77 @@ def sync_transcript(
     return True, "ok", None
 
 
+def _resolve_project_context(
+    info: TranscriptInfoLike,
+    project_binding: ProjectBinding | None,
+) -> tuple[dict[str, object] | None, Path, str]:
+    git_project_data = build_project_context(info.cwd)
+    git_project = git_project_data if isinstance(git_project_data, dict) else None
+    if project_binding is None:
+        if git_project is None:
+            return None, info.cwd, f"skip unmapped/unregistered cwd={info.cwd}"
+        return git_project, info.cwd, ""
+
+    bound_project_data = build_project_context(Path(project_binding.project_root))
+    if not isinstance(bound_project_data, dict):
+        return (
+            None,
+            info.cwd,
+            "conflict invalid Codex thread project binding "
+            f"project={project_binding.project_id} root={project_binding.project_root} ",
+        )
+    bound_project: dict[str, object] = bound_project_data
+    bound_root = Path(str(bound_project.get("repo_root") or "")).resolve()
+    stored_root = Path(project_binding.project_root).expanduser().resolve()
+    if bound_root != stored_root or project_binding.project_id not in _project_ids(bound_project):
+        return (
+            None,
+            info.cwd,
+            "conflict stale Codex thread project binding "
+            f"project={project_binding.project_id} root={project_binding.project_root}",
+        )
+    if git_project is not None and _project_ids(git_project).isdisjoint(_project_ids(bound_project)):
+        return (
+            None,
+            info.cwd,
+            "conflict Codex thread binding/Git project mismatch "
+            f"binding={project_binding.project_id} git={git_project['project_id']} "
+            f"transcript={info.path}",
+        )
+    return bound_project, bound_root, ""
+
+
+def _project_ids(project: dict[str, object]) -> set[str]:
+    identifiers = {str(project.get("project_id") or "")}
+    aliases = project.get("project_aliases")
+    if isinstance(aliases, list):
+        identifiers.update(alias for alias in aliases if isinstance(alias, str) and alias)
+    identifiers.discard("")
+    return identifiers
+
+
+def _project_binding_fingerprint(binding: ProjectBinding | None) -> str | None:
+    if binding is None:
+        return None
+    canonical = {
+        "project_id": binding.project_id,
+        "project_root": str(Path(binding.project_root).expanduser().resolve()),
+    }
+    encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _project_mapping_state(
     info: TranscriptInfoLike,
     project: dict[str, object],
+    *,
+    explicitly_bound: bool = False,
 ) -> tuple[str, str]:
     if info.ownership_ambiguous:
         return "ambiguous", f"conflict ambiguous AICO ownership transcript={info.path}"
     owner = info.process_owner
     if owner is None:
-        return "git_only", ""
+        return ("explicit_binding" if explicitly_bound else "git_only"), ""
 
     project_id = str(project["project_id"])
     aliases = {
@@ -195,26 +304,29 @@ def _project_mapping_state(
             "unmapped",
             f"conflict AICO owner has no project mapping transcript={info.path}",
         )
+    if owner.aico_project_id == AICO_PERSONAL_PROJECT_ID and explicitly_bound:
+        return "explicit_binding", ""
     if owner.aico_project_id not in {project_id, *aliases}:
         return (
             "mismatch",
             "conflict AICO/Git project mismatch "
             f"aico={owner.aico_project_id} git={project_id} transcript={info.path}",
         )
-    return "matched", ""
+    return ("explicit_binding" if explicitly_bound else "matched"), ""
 
 
 def _session_meta(
     info: TranscriptInfoLike,
     project: dict[str, object],
     project_mapping_state: str,
+    effective_cwd: Path,
 ) -> dict[str, object]:
     owner = info.process_owner
     harness = owner.harness if owner is not None else "codex"
     return {
         "transcript_path": str(info.path),
         "repo_root": project["repo_root"],
-        "cwd": str(info.cwd),
+        "cwd": str(effective_cwd),
         "host": os.uname().nodename,
         "external_identity": {
             "harness": harness,
@@ -259,12 +371,19 @@ def _ensure_session_upserted(
     project: dict[str, object],
     meta: dict[str, object],
     identity_fingerprint: str,
+    effective_cwd: Path,
     kw: dict[str, str],
 ) -> tuple[bool, str, int | None, dict[str, object]]:
     entry = get_state_entry(info.path, state)
     if not _should_upsert(entry, info.session_id, identity_fingerprint, is_open=info.is_open):
         return True, "", None, project
-    return _upsert_with_project_aliases(info=info, project=project, meta=meta, kw=kw)
+    return _upsert_with_project_aliases(
+        info=info,
+        project=project,
+        meta=meta,
+        effective_cwd=effective_cwd,
+        kw=kw,
+    )
 
 
 def _resolve_transcript_path(path: Path) -> Path:
@@ -322,6 +441,7 @@ def _upsert_with_project_aliases(
     info: TranscriptInfoLike,
     project: dict[str, object],
     meta: dict[str, object],
+    effective_cwd: Path,
     kw: dict[str, str],
 ) -> tuple[bool, str, int | None, dict[str, object]]:
     candidates = [project, *_project_aliases(project)]
@@ -332,7 +452,7 @@ def _upsert_with_project_aliases(
             info.session_id,
             candidate,
             info.model,
-            info.cwd,
+            effective_cwd,
             info.path,
             parent_session_id=info.parent_session_id,
             provider_metadata=meta,
@@ -398,6 +518,9 @@ def _transcript_infos(
     if args.cwd is not None:
         target_cwd = args.cwd.expanduser().resolve()
         infos = [info for info in infos if info.cwd.expanduser().resolve() == target_cwd]
+    bind_session = getattr(args, "bind_session", None)
+    if isinstance(bind_session, str) and bind_session:
+        infos = [info for info in infos if info.session_id == bind_session]
     return _parents_before_children(infos)
 
 
@@ -441,6 +564,177 @@ def _live_session_context(
     return live_transcript_paths, saw_live_codex_process
 
 
+def _project_binding_request(
+    args: argparse.Namespace,
+    infos: list[TranscriptInfoLike],
+) -> tuple[ProjectBinding | None, str]:
+    session_id = getattr(args, "bind_session", None)
+    project_id = getattr(args, "bind_project", None)
+    project_root = getattr(args, "project_root", None)
+    values = (session_id, project_id, project_root)
+    if not any(value is not None for value in values):
+        return None, ""
+    if not all(value is not None for value in values):
+        return None, "binding requires --bind-session, --bind-project, and --project-root"
+    assert isinstance(session_id, str)
+    assert isinstance(project_id, str)
+    root = Path(project_root).expanduser().resolve()
+    matches = [info for info in infos if info.session_id == session_id]
+    if len(matches) != 1:
+        return None, f"live Codex transcript not found for session={session_id}"
+    info = matches[0]
+    if not info.is_open:
+        return None, f"Codex transcript is not open for session={session_id}"
+    if info.ownership_ambiguous:
+        return None, f"conflict ambiguous AICO ownership transcript={info.path}"
+    registered_root = fetch_registered_project_root(project_id)
+    if registered_root is None:
+        return None, f"project is not registered in SummitFlow: {project_id}"
+    if registered_root != root:
+        return (
+            None,
+            f"registered project root mismatch requested={root} registered={registered_root}",
+        )
+    project_data = build_project_context(root)
+    if not isinstance(project_data, dict):
+        return None, f"registered project root is not a Git checkout: {root}"
+    canonical_root = Path(str(project_data.get("repo_root") or "")).resolve()
+    if canonical_root != root:
+        return None, f"project root must be the canonical Git root: {canonical_root}"
+    if project_id not in _project_ids(project_data):
+        return (
+            None,
+            f"project id/root mismatch requested={project_id} "
+            f"canonical={project_data.get('project_id')}",
+        )
+    git_project_data = build_project_context(info.cwd)
+    if isinstance(git_project_data, dict) and _project_ids(git_project_data).isdisjoint(
+        _project_ids(project_data)
+    ):
+        return (
+            None,
+            "conflict Codex thread binding/Git project mismatch "
+            f"binding={project_data['project_id']} git={git_project_data['project_id']} "
+            f"transcript={info.path}",
+        )
+    _, mapping_error = _project_mapping_state(
+        info,
+        project_data,
+        explicitly_bound=True,
+    )
+    if mapping_error:
+        return None, mapping_error
+    return (
+        ProjectBinding(
+            session_id=session_id,
+            project_id=str(project_data["project_id"]),
+            project_root=str(canonical_root),
+            bound_at=datetime.now(UTC).isoformat(),
+            source="explicit",
+            parent_session_id=None,
+        ),
+        "",
+    )
+
+
+def _same_binding_target(left: ProjectBinding, right: ProjectBinding) -> bool:
+    return (
+        left.project_id == right.project_id
+        and Path(left.project_root).expanduser().resolve()
+        == Path(right.project_root).expanduser().resolve()
+    )
+
+
+def _effective_project_binding(
+    info: TranscriptInfoLike,
+    project_bindings: dict[str, ProjectBinding],
+    binding_request: ProjectBinding | None,
+) -> tuple[ProjectBinding | None, bool, str]:
+    existing = project_bindings.get(info.session_id)
+    requested = binding_request if binding_request and binding_request.session_id == info.session_id else None
+    if existing is not None and requested is not None and not _same_binding_target(existing, requested):
+        return (
+            None,
+            False,
+            "conflict immutable Codex thread project binding "
+            f"session={info.session_id} existing={existing.project_id} "
+            f"requested={requested.project_id}",
+        )
+    own = requested or existing
+    parent = (
+        project_bindings.get(info.parent_session_id)
+        if isinstance(info.parent_session_id, str) and info.parent_session_id
+        else None
+    )
+    if own is not None and parent is not None and not _same_binding_target(own, parent):
+        return (
+            None,
+            False,
+            "conflict Codex child/parent project binding mismatch "
+            f"child={info.session_id}:{own.project_id} "
+            f"parent={info.parent_session_id}:{parent.project_id}",
+        )
+    if own is not None:
+        return own, requested is not None and existing is None, ""
+    if parent is None:
+        return None, False, ""
+    inherited = ProjectBinding(
+        session_id=info.session_id,
+        project_id=parent.project_id,
+        project_root=parent.project_root,
+        bound_at=datetime.now(UTC).isoformat(),
+        source="inherited",
+        parent_session_id=info.parent_session_id,
+    )
+    return inherited, True, ""
+
+
+def _prepare_project_bindings(
+    infos: list[TranscriptInfoLike],
+    project_bindings: dict[str, ProjectBinding],
+    binding_request: ProjectBinding | None,
+) -> tuple[bool, str]:
+    """Persist the immutable root/child binding graph before remote mutation."""
+    changed = False
+    if binding_request is not None:
+        existing = project_bindings.get(binding_request.session_id)
+        if existing is not None and not _same_binding_target(existing, binding_request):
+            return (
+                False,
+                "conflict immutable Codex thread project binding "
+                f"session={binding_request.session_id} existing={existing.project_id} "
+                f"requested={binding_request.project_id}",
+            )
+        for child in project_bindings.values():
+            if child.parent_session_id != binding_request.session_id:
+                continue
+            if not _same_binding_target(child, binding_request):
+                return (
+                    False,
+                    "conflict Codex child/parent project binding mismatch "
+                    f"child={child.session_id}:{child.project_id} "
+                    f"parent={binding_request.session_id}:{binding_request.project_id}",
+                )
+        if existing is None:
+            project_bindings[binding_request.session_id] = binding_request
+            changed = True
+
+    for info in infos:
+        project_binding, should_store, binding_error = _effective_project_binding(
+            info,
+            project_bindings,
+            binding_request,
+        )
+        if binding_error:
+            if binding_request is not None:
+                return False, binding_error
+            continue
+        if should_store and project_binding is not None:
+            project_bindings[info.session_id] = project_binding
+            changed = True
+    return changed, ""
+
+
 def _sync_infos(
     *,
     args: argparse.Namespace,
@@ -452,8 +746,35 @@ def _sync_infos(
     log_fn: LogFn,
     live_transcript_paths: set[Path],
     saw_live_codex_process: bool,
-) -> None:
+    project_bindings: dict[str, ProjectBinding] | None = None,
+    binding_request: ProjectBinding | None = None,
+) -> tuple[bool, bool]:
+    bindings = project_bindings if project_bindings is not None else {}
+    bindings_changed = False
+    binding_synced = False
+    failed_session_ids: set[str] = set()
     for info in infos:
+        if info.parent_session_id in failed_session_ids:
+            log_fn(
+                "[WARN] Deferred Codex child sync until parent succeeds "
+                f"child={info.session_id} parent={info.parent_session_id}"
+            )
+            continue
+        project_binding, should_store_binding, binding_error = _effective_project_binding(
+            info,
+            bindings,
+            binding_request,
+        )
+        if binding_error:
+            _record_sync_error(state, info, binding_error, None, log_fn)
+            failed_session_ids.add(info.session_id)
+            continue
+        binding_fingerprint = _project_binding_fingerprint(project_binding)
+        entry = get_state_entry(info.path, state) or {}
+        binding_changed = (
+            binding_fingerprint is not None
+            and entry.get("project_binding_fingerprint") != binding_fingerprint
+        )
         close_session = _close_inactive_session(
             info,
             close_all=args.close,
@@ -466,20 +787,20 @@ def _sync_infos(
             info.mtime,
             info.size,
             state,
-            args.force,
+            args.force or binding_changed,
         )
         close_required = close_session and should_sync(
             info.path,
             info.mtime,
             info.size,
             state,
-            args.force,
+            args.force or binding_changed,
             close_session=True,
         )
         heartbeat_required = (
             info.is_open
             and not close_session
-            and should_heartbeat(info.path, state, force=args.force)
+            and should_heartbeat(info.path, state, force=args.force or binding_changed)
         )
         if not ingest_required and not close_required and not heartbeat_required:
             continue
@@ -494,13 +815,28 @@ def _sync_infos(
             heartbeat_required=heartbeat_required,
             log_fn=log_fn,
             verbose=args.verbose,
+            project_binding=project_binding,
         )
         if ok:
+            if should_store_binding and project_binding is not None:
+                bindings[info.session_id] = project_binding
+                bindings_changed = True
+            if binding_request is not None and info.session_id == binding_request.session_id:
+                binding_synced = True
             continue
         if detail.startswith("skip "):
             _record_skipped(state, info, detail, log_fn)
         else:
-            _record_sync_error(state, info, detail, status, log_fn)
+            _record_sync_error(
+                state,
+                info,
+                detail,
+                status,
+                log_fn,
+                project_binding_fingerprint=binding_fingerprint,
+            )
+        failed_session_ids.add(info.session_id)
+    return bindings_changed, binding_synced
 
 
 def _record_skipped(
@@ -527,6 +863,8 @@ def _record_sync_error(
     detail: str,
     status: int | None,
     log_fn: LogFn,
+    *,
+    project_binding_fingerprint: str | None = None,
 ) -> None:
     update_state_entry(
         state,
@@ -536,5 +874,6 @@ def _record_sync_error(
         info.size,
         "permanent_error" if status in PERMANENT_HTTP_STATUSES else "error",
         detail,
+        project_binding_fingerprint=project_binding_fingerprint,
     )
     log_fn(f"[WARN] Failed sync for {info.path}: {detail}")

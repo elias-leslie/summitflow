@@ -4,17 +4,25 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import subprocess
 from collections.abc import Iterable
-from typing import cast
+from pathlib import Path
+from typing import Annotated, NoReturn, cast
 
 import typer
 
 from .._observability import refresh_agent_observability
 from ..client import APIError, STClient
-from ..config import get_project_override
+from ..config import (
+    get_config,
+    get_project_override,
+    get_project_root_path,
+    set_project_override,
+)
 from ..details import current_root, display_path, write_details
 from ..lib.usage import usage
-from ..output import handle_api_error, is_compact, output_json
+from ..output import handle_api_error, is_compact, output_error, output_json
 from ._session_resolver import resolve_session_id as _resolve_session_id
 from .session_events_client import get_session_events
 from .session_events_follow import follow_session_events
@@ -75,6 +83,62 @@ app = typer.Typer(
     invoke_without_command=True,
     no_args_is_help=False,
 )
+
+_CODEX_SESSION_SYNC = Path(__file__).resolve().parents[3] / "scripts" / "codex-session-sync.py"
+
+
+def _bind_error(message: str) -> NoReturn:
+    """Print one compact binding error and stop the command."""
+    output_error(message)
+    raise typer.Exit(1)
+
+
+def _binding_project() -> tuple[str, str]:
+    """Resolve the requested project and its registered repository root."""
+    project_id = get_project_override() or get_config().project_id
+    project_root = get_project_root_path(project_id)
+    if not project_root:
+        _bind_error(f"Project {project_id!r} has no registered root path.")
+    return project_id, cast(str, project_root)
+
+
+def _get_exact_session(client: STClient, session_id: str) -> dict[str, object] | None:
+    """Fetch an exact Agent Hub session, treating only 404 as absent."""
+    try:
+        return cast(dict[str, object], client.get_session(session_id))
+    except APIError as exc:
+        if exc.status_code == 404:
+            return None
+        handle_api_error(exc)
+    return None
+
+
+def _require_active_binding(
+    session: dict[str, object], *, session_id: str, project_id: str
+) -> None:
+    """Require the exact active Agent Hub binding requested by the caller."""
+    actual_id = str(session.get("id") or "")
+    actual_project = str(session.get("project_id") or "")
+    actual_status = str(session.get("status") or "")
+    if actual_id != session_id:
+        _bind_error(
+            f"Agent Hub returned session {actual_id or '-'} for exact id {session_id}."
+        )
+    if actual_project != project_id:
+        _bind_error(
+            f"Session {session_id} belongs to project {actual_project or '-'}, not {project_id}."
+        )
+    if actual_status != "active":
+        _bind_error(
+            f"Session {session_id} is {actual_status or 'missing status'}, not active."
+        )
+
+
+def _print_binding(session_id: str, project_id: str, *, result: str) -> None:
+    print(
+        f"SESSION_BIND:{session_id}|project={project_id}|status=active|result={result}"
+    )
+
 
 def _event_total(payload: dict[str, object]) -> int:
     return int(cast(int | str | bytes | bytearray, payload.get("total") or 0))
@@ -248,6 +312,8 @@ def sessions_callback(
 ) -> None:
     """List agent sessions when no subcommand is provided."""
     if ctx.invoked_subcommand is not None:
+        if project_id:
+            set_project_override(project_id)
         return
     _render_session_list(
         status_filter,
@@ -286,6 +352,59 @@ def list_sessions(
         project_id,
         include_unassigned=include_unassigned,
     )
+
+
+@app.command("bind")
+def bind_session(
+    target: Annotated[
+        str,
+        typer.Argument(help="Current Codex session: literal 'current' or its exact ID."),
+    ] = "current",
+) -> None:
+    """Bind the current Codex session to the resolved SummitFlow project."""
+    session_id = (os.getenv("CODEX_THREAD_ID") or "").strip()
+    if not session_id:
+        _bind_error("CODEX_THREAD_ID is not set; no current Codex session can be bound.")
+    if target not in {"current", session_id}:
+        _bind_error("Only 'current' or the exact CODEX_THREAD_ID may be bound.")
+
+    project_id, project_root = _binding_project()
+    client = STClient(require_project=False)
+    existing = _get_exact_session(client, session_id)
+    if existing is not None:
+        _require_active_binding(existing, session_id=session_id, project_id=project_id)
+    binding_result = "refreshed" if existing is not None else "bound"
+
+    command = [
+        str(_CODEX_SESSION_SYNC),
+        "--bind-session",
+        session_id,
+        "--bind-project",
+        project_id,
+        "--project-root",
+        project_root,
+        "--force",
+        "--verbose",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=_CODEX_SESSION_SYNC.parents[1],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        _bind_error(f"Codex session sync could not start: {exc}")
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "no output").strip()
+        _bind_error(f"Codex session sync failed ({completed.returncode}): {detail}")
+
+    bound = _get_exact_session(client, session_id)
+    if bound is None:
+        _bind_error(f"Session {session_id} was not found after Codex session sync.")
+    _require_active_binding(bound, session_id=session_id, project_id=project_id)
+    _print_binding(session_id, project_id, result=binding_result)
 
 
 @app.command("show")
