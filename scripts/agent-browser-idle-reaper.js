@@ -7,8 +7,13 @@ const { execFileSync } = require('child_process');
 
 const DEFAULT_IDLE_TIMEOUT_MS = 120000;
 const DEFAULT_HELPER_TIMEOUT_MS = 7200000;
+const DEFAULT_TEMP_ARTIFACT_RETENTION_MS = 1800000;
 const DEFAULT_SESSION_NAME = 'default';
 const SESSION_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
+const TEMP_ARTIFACT_PATTERNS = [
+  /^agent-browser-profile-/,
+  /^com\.google\.Chrome\.chrome_chrome_(?:url_fetcher_|Unpacker_)/,
+];
 
 const tryAccess = (p) => { try { fs.accessSync(p, fs.constants.F_OK); return true; } catch { return false; } };
 const tryKill0 = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
@@ -30,6 +35,112 @@ function getHelperTimeoutMs(env = process.env) {
   if (!raw) return DEFAULT_HELPER_TIMEOUT_MS;
   const parsed = Number.parseInt(raw, 10);
   return Number.isNaN(parsed) || parsed < 60000 ? DEFAULT_HELPER_TIMEOUT_MS : parsed;
+}
+
+function getTempArtifactRetentionMs(env = process.env) {
+  const raw = env.AGENT_BROWSER_TEMP_ARTIFACT_RETENTION_MS;
+  if (!raw) return DEFAULT_TEMP_ARTIFACT_RETENTION_MS;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isNaN(parsed) || parsed < 60000 ? DEFAULT_TEMP_ARTIFACT_RETENTION_MS : parsed;
+}
+
+function getTempRoot(env = process.env) {
+  return env.AGENT_BROWSER_TEMP_ROOT || os.tmpdir();
+}
+
+function listTempArtifacts(env = process.env) {
+  const root = getTempRoot(env);
+  if (!tryAccess(root)) return [];
+  const artifacts = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !TEMP_ARTIFACT_PATTERNS.some((pattern) => pattern.test(entry.name))) continue;
+    artifacts.push(path.join(root, entry.name));
+  }
+  return artifacts;
+}
+
+function getPathLastActivityMs(candidate) {
+  let latest = 0;
+  try { latest = fs.statSync(candidate).mtimeMs; } catch { return latest; }
+  try {
+    for (const entry of fs.readdirSync(candidate)) {
+      try { latest = Math.max(latest, fs.statSync(path.join(candidate, entry)).mtimeMs); }
+      catch { /* entry disappeared */ }
+    }
+  } catch { /* artifact disappeared */ }
+  return latest;
+}
+
+function referencedArtifact(target, candidates) {
+  if (!target) return null;
+  for (const candidate of candidates) {
+    if (target === candidate || target.startsWith(`${candidate}${path.sep}`) || target.includes(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function findActiveTempArtifacts(candidates) {
+  const active = new Set();
+  if (candidates.length === 0) return active;
+  for (const entry of fs.readdirSync('/proc', { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
+    const procRoot = path.join('/proc', entry.name);
+    try {
+      const cmdline = fs.readFileSync(path.join(procRoot, 'cmdline'), 'utf8');
+      const match = referencedArtifact(cmdline, candidates);
+      if (match) active.add(match);
+    } catch { /* process exited */ }
+    for (const linkName of ['cwd', 'root']) {
+      try {
+        const match = referencedArtifact(fs.readlinkSync(path.join(procRoot, linkName)), candidates);
+        if (match) active.add(match);
+      } catch { /* process exited or access denied */ }
+    }
+    const fdRoot = path.join(procRoot, 'fd');
+    try {
+      for (const fd of fs.readdirSync(fdRoot)) {
+        try {
+          const match = referencedArtifact(fs.readlinkSync(path.join(fdRoot, fd)), candidates);
+          if (match) active.add(match);
+        } catch { /* fd or process disappeared */ }
+      }
+    } catch { /* process exited or access denied */ }
+  }
+  return active;
+}
+
+function cleanupTempArtifacts(options = {}) {
+  const env = options.env || process.env;
+  const nowMs = options.nowMs || Date.now();
+  const dryRun = options.dryRun === true;
+  const retentionMs = options.retentionMs || getTempArtifactRetentionMs(env);
+  const summary = { cleaned: [], skippedActive: [], skippedRecent: [] };
+  const candidates = listTempArtifacts(env);
+  const eligible = [];
+  for (const candidate of candidates) {
+    const lastActivityMs = getPathLastActivityMs(candidate);
+    if (lastActivityMs > 0 && nowMs - lastActivityMs < retentionMs) {
+      summary.skippedRecent.push(path.basename(candidate));
+    } else {
+      eligible.push(path.resolve(candidate));
+    }
+  }
+  const active = findActiveTempArtifacts(eligible);
+  for (const candidate of eligible) {
+    const label = path.basename(candidate);
+    if (active.has(candidate)) {
+      summary.skippedActive.push(label);
+      continue;
+    }
+    if (!dryRun) {
+      try { fs.rmSync(candidate, { recursive: true, force: true }); }
+      catch { continue; }
+    }
+    summary.cleaned.push(label);
+  }
+  return summary;
 }
 
 function getRuntimeLocations(env = process.env) {
@@ -242,7 +353,16 @@ function runIdleCleanup(options = {}) {
   let socketLines;
   try { socketLines = execFileSync('ss', ['-xapnH'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n'); } catch { socketLines = null; }
   const hasSocketInspection = Array.isArray(socketLines);
-  const summary = { cleanedStale: [], skippedActive: [], skippedRecent: [], terminatedIdle: [], terminatedHelpers: [] };
+  const summary = {
+    cleanedStale: [],
+    skippedActive: [],
+    skippedRecent: [],
+    terminatedIdle: [],
+    terminatedHelpers: [],
+    cleanedArtifacts: [],
+    activeArtifacts: [],
+    recentArtifacts: [],
+  };
   const trackedPids = new Set();
 
   for (const sessionName of listSessions(env)) {
@@ -290,12 +410,34 @@ function runIdleCleanup(options = {}) {
     }
   }
 
+  if (env.AGENT_BROWSER_PRUNE_TEMP_ARTIFACTS !== '0') {
+    const artifacts = cleanupTempArtifacts({ env, nowMs, dryRun });
+    summary.cleanedArtifacts.push(...artifacts.cleaned);
+    summary.activeArtifacts.push(...artifacts.skippedActive);
+    summary.recentArtifacts.push(...artifacts.skippedRecent);
+  }
+
   if (verbose) {
     const fmt = (label, arr) => `${label}=${arr.join(',') || '-'}`;
-    process.stderr.write(`agent-browser cleanup: ${['stale', 'active', 'recent', 'terminated', 'helpers'].map((k, i) => fmt(k, [summary.cleanedStale, summary.skippedActive, summary.skippedRecent, summary.terminatedIdle, summary.terminatedHelpers][i])).join(' ')}\n`);
+    const labels = ['stale', 'active', 'recent', 'terminated', 'helpers', 'artifacts', 'artifact-active', 'artifact-recent'];
+    const values = [
+      summary.cleanedStale,
+      summary.skippedActive,
+      summary.skippedRecent,
+      summary.terminatedIdle,
+      summary.terminatedHelpers,
+      summary.cleanedArtifacts,
+      summary.activeArtifacts,
+      summary.recentArtifacts,
+    ];
+    process.stderr.write(`agent-browser cleanup: ${labels.map((k, i) => fmt(k, values[i])).join(' ')}\n`);
   }
 
   return summary;
 }
 
-runIdleCleanup({ dryRun: process.argv.includes('--dry-run'), verbose: process.argv.includes('--verbose') });
+if (require.main === module) {
+  runIdleCleanup({ dryRun: process.argv.includes('--dry-run'), verbose: process.argv.includes('--verbose') });
+}
+
+module.exports = { cleanupTempArtifacts, runIdleCleanup };

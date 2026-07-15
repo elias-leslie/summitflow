@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import shutil
 import subprocess
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from hashlib import sha1
 from ipaddress import ip_address
 from pathlib import Path
@@ -71,9 +74,11 @@ _PROXMOX_FLAG = "--proxmox"
 _PROXMOX_COMMAND = "proxmox"
 _LOCAL_AI_PROFILE_ENV = "ST_BROWSER_LOCAL_AI_PROFILE"
 _LOCAL_AI_CHROME_ENV = "ST_BROWSER_LOCAL_CHROME"
-_LOCAL_AI_HEADLESS_ENV = "ST_BROWSER_LOCAL_AI_HEADLESS"
+_LOCAL_AI_MINIMIZED_ENV = "ST_BROWSER_LOCAL_AI_MINIMIZED"
 _LOCAL_AI_VISIBLE_ENV = "ST_BROWSER_LOCAL_AI_VISIBLE"
+_LOCAL_AI_SESSION_ENV = "ST_BROWSER_LOCAL_AI_SESSION"
 _DEFAULT_LOCAL_AI_PROFILE = "AI"
+_DEFAULT_LOCAL_AI_SESSION = "st-local-ai"
 _LOCAL_CHROME_CANDIDATES = ("google-chrome-stable", "google-chrome", "chromium", "chromium-browser")
 _LOCAL_AI_WINDOW_CLASS = "st-browser-ai"
 # Chrome launch flags for the minimized local-AI window, comma-joined for
@@ -90,6 +95,10 @@ _LOCAL_AI_MINIMIZED_CHROME_ARGS = (
     ",--disable-background-timer-throttling"
     ",--disable-features=CalculateNativeWinOcclusion"
 )
+# Chrome headless defaults can select SwiftShader and consume several CPU cores.
+# Force the workstation GPU and fail graphics work instead of falling back to a
+# software rasterizer. This keeps unattended checks off the operator desktop.
+_LOCAL_AI_HEADLESS_CHROME_ARGS = "--enable-gpu,--use-angle=gl,--disable-software-rasterizer"
 # Process-level guard: iconify the local-AI window at most once per st invocation
 # so we don't fight the user if they restore it to watch mid-run.
 _local_ai_minimized = False
@@ -293,19 +302,66 @@ def _local_ai_window_mode() -> str:
     """Resolve how the local-AI Chrome window should present.
 
     "visible"  -> normal headed window for watching (ST_BROWSER_LOCAL_AI_VISIBLE=1)
-    "headless" -> no window (ST_BROWSER_LOCAL_AI_HEADLESS=1)
-    "minimized"-> default: headed but iconified out of the way.
+    "headless" -> default: no window, hardware GL, no software fallback
+    "minimized"-> headed but iconified (ST_BROWSER_LOCAL_AI_MINIMIZED=1)
 
-    VISIBLE is resolved before HEADLESS: an explicit per-command
-    ST_BROWSER_LOCAL_AI_VISIBLE=1 is a deliberate "watch this" request and must
-    win over an ambient ST_BROWSER_LOCAL_AI_HEADLESS=1 (commonly exported as a
-    host-wide default), otherwise the documented visible flag is silently ignored.
+    VISIBLE is resolved first because it is an explicit "watch this" request.
+    HEADLESS remains accepted for compatibility, but is now the safe default.
     """
     if os.environ.get(_LOCAL_AI_VISIBLE_ENV, "").strip() == "1":
         return "visible"
-    if os.environ.get(_LOCAL_AI_HEADLESS_ENV, "").strip() == "1":
-        return "headless"
-    return "minimized"
+    if os.environ.get(_LOCAL_AI_MINIMIZED_ENV, "").strip() == "1":
+        return "minimized"
+    return "headless"
+
+
+def _local_ai_session() -> str:
+    return _clean_session_component(
+        os.environ.get(_LOCAL_AI_SESSION_ENV, "").strip() or _DEFAULT_LOCAL_AI_SESSION
+    )
+
+
+def _with_local_ai_session(args: list[str]) -> list[str]:
+    """Keep the operator workstation on one reusable local Chrome daemon."""
+    requested = _session_args(args)
+    expected = _local_ai_session()
+    if requested:
+        actual = requested[1]
+        if actual != expected:
+            output_error(
+                f"LOCAL_AI_SESSION_BLOCKED requested={actual} allowed={expected}: "
+                "the operator workstation permits one local AI Chrome session; "
+                "use `st browser --proxmox --session "
+                f"{actual} ...` for isolated or parallel browser work"
+            )
+            raise typer.Exit(75)
+        return args
+    return ["--session", expected, *args]
+
+
+def _local_ai_lock_path() -> Path:
+    runtime_root = Path(os.environ.get("XDG_RUNTIME_DIR", "").strip() or f"/tmp/st-browser-{os.getuid()}")
+    return runtime_root / "st-browser-local-ai" / "command.lock"
+
+
+@contextmanager
+def _local_ai_command_lock() -> Iterator[bool]:
+    """Fail fast when another complete local browser operation is in flight."""
+    lock_path = _local_ai_lock_path()
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock_path.open("a+", encoding="utf-8")
+    acquired = False
+    try:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquired = True
+        except BlockingIOError:
+            pass
+        yield acquired
+    finally:
+        if acquired:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        handle.close()
 
 
 def _local_ai_agent_args(args: list[str]) -> list[str]:
@@ -335,11 +391,17 @@ def _local_ai_agent_args(args: list[str]) -> list[str]:
         and not os.environ.get("AGENT_BROWSER_ARGS", "").strip()
     ):
         prefix.extend(["--args", _LOCAL_AI_MINIMIZED_CHROME_ARGS])
+    if (
+        mode == "headless"
+        and not _has_agent_option(args, "--args")
+        and not os.environ.get("AGENT_BROWSER_ARGS", "").strip()
+    ):
+        prefix.extend(["--args", _LOCAL_AI_HEADLESS_CHROME_ARGS])
     return [*prefix, *args]
 
 
 def _local_ai_uses_default_launch(args: list[str]) -> bool:
-    if _local_ai_window_mode() != "minimized":
+    if _local_ai_window_mode() == "visible":
         return False
     launch_options = ("--profile", "--executable-path", "--args", "--headed")
     if any(_has_agent_option(args, option) for option in launch_options):
@@ -349,6 +411,7 @@ def _local_ai_uses_default_launch(args: list[str]) -> bool:
         "AGENT_BROWSER_EXECUTABLE_PATH",
         "AGENT_BROWSER_ARGS",
         "AGENT_BROWSER_HEADED",
+        _LOCAL_AI_MINIMIZED_ENV,
         _LOCAL_AI_PROFILE_ENV,
         _LOCAL_AI_CHROME_ENV,
     )
@@ -467,9 +530,12 @@ def _print_local_ai_health() -> None:
     print("Target: local system Chrome (AI profile)")
     print(f"chrome: {_system_chrome_path() or 'not found'}")
     print(f"profile: {os.environ.get(_LOCAL_AI_PROFILE_ENV, '').strip() or _DEFAULT_LOCAL_AI_PROFILE}")
+    print(f"session: {_local_ai_session()} (singleton)")
     print(f"window-mode: {mode}")
     if mode == "minimized":
         print("window-behavior: starts minimized/iconified; restore the st-browser-ai window from the taskbar to watch")
+    if mode == "headless":
+        print("window-behavior: no desktop window; hardware GL required; software rasterizer disabled")
     print(f"agent-browser-bin: {_agent_browser_bin()}")
 
 
@@ -650,8 +716,9 @@ def _with_resolved_local_navigation_target(args: list[str], command: str) -> lis
 
 
 def _run_local_ai_agent(args: list[str]) -> subprocess.CompletedProcess[str]:
-    default_launch = _local_ai_uses_default_launch(args)
-    result = _run_agent(_local_ai_agent_args(args), capture=True)
+    scoped_args = _with_local_ai_session(args)
+    default_launch = _local_ai_uses_default_launch(scoped_args)
+    result = _run_agent(_local_ai_agent_args(scoped_args), capture=True)
     result = _without_default_daemon_warning(result, default_launch=default_launch)
     _maybe_minimize_local_ai_window()
     return result
@@ -662,6 +729,16 @@ def _local_agent_failure(label: str, result: subprocess.CompletedProcess[str]) -
         return None
     output = "\n".join(part for part in (result.stdout, result.stderr) if part)
     return f"{label}: rc={result.returncode} hint={summary_hint(output) if output else '-'}"
+
+
+def _run_local_ai_startup_command(args: list[str]) -> subprocess.CompletedProcess[str]:
+    """Retry only the observed new-daemon socket race, not general failures."""
+    result = _run_local_ai_agent(args)
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    if result.returncode != 0 and "Failed to connect: No such file or directory" in output:
+        time.sleep(0.5)
+        return _run_local_ai_agent(args)
+    return result
 
 
 def _local_check_viewports(screenshot_path: str) -> list[tuple[str, int, int, str]]:
@@ -714,7 +791,7 @@ def _browser_local_ai_check(args: list[str]) -> int:
     screenshot_path = _absolute_local_output_path(
         args[1] if len(args) > 1 else "/tmp/st-browser-local-ai-check.png"
     )
-    session_args = ["--session", session or f"st-browser-local-ai-check-{os.getpid()}-{time.time_ns()}"]
+    session_args = ["--session", session or _local_ai_session()]
     command_warnings: list[str] = []
     page_result = subprocess.CompletedProcess([], 0, stdout="{}", stderr="")
     console_result = subprocess.CompletedProcess([], 0, stdout="", stderr="")
@@ -726,7 +803,7 @@ def _browser_local_ai_check(args: list[str]) -> int:
         )
         if warning := _local_agent_failure("initial viewport", first_viewport):
             command_warnings.append(warning)
-        console_clear = _run_local_ai_agent([*session_args, "console", "--clear"])
+        console_clear = _run_local_ai_startup_command([*session_args, "console", "--clear"])
         if warning := _local_agent_failure("console clear", console_clear):
             command_warnings.append(warning)
         open_result = _run_local_ai_agent([*session_args, "open", url])
@@ -849,18 +926,25 @@ def _run_local_ai_browser_command(command: str, browser_args: list[str]) -> int:
         return 2
     if command == "update":
         return _browser_update()
-    if command == "check":
-        index = _agent_command_index(browser_args)
-        return _browser_local_ai_check(browser_args[index + 1 :] if index is not None else [])
     if not command:
         output_error("Usage: st browser --local-ai <agent-browser command> [args...]")
         return 2
-    resolved_browser_args = _with_resolved_local_navigation_target(browser_args, command)
-    resolved_browser_args = _with_resolved_local_screenshot_path(resolved_browser_args, command)
-    result = _run_local_ai_agent(resolved_browser_args)
-    emit_result_or_details(current_root(), f"browser-local-ai-{command or 'command'}", "BROWSER", result)
-    _warn_if_visible_window_ignored(result)
-    return result.returncode
+    with _local_ai_command_lock() as acquired:
+        if not acquired:
+            output_error(
+                "LOCAL_AI_BUSY: another host-local browser operation is active; "
+                "use `st browser --proxmox ...` for parallel work"
+            )
+            return 75
+        if command == "check":
+            index = _agent_command_index(browser_args)
+            return _browser_local_ai_check(browser_args[index + 1 :] if index is not None else [])
+        resolved_browser_args = _with_resolved_local_navigation_target(browser_args, command)
+        resolved_browser_args = _with_resolved_local_screenshot_path(resolved_browser_args, command)
+        result = _run_local_ai_agent(resolved_browser_args)
+        emit_result_or_details(current_root(), f"browser-local-ai-{command or 'command'}", "BROWSER", result)
+        _warn_if_visible_window_ignored(result)
+        return result.returncode
 
 
 _USAGE = """Remote browser automation through st
@@ -908,10 +992,11 @@ Debug local CDP override:
   ST_BROWSER_HOST=127.0.0.1 ST_BROWSER_ALLOW_LOCAL=1 st browser health
 
 Local system Chrome:
-  Default mode uses system Chrome, profile `AI`, headed but started minimized
-  (out of the way; screenshots still work). Restore the window to watch it live.
-  Window control: ST_BROWSER_LOCAL_AI_VISIBLE=1 keeps a normal on-screen window;
-  ST_BROWSER_LOCAL_AI_HEADLESS=1 runs with no window at all.
+  Default mode uses system Chrome, profile `AI`, headless hardware GL, and no
+  software-rasterizer fallback. It creates no desktop window or focus change.
+  The host-local browser is a singleton; route parallel browser work through --proxmox.
+  Window control: ST_BROWSER_LOCAL_AI_VISIBLE=1 creates a normal watched window;
+  ST_BROWSER_LOCAL_AI_MINIMIZED=1 creates a minimized window. Both are explicit-only.
   Override local Chrome with ST_BROWSER_LOCAL_CHROME, ST_BROWSER_LOCAL_AI_PROFILE.
 
 Local desktop UI:

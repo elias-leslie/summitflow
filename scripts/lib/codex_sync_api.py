@@ -11,7 +11,6 @@ HTTP_TIMEOUT = 20
 
 HEADER_CONTENT_TYPE = "Content-Type"
 HEADER_CLIENT_ID = "X-Client-Id"
-HEADER_CLIENT_SECRET = "X-Client-Secret"
 HEADER_REQUEST_SOURCE = "X-Request-Source"
 HEADER_SOURCE_CLIENT = "X-Source-Client"
 HEADER_SOURCE_PATH = "X-Source-Path"
@@ -27,23 +26,16 @@ SOURCE_CLIENT = "summitflow/codex-session-sync"
 PROVIDER = "codex"
 SESSION_TYPE = "agent"
 SCOPE_CONFIDENCE = "unknown"
-HEARTBEAT_PHASE = "waiting_for_model"
-HEARTBEAT_STATUS = "active"
-HEARTBEAT_EVENT_TYPE = "heartbeat"
-
-
 def post_json(
     api_url: str,
     endpoint: str,
     body: dict[str, object] | None,
     client_id: str,
-    client_secret: str,
     source_path: str = "",
 ) -> tuple[int | None, str]:
     headers = {
         HEADER_CONTENT_TYPE: "application/json",
         HEADER_CLIENT_ID: client_id,
-        HEADER_CLIENT_SECRET: client_secret,
         HEADER_REQUEST_SOURCE: REQUEST_SOURCE,
         HEADER_SOURCE_CLIENT: SOURCE_CLIENT,
         HEADER_SOURCE_PATH: source_path,
@@ -65,12 +57,11 @@ def _checked_post(
     endpoint: str,
     body: dict[str, object] | None,
     client_id: str,
-    client_secret: str,
     label: str,
     source_path: str = "",
 ) -> tuple[bool, str, str, int | None]:
     """Return (ok, response_body, error_msg, status_code)."""
-    status, payload = post_json(api_url, endpoint, body, client_id, client_secret, source_path)
+    status, payload = post_json(api_url, endpoint, body, client_id, source_path)
     if status != 200:
         return False, payload, f"{label} failed status={status} body={payload[:300]}", status
     return True, payload, "", status
@@ -84,9 +75,18 @@ def upsert_session(
     transcript_path: Path,
     api_url: str,
     client_id: str,
-    client_secret: str,
+    parent_session_id: str | None = None,
+    provider_metadata: dict[str, object] | None = None,
     source_path: str = "",
 ) -> tuple[bool, str, int | None]:
+    metadata = {
+        "transcript_path": str(transcript_path),
+        "repo_root": project["repo_root"],
+        "cwd": str(cwd),
+        "host": os.uname().nodename,
+    }
+    if provider_metadata:
+        metadata.update(provider_metadata)
     ok, _, err, status = _checked_post(
         api_url,
         ENDPOINT_UPSERT,
@@ -98,16 +98,11 @@ def upsert_session(
             "session_type": SESSION_TYPE,
             "cwd": str(cwd),
             "current_branch": project["branch"],
+            "parent_session_id": parent_session_id,
             "scope_confidence": SCOPE_CONFIDENCE,
-            "provider_metadata": {
-                "transcript_path": str(transcript_path),
-                "repo_root": project["repo_root"],
-                "cwd": str(cwd),
-                "host": os.uname().nodename,
-            },
+            "provider_metadata": metadata,
         },
         client_id,
-        client_secret,
         "session upsert",
         source_path,
     )
@@ -120,7 +115,6 @@ def ingest_transcript(
     checkpoint: str | None,
     api_url: str,
     client_id: str,
-    client_secret: str,
     source_path: str = "",
 ) -> tuple[bool, str | None, str, str, int | None]:
     """Return (ok, next_checkpoint, ingest_detail, error_msg, status_code)."""
@@ -129,7 +123,6 @@ def ingest_transcript(
         ENDPOINT_TRANSCRIPT.format(sid=session_id),
         {"provider": PROVIDER, "transcript_path": str(transcript_path), "checkpoint": checkpoint},
         client_id,
-        client_secret,
         "transcript ingest",
         source_path,
     )
@@ -154,7 +147,6 @@ def send_heartbeat(
     meta: dict[str, object],
     api_url: str,
     client_id: str,
-    client_secret: str,
     source_path: str = "",
 ) -> tuple[bool, str, int | None]:
     ok, _, err, status = _checked_post(
@@ -163,14 +155,9 @@ def send_heartbeat(
         {
             "cwd": str(cwd),
             "current_branch": project["branch"],
-            "phase": HEARTBEAT_PHASE,
-            "status": HEARTBEAT_STATUS,
-            "summary": f"Transcript sync heartbeat for {session_id}",
-            "last_event_type": HEARTBEAT_EVENT_TYPE,
             "provider_metadata": meta,
         },
         client_id,
-        client_secret,
         "heartbeat",
         source_path,
     )
@@ -183,7 +170,6 @@ def finalize_and_close(
     close_session: bool,
     api_url: str,
     client_id: str,
-    client_secret: str,
     source_path: str = "",
 ) -> tuple[bool, str, int | None]:
     ok, _, err, status = _checked_post(
@@ -194,7 +180,6 @@ def finalize_and_close(
             "git_context": project["git_context"],
         },
         client_id,
-        client_secret,
         "finalize",
         source_path,
     )
@@ -207,7 +192,6 @@ def finalize_and_close(
         ENDPOINT_CLOSE.format(sid=session_id),
         None,
         client_id,
-        client_secret,
         "close",
         source_path,
     )

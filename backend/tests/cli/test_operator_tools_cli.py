@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import importlib
 import subprocess
 from pathlib import Path
@@ -952,8 +953,9 @@ def test_local_ai_health_shows_window_mode(
         browser._print_local_ai_health()
 
     output = capsys.readouterr().out
-    assert "window-mode: minimized" in output
-    assert "restore the st-browser-ai window from the taskbar" in output
+    assert "window-mode: headless" in output
+    assert "no desktop window" in output
+    assert "software rasterizer disabled" in output
 
 
 def test_browser_help_explains_isolated_target() -> None:
@@ -1104,6 +1106,7 @@ def _clear_local_ai_window_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "AGENT_BROWSER_ARGS",
         "ST_BROWSER_LOCAL_AI_VISIBLE",
         "ST_BROWSER_LOCAL_AI_HEADLESS",
+        "ST_BROWSER_LOCAL_AI_MINIMIZED",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -1113,6 +1116,7 @@ _LOCAL_AI_MINIMIZED_ARGS = (
     "--disable-backgrounding-occluded-windows,--disable-background-timer-throttling,"
     "--disable-features=CalculateNativeWinOcclusion"
 )
+_LOCAL_AI_HEADLESS_ARGS = "--enable-gpu,--use-angle=gl,--disable-software-rasterizer"
 
 
 def test_browser_auto_open_prefers_local_ai_profile(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1133,16 +1137,27 @@ def test_browser_auto_open_prefers_local_ai_profile(monkeypatch: pytest.MonkeyPa
         "AI",
         "--executable-path",
         "/usr/bin/google-chrome-stable",
-        "--headed",
         "--args",
-        _LOCAL_AI_MINIMIZED_ARGS,
+        _LOCAL_AI_HEADLESS_ARGS,
+        "--session",
+        "st-local-ai",
         "open",
         "http://app.lan:3005/",
     ]
 
 
-def test_local_ai_agent_args_minimized_is_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_local_ai_agent_args_hardware_headless_is_default(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_local_ai_window_env(monkeypatch)
+    with patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
+        args = browser._local_ai_agent_args(["open", "http://app.lan/"])
+    assert "--headed" not in args
+    assert args[args.index("--args") + 1] == _LOCAL_AI_HEADLESS_ARGS
+    assert "--disable-software-rasterizer" in _LOCAL_AI_HEADLESS_ARGS
+
+
+def test_local_ai_agent_args_minimized_is_explicit(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    monkeypatch.setenv("ST_BROWSER_LOCAL_AI_MINIMIZED", "1")
     with patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
         args = browser._local_ai_agent_args(["open", "http://app.lan/"])
     assert "--headed" in args
@@ -1212,7 +1227,7 @@ def test_visible_window_ignored_emits_hint_when_daemon_running(
     assert "st browser close" in err
 
 
-def test_visible_window_hint_silent_in_default_minimized_mode(
+def test_visible_window_hint_silent_in_default_headless_mode(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -1278,7 +1293,74 @@ def test_local_ai_agent_args_headless_omits_headed(monkeypatch: pytest.MonkeyPat
     with patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
         args = browser._local_ai_agent_args(["open", "http://app.lan/"])
     assert "--headed" not in args
-    assert "--args" not in args
+    assert args[args.index("--args") + 1] == _LOCAL_AI_HEADLESS_ARGS
+
+
+def test_local_ai_agent_uses_singleton_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    with (
+        patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
+        patch("cli.commands.browser._maybe_minimize_local_ai_window"),
+        patch(
+            "cli.commands.browser._run_agent",
+            return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+        ) as run_agent,
+    ):
+        browser._run_local_ai_agent(["snapshot"])
+
+    args = run_agent.call_args.args[0]
+    assert args[args.index("--session") + 1] == "st-local-ai"
+
+
+def test_local_ai_agent_blocks_additional_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    with (
+        patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
+        patch("cli.commands.browser._run_agent") as run_agent,
+        pytest.raises(typer.Exit) as raised,
+    ):
+        browser._run_local_ai_agent(["--session", "parallel", "snapshot"])
+
+    assert raised.value.exit_code == 75
+    run_agent.assert_not_called()
+
+
+def test_local_ai_startup_command_retries_only_missing_socket() -> None:
+    missing_socket = subprocess.CompletedProcess(
+        [],
+        1,
+        stdout="",
+        stderr="Failed to connect: No such file or directory (os error 2)",
+    )
+    success = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+    with (
+        patch("cli.commands.browser._run_local_ai_agent", side_effect=[missing_socket, success]) as run_agent,
+        patch("cli.commands.browser.time.sleep") as sleep,
+    ):
+        result = browser._run_local_ai_startup_command(["console", "--clear"])
+
+    assert result.returncode == 0
+    assert run_agent.call_count == 2
+    sleep.assert_called_once_with(0.5)
+
+
+def test_local_ai_browser_fails_fast_when_command_lock_is_busy(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    lock_path = browser._local_ai_lock_path()
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with patch("cli.commands.browser._run_local_ai_agent") as run_agent:
+            result = runner.invoke(main_app, ["browser", "snapshot"])
+
+    assert result.exit_code == 75
+    assert "LOCAL_AI_BUSY" in result.output
+    assert "--proxmox" in result.output
+    run_agent.assert_not_called()
 
 
 def test_explicit_visible_overrides_ambient_headless(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1299,10 +1381,12 @@ def test_local_ai_agent_args_respects_user_supplied_args(monkeypatch: pytest.Mon
         args = browser._local_ai_agent_args(["--args", "--no-sandbox", "open", "http://app.lan/"])
     assert args.count("--args") == 1
     assert _LOCAL_AI_MINIMIZED_ARGS not in args
+    assert _LOCAL_AI_HEADLESS_ARGS not in args
 
 
 def test_maybe_minimize_local_ai_window_targets_only_our_class(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_local_ai_window_env(monkeypatch)
+    monkeypatch.setenv("ST_BROWSER_LOCAL_AI_MINIMIZED", "1")
     monkeypatch.setattr(browser, "_local_ai_minimized", False, raising=False)
     calls: list[list[str]] = []
 

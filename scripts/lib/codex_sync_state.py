@@ -9,6 +9,7 @@ from typing import cast
 
 STATE_PATH = Path.home() / ".local" / "state" / "codex-session-sync" / "state.json"
 ERROR_RETRY_SECONDS = 300
+HEARTBEAT_INTERVAL_SECONDS = 30
 
 
 def load_state() -> dict[str, object]:
@@ -54,16 +55,27 @@ def update_state_entry(
     status: str,
     detail: str,
     checkpoint: str | None = None,
+    identity_fingerprint: str | None = None,
+    heartbeat_at: str | None = None,
 ) -> None:
     transcripts = _transcripts_map(state, create=True)
     assert transcripts is not None
+    previous = get_state_entry(path, state) or {}
     transcripts[str(path)] = {
         "session_id": session_id,
         "mtime": mtime,
         "size": size,
         "status": status,
         "detail": detail,
-        "checkpoint": checkpoint,
+        "checkpoint": checkpoint if checkpoint is not None else previous.get("checkpoint"),
+        "identity_fingerprint": (
+            identity_fingerprint
+            if identity_fingerprint is not None
+            else previous.get("identity_fingerprint")
+        ),
+        "last_heartbeat_at": (
+            heartbeat_at if heartbeat_at is not None else previous.get("last_heartbeat_at")
+        ),
         "updated_at": datetime.now(UTC).isoformat(),
     }
 
@@ -83,7 +95,7 @@ def should_sync(
     if entry is None:
         return True
     if close_session:
-        return entry.get("status") != "terminal"
+        return entry.get("status") not in {"terminal", "skipped"}
     if entry.get("status") == "terminal":
         return False
     if _entry_is_permanent_error(entry):
@@ -93,6 +105,50 @@ def should_sync(
     if entry.get("status") != "error":
         return False
     return _error_retry_due(entry)
+
+
+def should_heartbeat(
+    path: Path,
+    state: dict[str, object],
+    *,
+    force: bool = False,
+    now: datetime | None = None,
+    interval_seconds: int = HEARTBEAT_INTERVAL_SECONDS,
+) -> bool:
+    """Return True when a live transcript needs a collector heartbeat."""
+    if force:
+        return True
+    entry = get_state_entry(path, state)
+    if entry is None:
+        return True
+    if entry.get("status") in {"terminal", "skipped", "permanent_error"}:
+        return False
+    heartbeat_at = entry.get("last_heartbeat_at")
+    if not isinstance(heartbeat_at, str) or not heartbeat_at:
+        return True
+    try:
+        last_heartbeat = datetime.fromisoformat(heartbeat_at)
+    except ValueError:
+        return True
+    if last_heartbeat.tzinfo is None:
+        last_heartbeat = last_heartbeat.replace(tzinfo=UTC)
+    current = now or datetime.now(UTC)
+    return (current - last_heartbeat).total_seconds() >= interval_seconds
+
+
+def iter_nonterminal_paths(state: dict[str, object]) -> list[Path]:
+    """Return tracked paths that may need a deterministic inactive close pass."""
+    entries = _transcripts_map(state)
+    if entries is None:
+        return []
+    paths: list[Path] = []
+    for raw_path, raw_entry in entries.items():
+        if not isinstance(raw_path, str) or not isinstance(raw_entry, dict):
+            continue
+        if raw_entry.get("status") in {"terminal", "skipped", "permanent_error"}:
+            continue
+        paths.append(Path(raw_path))
+    return paths
 
 
 def get_checkpoint(path: Path, state: dict[str, object]) -> str | None:

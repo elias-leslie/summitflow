@@ -6,7 +6,6 @@ from pathlib import Path
 
 ENV_FILE = Path.home() / ".env.local"
 ENV_KEY_CLIENT_ID = "SUMMITFLOW_CLIENT_ID"
-ENV_KEY_CLIENT_SECRET = "SUMMITFLOW_CLIENT_SECRET"
 
 
 def _parse_env_value(raw: str) -> str:
@@ -16,13 +15,17 @@ def _parse_env_value(raw: str) -> str:
     return raw.split("#")[0].strip()
 
 
-def load_env_credentials() -> tuple[str, str]:
+def load_env_credentials() -> str:
+    """Return the registered SummitFlow client ID used by Agent Hub.
+
+    Agent Hub authenticates approved local clients with ``X-Client-Id`` plus
+    request provenance headers.  It does not accept or require a parallel
+    client-secret contract for this host-side collector.
+    """
     if not ENV_FILE.exists():
-        return "", ""
-    client_id = client_secret = ""
+        return ""
+    client_id = ""
     for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
         if line.startswith(f"{ENV_KEY_CLIENT_ID}="):
             client_id = _parse_env_value(line.split("=", 1)[1].rstrip())
-        elif line.startswith(f"{ENV_KEY_CLIENT_SECRET}="):
-            client_secret = _parse_env_value(line.split("=", 1)[1].rstrip())
-    return client_id, client_secret
+    return client_id
