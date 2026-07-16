@@ -25,6 +25,16 @@ _IMAGE_MIME_TYPES = {
     ".webp": "image/webp",
 }
 
+_AUDIO_MIME_TYPES = {
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".aif": "audio/aiff",
+    ".aiff": "audio/aiff",
+    ".aac": "audio/aac",
+    ".ogg": "audio/ogg",
+    ".flac": "audio/flac",
+}
+
 
 def handle_error_response(response: httpx.Response) -> None:
     """Handle a non-2xx response, printing diagnostics and exiting."""
@@ -76,6 +86,21 @@ def encode_image(path: str) -> dict[str, Any]:
     return {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": data}}
 
 
+def encode_audio(path: str) -> dict[str, Any]:
+    """Read a supported audio file and return a typed base64 content block."""
+    audio_path = Path(path)
+    if not audio_path.is_file():
+        output_error(f"Audio not found: {path}")
+        raise typer.Exit(1)
+    media_type = _AUDIO_MIME_TYPES.get(audio_path.suffix.lower())
+    if media_type is None:
+        supported = ", ".join(sorted(_AUDIO_MIME_TYPES))
+        output_error(f"Unsupported audio format: {path}. Supported extensions: {supported}")
+        raise typer.Exit(1)
+    data = base64.b64encode(audio_path.read_bytes()).decode()
+    return {"type": "audio", "source": {"type": "base64", "media_type": media_type, "data": data}}
+
+
 def build_payload(
     message: str, project_id: str, agent_slug: str | None,
     memory_group_id: str | None, working_dir: str | None,
@@ -85,6 +110,7 @@ def build_payload(
     max_turns: int | None, stream: bool, include_roles: list[str] | None,
     images: list[str] | None = None,
     *,
+    audios: list[str] | None = None,
     parent_session_id: str | None = None,
     source_metadata: dict[str, Any] | None = None,
     work_context: dict[str, Any] | None = None,
@@ -96,8 +122,9 @@ def build_payload(
 ) -> dict[str, Any]:
     """Build request payload for /api/complete."""
     content: str | list[dict[str, Any]]
-    if images:
-        content = [encode_image(img) for img in images]
+    if images or audios:
+        content = [encode_image(img) for img in images or []]
+        content.extend(encode_audio(audio) for audio in audios or [])
         content.append({"type": "text", "text": message})
     else:
         content = message
@@ -229,6 +256,7 @@ def call_complete(
     routing_exclude_providers: list[str] | None = None,
     routing_cost_preference: str | None = None,
     tool_name: str = "st complete",
+    audios: list[str] | None = None,
 ) -> dict[str, Any]:
     """Call /api/complete endpoint."""
     client_id, request_source = load_credentials(default_source="st-complete")
@@ -238,6 +266,7 @@ def call_complete(
         message, project_id, agent_slug, memory_group_id, working_dir,
         session_id, thinking_level, trace_id, use_memory, execute_tools, task_type,
         max_turns, stream, include_roles, images,
+        audios=audios,
         parent_session_id=parent_session_id,
         source_metadata=source_metadata,
         work_context=work_context,

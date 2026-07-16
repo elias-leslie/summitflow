@@ -69,6 +69,7 @@ def complete_default(
     trace_id: Annotated[str | None, _Opt("--trace", help="Trace ID for event correlation")] = None,
     include_roles: Annotated[str | None, _Opt("--roles", help="Comma-separated prompt roles to include")] = None,
     image: Annotated[list[str] | None, _Opt("--image", "-i", help="Image file path(s) for multimodal input")] = None,
+    audio: Annotated[list[str] | None, _Opt("--audio", "-A", help="Audio file path(s): WAV, MP3, AIFF, AAC, OGG, or FLAC")] = None,
     file: Annotated[str | None, _Opt("--file", "-f", help="Read message from file")] = None,
     timeout: Annotated[float | None, _Opt("--timeout", "-t", help="Optional HTTP read-timeout ceiling in seconds. Omit to wait for completion.")] = None,
     raw: Annotated[bool, _Opt("--raw", help="Output raw JSON")] = False,
@@ -80,6 +81,7 @@ def complete_default(
     Examples:
         st complete "Say hello"
         st complete -a critic --file /tmp/review.txt
+        st complete -a game-audio-critic --audio /tmp/mix.wav "Review this mix"
         cat prompt.txt | st complete -a reasoner
         st complete -a coder --stream "Write a hello world"
     """
@@ -101,6 +103,7 @@ def complete_default(
         agent, resolved_message, project, source, memory, memory_group,
         False, None, timeout, skip_cache, session_id,
         thinking_level, 1, stream, trace_id, roles, task_type, image or None,
+        audios=audio or None,
     )
     _output_result(result, stream, raw)
     if _completion_failed(result):
