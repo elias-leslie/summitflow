@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -210,7 +211,14 @@ def test_design_asset_critique_calls_agent_hub_with_default_agent(tmp_path: Path
         patch("cli.commands.design.get_config", return_value=mock_cfg),
         patch(
             "cli.commands.design.call_complete",
-            return_value={"content": "1. Vision sanity: hood, lantern", "session_id": "sess-1"},
+            return_value={
+                "content": "1. Vision sanity: hood, lantern",
+                "session_id": "sess-1",
+                "model_used": "gemini-3.1-flash-lite",
+                "provider": "google",
+                "fallback_used": True,
+                "fallback_reason": "requested provider unavailable",
+            },
         ) as mock_complete,
     ):
         result = runner.invoke(
@@ -237,6 +245,12 @@ def test_design_asset_critique_calls_agent_hub_with_default_agent(tmp_path: Path
     assert kwargs["images"] == [str(image_path)]
     assert kwargs["tool_name"] == "st design asset critique"
     assert "Dark ranger player anchor" in kwargs["message"]
+    payload = json.loads(result.output)
+    critique = payload["critiques"][0]
+    assert critique["model_used"] == "gemini-3.1-flash-lite"
+    assert critique["provider"] == "google"
+    assert critique["fallback_used"] is True
+    assert critique["fallback_reason"] == "requested provider unavailable"
 
 
 def test_design_asset_critique_ensemble_uses_ranked_model_panel(tmp_path: Path) -> None:
@@ -318,6 +332,9 @@ def test_critique_prompt_and_model_plan_are_agent_friendly() -> None:
     assert "If the image is unavailable" in prompt
     assert "not only the checklist" in prompt
     assert "each label actually faces that direction" in prompt
+    assert "AUTHORITATIVE DETERMINISTIC VALIDATOR EVIDENCE" in prompt
+    assert "Never invent a validator failure" in prompt
+    assert "Evidence conflicts" in prompt
     assert "Use gothic player art bar." in prompt
 
 

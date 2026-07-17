@@ -330,6 +330,10 @@ def critique_asset(
             "ok": not bool(result.get("error")),
             "content": result.get("content", ""),
             "session_id": result.get("session_id"),
+            "model_used": result.get("model_used"),
+            "provider": result.get("provider"),
+            "fallback_used": result.get("fallback_used"),
+            "fallback_reason": result.get("fallback_reason"),
             "raw_error": result.get("error"),
         })
 
@@ -404,6 +408,12 @@ First prove you are looking at this exact image by naming 3-5 visible elements. 
 
 Critique the whole image, not only the checklist. If the supplied brief is narrow, still report any other production issue you observe. For labeled direction sheets or turnaround poses, verify that each label actually faces that direction and flag any duplicate/mislabeled facing.
 
+Evidence authority is strict:
+- A project brief may contain an AUTHORITATIVE DETERMINISTIC VALIDATOR EVIDENCE block. Every measured fact in that block is ground truth and overrides visual inference.
+- Never claim or request repairs for alpha/anti-aliasing, exact dimensions, palette membership, color counts, or outline gaps when deterministic evidence reports that check passing.
+- If the preview merely looks soft or ambiguous while deterministic evidence passes, describe only the semantic readability concern. Do not turn that impression into a technical defect or blocking repair.
+- Blocking issues must be semantic art-quality problems or failures explicitly reported by deterministic evidence. Never invent a validator failure.
+
 Critique against these standards:
 - strong silhouette/readability at intended game scale;
 - disciplined hard pixel clusters and no blurry pseudo-pixel art when the asset is pixel art;
@@ -424,7 +434,8 @@ Return only:
 4. Concrete edit instructions: exact local edits.
 5. Animation/engine-readiness risks.
 6. What not to change.
-7. Usefulness score 1-10.
+7. Evidence conflicts: none, or name any visual impression you withheld because deterministic evidence overruled it.
+8. Usefulness score 1-10.
 """
 
 
