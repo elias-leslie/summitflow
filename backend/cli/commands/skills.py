@@ -228,8 +228,10 @@ def _audit_single_skill(skill_dir: Path, auto_fix: bool = False) -> dict[str, An
             if forbidden in raw_content:
                 warnings.append(f"Hardcoded harness path found: '{forbidden}' (use relative '_shared/...' or neutral commands)")
 
-    # Check relative markdown links
-    for match in re.finditer(r"\[([^\]]+)\]\(([^)]+)\)", body):
+    # Check relative markdown links (ignoring links inside code blocks or inline code spans)
+    clean_body = re.sub(r"```[\s\S]*?```", "", body)
+    clean_body = re.sub(r"`[^`]*`", "", clean_body)
+    for match in re.finditer(r"\[([^\]]+)\]\(([^)]+)\)", clean_body):
         link_target = match.group(2).strip().split("#")[0]
         if not link_target or link_target.startswith(("http://", "https://", "mailto:", "file://", "#")):
             continue
