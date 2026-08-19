@@ -64,7 +64,11 @@ def _load_harnesses(canon: Path) -> list[Harness]:
     return [
         Harness("claude", Path("~/.claude/skills").expanduser(), Path("~/.claude/commands").expanduser()),
         Harness("codex", Path("~/.codex/skills").expanduser(), None, ["zzpersona_refiner"]),
+        Harness("gemini", Path("~/.gemini/config/skills").expanduser(), None, ["zzpersona_refiner"]),
     ]
+
+
+_IGNORE_NAMES = {".system", ".git", ".DS_Store", ".codex-system-skills.marker"}
 
 
 def _canonical_items(canon: Path) -> tuple[list[str], list[str]]:
@@ -107,6 +111,32 @@ def _expected(canon: Path) -> list[tuple[str, Path, Path]]:
     return rows
 
 
+def _unmanaged(canon: Path) -> list[tuple[str, Path, str]]:
+    """Find any item in a harness dir that is not declared in canonical expectations."""
+    expected_by_harness: dict[str, set[Path]] = {}
+    for h, dest, _target in _expected(canon):
+        expected_by_harness.setdefault(h, set()).add(dest)
+
+    unmanaged: list[tuple[str, Path, str]] = []
+    for h in _load_harnesses(canon):
+        expected_dests = expected_by_harness.get(h.name, set())
+        if h.skills_dir.is_dir():
+            for item in sorted(h.skills_dir.iterdir()):
+                if item.name in _IGNORE_NAMES:
+                    continue
+                if item not in expected_dests:
+                    kind = "unmanaged-link" if item.is_symlink() else "unmanaged-copy"
+                    unmanaged.append((h.name, item, kind))
+        if h.commands_dir and h.commands_dir.is_dir():
+            for item in sorted(h.commands_dir.iterdir()):
+                if item.name in _IGNORE_NAMES:
+                    continue
+                if item not in expected_dests:
+                    kind = "unmanaged-link" if item.is_symlink() else "unmanaged-copy"
+                    unmanaged.append((h.name, item, kind))
+    return unmanaged
+
+
 def _canon_dirty(canon: Path) -> bool:
     try:
         r = subprocess.run(
@@ -119,9 +149,10 @@ def _canon_dirty(canon: Path) -> bool:
 
 
 def _scan(canon: Path) -> dict[str, int]:
-    counts = {"ok": 0, "missing": 0, "dangling": 0, "wrong-target": 0, "real-copy": 0}
+    counts = {"ok": 0, "missing": 0, "dangling": 0, "wrong-target": 0, "real-copy": 0, "unmanaged": 0}
     for _h, dest, target in _expected(canon):
         counts[_classify(dest, target)] += 1
+    counts["unmanaged"] = len(_unmanaged(canon))
     return counts
 
 
@@ -158,10 +189,13 @@ def doctor(ctx: typer.Context) -> None:
         if state == "ok":
             continue
         problems += 1
-        typer.echo(f"{state:12} [{h}] {dest}")
+        typer.echo(f"{state:14} [{h}] {dest}")
+    for h, dest, kind in _unmanaged(canon):
+        problems += 1
+        typer.echo(f"{kind:14} [{h}] {dest}")
     if _canon_dirty(canon):
         problems += 1
-        typer.echo(f"dirty-canon  {canon} has uncommitted changes (edits made through a symlink?)")
+        typer.echo(f"dirty-canon    {canon} has uncommitted changes (edits made through a symlink?)")
     if problems == 0:
         typer.echo(f"ok: all skills materialized as symlinks into canonical ({canon})")
         raise typer.Exit(0)
@@ -179,7 +213,7 @@ def status(
     canon = _canon()
     counts = _scan(canon)
     dirty = _canon_dirty(canon)
-    drifted = counts["wrong-target"] + counts["real-copy"] + counts["dangling"]
+    drifted = counts["wrong-target"] + counts["real-copy"] + counts["dangling"] + counts["unmanaged"]
     if as_json:
         output_json({"canon": str(canon), "counts": counts, "dirty_canon": dirty, "drifted": drifted})
         return
