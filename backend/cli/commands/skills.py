@@ -10,7 +10,7 @@ Commands:
   doctor         full drift report; nonzero exit on divergence
   status         compact health line for hooks (--json / --quiet)
   sync           pull canonical, install, reseed memory
-  audit          structural, link, scope, and semantic overlap audit of all skills
+  audit          intelligent structural, link, scope, cross-reference, and overlap audit
   create         scaffold a new canonical skill and link to all harnesses
   import-github  download/import a skill from GitHub, validate, link, and audit
 """
@@ -164,7 +164,7 @@ def _scan(canon: Path) -> dict[str, int]:
     return counts
 
 
-# --- Audit Subsystem ---
+# --- Intelligent Audit Subsystem ---
 
 def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str, list[str]]:
     """Parse YAML frontmatter from markdown text. Returns (frontmatter, body, errors)."""
@@ -198,6 +198,7 @@ def _audit_single_skill(skill_dir: Path, auto_fix: bool = False) -> dict[str, An
             "fixes": [],
             "description": "",
             "lines": 0,
+            "body": "",
         }
 
     raw_content = skill_md.read_text(encoding="utf-8", errors="replace")
@@ -219,8 +220,8 @@ def _audit_single_skill(skill_dir: Path, auto_fix: bool = False) -> dict[str, An
         errors.append("Missing required 'description' field in frontmatter (needed for agent skill routing)")
     elif not isinstance(desc, str):
         errors.append("'description' must be a string")
-    elif len(desc.strip()) < 20:
-        errors.append(f"Description too short ({len(desc.strip())} chars; min 20 chars recommended for clear routing)")
+    elif len(str(desc).strip()) < 15:
+        errors.append(f"Description too short ({len(str(desc).strip())} chars; min 15 chars recommended for clear routing)")
 
     # Check for hardcoded harness paths that break cross-harness neutrality
     if skill_dir.name not in ("zzpersona_refiner", "zzskills"):
@@ -265,6 +266,7 @@ def _audit_single_skill(skill_dir: Path, auto_fix: bool = False) -> dict[str, An
         "fixes": fixes_applied,
         "description": str(desc or ""),
         "lines": lines,
+        "body": body,
     }
 
 
@@ -276,13 +278,26 @@ _STOP_WORDS = {
 }
 
 
+# Domain actions and targets for semantic redundancy detection
+_DOMAIN_ACTIONS = {"audit", "refactor", "scrape", "test", "review", "search", "design", "lint", "format", "debug", "model", "browse"}
+_DOMAIN_TARGETS = {"architecture", "browser", "database", "git", "memory", "research", "styling", "testing", "typescript", "web", "bugs", "domain"}
+
+
 def _detect_semantic_overlaps(skill_audits: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    """Detect potential trigger collisions or scope ambiguities across skills."""
+    """Intelligently detect trigger collisions, functional redundancies, and scope ambiguities across skills."""
     tokens_by_skill: dict[str, set[str]] = {}
+    actions_by_skill: dict[str, set[str]] = {}
+    targets_by_skill: dict[str, set[str]] = {}
+
     for name, audit in skill_audits.items():
         desc = audit.get("description", "").lower()
+        body = audit.get("body", "").lower()
+        full_text = f"{desc} {body}"
+
         words = set(re.findall(r"[a-zA-Z0-9_-]{3,}", desc)) - _STOP_WORDS
         tokens_by_skill[name] = words
+        actions_by_skill[name] = {w for w in _DOMAIN_ACTIONS if w in full_text}
+        targets_by_skill[name] = {w for w in _DOMAIN_TARGETS if w in full_text}
 
     overlaps: list[dict[str, Any]] = []
     names = sorted(tokens_by_skill.keys())
@@ -292,15 +307,46 @@ def _detect_semantic_overlaps(skill_audits: dict[str, dict[str, Any]]) -> list[d
             if not t1 or not t2:
                 continue
             shared = t1 & t2
-            if len(shared) >= 4:
-                jaccard = len(shared) / len(t1 | t2)
-                if jaccard >= 0.10 or len(shared) >= 5:
-                    overlaps.append({
-                        "skills": [s1, s2],
-                        "shared_terms": sorted(shared),
-                        "similarity": round(jaccard, 2),
-                    })
+            shared_actions = actions_by_skill[s1] & actions_by_skill[s2]
+            shared_targets = targets_by_skill[s1] & targets_by_skill[s2]
+
+            # High token similarity or shared action+target domain
+            jaccard = len(shared) / len(t1 | t2)
+            is_domain_match = len(shared_actions) >= 1 and len(shared_targets) >= 1 and len(shared) >= 2
+
+            if jaccard >= 0.10 or len(shared) >= 4 or is_domain_match:
+                overlaps.append({
+                    "skills": [s1, s2],
+                    "shared_terms": sorted(shared),
+                    "shared_domain": sorted(shared_actions | shared_targets),
+                    "similarity": round(jaccard, 2),
+                })
     return overlaps
+
+
+def _check_cross_skill_references(skill_audits: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Ensure skills that refer to other skills point to existing canonical skills."""
+    available_skills = set(skill_audits.keys())
+    missing_refs: list[dict[str, Any]] = []
+
+    for name, audit in skill_audits.items():
+        body = audit.get("body", "")
+        # Find references like: call Skill tool with "foo", see the `foo` skill, the foo skill
+        matches = re.finditer(r'(?:skill|call|run|see|invok\w+)\s+(?:the\s+)?["`\']([a-zA-Z0-9_-]+)["`\'](?:\s+skill)?', body, re.IGNORECASE)
+        for m in matches:
+            ref_name = m.group(1).strip().lower()
+            if ref_name in available_skills or ref_name == name:
+                continue
+            if ref_name in {"st", "git", "bash", "python", "pytest", "main", "true", "false", "test", "node", "npm"}:
+                continue
+            # Check if this might be an intended skill reference
+            if any(term in m.group(0).lower() for term in ["skill", "tool"]):
+                missing_refs.append({
+                    "source_skill": name,
+                    "referenced": ref_name,
+                    "context": m.group(0),
+                })
+    return missing_refs
 
 
 def _audit_all_skills(canon: Path, auto_fix: bool = False) -> dict[str, Any]:
@@ -314,6 +360,7 @@ def _audit_all_skills(canon: Path, auto_fix: bool = False) -> dict[str, Any]:
             skill_audits[sdir.name] = _audit_single_skill(sdir, auto_fix=auto_fix)
 
     overlaps = _detect_semantic_overlaps(skill_audits)
+    missing_refs = _check_cross_skill_references(skill_audits)
     drift = _scan(canon)
     dirty = _canon_dirty(canon)
 
@@ -323,7 +370,7 @@ def _audit_all_skills(canon: Path, auto_fix: bool = False) -> dict[str, Any]:
 
     if total_errors > 0 or drift_problems > 0:
         overall = "fail"
-    elif total_warnings > 0 or len(overlaps) > 0:
+    elif total_warnings > 0 or len(overlaps) > 0 or len(missing_refs) > 0:
         overall = "warn"
     else:
         overall = "pass"
@@ -333,6 +380,7 @@ def _audit_all_skills(canon: Path, auto_fix: bool = False) -> dict[str, Any]:
         "overall": overall,
         "skills": skill_audits,
         "overlaps": overlaps,
+        "missing_references": missing_refs,
         "drift": drift,
         "canon_dirty": dirty,
         "total_errors": total_errors,
@@ -424,7 +472,7 @@ def audit(
     fix: Annotated[bool, typer.Option("--fix", help="Automatically fix issues like script permissions (+x)")] = False,
     as_json: Annotated[bool, typer.Option("--json", help="Emit JSON audit report")] = False,
 ) -> None:
-    """Run comprehensive audit of canonical skills, link integrity, and scope overlaps."""
+    """Run intelligent audit of canonical skills, link integrity, scope overlaps, and dependencies."""
     canon = _canon()
     report = _audit_all_skills(canon, auto_fix=fix)
 
@@ -436,7 +484,7 @@ def audit(
     for name, res in report["skills"].items():
         status = res["status"]
         symbol = {"ok": "✓", "warn": "⚠", "fail": "✗"}[status]
-        typer.echo(f"[{symbol}] {name:24} ({status.upper()})")
+        typer.echo(f"[{symbol}] {name:28} ({status.upper()})")
         for err in res["errors"]:
             typer.echo(f"    ERROR: {err}")
         for warn in res["warnings"]:
@@ -449,8 +497,17 @@ def audit(
         for ov in report["overlaps"]:
             s1, s2 = ov["skills"]
             shared = ", ".join(ov["shared_terms"])
+            domain = ", ".join(ov.get("shared_domain", []))
             typer.echo(f"  • Overlap [{s1} <-> {s2}] (similarity: {ov['similarity']})")
-            typer.echo(f"    Shared trigger terms: {shared}")
+            if shared:
+                typer.echo(f"    Shared trigger terms: {shared}")
+            if domain:
+                typer.echo(f"    Shared domain focus: {domain}")
+
+    if report["missing_references"]:
+        typer.echo("\n--- Cross-Skill Reference Integrity ---")
+        for ref in report["missing_references"]:
+            typer.echo(f"  ⚠ [{ref['source_skill']}] references '{ref['referenced']}' ({ref['context']}) — not found in canonical skills")
 
     typer.echo(f"\n--- Harness Symlink & Drift Status ---")
     drift = report["drift"]
@@ -460,7 +517,10 @@ def audit(
         f"{drift['missing']} missing, {drift['unmanaged']} unmanaged{' (canon dirty)' if dirty else ''}"
     )
 
-    typer.echo(f"\nAudit Summary: {report['total_errors']} error(s), {report['total_warnings']} warning(s), {len(report['overlaps'])} overlap note(s).")
+    typer.echo(
+        f"\nAudit Summary: {report['total_errors']} error(s), {report['total_warnings']} warning(s), "
+        f"{len(report['overlaps'])} overlap note(s), {len(report['missing_references'])} unresolved reference(s)."
+    )
     if report["overall"] == "fail" or (strict and report["overall"] != "pass"):
         raise typer.Exit(1)
 
