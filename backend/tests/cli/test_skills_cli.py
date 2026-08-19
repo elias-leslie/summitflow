@@ -19,11 +19,11 @@ exclude = []
 
 [harness.codex]
 skills_dir = "~/.codex/skills"
-exclude = ["zzpersona_refiner"]
+exclude = []
 
 [harness.gemini]
 skills_dir = "~/.gemini/config/skills"
-exclude = ["zzpersona_refiner"]
+exclude = []
 """)
     harnesses = skills._load_harnesses(tmp_path)
     names = [h.name for h in harnesses]
@@ -31,7 +31,7 @@ exclude = ["zzpersona_refiner"]
     gemini = next(h for h in harnesses if h.name == "gemini")
     assert gemini.skills_dir == Path("~/.gemini/config/skills").expanduser()
     assert gemini.commands_dir is None
-    assert gemini.exclude == ["zzpersona_refiner"]
+    assert gemini.exclude == []
 
 
 def test_load_harnesses_fallback(tmp_path: Path) -> None:

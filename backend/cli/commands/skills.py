@@ -83,7 +83,7 @@ def _load_harnesses(canon: Path, profile_name: str | None = None) -> list[Harnes
         if out:
             return out
 
-    default_excludes = ["zzpersona_refiner"]
+    default_excludes = []
     if profile_excludes:
         default_excludes = list(set(default_excludes + profile_excludes))
 
@@ -245,7 +245,7 @@ def _audit_single_skill(skill_dir: Path, auto_fix: bool = False) -> dict[str, An
         errors.append(f"Description too short ({len(str(desc).strip())} chars; min 15 chars recommended for clear routing)")
 
     # Check for hardcoded harness paths that break cross-harness neutrality
-    if skill_dir.name not in ("zzpersona_refiner", "zzskills"):
+    if skill_dir.name != "zzskills":
         for forbidden in ["~/.claude", "~/.codex", "~/.gemini", "/home/kasadis/.claude", "/home/kasadis/.codex", "/home/kasadis/.gemini"]:
             if forbidden in raw_content:
                 warnings.append(f"Hardcoded harness path found: '{forbidden}' (use relative '_shared/...' or neutral commands)")
@@ -285,7 +285,7 @@ def _audit_single_skill(skill_dir: Path, auto_fix: bool = False) -> dict[str, An
     bloat_notes: list[str] = []
     
     # Size and progressive disclosure thresholds
-    if est_tokens > 3000 and skill_dir.name != "zzpersona_refiner":
+    if est_tokens > 3000:
         warnings.append(
             f"Heavy token footprint (~{est_tokens} tokens, {lines} lines). "
             f"Recommend moving detailed reference manuals/checklists into 'references/' for progressive disclosure."
