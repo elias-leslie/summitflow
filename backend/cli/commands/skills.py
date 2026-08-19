@@ -10,7 +10,7 @@ Commands:
   doctor         full drift report; nonzero exit on divergence
   status         compact health line for hooks (--json / --quiet)
   sync           pull canonical, install, reseed memory
-  audit          intelligent structural, link, scope, cross-reference, and overlap audit
+  audit          intelligent structural, link, scope, token bloat, and overlap audit
   create         scaffold a new canonical skill and link to all harnesses
   import-github  download/import a skill from GitHub, validate, link, and audit
 """
@@ -198,6 +198,9 @@ def _audit_single_skill(skill_dir: Path, auto_fix: bool = False) -> dict[str, An
             "fixes": [],
             "description": "",
             "lines": 0,
+            "tokens": 0,
+            "code_pct": 0.0,
+            "bloat_notes": [],
             "body": "",
         }
 
@@ -252,10 +255,45 @@ def _audit_single_skill(skill_dir: Path, auto_fix: bool = False) -> dict[str, An
                     else:
                         warnings.append(f"Script '{sub}/{script_file.name}' is not executable (run chmod +x)")
 
-    # Progressive disclosure check
+    # --- Token Bloat & Density Analysis ---
+    chars = len(raw_content)
     lines = len(raw_content.splitlines())
-    if lines > 400 and skill_dir.name != "zzpersona_refiner":
-        warnings.append(f"Large SKILL.md ({lines} lines). Consider moving reference manuals into 'references/' for progressive disclosure")
+    est_tokens = int(chars / 3.8)
+    
+    code_blocks = re.findall(r"```[\s\S]*?```", raw_content)
+    code_chars = sum(len(cb) for cb in code_blocks)
+    code_pct = round((code_chars / chars * 100) if chars > 0 else 0, 1)
+
+    bloat_notes: list[str] = []
+    
+    # Size and progressive disclosure thresholds
+    if est_tokens > 3000 and skill_dir.name != "zzpersona_refiner":
+        warnings.append(
+            f"Heavy token footprint (~{est_tokens} tokens, {lines} lines). "
+            f"Recommend moving detailed reference manuals/checklists into 'references/' for progressive disclosure."
+        )
+        bloat_notes.append(f"Heavy (~{est_tokens} tokens)")
+    elif est_tokens > 1500 and code_pct > 50:
+        warnings.append(
+            f"High code block density ({code_pct}% code in ~{est_tokens} tokens). "
+            f"Recommend moving bulky script/template examples into 'references/examples.md'."
+        )
+        bloat_notes.append(f"High code density ({code_pct}%)")
+
+    # Intra-skill sentence repetition
+    text_no_quotes = re.sub(r'"[^"]*"', '', clean_body)
+    sentences = [s.strip() for s in re.split(r"[.\n]+", text_no_quotes) if len(s.strip()) > 35]
+    seen_s = set()
+    repeated_s = set()
+    for s in sentences:
+        norm = re.sub(r"\s+", " ", s.lower())
+        if norm in seen_s:
+            repeated_s.add(s)
+        seen_s.add(norm)
+
+    if len(repeated_s) >= 2:
+        warnings.append(f"Found {len(repeated_s)} duplicate sentence/rule statements inside SKILL.md. Recommend deduplicating.")
+        bloat_notes.append(f"{len(repeated_s)} repeated sentences")
 
     status = "fail" if errors else ("warn" if warnings else "ok")
     return {
@@ -266,6 +304,9 @@ def _audit_single_skill(skill_dir: Path, auto_fix: bool = False) -> dict[str, An
         "fixes": fixes_applied,
         "description": str(desc or ""),
         "lines": lines,
+        "tokens": est_tokens,
+        "code_pct": code_pct,
+        "bloat_notes": bloat_notes,
         "body": body,
     }
 
@@ -277,8 +318,6 @@ _STOP_WORDS = {
     "using", "used", "will", "can", "should", "must"
 }
 
-
-# Domain actions and targets for semantic redundancy detection
 _DOMAIN_ACTIONS = {"audit", "refactor", "scrape", "test", "review", "search", "design", "lint", "format", "debug", "model", "browse"}
 _DOMAIN_TARGETS = {"architecture", "browser", "database", "git", "memory", "research", "styling", "testing", "typescript", "web", "bugs", "domain"}
 
@@ -310,7 +349,6 @@ def _detect_semantic_overlaps(skill_audits: dict[str, dict[str, Any]]) -> list[d
             shared_actions = actions_by_skill[s1] & actions_by_skill[s2]
             shared_targets = targets_by_skill[s1] & targets_by_skill[s2]
 
-            # High token similarity or shared action+target domain
             jaccard = len(shared) / len(t1 | t2)
             is_domain_match = len(shared_actions) >= 1 and len(shared_targets) >= 1 and len(shared) >= 2
 
@@ -331,7 +369,6 @@ def _check_cross_skill_references(skill_audits: dict[str, dict[str, Any]]) -> li
 
     for name, audit in skill_audits.items():
         body = audit.get("body", "")
-        # Find references like: call Skill tool with "foo", see the `foo` skill, the foo skill
         matches = re.finditer(r'(?:skill|call|run|see|invok\w+)\s+(?:the\s+)?["`\']([a-zA-Z0-9_-]+)["`\'](?:\s+skill)?', body, re.IGNORECASE)
         for m in matches:
             ref_name = m.group(1).strip().lower()
@@ -339,7 +376,6 @@ def _check_cross_skill_references(skill_audits: dict[str, dict[str, Any]]) -> li
                 continue
             if ref_name in {"st", "git", "bash", "python", "pytest", "main", "true", "false", "test", "node", "npm"}:
                 continue
-            # Check if this might be an intended skill reference
             if any(term in m.group(0).lower() for term in ["skill", "tool"]):
                 missing_refs.append({
                     "source_skill": name,
@@ -364,6 +400,9 @@ def _audit_all_skills(canon: Path, auto_fix: bool = False) -> dict[str, Any]:
     drift = _scan(canon)
     dirty = _canon_dirty(canon)
 
+    total_tokens = sum(a.get("tokens", 0) for a in skill_audits.values())
+    avg_tokens = int(total_tokens / len(skill_audits)) if skill_audits else 0
+
     total_errors = sum(len(a["errors"]) for a in skill_audits.values())
     total_warnings = sum(len(a["warnings"]) for a in skill_audits.values())
     drift_problems = drift["wrong-target"] + drift["real-copy"] + drift["dangling"] + drift["unmanaged"] + (1 if dirty else 0)
@@ -381,6 +420,11 @@ def _audit_all_skills(canon: Path, auto_fix: bool = False) -> dict[str, Any]:
         "skills": skill_audits,
         "overlaps": overlaps,
         "missing_references": missing_refs,
+        "token_metrics": {
+            "total_tokens": total_tokens,
+            "avg_tokens": avg_tokens,
+            "skill_count": len(skill_audits),
+        },
         "drift": drift,
         "canon_dirty": dirty,
         "total_errors": total_errors,
@@ -472,7 +516,7 @@ def audit(
     fix: Annotated[bool, typer.Option("--fix", help="Automatically fix issues like script permissions (+x)")] = False,
     as_json: Annotated[bool, typer.Option("--json", help="Emit JSON audit report")] = False,
 ) -> None:
-    """Run intelligent audit of canonical skills, link integrity, scope overlaps, and dependencies."""
+    """Run intelligent audit of canonical skills, link integrity, token bloat, and overlaps."""
     canon = _canon()
     report = _audit_all_skills(canon, auto_fix=fix)
 
@@ -480,11 +524,16 @@ def audit(
         output_json(report)
         return
 
-    typer.echo(f"=== Canonical Skills Audit ({canon}) ===\n")
+    metrics = report["token_metrics"]
+    typer.echo(f"=== Canonical Skills Audit ({canon}) ===")
+    typer.echo(f"Total Skills: {metrics['skill_count']} | Footprint: ~{metrics['total_tokens']:,} tokens (avg ~{metrics['avg_tokens']:,}/skill)\n")
+
     for name, res in report["skills"].items():
         status = res["status"]
         symbol = {"ok": "✓", "warn": "⚠", "fail": "✗"}[status]
-        typer.echo(f"[{symbol}] {name:28} ({status.upper()})")
+        tokens = res.get("tokens", 0)
+        code_pct = res.get("code_pct", 0)
+        typer.echo(f"[{symbol}] {name:28} ({status.upper():4}) [~{tokens:4} tok | {code_pct:4.1f}% code]")
         for err in res["errors"]:
             typer.echo(f"    ERROR: {err}")
         for warn in res["warnings"]:
