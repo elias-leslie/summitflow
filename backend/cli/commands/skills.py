@@ -6,7 +6,7 @@ consumes them through per-item symlinks rather than copies, so a single edit pro
 everywhere and drift is structurally impossible.
 
 Commands:
-  install        create/repoint symlinks per manifest (--adopt to replace real dirs)
+  install        create/repoint symlinks per manifest and profile (--adopt to replace real dirs)
   doctor         full drift report; nonzero exit on divergence
   status         compact health line for hooks (--json / --quiet)
   sync           pull canonical, install, reseed memory
@@ -40,6 +40,10 @@ def _canon() -> Path:
     return Path(os.environ.get("ST_AGENT_SKILLS_DIR", "~/agent-skills")).expanduser()
 
 
+def _active_profile() -> str:
+    return os.environ.get("ST_SKILLS_PROFILE", "default").strip()
+
+
 @dataclass
 class Harness:
     name: str
@@ -48,31 +52,45 @@ class Harness:
     exclude: list[str] = field(default_factory=list)
 
 
-def _load_harnesses(canon: Path) -> list[Harness]:
-    """Read manifest.toml; fall back to built-in claude/codex/gemini defaults."""
+def _load_harnesses(canon: Path, profile_name: str | None = None) -> list[Harness]:
+    """Read manifest.toml; apply profile-level exclusions."""
     manifest = canon / "manifest.toml"
+    effective_profile = profile_name or _active_profile()
+    profile_excludes: list[str] = []
+
     if manifest.exists():
         data = tomllib.loads(manifest.read_text())
+        profiles = data.get("profile") or {}
+        if effective_profile in profiles:
+            profile_excludes = list(profiles[effective_profile].get("exclude") or [])
+
         out: list[Harness] = []
         for name, cfg in (data.get("harness") or {}).items():
             sd = cfg.get("skills_dir", "").strip()
             cd = cfg.get("commands_dir", "").strip()
             if not sd:
                 continue
+            h_excludes = list(cfg.get("exclude") or [])
+            combined_excludes = list(set(h_excludes + profile_excludes))
             out.append(
                 Harness(
                     name=name,
                     skills_dir=Path(sd).expanduser(),
                     commands_dir=Path(cd).expanduser() if cd else None,
-                    exclude=list(cfg.get("exclude") or []),
+                    exclude=combined_excludes,
                 )
             )
         if out:
             return out
+
+    default_excludes = ["zzpersona_refiner"]
+    if profile_excludes:
+        default_excludes = list(set(default_excludes + profile_excludes))
+
     return [
-        Harness("claude", Path("~/.claude/skills").expanduser(), Path("~/.claude/commands").expanduser()),
-        Harness("codex", Path("~/.codex/skills").expanduser(), None, ["zzpersona_refiner"]),
-        Harness("gemini", Path("~/.gemini/config/skills").expanduser(), None, ["zzpersona_refiner"]),
+        Harness("claude", Path("~/.claude/skills").expanduser(), Path("~/.claude/commands").expanduser(), profile_excludes),
+        Harness("codex", Path("~/.codex/skills").expanduser(), None, default_excludes),
+        Harness("gemini", Path("~/.gemini/config/skills").expanduser(), None, default_excludes),
     ]
 
 
@@ -103,11 +121,11 @@ def _classify(dest: Path, target: Path) -> str:
     return "real-copy"  # a real dir/file shadowing canonical — drift
 
 
-def _expected(canon: Path) -> list[tuple[str, Path, Path]]:
+def _expected(canon: Path, profile_name: str | None = None) -> list[tuple[str, Path, Path]]:
     """Yield (harness, dest, canonical_target) for every item that should be a symlink."""
     skills, commands = _canonical_items(canon)
     rows: list[tuple[str, Path, Path]] = []
-    for h in _load_harnesses(canon):
+    for h in _load_harnesses(canon, profile_name=profile_name):
         rows.append((h.name, h.skills_dir / "_shared", canon / "skills" / "_shared"))
         for s in skills:
             if s in h.exclude:
@@ -119,14 +137,14 @@ def _expected(canon: Path) -> list[tuple[str, Path, Path]]:
     return rows
 
 
-def _unmanaged(canon: Path) -> list[tuple[str, Path, str]]:
+def _unmanaged(canon: Path, profile_name: str | None = None) -> list[tuple[str, Path, str]]:
     """Find any item in a harness dir that is not declared in canonical expectations."""
     expected_by_harness: dict[str, set[Path]] = {}
-    for h, dest, _target in _expected(canon):
+    for h, dest, _target in _expected(canon, profile_name=profile_name):
         expected_by_harness.setdefault(h, set()).add(dest)
 
     unmanaged: list[tuple[str, Path, str]] = []
-    for h in _load_harnesses(canon):
+    for h in _load_harnesses(canon, profile_name=profile_name):
         expected_dests = expected_by_harness.get(h.name, set())
         if h.skills_dir.is_dir():
             for item in sorted(h.skills_dir.iterdir()):
@@ -156,11 +174,11 @@ def _canon_dirty(canon: Path) -> bool:
         return False
 
 
-def _scan(canon: Path) -> dict[str, int]:
+def _scan(canon: Path, profile_name: str | None = None) -> dict[str, int]:
     counts = {"ok": 0, "missing": 0, "dangling": 0, "wrong-target": 0, "real-copy": 0, "unmanaged": 0}
-    for _h, dest, target in _expected(canon):
+    for _h, dest, target in _expected(canon, profile_name=profile_name):
         counts[_classify(dest, target)] += 1
-    counts["unmanaged"] = len(_unmanaged(canon))
+    counts["unmanaged"] = len(_unmanaged(canon, profile_name=profile_name))
     return counts
 
 
@@ -385,7 +403,7 @@ def _check_cross_skill_references(skill_audits: dict[str, dict[str, Any]]) -> li
     return missing_refs
 
 
-def _audit_all_skills(canon: Path, auto_fix: bool = False) -> dict[str, Any]:
+def _audit_all_skills(canon: Path, profile_name: str | None = None, auto_fix: bool = False) -> dict[str, Any]:
     """Run comprehensive audit across all canonical skills and harnesses."""
     skills_dir = canon / "skills"
     skill_audits: dict[str, dict[str, Any]] = {}
@@ -397,7 +415,7 @@ def _audit_all_skills(canon: Path, auto_fix: bool = False) -> dict[str, Any]:
 
     overlaps = _detect_semantic_overlaps(skill_audits)
     missing_refs = _check_cross_skill_references(skill_audits)
-    drift = _scan(canon)
+    drift = _scan(canon, profile_name=profile_name)
     dirty = _canon_dirty(canon)
 
     total_tokens = sum(a.get("tokens", 0) for a in skill_audits.values())
@@ -416,6 +434,7 @@ def _audit_all_skills(canon: Path, auto_fix: bool = False) -> dict[str, Any]:
 
     return {
         "canon": str(canon),
+        "profile": profile_name or _active_profile(),
         "overall": overall,
         "skills": skill_audits,
         "overlaps": overlaps,
@@ -512,20 +531,21 @@ def _download_and_extract_skill(owner: str, repo: str, ref: str, subpath: str | 
 @app.command()
 def audit(
     ctx: typer.Context,
+    profile: Annotated[str | None, typer.Option("--profile", "-p", help="Project profile (e.g. backend, game, general)")] = None,
     strict: Annotated[bool, typer.Option("--strict", help="Exit nonzero on warnings or overlaps as well as errors")] = False,
     fix: Annotated[bool, typer.Option("--fix", help="Automatically fix issues like script permissions (+x)")] = False,
     as_json: Annotated[bool, typer.Option("--json", help="Emit JSON audit report")] = False,
 ) -> None:
     """Run intelligent audit of canonical skills, link integrity, token bloat, and overlaps."""
     canon = _canon()
-    report = _audit_all_skills(canon, auto_fix=fix)
+    report = _audit_all_skills(canon, profile_name=profile, auto_fix=fix)
 
     if as_json:
         output_json(report)
         return
 
     metrics = report["token_metrics"]
-    typer.echo(f"=== Canonical Skills Audit ({canon}) ===")
+    typer.echo(f"=== Canonical Skills Audit ({canon}) [Profile: {report['profile']}] ===")
     typer.echo(f"Total Skills: {metrics['skill_count']} | Footprint: ~{metrics['total_tokens']:,} tokens (avg ~{metrics['avg_tokens']:,}/skill)\n")
 
     for name, res in report["skills"].items():
@@ -703,6 +723,7 @@ Provide clear, step-by-step procedures and runbooks for the agent.
 @app.command()
 def install(
     ctx: typer.Context,
+    profile: Annotated[str | None, typer.Option("--profile", "-p", help="Project profile (e.g. backend, game, general)")] = None,
     adopt: Annotated[bool, typer.Option("--adopt", help="Replace existing real dirs/files with symlinks")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Show actions, change nothing")] = False,
 ) -> None:
@@ -713,6 +734,8 @@ def install(
         typer.echo(f"error: {script} not found (is {canon} cloned?)", err=True)
         raise typer.Exit(2)
     args = ["bash", str(script)]
+    if profile:
+        args.extend(["--profile", profile])
     if adopt:
         args.append("--adopt")
     if dry_run:
@@ -721,27 +744,30 @@ def install(
 
 
 @app.command()
-def doctor(ctx: typer.Context) -> None:
+def doctor(
+    ctx: typer.Context,
+    profile: Annotated[str | None, typer.Option("--profile", "-p", help="Project profile (e.g. backend, game, general)")] = None,
+) -> None:
     """Full drift report. Exits nonzero when any item diverges from canonical."""
     canon = _canon()
     if not (canon / "skills").is_dir():
         typer.echo(f"error: canonical skills not found at {canon}", err=True)
         raise typer.Exit(2)
     problems = 0
-    for h, dest, target in _expected(canon):
+    for h, dest, target in _expected(canon, profile_name=profile):
         state = _classify(dest, target)
         if state == "ok":
             continue
         problems += 1
         typer.echo(f"{state:14} [{h}] {dest}")
-    for h, dest, kind in _unmanaged(canon):
+    for h, dest, kind in _unmanaged(canon, profile_name=profile):
         problems += 1
         typer.echo(f"{kind:14} [{h}] {dest}")
     if _canon_dirty(canon):
         problems += 1
         typer.echo(f"dirty-canon    {canon} has uncommitted changes (edits made through a symlink?)")
     if problems == 0:
-        typer.echo(f"ok: all skills materialized as symlinks into canonical ({canon})")
+        typer.echo(f"ok: all skills materialized as symlinks into canonical ({canon}) [Profile: {profile or _active_profile()}]")
         raise typer.Exit(0)
     typer.echo(f"\n{problems} issue(s). Run `st skills install --adopt` to fix real-copy drift.", err=True)
     raise typer.Exit(1)
@@ -750,16 +776,17 @@ def doctor(ctx: typer.Context) -> None:
 @app.command()
 def status(
     ctx: typer.Context,
+    profile: Annotated[str | None, typer.Option("--profile", "-p", help="Project profile (e.g. backend, game, general)")] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Emit JSON")] = False,
     quiet: Annotated[bool, typer.Option("--quiet", help="One line; only emit when drifted")] = False,
 ) -> None:
     """Compact health, cheap enough for SessionStart hooks."""
     canon = _canon()
-    counts = _scan(canon)
+    counts = _scan(canon, profile_name=profile)
     dirty = _canon_dirty(canon)
     drifted = counts["wrong-target"] + counts["real-copy"] + counts["dangling"] + counts["unmanaged"]
     if as_json:
-        output_json({"canon": str(canon), "counts": counts, "dirty_canon": dirty, "drifted": drifted})
+        output_json({"canon": str(canon), "profile": profile or _active_profile(), "counts": counts, "dirty_canon": dirty, "drifted": drifted})
         return
     if quiet and drifted == 0 and not dirty:
         return
