@@ -64,6 +64,14 @@ def now_utc() -> datetime:
     return datetime.now(UTC)
 
 
+def system_uptime_seconds() -> float:
+    try:
+        return float(Path("/proc/uptime").read_text(encoding="utf-8").split()[0])
+    except (OSError, ValueError, IndexError):
+        return 86400.0
+
+
+
 def run(
     args: list[str],
     *,
@@ -101,9 +109,9 @@ def disk_snapshot(path: Path) -> dict[str, Any]:
 def evaluate_disk(state: CheckState, snapshot: dict[str, Any], *, label: str) -> None:
     percent = float(snapshot["percent_used"])
     free_gib = float(snapshot["free_gib"])
-    if percent >= 90 or free_gib <= 10:
+    if (percent >= 92 and free_gib <= 10) or percent >= 95 or free_gib <= 5:
         state.issue("critical", f"{label}_disk_critical", f"{label} disk is {percent}% used with {free_gib} GiB free")
-    elif percent >= 80 or free_gib <= 25:
+    elif (percent >= 85 and free_gib <= 30) or free_gib <= 15:
         state.issue("warning", f"{label}_disk_warning", f"{label} disk is {percent}% used with {free_gib} GiB free")
 
 
@@ -252,12 +260,19 @@ def check_veeam(state: CheckState) -> None:
     status, timestamp = match.groups()
     created = datetime.strptime(timestamp, "%Y-%m-%d %H:%M").replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC)
     age = now_utc() - created
+    uptime = system_uptime_seconds()
     if status in {"Failed", "Warning"}:
         state.issue("critical", "veeam_latest_failed", f"Latest Veeam session is {status}")
     elif status not in {"Running", "Pending"} and age > timedelta(hours=60):
-        state.issue("critical", "veeam_stale", f"Latest Veeam backup is {age.total_seconds() / 3600:.1f} hours old")
+        if uptime < 7200:
+            state.issue("info", "veeam_stale_boot_pending", f"Latest Veeam backup is {age.total_seconds() / 3600:.1f} hours old (boot catch-up pending)")
+        else:
+            state.issue("critical", "veeam_stale", f"Latest Veeam backup is {age.total_seconds() / 3600:.1f} hours old")
     elif status not in {"Running", "Pending"} and age > timedelta(hours=36):
-        state.issue("warning", "veeam_stale", f"Latest Veeam backup is {age.total_seconds() / 3600:.1f} hours old")
+        if uptime < 7200:
+            state.issue("info", "veeam_stale_boot_pending", f"Latest Veeam backup is {age.total_seconds() / 3600:.1f} hours old (boot catch-up pending)")
+        else:
+            state.issue("warning", "veeam_stale", f"Latest Veeam backup is {age.total_seconds() / 3600:.1f} hours old")
 
 
 def directory_size(path: Path) -> int:
@@ -369,10 +384,12 @@ def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def event_fingerprint(payload: dict[str, Any]) -> str:
+    issues = payload.get("issues") or []
+    issue_tuples = sorted([(item["severity"], item["code"]) for item in issues if isinstance(item, dict) and "severity" in item and "code" in item])
     return json.dumps(
         {
-            "status": payload["status"],
-            "issues": [(item["severity"], item["code"], item["message"]) for item in payload["issues"]],
+            "status": payload.get("status", "healthy"),
+            "issues": issue_tuples,
         },
         sort_keys=True,
     )
