@@ -97,10 +97,10 @@ class TestNotificationRetention:
 
     def test_cleanup_old_notifications_prunes_old_pending(self, ensure_test_project: str) -> None:
         project_id = ensure_test_project
-        old_read_id = "notif-old-read"
-        old_dismissed_id = "notif-old-dismissed"
-        old_pending_id = "notif-pending-old"
-        recent_pending_id = "notif-pending-recent"
+        old_read_id = generate_prefixed_id("notif-old-read-")
+        old_dismissed_id = generate_prefixed_id("notif-old-dismissed-")
+        old_pending_id = generate_prefixed_id("notif-pending-old-")
+        recent_pending_id = generate_prefixed_id("notif-pending-recent-")
         now = datetime.now(UTC)
 
         with get_connection() as conn:
