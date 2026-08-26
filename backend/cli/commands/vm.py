@@ -223,3 +223,54 @@ def destroy(
         ],
     )
     _run(lambda client: (client.destroy(vmid), print(f"VM {vmid} destroyed")))
+
+
+@app.command("monitor")
+def monitor(
+    vmid: Annotated[str, typer.Argument(help="VM ID")],
+    command: Annotated[str, typer.Argument(help="QEMU monitor command string (e.g. 'info mice', 'info status')")],
+) -> None:
+    """Execute a QEMU monitor command directly on a VM."""
+    def action(client: ProxmoxClient) -> None:
+        out = client.monitor(vmid, command)
+        if out:
+            print(out)
+
+    _run(action)
+
+
+@app.command("sendkey")
+def sendkey(
+    vmid: Annotated[str, typer.Argument(help="VM ID")],
+    keys: Annotated[str, typer.Argument(help="Key combination (e.g., 'shift-f10', 'ctrl-alt-delete', 'ret')")],
+) -> None:
+    """Send a key combination to a VM."""
+    _run(lambda client: (client.sendkey(vmid, keys), print(f"Sent key '{keys}' to VM {vmid}")))
+
+
+@app.command("exec")
+def exec_guest(
+    vmid: Annotated[str, typer.Argument(help="VM ID")],
+    command: Annotated[str, typer.Argument(help="Command string to execute in guest via guest agent")],
+) -> None:
+    """Execute a command inside guest OS via QEMU guest agent."""
+    def action(client: ProxmoxClient) -> None:
+        res = client.agent_exec(vmid, command)
+        pid = res.get("pid")
+        print(f"Started guest process PID {pid} on VM {vmid}")
+
+    _run(action)
+
+
+@app.command("config")
+def config(
+    vmid: Annotated[str, typer.Argument(help="VM ID")],
+) -> None:
+    """Display VM hardware configuration."""
+    def action(client: ProxmoxClient) -> None:
+        cfg = client.config_get(vmid)
+        for k, v in sorted(cfg.items()):
+            print(f"{k:<15} = {v}")
+
+    _run(action)
+

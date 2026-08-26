@@ -177,6 +177,46 @@ class ProxmoxClient:
         time.sleep(5)
         self.request("DELETE", f"/nodes/{self.config.node}/qemu/{vmid}?purge=1")
 
+    def monitor(self, vmid: str, command: str) -> str:
+        """Execute a QEMU monitor command."""
+        data = self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/monitor", data={"command": command})
+        return str(data or "")
+
+    def sendkey(self, vmid: str, keys: str) -> None:
+        """Send keystrokes to a VM via QEMU monitor or API."""
+        try:
+            self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/sendkey", data={"key": keys})
+        except ProxmoxError:
+            # Fallback to monitor command
+            self.monitor(vmid, f"sendkey {keys}")
+
+    def agent_exec(self, vmid: str, command: list[str] | str) -> dict[str, Any]:
+        """Execute a command inside the guest via QEMU guest agent."""
+        cmd_list = [command] if isinstance(command, str) else command
+        data = self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/agent/exec", data={"command": cmd_list})
+        if not isinstance(data, dict):
+            raise ProxmoxError(f"Failed to start guest exec on VM {vmid}")
+        return data
+
+    def agent_exec_status(self, vmid: str, pid: int) -> dict[str, Any]:
+        """Get status and output of a guest agent command execution."""
+        data = self.request("GET", f"/nodes/{self.config.node}/qemu/{vmid}/agent/exec-status?pid={pid}")
+        if not isinstance(data, dict):
+            raise ProxmoxError(f"Failed to get exec status for PID {pid} on VM {vmid}")
+        return data
+
+    def config_get(self, vmid: str) -> dict[str, Any]:
+        """Get VM hardware configuration."""
+        data = self.request("GET", f"/nodes/{self.config.node}/qemu/{vmid}/config")
+        if not isinstance(data, dict):
+            raise ProxmoxError(f"Failed to get config for VM {vmid}")
+        return data
+
+    def config_update(self, vmid: str, data: dict[str, Any]) -> None:
+        """Update VM hardware configuration (e.g. CD-ROM attach/eject)."""
+        self.request("PUT", f"/nodes/{self.config.node}/qemu/{vmid}/config", data=data)
+
 
 def snapshot_name_default() -> str:
     return "snap-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+
