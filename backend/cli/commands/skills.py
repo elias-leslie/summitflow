@@ -578,7 +578,7 @@ def audit(
         for ref in report["missing_references"]:
             typer.echo(f"  ⚠ [{ref['source_skill']}] references '{ref['referenced']}' ({ref['context']}) — not found in canonical skills")
 
-    typer.echo(f"\n--- Harness Symlink & Drift Status ---")
+    typer.echo("\n--- Harness Symlink & Drift Status ---")
     drift = report["drift"]
     dirty = report["canon_dirty"]
     typer.echo(
@@ -609,7 +609,7 @@ def import_github(
         owner, repo, resolved_ref, resolved_subpath = _parse_github_source(source, default_ref=ref)
     except Exception as e:
         output_error(f"Invalid source: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     effective_subpath = subpath or resolved_subpath
     typer.echo(f"Fetching {owner}/{repo} (ref: {resolved_ref}, subpath: {effective_subpath or 'root'})...")
@@ -620,7 +620,7 @@ def import_github(
             skill_source_dir = _download_and_extract_skill(owner, repo, resolved_ref, effective_subpath, temp_dir)
         except Exception as e:
             output_error(f"Failed to download skill: {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
         skill_md = skill_source_dir / "SKILL.md"
         if not skill_md.exists():
@@ -631,7 +631,7 @@ def import_github(
                 synth_desc = f"Use for {synth_name} workflows imported from {owner}/{repo}."
                 skill_md.write_text(f"---\nname: {synth_name}\ndescription: {synth_desc}\n---\n\n{readme_text}")
             else:
-                output_error(f"No SKILL.md or README.md found in imported directory.")
+                output_error("No SKILL.md or README.md found in imported directory.")
                 raise typer.Exit(1)
 
         raw_content = skill_md.read_text(encoding="utf-8", errors="replace")
@@ -667,7 +667,7 @@ def import_github(
     typer.echo(f"\nRunning audit on {dest_name}...")
     single_audit = _audit_single_skill(dest_dir, auto_fix=True)
     if single_audit["status"] == "fail":
-        typer.echo(f"✗ Imported skill has validation errors:")
+        typer.echo("✗ Imported skill has validation errors:")
         for err in single_audit["errors"]:
             typer.echo(f"    {err}")
     else:
@@ -715,8 +715,8 @@ Provide clear, step-by-step procedures and runbooks for the agent.
             args.append("--adopt")
         subprocess.run(args, check=False)
 
-    typer.echo(f"\nRunning audit...")
-    res = _audit_single_skill(skill_dir)
+    typer.echo("\nRunning audit...")
+    _audit_single_skill(skill_dir)
     output_success(f"Skill '{slug}' created and materialized across all harnesses.")
 
 
