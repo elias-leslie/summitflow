@@ -48,6 +48,7 @@ EP_APPLICATIONS = "/api/applications"
 EP_FUNNEL = "/api/applications/stats/funnel"
 EP_ARTIFACT_GENERATE = "/api/artifacts/generate"
 EP_FOLLOWUPS = "/api/followups"
+EP_INTERVIEWS = "/api/interviews"
 EP_PROFILE = "/api/profile"
 
 #: Recorded on every write this surface makes, so the application timeline
@@ -550,6 +551,56 @@ def followups(
         human=human,
         summary="\n".join(lines) or "Nothing due.",
     )
+
+
+@app.command()
+@usage(
+    surface="st.jobs.prep",
+    cmd="st jobs prep <app-id>",
+    when="an interview is scheduled and the candidate needs a brief for it",
+    why="reads the posting and the evaluation, then matches the story bank against what this interview will ask",
+    precautions=(
+        "--write spends an Agent Hub call and takes about a minute; without it this only reads existing briefs",
+        "a story the bank does not hold is reported as a suggestion, never as prepared material",
+    ),
+    examples=("st jobs prep 9 --write",),
+    task_types=("jobs", "career"),
+    tier="reference",
+)
+def prep(
+    application_id: Annotated[int, typer.Argument(help="Application id from st jobs track")],
+    write: Annotated[
+        bool, typer.Option("--write", help="Write a new brief instead of reading the last one")
+    ] = False,
+    human: Annotated[bool, typer.Option("--human", help="Plain-text rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use hosts.production_api")] = False,
+) -> None:
+    """The interview brief for one application."""
+    if write:
+        brief = _as_dict(
+            _post(remote, f"{EP_INTERVIEWS}/{application_id}", timeout=AGENT_TIMEOUT)
+        )
+    else:
+        briefs = _as_list(_as_dict(_get(remote, f"{EP_INTERVIEWS}/{application_id}")).get("briefs"))
+        if not briefs:
+            _emit(
+                None,
+                {"application_id": application_id},
+                human=human,
+                summary="No brief yet. Run with --write to prepare one.",
+            )
+            return
+        brief = briefs[0]
+
+    lines = [str(brief.get("brief_md") or "")]
+    for gap in _as_list(brief.get("gaps_to_rehearse")):
+        lines.append(f"\nGap: {gap.get('gap')}\n  {gap.get('honest_answer')}")
+    for match in _as_list(brief.get("matches")):
+        story = _as_dict(match.get("story"))
+        lines.append(f"\nStory for '{match.get('requirement')}': {story.get('title')}")
+    for flag in _as_list(brief.get("red_flags")):
+        lines.append(f"\nRed flag: {flag.get('flag')} — {flag.get('what_to_probe')}")
+    _emit(brief, {"brief_id": brief.get("id")}, human=human, summary="\n".join(lines))
 
 
 @app.command()

@@ -295,3 +295,32 @@ def test_stats_reports_every_status_not_just_the_happy_path(monkeypatch) -> None
         result = runner.invoke(app, ["jobs", "stats", "--human"])
     assert result.exit_code == 0, result.stdout
     assert "rejected" in result.stdout
+
+
+def test_prep_reads_the_last_brief_without_spending_an_agent_call(monkeypatch):
+    monkeypatch.setenv("ST_JOBS_API_URL", "http://test")
+    fake = _fake_client(get_return={"briefs": [{"id": 3, "brief_md": "## Zapier"}]})
+    with _patch_client(fake):
+        result = runner.invoke(app, ["jobs", "prep", "9"])
+    assert result.exit_code == 0, result.stdout
+    assert fake.post.call_count == 0
+    assert json.loads(result.stdout.strip())["meta"]["brief_id"] == 3
+
+
+def test_prep_with_no_brief_says_so_rather_than_rendering_an_empty_one(monkeypatch):
+    monkeypatch.setenv("ST_JOBS_API_URL", "http://test")
+    fake = _fake_client(get_return={"briefs": []})
+    with _patch_client(fake):
+        result = runner.invoke(app, ["jobs", "prep", "9", "--human"])
+    assert result.exit_code == 0, result.stdout
+    assert "--write" in result.stdout
+
+
+def test_prep_write_posts_and_takes_the_long_timeout(monkeypatch):
+    monkeypatch.setenv("ST_JOBS_API_URL", "http://test")
+    fake = _fake_client(post_return={"id": 4, "brief_md": "## Zapier"})
+    with patch("cli.commands.jobs.JobsClient", return_value=fake) as constructor:
+        result = runner.invoke(app, ["jobs", "prep", "9", "--write"])
+    assert result.exit_code == 0, result.stdout
+    assert fake.post.call_args.args[0] == "/api/interviews/9"
+    assert constructor.call_args.kwargs["timeout"] == 600.0
