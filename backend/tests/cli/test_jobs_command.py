@@ -324,3 +324,37 @@ def test_prep_write_posts_and_takes_the_long_timeout(monkeypatch):
     assert result.exit_code == 0, result.stdout
     assert fake.post.call_args.args[0] == "/api/interviews/9"
     assert constructor.call_args.kwargs["timeout"] == 600.0
+
+
+def test_screen_omits_the_limit_so_the_server_cap_applies(monkeypatch) -> None:
+    # No --limit must send no limit at all. Sending a client-side default would
+    # override JOBINATOR_SCREEN_DAILY_CAP, which is what keeps a backlog sweep
+    # from spending the whole day's free-tier budget in one run.
+    monkeypatch.setenv("ST_JOBS_API_URL", "http://test")
+    fake = _fake_client(post_return={"screened": 0, "kept": 0, "results": []})
+    with _patch_client(fake):
+        result = runner.invoke(app, ["jobs", "screen"])
+    assert result.exit_code == 0, result.stdout
+    assert fake.post.call_args.args[0] == "/api/evaluations/screen"
+    assert fake.post.call_args.kwargs["params"] == {}
+
+
+def test_screen_renders_each_verdict(monkeypatch) -> None:
+    monkeypatch.setenv("ST_JOBS_API_URL", "http://test")
+    fake = _fake_client(
+        post_return={
+            "screened": 2,
+            "kept": 1,
+            "results": [
+                {"posting_id": 41, "keep": True, "tier": "strong", "reason": "architect scope"},
+                {"posting_id": 42, "keep": False, "tier": "no", "reason": "junior"},
+            ],
+        }
+    )
+    with _patch_client(fake):
+        result = runner.invoke(app, ["jobs", "screen", "--limit", "2", "--human"])
+    assert result.exit_code == 0, result.stdout
+    assert fake.post.call_args.kwargs["params"] == {"limit": 2}
+    assert "keep" in result.stdout
+    assert "drop" in result.stdout
+    assert "architect scope" in result.stdout

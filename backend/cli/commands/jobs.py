@@ -42,6 +42,7 @@ EP_TODAY = "/api/today"
 EP_POSTINGS = "/api/postings"
 EP_POSTING_STATES = "/api/postings/stats/states"
 EP_EVALUATIONS = "/api/evaluations"
+EP_SCREEN = "/api/evaluations/screen"
 EP_SCAN_SYNC = "/api/sources/scan/sync"
 EP_SCAN_ASYNC = "/api/sources/scan"
 EP_APPLICATIONS = "/api/applications"
@@ -310,6 +311,46 @@ def scan(
     if data.get("errors"):
         summary += f"\nerrors: {json.dumps(data['errors'])}"
     _emit(data, None, human=human, summary=summary)
+
+
+@app.command()
+@usage(
+    surface="st.jobs.screen",
+    cmd="st jobs screen --limit 50",
+    when="triage the postings a scan left in `new` so the scored queues stop coming back empty",
+    why="one cheap call per posting sorts it into shortlisted or discarded; nothing else moves a posting out of `new`",
+    precautions=(
+        "spends one Agent Hub call per posting and runs serially — 50 takes several minutes",
+        "bounded by JOBINATOR_SCREEN_DAILY_CAP when --limit is omitted",
+        "the nightly worker already screens at 07:30 UTC; use this to work down a backlog",
+    ),
+    examples=("st jobs screen --limit 25 --human",),
+    task_types=("jobs", "career"),
+    tier="mandate",
+)
+def screen(
+    limit: Annotated[
+        int | None, typer.Option("--limit", help="Postings to screen; default is the daily cap")
+    ] = None,
+    human: Annotated[bool, typer.Option("--human", help="Plain-text rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use hosts.production_api")] = False,
+) -> None:
+    """Screen postings still in `new` and sort them into shortlisted or discarded."""
+    params: dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = limit
+    data = _as_dict(_post(remote, EP_SCREEN, params=params, timeout=AGENT_TIMEOUT))
+    results = data.get("results") or []
+    lines = [f"screened {data.get('screened')}, kept {data.get('kept')}"]
+    for row in results:
+        if not isinstance(row, dict):
+            continue
+        mark = "keep" if row.get("keep") else "drop"
+        lines.append(
+            f"  {mark:<4} {row.get('tier') or '':<6} "
+            f"{row.get('posting_id') or '':<6} {str(row.get('reason') or '')[:80]}"
+        )
+    _emit(data, None, human=human, summary="\n".join(lines))
 
 
 @app.command()
