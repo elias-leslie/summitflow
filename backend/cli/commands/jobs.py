@@ -51,6 +51,7 @@ EP_ARTIFACT_GENERATE = "/api/artifacts/generate"
 EP_FOLLOWUPS = "/api/followups"
 EP_INTERVIEWS = "/api/interviews"
 EP_PROFILE = "/api/profile"
+EP_COMPANIES = "/api/companies"
 
 #: Recorded on every write this surface makes, so the application timeline
 #: distinguishes an agent working through `st` from a person clicking in the UI.
@@ -705,3 +706,144 @@ def profile(
     if facts.get("forbidden_phrases"):
         lines.append("Forbidden: " + "; ".join(str(p) for p in facts["forbidden_phrases"]))
     _emit(data, None, human=human, summary="\n".join(lines))
+
+
+@app.command()
+@usage(
+    surface="st.jobs.search",
+    cmd="st jobs search --remote remote --employment full_time",
+    when="answer a shaped question about the board — remote full-time at small companies, anything within 50 miles, channel vendors only",
+    why="`ready` ranks the whole queue by score; this is the same list narrowed by work mode, employment type, company size, segment and distance",
+    precautions=(
+        "read-only",
+        "--employee-band, --segment and --max-distance only match companies that have been researched; an unresearched company is unknown, not excluded on merit",
+        "--max-distance drops remote roles, which have no distance to measure — pass --remote remote instead",
+    ),
+    examples=(
+        "st jobs search --remote remote --remote hybrid --employment full_time --employee-band startup_1_50 --employee-band small_51_200",
+        "st jobs search --channel-focus --min-score 3.5 --human",
+    ),
+    task_types=("jobs", "career"),
+    tier="mandate",
+)
+def search(
+    state: Annotated[str | None, typer.Option("--state", help="new|triaged|shortlisted|applied|discarded")] = None,
+    remote_kind: Annotated[list[str] | None, typer.Option("--remote-kind", help="remote|hybrid|onsite|unknown; repeatable")] = None,
+    employment: Annotated[list[str] | None, typer.Option("--employment", help="full_time|part_time|contract|…; repeatable")] = None,
+    employee_band: Annotated[list[str] | None, typer.Option("--employee-band", help="startup_1_50|small_51_200|…; repeatable")] = None,
+    segment: Annotated[list[str] | None, typer.Option("--segment", help="msp|mssp|edr_xdr|…; repeatable")] = None,
+    channel_focus: Annotated[bool, typer.Option("--channel-focus", help="Only companies that sell through MSPs")] = False,
+    max_distance: Annotated[float | None, typer.Option("--max-distance", help="Miles to the nearest researched office")] = None,
+    min_salary: Annotated[int | None, typer.Option("--min-salary", help="Advertised ceiling must reach this")] = None,
+    exclude_clearance: Annotated[bool, typer.Option("--exclude-clearance", help="Drop postings that require a clearance")] = False,
+    min_score: Annotated[float | None, typer.Option("--min-score", min=0, max=5)] = None,
+    search_text: Annotated[str | None, typer.Option("--search", help="Title or company substring")] = None,
+    limit: Annotated[int, typer.Option("--limit", min=1, max=200)] = 25,
+    human: Annotated[bool, typer.Option("--human", help="Plain-text rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use hosts.production_api")] = False,
+) -> None:
+    """Postings narrowed by work mode, employment type, company size and distance."""
+    params: dict[str, Any] = {"limit": limit}
+    # Repeatable options go through as repeated query parameters, which is what
+    # the API's list-valued filters read. A comma-joined string would arrive as
+    # one value and match nothing.
+    if remote_kind:
+        params["remote"] = remote_kind
+    if employment:
+        params["employment"] = employment
+    if employee_band:
+        params["employee_band"] = employee_band
+    if segment:
+        params["segment"] = segment
+    if state:
+        params["state"] = state
+    if channel_focus:
+        params["channel_focus"] = True
+    if max_distance is not None:
+        params["max_distance_miles"] = max_distance
+    if min_salary is not None:
+        params["min_salary"] = min_salary
+    if exclude_clearance:
+        params["exclude_clearance"] = True
+    if min_score is not None:
+        params["min_score"] = min_score
+    if search_text:
+        params["search"] = search_text
+
+    data = _as_dict(_get(remote, EP_POSTINGS, params=params))
+    rows = _as_list(data.get("postings"))
+    lines = [f"{data.get('total', 0)} matching, showing {len(rows)}"]
+    for row in rows:
+        shape = " · ".join(
+            str(part)
+            for part in (row.get("remote"), row.get("employment_type"))
+            if part and part != "unknown"
+        )
+        miles = row.get("distance_miles")
+        distance = f" · {round(float(miles))}mi" if miles is not None else ""
+        lines.append(f"{_score(row.get('score'))}  #{row.get('id')}  {_where(row)}")
+        lines.append(f"        {shape or 'shape unknown'}{distance}")
+    if not rows:
+        lines.append("Nothing matches. Widen a filter, or research more companies.")
+    _emit(rows, {"total": data.get("total")}, human=human, summary="\n".join(lines))
+
+
+@app.command()
+@usage(
+    surface="st.jobs.companies",
+    cmd="st jobs companies --hiring",
+    when="judge an employer before reading its postings — size, ownership, offices, whether it sells through the channel",
+    why="the firmographics the posting filters depend on, plus which companies are still unresearched",
+    precautions=(
+        "read-only",
+        "a null field on a researched company means it was looked for and could not be sourced; `not researched` means nobody has looked",
+    ),
+    examples=("st jobs companies --segment msp --hiring --human",),
+    task_types=("jobs", "career"),
+    tier="reference",
+)
+def companies(
+    segment: Annotated[list[str] | None, typer.Option("--segment", help="Repeatable")] = None,
+    employee_band: Annotated[list[str] | None, typer.Option("--employee-band", help="Repeatable")] = None,
+    channel_focus: Annotated[bool, typer.Option("--channel-focus")] = False,
+    hiring: Annotated[bool, typer.Option("--hiring", help="Only companies with open roles")] = False,
+    search_text: Annotated[str | None, typer.Option("--search")] = None,
+    limit: Annotated[int, typer.Option("--limit", min=1, max=200)] = 50,
+    human: Annotated[bool, typer.Option("--human", help="Plain-text rendering")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use hosts.production_api")] = False,
+) -> None:
+    """Tracked employers with their size, ownership, segments and nearest office."""
+    params: dict[str, Any] = {"limit": limit}
+    if segment:
+        params["segment"] = segment
+    if employee_band:
+        params["employee_band"] = employee_band
+    if channel_focus:
+        params["channel_focus"] = True
+    if hiring:
+        params["has_open_roles"] = True
+    if search_text:
+        params["search"] = search_text
+
+    data = _as_dict(_get(remote, EP_COMPANIES, params=params))
+    rows = _as_list(data.get("companies"))
+    lines = [f"{data.get('total', 0)} companies, showing {len(rows)}"]
+    for row in rows:
+        facts = " · ".join(
+            str(part)
+            for part in (
+                row.get("employee_band"),
+                row.get("ownership"),
+                "channel" if row.get("channel_focus") else None,
+            )
+            if part
+        )
+        miles = row.get("nearest_office_miles")
+        distance = f" · {round(float(miles))}mi" if miles is not None else ""
+        open_roles = row.get("open_roles") or 0
+        lines.append(f"  #{row.get('id')}  {row.get('name')}  ({open_roles} open)")
+        if row.get("enriched_at") is None:
+            lines.append("        not researched")
+        else:
+            lines.append(f"        {facts or 'nothing sourced'}{distance}")
+    _emit(rows, {"total": data.get("total")}, human=human, summary="\n".join(lines))
