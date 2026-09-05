@@ -252,6 +252,19 @@ export const runtimeApi = {
     fetchWithErrorHandling<ProxmoxStatus>(apiUrl('/api/docker/proxmox'), {
       errorMessage: 'Failed to fetch Proxmox status',
     }),
+  controlProxmoxGuest: (
+    node: string,
+    guestType: 'qemu' | 'lxc',
+    vmid: number,
+    action: 'start' | 'stop' | 'shutdown' | 'reboot',
+  ) =>
+    fetchWithErrorHandling<{ status: string; action: string; vmid: number; task?: string }>(
+      apiUrl(`/api/docker/proxmox/guests/${node}/${guestType}/${vmid}/${action}`),
+      {
+        method: 'POST',
+        errorMessage: `Failed to ${action} Proxmox guest ${vmid}`,
+      },
+    ),
   getMaintenanceStatus: () =>
     fetchWithErrorHandling<MaintenanceStatus>(
       apiUrl('/api/system/maintenance'),

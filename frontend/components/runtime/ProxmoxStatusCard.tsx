@@ -1,9 +1,9 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { useState } from 'react'
-import { runtimeApi } from '@/lib/api/runtime'
+import { type ProxmoxGuestStatus, runtimeApi } from '@/lib/api/runtime'
 import { POLL_NOTIFICATIONS } from '@/lib/polling'
 import { formatBytes, formatUptime } from './health-utils'
 
@@ -17,11 +17,32 @@ function statusTone(status: string): string {
 
 export function ProxmoxStatusCard() {
   const [expanded, setExpanded] = useState(false)
+  const [pendingAction, setPendingAction] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+
   const { data, error, isLoading } = useQuery({
     queryKey: ['runtime', 'proxmox'],
     queryFn: runtimeApi.getProxmoxStatus,
     refetchInterval: POLL_NOTIFICATIONS,
   })
+
+  const handleGuestAction = async (
+    guest: ProxmoxGuestStatus,
+    action: 'start' | 'stop' | 'shutdown',
+  ) => {
+    const key = `${guest.node}-${guest.type}-${guest.vmid}`
+    setPendingAction(`${key}-${action}`)
+    setActionError(null)
+    try {
+      await runtimeApi.controlProxmoxGuest(guest.node, guest.type, guest.vmid, action)
+      await queryClient.invalidateQueries({ queryKey: ['runtime', 'proxmox'] })
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : `Failed to ${action} guest ${guest.vmid}`)
+    } finally {
+      setPendingAction(null)
+    }
+  }
 
   if (isLoading) {
     return <div className="h-12 animate-pulse rounded-lg bg-slate-800/40" />
@@ -146,47 +167,99 @@ export function ProxmoxStatusCard() {
                 <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
                   Guests
                 </h3>
+                {actionError && (
+                  <div className="rounded-md border border-red-500/30 bg-red-950/30 px-3 py-2 text-xs text-red-300">
+                    {actionError}
+                  </div>
+                )}
                 {data.guests.length === 0 ? (
                   <p className="text-xs text-slate-500">
                     No guests reported by Proxmox.
                   </p>
                 ) : (
                   <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                    {data.guests.map((guest) => (
-                      <div
-                        key={`${guest.type}-${guest.vmid}`}
-                        className={clsx(
-                          'rounded-lg border p-3 text-sm',
-                          statusTone(guest.status),
-                        )}
-                      >
-                        <div className="flex items-center justify-between gap-2">
+                    {data.guests.map((guest) => {
+                      const guestKey = `${guest.node}-${guest.type}-${guest.vmid}`
+                      const isRunning = guest.status === 'running'
+                      const isStarting = pendingAction === `${guestKey}-start`
+                      const isStopping = pendingAction === `${guestKey}-stop`
+                      const isShuttingDown = pendingAction === `${guestKey}-shutdown`
+                      const isBusy = pendingAction !== null
+
+                      return (
+                        <div
+                          key={`${guest.type}-${guest.vmid}`}
+                          className={clsx(
+                            'rounded-lg border p-3 text-sm flex flex-col justify-between',
+                            statusTone(guest.status),
+                          )}
+                        >
                           <div>
-                            <div className="font-medium">{guest.name}</div>
-                            <div className="mt-0.5 text-2xs text-slate-400">
-                              {guest.node} &middot; {guest.type} &middot; VMID{' '}
-                              {guest.vmid}
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <div className="font-medium">{guest.name}</div>
+                                <div className="mt-0.5 text-2xs text-slate-400">
+                                  {guest.node} &middot; {guest.type} &middot; VMID{' '}
+                                  {guest.vmid}
+                                </div>
+                              </div>
+                              <span className="text-[10px] uppercase tracking-[0.14em] shrink-0">
+                                {guest.status}
+                              </span>
+                            </div>
+                            <div className="mt-2 grid gap-1 text-xs text-slate-300">
+                              <div>
+                                CPU: {guest.cpu_percent?.toFixed(1) ?? 'n/a'}%
+                              </div>
+                              <div>
+                                Mem: {formatBytes(guest.memory_used_bytes)} /{' '}
+                                {formatBytes(guest.memory_total_bytes)}
+                              </div>
+                              <div>Up: {formatUptime(guest.uptime_seconds)}</div>
+                              {Array.isArray(guest.tags) && guest.tags.length > 0 && (
+                                <div>Tags: {guest.tags.join(', ')}</div>
+                              )}
                             </div>
                           </div>
-                          <span className="text-[10px] uppercase tracking-[0.14em] shrink-0">
-                            {guest.status}
-                          </span>
-                        </div>
-                        <div className="mt-2 grid gap-1 text-xs text-slate-300">
-                          <div>
-                            CPU: {guest.cpu_percent?.toFixed(1) ?? 'n/a'}%
+
+                          {/* Guest Power Management Actions */}
+                          <div className="mt-3 flex items-center gap-1.5 pt-2 border-t border-slate-700/40">
+                            {isRunning ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleGuestAction(guest, 'stop')}
+                                  disabled={isBusy}
+                                  className="text-2xs px-2.5 py-1 rounded bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 disabled:opacity-40 transition-all font-medium"
+                                  title="Force stop guest"
+                                >
+                                  {isStopping ? 'Stopping...' : 'Stop'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleGuestAction(guest, 'shutdown')}
+                                  disabled={isBusy}
+                                  className="text-2xs px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 hover:border-amber-500/30 disabled:opacity-40 transition-all font-medium"
+                                  title="Graceful ACPI guest shutdown"
+                                >
+                                  {isShuttingDown ? 'Shutting down...' : 'Shutdown'}
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleGuestAction(guest, 'start')}
+                                disabled={isBusy}
+                                className="text-2xs px-3 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/30 disabled:opacity-40 transition-all font-medium"
+                                title="Power on guest"
+                              >
+                                {isStarting ? 'Starting...' : 'Start'}
+                              </button>
+                            )}
                           </div>
-                          <div>
-                            Mem: {formatBytes(guest.memory_used_bytes)} /{' '}
-                            {formatBytes(guest.memory_total_bytes)}
-                          </div>
-                          <div>Up: {formatUptime(guest.uptime_seconds)}</div>
-                          {guest.tags.length > 0 && (
-                            <div>Tags: {guest.tags.join(', ')}</div>
-                          )}
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </section>

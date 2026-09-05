@@ -636,6 +636,56 @@ class TestDockerRuntime:
             ],
         }
 
+    def test_proxmox_control_guest_success(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api import _runtime_proxmox
+
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        mocker.patch.object(
+            _runtime_proxmox,
+            "_proxmox_config",
+            return_value={
+                "api_url": "https://192.0.2.33:8006",
+                "token_id": "root@pam!automation",
+                "token_secret": "secret",
+                "verify_ssl": False,
+            },
+        )
+        post_mock = mocker.patch.object(
+            _runtime_proxmox,
+            "_sync_proxmox_post_json",
+            return_value="UPID:davion-gem:00001234:5678",
+        )
+
+        response = client.post("/api/docker/proxmox/guests/davion-gem/qemu/100/start")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "status": "ok",
+            "node": "davion-gem",
+            "guest_type": "qemu",
+            "vmid": 100,
+            "action": "start",
+            "task": "UPID:davion-gem:00001234:5678",
+        }
+        post_mock.assert_called_once_with(
+            "https://192.0.2.33:8006",
+            "root@pam!automation",
+            "secret",
+            "/nodes/davion-gem/qemu/100/status/start",
+            verify_ssl=False,
+        )
+
+    def test_proxmox_control_guest_invalid_action(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        response = client.post("/api/docker/proxmox/guests/davion-gem/qemu/100/invalid")
+        assert response.status_code == 422
+
     def test_live_session_create_uses_internal_browser_target(
         self,
         mocker: MockerFixture,

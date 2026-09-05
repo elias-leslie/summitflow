@@ -1,13 +1,26 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ProxmoxStatusCard } from './ProxmoxStatusCard'
 
+import { runtimeApi } from '@/lib/api/runtime'
+
 const queryMocks = vi.hoisted(() => ({
   useQuery: vi.fn(),
+  useQueryClient: vi.fn(() => ({
+    invalidateQueries: vi.fn(),
+  })),
+}))
+
+vi.mock('@/lib/api/runtime', () => ({
+  runtimeApi: {
+    getProxmoxStatus: vi.fn(),
+    controlProxmoxGuest: vi.fn(),
+  },
 }))
 
 vi.mock('@tanstack/react-query', () => ({
   useQuery: queryMocks.useQuery,
+  useQueryClient: queryMocks.useQueryClient,
 }))
 
 describe('ProxmoxStatusCard', () => {
@@ -81,5 +94,52 @@ describe('ProxmoxStatusCard', () => {
     expect(screen.getByText('davion-gem')).toBeInTheDocument()
     expect(screen.getByText('browser-test-vm')).toBeInTheDocument()
     expect(screen.getByText('Tags: test, browser')).toBeInTheDocument()
+  })
+
+  it('triggers control action when action button is clicked', async () => {
+    vi.mocked(runtimeApi.controlProxmoxGuest).mockResolvedValue({
+      action: 'stop',
+      guest_type: 'qemu',
+      node: 'davion-gem',
+      status: 'ok',
+      task_upid: 'UPID:davion-gem:123',
+      vmid: 100,
+    })
+
+    queryMocks.useQuery.mockReturnValue({
+      data: {
+        configured: true,
+        reachable: true,
+        api_url: 'https://192.0.2.33:8006',
+        error: null,
+        nodes: [{ node: 'davion-gem', status: 'online', cpu_percent: 10, memory_used_bytes: 1, memory_total_bytes: 2, uptime_seconds: 100 }],
+        guests: [
+          {
+            vmid: 100,
+            name: 'browser-test-vm',
+            node: 'davion-gem',
+            type: 'qemu',
+            status: 'running',
+            cpu_percent: 25,
+            memory_used_bytes: 4 * 1024 * 1024 * 1024,
+            memory_total_bytes: 8 * 1024 * 1024 * 1024,
+            uptime_seconds: 5_678,
+          },
+        ],
+      },
+      error: undefined,
+      isLoading: false,
+    })
+
+    render(<ProxmoxStatusCard />)
+    fireEvent.click(screen.getByText('Proxmox'))
+
+    const stopButton = screen.getByRole('button', { name: 'Stop' })
+    expect(stopButton).toBeInTheDocument()
+    await act(async () => {
+      fireEvent.click(stopButton)
+    })
+
+    expect(runtimeApi.controlProxmoxGuest).toHaveBeenCalledWith('davion-gem', 'qemu', 100, 'stop')
   })
 })

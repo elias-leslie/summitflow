@@ -15,6 +15,7 @@ from typing import Any, Literal, cast
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
+from fastapi import HTTPException
 from pydantic import BaseModel
 
 from ..utils.env import bool_env as _bool_env
@@ -214,3 +215,71 @@ async def get_proxmox_status() -> ProxmoxStatus:
         nodes=nodes,
         guests=guests,
     )
+
+
+def _sync_proxmox_post_json(
+    api_url: str,
+    token_id: str,
+    token_secret: str,
+    path: str,
+    *,
+    verify_ssl: bool,
+) -> Any:
+    request = urllib_request.Request(
+        f"{api_url}/api2/json{path}",
+        data=b"",
+        headers={"Authorization": f"PVEAPIToken={token_id}={token_secret}"},
+        method="POST",
+    )
+    context = None if verify_ssl else ssl._create_unverified_context()
+    with urllib_request.urlopen(
+        request,
+        timeout=_PROXMOX_TIMEOUT_SECONDS,
+        context=context,
+    ) as response:
+        payload = json.load(response)
+    return payload.get("data")
+
+
+async def control_proxmox_guest(
+    node: str,
+    guest_type: Literal["qemu", "lxc"],
+    vmid: int,
+    action: Literal["start", "stop", "shutdown", "reboot"],
+) -> dict[str, Any]:
+    """Execute a power management action on a Proxmox guest."""
+    config = _proxmox_config()
+    api_url = config["api_url"]
+    token_id = config["token_id"]
+    token_secret = config["token_secret"]
+    verify_ssl = config["verify_ssl"]
+    if not (api_url and token_id and token_secret):
+        raise HTTPException(
+            status_code=503,
+            detail="Proxmox integration not configured. Set PROXMOX_API_URL, PROXMOX_TOKEN_ID, and PROXMOX_TOKEN_SECRET.",
+        )
+
+    path = f"/nodes/{node}/{guest_type}/{vmid}/status/{action}"
+    try:
+        data = await asyncio.to_thread(
+            _sync_proxmox_post_json,
+            api_url,
+            token_id,
+            token_secret,
+            path,
+            verify_ssl=verify_ssl,
+        )
+        return {
+            "status": "ok",
+            "node": node,
+            "guest_type": guest_type,
+            "vmid": vmid,
+            "action": action,
+            "task": data,
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Proxmox error: {_proxmox_error_message(exc)}",
+        )
+

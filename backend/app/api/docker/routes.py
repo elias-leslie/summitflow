@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -13,6 +13,7 @@ from ...logging_config import get_logger
 from ...storage import runtime_metrics as runtime_metric_store
 from ...utils import safe_subprocess
 from .._runtime_proxmox import ProxmoxStatus
+from .._runtime_proxmox import control_proxmox_guest as _control_proxmox_guest
 from .._runtime_proxmox import get_proxmox_status as _get_proxmox_status
 from .constants import BACKUP_DIR
 from .helpers import (
@@ -65,6 +66,20 @@ async def get_runtime_status() -> RuntimeModeStatus:
 async def get_proxmox_status() -> ProxmoxStatus:
     """Get Proxmox node and guest status for runtime-adjacent infrastructure."""
     return await _get_proxmox_status()
+
+
+@router.post(
+    "/proxmox/guests/{node}/{guest_type}/{vmid}/{action}",
+    dependencies=[Depends(_require_auth)],
+)
+async def control_proxmox_guest_endpoint(
+    node: str,
+    guest_type: Literal["qemu", "lxc"],
+    vmid: int,
+    action: Literal["start", "stop", "shutdown", "reboot"],
+) -> dict[str, Any]:
+    """Execute power action (start, stop, shutdown, reboot) on a Proxmox guest."""
+    return await _control_proxmox_guest(node, guest_type, vmid, action)
 
 
 @router.post("/runtime", response_model=ActionResult, dependencies=[Depends(_require_auth)])
