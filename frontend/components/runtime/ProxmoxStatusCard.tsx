@@ -44,6 +44,30 @@ export function ProxmoxStatusCard() {
     }
   }
 
+  const handleToggleAutoStart = async (guest: ProxmoxGuestStatus) => {
+    const key = `${guest.node}-${guest.type}-${guest.vmid}`
+    const newTarget = !(guest.onboot === true)
+    setPendingAction(`${key}-autostart`)
+    setActionError(null)
+    try {
+      await runtimeApi.setProxmoxGuestAutoStart(
+        guest.node,
+        guest.type,
+        guest.vmid,
+        newTarget,
+      )
+      await queryClient.invalidateQueries({ queryKey: ['runtime', 'proxmox'] })
+    } catch (err) {
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : `Failed to update auto-start for ${guest.name}`,
+      )
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
   if (isLoading) {
     return <div className="h-12 animate-pulse rounded-lg bg-slate-800/40" />
   }
@@ -220,6 +244,46 @@ export function ProxmoxStatusCard() {
                                 <div>Tags: {guest.tags.join(', ')}</div>
                               )}
                             </div>
+                          </div>
+
+                          {/* Auto-start (boot) toggle */}
+                          <div className="mt-2.5 mb-2.5 flex items-center justify-between rounded-md bg-slate-950/40 px-2.5 py-1.5 border border-slate-800/50">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={guest.onboot === true}
+                              aria-label={`Toggle auto-start for ${guest.name}`}
+                              onClick={() => handleToggleAutoStart(guest)}
+                              disabled={isBusy}
+                              title={
+                                guest.onboot === true
+                                  ? 'Auto-start ON — guest will start on host boot. Click to disable.'
+                                  : 'Auto-start OFF — guest stays down on host boot. Click to enable.'
+                              }
+                              className="flex items-center gap-1.5 disabled:opacity-50 group focus-visible:outline-none"
+                            >
+                              <span className="text-2xs uppercase tracking-[0.12em] text-slate-500 font-medium">
+                                Auto-start
+                              </span>
+                              <span
+                                className={clsx(
+                                  'relative inline-flex h-4 w-7 items-center rounded-full transition-colors duration-200 ring-1',
+                                  guest.onboot === true
+                                    ? 'bg-emerald-500/30 ring-emerald-500/40'
+                                    : 'bg-slate-700/70 ring-slate-600/50',
+                                )}
+                              >
+                                <span
+                                  className={clsx(
+                                    'inline-block h-3 w-3 transform rounded-full transition-transform duration-200 shadow',
+                                    guest.onboot === true
+                                      ? 'translate-x-3.5 bg-emerald-400'
+                                      : 'translate-x-0.5 bg-slate-400',
+                                  )}
+                                />
+                              </span>
+                            </button>
+                            <span className="text-[10px] text-slate-600">on reboot</span>
                           </div>
 
                           {/* Guest Power Management Actions */}

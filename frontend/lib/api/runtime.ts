@@ -139,6 +139,7 @@ export interface ProxmoxGuestStatus {
   memory_total_bytes: number | null
   uptime_seconds: number | null
   tags: string[]
+  onboot?: boolean | null
 }
 
 export interface ProxmoxStatus {
@@ -263,6 +264,21 @@ export const runtimeApi = {
       {
         method: 'POST',
         errorMessage: `Failed to ${action} Proxmox guest ${vmid}`,
+      },
+    ),
+  setProxmoxGuestAutoStart: (
+    node: string,
+    guestType: 'qemu' | 'lxc',
+    vmid: number,
+    enabled: boolean,
+  ) =>
+    fetchWithErrorHandling<{ status: string; node: string; vmid: number; onboot: boolean }>(
+      apiUrl(`/api/docker/proxmox/guests/${node}/${guestType}/${vmid}/autostart`),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+        errorMessage: `Failed to set auto-start for Proxmox guest ${vmid}`,
       },
     ),
   getMaintenanceStatus: () =>

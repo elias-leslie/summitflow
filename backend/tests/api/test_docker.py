@@ -599,6 +599,9 @@ class TestDockerRuntime:
                         "tags": "test;browser",
                     }
                 ],
+                {
+                    "onboot": 1,
+                },
             ],
         )
 
@@ -632,9 +635,56 @@ class TestDockerRuntime:
                     "memory_total_bytes": 8589934592,
                     "uptime_seconds": 5678,
                     "tags": ["test", "browser"],
+                    "onboot": True,
                 }
             ],
         }
+
+    def test_proxmox_set_autostart_success(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api import _runtime_proxmox
+
+        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
+        mocker.patch.object(
+            _runtime_proxmox,
+            "_proxmox_config",
+            return_value={
+                "api_url": "https://192.0.2.33:8006",
+                "token_id": "root@pam!automation",
+                "token_secret": "secret",
+                "verify_ssl": False,
+            },
+        )
+        put_mock = mocker.patch.object(
+            _runtime_proxmox,
+            "_sync_proxmox_put_json",
+            return_value=None,
+        )
+
+        response = client.post(
+            "/api/docker/proxmox/guests/davion-gem/qemu/100/autostart",
+            json={"enabled": True},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "status": "ok",
+            "node": "davion-gem",
+            "guest_type": "qemu",
+            "vmid": 100,
+            "onboot": True,
+            "task": None,
+        }
+        put_mock.assert_called_once_with(
+            "https://192.0.2.33:8006",
+            "root@pam!automation",
+            "secret",
+            "/nodes/davion-gem/qemu/100/config",
+            {"onboot": 1},
+            verify_ssl=False,
+        )
 
     def test_proxmox_control_guest_success(
         self,

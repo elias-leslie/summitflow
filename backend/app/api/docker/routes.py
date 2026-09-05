@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from ...logging_config import get_logger
 from ...storage import runtime_metrics as runtime_metric_store
@@ -15,6 +16,7 @@ from ...utils import safe_subprocess
 from .._runtime_proxmox import ProxmoxStatus
 from .._runtime_proxmox import control_proxmox_guest as _control_proxmox_guest
 from .._runtime_proxmox import get_proxmox_status as _get_proxmox_status
+from .._runtime_proxmox import set_proxmox_guest_autostart as _set_proxmox_guest_autostart
 from .constants import BACKUP_DIR
 from .helpers import (
     _find_container_name,
@@ -66,6 +68,24 @@ async def get_runtime_status() -> RuntimeModeStatus:
 async def get_proxmox_status() -> ProxmoxStatus:
     """Get Proxmox node and guest status for runtime-adjacent infrastructure."""
     return await _get_proxmox_status()
+
+
+class ProxmoxAutostartUpdate(BaseModel):
+    enabled: bool
+
+
+@router.post(
+    "/proxmox/guests/{node}/{guest_type}/{vmid}/autostart",
+    dependencies=[Depends(_require_auth)],
+)
+async def set_proxmox_guest_autostart_endpoint(
+    node: str,
+    guest_type: Literal["qemu", "lxc"],
+    vmid: int,
+    payload: ProxmoxAutostartUpdate,
+) -> dict[str, Any]:
+    """Enable or disable boot auto-start for a Proxmox guest."""
+    return await _set_proxmox_guest_autostart(node, guest_type, vmid, payload.enabled)
 
 
 @router.post(

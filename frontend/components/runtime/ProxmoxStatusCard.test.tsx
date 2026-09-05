@@ -15,6 +15,7 @@ vi.mock('@/lib/api/runtime', () => ({
   runtimeApi: {
     getProxmoxStatus: vi.fn(),
     controlProxmoxGuest: vi.fn(),
+    setProxmoxGuestAutoStart: vi.fn(),
   },
 }))
 
@@ -141,5 +142,54 @@ describe('ProxmoxStatusCard', () => {
     })
 
     expect(runtimeApi.controlProxmoxGuest).toHaveBeenCalledWith('davion-gem', 'qemu', 100, 'stop')
+  })
+
+  it('triggers auto-start toggle when auto-start switch is clicked', async () => {
+    vi.mocked(runtimeApi.setProxmoxGuestAutoStart).mockResolvedValue({
+      node: 'davion-gem',
+      onboot: false,
+      status: 'ok',
+      vmid: 100,
+    })
+
+    queryMocks.useQuery.mockReturnValue({
+      data: {
+        configured: true,
+        reachable: true,
+        api_url: 'https://192.0.2.33:8006',
+        error: null,
+        nodes: [{ node: 'davion-gem', status: 'online', cpu_percent: 10, memory_used_bytes: 1, memory_total_bytes: 2, uptime_seconds: 100 }],
+        guests: [
+          {
+            vmid: 100,
+            name: 'browser-test-vm',
+            node: 'davion-gem',
+            type: 'qemu',
+            status: 'running',
+            cpu_percent: 25,
+            memory_used_bytes: 4 * 1024 * 1024 * 1024,
+            memory_total_bytes: 8 * 1024 * 1024 * 1024,
+            uptime_seconds: 5_678,
+            tags: ['test'],
+            onboot: true,
+          },
+        ],
+      },
+      error: undefined,
+      isLoading: false,
+    })
+
+    render(<ProxmoxStatusCard />)
+    fireEvent.click(screen.getByText('Proxmox'))
+
+    const toggleButton = screen.getByRole('switch', { name: 'Toggle auto-start for browser-test-vm' })
+    expect(toggleButton).toBeInTheDocument()
+    expect(toggleButton).toHaveAttribute('aria-checked', 'true')
+
+    await act(async () => {
+      fireEvent.click(toggleButton)
+    })
+
+    expect(runtimeApi.setProxmoxGuestAutoStart).toHaveBeenCalledWith('davion-gem', 'qemu', 100, false)
   })
 })

@@ -13,6 +13,7 @@ import re
 import ssl
 from typing import Any, Literal, cast
 from urllib import error as urllib_error
+from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from fastapi import HTTPException
@@ -47,6 +48,7 @@ class ProxmoxGuestStatus(BaseModel):
     memory_total_bytes: int | None = None
     uptime_seconds: int | None = None
     tags: list[str]
+    onboot: bool | None = None
 
 
 class ProxmoxStatus(BaseModel):
@@ -202,11 +204,33 @@ async def get_proxmox_status() -> ProxmoxStatus:
                 memory_total_bytes=_int_value(row.get("maxmem")),
                 uptime_seconds=_int_value(row.get("uptime")),
                 tags=_split_proxmox_tags(row.get("tags")),
+                onboot=None,
             )
         )
 
     nodes.sort(key=lambda node: node.node)
     guests.sort(key=lambda guest: (guest.node, guest.vmid))
+
+    async def _fetch_guest_onboot(guest: ProxmoxGuestStatus) -> None:
+        try:
+            cfg = await asyncio.to_thread(
+                _sync_proxmox_get_json,
+                api_url,
+                token_id,
+                token_secret,
+                f"/nodes/{guest.node}/{guest.type}/{guest.vmid}/config",
+                verify_ssl=verify_ssl,
+            )
+            if isinstance(cfg, dict):
+                guest.onboot = bool(cfg.get("onboot"))
+        except Exception:
+            guest.onboot = None
+
+    if guests:
+        await asyncio.gather(
+            *[_fetch_guest_onboot(g) for g in guests],
+            return_exceptions=True,
+        )
 
     return ProxmoxStatus(
         configured=True,
@@ -230,6 +254,32 @@ def _sync_proxmox_post_json(
         data=b"",
         headers={"Authorization": f"PVEAPIToken={token_id}={token_secret}"},
         method="POST",
+    )
+    context = None if verify_ssl else ssl._create_unverified_context()
+    with urllib_request.urlopen(
+        request,
+        timeout=_PROXMOX_TIMEOUT_SECONDS,
+        context=context,
+    ) as response:
+        payload = json.load(response)
+    return payload.get("data")
+
+
+def _sync_proxmox_put_json(
+    api_url: str,
+    token_id: str,
+    token_secret: str,
+    path: str,
+    data_dict: dict[str, Any],
+    *,
+    verify_ssl: bool,
+) -> Any:
+    encoded_data = urllib_parse.urlencode(data_dict).encode("utf-8")
+    request = urllib_request.Request(
+        f"{api_url}/api2/json{path}",
+        data=encoded_data,
+        headers={"Authorization": f"PVEAPIToken={token_id}={token_secret}"},
+        method="PUT",
     )
     context = None if verify_ssl else ssl._create_unverified_context()
     with urllib_request.urlopen(
@@ -275,6 +325,50 @@ async def control_proxmox_guest(
             "guest_type": guest_type,
             "vmid": vmid,
             "action": action,
+            "task": data,
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Proxmox error: {_proxmox_error_message(exc)}",
+        )
+
+
+async def set_proxmox_guest_autostart(
+    node: str,
+    guest_type: Literal["qemu", "lxc"],
+    vmid: int,
+    enabled: bool,
+) -> dict[str, Any]:
+    """Set onboot (auto-start on boot) configuration for a Proxmox guest."""
+    config = _proxmox_config()
+    api_url = config["api_url"]
+    token_id = config["token_id"]
+    token_secret = config["token_secret"]
+    verify_ssl = config["verify_ssl"]
+    if not (api_url and token_id and token_secret):
+        raise HTTPException(
+            status_code=503,
+            detail="Proxmox integration not configured. Set PROXMOX_API_URL, PROXMOX_TOKEN_ID, and PROXMOX_TOKEN_SECRET.",
+        )
+
+    path = f"/nodes/{node}/{guest_type}/{vmid}/config"
+    try:
+        data = await asyncio.to_thread(
+            _sync_proxmox_put_json,
+            api_url,
+            token_id,
+            token_secret,
+            path,
+            {"onboot": 1 if enabled else 0},
+            verify_ssl=verify_ssl,
+        )
+        return {
+            "status": "ok",
+            "node": node,
+            "guest_type": guest_type,
+            "vmid": vmid,
+            "onboot": enabled,
             "task": data,
         }
     except Exception as exc:
