@@ -8,6 +8,7 @@ import shutil
 import socket
 import subprocess
 import time
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -114,6 +115,19 @@ def _detail_name(command: list[str]) -> str:
     return "service-" + "".join(char if char.isalnum() or char in "-_" else "-" for char in raw).strip("-")
 
 
+def _command_env(command: list[str], env: dict[str, str] | None = None) -> dict[str, str] | None:
+    """Find this user's existing systemd bus in non-login agent shells."""
+    if not command or Path(command[0]).name not in {"systemctl", "systemd-run"}:
+        return env
+    resolved = dict(os.environ if env is None else env)
+    runtime = Path(resolved.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
+    bus = runtime / "bus"
+    if runtime.is_dir() and runtime.stat().st_uid == os.getuid() and bus.is_socket():
+        resolved.setdefault("XDG_RUNTIME_DIR", str(runtime))
+        resolved.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path={bus}")
+    return resolved
+
+
 def run(
     command: list[str],
     *,
@@ -124,7 +138,7 @@ def run(
     result = subprocess.run(
         command,
         cwd=cwd,
-        env=env,
+        env=_command_env(command, env),
         text=True,
         capture_output=True,
         encoding="utf-8",
@@ -137,7 +151,7 @@ def run(
 
 
 def capture(command: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=False)
+    return subprocess.run(command, cwd=cwd, env=_command_env(command), text=True, capture_output=True, check=False)
 
 
 def systemctl(*args: str) -> subprocess.CompletedProcess[str]:
@@ -255,8 +269,8 @@ def restart_service(service: str, *, port: int = 0) -> int:
     if not service:
         return 0
     if not service_exists(service):
-        print(f"[service] {service} not found, skipping")
-        return 0
+        print(f"[service] {service} FAIL: configured service not found")
+        return 1
     current_invocation = os.environ.get("INVOCATION_ID", "")
     if current_invocation:
         unit_invocation = systemctl("show", service, "-p", "InvocationID", "--value").stdout.strip()
@@ -375,6 +389,19 @@ def ensure_infra() -> int:
         time.sleep(2)
     print("[service] Docker infra not ready after 90s")
     return 1
+
+
+def sync_backend(project: ProjectServices) -> int:
+    """Install the locked Python environment before migrations or restarts."""
+    if not (project.backend_dir / "pyproject.toml").exists() or not (project.backend_dir / "uv.lock").exists():
+        return 0
+    print("[service] syncing locked backend dependencies")
+    manifest = tomllib.loads((project.backend_dir / "pyproject.toml").read_text())
+    command = ["uv", "sync", "--locked"]
+    # Managed checkouts use this same environment for canonical quality gates.
+    if "dev" in manifest.get("project", {}).get("optional-dependencies", {}):
+        command.extend(["--extra", "dev"])
+    return run(command, cwd=project.backend_dir, quiet_success=True)
 
 
 def build_frontend(project: ProjectServices) -> int:

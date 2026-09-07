@@ -70,7 +70,8 @@ def status(
     precautions=(
         "st pulse --gate first",
         "explicit project, not cwd-implicit",
-        "--include-all-workers only when intentional",
+        "required application workers belong in project.identity.json services.default_workers and rebuild automatically",
+        "--include-all-workers only for intentionally restarting protected optional workers",
         "never run raw pnpm run build / npm build / uv pip install + manual systemctl restart for a managed project",
     ),
     examples=(
@@ -96,9 +97,15 @@ def rebuild(
     start_time = time.time()
     errors = 0
     print(f"Rebuilding {services.project_id}")
-    errors += service_ops.ensure_infra() != 0
-    errors += service_ops.build_frontend(services) != 0
-    errors += service_ops.run_migrations(services) != 0
+    for name, step in (
+        ("infrastructure", service_ops.ensure_infra),
+        ("backend dependencies", lambda: service_ops.sync_backend(services)),
+        ("frontend build", lambda: service_ops.build_frontend(services)),
+        ("migrations", lambda: service_ops.run_migrations(services)),
+    ):
+        if step() != 0:
+            print(f"[service] rebuild stopped: {name} failed; services were not restarted")
+            raise typer.Exit(1)
     if services.optional_workers and not include_all_workers:
         print(
             "[service] skipping protected workers: "
@@ -113,6 +120,10 @@ def rebuild(
     if services.frontend_service:
         errors += service_ops.restart_service(services.frontend_service, port=services.frontend_port) != 0
     errors += service_ops.verify_health(services)
+    for worker in services.workers(include_all=include_all_workers):
+        state = service_ops.service_state(worker)
+        print(f"[service] worker {worker}: {state}")
+        errors += state != "active"
     if errors == 0:
         service_ops.sync_seeds(services)
         print(f"[service] rebuild complete ({int(time.time() - start_time)}s)")

@@ -89,6 +89,8 @@ def test_service_rebuild_uses_native_steps() -> None:
     with (
         patch("cli.commands.service._load", return_value=_project()),
         patch("cli.commands.service.service_ops.ensure_infra", return_value=0),
+        patch("cli.commands.service.service_ops.sync_backend", return_value=0),
+        patch("cli.commands.service.service_ops.service_state", return_value="active"),
         patch("cli.commands.service.service_ops.build_frontend", return_value=0),
         patch("cli.commands.service.service_ops.run_migrations", return_value=0),
         patch("cli.commands.service.service_ops.sync_systemd_units"),
@@ -1978,3 +1980,71 @@ def test_setup_services_dry_run_does_not_mutate() -> None:
     assert result.exit_code == 0
     assert "SETUP SERVICES" in result.output
     link_st.assert_not_called()
+
+
+@pytest.mark.parametrize("failed_step", ["sync_backend", "build_frontend", "run_migrations"])
+def test_rebuild_failure_never_restarts_services(failed_step):
+    with (
+        patch("cli.commands.service._load", return_value=_project()),
+        patch.object(service_ops, "ensure_infra", return_value=0),
+        patch.object(service_ops, "sync_backend", return_value=int(failed_step == "sync_backend")),
+        patch.object(service_ops, "build_frontend", return_value=int(failed_step == "build_frontend")),
+        patch.object(service_ops, "run_migrations", return_value=int(failed_step == "run_migrations")),
+        patch.object(service_ops, "restart_service") as restart,
+        patch.object(service_ops, "sync_systemd_units") as sync,
+    ):
+        result = runner.invoke(service.app, ["rebuild", "summitflow"])
+    assert result.exit_code == 1
+    restart.assert_not_called()
+    sync.assert_not_called()
+
+
+def test_backend_sync_uses_lockfile(tmp_path):
+    from dataclasses import replace
+    project = replace(_project(), backend_dir=tmp_path)
+    (tmp_path / "pyproject.toml").touch()
+    (tmp_path / "uv.lock").touch()
+    with patch.object(service_ops, "run", return_value=0) as run:
+        assert service_ops.sync_backend(project) == 0
+    run.assert_called_once_with(["uv", "sync", "--locked"], cwd=tmp_path, quiet_success=True)
+
+
+def test_systemd_bus_discovery_uses_existing_owned_socket(tmp_path, monkeypatch):
+    import socket
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.delenv("DBUS_SESSION_BUS_ADDRESS", raising=False)
+    with socket.socket(socket.AF_UNIX) as bus:
+        bus.bind(str(tmp_path / "bus"))
+        env = service_ops._command_env(["systemctl", "--user", "is-active", "example.service"])
+    assert env is not None
+    assert env["DBUS_SESSION_BUS_ADDRESS"] == f"unix:path={tmp_path}/bus"
+    assert service_ops._command_env(["pnpm", "build"]) is None
+
+
+def test_rebuild_fails_when_restarted_worker_is_not_active():
+    with (
+        patch("cli.commands.service._load", return_value=_project()),
+        patch.object(service_ops, "ensure_infra", return_value=0),
+        patch.object(service_ops, "sync_backend", return_value=0),
+        patch.object(service_ops, "build_frontend", return_value=0),
+        patch.object(service_ops, "run_migrations", return_value=0),
+        patch.object(service_ops, "sync_systemd_units"),
+        patch.object(service_ops, "restart_service", return_value=0),
+        patch.object(service_ops, "verify_health", return_value=0),
+        patch.object(service_ops, "service_state", return_value="failed"),
+        patch.object(service_ops, "sync_seeds") as seeds,
+    ):
+        result = runner.invoke(service.app, ["rebuild", "summitflow"])
+    assert result.exit_code == 1
+    assert "worker summitflow-worker.service: failed" in result.output
+    seeds.assert_not_called()
+
+
+def test_backend_sync_keeps_declared_quality_gate_dependencies(tmp_path):
+    from dataclasses import replace
+    project = replace(_project(), backend_dir=tmp_path)
+    (tmp_path / "pyproject.toml").write_text('[project.optional-dependencies]\ndev = ["pytest"]\n')
+    (tmp_path / "uv.lock").touch()
+    with patch.object(service_ops, "run", return_value=0) as run:
+        assert service_ops.sync_backend(project) == 0
+    run.assert_called_once_with(["uv", "sync", "--locked", "--extra", "dev"], cwd=tmp_path, quiet_success=True)
