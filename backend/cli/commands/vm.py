@@ -310,6 +310,8 @@ def repair_agent(
 ) -> None:
     """Repair a Linux guest agent through verified SSH recovery access."""
     def action(client: ProxmoxClient) -> None:
+        if client.config_get(vmid).get("ostype") != "l26":
+            raise ProxmoxError("Automatic guest-agent repair requires Linux; use exec-ssh for Windows recovery")
         script = (
             'if [ "$(systemctl show -p LoadState --value qemu-guest-agent)" = not-found ]; then\n'
             "  command -v apt-get >/dev/null || { echo 'Install qemu-guest-agent using the guest package manager' >&2; exit 1; }\n"
@@ -324,26 +326,46 @@ def repair_agent(
                 "  sudo -n apt-get update\n",
                 "  sudo -n apt-get update\n  sudo -n env DEBIAN_FRONTEND=noninteractive apt-get --fix-broken --no-remove install -y\n",
             )
-        _ssh_linux(client, vmid, ssh_target, script, jump_host, identity_file)
+        _ssh_guest(client, vmid, ssh_target, script, jump_host, identity_file)
 
     _run(action)
 
 
-def _ssh_linux(client, vmid, ssh_target, command, jump_host, identity_file):
+def _ssh_guest(client, vmid, ssh_target, command, jump_host, identity_file):
     for target in (ssh_target, jump_host):
         if target is not None and not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.@:\[\]-]*", target):
             raise typer.BadParameter("Use an SSH host alias or user@host, without options")
     cfg = client.config_get(vmid)
-    if cfg.get("ostype") != "l26" or not cfg.get("name"):
-        raise ProxmoxError("SSH recovery requires a named Linux VM")
-    expected = shlex.quote(str(cfg["name"]))
-    script = "set -eu\n" + f'test "$(hostname -s)" = {expected} || {{ echo "Guest hostname does not match VM" >&2; exit 1; }}\n' + command
+    windows = str(cfg.get("ostype", "")).startswith("win")
+    if windows:
+        macs = []
+        for key, value in cfg.items():
+            if re.fullmatch(r"net[0-9]+", key):
+                match = re.search(r"=([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})(?:,|$)", str(value))
+                if match:
+                    macs.append(match.group(1))
+        if not macs:
+            raise ProxmoxError("Windows SSH recovery requires a configured guest NIC identity")
+        literals = ",".join("'" + mac + "'" for mac in macs)
+        guard = (
+            f"$stGuestMacs = @({literals})\n"
+            "$stGuestAdapters = @(Get-NetAdapter -IncludeHidden | Where-Object { $stGuestMacs -contains ($_.MacAddress -replace '-', ':') })\n"
+            "if ($stGuestAdapters.Count -eq 0) { throw 'Guest NIC does not match VM configuration' }\n"
+        )
+        script = "try {\n$ErrorActionPreference = 'Stop'\n" + guard + command + "\n} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }\nexit 0\n\n"
+        remote = "powershell.exe -NoProfile -NonInteractive -Command -"
+    else:
+        if cfg.get("ostype") != "l26" or not cfg.get("name"):
+            raise ProxmoxError("SSH recovery requires a named Linux or Windows VM")
+        expected = shlex.quote(str(cfg["name"]))
+        script = "set -eu\n" + f'test "$(hostname -s)" = {expected} || {{ echo "Guest hostname does not match VM" >&2; exit 1; }}\n' + command
+        remote = "sh -s"
     args = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
     if jump_host:
         args.extend(["-J", jump_host])
     if identity_file:
         args.extend(["-i", str(identity_file)])
-    args.extend(["--", ssh_target, "sh -s"])
+    args.extend(["--", ssh_target, remote])
     try:
         result = subprocess.run(args, input=script, text=True, capture_output=True, timeout=300)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -355,17 +377,17 @@ def _ssh_linux(client, vmid, ssh_target, command, jump_host, identity_file):
 
 @app.command("exec-ssh")
 def exec_ssh(
-    vmid: Annotated[str, typer.Argument(help="Linux VM ID")],
+    vmid: Annotated[str, typer.Argument(help="VM ID")],
     command: Annotated[str, typer.Argument(help="Shell command; use - to read stdin")],
     ssh_target: Annotated[str, typer.Option(help="Existing SSH user@host for this VM")],
     jump_host: Annotated[str | None, typer.Option(help="Existing SSH jump host alias")] = None,
     identity_file: Annotated[Path | None, typer.Option(help="Existing SSH private-key path")] = None,
 ) -> None:
-    """Execute through verified SSH when the Linux QEMU agent is unavailable."""
+    """Execute through verified SSH when QEMU execution or stdin is unavailable."""
     import sys
 
     script = sys.stdin.read() if command == "-" else command
-    _run(lambda client: _ssh_linux(client, vmid, ssh_target, script, jump_host, identity_file))
+    _run(lambda client: _ssh_guest(client, vmid, ssh_target, script, jump_host, identity_file))
 
 
 @app.command("grow-disk")
