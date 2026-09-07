@@ -258,23 +258,31 @@ def agent_tooling(
 def test_dbs(
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview setup without running")] = False,
     confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
+    project: Annotated[str | None, typer.Option("--project", help="Set up only this project's test database")] = None,
 ) -> None:
     """Create or refresh test databases."""
+    targets = {
+        "summitflow": ("summitflow_test", "summitflow_app"),
+        "agent-hub": ("agent_hub_test", "agent_hub_app"),
+        "portfolio-ai": ("portfolio_ai_test", "portfolio_app"),
+        "jobinator-4000": ("jobinator_test", "jobinator_app"),
+    }
+    if project and project not in targets:
+        raise typer.BadParameter("No test database configured for this project")
+    selected = [targets[project]] if project else list(targets.values())[:3]
     lines = [
         "SETUP TEST DATABASES",
-        "Creates or refreshes configured test databases.",
+        *(f"Create test database {name}, owned by {owner}" for name, owner in selected),
     ]
     _preview("st setup test-dbs", lines, dry_run, confirm)
     if dry_run:
         return
-    use_docker = _run(["docker", "compose", "-p", "summitflow-stack", "ps", "--status", "running", "-q"]) == 0
-    base = ["docker", "compose", "-p", "summitflow-stack", "exec", "-T", "postgres"] if use_docker else ["sudo", "-u", "postgres"]
-    for db_name, owner in (
-        ("summitflow_test", "summitflow_app"),
-        ("agent_hub_test", "agent_hub_app"),
-        ("portfolio_ai_test", "portfolio_app"),
-    ):
-        _run([*base, "createdb", "-U", "admin", db_name] if use_docker else [*base, "createdb", db_name])
+    from app.tasks.backup_native_infra import _find_compose_container
+    container = _find_compose_container("postgres")
+    use_docker = container is not None
+    base = ["docker", "exec", "-i", container] if container else ["sudo", "-u", "postgres"]
+    for db_name, owner in selected:
+        _run([*base, "createdb", "-U", "admin", "-O", owner, db_name] if use_docker else [*base, "createdb", "-O", owner, db_name])
         _run([*base, "psql", "-U", "admin", "-c", f"GRANT ALL PRIVILEGES ON DATABASE {db_name} TO {owner};"] if use_docker else [*base, "psql", "-c", f"GRANT ALL PRIVILEGES ON DATABASE {db_name} TO {owner};"])
         _run([*base, "psql", "-U", "admin", "-d", db_name, "-c", f"GRANT ALL ON SCHEMA public TO {owner};"] if use_docker else [*base, "psql", "-d", db_name, "-c", f"GRANT ALL ON SCHEMA public TO {owner};"])
     print("test databases ready")

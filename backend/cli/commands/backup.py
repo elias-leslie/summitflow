@@ -198,7 +198,11 @@ def _create_backup_dry_run(*, source: str | None) -> None:
         for raw in ignore_file.read_text(errors="ignore").splitlines():
             line = raw.strip()
             if line and not line.startswith("#"):
-                patterns.append(line.rstrip("/"))
+                if line.startswith("!"):
+                    included = line[1:].removeprefix("./").rstrip("/")
+                    patterns = [p for p in patterns if p.removeprefix("./").rstrip("/") != included]
+                else:
+                    patterns.append(line.rstrip("/"))
 
     def should_exclude(rel_path: str) -> bool:
         normalized = rel_path.removeprefix("./")

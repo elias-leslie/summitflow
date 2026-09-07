@@ -111,7 +111,14 @@ def _load_excludes(project_dir: Path) -> tuple[str, ...]:
         for raw_line in ignore_file.read_text(errors="ignore").splitlines():
             line = raw_line.strip()
             if line and not line.startswith("#"):
-                patterns.append(line.rstrip("/"))
+                if line.startswith("!"):
+                    # Explicitly opt a durable project directory back in. Only
+                    # remove an exact inherited pattern; do not reinterpret
+                    # unrelated exclusions or descend into excluded parents.
+                    included = line[1:].removeprefix("./").rstrip("/")
+                    patterns = [p for p in patterns if p.removeprefix("./").rstrip("/") != included]
+                else:
+                    patterns.append(line.rstrip("/"))
     return tuple(patterns)
 
 
@@ -146,6 +153,17 @@ def _dump_database(project_name: str, destination: Path, env: dict[str, str]) ->
     run_env = {**os.environ, **env}
     user = run_env.get("PGUSER", db["user"])
     password = run_env.get("PGPASSWORD", db["password"])
+    # A complete backup of forced-RLS tables needs the existing backup/admin
+    # identity. Never weaken the application's role or its row policies.
+    admin_url = run_env.get("POSTGRES_ADMIN_URL") or _read_env_file(Path.home() / ".env.local").get("POSTGRES_ADMIN_URL")
+    if admin_url and not (run_env.get("PGUSER") and run_env.get("PGPASSWORD")):
+        admin = urlsplit(admin_url)
+        aliases = {"localhost": "127.0.0.1", "::1": "127.0.0.1"}
+        if (aliases.get(admin.hostname or "", admin.hostname) != aliases.get(db["host"], db["host"])
+                or (admin.port or 5432) != int(db["port"])):
+            raise RuntimeError("Backup administrator and project database endpoints differ")
+        if admin.username and admin.password:
+            user, password = unquote(admin.username), unquote(admin.password)
     run_env["PGPASSWORD"] = password
     command = ["pg_dump", "-U", user, "-h", db["host"], "-p", db["port"], db["name"]]
     returncode, stderr = _run_gzip_stream(command, destination, env=run_env, timeout=BACKUP_TIMEOUT)

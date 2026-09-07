@@ -23,6 +23,21 @@ from cli.main import app as main_app
 runner = CliRunner()
 
 
+def test_test_database_setup_can_target_only_jobinator() -> None:
+    with (
+        patch("cli.commands.setup._preview"),
+        patch("app.tasks.backup_native_infra._find_compose_container", return_value="test-postgres"),
+        patch("cli.commands.setup._run", return_value=0) as run,
+    ):
+        result = runner.invoke(setup.app, ["test-dbs", "--project", "jobinator-4000"])
+    assert result.exit_code == 0
+    assert run.call_count == 3
+    assert run.call_args_list[0].args[0] == [
+        "docker", "exec", "-i", "test-postgres", "createdb", "-U", "admin",
+        "-O", "jobinator_app", "jobinator_test",
+    ]
+
+
 def _project() -> ProjectServices:
     return ProjectServices(
         project_id="summitflow",
