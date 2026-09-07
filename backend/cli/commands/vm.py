@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import re
+import shlex
+import subprocess
+import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -251,13 +256,32 @@ def sendkey(
 @app.command("exec")
 def exec_guest(
     vmid: Annotated[str, typer.Argument(help="VM ID")],
-    command: Annotated[str, typer.Argument(help="Command string to execute in guest via guest agent")],
+    command: Annotated[str, typer.Argument(help="Shell command to execute in guest")],
+    wait: Annotated[bool, typer.Option(help="Wait for completion and return guest output/status")] = False,
 ) -> None:
-    """Execute a command inside guest OS via QEMU guest agent."""
+    """Execute using the guest OS shell through QEMU guest agent."""
     def action(client: ProxmoxClient) -> None:
-        res = client.agent_exec(vmid, command)
+        windows = str(client.config_get(vmid).get("ostype", "")).startswith("win")
+        argv = ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command] if windows else ["/bin/sh", "-lc", command]
+        res = client.agent_exec(vmid, argv)
         pid = res.get("pid")
+        if not isinstance(pid, int):
+            raise ProxmoxError("Guest exec returned no process ID")
         print(f"Started guest process PID {pid} on VM {vmid}")
+        if not wait:
+            return
+        deadline = time.monotonic() + 300
+        while time.monotonic() < deadline:
+            status = client.agent_exec_status(vmid, pid)
+            if status.get("exited"):
+                for key in ("out-data", "err-data"):
+                    if status.get(key):
+                        print(status[key])
+                if status.get("exitcode") != 0:
+                    raise ProxmoxError(f"Guest process exited with code {status.get('exitcode')}, signal {status.get('signal')}")
+                return
+            time.sleep(1)
+        raise ProxmoxError(f"Timed out waiting for guest PID {pid}; process may still be running")
 
     _run(action)
 
@@ -274,3 +298,91 @@ def config(
 
     _run(action)
 
+
+
+@app.command("repair-agent")
+def repair_agent(
+    vmid: Annotated[str, typer.Argument(help="Linux VM ID")],
+    ssh_target: Annotated[str, typer.Option(help="Existing SSH user@host for this VM")],
+    jump_host: Annotated[str | None, typer.Option(help="Existing SSH jump host alias")] = None,
+    identity_file: Annotated[Path | None, typer.Option(help="Existing SSH private-key path")] = None,
+    repair_packages: Annotated[bool, typer.Option(help="Repair broken Debian dependencies without removing packages")] = False,
+) -> None:
+    """Repair a Linux guest agent through verified SSH recovery access."""
+    def action(client: ProxmoxClient) -> None:
+        script = (
+            'if [ "$(systemctl show -p LoadState --value qemu-guest-agent)" = not-found ]; then\n'
+            "  command -v apt-get >/dev/null || { echo 'Install qemu-guest-agent using the guest package manager' >&2; exit 1; }\n"
+            "  sudo -n apt-get update\n"
+            "  sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y qemu-guest-agent\n"
+            "fi\n"
+            "sudo -n systemctl restart qemu-guest-agent\n"
+            "systemctl is-active qemu-guest-agent\n"
+        )
+        if repair_packages:
+            script = script.replace(
+                "  sudo -n apt-get update\n",
+                "  sudo -n apt-get update\n  sudo -n env DEBIAN_FRONTEND=noninteractive apt-get --fix-broken --no-remove install -y\n",
+            )
+        _ssh_linux(client, vmid, ssh_target, script, jump_host, identity_file)
+
+    _run(action)
+
+
+def _ssh_linux(client, vmid, ssh_target, command, jump_host, identity_file):
+    for target in (ssh_target, jump_host):
+        if target is not None and not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.@:\[\]-]*", target):
+            raise typer.BadParameter("Use an SSH host alias or user@host, without options")
+    cfg = client.config_get(vmid)
+    if cfg.get("ostype") != "l26" or not cfg.get("name"):
+        raise ProxmoxError("SSH recovery requires a named Linux VM")
+    expected = shlex.quote(str(cfg["name"]))
+    script = "set -eu\n" + f'test "$(hostname -s)" = {expected} || {{ echo "Guest hostname does not match VM" >&2; exit 1; }}\n' + command
+    args = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
+    if jump_host:
+        args.extend(["-J", jump_host])
+    if identity_file:
+        args.extend(["-i", str(identity_file)])
+    args.extend(["--", ssh_target, "sh -s"])
+    try:
+        result = subprocess.run(args, input=script, text=True, capture_output=True, timeout=300)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ProxmoxError(f"SSH guest-agent recovery failed: {exc}") from exc
+    if result.returncode:
+        raise ProxmoxError((result.stdout + "\n" + result.stderr).strip()[-6000:] or "Guest-agent restart failed")
+    print(result.stdout.strip())
+
+
+@app.command("exec-ssh")
+def exec_ssh(
+    vmid: Annotated[str, typer.Argument(help="Linux VM ID")],
+    command: Annotated[str, typer.Argument(help="Shell command; use - to read stdin")],
+    ssh_target: Annotated[str, typer.Option(help="Existing SSH user@host for this VM")],
+    jump_host: Annotated[str | None, typer.Option(help="Existing SSH jump host alias")] = None,
+    identity_file: Annotated[Path | None, typer.Option(help="Existing SSH private-key path")] = None,
+) -> None:
+    """Execute through verified SSH when the Linux QEMU agent is unavailable."""
+    import sys
+
+    script = sys.stdin.read() if command == "-" else command
+    _run(lambda client: _ssh_linux(client, vmid, ssh_target, script, jump_host, identity_file))
+
+
+@app.command("grow-disk")
+def grow_disk(
+    vmid: Annotated[str, typer.Argument(help="VM ID")],
+    disk: Annotated[str, typer.Argument(help="Configured disk slot, such as scsi0")],
+    add_gib: Annotated[int, typer.Argument(min=1, help="GiB to add; shrinking is not supported")],
+) -> None:
+    """Add capacity to an existing VM disk. Guest filesystem growth is separate."""
+    def action(client: ProxmoxClient) -> None:
+        if not re.fullmatch(r"(?:scsi|sata|virtio|ide)[0-9]+", disk):
+            raise typer.BadParameter("Use a configured disk slot")
+        cfg = client.config_get(vmid)
+        value = str(cfg.get(disk, ""))
+        if not value or "media=cdrom" in value or "cloudinit" in value:
+            raise ProxmoxError("Selected slot is not a data disk")
+        client.request("PUT", f"/nodes/{client.config.node}/qemu/{vmid}/resize", data={"disk": disk, "size": f"+{add_gib}G"})
+        print(f"Added {add_gib} GiB to VM {vmid} {disk}; grow the guest partition and filesystem next")
+
+    _run(action)

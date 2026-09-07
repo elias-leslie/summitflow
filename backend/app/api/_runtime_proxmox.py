@@ -331,7 +331,7 @@ async def control_proxmox_guest(
         raise HTTPException(
             status_code=502,
             detail=f"Proxmox error: {_proxmox_error_message(exc)}",
-        )
+        ) from exc
 
 
 async def set_proxmox_guest_autostart(
@@ -375,5 +375,5 @@ async def set_proxmox_guest_autostart(
         raise HTTPException(
             status_code=502,
             detail=f"Proxmox error: {_proxmox_error_message(exc)}",
-        )
+        ) from exc
 

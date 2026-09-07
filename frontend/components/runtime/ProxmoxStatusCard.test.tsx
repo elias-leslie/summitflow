@@ -1,8 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { ProxmoxStatusCard } from './ProxmoxStatusCard'
-
 import { runtimeApi } from '@/lib/api/runtime'
+import { ProxmoxStatusCard } from './ProxmoxStatusCard'
 
 const queryMocks = vi.hoisted(() => ({
   useQuery: vi.fn(),
@@ -103,7 +102,7 @@ describe('ProxmoxStatusCard', () => {
       guest_type: 'qemu',
       node: 'davion-gem',
       status: 'ok',
-      task_upid: 'UPID:davion-gem:123',
+      task: 'UPID:davion-gem:123',
       vmid: 100,
     })
 
@@ -113,7 +112,16 @@ describe('ProxmoxStatusCard', () => {
         reachable: true,
         api_url: 'https://192.0.2.33:8006',
         error: null,
-        nodes: [{ node: 'davion-gem', status: 'online', cpu_percent: 10, memory_used_bytes: 1, memory_total_bytes: 2, uptime_seconds: 100 }],
+        nodes: [
+          {
+            node: 'davion-gem',
+            status: 'online',
+            cpu_percent: 10,
+            memory_used_bytes: 1,
+            memory_total_bytes: 2,
+            uptime_seconds: 100,
+          },
+        ],
         guests: [
           {
             vmid: 100,
@@ -141,7 +149,12 @@ describe('ProxmoxStatusCard', () => {
       fireEvent.click(stopButton)
     })
 
-    expect(runtimeApi.controlProxmoxGuest).toHaveBeenCalledWith('davion-gem', 'qemu', 100, 'stop')
+    expect(runtimeApi.controlProxmoxGuest).toHaveBeenCalledWith(
+      'davion-gem',
+      'qemu',
+      100,
+      'stop',
+    )
   })
 
   it('triggers auto-start toggle when auto-start switch is clicked', async () => {
@@ -158,7 +171,16 @@ describe('ProxmoxStatusCard', () => {
         reachable: true,
         api_url: 'https://192.0.2.33:8006',
         error: null,
-        nodes: [{ node: 'davion-gem', status: 'online', cpu_percent: 10, memory_used_bytes: 1, memory_total_bytes: 2, uptime_seconds: 100 }],
+        nodes: [
+          {
+            node: 'davion-gem',
+            status: 'online',
+            cpu_percent: 10,
+            memory_used_bytes: 1,
+            memory_total_bytes: 2,
+            uptime_seconds: 100,
+          },
+        ],
         guests: [
           {
             vmid: 100,
@@ -182,7 +204,9 @@ describe('ProxmoxStatusCard', () => {
     render(<ProxmoxStatusCard />)
     fireEvent.click(screen.getByText('Proxmox'))
 
-    const toggleButton = screen.getByRole('switch', { name: 'Toggle auto-start for browser-test-vm' })
+    const toggleButton = screen.getByRole('switch', {
+      name: 'Toggle auto-start for browser-test-vm',
+    })
     expect(toggleButton).toBeInTheDocument()
     expect(toggleButton).toHaveAttribute('aria-checked', 'true')
 
@@ -190,6 +214,11 @@ describe('ProxmoxStatusCard', () => {
       fireEvent.click(toggleButton)
     })
 
-    expect(runtimeApi.setProxmoxGuestAutoStart).toHaveBeenCalledWith('davion-gem', 'qemu', 100, false)
+    expect(runtimeApi.setProxmoxGuestAutoStart).toHaveBeenCalledWith(
+      'davion-gem',
+      'qemu',
+      100,
+      false,
+    )
   })
 })

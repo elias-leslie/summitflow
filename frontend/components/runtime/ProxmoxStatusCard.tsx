@@ -35,10 +35,19 @@ export function ProxmoxStatusCard() {
     setPendingAction(`${key}-${action}`)
     setActionError(null)
     try {
-      await runtimeApi.controlProxmoxGuest(guest.node, guest.type, guest.vmid, action)
+      await runtimeApi.controlProxmoxGuest(
+        guest.node,
+        guest.type,
+        guest.vmid,
+        action,
+      )
       await queryClient.invalidateQueries({ queryKey: ['runtime', 'proxmox'] })
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : `Failed to ${action} guest ${guest.vmid}`)
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : `Failed to ${action} guest ${guest.vmid}`,
+      )
     } finally {
       setPendingAction(null)
     }
@@ -207,7 +216,8 @@ export function ProxmoxStatusCard() {
                       const isRunning = guest.status === 'running'
                       const isStarting = pendingAction === `${guestKey}-start`
                       const isStopping = pendingAction === `${guestKey}-stop`
-                      const isShuttingDown = pendingAction === `${guestKey}-shutdown`
+                      const isShuttingDown =
+                        pendingAction === `${guestKey}-shutdown`
                       const isBusy = pendingAction !== null
 
                       return (
@@ -223,8 +233,8 @@ export function ProxmoxStatusCard() {
                               <div>
                                 <div className="font-medium">{guest.name}</div>
                                 <div className="mt-0.5 text-2xs text-slate-400">
-                                  {guest.node} &middot; {guest.type} &middot; VMID{' '}
-                                  {guest.vmid}
+                                  {guest.node} &middot; {guest.type} &middot;
+                                  VMID {guest.vmid}
                                 </div>
                               </div>
                               <span className="text-[10px] uppercase tracking-[0.14em] shrink-0">
@@ -239,10 +249,13 @@ export function ProxmoxStatusCard() {
                                 Mem: {formatBytes(guest.memory_used_bytes)} /{' '}
                                 {formatBytes(guest.memory_total_bytes)}
                               </div>
-                              <div>Up: {formatUptime(guest.uptime_seconds)}</div>
-                              {Array.isArray(guest.tags) && guest.tags.length > 0 && (
-                                <div>Tags: {guest.tags.join(', ')}</div>
-                              )}
+                              <div>
+                                Up: {formatUptime(guest.uptime_seconds)}
+                              </div>
+                              {Array.isArray(guest.tags) &&
+                                guest.tags.length > 0 && (
+                                  <div>Tags: {guest.tags.join(', ')}</div>
+                                )}
                             </div>
                           </div>
 
@@ -283,7 +296,9 @@ export function ProxmoxStatusCard() {
                                 />
                               </span>
                             </button>
-                            <span className="text-[10px] text-slate-600">on reboot</span>
+                            <span className="text-[10px] text-slate-600">
+                              on reboot
+                            </span>
                           </div>
 
                           {/* Guest Power Management Actions */}
@@ -292,7 +307,9 @@ export function ProxmoxStatusCard() {
                               <>
                                 <button
                                   type="button"
-                                  onClick={() => handleGuestAction(guest, 'stop')}
+                                  onClick={() =>
+                                    handleGuestAction(guest, 'stop')
+                                  }
                                   disabled={isBusy}
                                   className="text-2xs px-2.5 py-1 rounded bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 disabled:opacity-40 transition-all font-medium"
                                   title="Force stop guest"
@@ -301,18 +318,24 @@ export function ProxmoxStatusCard() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleGuestAction(guest, 'shutdown')}
+                                  onClick={() =>
+                                    handleGuestAction(guest, 'shutdown')
+                                  }
                                   disabled={isBusy}
                                   className="text-2xs px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 hover:border-amber-500/30 disabled:opacity-40 transition-all font-medium"
                                   title="Graceful ACPI guest shutdown"
                                 >
-                                  {isShuttingDown ? 'Shutting down...' : 'Shutdown'}
+                                  {isShuttingDown
+                                    ? 'Shutting down...'
+                                    : 'Shutdown'}
                                 </button>
                               </>
                             ) : (
                               <button
                                 type="button"
-                                onClick={() => handleGuestAction(guest, 'start')}
+                                onClick={() =>
+                                  handleGuestAction(guest, 'start')
+                                }
                                 disabled={isBusy}
                                 className="text-2xs px-3 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/30 disabled:opacity-40 transition-all font-medium"
                                 title="Power on guest"

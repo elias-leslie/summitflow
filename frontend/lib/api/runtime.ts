@@ -259,8 +259,17 @@ export const runtimeApi = {
     vmid: number,
     action: 'start' | 'stop' | 'shutdown' | 'reboot',
   ) =>
-    fetchWithErrorHandling<{ status: string; action: string; vmid: number; task?: string }>(
-      apiUrl(`/api/docker/proxmox/guests/${node}/${guestType}/${vmid}/${action}`),
+    fetchWithErrorHandling<{
+      status: string
+      node: string
+      guest_type: 'qemu' | 'lxc'
+      action: string
+      vmid: number
+      task?: string
+    }>(
+      apiUrl(
+        `/api/docker/proxmox/guests/${node}/${guestType}/${vmid}/${action}`,
+      ),
       {
         method: 'POST',
         errorMessage: `Failed to ${action} Proxmox guest ${vmid}`,
@@ -272,8 +281,15 @@ export const runtimeApi = {
     vmid: number,
     enabled: boolean,
   ) =>
-    fetchWithErrorHandling<{ status: string; node: string; vmid: number; onboot: boolean }>(
-      apiUrl(`/api/docker/proxmox/guests/${node}/${guestType}/${vmid}/autostart`),
+    fetchWithErrorHandling<{
+      status: string
+      node: string
+      vmid: number
+      onboot: boolean
+    }>(
+      apiUrl(
+        `/api/docker/proxmox/guests/${node}/${guestType}/${vmid}/autostart`,
+      ),
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
