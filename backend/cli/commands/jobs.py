@@ -336,13 +336,13 @@ def screen(
     human: Annotated[bool, typer.Option("--human", help="Plain-text rendering")] = False,
     remote: Annotated[bool, typer.Option("--remote", help="Use hosts.production_api")] = False,
 ) -> None:
-    """Screen postings still in `new` and sort them into shortlisted or discarded."""
+    """Queue screening within the shared daily allowance."""
     params: dict[str, Any] = {}
     if limit is not None:
         params["limit"] = limit
     data = _as_dict(_post(remote, EP_SCREEN, params=params, timeout=AGENT_TIMEOUT))
     results = data.get("results") or []
-    lines = [f"screened {data.get('screened')}, kept {data.get('kept')}"]
+    lines = [f"Screening queued: {data.get('run_id')}. Results will appear in Discover."] if data.get("queued") else [f"screened {data.get('screened')}, kept {data.get('kept')}"]
     for row in results:
         if not isinstance(row, dict):
             continue

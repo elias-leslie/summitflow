@@ -358,3 +358,14 @@ def test_screen_renders_each_verdict(monkeypatch) -> None:
     assert "keep" in result.stdout
     assert "drop" in result.stdout
     assert "architect scope" in result.stdout
+
+
+
+def test_screen_reports_queued_work_without_fake_counts(monkeypatch) -> None:
+    fake = _fake_client(post_return={"queued": True, "run_id": "test-run"})
+    monkeypatch.setenv("ST_JOBS_API_URL", "http://test")
+    with _patch_client(fake):
+        result = runner.invoke(app, ["jobs", "screen", "--limit", "1", "--human"])
+    assert result.exit_code == 0
+    assert "Screening queued: test-run" in result.stdout
+    assert "screened None" not in result.stdout
