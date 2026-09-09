@@ -23,6 +23,19 @@ from app.tasks.backup_native import SmbUploadResult, drain_pending_archives, run
 from app.tasks.backup_restore import restore_backup
 
 
+@pytest.fixture(autouse=True)
+def isolated_backup_redis() -> Generator[None]:
+    """Exercise backup records with a local lock client; lock contracts have their own suite."""
+    with (
+        patch("redis.Redis.execute_command", side_effect=AssertionError("Unexpected live Redis command")) as command,
+        patch("app.tasks.backup_lock.get_redis") as get_redis,
+    ):
+        get_redis.return_value.set.return_value = True
+        get_redis.return_value.eval.return_value = 1
+        yield
+        command.assert_not_called()
+
+
 @pytest.fixture
 def conn() -> Generator[Any]:
     """Database connection fixture."""

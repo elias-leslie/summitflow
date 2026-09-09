@@ -27,6 +27,13 @@ _env_file = Path.home() / ".env.local"
 if _env_file.exists():
     load_dotenv(_env_file, override=True)
 
+# CLI assertions inspect text, not terminal styling. Keep Rich/Typer output
+# stable under GitHub Actions and developer terminals before CLI imports.
+os.environ["NO_COLOR"] = "1"
+os.environ["TERM"] = "dumb"
+os.environ["COLUMNS"] = "160"
+os.environ["TERMINAL_WIDTH"] = "160"
+
 _db_url = os.environ.get("DATABASE_URL", "")
 _test_db_url = os.environ.get("TEST_DATABASE_URL", "")
 

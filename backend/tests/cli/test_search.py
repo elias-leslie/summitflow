@@ -4,26 +4,38 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from cli.commands import search as search_command
 from cli.commands.search import app
+from cli.config import Config
 
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def isolated_checkout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Default unit cases must not discover the developer's registered checkout.
+    monkeypatch.chdir(tmp_path)
+
+
 def _invoke(args: list[str]) -> Any:
-    project_root = Path("/srv/workspaces/projects/summitflow")
-    if isinstance(search_command.resolve_checkout_root, MagicMock) or isinstance(search_command.canonical_repo_root, MagicMock):
-        return runner.invoke(app, args)
-    with (
-        patch("cli.commands.search.resolve_checkout_root", return_value=project_root, create=True),
-        patch("cli.commands.search.canonical_repo_root", return_value=project_root, create=True),
-    ):
+    project_root = Path.cwd()
+    with ExitStack() as stack:
+        if not isinstance(search_command.get_config_optional, MagicMock):
+            stack.enter_context(patch("cli.commands.search.get_config_optional", return_value=Config(
+                api_base="http://testserver", project_id="summitflow", project_root=str(project_root), source="cwd",
+            )))
+        if not (isinstance(search_command.resolve_checkout_root, MagicMock)
+                or isinstance(search_command.canonical_repo_root, MagicMock)):
+            stack.enter_context(patch("cli.commands.search.resolve_checkout_root", return_value=project_root))
+            stack.enter_context(patch("cli.commands.search.canonical_repo_root", return_value=project_root))
         return runner.invoke(app, args)
 
 

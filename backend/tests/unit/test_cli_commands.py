@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import ANY, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import jsonschema
 import pytest
@@ -559,39 +559,54 @@ class TestTaskCliErgonomics:
         assert '"description": "Do thing"' in result.output
 
     def test_log_accepts_trailing_task_id(self) -> None:
-        with patch("cli.commands.tasks_commands.append_task_log") as mock_append:
+        with (
+            patch("cli.commands.tasks_commands.append_task_log") as mock_append,
+            patch("cli.commands.tasks.STClient") as mock_client,
+        ):
             result = runner.invoke(tasks_app, ["log", "hello world", "task-123"])
 
         assert result.exit_code == 0
-        mock_append.assert_called_once_with("hello world", "task-123", ANY)
+        mock_append.assert_called_once_with("hello world", "task-123", mock_client.return_value)
 
     def test_log_accepts_task_id_first(self) -> None:
-        with patch("cli.commands.tasks_commands.append_task_log") as mock_append:
+        with (
+            patch("cli.commands.tasks_commands.append_task_log") as mock_append,
+            patch("cli.commands.tasks.STClient") as mock_client,
+        ):
             result = runner.invoke(tasks_app, ["log", "task-123", "hello world"])
 
         assert result.exit_code == 0
-        mock_append.assert_called_once_with("hello world", "task-123", ANY)
+        mock_append.assert_called_once_with("hello world", "task-123", mock_client.return_value)
 
     def test_log_accepts_explicit_task_option(self) -> None:
-        with patch("cli.commands.tasks_commands.append_task_log") as mock_append:
+        with (
+            patch("cli.commands.tasks_commands.append_task_log") as mock_append,
+            patch("cli.commands.tasks.STClient") as mock_client,
+        ):
             result = runner.invoke(tasks_app, ["log", "hello world", "--task", "task-123"])
 
         assert result.exit_code == 0
-        mock_append.assert_called_once_with("hello world", "task-123", ANY)
+        mock_append.assert_called_once_with("hello world", "task-123", mock_client.return_value)
 
     def test_log_accepts_message_option_with_task_first(self) -> None:
-        with patch("cli.commands.tasks_commands.append_task_log") as mock_append:
+        with (
+            patch("cli.commands.tasks_commands.append_task_log") as mock_append,
+            patch("cli.commands.tasks.STClient") as mock_client,
+        ):
             result = runner.invoke(tasks_app, ["log", "task-123", "--message", "hello world"])
 
         assert result.exit_code == 0
-        mock_append.assert_called_once_with("hello world", "task-123", ANY)
+        mock_append.assert_called_once_with("hello world", "task-123", mock_client.return_value)
 
     def test_log_accepts_message_option_with_explicit_task(self) -> None:
-        with patch("cli.commands.tasks_commands.append_task_log") as mock_append:
+        with (
+            patch("cli.commands.tasks_commands.append_task_log") as mock_append,
+            patch("cli.commands.tasks.STClient") as mock_client,
+        ):
             result = runner.invoke(tasks_app, ["log", "ignored", "--task", "task-123", "-m", "hello world"])
 
         assert result.exit_code == 0
-        mock_append.assert_called_once_with("hello world", "task-123", ANY)
+        mock_append.assert_called_once_with("hello world", "task-123", mock_client.return_value)
 
     def test_import_plan_refreshes_subtasks_before_reporting(self) -> None:
         schema_path = Path(__file__).resolve().parents[2] / "app" / "schemas" / "plan.schema.json"

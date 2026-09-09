@@ -38,6 +38,10 @@ jobs:
           repository: elias-leslie/agent-hub
           ref: af7c4df239a9db1ac11f3a982e65c2b28f1a5481
           path: agent-hub-repo
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
