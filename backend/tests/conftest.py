@@ -13,6 +13,8 @@ from __future__ import annotations
 # =============================================================================
 # This runs at module load time, BEFORE pytest_configure, to ensure
 # DATABASE_URL is overridden before any app modules read it.
+import base64
+import json
 import os
 import sys
 from collections.abc import Callable, Generator
@@ -64,6 +66,25 @@ if _test_db_url:
 # from ~/.env.local. Tests that need Cloudflare mode patch settings directly.
 os.environ["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = ""
 os.environ["CLOUDFLARE_ACCESS_AUD"] = ""
+
+# Hatchet decorators build real SDK workflow objects during collection. The SDK
+# requires JWT claims even without connecting. Never inherit an operator's
+# token/endpoints: this unsigned fixture has no server authority and points only
+# at a closed loopback port. Tests that execute remote operations must mock them.
+for _key in tuple(os.environ):
+    if _key.startswith("HATCHET_CLIENT_"):
+        del os.environ[_key]
+_hatchet_claims = {
+    "sub": "00000000-0000-0000-0000-000000000000",
+    "server_url": "http://127.0.0.1:1",
+    "grpc_broadcast_address": "127.0.0.1:1",
+}
+_hatchet_header = base64.urlsafe_b64encode(b'{"alg":"none","typ":"JWT"}').decode().rstrip("=")
+_hatchet_payload = base64.urlsafe_b64encode(json.dumps(_hatchet_claims).encode()).decode().rstrip("=")
+os.environ["HATCHET_CLIENT_TOKEN"] = f"{_hatchet_header}.{_hatchet_payload}."
+os.environ["HATCHET_CLIENT_TENANT_ID"] = _hatchet_claims["sub"]
+os.environ["HATCHET_CLIENT_SERVER_URL"] = _hatchet_claims["server_url"]
+os.environ["HATCHET_CLIENT_HOST_PORT"] = _hatchet_claims["grpc_broadcast_address"]
 
 # =============================================================================
 # NOW safe to import from app modules
@@ -204,9 +225,9 @@ def client(db_schema_initialized: None) -> TestClient:
 
 
 @pytest.fixture
-def test_project_id() -> str:
-    """Return a test project ID."""
-    return "test-project"
+def test_project_id(ensure_test_project: str) -> str:
+    """Return an existing test project, including on a fresh test database."""
+    return ensure_test_project
 
 
 @pytest.fixture
