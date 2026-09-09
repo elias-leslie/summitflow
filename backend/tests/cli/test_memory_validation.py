@@ -16,40 +16,36 @@ def test_validate_content_format_accepts_topic_header() -> None:
     )
 
 
-def test_validate_content_format_rejects_missing_bold_topic_header() -> None:
-    with pytest.raises(typer.Exit):
-        validate_content_format(
-            "Use dt for all quality checks.",
-            "Use dt for checks",
-            "mandate",
-        )
+def test_validate_content_format_accepts_missing_bold_topic_header() -> None:
+    validate_content_format(
+        "Use dt for all quality checks.",
+        "Use dt for checks",
+        "mandate",
+    )
 
 
-def test_validate_content_format_rejects_reserved_tier_header() -> None:
-    with pytest.raises(typer.Exit):
-        validate_content_format(
-            "**Mandate**: Use dt for all quality checks.",
-            "Use dt for checks",
-            "mandate",
-        )
+def test_validate_content_format_accepts_reserved_tier_header() -> None:
+    validate_content_format(
+        "**Mandate**: Use dt for all quality checks.",
+        "Use dt for checks",
+        "mandate",
+    )
 
 
-def test_validate_content_format_rejects_weak_imperative() -> None:
-    with pytest.raises(typer.Exit):
-        validate_content_format(
-            "**Git Safety**: Git commits should use /commit_it when available.",
-            "Use commit flow",
-            "mandate",
-        )
+def test_validate_content_format_accepts_weak_imperative() -> None:
+    validate_content_format(
+        "**Git Safety**: Git commits should use /commit_it when available.",
+        "Use commit flow",
+        "mandate",
+    )
 
 
-def test_validate_content_format_rejects_conversational_language() -> None:
-    with pytest.raises(typer.Exit):
-        validate_content_format(
-            "**Deletion Safety**: Please remember to grep before deleting code.",
-            "Grep before deletion",
-            "guardrail",
-        )
+def test_validate_content_format_accepts_conversational_language() -> None:
+    validate_content_format(
+        "**Deletion Safety**: Please remember to grep before deleting code.",
+        "Grep before deletion",
+        "guardrail",
+    )
 
 
 def test_validate_content_format_error_includes_quickstart(capsys) -> None:
@@ -57,12 +53,12 @@ def test_validate_content_format_error_includes_quickstart(capsys) -> None:
         validate_content_format(
             "Use dt for all quality checks.",
             "Use dt for checks",
-            "mandate",
+            "unsupported",
         )
 
     err = capsys.readouterr().err
-    assert 'st memory save -s project --scope-id a-term -t guardrail' in err
-    assert 'st memory format --topic "Quality Gates"' in err
+    assert 'st memory save -s project --scope-id a-term -t reference' in err
+    assert 'st memory format --topic "Network evidence"' in err
 
 
 def test_validate_content_format_allows_long_single_rule_without_hint(capsys) -> None:

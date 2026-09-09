@@ -9,7 +9,6 @@ import typer
 import yaml
 
 from ..output import is_compact, output_error, output_json
-from .compactness import enforce_prompt_compactness, warn_prompt_compactness
 from .prompt_api import prompt_api
 from .prompt_formatters import line_count
 
@@ -60,8 +59,6 @@ def _apply_entry(entry: dict[str, Any], existing: dict[str, Any], dry_run: bool)
     if ex and ex.get("content", "").strip() == content.strip():
         return 0, 0, 1
 
-    warn_prompt_compactness(str(slug), content)
-    enforce_prompt_compactness(str(slug), content)
 
     if dry_run:
         action = "update" if ex else "create"

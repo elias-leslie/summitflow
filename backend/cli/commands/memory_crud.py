@@ -147,7 +147,6 @@ def save_impl(
     agent_slugs: str | None, exclude_agent_slugs: str | None, audience_tags: str | None,
     exclude_audience_tags: str | None, tags: str | None, scope: str, scope_id: str | None,
     change_reason: str | None = None, render_mode: str | None = None,
-    bypass_compactness: bool = False,
 ) -> None:
     summary = validate_save_inputs(tier, confidence, summary)
     validate_episode_content_present(content)
@@ -156,7 +155,6 @@ def save_impl(
         content, summary, tier, confidence, context, pinned, trigger_types, trigger_phases,
         context_kind, consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs,
         audience_tags, exclude_audience_tags, change_reason, render_mode=render_mode,
-        bypass_compactness=bypass_compactness,
     )
     result = agent_hub_request(
         "POST", MEMORY_SAVE_LEARNING_PATH, json=payload,
@@ -290,7 +288,6 @@ def update_impl(
     agent_slugs: str | None, exclude_agent_slugs: str | None, audience_tags: str | None,
     exclude_audience_tags: str | None, clear_applicability: bool, tags: str | None,
     clear_tags: bool, change_reason: str | None = None, render_mode: str | None = None,
-    bypass_compactness: bool = False,
 ) -> None:
     normalized_summary, normalized_tier, replacement_tags, normalized_render_mode = _validate_update_and_normalize(
         content, tier, summary, tags, clear_tags, clear_applicability, trigger_types, trigger_phases,
@@ -311,7 +308,6 @@ def update_impl(
             content=content,
             tier=effective_tier,
             change_reason=change_reason,
-            bypass_compactness=bypass_compactness,
         )
         replace_episode_tags(target_uuid, replacement_tags if replacement_tags is not None else existing_tags)
     _app = (consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs, audience_tags, exclude_audience_tags)

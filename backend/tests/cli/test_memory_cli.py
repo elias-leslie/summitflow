@@ -238,7 +238,7 @@ class TestMemorySaveContentInput:
         assert "Specify only one of --content or --content-file" in result.output
         mock_save_impl.assert_not_called()
 
-    def test_save_enforces_memory_compactness(self) -> None:
+    def test_save_validates_authoring_fields(self) -> None:
         with (
             patch("cli.commands.memory.validate_memory_authoring") as mock_validate,
             patch("cli.commands.memory.save_impl") as mock_save_impl,
@@ -259,72 +259,12 @@ class TestMemorySaveContentInput:
             "**Quality Checks**: Use dt for all quality checks.\n",
             "Use dt for checks",
             "reference",
-            bypass_compactness=False,
         )
         mock_save_impl.assert_called_once()
 
-    def test_save_reports_both_gates_in_one_pass(self) -> None:
-        """A save violating compactness AND format must surface both gate reports at once."""
-        result = runner.invoke(
-            app,
-            [
-                "save",
-                "**Quality Checks**: Know that thoroughness in every single dimension of the "
-                "work at hand is always expected at all times from each and every one of the "
-                "many agents that are operating inside of this very large shared workspace.",
-                "--summary",
-                "Use dt for checks",
-            ],
-        )
 
-        assert result.exit_code == 1
-        assert "strict Caveman gate failed" in result.output
-        assert "FORMAT_STANDARD violations detected" in result.output
 
-    def test_save_imperative_error_lists_accepted_verbs(self) -> None:
-        result = runner.invoke(
-            app,
-            [
-                "save",
-                "**Quality Checks**: Know dt runs all checks.",
-                "--summary",
-                "Use dt for checks",
-            ],
-        )
 
-        assert result.exit_code == 1
-        assert "Accepted verbs:" in result.output
-        assert "Treat" in result.output
-
-    def test_save_rejects_non_caveman_memory(self) -> None:
-        result = runner.invoke(
-            app,
-            [
-                "save",
-                "**Quality Checks**: You should be thorough. For example, explain every case.",
-                "--summary",
-                "Use dt for checks",
-            ],
-        )
-
-        assert result.exit_code == 1
-        assert "strict Caveman gate failed" in result.output
-        assert "example markers found" in result.output
-
-    def test_save_rejects_offer_back_memory(self) -> None:
-        result = runner.invoke(
-            app,
-            [
-                "save",
-                "**Answer Style**: Use short direct output. If you want more, ask for details.",
-                "--summary",
-                "Keep answers terse",
-            ],
-        )
-
-        assert result.exit_code == 1
-        assert "strict Caveman gate failed" in result.output
-        assert "offer-back phrasing found" in result.output
 
     def test_save_rejects_inline_and_file_content_together(self, tmp_path: Path) -> None:
         """`save` should reject inline content combined with --content-file."""
@@ -361,8 +301,8 @@ class TestMemorySaveContentInput:
 
         assert result.exit_code == 1
         assert "st memory save requires --summary." in result.output
-        assert 'st memory save -s project --scope-id a-term -t guardrail' in result.output
-        assert 'st memory format --topic "Quality Gates"' in result.output
+        assert 'st memory save -s project --scope-id a-term -t reference' in result.output
+        assert "Content: non-empty text or Markdown." in result.output
         mock_save_impl.assert_not_called()
 
     def test_save_missing_content_shows_quickstart(self) -> None:
@@ -379,8 +319,8 @@ class TestMemorySaveContentInput:
 
         assert result.exit_code == 1
         assert "st memory save requires content or --content-file." in result.output
-        assert 'st memory save -s project --scope-id a-term -t guardrail' in result.output
-        assert 'st memory format --topic "Quality Gates"' in result.output
+        assert 'st memory save -s project --scope-id a-term -t reference' in result.output
+        assert "Content: non-empty text or Markdown." in result.output
         mock_save_impl.assert_not_called()
 
 
@@ -847,7 +787,6 @@ class TestMemoryTagOptions:
             content="new content",
             tier="reference",
             change_reason=None,
-            bypass_compactness=False,
         )
         mock_replace_tags.assert_called_once_with("abc12345", ["finance-relevant"])
 

@@ -9,7 +9,6 @@ from typing import Annotated
 import typer
 
 from ..lib.usage import usage
-from .compactness import enforce_memory_compactness
 from .memory_commands import (
     batch_tier_impl,
     cleanup_impl,
@@ -32,7 +31,6 @@ from .memory_options import (
     AgentSlugsOpt,
     AudienceTagsOpt,
     BatchTierOpt,
-    BypassCompactnessOpt,
     ChangeReasonOpt,
     ClearApplicabilityOpt,
     ClearTagsOpt,
@@ -225,7 +223,6 @@ def save(
     scope_id: ScopeIdOpt = None,
     change_reason: ChangeReasonOpt = None,
     render_mode: RenderModeOpt = None,
-    bypass_compactness: BypassCompactnessOpt = False,
 ) -> None:
     """Save a learning to the memory system."""
     if content is not None and content_option is not None:
@@ -234,14 +231,14 @@ def save(
     resolved_content = _resolve_and_validate_save(summary, resolved_inline_content, content_file)
     assert summary is not None
     validate_memory_authoring(
-        summary, resolved_content, summary, tier, bypass_compactness=bypass_compactness
+        summary, resolved_content, summary, tier
     )
     save_impl(
         ctx.obj, resolved_content, summary, tier, confidence, context, pinned,
         trigger_types, trigger_phases, context_kind, consumer_profiles,
         exclude_consumer_profiles, agent_slugs, exclude_agent_slugs,
         audience_tags, exclude_audience_tags, tags, scope, scope_id, change_reason,
-        render_mode=render_mode, bypass_compactness=bypass_compactness,
+        render_mode=render_mode,
     )
 
 
@@ -253,13 +250,12 @@ def format_cmd(
     prohibition: FormatProhibitionOpt = None,
     why: FormatWhyOpt = None,
     summary: FormatSummaryOpt = None,
-    bypass_compactness: BypassCompactnessOpt = False,
 ) -> None:
     """Generate a standard memory episode body and compact summary."""
     content = build_episode_content(topic, instruction, prohibition, why)
     resolved_summary = (summary.strip() if summary else suggest_summary(instruction)) or "Memory episode"
     validate_memory_authoring(
-        resolved_summary, content, resolved_summary, tier, bypass_compactness=bypass_compactness
+        resolved_summary, content, resolved_summary, tier
     )
     typer.echo(f"SUMMARY: {resolved_summary}")
     typer.echo("CONTENT:")
@@ -334,18 +330,15 @@ def update(
     clear_tags: ClearTagsOpt = False,
     change_reason: ChangeReasonOpt = None,
     render_mode: RenderModeUpdateOpt = None,
-    bypass_compactness: BypassCompactnessOpt = False,
 ) -> None:
     """Update an episode in place (content/tier and properties)."""
     resolved_content = _resolve_content(content, content_file, require_value=False)
-    if resolved_content is not None and not bypass_compactness:
-        enforce_memory_compactness(uuid, resolved_content)
     update_impl(
         uuid, resolved_content, tier, summary, trigger_types, trigger_phases,
         pinned, context_kind, consumer_profiles, exclude_consumer_profiles,
         agent_slugs, exclude_agent_slugs, audience_tags, exclude_audience_tags,
         clear_applicability, tags, clear_tags, change_reason,
-        render_mode=render_mode, bypass_compactness=bypass_compactness,
+        render_mode=render_mode,
     )
 
 
