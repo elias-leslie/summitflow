@@ -309,7 +309,7 @@ def render_inject(specs: Iterable[UsageSpec]) -> str:
             when: service/config/worker change
             careful: st pulse --gate first; explicit project; --include-all-workers only when intentional
         references:
-          st.pulse: {cmd: st pulse --gate, when: session start + risky edits}
+          st.pulse: {cmd: st pulse --gate, when: implementation ownership + lane state}
 
     Rules:
       - Group by tier as `mandates|guardrails|references:`

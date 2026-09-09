@@ -30,6 +30,19 @@ def _state_for(path: Path, *, status: str, mtime: float = 10.0, size: int = 200)
     }
 
 
+@pytest.mark.parametrize("status", [403, 409])
+def test_legacy_rejections_skip_timer_growth_heartbeat_and_close(status: int) -> None:
+    path = Path("/tmp/rejected.jsonl")
+    state = _state_for(path, status="error")
+    transcripts = cast(dict[str, dict[str, object]], state["transcripts"])
+    transcripts[str(path)]["detail"] = f"upsert status={status} rejected"
+    assert not codex_sync_state.should_sync(path, 99, 999, state, force=False)
+    assert not codex_sync_state.should_sync(path, 99, 999, state, force=False, close_session=True)
+    assert not codex_sync_state.should_heartbeat(path, state)
+    assert codex_sync_state.iter_nonterminal_paths(state) == []
+    assert codex_sync_state.should_sync(path, 99, 999, state, force=True)
+
+
 def test_should_sync_skips_unchanged_active_entry_without_close() -> None:
     path = Path("/tmp/transcript.jsonl")
     state = _state_for(path, status="active")

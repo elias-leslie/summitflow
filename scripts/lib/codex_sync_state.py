@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,6 +13,7 @@ from typing import cast
 STATE_PATH = Path.home() / ".local" / "state" / "codex-session-sync" / "state.json"
 ERROR_RETRY_SECONDS = 300
 HEARTBEAT_INTERVAL_SECONDS = 30
+PERMANENT_HTTP_STATUSES = frozenset({400, 403, 404, 409, 410, 422})
 
 
 def load_state() -> dict[str, object]:
@@ -88,6 +90,7 @@ def update_state_entry(
     identity_fingerprint: str | None = None,
     project_binding_fingerprint: str | None = None,
     heartbeat_at: str | None = None,
+    rejected_identity: str | None = None,
 ) -> None:
     transcripts = _transcripts_map(state, create=True)
     assert transcripts is not None
@@ -117,6 +120,7 @@ def update_state_entry(
             heartbeat_at if heartbeat_at is not None else previous.get("last_heartbeat_at")
         ),
         "updated_at": datetime.now(UTC).isoformat(),
+        "rejected_identity": rejected_identity if rejected_identity is not None else previous.get("rejected_identity"),
     }
 
 
@@ -134,11 +138,11 @@ def should_sync(
     entry = get_state_entry(path, state)
     if entry is None:
         return True
+    if entry_is_permanent_error(entry):
+        return False
     if close_session:
         return entry.get("status") not in {"terminal", "skipped"}
     if entry.get("status") == "terminal":
-        return False
-    if _entry_is_permanent_error(entry):
         return False
     if entry.get("mtime") != mtime or entry.get("size") != size:
         return True
@@ -161,7 +165,7 @@ def should_heartbeat(
     entry = get_state_entry(path, state)
     if entry is None:
         return True
-    if entry.get("status") in {"terminal", "skipped", "permanent_error"}:
+    if entry.get("status") in {"terminal", "skipped"} or entry_is_permanent_error(entry):
         return False
     if entry.get("status") == "error":
         return _error_retry_due(entry)
@@ -187,7 +191,7 @@ def iter_nonterminal_paths(state: dict[str, object]) -> list[Path]:
     for raw_path, raw_entry in entries.items():
         if not isinstance(raw_path, str) or not isinstance(raw_entry, dict):
             continue
-        if raw_entry.get("status") in {"terminal", "skipped", "permanent_error"}:
+        if raw_entry.get("status") in {"terminal", "skipped"} or entry_is_permanent_error(raw_entry):
             continue
         paths.append(Path(raw_path))
     return paths
@@ -201,14 +205,15 @@ def get_checkpoint(path: Path, state: dict[str, object]) -> str | None:
     return checkpoint if isinstance(checkpoint, str) else None
 
 
-def _entry_is_permanent_error(entry: dict[str, object]) -> bool:
+def entry_is_permanent_error(entry: dict[str, object]) -> bool:
     status = str(entry.get("status") or "")
     if status == "permanent_error":
         return True
     if status != "error":
         return False
     detail = str(entry.get("detail") or "")
-    return any(token in detail for token in ("status=400", "status=404", "status=410", "status=422"))
+    match = re.search(r"\bstatus=(\d{3})\b", detail)
+    return bool(match and int(match[1]) in PERMANENT_HTTP_STATUSES)
 
 
 def _error_retry_due(entry: dict[str, object]) -> bool:

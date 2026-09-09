@@ -20,6 +20,8 @@ from codex_sync_bindings import (
 )
 from codex_sync_git import build_project_context, fetch_registered_project_root
 from codex_sync_state import (
+    PERMANENT_HTTP_STATUSES,
+    entry_is_permanent_error,
     get_checkpoint,
     get_state_entry,
     iter_nonterminal_paths,
@@ -40,8 +42,6 @@ from codex_sync_transcripts import (
 )
 
 LogFn = Callable[[str], None]
-
-PERMANENT_HTTP_STATUSES = {400, 404, 410, 422}
 
 
 class TranscriptInfoLike(Protocol):
@@ -771,6 +771,15 @@ def _sync_infos(
             continue
         binding_fingerprint = _project_binding_fingerprint(project_binding)
         entry = get_state_entry(info.path, state) or {}
+        rejected_identity = _rejection_identity(info, client_id)
+        identity_changed = (
+            entry_is_permanent_error(entry)
+            and entry.get("rejected_identity") is not None
+            and entry["rejected_identity"] != rejected_identity
+        )
+        if entry_is_permanent_error(entry) and entry.get("rejected_identity") is None:
+            # Baseline legacy rejected rows without causing a migration retry storm.
+            entry["rejected_identity"] = rejected_identity
         binding_changed = (
             binding_fingerprint is not None
             and entry.get("project_binding_fingerprint") != binding_fingerprint
@@ -787,20 +796,20 @@ def _sync_infos(
             info.mtime,
             info.size,
             state,
-            args.force or binding_changed,
+            args.force or binding_changed or identity_changed,
         )
         close_required = close_session and should_sync(
             info.path,
             info.mtime,
             info.size,
             state,
-            args.force or binding_changed,
+            args.force or binding_changed or identity_changed,
             close_session=True,
         )
         heartbeat_required = (
             info.is_open
             and not close_session
-            and should_heartbeat(info.path, state, force=args.force or binding_changed)
+            and should_heartbeat(info.path, state, force=args.force or binding_changed or identity_changed)
         )
         if not ingest_required and not close_required and not heartbeat_required:
             continue
@@ -834,6 +843,7 @@ def _sync_infos(
                 status,
                 log_fn,
                 project_binding_fingerprint=binding_fingerprint,
+                rejected_identity=rejected_identity,
             )
         failed_session_ids.add(info.session_id)
     return bindings_changed, binding_synced
@@ -865,6 +875,7 @@ def _record_sync_error(
     log_fn: LogFn,
     *,
     project_binding_fingerprint: str | None = None,
+    rejected_identity: str | None = None,
 ) -> None:
     update_state_entry(
         state,
@@ -875,5 +886,20 @@ def _record_sync_error(
         "permanent_error" if status in PERMANENT_HTTP_STATUSES else "error",
         detail,
         project_binding_fingerprint=project_binding_fingerprint,
+        rejected_identity=rejected_identity,
     )
     log_fn(f"[WARN] Failed sync for {info.path}: {detail}")
+
+
+def _rejection_identity(info: TranscriptInfoLike, client_id: str) -> str:
+    """Only identity inputs can reopen a rejected request; file growth cannot."""
+    owner = info.process_owner
+    identity = {
+        "client_id": client_id, "session_id": info.session_id, "cwd": str(info.cwd),
+        "model": info.model, "parent": info.parent_session_id,
+        "agent_path": info.agent_path, "agent_nickname": info.agent_nickname,
+        "aico_session_id": owner.aico_session_id if owner else None,
+        "aico_widget_id": owner.aico_widget_id if owner else None,
+        "aico_project_id": owner.aico_project_id if owner else None,
+    }
+    return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()

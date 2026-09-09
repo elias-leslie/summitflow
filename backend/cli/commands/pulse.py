@@ -141,7 +141,7 @@ def _pulse_payloads(
 @usage(
     surface="st.pulse",
     cmd="st pulse --gate",
-    when="session start; before risky edits; cross-project lane truth",
+    when="implementation ownership or cross-project lane state matters",
     precautions=(
         "run once; if PREFLIGHT clear, edit without further inspection",
         "if blocked, fix only listed reasons",

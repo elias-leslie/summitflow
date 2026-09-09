@@ -243,7 +243,7 @@ def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]
 @usage(
     surface="st.check",
     cmd="st check --quick --changed-only",
-    when="pre-edit gates; pre-commit; before reporting done",
+    when="verify implementation changes; before committing or claiming a fix",
     precautions=(
         "use st check for all quality gates (ruff/biome/tsc/types/pytest)",
         "use st check codeql to verify GitHub CodeQL alert state after code-scanning work",

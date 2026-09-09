@@ -598,14 +598,16 @@ def _cost_queries(hours: int, limit: int) -> tuple[sql.SQL, sql.SQL, sql.SQL]:
             COALESCE(tool_name, endpoint, 'unknown') AS tool_name,
             COALESCE(tool_type::text, 'unknown') AS tool_type,
             count(*)::int AS requests,
-            COALESCE(sum(tokens_in), 0)::int AS tokens_in,
-            COALESCE(sum(tokens_out), 0)::int AS tokens_out,
+            sum(tokens_in)::bigint AS tokens_in,
+            sum(tokens_out)::bigint AS tokens_out,
             COALESCE(avg(latency_ms), 0)::float AS avg_latency_ms,
             COALESCE(
                 count(*) FILTER (WHERE status_code BETWEEN 200 AND 399) * 100.0
                 / NULLIF(count(*), 0),
                 0
-            )::float AS success_rate
+            )::float AS success_rate,
+            count(tokens_in)::int AS tokens_in_samples,
+            count(tokens_out)::int AS tokens_out_samples
         FROM request_logs
         WHERE created_at >= now() - (%s * interval '1 hour')
         GROUP BY 1, 2
@@ -618,7 +620,7 @@ def _cost_queries(hours: int, limit: int) -> tuple[sql.SQL, sql.SQL, sql.SQL]:
         SELECT
             COALESCE(tool_name, 'unknown') AS tool_name,
             count(*)::int AS events,
-            COALESCE(sum(tokens), 0)::int AS stored_tokens,
+            sum(tokens)::bigint AS stored_tokens,
             COALESCE(sum(length(COALESCE(tool_output::text, content, ''))), 0)::int AS output_chars,
             COALESCE(avg(duration_ms), 0)::float AS avg_duration_ms
         FROM session_events
@@ -666,8 +668,10 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_
             "tool_name": str(tool_name),
             "tool_type": str(tool_type),
             "requests": int(requests),
-            "tokens_in": int(tokens_in),
-            "tokens_out": int(tokens_out),
+            "tokens_in": int(tokens_in) if tokens_in is not None else None,
+            "tokens_out": int(tokens_out) if tokens_out is not None else None,
+            "tokens_in_samples": int(tokens_in_samples),
+            "tokens_out_samples": int(tokens_out_samples),
             "avg_latency_ms": float(avg_latency_ms),
             "success_rate": float(success_rate),
         }
@@ -679,13 +683,15 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_
             tokens_out,
             avg_latency_ms,
             success_rate,
+            tokens_in_samples,
+            tokens_out_samples,
         ) in request_rows
     ]
     output_hotspots = [
         {
             "tool_name": str(tool_name),
             "events": int(events),
-            "stored_tokens": int(stored_tokens),
+            "stored_tokens": int(stored_tokens) if stored_tokens is not None else None,
             "output_chars": int(output_chars),
             "output_tokens_approx": max(0, round(int(output_chars) / 4)),
             "avg_duration_ms": float(avg_duration_ms),
@@ -699,6 +705,16 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_
         "tool_output_hotspots": output_hotspots,
         "feedback_session_id": feedback_session_id,
     }
+
+
+def _token_measurement(item: dict[str, Any], field: str) -> str:
+    value = item.get(field)
+    if value is None:
+        return "unknown"
+    samples, requests = item.get(f"{field}_samples"), item.get("requests")
+    if samples is not None and requests is not None and samples < requests:
+        return f"{value}[{samples}/{requests} measured]"
+    return str(value)
 
 
 def _format_cost_compact(data: dict[str, Any]) -> None:
@@ -721,7 +737,7 @@ def _format_cost_compact(data: dict[str, Any]) -> None:
             print(
                 f"    {item.get('tool_name', '?')}|{item.get('tool_type', '?')}"
                 f" reqs={item.get('requests', 0)}"
-                f" in={item.get('tokens_in', 0)} out={item.get('tokens_out', 0)}"
+                f" in={_token_measurement(item, 'tokens_in')} out={_token_measurement(item, 'tokens_out')}"
                 f" success={float(item.get('success_rate') or 0):.1f}%"
             )
     output_hotspots = data.get("tool_output_hotspots", [])
@@ -751,17 +767,20 @@ def _emit_feedback_for_cost(data: dict[str, Any]) -> None:
     # Flag request hotspots with >10k tokens_in or <50% success rate
     for item in request_hotspots:
         tokens_in = int(item.get("tokens_in") or 0)
-        success_rate = float(item.get("success_rate") or 100.0)
-        if tokens_in > 10000 or success_rate < 50.0:
+        measured_rate = item.get("success_rate")
+        success_rate = float(measured_rate) if measured_rate is not None else None
+        failing = success_rate is not None and success_rate < 50.0
+        if tokens_in > 10000 or failing:
+            rate_text = f"{success_rate:.1f}%" if success_rate is not None else "unknown"
             _report_or_vote_feedback(
                 "xc.tool_registry",
                 "Tool governance: high-cost or failing request hotspot",
                 feedback_type="friction",
-                severity="high" if success_rate < 50.0 else "medium",
+                severity="high" if failing else "medium",
                 description=(
                     f"{item.get('tool_name', '?')}|{item.get('tool_type', '?')} "
-                    f"reqs={item.get('requests', 0)} in={tokens_in} "
-                    f"success={success_rate:.1f}%"
+                    f"reqs={item.get('requests', 0)} in={_token_measurement(item, 'tokens_in')} "
+                    f"success={rate_text}"
                 ),
                 project_id="summitflow",
                 session_id=str(feedback_session_id),

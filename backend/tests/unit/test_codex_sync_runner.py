@@ -6,9 +6,12 @@ import json
 import os
 import sys
 from contextlib import nullcontext
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
+
+import pytest
 
 SCRIPTS_LIB = Path(__file__).resolve().parents[3] / "scripts" / "lib"
 if str(SCRIPTS_LIB) not in sys.path:
@@ -75,6 +78,55 @@ def _args(**overrides) -> argparse.Namespace:
     }
     values.update(overrides)
     return argparse.Namespace(**values)
+
+
+@pytest.mark.parametrize("status", [403, 409])
+def test_rejected_sync_waits_for_identity_change_or_force(tmp_path: Path, monkeypatch, status: int) -> None:
+    info = _info(tmp_path, "rejected-session")
+    state: dict[str, object] = {"transcripts": {str(info.path): {"checkpoint": "keep-me"}}}
+    calls = []
+
+    def rejected(**kwargs):
+        calls.append(kwargs)
+        return False, f"upsert status={status} rejected", status
+
+    monkeypatch.setattr(codex_sync_runner, "sync_transcript", rejected)
+
+    def sync(current, *, force=False):
+        codex_sync_runner._sync_infos(
+            args=_args(close=True, force=force), state=state, infos=[current],
+            api_url="http://agent-hub.test/api", client_id="summitflow",
+            source_path="/scripts/codex-session-sync.py", log_fn=lambda _: None,
+            live_transcript_paths=set(), saw_live_codex_process=False,
+        )
+
+    sync(info)
+    sync(replace(info, size=999, mtime=99))
+    assert len(calls) == 1
+    entry = state["transcripts"][str(info.path)]
+    assert entry["checkpoint"] == "keep-me"
+    assert entry["status"] == "permanent_error"
+    changed = replace(info, model="corrected-model")
+    sync(changed)
+    assert len(calls) == 2
+    sync(changed, force=True)
+    assert len(calls) == 3
+
+
+def test_successful_recovery_does_not_keep_forcing_ingest(tmp_path: Path, monkeypatch) -> None:
+    info = _info(tmp_path, "recovered-session")
+    state = {"transcripts": {str(info.path): {
+        "status": "active", "mtime": info.mtime, "size": info.size,
+        "rejected_identity": "old-rejection", "last_heartbeat_at": datetime.now(UTC).isoformat(),
+    }}}
+    calls = []
+    monkeypatch.setattr(codex_sync_runner, "sync_transcript", lambda **kw: (calls.append(kw) or (True, "ok", None)))
+    codex_sync_runner._sync_infos(
+        args=_args(), state=state, infos=[info], api_url="http://agent-hub.test/api",
+        client_id="summitflow", source_path="/scripts/codex-session-sync.py",
+        log_fn=lambda _: None, live_transcript_paths={info.path}, saw_live_codex_process=True,
+    )
+    assert calls == []
 
 
 def _write_rollout(

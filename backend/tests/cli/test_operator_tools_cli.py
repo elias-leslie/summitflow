@@ -23,6 +23,28 @@ from cli.main import app as main_app
 runner = CliRunner()
 
 
+def test_db_honors_root_project_flag_without_cwd_override() -> None:
+    from cli.config import set_project_override
+    try:
+        with (
+            patch("cli.commands.db.find_project_by_cwd", return_value={"id": "summitflow"}),
+            patch("cli.commands.db._run_psql", return_value=0) as query,
+        ):
+            result = runner.invoke(main_app, ["-P", "agent-hub", "db", "query", "SELECT 1"])
+        assert result.exit_code == 0, result.output
+        assert query.call_args.args[0] == "agent-hub"
+    finally:
+        set_project_override(None)
+
+
+def test_nested_db_query_help_never_opens_a_database() -> None:
+    with patch("cli.commands.db._run_psql") as query:
+        result = runner.invoke(main_app, ["db", "query", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "query" in result.output and "Usage:" in result.output
+    query.assert_not_called()
+
+
 def test_test_database_setup_can_target_only_jobinator() -> None:
     with (
         patch("cli.commands.setup._preview"),

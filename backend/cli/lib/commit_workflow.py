@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
@@ -34,10 +35,13 @@ def dirty(repo: Path) -> bool:
     return bool(run_git(repo, ["status", "--porcelain"]).stdout.strip())
 
 
-def run_checks(repo: Path) -> tuple[bool, str]:
+def run_checks(repo: Path, *, paths: Sequence[str] = ()) -> tuple[bool, str]:
+    # Same canonical changed-file input used by the Jujutsu commit path.
+    env = {**os.environ, "ST_CHECK_CHANGED_FILES": "\n".join(paths)} if paths else None
     result = subprocess.run(
         ["st", "check", "--quick", "--changed-only"],
         cwd=repo,
+        env=env,
         text=True,
         capture_output=True,
         check=False,
@@ -83,6 +87,20 @@ def _selected_paths_dirty(repo: Path, paths: Sequence[str]) -> bool:
     """Return True if any of the selected paths has staged or unstaged changes."""
     result = run_git(repo, ["status", "--porcelain", "--", *paths])
     return bool(result.stdout.strip())
+
+
+def _selected_changed_files(repo: Path, paths: Sequence[str]) -> list[str]:
+    """Expand selected directories before passing the canonical gate its scope."""
+    files: set[str] = set()
+    for args in (
+        ["diff", "--name-only", "-z", "HEAD", "--", *paths],
+        ["ls-files", "--others", "--exclude-standard", "-z", "--", *paths],
+    ):
+        result = run_git(repo, args)
+        if result.returncode != 0:
+            raise CommitError(result.stderr.strip() or "cannot resolve selected check paths")
+        files.update(item for item in result.stdout.split("\0") if item)
+    return sorted(files) or list(paths)
 
 
 def _addable_paths(repo: Path, paths: Sequence[str]) -> list[str]:
@@ -139,12 +157,16 @@ def commit_git_revision(
         if pushed.returncode != 0:
             raise CommitError(pushed.stderr.strip() or pushed.stdout.strip() or "git push failed")
         return {**result, "reason": "clean", "pushed": True}
+    selected_files = _selected_changed_files(repo, selected_paths) if selected_paths else []
     if not skip_checks:
-        ok, detail = run_checks(repo)
+        ok, detail = (
+            run_checks(repo, paths=selected_files)
+            if selected_paths else run_checks(repo)
+        )
         if not ok:
             return {**result, "status": "BLOCKED", "reason": "quality_gates_failed", "detail": detail}
     if selected_paths:
-        addable = _addable_paths(repo, selected_paths)
+        addable = _addable_paths(repo, selected_files)
         if addable:
             add = run_git(repo, ["add", "--", *addable])
             if add.returncode != 0:
@@ -155,7 +177,10 @@ def commit_git_revision(
             raise CommitError(add.stderr.strip() or "git add failed")
     if run_git(repo, ["diff", "--cached", "--quiet"]).returncode == 0:
         return {**result, "reason": "no_staged_changes"}
-    committed = run_git(repo, ["commit", "-m", message])
+    commit_args = ["commit", "-m", message]
+    if selected_paths:
+        commit_args.extend(["--only", "--", *selected_files])
+    committed = run_git(repo, commit_args)
     if committed.returncode != 0:
         raise CommitError(committed.stderr.strip() or committed.stdout.strip() or "git commit failed")
     sha = run_git(repo, ["rev-parse", "--short", "HEAD"]).stdout.strip()

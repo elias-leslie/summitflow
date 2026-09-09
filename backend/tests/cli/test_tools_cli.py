@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, cast
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
@@ -21,6 +21,24 @@ from cli.commands.tools import (
 )
 
 runner = CliRunner()
+
+
+def test_cost_distinguishes_unmeasured_tokens_from_measured_zero() -> None:
+    from contextlib import nullcontext
+    connection = MagicMock()
+    connection.execute.side_effect = [
+        MagicMock(fetchall=lambda: [("unmeasured", "cli", 2, None, 0, 12.0, 100.0, 0, 2)]),
+        MagicMock(fetchall=lambda: []), MagicMock(fetchone=lambda: None),
+    ]
+    with (
+        patch("psycopg.connect", return_value=nullcontext(connection)),
+        patch("cli.commands.db._db_url", return_value="postgresql:///test"),
+        patch("cli.commands.db._psql_project_lock", return_value=nullcontext()),
+        patch("cli.commands.tools._manifest_density_costs", return_value=[]),
+    ):
+        result = runner.invoke(app, ["cost"])
+    assert result.exit_code == 0, result.output
+    assert "in=unknown out=0" in result.output
 
 
 class _DummyClient:
@@ -391,7 +409,8 @@ def test_cost_emit_feedback_flags_high_cost_request_hotspot(monkeypatch: pytest.
     assert kwargs["severity"] == "medium"
 
 
-def test_cost_emit_feedback_flags_failing_request_hotspot(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("success_rate", [0.0, 30.0])
+def test_cost_emit_feedback_flags_failing_request_hotspot(monkeypatch: pytest.MonkeyPatch, success_rate: float) -> None:
     calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(
@@ -407,7 +426,7 @@ def test_cost_emit_feedback_flags_failing_request_hotspot(monkeypatch: pytest.Mo
                     "requests": 10,
                     "tokens_in": 100,
                     "tokens_out": 50,
-                    "success_rate": 30.0,
+                    "success_rate": success_rate,
                 }
             ],
             "tool_output_hotspots": [],

@@ -24,6 +24,7 @@ from app.services.db_workbench import (
 )
 from app.storage.projects import find_project_by_cwd, get_project_root_path
 
+from ..config import get_project_override
 from ..details import emit_result_or_details
 from ..lib.usage import usage
 from ..output import output_error
@@ -37,6 +38,8 @@ app = typer.Typer(
 def _detect_project(explicit: str | None) -> str:
     if explicit:
         return explicit
+    if override := get_project_override():
+        return override
     env_project = os.environ.get("ST_PROJECT_ID", "").strip()
     if env_project:
         return env_project
@@ -417,7 +420,7 @@ def db(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
     explicit_project, args = _parse_project_arg(list(ctx.args))
-    if not args or args[0] in {"-h", "--help", "help"}:
+    if not args or args[0] == "help" or any(arg in {"-h", "--help"} for arg in args):
         _usage()
         raise typer.Exit(0)
     project = _detect_project(explicit_project)

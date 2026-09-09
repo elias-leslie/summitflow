@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -11,6 +12,32 @@ from cli.lib.commit_workflow import CommitError, commit_repo
 from cli.main import app
 
 runner = CliRunner()
+
+
+def test_scoped_git_commit_preserves_unrelated_staged_work(tmp_path: Path, monkeypatch) -> None:
+    from cli.lib import commit_workflow
+
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=tmp_path, text=True, capture_output=True, check=True).stdout
+
+    git("init", "-q")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/note.md").write_text("before")
+    (tmp_path / "unrelated.py").write_text("before")
+    git("add", ".")
+    git("commit", "-qm", "baseline")
+    (tmp_path / "docs/note.md").write_text("after")
+    (tmp_path / "unrelated.py").write_text("unfinished work")
+    git("add", "unrelated.py")
+    calls = []
+    monkeypatch.setattr(commit_workflow, "run_checks", lambda repo, **kw: (calls.append(kw) or (True, "")))
+    result = commit_workflow.commit_git_revision(tmp_path, message="scoped docs", paths=("docs",), push=False)
+    assert result["status"] == "SUCCESS"
+    assert calls == [{"paths": ["docs/note.md"]}]
+    assert git("show", "--format=", "--name-only", "HEAD").strip() == "docs/note.md"
+    assert git("diff", "--cached", "--name-only").strip() == "unrelated.py"
 
 
 @patch("cli.main.log_task_event")

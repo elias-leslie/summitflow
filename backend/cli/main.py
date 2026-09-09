@@ -298,10 +298,10 @@ app.command("note")(_COMMANDS["note"].note)
 @usage(
     surface="st.commit",
     cmd='st commit -m "msg" --push',
-    when="user-requested work complete; off-task or residue commits; any time the working tree is dirty and a commit point is reached — never leave residue for the next session",
+    when="authorized implementation reaches a verified checkpoint",
     precautions=(
-        "default: commit the ENTIRE working tree with one message — do not pre-audit files, do not propose --paths scoping, do not ask which subset to include",
-        "--paths is opt-in ONLY when the user explicitly asks to split a commit; never volunteer it",
+        "review the diff for secrets, destructive changes, and task scope before publication",
+        "use --paths to preserve unrelated work; include generated changes belonging to the checkpoint",
         "after publish, trust printed COMMIT summary not local-clean state",
         "commit before destructive ops (abandon, rollback)",
     ),
