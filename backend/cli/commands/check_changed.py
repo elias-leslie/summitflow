@@ -86,6 +86,19 @@ def _changed_args(
 ) -> list[str]:
     if not changed_files or (name != "pytest" and not config.get("pass_path")):
         return []
+    if name == "pytest":
+        # A test-file list is safe only when no changed input can affect other
+        # tests. Empty args preserve the project's configured full test scope.
+        for rel_path in changed_files:
+            path = Path(rel_path)
+            if path.name in _TOOL_CONFIG_PATHS["pytest"]:
+                return []
+            if path.suffix in _TOOL_FILE_SUFFIXES["pytest"] and (
+                not _is_pytest_test_path(path)
+                or path.name == "conftest.py"
+                or not (root / path).is_file()
+            ):
+                return []
     paths: list[str] = []
     cwd_resolved = cwd.resolve()
     for rel_path in changed_files:
@@ -129,8 +142,6 @@ def _skip_reason(
         path = Path(rel_path)
         if path.name in _TOOL_CONFIG_PATHS.get(name, set()):
             return True
-        if name == "pytest":
-            return _is_pytest_test_path(path)
         return path.suffix in _TOOL_FILE_SUFFIXES.get(name, set())
 
     has_relevant = any(is_relevant(rel_path) for rel_path in changed_files)

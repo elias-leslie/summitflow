@@ -35,6 +35,7 @@ from .listing import (
     build_project_response,
     check_registered_project_health,
     list_project_rows,
+    project_is_active,
     resolve_project_health_statuses,
 )
 from .models import (
@@ -105,19 +106,19 @@ async def create_project(
 
 
 @router.get("", response_model=list[ProjectResponse])
-async def list_projects() -> list[ProjectResponse]:
-    """List all registered projects."""
-    rows = list_project_rows()
+async def list_projects(include_inactive: bool = False) -> list[ProjectResponse]:
+    """List active non-testing projects; opt in to the complete inventory."""
+    rows = list_project_rows(include_inactive=True) if include_inactive else list_project_rows()
     health_statuses = await _resolve_project_health_statuses(
-        (row[0], row[2], row[4]) for row in rows
+        (row[0], row[2], row[4]) for row in rows if project_is_active(row)
     )
     return [build_project_response(row, health_statuses.get(row[0])) for row in rows]
 
 
 @router.get("/with-stats", response_model=ProjectsWithStatsResponse)
-async def list_projects_with_stats() -> ProjectsWithStatsResponse:
-    """List all projects with aggregated stats (features, tasks, bugs, blocked)."""
-    projects = await asyncio.to_thread(list_project_rows)
+async def list_projects_with_stats(include_inactive: bool = False) -> ProjectsWithStatsResponse:
+    """List discoverable projects with stats, optionally including inactive entries."""
+    projects = await asyncio.to_thread(list_project_rows, **({"include_inactive": True} if include_inactive else {}))
 
     if not projects:
         return ProjectsWithStatsResponse(projects=[], total=0)
@@ -128,7 +129,7 @@ async def list_projects_with_stats() -> ProjectsWithStatsResponse:
         asyncio.to_thread(_get_quality_summaries, project_ids),
         asyncio.to_thread(get_active_checkpoint_map),
         _resolve_project_health_statuses(
-            (row[0], row[2], row[4]) for row in projects
+            (row[0], row[2], row[4]) for row in projects if project_is_active(row)
         ),
     )
     result = [build_project_with_stats(row, stats_dict[row[0]]) for row in projects]

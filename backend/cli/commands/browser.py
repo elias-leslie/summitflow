@@ -98,7 +98,10 @@ _LOCAL_AI_MINIMIZED_CHROME_ARGS = (
 # Chrome headless defaults can select SwiftShader and consume several CPU cores.
 # Force the workstation GPU and fail graphics work instead of falling back to a
 # software rasterizer. This keeps unattended checks off the operator desktop.
-_LOCAL_AI_HEADLESS_CHROME_ARGS = "--enable-gpu,--use-angle=gl,--disable-software-rasterizer"
+_LOCAL_AI_HEADLESS_CHROME_ARGS = (
+    "--enable-gpu,--use-angle=vulkan,--enable-features=Vulkan,"
+    "--disable-vulkan-surface,--disable-software-rasterizer"
+)
 # Process-level guard: iconify the local-AI window at most once per st invocation
 # so we don't fight the user if they restore it to watch mid-run.
 _local_ai_minimized = False

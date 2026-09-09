@@ -754,22 +754,33 @@ def doctor(
         typer.echo(f"error: canonical skills not found at {canon}", err=True)
         raise typer.Exit(2)
     problems = 0
+    states: set[str] = set()
     for h, dest, target in _expected(canon, profile_name=profile):
         state = _classify(dest, target)
         if state == "ok":
             continue
         problems += 1
+        states.add(state)
         typer.echo(f"{state:14} [{h}] {dest}")
     for h, dest, kind in _unmanaged(canon, profile_name=profile):
         problems += 1
+        states.add("unmanaged")
         typer.echo(f"{kind:14} [{h}] {dest}")
-    if _canon_dirty(canon):
-        problems += 1
+    dirty = _canon_dirty(canon)
+    if dirty:
         typer.echo(f"dirty-canon    {canon} has uncommitted changes (edits made through a symlink?)")
-    if problems == 0:
+    if problems == 0 and not dirty:
         typer.echo(f"ok: all skills materialized as symlinks into canonical ({canon}) [Profile: {profile or _active_profile()}]")
         raise typer.Exit(0)
-    typer.echo(f"\n{problems} issue(s). Run `st skills install --adopt` to fix real-copy drift.", err=True)
+    typer.echo(f"\n{problems} link issue(s).", err=True)
+    if dirty:
+        typer.echo(f"Review and commit intended canonical source changes in {canon}; relinking does not resolve them.", err=True)
+    if "real-copy" in states:
+        typer.echo("Review local copies before `st skills install --adopt` replaces them with canonical links.", err=True)
+    if states.intersection({"missing", "wrong-target", "dangling"}):
+        typer.echo("Run `st skills install --dry-run` to inspect link repairs, then `st skills install`.", err=True)
+    if "unmanaged" in states:
+        typer.echo("Review unmanaged entries against the canonical manifest before changing their ownership.", err=True)
     raise typer.Exit(1)
 
 
@@ -790,7 +801,7 @@ def status(
         return
     if quiet and drifted == 0 and not dirty:
         return
-    flag = "DRIFT" if (drifted or dirty) else "ok"
+    flag = "DRIFT" if drifted else "DIRTY" if dirty else "ok"
     typer.echo(
         f"skills {flag}: {counts['ok']} linked, {drifted} drifted, "
         f"{counts['missing']} missing{' , canon dirty' if dirty else ''}"

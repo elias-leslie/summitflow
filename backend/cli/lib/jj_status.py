@@ -182,7 +182,7 @@ def run_checks(repo: Path, *, paths: Sequence[str] = ()) -> tuple[bool, str]:
     if paths:
         env = {**dict(os.environ), "ST_CHECK_CHANGED_FILES": "\n".join(paths)}
     result = subprocess.run(
-        ["st", "check", "--quick", "--changed-only"],
+        ["st", "check", "--check", "--changed-only"],
         cwd=repo,
         env=env,
         capture_output=True,

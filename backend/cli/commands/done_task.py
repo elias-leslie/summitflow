@@ -18,7 +18,7 @@ from ..client import STClient
 from ..lib.autosnapshot import capture_lifecycle_baseline
 from ..lib.checkpoint import get_snapshot_info, remove_snapshot
 from ..lib.checkpoint_branches import resolve_task_branch
-from ..lib.commit_workflow import CommitError, commit_repo
+from ..lib.commit_workflow import CommitError, _normalize_paths, _selected_paths_dirty, commit_repo
 from ..output import output_error, output_success, output_warning
 from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
 from .done_lifecycle import _reconstruct_snapshot_info
@@ -69,15 +69,22 @@ def _task_base_branch(task: dict[str, Any]) -> str:
     return normalize_base_branch(branch, _checkpoint_repo_root(_task_project_id(task)))
 
 
-def ensure_checkpoint_clean(snapshot_info: dict[str, str | int | None], *, task_id: str | None = None, message: str | None = None, strict: bool = True) -> None:
+def _selected_work_is_clean(repo_root: str, paths: tuple[str, ...]) -> bool:
+    if not paths:
+        return is_working_tree_clean(repo_root)
+    repo = Path(repo_root)
+    return not _selected_paths_dirty(repo, _normalize_paths(repo, paths))
+
+
+def ensure_checkpoint_clean(snapshot_info: dict[str, str | int | None], *, task_id: str | None = None, message: str | None = None, strict: bool = True, paths: tuple[str, ...] = ()) -> None:
     raw_pid = snapshot_info.get("project_id")
     project_id = str(raw_pid) if isinstance(raw_pid, str) and raw_pid else None
     repo_root = _checkpoint_repo_root(project_id)
-    if not repo_root or is_working_tree_clean(repo_root):
+    if not repo_root or _selected_work_is_clean(repo_root, paths):
         return
     if not strict and task_id:
-        _commit_active_task_work(repo_root, task_id, message)
-        if is_working_tree_clean(repo_root):
+        _commit_active_task_work(repo_root, task_id, message, **({"paths": paths} if paths else {}))
+        if _selected_work_is_clean(repo_root, paths):
             return
     output_error(f"Claimed checkpoint has uncommitted changes.\n  Path: {repo_root}\n  Smart mode could not create a clean checkpoint. Fix the reported closeout blocker, then rerun st done.")
     raise typer.Exit(1)
@@ -116,7 +123,7 @@ def _task_has_published_commit_event(task_id: str) -> bool:
         from app.storage.events import get_events_by_trace
     except Exception:
         return False
-    commit_event_re = re.compile(r"\bst commit\b.*\bcommit=[0-9a-f]+\b.*\bpushed=true\b")
+    commit_event_re = re.compile(r"\bst commit\b.*\bcommit=[0-9a-f]+\b.*\bpublication_complete=true\b")
     try:
         events = get_events_by_trace(task_id, limit=50)
     except Exception:
@@ -124,32 +131,33 @@ def _task_has_published_commit_event(task_id: str) -> bool:
     return any(message and commit_event_re.search(message) for event in reversed(events) if (message := event.get("message")))
 
 
-def _commit_active_task_work(repo_root: str, task_id: str, message: str | None) -> None:
+def _commit_active_task_work(repo_root: str, task_id: str, message: str | None, *, paths: tuple[str, ...] = ()) -> None:
     commit_message = (message or f"complete {task_id}").strip()
     try:
-        result = commit_repo(Path(repo_root), message=commit_message, task_id=task_id, push=True)
+        result = (commit_repo(Path(repo_root), message=commit_message, task_id=task_id, push=True, paths=paths)
+                  if paths else commit_repo(Path(repo_root), message=commit_message, task_id=task_id, push=True))
     except CommitError as exc:
         output_error(f"Task closeout blocked: st commit failed: {exc}")
         raise typer.Exit(1) from None
-    if result.get("status") == "BLOCKED":
+    if result.get("status") in {"BLOCKED", "PENDING"}:
         detail = str(result.get("detail") or result.get("reason") or "quality gates failed")
         output_error(f"Task closeout blocked: {detail}")
         raise typer.Exit(2)
     if result.get("status") == "SUCCESS":
         try:
             from app.storage.events import log_task_event
-            detail_parts = [f"change={result.get('change_id', '')}", f"commit={result.get('commit_id') or result.get('sha') or ''}", f"bookmark={result.get('bookmark', '')}", f"op={result.get('operation_id', '')}", f"pushed={str(result.get('pushed', False)).lower()}"]
+            detail_parts = [f"change={result.get('change_id', '')}", f"commit={result.get('commit_id') or result.get('sha') or ''}", f"bookmark={result.get('bookmark', '')}", f"op={result.get('operation_id', '')}", f"pushed={str(result.get('pushed', False)).lower()}", f"publication_complete={str(result.get('publication_complete', False)).lower()}"]
             log_task_event(task_id, "st commit " + " ".join(part for part in detail_parts if not part.endswith("=")))
         except Exception:
             pass
     output_success(f"Committed task work before completion: {result.get('commit_id') or result.get('sha')}")
 
 
-def _close_missing_checkpoint_active_task(client: STClient, task_id: str, task: dict[str, Any], project_id: str | None, *, base_branch: str, repo_is_clean: bool) -> dict[str, str | bool]:
+def _close_missing_checkpoint_active_task(client: STClient, task_id: str, task: dict[str, Any], project_id: str | None, *, base_branch: str, repo_is_clean: bool, paths: tuple[str, ...] = ()) -> dict[str, str | bool]:
     _run_smart_prereqs(client, task_id, project_id)
     if repo_is_clean:
         try:
-            _publish_completed_work(task_id, project_id)
+            _publish_completed_work(task_id, project_id, **({"paths": paths} if paths else {}))
         except Exception as exc:
             output_error(
                 f"Task closeout blocked: publish failed: {exc}\n"
@@ -281,10 +289,11 @@ def _capture_and_remove_snapshot(task_id: str, project_id: str | None) -> None:
     remove_snapshot(task_id, project_id=project_id)
 
 
-def _publish_completed_work(task_id: str, project_id: str | None) -> None:
+def _publish_completed_work(task_id: str, project_id: str | None, *, paths: tuple[str, ...] = ()) -> None:
     publish_completed_work(
         task_id,
         project_id,
+        paths=paths,
         deps={
             "cleanup_completed_bookmark": lambda st_path, project_root, tid: cleanup_completed_bookmark(st_path, project_root, tid, subprocess_module=subprocess, output_warning=output_warning),
             "get_repo_root": get_repo_root,
@@ -296,10 +305,10 @@ def _publish_completed_work(task_id: str, project_id: str | None) -> None:
     )
 
 
-def _publish_completed_work_or_exit(task_id: str, project_id: str | None) -> None:
+def _publish_completed_work_or_exit(task_id: str, project_id: str | None, *, paths: tuple[str, ...] = ()) -> None:
     """Publish residue or block closeout with a concise retry path."""
     try:
-        _publish_completed_work(task_id, project_id)
+        _publish_completed_work(task_id, project_id, **({"paths": paths} if paths else {}))
     except Exception as exc:
         output_error(
             f"Task closeout blocked: publish failed: {exc}\n"
@@ -308,7 +317,7 @@ def _publish_completed_work_or_exit(task_id: str, project_id: str | None) -> Non
         raise typer.Exit(1) from None
 
 
-def complete_task(client: STClient, task_id: str, message: str | None = None, strict: bool = False, admin: bool = False, skip_diff_gate: bool = False) -> dict[str, str | bool]:
+def complete_task(client: STClient, task_id: str, message: str | None = None, strict: bool = False, admin: bool = False, skip_diff_gate: bool = False, *, paths: tuple[str, ...] = ()) -> dict[str, str | bool]:
     """Complete a task with direct-main publish and checkpoint cleanup.
 
     Smart mode (default): auto-verifies, checkpoints, publishes, closes, and cleans up.
@@ -318,7 +327,7 @@ def complete_task(client: STClient, task_id: str, message: str | None = None, st
     if snapshot_info:
         if admin:
             return _complete_admin(client, task_id, snapshot_info, message)
-        return _complete_with_snapshot(client, task_id, snapshot_info, message=message, strict=strict, skip_diff_gate=skip_diff_gate)
+        return _complete_with_snapshot(client, task_id, snapshot_info, message=message, strict=strict, skip_diff_gate=skip_diff_gate, paths=paths)
     if admin:
         _close_task_safely(client, task_id, message)
         return _done_result(task_id)
@@ -326,11 +335,11 @@ def complete_task(client: STClient, task_id: str, message: str | None = None, st
     if snapshot_info:
         if admin:
             return _complete_admin(client, task_id, snapshot_info, message)
-        return _complete_with_snapshot(client, task_id, snapshot_info, message=message, strict=strict, skip_diff_gate=skip_diff_gate)
-    return _complete_without_snapshot(client, task_id, message=message, strict=strict, skip_diff_gate=skip_diff_gate)
+        return _complete_with_snapshot(client, task_id, snapshot_info, message=message, strict=strict, skip_diff_gate=skip_diff_gate, paths=paths)
+    return _complete_without_snapshot(client, task_id, message=message, strict=strict, skip_diff_gate=skip_diff_gate, paths=paths)
 
 
-def _complete_without_snapshot(client: STClient, task_id: str, *, message: str | None, strict: bool, skip_diff_gate: bool) -> dict[str, str | bool]:
+def _complete_without_snapshot(client: STClient, task_id: str, *, message: str | None, strict: bool, skip_diff_gate: bool, paths: tuple[str, ...] = ()) -> dict[str, str | bool]:
     task: dict[str, Any] | None = None
     try:
         task = client.get_task(task_id)
@@ -341,17 +350,17 @@ def _complete_without_snapshot(client: STClient, task_id: str, *, message: str |
             client, task_id, task, message=message, strict=strict, skip_diff_gate=skip_diff_gate,
             deps={
                 "checkpoint_repo_root": _checkpoint_repo_root,
-                "close_missing_checkpoint_active_task": _close_missing_checkpoint_active_task,
-                "commit_active_task_work": _commit_active_task_work,
+                "close_missing_checkpoint_active_task": lambda *args, **kwargs: _close_missing_checkpoint_active_task(*args, **kwargs, **({"paths": paths} if paths else {})),
+                "commit_active_task_work": lambda *args: _commit_active_task_work(*args, **({"paths": paths} if paths else {})),
                 "dirty_paths_in_task_scope": lambda repo_root, t: [
                     path for path in _git_dirty_paths(repo_root)
                     if path in (scope := _task_scope_paths(t)) or any(path.startswith(f"{prefix.rstrip('/')}/") for prefix in scope)
                 ],
                 "done_result": _done_result,
-                "is_working_tree_clean": is_working_tree_clean,
+                "is_working_tree_clean": lambda repo_root: _selected_work_is_clean(repo_root, paths),
                 "output_error": output_error,
                 "output_success": output_success,
-                "publish_completed_work": _publish_completed_work_or_exit,
+                "publish_completed_work": lambda *args: _publish_completed_work_or_exit(*args, **({"paths": paths} if paths else {})),
                 "run_diff_gate": _run_diff_gate,
                 "task_base_branch": _task_base_branch,
                 "task_has_published_commit_event": _task_has_published_commit_event,
@@ -373,7 +382,7 @@ def _complete_admin(client: STClient, task_id: str, snapshot_info: dict[str, str
     return _done_result(task_id, snapshot_removed=True, base_branch=str(snapshot_info.get("base_branch", "main")), project_id=project_id)
 
 
-def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[str, str | int | None], *, message: str | None, strict: bool, skip_diff_gate: bool) -> dict[str, str | bool]:
+def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[str, str | int | None], *, message: str | None, strict: bool, skip_diff_gate: bool, paths: tuple[str, ...] = ()) -> dict[str, str | bool]:
     try:
         already_completed = client.get_task(task_id).get("status") == "completed"
     except APIError as exc:
@@ -387,6 +396,7 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
         task_id=task_id,
         message=message,
         strict=strict or already_completed,
+        **({"paths": paths} if paths else {}),
     )
     pid = snapshot_info.get("project_id")
     project_id = str(pid) if isinstance(pid, str) and pid else None
@@ -394,7 +404,7 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
     base_branch = normalize_base_branch(str(snapshot_info.get("base_branch", "main")), repo_root)
     snapshot_info["base_branch"] = base_branch
     stashed = False
-    if not is_working_tree_clean():
+    if not paths and not is_working_tree_clean():
         if strict:
             output_error("Main branch has uncommitted changes. Commit/stash them first or use smart mode.")
             raise typer.Exit(1)
@@ -411,7 +421,7 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
         # Publish before closing so an enqueue/network failure leaves both the task
         # and checkpoint retryable instead of creating a completed-but-unpublished task.
         try:
-            _publish_completed_work(task_id, project_id)
+            _publish_completed_work(task_id, project_id, **({"paths": paths} if paths else {}))
         except Exception as publish_exc:
             publish_failed = True
             output_warning(

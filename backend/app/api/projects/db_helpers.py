@@ -7,7 +7,7 @@ import psycopg
 from fastapi import HTTPException
 from psycopg import sql
 
-from ...project_identity import canonicalize_project_name
+from ...project_identity import canonicalize_project_name, get_project_lifecycle
 from ...storage.connection import get_connection, get_cursor
 from .models import ProjectCategory, ProjectResponse, ProjectStats, ProjectUpdate, ProjectWithStats
 from .public_urls import build_project_urls, resolve_project_public_url
@@ -67,6 +67,7 @@ def get_project_from_db(project_id: str) -> ProjectResponse:
         health_endpoint=row[4],
         root_path=row[5],
         category=row[6],
+        lifecycle=get_project_lifecycle(row[0], row[5]),
         sidebar_rank=row[7],
         created_at=row[8],
     )
@@ -164,6 +165,7 @@ def build_project_with_stats(
         root_path=row[5],
         logo_url=None,  # Logo support will be added later
         category=row[6],
+        lifecycle=get_project_lifecycle(row[0], row[5]),
         sidebar_rank=row[7],
         created_at=row[8],
         stats=stats,
@@ -226,6 +228,7 @@ def create_project_in_db(
         health_endpoint=row[4],
         root_path=row[5],
         category=row[6],
+        lifecycle=get_project_lifecycle(row[0], row[5]),
         sidebar_rank=row[7],
         created_at=row[8],
     )
@@ -338,6 +341,7 @@ def update_project_in_db(project_id: str, update: ProjectUpdate) -> ProjectRespo
         health_endpoint=row[4],
         root_path=row[5],
         category=row[6],
+        lifecycle=get_project_lifecycle(row[0], row[5]),
         sidebar_rank=row[7],
         created_at=row[8],
     )

@@ -25,9 +25,9 @@ services:
       dockerfile: docker/frontend.Dockerfile
       target: dev
     volumes:
-      - ../../../summitflow/frontend/app:/app/app:cached
-      - ../../../summitflow/frontend/components:/app/components:cached
-      - ../../../summitflow/frontend/lib:/app/lib:cached
+      - ../../../summitflow/frontend/app:/workspace/frontend/app:cached
+      - ../../../summitflow/frontend/components:/workspace/frontend/components:cached
+      - ../../../summitflow/frontend/lib:/workspace/frontend/lib:cached
     command: ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3001"]
 
   summitflow-worker:

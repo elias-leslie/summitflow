@@ -19,7 +19,7 @@
       "replaces": ["dt", "dev-tools.sh"],
       "summary": "Quality gates and tool wrappers with TOON output.",
       "safety": "read-mostly",
-      "commands": ["--check", "--quick", "cleanroom", "codeql", "pytest", "ruff", "types", "biome", "tsc", "vitest"],
+      "commands": ["--check", "--quick", "cleanroom", "codeql", "pytest", "ruff", "types", "biome", "tsc", "vitest", "actionlint", "shellcheck", "govulncheck"],
       "examples": ["st check --quick --changed-only", "st check codeql", "st check cleanroom -- bash scripts/install.sh --skip-systemd", "st check pytest -- backend/tests/cli/test_tools_cli.py"],
       "verify": ["st check --help"]
     },
@@ -39,7 +39,7 @@
       "replaces": ["manual task branch setup", "st tasks claim"],
       "summary": "Task lifecycle workflow: inspect coordination gate, claim task checkpoint, read context, and close completed task.",
       "safety": "mutating",
-      "commands": ["pulse --gate", "claim <task-id>", "context <task-id>", "subtask list <task-id>", "subtask pass", "done <task-id>"],
+      "commands": ["pulse --gate", "claim <task-id>", "context <task-id>", "subtask list <task-id>", "done <subtask-id> -t <task-id> --none", "done <task-id>"],
       "examples": ["st pulse --gate", "st claim task-abc123", "st context task-abc123", "st done task-abc123 -m \"complete\""],
       "verify": ["st claim --help", "st done --help"]
     },
@@ -120,7 +120,7 @@
       "summary": "Desktop UI control on X11: list windows, screenshot, OCR, image diff, window move/resize/activate/close, click/type/key, and clipboard. TOON-compact output. Use to self-verify GUI changes.",
       "safety": "mutating",
       "commands": ["windows", "shot", "ocr", "diff", "activate", "move", "resize", "close", "click", "type", "key", "clip"],
-      "examples": ["st ui windows", "st ui shot -w aico -o /tmp/aico.png", "st ui ocr aico", "st ui diff a.png b.png"],
+      "examples": ["st ui windows", "st ui shot -w summitflow -o /tmp/summitflow.png", "st ui ocr summitflow", "st ui diff a.png b.png"],
       "verify": ["st ui windows"]
     }
   ],
@@ -129,6 +129,48 @@
     "st\\s+docker\\b"
   ],
   "tools": [
+    {
+      "name": "actionlint",
+      "component_id": "sf.check",
+      "redirect_patterns": [],
+      "redirect_message": "Use 'st check actionlint' for scoped quality checks.",
+      "check": {
+        "label": "ACTIONLINT",
+        "binary": "actionlint",
+        "args": "",
+        "working_dir": "root",
+        "fallback_global": true,
+        "pass_path": false
+      }
+    },
+    {
+      "name": "shellcheck",
+      "component_id": "sf.check",
+      "redirect_patterns": [],
+      "redirect_message": "Use 'st check shellcheck' for scoped quality checks.",
+      "check": {
+        "label": "SHELLCHECK",
+        "binary": "shellcheck",
+        "args": "",
+        "working_dir": "root",
+        "fallback_global": true,
+        "pass_path": false
+      }
+    },
+    {
+      "name": "govulncheck",
+      "component_id": "sf.check",
+      "redirect_patterns": [],
+      "redirect_message": "Use 'st check govulncheck' for scoped quality checks.",
+      "check": {
+        "label": "GOVULNCHECK",
+        "binary": "govulncheck",
+        "args": "",
+        "working_dir": "root",
+        "fallback_global": true,
+        "pass_path": false
+      }
+    },
     {
       "name": "pytest",
       "component_id": "sf.check",

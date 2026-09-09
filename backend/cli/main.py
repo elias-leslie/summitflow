@@ -4,7 +4,7 @@ import atexit
 from importlib import import_module
 from pathlib import Path
 from types import ModuleType
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 import typer
 
@@ -220,6 +220,7 @@ def _event_detail_parts(result: dict[str, object]) -> list[str]:
         f"bookmark={result.get('bookmark', '')}",
         f"op={result.get('operation_id', '')}",
         f"pushed={str(result.get('pushed', False)).lower()}",
+        *([f"publication_complete={str(result['publication_complete']).lower()}"] if "publication_complete" in result else []),
     ]
 
 
@@ -238,6 +239,18 @@ def _emit_commit_output(ctx: typer.Context, result: dict[str, object]) -> None:
                 detail=detail,
             )
         )
+        if "ci" in result:
+            ci = cast(dict[str, Any], result["ci"])
+            if isinstance(ci, dict):
+                print(f"CI:state={ci.get('state')} sha={ci.get('sha')} pr={result.get('pr_url', '')} merge={result.get('merge_sha', '')}")
+                if ci.get("detail"):
+                    print(f"CI:detail={ci['detail']}")
+                for check in ci.get("checks", []):
+                    if check.get("state") != "success":
+                        print(f"CI:check={check.get('name')} state={check.get('state')} url={check.get('url') or ''}")
+            print("DEPLOYMENT:state=not_run")
+            if result.get("local_reconciliation"):
+                print(f"LOCAL:{result['local_reconciliation']}")
         return
 
     from .output import output_json
@@ -349,7 +362,7 @@ def commit_command(
     if task_id and result.get("status") == SUCCESS_STATUS:
         _log_commit_event(task_id, result)
     _emit_commit_output(ctx, result)
-    if result.get("status") == BLOCKED_STATUS:
+    if result.get("status") in {BLOCKED_STATUS, "PENDING"}:
         raise typer.Exit(2)
 
 
@@ -360,7 +373,7 @@ _register_forwarded_root_commands()
 def progress_alias(
     task_id: Annotated[str | None, typer.Argument(help="Task ID")] = None,
 ) -> None:
-    """Alias hint: use 'st sync-progress' or 'st subtask pass' instead."""
+    """Alias hint: use 'st sync-progress' or 'st done <subtask-id> -t <task-id>' instead."""
     typer.echo(PROGRESS_ALIAS_MESSAGE, err=True)
     raise typer.Exit(1)
 

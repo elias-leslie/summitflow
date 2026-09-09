@@ -9,7 +9,7 @@ from typing import cast
 
 import httpx
 
-from ...project_identity import canonicalize_project_name
+from ...project_identity import canonicalize_project_name, get_project_lifecycle
 from ...storage.connection import get_cursor
 from .models import ProjectCategory, ProjectHealthResponse, ProjectResponse
 from .public_urls import resolve_project_public_url
@@ -66,11 +66,12 @@ async def resolve_project_health_statuses(
     return dict(results)
 
 
-def list_project_rows() -> list[ProjectListRow]:
-    """Fetch and sort all project rows for list-style responses."""
+def list_project_rows(*, include_inactive: bool = False) -> list[ProjectListRow]:
+    """Fetch and sort discoverable rows, preserving an explicit full inventory."""
     with get_cursor() as cur:
         cur.execute(SQL_LIST_PROJECTS)
-        return cast(list[ProjectListRow], sorted(cur.fetchall(), key=project_sort_key))
+        rows = cast(list[ProjectListRow], sorted(cur.fetchall(), key=project_sort_key))
+    return rows if include_inactive else [row for row in rows if project_is_active(row)]
 
 
 def build_project_response(
@@ -91,6 +92,7 @@ def build_project_response(
         health_endpoint=row[4],
         root_path=row[5],
         category=row[6],
+        lifecycle=get_project_lifecycle(row[0], row[5]),
         sidebar_rank=row[7],
         created_at=row[8],
         health_status=health_status,
@@ -147,3 +149,8 @@ async def check_registered_project_health(project_id: str) -> ProjectHealthRespo
             error=str(exc),
             checked_at=datetime.now(UTC),
         )
+
+
+def project_is_active(row: ProjectListRow) -> bool:
+    """Routine discovery excludes retired projects and canonical testing fixtures."""
+    return row[6] != "testing" and get_project_lifecycle(row[0], row[5]) == "active"

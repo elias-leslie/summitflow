@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from ...project_identity import ProjectLifecycle
 from ..checkpoint_models import CheckpointResponse
 from ..quality_gate_models import HealthSummaryResponse
 
@@ -90,6 +91,7 @@ class ProjectResponse(BaseModel):
     category: ProjectCategory
     sidebar_rank: int | None = Field(default=None, ge=0)
     created_at: datetime
+    lifecycle: ProjectLifecycle = "active"
     health_status: str | None = None
 
 
@@ -138,6 +140,7 @@ class ProjectWithStats(BaseModel):
     category: ProjectCategory
     sidebar_rank: int | None = Field(default=None, ge=0)
     created_at: datetime
+    lifecycle: ProjectLifecycle = "active"
     health_status: str | None = None
     quality_gate: HealthSummaryResponse | None = None
     active_checkpoint: CheckpointResponse | None = None

@@ -155,3 +155,10 @@ def list_projects() -> list[dict[str, Any]]:
             }
             for row in cur.fetchall()
         ]
+
+
+def testing_project_ids() -> set[str]:
+    """Canonical test registrations excluded from routine service discovery."""
+    with get_cursor() as cur:
+        cur.execute("SELECT id FROM projects WHERE category = 'testing'")
+        return {row[0] for row in cur.fetchall()}

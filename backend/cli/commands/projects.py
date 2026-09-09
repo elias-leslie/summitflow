@@ -104,14 +104,14 @@ def current() -> None:
 def switch_project(
     project_id: Annotated[str, typer.Argument(help="Project ID (slug) to make active")],
 ) -> None:
-    """Set the persisted active project (consumed by Aico for widget cwd).
+    """Set the persisted active project for clients using the project pointer.
 
     Validates the slug against the registry, then writes the active-project
     pointer to ~/.local/share/st/active-project.json. Does not change st's own
     cwd-based project resolution.
 
     Examples:
-        st projects switch aico
+        st projects switch agent-hub
         st projects switch summitflow
     """
     project = projects_api("GET", f"/{project_id}")
@@ -151,7 +151,7 @@ def get_project_root(
 
     Examples:
         st projects root summitflow
-        st projects root a-term
+        st projects root agent-hub
     """
     run_root(project_id)
 
@@ -163,8 +163,8 @@ def sync_project_identity_command(
     """Sync a registered project's DB identity from its repo-local manifest.
 
     Examples:
-        st projects sync-identity a-term
-        st projects sync-identity terminal
+        st projects sync-identity agent-hub
+        st projects sync-identity summitflow
     """
     run_sync_identity(project_id)
 

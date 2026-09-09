@@ -1,5 +1,8 @@
 --
 -- PostgreSQL database dump
+-- Bootstrap baseline: f53cfc3e6e4d (legacy SQL schema).
+-- Post-baseline design asset tables are created by Alembic a24e1b127505.
+-- Always run the full remaining migration chain after importing this snapshot.
 --
 
 \restrict IQaHikaoYBGqGtEiTocohupnoeKE9aZh0xW9D8asSUTeeLb9JLfYgjbilD9gFdv
@@ -390,105 +393,6 @@ CREATE TABLE public.backups (
     CONSTRAINT backups_status_check CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('running'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('completed_pending_upload'::character varying)::text]))),
     CONSTRAINT backups_type_check CHECK (((backup_type)::text = ANY (ARRAY[('manual'::character varying)::text, ('scheduled'::character varying)::text])))
 );
-
-
---
--- Name: design_asset_exports; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.design_asset_exports (
-    id integer NOT NULL,
-    asset_id integer NOT NULL,
-    export_id character varying(50) NOT NULL,
-    export_type character varying(30) NOT NULL,
-    file_path text NOT NULL,
-    manifest_path text,
-    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_design_asset_exports_type CHECK (((export_type)::text = ANY ((ARRAY['original'::character varying, 'sprite_frames'::character varying, 'atlas_json'::character varying])::text[])))
-);
-
-
---
--- Name: design_asset_exports_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.design_asset_exports_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: design_asset_exports_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.design_asset_exports_id_seq OWNED BY public.design_asset_exports.id;
-
-
---
--- Name: design_assets; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.design_assets (
-    id integer NOT NULL,
-    project_id text NOT NULL,
-    asset_id character varying(50) NOT NULL,
-    name character varying(255) NOT NULL,
-    description text,
-    asset_type character varying(50) NOT NULL,
-    workflow character varying(50) DEFAULT 'concept'::character varying NOT NULL,
-    status character varying(30) DEFAULT 'generated'::character varying NOT NULL,
-    prompt text NOT NULL,
-    negative_prompt text,
-    style_prompt text,
-    background character varying(20) DEFAULT 'transparent'::character varying NOT NULL,
-    width integer NOT NULL,
-    height integer NOT NULL,
-    transparent_background boolean DEFAULT false NOT NULL,
-    model character varying(100),
-    generator character varying(100),
-    file_path text,
-    source_asset_id integer,
-    sheet_columns integer,
-    sheet_rows integer,
-    frame_width integer,
-    frame_height integer,
-    animation_labels text[] DEFAULT '{}'::text[] NOT NULL,
-    tags text[] DEFAULT '{}'::text[] NOT NULL,
-    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
-    approved_at timestamp with time zone,
-    approved_by character varying(100),
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_design_assets_background CHECK (((background)::text = ANY ((ARRAY['transparent'::character varying, 'solid'::character varying, 'scene'::character varying])::text[]))),
-    CONSTRAINT ck_design_assets_status CHECK (((status)::text = ANY ((ARRAY['generated'::character varying, 'approved'::character varying, 'rejected'::character varying, 'archived'::character varying, 'exported'::character varying])::text[]))),
-    CONSTRAINT ck_design_assets_type CHECK (((asset_type)::text = ANY ((ARRAY['sprite'::character varying, 'sprite_sheet'::character varying, 'portrait'::character varying, 'environment'::character varying, 'icon'::character varying, 'illustration'::character varying, 'ui_texture'::character varying, 'marketing_mockup'::character varying, 'tile_set'::character varying, 'concept_art'::character varying])::text[]))),
-    CONSTRAINT ck_design_assets_workflow CHECK (((workflow)::text = ANY ((ARRAY['concept'::character varying, 'production'::character varying, 'marketing'::character varying, 'ui'::character varying])::text[])))
-);
-
-
---
--- Name: design_assets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.design_assets_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: design_assets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.design_assets_id_seq OWNED BY public.design_assets.id;
 
 
 --
@@ -2048,20 +1952,6 @@ ALTER TABLE ONLY public.artifacts ALTER COLUMN id SET DEFAULT nextval('public.ar
 
 
 --
--- Name: design_asset_exports id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.design_asset_exports ALTER COLUMN id SET DEFAULT nextval('public.design_asset_exports_id_seq'::regclass);
-
-
---
--- Name: design_assets id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.design_assets ALTER COLUMN id SET DEFAULT nextval('public.design_assets_id_seq'::regclass);
-
-
---
 -- Name: design_rules id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2250,22 +2140,6 @@ ALTER TABLE ONLY public.backup_sources
 
 ALTER TABLE ONLY public.backups
     ADD CONSTRAINT backups_pkey PRIMARY KEY (id);
-
-
---
--- Name: design_asset_exports design_asset_exports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.design_asset_exports
-    ADD CONSTRAINT design_asset_exports_pkey PRIMARY KEY (id);
-
-
---
--- Name: design_assets design_assets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.design_assets
-    ADD CONSTRAINT design_assets_pkey PRIMARY KEY (id);
 
 
 --
@@ -2677,22 +2551,6 @@ ALTER TABLE ONLY public.aterm_sessions
 
 
 --
--- Name: design_asset_exports uq_design_asset_exports; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.design_asset_exports
-    ADD CONSTRAINT uq_design_asset_exports UNIQUE (asset_id, export_id);
-
-
---
--- Name: design_assets uq_design_assets_project_asset; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.design_assets
-    ADD CONSTRAINT uq_design_assets_project_asset UNIQUE (project_id, asset_id);
-
-
---
 -- Name: user_prompts user_prompts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2825,48 +2683,6 @@ CREATE INDEX idx_backups_source_status_created ON public.backups USING btree (so
 --
 
 CREATE INDEX idx_backups_status ON public.backups USING btree (status);
-
-
---
--- Name: idx_design_asset_exports_asset; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_design_asset_exports_asset ON public.design_asset_exports USING btree (asset_id);
-
-
---
--- Name: idx_design_assets_created; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_design_assets_created ON public.design_assets USING btree (project_id, created_at);
-
-
---
--- Name: idx_design_assets_project; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_design_assets_project ON public.design_assets USING btree (project_id);
-
-
---
--- Name: idx_design_assets_source; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_design_assets_source ON public.design_assets USING btree (source_asset_id);
-
-
---
--- Name: idx_design_assets_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_design_assets_status ON public.design_assets USING btree (project_id, status);
-
-
---
--- Name: idx_design_assets_type; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_design_assets_type ON public.design_assets USING btree (project_id, asset_type);
 
 
 --
@@ -3771,30 +3587,6 @@ ALTER TABLE ONLY public.backups
 
 
 --
--- Name: design_asset_exports design_asset_exports_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.design_asset_exports
-    ADD CONSTRAINT design_asset_exports_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES public.design_assets(id) ON DELETE CASCADE;
-
-
---
--- Name: design_assets design_assets_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.design_assets
-    ADD CONSTRAINT design_assets_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
-
-
---
--- Name: design_assets design_assets_source_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.design_assets
-    ADD CONSTRAINT design_assets_source_asset_id_fkey FOREIGN KEY (source_asset_id) REFERENCES public.design_assets(id) ON DELETE SET NULL;
-
-
---
 -- Name: design_rules design_rules_standard_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4079,3 +3871,29 @@ ALTER TABLE ONLY public.user_prompts
 --
 
 \unrestrict IQaHikaoYBGqGtEiTocohupnoeKE9aZh0xW9D8asSUTeeLb9JLfYgjbilD9gFdv
+
+-- Legacy Celery tables belong to the SQL baseline and are removed by 537e356aff9f.
+-- Definitions follow that migration's downgrade contract; these never survive upgrade.
+CREATE TABLE public.celery_taskmeta (
+    id serial PRIMARY KEY,
+    task_id varchar UNIQUE,
+    status varchar,
+    result bytea,
+    date_done timestamp without time zone,
+    traceback text,
+    name varchar,
+    args bytea,
+    kwargs bytea,
+    worker varchar,
+    retries integer,
+    queue varchar
+);
+CREATE TABLE public.celery_tasksetmeta (
+    id serial PRIMARY KEY,
+    taskset_id varchar UNIQUE,
+    result bytea,
+    date_done timestamp without time zone
+);
+
+-- Schema-only dumps omit this required baseline row; retain it when regenerating.
+INSERT INTO public.alembic_version (version_num) VALUES ('f53cfc3e6e4d');

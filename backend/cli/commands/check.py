@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
+import signal
 import subprocess
+from contextlib import suppress
 from pathlib import Path
 
 import typer
@@ -84,6 +86,29 @@ def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str]) -
     return [resolved or binary, *base_args]
 
 
+_FRONTEND_TEST_TIMEOUT = 600
+
+
+def _run_frontend_script(command: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """Cap arbitrary manifest scripts and clean up their process group on timeout."""
+    with subprocess.Popen(
+        command, cwd=cwd, env={**env, "CI": "true", "NODE_ENV": "test"},
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
+        errors="replace", start_new_session=True,
+    ) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=_FRONTEND_TEST_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            # The group may have completed at the deadline.
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            stdout, stderr = process.communicate()
+            return subprocess.CompletedProcess(
+                command, 124, stdout, f"{stderr}\nFrontend tests exceeded {_FRONTEND_TEST_TIMEOUT}s; process group stopped."
+            )
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
 def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> int:
     root = _resolve_repo_root()
     cwd = _workdir(root, config)
@@ -95,18 +120,21 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
     print(f"{label}:{name}:start")
 
     try:
-        result = subprocess.run(
-            command,
-            cwd=cwd,
-            env=tool_env(root, os.environ, name),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
+        if name == "frontend-test":
+            result = _run_frontend_script(command, cwd, tool_env(root, os.environ, name))
+        else:
+            result = subprocess.run(
+                command,
+                cwd=cwd,
+                env=tool_env(root, os.environ, name),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
     except OSError as exc:
-        if isinstance(exc, FileNotFoundError) and tool_not_installed(name, root):
+        if name not in {"vitest", "frontend-test"} and isinstance(exc, FileNotFoundError) and tool_not_installed(name, root):
             print(f"{label}:SKIP:{name}:tool_not_installed")
             return 0
         output = f"{type(exc).__name__}: {exc}"

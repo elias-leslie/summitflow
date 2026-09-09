@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from .jj_common import JJError, JJRevisionInfo, is_colocated, require_success, run_jj
+from .jj_common import JJError, JJRevisionInfo, is_colocated, require_success, run_git, run_jj
 from .jj_status import (
     current_revision_info,
     display_branch,
@@ -15,6 +15,7 @@ from .jj_status import (
     run_checks,
     status_summary,
 )
+from .publish_workflow import PublishError, publish_git
 
 
 def task_bookmark(task_id: str, bookmark: str = "") -> str:
@@ -43,7 +44,10 @@ def publish_current_revision(
     _validate_publishable_revision(info, revision)
 
     if run_quality_gate:
-        ok, detail = run_checks(repo, paths=check_paths)
+        changed = run_jj(repo, ["diff", "--name-only", "-r", f"remote_bookmarks(remote={remote})..{revision}"])
+        require_success(changed, "jj outgoing check scope")
+        scope = sorted(set([*changed.stdout.splitlines(), *check_paths]))
+        ok, detail = run_checks(repo, paths=scope)
         if not ok:
             raise JJError(f"quality gates failed before jj push: {detail[-1200:]}")
 
@@ -60,19 +64,30 @@ def publish_current_revision(
             )
         raise JJError(f"jj bookmark set failed: {detail}")
 
-    push_result = run_jj(repo, _push_args(remote, resolved_bookmark, dry_run))
-    require_success(push_result, "jj git push")
+    def push_revision(protected_bookmark: str | None) -> Any:
+        nonlocal resolved_bookmark
+        if protected_bookmark and protected_bookmark != resolved_bookmark:
+            require_success(run_jj(repo, ["bookmark", "set", protected_bookmark, "-r", revision]), "jj protected bookmark")
+            resolved_bookmark = protected_bookmark
+        return run_jj(repo, _push_args(remote, resolved_bookmark, dry_run))
+
+    if dry_run:
+        require_success(push_revision(None), "jj git push dry run")
+        delivery: dict[str, Any] = {"status": "SUCCESS", "pushed": False, "publication_complete": False}
+    else:
+        try:
+            delivery = publish_git(repo, sha=info.commit_id, task_id=task_id, message=info.description,
+                                   run_git=run_git, push_revision=push_revision, remote_name=remote)
+        except PublishError as exc:
+            raise JJError(str(exc)) from exc
     return {
         "repo": repo.name,
         "path": str(repo),
-        "status": "SUCCESS",
         "change_id": info.change_id,
         "commit_id": info.commit_id,
         "operation_id": latest_operation_id(repo),
         "bookmark": resolved_bookmark,
-        "pushed": not dry_run,
-        "stdout": push_result.stdout.strip(),
-        "stderr": push_result.stderr.strip(),
+        **delivery,
     }
 
 
@@ -226,6 +241,8 @@ def commit_current_revision(
 
     before = status_summary(repo)
     if before.state == "clean" and before.unpublished == 0:
+        if push:
+            return publish_current_revision(repo, task_id=task_id, bookmark=bookmark, revision="@-", run_quality_gate=False)
         return {"repo": repo.name, "path": str(repo), "status": "SKIP", "reason": "clean", "pushed": False}
 
     require_success(run_jj(repo, ["describe", "-m", message]), "jj describe")
@@ -233,8 +250,9 @@ def commit_current_revision(
     result = _commit_result(repo, info, message)
     if push:
         result.update(publish_current_revision(repo, task_id=task_id, bookmark=bookmark, run_quality_gate=not skip_checks))
-        require_success(run_jj(repo, ["new"]), "jj new")
-        result["working_copy"] = "advanced"
+        if result.get("publication_complete"):
+            require_success(run_jj(repo, ["new"]), "jj new")
+            result["working_copy"] = "advanced"
     return result
 
 

@@ -10,6 +10,39 @@ from cli.commands import skills
 runner = CliRunner()
 
 
+def test_dirty_canonical_source_is_not_link_drift(tmp_path: Path) -> None:
+    (tmp_path / "skills").mkdir()
+    counts = {"ok": 1, "missing": 0, "dangling": 0, "wrong-target": 0, "real-copy": 0, "unmanaged": 0}
+    with (
+        patch.object(skills, "_canon", return_value=tmp_path),
+        patch.object(skills, "_canon_dirty", return_value=True),
+        patch.object(skills, "_expected", return_value=[]),
+        patch.object(skills, "_unmanaged", return_value=[]),
+        patch.object(skills, "_scan", return_value=counts),
+    ):
+        doctor = runner.invoke(skills.app, ["doctor"])
+        status = runner.invoke(skills.app, ["status"])
+    assert doctor.exit_code == 1
+    assert "0 link issue(s)" in doctor.output
+    assert "Review and commit" in doctor.output
+    assert "--adopt" not in doctor.output
+    assert "skills DIRTY:" in status.output
+
+
+def test_doctor_only_recommends_adopt_for_real_copies(tmp_path: Path) -> None:
+    (tmp_path / "skills").mkdir()
+    with (
+        patch.object(skills, "_canon", return_value=tmp_path),
+        patch.object(skills, "_canon_dirty", return_value=False),
+        patch.object(skills, "_expected", return_value=[("codex", tmp_path / "copy", tmp_path / "target")]),
+        patch.object(skills, "_classify", return_value="real-copy"),
+        patch.object(skills, "_unmanaged", return_value=[]),
+    ):
+        result = runner.invoke(skills.app, ["doctor"])
+    assert result.exit_code == 1
+    assert "--adopt" in result.output
+
+
 def test_load_harnesses_with_manifest(tmp_path: Path) -> None:
     manifest = tmp_path / "manifest.toml"
     manifest.write_text("""[harness.claude]

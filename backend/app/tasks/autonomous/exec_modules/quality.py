@@ -145,7 +145,14 @@ def run_final_quality_gate(
     """
     st_cmd = find_check_tool()
     if not st_cmd:
-        return True
+        emit_log(
+            task_id,
+            "warn",
+            "Final quality gate unavailable: st executable not found; completion blocked",
+            source="quality",
+            project_id=project_id,
+        )
+        return False
 
     cmd = build_final_quality_gate_command(st_cmd, project_id)
     _emit_gate_start(task_id, cmd, project_id)

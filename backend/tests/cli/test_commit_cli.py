@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -189,13 +189,15 @@ def test_commit_repo_skips_gitignored_paths_in_add_step(tmp_path: Path) -> None:
         if args[:1] == ["check-ignore"]:
             # ignored.json is gitignored; .gitignore itself isn't.
             result.returncode = 0 if "ignored.json" in args else 1
-        if args[:2] == ["rev-parse", "--short"]:
+        if args[:2] == ["rev-parse", "HEAD"]:
             result.stdout = "abc1234"
         return result
 
     with (
         patch.object(commit_workflow, "run_git", side_effect=fake_run_git) as run,
+        patch.object(commit_workflow, "_commit_selected_index", return_value=subprocess.CompletedProcess([], 0, "", "")),
         patch.object(commit_workflow, "run_checks", return_value=(True, "")),
+        patch.object(commit_workflow, "publish_git", return_value={"status": "SUCCESS", "pushed": True, "publication_complete": True}),
     ):
         result = commit_repo(
             tmp_path,
@@ -222,7 +224,7 @@ def test_commit_repo_skips_gitignored_paths_in_add_step(tmp_path: Path) -> None:
         if args[:1] == ["check-ignore"]:
             # default: not ignored (exit 1 means no match)
             result.returncode = 1
-        if args[:2] == ["rev-parse", "--short"]:
+        if args[:2] == ["rev-parse", "HEAD"]:
             result.stdout = "abc1234"
         if args[:1] == ["push"]:
             result.stdout = "pushed"
@@ -231,6 +233,7 @@ def test_commit_repo_skips_gitignored_paths_in_add_step(tmp_path: Path) -> None:
     with (
         patch.object(commit_workflow, "run_git", side_effect=fake_run_git) as run,
         patch.object(commit_workflow, "run_checks", return_value=(True, "")),
+        patch.object(commit_workflow, "publish_git", return_value={"status": "SUCCESS", "pushed": True, "publication_complete": True}),
         patch(
             "cli.commands.cleanup_handlers.cleanup_safe_git_residue",
             return_value=(0, 0, 0, 0, 0, 0),
@@ -325,3 +328,127 @@ def test_refresh_symbols_after_publish_swallows_api_errors(mock_run_git: MagicMo
 
     assert result["status"] == "SUCCESS"
     assert "symbol_refresh_queued" not in result
+
+
+def test_publication_checks_include_vitest(tmp_path):
+    from cli.lib import commit_workflow
+    with patch.object(commit_workflow.subprocess, 'run') as run:
+        run.return_value = subprocess.CompletedProcess([], 0, 'ok', '')
+        assert commit_workflow.run_checks(tmp_path, paths=['frontend/a.tsx'])[0]
+    assert run.call_args.args[0] == ['st', 'check', '--check', '--changed-only']
+
+
+def test_outgoing_scope_includes_previously_committed_files(tmp_path):
+    from cli.lib import commit_workflow
+    with patch.object(commit_workflow, 'run_git') as run:
+        run.side_effect = [subprocess.CompletedProcess([], 0, 'main\n', ''),
+                           subprocess.CompletedProcess([], 0, 'a'*40, ''),
+                           subprocess.CompletedProcess([], 0, 'backend/old.py\0frontend/new.tsx\0', '')]
+        assert commit_workflow.outgoing_paths(tmp_path) == ['backend/old.py', 'frontend/new.tsx']
+
+
+def test_clean_ahead_failed_gate_does_not_push(tmp_path):
+    from cli.lib import commit_workflow
+    with (patch.object(commit_workflow, 'dirty', return_value=False),
+          patch.object(commit_workflow, 'outgoing_paths', return_value=['backend/a.py']),
+          patch.object(commit_workflow, 'run_checks', return_value=(False, 'test failed')),
+          patch.object(commit_workflow, 'publish_git') as publish):
+        result = commit_workflow.commit_git_revision(tmp_path, message='resume')
+    assert result['status'] == 'BLOCKED'
+    publish.assert_not_called()
+
+
+def test_cli_pending_ci_returns_nonzero_and_prints_revision():
+    with (patch('cli.main.current_repo', return_value=Path('/repo')),
+          patch('cli.main.commit_repo', return_value={'status': 'PENDING', 'pushed': True, 'sha': 'abc',
+                'publication_complete': False, 'ci': {'state': 'pending', 'sha': 'abc', 'checks': []}})):
+        result = runner.invoke(app, ['commit', '-m', 'resume'])
+    assert result.exit_code == 2
+    assert 'CI:state=pending sha=abc' in result.stdout
+
+
+@pytest.mark.parametrize('tracked_kind', ['file', 'symlink'])
+@pytest.mark.parametrize('hook_fails', [False, True])
+def test_selected_cached_deletion_preserves_local_directory_and_other_index_work(
+    tmp_path: Path, monkeypatch, tracked_kind: str, hook_fails: bool,
+) -> None:
+    from cli.lib import commit_workflow
+
+    def git(*args: str) -> str:
+        return subprocess.run(['git', *args], cwd=tmp_path, text=True, capture_output=True, check=True).stdout
+
+    git('init', '-q')
+    git('config', 'user.name', 'Test')
+    git('config', 'user.email', 'test@example.invalid')
+    (tmp_path / 'frontend').mkdir()
+    cache = tmp_path / 'frontend/node_modules'
+    if tracked_kind == 'symlink':
+        cache.symlink_to('/nonexistent/test-cache')
+    else:
+        cache.write_text('old tracked cache')
+    (tmp_path / '.gitignore').write_text('')
+    (tmp_path / 'unrelated.py').write_text('baseline')
+    git('add', '.')
+    git('commit', '-qm', 'baseline')
+    before = git('rev-parse', 'HEAD')
+    git('rm', '--cached', '--', 'frontend/node_modules')
+    cache.unlink()
+    cache.mkdir()
+    (cache / 'cached.js').write_text('keep local cache')
+    (tmp_path / '.gitignore').write_bytes(b'node_modules\r\n')
+    (tmp_path / 'unrelated.py').write_text('unfinished staged work')
+    git('add', 'unrelated.py')
+    hook = tmp_path / '.git/hooks/pre-commit'
+    hook.write_text('#!/bin/sh\nprintf ran > .git/hook-ran\nexit ' + ('1' if hook_fails else '0') + '\n')
+    hook.chmod(0o755)
+    monkeypatch.setattr(commit_workflow, 'run_checks', lambda *args, **kwargs: (True, ''))
+    selected_paths = ('.gitignore', 'frontend/node_modules')
+    if hook_fails:
+        with pytest.raises(CommitError):
+            commit_workflow.commit_git_revision(tmp_path, message='stop tracking cache', paths=selected_paths, push=False)
+        assert git('rev-parse', 'HEAD') == before
+        assert 'frontend/node_modules' in git('diff', '--cached', '--name-only')
+    else:
+        assert commit_workflow.commit_git_revision(tmp_path, message='stop tracking cache', paths=selected_paths, push=False)['status'] == 'SUCCESS'
+        assert set(git('show', '--format=', '--name-only', 'HEAD').splitlines()) == {'.gitignore', 'frontend/node_modules'}
+        assert git('diff', '--cached', '--name-only').strip() == 'unrelated.py'
+        assert git('show', ':unrelated.py') == 'unfinished staged work'
+        assert subprocess.check_output(['git', 'show', 'HEAD:.gitignore'], cwd=tmp_path) == b'node_modules\r\n'
+    assert (tmp_path / '.git/hook-ran').read_text() == 'ran'
+    assert (cache / 'cached.js').read_text() == 'keep local cache'
+
+
+def test_outgoing_scope_uses_publish_destination_when_upstream_is_elsewhere(tmp_path):
+    from cli.lib import commit_workflow
+
+    def git(*args):
+        return subprocess.check_output(['git', *args], cwd=tmp_path, text=True).strip()
+
+    git('init', '-q', '--initial-branch=main')
+    git('config', 'user.name', 'Test')
+    git('config', 'user.email', 'test@example.invalid')
+    (tmp_path / 'app.py').write_text('before')
+    git('add', '.')
+    git('commit', '-qm', 'baseline')
+    git('remote', 'add', 'origin', '/tmp/unused-origin.git')
+    git('remote', 'add', 'elsewhere', '/tmp/unused-elsewhere.git')
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+    (tmp_path / 'app.py').write_text('unpublished change')
+    git('add', '.')
+    git('commit', '-qm', 'ahead of publication remote')
+    git('update-ref', 'refs/remotes/elsewhere/main', 'HEAD')
+    git('branch', '--set-upstream-to=elsewhere/main')
+    assert commit_workflow.outgoing_paths(tmp_path) == ['app.py']
+
+
+@pytest.mark.parametrize('paths', [(), ('app.py',)])
+def test_git_status_error_blocks_before_publication(tmp_path, monkeypatch, paths):
+    from cli.lib import commit_workflow
+
+    monkeypatch.setattr(commit_workflow, 'run_git', Mock(return_value=subprocess.CompletedProcess([], 1, '', 'index unreadable')))
+    monkeypatch.setattr(commit_workflow, 'outgoing_paths', lambda _: [])
+    publish = Mock()
+    monkeypatch.setattr(commit_workflow, '_publish_revision', publish)
+    with pytest.raises(CommitError, match='index unreadable'):
+        commit_workflow.commit_git_revision(tmp_path, message='publish', paths=paths)
+    publish.assert_not_called()

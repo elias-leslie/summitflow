@@ -96,7 +96,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Skip E2E and integration tests unless explicitly enabled."""
+    """Keep live suites opt-in while allowing explicitly isolated integrations."""
     from pathlib import Path
 
     run_e2e = config.getoption("--run-e2e")
@@ -112,7 +112,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         # Auto-mark tests in e2e/ or integration/ directories
         try:
             rel_path = item_path.relative_to(tests_dir)
-            if str(rel_path).startswith("e2e/") or str(rel_path).startswith("integration/"):
+            if (str(rel_path).startswith("e2e/") or str(rel_path).startswith("integration/")) and "isolated" not in item.keywords:
                 item.add_marker(pytest.mark.e2e)
         except ValueError:
             pass

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from .jj import JJError, commit_current_revision
+from .publish_workflow import PublishError, publish_git
 
 
 class CommitError(RuntimeError):
@@ -32,14 +34,17 @@ def current_repo() -> Path:
 
 
 def dirty(repo: Path) -> bool:
-    return bool(run_git(repo, ["status", "--porcelain"]).stdout.strip())
+    result = run_git(repo, ["status", "--porcelain"])
+    if result.returncode != 0:
+        raise CommitError(result.stderr.strip() or "cannot inspect working tree status")
+    return bool(result.stdout.strip())
 
 
 def run_checks(repo: Path, *, paths: Sequence[str] = ()) -> tuple[bool, str]:
     # Same canonical changed-file input used by the Jujutsu commit path.
     env = {**os.environ, "ST_CHECK_CHANGED_FILES": "\n".join(paths)} if paths else None
     result = subprocess.run(
-        ["st", "check", "--quick", "--changed-only"],
+        ["st", "check", "--check", "--changed-only"],
         cwd=repo,
         env=env,
         text=True,
@@ -48,6 +53,33 @@ def run_checks(repo: Path, *, paths: Sequence[str] = ()) -> tuple[bool, str]:
     )
     detail = (result.stdout + "\n" + result.stderr).strip()
     return result.returncode == 0, detail[-1200:]
+
+
+def outgoing_paths(repo: Path) -> list[str]:
+    """Include committed-but-unpublished inputs, even with a clean working tree."""
+    current = run_git(repo, ["branch", "--show-current"])
+    if current.returncode != 0:
+        raise CommitError(current.stderr.strip() or "cannot determine publication branch")
+    # Native publication targets origin/current, regardless of @{upstream}.
+    destination = f"refs/remotes/origin/{current.stdout.strip()}" if current.stdout.strip() else ""
+    known = run_git(repo, ["rev-parse", "--verify", destination]) if destination else None
+    args = (["diff", "--name-only", "-z", f"{destination}..HEAD"]
+            if known is not None and known.returncode == 0 else ["ls-files", "-z"])
+    result = run_git(repo, args)
+    if result.returncode:
+        raise CommitError(result.stderr.strip() or "cannot determine outgoing check scope")
+    return sorted(set(item for item in result.stdout.split("\0") if item))
+
+
+def _publish_revision(repo: Path, result: dict[str, Any], *, task_id: str, message: str) -> dict[str, Any]:
+    sha = run_git(repo, ["rev-parse", "HEAD"])
+    if sha.returncode or not sha.stdout.strip():
+        raise CommitError("cannot resolve publication commit")
+    try:
+        return {**result, **publish_git(repo, sha=sha.stdout.strip(), task_id=task_id,
+                                       message=message, run_git=run_git)}
+    except PublishError as exc:
+        raise CommitError(str(exc)) from exc
 
 
 def branch(repo: Path) -> str:
@@ -86,6 +118,8 @@ def _normalize_paths(repo: Path, paths: Sequence[str]) -> list[str]:
 def _selected_paths_dirty(repo: Path, paths: Sequence[str]) -> bool:
     """Return True if any of the selected paths has staged or unstaged changes."""
     result = run_git(repo, ["status", "--porcelain", "--", *paths])
+    if result.returncode != 0:
+        raise CommitError(result.stderr.strip() or "cannot inspect selected working tree status")
     return bool(result.stdout.strip())
 
 
@@ -121,6 +155,39 @@ def _addable_paths(repo: Path, paths: Sequence[str]) -> list[str]:
     return addable
 
 
+
+def _commit_selected_index(repo: Path, message: str, paths: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    """Commit staged selections without rescanning ignored worktree replacements."""
+    patch = subprocess.run(["git", "diff", "--cached", "--binary", "--full-index", "--", *paths],
+                           cwd=repo, capture_output=True, check=False)
+    if patch.returncode != 0:
+        raise CommitError(patch.stderr.decode(errors="replace").strip() or "cannot read selected staged changes")
+    with tempfile.TemporaryDirectory(prefix="st-commit-index-") as temporary:
+        env = {**os.environ, "GIT_INDEX_FILE": str(Path(temporary) / "index")}
+
+        def indexed(args: list[str]) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(["git", *args], cwd=repo, env=env,
+                                  text=True, capture_output=True, check=False)
+
+        prepared = indexed(["read-tree", "HEAD"])
+        if prepared.returncode != 0:
+            raise CommitError(prepared.stderr.strip() or "cannot prepare selected commit index")
+        # Keep the staged patch byte-for-byte: text-mode pipes normalize CRLF.
+        applied = subprocess.run(["git", "apply", "--cached", "--binary", "-"], cwd=repo,
+                                 env=env, input=patch.stdout, capture_output=True, check=False)
+        if applied.returncode != 0:
+            raise CommitError(applied.stderr.decode(errors="replace").strip() or "cannot apply selected staged changes")
+        # Normal commit still runs every hook against the selected index.
+        committed = indexed(["commit", "-m", message])
+        if committed.returncode == 0:
+            # Path-scoped reset updates only these index entries, including hook
+            # changes. It never moves HEAD or touches the ignored local cache.
+            reconciled = run_git(repo, ["reset", "--quiet", "HEAD", "--", *paths])
+            if reconciled.returncode != 0:
+                raise CommitError(reconciled.stderr.strip() or "commit created; selected index reconciliation failed")
+        return committed
+
+
 def commit_git_revision(
     repo: Path,
     *,
@@ -140,31 +207,19 @@ def commit_git_revision(
         "status": "SKIP",
         "pushed": False,
     }
-    selected_paths: list[str] = []
-    if paths:
-        selected_paths = _normalize_paths(repo, paths)
-        if not _selected_paths_dirty(repo, selected_paths):
-            if not push:
-                return {**result, "reason": "no_changes_in_selected_paths"}
-            pushed = run_git(repo, push_args(repo))
-            if pushed.returncode != 0:
-                raise CommitError(pushed.stderr.strip() or pushed.stdout.strip() or "git push failed")
-            return {**result, "reason": "no_changes_in_selected_paths", "pushed": True}
-    elif not dirty(repo):
-        if not push:
-            return {**result, "reason": "clean"}
-        pushed = run_git(repo, push_args(repo))
-        if pushed.returncode != 0:
-            raise CommitError(pushed.stderr.strip() or pushed.stdout.strip() or "git push failed")
-        return {**result, "reason": "clean", "pushed": True}
-    selected_files = _selected_changed_files(repo, selected_paths) if selected_paths else []
-    if not skip_checks:
-        ok, detail = (
-            run_checks(repo, paths=selected_files)
-            if selected_paths else run_checks(repo)
-        )
+    selected_paths = _normalize_paths(repo, paths) if paths else []
+    has_changes = _selected_paths_dirty(repo, selected_paths) if selected_paths else dirty(repo)
+    if not has_changes and not push:
+        return {**result, "reason": "no_changes_in_selected_paths" if selected_paths else "clean"}
+    selected_files = _selected_changed_files(repo, selected_paths) if selected_paths and has_changes else []
+    changed_scope = (selected_files if selected_paths else _selected_changed_files(repo, ["."])) if has_changes else []
+    scope = sorted(set([*changed_scope, *(outgoing_paths(repo) if push else [])]))
+    if not skip_checks and (has_changes or scope):
+        ok, detail = run_checks(repo, paths=scope)
         if not ok:
             return {**result, "status": "BLOCKED", "reason": "quality_gates_failed", "detail": detail}
+    if not has_changes:
+        return _publish_revision(repo, {**result, "reason": "clean"}, task_id=task_id, message=message)
     if selected_paths:
         addable = _addable_paths(repo, selected_files)
         if addable:
@@ -180,18 +235,17 @@ def commit_git_revision(
     commit_args = ["commit", "-m", message]
     if selected_paths:
         commit_args.extend(["--only", "--", *selected_files])
-    committed = run_git(repo, commit_args)
+    committed = (_commit_selected_index(repo, message, selected_files)
+                 if selected_paths and len(addable) != len(selected_files)
+                 else run_git(repo, commit_args))
     if committed.returncode != 0:
         raise CommitError(committed.stderr.strip() or committed.stdout.strip() or "git commit failed")
-    sha = run_git(repo, ["rev-parse", "--short", "HEAD"]).stdout.strip()
+    sha = run_git(repo, ["rev-parse", "HEAD"]).stdout.strip()
     result.update({"status": "SUCCESS", "sha": sha, "message": message})
     if selected_paths:
         result["selected_paths"] = selected_paths
     if push:
-        pushed = run_git(repo, push_args(repo))
-        if pushed.returncode != 0:
-            raise CommitError(pushed.stderr.strip() or pushed.stdout.strip() or "git push failed")
-        result["pushed"] = True
+        result = _publish_revision(repo, result, task_id=task_id, message=message)
     if task_id:
         result["task_id"] = task_id
     return result

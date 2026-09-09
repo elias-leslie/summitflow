@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 import typer
+
+from .check_frontend import frontend_test_config
 
 ToolConfig = dict[str, object]
 ToolConfigs = dict[str, ToolConfig]
@@ -44,6 +47,61 @@ class CheckRuntime:
     run_codeql_alert_check: Callable[[list[str]], int]
 
 
+def run_scoped_quality_tool(
+    name: str,
+    config: ToolConfig,
+    explicit_args: list[str],
+    *,
+    changed_only: bool,
+    runtime: CheckRuntime,
+) -> int | None:
+    if name not in {"actionlint", "shellcheck", "govulncheck"}:
+        return None
+    if explicit_args:
+        return runtime.run_tool(name, config, explicit_args)
+    root = runtime.resolve_repo_root()
+    excluded = {".git", ".venv", "node_modules", "vendor", "vendored", "generated", "build", "dist"}
+    if changed_only:
+        paths = [Path(path) for path in runtime.changed_files(root)]
+    else:
+        paths = []
+        for directory, subdirs, files in os.walk(root):
+            subdirs[:] = [part for part in subdirs if part not in excluded]
+            paths.extend((Path(directory) / file).relative_to(root) for file in files)
+    selected: set[str] = set()
+    for path in paths:
+        if path.is_absolute() or ".." in path.parts or excluded.intersection(path.parts):
+            continue
+        if name == "govulncheck":
+            if path.suffix != ".go" and path.name not in {"go.mod", "go.sum"}:
+                continue
+            parent = path.parent
+            while True:
+                if (root / parent / "go.mod").is_file():
+                    selected.add(parent.as_posix())
+                    break
+                if parent == Path("."):
+                    break
+                parent = parent.parent
+        elif (root / path).is_file():
+            if (
+                name == "actionlint" and path.parent == Path(".github/workflows") and path.suffix in {".yml", ".yaml"}
+            ) or (name == "shellcheck" and path.suffix == ".sh" and (
+                path.is_relative_to("scripts") or path.is_relative_to("docker/scripts")
+            )):
+                selected.add(path.as_posix())
+    if not selected:
+        print(f"{config.get('label') or name.upper()}:SKIP:{name}:no_relevant_paths")
+        return 0
+    if name == "govulncheck":
+        failures = [
+            runtime.run_tool(name, {**config, "working_directory": module}, ["./..."])
+            for module in sorted(selected)
+        ]
+        return int(any(failures))
+    return runtime.run_tool(name, config, sorted(selected))
+
+
 def extract_check_options(args: list[str]) -> tuple[list[str], bool, bool]:
     changed_only = False
     args = [
@@ -69,12 +127,28 @@ def run_selected(
     failures = int(runtime.run_architecture_check(root, changed_files if changed_only else None) != 0)
     for name in selected:
         config = configs[name]
+        scoped_result = run_scoped_quality_tool(name, config, [], changed_only=changed_only, runtime=runtime)
+        if scoped_result is not None:
+            failures += int(scoped_result != 0)
+            continue
         cwd = runtime.workdir(root, config)
-        scoped_args = runtime.changed_args(name, root, cwd, config, changed_files)
+        if name == "vitest":
+            try:
+                frontend = frontend_test_config(root, cwd, config)
+            except (OSError, ValueError) as exc:
+                runtime.output_error(f"Frontend test declaration invalid: {exc}")
+                failures += 1
+                continue
+            if frontend is None:
+                print("TEST:SKIP:frontend-test:no_declared_tests")
+                continue
+            name, config = frontend
+        # Arbitrary scripts may depend on fixtures/config of any suffix; run their full suite.
+        scoped_args = [] if name == "frontend-test" else runtime.changed_args(name, root, cwd, config, changed_files)
         skip_reason = runtime.skip_reason(
             name,
             config,
-            changed_only=changed_only,
+            changed_only=changed_only and not (name == "frontend-test" and changed_files),
             changed_files=changed_files,
             scoped_args=scoped_args,
         )
@@ -129,6 +203,9 @@ def run_named_tool(
         return 2
     root = runtime.resolve_repo_root()
     config = configs[first]
+    scoped_result = run_scoped_quality_tool(first, config, args[1:], changed_only=changed_only, runtime=runtime)
+    if scoped_result is not None:
+        return scoped_result
     cwd = runtime.workdir(root, config)
     extra_args, skipped = selected_tool_args(
         first, root, cwd, config, changed_only, fix, args, runtime=runtime

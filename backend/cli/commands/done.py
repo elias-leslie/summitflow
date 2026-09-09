@@ -94,6 +94,7 @@ def _handle_task_completion(
     client: STClient,
     id: str,
     message: str | None,
+    *, paths: tuple[str, ...] = (),
 ) -> None:
     """Handle task completion (idempotent; docs/admin auto-routed)."""
     task = client.get_task(id)
@@ -105,7 +106,8 @@ def _handle_task_completion(
     project_id = str(task.get("project_id") or "") or None
     preflight(id, project_id, op="done")
     task_client = STClient(project_id=project_id) if project_id else client
-    result = complete_task(task_client, id, message)
+    result = (complete_task(task_client, id, message, paths=paths) if paths
+              else complete_task(task_client, id, message))
     base_branch = result.get("base_branch", "main")
     if result.get("snapshot_removed"):
         output_success(f"Task {id} completed. Checkpoint removed.")
@@ -146,6 +148,10 @@ def done_command(
             ),
         ),
     ] = None,
+    paths: Annotated[
+        list[str] | None,
+        typer.Option("--path", "--paths", help="Only commit selected task paths; repeat for multiple paths. Preserves unrelated work."),
+    ] = None,
     acknowledge_none: Annotated[
         bool,
         typer.Option("--none", help="Acknowledge no memories were needed (subtask form)."),
@@ -161,6 +167,9 @@ def done_command(
     Already-completed task/subtask is a no-op (exit 0).
     """
     if is_subtask_id(id):
+        if paths:
+            output_error("--path / --paths only apply to task completion.")
+            raise typer.Exit(1)
         client = STClient()
         _handle_subtask_completion(
             client, id, task_id, message,
@@ -174,4 +183,4 @@ def done_command(
             )
             raise typer.Exit(1)
         client = STClient(require_project=False)
-        _handle_task_completion(client, id, message)
+        _handle_task_completion(client, id, message, **({"paths": tuple(paths)} if paths else {}))

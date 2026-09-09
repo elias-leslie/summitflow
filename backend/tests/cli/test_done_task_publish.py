@@ -34,7 +34,7 @@ def test_publish_completed_work_uses_st_commit_and_cleans_jj_bookmark(
         return subprocess.CompletedProcess(
             command,
             0,
-            stdout='{"status":"SUCCESS"}',
+            stdout='{"status":"SUCCESS","publication_complete":true}',
             stderr="",
         )
 
@@ -117,3 +117,27 @@ def test_publish_completed_work_raises_when_result_is_unreadable(
 
     with pytest.raises(RuntimeError, match="not-json"):
         done_task._publish_completed_work("task-1", "summitflow")
+
+
+def test_successful_push_with_pending_ci_is_not_complete():
+    from types import SimpleNamespace
+
+    from cli.commands.done_task_publish import warn_on_publish_failure
+    result = SimpleNamespace(returncode=0, stdout='{"status":"SUCCESS","pushed":true,"publication_complete":false,"ci":{"state":"pending"}}', stderr='')
+    assert warn_on_publish_failure(result, lambda _: None) is not None
+
+
+def test_verified_remote_revision_without_new_push_is_complete():
+    from types import SimpleNamespace
+
+    from cli.commands.done_task_publish import warn_on_publish_failure
+    result = SimpleNamespace(returncode=0, stdout='{"status":"SUCCESS","pushed":false,"publication_complete":true,"ci":{"state":"success"}}', stderr='')
+    assert warn_on_publish_failure(result, lambda _: None) is None
+
+
+def test_legacy_push_without_remote_evidence_is_not_complete():
+    from types import SimpleNamespace
+
+    from cli.commands.done_task_publish import warn_on_publish_failure
+    result = SimpleNamespace(returncode=0, stdout='{"status":"SUCCESS","pushed":true}', stderr='')
+    assert warn_on_publish_failure(result, lambda _: None) is not None

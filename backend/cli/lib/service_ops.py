@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
-import shutil
 import socket
 import subprocess
+import tempfile
 import time
 import tomllib
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -18,6 +20,7 @@ import httpx
 from app.project_identity import (
     get_project_identity,
     get_project_identity_root,
+    identity_lifecycle,
     list_project_identities,
 )
 from app.utils.shared_paths import get_repo_root
@@ -42,6 +45,7 @@ class ProjectServices:
     backend_dir: Path
     frontend_dir: Path
     health_endpoint: str
+    backend_extras: tuple[str, ...] = ()
 
     @property
     def all_services(self) -> tuple[str, ...]:
@@ -80,6 +84,9 @@ def load_project(project_id: str) -> ProjectServices:
     project = _dict_value(identity.get("project"))
     runtime = _dict_value(identity.get("runtime"))
     services = _dict_value(identity.get("services"))
+    extras = runtime.get("backend_extras", [])
+    if not isinstance(extras, list) or any(not isinstance(extra, str) or not extra.strip() for extra in extras):
+        raise ServiceError("runtime.backend_extras must be a list of nonempty extra names")
     canonical_id = str(project.get("id") or project_id)
     root = Path(root_raw)
     backend_subdir = str(runtime.get("backend_dir") or "backend")
@@ -96,15 +103,20 @@ def load_project(project_id: str) -> ProjectServices:
         backend_dir=root if backend_subdir == "." else root / backend_subdir,
         frontend_dir=root if frontend_subdir == "." else root / frontend_subdir,
         health_endpoint=str(runtime.get("health_endpoint") or "/health"),
+        backend_extras=tuple(dict.fromkeys(_as_str_list(extras))),
     )
 
 
-def project_ids() -> list[str]:
+def project_ids(*, include_inactive: bool = False) -> list[str]:
     ids: list[str] = []
+    from app.storage.projects import testing_project_ids
+
+    testing = set() if include_inactive else testing_project_ids()
     for identity in list_project_identities():
         project = _dict_value(identity.get("project"))
         project_id = project.get("id")
-        if isinstance(project_id, str) and project_id:
+        if (isinstance(project_id, str) and project_id
+                and (include_inactive or (identity_lifecycle(identity) == "active" and project_id not in testing))):
             ids.append(project_id)
     return sorted(set(ids))
 
@@ -169,7 +181,7 @@ def service_exists(service: str) -> bool:
     return systemctl("cat", service).returncode == 0
 
 
-def sync_systemd_units(project: ProjectServices) -> None:
+def sync_systemd_units(project: ProjectServices) -> int:
     systemd_dir = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "systemd" / "user"
     systemd_dir.mkdir(parents=True, exist_ok=True)
     synced = False
@@ -185,7 +197,8 @@ def sync_systemd_units(project: ProjectServices) -> None:
         print(f"[service] synced {service}")
         synced = True
     if synced:
-        run(["systemctl", "--user", "daemon-reload"])
+        return run(["systemctl", "--user", "daemon-reload"])
+    return 0
 
 
 def _port_open(port: int) -> bool:
@@ -300,7 +313,8 @@ def restart_service(service: str, *, port: int = 0) -> int:
 
 def start_services(project: ProjectServices) -> int:
     errors = 0
-    sync_systemd_units(project)
+    if sync_systemd_units(project) != 0:
+        return 1
     for service in project.all_services:
         if service_exists(service):
             errors += run(["systemctl", "--user", "start", service]) != 0
@@ -394,13 +408,22 @@ def ensure_infra() -> int:
 def sync_backend(project: ProjectServices) -> int:
     """Install the locked Python environment before migrations or restarts."""
     if not (project.backend_dir / "pyproject.toml").exists() or not (project.backend_dir / "uv.lock").exists():
+        if project.backend_extras:
+            print("[service] configured backend extras require pyproject.toml and uv.lock")
+            return 1
         return 0
     print("[service] syncing locked backend dependencies")
     manifest = tomllib.loads((project.backend_dir / "pyproject.toml").read_text())
     command = ["uv", "sync", "--locked"]
     # Managed checkouts use this same environment for canonical quality gates.
-    if "dev" in manifest.get("project", {}).get("optional-dependencies", {}):
-        command.extend(["--extra", "dev"])
+    declared_extras = manifest.get("project", {}).get("optional-dependencies", {})
+    unknown = set(project.backend_extras) - set(declared_extras)
+    if unknown:
+        print("[service] configured backend extras are not declared: " + ", ".join(sorted(unknown)))
+        return 1
+    extras = dict.fromkeys((*(("dev",) if "dev" in declared_extras else ()), *project.backend_extras))
+    for extra in extras:
+        command.extend(["--extra", extra])
     return run(command, cwd=project.backend_dir, quiet_success=True)
 
 
@@ -408,13 +431,28 @@ def build_frontend(project: ProjectServices) -> int:
     if not (project.frontend_dir / "package.json").exists():
         return 0
     print("[service] building frontend")
-    for path in (project.frontend_dir / ".next", project.frontend_dir / "dist"):
-        if path.exists():
-            shutil.rmtree(path)
-    if not (project.frontend_dir / "node_modules").exists():
-        install = run(["pnpm", "install"], cwd=project.frontend_dir, quiet_success=True)
-        if install != 0:
-            return install
+    # pnpm resolves workspace dependencies at the workspace root. Always verify
+    # the frozen lock, even when an existing node_modules directory is present.
+    install_dir = project.frontend_dir
+    workspace = False
+    for directory in (project.frontend_dir, *project.frontend_dir.parents):
+        if not directory.is_relative_to(project.root):
+            break
+        if (directory / "pnpm-workspace.yaml").exists():
+            install_dir = directory
+            workspace = True
+            break
+    install = run(["pnpm", "install", "--frozen-lockfile"], cwd=install_dir, quiet_success=True)
+    if install != 0:
+        return install
+    if workspace:
+        # Production exports point at dist. pnpm owns dependency selection and
+        # build order; build only this frontend's transitive workspace inputs.
+        relative = project.frontend_dir.relative_to(install_dir).as_posix()
+        dependencies = run(["pnpm", "--filter", f"{{./{relative}}}^...", "--if-present", "run", "build"],
+                           cwd=install_dir, quiet_success=True)
+        if dependencies != 0:
+            return dependencies
     return run(["pnpm", "build"], cwd=project.frontend_dir, quiet_success=True)
 
 
@@ -426,7 +464,8 @@ def run_migrations(project: ProjectServices) -> int:
         venv = project.root / ".venv"
     alembic = venv / "bin" / "alembic"
     if not alembic.exists():
-        return 0
+        print("[service] configured migrations require an installed Alembic executable")
+        return 1
     env = os.environ.copy()
     for key in (
         "DATABASE_URL",
@@ -442,11 +481,15 @@ def run_migrations(project: ProjectServices) -> int:
     return run([str(alembic), "upgrade", "head"], cwd=project.backend_dir, env=env, quiet_success=True)
 
 
-def sync_seeds(project: ProjectServices) -> None:
+def sync_seeds(project: ProjectServices) -> int:
     export_script = project.backend_dir / "scripts" / "export_seeds.py"
     python = project.backend_dir / ".venv" / "bin" / "python"
-    if export_script.exists() and python.exists():
-        run([str(python), "-m", "scripts.export_seeds"], cwd=project.backend_dir, quiet_success=True)
+    if not export_script.exists():
+        return 0
+    if not python.exists():
+        print("[service] seed export requires the backend Python environment")
+        return 1
+    return run([str(python), "-m", "scripts.export_seeds"], cwd=project.backend_dir, quiet_success=True)
 
 
 def verify_health(project: ProjectServices) -> int:
@@ -480,36 +523,110 @@ def verify_health(project: ProjectServices) -> int:
     return int(errors)
 
 
-def queue_detached(project: str, include_all_workers: bool) -> int:
+def _job_path(job_id: str) -> Path:
+    if not re.fullmatch(r"[0-9a-f]{32}", job_id):
+        raise ServiceError("Invalid detached job id")
+    return get_repo_root() / ".dev-tools" / "service-jobs" / f"{job_id}.json"
+
+
+def _write_job(record: dict[str, Any]) -> None:
+    path = _job_path(record["job_id"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as temporary:
+        json.dump(record, temporary)
+        temporary.flush()
+        os.fsync(temporary.fileno())
+    os.replace(temporary.name, path)
+
+
+def _read_job(job_id: str) -> dict[str, Any]:
+    path = _job_path(job_id)
+    try:
+        record = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise ServiceError(f"Detached job result unavailable: {job_id}") from exc
+    if not isinstance(record, dict) or record.get("job_id") != job_id:
+        raise ServiceError(f"Invalid detached job record: {job_id}")
+    return record
+
+
+def detached_result(job_id: str) -> dict[str, Any]:
+    """Read persisted exit status; disappearance alone never proves success."""
+    record = _read_job(job_id)
+    if record.get("state") in {"succeeded", "failed", "interrupted"}:
+        return record
+    response = systemctl("show", record["unit"], "--property=LoadState,ActiveState,InvocationID,Description")
+    properties = dict(line.split("=", 1) for line in response.stdout.splitlines() if "=" in line)
+    if response.returncode != 0 and properties.get("LoadState") != "not-found":
+        return {**record, "state": "unknown"}
+    same_invocation = not record.get("invocation_id") or record["invocation_id"] == properties.get("InvocationID")
+    same_job = job_id in properties.get("Description", "")
+    if properties.get("ActiveState") in {"active", "activating", "reloading", "deactivating"} and same_invocation and same_job:
+        return record
+    # The runner may have atomically committed its result during the systemd query.
+    latest = _read_job(job_id)
+    if latest.get("state") in {"succeeded", "failed", "interrupted"}:
+        return latest
+    return {**latest, "state": "interrupted"}
+
+
+def run_detached_job(job_id: str) -> int:
+    record = _read_job(job_id)
+    if record.get("state") != "queued":
+        raise ServiceError("Detached job has already started or completed")
+    record.update(state="running", started_at=time.time(), invocation_id=os.environ.get("INVOCATION_ID", ""))
+    _write_job(record)
+    log_path = _job_path(job_id).with_suffix(".log")
+    try:
+        with log_path.open("w") as log:
+            result = subprocess.run(record["command"], stdout=log, stderr=subprocess.STDOUT, check=False)
+        code = result.returncode if result.returncode >= 0 else 128 - result.returncode
+    except OSError as exc:
+        log_path.write_text(f"Detached command could not start: {exc}\n")
+        code = 1
+    record.update(state="succeeded" if code == 0 else "failed", exit_code=code, completed_at=time.time(), log_path=str(log_path))
+    _write_job(record)
+    return code
+
+
+def queue_detached(
+    project: str, include_all_workers: bool, *, scope: str = "full", workers: tuple[str, ...] = (),
+) -> int:
     unit = f"sf-rebuild-{project}"
-    if systemctl("is-active", f"{unit}.service").stdout.strip() == "active":
+    if systemctl("is-active", f"{unit}.service").stdout.strip() in {"active", "activating", "deactivating", "reloading"}:
         print(f"[service] detached rebuild already active: {unit}.service")
         return 1
     command = ["st", "service", "rebuild"]
     if include_all_workers:
         command.append("--include-all-workers")
+    if scope != "full":
+        command.extend(["--scope", scope])
+    for worker in workers:
+        command.extend(["--worker", worker])
     command.append(project)
+    job_id = uuid.uuid4().hex
+    record = {
+        "job_id": job_id, "project": project, "unit": f"{unit}.service",
+        "state": "queued", "exit_code": None, "queued_at": time.time(), "command": command,
+    }
+    _write_job(record)
     result = capture(
         [
-            "systemd-run",
-            "--user",
-            "--collect",
-            "--unit",
-            unit,
-            "--description",
-            f"Detached rebuild for {project}",
-            "--setenv",
-            f"PATH={os.environ.get('PATH', '')}",
-            "--setenv",
-            f"HOME={Path.home()}",
-            *command,
+            "systemd-run", "--user", "--collect", "--unit", unit,
+            "--description", f"Detached rebuild for {project} ({job_id})",
+            "--setenv", f"PATH={os.environ.get('PATH', '')}",
+            "--setenv", f"HOME={Path.home()}",
+            "--setenv", f"SUMMITFLOW_ROOT={get_repo_root()}",
+            "st", "service", "_run-job", job_id,
         ]
     )
+    if result.returncode != 0:
+        record.update(state="failed", exit_code=result.returncode, completed_at=time.time())
+        _write_job(record)
+    print(f"[service] detached rebuild job={job_id} submission_rc={result.returncode}")
+    print(f"[service] result: st service result {job_id}; wait: st service wait {job_id}")
     output = result.stdout or result.stderr
     if output:
-        details = write_details(get_repo_root(), f"service-detached-{project}", output)
-        print(
-            f"[service] detached rebuild queued rc={result.returncode}|"
-            f"details:{display_path(get_repo_root(), details)}|hint:{summary_hint(output)}"
-        )
+        details = write_details(get_repo_root(), f"service-detached-{job_id}", output)
+        print(f"[service] details:{display_path(get_repo_root(), details)}|hint:{summary_hint(output)}")
     return result.returncode

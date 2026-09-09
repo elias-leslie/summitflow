@@ -115,10 +115,10 @@ def test_service_rebuild_uses_native_steps() -> None:
         patch("cli.commands.service.service_ops.service_state", return_value="active"),
         patch("cli.commands.service.service_ops.build_frontend", return_value=0),
         patch("cli.commands.service.service_ops.run_migrations", return_value=0),
-        patch("cli.commands.service.service_ops.sync_systemd_units"),
+        patch("cli.commands.service.service_ops.sync_systemd_units", return_value=0),
         patch("cli.commands.service.service_ops.restart_service", return_value=0) as restart,
         patch("cli.commands.service.service_ops.verify_health", return_value=0),
-        patch("cli.commands.service.service_ops.sync_seeds"),
+        patch("cli.commands.service.service_ops.sync_seeds", return_value=0),
     ):
         result = runner.invoke(service.app, ["rebuild", "summitflow"])
 
@@ -165,12 +165,12 @@ def test_build_frontend_suppresses_successful_build_output() -> None:
 
     with (
         patch.object(Path, "exists", return_value=True),
-        patch("cli.lib.service_ops.shutil.rmtree"),
         patch("cli.lib.service_ops.run", return_value=0) as run,
     ):
         assert service_ops.build_frontend(project) == 0
 
-    run.assert_called_once_with(["pnpm", "build"], cwd=project.frontend_dir, quiet_success=True)
+    assert run.call_args_list[0].args[0] == ["pnpm", "install", "--frozen-lockfile"]
+    run.assert_called_with(["pnpm", "build"], cwd=project.frontend_dir, quiet_success=True)
 
 
 def test_kill_port_parses_ss_listener_pids(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -517,7 +517,7 @@ def test_check_bare_changed_only_defaults_to_quick() -> None:
     run_tool.assert_not_called()
 
 
-def test_check_changed_only_skips_pytest_for_app_only_python_changes() -> None:
+def test_check_changed_only_runs_pytest_for_app_only_python_changes() -> None:
     configs = {
         "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
     }
@@ -529,8 +529,8 @@ def test_check_changed_only_skips_pytest_for_app_only_python_changes() -> None:
         result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
 
     assert result.exit_code == 0
-    assert "TEST:SKIP:pytest:no_relevant_changed_paths" in result.output
-    run_tool.assert_not_called()
+    assert "TEST:SKIP" not in result.output
+    run_tool.assert_called_once_with("pytest", configs["pytest"], [])
 
 
 def test_check_changed_only_targets_changed_pytest_files() -> None:
@@ -1155,7 +1155,10 @@ _LOCAL_AI_MINIMIZED_ARGS = (
     "--disable-backgrounding-occluded-windows,--disable-background-timer-throttling,"
     "--disable-features=CalculateNativeWinOcclusion"
 )
-_LOCAL_AI_HEADLESS_ARGS = "--enable-gpu,--use-angle=gl,--disable-software-rasterizer"
+_LOCAL_AI_HEADLESS_ARGS = (
+    "--enable-gpu,--use-angle=vulkan,--enable-features=Vulkan,"
+    "--disable-vulkan-surface,--disable-software-rasterizer"
+)
 
 
 def test_browser_auto_open_prefers_local_ai_profile(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1191,7 +1194,11 @@ def test_local_ai_agent_args_hardware_headless_is_default(monkeypatch: pytest.Mo
         args = browser._local_ai_agent_args(["open", "http://app.lan/"])
     assert "--headed" not in args
     assert args[args.index("--args") + 1] == _LOCAL_AI_HEADLESS_ARGS
-    assert "--disable-software-rasterizer" in _LOCAL_AI_HEADLESS_ARGS
+    flags = args[args.index("--args") + 1].split(",")
+    assert "--use-angle=vulkan" in flags
+    assert "--disable-vulkan-surface" in flags
+    assert "--disable-software-rasterizer" in flags
+    assert "--no-sandbox" not in flags
 
 
 def test_local_ai_agent_args_minimized_is_explicit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2050,7 +2057,7 @@ def test_rebuild_fails_when_restarted_worker_is_not_active():
         patch.object(service_ops, "sync_backend", return_value=0),
         patch.object(service_ops, "build_frontend", return_value=0),
         patch.object(service_ops, "run_migrations", return_value=0),
-        patch.object(service_ops, "sync_systemd_units"),
+        patch.object(service_ops, "sync_systemd_units", return_value=0),
         patch.object(service_ops, "restart_service", return_value=0),
         patch.object(service_ops, "verify_health", return_value=0),
         patch.object(service_ops, "service_state", return_value="failed"),

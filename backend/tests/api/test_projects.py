@@ -875,7 +875,7 @@ def test_list_projects_orders_by_category_rank_then_name(client, monkeypatch) ->
     )
 
     try:
-        response = client.get("/api/projects")
+        response = client.get("/api/projects?include_inactive=true")
 
         assert response.status_code == 200
         filtered = [

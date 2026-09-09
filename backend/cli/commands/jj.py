@@ -24,7 +24,7 @@ from ..lib.jj import (
     run_jj,
     status_summary,
 )
-from ..output import output_error, output_json
+from ..output import output_error, output_json, output_warning
 from ._git_helpers import _get_managed_repos
 from .cleanup_handlers import cleanup_safe_git_residue
 
@@ -90,7 +90,7 @@ def _log_and_run(repo: Path, args: list[str], task_id: str, msg: str) -> None:
 
 
 def _prune_residue(path: Path, result: dict) -> None:
-    if not result.get("pushed"):
+    if not result.get("pushed") or not result.get("publication_complete"):
         return
     try:
         counts = cleanup_safe_git_residue([path], dry_run=False)
@@ -335,6 +335,10 @@ def push(
         _push_compact(result, delete_bookmark)
     else:
         output_json(result)
+    if result.get("status") in {"PENDING", "BLOCKED"}:
+        if result.get("ci"):
+            output_warning(f"Remote verification: {result['ci']}")
+        raise typer.Exit(2)
 
 
 @app.command()

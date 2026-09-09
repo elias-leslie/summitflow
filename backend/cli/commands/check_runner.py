@@ -11,10 +11,19 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import typer
+
+from ..config import get_project_override, get_project_root_path
 from ..tool_registry import load_tool_registry
 
 
 def _resolve_repo_root() -> Path:
+    project = get_project_override()
+    if project:
+        registered_root = get_project_root_path(project)
+        if not registered_root or not Path(registered_root).is_dir():
+            raise typer.BadParameter(f"Project {project!r} has no available registered root", param_hint="--project")
+        return Path(registered_root).resolve()
     result = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
         text=True,
@@ -42,6 +51,12 @@ def _tool_configs() -> dict[str, dict[str, object]]:
 
 
 def _workdir(root: Path, config: dict[str, object]) -> Path:
+    directory = config.get("working_directory")
+    if isinstance(directory, str):
+        resolved = (root / directory).resolve()
+        if not resolved.is_relative_to(root.resolve()) or not resolved.is_dir():
+            raise ValueError("Check working_directory must be an existing directory inside the project")
+        return resolved
     kind = str(config.get("working_dir") or "")
     backend = root / "backend"
     frontend = root / "frontend"

@@ -42,21 +42,21 @@ def check_diff_gate(
         merge_base = _get_merge_base(project_path, head_ref, base_ref)
         if not merge_base:
             return DiffGateResult(
-                passed=True,
+                passed=False,
                 files_changed=0,
                 insertions=0,
                 deletions=0,
-                summary="Could not determine merge-base — skipping diff gate",
+                summary="Could not determine merge-base — completion blocked",
             )
 
         stats = _get_diff_stats(project_path, merge_base, head_ref)
         if stats is None:
             return DiffGateResult(
-                passed=True,
+                passed=False,
                 files_changed=0,
                 insertions=0,
                 deletions=0,
-                summary="Could not get diff stats — skipping diff gate",
+                summary="Could not get diff stats — completion blocked",
             )
 
         files_changed, insertions, deletions = stats
@@ -79,13 +79,13 @@ def check_diff_gate(
         )
 
     except Exception as e:
-        logger.warning("Diff gate check failed, defaulting to pass", error=str(e))
+        logger.warning("Diff gate check failed; completion blocked", error=str(e))
         return DiffGateResult(
-            passed=True,
+            passed=False,
             files_changed=0,
             insertions=0,
             deletions=0,
-            summary=f"Diff gate error: {e} — defaulting to pass",
+            summary=f"Diff gate error: {e} — completion blocked",
         )
 
 

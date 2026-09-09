@@ -24,10 +24,15 @@ def warn_on_publish_failure(result: Any, output_warning: Any) -> str | None:
     repos = payload.get("repos")
     repo_result = repos[0] if isinstance(repos, list) and repos and isinstance(repos[0], dict) else {}
     status = str(repo_result.get("status", payload.get("status", "UNKNOWN")))
-    reason = str(repo_result.get("reason", "") or "")
-    detail_text = str(repo_result.get("detail", "") or "")
-    if result.returncode == 0 and status in {"SUCCESS", "SKIP"}:
+    evidence = repo_result or payload
+    reason = str(evidence.get("reason", "") or "")
+    detail_text = str(evidence.get("detail", "") or "")
+    if (result.returncode == 0 and status in {"SUCCESS", "SKIP"}
+            and evidence.get("publication_complete") is True):
         return None
+    if not reason and not detail_text:
+        ci = evidence.get("ci") or {}
+        detail_text = str(ci.get("detail") or f"remote publication evidence: {ci.get('state', 'missing')}")
     detail = detail_text or reason or stderr or stdout[:200] or "unknown publish failure"
     output_warning(f"Publish did not complete cleanly: {status} ({detail})")
     return detail
@@ -70,6 +75,7 @@ def publish_completed_work(
     project_id: str | None,
     *,
     deps: dict[str, Any],
+    paths: tuple[str, ...] = (),
 ) -> None:
     """Publish direct-main work so completed tasks do not leave repos ahead/dirty."""
     if not project_id:
@@ -94,6 +100,8 @@ def publish_completed_work(
         "--message",
         f"complete {task_id}",
     ]
+    for path in paths:
+        command.extend(["--paths", path])
     try:
         result = deps["subprocess"].run(
             command, cwd=project_root, capture_output=True, text=True, check=False, timeout=600

@@ -1,93 +1,52 @@
-"""Tests for lease-scoped changed-file detection in st check.
+"""Changed-file selection must not hide Python regressions."""
 
-Regression coverage for shared-checkout parallel refactors: a `--changed-only`
-run scoped by ST_CHECK_LEASE_SCOPE must consider only the current agent's leased
-files, never another in-flight agent's uncommitted churn.
-"""
-
-from __future__ import annotations
-
-import types
+from pathlib import Path
 
 import pytest
 
-from cli.commands import check_changed
-from cli.lib import leases
+from cli.commands.check_changed import _changed_args, _skip_reason
 
 
-@pytest.fixture
-def isolated_store(monkeypatch, tmp_path):
-    monkeypatch.setattr(leases, "LEASES_DIR", tmp_path / "leases")
-    monkeypatch.setenv("CLAUDE_SESSION_ID", "")
-    return tmp_path
+@pytest.mark.parametrize(
+    "changed",
+    [
+        ["backend/app/service.py"],
+        ["backend/app/service.py", "backend/tests/test_service.py"],
+        ["backend/pytest.ini", "backend/tests/test_service.py"],
+        ["backend/tests/conftest.py", "backend/tests/test_service.py"],
+        ["backend/tests/test_deleted.py", "backend/tests/test_service.py"],
+        ["backend/app/deleted.py", "backend/tests/test_service.py"],
+    ],
+)
+def test_python_changes_retain_full_pytest_scope(tmp_path: Path, changed: list[str]) -> None:
+    for path in ("backend/app/service.py", "backend/tests/test_service.py", "backend/tests/conftest.py"):
+        target = tmp_path / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.touch()
+    config: dict[str, object] = {"pass_path": False}
+    args = _changed_args("pytest", tmp_path, tmp_path / "backend", config, changed)
+    assert args == []
+    assert _skip_reason(
+        "pytest", config, changed_only=True, changed_files=changed, scoped_args=args
+    ) is None
 
 
-def _repo(tmp_path):
-    root = (tmp_path / "repo").resolve()
-    root.mkdir()
-    (root / "mine.py").write_text("x = 1\n")
-    (root / "theirs.py").write_text("y = 2\n")
-    return root
+def test_existing_tests_only_can_target_files(tmp_path: Path) -> None:
+    target = tmp_path / "backend/tests/test_service.py"
+    target.parent.mkdir(parents=True)
+    target.touch()
+    assert _changed_args(
+        "pytest", tmp_path, tmp_path / "backend", {"pass_path": False},
+        ["README.md", "backend/tests/test_service.py"],
+    ) == ["tests/test_service.py"]
 
 
-def _point_config_at(monkeypatch, pid, root):
-    monkeypatch.setattr(
-        check_changed,
-        "get_config_optional",
-        lambda: types.SimpleNamespace(project_id=pid, project_root=str(root)),
-        raising=False,
-    )
-
-
-def test_scope_keeps_only_leased_files(isolated_store, monkeypatch):
-    root = _repo(isolated_store)
-    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
-    leases.acquire("ex", [str(root / "mine.py")], project_root=str(root))
-    _point_config_at(monkeypatch, "ex", root)
-
-    scoped = check_changed._scope_to_leases(root, ["mine.py", "theirs.py"])
-    assert scoped == ["mine.py"]
-
-
-def test_scope_no_leases_returns_all(isolated_store, monkeypatch):
-    """No declared scope → unchanged behaviour (full changed set)."""
-    root = _repo(isolated_store)
-    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
-    _point_config_at(monkeypatch, "ex", root)
-
-    scoped = check_changed._scope_to_leases(root, ["mine.py", "theirs.py"])
-    assert scoped == ["mine.py", "theirs.py"]
-
-
-def test_scope_ignores_other_agents_leases(isolated_store, monkeypatch):
-    """A lease held by another agent does not scope my run (I hold none)."""
-    root = _repo(isolated_store)
-    monkeypatch.setenv("CLAUDE_SESSION_ID", "bob")
-    leases.acquire("ex", [str(root / "theirs.py")], project_root=str(root))
-    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
-    _point_config_at(monkeypatch, "ex", root)
-
-    scoped = check_changed._scope_to_leases(root, ["mine.py", "theirs.py"])
-    assert scoped == ["mine.py", "theirs.py"]
-
-
-def test_changed_files_applies_scope_only_when_enabled(isolated_store, monkeypatch):
-    """ST_CHECK_LEASE_SCOPE gates the scoping; otherwise the override path is verbatim."""
-    root = _repo(isolated_store)
-    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
-    leases.acquire("ex", [str(root / "mine.py")], project_root=str(root))
-    _point_config_at(monkeypatch, "ex", root)
-    monkeypatch.setenv("ST_CHECK_CHANGED_FILES", "mine.py\ntheirs.py")
-
-    # Override path ignores lease scope (explicit file list wins).
-    monkeypatch.delenv("ST_CHECK_LEASE_SCOPE", raising=False)
-    assert check_changed._changed_files(root) == ["mine.py", "theirs.py"]
-
-
-def test_lease_scope_enabled_truthy_values(monkeypatch):
-    for val in ("1", "true", "YES", "on"):
-        monkeypatch.setenv("ST_CHECK_LEASE_SCOPE", val)
-        assert check_changed._lease_scope_enabled()
-    for val in ("0", "", "off", "no"):
-        monkeypatch.setenv("ST_CHECK_LEASE_SCOPE", val)
-        assert not check_changed._lease_scope_enabled()
+def test_docs_only_skip_unless_explicit_test_args() -> None:
+    assert _skip_reason(
+        "pytest", {"pass_path": False}, changed_only=True,
+        changed_files=["README.md"], scoped_args=[],
+    ) == "no_relevant_changed_paths"
+    assert _skip_reason(
+        "pytest", {"pass_path": False}, changed_only=True,
+        changed_files=["README.md"], scoped_args=[], explicit_args=True,
+    ) is None

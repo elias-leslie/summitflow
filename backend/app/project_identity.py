@@ -6,7 +6,7 @@ import json
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from app.utils.shared_paths import get_repo_root
 
@@ -16,11 +16,11 @@ _MANIFEST_NAME = "project.identity.json"
 
 
 @lru_cache(maxsize=256)
-def _read_manifest(path: str) -> dict[str, Any]:
+def _read_manifest(path: str, revision: tuple[int, int, int] | None = None) -> dict[str, Any]:
     return json.loads(Path(path).read_text())
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=0)  # Discovery must see manifests created or removed during this process.
 def _workspace_manifest_paths() -> tuple[str, ...]:
     paths: list[str] = []
     if not _PROJECTS_ROOT.is_dir():
@@ -34,7 +34,7 @@ def _workspace_manifest_paths() -> tuple[str, ...]:
     return tuple(dict.fromkeys(paths))
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=0)  # Discovery must see manifests created or removed during this process.
 def _local_manifest_paths() -> tuple[str, ...]:
     repo_root = get_repo_root().resolve()
     candidates = [repo_root / _MANIFEST_NAME]
@@ -79,7 +79,7 @@ def _ordered_project_aliases(project: dict[str, Any]) -> tuple[str, ...]:
 
 
 def _manifest_matches_project_id(manifest_path: str, project_id: str) -> bool:
-    payload = _read_manifest(manifest_path)
+    payload = _load_manifest(manifest_path)
     project = payload.get("project")
     return isinstance(project, dict) and project_id in _project_aliases(project)
 
@@ -113,7 +113,7 @@ def get_project_identity(
     manifest_path = get_project_identity_path(project_id, root_path)
     if manifest_path is None:
         return None
-    return _read_manifest(str(manifest_path))
+    return _load_manifest(str(manifest_path))
 
 
 def get_project_aliases(
@@ -214,4 +214,25 @@ def canonicalize_project_name(
 
 def list_project_identities() -> list[dict[str, Any]]:
     """Return all workspace project identity payloads."""
-    return [_read_manifest(path) for path in _workspace_manifest_paths()]
+    return [_load_manifest(path) for path in _workspace_manifest_paths()]
+
+
+ProjectLifecycle = Literal["active", "retired"]
+
+
+def _load_manifest(path: str) -> dict[str, Any]:
+    metadata = Path(path).stat()
+    return _read_manifest(path, (metadata.st_mtime_ns, metadata.st_ctime_ns, metadata.st_size))
+
+
+def identity_lifecycle(identity: dict[str, Any] | None) -> ProjectLifecycle:
+    """Read canonical lifecycle; absent metadata preserves existing active behavior."""
+    project = (identity or {}).get("project", {})
+    value = project.get("lifecycle", "active") if isinstance(project, dict) else "active"
+    if value not in ("active", "retired"):
+        raise ValueError(f"project.lifecycle must be active or retired, got {value!r}")
+    return cast(ProjectLifecycle, value)
+
+
+def get_project_lifecycle(project_id: str, root_path: str | None = None) -> ProjectLifecycle:
+    return identity_lifecycle(get_project_identity(project_id, root_path))

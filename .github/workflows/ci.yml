@@ -12,25 +12,44 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: summitflow_test
+          POSTGRES_USER: summitflow_app
+          POSTGRES_PASSWORD: ci-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U summitflow_app -d summitflow_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://summitflow_app:ci-test@127.0.0.1:5432/summitflow_test
     defaults:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: elias-leslie/agent-hub
+          ref: af7c4df239a9db1ac11f3a982e65c2b28f1a5481
           path: agent-hub-repo
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
       - name: Build Agent Hub client wheel
         working-directory: agent-hub-repo/packages/agent-hub-client
-        run: uv build --wheel --out-dir "${{ github.workspace }}/docker/workspace-packages"
+        run: SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "${{ github.workspace }}/docker/workspace-packages"
       - name: Install backend dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --locked --all-extras --dev
       - name: Lint backend
         run: uv run ruff check .
+      - name: Verify fresh schema and upgrade compatibility
+        run: uv run python scripts/verify_bootstrap_schema.py
       - name: Test backend
         run: uv run pytest
       - name: Build backend package
@@ -39,15 +58,16 @@ jobs:
   frontend:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: elias-leslie/agent-hub
+          ref: af7c4df239a9db1ac11f3a982e65c2b28f1a5481
           path: agent-hub-repo
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0

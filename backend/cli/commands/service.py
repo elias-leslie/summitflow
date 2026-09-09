@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import time
+from enum import StrEnum
 from typing import Annotated
 
 import typer
@@ -19,6 +21,13 @@ app = typer.Typer(
         "health checks, and seed sync stay together."
     )
 )
+
+
+class RebuildScope(StrEnum):
+    full = "full"
+    backend = "backend"
+    frontend = "frontend"
+    worker = "worker"
 
 
 def _load(project: str) -> service_ops.ProjectServices:
@@ -53,7 +62,7 @@ def status(
         for svc in services.all_services:
             state = service_ops.service_state(svc)
             parts.append(f"{svc}:{state}")
-            errors += state != "active"
+            errors += state != "active" and not (svc in services.optional_workers and state == "inactive")
         print(f"{services.project_id:<15} {' '.join(parts)}")
     raise typer.Exit(1 if errors else 0)
 
@@ -71,11 +80,13 @@ def status(
         "st pulse --gate first",
         "explicit project, not cwd-implicit",
         "required application workers belong in project.identity.json services.default_workers and rebuild automatically",
-        "--include-all-workers only for intentionally restarting protected optional workers",
+        "active optional workers restart with backend changes; inactive optional workers stay stopped",
+        "--include-all-workers explicitly starts all optional workers",
+        "use full scope for shared or uncertain changes; worker scope includes backend consumers",
         "never run raw pnpm run build / npm build / uv pip install + manual systemctl restart for a managed project",
     ),
     examples=(
-        "st service rebuild a-term",
+        "st service rebuild summitflow",
         "st service rebuild agent-hub --detach",
         "st -P agent-hub service rebuild",
     ),
@@ -89,43 +100,77 @@ def rebuild(
         bool,
         typer.Option("--include-all-workers", help="Restart protected optional workers too"),
     ] = False,
+    scope: Annotated[
+        RebuildScope,
+        typer.Option("--scope", help="Explicit isolated component; use full for shared or uncertain changes. Worker includes backend consumers."),
+    ] = RebuildScope.full,
+    worker: Annotated[
+        list[str] | None,
+        typer.Option("--worker", help="Also restart this declared worker, including inactive optional workers. Repeatable."),
+    ] = None,
 ) -> None:
     """Build, migrate, restart, and health-check a project."""
-    if detach:
-        raise typer.Exit(service_ops.queue_detached(project, include_all_workers))
     services = _load(project)
+    requested_workers = tuple(worker or ())
+    unknown = set(requested_workers) - set(services.workers(include_all=True))
+    if unknown or (scope == RebuildScope.frontend and (requested_workers or include_all_workers)):
+        output_error("Unknown worker or frontend-only scope combined with worker selection.")
+        raise typer.Exit(1)
+    overlapping_components = (
+        services.backend_dir.is_relative_to(services.frontend_dir)
+        or services.frontend_dir.is_relative_to(services.backend_dir)
+    )
+    if scope != RebuildScope.full and overlapping_components:
+        print("[service] shared component directory; using full rebuild")
+        scope = RebuildScope.full
+    if detach:
+        if scope == RebuildScope.full and not requested_workers:
+            raise typer.Exit(service_ops.queue_detached(project, include_all_workers))
+        raise typer.Exit(service_ops.queue_detached(project, include_all_workers, scope=scope.value, workers=requested_workers))
+    backend = scope != RebuildScope.frontend
+    frontend = scope in (RebuildScope.full, RebuildScope.frontend)
+    # Capture intent before any lifecycle mutation. Backend and worker scopes
+    # share one environment, so all running consumers must receive the update.
+    active_optional = tuple(
+        name for name in services.optional_workers if service_ops.service_state(name) == "active"
+    ) if backend else ()
+    workers = tuple(dict.fromkeys((
+        *services.default_workers,
+        *(services.optional_workers if include_all_workers else active_optional),
+        *requested_workers,
+    ))) if backend else ()
     start_time = time.time()
     errors = 0
-    print(f"Rebuilding {services.project_id}")
-    for name, step in (
-        ("infrastructure", service_ops.ensure_infra),
-        ("backend dependencies", lambda: service_ops.sync_backend(services)),
-        ("frontend build", lambda: service_ops.build_frontend(services)),
-        ("migrations", lambda: service_ops.run_migrations(services)),
-    ):
+    print(f"Rebuilding {services.project_id} (scope: {scope.value})")
+    steps = [("infrastructure", service_ops.ensure_infra)]
+    if backend:
+        steps.append(("backend dependencies", lambda: service_ops.sync_backend(services)))
+    if frontend:
+        steps.append(("frontend build", lambda: service_ops.build_frontend(services)))
+    if backend:
+        steps.append(("migrations", lambda: service_ops.run_migrations(services)))
+    steps.append(("systemd units", lambda: service_ops.sync_systemd_units(services)))
+    for name, step in steps:
         if step() != 0:
             print(f"[service] rebuild stopped: {name} failed; services were not restarted")
             raise typer.Exit(1)
-    if services.optional_workers and not include_all_workers:
-        print(
-            "[service] skipping protected workers: "
-            + " ".join(services.optional_workers)
-            + " (use --include-all-workers)"
-        )
-    service_ops.sync_systemd_units(services)
-    if services.backend_service:
+    skipped = [name for name in services.optional_workers if name not in workers]
+    if skipped:
+        print("[service] leaving optional workers unchanged: " + " ".join(skipped))
+    if backend and services.backend_service:
         errors += service_ops.restart_service(services.backend_service, port=services.backend_port) != 0
-    for worker in services.workers(include_all=include_all_workers):
-        errors += service_ops.restart_service(worker) != 0
-    if services.frontend_service:
+    for name in workers:
+        errors += service_ops.restart_service(name) != 0
+    if frontend and services.frontend_service:
         errors += service_ops.restart_service(services.frontend_service, port=services.frontend_port) != 0
     errors += service_ops.verify_health(services)
-    for worker in services.workers(include_all=include_all_workers):
-        state = service_ops.service_state(worker)
-        print(f"[service] worker {worker}: {state}")
+    for name in workers:
+        state = service_ops.service_state(name)
+        print(f"[service] worker {name}: {state}")
         errors += state != "active"
     if errors == 0:
-        service_ops.sync_seeds(services)
+        errors += service_ops.sync_seeds(services) != 0
+    if errors == 0:
         print(f"[service] rebuild complete ({int(time.time() - start_time)}s)")
     else:
         print(f"[service] rebuild completed with {errors} error(s)")
@@ -140,9 +185,58 @@ def restart(
         bool,
         typer.Option("--include-all-workers", help="Restart protected optional workers too"),
     ] = False,
+    scope: Annotated[RebuildScope, typer.Option("--scope", help="Same explicit component scope as rebuild.")] = RebuildScope.full,
+    worker: Annotated[list[str] | None, typer.Option("--worker", help="Declared worker to restart; repeatable.")] = None,
 ) -> None:
     """Restart a managed project through the rebuild path."""
-    rebuild(project, detach=detach, include_all_workers=include_all_workers)
+    rebuild(project, detach=detach, include_all_workers=include_all_workers, scope=scope, worker=worker)
+
+
+def _job_result(job_id: str) -> dict:
+    try:
+        return service_ops.detached_result(job_id)
+    except service_ops.ServiceError as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
+
+
+def _job_exit_code(record: dict) -> int:
+    if record["state"] in {"succeeded", "failed"}:
+        return record["exit_code"]
+    return 1
+
+
+@app.command("result")
+def job_result(job_id: Annotated[str, typer.Argument(help="Job id returned by --detach")]) -> None:
+    """Read a durable detached rebuild result, including interrupted/unknown state."""
+    record = _job_result(job_id)
+    print(json.dumps(record))
+    raise typer.Exit(_job_exit_code(record))
+
+
+@app.command("wait")
+def wait_for_job(
+    job_id: Annotated[str, typer.Argument(help="Job id returned by --detach")],
+    timeout: Annotated[float, typer.Option("--timeout", min=0, help="Maximum seconds to await completion")] = 300,
+) -> None:
+    """Wait for a detached rebuild and return its actual exit code."""
+    deadline = time.monotonic() + timeout
+    while True:
+        record = _job_result(job_id)
+        if record["state"] not in {"queued", "running"} or time.monotonic() >= deadline:
+            print(json.dumps(record))
+            raise typer.Exit(_job_exit_code(record))
+        time.sleep(min(1, max(0, deadline - time.monotonic())))
+
+
+@app.command("_run-job", hidden=True)
+def run_job(job_id: str) -> None:
+    """Internal systemd runner; terminal result survives transient-unit collection."""
+    try:
+        raise typer.Exit(service_ops.run_detached_job(job_id))
+    except service_ops.ServiceError as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
 
 
 @app.command()

@@ -549,3 +549,15 @@ def test_resolve_task_branch_prefers_st_commit_bookmark() -> None:
         ),
     ):
         assert resolve_task_branch("task-1", project_id="summitflow") == "task/task-1"
+
+
+def test_push_event_without_remote_verification_cannot_close_task():
+    from cli.commands.done_task import _task_has_published_commit_event
+    with patch('app.storage.events.get_events_by_trace', return_value=[{'message': 'st commit commit=abcdef pushed=true'}]):
+        assert not _task_has_published_commit_event('task-123')
+
+
+def test_verified_existing_remote_commit_can_support_closeout():
+    from cli.commands.done_task import _task_has_published_commit_event
+    with patch('app.storage.events.get_events_by_trace', return_value=[{'message': 'st commit commit=abcdef pushed=false publication_complete=true'}]):
+        assert _task_has_published_commit_event('task-123')

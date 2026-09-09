@@ -31,6 +31,9 @@ from agent_hub.exceptions import (
     ValidationError,
 )
 
+pytestmark = pytest.mark.isolated
+
+
 # ---------------------------------------------------------------------------
 # Contract Schemas - Define expected API shapes
 # ---------------------------------------------------------------------------
@@ -585,6 +588,7 @@ def live_client_with_cleanup(live_agent_hub_available: None) -> Any:
 
 
 @pytest.mark.integration
+@pytest.mark.e2e
 class TestLiveAgentHubContract:
     """Live integration tests against running Agent Hub.
 

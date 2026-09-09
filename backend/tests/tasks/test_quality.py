@@ -11,6 +11,15 @@ from app.tasks.autonomous.exec_modules.quality import (
 )
 
 
+def test_missing_check_tool_blocks_completion() -> None:
+    with (
+        patch("app.tasks.autonomous.exec_modules.quality.find_check_tool", return_value=None),
+        patch("app.tasks.autonomous.exec_modules.quality.emit_log") as log,
+    ):
+        assert run_final_quality_gate("task-1", "/workspace/project", "summitflow") is False
+    assert "unavailable" in log.call_args.args[2]
+
+
 def test_final_quality_gate_command_scopes_configured_aggregate_check() -> None:
     with patch(
         "app.tasks.autonomous.exec_modules.quality.build_st_check_command",
