@@ -132,7 +132,8 @@ def models_default(
     surface="st.models",
     cmd="st models [list] [--id MODEL] [--provider PROVIDER] [--free] [--coding] --limit N",
     when="inspect canonical Agent Hub model catalog without raw DB queries",
-    task_types=("config", "verification", "prompt-tuning"),
+    task_types=("model-admin", "prompt-tuning", "model-review",),
+    on_demand="model administration",
     tier="reference",
 )
 def list_models(

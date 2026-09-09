@@ -110,7 +110,8 @@ DEFAULT_ASSET_CRITIQUE_MODELS = (
         "Design Ops storage is durable project state; never configure Asset Studio or UI mockup storage under /tmp",
         "do not export or commit visual assets into the repo until approved in Design/Asset Studio",
     ),
-    task_types=("design", "implementation"),
+    task_types=("design", "ui-design", "design-review", "game-art", "asset-generation"),
+    on_demand="visual design",
     tier="guardrail",
 )
 def design_default(ctx: typer.Context) -> None:

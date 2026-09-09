@@ -443,7 +443,8 @@ def grab(
         "the GIF is publishable output — pre-stage panes and keep secrets/real paths off-screen",
         "--width caps output width (default 960; 0 = native), --fps default 12; longer/wider/faster = larger file",
     ),
-    task_types=("frontend", "verification"),
+    task_types=("recording", "ui-demo",),
+    on_demand="UI recording",
     tier="reference",
 )
 def gif(

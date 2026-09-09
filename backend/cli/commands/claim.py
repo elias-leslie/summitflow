@@ -198,7 +198,7 @@ def _claim_subtask(
 @usage(
     surface="st.claim",
     cmd="st claim <task-id>",
-    when="before any work on a task; after st ready picks one",
+    when="before implementing an assigned task; after st ready picks one",
     precautions=(
         "subtask form uses dotted ID like 1.2; pass --task <parent> when claiming subtask",
         "claim records a checkpoint; work commits direct to main, no branch is created",

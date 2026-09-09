@@ -23,6 +23,46 @@ from cli.commands.tools import (
 runner = CliRunner()
 
 
+def test_cost_query_measures_real_payloads_not_json_null(test_db_url: str) -> None:
+    import psycopg
+    from psycopg import sql
+
+    from cli.commands.tools import _cost_queries
+
+    # Shadow the source relation with read-only fixtures; never write a table.
+    fixtures = sql.SQL("""
+        WITH session_events(tool_name, tool_output, content, tokens, duration_ms, created_at) AS (
+          VALUES
+            ('missing', 'null'::json, NULL::text, NULL::int, 1.0, now()),
+            ('missing', NULL::json, NULL::text, NULL::int, 1.0, now()),
+            ('mixed', 'null'::json, 'abcd', NULL::int, 1.0, now()),
+            ('mixed', NULL::json, NULL::text, 7, 1.0, now()),
+            ('empty', NULL::json, '', 0, 1.0, now()),
+            ('literal', '\"null\"'::json, NULL::text, NULL::int, 1.0, now())
+        )
+    """)
+    _, query, _ = _cost_queries(24, 10)
+    with psycopg.connect(test_db_url) as connection:
+        rows = {row[0]: row[1:] for row in connection.execute(fixtures + query, (24, 10)).fetchall()}
+    assert rows["missing"] == (2, None, None, 1.0, 0, 0, 2)
+    assert rows["mixed"] == (2, 7, 4, 1.0, 1, 1, 0)
+    assert rows["empty"] == (1, 0, 0, 1.0, 1, 1, 0)
+    assert rows["literal"] == (1, None, 6, 1.0, 1, 0, 0)
+
+
+def test_cost_output_reports_missing_and_partial_coverage(capsys: pytest.CaptureFixture[str]) -> None:
+    _format_cost_compact({"tool_output_hotspots": [
+        {"tool_name": "missing", "events": 2, "output_chars": None, "output_tokens_approx": None, "output_samples": 0, "stored_tokens": None, "stored_tokens_samples": 0, "unmeasured_events": 2},
+        {"tool_name": "mixed", "events": 2, "output_chars": 4, "output_tokens_approx": 1, "output_samples": 1, "stored_tokens": 7, "stored_tokens_samples": 1, "unmeasured_events": 0},
+        {"tool_name": "empty", "events": 1, "output_chars": 0, "output_tokens_approx": 0, "output_samples": 1, "stored_tokens": 0, "stored_tokens_samples": 1, "unmeasured_events": 0},
+    ]})
+    output = capsys.readouterr().out
+    assert "out=unknown" in output and "chars=unknown" in output
+    assert "measured=0/2" in output and "missing=2" in output
+    assert "measured=1/2" in output and "stored=7[1/2 measured]" in output
+    assert "out~0t chars=0" in output
+
+
 def test_cost_distinguishes_unmeasured_tokens_from_measured_zero() -> None:
     from contextlib import nullcontext
     connection = MagicMock()

@@ -148,9 +148,9 @@ def ready_all(
 @usage(
     surface="st.context",
     cmd="st context <task-id>",
-    when="after st claim, before editing — get full task brief + plan + history",
+    when="read task brief, plan, and history",
     precautions=(
-        "claim first; reading context without claiming risks duplicate work",
+        "claim before implementation; read-only inspection needs no claim",
         "use --subtask X.Y for subtask context inside a task",
     ),
     tier="mandate",

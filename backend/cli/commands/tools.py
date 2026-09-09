@@ -621,13 +621,20 @@ def _cost_queries(hours: int, limit: int) -> tuple[sql.SQL, sql.SQL, sql.SQL]:
             COALESCE(tool_name, 'unknown') AS tool_name,
             count(*)::int AS events,
             sum(tokens)::bigint AS stored_tokens,
-            COALESCE(sum(length(COALESCE(tool_output::text, content, ''))), 0)::int AS output_chars,
-            COALESCE(avg(duration_ms), 0)::float AS avg_duration_ms
-        FROM session_events
-        WHERE created_at >= now() - (%s * interval '1 hour')
-          AND tool_name IS NOT NULL
+            sum(length(output_text))::int AS output_chars,
+            COALESCE(avg(duration_ms), 0)::float AS avg_duration_ms,
+            count(output_text)::int AS output_samples,
+            count(tokens)::int AS stored_tokens_samples,
+            count(*) FILTER (WHERE output_text IS NULL AND tokens IS NULL)::int AS unmeasured_events
+        FROM (
+            SELECT tool_name, tokens, duration_ms,
+                COALESCE(NULLIF(tool_output::text, 'null'), content) AS output_text
+            FROM session_events
+            WHERE created_at >= now() - (%s * interval '1 hour')
+              AND tool_name IS NOT NULL
+        ) AS measured_outputs
         GROUP BY 1
-        ORDER BY output_chars DESC, events DESC, tool_name
+        ORDER BY output_chars DESC NULLS LAST, events DESC, tool_name
         LIMIT %s;
     """)
     session_sql = sql.SQL("""
@@ -692,11 +699,17 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_
             "tool_name": str(tool_name),
             "events": int(events),
             "stored_tokens": int(stored_tokens) if stored_tokens is not None else None,
-            "output_chars": int(output_chars),
-            "output_tokens_approx": max(0, round(int(output_chars) / 4)),
+            "output_chars": int(output_chars) if output_chars is not None else None,
+            "output_tokens_approx": max(0, round(int(output_chars) / 4)) if output_chars is not None else None,
             "avg_duration_ms": float(avg_duration_ms),
+            "output_samples": int(output_samples),
+            "stored_tokens_samples": int(stored_tokens_samples),
+            "unmeasured_events": int(unmeasured_events),
         }
-        for tool_name, events, stored_tokens, output_chars, avg_duration_ms in output_rows
+        for (
+            tool_name, events, stored_tokens, output_chars, avg_duration_ms,
+            output_samples, stored_tokens_samples, unmeasured_events,
+        ) in output_rows
     ]
     return {
         "window_hours": hours,
@@ -711,7 +724,7 @@ def _token_measurement(item: dict[str, Any], field: str) -> str:
     value = item.get(field)
     if value is None:
         return "unknown"
-    samples, requests = item.get(f"{field}_samples"), item.get("requests")
+    samples, requests = item.get(f"{field}_samples"), item.get("requests", item.get("events"))
     if samples is not None and requests is not None and samples < requests:
         return f"{value}[{samples}/{requests} measured]"
     return str(value)
@@ -744,10 +757,15 @@ def _format_cost_compact(data: dict[str, Any]) -> None:
     if output_hotspots:
         print("  Tool output hotspots:")
         for item in output_hotspots[:10]:
+            estimate = item.get("output_tokens_approx")
+            output = "out=unknown" if estimate is None else f"out~{estimate}t"
             print(
                 f"    {item.get('tool_name', '?')} events={item.get('events', 0)}"
-                f" out~{item.get('output_tokens_approx', 0)}t"
-                f" chars={item.get('output_chars', 0)}"
+                f" {output}"
+                f" chars={_token_measurement(item, 'output_chars')}"
+                f" measured={item.get('output_samples', 'unknown')}/{item.get('events', 0)}"
+                f" stored={_token_measurement(item, 'stored_tokens')}"
+                f" missing={item.get('unmeasured_events', 'unknown')}"
             )
 
 
@@ -832,7 +850,8 @@ def catalog(ctx: typer.Context) -> None:
     surface="st.tools.status",
     cmd="st tools status",
     when="inspect Agent Hub API/CLI usage metrics and top command names",
-    task_types=("verification", "devops"),
+    task_types=("tool-governance", "prompt-tuning",),
+    on_demand="tool telemetry",
 )
 def status(
     ctx: typer.Context,
@@ -869,7 +888,8 @@ def status(
     cmd="st tools adoption",
     when="audit whether recent agent shell commands use st wrappers instead of raw quality tools",
     precautions=("read-only Agent Hub session_events summary",),
-    task_types=("verification", "devops"),
+    task_types=("tool-governance", "prompt-tuning",),
+    on_demand="tool telemetry",
 )
 def adoption(
     ctx: typer.Context,
@@ -890,7 +910,8 @@ def adoption(
     cmd="st tools audit",
     when="surface high-confidence missed st usage from persisted Agent Hub session telemetry",
     precautions=("deterministic rules only; use --emit-feedback to file deduped feedback items",),
-    task_types=("verification", "devops", "prompt-tuning"),
+    task_types=("tool-governance", "prompt-tuning",),
+    on_demand="tool telemetry",
 )
 def audit(
     ctx: typer.Context,
@@ -921,7 +942,8 @@ def audit(
     cmd="st tools cost",
     when="inspect context/tool-output/request token cost hotspots for st tool governance",
     precautions=("uses existing Agent Hub request_logs and session_events; estimates text tokens cheaply",),
-    task_types=("verification", "devops", "prompt-tuning"),
+    task_types=("tool-governance", "prompt-tuning",),
+    on_demand="tool telemetry",
 )
 def cost(
     ctx: typer.Context,

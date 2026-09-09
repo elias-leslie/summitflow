@@ -18,7 +18,8 @@ app = typer.Typer(help="Autonomous execution management")
     surface="st.autonomous.status",
     cmd="st autonomous status",
     when="inspect autonomous execution permission and project settings",
-    task_types=("devops", "verification"),
+    task_types=("autonomous", "upkeep", "heartbeat",),
+    on_demand="autonomous operations",
 )
 def status() -> None:
     """Show autonomous execution settings for the project.
@@ -127,7 +128,8 @@ def disable(
     surface="st.autonomous.schedules",
     cmd="st autonomous schedules",
     when="inspect autonomous schedule enablement for the current project",
-    task_types=("devops", "verification"),
+    task_types=("autonomous", "upkeep", "heartbeat",),
+    on_demand="autonomous operations",
 )
 def schedules() -> None:
     """List autonomous schedule states for the project."""
@@ -147,7 +149,8 @@ def schedules() -> None:
     surface="st.autonomous.upkeep",
     cmd="st autonomous upkeep",
     when="run one routine upkeep discovery cycle for the current project",
-    task_types=("devops", "verification"),
+    task_types=("autonomous", "upkeep", "heartbeat",),
+    on_demand="autonomous operations",
 )
 def upkeep() -> None:
     """Run one routine upkeep discovery cycle now."""

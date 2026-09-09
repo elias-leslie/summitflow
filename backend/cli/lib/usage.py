@@ -95,6 +95,7 @@ class UsageSpec:
     task_types: tuple[str, ...] = ()
     agent_slugs: tuple[str, ...] = ()
     consumer_profiles: tuple[str, ...] = ()
+    on_demand: str = ""
     tier: str = "reference"
 
     def to_dict(self) -> dict[str, Any]:
@@ -115,15 +116,19 @@ class UsageSpec:
             out["agent_slugs"] = list(self.agent_slugs)
         if self.consumer_profiles:
             out["consumer_profiles"] = list(self.consumer_profiles)
+        if self.on_demand:
+            out["on_demand"] = self.on_demand
         return out
 
 
-def _detail_spec() -> UsageSpec:
+def _detail_spec(deferred_workflows: Iterable[str] = ()) -> UsageSpec:
+    workflows = sorted(set(deferred_workflows))
     return UsageSpec(
         surface="st.details",
         cmd="st tools manifest --surface <surface>",
-        when="need exact command guidance for a surface omitted from compact context",
-        tier="reference",
+        when="before using an omitted surface or starting an on-demand workflow, load its full canonical guidance and follow its precautions; use unfiltered st tools manifest to discover surfaces",
+        why="On-demand workflows: " + "; ".join(workflows) if workflows else "",
+        tier="mandate",
     )
 
 
@@ -138,6 +143,7 @@ def usage(
     task_types: Iterable[str] = (),
     agent_slugs: Iterable[str] = (),
     consumer_profiles: Iterable[str] = (),
+    on_demand: str = "",
     tier: str = "reference",
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Attach a UsageSpec to a Typer command callback.
@@ -163,6 +169,7 @@ def usage(
         task_types=tuple(task_types),
         agent_slugs=tuple(agent_slugs),
         consumer_profiles=tuple(consumer_profiles),
+        on_demand=on_demand,
         tier=tier,
     )
 
@@ -208,6 +215,12 @@ def collect_usage_specs(app: typer.Typer) -> list[UsageSpec]:
     return list(_walk(app, set()))
 
 
+def _matches_task_type(task_types: Iterable[str], task_type: str) -> bool:
+    """CLI hyphens and consumer snake_case identify the same workflow."""
+    normalized = task_type.replace("-", "_")
+    return any(value.replace("-", "_") == normalized for value in task_types)
+
+
 def filter_specs(
     specs: Iterable[UsageSpec],
     *,
@@ -224,7 +237,7 @@ def filter_specs(
     for spec in specs:
         if surface is not None and spec.surface != surface:
             continue
-        if task_type is not None and spec.task_types and task_type not in spec.task_types:
+        if task_type is not None and spec.task_types and not _matches_task_type(spec.task_types, task_type):
             continue
         if agent_slug is not None and spec.agent_slugs and agent_slug not in spec.agent_slugs:
             continue
@@ -244,9 +257,9 @@ def select_specs_for_density(
 ) -> list[UsageSpec]:
     """Select a context-density slice while keeping @usage as the source of truth.
 
-    `adaptive` injects the always-on floor, plus task-matched surfaces, plus any
-    surface whose usage score (from `scores`) clears `score_threshold`. The
-    result is lean by curation, not by a hardcoded count.
+    Specialized on-demand workflows require a declared task match. History
+    alone cannot activate them. Omitted guidance stays discoverable and must
+    be loaded before use; the implementation floor is always retained.
     """
     if density not in VALID_MANIFEST_DENSITIES:
         expected = "|".join(VALID_MANIFEST_DENSITIES)
@@ -258,18 +271,21 @@ def select_specs_for_density(
 
     out: list[UsageSpec] = []
     seen: set[str] = set()
+    deferred_workflows: set[str] = set()
     for spec in spec_list:
-        include_task = bool(task_type and spec.task_types and task_type in spec.task_types)
+        include_task = bool(task_type and _matches_task_type(spec.task_types, task_type))
         if density == "adaptive":
             include = (
                 spec.surface in _FLOOR_SURFACES
                 or include_task
-                or _surface_score(spec.surface, scores) >= score_threshold
+                or (not spec.on_demand and _surface_score(spec.surface, scores) >= score_threshold)
             )
         else:
-            include_core = spec.surface in _CORE_SURFACES
+            include_core = spec.surface in _CORE_SURFACES and not spec.on_demand
             include = include_core or (density != "core" and include_task)
         if not include:
+            if spec.on_demand:
+                deferred_workflows.add(spec.on_demand)
             continue
         if spec.surface in seen:
             continue
@@ -277,7 +293,7 @@ def select_specs_for_density(
         out.append(spec)
 
     if "st.details" not in seen:
-        out.append(_detail_spec())
+        out.append(_detail_spec(deferred_workflows))
     return out
 
 

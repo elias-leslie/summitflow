@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 import typer
 from typer.testing import CliRunner
 
@@ -18,6 +19,57 @@ from cli.lib.usage import (
 )
 
 runner = CliRunner()
+
+
+@pytest.mark.parametrize("task", [None, "backend", "verification"])
+def test_specialized_guidance_is_not_selected_by_unrelated_task_or_history(tmp_path, task) -> None:
+    scores = tmp_path / "scores.json"
+    scores.write_text(json.dumps({"design asset import": 100, "tools cost": 100, "ui gif": 100}))
+    args = ["manifest", "--density", "adaptive", "--scores-file", str(scores), "--format", "json"]
+    if task:
+        args += ["--task", task]
+    result = runner.invoke(tools_app, args)
+    assert result.exit_code == 0, result.output
+    specs = {row["surface"]: row for row in json.loads(result.output)["tools"]}
+    assert {"st.claim", "st.context", "st.check", "st.db", "st.service.rebuild"} <= specs.keys()
+    assert not {"st.design", "st.models", "st.tools.cost", "st.pulsebrief.schema", "st.ui.gif", "st.vm.status", "st.agents.get", "st.autonomous.upkeep"} & specs.keys()
+    details = specs["st.details"]
+    assert "before using" in details["when"]
+    assert "precautions" in details["when"]
+    assert "starting an on-demand workflow" in details["when"]
+    assert "visual design" in details["why"]
+
+
+@pytest.mark.parametrize(("task", "surface"), [
+    ("design", "st.design"), ("ui-design", "st.design"), ("briefing", "st.pulsebrief.schema"),
+    ("agent-admin", "st.agents.get"), ("model-admin", "st.models"),
+    ("tool-governance", "st.tools.cost"), ("vm-repair", "st.vm.status"),
+    ("recording", "st.ui.gif"), ("heartbeat", "st.autonomous.upkeep"),
+])
+def test_explicit_specialized_work_gets_complete_canonical_guidance(task, surface) -> None:
+    selected = runner.invoke(tools_app, ["manifest", "--task", task, "--density", "adaptive", "--format", "json"])
+    full = runner.invoke(tools_app, ["manifest", "--surface", surface, "--format", "json"])
+    assert selected.exit_code == full.exit_code == 0
+    selected_spec = next(row for row in json.loads(selected.output)["tools"] if row["surface"] == surface)
+    assert selected_spec == json.loads(full.output)["tools"][0]
+
+
+def test_read_only_task_context_does_not_require_a_claim() -> None:
+    result = runner.invoke(tools_app, ["manifest", "--surface", "st.context", "--format", "json"])
+    assert result.exit_code == 0
+    spec = json.loads(result.output)["tools"][0]
+    assert "claim before implementation; read-only inspection needs no claim" in spec["precautions"]
+
+
+@pytest.mark.parametrize("density", ["full", "task", "adaptive"])
+@pytest.mark.parametrize("task", ["ui-design", "agent-admin", "model-admin", "tool-governance", "vm-repair"])
+def test_task_delimiters_from_live_consumers_match_cli_names(density, task) -> None:
+    def surfaces(value):
+        result = runner.invoke(tools_app, ["manifest", "--task", value, "--density", density, "--format", "json"])
+        assert result.exit_code == 0
+        return json.loads(result.output)["tools"]
+
+    assert surfaces(task.replace("-", "_")) == surfaces(task)
 
 
 def test_usage_stamps_spec_on_callback() -> None:

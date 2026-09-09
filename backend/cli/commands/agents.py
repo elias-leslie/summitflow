@@ -126,7 +126,8 @@ def list_agents(
     surface="st.agents.get",
     cmd="st agents get <slug> [--json]",
     when="inspect one agent's canonical routing, fallbacks, escalation, timeout, and memory summary",
-    task_types=("config", "verification", "prompt-tuning"),
+    task_types=("agent-admin", "prompt-tuning",),
+    on_demand="agent administration",
     tier="reference",
 )
 def get_agent(
@@ -146,7 +147,8 @@ def get_agent(
     surface="st.agents.versions",
     cmd="st agents versions <slug> --limit N",
     when="inspect compact agent routing/config version history without raw DB queries",
-    task_types=("config", "verification", "prompt-tuning"),
+    task_types=("agent-admin", "prompt-tuning",),
+    on_demand="agent administration",
     tier="reference",
 )
 def agent_versions(
@@ -168,7 +170,8 @@ def agent_versions(
     surface="st.agents.activity",
     cmd="st agents activity <slug> [--external-id TASK] --limit N",
     when="inspect recent agent sessions and complete requests without raw DB queries",
-    task_types=("verification", "debugging", "config"),
+    task_types=("agent-admin", "prompt-tuning",),
+    on_demand="agent administration",
     tier="reference",
 )
 def agent_activity(
@@ -235,7 +238,8 @@ def create_agent(
     surface="st.agents.preview",
     cmd="st agents preview <slug> --json",
     when="inspect agent prompt/context size; verify injection",
-    task_types=("config", "prompt-tuning", "verification"),
+    task_types=("agent-admin", "prompt-tuning",),
+    on_demand="agent administration",
     tier="reference",
 )
 def preview_agent(

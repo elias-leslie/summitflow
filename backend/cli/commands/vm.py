@@ -85,7 +85,8 @@ def list_vms() -> None:
     cmd="st vm status <id>",
     when="inspect browser/test VM state when changing or repairing it",
     precautions=("for routine browser work use st browser, not st vm",),
-    task_types=("devops", "verification"),
+    task_types=("vm-repair", "vm-admin",),
+    on_demand="VM repair",
     tier="reference",
 )
 def status(vmid: Annotated[str, typer.Argument(help="VM ID")]) -> None:

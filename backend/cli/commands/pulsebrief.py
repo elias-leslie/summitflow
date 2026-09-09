@@ -43,7 +43,8 @@ def _run_pulse_db(args: list[str]) -> dict[str, Any] | list[Any]:
     cmd="st pulsebrief schema",
     when="initialize or verify Pulse PostgreSQL briefing tables through the managed st surface",
     precautions=("uses approved PULSE_DB_URL or AGENT_HUB_DB_URL from shared env files",),
-    task_types=("database", "verification", "briefing"),
+    task_types=("briefing",),
+    on_demand="briefing",
     tier="mandate",
 )
 def schema() -> None:
@@ -59,7 +60,8 @@ def schema() -> None:
     cmd="st pulsebrief context --cadence daily --limit 7",
     when="inspect sampled prior Pulse briefs and pending process proposals before briefing work",
     precautions=("compact summary only; do not dump full raw brief history",),
-    task_types=("briefing", "verification"),
+    task_types=("briefing",),
+    on_demand="briefing",
     tier="mandate",
 )
 def context(
@@ -80,7 +82,8 @@ def context(
     surface="st.pulsebrief.proposal.list",
     cmd="st pulsebrief proposal list --limit 10",
     when="inspect pending Pulse process improvement proposals",
-    task_types=("briefing", "verification"),
+    task_types=("briefing",),
+    on_demand="briefing",
     tier="reference",
 )
 def proposal_list(
