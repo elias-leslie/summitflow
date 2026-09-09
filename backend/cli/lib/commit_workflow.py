@@ -126,8 +126,11 @@ def _selected_paths_dirty(repo: Path, paths: Sequence[str]) -> bool:
 def _selected_changed_files(repo: Path, paths: Sequence[str]) -> list[str]:
     """Expand selected directories before passing the canonical gate its scope."""
     files: set[str] = set()
+    head = run_git(repo, ["rev-parse", "--verify", "HEAD"])
+    tracked = (["diff", "--name-only", "-z", "HEAD", "--", *paths] if head.returncode == 0
+               else ["ls-files", "--cached", "-z", "--", *paths])
     for args in (
-        ["diff", "--name-only", "-z", "HEAD", "--", *paths],
+        tracked,
         ["ls-files", "--others", "--exclude-standard", "-z", "--", *paths],
     ):
         result = run_git(repo, args)
@@ -169,7 +172,8 @@ def _commit_selected_index(repo: Path, message: str, paths: Sequence[str]) -> su
             return subprocess.run(["git", *args], cwd=repo, env=env,
                                   text=True, capture_output=True, check=False)
 
-        prepared = indexed(["read-tree", "HEAD"])
+        prepared = indexed(["read-tree", "HEAD"] if run_git(repo, ["rev-parse", "--verify", "HEAD"]).returncode == 0
+                           else ["read-tree", "--empty"])
         if prepared.returncode != 0:
             raise CommitError(prepared.stderr.strip() or "cannot prepare selected commit index")
         # Keep the staged patch byte-for-byte: text-mode pipes normalize CRLF.

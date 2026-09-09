@@ -46,7 +46,10 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
     client = GitHub(repo, name) if name else None
     try:
         plan = client.plan() if client else None
-        already_remote = bool(client and plan and client.base_sha(plan["base"]) == sha)
+        remote_sha = client.base_sha(plan["base"]) if client and plan else None
+        if client and plan and remote_sha is None and plan['requires_pr']:
+            raise GitHubError('Empty repository requires a pull request; initialize its default branch under the applicable repository rules first')
+        already_remote = bool(client and plan and remote_sha == sha)
     except GitHubError as exc:
         raise PublishError(str(exc)) from exc
     if client and plan and already_remote:

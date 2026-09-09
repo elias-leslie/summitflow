@@ -561,3 +561,37 @@ def test_verified_existing_remote_commit_can_support_closeout():
     from cli.commands.done_task import _task_has_published_commit_event
     with patch('app.storage.events.get_events_by_trace', return_value=[{'message': 'st commit commit=abcdef pushed=false publication_complete=true'}]):
         assert _task_has_published_commit_event('task-123')
+
+
+@pytest.mark.parametrize("claimed_at, passes", [("2000-01-01T00:00:00+00:00", True), ("2100-01-01T00:00:00+00:00", False), (None, False)])
+@pytest.mark.parametrize("history", ["initial", "missing_reflog", "empty_commit"])
+def test_initial_repository_closeout_requires_post_claim_initial_reflog(tmp_path, monkeypatch, claimed_at, passes, history):
+    import subprocess
+
+    import typer
+
+    from cli.commands.done_task import _run_diff_gate
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True).stdout
+
+    git("init", "-q", "--initial-branch=main")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    git("config", "core.hooksPath", "/dev/null")
+    (tmp_path / "app.py").write_text("print('bootstrap')\n")
+    git("add", ".")
+    if history == "empty_commit":
+        git("rm", "--cached", "app.py")
+        git("commit", "--allow-empty", "-qm", "initial")
+    else:
+        git("commit", "-qm", "initial")
+    if history == "missing_reflog":
+        git("reflog", "expire", "--expire=all", "--all")
+    passes = passes and history == "initial"
+    monkeypatch.setattr("cli.commands.done_task.resolve_task_branch", lambda *a, **k: "task-new/main")
+    if passes:
+        _run_diff_gate(str(tmp_path), "task-new", "test", "main", claimed_at=claimed_at)
+    else:
+        with pytest.raises(typer.Exit):
+            _run_diff_gate(str(tmp_path), "task-new", "test", "main", claimed_at=claimed_at)

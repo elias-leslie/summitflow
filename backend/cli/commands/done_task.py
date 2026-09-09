@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -218,6 +219,36 @@ def _is_diff_docs_or_config_only(
     return bool(paths) and all(_is_doc_or_config_path(p) for p in paths)
 
 
+def _initial_checkpoint_tree(repo_root: str, claimed_at: str | None) -> str | None:
+    """Recover an empty baseline only from a post-claim initial-commit reflog.
+
+    Legacy checkpoints omitted base_commit for unborn repositories. Missing
+    history alone is insufficient: the oldest HEAD reflog must record creation
+    of the sole reachable root after this task was claimed.
+    """
+    if not claimed_at:
+        return None
+    try:
+        claimed = datetime.fromisoformat(claimed_at)
+        if claimed.tzinfo is None:
+            return None
+        def git(*args: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(["git", *args], cwd=repo_root, capture_output=True, text=True, check=False)
+        roots = git("rev-list", "--max-parents=0", "--all")
+        history = git("reflog", "show", "--date=unix", "--format=%H%x00%gD%x00%gs", "HEAD")
+        if roots.returncode or history.returncode or not history.stdout.strip():
+            return None
+        sha, selector, subject = history.stdout.strip().splitlines()[-1].split("\0", 2)
+        timestamp = int(selector.rsplit("@{", 1)[1].removesuffix("}"))
+        if roots.stdout.splitlines() != [sha] or not subject.startswith("commit (initial):") or timestamp < int(claimed.timestamp()):
+            return None
+        tree = subprocess.run(["git", "hash-object", "-w", "-t", "tree", "--stdin"], cwd=repo_root,
+                              input="", capture_output=True, text=True, check=False)
+        return tree.stdout.strip() if tree.returncode == 0 else None
+    except (ValueError, IndexError, OSError, subprocess.SubprocessError):
+        return None
+
+
 def _run_diff_gate(
     repo_root: str,
     task_id: str,
@@ -225,6 +256,7 @@ def _run_diff_gate(
     base_branch: str,
     *,
     base_commit: str | None = None,
+    claimed_at: str | None = None,
 ) -> None:
     # Emergency escape: ST_DIFF_GATE=off disables the gate entirely.
     if (os.environ.get("ST_DIFF_GATE") or "").strip().lower() == "off":
@@ -234,7 +266,9 @@ def _run_diff_gate(
     if _is_diff_docs_or_config_only(repo_root, head_ref, base_branch, base_commit=base_commit):
         output_success("Diff gate auto-skipped: changes are docs/config only.")
         return
-    diff_result = check_diff_gate(repo_root, head_ref=head_ref, base_ref=base_commit or base_branch)
+    initial_tree = _initial_checkpoint_tree(repo_root, claimed_at) if not base_commit else None
+    diff_result = (check_diff_gate(repo_root, head_ref="HEAD", base_tree=initial_tree) if initial_tree
+                   else check_diff_gate(repo_root, head_ref=head_ref, base_ref=base_commit or base_branch))
     if diff_result.passed:
         return
     output_error(
@@ -415,7 +449,8 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
     try:
         base_commit = str(snapshot_info.get("base_commit") or "") or None
         if repo_root and not skip_diff_gate:
-            _run_diff_gate(repo_root, task_id, project_id, base_branch, base_commit=base_commit)
+            _run_diff_gate(repo_root, task_id, project_id, base_branch, base_commit=base_commit,
+                           claimed_at=str(snapshot_info.get("created_at") or "") or None)
         if not strict and not already_completed:
             _run_smart_prereqs(client, task_id, project_id)
         # Publish before closing so an enqueue/network failure leaves both the task

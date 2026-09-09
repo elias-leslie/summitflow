@@ -452,3 +452,25 @@ def test_git_status_error_blocks_before_publication(tmp_path, monkeypatch, paths
     with pytest.raises(CommitError, match='index unreadable'):
         commit_workflow.commit_git_revision(tmp_path, message='publish', paths=paths)
     publish.assert_not_called()
+
+
+@pytest.mark.parametrize("scoped", [False, True])
+def test_initial_git_commit_checks_new_files_and_preserves_other_staging(tmp_path, monkeypatch, scoped):
+    from cli.lib import commit_workflow
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True).stdout
+    git("init", "-q", "--initial-branch=main")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    git("config", "core.hooksPath", "/dev/null")
+    (tmp_path / "app.py").write_text("print('hello')\n")
+    (tmp_path / "other.txt").write_text("unrelated\n")
+    git("add", "other.txt")
+    checks = []
+    monkeypatch.setattr(commit_workflow, "run_checks", lambda repo, **kw: (checks.append(kw) or (True, "")))
+    result = commit_workflow.commit_git_revision(tmp_path, message="initial", push=False, paths=("app.py",) if scoped else ())
+    assert result["status"] == "SUCCESS"
+    assert checks == [{"paths": ["app.py"] if scoped else ["app.py", "other.txt"]}]
+    assert git("ls-tree", "--name-only", "HEAD").splitlines() == (["app.py"] if scoped else ["app.py", "other.txt"])
+    if scoped:
+        assert git("diff", "--cached", "--name-only").strip() == "other.txt"

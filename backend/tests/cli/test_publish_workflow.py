@@ -124,3 +124,18 @@ def test_existing_feature_pr_waits_for_its_exact_sha_ci_without_merging(monkeypa
     else:
         assert observe.call_count == 1  # Older PR metadata cannot supply current revision evidence.
     api.assert_not_called()
+
+
+
+def test_empty_remote_publishes_initial_commit_with_ci_observation(monkeypatch):
+    client = Mock()
+    client.plan.return_value = {'base': 'main', 'requires_pr': False, 'required': []}
+    client.base_sha.return_value = None
+    client.observe.return_value = {'state': 'pending', 'sha': 'a'*40, 'checks': []}
+    monkeypatch.setattr(publish, 'GitHub', Mock(return_value=client))
+    git = Mock(side_effect=[Mock(returncode=0, stdout='git@github.com:owner/repo.git'),
+                           Mock(returncode=0, stdout='main'), Mock(returncode=0, stdout='')])
+    result = publish.publish_git(Path('/repo'), sha='a'*40, task_id='task-new', message='initial', run_git=git)
+    assert git.call_args.args[1] == ['push', '--porcelain', 'origin', 'a'*40 + ':refs/heads/main']
+    assert result['status'] == 'PENDING'
+    client.observe.assert_called_once_with('a'*40, [], branch='main')

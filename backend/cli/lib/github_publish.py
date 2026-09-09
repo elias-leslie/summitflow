@@ -247,8 +247,15 @@ class GitHub:
         return {**push, 'state': state, 'pull_requests': pull_results,
                 'checks': [check for item in observations for check in item['checks']]}
 
-    def base_sha(self, base: str) -> str:
-        return self.api(f'branches/{quote(base, safe="")}')['commit']['sha']
+    def base_sha(self, base: str) -> str | None:
+        try:
+            return self.api(f'branches/{quote(base, safe="")}')['commit']['sha']
+        except GitHubError as exc:
+            # A missing default branch is normal only for a verified empty repo.
+            # Generic 404/auth failures and missing branches in existing repos fail closed.
+            if 'Branch not found' in str(exc) and 'HTTP 404' in str(exc) and self.api('branches?per_page=1') == []:
+                return None
+            raise
 
     def pull_request(self, head: str, base: str, title: str, sha: str) -> dict[str, Any]:
         params = urlencode({'state': 'all', 'head': f'{self.name.split("/")[0]}:{head}', 'base': base})

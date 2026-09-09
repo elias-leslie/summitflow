@@ -31,6 +31,7 @@ def check_diff_gate(
     *,
     head_ref: str = "HEAD",
     base_ref: str = "main",
+    base_tree: str | None = None,
 ) -> DiffGateResult:
     """Check whether the task branch has meaningful changes vs base (main).
 
@@ -39,7 +40,7 @@ def check_diff_gate(
     """
     try:
         base_ref = normalize_base_branch(base_ref, project_path)
-        merge_base = _get_merge_base(project_path, head_ref, base_ref)
+        merge_base = base_tree or _get_merge_base(project_path, head_ref, base_ref)
         if not merge_base:
             return DiffGateResult(
                 passed=False,
@@ -110,7 +111,7 @@ def _get_diff_stats(
 ) -> tuple[int, int, int] | None:
     """Get (files_changed, insertions, deletions) from git diff --numstat."""
     result = subprocess.run(
-        ["git", "diff", "--numstat", f"{merge_base}..{head_ref}"],
+        ["git", "diff", "--numstat", merge_base, head_ref],
         cwd=project_path,
         capture_output=True,
         text=True,

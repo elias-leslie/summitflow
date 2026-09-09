@@ -254,3 +254,25 @@ def test_pr_path_scope_requires_complete_current_head_files(monkeypatch, head, c
     ]))
     assert client.workflow_applies({'state': 'active', 'path': '.github/workflows/mac.yml'},
                                    'a'*40, event='pull_request', branch='main') is expected
+
+
+@pytest.mark.parametrize("branches", [[], [{"name": "other"}]])
+def test_missing_base_is_initial_only_when_remote_has_no_branches(monkeypatch, branches):
+    client = GitHub(Path('/repo'), 'owner/repo')
+    api = Mock(side_effect=[GitHubError('GitHub GET branches/main: gh: Branch not found (HTTP 404)'), branches])
+    monkeypatch.setattr(client, 'api', api)
+    if branches:
+        with pytest.raises(GitHubError, match='Branch not found'):
+            client.base_sha('main')
+    else:
+        assert client.base_sha('main') is None
+    assert api.call_args.args == ('branches?per_page=1',)
+
+
+def test_base_auth_error_is_not_an_empty_repository(monkeypatch):
+    client = GitHub(Path('/repo'), 'owner/repo')
+    api = Mock(side_effect=GitHubError('Not Found (HTTP 404)'))
+    monkeypatch.setattr(client, 'api', api)
+    with pytest.raises(GitHubError):
+        client.base_sha('main')
+    assert api.call_count == 1
