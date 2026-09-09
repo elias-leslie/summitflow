@@ -35,6 +35,7 @@ from .backup_native_storage import (
     storage_backend_type,
     update_backup_index,
 )
+from .backup_utils import require_verified_backup_output
 
 logger = get_logger(__name__)
 
@@ -137,11 +138,14 @@ def run_project_backup(
 ) -> dict[str, Any]:
     """Create a project/source archive and return parsed backup metadata."""
     project_path = Path(project_dir)
+    if not project_path.is_dir():
+        raise FileNotFoundError(f"Backup source directory does not exist: {project_dir}")
     project_name = project_path.name
     run_env = dict(env or {})
     retention = retention_days or 14
     with tempfile.TemporaryDirectory(prefix=f"{project_name}-backup-") as temp_dir:
         result = _create_project_archive(project_path, project_name, Path(temp_dir), run_env)
+        require_verified_backup_output(result)
         archive_name = str(result["archive_name"])
         archive_path = Path(result["archive_path"])
         if local_only:

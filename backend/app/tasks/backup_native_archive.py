@@ -180,7 +180,10 @@ def _add_project_files(
     excludes: tuple[str, ...],
 ) -> int:
     count = 0
-    for root, dirs, files in os.walk(project_dir):
+    def walk_error(error: OSError) -> None:
+        raise error
+
+    for root, dirs, files in os.walk(project_dir, onerror=walk_error):
         root_path = Path(root)
         rel_root = root_path.relative_to(project_dir).as_posix()
         rel_root = "" if rel_root == "." else rel_root

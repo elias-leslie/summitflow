@@ -6,6 +6,9 @@ import io
 import os
 import tarfile
 from pathlib import Path
+from unittest.mock import Mock
+
+import pytest
 
 from app.tasks.backup_native_archive import (
     _add_project_files,
@@ -201,3 +204,49 @@ def test_archive_verification_rejects_file_without_top_level_root(
     assert result["errors"] == [
         "Critical: archive files must use exactly one top-level directory"
     ]
+
+
+@pytest.mark.parametrize("source_state", ["missing", "empty", "populated"])
+@pytest.mark.parametrize("local_only", [False, True])
+def test_native_backup_rejects_invalid_source_before_storage(tmp_path, monkeypatch, source_state, local_only):
+    from app.tasks import backup_native, backup_native_archive
+    project = tmp_path / "source"
+    if source_state != "missing":
+        project.mkdir()
+    if source_state == "populated":
+        (project / "note.txt").write_text("recoverable content\n")
+    monkeypatch.setattr(backup_native_archive, "_dump_database", lambda *a: (0, False))
+    store = Mock(return_value={"stored": True})
+    monkeypatch.setattr(backup_native, "_store_local_project_archive", store)
+    monkeypatch.setattr(backup_native, "_upload_project_archive", store)
+    monkeypatch.setattr(backup_native, "_storage_config", lambda *a: None)
+    if source_state == "populated":
+        assert backup_native.run_project_backup(project_dir=str(project), source_id="source", local_only=local_only) == {"stored": True}
+        assert store.call_count == 1
+        assert store.call_args.args[2]["verification"]["verified"] is True
+    else:
+        with pytest.raises((RuntimeError, FileNotFoundError), match=r"does not exist|no regular files"):
+            backup_native.run_project_backup(project_dir=str(project), source_id="source", local_only=local_only)
+        store.assert_not_called()
+
+
+
+def test_unreadable_subdirectory_cannot_produce_verified_partial_backup(tmp_path, monkeypatch):
+    from app.tasks import backup_native, backup_native_archive
+    project = tmp_path / "source"
+    blocked = project / "private-data"
+    blocked.mkdir(parents=True)
+    (project / "readable.txt").write_text("partial content\n")
+    (blocked / "important.txt").write_text("must be included\n")
+    original_scandir = os.scandir
+    def scandir(path):
+        if not isinstance(path, int) and Path(path) == blocked:
+            raise PermissionError("source permission denied")
+        return original_scandir(path)
+    monkeypatch.setattr(os, "scandir", scandir)
+    monkeypatch.setattr(backup_native_archive, "_dump_database", lambda *a: (0, False))
+    store = Mock()
+    monkeypatch.setattr(backup_native, "_upload_project_archive", store)
+    with pytest.raises(PermissionError, match="source permission denied"):
+        backup_native.run_project_backup(project_dir=str(project), source_id="source")
+    store.assert_not_called()
