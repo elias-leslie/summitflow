@@ -197,6 +197,6 @@ def test_runtime_release_requires_explicit_revision_without_resuming(monkeypatch
 def test_advisory_budget_help_does_not_promise_enforcement():
     runner = CliRunner()
     result = runner.invoke(neri.app, ['budget', '--help'])
-    assert result.exit_code == 0 and 'do not gate execution' in result.output
+    assert result.exit_code == 0 and 'do not gate execution' in ' '.join(result.output.split())
     result = runner.invoke(neri.app, ['budget', 'set', '--help'])
-    assert result.exit_code == 0 and 'does not cap or pause execution' in result.output
+    assert result.exit_code == 0 and 'does not cap or pause execution' in ' '.join(result.output.split())
