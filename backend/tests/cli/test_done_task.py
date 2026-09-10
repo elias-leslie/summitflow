@@ -564,7 +564,7 @@ def test_verified_existing_remote_commit_can_support_closeout():
 
 
 @pytest.mark.parametrize("claimed_at, passes", [("2000-01-01T00:00:00+00:00", True), ("2100-01-01T00:00:00+00:00", False), (None, False)])
-@pytest.mark.parametrize("history", ["initial", "missing_reflog", "empty_commit"])
+@pytest.mark.parametrize("history", ["initial", "amended_root", "amended_then_commit", "switched_then_amended", "missing_reflog", "empty_commit"])
 def test_initial_repository_closeout_requires_post_claim_initial_reflog(tmp_path, monkeypatch, claimed_at, passes, history):
     import subprocess
 
@@ -586,9 +586,19 @@ def test_initial_repository_closeout_requires_post_claim_initial_reflog(tmp_path
         git("commit", "--allow-empty", "-qm", "initial")
     else:
         git("commit", "-qm", "initial")
+    if history in {"amended_root", "amended_then_commit", "switched_then_amended"}:
+        if history == "switched_then_amended":
+            git("checkout", "-qb", "different-work")
+        (tmp_path / "app.py").write_text("print('corrected bootstrap')\n")
+        git("add", "app.py")
+        git("commit", "--amend", "-qm", "correct initial release")
+        if history == "amended_then_commit":
+            (tmp_path / "app.py").write_text("print('next change')\n")
+            git("add", "app.py")
+            git("commit", "-qm", "continue implementation")
     if history == "missing_reflog":
         git("reflog", "expire", "--expire=all", "--all")
-    passes = passes and history == "initial"
+    passes = passes and history in {"initial", "amended_root", "amended_then_commit"}
     monkeypatch.setattr("cli.commands.done_task.resolve_task_branch", lambda *a, **k: "task-new/main")
     if passes:
         _run_diff_gate(str(tmp_path), "task-new", "test", "main", claimed_at=claimed_at)

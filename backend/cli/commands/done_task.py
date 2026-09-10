@@ -224,7 +224,8 @@ def _initial_checkpoint_tree(repo_root: str, claimed_at: str | None) -> str | No
 
     Legacy checkpoints omitted base_commit for unborn repositories. Missing
     history alone is insufficient: the oldest HEAD reflog must record creation
-    of the sole reachable root after this task was claimed.
+    after this task was claimed. Direct root amendments may replace that root;
+    branch switches, resets and other history changes are not proof of origin.
     """
     if not claimed_at:
         return None
@@ -238,9 +239,21 @@ def _initial_checkpoint_tree(repo_root: str, claimed_at: str | None) -> str | No
         history = git("reflog", "show", "--date=unix", "--format=%H%x00%gD%x00%gs", "HEAD")
         if roots.returncode or history.returncode or not history.stdout.strip():
             return None
-        sha, selector, subject = history.stdout.strip().splitlines()[-1].split("\0", 2)
+        entries = [line.split("\0", 2) for line in reversed(history.stdout.strip().splitlines())]
+        sha, selector, subject = entries[0]
         timestamp = int(selector.rsplit("@{", 1)[1].removesuffix("}"))
-        if roots.stdout.splitlines() != [sha] or not subject.startswith("commit (initial):") or timestamp < int(claimed.timestamp()):
+        if not subject.startswith("commit (initial):") or timestamp < int(claimed.timestamp()):
+            return None
+        # Only an uninterrupted sequence of parentless amendments can replace
+        # the initial root. Later ordinary commits retain that root as evidence.
+        for amended_sha, _, amended_subject in entries[1:]:
+            if not amended_subject.startswith("commit (amend):"):
+                break
+            parents = git("rev-list", "--parents", "-n", "1", amended_sha)
+            if parents.returncode or parents.stdout.split() != [amended_sha]:
+                break
+            sha = amended_sha
+        if roots.stdout.splitlines() != [sha]:
             return None
         tree = subprocess.run(["git", "hash-object", "-w", "-t", "tree", "--stdin"], cwd=repo_root,
                               input="", capture_output=True, text=True, check=False)
