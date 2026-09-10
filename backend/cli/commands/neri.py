@@ -20,6 +20,10 @@ from ..output import output_json
 app = typer.Typer(help="Run and inspect Neri's isolated discovery labs")
 brief_app = typer.Typer(help="Save investigation objectives, prospects, sources and decisions")
 app.add_typer(brief_app, name="brief")
+budget_app = typer.Typer(help="Inspect or adjust Neri's subscription usage allocation")
+app.add_typer(budget_app, name="budget")
+hypothesis_app = typer.Typer(help="Maintain evidence-linked investigation hypotheses")
+app.add_typer(hypothesis_app, name="hypothesis")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
 
 
@@ -39,7 +43,7 @@ class Action(StrEnum):
     direct = "direct"
 
 
-def request(path: str, body: dict | None = None, *, method: str | None = None) -> None:
+def request(path: str, body: dict | None = None, *, method: str | None = None, emit: bool = True) -> dict:
     resolved = resolve_api_url(NERI_API)
     try:
         with ProjectApiClient(resolved.url) as client:
@@ -47,7 +51,9 @@ def request(path: str, body: dict | None = None, *, method: str | None = None) -
                 result = client.put(path, json_body=body)
             else:
                 result = client.get(path) if body is None else client.post(path, json_body=body)
-        output_json(result)
+        if emit:
+            output_json(result)
+        return result
     except ProjectApiConnectError:
         output_json({"ok": False, "error": "neri_unreachable", "hint": "Check st service status neri or ST_NERI_API_URL"})
         raise typer.Exit(2) from None
@@ -73,17 +79,21 @@ def runs() -> None:
 @app.command()
 @usage(surface="st.neri.start", cmd='st neri start --variant benchmark', when='start real agent-led discovery inside Neri labs', precautions=('executes lab requests within the run budget; no live bounty targets',), task_types=("neri", "security-labs"), tier="reference")
 def start(variant: Variant = Variant.benchmark, advanced: bool = False,
-          external: bool = False, controller_id: str | None = None,
+          external: bool = False, native: bool = False, controller_id: str | None = None,
           title: str | None = None, verification: bool = False,
           brief_id: UUID | None = None) -> None:
     """Start actual agent-led discovery. Guidance mode does not change permissions."""
     body = {"variant": variant.value, "guidance": "advanced" if advanced else "helper"}
+    if native and external:
+        raise typer.BadParameter("--native and --external are mutually exclusive")
     if external:
         if not controller_id:
             raise typer.BadParameter("--controller-id is required for --external")
         body.update(controller_mode="external", controller_id=controller_id)
     elif controller_id:
         raise typer.BadParameter("--controller-id requires --external")
+    elif native:
+        body["controller_mode"] = "native"
     if title:
         body["title"] = title
     if verification:
@@ -119,6 +129,7 @@ def report(run_id: UUID) -> None:
 class ControllerMode(StrEnum):
     automatic = "automatic"
     external = "external"
+    native = "native"
 
 
 class Role(StrEnum):
@@ -236,3 +247,38 @@ def create_brief(file: Annotated[Path, typer.Option()]) -> None:
 @usage(surface="st.neri.brief.update", cmd='st neri brief update <brief-id> --file brief.json', when='update the saved investigation brief with agreed decisions', precautions=('does not expand an execution envelope',), task_types=("neri", "security-labs"), tier="reference")
 def update_brief(brief_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
     request(f"/api/briefs/{brief_id}", read_object(file), method="PUT")
+
+
+@budget_app.command("show")
+@usage(surface="st.neri.budget.show", cmd='st neri budget show', when='inspect Neri subscription allocation and observed usage', precautions=('usage is conservative shared-account telemetry, not an exact billing meter',), task_types=("neri", "security-labs"), tier="reference")
+def show_budget() -> None:
+    request("/api/budget")
+
+
+@budget_app.command("set")
+@usage(surface="st.neri.budget.set", cmd='st neri budget set <percent>', when='adjust Neri weekly subscription allocation from 0 to 100 percent', precautions=('reads the current revision before updating; conflicts are not retried; does not purchase credits',), task_types=("neri", "security-labs"), tier="reference")
+def set_budget(percent: Annotated[int, typer.Argument(min=0, max=100)]) -> None:
+    current = request("/api/budget", emit=False)
+    revision = current.get("revision")
+    if type(revision) is not int or revision < 1:
+        raise typer.BadParameter("Neri returned no valid budget revision; no change was sent")
+    request("/api/budget", {"weekly_allowance_percent": percent, "expected_revision": revision}, method="PUT")
+
+
+@hypothesis_app.command("list")
+@usage(surface="st.neri.hypothesis.list", cmd='st neri hypothesis list <run-id>', when='inspect persisted investigation hypotheses', precautions=('read-only; supported status is an evidence claim, not independent validation',), task_types=("neri", "security-labs"), tier="reference")
+def hypotheses(run_id: UUID, include_archived: bool = False) -> None:
+    path = f"/api/runs/{run_id}/hypotheses"
+    request(path + "?include_archived=true" if include_archived else path)
+
+
+@hypothesis_app.command("create")
+@usage(surface="st.neri.hypothesis.create", cmd='st neri hypothesis create <run-id> --file hypothesis.json', when='record an investigation hypothesis through the canonical API', precautions=('use the capabilities schema; agent attribution requires current external controller identity and revision',), task_types=("neri", "security-labs"), tier="reference")
+def create_hypothesis(run_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    request(f"/api/runs/{run_id}/hypotheses", read_object(file))
+
+
+@hypothesis_app.command("update")
+@usage(surface="st.neri.hypothesis.update", cmd='st neri hypothesis update <run-id> <hypothesis-id> --file hypothesis.json', when='update a hypothesis and its supporting or contrary evidence', precautions=('include expected_revision from the current hypothesis; backend enforces evidence and controller fencing',), task_types=("neri", "security-labs"), tier="reference")
+def update_hypothesis(run_id: UUID, hypothesis_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    request(f"/api/runs/{run_id}/hypotheses/{hypothesis_id}", read_object(file), method="PUT")

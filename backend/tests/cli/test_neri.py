@@ -76,3 +76,97 @@ def test_context_and_assignment_are_not_execution(monkeypatch):
     assert len(calls) == 1
     assert runner.invoke(neri.app, ['assignment', run_id, '--file', '-'], input='{"role":"hunter"}').exit_code == 0
     assert calls[-1][0].endswith('/assignments')
+
+
+def test_native_background_selection_and_conflicting_modes(monkeypatch):
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None: calls.append((path, body)))
+    runner = CliRunner()
+    assert runner.invoke(neri.app, ['start', '--native', '--external']).exit_code != 0
+    assert runner.invoke(neri.app, ['start', '--native', '--controller-id', 'interactive']).exit_code != 0
+    assert not calls
+    assert runner.invoke(neri.app, ['start', '--native']).exit_code == 0
+    assert calls == [('/api/runs', {'variant': 'benchmark', 'guidance': 'helper', 'controller_mode': 'native'})]
+    run_id = '11111111-1111-4111-8111-111111111111'
+    assert runner.invoke(neri.app, ['controller', run_id, 'native', '--revision', '4']).exit_code == 0
+    assert calls[-1][1] == {'mode': 'native', 'controller_id': None, 'expected_revision': 4}
+
+
+def test_budget_reads_revision_and_updates_once(monkeypatch):
+    calls = []
+
+    def request(path, body=None, **kwargs):
+        calls.append((path, body, kwargs))
+        return {'revision': 7}
+
+    monkeypatch.setattr(neri, 'request', request)
+    runner = CliRunner()
+    for invalid in ('-1', '101', '1.5'):
+        assert runner.invoke(neri.app, ['budget', 'set', invalid]).exit_code != 0
+    assert not calls
+    for percent in (0, 100):
+        calls.clear()
+        assert runner.invoke(neri.app, ['budget', 'set', str(percent)]).exit_code == 0
+        assert calls == [('/api/budget', None, {'emit': False}),
+                         ('/api/budget', {'weekly_allowance_percent': percent, 'expected_revision': 7}, {'method': 'PUT'})]
+
+
+def test_budget_missing_revision_does_not_write(monkeypatch):
+    calls = []
+
+    def request(path, body=None, **kwargs):
+        calls.append((path, body))
+        return {'revision': True}
+
+    monkeypatch.setattr(neri, 'request', request)
+    assert CliRunner().invoke(neri.app, ['budget', 'set', '25']).exit_code != 0
+    assert calls == [('/api/budget', None)]
+
+
+def test_budget_conflict_is_reported_without_overwriting_or_retry(monkeypatch):
+    from types import SimpleNamespace
+
+    calls = []
+
+    class Client:
+        def __init__(self, _url):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def get(self, path):
+            calls.append(('GET', path))
+            return {'revision': 4}
+
+        def put(self, path, *, json_body):
+            calls.append(('PUT', path, json_body))
+            raise neri.APIError(409, 'Budget changed; refresh and retry')
+
+    monkeypatch.setattr(neri, 'ProjectApiClient', Client)
+    monkeypatch.setattr(neri, 'resolve_api_url', lambda _: SimpleNamespace(url='http://localhost:8017'))
+    result = CliRunner().invoke(neri.app, ['budget', 'set', '30'])
+    assert result.exit_code == 1
+    assert 'Budget changed' in result.output
+    assert [call[0] for call in calls] == ['GET', 'PUT']
+
+
+def test_hypothesis_payloads_preserve_attribution_and_revision(monkeypatch):
+    import json
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None, **kwargs: calls.append((path, body, kwargs)))
+    runner = CliRunner()
+    run_id = '11111111-1111-4111-8111-111111111111'
+    hypothesis_id = '22222222-2222-4222-8222-222222222222'
+    payload = {'statement': 'Check an invariant', 'actor': 'agent', 'controller_id': 'codex',
+               'controller_revision': 2, 'expected_revision': 3, 'evidence_ids': [hypothesis_id]}
+    assert runner.invoke(neri.app, ['hypothesis', 'update', run_id, hypothesis_id, '--file', '-'],
+                         input=json.dumps(payload)).exit_code == 0
+    assert calls == [(f'/api/runs/{run_id}/hypotheses/{hypothesis_id}', payload, {'method': 'PUT'})]
+    assert runner.invoke(neri.app, ['hypothesis', 'list', run_id, '--include-archived']).exit_code == 0
+    assert calls[-1][0] == f'/api/runs/{run_id}/hypotheses?include_archived=true'
+    assert runner.invoke(neri.app, ['hypothesis', 'create', run_id, '--file', '-'], input='[]').exit_code != 0
+    assert len(calls) == 2
