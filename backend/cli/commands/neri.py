@@ -26,6 +26,8 @@ runtime_app = typer.Typer(help="Inspect or operate Neri's durable global stop")
 app.add_typer(runtime_app, name="runtime")
 hypothesis_app = typer.Typer(help="Maintain evidence-linked investigation hypotheses")
 app.add_typer(hypothesis_app, name="hypothesis")
+gap_app = typer.Typer(help="Record and follow verified capability improvements")
+app.add_typer(gap_app, name="gap")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
 
 
@@ -35,6 +37,11 @@ class Variant(StrEnum):
     object = "object"
     export = "export"
     revocation = "revocation"
+
+
+class ReasoningProfile(StrEnum):
+    astra = 'astra-standard'
+    sol = 'sol-daybreak-blue'
 
 
 class Action(StrEnum):
@@ -83,11 +90,17 @@ def runs() -> None:
 def start(variant: Variant = Variant.benchmark, advanced: bool = False,
           external: bool = False, native: bool = False, controller_id: str | None = None,
           title: str | None = None, verification: bool = False,
-          brief_id: UUID | None = None) -> None:
+          brief_id: UUID | None = None,
+          hunter_profile: ReasoningProfile | None = None,
+          reviewer_profile: ReasoningProfile | None = None) -> None:
     """Start actual agent-led discovery. Guidance mode does not change permissions."""
-    body = {"variant": variant.value, "guidance": "advanced" if advanced else "helper"}
+    body: dict = {"variant": variant.value, "guidance": "advanced" if advanced else "helper"}
     if native and external:
         raise typer.BadParameter("--native and --external are mutually exclusive")
+    if hunter_profile or reviewer_profile:
+        if not (native or external):
+            raise typer.BadParameter('Explicit profiles require --native or --external')
+        body['reasoning_profiles'] = {'hunter': hunter_profile or 'astra-standard', 'reviewer': reviewer_profile or 'astra-standard'}
     if external:
         if not controller_id:
             raise typer.BadParameter("--controller-id is required for --external")
@@ -137,6 +150,7 @@ class ControllerMode(StrEnum):
 class Role(StrEnum):
     hunter = "hunter"
     reviewer = "reviewer"
+    orchestrator = "orchestrator"
 
 
 class CommandKind(StrEnum):
@@ -163,10 +177,27 @@ def capabilities() -> None:
 
 
 @app.command()
-@usage(surface="st.neri.context", cmd='st neri context <run-id> --role hunter', when='brief a native investigator or reviewer with filtered evidence and canonical Agent Hub instructions', precautions=('preserve native harness instructions; benchmark context excludes grader and operator state; verify delivery provenance before recording acknowledgement',), task_types=("neri", "security-labs"), tier="reference")
-def context(run_id: UUID, role: Role = Role.hunter) -> None:
+@usage(surface="st.neri.context", cmd='st neri context [run-id] --role orchestrator|hunter|reviewer', when='load canonical Neri operating instructions before orchestration or role assignment', precautions=('orchestrator context without a run describes continuous verified extension; preserve native harness instructions; supplied context is not observed consumption',), task_types=("neri", "security-labs"), tier="reference")
+def context(run_id: Annotated[UUID | None, typer.Argument()] = None, role: Role = Role.hunter) -> None:
     """Retrieve role context and actual observations without lab answers."""
-    request(f"/api/runs/{run_id}/context?{urlencode({'role': role.value})}")
+    if run_id is None:
+        if role != Role.orchestrator:
+            raise typer.BadParameter('A run ID is required for investigator and reviewer evidence')
+        request('/api/orchestration-context')
+    else:
+        request(f"/api/runs/{run_id}/context?{urlencode({'role': role.value})}")
+
+
+@gap_app.command('list')
+@usage(surface='st.neri.gap.list', cmd='st neri gap list <run-id>', when='inspect capability gaps and their latest implementation status', precautions=('read-only; reported verification is not independent proof',), task_types=('neri',), tier='reference')
+def gap_list(run_id: UUID) -> None:
+    request(f'/api/runs/{run_id}/capability-gaps')
+
+
+@gap_app.command('save')
+@usage(surface='st.neri.gap.save', cmd='st neri gap save <run-id> --file gap.json', when='record a reusable improvement needed by an investigation or update its verification', precautions=('use the capabilities schema and expected revision; does not dispatch target work or expand scope',), task_types=('neri',), tier='reference')
+def gap_save(run_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    request(f'/api/runs/{run_id}/capability-gaps', read_object(file), method='PUT')
 
 
 @app.command()

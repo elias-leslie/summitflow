@@ -200,3 +200,14 @@ def test_advisory_budget_help_does_not_promise_enforcement():
     assert result.exit_code == 0 and 'do not gate execution' in ' '.join(result.output.split())
     result = runner.invoke(neri.app, ['budget', 'set', '--help'])
     assert result.exit_code == 0 and 'does not cap or pause execution' in ' '.join(result.output.split())
+def test_orchestrator_context_before_run_and_profiles(monkeypatch):
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None: calls.append((path, body)))
+    runner = CliRunner()
+    assert runner.invoke(neri.app, ['context', '--role', 'orchestrator']).exit_code == 0
+    assert calls == [('/api/orchestration-context', None)]
+    assert runner.invoke(neri.app, ['context']).exit_code != 0
+    assert runner.invoke(neri.app, ['start', '--hunter-profile', 'sol-daybreak-blue']).exit_code != 0
+    assert runner.invoke(neri.app, ['start', '--native', '--hunter-profile', 'sol-daybreak-blue', '--reviewer-profile', 'astra-standard']).exit_code == 0
+    assert calls[-1][1]['reasoning_profiles'] == {'hunter': 'sol-daybreak-blue', 'reviewer': 'astra-standard'}
+
