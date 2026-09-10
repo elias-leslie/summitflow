@@ -211,3 +211,21 @@ def test_orchestrator_context_before_run_and_profiles(monkeypatch):
     assert runner.invoke(neri.app, ['start', '--native', '--hunter-profile', 'sol-daybreak-blue', '--reviewer-profile', 'astra-standard']).exit_code == 0
     assert calls[-1][1]['reasoning_profiles'] == {'hunter': 'sol-daybreak-blue', 'reviewer': 'astra-standard'}
 
+
+
+def test_workbench_uses_canonical_routes_and_preserves_operation_identity(monkeypatch, tmp_path):
+    import json
+    calls=[]
+    monkeypatch.setattr(neri,'request',lambda path,body=None:calls.append((path,body)))
+    run_id='11111111-1111-4111-8111-111111111111'
+    operation_id='22222222-2222-4222-8222-222222222222'
+    payload={'id':operation_id,'kind':'http','purpose':'Observe','path':'/','actor':'agent','controller_id':'terminal','controller_revision':1}
+    file=tmp_path/'operation.json'
+    file.write_text(json.dumps(payload))
+    runner=CliRunner()
+    assert runner.invoke(neri.app,['workbench','send',run_id,'--file',str(file)]).exit_code==0
+    assert calls[-1]==(f'/api/workbench/{run_id}/operations',payload)
+    assert runner.invoke(neri.app,['workbench','traffic',run_id]).exit_code==0
+    assert calls[-1]==(f'/api/workbench/{run_id}/traffic',None)
+    assert runner.invoke(neri.app,['workbench','operation',run_id,operation_id]).exit_code==0
+    assert calls[-1]==(f'/api/workbench/{run_id}/operations/{operation_id}',None)

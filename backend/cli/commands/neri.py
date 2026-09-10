@@ -339,3 +339,55 @@ def create_hypothesis(run_id: UUID, file: Annotated[Path, typer.Option()]) -> No
 @usage(surface="st.neri.hypothesis.update", cmd='st neri hypothesis update <run-id> <hypothesis-id> --file hypothesis.json', when='update a hypothesis and its supporting or contrary evidence', precautions=('include expected_revision from the current hypothesis; backend enforces evidence and controller fencing',), task_types=("neri", "security-labs"), tier="reference")
 def update_hypothesis(run_id: UUID, hypothesis_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
     request(f"/api/runs/{run_id}/hypotheses/{hypothesis_id}", read_object(file), method="PUT")
+
+
+workbench_app = typer.Typer(help='Operate the isolated HTTP/browser workbench through Neri admission and evidence')
+app.add_typer(workbench_app, name='workbench')
+
+
+@workbench_app.command('targets')
+@usage(surface='st.neri.workbench.targets', cmd='st neri workbench targets', when='discover registered proxy targets and qualification state', precautions=('read-only; use only registered authorized targets',), task_types=('neri','security-labs'), tier='reference')
+def workbench_targets() -> None:
+    request('/api/workbench/targets')
+
+
+@workbench_app.command('start')
+@usage(surface='st.neri.workbench.start', cmd='st neri workbench start --title TEXT --controller-id ID', when='create an isolated workbench investigation for native orchestration', precautions=('no target request is sent; global stop must be explicitly released first',), task_types=('neri','security-labs'), tier='reference')
+def workbench_start(title: str='Juice Shop investigation', controller_id: str='native-tui') -> None:
+    request('/api/workbench/investigations', {'title':title,'controller_id':controller_id})
+
+
+@workbench_app.command('traffic')
+@usage(surface='st.neri.workbench.traffic', cmd='st neri workbench traffic <run-id>', when='inspect immutable proxy observations and held-message state', precautions=('read-only; does not renew execution; credential and benchmark content is omitted from the reasoning projection',), task_types=('neri','security-labs'), tier='reference')
+def workbench_traffic(run_id: UUID) -> None:
+    request(f'/api/workbench/{run_id}/traffic')
+
+
+@workbench_app.command('send')
+@usage(surface='st.neri.workbench.send', cmd='st neri workbench send <run-id> --file operation.json', when='submit a scoped HTTP request or browser action', precautions=('load capabilities schema and controller context first; include actor=agent and current identity/revision; reuse an operation UUID only for identical submission; inspect uncertainty instead of retrying',), task_types=('neri','security-labs'), tier='reference')
+def workbench_send(run_id: UUID, file: Annotated[Path,typer.Option()]) -> None:
+    request(f'/api/workbench/{run_id}/operations',read_object(file))
+
+
+@workbench_app.command('operation')
+@usage(surface='st.neri.workbench.operation', cmd='st neri workbench operation <run-id> <operation-id>', when='read actual operation completion, browser observations or sequence assertions', precautions=('queued is not proof of transfer; reading does not send target requests',), task_types=('neri','security-labs'), tier='reference')
+def workbench_operation(run_id: UUID, operation_id: UUID) -> None:
+    request(f'/api/workbench/{run_id}/operations/{operation_id}')
+
+
+@workbench_app.command('sequence')
+@usage(surface='st.neri.workbench.sequence', cmd='st neri workbench sequence <run-id> --file sequence.json', when='execute a finite prepared sequence with named extraction and assertions', precautions=('stops at first failed assertion; no automatic retries; extracted values are substituted only into scoped paths; owner can stop all work',), task_types=('neri','security-labs'), tier='reference')
+def workbench_sequence(run_id: UUID, file: Annotated[Path,typer.Option()]) -> None:
+    request(f'/api/workbench/{run_id}/sequences',read_object(file))
+
+
+@workbench_app.command('intercept')
+@usage(surface='st.neri.workbench.intercept', cmd='st neri workbench intercept <run-id> --file interception.json', when='configure request or response interception for an investigation', precautions=('configuration sends no target requests; response interception happens after target processing',), task_types=('neri','security-labs'), tier='reference')
+def workbench_intercept(run_id: UUID, file: Annotated[Path,typer.Option()]) -> None:
+    request(f'/api/workbench/{run_id}/interception',read_object(file))
+
+
+@workbench_app.command('flow')
+@usage(surface='st.neri.workbench.flow', cmd='st neri workbench flow <run-id> <flow-id> --file control.json', when='explicitly forward, edit or drop a held message', precautions=('global stop and controller fencing apply; original message stays immutable; dropping a response cannot undo target effects',), task_types=('neri','security-labs'), tier='reference')
+def workbench_flow(run_id: UUID, flow_id: UUID, file: Annotated[Path,typer.Option()]) -> None:
+    request(f'/api/workbench/{run_id}/traffic/{flow_id}/control',read_object(file))
