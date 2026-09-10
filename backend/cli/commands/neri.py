@@ -20,8 +20,10 @@ from ..output import output_json
 app = typer.Typer(help="Run and inspect Neri's isolated discovery labs")
 brief_app = typer.Typer(help="Save investigation objectives, prospects, sources and decisions")
 app.add_typer(brief_app, name="brief")
-budget_app = typer.Typer(help="Inspect or adjust Neri's subscription usage allocation")
+budget_app = typer.Typer(help="Read advisory subscription usage; legacy allocation preferences do not gate execution")
 app.add_typer(budget_app, name="budget")
+runtime_app = typer.Typer(help="Inspect or operate Neri's durable global stop")
+app.add_typer(runtime_app, name="runtime")
 hypothesis_app = typer.Typer(help="Maintain evidence-linked investigation hypotheses")
 app.add_typer(hypothesis_app, name="hypothesis")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
@@ -250,19 +252,43 @@ def update_brief(brief_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
 
 
 @budget_app.command("show")
-@usage(surface="st.neri.budget.show", cmd='st neri budget show', when='inspect Neri subscription allocation and observed usage', precautions=('usage is conservative shared-account telemetry, not an exact billing meter',), task_types=("neri", "security-labs"), tier="reference")
+@usage(surface="st.neri.budget.show", cmd='st neri budget show', when='inspect informational subscription usage and historical allocation preferences', precautions=('usage is advisory shared-account telemetry; it does not stop or authorize execution',), task_types=("neri", "security-labs"), tier="reference")
 def show_budget() -> None:
+    """Read advisory usage; missing telemetry or allocation values do not gate work."""
     request("/api/budget")
 
 
 @budget_app.command("set")
-@usage(surface="st.neri.budget.set", cmd='st neri budget set <percent>', when='adjust Neri weekly subscription allocation from 0 to 100 percent', precautions=('reads the current revision before updating; conflicts are not retried; does not purchase credits',), task_types=("neri", "security-labs"), tier="reference")
+@usage(surface="st.neri.budget.set", cmd='st neri budget set <percent>', when='update a historical allocation preference for compatibility', precautions=('informational only; does not cap execution or purchase credits; conflicts are not retried',), task_types=("neri", "security-labs"), tier="reference")
 def set_budget(percent: Annotated[int, typer.Argument(min=0, max=100)]) -> None:
+    """Compatibility setting only: this percentage does not cap or pause execution."""
     current = request("/api/budget", emit=False)
     revision = current.get("revision")
     if type(revision) is not int or revision < 1:
         raise typer.BadParameter("Neri returned no valid budget revision; no change was sent")
     request("/api/budget", {"weekly_allowance_percent": percent, "expected_revision": revision}, method="PUT")
+
+
+@runtime_app.command("show")
+@usage(surface="st.neri.runtime.show", cmd='st neri runtime show', when='inspect Neri global stop state and release revision', precautions=('read-only; external terminal processes are outside Neri control',), task_types=("neri", "security-labs"), tier="reference")
+def show_runtime() -> None:
+    """Read the global stop state, revision and cancellation limits."""
+    request("/api/runtime-control")
+
+
+@runtime_app.command("stop")
+@usage(surface="st.neri.runtime.stop", cmd='st neri runtime stop', when='hold all new Neri-managed work and request cancellation of owned work', precautions=('already-submitted provider or target work may finish; does not stop external terminals; stale stop revisions are accepted',), task_types=("neri", "security-labs"), tier="reference")
+def stop_runtime() -> None:
+    """Engage global stop immediately. Evidence stays; submitted work may finish."""
+    # Stops accept stale revisions, so an extra read must not delay this action.
+    request("/api/runtime-control", {"stopped": True, "expected_revision": 1}, method="PUT")
+
+
+@runtime_app.command("release")
+@usage(surface="st.neri.runtime.release", cmd='st neri runtime release --revision N', when='explicitly release Neri global stop after reading its current revision', precautions=('stale release conflicts are not retried; release does not resume runs or scans',), task_types=("neri", "security-labs"), tier="reference")
+def release_runtime(revision: Annotated[int, typer.Option(min=1)]) -> None:
+    """Release using the observed revision. Preserved work remains held."""
+    request("/api/runtime-control", {"stopped": False, "expected_revision": revision}, method="PUT")
 
 
 @hypothesis_app.command("list")

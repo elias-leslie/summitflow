@@ -170,3 +170,33 @@ def test_hypothesis_payloads_preserve_attribution_and_revision(monkeypatch):
     assert calls[-1][0] == f'/api/runs/{run_id}/hypotheses?include_archived=true'
     assert runner.invoke(neri.app, ['hypothesis', 'create', run_id, '--file', '-'], input='[]').exit_code != 0
     assert len(calls) == 2
+
+
+def test_runtime_status_and_immediate_stop_use_canonical_api(monkeypatch):
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None, **kwargs: calls.append((path, body, kwargs)))
+    runner = CliRunner()
+    assert runner.invoke(neri.app, ['runtime', 'show']).exit_code == 0
+    assert calls == [('/api/runtime-control', None, {})]
+    calls.clear()
+    assert runner.invoke(neri.app, ['runtime', 'stop']).exit_code == 0
+    assert calls == [('/api/runtime-control', {'stopped': True, 'expected_revision': 1}, {'method': 'PUT'})]
+
+
+def test_runtime_release_requires_explicit_revision_without_resuming(monkeypatch):
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None, **kwargs: calls.append((path, body, kwargs)))
+    runner = CliRunner()
+    assert runner.invoke(neri.app, ['runtime', 'release']).exit_code != 0
+    assert runner.invoke(neri.app, ['runtime', 'release', '--revision', '0']).exit_code != 0
+    assert not calls
+    assert runner.invoke(neri.app, ['runtime', 'release', '--revision', '12']).exit_code == 0
+    assert calls == [('/api/runtime-control', {'stopped': False, 'expected_revision': 12}, {'method': 'PUT'})]
+
+
+def test_advisory_budget_help_does_not_promise_enforcement():
+    runner = CliRunner()
+    result = runner.invoke(neri.app, ['budget', '--help'])
+    assert result.exit_code == 0 and 'do not gate execution' in result.output
+    result = runner.invoke(neri.app, ['budget', 'set', '--help'])
+    assert result.exit_code == 0 and 'does not cap or pause execution' in result.output
