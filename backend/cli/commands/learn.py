@@ -105,13 +105,35 @@ class WorkKind(StrEnum):
 
 
 @app.command()
-@usage(surface="st.learn.work", cmd="st learn work recommend|curriculum|tutor|review|audio|content-review|prediction [--message TEXT] [--record ID] [--lesson ID] [--step N] [--explanation-seen] [--command-id UUID]", when="request subscription-only learning work, prediction feedback, independent draft review or local audio", precautions=("returns a durable job; inspect status before retrying; preserve command ID only for identical payloads; review record is an attempt ID; content-review record is a draft ID; prediction needs the actual learner answer and zero-based step; never invent a learner response",), task_types=("learning", "learn-o-tron"), tier="reference")
-def work(kind: WorkKind, message: str = "", record: str = "", lesson: str = "", command_id: UUID | None = None, step: int | None = None, explanation_seen: bool = False):
+@usage(surface="st.learn.work", cmd="st learn work recommend|curriculum|tutor|review|audio|content-review|prediction [--message TEXT] [--record ID] [--lesson ID] [--step N] [--explanation-seen] [--command-id UUID] [--context-file FILE]", when="request subscription-only learning work, prediction feedback, independent draft review or local audio", precautions=("returns a durable job; inspect status before retrying; preserve command ID only for identical payloads; review record is an attempt ID; content-review record is a draft ID; prediction needs the actual learner answer and zero-based step; never invent a learner response",), task_types=("learning", "learn-o-tron"), tier="reference")
+def work(kind: WorkKind, message: str = "", record: str = "", lesson: str = "", command_id: UUID | None = None, step: int | None = None, explanation_seen: bool = False, context_file: Annotated[Path | None, typer.Option(help="Structured learning-check section, saved attempt or current draft; use capabilities for its schema.")] = None):
     payload = {"command_id": str(command_id or uuid4()), "kind": kind.value, "message": message,
                "record_id": record, "lesson_id": lesson, "step": step, "actor": "agent"}
     if kind == WorkKind.prediction:
         payload["explanation_seen"] = explanation_seen
+    if context_file:
+        if kind != WorkKind.tutor:
+            raise typer.BadParameter('--context-file is for tutor discussion')
+        payload["learning_check"] = read_file(context_file)
     request("/api/jobs", payload)
+
+
+@app.command('check')
+@usage(surface="st.learn.check", cmd="st learn check --path ID --lesson ID [--attempt ID]", when="resume saved learning-check answers and their automatic Rowan review", precautions=("default is the latest submission; saving an attempt starts a review atomically; a queued review is not completion",), task_types=("learning", "learn-o-tron"), tier="reference")
+def learning_check(path: Annotated[str, typer.Option()], lesson: Annotated[str, typer.Option()], attempt: str = ''):
+    from urllib.parse import quote
+    query = f'?attempt_id={quote(attempt, safe="")}' if attempt else ''
+    request(f"/api/paths/{quote(path, safe='')}/lessons/{quote(lesson, safe='')}/learning-check{query}")
+
+
+@app.command()
+@usage(surface="st.learn.discussion", cmd="st learn discussion --path ID --lesson ID --attempt ID | --challenge ID", when="read saved questions, critiques and Rowan replies attached to a learning check", precautions=("send actual learner text with work tutor --context-file; do not fabricate learner messages or evidence",), task_types=("learning", "learn-o-tron"), tier="reference")
+def discussion(path: Annotated[str, typer.Option()], lesson: Annotated[str, typer.Option()], attempt: str = '', challenge: str = ''):
+    from urllib.parse import quote, urlencode
+    if bool(attempt) == bool(challenge):
+        raise typer.BadParameter('Choose exactly one of --attempt or --challenge')
+    query = urlencode({'attempt_id': attempt} if attempt else {'challenge_id': challenge})
+    request(f"/api/paths/{quote(path, safe='')}/lessons/{quote(lesson, safe='')}/check-discussion?{query}")
 
 
 @app.command()

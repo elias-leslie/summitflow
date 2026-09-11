@@ -21,3 +21,21 @@ def test_prediction_history_routes_and_step_validation(monkeypatch):
     assert runner.invoke(learn.app, ['predictions', '--path', 'path-test', '--lesson', 'authority', '--step', '0']).exit_code == 0
     assert calls == [('/api/paths/path-test/lessons/authority/steps/0/predictions',)]
     assert runner.invoke(learn.app, ['predictions', '--path', 'path-test', '--lesson', 'authority', '--step', '-1']).exit_code != 0
+
+
+def test_check_discussion_preserves_context_and_uses_saved_check_endpoint(monkeypatch, tmp_path):
+    import json
+    calls = []
+    monkeypatch.setattr(learn, 'request', lambda *args: calls.append(args))
+    context = {'section':'review', 'attempt_id':'saved-check'}
+    path = tmp_path / 'context.json'
+    path.write_text(json.dumps(context))
+    runner = CliRunner()
+    result = runner.invoke(learn.app, ['work', 'tutor', '--record', 'path-test', '--lesson', 'authority',
+        '--message', 'The policy was not specified.', '--context-file', str(path)])
+    assert result.exit_code == 0, result.output
+    assert calls[-1][1]['learning_check'] == context and calls[-1][1]['actor'] == 'agent'
+    assert runner.invoke(learn.app, ['check', '--path', 'path-test', '--lesson', 'authority']).exit_code == 0
+    assert calls[-1] == ('/api/paths/path-test/lessons/authority/learning-check',)
+    assert runner.invoke(learn.app, ['discussion', '--path', 'path-test', '--lesson', 'authority', '--attempt', 'saved-check']).exit_code == 0
+    assert calls[-1] == ('/api/paths/path-test/lessons/authority/check-discussion?attempt_id=saved-check',)
