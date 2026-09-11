@@ -45,6 +45,48 @@ def _status(
 class TestDockerRuntime:
     """Tests for Docker runtime mode endpoints."""
 
+    def test_missing_local_unit_does_not_claim_remote_service_stopped(self) -> None:
+        from app.api.docker._status_probing import _classify_systemd_state
+
+        state, health, status = _classify_systemd_state("inactive", "dead", "not-found", False, None, "app")
+        assert state == "unknown"
+        assert health == ""
+        assert "not installed locally" in status
+
+    @pytest.mark.asyncio
+    async def test_runtime_discovers_new_project_without_restart(self, mocker: MockerFixture) -> None:
+        from app.api.docker import _status_probing, helpers
+
+        identities = []
+        mocker.patch("app.project_identity.list_project_identities", side_effect=lambda: identities)
+        mocker.patch.object(helpers, "_docker_container_map", new=mocker.AsyncMock(return_value={}))
+        probe = mocker.patch.object(_status_probing, "_runtime_service_status", new=mocker.AsyncMock())
+        await helpers._runtime_service_statuses()
+        assert not any(call.args[0]["service"] == "new-project-api" for call in probe.call_args_list)
+
+        identities.append({
+            "project": {"id": "new-project"},
+            "runtime": {"backend_port": 8123, "health_endpoint": "/healthz"},
+            "services": {
+                "backend": "new-project.service", "frontend": "new-project.service",
+                "default_workers": ["new-project-jobs.service"],
+                "optional_workers": ["new-project-extra.service"],
+            },
+        })
+        probe.reset_mock()
+        await helpers._runtime_service_statuses()
+        discovered = [call.args[0] for call in probe.call_args_list if call.args[0].get("project_id") == "new-project"]
+        assert {item["unit"] for item in discovered} == {
+            "new-project.service", "new-project-jobs.service", "new-project-extra.service",
+        }
+        assert len(discovered) == 3
+        definition = helpers._service_definition("new-project-api")
+        assert definition["probe_url"] == "http://localhost:8123/healthz"
+        assert definition["ports"] == ["8123"]
+        identities[0]["project"]["lifecycle"] = "retired"
+        with pytest.raises(HTTPException, match="Unknown service"):
+            helpers._service_definition("new-project-api")
+
     @pytest.mark.asyncio
     async def test_backup_fallback_confines_note_to_safe_filename(
         self,

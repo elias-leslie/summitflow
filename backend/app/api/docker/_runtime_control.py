@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 # Late-bound access to helpers — ensures mocks at helpers.* take effect at runtime.
 from . import helpers as _h
-from .constants import _COMMAND_TIMEOUT_SECONDS, _INFRA_SERVICES, _RUNTIME_SERVICE_DEFS
+from .constants import _COMMAND_TIMEOUT_SECONDS, _INFRA_SERVICES, runtime_service_definitions
 from .models import ActionResult, RuntimeModeStatus
 
 __all__ = [
@@ -223,7 +223,7 @@ def _systemd_stop_service_defs(svc: dict[str, Any]) -> list[dict[str, Any]]:
     sibling_prefix = f"{project_prefix}-"
     siblings = [
         candidate
-        for candidate in _RUNTIME_SERVICE_DEFS
+        for candidate in runtime_service_definitions()
         if (
             candidate["manager"] == "systemd"
             and candidate["service"] != service

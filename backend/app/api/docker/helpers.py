@@ -28,8 +28,8 @@ from .constants import (
     _INFRA_SERVICES,
     _INTERNAL_SECRET,
     _REPO_ROOT,  # noqa: F401 — mocked at helpers.* in tests
-    _RUNTIME_SERVICE_MAP,
     COMPOSE_PROJECT,
+    runtime_service_definitions,
 )
 
 # ─── Auth ────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ def _service_from_container(container: dict[str, Any]) -> str:
 
 
 def _service_definition(service: str) -> dict[str, Any]:
-    svc = _RUNTIME_SERVICE_MAP.get(service)
+    svc = next((item for item in runtime_service_definitions() if item["service"] == service), None)
     if svc is None:
         raise HTTPException(status_code=404, detail=f"Unknown service: {service}")
     return svc

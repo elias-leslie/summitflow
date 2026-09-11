@@ -10,7 +10,7 @@ from typing import Any
 # Late-bound access to helpers — ensures mocks at helpers.* take effect at runtime.
 from . import helpers as _h
 from ._process_execution import _run_command  # never mocked at helpers.*
-from .constants import _RUNTIME_SERVICE_DEFS
+from .constants import runtime_service_definitions
 from .models import RuntimeServiceMetrics
 
 __all__ = [
@@ -126,7 +126,7 @@ async def _runtime_metrics() -> list[RuntimeServiceMetrics]:
     docker_metrics = await _collect_docker_metrics(docker_containers)
 
     systemd_metrics = await asyncio.gather(
-        *[_systemd_service_metric(svc) for svc in _RUNTIME_SERVICE_DEFS if svc["manager"] == "systemd"]
+        *[_systemd_service_metric(svc) for svc in runtime_service_definitions() if svc["manager"] == "systemd"]
     )
 
     return docker_metrics + [m for m in systemd_metrics if m is not None]

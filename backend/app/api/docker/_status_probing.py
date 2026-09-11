@@ -9,7 +9,7 @@ from urllib import request as urllib_request
 
 # Late-bound access to helpers — ensures mocks at helpers.* take effect at runtime.
 from . import helpers as _h
-from .constants import _HTTP_PROBE_TIMEOUT_SECONDS, _RUNTIME_SERVICE_DEFS
+from .constants import _HTTP_PROBE_TIMEOUT_SECONDS, runtime_service_definitions
 from .models import RuntimeServiceStatus
 
 __all__ = [
@@ -174,6 +174,8 @@ def _classify_systemd_state(
     """Return (state, health, status) for a systemd unit."""
     if probe_ok:
         return "running", "healthy", f"Serving HTTP {probe_status}"
+    if load_state == "not-found":
+        return "unknown", "", "Unit not installed locally; remote runtime is not inspected"
     if active_state == "active":
         health = "running" if category == "worker" else ""
         return "running", health, f"systemd {sub_state}"
@@ -200,6 +202,6 @@ async def _runtime_service_statuses() -> list[RuntimeServiceStatus]:
     docker_containers = await _h._docker_container_map(all_containers=True)
     return list(
         await asyncio.gather(
-            *[_runtime_service_status(svc, docker_containers) for svc in _RUNTIME_SERVICE_DEFS]
+            *[_runtime_service_status(svc, docker_containers) for svc in runtime_service_definitions()]
         )
     )

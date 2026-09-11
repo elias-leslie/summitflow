@@ -337,3 +337,41 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
     },
 )
 _RUNTIME_SERVICE_MAP = {svc["service"]: svc for svc in _RUNTIME_SERVICE_DEFS}
+
+
+def runtime_service_definitions() -> tuple[dict[str, Any], ...]:
+    """Discover declared project services on each request, retaining legacy IDs."""
+    from ...project_identity import identity_lifecycle, list_project_identities
+
+    definitions = {svc["service"]: dict(svc) for svc in _RUNTIME_SERVICE_DEFS}
+    by_unit = {svc.get("unit"): svc["service"] for svc in _RUNTIME_SERVICE_DEFS}
+    for identity in list_project_identities():
+        if identity_lifecycle(identity) != "active":
+            continue
+        project_id = identity["project"]["id"]
+        services = identity.get("services", {})
+        runtime = identity.get("runtime", {})
+        roles = [
+            (services.get("backend"), "api", runtime.get("backend_port"), runtime.get("health_endpoint", "/health")),
+            (services.get("frontend"), "web", runtime.get("frontend_port"), "/"),
+            *((unit, "worker", None, None) for unit in (
+                *services.get("default_workers", []), *services.get("optional_workers", []),
+            )),
+        ]
+        seen: set[str] = set()
+        for unit, role, port, health_path in roles:
+            if not unit or unit in seen:
+                continue
+            seen.add(unit)
+            service = by_unit.get(unit) or (
+                unit.removesuffix(".service") if role == "worker" else f"{project_id}-{role}"
+            )
+            definition = {
+                "service": service, "display_name": service, "manager": "systemd",
+                "category": "worker" if role == "worker" else "app", "unit": unit,
+                "ports": [str(port)] if port else [], "project_id": project_id,
+            }
+            if port and health_path:
+                definition["probe_url"] = f"http://localhost:{port}{health_path}"
+            definitions[service] = definition
+    return tuple(definitions.values())
