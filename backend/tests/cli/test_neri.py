@@ -210,6 +210,10 @@ def test_orchestrator_context_before_run_and_profiles(monkeypatch):
     assert runner.invoke(neri.app, ['start', '--hunter-profile', 'sol-daybreak-blue']).exit_code != 0
     assert runner.invoke(neri.app, ['start', '--native', '--hunter-profile', 'sol-daybreak-blue', '--reviewer-profile', 'astra-standard']).exit_code == 0
     assert calls[-1][1]['reasoning_profiles'] == {'hunter': 'sol-daybreak-blue', 'reviewer': 'astra-standard'}
+    assert runner.invoke(neri.app, ['start', '--native', '--hunter-profile', 'sol-automatic']).exit_code == 0
+    assert calls[-1][1]['reasoning_profiles'] == {'hunter': 'sol-automatic', 'reviewer': 'astra-standard'}
+    assert runner.invoke(neri.app, ['start', '--native', '--reviewer-profile', 'astra-standard']).exit_code == 0
+    assert calls[-1][1]['reasoning_profiles'] == {'hunter': 'sol-automatic', 'reviewer': 'astra-standard'}
 
 
 

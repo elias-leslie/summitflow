@@ -40,6 +40,7 @@ class Variant(StrEnum):
 
 
 class ReasoningProfile(StrEnum):
+    automatic = 'sol-automatic'
     astra = 'astra-standard'
     sol = 'sol-daybreak-blue'
 
@@ -100,7 +101,7 @@ def start(variant: Variant = Variant.benchmark, advanced: bool = False,
     if hunter_profile or reviewer_profile:
         if not (native or external):
             raise typer.BadParameter('Explicit profiles require --native or --external')
-        body['reasoning_profiles'] = {'hunter': hunter_profile or 'astra-standard', 'reviewer': reviewer_profile or 'astra-standard'}
+        body['reasoning_profiles'] = {'hunter': hunter_profile or 'sol-automatic', 'reviewer': reviewer_profile or 'astra-standard'}
     if external:
         if not controller_id:
             raise typer.BadParameter("--controller-id is required for --external")
