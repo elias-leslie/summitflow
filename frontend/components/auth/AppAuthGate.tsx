@@ -4,12 +4,13 @@ import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect } from 'react'
+import { Button } from '@/components/ui/button'
 import { fetchAuthMe } from '@/lib/api/auth'
 
 export function AppAuthGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['auth-me'],
     queryFn: fetchAuthMe,
     retry: false,
@@ -30,7 +31,34 @@ export function AppAuthGate({ children }: { children: React.ReactNode }) {
     )
   }
 
-  if (isError || !data?.is_owner) {
+  if (isError) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-950 p-6 text-center">
+        <div
+          role="alert"
+          className="max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-8"
+        >
+          <h1 className="display text-xl font-semibold text-slate-100">
+            Unable to check SummitFlow access
+          </h1>
+          <p className="mt-2 text-sm text-slate-400">
+            We couldn’t verify your access. The service may be temporarily
+            unavailable, or your connection may have been interrupted. Please
+            try again.
+          </p>
+          <Button
+            className="mt-4"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            {isFetching ? 'Checking access...' : 'Try again'}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!data?.is_owner) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-950 p-6 text-center">
         <div className="max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-8">
