@@ -100,17 +100,18 @@ class WorkKind(StrEnum):
     tutor = "tutor"
     review = "review"
     audio = "audio"
+    content_review = "content-review"
 
 
 @app.command()
-@usage(surface="st.learn.work", cmd="st learn work recommend|curriculum|tutor|review|audio [--message TEXT] [--record ID] [--lesson ID] [--command-id UUID]", when="request bounded subscription-only Agent Hub learning work or local audio", precautions=("returns a durable job; inspect status before retrying; preserve command ID only for identical payloads; review record is an attempt ID",), task_types=("learning", "learn-o-tron"), tier="reference")
-def work(kind: WorkKind, message: str = "", record: str = "", lesson: str = "", command_id: UUID | None = None):
+@usage(surface="st.learn.work", cmd="st learn work recommend|curriculum|tutor|review|audio|content-review [--message TEXT] [--record ID] [--lesson ID] [--command-id UUID]", when="request subscription-only learning work, independent draft review or local audio", precautions=("returns a durable job; inspect status before retrying; preserve command ID only for identical payloads; review record is an attempt ID; content-review record is a draft ID",), task_types=("learning", "learn-o-tron"), tier="reference")
+def work(kind: WorkKind, message: str = "", record: str = "", lesson: str = "", command_id: UUID | None = None, step: int | None = None):
     request("/api/jobs", {"command_id": str(command_id or uuid4()), "kind": kind.value, "message": message,
-                          "record_id": record, "lesson_id": lesson, "actor": "agent"})
+                          "record_id": record, "lesson_id": lesson, "step": step, "actor": "agent"})
 
 
 @app.command()
-@usage(surface="st.learn.status", cmd="st learn status [JOB_ID]", when="read job completion or full learning state", precautions=("queued/running is not completion; full state is larger than st learn context",), task_types=("learning", "learn-o-tron"), tier="reference")
+@usage(surface="st.learn.status", cmd="st learn status [--job-id UUID]", when="read job completion or full learning state", precautions=("queued/running is not completion; full state is larger than st learn context",), task_types=("learning", "learn-o-tron"), tier="reference")
 def status(job_id: UUID | None = None):
     request(f"/api/jobs/{job_id}" if job_id else "/api/state")
 
@@ -136,3 +137,69 @@ def lab(path: Annotated[str, typer.Option()], lesson: Annotated[str, typer.Optio
     if payload:
         payload["actor"] = "agent"
     request(f"/api/paths/{quote(path, safe='')}/lessons/{quote(lesson, safe='')}/lab", payload)
+
+
+@app.command()
+@usage(surface="st.learn.instructor", cmd="st learn instructor", when="load Rowan's shared teaching voice and evidence-based method", task_types=("learning", "learn-o-tron"), tier="reference")
+def instructor():
+    request("/api/instructor")
+
+
+@app.command()
+@usage(surface="st.learn.roadmap", cmd="st learn roadmap [--file roadmap.json]", when="read or revise the shared goals, milestones and optional certifications", precautions=("updates require the read revision and a reason; completed milestones need evidence; preserve unrelated goals",), task_types=("learning", "learn-o-tron"), tier="reference")
+def roadmap(file: Annotated[Path | None, typer.Option()] = None):
+    payload = read_file(file) if file else None
+    if payload is not None:
+        payload["actor"] = "agent"
+    request("/api/roadmap", payload, "PUT")
+
+
+@app.command()
+@usage(surface="st.learn.conversation", cmd="st learn conversation [--before ID] [--file exchange.json]", when="read saved exchanges or preserve an actual native tutor conversation", precautions=("store actual user and instructor messages; no invented learner statements; this does not create mastery evidence",), task_types=("learning", "learn-o-tron"), tier="reference")
+def conversation(before: str = "", file: Annotated[Path | None, typer.Option()] = None):
+    from urllib.parse import quote
+    request("/api/conversation" + (f"?before={quote(before, safe='')}" if before and not file else ""), read_file(file) if file else None)
+
+
+@app.command()
+@usage(surface="st.learn.authoring", cmd="st learn authoring", when="load the canonical source-to-publication workflow, schemas and supported labs", precautions=("read before authoring; primary-source evidence and independent editorial review precede publication",), task_types=("learning", "learn-o-tron"), tier="reference")
+def authoring():
+    request("/api/authoring")
+
+
+@app.command()
+@usage(surface="st.learn.source", cmd="st learn source [--file source.json]", when="inspect or preserve an actually retrieved primary-source excerpt", precautions=("read the original first; do not manufacture captures or claim the timestamp proves retrieval",), task_types=("learning", "learn-o-tron"), tier="reference")
+def source(file: Annotated[Path | None, typer.Option()] = None):
+    request("/api/content/sources", read_file(file) if file else None)
+
+
+@app.command()
+@usage(surface="st.learn.draft", cmd="st learn draft --file draft.json | --id ID", when="save an immutable curriculum draft or inspect checks, sources and review", precautions=("revisions use a new command ID; reading a draft includes answer keys intended for authors",), task_types=("learning", "learn-o-tron"), tier="reference")
+def draft(file: Annotated[Path | None, typer.Option()] = None, id: Annotated[str | None, typer.Option()] = None):
+    from urllib.parse import quote
+    if bool(file) == bool(id):
+        raise typer.BadParameter("Choose exactly one of --file or --id")
+    request(f"/api/content/drafts/{quote(id, safe='')}" if id else "/api/content/drafts", read_file(file) if file else None)
+
+
+@app.command()
+@usage(surface="st.learn.publish", cmd="st learn publish DRAFT_ID", when="publish the exact draft after passing checks and independent content review", precautions=("server rejects unreviewed, changed or blocked drafts; success is idempotent",), task_types=("learning", "learn-o-tron"), tier="reference")
+def publish(draft_id: str):
+    from urllib.parse import quote
+    request(f"/api/content/drafts/{quote(draft_id, safe='')}/publish", {})
+
+
+@app.command()
+@usage(surface="st.learn.challenge", cmd="st learn challenge --path ID --lesson ID", when="load the current question variant and challenge ID before a learning check", precautions=("answer keys are withheld; stale challenges are rejected; finite question sets eventually repeat",), task_types=("learning", "learn-o-tron"), tier="reference")
+def challenge(path: Annotated[str, typer.Option()], lesson: Annotated[str, typer.Option()]):
+    from urllib.parse import quote
+    request(f"/api/paths/{quote(path, safe='')}/lessons/{quote(lesson, safe='')}/challenge")
+
+
+@app.command()
+@usage(surface="st.learn.agent_lab", cmd="st learn agent-lab --path ID --lesson ID --file action.json", when="operate the local agent permission simulator and retain attributed evidence", precautions=("CLI actions are agent-assisted; deterministic policy test only, no live model or external effects",), task_types=("learning", "learn-o-tron"), tier="reference")
+def agent_lab(path: Annotated[str, typer.Option()], lesson: Annotated[str, typer.Option()], file: Annotated[Path, typer.Option()]):
+    from urllib.parse import quote
+    payload = read_file(file)
+    payload["actor"] = "agent"
+    request(f"/api/paths/{quote(path, safe='')}/lessons/{quote(lesson, safe='')}/agent-lab", payload)
