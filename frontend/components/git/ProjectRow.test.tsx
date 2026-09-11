@@ -5,10 +5,12 @@ import { ProjectRow } from './ProjectRow'
 
 const apiMocks = vi.hoisted(() => ({
   publishProjectChanges: vi.fn(),
+  pullRepository: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
   publishProjectChanges: apiMocks.publishProjectChanges,
+  pullRepository: apiMocks.pullRepository,
 }))
 
 vi.mock('./project-row/DashboardContent', () => ({
@@ -142,4 +144,37 @@ describe('ProjectRow', () => {
       'sm:basis-auto',
     )
   })
+})
+
+it('displays a skipped pull with its reason', async () => {
+  apiMocks.pullRepository.mockResolvedValue({
+    results: [
+      {
+        path: '/repos/repo-folder',
+        name: 'repo-folder',
+        branch: 'main',
+        status: 'skipped',
+        reason: 'uncommitted changes',
+      },
+    ],
+    success: 0,
+    failed: 0,
+    skipped: 1,
+  })
+  renderRow()
+  fireEvent.click(screen.getByRole('button', { name: 'Sync' }))
+  await waitFor(() =>
+    expect(screen.getByText(/uncommitted changes/)).toBeInTheDocument(),
+  )
+})
+
+it('displays publish transport errors', async () => {
+  apiMocks.publishProjectChanges.mockRejectedValue(
+    new Error('Publication unavailable'),
+  )
+  renderRow()
+  fireEvent.click(screen.getByRole('button', { name: 'Commit + Push' }))
+  await waitFor(() =>
+    expect(screen.getByText('Publication unavailable')).toBeInTheDocument(),
+  )
 })

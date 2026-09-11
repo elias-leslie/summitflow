@@ -49,22 +49,30 @@ function StatPill({
 
 export function GitClient() {
   const queryClient = useQueryClient()
-  const [remoteCheckedAt, setRemoteCheckedAt] = useState<Date | null>(null)
+  const [remoteCheckedAt, setRemoteCheckedAt] = useState<Record<string, Date>>(
+    {},
+  )
   const { data: gitStatus, isLoading, isError } = useGitStatus()
   const repos = gitStatus?.repositories ?? []
   const checkRemoteMutation = useMutation({
     mutationFn: checkGitRemotes,
-    onSuccess: () => {
-      setRemoteCheckedAt(new Date())
+    onSuccess: (result) => {
+      const checkedAt = new Date()
+      setRemoteCheckedAt(
+        Object.fromEntries(
+          result.results
+            .filter(
+              (repo) =>
+                repo.status === 'updated' || repo.status === 'up_to_date',
+            )
+            .map((repo) => [repo.path, checkedAt]),
+        ),
+      )
       queryClient.invalidateQueries({ queryKey: ['git-status'] })
     },
   })
 
-  const dirtyRepos = repos.filter(
-    (r) => r.state === 'dirty' || r.state === 'ahead',
-  ).length
-  const behindRepos = repos.filter((r) => r.behind > 0).length
-  const aheadRepos = repos.filter((r) => r.ahead > 0).length
+  const remoteRepos = repos.filter((r) => r.ahead > 0 || r.behind > 0).length
   const checkpointCount = repos.reduce(
     (s, r) => s + (r.workspace_summary?.active_checkpoints ?? 0),
     0,
@@ -74,7 +82,8 @@ export function GitClient() {
     0,
   )
   const dirtyMainRepoCount = repos.reduce(
-    (s, r) => s + (r.workspace_summary?.dirty_main_repo ? 1 : 0),
+    (s, r) =>
+      s + (r.uncommitted > 0 || r.workspace_summary?.dirty_main_repo ? 1 : 0),
     0,
   )
   const dirtyCount = dirtyCheckpointCount + dirtyMainRepoCount
@@ -82,7 +91,7 @@ export function GitClient() {
     (r) => r.workspace_summary?.needs_cleanup,
   ).length
   const hasSignals =
-    dirtyCount + checkpointCount + cleanupCount + dirtyRepos > 0
+    dirtyCount + checkpointCount + cleanupCount + remoteRepos > 0
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-3 px-4 py-3 md:px-5 lg:px-6">
@@ -152,21 +161,37 @@ export function GitClient() {
                 />
                 <StatPill
                   icon={RefreshCw}
-                  value={aheadRepos + behindRepos}
+                  value={remoteRepos}
                   label="remote"
                   tone="bg-cyan-500/8 text-cyan-300 border-cyan-500/20"
                 />
               </>
-            ) : (
+            ) : gitStatus && repos.length > 0 && !isError ? (
               <span className="rounded-full border border-emerald-500/18 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-200">
                 All repos clean
               </span>
-            )}
+            ) : null}
           </div>
         </div>
       </motion.section>
 
       <ConflictAlerts />
+
+      {checkRemoteMutation.isError && (
+        <p role="alert" className="text-sm text-rose-300">
+          {checkRemoteMutation.error.message}
+        </p>
+      )}
+      {checkRemoteMutation.data?.results
+        .filter(
+          (result) => result.status === 'failed' || result.status === 'skipped',
+        )
+        .map((result) => (
+          <p key={result.path} role="alert" className="text-sm text-amber-300">
+            {result.name}:{' '}
+            {result.error || result.reason || 'Remote check did not complete'}
+          </p>
+        ))}
 
       {gitStatus && !isLoading && (
         <section className="space-y-3">
@@ -194,7 +219,10 @@ export function GitClient() {
                   ease: [0.25, 0.46, 0.45, 0.94],
                 }}
               >
-                <ProjectRow repo={repo} remoteCheckedAt={remoteCheckedAt} />
+                <ProjectRow
+                  repo={repo}
+                  remoteCheckedAt={remoteCheckedAt[repo.path]}
+                />
               </motion.div>
             ))}
           </div>

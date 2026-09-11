@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { GitClient } from './GitClient'
 
 const hookMocks = vi.hoisted(() => ({
   useGitStatus: vi.fn(),
+  checkGitRemotes: vi.fn(),
 }))
 
 vi.mock('./useGitStatus', () => ({
@@ -16,13 +17,21 @@ vi.mock('@/components/git/ConflictAlerts', () => ({
 }))
 
 vi.mock('@/components/git/ProjectRow', () => ({
-  ProjectRow: ({ repo }: { repo: { name: string } }) => (
-    <div data-testid="project-row">{repo.name}</div>
+  ProjectRow: ({
+    repo,
+    remoteCheckedAt,
+  }: {
+    repo: { name: string }
+    remoteCheckedAt?: Date | null
+  }) => (
+    <div data-testid="project-row">
+      {repo.name}: {remoteCheckedAt ? 'checked' : 'unchecked'}
+    </div>
   ),
 }))
 
 vi.mock('@/lib/api', () => ({
-  checkGitRemotes: vi.fn(),
+  checkGitRemotes: hookMocks.checkGitRemotes,
 }))
 
 function renderClient() {
@@ -97,4 +106,75 @@ describe('GitClient', () => {
     expect(screen.getByText('15')).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
   })
+})
+
+const cleanRepo = {
+  path: '/repos/alpha',
+  name: 'alpha',
+  branch: 'main',
+  uncommitted: 0,
+  ahead: 0,
+  behind: 0,
+  state: 'clean',
+}
+
+it('shows remote-only debt instead of claiming all repos clean', () => {
+  hookMocks.useGitStatus.mockReturnValue({
+    data: { repositories: [{ ...cleanRepo, behind: 2, state: 'behind' }] },
+    isLoading: false,
+    isError: false,
+  })
+  renderClient()
+  expect(screen.queryByText('All repos clean')).not.toBeInTheDocument()
+  expect(screen.getByText('remote')).toBeInTheDocument()
+})
+
+it('does not claim all repos clean when status is unavailable', () => {
+  hookMocks.useGitStatus.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    isError: true,
+  })
+  renderClient()
+  expect(screen.queryByText('All repos clean')).not.toBeInTheDocument()
+})
+
+it('marks only successful remote checks fresh and displays failures', async () => {
+  hookMocks.useGitStatus.mockReturnValue({
+    data: {
+      repositories: [
+        cleanRepo,
+        { ...cleanRepo, path: '/repos/beta', name: 'beta' },
+      ],
+    },
+    isLoading: false,
+    isError: false,
+  })
+  hookMocks.checkGitRemotes.mockResolvedValue({
+    results: [
+      {
+        path: '/repos/alpha',
+        name: 'alpha',
+        branch: 'main',
+        status: 'updated',
+      },
+      {
+        path: '/repos/beta',
+        name: 'beta',
+        branch: 'main',
+        status: 'failed',
+        error: 'Remote unavailable',
+      },
+    ],
+    success: 1,
+    failed: 1,
+    skipped: 0,
+  })
+  renderClient()
+  fireEvent.click(screen.getByRole('button', { name: 'Check Remote' }))
+  await waitFor(() =>
+    expect(screen.getByText(/beta: Remote unavailable/)).toBeInTheDocument(),
+  )
+  expect(screen.getByText('alpha: checked')).toBeInTheDocument()
+  expect(screen.getByText('beta: unchecked')).toBeInTheDocument()
 })

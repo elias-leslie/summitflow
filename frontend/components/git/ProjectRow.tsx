@@ -75,7 +75,7 @@ export function ProjectRow({ repo, remoteCheckedAt }: ProjectRowProps) {
   })
 
   useEffect(() => {
-    if (!publishResult) return undefined
+    if (!publishResult?.success) return undefined
     const id = window.setTimeout(
       () => setPublishResult(null),
       PUBLISH_RESULT_AUTO_DISMISS_MS,
@@ -144,7 +144,10 @@ export function ProjectRow({ repo, remoteCheckedAt }: ProjectRowProps) {
         tabIndex={0}
         onClick={() => setExpanded(!expanded)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
+          if (
+            e.target === e.currentTarget &&
+            (e.key === 'Enter' || e.key === ' ')
+          ) {
             e.preventDefault()
             setExpanded(!expanded)
           }
@@ -218,7 +221,7 @@ export function ProjectRow({ repo, remoteCheckedAt }: ProjectRowProps) {
           {/* Sync button — stops propagation so it doesn't toggle expand */}
           <button
             type="button"
-            disabled={syncMutation.isPending}
+            disabled={syncMutation.isPending || publishMutation.isPending}
             onClick={(e) => {
               e.stopPropagation()
               syncMutation.mutate()
@@ -242,7 +245,7 @@ export function ProjectRow({ repo, remoteCheckedAt }: ProjectRowProps) {
           {canPublish && (
             <button
               type="button"
-              disabled={publishMutation.isPending}
+              disabled={publishMutation.isPending || syncMutation.isPending}
               onClick={(e) => {
                 e.stopPropagation()
                 publishMutation.mutate()
@@ -266,6 +269,38 @@ export function ProjectRow({ repo, remoteCheckedAt }: ProjectRowProps) {
         </div>
       </div>
 
+      {syncMutation.isError && (
+        <p role="alert" className="px-4 pb-3 text-sm text-rose-300">
+          {syncMutation.error.message}
+        </p>
+      )}
+      {syncMutation.data?.results.map((result) => (
+        <p
+          key={result.path}
+          role={
+            result.status === 'failed' || result.status === 'skipped'
+              ? 'alert'
+              : 'status'
+          }
+          className="px-4 pb-3 text-sm text-slate-300"
+        >
+          {result.status === 'failed'
+            ? 'Sync failed'
+            : result.status === 'skipped'
+              ? 'Sync skipped'
+              : result.status === 'up_to_date'
+                ? 'Already up to date'
+                : 'Remote changes synced'}
+          {result.error || result.reason
+            ? `: ${result.error || result.reason}`
+            : ''}
+        </p>
+      ))}
+      {publishMutation.isError && (
+        <p role="alert" className="px-4 pb-3 text-sm text-rose-300">
+          {publishMutation.error.message}
+        </p>
+      )}
       {/* Publish result */}
       {publishResult && (
         <div className="px-4 pb-2.5">
