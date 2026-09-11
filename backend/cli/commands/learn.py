@@ -101,13 +101,24 @@ class WorkKind(StrEnum):
     review = "review"
     audio = "audio"
     content_review = "content-review"
+    prediction = "prediction"
 
 
 @app.command()
-@usage(surface="st.learn.work", cmd="st learn work recommend|curriculum|tutor|review|audio|content-review [--message TEXT] [--record ID] [--lesson ID] [--command-id UUID]", when="request subscription-only learning work, independent draft review or local audio", precautions=("returns a durable job; inspect status before retrying; preserve command ID only for identical payloads; review record is an attempt ID; content-review record is a draft ID",), task_types=("learning", "learn-o-tron"), tier="reference")
-def work(kind: WorkKind, message: str = "", record: str = "", lesson: str = "", command_id: UUID | None = None, step: int | None = None):
-    request("/api/jobs", {"command_id": str(command_id or uuid4()), "kind": kind.value, "message": message,
-                          "record_id": record, "lesson_id": lesson, "step": step, "actor": "agent"})
+@usage(surface="st.learn.work", cmd="st learn work recommend|curriculum|tutor|review|audio|content-review|prediction [--message TEXT] [--record ID] [--lesson ID] [--step N] [--explanation-seen] [--command-id UUID]", when="request subscription-only learning work, prediction feedback, independent draft review or local audio", precautions=("returns a durable job; inspect status before retrying; preserve command ID only for identical payloads; review record is an attempt ID; content-review record is a draft ID; prediction needs the actual learner answer and zero-based step; never invent a learner response",), task_types=("learning", "learn-o-tron"), tier="reference")
+def work(kind: WorkKind, message: str = "", record: str = "", lesson: str = "", command_id: UUID | None = None, step: int | None = None, explanation_seen: bool = False):
+    payload = {"command_id": str(command_id or uuid4()), "kind": kind.value, "message": message,
+               "record_id": record, "lesson_id": lesson, "step": step, "actor": "agent"}
+    if kind == WorkKind.prediction:
+        payload["explanation_seen"] = explanation_seen
+    request("/api/jobs", payload)
+
+
+@app.command()
+@usage(surface="st.learn.predictions", cmd="st learn predictions --path ID --lesson ID --step N", when="read saved prediction answers, Rowan feedback and queued checks for a lesson step", precautions=("latest 20 requests; zero-based step; formative feedback is not mastery evidence",), task_types=("learning", "learn-o-tron"), tier="reference")
+def predictions(path: Annotated[str, typer.Option()], lesson: Annotated[str, typer.Option()], step: Annotated[int, typer.Option(min=0, max=6)]):
+    from urllib.parse import quote
+    request(f"/api/paths/{quote(path, safe='')}/lessons/{quote(lesson, safe='')}/steps/{step}/predictions")
 
 
 @app.command()
