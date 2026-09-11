@@ -17,6 +17,14 @@ from cli.output_context import OutputContext
 runner = CliRunner()
 
 
+@patch("cli.commands.jj.run_jj")
+def test_untrack_uses_literal_repo_relative_paths(mock_run: MagicMock, tmp_path: Path) -> None:
+    mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    result = runner.invoke(jj.app, ["untrack", "--repo", str(tmp_path), "thread_history_1.sqlite"])
+    assert result.exit_code == 0
+    mock_run.assert_called_once_with(tmp_path, ["file", "untrack", "--", 'root:"thread_history_1.sqlite"'])
+
+
 def test_jj_help_lists_agent_workflows() -> None:
     result = runner.invoke(jj.app, ["--help"])
 

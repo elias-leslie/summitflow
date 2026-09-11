@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -387,6 +388,16 @@ def abandon(
 ) -> None:
     """Abandon a local jj revision; recover with st jj undo/op-restore."""
     _log_and_run(_repo_or_current(repo), ["abandon", revision], task_id, f"st jj abandon {revision} executed")
+
+
+@app.command()
+def untrack(
+    paths: Annotated[list[str], typer.Argument(help="Ignored paths to stop tracking; local files are preserved.")],
+    repo: Annotated[Path | None, typer.Option("--repo", "-R", help="Repository path.")] = None,
+) -> None:
+    """Stop snapshotting ignored runtime files without deleting their contents."""
+    filesets = [f"root:{json.dumps(path)}" for path in paths]
+    _run_or_exit(_repo_or_current(repo), ["file", "untrack", "--", *filesets])
 
 
 @app.command()

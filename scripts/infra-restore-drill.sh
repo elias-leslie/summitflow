@@ -20,7 +20,8 @@ DRILL_REDIS_CONTAINER="sf-drill-redis-$$"
 START_TIME=$(date +%s%3N 2>/dev/null || echo "0")
 
 cleanup() {
-    docker rm -f "$DRILL_PG_CONTAINER" "$DRILL_REDIS_CONTAINER" >/dev/null 2>&1 || true
+    # Database images create anonymous volumes; remove those with the disposable containers.
+    docker rm -fv "$DRILL_PG_CONTAINER" "$DRILL_REDIS_CONTAINER" >/dev/null 2>&1 || true
     [ -d "$DRILL_DIR" ] && rm -rf "$DRILL_DIR"
 }
 trap cleanup EXIT
@@ -54,7 +55,7 @@ if [ -n "$PG_DUMP" ]; then
         -e POSTGRES_PASSWORD=drill_test \
         pgvector/pgvector:pg16 >/dev/null 2>&1
 
-    for i in $(seq 1 30); do
+    for _ in $(seq 1 30); do
         if docker exec "$DRILL_PG_CONTAINER" pg_isready -U postgres >/dev/null 2>&1; then
             break
         fi
@@ -90,7 +91,7 @@ if [ -n "$REDIS_RDB" ]; then
             -v "$REDIS_RDB:/data/dump.rdb:ro" \
             redis:7-alpine redis-server --appendonly no >/dev/null 2>&1
 
-        for i in $(seq 1 15); do
+        for _ in $(seq 1 15); do
             if docker exec "$DRILL_REDIS_CONTAINER" redis-cli ping 2>/dev/null | grep -q PONG; then
                 break
             fi
