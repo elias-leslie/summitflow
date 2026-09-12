@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: elias-leslie/agent-hub
-          ref: af7c4df239a9db1ac11f3a982e65c2b28f1a5481
+          ref: e23acc82b89f01d974e93aac87f15fb399f2a812
           path: agent-hub-repo
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -66,7 +66,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: elias-leslie/agent-hub
-          ref: af7c4df239a9db1ac11f3a982e65c2b28f1a5481
+          ref: e23acc82b89f01d974e93aac87f15fb399f2a812
           path: agent-hub-repo
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
