@@ -13,9 +13,11 @@ from ..config import DATABASE_URL
 # Module-level connection pool (lazy-initialized)
 _pool: ConnectionPool | None = None
 
-# Pool configuration
-POOL_MIN_SIZE = 5
-POOL_MAX_SIZE = 20
+# Every service and short-lived CLI process owns a pool on the shared host.
+# Open connections on demand and release burst capacity promptly.
+POOL_MIN_SIZE = 0
+POOL_MAX_SIZE = 5
+POOL_MAX_IDLE_SECONDS = 60.0
 PREFIXED_ID_HEX_LENGTH = 16
 
 
@@ -41,6 +43,7 @@ def get_pool() -> ConnectionPool:
             min_size=POOL_MIN_SIZE,
             max_size=POOL_MAX_SIZE,
             timeout=30.0,
+            max_idle=POOL_MAX_IDLE_SECONDS,
             open=True,
         )
     return _pool
