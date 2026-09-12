@@ -270,3 +270,78 @@ def test_evolution_and_help_are_thin_clients(monkeypatch):
     count = len(calls)
     assert runner.invoke(neri.app, ['help', 'resolve', identity, '--file', '-'], input='[]').exit_code != 0
     assert len(calls) == count
+
+
+def test_target_discovery_uses_compact_api_and_encoded_identity(monkeypatch):
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None: calls.append((path, body)))
+    runner = CliRunner()
+    assert runner.invoke(neri.app, ['target', 'list']).exit_code == 0
+    assert runner.invoke(neri.app, ['target', 'show', 'local-documents-v1']).exit_code == 0
+    assert runner.invoke(neri.app, ['target', 'show', 'docs?version=2']).exit_code == 0
+    assert calls == [
+        ('/api/targets?compact=true', None),
+        ('/api/targets/local-documents-v1', None),
+        ('/api/targets/docs%3Fversion%3D2', None),
+    ]
+
+
+def test_target_writes_preserve_manifest_and_status_fence(monkeypatch, tmp_path):
+    import json
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None, **kwargs: calls.append((path, body, kwargs)))
+    runner = CliRunner()
+    manifest = {
+        'target_id': 'local-documents-v1', 'version': '1',
+        'artifact_identity': 'sha256:fixture', 'executor_key': 'local-analysis',
+        'manifest': {'domain': 'documents', 'resource_refs': ['fixture:documents'],
+                     'setup': {'notes': 'Keep literal `text` and $(values).'}},
+    }
+    file = tmp_path / 'target.json'
+    file.write_text(json.dumps(manifest))
+    assert runner.invoke(neri.app, ['target', 'register', '--file', str(file)]).exit_code == 0
+    assert calls[-1] == ('/api/targets', manifest, {})
+    for expected, status in [('active', 'inactive'), ('inactive', 'active')]:
+        body = {'manifest_digest': 'sha256:observed', 'expected_status': expected,
+                'status': status, 'reason': 'Owner requested a reversible status change'}
+        result = runner.invoke(neri.app, ['target', 'status', 'local-documents-v1', '--file', '-'],
+                               input=json.dumps(body))
+        assert result.exit_code == 0
+        assert calls[-1] == ('/api/targets/local-documents-v1/status', body, {'method': 'PUT'})
+    count = len(calls)
+    for args in [['target', 'register'], ['target', 'status', 'local-documents-v1']]:
+        for invalid in ['[]', '{invalid']:
+            assert runner.invoke(neri.app, [*args, '--file', '-'], input=invalid).exit_code != 0
+    assert len(calls) == count
+
+
+def test_target_status_uses_shared_client_without_retrying_conflicts(monkeypatch):
+    from types import SimpleNamespace
+
+    from cli._client_base import APIError
+
+    calls = []
+
+    class Client:
+        def __init__(self, url):
+            assert url == 'http://localhost:8017'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def put(self, path, *, json_body):
+            calls.append((path, json_body))
+            raise APIError(409, 'Target status changed')
+
+    monkeypatch.setattr(neri, 'ProjectApiClient', Client)
+    monkeypatch.setattr(neri, 'resolve_api_url', lambda _: SimpleNamespace(url='http://localhost:8017'))
+    result = CliRunner().invoke(
+        neri.app, ['target', 'status', 'local-documents-v1', '--file', '-'],
+        input='{"manifest_digest":"observed","expected_status":"active","status":"inactive","reason":"Pause"}',
+    )
+    assert result.exit_code == 1
+    assert 'Target status changed' in result.stdout
+    assert len(calls) == 1

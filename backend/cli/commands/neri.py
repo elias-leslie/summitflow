@@ -17,7 +17,7 @@ from .._project_client import ProjectApi, ProjectApiClient, ProjectApiConnectErr
 from ..lib.usage import usage
 from ..output import output_json
 
-app = typer.Typer(help="Run and inspect Neri's isolated discovery labs")
+app = typer.Typer(help="Run and inspect Neri's registered local investigations")
 brief_app = typer.Typer(help="Save investigation objectives, prospects, sources and decisions")
 app.add_typer(brief_app, name="brief")
 budget_app = typer.Typer(help="Read advisory subscription usage; legacy allocation preferences do not gate execution")
@@ -32,6 +32,8 @@ evolution_app = typer.Typer(help="Inspect linked development requests; use st co
 app.add_typer(evolution_app, name="evolution")
 help_app = typer.Typer(help="Inspect assistance requests, attach context and record owner resolutions")
 app.add_typer(help_app, name="help")
+target_app = typer.Typer(help="Inspect and register local target manifests without executing target work")
+app.add_typer(target_app, name="target")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
 
 
@@ -444,3 +446,31 @@ def help_attach(request_id: UUID, file: Annotated[Path, typer.Option()]) -> None
 @usage(surface="st.neri.help.resolve", cmd="st neri help resolve <request-id> --file resolution.json", when="record an owner resolution through the canonical Neri route", precautions=("preserves expected revision; API enforces owner authority; no automatic retry",), task_types=("neri",), tier="reference")
 def help_resolve(request_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
     request(f"/api/help-requests/{request_id}/resolution", read_object(file), method="PUT")
+
+
+@target_app.command("list")
+@usage(surface="st.neri.target.list", cmd="st neri target list", when="discover registered local targets using compact manifests", precautions=("read-only; registration is not execution authorization",), task_types=("neri",), tier="reference")
+def target_list() -> None:
+    """List compact target identities, status and available capabilities."""
+    request("/api/targets?compact=true")
+
+
+@target_app.command("show")
+@usage(surface="st.neri.target.show", cmd="st neri target show <target-id>", when="read a registered target's full manifest and immutable digest", precautions=("read-only; inspect the current manifest before status changes",), task_types=("neri",), tier="reference")
+def target_show(target_id: str) -> None:
+    """Read the full registered manifest, including setup and reset procedures."""
+    request(f"/api/targets/{quote(target_id, safe='')}")
+
+
+@target_app.command("register")
+@usage(surface="st.neri.target.register", cmd="st neri target register --file target.json", when="register a local target manifest through Neri's owner-authenticated API", precautions=("JSON object or stdin; records metadata only; API validates boundaries and version identity",), task_types=("neri",), tier="reference")
+def target_register(file: Annotated[Path, typer.Option()]) -> None:
+    """Register manifest data; '-' reads stdin. No target work is started."""
+    request("/api/targets", read_object(file))
+
+
+@target_app.command("status")
+@usage(surface="st.neri.target.status", cmd="st neri target status <target-id> --file status.json", when="reversibly activate or deactivate a registered target", precautions=("preserve manifest_digest, expected_status, status and reason; API enforces owner authority; conflicts are not retried",), task_types=("neri",), tier="reference")
+def target_status(target_id: str, file: Annotated[Path, typer.Option()]) -> None:
+    """Update status using the observed manifest digest and expected status."""
+    request(f"/api/targets/{quote(target_id, safe='')}/status", read_object(file), method="PUT")
