@@ -345,3 +345,108 @@ def test_target_status_uses_shared_client_without_retrying_conflicts(monkeypatch
     assert result.exit_code == 1
     assert 'Target status changed' in result.stdout
     assert len(calls) == 1
+
+
+def test_start_preserves_registered_target_and_external_controller(monkeypatch):
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None: calls.append((path, body)))
+    result = CliRunner().invoke(neri.app, [
+        'start', '--target-id', 'local-documents-v1', '--external',
+        '--controller-id', 'document-assistant', '--title', 'Check document inventory',
+    ])
+    assert result.exit_code == 0
+    assert calls == [('/api/runs', {
+        'variant': 'benchmark', 'guidance': 'helper', 'target_id': 'local-documents-v1',
+        'controller_mode': 'external', 'controller_id': 'document-assistant',
+        'title': 'Check document inventory',
+    })]
+
+
+def test_evolution_transitions_are_explicit_posts(monkeypatch):
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None, **kwargs: calls.append((path, body, kwargs)))
+    runner = CliRunner()
+    attempt_id = '11111111-1111-4111-8111-111111111111'
+    for transition in ['reconcile', 'qualify', 'resume']:
+        assert runner.invoke(neri.app, ['evolution', transition, attempt_id]).exit_code == 0
+        assert calls[-1] == (f'/api/evolution-attempts/{attempt_id}/{transition}', {}, {})
+    assert len(calls) == 3
+    for transition in ['reconcile', 'qualify', 'resume']:
+        assert runner.invoke(neri.app, ['evolution', transition, 'not-a-uuid']).exit_code != 0
+    assert len(calls) == 3
+
+
+def test_evolution_files_preserve_gap_revision_and_verifier_identity(monkeypatch, tmp_path):
+    import json
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None, **kwargs: calls.append((path, body, kwargs)))
+    runner = CliRunner()
+    identity = '11111111-1111-4111-8111-111111111111'
+    payloads = [
+        ('start', f'/api/runs/{identity}/evolution-attempts', {
+            'gap_id': '22222222-2222-4222-8222-222222222222', 'gap_revision': 4,
+            'owning_project': 'neri', 'implementation_envelope': {'objective': 'Read documents'},
+            'baseline': {'event_id': 'retained-observation'}, 'neri_task_ids': ['task-document-read'],
+        }),
+        ('activate', f'/api/evolution-attempts/{identity}/activate', {
+            'acceptance_id': '33333333-3333-4333-8333-333333333333',
+            'capability_id': 'documents.read', 'package_id': 'neri-documents', 'version': '2',
+            'artifact_digest': 'a' * 64, 'permissions': {'effect_class': 'read_only'},
+            'manifest': {'input_schema_digest': 'b' * 64, 'output_schema_digest': 'c' * 64},
+        }),
+    ]
+    for command, route, body in payloads:
+        file = tmp_path / f'{command}.json'
+        file.write_text(json.dumps(body))
+        assert runner.invoke(neri.app, ['evolution', command, identity, '--file', str(file)]).exit_code == 0
+        assert calls[-1] == (route, body, {})
+        assert runner.invoke(neri.app, ['evolution', command, identity, '--file', '-'],
+                             input=json.dumps(body)).exit_code == 0
+        assert calls[-1] == (route, body, {})
+    count = len(calls)
+    for command, _, _ in payloads:
+        assert runner.invoke(neri.app, ['evolution', command, identity, '--file', '-'], input='[]').exit_code != 0
+    assert len(calls) == count
+
+
+def test_grants_and_rollout_preserve_revisioned_authority_inputs(monkeypatch):
+    import json
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None, **kwargs: calls.append((path, body, kwargs)))
+    runner = CliRunner()
+    identity = '11111111-1111-4111-8111-111111111111'
+    assert runner.invoke(neri.app, ['grant', 'list', identity]).exit_code == 0
+    assert calls[-1] == (f'/api/runs/{identity}/grants', None, {})
+    assert runner.invoke(neri.app, ['kernel', 'rollout', 'show']).exit_code == 0
+    assert calls[-1] == ('/api/kernel-rollout', None, {})
+    grant = {
+        'expected_revision': 3, 'domain': 'documents', 'resource_scope': {'local_only': True},
+        'capability_ids': ['documents.read'], 'effect_classes': ['read_only'],
+        'development_projects': ['neri'], 'deployment_environments': ['local'],
+        'publication_allowed': False, 'provider_policy': {'silent_fallback': False},
+        'automation_policy': {'gap_task_creation': 'disabled', 'managed_execution': False},
+    }
+    rollout = {'expected_revision': 2, 'enabled': False, 'acceptance_refs': [], 'reason': 'Manual verification'}
+    commands = [
+        (['grant', 'issue', identity], f'/api/runs/{identity}/grants', grant, {}),
+        (['kernel', 'rollout', 'set'], '/api/kernel-rollout', rollout, {'method': 'PUT'}),
+    ]
+    for args, route, body, kwargs in commands:
+        assert runner.invoke(neri.app, [*args, '--file', '-'], input=json.dumps(body)).exit_code == 0
+        assert calls[-1] == (route, body, kwargs)
+    count = len(calls)
+    for args, _, _, _ in commands:
+        for invalid in ['[]', '{invalid']:
+            assert runner.invoke(neri.app, [*args, '--file', '-'], input=invalid).exit_code != 0
+    assert len(calls) == count
+
+
+def test_legacy_grant_upgrade_is_one_explicit_post(monkeypatch):
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None: calls.append((path, body)))
+    runner = CliRunner()
+    identity = '11111111-1111-4111-8111-111111111111'
+    assert runner.invoke(neri.app, ['grant', 'upgrade', identity]).exit_code == 0
+    assert calls == [(f'/api/runs/{identity}/grants/upgrade', {})]
+    assert runner.invoke(neri.app, ['grant', 'upgrade', 'not-a-uuid']).exit_code != 0
+    assert len(calls) == 1

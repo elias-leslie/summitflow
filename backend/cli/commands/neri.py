@@ -28,12 +28,18 @@ hypothesis_app = typer.Typer(help="Maintain evidence-linked investigation hypoth
 app.add_typer(hypothesis_app, name="hypothesis")
 gap_app = typer.Typer(help="Record and follow verified capability improvements")
 app.add_typer(gap_app, name="gap")
-evolution_app = typer.Typer(help="Inspect linked development requests; use st context/claim/checkpoint/done for their tasks")
+evolution_app = typer.Typer(help="Inspect and advance linked development requests through Neri verification")
 app.add_typer(evolution_app, name="evolution")
 help_app = typer.Typer(help="Inspect assistance requests, attach context and record owner resolutions")
 app.add_typer(help_app, name="help")
 target_app = typer.Typer(help="Inspect and register local target manifests without executing target work")
 app.add_typer(target_app, name="target")
+grant_app = typer.Typer(help="Inspect and issue versioned investigation grants through owner-authenticated routes")
+app.add_typer(grant_app, name="grant")
+kernel_app = typer.Typer(help="Inspect and configure Neri's adaptive kernel")
+app.add_typer(kernel_app, name="kernel")
+rollout_app = typer.Typer(help="Inspect and update the revisioned automatic evolution rollout")
+kernel_app.add_typer(rollout_app, name="rollout")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
 
 
@@ -93,14 +99,15 @@ def runs() -> None:
 
 
 @app.command()
-@usage(surface="st.neri.start", cmd='st neri start --variant benchmark', when='start real agent-led discovery inside Neri labs', precautions=('executes lab requests within the run budget; no live bounty targets',), task_types=("neri", "security-labs"), tier="reference")
+@usage(surface="st.neri.start", cmd='st neri start [--target-id TARGET_ID] [--variant benchmark]', when='start an investigation against a registered local target', precautions=('select an active registered target; target manifest and controller mode govern admission; no live bounty targets',), task_types=("neri", "security-labs"), tier="reference")
 def start(variant: Variant = Variant.benchmark, advanced: bool = False,
           external: bool = False, native: bool = False, controller_id: str | None = None,
           title: str | None = None, verification: bool = False,
           brief_id: UUID | None = None,
+          target_id: str | None = None,
           hunter_profile: ReasoningProfile | None = None,
           reviewer_profile: ReasoningProfile | None = None) -> None:
-    """Start actual agent-led discovery. Guidance mode does not change permissions."""
+    """Start a registered local investigation. Guidance does not change permissions."""
     body: dict = {"variant": variant.value, "guidance": "advanced" if advanced else "helper"}
     if native and external:
         raise typer.BadParameter("--native and --external are mutually exclusive")
@@ -122,6 +129,8 @@ def start(variant: Variant = Variant.benchmark, advanced: bool = False,
         body["origin"] = "verification"
     if brief_id:
         body["brief_id"] = str(brief_id)
+    if target_id is not None:
+        body["target_id"] = target_id
     request("/api/runs", body)
 
 
@@ -418,6 +427,41 @@ def evolution_show(attempt_id: UUID) -> None:
     request(f"/api/evolution-attempts/{attempt_id}")
 
 
+@evolution_app.command("start")
+@usage(surface="st.neri.evolution.start", cmd="st neri evolution start <run-id> --file evolution.json", when="record an explicit development attempt for a saved capability gap", precautions=("preserve gap identity and revision; Neri freezes the current grant and resume state; task creation is not activation",), task_types=("neri",), tier="reference")
+def evolution_start(run_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    """Start a managed development request, including when automatic rollout is disabled."""
+    request(f"/api/runs/{run_id}/evolution-attempts", read_object(file))
+
+
+@evolution_app.command("reconcile")
+@usage(surface="st.neri.evolution.reconcile", cmd="st neri evolution reconcile <attempt-id>", when="reconcile an evolution attempt with its managed development task", precautions=("may deliver the saved development request; Neri rechecks authority and stop state; do not retry uncertain outcomes blindly",), task_types=("neri",), tier="reference")
+def evolution_reconcile(attempt_id: UUID) -> None:
+    """Reconcile the saved attempt and its linked SummitFlow task."""
+    request(f"/api/evolution-attempts/{attempt_id}/reconcile", {})
+
+
+@evolution_app.command("qualify")
+@usage(surface="st.neri.evolution.qualify", cmd="st neri evolution qualify <attempt-id>", when="evaluate an evolution candidate against its frozen acceptance evidence", precautions=("uses the deterministic Neri verifier; a task completion or passing CI alone is not acceptance",), task_types=("neri",), tier="reference")
+def evolution_qualify(attempt_id: UUID) -> None:
+    """Record verifier results from the candidate's retained evidence."""
+    request(f"/api/evolution-attempts/{attempt_id}/qualify", {})
+
+
+@evolution_app.command("activate")
+@usage(surface="st.neri.evolution.activate", cmd="st neri evolution activate <attempt-id> --file activation.json", when="activate an accepted capability artifact through Neri", precautions=("JSON object or stdin; preserve verifier receipt, artifact identity and permissions; API checks current grant",), task_types=("neri",), tier="reference")
+def evolution_activate(attempt_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    """Activate the exact accepted artifact described in a JSON object."""
+    request(f"/api/evolution-attempts/{attempt_id}/activate", read_object(file))
+
+
+@evolution_app.command("resume")
+@usage(surface="st.neri.evolution.resume", cmd="st neri evolution resume <attempt-id>", when="resume an investigation after its capability improvement is accepted and activated", precautions=("Neri checks the saved resume fence and outstanding work; stale authority or uncertainty blocks continuation",), task_types=("neri",), tier="reference")
+def evolution_resume(attempt_id: UUID) -> None:
+    """Request continuation through the attempt's saved resume fence."""
+    request(f"/api/evolution-attempts/{attempt_id}/resume", {})
+
+
 @help_app.command("list")
 @usage(surface="st.neri.help.list", cmd="st neri help list [--status STATUS]", when="list Neri assistance requests", precautions=("read-only; no new task ownership",), task_types=("neri",), tier="reference")
 def help_list(status: str | None = None) -> None:
@@ -474,3 +518,38 @@ def target_register(file: Annotated[Path, typer.Option()]) -> None:
 def target_status(target_id: str, file: Annotated[Path, typer.Option()]) -> None:
     """Update status using the observed manifest digest and expected status."""
     request(f"/api/targets/{quote(target_id, safe='')}/status", read_object(file), method="PUT")
+
+
+@grant_app.command("list")
+@usage(surface="st.neri.grant.list", cmd="st neri grant list <run-id>", when="inspect immutable authority revisions for an investigation", precautions=("read-only; use the latest revision before issuing a new grant",), task_types=("neri",), tier="reference")
+def grant_list(run_id: UUID) -> None:
+    """Read the investigation's grant history in revision order."""
+    request(f"/api/runs/{run_id}/grants")
+
+
+@grant_app.command("issue")
+@usage(surface="st.neri.grant.issue", cmd="st neri grant issue <run-id> --file grant.json", when="issue an authorized immutable investigation grant revision", precautions=("owner-authenticated API; preserve expected_revision and the authorized scope; conflicts are not retried",), task_types=("neri",), tier="reference")
+def grant_issue(run_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    """Issue a new grant revision from an authorized JSON object."""
+    request(f"/api/runs/{run_id}/grants", read_object(file))
+
+
+@grant_app.command("upgrade")
+@usage(surface="st.neri.grant.upgrade", cmd="st neri grant upgrade <run-id>", when="explicitly bind a preserved pre-kernel investigation to its registered target grant", precautions=("owner-authenticated API; preserves an existing grant; does not resume the investigation",), task_types=("neri",), tier="reference")
+def grant_upgrade(run_id: UUID) -> None:
+    """Upgrade a legacy investigation through Neri's grant migration route."""
+    request(f"/api/runs/{run_id}/grants/upgrade", {})
+
+
+@rollout_app.command("show")
+@usage(surface="st.neri.kernel.rollout.show", cmd="st neri kernel rollout show", when="inspect the adaptive kernel rollout and acceptance references", precautions=("read-only; disabled rollout preserves manual development workflows",), task_types=("neri",), tier="reference")
+def rollout_show() -> None:
+    """Read automatic evolution status, revision and decision history."""
+    request("/api/kernel-rollout")
+
+
+@rollout_app.command("set")
+@usage(surface="st.neri.kernel.rollout.set", cmd="st neri kernel rollout set --file rollout.json", when="record an authorized kernel rollout decision", precautions=("preserve expected_revision, enabled, acceptance_refs and reason; enabling requires retained verifier acceptance; no conflict retry",), task_types=("neri",), tier="reference")
+def rollout_set(file: Annotated[Path, typer.Option()]) -> None:
+    """Update rollout using the observed revision and acceptance evidence."""
+    request("/api/kernel-rollout", read_object(file), method="PUT")
