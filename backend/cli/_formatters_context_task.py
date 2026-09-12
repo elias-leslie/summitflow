@@ -268,6 +268,8 @@ def format_context_task(task: dict[str, Any]) -> str:
     status = task.get("status", "pending")
     final_status = is_final_task_status(status)
     lines = _format_identity_lines(task, status)
+    if task.get("external_origin"):
+        lines.append(f"EXTERNAL:{task['external_origin']}|request={task.get('external_request_key')}|digest={task.get('external_payload_digest')}")
     lines.extend(format_task_freshness_lines(status))
     if workflow := _format_workflow_line(task):
         lines.append(workflow)

@@ -6,9 +6,12 @@ Handles create_task, batch_create_tasks, and create_task_from_ideation.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
+from ...access_control import require_owner
 from ...logging_config import get_logger
 from ...schemas.tasks import (
     BatchTaskRequest,
@@ -18,7 +21,9 @@ from ...schemas.tasks import (
     TaskCreate,
     TaskResponse,
 )
+from ...services.task_plan_context import build_task_plan_context
 from ...storage import tasks as task_store
+from ...storage.tasks.core import ExternalTaskConflict, ExternalTaskUnavailable
 from ...storage.tasks.execution_mode import EXECUTION_MODE_AUTONOMOUS, normalize_execution_fields
 from .helpers import refresh_task_tracking
 from .response import task_to_response
@@ -83,7 +88,7 @@ def _auto_classify_complexity(task: dict) -> None:
 
 
 @router.post("/projects/{project_id}/tasks", response_model=TaskResponse)
-async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
+async def create_task(project_id: str, task: TaskCreate, request: Request) -> TaskResponse:
     """Create a new task. When auto_dispatch=True, queues and dispatches to Hatchet."""
     execution_fields = normalize_execution_fields(
         task_type=task.task_type,
@@ -94,22 +99,50 @@ async def create_task(project_id: str, task: TaskCreate) -> TaskResponse:
         ),
         autonomous=task.autonomous or task.auto_dispatch,
     )
-    created = await asyncio.to_thread(
-        task_store.create_task,
-        project_id=project_id,
-        title=task.title,
-        description=task.description,
-        capability_id=task.capability_id,
-        priority=task.priority,
-        task_type=task.task_type,
-        parent_task_id=task.parent_task_id,
-        complexity=task.complexity,
-        execution_mode=execution_fields["execution_mode"],
-        labels=task.labels,
-        ai_review=task.ai_review,
-    )
+    extra = {}
+    if task.external_origin is not None:
+        principal = require_owner(request)
+        payload = task.model_dump(mode="json", exclude={"external_origin", "external_request_key", "autonomous"})
+        payload["execution_mode"] = execution_fields["execution_mode"]
+        payload["project_id"] = project_id
+        extra["external_identity"] = {
+            "principal_scope": hashlib.sha256(principal.email.encode()).hexdigest(),
+            "external_origin": task.external_origin,
+            "external_request_key": task.external_request_key,
+            "external_payload_digest": hashlib.sha256(
+                json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+            ).hexdigest(),
+        }
+        extra["initial_spirit"] = {
+            "done_when": task.done_when,
+            "context": build_task_plan_context(task.model_dump()),
+            "complexity": task.complexity,
+        }
+    try:
+        created = await asyncio.to_thread(
+            task_store.create_task,
+            project_id=project_id,
+            title=task.title,
+            description=task.description,
+            capability_id=task.capability_id,
+            priority=task.priority,
+            task_type=task.task_type,
+            parent_task_id=task.parent_task_id,
+            complexity=task.complexity,
+            execution_mode=execution_fields["execution_mode"],
+            labels=task.labels,
+            ai_review=task.ai_review,
+            **extra,
+        )
+    except ExternalTaskConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ExternalTaskUnavailable as exc:
+        raise HTTPException(status_code=410, detail=str(exc)) from exc
 
-    await _save_spirit_fields(created["id"], task)
+    if created.pop("_external_reused", False):
+        return task_to_response(created)
+    if not extra:
+        await _save_spirit_fields(created["id"], task)
     _auto_classify_complexity(created)
     created = await refresh_task_tracking(created["id"], "task-create")
 

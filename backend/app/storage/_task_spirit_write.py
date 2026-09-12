@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from psycopg import sql
+from psycopg import Cursor, sql
 
 from ..logging_config import get_logger
 from ._sql import static_sql
@@ -32,6 +32,21 @@ def _build_insert_params(
     )
 
 
+def insert_task_spirit(
+    cur: Cursor,
+    task_id: str,
+    done_when: list[str] | None = None,
+    context: dict[str, Any] | None = None,
+    complexity: str | None = None,
+) -> Any:
+    """Insert initial spirit in the caller's task creation transaction."""
+    cur.execute(
+        f"INSERT INTO task_spirit {_INSERT_FIELDS} VALUES {_INSERT_PLACEHOLDERS} RETURNING {SPIRIT_SELECT}",
+        _build_insert_params(task_id, done_when, context, complexity),
+    )
+    return cur.fetchone()
+
+
 def create_task_spirit(
     task_id: str,
     done_when: list[str] | None = None,
@@ -49,18 +64,8 @@ def create_task_spirit(
     Returns:
         Created task_spirit record as dict
     """
-    params = _build_insert_params(task_id, done_when, context, complexity)
-    query = sql.SQL(
-        "INSERT INTO task_spirit {fields} VALUES {placeholders} RETURNING {returning}"
-    ).format(
-        fields=static_sql(_INSERT_FIELDS),
-        placeholders=static_sql(_INSERT_PLACEHOLDERS),
-        returning=static_sql(SPIRIT_SELECT),
-    )
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(query, params)
-        row = cur.fetchone()
+    with get_connection() as conn, conn.cursor() as cur:
+        row = insert_task_spirit(cur, task_id, done_when, context, complexity)
         conn.commit()
     logger.info("Created task_spirit for task %s", task_id)
     result = _row_to_dict(row)

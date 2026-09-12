@@ -424,7 +424,7 @@ class TestSchemaSweep:
     def test_autonomous_column_dropped_from_select(self) -> None:
         from app.storage.tasks.columns import EXPECTED_TASK_COLUMNS, TASK_COLUMNS
 
-        assert EXPECTED_TASK_COLUMNS == 39
+        assert EXPECTED_TASK_COLUMNS == 40  # Includes immutable external correlation
         normalized = " ".join(TASK_COLUMNS.split())
         # `autonomous` (boolean column) must not be in the SELECT list.
         # The substring `autonomous` could legitimately appear as a tail

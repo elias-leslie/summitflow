@@ -9,6 +9,7 @@ def create_core_tables(cur: psycopg.Cursor) -> None:
     _create_access_tables(cur)
     _create_sitemap_entries_table(cur)
     _create_tasks_table(cur)
+    _create_task_external_requests_table(cur)
     _create_task_deletions_table(cur)
     _create_task_dependencies_table(cur)
     _create_maintenance_runs_table(cur)
@@ -307,3 +308,18 @@ def _create_runtime_metric_samples_table(cur: psycopg.Cursor) -> None:
         "CREATE INDEX IF NOT EXISTS idx_runtime_metric_samples_manager_category"
         " ON runtime_metric_samples(manager, category, sampled_at DESC)"
     )
+
+
+def _create_task_external_requests_table(cur: psycopg.Cursor) -> None:
+    """Identity receipts outlive task archival; they carry no task ownership."""
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS task_external_requests (
+            principal_scope TEXT NOT NULL,
+            external_origin TEXT NOT NULL,
+            external_request_key TEXT NOT NULL,
+            external_payload_digest TEXT NOT NULL,
+            task_id TEXT NOT NULL UNIQUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (principal_scope, external_origin, external_request_key)
+        )
+    """)

@@ -14,7 +14,7 @@ from .execution_mode import EXECUTION_MODE_MANUAL, is_autonomous_mode
 
 
 def _build_task_dict(row: tuple[Any, ...]) -> dict[str, Any]:
-    """Build a task dict from the first 39 columns of a database row.
+    """Build a task dict from the first 40 columns of a database row.
 
     `autonomous` is derived from `execution_mode` at read time (the boolean
     column was dropped in migration a9c4e1b7d2e8).
@@ -37,13 +37,14 @@ def _build_task_dict(row: tuple[Any, ...]) -> dict[str, Any]:
         "agent_override": row[32], "agent_hub_session_ids": row[33] or [],
         "labels": row[34] or [], "ai_review": row[35] if row[35] is not None else True,
         "conflict_info": row[36], "merge_sha": row[37], "updated_at": row[38],
+        **(row[39] or {}),
     }
 
 
 def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row to a task dict.
 
-    Column order (39 columns):
+    Column order (40 columns):
         id, project_id, capability_id, title, description, status,
         error_message, branch_name, commits,
         total_sessions, total_tokens_used, created_at, started_at, completed_at,
@@ -53,7 +54,7 @@ def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
         raw_request, enrichment_status, enriched_by, enriched_at,
         complexity, execution_mode,
         agent_override, agent_hub_session_ids, labels, ai_review, conflict_info, merge_sha,
-        updated_at
+        updated_at, external correlation
     """
     if row is None:
         raise ValueError("Row cannot be None")
@@ -65,10 +66,10 @@ def row_to_dict(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
 def row_to_dict_with_spirit(row: TupleRow | tuple[Any, ...] | None) -> dict[str, Any]:
     """Convert a database row with spirit fields to a task dict.
 
-    Column order (41 columns):
-        First 39 columns are standard task columns (see row_to_dict).
+    Column order (42 columns):
+        First 40 columns are standard task columns (see row_to_dict).
         Then 2 spirit columns:
-        39: done_when, 40: plan_status
+        40: done_when, 41: plan_status
     """
     if row is None:
         raise ValueError("Row cannot be None")

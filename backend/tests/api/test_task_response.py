@@ -72,3 +72,18 @@ class TestTaskToResponse:
         task = _minimal_task(agent_hub_session_ids=["sess-1", "sess-2"])
         response = task_to_response(task)
         assert response.agent_hub_session_ids == ["sess-1", "sess-2"]
+
+
+
+def test_correlation_and_existing_implementation_facts_are_preserved():
+    task = _minimal_task(
+        external_origin="generic-client", external_request_key="request-1",
+        external_payload_digest="d" * 64, commits=["a" * 40],
+        pre_merge_sha="b" * 40, merge_sha="a" * 40,
+        verification_result={"check_id": "check-existing", "success": False},
+    )
+    response = task_to_response(task)
+    assert response.external_request_key == "request-1"
+    assert response.merge_sha == "a" * 40
+    assert response.commits == ["a" * 40]
+    assert response.verification_result == {"check_id": "check-existing", "success": False}

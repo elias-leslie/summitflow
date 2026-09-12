@@ -7,6 +7,7 @@ from typing import Any
 
 from cli.lib.checkpoint import SnapshotMeta, get_active_checkpoints
 
+from ..storage.tasks import get_task
 from .checkpoint_models import CheckpointResponse
 
 
@@ -28,8 +29,13 @@ def _format_age(created_at: str) -> str:
 
 def _serialize_checkpoint(meta: SnapshotMeta) -> dict[str, Any]:
     """Build API-facing checkpoint info from canonical checkpoint metadata."""
+    task = get_task(meta.task_id) or {}
     return {
         "task_id": meta.task_id,
+        "base_commit": meta.base_commit,
+        "external_origin": task.get("external_origin"),
+        "external_request_key": task.get("external_request_key"),
+        "external_payload_digest": task.get("external_payload_digest"),
         "project_id": meta.project_id,
         "base_branch": meta.base_branch,
         "created_at": meta.created_at,
@@ -44,6 +50,10 @@ def _build_response(info: dict[str, Any]) -> CheckpointResponse:
         task_id=info["task_id"],
         project_id=info["project_id"],
         base_branch=info["base_branch"],
+        base_commit=info.get("base_commit"),
+        external_origin=info.get("external_origin"),
+        external_request_key=info.get("external_request_key"),
+        external_payload_digest=info.get("external_payload_digest"),
         created_at=info["created_at"],
         claimed_by=info["claimed_by"],
         age=info["age"],

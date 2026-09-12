@@ -6,7 +6,7 @@ import sys
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from uuid import UUID
 
 import httpx
@@ -28,6 +28,10 @@ hypothesis_app = typer.Typer(help="Maintain evidence-linked investigation hypoth
 app.add_typer(hypothesis_app, name="hypothesis")
 gap_app = typer.Typer(help="Record and follow verified capability improvements")
 app.add_typer(gap_app, name="gap")
+evolution_app = typer.Typer(help="Inspect linked development requests; use st context/claim/checkpoint/done for their tasks")
+app.add_typer(evolution_app, name="evolution")
+help_app = typer.Typer(help="Inspect assistance requests, attach context and record owner resolutions")
+app.add_typer(help_app, name="help")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
 
 
@@ -171,10 +175,16 @@ def read_object(path: Path) -> dict:
 
 
 @app.command()
-@usage(surface="st.neri.capabilities", cmd='st neri capabilities', when='discover Neri native orchestration interfaces and payload schemas', precautions=('read-only; schemas describe permitted capabilities, not target authorization',), task_types=("neri", "security-labs"), tier="reference")
-def capabilities() -> None:
-    """Discover canonical command contracts and supported workflow capabilities."""
-    request("/api/capabilities")
+@usage(surface="st.neri.capabilities", cmd='st neri capabilities [capability-id] [--compact]', when='discover Neri native orchestration interfaces and payload schemas', precautions=('read-only; schemas describe permitted capabilities, not target authorization',), task_types=("neri", "security-labs"), tier="reference")
+def capabilities(
+    capability_id: Annotated[str | None, typer.Argument()] = None,
+    compact: bool = False,
+) -> None:
+    """Discover contracts, or describe one capability by its stable ID."""
+    if capability_id:
+        request(f"/api/capabilities/{quote(capability_id, safe='')}")
+    else:
+        request("/api/capabilities?compact=true" if compact else "/api/capabilities")
 
 
 @app.command()
@@ -392,3 +402,45 @@ def workbench_intercept(run_id: UUID, file: Annotated[Path,typer.Option()]) -> N
 @usage(surface='st.neri.workbench.flow', cmd='st neri workbench flow <run-id> <flow-id> --file control.json', when='explicitly forward, edit or drop a held message', precautions=('global stop and controller fencing apply; original message stays immutable; dropping a response cannot undo target effects',), task_types=('neri','security-labs'), tier='reference')
 def workbench_flow(run_id: UUID, flow_id: UUID, file: Annotated[Path,typer.Option()]) -> None:
     request(f'/api/workbench/{run_id}/traffic/{flow_id}/control',read_object(file))
+
+
+@evolution_app.command("list")
+@usage(surface="st.neri.evolution.list", cmd="st neri evolution list [--run-id UUID]", when="list Neri development requests and linked managed tasks", precautions=("read-only; task status comes from SummitFlow",), task_types=("neri",), tier="reference")
+def evolution_list(run_id: UUID | None = None) -> None:
+    request("/api/evolution-attempts" + (f"?{urlencode({'run_id': str(run_id)})}" if run_id else ""))
+
+
+@evolution_app.command("show")
+@usage(surface="st.neri.evolution.show", cmd="st neri evolution show <attempt-id>", when="inspect development request correlation and results", precautions=("use ordinary st context/claim/checkpoint/done on the linked task",), task_types=("neri",), tier="reference")
+def evolution_show(attempt_id: UUID) -> None:
+    request(f"/api/evolution-attempts/{attempt_id}")
+
+
+@help_app.command("list")
+@usage(surface="st.neri.help.list", cmd="st neri help list [--status STATUS]", when="list Neri assistance requests", precautions=("read-only; no new task ownership",), task_types=("neri",), tier="reference")
+def help_list(status: str | None = None) -> None:
+    request("/api/help-requests" + (f"?{urlencode({'status': status})}" if status else ""))
+
+
+@help_app.command("show")
+@usage(surface="st.neri.help.show", cmd="st neri help show <request-id>", when="inspect an assistance request", precautions=("read-only",), task_types=("neri",), tier="reference")
+def help_show(request_id: UUID) -> None:
+    request(f"/api/help-requests/{request_id}")
+
+
+@help_app.command("context")
+@usage(surface="st.neri.help.context", cmd="st neri help context <request-id>", when="load canonical assistance context in a connected TUI", precautions=("context retrieval is not observed model consumption",), task_types=("neri",), tier="reference")
+def help_context(request_id: UUID) -> None:
+    request(f"/api/help-requests/{request_id}/context")
+
+
+@help_app.command("attach")
+@usage(surface="st.neri.help.attach", cmd="st neri help attach <request-id> --file attachment.json", when="attach assistance evidence or an update through Neri", precautions=("JSON object or stdin; preserves supplied revision and attribution",), task_types=("neri",), tier="reference")
+def help_attach(request_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    request(f"/api/help-requests/{request_id}/attachments", read_object(file))
+
+
+@help_app.command("resolve")
+@usage(surface="st.neri.help.resolve", cmd="st neri help resolve <request-id> --file resolution.json", when="record an owner resolution through the canonical Neri route", precautions=("preserves expected revision; API enforces owner authority; no automatic retry",), task_types=("neri",), tier="reference")
+def help_resolve(request_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    request(f"/api/help-requests/{request_id}/resolution", read_object(file), method="PUT")

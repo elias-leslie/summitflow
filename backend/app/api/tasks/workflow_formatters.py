@@ -148,6 +148,8 @@ def format_toon_context(
     lines: list[str] = [
         f"TASK:{task['id']}|{task['status']}|{priority}|{task.get('task_type', 'task')}|{complexity}"
     ]
+    if task.get("external_origin"):
+        lines.append(f"EXTERNAL:{task['external_origin']}|request={task.get('external_request_key')}|digest={task.get('external_payload_digest')}")
     title = str(task.get("title") or "").strip()
     if title:
         lines.append(f"TITLE:{title}")
@@ -203,6 +205,13 @@ def build_context_json(
             "priority": task.get("priority", 2),
             "task_type": task.get("task_type", "task"),
             "complexity": task.get("complexity"),
+            "external_origin": task.get("external_origin"),
+            "external_request_key": task.get("external_request_key"),
+            "external_payload_digest": task.get("external_payload_digest"),
+            "commits": task.get("commits") or [],
+            "pre_merge_sha": task.get("pre_merge_sha"),
+            "merge_sha": task.get("merge_sha"),
+            "verification_result": task.get("verification_result"),
         },
         "spirit": spirit,
         "subtasks": subtasks,

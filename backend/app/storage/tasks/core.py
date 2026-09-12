@@ -7,6 +7,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from psycopg import Cursor
+
+from .._task_spirit_write import insert_task_spirit
 from ..connection import generate_prefixed_id, get_connection, get_cursor
 from .columns import TASK_COLUMNS, TASK_COLUMNS_WITH_SPIRIT
 from .execution_mode import normalize_execution_fields
@@ -41,9 +44,61 @@ def _fetch_task_row(task_id: str) -> Any | None:
         return cur.fetchone()
 
 
-def _insert_task(params: tuple[Any, ...]) -> dict[str, Any]:
+class ExternalTaskConflict(ValueError):
+    """An external request key already describes a different payload."""
+
+
+class ExternalTaskUnavailable(ValueError):
+    """Identity is retained but its task has no available live/archive record."""
+
+
+def _reserve_external_request(
+    cur: Cursor, identity: dict[str, str], task_id: str,
+) -> dict[str, Any] | None:
+    """Unique insertion waits for concurrent intake to commit, then reconciles."""
+    key = (identity["principal_scope"], identity["external_origin"], identity["external_request_key"])
+    cur.execute(
+        """INSERT INTO task_external_requests
+        (principal_scope, external_origin, external_request_key, external_payload_digest, task_id)
+        VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING RETURNING task_id""",
+        (*key, identity["external_payload_digest"], task_id),
+    )
+    if cur.fetchone():
+        return None
+    cur.execute(
+        """SELECT task_id, external_payload_digest FROM task_external_requests
+        WHERE principal_scope = %s AND external_origin = %s AND external_request_key = %s""", key,
+    )
+    existing = cur.fetchone()
+    if existing is None:
+        raise ExternalTaskUnavailable("External task identity could not be reconciled")
+    if existing[1] != identity["external_payload_digest"]:
+        raise ExternalTaskConflict("External request key already has a different payload")
+    cur.execute(
+        f"SELECT {TASK_COLUMNS_WITH_SPIRIT} FROM tasks t LEFT JOIN task_spirit ts ON t.id = ts.task_id WHERE t.id = %s",
+        (existing[0],),
+    )
+    if row := cur.fetchone():
+        return {**row_to_dict_with_spirit(row), "_external_reused": True}
+    cur.execute(
+        "SELECT snapshot FROM task_deletions WHERE task_id = %s ORDER BY deleted_at DESC, id DESC LIMIT 1",
+        (existing[0],),
+    )
+    if archived := cur.fetchone():
+        return {**archived[0]["task"], "archived": True, "_external_reused": True}
+    raise ExternalTaskUnavailable(f"External task {existing[0]} is no longer available")
+
+
+def _insert_task(
+    params: tuple[Any, ...], *, external_identity: dict[str, str] | None = None,
+    initial_spirit: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Execute INSERT for a task row and return the created dict."""
     with get_connection() as conn, conn.cursor() as cur:
+        if external_identity:
+            existing = _reserve_external_request(cur, external_identity, str(params[0]))
+            if existing is not None:
+                return existing
         cur.execute(
             f"""
             INSERT INTO tasks (id, project_id, capability_id, title, description,
@@ -56,6 +111,8 @@ def _insert_task(params: tuple[Any, ...]) -> dict[str, Any]:
             params,
         )
         row = cur.fetchone()
+        if initial_spirit:
+            insert_task_spirit(cur, str(params[0]), **initial_spirit)
         conn.commit()
     return row_to_dict(row)
 
@@ -77,6 +134,9 @@ def create_task(
     execution_mode: str | None = None,
     labels: list[str] | None = None,
     ai_review: bool = True,
+    *,
+    external_identity: dict[str, str] | None = None,
+    initial_spirit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a new task and return its dict.
 
@@ -96,7 +156,7 @@ def create_task(
         complexity, execution_fields["execution_mode"],
         labels or [], ai_review,
     )
-    return _insert_task(params)
+    return _insert_task(params, external_identity=external_identity, initial_spirit=initial_spirit)
 
 
 def get_task(task_id: str) -> dict[str, Any] | None:

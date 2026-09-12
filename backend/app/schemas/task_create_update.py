@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..constants import TaskType
 
@@ -15,6 +15,8 @@ class TaskCreate(BaseModel):
     """Request model for creating a new task."""
 
     title: str
+    external_origin: str | None = Field(default=None, min_length=1, max_length=128)
+    external_request_key: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = None
     capability_id: int | None = None  # Database ID of capability (optional)
     # Issue tracking fields
@@ -64,6 +66,19 @@ class TaskCreate(BaseModel):
         default=False,
         description="Automatically dispatch to Hatchet pipeline after creation",
     )
+
+    @field_validator("external_origin", "external_request_key")
+    @classmethod
+    def validate_external_identity(cls, value: str | None) -> str | None:
+        if value is not None and (not value.strip() or value != value.strip()):
+            raise ValueError("External identity must be nonempty without surrounding whitespace")
+        return value
+
+    @model_validator(mode="after")
+    def require_complete_external_identity(self) -> TaskCreate:
+        if (self.external_origin is None) != (self.external_request_key is None):
+            raise ValueError("external_origin and external_request_key must be supplied together")
+        return self
 
 
 class TaskUpdate(BaseModel):

@@ -36,6 +36,12 @@ class TaskResponse(BaseModel):
     error_message: str | None
     branch_name: str | None
     commits: list[str]
+    pre_merge_sha: str | None = None
+    merge_sha: str | None = None
+    external_origin: str | None = None
+    external_request_key: str | None = None
+    external_payload_digest: str | None = None
+    archived: bool = False
     total_sessions: int
     total_tokens_used: int
     created_at: datetime | None

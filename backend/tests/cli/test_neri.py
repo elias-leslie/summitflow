@@ -233,3 +233,40 @@ def test_workbench_uses_canonical_routes_and_preserves_operation_identity(monkey
     assert calls[-1]==(f'/api/workbench/{run_id}/traffic',None)
     assert runner.invoke(neri.app,['workbench','operation',run_id,operation_id]).exit_code==0
     assert calls[-1]==(f'/api/workbench/{run_id}/operations/{operation_id}',None)
+
+
+def test_capabilities_preserves_legacy_and_describes_registry_entry(monkeypatch):
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None: calls.append((path, body)))
+    runner = CliRunner()
+    assert runner.invoke(neri.app, ['capabilities']).exit_code == 0
+    assert runner.invoke(neri.app, ['capabilities', '--compact']).exit_code == 0
+    assert runner.invoke(neri.app, ['capabilities', 'generic-capability']).exit_code == 0
+    assert calls == [('/api/capabilities', None), ('/api/capabilities?compact=true', None),
+                     ('/api/capabilities/generic-capability', None)]
+
+
+def test_evolution_and_help_are_thin_clients(monkeypatch):
+    import json
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None, **kwargs: calls.append((path, body, kwargs)))
+    runner = CliRunner()
+    identity = '11111111-1111-4111-8111-111111111111'
+    routes = [
+        (['evolution', 'list'], '/api/evolution-attempts'),
+        (['evolution', 'list', '--run-id', identity], f'/api/evolution-attempts?run_id={identity}'),
+        (['evolution', 'show', identity], f'/api/evolution-attempts/{identity}'),
+        (['help', 'list', '--status', 'open'], '/api/help-requests?status=open'),
+        (['help', 'show', identity], f'/api/help-requests/{identity}'),
+        (['help', 'context', identity], f'/api/help-requests/{identity}/context'),
+    ]
+    for args, route in routes:
+        assert runner.invoke(neri.app, args).exit_code == 0
+        assert calls[-1] == (route, None, {})
+    body = {'expected_revision': 3, 'summary': 'Assistance recorded'}
+    for command, suffix, kwargs in [('attach', 'attachments', {}), ('resolve', 'resolution', {'method': 'PUT'})]:
+        assert runner.invoke(neri.app, ['help', command, identity, '--file', '-'], input=json.dumps(body)).exit_code == 0
+        assert calls[-1] == (f'/api/help-requests/{identity}/{suffix}', body, kwargs)
+    count = len(calls)
+    assert runner.invoke(neri.app, ['help', 'resolve', identity, '--file', '-'], input='[]').exit_code != 0
+    assert len(calls) == count

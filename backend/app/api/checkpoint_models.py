@@ -11,6 +11,10 @@ class CheckpointResponse(BaseModel):
     task_id: str
     project_id: str
     base_branch: str
+    base_commit: str | None = None
+    external_origin: str | None = None
+    external_request_key: str | None = None
+    external_payload_digest: str | None = None
     created_at: str
     claimed_by: str
     age: str

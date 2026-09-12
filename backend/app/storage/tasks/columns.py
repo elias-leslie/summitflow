@@ -3,7 +3,7 @@
 This module defines the column lists used in task queries.
 """
 
-# Column list for all task SELECT/RETURNING queries (39 columns)
+# Column list for all task SELECT/RETURNING queries (40 columns, including external correlation)
 # Order must match _row_to_dict index mapping
 # Note: Migration 072 dropped: plan_content, objective, spirit_anti,
 #       decisions, constraints, done_when (moved to task_spirit)
@@ -38,22 +38,20 @@ TASK_COLUMNS_ALIASED = """t.id, t.project_id, t.capability_id, t.title, t.descri
     t.agent_override, t.agent_hub_session_ids,
     t.labels, t.ai_review, t.conflict_info, t.merge_sha, t.updated_at"""
 
-EXPECTED_TASK_COLUMNS = 39
+EXPECTED_TASK_COLUMNS = 40
 
-# Columns for queries that JOIN with task_spirit (41 columns total)
-# Adds 2 spirit fields: done_when, plan_status
-# Dropped: objective, spirit_anti, decisions, constraints (migration 52f2ce12774b)
-# Dropped: autonomous (migration a9c4e1b7d2e8)
-TASK_COLUMNS_WITH_SPIRIT = """t.id, t.project_id, t.capability_id, t.title, t.description, t.status,
-    t.error_message, t.branch_name, t.commits,
-    t.total_sessions, t.total_tokens_used, t.created_at, t.started_at, t.completed_at,
-    t.priority, t.task_type, t.parent_task_id, t.feature_id,
-    t.claimed_by, t.claimed_at, t.lock_expires_at, t.tier, t.pre_merge_sha, t.review_result,
-    t.current_phase, t.verification_result,
-    t.raw_request, t.enrichment_status, t.enriched_by, t.enriched_at,
-    t.complexity, t.execution_mode,
-    t.agent_override, t.agent_hub_session_ids,
-    t.labels, t.ai_review, t.conflict_info, t.merge_sha, t.updated_at,
-    ts.done_when, ts.plan_status"""
+EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 42
 
-EXPECTED_TASK_COLUMNS_WITH_SPIRIT = 41
+
+# Correlation is an immutable receipt, retained when the task is archived.
+# A scalar indexed lookup keeps every existing SELECT/RETURNING caller compatible.
+_EXTERNAL_CORRELATION = """(SELECT jsonb_build_object(
+    'external_origin', external_origin,
+    'external_request_key', external_request_key,
+    'external_payload_digest', external_payload_digest)
+    FROM task_external_requests WHERE task_id = {task_alias}.id)"""
+TASK_COLUMNS += ", " + _EXTERNAL_CORRELATION.format(task_alias="tasks")
+TASK_COLUMNS_ALIASED += ", " + _EXTERNAL_CORRELATION.format(task_alias="t")
+TASK_COLUMNS_WITH_SPIRIT = (
+    TASK_COLUMNS_ALIASED + ", ts.done_when, ts.plan_status"
+)
