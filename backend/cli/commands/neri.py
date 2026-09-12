@@ -463,10 +463,10 @@ def evolution_activate(attempt_id: UUID, file: Annotated[Path, typer.Option()]) 
 
 
 @evolution_app.command("resume")
-@usage(surface="st.neri.evolution.resume", cmd="st neri evolution resume <attempt-id>", when="resume an investigation after its capability improvement is accepted and activated", precautions=("Neri checks the saved resume fence and outstanding work; stale authority or uncertainty blocks continuation",), task_types=("neri",), tier="reference")
-def evolution_resume(attempt_id: UUID) -> None:
-    """Request continuation through the attempt's saved resume fence."""
-    request(f"/api/evolution-attempts/{attempt_id}/resume", {})
+@usage(surface="st.neri.evolution.resume", cmd="st neri evolution resume <attempt-id> --file resume.json", when="resume an investigation after its capability improvement is accepted and activated", precautions=("preserve expected_revision and any required help_dependency_fingerprint; Neri checks the saved resume fence; stale authority or uncertainty blocks continuation",), task_types=("neri",), tier="reference")
+def evolution_resume(attempt_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    """Request continuation using the observed attempt revision and help fingerprint."""
+    request(f"/api/evolution-attempts/{attempt_id}/resume", read_object(file))
 
 
 @help_app.command("list")

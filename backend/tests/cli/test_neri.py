@@ -367,13 +367,13 @@ def test_evolution_transitions_are_explicit_posts(monkeypatch):
     monkeypatch.setattr(neri, 'request', lambda path, body=None, **kwargs: calls.append((path, body, kwargs)))
     runner = CliRunner()
     attempt_id = '11111111-1111-4111-8111-111111111111'
-    for transition in ['reconcile', 'qualify', 'resume']:
+    for transition in ['reconcile', 'qualify']:
         assert runner.invoke(neri.app, ['evolution', transition, attempt_id]).exit_code == 0
         assert calls[-1] == (f'/api/evolution-attempts/{attempt_id}/{transition}', {}, {})
-    assert len(calls) == 3
-    for transition in ['reconcile', 'qualify', 'resume']:
+    assert len(calls) == 2
+    for transition in ['reconcile', 'qualify']:
         assert runner.invoke(neri.app, ['evolution', transition, 'not-a-uuid']).exit_code != 0
-    assert len(calls) == 3
+    assert len(calls) == 2
 
 
 def test_evolution_files_preserve_gap_revision_and_verifier_identity(monkeypatch, tmp_path):
@@ -470,4 +470,28 @@ def test_evolution_verify_preserves_receipt_and_expected_revision(monkeypatch, t
     for invalid in ['[]', '{invalid']:
         assert runner.invoke(neri.app, ['evolution', 'verify', identity, '--file', '-'], input=invalid).exit_code != 0
     assert runner.invoke(neri.app, ['evolution', 'verify', 'not-a-uuid', '--file', str(file)]).exit_code != 0
+    assert len(calls) == count
+
+
+def test_evolution_resume_requires_revision_payload_and_preserves_help_fingerprint(monkeypatch, tmp_path):
+    import json
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None: calls.append((path, body)))
+    runner = CliRunner()
+    identity = '11111111-1111-4111-8111-111111111111'
+    args = ['evolution', 'resume', identity]
+    assert runner.invoke(neri.app, args).exit_code != 0
+    assert not calls
+    payloads = [{'expected_revision': 7},
+                {'expected_revision': 9, 'help_dependency_fingerprint': 'a' * 64}]
+    for payload in payloads:
+        file = tmp_path / 'resume.json'
+        file.write_text(json.dumps(payload))
+        for source in [str(file), '-']:
+            result = runner.invoke(neri.app, [*args, '--file', source],
+                                   input=json.dumps(payload) if source == '-' else None)
+            assert result.exit_code == 0
+            assert calls[-1] == (f'/api/evolution-attempts/{identity}/resume', payload)
+    count = len(calls)
+    assert runner.invoke(neri.app, [*args, '--file', '-'], input='[]').exit_code != 0
     assert len(calls) == count
