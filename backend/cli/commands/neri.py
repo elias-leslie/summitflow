@@ -441,6 +441,13 @@ def evolution_reconcile(attempt_id: UUID) -> None:
     request(f"/api/evolution-attempts/{attempt_id}/reconcile", {})
 
 
+@evolution_app.command("verify")
+@usage(surface="st.neri.evolution.verify", cmd="st neri evolution verify <attempt-id> --file verification.json", when="verify a frozen acceptance predicate against a retained capability receipt", precautions=("preserve expected_revision and receipt_id; Neri checks immutable receipt provenance; verification is not activation",), task_types=("neri",), tier="reference")
+def evolution_verify(attempt_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    """Verify the saved attempt using an actual immutable capability receipt."""
+    request(f"/api/evolution-attempts/{attempt_id}/verify", read_object(file))
+
+
 @evolution_app.command("qualify")
 @usage(surface="st.neri.evolution.qualify", cmd="st neri evolution qualify <attempt-id>", when="evaluate an evolution candidate against its frozen acceptance evidence", precautions=("uses the deterministic Neri verifier; a task completion or passing CI alone is not acceptance",), task_types=("neri",), tier="reference")
 def evolution_qualify(attempt_id: UUID) -> None:

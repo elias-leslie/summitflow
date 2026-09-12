@@ -450,3 +450,24 @@ def test_legacy_grant_upgrade_is_one_explicit_post(monkeypatch):
     assert calls == [(f'/api/runs/{identity}/grants/upgrade', {})]
     assert runner.invoke(neri.app, ['grant', 'upgrade', 'not-a-uuid']).exit_code != 0
     assert len(calls) == 1
+
+
+def test_evolution_verify_preserves_receipt_and_expected_revision(monkeypatch, tmp_path):
+    import json
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None: calls.append((path, body)))
+    runner = CliRunner()
+    identity = '11111111-1111-4111-8111-111111111111'
+    payload = {'expected_revision': 7, 'receipt_id': '22222222-2222-4222-8222-222222222222'}
+    file = tmp_path / 'verification.json'
+    file.write_text(json.dumps(payload))
+    for source in [str(file), '-']:
+        result = runner.invoke(neri.app, ['evolution', 'verify', identity, '--file', source],
+                               input=json.dumps(payload) if source == '-' else None)
+        assert result.exit_code == 0
+        assert calls[-1] == (f'/api/evolution-attempts/{identity}/verify', payload)
+    count = len(calls)
+    for invalid in ['[]', '{invalid']:
+        assert runner.invoke(neri.app, ['evolution', 'verify', identity, '--file', '-'], input=invalid).exit_code != 0
+    assert runner.invoke(neri.app, ['evolution', 'verify', 'not-a-uuid', '--file', str(file)]).exit_code != 0
+    assert len(calls) == count
