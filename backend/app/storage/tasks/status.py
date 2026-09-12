@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from psycopg.types.json import Jsonb
+
 from ..connection import get_connection
 from .core import TASK_COLUMNS, _row_to_dict, canonicalize_task_id
 
@@ -131,8 +133,11 @@ def update_task_status(
     )
 
 
-def add_commit(task_id: str, commit_sha: str) -> dict[str, Any] | None:
-    """Add a commit SHA to the task's commits array.
+def add_commit(
+    task_id: str, commit_sha: str, *, project_id: str | None = None,
+    publication: dict[str, Any] | None = None, merge_sha: str | None = None,
+) -> dict[str, Any] | None:
+    """Add an immutable source once, atomically retaining optional publication evidence.
 
     Args:
         task_id: Task ID
@@ -144,8 +149,18 @@ def add_commit(task_id: str, commit_sha: str) -> dict[str, Any] | None:
     resolved_task_id = canonicalize_task_id(task_id)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"UPDATE tasks SET commits = array_append(commits, %s) WHERE id = %s RETURNING {TASK_COLUMNS}",
-            (commit_sha, resolved_task_id),
+            f"""UPDATE tasks SET
+                commits = CASE WHEN %s = ANY(COALESCE(commits, ARRAY[]::text[]))
+                    THEN commits ELSE array_append(COALESCE(commits, ARRAY[]::text[]), %s) END,
+                verification_result = CASE WHEN %s::jsonb IS NULL THEN verification_result
+                    ELSE COALESCE(verification_result, '{{}}'::jsonb) || %s::jsonb END,
+                merge_sha = COALESCE(%s, merge_sha), updated_at = NOW()
+                WHERE id = %s AND (%s::text IS NULL OR project_id = %s)
+                RETURNING {TASK_COLUMNS}""",
+            (commit_sha, commit_sha,
+             Jsonb({"publication": publication}) if publication is not None else None,
+             Jsonb({"publication": publication}) if publication is not None else None,
+             merge_sha, resolved_task_id, project_id, project_id),
         )
         row = cur.fetchone()
         conn.commit()

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import tempfile
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -311,6 +313,47 @@ def _refresh_symbols_after_publish(repo: Path, result: dict[str, Any]) -> dict[s
     return result
 
 
+def _record_task_publication(
+    repo: Path, result: dict[str, Any], *, task_id: str, push: bool,
+) -> dict[str, Any]:
+    """Persist the canonical observer's source-bound evidence before closeout."""
+    if not task_id or not push:
+        return result
+    if not isinstance(result.get("ci"), dict):
+        if result.get("publication_complete"):
+            raise CommitError("task publication is missing observed check evidence")
+        return result
+    from app.storage.tasks import add_commit, canonicalize_task_id
+
+    from .execution_context import resolve_checkout_project_id
+
+    source = str(result.get("merge_sha") or result.get("sha") or result.get("commit_id") or "")
+    ci = result["ci"]
+    if result.get("publication_complete") and ci.get("state") not in {"success", "not_applicable"}:
+        raise CommitError("task publication is not supported by successful check evidence")
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source) or ci.get("sha") != source:
+        if result.get("publication_complete"):
+            raise CommitError("published task source does not match the observed CI revision")
+        return result  # Partial/legacy observations do not prove a source-bound check.
+    project_id = resolve_checkout_project_id(repo)
+    if not project_id:
+        raise CommitError("cannot correlate task publication with this checkout's project")
+    publication = {
+        "task_id": canonicalize_task_id(task_id), "project_id": project_id,
+        "source_commit": source, "observed_at": datetime.now(UTC).isoformat(),
+        "publication_complete": result.get("publication_complete") is True,
+        "ci": ci,
+    }
+    try:
+        stored = add_commit(task_id, source, project_id=project_id,
+                            publication=publication, merge_sha=result.get("merge_sha"))
+    except Exception as exc:
+        raise CommitError("published revision could not be recorded on the task; retry closeout") from exc
+    if stored is None:
+        raise CommitError("published task does not belong to this checkout's project")
+    return {**result, "task_publication": publication}
+
+
 def commit_repo(
     repo: Path,
     *,
@@ -334,6 +377,7 @@ def commit_repo(
                 bookmark=bookmark,
                 paths=paths,
             )
+            result = _record_task_publication(repo, result, task_id=task_id, push=push)
             return _refresh_symbols_after_publish(repo, _cleanup_after_publish(repo, result, push=push))
         except JJError as exc:
             raise CommitError(str(exc)) from exc
@@ -345,4 +389,5 @@ def commit_repo(
         skip_checks=skip_checks,
         paths=paths,
     )
+    result = _record_task_publication(repo, result, task_id=task_id, push=push)
     return _refresh_symbols_after_publish(repo, _cleanup_after_publish(repo, result, push=push))

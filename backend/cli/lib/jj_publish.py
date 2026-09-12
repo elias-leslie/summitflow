@@ -76,7 +76,11 @@ def publish_current_revision(
         delivery: dict[str, Any] = {"status": "SUCCESS", "pushed": False, "publication_complete": False}
     else:
         try:
-            delivery = publish_git(repo, sha=info.commit_id, task_id=task_id, message=info.description,
+            # Display metadata uses an abbreviated ID; checks and task receipts
+            # must observe the immutable full commit that this bookmark publishes.
+            source = run_git(repo, ["rev-parse", "--verify", f"{info.commit_id}^{{commit}}"])
+            require_success(source, "resolve publication commit")
+            delivery = publish_git(repo, sha=source.stdout.strip(), task_id=task_id, message=info.description,
                                    run_git=run_git, push_revision=push_revision, remote_name=remote)
         except PublishError as exc:
             raise JJError(str(exc)) from exc

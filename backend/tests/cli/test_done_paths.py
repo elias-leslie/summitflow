@@ -66,7 +66,12 @@ def test_scoped_done_preserves_unrelated_index_and_worktree(tmp_path: Path, monk
     monkeypatch.setattr('app.storage.events.log_task_event', Mock())
     checks = Mock(return_value=(gate_passes, 'test gate failed'))
     monkeypatch.setattr(commit_workflow, 'run_checks', checks)
-    monkeypatch.setattr(commit_workflow, 'publish_git', Mock(return_value={'status': 'SUCCESS', 'publication_complete': True}))
+    monkeypatch.setattr(commit_workflow, 'publish_git', lambda _repo, *, sha, **_kwargs: {
+        'status': 'SUCCESS', 'publication_complete': True,
+        'ci': {'state': 'success', 'sha': sha, 'checks': []},
+    })
+    monkeypatch.setattr('cli.lib.execution_context.resolve_checkout_project_id', lambda _repo: 'example')
+    monkeypatch.setattr('app.storage.tasks.add_commit', Mock(return_value={'id': 'task-1'}))
     publications = []
 
     def publish(task, project, *, paths=()):
