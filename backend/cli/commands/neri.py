@@ -40,6 +40,8 @@ kernel_app = typer.Typer(help="Inspect and configure Neri's adaptive kernel")
 app.add_typer(kernel_app, name="kernel")
 rollout_app = typer.Typer(help="Inspect and update the revisioned automatic evolution rollout")
 kernel_app.add_typer(rollout_app, name="rollout")
+technique_app = typer.Typer(help="Inspect technique definitions and record evidence-linked assessment cases")
+app.add_typer(technique_app, name="technique")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
 
 
@@ -560,3 +562,60 @@ def rollout_show() -> None:
 def rollout_set(file: Annotated[Path, typer.Option()]) -> None:
     """Update rollout using the observed revision and acceptance evidence."""
     request("/api/kernel-rollout", read_object(file), method="PUT")
+
+
+@technique_app.command("list")
+@usage(surface="st.neri.technique.list", cmd="st neri technique list [--compact]", when="discover versioned technique definitions and assessment contracts", precautions=("read-only; technique definitions do not grant execution authority",), task_types=("neri",), tier="reference")
+def technique_list(compact: bool = False) -> None:
+    """List registered definitions; use --compact for a smaller projection."""
+    request("/api/techniques?compact=true" if compact else "/api/techniques")
+
+
+@technique_app.command("show")
+@usage(surface="st.neri.technique.show", cmd="st neri technique show <technique-id> [--version VERSION]", when="read a technique definition and its pinned assessment requirements", precautions=("read-only; preserve the selected version and digest in subsequent records",), task_types=("neri",), tier="reference")
+def technique_show(technique_id: str, version: str | None = None) -> None:
+    """Read a definition, optionally selecting its recorded version."""
+    path = f"/api/techniques/{quote(technique_id, safe='')}"
+    request(path + (f"?{urlencode({'version': version})}" if version is not None else ""))
+
+
+@technique_app.command("metrics")
+@usage(surface="st.neri.technique.metrics", cmd="st neri technique metrics [--technique-id ID]", when="inspect recorded technique outcomes and usage measurements", precautions=("read-only; metrics retain assessment limitations and attribution",), task_types=("neri",), tier="reference")
+def technique_metrics(technique_id: str | None = None) -> None:
+    """Read aggregate measurements, optionally filtered to one technique."""
+    request("/api/techniques/metrics" + (f"?{urlencode({'technique_id': technique_id})}" if technique_id is not None else ""))
+
+
+@technique_app.command("uses")
+@usage(surface="st.neri.technique.uses", cmd="st neri technique uses <run-id>", when="inspect an investigation's saved technique assessment cases", precautions=("read-only; a selected technique does not prove execution or a finding",), task_types=("neri",), tier="reference")
+def technique_uses(run_id: UUID) -> None:
+    """List saved technique uses and their evidence-linked assessment state."""
+    request(f"/api/runs/{run_id}/techniques")
+
+
+@technique_app.command("recommendations")
+@usage(surface="st.neri.technique.recommendations", cmd="st neri technique recommendations <run-id>", when="read saved advisory technique recommendations for an investigation", precautions=("read-only; recommendations neither select nor execute a technique",), task_types=("neri",), tier="reference")
+def technique_recommendations(run_id: UUID) -> None:
+    """Read retained recommendation snapshots without creating another."""
+    request(f"/api/runs/{run_id}/techniques/recommendations")
+
+
+@technique_app.command("recommend")
+@usage(surface="st.neri.technique.recommend", cmd="st neri technique recommend <run-id> --file recommendation.json", when="record an advisory technique recommendation through Neri", precautions=("JSON object or stdin; preserve request identity and controller revision; does not select or execute work",), task_types=("neri",), tier="reference")
+def technique_recommend(run_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    """Create an advisory snapshot from the supplied attributed JSON object."""
+    request(f"/api/runs/{run_id}/techniques/recommendations", read_object(file))
+
+
+@technique_app.command("select")
+@usage(surface="st.neri.technique.select", cmd="st neri technique select <run-id> --file selection.json", when="record a version-pinned technique assessment case", precautions=("preserve request identity, definition version and controller authority fields; selection does not dispatch target work",), task_types=("neri",), tier="reference")
+def technique_select(run_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    """Record a technique selection and case references without executing it."""
+    request(f"/api/runs/{run_id}/techniques", read_object(file))
+
+
+@technique_app.command("update")
+@usage(surface="st.neri.technique.update", cmd="st neri technique update <run-id> <use-id> --file assessment.json", when="update a saved technique case with its actual evidence and assessment", precautions=("preserve expected_revision and controller authority fields; Neri validates evidence and state transitions; conflicts are not retried",), task_types=("neri",), tier="reference")
+def technique_update(run_id: UUID, use_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    """Update a case through Neri's revision-checked assessment route."""
+    request(f"/api/runs/{run_id}/techniques/{use_id}", read_object(file), method="PUT")

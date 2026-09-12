@@ -495,3 +495,78 @@ def test_evolution_resume_requires_revision_payload_and_preserves_help_fingerpri
     count = len(calls)
     assert runner.invoke(neri.app, [*args, '--file', '-'], input='[]').exit_code != 0
     assert len(calls) == count
+
+
+def test_technique_reads_use_canonical_routes_and_encode_filters(monkeypatch):
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None: calls.append((path, body)))
+    runner = CliRunner()
+    run_id = '11111111-1111-4111-8111-111111111111'
+    routes = [
+        (['list'], '/api/techniques'),
+        (['list', '--compact'], '/api/techniques?compact=true'),
+        (['show', 'document-review'], '/api/techniques/document-review'),
+        (['show', 'document?review', '--version', 'v1+review'], '/api/techniques/document%3Freview?version=v1%2Breview'),
+        (['metrics'], '/api/techniques/metrics'),
+        (['metrics', '--technique-id', 'document&review'], '/api/techniques/metrics?technique_id=document%26review'),
+        (['uses', run_id], f'/api/runs/{run_id}/techniques'),
+        (['recommendations', run_id], f'/api/runs/{run_id}/techniques/recommendations'),
+    ]
+    for args, route in routes:
+        assert runner.invoke(neri.app, ['technique', *args]).exit_code == 0
+        assert calls[-1] == (route, None)
+    assert len(calls) == len(routes)
+
+
+def test_technique_writes_preserve_case_identity_authority_and_revision(monkeypatch, tmp_path):
+    import json
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None, **kwargs: calls.append((path, body, kwargs)))
+    runner = CliRunner()
+    run_id = '11111111-1111-4111-8111-111111111111'
+    use_id = '22222222-2222-4222-8222-222222222222'
+    attribution = {'actor': 'agent', 'controller_id': 'document-assistant', 'controller_revision': 6}
+    cases = [
+        (['recommend', run_id], f'/api/runs/{run_id}/techniques/recommendations', {}, {
+            **attribution, 'id': use_id, 'request_key': 'recommendation:1',
+            'objective': 'Review the document inventory', 'objective_tags': ['documents'],
+            'applicability_signals': [{'id': 'document-source', 'status': 'declared'}],
+        }),
+        (['select', run_id], f'/api/runs/{run_id}/techniques', {}, {
+            **attribution, 'id': use_id, 'request_key': 'selection:1',
+            'technique_id': 'document-review', 'technique_version': '1.0',
+            'case_id': 'documents:1', 'case_ref': {'kind': 'document', 'ref': 'artifact:inventory'},
+            'objective': 'Assess retained document evidence', 'parameter_refs': {'source': ['artifact:inventory']},
+            'selection_mode': 'prospective', 'attempt_no': 1,
+        }),
+        (['update', run_id, use_id], f'/api/runs/{run_id}/techniques/{use_id}', {'method': 'PUT'}, {
+            **attribution, 'expected_revision': 3, 'status': 'blocked', 'candidate_outcome': 'blocked',
+            'evidence_refs': ['33333333-3333-4333-8333-333333333333'],
+            'uncertainty': 'Waiting for source evidence; preserve literal `text` and $(values).',
+        }),
+    ]
+    for args, route, kwargs, payload in cases:
+        file = tmp_path / f'{args[0]}.json'
+        file.write_text(json.dumps(payload))
+        for source in [str(file), '-']:
+            result = runner.invoke(neri.app, ['technique', *args, '--file', source],
+                                   input=json.dumps(payload) if source == '-' else None)
+            assert result.exit_code == 0
+            assert calls[-1] == (route, payload, kwargs)
+    assert len(calls) == 6
+
+
+def test_technique_writes_reject_missing_or_malformed_inputs_before_transport(monkeypatch):
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda *args, **kwargs: calls.append((args, kwargs)))
+    runner = CliRunner()
+    run_id = '11111111-1111-4111-8111-111111111111'
+    use_id = '22222222-2222-4222-8222-222222222222'
+    commands = [['recommend', run_id], ['select', run_id], ['update', run_id, use_id]]
+    for args in commands:
+        assert runner.invoke(neri.app, ['technique', *args]).exit_code != 0
+        for invalid in ['[]', '{invalid']:
+            assert runner.invoke(neri.app, ['technique', *args, '--file', '-'], input=invalid).exit_code != 0
+    for args in [['recommend', 'bad-id'], ['select', 'bad-id'], ['update', run_id, 'bad-id']]:
+        assert runner.invoke(neri.app, ['technique', *args, '--file', '-'], input='{}').exit_code != 0
+    assert not calls
