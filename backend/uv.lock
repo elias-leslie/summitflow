@@ -19,14 +19,14 @@ constraints = [
 
 [[package]]
 name = "agent-hub-client"
-version = "0.4.0"
-source = { path = "../docker/workspace-packages/agent_hub_client-0.4.0-py3-none-any.whl" }
+version = "0.4.1"
+source = { path = "../docker/workspace-packages/agent_hub_client-0.4.1-py3-none-any.whl" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
 ]
 wheels = [
-    { filename = "agent_hub_client-0.4.0-py3-none-any.whl", hash = "sha256:e0b71dfa72d190eb76112195f890ff2f2f150ef5b4b2093028e829ea04a46d3f" },
+    { filename = "agent_hub_client-0.4.1-py3-none-any.whl", hash = "sha256:89fe5b21ae3093070f0c53151be676e2d7677c4b00a5e10ab3fa361d0cd67de8" },
 ]
 
 [package.metadata]
@@ -1731,7 +1731,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-hub-client", path = "../docker/workspace-packages/agent_hub_client-0.4.0-py3-none-any.whl" },
+    { name = "agent-hub-client", path = "../docker/workspace-packages/agent_hub_client-0.4.1-py3-none-any.whl" },
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "croniter", specifier = ">=3.0.0" },
     { name = "defusedxml", specifier = ">=0.7.1" },
