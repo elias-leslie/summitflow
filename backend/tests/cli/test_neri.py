@@ -40,10 +40,16 @@ def transport(monkeypatch):
     (["show", INVESTIGATION], f"/api/investigations/{INVESTIGATION}"),
     (["activity", INVESTIGATION, "--after", "9", "--limit", "10"], f"/api/runs/{INVESTIGATION}/activity?after=9&limit=10"),
     (["context", INVESTIGATION, "--after", "7", "--limit", "8"], f"/api/runs/{INVESTIGATION}/context?after=7&limit=8"),
-    (["evidence", "list", INVESTIGATION], f"/api/runs/{INVESTIGATION}/evidence"),
+    (["evidence", "list", INVESTIGATION], f"/api/runs/{INVESTIGATION}/evidence?after=0&limit=40"),
+    (["evidence", "list", INVESTIGATION, "--after", "42", "--limit", "100"], f"/api/runs/{INVESTIGATION}/evidence?after=42&limit=100"),
     (["evidence", "show", INVESTIGATION, RECORD], f"/api/runs/{INVESTIGATION}/evidence/{RECORD}"),
+    (["evidence", "show", INVESTIGATION, "E42"], f"/api/runs/{INVESTIGATION}/evidence/E42"),
+    (["evidence", "show", INVESTIGATION, f"operation:{RECORD}"], f"/api/runs/{INVESTIGATION}/evidence/operation:{RECORD}"),
+    (["evidence", "show", INVESTIGATION, RECORD.replace("-", "")], f"/api/runs/{INVESTIGATION}/evidence/{RECORD}"),
+    (["evidence", "show", INVESTIGATION, f"urn:uuid:{RECORD}"], f"/api/runs/{INVESTIGATION}/evidence/{RECORD}"),
     (["notes", "list", INVESTIGATION], f"/api/runs/{INVESTIGATION}/notes"),
-    (["reports"], "/api/reports"),
+    (["reports"], "/api/reports?limit=40"),
+    (["reports", "--limit", "7", "--cursor", "opaque+/=&cursor"], "/api/reports?limit=7&cursor=opaque%2B%2F%3D%26cursor"),
     (["report", "show", INVESTIGATION], f"/api/runs/{INVESTIGATION}/report"),
     (["report", "revision", INVESTIGATION, RECORD], f"/api/runs/{INVESTIGATION}/reports/{RECORD}"),
     (["report", "review-revision", INVESTIGATION, RECORD], f"/api/runs/{INVESTIGATION}/reviews/{RECORD}"),
@@ -56,7 +62,7 @@ def transport(monkeypatch):
 ])
 def test_reads_use_canonical_routes_and_preserve_server_projection(transport, args, path):
     calls, response = transport
-    response.body = {"items": [], "has_more": True, "next_cursor": "opaque-token"}
+    response.body = {"items": [], "has_more": True, "next_cursor": "opaque-token", "through_seq": 42}
     result = CliRunner().invoke(neri.app, args)
     assert result.exit_code == 0, result.output
     assert calls == [("GET", path, None)]
@@ -161,6 +167,9 @@ def test_mutations_reject_bad_or_conflicting_identity_before_transport(transport
 
 @pytest.mark.parametrize("args", [
     ["investigations", "--limit", "101"], ["investigations", "--limit", "0"],
+    ["reports", "--limit", "101"], ["reports", "--limit", "0"],
+    ["evidence", "list", INVESTIGATION, "--after", "-1"],
+    ["evidence", "list", INVESTIGATION, "--limit", "0"], ["evidence", "list", INVESTIGATION, "--limit", "101"],
     ["activity", INVESTIGATION, "--after", "-1"], ["activity", INVESTIGATION, "--limit", "0"],
     ["context", INVESTIGATION, "--limit", "101"], ["context"], ["show", "bad-id"],
     ["evidence", "show", INVESTIGATION, "bad-id"], ["notes", "state", INVESTIGATION, RECORD, "invalid"],
@@ -172,6 +181,19 @@ def test_mutations_reject_bad_or_conflicting_identity_before_transport(transport
 def test_invalid_routes_and_options_do_not_send_requests(transport, args):
     calls, _ = transport
     assert CliRunner().invoke(neri.app, args).exit_code != 0
+    assert not calls
+
+
+@pytest.mark.parametrize("command", ["show", "artifact", "download"])
+@pytest.mark.parametrize("evidence_id", ["E0", "E01", "E-1", "e1", "E1/extra", "E1?extra", "E1#extra", "operation:bad-id"])
+def test_invalid_evidence_identifier_does_not_send_requests(transport, tmp_path, command, evidence_id):
+    calls, _ = transport
+    args = ["evidence", command, INVESTIGATION, evidence_id]
+    if command == "download":
+        args.extend(["--output", str(tmp_path / "artifact.bin")])
+    result = CliRunner().invoke(neri.app, args)
+    assert result.exit_code != 0
+    assert "Evidence ID must be" in result.output
     assert not calls
 
 
@@ -258,6 +280,9 @@ def test_lean_surface_is_discoverable_and_retired_groups_are_gone():
             "st.neri.report.revision", "st.neri.report.review-revision",
             "st.neri.operation", "st.neri.target.list", "st.neri.runtime.stop"} <= surfaces
     assert all(spec.get("precautions") for spec in specs)
+    commands = {spec["surface"]: spec["cmd"] for spec in specs}
+    assert commands["st.neri.evidence.list"] == "st neri evidence list <investigation-id> [--after 0 --limit 40]"
+    assert commands["st.neri.reports"] == "st neri reports [--limit 40 --cursor TOKEN]"
     retired = ["labs", "training", "budget", "usage", "campaign", "technique", "kernel", "evolution",
                "grant", "controller", "assignment", "submit", "workbench", "start", "watch", "runs",
                "brief", "hypothesis", "gap", "help"]
@@ -269,3 +294,7 @@ def test_lean_surface_is_discoverable_and_retired_groups_are_gone():
         assert result.exit_code == 0, result.output
         assert "REVISION_ID" in result.output
         assert "without loading report history" in result.output
+    for command in ["show", "artifact", "download"]:
+        result = runner.invoke(neri.app, ["evidence", command, "--help"])
+        assert result.exit_code == 0, result.output
+        assert "UUID, E<number>, or operation:<UUID>" in result.output

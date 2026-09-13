@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from contextlib import suppress
 from enum import StrEnum
@@ -42,6 +43,20 @@ class Action(StrEnum):
 class NoteState(StrEnum):
     acknowledged = "acknowledged"
     resolved = "resolved"
+
+
+def evidence_identifier(value: str) -> str:
+    """Accept retained UUIDs, event labels and operation receipt identities."""
+    if re.fullmatch(r"E[1-9][0-9]*", value):
+        return value
+    prefix = "operation:" if value.startswith("operation:") else ""
+    try:
+        return prefix + str(UUID(value.removeprefix(prefix)))
+    except ValueError:
+        raise typer.BadParameter("Evidence ID must be a UUID, E<number> (positive), or operation:<UUID>") from None
+
+
+EvidenceId = Annotated[str, typer.Argument(parser=evidence_identifier, help="UUID, E<number>, or operation:<UUID>")]
 
 
 def request(path: str, body: dict | None = None, *, method: str | None = None, emit: bool = True) -> Any:
@@ -171,14 +186,15 @@ def capabilities(full: bool = False) -> None:
 
 
 @evidence_app.command("list")
-@usage(surface="st.neri.evidence.list", cmd="st neri evidence list <investigation-id>", when="list retained evidence references", precautions=("read-only; capture provenance and completeness are part of the evidence",), task_types=("neri",))
-def evidence_list(investigation_id: UUID) -> None:
-    request(f"/api/runs/{investigation_id}/evidence")
+@usage(surface="st.neri.evidence.list", cmd="st neri evidence list <investigation-id> [--after 0 --limit 40]", when="list a page of retained evidence references", precautions=("read-only; resume with through_seq while has_more; preserve provenance and completeness",), task_types=("neri",))
+def evidence_list(investigation_id: UUID, after: Annotated[int, typer.Option(min=0)] = 0,
+                  limit: Annotated[int, typer.Option(min=1, max=100)] = 40) -> None:
+    request(f"/api/runs/{investigation_id}/evidence?{urlencode({'after': after, 'limit': limit})}")
 
 
 @evidence_app.command("show")
-@usage(surface="st.neri.evidence.show", cmd="st neri evidence show <investigation-id> <evidence-id>", when="inspect retained evidence detail", precautions=("read-only; imported evidence is not automatically independently verified",), task_types=("neri",))
-def evidence_show(investigation_id: UUID, evidence_id: UUID) -> None:
+@usage(surface="st.neri.evidence.show", cmd="st neri evidence show <investigation-id> <evidence-id>", when="inspect retained evidence detail", precautions=("read-only; ID accepts UUID, E<number>, or operation:<UUID>; imported evidence is not automatically independently verified",), task_types=("neri",))
+def evidence_show(investigation_id: UUID, evidence_id: EvidenceId) -> None:
     request(f"/api/runs/{investigation_id}/evidence/{evidence_id}")
 
 
@@ -190,15 +206,15 @@ def evidence_import(investigation_id: UUID, file: Annotated[Path, typer.Option()
 
 
 @evidence_app.command("artifact")
-@usage(surface="st.neri.evidence.artifact", cmd="st neri evidence artifact <investigation-id> <evidence-id>", when="inspect artifact metadata and its download URL", precautions=("read-only; does not print artifact bytes",), task_types=("neri",))
-def evidence_artifact(investigation_id: UUID, evidence_id: UUID) -> None:
+@usage(surface="st.neri.evidence.artifact", cmd="st neri evidence artifact <investigation-id> <evidence-id>", when="inspect artifact metadata and its download URL", precautions=("read-only; ID accepts UUID, E<number>, or operation:<UUID>; does not print artifact bytes",), task_types=("neri",))
+def evidence_artifact(investigation_id: UUID, evidence_id: EvidenceId) -> None:
     evidence = request(f"/api/runs/{investigation_id}/evidence/{evidence_id}", emit=False)
     output_json({"evidence_id": str(evidence_id), "artifact": evidence.get("artifact")})
 
 
 @evidence_app.command("download")
-@usage(surface="st.neri.evidence.download", cmd="st neri evidence download <investigation-id> <evidence-id> --output PATH", when="save retained artifact bytes to a new local file", precautions=("does not overwrite files; download stays on the configured Neri API",), task_types=("neri",))
-def evidence_download(investigation_id: UUID, evidence_id: UUID, output: Annotated[Path, typer.Option()]) -> None:
+@usage(surface="st.neri.evidence.download", cmd="st neri evidence download <investigation-id> <evidence-id> --output PATH", when="save retained artifact bytes to a new local file", precautions=("ID accepts UUID, E<number>, or operation:<UUID>; does not overwrite files; download stays on the configured Neri API",), task_types=("neri",))
+def evidence_download(investigation_id: UUID, evidence_id: EvidenceId, output: Annotated[Path, typer.Option()]) -> None:
     evidence = request(f"/api/runs/{investigation_id}/evidence/{evidence_id}", emit=False)
     artifact = evidence.get("artifact") or {}
     path = artifact.get("download_url")
@@ -228,9 +244,12 @@ def notes_state(investigation_id: UUID, note_id: UUID, state: NoteState,
 
 
 @app.command()
-@usage(surface="st.neri.reports", cmd="st neri reports", when="list saved investigation reports", precautions=("read-only; report status and independent review remain separate",), task_types=("neri",))
-def reports() -> None:
-    request("/api/reports")
+@usage(surface="st.neri.reports", cmd="st neri reports [--limit 40 --cursor TOKEN]", when="list a page of saved investigation reports", precautions=("read-only; next_cursor resumes the listing; report status and independent review remain separate",), task_types=("neri",))
+def reports(limit: Annotated[int, typer.Option(min=1, max=100)] = 40, cursor: str | None = None) -> None:
+    params: dict[str, str | int] = {"limit": limit}
+    if cursor is not None:
+        params["cursor"] = cursor
+    request(f"/api/reports?{urlencode(params)}")
 
 
 @report_app.command("show")

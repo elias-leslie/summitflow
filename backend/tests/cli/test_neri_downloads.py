@@ -18,11 +18,11 @@ CONTENT = b"Retained document\x00\xff\n"
 @pytest.fixture
 def transport(monkeypatch):
     calls = []
-    state = SimpleNamespace(download_url=ARTIFACT_PATH, status=200, stream=None)
+    state = SimpleNamespace(evidence_id=EVIDENCE, download_url=ARTIFACT_PATH, status=200, stream=None)
 
     def handle(request):
         calls.append(str(request.url))
-        if request.url.path == f"/api/runs/{INVESTIGATION}/evidence/{EVIDENCE}":
+        if request.url.path == f"/api/runs/{INVESTIGATION}/evidence/{state.evidence_id}":
             return httpx.Response(200, json={
                 "id": EVIDENCE, "summary": "Evidence content is separate from artifact metadata",
                 "artifact": {"filename": "document.bin", "media_type": "application/octet-stream",
@@ -39,30 +39,35 @@ def transport(monkeypatch):
     return calls, state
 
 
-def test_artifact_command_prints_metadata_only(transport):
-    calls, _ = transport
-    result = CliRunner().invoke(neri.app, ["evidence", "artifact", INVESTIGATION, EVIDENCE])
+@pytest.mark.parametrize("evidence_id", [EVIDENCE, "E42", f"operation:{EVIDENCE}"])
+def test_artifact_command_prints_metadata_only(transport, evidence_id):
+    calls, state = transport
+    state.evidence_id = evidence_id
+    result = CliRunner().invoke(neri.app, ["evidence", "artifact", INVESTIGATION, evidence_id])
     assert result.exit_code == 0, result.output
     assert json.loads(result.output) == {
-        "evidence_id": EVIDENCE,
+        "evidence_id": evidence_id,
         "artifact": {"filename": "document.bin", "media_type": "application/octet-stream",
                      "size": len(CONTENT), "download_url": ARTIFACT_PATH},
     }
     assert "Evidence content" not in result.output
-    assert len(calls) == 1
+    assert calls == [f"https://neri.invalid/api/runs/{INVESTIGATION}/evidence/{evidence_id}"]
 
 
 @pytest.mark.parametrize("absolute", [True, False])
-def test_artifact_download_follows_same_origin_metadata_url(transport, tmp_path, absolute):
+@pytest.mark.parametrize("evidence_id", [EVIDENCE, "E42", f"operation:{EVIDENCE}"])
+def test_artifact_download_follows_same_origin_metadata_url(transport, tmp_path, absolute, evidence_id):
     calls, state = transport
+    state.evidence_id = evidence_id
     if absolute:
         state.download_url = "https://neri.invalid" + ARTIFACT_PATH
     output = tmp_path / "artifact.bin"
-    result = CliRunner().invoke(neri.app, ["evidence", "download", INVESTIGATION, EVIDENCE, "--output", str(output)])
+    result = CliRunner().invoke(neri.app, ["evidence", "download", INVESTIGATION, evidence_id, "--output", str(output)])
     assert result.exit_code == 0, result.output
     assert output.read_bytes() == CONTENT
     assert json.loads(result.output) == {"ok": True, "path": str(output), "bytes": len(CONTENT)}
     assert calls[-1] == "https://neri.invalid" + ARTIFACT_PATH
+    assert calls[0] == f"https://neri.invalid/api/runs/{INVESTIGATION}/evidence/{evidence_id}"
     assert len(calls) == 2
 
 
