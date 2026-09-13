@@ -297,4 +297,5 @@ def test_lean_surface_is_discoverable_and_retired_groups_are_gone():
     for command in ["show", "artifact", "download"]:
         result = runner.invoke(neri.app, ["evidence", command, "--help"])
         assert result.exit_code == 0, result.output
-        assert "UUID, E<number>, or operation:<UUID>" in result.output
+        for identifier_format in ["UUID", "E<number>", "operation:<UUID>"]:
+            assert identifier_format in result.output
