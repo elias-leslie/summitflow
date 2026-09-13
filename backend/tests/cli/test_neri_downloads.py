@@ -71,18 +71,33 @@ def test_artifact_download_follows_same_origin_metadata_url(transport, tmp_path,
     assert len(calls) == 2
 
 
-def test_report_download_is_explicit_and_preserves_an_existing_file(transport, tmp_path):
+@pytest.mark.parametrize("revision", [None, EVIDENCE])
+def test_report_download_is_explicit_and_preserves_an_existing_file(transport, tmp_path, revision):
     calls, _ = transport
     output = tmp_path / "report.md"
     args = ["report", "download", INVESTIGATION, "--output", str(output)]
+    if revision is not None:
+        args.extend(["--revision", revision])
     runner = CliRunner()
     result = runner.invoke(neri.app, args)
     assert result.exit_code == 0, result.output
     assert output.read_bytes() == CONTENT
-    assert calls == [f"https://neri.invalid/api/runs/{INVESTIGATION}/report-download"]
+    query = f"?revision={revision}" if revision else ""
+    assert calls == [f"https://neri.invalid/api/runs/{INVESTIGATION}/report-download{query}"]
     assert runner.invoke(neri.app, args).exit_code != 0
     assert output.read_bytes() == CONTENT
     assert len(calls) == 1
+
+
+def test_report_download_rejects_invalid_revision_before_request(transport, tmp_path):
+    calls, _ = transport
+    output = tmp_path / "report.md"
+    result = CliRunner().invoke(neri.app, [
+        "report", "download", INVESTIGATION, "--output", str(output), "--revision", "bad-id",
+    ])
+    assert result.exit_code != 0
+    assert not calls
+    assert not output.exists()
 
 
 @pytest.mark.parametrize("url", ["https://external.invalid/private", "//external.invalid/private", "file:///private", "https://neri.invalid@external.invalid/private"])

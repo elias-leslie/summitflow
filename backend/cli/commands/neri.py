@@ -287,9 +287,13 @@ def report_review(investigation_id: UUID, file: Annotated[Path, typer.Option()],
 
 
 @report_app.command("download")
-@usage(surface="st.neri.report.download", cmd="st neri report download <investigation-id> --output PATH", when="download the saved report draft", precautions=("writes a new local file; no external submission",), task_types=("neri",))
-def report_download(investigation_id: UUID, output: Annotated[Path, typer.Option()]) -> None:
-    download_file(f"/api/runs/{investigation_id}/report-download", output)
+@usage(surface="st.neri.report.download", cmd="st neri report download <investigation-id> --output PATH [--revision UUID]", when="download a saved report draft or exact revision", precautions=("omit revision for the latest report; writes a new local file; no external submission",), task_types=("neri",))
+def report_download(investigation_id: UUID, output: Annotated[Path, typer.Option()],
+                    revision: Annotated[UUID | None, typer.Option(help="Download this exact report revision")] = None) -> None:
+    path = f"/api/runs/{investigation_id}/report-download"
+    if revision is not None:
+        path += f"?{urlencode({'revision': str(revision)})}"
+    download_file(path, output)
 
 
 @app.command()
