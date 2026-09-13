@@ -200,6 +200,11 @@ class PendingFakeSpool(FakeSpool):
         return False
 
 
+class BusyFakeSpool:
+    def __init__(self, *_args, **_kwargs):
+        raise learn.TranscriptSpoolBusy("Another local terminal already owns this study session")
+
+
 def study(activity: str = "terminal") -> dict[str, Any]:
     return {
         "id": "study-session:one",
@@ -261,6 +266,32 @@ def test_handoff_refuses_to_orphan_a_pending_transcript(monkeypatch):
     )
     assert result.exit_code == 1
     assert sent == []
+
+
+@pytest.mark.parametrize(
+    ("spool", "error"),
+    [
+        (BusyFakeSpool, "study_terminal_busy"),
+        (PendingFakeSpool, "pending_transcript"),
+    ],
+)
+def test_finish_requires_closed_terminal_and_uploaded_transcript(monkeypatch, spool, error):
+    calls = []
+    captured = []
+    monkeypatch.setattr(learn, "TranscriptSpool", spool)
+    monkeypatch.setattr(
+        learn,
+        "require_data",
+        lambda path, *_args, **_kwargs: calls.append(path) or study(),
+    )
+    monkeypatch.setattr(learn, "output_json", captured.append)
+    result = CliRunner().invoke(
+        learn.app,
+        ["session", "finish", "study-session:one", "--harness", "codex"],
+    )
+    assert result.exit_code == 1
+    assert calls == ["/api/training/sessions/study-session%3Aone"]
+    assert captured[-1]["error"] == error
 
 
 def test_terminal_stops_when_heartbeat_observes_handoff(monkeypatch):

@@ -822,28 +822,53 @@ def session_finish(
 ):
     harness = _native_harness(harness)
     study = require_data(_study_url(session_id))
-    if file:
-        evidence = read_file(file)
-        evidence.setdefault("command_id", str(uuid4()))
-        evidence.setdefault("actor", "human")
-        evidence.setdefault("harness", harness)
-        require_data(_study_url(session_id, "/evidence"), evidence)
-    require_data(
-        "/api/training/providers/pwn-college/sync",
-        {"command_id": str(uuid4()), "username": "", "full": False, "dojo_ids": []},
-    )
-    activities = require_data("/api/training/activities?limit=1000")["items"]
-    current = next((item for item in activities if item["id"] == study["data"]["activity_id"]), None)
-    platform_solved = bool(current and current["data"].get("platform_solved"))
-    study = require_data(_study_url(session_id))
-    result = _session_action(
-        study,
-        "finish",
-        harness,
-        note="Final provider reconciliation completed",
-        platform_solved=platform_solved,
-    )
-    output_json({"ok": True, "schema_version": 2, "data": result})
+    try:
+        spool = TranscriptSpool(
+            session_id,
+            harness,
+            int(study["transcript"]["last_sequence"]) + 1,
+        )
+    except TranscriptSpoolBusy as exc:
+        output_json({"ok": False, "error": "study_terminal_busy", "detail": str(exc)})
+        raise typer.Exit(1) from None
+    try:
+        def upload(record: dict):
+            payload = {key: value for key, value in record.items() if key != "session_id"}
+            request_data(_study_url(session_id, "/transcript"), payload)
+
+        if not spool.drain(upload):
+            output_json(
+                {
+                    "ok": False,
+                    "error": "pending_transcript",
+                    "detail": "Upload the private pending transcript before finishing this session",
+                }
+            )
+            raise typer.Exit(1)
+        if file:
+            evidence = read_file(file)
+            evidence.setdefault("command_id", str(uuid4()))
+            evidence.setdefault("actor", "human")
+            evidence.setdefault("harness", harness)
+            require_data(_study_url(session_id, "/evidence"), evidence)
+        require_data(
+            "/api/training/providers/pwn-college/sync",
+            {"command_id": str(uuid4()), "username": "", "full": False, "dojo_ids": []},
+        )
+        activities = require_data("/api/training/activities?limit=1000")["items"]
+        current = next((item for item in activities if item["id"] == study["data"]["activity_id"]), None)
+        platform_solved = bool(current and current["data"].get("platform_solved"))
+        study = require_data(_study_url(session_id))
+        result = _session_action(
+            study,
+            "finish",
+            harness,
+            note="Final provider reconciliation completed",
+            platform_solved=platform_solved,
+        )
+        output_json({"ok": True, "schema_version": 2, "data": result})
+    finally:
+        spool.close()
 
 
 @session_app.command("evidence")
