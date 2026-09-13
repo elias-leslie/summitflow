@@ -32,6 +32,21 @@ def test_advanced_mode_does_not_change_execution_destination(monkeypatch):
     assert calls == [('/api/runs', {'variant': 'secure', 'guidance': 'advanced'})]
 
 
+def test_start_sends_an_explicit_bounded_execution_budget(monkeypatch):
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda path, body=None: calls.append((path, body)))
+    result = CliRunner().invoke(neri.app, [
+        'start', '--native', '--max-turns', '15', '--max-requests', '120', '--max-seconds', '900',
+    ])
+    assert result.exit_code == 0
+    assert calls == [('/api/runs', {
+        'variant': 'benchmark',
+        'guidance': 'helper',
+        'controller_mode': 'native',
+        'budget': {'turns': 15, 'requests': 120, 'seconds': 900},
+    })]
+
+
 def test_native_start_requires_identity_and_preserves_mode(monkeypatch):
     calls = []
     monkeypatch.setattr(neri, 'request', lambda path, body=None: calls.append((path, body)))

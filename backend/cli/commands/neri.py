@@ -103,14 +103,17 @@ def runs() -> None:
 
 
 @app.command()
-@usage(surface="st.neri.start", cmd='st neri start [--target-id TARGET_ID] [--variant benchmark]', when='start an investigation against a registered local target', precautions=('select an active registered target; target manifest and controller mode govern admission; no live bounty targets',), task_types=("neri", "security-labs"), tier="reference")
+@usage(surface="st.neri.start", cmd='st neri start [--target-id TARGET_ID] [--variant benchmark] [--max-turns N --max-requests N --max-seconds N]', when='start an investigation against a registered local target', precautions=('select an active registered target; target manifest and controller mode govern admission; no live bounty targets',), task_types=("neri", "security-labs"), tier="reference")
 def start(variant: Variant = Variant.benchmark, advanced: bool = False,
           external: bool = False, native: bool = False, controller_id: str | None = None,
           title: str | None = None, verification: bool = False,
           brief_id: UUID | None = None,
           target_id: str | None = None,
           hunter_profile: ReasoningProfile | None = None,
-          reviewer_profile: ReasoningProfile | None = None) -> None:
+          reviewer_profile: ReasoningProfile | None = None,
+          max_turns: Annotated[int | None, typer.Option(min=1, max=500)] = None,
+          max_requests: Annotated[int | None, typer.Option(min=1, max=10_000)] = None,
+          max_seconds: Annotated[int | None, typer.Option(min=1, max=86_400)] = None) -> None:
     """Start a registered local investigation. Guidance does not change permissions."""
     body: dict = {"variant": variant.value, "guidance": "advanced" if advanced else "helper"}
     if native and external:
@@ -135,6 +138,12 @@ def start(variant: Variant = Variant.benchmark, advanced: bool = False,
         body["brief_id"] = str(brief_id)
     if target_id is not None:
         body["target_id"] = target_id
+    if any(value is not None for value in (max_turns, max_requests, max_seconds)):
+        body["budget"] = {
+            "turns": max_turns if max_turns is not None else 40,
+            "requests": max_requests if max_requests is not None else 600,
+            "seconds": max_seconds if max_seconds is not None else 1200,
+        }
     request("/api/runs", body)
 
 
