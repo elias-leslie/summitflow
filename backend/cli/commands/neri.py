@@ -23,6 +23,7 @@ app = typer.Typer(help="Read and maintain Neri targets, investigations, notes, r
 evidence_app = typer.Typer(help="Import evidence and inspect retained artifacts")
 notes_app = typer.Typer(help="Save contextual notes and direction")
 report_app = typer.Typer(help="Read exact report and review revisions, save reports and download drafts")
+report_severity_app = typer.Typer(help="Read and save immutable severity assessments for an exact report revision")
 executor_app = typer.Typer(help="Submit explicit typed actions to a registered local target")
 target_app = typer.Typer(help="Inspect and maintain registered target metadata")
 group_app = typer.Typer(help="Read and organize passive investigations containing saved attempts")
@@ -34,6 +35,7 @@ runtime_app = typer.Typer(help="Inspect or operate Neri's emergency admission st
 app.add_typer(evidence_app, name="evidence")
 app.add_typer(notes_app, name="notes")
 app.add_typer(report_app, name="report")
+report_app.add_typer(report_severity_app, name="severity")
 app.add_typer(executor_app, name="execute")
 app.add_typer(target_app, name="target")
 app.add_typer(group_app, name="group")
@@ -330,6 +332,29 @@ def report_save(investigation_id: UUID, file: Annotated[Path, typer.Option()],
 def report_review(investigation_id: UUID, file: Annotated[Path, typer.Option()],
                   request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
     request(f"/api/runs/{investigation_id}/review", read_object(file, request_id=request_id, identified=True))
+
+
+@report_severity_app.command("list")
+@usage(surface="st.neri.report.severity.list", cmd="st neri report severity list <investigation-id> <revision-id> [--limit 40 --before-sequence N]", when="read immutable severity assessment history for an exact report revision", precautions=("read-only; preserve authority, scheme, native values and next_before_sequence; pass next_before_sequence to continue history",), task_types=("neri",))
+def report_severity_list(investigation_id: UUID, revision_id: UUID,
+                         limit: Annotated[int, typer.Option(min=1, max=100)] = 40,
+                         before_sequence: Annotated[int | None, typer.Option(help="Continue from the returned next_before_sequence")] = None) -> None:
+    request_page(f"/api/runs/{investigation_id}/reports/{revision_id}/severity-assessments", limit, None,
+                 before_sequence=before_sequence)
+
+
+@report_severity_app.command("show")
+@usage(surface="st.neri.report.severity.show", cmd="st neri report severity show <investigation-id> <revision-id> <assessment-id>", when="read one immutable severity assessment for an exact report revision", precautions=("read-only; preserve the assessment identity and source; no fallback to another assessment or report revision",), task_types=("neri",))
+def report_severity_show(investigation_id: UUID, revision_id: UUID, assessment_id: UUID) -> None:
+    request(f"/api/runs/{investigation_id}/reports/{revision_id}/severity-assessments/{assessment_id}")
+
+
+@report_severity_app.command("save")
+@usage(surface="st.neri.report.severity.save", cmd="st neri report severity save <investigation-id> <revision-id> --file assessment.json [--id UUID]", when="save an attributed severity assessment for an exact report revision", precautions=("JSON object or stdin; preserve authority, scheme, native values, rationale and source; id is retained or generated and printed; server validates assessment fields; no automatic retry",), task_types=("neri",))
+def report_severity_save(investigation_id: UUID, revision_id: UUID, file: Annotated[Path, typer.Option()],
+                         request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(f"/api/runs/{investigation_id}/reports/{revision_id}/severity-assessments",
+            read_object(file, request_id=request_id, identified=True))
 
 
 @report_app.command("download")

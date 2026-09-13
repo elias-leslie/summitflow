@@ -56,6 +56,9 @@ def transport(monkeypatch):
     (["report", "show", INVESTIGATION], f"/api/runs/{INVESTIGATION}/report"),
     (["report", "revision", INVESTIGATION, RECORD], f"/api/runs/{INVESTIGATION}/reports/{RECORD}"),
     (["report", "review-revision", INVESTIGATION, RECORD], f"/api/runs/{INVESTIGATION}/reviews/{RECORD}"),
+    (["report", "severity", "list", INVESTIGATION, RECORD], f"/api/runs/{INVESTIGATION}/reports/{RECORD}/severity-assessments?limit=40"),
+    (["report", "severity", "list", INVESTIGATION, RECORD, "--limit", "7", "--before-sequence", "42"], f"/api/runs/{INVESTIGATION}/reports/{RECORD}/severity-assessments?limit=7&before_sequence=42"),
+    (["report", "severity", "show", INVESTIGATION, RECORD, OTHER], f"/api/runs/{INVESTIGATION}/reports/{RECORD}/severity-assessments/{OTHER}"),
     (["capabilities"], "/api/capabilities?compact=true"),
     (["capabilities", "--full"], "/api/capabilities"),
     (["target", "list"], "/api/targets?compact=true"),
@@ -92,7 +95,7 @@ def transport(monkeypatch):
 ])
 def test_reads_use_canonical_routes_and_preserve_server_projection(transport, args, path):
     calls, response = transport
-    response.body = {"items": [], "has_more": True, "next_cursor": "opaque-token", "through_seq": 42}
+    response.body = {"items": [], "has_more": True, "next_cursor": "opaque-token", "next_before_sequence": 42, "through_seq": 42}
     result = CliRunner().invoke(neri.app, args)
     assert result.exit_code == 0, result.output
     assert calls == [("GET", path, None)]
@@ -108,6 +111,16 @@ def test_exact_revision_not_found_does_not_fall_back_to_report_history(transport
     assert result.exit_code == 1
     assert json.loads(result.output)["status"] == 404
     assert calls == [("GET", f"/api/runs/{INVESTIGATION}/{collection}/{RECORD}", None)]
+
+
+def test_exact_severity_not_found_does_not_fall_back_to_assessment_history(transport):
+    calls, response = transport
+    response.status = 404
+    response.body = {"detail": "Assessment not found"}
+    result = CliRunner().invoke(neri.app, ["report", "severity", "show", INVESTIGATION, RECORD, OTHER])
+    assert result.exit_code == 1
+    assert json.loads(result.output)["status"] == 404
+    assert calls == [("GET", f"/api/runs/{INVESTIGATION}/reports/{RECORD}/severity-assessments/{OTHER}", None)]
 
 
 MUTATIONS = [
@@ -162,6 +175,14 @@ MUTATIONS = [
     (["report", "review", INVESTIGATION], f"/api/runs/{INVESTIGATION}/review", {
         "report_revision_id": OTHER, "verdict": "needs_work", "summary": "Obtain complete source",
         "objections": ["Excerpt only"], "verification_attempts": [],
+    }),
+    (["report", "severity", "save", INVESTIGATION, RECORD], f"/api/runs/{INVESTIGATION}/reports/{RECORD}/severity-assessments", {
+        "finding_id": None, "authority": "internal_reviewer", "scheme": "program_native",
+        "scheme_version": "2026", "metric_scope": "report", "vector": None, "score": None,
+        "native_label": " Needs review ", "native_code": "R-2", "taxonomy": {"category": "documentation"},
+        "program_binding_revision_id": OTHER, "rationale": "Keep `literal` $(text).\nManual assessment.",
+        "assessed_by": "Document reviewer", "assessed_at": "2026-09-13T12:00:00Z",
+        "source": {"url": "https://example.invalid/review", "kind": "manual"},
     }),
     (["record-activity", INVESTIGATION], f"/api/runs/{INVESTIGATION}/activity", {
         "kind": "blocker", "title": "Capture adapter is missing",
@@ -423,6 +444,15 @@ def test_exact_context_detail_preserves_full_record_and_never_falls_back(transpo
     ["evidence", "show", INVESTIGATION, "bad-id"], ["notes", "state", INVESTIGATION, RECORD, "invalid"],
     ["report", "revision", INVESTIGATION], ["report", "revision", INVESTIGATION, "bad-id"],
     ["report", "review-revision", INVESTIGATION], ["report", "review-revision", INVESTIGATION, "bad-id"],
+    ["report", "severity", "list", INVESTIGATION],
+    ["report", "severity", "list", "bad-id", RECORD],
+    ["report", "severity", "list", INVESTIGATION, "bad-id"],
+    ["report", "severity", "list", INVESTIGATION, RECORD, "--limit", "0"],
+    ["report", "severity", "list", INVESTIGATION, RECORD, "--limit", "101"],
+    ["report", "severity", "list", INVESTIGATION, RECORD, "--before-sequence", "bad-sequence"],
+    ["report", "severity", "show", INVESTIGATION, RECORD],
+    ["report", "severity", "show", INVESTIGATION, RECORD, "bad-id"],
+    ["report", "severity", "save", INVESTIGATION, "bad-id", "--file", "-"],
     ["control", INVESTIGATION, "resume"], ["control", INVESTIGATION, "step"],
     ["control", INVESTIGATION, "direct"], ["runtime", "release", "--revision", "0"],
 ])
@@ -483,6 +513,7 @@ def test_target_metadata_preserves_existing_contract(transport, args, path, meth
 @pytest.mark.parametrize("status", [409, 422, 500])
 @pytest.mark.parametrize(("args", "identity_field"), [
     (["notes", "add", INVESTIGATION], "id"),
+    (["report", "severity", "save", INVESTIGATION, RECORD], "id"),
     (["group", "classify", "documents", INVESTIGATION], "mutation_id"),
     (["group", "select-report", "documents", INVESTIGATION], "mutation_id"),
     (["group", "membership", "documents", INVESTIGATION], "mutation_id"),
@@ -506,6 +537,7 @@ def test_api_errors_keep_mutation_id_without_leaking_input_or_retrying(transport
 
 @pytest.mark.parametrize(("args", "identity_field"), [
     (["create"], "id"),
+    (["report", "severity", "save", INVESTIGATION, RECORD], "id"),
     (["group", "classify", "documents", INVESTIGATION], "mutation_id"),
     (["target", "notes", "state", "documents", RECORD], "mutation_id"),
     (["group", "notes", "state", "documents", INVESTIGATION, RECORD], "mutation_id"),
@@ -544,6 +576,7 @@ def test_lean_surface_is_discoverable_and_retired_groups_are_gone():
             "st.neri.evidence.import", "st.neri.evidence.artifact", "st.neri.notes.add",
             "st.neri.report.save", "st.neri.report.review", "st.neri.report.download",
             "st.neri.report.revision", "st.neri.report.review-revision",
+            "st.neri.report.severity.list", "st.neri.report.severity.show", "st.neri.report.severity.save",
             "st.neri.operation", "st.neri.target.list", "st.neri.runtime.stop",
             "st.neri.group.list", "st.neri.group.create", "st.neri.group.show", "st.neri.group.classify",
             "st.neri.group.select-report", "st.neri.group.membership",
@@ -560,6 +593,11 @@ def test_lean_surface_is_discoverable_and_retired_groups_are_gone():
     assert "--workspace" in commands["st.neri.target.list"]
     assert "--workspace" in commands["st.neri.target.show"]
     assert "--revision UUID --review UUID" in commands["st.neri.report.download"]
+    assert "--before-sequence N" in commands["st.neri.report.severity.list"]
+    for command in ["list", "show", "save"]:
+        severity_help = runner.invoke(neri.app, ["report", "severity", command, "--help"])
+        assert severity_help.exit_code == 0, severity_help.output
+        assert "REVISION_ID" in severity_help.output
     download_help = runner.invoke(neri.app, ["report", "download", "--help"])
     assert download_help.exit_code == 0, download_help.output
     assert "--review" in download_help.output
