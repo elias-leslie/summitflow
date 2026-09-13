@@ -427,6 +427,11 @@ def _upstream_path(study: dict[str, Any]) -> str:
     return path
 
 
+def _dojo_cli_path(upstream_path: str) -> str:
+    """Convert the provider's /dojo URL path to the official CLI's absolute path."""
+    return upstream_path.removeprefix("/dojo")
+
+
 def _remote_activity_path() -> str:
     result = _ssh([_CURRENT_ACTIVITY_COMMAND], capture=True)
     candidate = (result.stdout or "").strip()
@@ -481,8 +486,8 @@ def _open_study_terminal(study: dict[str, Any], harness: str):
                 else "No active remote challenge was observed"
             )
             study = _session_action(study, "remote_expired", harness, note=note)
-            started = _ssh(["dojo", "start", path])
-            if started.returncode != 0:
+            started = _ssh(["dojo", "start", _dojo_cli_path(path)])
+            if started.returncode != 0 and _remote_activity_path() != path:
                 output_json(
                     {
                         "ok": False,

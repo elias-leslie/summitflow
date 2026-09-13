@@ -285,7 +285,33 @@ def test_terminal_starts_selected_activity_when_remote_identity_differs(monkeypa
     monkeypatch.setattr(learn, "request_data", lambda *_args, **_kwargs: current)
     monkeypatch.setattr(learn, "output_json", lambda _value: None)
     learn._open_study_terminal(current, "codex")
-    assert ["dojo", "start", "/dojo/welcome/welcome/terminal"] in ssh_calls
+    assert ["dojo", "start", "/welcome/welcome/terminal"] in ssh_calls
+    assert [item[0] for item in actions[:2]] == ["remote_expired", "remote_started"]
+
+
+def test_terminal_accepts_killed_start_process_when_requested_activity_is_running(monkeypatch):
+    current = study("terminal")
+    actions = []
+    identities = iter(
+        [
+            "/dojo/welcome/welcome/other",
+            "/dojo/welcome/welcome/terminal",
+        ]
+    )
+    monkeypatch.setattr(learn, "TranscriptSpool", FakeSpool)
+    monkeypatch.setattr(learn, "_remote_activity_path", lambda: next(identities))
+    monkeypatch.setattr(
+        learn,
+        "_session_action",
+        lambda value, action, harness, **fields: actions.append((action, harness, fields)) or value,
+    )
+    monkeypatch.setattr(learn, "_ssh", lambda *_args, **_kwargs: MagicMock(returncode=137))
+    monkeypatch.setattr(learn, "run_terminal", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(learn, "request_data", lambda *_args, **_kwargs: current)
+    monkeypatch.setattr(learn, "output_json", lambda _value: None)
+
+    learn._open_study_terminal(current, "codex")
+
     assert [item[0] for item in actions[:2]] == ["remote_expired", "remote_started"]
 
 
