@@ -235,6 +235,82 @@ def test_workbench_uses_canonical_routes_and_preserves_operation_identity(monkey
     assert calls[-1]==(f'/api/workbench/{run_id}/operations/{operation_id}',None)
 
 
+def test_workbench_reset_preserves_json_and_returns_receipt_or_error_without_retry(monkeypatch, tmp_path):
+    import json
+
+    import httpx
+
+    calls = []
+    status = 200
+    receipt = {'id': '22222222-2222-4222-8222-222222222222', 'status': 'complete'}
+
+    def handle(request):
+        calls.append((request.method, request.url.path, json.loads(request.content)))
+        body = receipt if status == 200 else {'detail': 'Inspect the retained reset receipt'}
+        return httpx.Response(status, json=body)
+
+    client = httpx.Client
+    monkeypatch.setenv('ST_NERI_API_URL', 'https://neri.invalid')
+    monkeypatch.setattr(httpx, 'Client', lambda **kwargs: client(transport=httpx.MockTransport(handle), **kwargs))
+    run_id = '11111111-1111-4111-8111-111111111111'
+    payload = {
+        'id': receipt['id'],
+        'expected_target_manifest_digest': 'a' * 64,
+        'actor': 'agent',
+        'controller_id': 'native-tui',
+        'controller_revision': 3,
+    }
+    file = tmp_path / 'reset.json'
+    file.write_text(json.dumps(payload))
+    runner = CliRunner()
+    for status in (200, 409, 500):
+        for source in (str(file), '-'):
+            calls.clear()
+            result = runner.invoke(neri.app, ['workbench', 'reset', run_id, '--file', source],
+                                   input=json.dumps(payload) if source == '-' else None)
+            assert result.exit_code == (0 if status == 200 else 1), result.output
+            if status == 200:
+                assert json.loads(result.output) == receipt
+            else:
+                assert json.loads(result.output) == {
+                    'ok': False, 'error': 'neri_api_error', 'detail': 'Inspect the retained reset receipt',
+                }
+            assert calls == [('POST', f'/api/workbench/{run_id}/target-reset', payload)]
+
+
+def test_workbench_reset_rejects_invalid_input_before_transport(monkeypatch):
+    calls = []
+    monkeypatch.setattr(neri, 'request', lambda *args, **kwargs: calls.append((args, kwargs)))
+    runner = CliRunner()
+    args = ['workbench', 'reset', '11111111-1111-4111-8111-111111111111']
+    assert runner.invoke(neri.app, args).exit_code != 0
+    for invalid in ('[]', 'null', '{invalid'):
+        assert runner.invoke(neri.app, [*args, '--file', '-'], input=invalid).exit_code != 0
+    assert runner.invoke(neri.app, ['workbench', 'reset', 'bad-id', '--file', '-'], input='{}').exit_code != 0
+    assert not calls
+
+
+def test_workbench_reset_help_and_manifest_describe_admission_and_receipt_handling():
+    import json
+
+    from cli.commands.tools import app as tools_app
+
+    runner = CliRunner()
+    help_result = runner.invoke(neri.app, ['workbench', 'reset', '--help'])
+    assert help_result.exit_code == 0
+    help_text = ' '.join(help_result.output.split())
+    for phrase in ('fixed target', 'global stop', 'paused/settled run', 'request identity', 'retained receipt', 'new ID'):
+        assert phrase in help_text
+    result = runner.invoke(tools_app, ['manifest', '--surface', 'st.neri.workbench.reset', '--format', 'json'])
+    assert result.exit_code == 0
+    specs = json.loads(result.output)['tools']
+    assert len(specs) == 1
+    assert specs[0]['cmd'] == 'st neri workbench reset <run-id> --file reset.json'
+    precautions = ' '.join(specs[0]['precautions'])
+    for phrase in ('global stop', 'paused/settled run', 'fixed target recreation', 'request identity', 'retained receipt', 'new ID'):
+        assert phrase in precautions
+
+
 def test_capabilities_preserves_legacy_and_describes_registry_entry(monkeypatch):
     calls = []
     monkeypatch.setattr(neri, 'request', lambda path, body=None: calls.append((path, body)))

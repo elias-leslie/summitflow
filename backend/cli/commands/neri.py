@@ -42,6 +42,8 @@ rollout_app = typer.Typer(help="Inspect and update the revisioned automatic evol
 kernel_app.add_typer(rollout_app, name="rollout")
 technique_app = typer.Typer(help="Inspect technique definitions and record evidence-linked assessment cases")
 app.add_typer(technique_app, name="technique")
+campaign_app = typer.Typer(help="Freeze experiment protocols, record observations and inspect evaluations")
+app.add_typer(campaign_app, name="campaign")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
 
 
@@ -387,6 +389,17 @@ def workbench_traffic(run_id: UUID) -> None:
     request(f'/api/workbench/{run_id}/traffic')
 
 
+@workbench_app.command('reset')
+@usage(surface='st.neri.workbench.reset', cmd='st neri workbench reset <run-id> --file reset.json', when='request fixed target recreation for a settled workbench investigation', precautions=('requires global stop and a paused/settled run; fixed target recreation; preserve request identity; inspect the retained receipt and do not blindly retry failures with a new ID',), task_types=('neri','security-labs'), tier='reference')
+def workbench_reset(run_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    """Recreate the fixed target; requires global stop and a paused/settled run.
+
+    Preserve request identity and inspect the retained receipt. Do not blindly
+    retry failures with a new ID. '-' reads the reset JSON object from stdin.
+    """
+    request(f'/api/workbench/{run_id}/target-reset', read_object(file))
+
+
 @workbench_app.command('send')
 @usage(surface='st.neri.workbench.send', cmd='st neri workbench send <run-id> --file operation.json', when='submit a scoped HTTP request or browser action', precautions=('load capabilities schema and controller context first; include actor=agent and current identity/revision; reuse an operation UUID only for identical submission; inspect uncertainty instead of retrying',), task_types=('neri','security-labs'), tier='reference')
 def workbench_send(run_id: UUID, file: Annotated[Path,typer.Option()]) -> None:
@@ -619,3 +632,45 @@ def technique_select(run_id: UUID, file: Annotated[Path, typer.Option()]) -> Non
 def technique_update(run_id: UUID, use_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
     """Update a case through Neri's revision-checked assessment route."""
     request(f"/api/runs/{run_id}/techniques/{use_id}", read_object(file), method="PUT")
+
+
+@campaign_app.command("freeze")
+@usage(surface="st.neri.campaign.freeze", cmd="st neri campaign freeze --file protocol.json", when="freeze a versioned experiment protocol through Neri", precautions=("JSON object or stdin; preserve protocol version and supplied identity; freezing records metadata and starts no execution",), task_types=("neri",), tier="reference")
+def campaign_freeze(file: Annotated[Path, typer.Option()]) -> None:
+    """Freeze the supplied protocol JSON object; '-' reads stdin."""
+    request("/api/campaigns/freeze", read_object(file))
+
+
+@campaign_app.command("list")
+@usage(surface="st.neri.campaign.list", cmd="st neri campaign list", when="inspect saved experiment campaigns", precautions=("read-only; protocol registration does not imply completed observations",), task_types=("neri",), tier="reference")
+def campaign_list() -> None:
+    """List saved campaigns through the canonical API."""
+    request("/api/campaigns")
+
+
+@campaign_app.command("show")
+@usage(surface="st.neri.campaign.show", cmd="st neri campaign show <campaign-id>", when="read a campaign's frozen protocol and recorded state", precautions=("read-only; preserve the observed campaign revision before appending records",), task_types=("neri",), tier="reference")
+def campaign_show(campaign_id: UUID) -> None:
+    """Read one campaign's protocol and current state."""
+    request(f"/api/campaigns/{campaign_id}")
+
+
+@campaign_app.command("record")
+@usage(surface="st.neri.campaign.record", cmd="st neri campaign record <campaign-id> --file record.json", when="append a typed observation to a campaign", precautions=("JSON object or stdin; preserve record type, identity and expected_revision; API validates records; conflicts are not retried",), task_types=("neri",), tier="reference")
+def campaign_record(campaign_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    """Append the supplied record through Neri's revision-checked route."""
+    request(f"/api/campaigns/{campaign_id}/records", read_object(file))
+
+
+@campaign_app.command("evaluate")
+@usage(surface="st.neri.campaign.evaluate", cmd="st neri campaign evaluate <campaign-id> --file evaluation.json", when="request a retained campaign evaluation projection", precautions=("JSON object or stdin must preserve the request key, observed revision and explicit record cutoff; evaluation uses saved records and starts no experiment execution",), task_types=("neri",), tier="reference")
+def campaign_evaluate(campaign_id: UUID, file: Annotated[Path, typer.Option()]) -> None:
+    """Create one cutoff-bound evaluation from an explicit JSON object."""
+    request(f"/api/campaigns/{campaign_id}/evaluate", read_object(file))
+
+
+@campaign_app.command("evaluation")
+@usage(surface="st.neri.campaign.evaluation", cmd="st neri campaign evaluation <campaign-id> <snapshot-id>", when="read a retained campaign evaluation snapshot", precautions=("read-only; retain the snapshot's evidence cutoff and uncertainty",), task_types=("neri",), tier="reference")
+def campaign_evaluation(campaign_id: UUID, snapshot_id: UUID) -> None:
+    """Read a saved evaluation without creating a new snapshot."""
+    request(f"/api/campaigns/{campaign_id}/evaluations/{snapshot_id}")
