@@ -333,12 +333,14 @@ def report_review(investigation_id: UUID, file: Annotated[Path, typer.Option()],
 
 
 @report_app.command("download")
-@usage(surface="st.neri.report.download", cmd="st neri report download <investigation-id> --output PATH [--revision UUID]", when="download a saved report draft or exact revision", precautions=("omit revision for the latest report; writes a new local file; no external submission",), task_types=("neri",))
+@usage(surface="st.neri.report.download", cmd="st neri report download <investigation-id> --output PATH [--revision UUID --review UUID]", when="download a saved report draft or exact report/review pair", precautions=("omit both selectors for the latest report; --review selects its bound report; supplying both pins the exact pair and mismatches are rejected; writes a new local file; no external submission",), task_types=("neri",))
 def report_download(investigation_id: UUID, output: Annotated[Path, typer.Option()],
-                    revision: Annotated[UUID | None, typer.Option(help="Download this exact report revision")] = None) -> None:
+                    revision: Annotated[UUID | None, typer.Option(help="Download this exact report revision")] = None,
+                    review: Annotated[UUID | None, typer.Option(help="Bind this exact review revision and its report")] = None) -> None:
     path = f"/api/runs/{investigation_id}/report-download"
-    if revision is not None:
-        path += f"?{urlencode({'revision': str(revision)})}"
+    params = {key: str(value) for key, value in {"revision": revision, "review": review}.items() if value is not None}
+    if params:
+        path += f"?{urlencode(params)}"
     download_file(path, output)
 
 

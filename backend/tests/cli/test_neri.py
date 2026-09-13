@@ -559,6 +559,11 @@ def test_lean_surface_is_discoverable_and_retired_groups_are_gone():
     assert commands["st.neri.reports"] == "st neri reports [--view investigations --target TARGET --limit 40 --cursor TOKEN]"
     assert "--workspace" in commands["st.neri.target.list"]
     assert "--workspace" in commands["st.neri.target.show"]
+    assert "--revision UUID --review UUID" in commands["st.neri.report.download"]
+    download_help = runner.invoke(neri.app, ["report", "download", "--help"])
+    assert download_help.exit_code == 0, download_help.output
+    assert "--review" in download_help.output
+    assert "Bind this exact review revision and its report" in download_help.output
     retired = ["labs", "training", "budget", "usage", "campaign", "technique", "kernel", "evolution",
                "grant", "controller", "assignment", "submit", "workbench", "start", "watch", "runs",
                "brief", "hypothesis", "gap", "help"]
