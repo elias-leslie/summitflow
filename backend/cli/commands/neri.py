@@ -19,13 +19,17 @@ from .._project_client import ProjectApi, ProjectApiClient, ProjectApiConnectErr
 from ..lib.usage import usage
 from ..output import output_json
 
-app = typer.Typer(help="Read and maintain Neri targets, investigations, attempts, evidence, notes and reports")
+app = typer.Typer(help="Read and maintain Neri targets, investigations, notes, reports and disclosure programs")
 evidence_app = typer.Typer(help="Import evidence and inspect retained artifacts")
 notes_app = typer.Typer(help="Save contextual notes and direction")
 report_app = typer.Typer(help="Read exact report and review revisions, save reports and download drafts")
 executor_app = typer.Typer(help="Submit explicit typed actions to a registered local target")
 target_app = typer.Typer(help="Inspect and maintain registered target metadata")
 group_app = typer.Typer(help="Read and organize passive investigations containing saved attempts")
+target_notes_app = typer.Typer(help="Save target direction and read its state history")
+group_notes_app = typer.Typer(help="Save investigation direction and read its state history")
+program_app = typer.Typer(help="Maintain passive disclosure programs and exact policy revisions")
+target_programs_app = typer.Typer(help="Record exact target applicability and its revision history")
 runtime_app = typer.Typer(help="Inspect or operate Neri's emergency admission stop")
 app.add_typer(evidence_app, name="evidence")
 app.add_typer(notes_app, name="notes")
@@ -33,6 +37,10 @@ app.add_typer(report_app, name="report")
 app.add_typer(executor_app, name="execute")
 app.add_typer(target_app, name="target")
 app.add_typer(group_app, name="group")
+target_app.add_typer(target_notes_app, name="notes")
+group_app.add_typer(group_notes_app, name="notes")
+app.add_typer(program_app, name="program")
+target_app.add_typer(target_programs_app, name="programs")
 app.add_typer(runtime_app, name="runtime")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
 
@@ -43,6 +51,12 @@ class Action(StrEnum):
 
 
 class NoteState(StrEnum):
+    acknowledged = "acknowledged"
+    resolved = "resolved"
+
+
+class DirectionNoteState(StrEnum):
+    saved = "saved"
     acknowledged = "acknowledged"
     resolved = "resolved"
 
@@ -130,6 +144,20 @@ def read_object(path: Path, *, request_id: UUID | None = None, identified: bool 
     return value
 
 
+def request_page(path: str, limit: int, cursor: str | None,
+                 **filters: str | int | None) -> None:
+    """Read one cursor page and preserve the server's continuation envelope."""
+    params = {"limit": limit, "cursor": cursor, **filters}
+    request(f"{path}?{urlencode({key: value for key, value in params.items() if value is not None})}")
+
+
+def direction_notes_path(target_id: str, group_id: UUID | None = None) -> str:
+    path = f"/api/targets/{quote(target_id, safe='')}"
+    if group_id is not None:
+        path += f"/investigations/{group_id}"
+    return f"{path}/notes"
+
+
 def download_file(path: str, output: Path) -> None:
     """Download from Neri to an explicitly named new file; redirects are not followed."""
     base_url = resolve_api_url(NERI_API).url.rstrip("/") + "/"
@@ -158,10 +186,7 @@ def download_file(path: str, output: Path) -> None:
 @app.command()
 @usage(surface="st.neri.investigations", cmd="st neri investigations [--limit 40 --cursor TOKEN]", when="list saved Neri attempts using the legacy investigation contract", precautions=("read-only; IDs identify runs, not passive groups; next_cursor resumes the saved listing",), task_types=("neri",))
 def investigations(limit: Annotated[int, typer.Option(min=1, max=100)] = 40, cursor: str | None = None) -> None:
-    params: dict[str, str | int] = {"limit": limit}
-    if cursor is not None:
-        params["cursor"] = cursor
-    request(f"/api/investigations?{urlencode(params)}")
+    request_page("/api/investigations", limit, cursor)
 
 
 @app.command()
@@ -269,14 +294,8 @@ def reports(limit: Annotated[int, typer.Option(min=1, max=100)] = 40, cursor: st
             target_id: Annotated[str | None, typer.Option("--target", "--target-id")] = None) -> None:
     if target_id is not None and view is None:
         raise typer.BadParameter("--target requires --view investigations")
-    params: dict[str, str | int] = {"limit": limit}
-    if cursor is not None:
-        params["cursor"] = cursor
-    if view is not None:
-        params["view"] = view.value
-    if target_id is not None:
-        params["target_id"] = target_id
-    request(f"/api/reports?{urlencode(params)}")
+    request_page("/api/reports", limit, cursor, view=view.value if view is not None else None,
+                 target_id=target_id)
 
 
 @report_app.command("show")
@@ -417,15 +436,10 @@ def group_list(target_id: str, limit: Annotated[int, typer.Option(min=1, max=100
                cursor: str | None = None, search: str | None = None, class_key: str | None = None,
                workspace_filter: Annotated[WorkspaceFilter | None, typer.Option("--filter")] = None,
                include_empty: bool = False) -> None:
-    params: dict[str, str | int] = {"limit": limit}
-    for key, value in {"cursor": cursor, "q": search, "class_key": class_key}.items():
-        if value is not None:
-            params[key] = value
-    if workspace_filter is not None:
-        params["filter"] = workspace_filter.value
-    if include_empty:
-        params["include_empty"] = "true"
-    request(f"/api/targets/{quote(target_id, safe='')}/investigations?{urlencode(params)}")
+    request_page(f"/api/targets/{quote(target_id, safe='')}/investigations", limit, cursor,
+                 q=search, class_key=class_key,
+                 filter=workspace_filter.value if workspace_filter is not None else None,
+                 include_empty="true" if include_empty else None)
 
 
 @group_app.command("create")
@@ -488,3 +502,159 @@ def target_register(file: Annotated[Path, typer.Option()]) -> None:
 @usage(surface="st.neri.target.status", cmd="st neri target status <target-id> --file status.json", when="update a registered target's active status", precautions=("preserve manifest_digest, expected_status, status and reason; conflicts are not retried",), task_types=("neri",))
 def target_status(target_id: str, file: Annotated[Path, typer.Option()]) -> None:
     request(f"/api/targets/{quote(target_id, safe='')}/status", read_object(file), method="PUT")
+
+
+@target_notes_app.command("list")
+@usage(surface="st.neri.target.notes.list", cmd="st neri target notes list <target-id> [--state saved|acknowledged|resolved --limit 40 --cursor TOKEN]", when="read a page of target direction notes", precautions=("read-only; previews may truncate bodies; preserve note IDs and next_cursor",), task_types=("neri",))
+def target_notes_list(target_id: str, limit: Annotated[int, typer.Option(min=1, max=100)] = 40,
+                      cursor: str | None = None, state: DirectionNoteState | None = None) -> None:
+    request_page(direction_notes_path(target_id), limit, cursor, state=state.value if state else None)
+
+
+@target_notes_app.command("add")
+@usage(surface="st.neri.target.notes.add", cmd="st neri target notes add <target-id> --file note.json [--id UUID]", when="save target direction with exact saved context references", precautions=("JSON object or stdin; id is retained or generated and printed; preserve run/event/evidence/report/review references; passive notes do not imply delivery or execution",), task_types=("neri",))
+def target_notes_add(target_id: str, file: Annotated[Path, typer.Option()],
+                     request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(direction_notes_path(target_id), read_object(file, request_id=request_id, identified=True))
+
+
+@target_notes_app.command("show")
+@usage(surface="st.neri.target.notes.show", cmd="st neri target notes show <target-id> <note-id>", when="read one target direction note with its full body and context", precautions=("read-only; uses the exact note ID without falling back to a preview",), task_types=("neri",))
+def target_notes_show(target_id: str, note_id: UUID) -> None:
+    request(f"{direction_notes_path(target_id)}/{note_id}")
+
+
+@target_notes_app.command("history")
+@usage(surface="st.neri.target.notes.history", cmd="st neri target notes history <target-id> <note-id> [--limit 40 --cursor TOKEN]", when="read immutable target note state transitions", precautions=("read-only; preserve state_revision_id, mutation_id, revision and next_cursor",), task_types=("neri",))
+def target_notes_history(target_id: str, note_id: UUID,
+                         limit: Annotated[int, typer.Option(min=1, max=100)] = 40,
+                         cursor: str | None = None) -> None:
+    request_page(f"{direction_notes_path(target_id)}/{note_id}/history", limit, cursor)
+
+
+@target_notes_app.command("state")
+@usage(surface="st.neri.target.notes.state", cmd="st neri target notes state <target-id> <note-id> --file state.json [--id UUID]", when="acknowledge, resolve or reopen target direction", precautions=("JSON includes expected_revision, state and reason; --id identifies mutation_id; retained or generated ID is printed; same-state writes and stale revisions are rejected; no automatic retry",), task_types=("neri",))
+def target_notes_state(target_id: str, note_id: UUID, file: Annotated[Path, typer.Option()],
+                       request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    """Save a state revision. JSON state accepts saved, acknowledged or resolved."""
+    request(f"{direction_notes_path(target_id)}/{note_id}/state",
+            read_object(file, request_id=request_id, identified=True, identity_field="mutation_id"),
+            identity_field="mutation_id")
+
+
+@group_notes_app.command("list")
+@usage(surface="st.neri.group.notes.list", cmd="st neri group notes list <target-id> <group-id> [--state saved|acknowledged|resolved --limit 40 --cursor TOKEN]", when="read a page of passive investigation direction notes", precautions=("read-only; group IDs are distinct from run IDs; previews may truncate bodies; preserve next_cursor",), task_types=("neri",))
+def group_notes_list(target_id: str, group_id: UUID,
+                     limit: Annotated[int, typer.Option(min=1, max=100)] = 40,
+                     cursor: str | None = None, state: DirectionNoteState | None = None) -> None:
+    request_page(direction_notes_path(target_id, group_id), limit, cursor,
+                 state=state.value if state else None)
+
+
+@group_notes_app.command("add")
+@usage(surface="st.neri.group.notes.add", cmd="st neri group notes add <target-id> <group-id> --file note.json [--id UUID]", when="save passive investigation direction with exact saved context references", precautions=("JSON object or stdin; id is retained or generated and printed; context survives reassignment; passive notes do not imply delivery, execution or blockers",), task_types=("neri",))
+def group_notes_add(target_id: str, group_id: UUID, file: Annotated[Path, typer.Option()],
+                    request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(direction_notes_path(target_id, group_id),
+            read_object(file, request_id=request_id, identified=True))
+
+
+@group_notes_app.command("show")
+@usage(surface="st.neri.group.notes.show", cmd="st neri group notes show <target-id> <group-id> <note-id>", when="read one investigation direction note with its full body and context", precautions=("read-only; preserves the exact group, note and contextual record IDs",), task_types=("neri",))
+def group_notes_show(target_id: str, group_id: UUID, note_id: UUID) -> None:
+    request(f"{direction_notes_path(target_id, group_id)}/{note_id}")
+
+
+@group_notes_app.command("history")
+@usage(surface="st.neri.group.notes.history", cmd="st neri group notes history <target-id> <group-id> <note-id> [--limit 40 --cursor TOKEN]", when="read immutable investigation note state transitions", precautions=("read-only; preserve state_revision_id, mutation_id, revision and next_cursor",), task_types=("neri",))
+def group_notes_history(target_id: str, group_id: UUID, note_id: UUID,
+                        limit: Annotated[int, typer.Option(min=1, max=100)] = 40,
+                        cursor: str | None = None) -> None:
+    request_page(f"{direction_notes_path(target_id, group_id)}/{note_id}/history", limit, cursor)
+
+
+@group_notes_app.command("state")
+@usage(surface="st.neri.group.notes.state", cmd="st neri group notes state <target-id> <group-id> <note-id> --file state.json [--id UUID]", when="acknowledge, resolve or reopen investigation direction", precautions=("JSON includes expected_revision, state and reason; --id identifies mutation_id; retained or generated ID is printed; same-state writes and stale revisions are rejected; no automatic retry",), task_types=("neri",))
+def group_notes_state(target_id: str, group_id: UUID, note_id: UUID, file: Annotated[Path, typer.Option()],
+                      request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    """Save a state revision. JSON state accepts saved, acknowledged or resolved."""
+    request(f"{direction_notes_path(target_id, group_id)}/{note_id}/state",
+            read_object(file, request_id=request_id, identified=True, identity_field="mutation_id"),
+            identity_field="mutation_id")
+
+
+@program_app.command("list")
+@usage(surface="st.neri.program.list", cmd="st neri program list [--limit 40 --cursor TOKEN]", when="read saved disclosure program identities", precautions=("read-only; program identity is distinct from its immutable policy revisions; preserve next_cursor",), task_types=("neri",))
+def program_list(limit: Annotated[int, typer.Option(min=1, max=100)] = 40,
+                 cursor: str | None = None) -> None:
+    request_page("/api/disclosure-programs", limit, cursor)
+
+
+@program_app.command("create")
+@usage(surface="st.neri.program.create", cmd="st neri program create --file program.json [--id UUID]", when="save a named disclosure program identity", precautions=("JSON object or stdin; id is retained or generated and printed; passive record only; policy is saved separately as a revision",), task_types=("neri",))
+def program_create(file: Annotated[Path, typer.Option()],
+                   request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request("/api/disclosure-programs", read_object(file, request_id=request_id, identified=True))
+
+
+@program_app.command("show")
+@usage(surface="st.neri.program.show", cmd="st neri program show <program-id>", when="read one disclosure program identity and its current revision reference", precautions=("read-only; fetch the exact policy revision separately",), task_types=("neri",))
+def program_show(program_id: UUID) -> None:
+    request(f"/api/disclosure-programs/{program_id}")
+
+
+@program_app.command("revisions")
+@usage(surface="st.neri.program.revisions", cmd="st neri program revisions <program-id> [--limit 40 --cursor TOKEN]", when="read a page of immutable disclosure policy revision summaries", precautions=("read-only; summaries omit policy_snapshot and may truncate summary; use revision for exact detail",), task_types=("neri",))
+def program_revisions(program_id: UUID, limit: Annotated[int, typer.Option(min=1, max=100)] = 40,
+                      cursor: str | None = None) -> None:
+    request_page(f"/api/disclosure-programs/{program_id}/revisions", limit, cursor)
+
+
+@program_app.command("revise")
+@usage(surface="st.neri.program.revise", cmd="st neri program revise <program-id> --file revision.json [--id UUID]", when="save an immutable disclosure policy snapshot and sources", precautions=("JSON includes expected_revision, policy_snapshot and sources; verification fields record manually supplied facts; id is retained or generated and printed; policy revisions never rewrite bindings; no automatic retry",), task_types=("neri",))
+def program_revise(program_id: UUID, file: Annotated[Path, typer.Option()],
+                   request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(f"/api/disclosure-programs/{program_id}/revisions",
+            read_object(file, request_id=request_id, identified=True))
+
+
+@program_app.command("revision")
+@usage(surface="st.neri.program.revision", cmd="st neri program revision <program-id> <revision-id>", when="read one full immutable disclosure policy revision", precautions=("read-only; exact revision ID is preserved; no fallback to the current policy",), task_types=("neri",))
+def program_revision(program_id: UUID, revision_id: UUID) -> None:
+    """Read the full policy snapshot at one exact revision."""
+    request(f"/api/disclosure-programs/{program_id}/revisions/{revision_id}")
+
+
+@target_programs_app.command("list")
+@usage(surface="st.neri.target.programs.list", cmd="st neri target programs list <target-id> [--manifest-id UUID --environment NAME --include-history --limit 40 --cursor TOKEN]", when="read current target program applicability bindings or their revision history", precautions=("read-only; manifest and environment filters are exact; list previews omit full policy; preserve binding and binding revision IDs",), task_types=("neri",))
+def target_programs_list(target_id: str, limit: Annotated[int, typer.Option(min=1, max=100)] = 40,
+                         cursor: str | None = None, manifest_id: UUID | None = None,
+                         environment: str | None = None, include_history: bool = False) -> None:
+    request_page(f"/api/targets/{quote(target_id, safe='')}/programs", limit, cursor,
+                 manifest_id=str(manifest_id) if manifest_id is not None else None,
+                 environment=environment, include_history="true" if include_history else None)
+
+
+@target_programs_app.command("bind")
+@usage(surface="st.neri.target.programs.bind", cmd="st neri target programs bind <target-id> --file binding.json [--id UUID]", when="save or revise exact target program applicability", precautions=("JSON preserves program_revision_id, manifest_id, environment and optional run/report/finding IDs; include expected_revision; target_scope_status and eligibility_status are separate; id identifies the immutable binding revision and is retained or generated; no automatic retry",), task_types=("neri",))
+def target_programs_bind(target_id: str, file: Annotated[Path, typer.Option()],
+                         request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(f"/api/targets/{quote(target_id, safe='')}/programs",
+            read_object(file, request_id=request_id, identified=True))
+
+
+@target_programs_app.command("show")
+@usage(surface="st.neri.target.programs.show", cmd="st neri target programs show <target-id> <binding-id> [--revision-id UUID]", when="read full current or exact immutable binding detail and its pinned policy", precautions=("read-only; --revision-id pins an immutable binding revision; binding identity is distinct from its revision ID; no fallback",), task_types=("neri",))
+def target_programs_show(target_id: str, binding_id: UUID, revision_id: UUID | None = None) -> None:
+    path = f"/api/targets/{quote(target_id, safe='')}/programs/{binding_id}"
+    if revision_id is not None:
+        path += f"?{urlencode({'revision_id': str(revision_id)})}"
+    request(path)
+
+
+@target_programs_app.command("history")
+@usage(surface="st.neri.target.programs.history", cmd="st neri target programs history <target-id> <binding-id> [--limit 40 --cursor TOKEN]", when="read immutable revisions of one exact applicability binding", precautions=("read-only; history omits full policy; preserve supersedes_revision_id and next_cursor",), task_types=("neri",))
+def target_programs_history(target_id: str, binding_id: UUID,
+                            limit: Annotated[int, typer.Option(min=1, max=100)] = 40,
+                            cursor: str | None = None) -> None:
+    request_page(f"/api/targets/{quote(target_id, safe='')}/programs/{binding_id}/history", limit, cursor)

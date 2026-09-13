@@ -68,6 +68,25 @@ def transport(monkeypatch):
     (["group", "show", "document?version", INVESTIGATION], f"/api/targets/document%3Fversion/investigations/{INVESTIGATION}?attempt_limit=40&report_limit=40"),
     (["group", "show", "documents", INVESTIGATION, "--limit", "7", "--cursor", "opaque+/=&cursor"], f"/api/targets/documents/investigations/{INVESTIGATION}?attempt_limit=7&report_limit=40&attempt_cursor=opaque%2B%2F%3D%26cursor"),
     (["group", "show", "documents", INVESTIGATION, "--attempt-limit", "3", "--attempt-cursor", "a+cursor", "--report-limit", "7", "--report-cursor", "r/cursor"], f"/api/targets/documents/investigations/{INVESTIGATION}?attempt_limit=3&report_limit=7&attempt_cursor=a%2Bcursor&report_cursor=r%2Fcursor"),
+    (["target", "notes", "list", "document?version"], "/api/targets/document%3Fversion/notes?limit=40"),
+    (["target", "notes", "list", "documents", "--state", "saved", "--limit", "7", "--cursor", "opaque+/=&cursor"], "/api/targets/documents/notes?limit=7&cursor=opaque%2B%2F%3D%26cursor&state=saved"),
+    (["target", "notes", "show", "document?version", RECORD], f"/api/targets/document%3Fversion/notes/{RECORD}"),
+    (["target", "notes", "history", "document?version", RECORD, "--limit", "7", "--cursor", "next+page"], f"/api/targets/document%3Fversion/notes/{RECORD}/history?limit=7&cursor=next%2Bpage"),
+    (["group", "notes", "list", "document?version", INVESTIGATION], f"/api/targets/document%3Fversion/investigations/{INVESTIGATION}/notes?limit=40"),
+    (["group", "notes", "list", "documents", INVESTIGATION, "--state", "acknowledged", "--limit", "7", "--cursor", "next+page"], f"/api/targets/documents/investigations/{INVESTIGATION}/notes?limit=7&cursor=next%2Bpage&state=acknowledged"),
+    (["group", "notes", "show", "document?version", INVESTIGATION, RECORD], f"/api/targets/document%3Fversion/investigations/{INVESTIGATION}/notes/{RECORD}"),
+    (["group", "notes", "history", "document?version", INVESTIGATION, RECORD, "--limit", "7", "--cursor", "next+page"], f"/api/targets/document%3Fversion/investigations/{INVESTIGATION}/notes/{RECORD}/history?limit=7&cursor=next%2Bpage"),
+    (["program", "list"], "/api/disclosure-programs?limit=40"),
+    (["program", "list", "--limit", "7", "--cursor", "next+page"], "/api/disclosure-programs?limit=7&cursor=next%2Bpage"),
+    (["program", "show", RECORD], f"/api/disclosure-programs/{RECORD}"),
+    (["program", "revisions", RECORD], f"/api/disclosure-programs/{RECORD}/revisions?limit=40"),
+    (["program", "revisions", RECORD, "--limit", "7", "--cursor", "next+page"], f"/api/disclosure-programs/{RECORD}/revisions?limit=7&cursor=next%2Bpage"),
+    (["program", "revision", RECORD, OTHER], f"/api/disclosure-programs/{RECORD}/revisions/{OTHER}"),
+    (["target", "programs", "list", "document?version"], "/api/targets/document%3Fversion/programs?limit=40"),
+    (["target", "programs", "list", "documents", "--manifest-id", RECORD, "--environment", " Staging / east & west ", "--include-history", "--limit", "7", "--cursor", "next+page"], f"/api/targets/documents/programs?limit=7&cursor=next%2Bpage&manifest_id={RECORD}&environment=+Staging+%2F+east+%26+west+&include_history=true"),
+    (["target", "programs", "show", "document?version", RECORD], f"/api/targets/document%3Fversion/programs/{RECORD}"),
+    (["target", "programs", "show", "document?version", RECORD, "--revision-id", OTHER], f"/api/targets/document%3Fversion/programs/{RECORD}?revision_id={OTHER}"),
+    (["target", "programs", "history", "document?version", RECORD, "--limit", "7", "--cursor", "next+page"], f"/api/targets/document%3Fversion/programs/{RECORD}/history?limit=7&cursor=next%2Bpage"),
     (["runtime", "show"], "/api/runtime-control"),
     (["operation", INVESTIGATION, RECORD], f"/api/workbench/{INVESTIGATION}/operations/{RECORD}"),
 ])
@@ -103,6 +122,28 @@ MUTATIONS = [
     (["group", "create", "document?version"], "/api/targets/document%3Fversion/investigations", {
         "title": "Source completeness", "objective": "Which source records remain missing?",
         "class_key": "unclassified", "class_label": "Unclassified",
+    }),
+    (["target", "notes", "add", "document?version"], "/api/targets/document%3Fversion/notes", {
+        "body": "Review `text` and $(values).\nKeep the supplied context.",
+        "context": [{"run_id": INVESTIGATION, "event_id": OTHER, "evidence_id": "E42",
+                     "report_revision_id": RECORD, "review_revision_id": MUTATION}],
+    }),
+    (["group", "notes", "add", "document?version", INVESTIGATION], f"/api/targets/document%3Fversion/investigations/{INVESTIGATION}/notes", {
+        "body": "Keep the exact source reference after reassignment.",
+        "context": [{"run_id": OTHER, "evidence_id": f"operation:{MUTATION}"}],
+    }),
+    (["program", "create"], "/api/disclosure-programs", {"name": "Example disclosure policy"}),
+    (["program", "revise", OTHER], f"/api/disclosure-programs/{OTHER}/revisions", {
+        "expected_revision": 2, "summary": "Updated source material",
+        "policy_snapshot": "# Supplied policy\nLiteral `text` and $(values).",
+        "sources": [{"url": "https://example.invalid/policy?version=2", "label": "Policy source"}],
+        "verified_at": "2026-09-13T11:00:00-04:00", "verified_fact": "Compared supplied snapshot.",
+    }),
+    (["target", "programs", "bind", "document?version"], "/api/targets/document%3Fversion/programs", {
+        "program_revision_id": OTHER, "manifest_id": MUTATION, "environment": " Staging / east ",
+        "run_id": INVESTIGATION, "report_revision_id": RECORD, "finding_id": "F-17",
+        "expected_revision": 1, "target_scope_status": "in_scope", "eligibility_status": "unknown",
+        "rationale": "Scope recorded; eligibility remains undetermined.\nKeep exact references.",
     }),
     (["evidence", "import", INVESTIGATION], f"/api/runs/{INVESTIGATION}/evidence", {
         "kind": "source_excerpt", "title": "Retained excerpt", "summary": "Keep `text` and $(values).",
@@ -250,6 +291,96 @@ def test_group_mutations_reject_invalid_mutation_identity_before_transport(
     assert not calls
 
 
+NOTE_STATE_COMMANDS = [
+    (["target", "notes", "state", "document?version", RECORD],
+     f"/api/targets/document%3Fversion/notes/{RECORD}/state"),
+    (["group", "notes", "state", "document?version", INVESTIGATION, RECORD],
+     f"/api/targets/document%3Fversion/investigations/{INVESTIGATION}/notes/{RECORD}/state"),
+]
+
+
+@pytest.mark.parametrize(("args", "path"), NOTE_STATE_COMMANDS)
+@pytest.mark.parametrize("state", ["saved", "acknowledged", "resolved"])
+def test_direction_state_preserves_revision_reason_and_replay_identity(transport, tmp_path, args, path, state):
+    calls, response = transport
+    response.body = {"note_id": RECORD, "state_revision_id": OTHER, "revision": 4, "state": state}
+    payload = {"expected_revision": 3, "state": state, "reason": "Keep `literal` $(text).\nManual update."}
+    body = {**payload, "mutation_id": MUTATION}
+    file = tmp_path / "state.json"
+    file.write_text(json.dumps(body))
+    runner = CliRunner()
+    for source in [str(file), "-"]:
+        result = runner.invoke(neri.app, [*args, "--file", source], input=json.dumps(body) if source == "-" else None)
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output) == {**response.body, "request_id": MUTATION}
+    assert calls == [("POST", path, body), ("POST", path, body)]
+    result = runner.invoke(neri.app, [*args, "--file", "-", "--id", MUTATION], input=json.dumps(payload))
+    assert result.exit_code == 0, result.output
+    assert calls[-1] == ("POST", path, body)
+    result = runner.invoke(neri.app, [*args, "--file", "-"], input=json.dumps(payload))
+    assert result.exit_code == 0, result.output
+    generated_id = json.loads(result.output)["request_id"]
+    assert str(UUID(generated_id)) == generated_id
+    assert calls[-1] == ("POST", path, {**payload, "mutation_id": generated_id})
+    assert "id" not in calls[-1][2]
+
+
+@pytest.mark.parametrize(("args", "path"), NOTE_STATE_COMMANDS)
+def test_direction_state_rejects_bad_json_identity_before_transport(transport, tmp_path, args, path):
+    calls, _ = transport
+    runner = CliRunner()
+    for body in ["[]", "null", "{invalid", '{"mutation_id": null}', '{"mutation_id": 123}', '{"mutation_id": "bad-id"}']:
+        assert runner.invoke(neri.app, [*args, "--file", "-"], input=body).exit_code != 0
+    assert runner.invoke(neri.app, args).exit_code != 0
+    assert runner.invoke(neri.app, [*args, "--file", str(tmp_path / "absent")]).exit_code != 0
+    result = runner.invoke(neri.app, [*args, "--file", "-", "--id", OTHER],
+                           input=json.dumps({"mutation_id": MUTATION, "state": "saved", "expected_revision": 3}))
+    assert result.exit_code != 0
+    assert "--id must match the JSON mutation_id" in result.output
+    assert not calls
+
+
+@pytest.mark.parametrize("args", [
+    ["target", "notes", "list", "documents"],
+    ["target", "notes", "history", "documents", RECORD],
+    ["group", "notes", "list", "documents", INVESTIGATION],
+    ["group", "notes", "history", "documents", INVESTIGATION, RECORD],
+    ["program", "list"], ["program", "revisions", RECORD],
+    ["target", "programs", "list", "documents"],
+    ["target", "programs", "history", "documents", RECORD],
+])
+@pytest.mark.parametrize("limit", ["0", "101"])
+def test_context_pages_reject_out_of_range_limits_before_transport(transport, args, limit):
+    calls, _ = transport
+    result = CliRunner().invoke(neri.app, [*args, "--limit", limit])
+    assert result.exit_code != 0
+    assert not calls
+
+
+@pytest.mark.parametrize(("args", "path"), [
+    (["target", "notes", "show", "documents", RECORD], f"/api/targets/documents/notes/{RECORD}"),
+    (["group", "notes", "show", "documents", INVESTIGATION, RECORD], f"/api/targets/documents/investigations/{INVESTIGATION}/notes/{RECORD}"),
+    (["program", "revision", RECORD, OTHER], f"/api/disclosure-programs/{RECORD}/revisions/{OTHER}"),
+    (["target", "programs", "show", "documents", RECORD, "--revision-id", OTHER], f"/api/targets/documents/programs/{RECORD}?revision_id={OTHER}"),
+])
+def test_exact_context_detail_preserves_full_record_and_never_falls_back(transport, args, path):
+    calls, response = transport
+    response.body = {"note_id": RECORD, "binding_id": RECORD, "binding_revision_id": OTHER,
+                     "body": "Full body. " * 100, "body_truncated": False,
+                     "context": [{"run_id": INVESTIGATION, "evidence_id": "E42", "evidence_event_id": MUTATION}],
+                     "program_revision": {"program_revision_id": OTHER, "policy_snapshot": "Full policy. " * 100}}
+    runner = CliRunner()
+    result = runner.invoke(neri.app, args)
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == response.body
+    response.status = 404
+    response.body = {"detail": "Exact record not found"}
+    result = runner.invoke(neri.app, args)
+    assert result.exit_code == 1
+    assert json.loads(result.output)["status"] == 404
+    assert calls == [("GET", path, None), ("GET", path, None)]
+
+
 @pytest.mark.parametrize("args", [
     ["investigations", "--limit", "101"], ["investigations", "--limit", "0"],
     ["reports", "--limit", "101"], ["reports", "--limit", "0"],
@@ -267,6 +398,24 @@ def test_group_mutations_reject_invalid_mutation_identity_before_transport(
     ["group", "show", "documents", "bad-id"], ["group", "classify", "documents", "bad-id", "--file", "-"],
     ["group", "membership", "documents", "bad-id", "--file", "-"],
     ["group", "select-report", "documents", "bad-id", "--file", "-"],
+    ["target", "notes", "list", "documents", "--state", "invalid"],
+    ["target", "notes", "show", "documents", "bad-id"],
+    ["target", "notes", "history", "documents", "bad-id"],
+    ["target", "notes", "state", "documents", "bad-id", "--file", "-"],
+    ["group", "notes", "list", "documents", INVESTIGATION, "--state", "invalid"],
+    ["group", "notes", "list", "documents", "bad-id"],
+    ["group", "notes", "add", "documents", "bad-id", "--file", "-"],
+    ["group", "notes", "show", "documents", INVESTIGATION, "bad-id"],
+    ["group", "notes", "history", "documents", INVESTIGATION, "bad-id"],
+    ["group", "notes", "state", "documents", INVESTIGATION, "bad-id", "--file", "-"],
+    ["group", "notes", "state", "documents", "bad-id", RECORD, "--file", "-"],
+    ["program", "show", "bad-id"], ["program", "revisions", "bad-id"],
+    ["program", "revise", "bad-id", "--file", "-"],
+    ["program", "revision", "bad-id", RECORD], ["program", "revision", RECORD, "bad-id"],
+    ["target", "programs", "list", "documents", "--manifest-id", "bad-id"],
+    ["target", "programs", "show", "documents", "bad-id"],
+    ["target", "programs", "show", "documents", RECORD, "--revision-id", "bad-id"],
+    ["target", "programs", "history", "documents", "bad-id"],
     ["evidence", "list", INVESTIGATION, "--after", "-1"],
     ["evidence", "list", INVESTIGATION, "--limit", "0"], ["evidence", "list", INVESTIGATION, "--limit", "101"],
     ["activity", INVESTIGATION, "--after", "-1"], ["activity", INVESTIGATION, "--limit", "0"],
@@ -337,6 +486,10 @@ def test_target_metadata_preserves_existing_contract(transport, args, path, meth
     (["group", "classify", "documents", INVESTIGATION], "mutation_id"),
     (["group", "select-report", "documents", INVESTIGATION], "mutation_id"),
     (["group", "membership", "documents", INVESTIGATION], "mutation_id"),
+    (["target", "notes", "state", "documents", RECORD], "mutation_id"),
+    (["group", "notes", "state", "documents", INVESTIGATION, RECORD], "mutation_id"),
+    (["program", "revise", RECORD], "id"),
+    (["target", "programs", "bind", "documents"], "id"),
 ])
 def test_api_errors_keep_mutation_id_without_leaking_input_or_retrying(transport, status, args, identity_field):
     calls, response = transport
@@ -354,6 +507,10 @@ def test_api_errors_keep_mutation_id_without_leaking_input_or_retrying(transport
 @pytest.mark.parametrize(("args", "identity_field"), [
     (["create"], "id"),
     (["group", "classify", "documents", INVESTIGATION], "mutation_id"),
+    (["target", "notes", "state", "documents", RECORD], "mutation_id"),
+    (["group", "notes", "state", "documents", INVESTIGATION, RECORD], "mutation_id"),
+    (["program", "revise", RECORD], "id"),
+    (["target", "programs", "bind", "documents"], "id"),
 ])
 def test_connection_failure_keeps_id_without_logging_url_or_retrying(transport, args, identity_field):
     calls, response = transport
@@ -389,7 +546,13 @@ def test_lean_surface_is_discoverable_and_retired_groups_are_gone():
             "st.neri.report.revision", "st.neri.report.review-revision",
             "st.neri.operation", "st.neri.target.list", "st.neri.runtime.stop",
             "st.neri.group.list", "st.neri.group.create", "st.neri.group.show", "st.neri.group.classify",
-            "st.neri.group.select-report", "st.neri.group.membership"} <= surfaces
+            "st.neri.group.select-report", "st.neri.group.membership",
+            "st.neri.program.list", "st.neri.program.create", "st.neri.program.show",
+            "st.neri.program.revisions", "st.neri.program.revise", "st.neri.program.revision",
+            "st.neri.target.programs.list", "st.neri.target.programs.bind",
+            "st.neri.target.programs.show", "st.neri.target.programs.history"} <= surfaces
+    for scope in ["target", "group"]:
+        assert {f"st.neri.{scope}.notes.{command}" for command in ["list", "add", "show", "history", "state"]} <= surfaces
     assert all(spec.get("precautions") for spec in specs)
     commands = {spec["surface"]: spec["cmd"] for spec in specs}
     assert commands["st.neri.evidence.list"] == "st neri evidence list <investigation-id> [--after 0 --limit 40]"
@@ -412,3 +575,14 @@ def test_lean_surface_is_discoverable_and_retired_groups_are_gone():
         assert result.exit_code == 0, result.output
         for identifier_format in ["UUID", "E<number>", "operation:<UUID>"]:
             assert identifier_format in result.output
+    for scope in ["target", "group"]:
+        result = runner.invoke(neri.app, [scope, "notes", "state", "--help"])
+        assert result.exit_code == 0, result.output
+        assert "JSON state accepts saved, acknowledged or resolved" in result.output
+        assert "--file" in result.output
+    result = runner.invoke(neri.app, ["program", "revision", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "full policy snapshot at one exact revision" in result.output
+    result = runner.invoke(neri.app, ["target", "programs", "show", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--revision-id" in result.output
