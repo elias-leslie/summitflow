@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -116,6 +117,48 @@ def test_session_start_without_shell_binds_native_harness(monkeypatch):
     assert calls[0][1]['harness'] == 'codex'
     assert calls[0][1]['actor'] == 'agent'
     assert calls[0][2] == 'POST'
+
+
+def test_native_learning_operator_is_bound_to_a_term_session(monkeypatch):
+    monkeypatch.setenv("A_TERM_SESSION_ID", "a-term-session-one")
+    monkeypatch.setenv("CODEX_THREAD_ID", "codex-thread-one")
+
+    assert learn._native_session_id() == "a-term-session-one"
+    suffix = hashlib.sha256(b"a-term-session-one").hexdigest()[:12]
+    assert learn._native_harness("") == f"codex-{suffix}"
+
+
+def test_session_continue_uses_atomic_admission_route(monkeypatch):
+    calls = []
+    study = {
+        "id": "study-session:one",
+        "revision": 1,
+        "data": {"status": "active", "participants": [], "operator_harness": "codex"},
+        "transcript": {"last_sequence": -1},
+        "admission": "created",
+    }
+
+    def fake(path, body=None, method="POST"):
+        calls.append((path, body, method))
+        return study
+
+    monkeypatch.setattr(learn, "require_data", fake)
+    monkeypatch.setattr(learn, "output_json", lambda value: None)
+    result = CliRunner().invoke(
+        learn.app,
+        [
+            "session",
+            "continue",
+            "--activity",
+            "pwn-college:welcome:welcome:terminal",
+            "--no-open",
+            "--no-sync",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls[0][0] == "/api/training/sessions/continue"
+    assert calls[0][1]["activity_id"] == "pwn-college:welcome:welcome:terminal"
 
 
 def test_explicit_handoff_uses_optimistic_revision(monkeypatch):

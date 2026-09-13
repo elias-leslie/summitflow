@@ -1,6 +1,7 @@
 """Agent-facing Learn-o-Tron operations; the project API owns all learning state."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -321,23 +322,69 @@ def _native_harness(value: str) -> str:
     if configured:
         return configured
     if os.environ.get("CLAUDECODE"):
-        return "claude"
-    if os.environ.get("CODEX_THREAD_ID") or os.environ.get("CURSOR_TRACE_ID"):
-        return "codex"
-    if os.environ.get("PI_CODING_AGENT_DIR"):
-        return "pi"
-    return "terminal"
+        base = "claude"
+    elif os.environ.get("CODEX_THREAD_ID") or os.environ.get("CURSOR_TRACE_ID"):
+        base = "codex"
+    elif os.environ.get("PI_CODING_AGENT_DIR"):
+        base = "pi"
+    else:
+        base = "terminal"
+    native_session_id = _native_session_id()
+    if not native_session_id:
+        return base
+    suffix = hashlib.sha256(native_session_id.encode()).hexdigest()[:12]
+    return f"{base}-{suffix}"
 
 
 def _native_session_id() -> str:
     return next(
         (
             os.environ[name]
-            for name in ("CODEX_THREAD_ID", "CURSOR_TRACE_ID", "CLAUDE_SESSION_ID", "PI_SESSION_ID")
+            for name in (
+                "AICO_SESSION_ID",
+                "A_TERM_SESSION_ID",
+                "CODEX_THREAD_ID",
+                "CURSOR_TRACE_ID",
+                "CLAUDE_SESSION_ID",
+                "PI_SESSION_ID",
+            )
             if os.environ.get(name)
         ),
         "",
     )
+
+
+def _prepare_study_operator(
+    study: dict[str, Any],
+    harness: str,
+    agent_name: str,
+    model: str,
+) -> dict[str, Any]:
+    participants = study["data"].get("participants", [])
+    if not any(item.get("harness") == harness for item in participants):
+        study = require_data(
+            _study_url(study["id"], "/participants"),
+            {
+                "command_id": str(uuid4()),
+                "expected_revision": study["revision"],
+                "harness": harness,
+                "agent_name": agent_name,
+                "model": model,
+                "native_session_id": _native_session_id(),
+                "actor": "agent",
+            },
+        )
+    study = require_data(
+        _study_url(study["id"], "/operator"),
+        {
+            "command_id": str(uuid4()),
+            "expected_revision": study["revision"],
+            "harness": harness,
+        },
+    )
+    if study["data"]["status"] == "paused":
+        study = _session_action(study, "resume", harness, note="Native harness resumed the session")
+    return study
 
 
 def _study_url(session_id: str, suffix: str = "") -> str:
@@ -671,6 +718,54 @@ def session_start(
             "actor": "agent",
         },
     )
+    if study.get("admission") == "existing":
+        study = _prepare_study_operator(study, harness, agent_name, model)
+    output_json({"ok": True, "schema_version": 2, "data": study})
+    if open_shell:
+        _open_study_terminal(study, harness)
+
+
+@session_app.command("continue")
+@usage(
+    surface="st.learn.session.continue",
+    cmd="st learn session continue [--activity ID] [--objective TEXT] [--no-open]",
+    when="atomically resume the one unfinished pwn.college study or create it when an activity is supplied",
+    precautions=(
+        "one provider account admits one unfinished study; a different live native operator requires an explicit handoff",
+    ),
+    task_types=("learning", "security"),
+    tier="reference",
+)
+def session_continue(
+    activity: Annotated[str, typer.Option()] = "",
+    objective: str = "",
+    harness: str = "",
+    agent_name: str = "",
+    model: str = "",
+    open_shell: Annotated[bool, typer.Option("--open/--no-open")] = True,
+    sync_provider: Annotated[bool, typer.Option("--sync/--no-sync")] = True,
+):
+    harness = _native_harness(harness)
+    if sync_provider:
+        require_data(
+            "/api/training/providers/pwn-college/sync",
+            {"command_id": str(uuid4()), "username": "", "full": False, "dojo_ids": []},
+        )
+    study = require_data(
+        "/api/training/sessions/continue",
+        {
+            "command_id": str(uuid4()),
+            "activity_id": activity,
+            "objective": objective,
+            "harness": harness,
+            "agent_name": agent_name,
+            "model": model,
+            "native_session_id": _native_session_id(),
+            "actor": "agent",
+        },
+    )
+    if study.get("admission") == "existing":
+        study = _prepare_study_operator(study, harness, agent_name, model)
     output_json({"ok": True, "schema_version": 2, "data": study})
     if open_shell:
         _open_study_terminal(study, harness)
@@ -770,30 +865,7 @@ def session_resume(
         {"command_id": str(uuid4()), "username": "", "full": False, "dojo_ids": []},
     )
     study = require_data(_study_url(session_id))
-    participants = study["data"].get("participants", [])
-    if not any(item.get("harness") == harness for item in participants):
-        study = require_data(
-            _study_url(session_id, "/participants"),
-            {
-                "command_id": str(uuid4()),
-                "expected_revision": study["revision"],
-                "harness": harness,
-                "agent_name": agent_name,
-                "model": model,
-                "native_session_id": _native_session_id(),
-                "actor": "agent",
-            },
-        )
-    study = require_data(
-        _study_url(session_id, "/operator"),
-        {
-            "command_id": str(uuid4()),
-            "expected_revision": study["revision"],
-            "harness": harness,
-        },
-    )
-    if study["data"]["status"] == "paused":
-        study = _session_action(study, "resume", harness, note="Native harness resumed the session")
+    study = _prepare_study_operator(study, harness, agent_name, model)
     output_json({"ok": True, "schema_version": 2, "data": study})
     if open_shell:
         _open_study_terminal(study, harness)
