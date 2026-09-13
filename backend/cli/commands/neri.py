@@ -7,7 +7,7 @@ import sys
 from contextlib import suppress
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from urllib.parse import quote, urlencode, urljoin, urlsplit
 from uuid import UUID, uuid4
 
@@ -19,18 +19,20 @@ from .._project_client import ProjectApi, ProjectApiClient, ProjectApiConnectErr
 from ..lib.usage import usage
 from ..output import output_json
 
-app = typer.Typer(help="Read and maintain Neri investigations, evidence, notes and reports")
+app = typer.Typer(help="Read and maintain Neri targets, investigations, attempts, evidence, notes and reports")
 evidence_app = typer.Typer(help="Import evidence and inspect retained artifacts")
 notes_app = typer.Typer(help="Save contextual notes and direction")
 report_app = typer.Typer(help="Read exact report and review revisions, save reports and download drafts")
 executor_app = typer.Typer(help="Submit explicit typed actions to a registered local target")
 target_app = typer.Typer(help="Inspect and maintain registered target metadata")
+group_app = typer.Typer(help="Read and organize passive investigations containing saved attempts")
 runtime_app = typer.Typer(help="Inspect or operate Neri's emergency admission stop")
 app.add_typer(evidence_app, name="evidence")
 app.add_typer(notes_app, name="notes")
 app.add_typer(report_app, name="report")
 app.add_typer(executor_app, name="execute")
 app.add_typer(target_app, name="target")
+app.add_typer(group_app, name="group")
 app.add_typer(runtime_app, name="runtime")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
 
@@ -43,6 +45,19 @@ class Action(StrEnum):
 class NoteState(StrEnum):
     acknowledged = "acknowledged"
     resolved = "resolved"
+
+
+class ReportView(StrEnum):
+    investigations = "investigations"
+
+
+class WorkspaceFilter(StrEnum):
+    all = "all"
+    active = "active"
+    attention = "attention"
+    awaiting_review = "awaiting_review"
+    reviewed_findings = "reviewed_findings"
+    reviewed_no_findings = "reviewed_no_findings"
 
 
 def evidence_identifier(value: str) -> str:
@@ -59,18 +74,21 @@ def evidence_identifier(value: str) -> str:
 EvidenceId = Annotated[str, typer.Argument(parser=evidence_identifier, help="UUID, E<number>, or operation:<UUID>")]
 
 
-def request(path: str, body: dict | None = None, *, method: str | None = None, emit: bool = True) -> Any:
+def request(path: str, body: dict | None = None, *, method: str | None = None, emit: bool = True,
+            identity_field: Literal["id", "mutation_id"] = "id") -> Any:
     """Use the shared project transport once; never echo failed input or credentials."""
     identity = {}
-    if body and "id" in body:
+    if body and identity_field in body:
         # Target manifest IDs are not mutation UUIDs.
         with suppress(AttributeError, TypeError, ValueError):
-            identity["request_id"] = str(UUID(body["id"]))
+            identity["request_id"] = str(UUID(body[identity_field]))
     resolved = resolve_api_url(NERI_API)
     try:
         with ProjectApiClient(resolved.url) as client:
             if method == "PUT":
                 result = client.put(path, json_body=body)
+            elif method == "PATCH":
+                result = client.patch(path, json_body=body)
             else:
                 result = client.get(path) if body is None else client.post(path, json_body=body)
         if emit:
@@ -90,7 +108,8 @@ def request(path: str, body: dict | None = None, *, method: str | None = None, e
         raise typer.Exit(1) from None
 
 
-def read_object(path: Path, *, request_id: UUID | None = None, identified: bool = False) -> dict:
+def read_object(path: Path, *, request_id: UUID | None = None, identified: bool = False,
+                identity_field: Literal["id", "mutation_id"] = "id") -> dict:
     """Read literal JSON from a file/stdin and retain or allocate its mutation UUID."""
     try:
         value = json.loads(sys.stdin.read() if str(path) == "-" else path.read_text(encoding="utf-8"))
@@ -99,15 +118,15 @@ def read_object(path: Path, *, request_id: UUID | None = None, identified: bool 
     if not isinstance(value, dict):
         raise typer.BadParameter("The JSON document must be an object")
     if identified:
-        if "id" in value:
+        if identity_field in value:
             try:
-                supplied_id = UUID(value["id"])
+                supplied_id = UUID(value[identity_field])
             except (AttributeError, TypeError, ValueError):
-                raise typer.BadParameter("JSON id must be a UUID") from None
+                raise typer.BadParameter(f"JSON {identity_field} must be a UUID") from None
             if request_id is not None and supplied_id != request_id:
-                raise typer.BadParameter("--id must match the JSON id")
+                raise typer.BadParameter(f"--id must match the JSON {identity_field}")
             request_id = supplied_id
-        value["id"] = str(request_id or uuid4())
+        value[identity_field] = str(request_id or uuid4())
     return value
 
 
@@ -137,7 +156,7 @@ def download_file(path: str, output: Path) -> None:
 
 
 @app.command()
-@usage(surface="st.neri.investigations", cmd="st neri investigations [--limit 40 --cursor TOKEN]", when="list saved Neri investigations", precautions=("read-only; next_cursor resumes the saved listing",), task_types=("neri",))
+@usage(surface="st.neri.investigations", cmd="st neri investigations [--limit 40 --cursor TOKEN]", when="list saved Neri attempts using the legacy investigation contract", precautions=("read-only; IDs identify runs, not passive groups; next_cursor resumes the saved listing",), task_types=("neri",))
 def investigations(limit: Annotated[int, typer.Option(min=1, max=100)] = 40, cursor: str | None = None) -> None:
     params: dict[str, str | int] = {"limit": limit}
     if cursor is not None:
@@ -146,9 +165,9 @@ def investigations(limit: Annotated[int, typer.Option(min=1, max=100)] = 40, cur
 
 
 @app.command()
-@usage(surface="st.neri.create", cmd="st neri create --file investigation.json [--id UUID]", when="save an investigation title, objective and scope", precautions=("passive creation; JSON id or --id is retained, otherwise generated and printed; reuse only for identical content",), task_types=("neri",))
+@usage(surface="st.neri.create", cmd="st neri create --file investigation.json [--id UUID]", when="save an attempt with title, objective, scope and optional group membership", precautions=("passive creation; preserve group_id and role when supplied; JSON id or --id is retained, otherwise generated and printed; reuse only for identical content",), task_types=("neri",))
 def create(file: Annotated[Path, typer.Option()], request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
-    """Create a saved investigation. --file - reads JSON from stdin."""
+    """Create a saved attempt through the legacy investigation API. --file - reads JSON from stdin."""
     request("/api/investigations", read_object(file, request_id=request_id, identified=True))
 
 
@@ -244,11 +263,19 @@ def notes_state(investigation_id: UUID, note_id: UUID, state: NoteState,
 
 
 @app.command()
-@usage(surface="st.neri.reports", cmd="st neri reports [--limit 40 --cursor TOKEN]", when="list a page of saved investigation reports", precautions=("read-only; next_cursor resumes the listing; report status and independent review remain separate",), task_types=("neri",))
-def reports(limit: Annotated[int, typer.Option(min=1, max=100)] = 40, cursor: str | None = None) -> None:
+@usage(surface="st.neri.reports", cmd="st neri reports [--view investigations --target TARGET --limit 40 --cursor TOKEN]", when="list saved attempt reports or explicitly selected investigation reports", precautions=("read-only; default retains run-valued investigation_id; investigations view preserves group, run and exact report/review IDs; next_cursor resumes the listing",), task_types=("neri",))
+def reports(limit: Annotated[int, typer.Option(min=1, max=100)] = 40, cursor: str | None = None,
+            view: ReportView | None = None,
+            target_id: Annotated[str | None, typer.Option("--target", "--target-id")] = None) -> None:
+    if target_id is not None and view is None:
+        raise typer.BadParameter("--target requires --view investigations")
     params: dict[str, str | int] = {"limit": limit}
     if cursor is not None:
         params["cursor"] = cursor
+    if view is not None:
+        params["view"] = view.value
+    if target_id is not None:
+        params["target_id"] = target_id
     request(f"/api/reports?{urlencode(params)}")
 
 
@@ -358,15 +385,97 @@ def release_runtime(revision: Annotated[int, typer.Option(min=1)]) -> None:
 
 
 @target_app.command("list")
-@usage(surface="st.neri.target.list", cmd="st neri target list", when="list compact registered target metadata", precautions=("read-only; registration does not start target work",), task_types=("neri",))
-def target_list() -> None:
-    request("/api/targets?compact=true")
+@usage(surface="st.neri.target.list", cmd="st neri target list [--workspace --limit 40 --cursor TOKEN --search TEXT --filter FILTER]", when="list compact manifests or logical target workspace summaries", precautions=("read-only; default preserves registered manifest metadata; workspace uses filter-bound cursors and bounded summaries",), task_types=("neri",))
+def target_list(workspace: bool = False, limit: Annotated[int, typer.Option(min=1, max=100)] = 40,
+                cursor: str | None = None, search: str | None = None,
+                workspace_filter: Annotated[WorkspaceFilter | None, typer.Option("--filter")] = None) -> None:
+    if not workspace:
+        if limit != 40 or cursor is not None or search is not None or workspace_filter is not None:
+            raise typer.BadParameter("Pagination, search and filters require --workspace")
+        request("/api/targets?compact=true")
+        return
+    params: dict[str, str | int] = {"view": "workspace", "limit": limit}
+    if cursor is not None:
+        params["cursor"] = cursor
+    if search is not None:
+        params["q"] = search
+    if workspace_filter is not None:
+        params["filter"] = workspace_filter.value
+    request(f"/api/targets?{urlencode(params)}")
 
 
 @target_app.command("show")
-@usage(surface="st.neri.target.show", cmd="st neri target show <target-id>", when="read a registered target manifest and digest", precautions=("read-only; inspect the manifest before status changes",), task_types=("neri",))
-def target_show(target_id: str) -> None:
-    request(f"/api/targets/{quote(target_id, safe='')}")
+@usage(surface="st.neri.target.show", cmd="st neri target show <target-id> [--workspace]", when="read a target manifest or its compact workspace context", precautions=("read-only; default preserves the manifest and digest; read workspace context before exact attempts",), task_types=("neri",))
+def target_show(target_id: str, workspace: bool = False) -> None:
+    path = f"/api/targets/{quote(target_id, safe='')}"
+    request(f"{path}?view=workspace" if workspace else path)
+
+
+@group_app.command("list")
+@usage(surface="st.neri.group.list", cmd="st neri group list <target-id> [--limit 40 --cursor TOKEN --search TEXT --class-key KEY --filter FILTER --include-empty]", when="list passive investigations for a logical target", precautions=("read-only; filters apply before pagination; preserve group IDs and section continuation cursors; empty historical groups are omitted unless requested",), task_types=("neri",))
+def group_list(target_id: str, limit: Annotated[int, typer.Option(min=1, max=100)] = 40,
+               cursor: str | None = None, search: str | None = None, class_key: str | None = None,
+               workspace_filter: Annotated[WorkspaceFilter | None, typer.Option("--filter")] = None,
+               include_empty: bool = False) -> None:
+    params: dict[str, str | int] = {"limit": limit}
+    for key, value in {"cursor": cursor, "q": search, "class_key": class_key}.items():
+        if value is not None:
+            params[key] = value
+    if workspace_filter is not None:
+        params["filter"] = workspace_filter.value
+    if include_empty:
+        params["include_empty"] = "true"
+    request(f"/api/targets/{quote(target_id, safe='')}/investigations?{urlencode(params)}")
+
+
+@group_app.command("create")
+@usage(surface="st.neri.group.create", cmd="st neri group create <target-id> --file group.json [--id UUID]", when="save a sustained investigation before assigning attempts", precautions=("passive grouping only; JSON id or --id identifies the group and is retained or generated; reuse only for identical content",), task_types=("neri",))
+def group_create(target_id: str, file: Annotated[Path, typer.Option()],
+                 request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(f"/api/targets/{quote(target_id, safe='')}/investigations",
+            read_object(file, request_id=request_id, identified=True))
+
+
+@group_app.command("show")
+@usage(surface="st.neri.group.show", cmd="st neri group show <target-id> <group-id> [--limit 40 --cursor TOKEN --report-limit 40 --report-cursor TOKEN]", when="read compact investigation context with paginated attempts and report history", precautions=("read-only; limit/cursor apply to attempts; report pagination is independent; preserve membership, selection and exact report/review IDs; no selection is a valid state",), task_types=("neri",))
+def group_show(target_id: str, group_id: UUID,
+               limit: Annotated[int, typer.Option("--limit", "--attempt-limit", min=1, max=100)] = 40,
+               cursor: Annotated[str | None, typer.Option("--cursor", "--attempt-cursor")] = None,
+               report_limit: Annotated[int, typer.Option(min=1, max=100)] = 40,
+               report_cursor: str | None = None) -> None:
+    params: dict[str, str | int] = {"attempt_limit": limit, "report_limit": report_limit}
+    if cursor is not None:
+        params["attempt_cursor"] = cursor
+    if report_cursor is not None:
+        params["report_cursor"] = report_cursor
+    request(f"/api/targets/{quote(target_id, safe='')}/investigations/{group_id}?{urlencode(params)}")
+
+
+@group_app.command("classify")
+@usage(surface="st.neri.group.classify", cmd="st neri group classify <target-id> <group-id> --file classification.json [--id UUID]", when="revise an investigation's primary class metadata", precautions=("preserve expected_revision, class_key, class_label and reason; --id identifies mutation_id; conflicts are not retried",), task_types=("neri",))
+def group_classify(target_id: str, group_id: UUID, file: Annotated[Path, typer.Option()],
+                   request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(f"/api/targets/{quote(target_id, safe='')}/investigations/{group_id}/classification",
+            read_object(file, request_id=request_id, identified=True, identity_field="mutation_id"),
+            method="PATCH", identity_field="mutation_id")
+
+
+@group_app.command("select-report")
+@usage(surface="st.neri.group.select-report", cmd="st neri group select-report <target-id> <group-id> --file selection.json [--id UUID]", when="select or explicitly clear an exact investigation report", precautions=("preserve expected_revision and reason; report_revision_id null clears selection; --id identifies mutation_id; newer reports never replace the selection automatically",), task_types=("neri",))
+def group_select_report(target_id: str, group_id: UUID, file: Annotated[Path, typer.Option()],
+                        request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(f"/api/targets/{quote(target_id, safe='')}/investigations/{group_id}/report-selection",
+            read_object(file, request_id=request_id, identified=True, identity_field="mutation_id"),
+            identity_field="mutation_id")
+
+
+@group_app.command("membership")
+@usage(surface="st.neri.group.membership", cmd="st neri group membership <target-id> <group-id> --file membership.json [--id UUID]", when="assign or reassign an attempt to a passive investigation", precautions=("preserve run_id, expected_revision, role, exact predecessor/report references and reason; --id identifies mutation_id; clear a selected report before moving its owner run; no automatic retry",), task_types=("neri",))
+def group_membership(target_id: str, group_id: UUID, file: Annotated[Path, typer.Option()],
+                     request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(f"/api/targets/{quote(target_id, safe='')}/investigations/{group_id}/memberships",
+            read_object(file, request_id=request_id, identified=True, identity_field="mutation_id"),
+            identity_field="mutation_id")
 
 
 @target_app.command("register")
