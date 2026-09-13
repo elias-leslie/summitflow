@@ -45,6 +45,8 @@ def transport(monkeypatch):
     (["notes", "list", INVESTIGATION], f"/api/runs/{INVESTIGATION}/notes"),
     (["reports"], "/api/reports"),
     (["report", "show", INVESTIGATION], f"/api/runs/{INVESTIGATION}/report"),
+    (["report", "revision", INVESTIGATION, RECORD], f"/api/runs/{INVESTIGATION}/reports/{RECORD}"),
+    (["report", "review-revision", INVESTIGATION, RECORD], f"/api/runs/{INVESTIGATION}/reviews/{RECORD}"),
     (["capabilities"], "/api/capabilities?compact=true"),
     (["capabilities", "--full"], "/api/capabilities"),
     (["target", "list"], "/api/targets?compact=true"),
@@ -59,6 +61,17 @@ def test_reads_use_canonical_routes_and_preserve_server_projection(transport, ar
     assert result.exit_code == 0, result.output
     assert calls == [("GET", path, None)]
     assert json.loads(result.output) == response.body
+
+
+@pytest.mark.parametrize(("command", "collection"), [("revision", "reports"), ("review-revision", "reviews")])
+def test_exact_revision_not_found_does_not_fall_back_to_report_history(transport, command, collection):
+    calls, response = transport
+    response.status = 404
+    response.body = {"detail": "Revision not found"}
+    result = CliRunner().invoke(neri.app, ["report", command, INVESTIGATION, RECORD])
+    assert result.exit_code == 1
+    assert json.loads(result.output)["status"] == 404
+    assert calls == [("GET", f"/api/runs/{INVESTIGATION}/{collection}/{RECORD}", None)]
 
 
 MUTATIONS = [
@@ -151,6 +164,8 @@ def test_mutations_reject_bad_or_conflicting_identity_before_transport(transport
     ["activity", INVESTIGATION, "--after", "-1"], ["activity", INVESTIGATION, "--limit", "0"],
     ["context", INVESTIGATION, "--limit", "101"], ["context"], ["show", "bad-id"],
     ["evidence", "show", INVESTIGATION, "bad-id"], ["notes", "state", INVESTIGATION, RECORD, "invalid"],
+    ["report", "revision", INVESTIGATION], ["report", "revision", INVESTIGATION, "bad-id"],
+    ["report", "review-revision", INVESTIGATION], ["report", "review-revision", INVESTIGATION, "bad-id"],
     ["control", INVESTIGATION, "resume"], ["control", INVESTIGATION, "step"],
     ["control", INVESTIGATION, "direct"], ["runtime", "release", "--revision", "0"],
 ])
@@ -240,6 +255,7 @@ def test_lean_surface_is_discoverable_and_retired_groups_are_gone():
             "st.neri.execute.reset",
             "st.neri.evidence.import", "st.neri.evidence.artifact", "st.neri.notes.add",
             "st.neri.report.save", "st.neri.report.review", "st.neri.report.download",
+            "st.neri.report.revision", "st.neri.report.review-revision",
             "st.neri.operation", "st.neri.target.list", "st.neri.runtime.stop"} <= surfaces
     assert all(spec.get("precautions") for spec in specs)
     retired = ["labs", "training", "budget", "usage", "campaign", "technique", "kernel", "evolution",
@@ -248,3 +264,8 @@ def test_lean_surface_is_discoverable_and_retired_groups_are_gone():
     for group in retired:
         assert not any(surface == f"st.neri.{group}" or surface.startswith(f"st.neri.{group}.") for surface in surfaces)
         assert runner.invoke(neri.app, [group, "--help"]).exit_code != 0
+    for command in ["revision", "review-revision"]:
+        result = runner.invoke(neri.app, ["report", command, "--help"])
+        assert result.exit_code == 0, result.output
+        assert "REVISION_ID" in result.output
+        assert "without loading report history" in result.output

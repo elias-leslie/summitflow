@@ -21,7 +21,7 @@ from ..output import output_json
 app = typer.Typer(help="Read and maintain Neri investigations, evidence, notes and reports")
 evidence_app = typer.Typer(help="Import evidence and inspect retained artifacts")
 notes_app = typer.Typer(help="Save contextual notes and direction")
-report_app = typer.Typer(help="Save reports, record independent reviews and download drafts")
+report_app = typer.Typer(help="Read exact report and review revisions, save reports and download drafts")
 executor_app = typer.Typer(help="Submit explicit typed actions to a registered local target")
 target_app = typer.Typer(help="Inspect and maintain registered target metadata")
 runtime_app = typer.Typer(help="Inspect or operate Neri's emergency admission stop")
@@ -237,6 +237,20 @@ def reports() -> None:
 @usage(surface="st.neri.report.show", cmd="st neri report show <investigation-id>", when="read a saved report and its reviews", precautions=("read-only; retain caveats and evidence references",), task_types=("neri",))
 def report_show(investigation_id: UUID) -> None:
     request(f"/api/runs/{investigation_id}/report")
+
+
+@report_app.command("revision")
+@usage(surface="st.neri.report.revision", cmd="st neri report revision <investigation-id> <revision-id>", when="read one immutable report revision", precautions=("read-only; fetches only the cited revision; retain caveats and evidence references",), task_types=("neri",))
+def report_revision(investigation_id: UUID, revision_id: UUID) -> None:
+    """Read one exact report revision without loading report history."""
+    request(f"/api/runs/{investigation_id}/reports/{revision_id}")
+
+
+@report_app.command("review-revision")
+@usage(surface="st.neri.report.review-revision", cmd="st neri report review-revision <investigation-id> <revision-id>", when="read one immutable review revision", precautions=("read-only; fetches only the cited revision; preserve its report_revision_id and objections",), task_types=("neri",))
+def report_review_revision(investigation_id: UUID, revision_id: UUID) -> None:
+    """Read one exact review revision without loading report history."""
+    request(f"/api/runs/{investigation_id}/reviews/{revision_id}")
 
 
 @report_app.command("save")
