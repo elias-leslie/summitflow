@@ -47,7 +47,6 @@ def transport(monkeypatch):
     (["report", "show", INVESTIGATION], f"/api/runs/{INVESTIGATION}/report"),
     (["capabilities"], "/api/capabilities?compact=true"),
     (["capabilities", "--full"], "/api/capabilities"),
-    (["capabilities", "record?schema"], "/api/capabilities/record%3Fschema"),
     (["target", "list"], "/api/targets?compact=true"),
     (["target", "show", "document?version"], "/api/targets/document%3Fversion"),
     (["runtime", "show"], "/api/runtime-control"),
@@ -84,6 +83,25 @@ MUTATIONS = [
     (["report", "review", INVESTIGATION], f"/api/runs/{INVESTIGATION}/review", {
         "report_revision_id": OTHER, "verdict": "needs_work", "summary": "Obtain complete source",
         "objections": ["Excerpt only"], "verification_attempts": [],
+    }),
+    (["record-activity", INVESTIGATION], f"/api/runs/{INVESTIGATION}/activity", {
+        "kind": "blocker", "title": "Capture adapter is missing",
+        "summary": "The current response format is unsupported.",
+        "task_ids": ["task-123"], "next_step": "Add and verify a bounded adapter.",
+    }),
+    (["execute", "operation", INVESTIGATION], f"/api/workbench/{INVESTIGATION}/operations", {
+        "kind": "http", "method": "GET", "path": "/rest/products/search?q=juice",
+        "purpose": "Read the registered local target response.", "actor": "agent",
+        "controller_id": "codex-tui", "controller_revision": 3,
+    }),
+    (["execute", "sequence", INVESTIGATION], f"/api/workbench/{INVESTIGATION}/sequences", {
+        "purpose": "Run two finite read-only target checks.", "actor": "agent",
+        "controller_id": "codex-tui", "controller_revision": 3,
+        "steps": [{"purpose": "Read status", "method": "GET", "path": "/"}],
+    }),
+    (["execute", "reset", INVESTIGATION], f"/api/workbench/{INVESTIGATION}/target-reset", {
+        "expected_target_manifest_digest": "a" * 64, "actor": "agent",
+        "controller_id": "codex-tui", "controller_revision": 3,
     }),
 ]
 
@@ -218,6 +236,8 @@ def test_lean_surface_is_discoverable_and_retired_groups_are_gone():
     specs = [spec for spec in json.loads(result.output)["tools"] if spec["surface"].startswith("st.neri.")]
     surfaces = {spec["surface"] for spec in specs}
     assert {"st.neri.investigations", "st.neri.create", "st.neri.activity", "st.neri.context",
+            "st.neri.activity.record", "st.neri.execute.operation", "st.neri.execute.sequence",
+            "st.neri.execute.reset",
             "st.neri.evidence.import", "st.neri.evidence.artifact", "st.neri.notes.add",
             "st.neri.report.save", "st.neri.report.review", "st.neri.report.download",
             "st.neri.operation", "st.neri.target.list", "st.neri.runtime.stop"} <= surfaces

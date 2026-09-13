@@ -22,11 +22,13 @@ app = typer.Typer(help="Read and maintain Neri investigations, evidence, notes a
 evidence_app = typer.Typer(help="Import evidence and inspect retained artifacts")
 notes_app = typer.Typer(help="Save contextual notes and direction")
 report_app = typer.Typer(help="Save reports, record independent reviews and download drafts")
+executor_app = typer.Typer(help="Submit explicit typed actions to a registered local target")
 target_app = typer.Typer(help="Inspect and maintain registered target metadata")
 runtime_app = typer.Typer(help="Inspect or operate Neri's emergency admission stop")
 app.add_typer(evidence_app, name="evidence")
 app.add_typer(notes_app, name="notes")
 app.add_typer(report_app, name="report")
+app.add_typer(executor_app, name="execute")
 app.add_typer(target_app, name="target")
 app.add_typer(runtime_app, name="runtime")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
@@ -148,6 +150,13 @@ def activity(investigation_id: UUID, after: Annotated[int, typer.Option(min=0)] 
     request(f"/api/runs/{investigation_id}/activity?{urlencode({'after': after, 'limit': limit})}")
 
 
+@app.command("record-activity")
+@usage(surface="st.neri.activity.record", cmd="st neri record-activity <investigation-id> --file activity.json [--id UUID]", when="record a public objective, hypothesis, decision, progress update, blocker or follow-up", precautions=("passive record only; cite exact evidence and SummitFlow task IDs; private chain-of-thought does not belong here; UUID is retained or generated",), task_types=("neri",))
+def record_activity(investigation_id: UUID, file: Annotated[Path, typer.Option()],
+                    request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(f"/api/runs/{investigation_id}/activity", read_object(file, request_id=request_id, identified=True))
+
+
 @app.command()
 @usage(surface="st.neri.context", cmd="st neri context <investigation-id> [--after 0 --limit 40]", when="load compact local investigation state and evidence references", precautions=("read-only local projection; retrieval is not proof of model consumption",), task_types=("neri",))
 def context(investigation_id: UUID, after: Annotated[int, typer.Option(min=0)] = 0,
@@ -156,12 +165,9 @@ def context(investigation_id: UUID, after: Annotated[int, typer.Option(min=0)] =
 
 
 @app.command()
-@usage(surface="st.neri.capabilities", cmd="st neri capabilities [capability-id] [--full]", when="discover Neri API payload contracts", precautions=("read-only; schemas describe available contracts",), task_types=("neri",))
-def capabilities(capability_id: Annotated[str | None, typer.Argument()] = None, full: bool = False) -> None:
-    if capability_id:
-        request(f"/api/capabilities/{quote(capability_id, safe='')}")
-    else:
-        request("/api/capabilities" if full else "/api/capabilities?compact=true")
+@usage(surface="st.neri.capabilities", cmd="st neri capabilities [--full]", when="discover Neri API payload contracts", precautions=("read-only; compact output omits schemas and --full returns every payload schema",), task_types=("neri",))
+def capabilities(full: bool = False) -> None:
+    request("/api/capabilities" if full else "/api/capabilities?compact=true")
 
 
 @evidence_app.command("list")
@@ -263,6 +269,36 @@ def control(investigation_id: UUID, action: Action) -> None:
 @usage(surface="st.neri.operation", cmd="st neri operation <investigation-id> <operation-id>", when="inspect a retained managed-operation result", precautions=("read-only; queued status is not completion evidence",), task_types=("neri",))
 def operation(investigation_id: UUID, operation_id: UUID) -> None:
     request(f"/api/workbench/{investigation_id}/operations/{operation_id}")
+
+
+@executor_app.command("operation")
+@usage(surface="st.neri.execute.operation", cmd="st neri execute operation <investigation-id> --file operation.json [--id UUID]", when="submit one explicit HTTP or browser action to a run-pinned registered local target", precautions=("target action; include current agent controller identity; no automatic retry; inspect the same operation UUID after an uncertain response",), task_types=("neri",))
+def execute_operation(investigation_id: UUID, file: Annotated[Path, typer.Option()],
+                      request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(
+        f"/api/workbench/{investigation_id}/operations",
+        read_object(file, request_id=request_id, identified=True),
+    )
+
+
+@executor_app.command("sequence")
+@usage(surface="st.neri.execute.sequence", cmd="st neri execute sequence <investigation-id> --file sequence.json [--id UUID]", when="submit a finite prepared action sequence to a run-pinned registered local target", precautions=("target actions; use only when intermediate judgment is unnecessary; include current controller identity; no automatic retry; inspect the same UUID after uncertainty",), task_types=("neri",))
+def execute_sequence(investigation_id: UUID, file: Annotated[Path, typer.Option()],
+                     request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(
+        f"/api/workbench/{investigation_id}/sequences",
+        read_object(file, request_id=request_id, identified=True),
+    )
+
+
+@executor_app.command("reset")
+@usage(surface="st.neri.execute.reset", cmd="st neri execute reset <investigation-id> --file reset.json [--id UUID]", when="recreate the exact run-pinned local target from its registered clean state", precautions=("target mutation; global stop and a settled run are required; bind expected_target_manifest_digest; reconcile the same UUID after uncertainty",), task_types=("neri",))
+def execute_reset(investigation_id: UUID, file: Annotated[Path, typer.Option()],
+                  request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(
+        f"/api/workbench/{investigation_id}/target-reset",
+        read_object(file, request_id=request_id, identified=True),
+    )
 
 
 @runtime_app.command("show")
