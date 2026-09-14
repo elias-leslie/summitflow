@@ -93,6 +93,7 @@ def agent_hub_request(
     scope_id: str | None = None,
     tool_name: str = "st memory",
     retries: int = 1,
+    read_timeout_seconds: float = _HTTP_TIMEOUT_READ,
 ) -> dict[str, Any]:
     """Make a request to Agent Hub API with proper authentication."""
     client_id, request_source = load_credentials(default_source="st-memory")
@@ -110,7 +111,7 @@ def agent_hub_request(
     agent_hub_url = get_agent_hub_url()
     url = f"{agent_hub_url}{path}"
     # Graphiti embedding + Neo4j writes can take 30-60s; generous timeout prevents partial ops.
-    timeout = httpx.Timeout(connect=5.0, read=_HTTP_TIMEOUT_READ, write=30.0, pool=30.0)
+    timeout = httpx.Timeout(connect=5.0, read=read_timeout_seconds, write=30.0, pool=30.0)
     attempts = max(retries, 1)
     for attempt in range(1, attempts + 1):
         try:

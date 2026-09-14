@@ -18,6 +18,12 @@ from .._client_base import APIError
 from .._project_client import ProjectApi, ProjectApiClient, ProjectApiConnectError, resolve_api_url
 from ..lib.usage import usage
 from ..output import output_json
+from ._api_paths import (
+    NERI_LOCAL_WORKER_BENCHMARK_PATH,
+    NERI_LOCAL_WORKER_EVALUATE_PATH,
+    NERI_LOCAL_WORKER_STATUS_PATH,
+)
+from .memory_api import agent_hub_request
 
 app = typer.Typer(help="Read and maintain Neri targets, investigations, notes, reports and disclosure programs")
 evidence_app = typer.Typer(help="Import evidence and inspect retained artifacts")
@@ -33,6 +39,7 @@ program_app = typer.Typer(help="Maintain passive disclosure programs and exact p
 target_programs_app = typer.Typer(help="Record exact target applicability and its revision history")
 runtime_app = typer.Typer(help="Inspect or operate Neri's emergency admission stop")
 research_app = typer.Typer(help="Read research capability progress and save exact associations")
+worker_app = typer.Typer(help="Use and evaluate Agent Hub's bounded passive local Neri worker")
 app.add_typer(evidence_app, name="evidence")
 app.add_typer(notes_app, name="notes")
 app.add_typer(report_app, name="report")
@@ -46,6 +53,7 @@ app.add_typer(program_app, name="program")
 target_app.add_typer(target_programs_app, name="programs")
 app.add_typer(runtime_app, name="runtime")
 app.add_typer(research_app, name="research")
+app.add_typer(worker_app, name="worker")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
 
 
@@ -76,6 +84,29 @@ class WorkspaceFilter(StrEnum):
     awaiting_review = "awaiting_review"
     reviewed_findings = "reviewed_findings"
     reviewed_no_findings = "reviewed_no_findings"
+
+
+class LocalWorkerTask(StrEnum):
+    facts_unknowns = "facts_unknowns"
+    evidence_consistency = "evidence_consistency"
+    scope_policy_parse = "scope_policy_parse"
+    evidence_condensation = "evidence_condensation"
+    matrix_construction = "matrix_construction"
+    hypothesis_controls = "hypothesis_controls"
+    candidate_triage = "candidate_triage"
+    learning_draft = "learning_draft"
+
+
+class LocalWorkerArm(StrEnum):
+    bare_schema = "bare_schema"
+    role_checklist = "role_checklist"
+    grounded_decomposition = "grounded_decomposition"
+    critique_repair = "critique_repair"
+
+
+class LocalWorkerSplit(StrEnum):
+    development = "development"
+    locked = "locked"
 
 
 def evidence_identifier(value: str) -> str:
@@ -146,6 +177,105 @@ def read_object(path: Path, *, request_id: UUID | None = None, identified: bool 
             request_id = supplied_id
         value[identity_field] = str(request_id or uuid4())
     return value
+
+
+@worker_app.command("status")
+@usage(
+    surface="st.neri.worker.status",
+    cmd="st neri worker status",
+    when="verify the exact local Neri candidate runtime before assigning passive work",
+    task_types=("security-research", "model-review"),
+)
+def local_worker_status() -> None:
+    """Inspect the dedicated local runtime and promotion state."""
+    output_json(
+        agent_hub_request(
+            "GET",
+            NERI_LOCAL_WORKER_STATUS_PATH,
+            tool_name="st neri worker status",
+        )
+    )
+
+
+@worker_app.command("evaluate")
+@usage(
+    surface="st.neri.worker.evaluate",
+    cmd="st neri worker evaluate --task-family FAMILY --file packet.json [--arm ARM]",
+    when="delegate a sanitized passive evidence task to an evidence-qualified local worker",
+    task_types=("security-research", "model-review"),
+    precautions=(
+        "Packet must contain only sanitized objective/evidence/constraints; output is an unreviewed draft",
+    ),
+)
+def local_worker_evaluate(
+    task_family: Annotated[LocalWorkerTask, typer.Option("--task-family")],
+    file: Annotated[Path, typer.Option("--file", exists=True, dir_okay=False)],
+    arm: Annotated[LocalWorkerArm, typer.Option("--arm")] = LocalWorkerArm.grounded_decomposition,
+    reasoning_effort: Annotated[
+        Literal["low", "medium", "xhigh"], typer.Option("--reasoning-effort")
+    ] = "xhigh",
+    max_output_tokens: Annotated[int, typer.Option("--max-output-tokens", min=256, max=8192)] = 4096,
+) -> None:
+    """Run one fallback-free, tool-free local analysis over a sanitized packet."""
+    packet = read_object(file)
+    payload = {
+        "task_family": task_family.value,
+        "harness_arm": arm.value,
+        "packet": packet,
+        "reasoning_effort": reasoning_effort,
+        "max_output_tokens": max_output_tokens,
+    }
+    output_json(
+        agent_hub_request(
+            "POST",
+            NERI_LOCAL_WORKER_EVALUATE_PATH,
+            json=payload,
+            tool_name="st neri worker evaluate",
+            read_timeout_seconds=300.0,
+        )
+    )
+
+
+@worker_app.command("benchmark")
+@usage(
+    surface="st.neri.worker.benchmark",
+    cmd="st neri worker benchmark --split development|locked [--arm ARM] [--runs N]",
+    when="compare model-alone and model-plus-harness behavior before routing any task family",
+    task_types=("security-research", "model-review"),
+    precautions=(
+        "Locked cases are promotion evidence; never tune the harness against their answers",
+    ),
+)
+def local_worker_benchmark(
+    split: Annotated[LocalWorkerSplit, typer.Option("--split")] = LocalWorkerSplit.development,
+    arms: Annotated[list[LocalWorkerArm] | None, typer.Option("--arm")] = None,
+    task_families: Annotated[list[LocalWorkerTask] | None, typer.Option("--task-family")] = None,
+    runs: Annotated[int, typer.Option("--runs", min=1, max=3)] = 1,
+    reasoning_effort: Annotated[
+        Literal["low", "medium", "xhigh"], typer.Option("--reasoning-effort")
+    ] = "xhigh",
+    max_output_tokens: Annotated[int, typer.Option("--max-output-tokens", min=256, max=8192)] = 4096,
+    no_persist: Annotated[bool, typer.Option("--no-persist")] = False,
+) -> None:
+    """Run the bounded harness-arm suite sequentially on the single local GPU."""
+    payload = {
+        "split": split.value,
+        "harness_arms": [arm.value for arm in (arms or list(LocalWorkerArm))],
+        "task_families": [family.value for family in task_families] if task_families else None,
+        "runs_per_case": runs,
+        "reasoning_effort": reasoning_effort,
+        "max_output_tokens": max_output_tokens,
+        "persist": not no_persist,
+    }
+    output_json(
+        agent_hub_request(
+            "POST",
+            NERI_LOCAL_WORKER_BENCHMARK_PATH,
+            json=payload,
+            tool_name="st neri worker benchmark",
+            read_timeout_seconds=3_600.0,
+        )
+    )
 
 
 def request_page(path: str, limit: int, cursor: str | None,
