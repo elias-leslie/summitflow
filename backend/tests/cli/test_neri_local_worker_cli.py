@@ -87,3 +87,117 @@ def test_worker_benchmark_defaults_to_all_harness_arms() -> None:
     ]
     assert payload["persist"] is True
     assert payload["max_output_tokens"] == 4096
+
+
+def test_worker_benchmark_preserves_exact_case_order() -> None:
+    with patch(
+        "cli.commands.neri.agent_hub_request",
+        return_value={"benchmark_id": "bench-exact", "attempts": 2},
+    ) as request:
+        result = runner.invoke(
+            app,
+            [
+                "worker",
+                "benchmark",
+                "--case-id",
+                "locked_case_17",
+                "--case-id",
+                "development_case_02",
+            ],
+        )
+
+    assert result.exit_code == 0
+    payload = request.call_args.kwargs["json"]
+    assert payload["case_ids"] == ["locked_case_17", "development_case_02"]
+    assert payload["study_id"] is None
+    assert payload["study_block"] is None
+    assert payload["study_case_position"] is None
+    assert payload["study_replacement"] == 0
+
+
+def test_worker_benchmark_sends_complete_study_binding() -> None:
+    with patch(
+        "cli.commands.neri.agent_hub_request",
+        return_value={"benchmark_id": "bench-study", "attempts": 1},
+    ) as request:
+        result = runner.invoke(
+            app,
+            [
+                "worker",
+                "benchmark",
+                "--study-id",
+                "frozen-study-v1",
+                "--study-block",
+                "3",
+                "--study-case-position",
+                "11",
+                "--study-replacement",
+                "2",
+            ],
+        )
+
+    assert result.exit_code == 0
+    payload = request.call_args.kwargs["json"]
+    assert payload["harness_arms"] == ["role_checklist"]
+    assert payload["study_id"] == "frozen-study-v1"
+    assert payload["study_block"] == 3
+    assert payload["study_case_position"] == 11
+    assert payload["study_replacement"] == 2
+
+
+def test_worker_benchmark_rejects_incomplete_study_binding_before_request() -> None:
+    with patch("cli.commands.neri.agent_hub_request") as request:
+        result = runner.invoke(
+            app,
+            [
+                "worker",
+                "benchmark",
+                "--study-id",
+                "frozen-study-v1",
+                "--study-block",
+                "3",
+            ],
+        )
+
+    assert result.exit_code == 2
+    assert "must be supplied together" in result.output
+    request.assert_not_called()
+
+
+def test_worker_benchmark_rejects_non_frozen_study_options_before_request() -> None:
+    binding = [
+        "--study-id",
+        "frozen-study-v1",
+        "--study-block",
+        "3",
+        "--study-case-position",
+        "11",
+    ]
+    incompatible_options = [
+        ["--case-id", "development_case_02"],
+        ["--task-family", "facts_unknowns"],
+        ["--runs", "2"],
+        ["--arm", "bare_schema"],
+        ["--arm", "role_checklist", "--arm", "role_checklist"],
+        ["--no-persist"],
+    ]
+
+    with patch("cli.commands.neri.agent_hub_request") as request:
+        for incompatible in incompatible_options:
+            result = runner.invoke(app, ["worker", "benchmark", *binding, *incompatible])
+
+            assert result.exit_code == 2
+
+    request.assert_not_called()
+
+
+def test_worker_benchmark_rejects_replacement_outside_study_before_request() -> None:
+    with patch("cli.commands.neri.agent_hub_request") as request:
+        result = runner.invoke(
+            app,
+            ["worker", "benchmark", "--study-replacement", "1"],
+        )
+
+    assert result.exit_code == 2
+    assert "requires a complete study binding" in result.output
+    request.assert_not_called()

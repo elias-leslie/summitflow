@@ -239,33 +239,74 @@ def local_worker_evaluate(
 @worker_app.command("benchmark")
 @usage(
     surface="st.neri.worker.benchmark",
-    cmd="st neri worker benchmark --split development|locked [--arm ARM] [--runs N]",
+    cmd=(
+        "st neri worker benchmark --split development|locked [--arm ARM] [--case-id ID] [--runs N] "
+        "[--study-id ID --study-block N --study-case-position N --study-replacement N]"
+    ),
     when="compare model-alone and model-plus-harness behavior before routing any task family",
     task_types=("security-research", "model-review"),
     precautions=(
         "Locked cases are promotion evidence; never tune the harness against their answers",
+        "Study mode is frozen; attempts are durable one case at a time and outputs are unreviewed",
+        "Study replacements preserve originals and label a full block; they never enable selective case reruns",
     ),
 )
 def local_worker_benchmark(
     split: Annotated[LocalWorkerSplit, typer.Option("--split")] = LocalWorkerSplit.development,
     arms: Annotated[list[LocalWorkerArm] | None, typer.Option("--arm")] = None,
     task_families: Annotated[list[LocalWorkerTask] | None, typer.Option("--task-family")] = None,
+    case_ids: Annotated[list[str] | None, typer.Option("--case-id")] = None,
     runs: Annotated[int, typer.Option("--runs", min=1, max=3)] = 1,
     reasoning_effort: Annotated[
         Literal["low", "medium", "xhigh"], typer.Option("--reasoning-effort")
     ] = "xhigh",
     max_output_tokens: Annotated[int, typer.Option("--max-output-tokens", min=256, max=8192)] = 4096,
     no_persist: Annotated[bool, typer.Option("--no-persist")] = False,
+    study_id: Annotated[str | None, typer.Option("--study-id")] = None,
+    study_block: Annotated[int | None, typer.Option("--study-block", min=1, max=8)] = None,
+    study_case_position: Annotated[
+        int | None, typer.Option("--study-case-position", min=1, max=24)
+    ] = None,
+    study_replacement: Annotated[int, typer.Option("--study-replacement", min=0, max=3)] = 0,
 ) -> None:
     """Run the bounded harness-arm suite sequentially on the single local GPU."""
+    study_binding = (study_id, study_block, study_case_position)
+    if any(value is not None for value in study_binding) and not all(
+        value is not None for value in study_binding
+    ):
+        raise typer.BadParameter(
+            "--study-id, --study-block, and --study-case-position must be supplied together"
+        )
+
+    study_mode = study_id is not None
+    if study_mode:
+        if case_ids or task_families:
+            raise typer.BadParameter("Study mode does not accept --case-id or --task-family")
+        if runs != 1:
+            raise typer.BadParameter("Study mode requires --runs 1")
+        if arms is not None and arms != [LocalWorkerArm.role_checklist]:
+            raise typer.BadParameter("Study mode accepts exactly one --arm role_checklist")
+        if no_persist:
+            raise typer.BadParameter("Study mode requires durable attempts; do not use --no-persist")
+        selected_arms = [LocalWorkerArm.role_checklist]
+    else:
+        if study_replacement != 0:
+            raise typer.BadParameter("--study-replacement requires a complete study binding")
+        selected_arms = arms or list(LocalWorkerArm)
+
     payload = {
         "split": split.value,
-        "harness_arms": [arm.value for arm in (arms or list(LocalWorkerArm))],
+        "harness_arms": [arm.value for arm in selected_arms],
         "task_families": [family.value for family in task_families] if task_families else None,
+        "case_ids": case_ids,
         "runs_per_case": runs,
         "reasoning_effort": reasoning_effort,
         "max_output_tokens": max_output_tokens,
         "persist": not no_persist,
+        "study_id": study_id,
+        "study_block": study_block,
+        "study_case_position": study_case_position,
+        "study_replacement": study_replacement,
     }
     output_json(
         agent_hub_request(
