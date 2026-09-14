@@ -41,6 +41,18 @@ def transport(monkeypatch):
     (["show", INVESTIGATION], f"/api/investigations/{INVESTIGATION}"),
     (["activity", INVESTIGATION, "--after", "9", "--limit", "10"], f"/api/runs/{INVESTIGATION}/activity?after=9&limit=10"),
     (["context", INVESTIGATION, "--after", "7", "--limit", "8"], f"/api/runs/{INVESTIGATION}/context?after=7&limit=8"),
+    (["context", INVESTIGATION, "--research-digest", "a" * 64], f"/api/runs/{INVESTIGATION}/context?after=0&limit=40&research_digest={'a' * 64}"),
+    (["research", "catalogue"], "/api/research/capabilities?compact=true"),
+    (["research", "catalogue", "--full"], "/api/research/capabilities?compact=false"),
+    (["research", "show", "authorization.object-boundary.differential"], "/api/research/capabilities/authorization.object-boundary.differential"),
+    (["research", "show", "identity/session", "--version", "1.1.0"], "/api/research/capabilities/identity%2Fsession?version=1.1.0"),
+    (["research", "matrix"], "/api/research/matrix"),
+    (["research", "context", INVESTIGATION], f"/api/runs/{INVESTIGATION}/research-context"),
+    (["research", "context", INVESTIGATION, "--previous-digest", "b" * 64], f"/api/runs/{INVESTIGATION}/research-context?previous_digest={'b' * 64}"),
+    (["research", "recommend", INVESTIGATION], f"/api/runs/{INVESTIGATION}/research-recommendation"),
+    (["research", "links", INVESTIGATION], f"/api/runs/{INVESTIGATION}/research-links"),
+    (["research", "snapshots", INVESTIGATION], f"/api/runs/{INVESTIGATION}/research-recommendations"),
+    (["research", "outcomes", INVESTIGATION], f"/api/runs/{INVESTIGATION}/commercial-outcomes"),
     (["evidence", "list", INVESTIGATION], f"/api/runs/{INVESTIGATION}/evidence?after=0&limit=40"),
     (["evidence", "list", INVESTIGATION, "--after", "42", "--limit", "100"], f"/api/runs/{INVESTIGATION}/evidence?after=42&limit=100"),
     (["evidence", "show", INVESTIGATION, RECORD], f"/api/runs/{INVESTIGATION}/evidence/{RECORD}"),
@@ -124,6 +136,29 @@ def test_exact_severity_not_found_does_not_fall_back_to_assessment_history(trans
 
 
 MUTATIONS = [
+    (["research", "associate", INVESTIGATION], f"/api/runs/{INVESTIGATION}/research-links", {
+        "request_key": "selection-one", "link_kind": "selection",
+        "capability_id": "authorization.object-boundary.differential",
+        "configuration_digest": "c" * 64,
+        "configuration_identity": {
+            "harness": "neri", "harness_version": "research-matrix-v1",
+            "model_id": "gpt-daybreak-blue-latest", "target_build_identity": "fixture:test",
+            "environment_kind": "lab", "implementation_mode": "harness_assisted",
+            "tool_capability_ids": ["run.context", "workbench.http"],
+            "parameter_refs": {}, "safety_policy_digest": "d" * 64,
+        },
+        "case_family": "basket-access", "case_identity": "basket-one",
+        "environment_kind": "lab", "implementation_mode": "harness_assisted",
+        "objective": "Compare the controlled identities before result evidence exists.",
+    }),
+    (["research", "snapshot", INVESTIGATION], f"/api/runs/{INVESTIGATION}/research-recommendations", {
+        "request_key": "recommendation-one", "expected_input_digest": "a" * 64,
+    }),
+    (["research", "record-outcome", INVESTIGATION], f"/api/runs/{INVESTIGATION}/commercial-outcomes", {
+        "report_revision_id": RECORD, "program_binding_revision_id": OTHER,
+        "expected_sequence": 0, "status": "submitted",
+        "owner_confirmation": "The owner confirmed submission from the saved program record.",
+    }),
     (["create"], "/api/investigations", {
         "title": "Document inventory", "objective": "Review supplied source records",
         "scope_notes": "Retained documents only", "target_id": "documents",
@@ -584,6 +619,12 @@ def test_lean_surface_is_discoverable_and_retired_groups_are_gone():
             "st.neri.program.revisions", "st.neri.program.revise", "st.neri.program.revision",
             "st.neri.target.programs.list", "st.neri.target.programs.bind",
             "st.neri.target.programs.show", "st.neri.target.programs.history"} <= surfaces
+    assert {"st.neri.research.catalogue", "st.neri.research.show", "st.neri.research.matrix",
+            "st.neri.research.context", "st.neri.research.recommend",
+            "st.neri.research.links", "st.neri.research.associate",
+            "st.neri.research.snapshot", "st.neri.research.snapshots",
+            "st.neri.research.outcomes",
+            "st.neri.research.record-outcome"} <= surfaces
     for scope in ["target", "group"]:
         assert {f"st.neri.{scope}.notes.{command}" for command in ["list", "add", "show", "history", "state"]} <= surfaces
     assert all(spec.get("precautions") for spec in specs)

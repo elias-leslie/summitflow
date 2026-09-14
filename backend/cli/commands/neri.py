@@ -32,6 +32,7 @@ group_notes_app = typer.Typer(help="Save investigation direction and read its st
 program_app = typer.Typer(help="Maintain passive disclosure programs and exact policy revisions")
 target_programs_app = typer.Typer(help="Record exact target applicability and its revision history")
 runtime_app = typer.Typer(help="Inspect or operate Neri's emergency admission stop")
+research_app = typer.Typer(help="Read research capability progress and save exact associations")
 app.add_typer(evidence_app, name="evidence")
 app.add_typer(notes_app, name="notes")
 app.add_typer(report_app, name="report")
@@ -44,6 +45,7 @@ group_app.add_typer(group_notes_app, name="notes")
 app.add_typer(program_app, name="program")
 target_app.add_typer(target_programs_app, name="programs")
 app.add_typer(runtime_app, name="runtime")
+app.add_typer(research_app, name="research")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
 
 
@@ -219,10 +221,87 @@ def record_activity(investigation_id: UUID, file: Annotated[Path, typer.Option()
 
 
 @app.command()
-@usage(surface="st.neri.context", cmd="st neri context <investigation-id> [--after 0 --limit 40]", when="load compact local investigation state and evidence references", precautions=("read-only local projection; retrieval is not proof of model consumption",), task_types=("neri",))
+@usage(surface="st.neri.context", cmd="st neri context <investigation-id> [--after 0 --limit 40 --research-digest SHA256]", when="load compact local investigation state, evidence references and independently invalidated research guidance", precautions=("read-only local projection; retrieval is not proof of model consumption",), task_types=("neri", "security-research"))
 def context(investigation_id: UUID, after: Annotated[int, typer.Option(min=0)] = 0,
-            limit: Annotated[int, typer.Option(min=1, max=100)] = 40) -> None:
-    request(f"/api/runs/{investigation_id}/context?{urlencode({'after': after, 'limit': limit})}")
+            limit: Annotated[int, typer.Option(min=1, max=100)] = 40,
+            research_digest: Annotated[str | None, typer.Option("--research-digest")] = None) -> None:
+    params = {"after": after, "limit": limit, "research_digest": research_digest}
+    request(f"/api/runs/{investigation_id}/context?{urlencode({key: value for key, value in params.items() if value is not None})}")
+
+
+@research_app.command("catalogue")
+@usage(surface="st.neri.research.catalogue", cmd="st neri research catalogue [--full]", when="read versioned research capability definitions", precautions=("definitions are assessment metadata; draft or active state is explicit and grants no target authority",), task_types=("neri", "security-research"))
+def research_catalogue(full: bool = False) -> None:
+    request(f"/api/research/capabilities?{urlencode({'compact': str(not full).lower()})}")
+
+
+@research_app.command("show")
+@usage(surface="st.neri.research.show", cmd="st neri research show <capability-id> [--version VERSION]", when="read one exact research capability revision", precautions=("read-only definition; required tools and prerequisites must still be established",), task_types=("neri", "security-research"))
+def research_show(capability_id: str, version: str | None = None) -> None:
+    path = f"/api/research/capabilities/{quote(capability_id, safe='')}"
+    request(f"{path}?{urlencode({'version': version})}" if version else path)
+
+
+@research_app.command("matrix")
+@usage(surface="st.neri.research.matrix", cmd="st neri research matrix", when="read technical evidence, implementation readiness and commercial outcomes", precautions=("projection is evidence-derived; inspect denominators, counterevidence and contamination",), task_types=("neri", "security-research"))
+def research_matrix() -> None:
+    request("/api/research/matrix")
+
+
+@research_app.command("context")
+@usage(surface="st.neri.research.context", cmd="st neri research context <investigation-id> [--previous-digest SHA256]", when="read independently invalidated research guidance for an investigation", precautions=("read-only guidance; unchanged means the exact research input digest did not change",), task_types=("neri", "security-research"))
+def research_context(investigation_id: UUID,
+                     previous_digest: Annotated[str | None, typer.Option("--previous-digest")] = None) -> None:
+    path = f"/api/runs/{investigation_id}/research-context"
+    request(f"{path}?{urlencode({'previous_digest': previous_digest})}" if previous_digest else path)
+
+
+@research_app.command("recommend")
+@usage(surface="st.neri.research.recommend", cmd="st neri research recommend <investigation-id>", when="read deterministic capability guidance", precautions=("does not call a model, write state, grant authority or perform target interaction",), task_types=("neri", "security-research"))
+def research_recommend(investigation_id: UUID) -> None:
+    request(f"/api/runs/{investigation_id}/research-recommendation")
+
+
+@research_app.command("links")
+@usage(surface="st.neri.research.links", cmd="st neri research links <investigation-id>", when="read immutable capability selections and evidence associations", precautions=("technical verdicts remain owned by exact reviews",), task_types=("neri", "security-research"))
+def research_links(investigation_id: UUID) -> None:
+    request(f"/api/runs/{investigation_id}/research-links")
+
+
+@research_app.command("associate")
+@usage(surface="st.neri.research.associate", cmd="st neri research associate <investigation-id> --file association.json [--id UUID]", when="save a prospective selection or exact reviewed evidence association", precautions=("JSON or stdin; selection must precede all result evidence for prospective credit; no verdict is accepted here",), task_types=("neri", "security-research"))
+def research_associate(investigation_id: UUID, file: Annotated[Path, typer.Option()],
+                       request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(f"/api/runs/{investigation_id}/research-links",
+            read_object(file, request_id=request_id, identified=True))
+
+
+@research_app.command("snapshot")
+@usage(surface="st.neri.research.snapshot", cmd="st neri research snapshot <investigation-id> --file snapshot.json [--id UUID]", when="save the exact deterministic recommendation and input digest", precautions=("server rejects stale input digests; saving does not dispatch work",), task_types=("neri", "security-research"))
+def research_snapshot(investigation_id: UUID, file: Annotated[Path, typer.Option()],
+                      request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(f"/api/runs/{investigation_id}/research-recommendations",
+            read_object(file, request_id=request_id, identified=True))
+
+
+@research_app.command("snapshots")
+@usage(surface="st.neri.research.snapshots", cmd="st neri research snapshots <investigation-id>", when="read saved deterministic recommendation history", precautions=("bounded read-only history; preserve input and source digests",), task_types=("neri", "security-research"))
+def research_snapshots(investigation_id: UUID) -> None:
+    request(f"/api/runs/{investigation_id}/research-recommendations")
+
+
+@research_app.command("outcomes")
+@usage(surface="st.neri.research.outcomes", cmd="st neri research outcomes <investigation-id>", when="read immutable commercial outcome history", precautions=("owner-confirmed program/report attribution only; technical support remains in reviews",), task_types=("neri", "security-research"))
+def research_outcomes(investigation_id: UUID) -> None:
+    request(f"/api/runs/{investigation_id}/commercial-outcomes")
+
+
+@research_app.command("record-outcome")
+@usage(surface="st.neri.research.record-outcome", cmd="st neri research record-outcome <investigation-id> --file outcome.json [--id UUID]", when="append an owner-confirmed commercial status", precautions=("requires exact report, finding and program binding revisions; never infers acceptance or payment",), task_types=("neri", "security-research"))
+def research_record_outcome(investigation_id: UUID, file: Annotated[Path, typer.Option()],
+                            request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
+    request(f"/api/runs/{investigation_id}/commercial-outcomes",
+            read_object(file, request_id=request_id, identified=True))
 
 
 @app.command()
