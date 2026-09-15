@@ -49,7 +49,7 @@ def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
     path = directory / (attempt + ".json")
     record: dict[str, Any] = {
         "adapter": adapter.value, "operation": action, "attempt": attempt,
-        "state": "running", "events": [],
+        "state": "running", "events": [], "guest_processes": {},
     }
 
     def phase(name: str, **values: Any) -> None:
@@ -69,20 +69,29 @@ def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
 
         def execute(action: str, *arguments: str) -> tuple[int, dict[str, Any]]:
             nonlocal submitted
-            phase(action + "-submitting")
+            record["guest_processes"][action] = {"state": "submitting", "pid": None}
+            # Clear the compatibility field before submission so a lost
+            # deployment response cannot leave the earlier inspection PID as
+            # the apparent process to reconcile.
+            phase(action + "-submitting", guest_action=action, guest_pid=None)
             if action in {"bootstrap", "deploy"}:
                 submitted = True  # The API may accept a command before losing its response.
             response = client.agent_exec(VM_ID, ["/usr/bin/python3", "-c", program, action, *arguments])
             pid = response.get("pid")
             if not isinstance(pid, int):
                 raise ProxmoxError("Guest execution returned no process identity")
-            phase(action + "-waiting", guest_pid=pid)
+            record["guest_processes"][action] = {"state": "waiting", "pid": pid}
+            phase(action + "-waiting", guest_action=action, guest_pid=pid)
             # Match the existing guest-exec wait window; first adoption can
             # include both a bounded stop and restart before startup health.
             deadline = time.monotonic() + 300
             while time.monotonic() < deadline:
                 status = client.agent_exec_status(VM_ID, pid)
                 if status.get("exited"):
+                    record["guest_processes"][action] = {
+                        "state": "exited", "pid": pid, "exitcode": status.get("exitcode"),
+                    }
+                    phase(action + "-exited", guest_action=action, guest_pid=pid)
                     if status.get("out-truncated") or status.get("err-truncated"):
                         raise ProxmoxError("Guest result was truncated; inspect its durable receipt")
                     result = json.loads(status.get("out-data", ""))

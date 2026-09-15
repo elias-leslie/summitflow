@@ -408,6 +408,17 @@ def test_host_preserves_uncertainty_after_submission_without_retry(installed, ch
     assert record["observation"]["installed"] == guest.identity(installed[1])
     assert "private transport details" not in json.dumps(record)
     assert len(client.commands) <= 2
+    assert record["guest_processes"]["inspect"]["pid"] == 1
+    assert record["guest_processes"]["inspect"]["state"] == "exited"
+    if failure == "submission":
+        assert record["guest_action"] == "deploy"
+        assert record["guest_pid"] is None
+        assert record["guest_processes"]["deploy"] == {
+            "state": "submitting", "pid": None,
+        }
+    else:
+        assert record["guest_pid"] == 2
+        assert record["guest_processes"]["deploy"]["pid"] == 2
 
 
 @pytest.mark.parametrize("raw,project", [
