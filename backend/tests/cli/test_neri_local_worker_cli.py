@@ -160,7 +160,8 @@ def test_worker_benchmark_rejects_incomplete_study_binding_before_request() -> N
         )
 
     assert result.exit_code == 2
-    assert "must be supplied together" in result.output
+    # Rich may wrap the validation text inside its terminal-width error box.
+    assert "must be supplied together" in " ".join(result.output.replace("│", " ").split())
     request.assert_not_called()
 
 
