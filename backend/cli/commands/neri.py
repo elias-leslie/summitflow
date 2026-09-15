@@ -55,6 +55,9 @@ app.add_typer(runtime_app, name="runtime")
 app.add_typer(research_app, name="research")
 app.add_typer(worker_app, name="worker")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
+NERI_LOCAL_WORKER_QUALIFICATION_PATH = "/api/research/local-worker/qualification"
+NERI_LOCAL_WORKER_QUALIFICATION_DECISIONS_PATH = f"{NERI_LOCAL_WORKER_QUALIFICATION_PATH}/decisions"
+NERI_LOCAL_WORKER_SHADOW_ASSIGNMENTS_PATH = "/api/research/local-worker/shadow-assignments"
 
 
 class Action(StrEnum):
@@ -124,7 +127,7 @@ EvidenceId = Annotated[str, typer.Argument(parser=evidence_identifier, help="UUI
 
 
 def request(path: str, body: dict | None = None, *, method: str | None = None, emit: bool = True,
-            identity_field: Literal["id", "mutation_id"] = "id") -> Any:
+            identity_field: Literal["id", "mutation_id", "request_id"] = "id") -> Any:
     """Use the shared project transport once; never echo failed input or credentials."""
     identity = {}
     if body and identity_field in body:
@@ -158,7 +161,7 @@ def request(path: str, body: dict | None = None, *, method: str | None = None, e
 
 
 def read_object(path: Path, *, request_id: UUID | None = None, identified: bool = False,
-                identity_field: Literal["id", "mutation_id"] = "id") -> dict:
+                identity_field: Literal["id", "mutation_id", "request_id"] = "id") -> dict:
     """Read literal JSON from a file/stdin and retain or allocate its mutation UUID."""
     try:
         value = json.loads(sys.stdin.read() if str(path) == "-" else path.read_text(encoding="utf-8"))
@@ -177,6 +180,45 @@ def read_object(path: Path, *, request_id: UUID | None = None, identified: bool 
             request_id = supplied_id
         value[identity_field] = str(request_id or uuid4())
     return value
+
+
+def local_worker_qualification_path(task_family: LocalWorkerTask | None = None) -> str:
+    """Build the canonical Neri qualification read without widening the API surface."""
+    if task_family is None:
+        return NERI_LOCAL_WORKER_QUALIFICATION_PATH
+    return f"{NERI_LOCAL_WORKER_QUALIFICATION_PATH}?{urlencode({'task_family': task_family.value})}"
+
+
+def local_worker_shadow_assignments_path(
+    *,
+    run_id: UUID | None = None,
+    task_family: LocalWorkerTask | None = None,
+) -> str:
+    """Build the canonical filtered assignment read in a stable query order."""
+    params = {
+        "run_id": str(run_id) if run_id is not None else None,
+        "task_family": task_family.value if task_family is not None else None,
+    }
+    query = urlencode({key: value for key, value in params.items() if value is not None})
+    return f"{NERI_LOCAL_WORKER_SHADOW_ASSIGNMENTS_PATH}?{query}" if query else NERI_LOCAL_WORKER_SHADOW_ASSIGNMENTS_PATH
+
+
+def local_worker_shadow_assignment_path(assignment_id: UUID) -> str:
+    """Address one server-issued assignment identity exactly."""
+    return f"{NERI_LOCAL_WORKER_SHADOW_ASSIGNMENTS_PATH}/{assignment_id}"
+
+
+def bind_local_worker_run(payload: dict, run_id: UUID) -> dict:
+    """Bind a reusable file payload to the positional run without silent contradiction."""
+    supplied_run_id = payload.get("run_id")
+    if supplied_run_id is not None:
+        try:
+            parsed_run_id = UUID(str(supplied_run_id))
+        except (AttributeError, TypeError, ValueError):
+            raise typer.BadParameter("JSON run_id must be a UUID when supplied") from None
+        if parsed_run_id != run_id:
+            raise typer.BadParameter("JSON run_id must match the positional run ID")
+    return {**payload, "run_id": str(run_id)}
 
 
 @worker_app.command("status")
@@ -316,6 +358,141 @@ def local_worker_benchmark(
             tool_name="st neri worker benchmark",
             read_timeout_seconds=3_600.0,
         )
+    )
+
+
+@worker_app.command("qualification")
+@usage(
+    surface="st.neri.worker.qualification",
+    cmd="st neri worker qualification [--task-family FAMILY]",
+    when="read the durable Neri promotion decision and evidence summary before assigning local work",
+    task_types=("security-research", "model-review"),
+    precautions=(
+        "A held or missing family remains on its established frontier-model route",
+        "Qualification state grants no target authority and does not make the local worker a reviewer",
+    ),
+)
+def local_worker_qualification(task_family: LocalWorkerTask | None = None) -> None:
+    """Read current qualification state from Neri, not the Agent Hub runtime."""
+    request(local_worker_qualification_path(task_family))
+
+
+@worker_app.command("qualify")
+@usage(
+    surface="st.neri.worker.qualify",
+    cmd="st neri worker qualify --file decision.json [--id UUID]",
+    when="append an independently reviewed qualification decision to Neri",
+    task_types=("security-research", "model-review"),
+    precautions=(
+        "The JSON must cite the exact immutable benchmark and review evidence",
+        "Decisions are append-only; a promotion never grants scope or submission authority",
+    ),
+)
+def local_worker_qualify(
+    file: Annotated[Path, typer.Option("--file", exists=True, dir_okay=False)],
+    request_id: Annotated[UUID | None, typer.Option("--id")] = None,
+) -> None:
+    """Append one qualification decision while retaining its idempotency identity."""
+    payload = read_object(
+        file,
+        request_id=request_id,
+        identified=True,
+        identity_field="request_id",
+    )
+    request(
+        NERI_LOCAL_WORKER_QUALIFICATION_DECISIONS_PATH,
+        payload,
+        identity_field="request_id",
+    )
+
+
+@worker_app.command("shadow")
+@usage(
+    surface="st.neri.worker.shadow",
+    cmd="st neri worker shadow <run-id> --file assignment.json [--id UUID]",
+    when="save a passive local-worker shadow assignment before its draft exists",
+    task_types=("security-research", "model-review"),
+    precautions=(
+        "Use only a sanitized referenced packet; the local worker gets no target, tool, memory, or network authority",
+        "The positional run is authoritative and a contradictory JSON run_id is rejected",
+    ),
+)
+def local_worker_shadow(
+    run_id: UUID,
+    file: Annotated[Path, typer.Option("--file", exists=True, dir_okay=False)],
+    request_id: Annotated[UUID | None, typer.Option("--id")] = None,
+) -> None:
+    """Create one predeclared shadow assignment through Neri."""
+    payload = read_object(
+        file,
+        request_id=request_id,
+        identified=True,
+        identity_field="request_id",
+    )
+    request(
+        NERI_LOCAL_WORKER_SHADOW_ASSIGNMENTS_PATH,
+        bind_local_worker_run(payload, run_id),
+        identity_field="request_id",
+    )
+
+
+@worker_app.command("assignments")
+@usage(
+    surface="st.neri.worker.assignments",
+    cmd="st neri worker assignments [--run-id UUID] [--task-family FAMILY]",
+    when="list saved local-worker shadow assignments and their current review disposition",
+    task_types=("security-research", "model-review"),
+    precautions=("Read-only; assignment IDs are server-issued and identify exact retained drafts",),
+)
+def local_worker_assignments(
+    run_id: Annotated[UUID | None, typer.Option("--run-id")] = None,
+    task_family: Annotated[LocalWorkerTask | None, typer.Option("--task-family")] = None,
+) -> None:
+    """List assignment projections, optionally narrowed to one run or family."""
+    request(local_worker_shadow_assignments_path(run_id=run_id, task_family=task_family))
+
+
+@worker_app.command("assignment")
+@usage(
+    surface="st.neri.worker.assignment",
+    cmd="st neri worker assignment <assignment-id>",
+    when="read one exact saved shadow assignment, draft provenance, and review disposition",
+    task_types=("security-research", "model-review"),
+    precautions=("Read-only; a retained draft remains inert until a frontier review accepts it",),
+)
+def local_worker_assignment(assignment_id: UUID) -> None:
+    """Read one assignment using its server-issued identity without fallback."""
+    request(local_worker_shadow_assignment_path(assignment_id))
+
+
+@worker_app.command("review")
+@usage(
+    surface="st.neri.worker.review",
+    cmd="st neri worker review <run-id> <assignment-id> --file review.json [--id UUID]",
+    when="append a frontier review and exact corrections for one local-worker shadow draft",
+    task_types=("security-research", "model-review"),
+    precautions=(
+        "The reviewer must verify every reference, supported inference, and uncertainty",
+        "Reviews are immutable; acceptance records draft usefulness but grants no broad family promotion",
+    ),
+)
+def local_worker_review(
+    run_id: UUID,
+    assignment_id: UUID,
+    file: Annotated[Path, typer.Option("--file", exists=True, dir_okay=False)],
+    request_id: Annotated[UUID | None, typer.Option("--id")] = None,
+) -> None:
+    """Append one immutable frontier review to an exact assignment."""
+    payload = read_object(
+        file,
+        request_id=request_id,
+        identified=True,
+        identity_field="request_id",
+    )
+    request(
+        f"{local_worker_shadow_assignment_path(assignment_id)}/reviews",
+        bind_local_worker_run(payload, run_id),
+        identity_field="request_id",
     )
 
 
