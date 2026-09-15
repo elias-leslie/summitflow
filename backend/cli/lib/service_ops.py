@@ -26,6 +26,7 @@ from app.project_identity import (
 from app.utils.shared_paths import get_repo_root
 
 from ..details import display_path, emit_result_or_details, summary_hint, write_details
+from .neri_runner_deploy import RunnerAdapter
 
 
 class ServiceError(RuntimeError):
@@ -46,6 +47,7 @@ class ProjectServices:
     frontend_dir: Path
     health_endpoint: str
     backend_extras: tuple[str, ...] = ()
+    runner_adapter: RunnerAdapter | None = None
 
     @property
     def all_services(self) -> tuple[str, ...]:
@@ -88,6 +90,13 @@ def load_project(project_id: str) -> ProjectServices:
     if not isinstance(extras, list) or any(not isinstance(extra, str) or not extra.strip() for extra in extras):
         raise ServiceError("runtime.backend_extras must be a list of nonempty extra names")
     canonical_id = str(project.get("id") or project_id)
+    adapter_raw = services.get("runner_adapter")
+    try:
+        adapter = RunnerAdapter(adapter_raw) if adapter_raw is not None else None
+    except (ValueError, TypeError):
+        raise ServiceError("services.runner_adapter must be the fixed neri-runner-v1 identifier") from None
+    if adapter is not None and canonical_id != "neri":
+        raise ServiceError("The neri-runner-v1 adapter is restricted to Neri")
     root = Path(root_raw)
     backend_subdir = str(runtime.get("backend_dir") or "backend")
     frontend_subdir = str(runtime.get("frontend_dir") or "frontend")
@@ -104,6 +113,7 @@ def load_project(project_id: str) -> ProjectServices:
         frontend_dir=root if frontend_subdir == "." else root / frontend_subdir,
         health_endpoint=str(runtime.get("health_endpoint") or "/health"),
         backend_extras=tuple(dict.fromkeys(_as_str_list(extras))),
+        runner_adapter=adapter,
     )
 
 

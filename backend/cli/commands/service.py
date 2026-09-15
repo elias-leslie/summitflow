@@ -11,6 +11,7 @@ import typer
 
 from ..lib import service_ops
 from ..lib.confirm_token import confirm_gate
+from ..lib.neri_runner_deploy import bootstrap_runner, deploy_runner
 from ..lib.usage import usage
 from ..output import output_error
 
@@ -28,6 +29,44 @@ class RebuildScope(StrEnum):
     backend = "backend"
     frontend = "frontend"
     worker = "worker"
+
+
+@app.command("bootstrap-runner")
+@usage(
+    surface="st.service.runner-bootstrap",
+    cmd="st service bootstrap-runner neri",
+    when="perform the one-time controlled adoption of a legacy Neri local-lab runner",
+    precautions=(
+        "run only after inspection proves the fixed legacy two-file layout and no retained deployment interlock",
+        "two-pass confirmation is required because both local-lab runner services are stopped and restarted",
+        "an uncertain result retains the deployment marker; inspect its durable receipt and never retry blindly",
+        "the command is restricted to the fixed Neri runner adapter, VM, services, paths, and source files",
+    ),
+    task_types=("vm-repair", "devops"),
+    on_demand="VM repair",
+    tier="reference",
+)
+def runner_bootstrap(
+    project: Annotated[str, typer.Argument(help="Project id with the fixed Neri runner adapter")],
+    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
+) -> None:
+    """Adopt a legacy Neri runner into guarded release management."""
+    services = _load(project)
+    if services.runner_adapter is None:
+        output_error("Project has no managed runner adapter.")
+        raise typer.Exit(1)
+    confirm_gate(
+        f"service-runner-bootstrap-{services.project_id}",
+        confirm,
+        [
+            f"BOOTSTRAP LEGACY RUNNER: {services.project_id}",
+            "This stops and restarts both fixed local-lab runner services.",
+            "The old source bundle is preserved and all activation steps are durably recorded.",
+            "Any uncertain mutation retains the interlock for manual inspection.",
+        ],
+        f"st service bootstrap-runner {services.project_id}",
+    )
+    raise typer.Exit(bootstrap_runner(services.root, services.runner_adapter))
 
 
 def _load(project: str) -> service_ops.ProjectServices:
@@ -142,6 +181,12 @@ def rebuild(
     start_time = time.time()
     errors = 0
     print(f"Rebuilding {services.project_id} (scope: {scope.value})")
+    # Freeze and verify the runner before any host lifecycle mutation. Worker
+    # scope also updates backend consumers, so it follows the same contract.
+    if (backend and services.runner_adapter is not None
+            and deploy_runner(services.root, services.runner_adapter) != 0):
+        print("[service] rebuild stopped: runner deployment failed")
+        raise typer.Exit(1)
     steps = [("infrastructure", service_ops.ensure_infra)]
     if backend:
         steps.append(("backend dependencies", lambda: service_ops.sync_backend(services)))
