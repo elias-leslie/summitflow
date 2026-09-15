@@ -727,6 +727,29 @@ def research_close_cohort(
     )
 
 
+@research_app.command("finalize-accounting")
+@usage(
+    surface="st.neri.research.cohort.finalize_accounting",
+    cmd="st neri research finalize-accounting <cohort-id> --file accounting.json [--id UUID]",
+    when="freeze the commercial measurement cutoff after research and later handling finish",
+    precautions=(
+        "research closure must already exist; retain every registered case",
+        "complete accounting requires exact final outcomes and known time/direct costs",
+        "later payments or costs do not rewrite this immutable as-of measurement",
+    ),
+    task_types=("neri", "security-research"),
+)
+def research_finalize_accounting(
+    cohort_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    request_id: Annotated[UUID | None, typer.Option("--id")] = None,
+) -> None:
+    request(
+        f"/api/research/evaluation-cohorts/{cohort_id}/accounting-closure",
+        read_object(file, request_id=request_id, identified=True),
+    )
+
+
 @research_app.command("work")
 @usage(
     surface="st.neri.research.work",

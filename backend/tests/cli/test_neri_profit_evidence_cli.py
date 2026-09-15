@@ -62,9 +62,16 @@ def test_profit_evidence_writes_retain_or_allocate_exact_ids(tmp_path: Path) -> 
         "cohort_id": COHORT_ID,
         "work_kind": "reasoning",
     }
+    accounting_payload = {
+        "request_key": "accounting-one",
+        "status": "stopped",
+        "case_dispositions": [],
+        "reason": "Measurement stopped.",
+    }
     cohort_file = write_json(tmp_path / "cohort.json", cohort_payload)
     closure_file = write_json(tmp_path / "closure.json", closure_payload)
     work_file = write_json(tmp_path / "work.json", work_payload)
+    accounting_file = write_json(tmp_path / "accounting.json", accounting_payload)
     application_file = write_json(tmp_path / "application.json", {
         "request_key": "application-one",
         "expected_source_digest": "a" * 64,
@@ -89,6 +96,13 @@ def test_profit_evidence_writes_retain_or_allocate_exact_ids(tmp_path: Path) -> 
                 "--file", str(work_file), "--id", REQUEST_ID,
             ],
         )
+        finalize = runner.invoke(
+            app,
+            [
+                "research", "finalize-accounting", COHORT_ID,
+                "--file", str(accounting_file), "--id", REQUEST_ID,
+            ],
+        )
         snapshot_application = runner.invoke(
             app,
             [
@@ -98,7 +112,7 @@ def test_profit_evidence_writes_retain_or_allocate_exact_ids(tmp_path: Path) -> 
         )
 
     assert (
-        register.exit_code == close.exit_code == record.exit_code
+        register.exit_code == close.exit_code == finalize.exit_code == record.exit_code
         == snapshot_application.exit_code == 0
     )
     assert request.call_args_list == [
@@ -113,6 +127,10 @@ def test_profit_evidence_writes_retain_or_allocate_exact_ids(tmp_path: Path) -> 
         call(
             f"/api/runs/{RUN_ID}/research-work-receipts",
             {**work_payload, "id": REQUEST_ID},
+        ),
+        call(
+            f"/api/research/evaluation-cohorts/{COHORT_ID}/accounting-closure",
+            {**accounting_payload, "id": REQUEST_ID},
         ),
         call(
             f"/api/runs/{RUN_ID}/application-evidence-snapshots",
