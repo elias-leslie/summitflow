@@ -39,7 +39,9 @@ program_app = typer.Typer(help="Maintain passive disclosure programs and exact p
 target_programs_app = typer.Typer(help="Record exact target applicability and its revision history")
 runtime_app = typer.Typer(help="Inspect or operate Neri's emergency admission stop")
 research_app = typer.Typer(help="Read research capability progress and save exact associations")
-worker_app = typer.Typer(help="Use and evaluate Agent Hub's bounded passive local Neri worker")
+worker_app = typer.Typer(
+    help="Inspect the bounded local candidate and Neri-owned qualification evidence"
+)
 app.add_typer(evidence_app, name="evidence")
 app.add_typer(notes_app, name="notes")
 app.add_typer(report_app, name="report")
@@ -653,6 +655,110 @@ def research_record_outcome(investigation_id: UUID, file: Annotated[Path, typer.
                             request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
     request(f"/api/runs/{investigation_id}/commercial-outcomes",
             read_object(file, request_id=request_id, identified=True))
+
+
+@research_app.command("cohorts")
+@usage(
+    surface="st.neri.research.cohorts",
+    cmd="st neri research cohorts",
+    when="read prospective fixed-denominator evaluation cohorts and economics",
+    precautions=(
+        "read-only; observed margin is not a statistical guarantee of future profit",
+        "unknown cost or human time blocks a complete economics claim",
+    ),
+    task_types=("neri", "security-research"),
+)
+def research_cohorts() -> None:
+    request("/api/research/evaluation-cohorts")
+
+
+@research_app.command("cohort")
+@usage(
+    surface="st.neri.research.cohort",
+    cmd="st neri research cohort <cohort-id>",
+    when="inspect one exact cohort, case denominator, work receipts, closure and economics",
+    precautions=("read-only; preserve exact program, capability and configuration identities",),
+    task_types=("neri", "security-research"),
+)
+def research_cohort(cohort_id: UUID) -> None:
+    request(f"/api/research/evaluation-cohorts/{cohort_id}")
+
+
+@research_app.command("register-cohort")
+@usage(
+    surface="st.neri.research.cohort.register",
+    cmd="st neri research register-cohort --file cohort.json [--id UUID]",
+    when="freeze a prospective evaluation before result-generating work",
+    precautions=(
+        "requires exact current program scope, target build, capability/configuration and cases",
+        "new opportunities or material configuration changes require a successor cohort",
+    ),
+    task_types=("neri", "security-research"),
+)
+def research_register_cohort(
+    file: Annotated[Path, typer.Option()],
+    request_id: Annotated[UUID | None, typer.Option("--id")] = None,
+) -> None:
+    request(
+        "/api/research/evaluation-cohorts",
+        read_object(file, request_id=request_id, identified=True),
+    )
+
+
+@research_app.command("close-cohort")
+@usage(
+    surface="st.neri.research.cohort.close",
+    cmd="st neri research close-cohort <cohort-id> --file closure.json [--id UUID]",
+    when="append the one outcome-independent closure assessment for a frozen cohort",
+    precautions=(
+        "must retain every registered case and frozen coverage item",
+        "closure never authorizes submission or infers finding validity/payment",
+    ),
+    task_types=("neri", "security-research"),
+)
+def research_close_cohort(
+    cohort_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    request_id: Annotated[UUID | None, typer.Option("--id")] = None,
+) -> None:
+    request(
+        f"/api/research/evaluation-cohorts/{cohort_id}/closure",
+        read_object(file, request_id=request_id, identified=True),
+    )
+
+
+@research_app.command("work")
+@usage(
+    surface="st.neri.research.work",
+    cmd="st neri research work <investigation-id>",
+    when="read immutable research work receipts for an investigation",
+    precautions=("read-only; zero and unknown measurements have distinct meanings",),
+    task_types=("neri", "security-research"),
+)
+def research_work(investigation_id: UUID) -> None:
+    request(f"/api/runs/{investigation_id}/research-work-receipts")
+
+
+@research_app.command("record-work")
+@usage(
+    surface="st.neri.research.work.record",
+    cmd="st neri research record-work <investigation-id> --file receipt.json [--id UUID]",
+    when="append measured agent, tool and owner work to a prospective cohort",
+    precautions=(
+        "requires exact cohort/case/configuration and evidence references",
+        "never coerce missing time, token usage or direct cost to zero",
+    ),
+    task_types=("neri", "security-research"),
+)
+def research_record_work(
+    investigation_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    request_id: Annotated[UUID | None, typer.Option("--id")] = None,
+) -> None:
+    request(
+        f"/api/runs/{investigation_id}/research-work-receipts",
+        read_object(file, request_id=request_id, identified=True),
+    )
 
 
 @app.command()
