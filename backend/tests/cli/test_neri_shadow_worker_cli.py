@@ -9,6 +9,7 @@ from unittest.mock import call, patch
 import httpx
 from typer.testing import CliRunner
 
+from cli.commands import neri
 from cli.commands.neri import app
 
 RUN_ID = "11111111-1111-4111-8111-111111111111"
@@ -105,6 +106,7 @@ def test_worker_shadow_binds_positional_run_and_preserves_reusable_packet(tmp_pa
             "run_id": RUN_ID,
         },
         identity_field="request_id",
+        timeout=neri.LOCAL_WORKER_SHADOW_TIMEOUT_SECONDS,
     )
 
 

@@ -58,6 +58,7 @@ NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url=
 NERI_LOCAL_WORKER_QUALIFICATION_PATH = "/api/research/local-worker/qualification"
 NERI_LOCAL_WORKER_QUALIFICATION_DECISIONS_PATH = f"{NERI_LOCAL_WORKER_QUALIFICATION_PATH}/decisions"
 NERI_LOCAL_WORKER_SHADOW_ASSIGNMENTS_PATH = "/api/research/local-worker/shadow-assignments"
+LOCAL_WORKER_SHADOW_TIMEOUT_SECONDS = 330.0
 
 
 class Action(StrEnum):
@@ -127,7 +128,8 @@ EvidenceId = Annotated[str, typer.Argument(parser=evidence_identifier, help="UUI
 
 
 def request(path: str, body: dict | None = None, *, method: str | None = None, emit: bool = True,
-            identity_field: Literal["id", "mutation_id", "request_id"] = "id") -> Any:
+            identity_field: Literal["id", "mutation_id", "request_id"] = "id",
+            timeout: float = 30.0) -> Any:
     """Use the shared project transport once; never echo failed input or credentials."""
     identity = {}
     if body and identity_field in body:
@@ -136,7 +138,7 @@ def request(path: str, body: dict | None = None, *, method: str | None = None, e
             identity["request_id"] = str(UUID(body[identity_field]))
     resolved = resolve_api_url(NERI_API)
     try:
-        with ProjectApiClient(resolved.url) as client:
+        with ProjectApiClient(resolved.url, timeout=timeout) as client:
             if method == "PUT":
                 result = client.put(path, json_body=body)
             elif method == "PATCH":
@@ -433,6 +435,7 @@ def local_worker_shadow(
         NERI_LOCAL_WORKER_SHADOW_ASSIGNMENTS_PATH,
         bind_local_worker_run(payload, run_id),
         identity_field="request_id",
+        timeout=LOCAL_WORKER_SHADOW_TIMEOUT_SECONDS,
     )
 
 
