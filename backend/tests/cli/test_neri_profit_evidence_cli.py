@@ -27,12 +27,21 @@ def test_profit_evidence_reads_use_exact_neri_routes() -> None:
         cohorts = runner.invoke(app, ["research", "cohorts"])
         cohort = runner.invoke(app, ["research", "cohort", COHORT_ID])
         work = runner.invoke(app, ["research", "work", RUN_ID])
+        application = runner.invoke(app, ["research", "application", RUN_ID])
+        application_snapshots = runner.invoke(
+            app, ["research", "application-snapshots", RUN_ID]
+        )
 
-    assert cohorts.exit_code == cohort.exit_code == work.exit_code == 0
+    assert (
+        cohorts.exit_code == cohort.exit_code == work.exit_code
+        == application.exit_code == application_snapshots.exit_code == 0
+    )
     assert request.call_args_list == [
         call("/api/research/evaluation-cohorts"),
         call(f"/api/research/evaluation-cohorts/{COHORT_ID}"),
         call(f"/api/runs/{RUN_ID}/research-work-receipts"),
+        call(f"/api/runs/{RUN_ID}/application-evidence-projection"),
+        call(f"/api/runs/{RUN_ID}/application-evidence-snapshots"),
     ]
 
 
@@ -56,6 +65,10 @@ def test_profit_evidence_writes_retain_or_allocate_exact_ids(tmp_path: Path) -> 
     cohort_file = write_json(tmp_path / "cohort.json", cohort_payload)
     closure_file = write_json(tmp_path / "closure.json", closure_payload)
     work_file = write_json(tmp_path / "work.json", work_payload)
+    application_file = write_json(tmp_path / "application.json", {
+        "request_key": "application-one",
+        "expected_source_digest": "a" * 64,
+    })
 
     with patch("cli.commands.neri.request") as request:
         register = runner.invoke(
@@ -76,8 +89,18 @@ def test_profit_evidence_writes_retain_or_allocate_exact_ids(tmp_path: Path) -> 
                 "--file", str(work_file), "--id", REQUEST_ID,
             ],
         )
+        snapshot_application = runner.invoke(
+            app,
+            [
+                "research", "snapshot-application", RUN_ID,
+                "--file", str(application_file), "--id", REQUEST_ID,
+            ],
+        )
 
-    assert register.exit_code == close.exit_code == record.exit_code == 0
+    assert (
+        register.exit_code == close.exit_code == record.exit_code
+        == snapshot_application.exit_code == 0
+    )
     assert request.call_args_list == [
         call(
             "/api/research/evaluation-cohorts",
@@ -90,6 +113,14 @@ def test_profit_evidence_writes_retain_or_allocate_exact_ids(tmp_path: Path) -> 
         call(
             f"/api/runs/{RUN_ID}/research-work-receipts",
             {**work_payload, "id": REQUEST_ID},
+        ),
+        call(
+            f"/api/runs/{RUN_ID}/application-evidence-snapshots",
+            {
+                "request_key": "application-one",
+                "expected_source_digest": "a" * 64,
+                "id": REQUEST_ID,
+            },
         ),
     ]
 

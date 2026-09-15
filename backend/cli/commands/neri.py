@@ -761,6 +761,58 @@ def research_record_work(
     )
 
 
+@research_app.command("application")
+@usage(
+    surface="st.neri.research.application",
+    cmd="st neri research application <investigation-id>",
+    when="inspect the experimental passive application-evidence projection",
+    precautions=(
+        "read-only; static candidates do not establish reachability or vulnerability",
+        "projection executes no JavaScript, follows no links and calls no model",
+    ),
+    task_types=("neri", "security-research"),
+)
+def research_application(investigation_id: UUID) -> None:
+    request(f"/api/runs/{investigation_id}/application-evidence-projection")
+
+
+@research_app.command("application-snapshots")
+@usage(
+    surface="st.neri.research.application.snapshots",
+    cmd="st neri research application-snapshots <investigation-id>",
+    when="read immutable application-evidence snapshot history",
+    precautions=("read-only; preserve source and build identities",),
+    task_types=("neri", "security-research"),
+)
+def research_application_snapshots(investigation_id: UUID) -> None:
+    request(f"/api/runs/{investigation_id}/application-evidence-snapshots")
+
+
+@research_app.command("snapshot-application")
+@usage(
+    surface="st.neri.research.application.snapshot",
+    cmd=(
+        "st neri research snapshot-application <investigation-id> "
+        "--file snapshot.json [--id UUID]"
+    ),
+    when="freeze the current exact application-evidence source projection",
+    precautions=(
+        "server rejects a stale source digest",
+        "saving a projection performs no target interaction and grants no capability credit",
+    ),
+    task_types=("neri", "security-research"),
+)
+def research_snapshot_application(
+    investigation_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    request_id: Annotated[UUID | None, typer.Option("--id")] = None,
+) -> None:
+    request(
+        f"/api/runs/{investigation_id}/application-evidence-snapshots",
+        read_object(file, request_id=request_id, identified=True),
+    )
+
+
 @app.command()
 @usage(surface="st.neri.capabilities", cmd="st neri capabilities [--full]", when="discover Neri API payload contracts", precautions=("read-only; compact output omits schemas and --full returns every payload schema",), task_types=("neri",))
 def capabilities(full: bool = False) -> None:
