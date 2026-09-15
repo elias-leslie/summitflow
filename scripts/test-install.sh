@@ -6,7 +6,8 @@
 #   test-install.sh                    # Full cycle: clone → install → verify → destroy
 #   test-install.sh --keep             # Keep VM after test (for debugging)
 #   test-install.sh --vm-id 101        # Use specific VM ID
-#   test-install.sh --existing         # Test on existing VM 100 (no clone/destroy)
+#   test-install.sh --existing --vm-id 101 # Reset an explicit disposable test VM
+# VM 100 is the persistent st-browser runtime, never an installer test target.
 
 set -euo pipefail
 
@@ -109,12 +110,32 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --keep) KEEP=true; shift ;;
         --vm-id) VM_ID="$2"; shift 2 ;;
-        --existing) EXISTING=true; VM_ID="${PROXMOX_TEST_VM:-100}"; shift ;;
+        --existing) EXISTING=true; shift ;;
         *) echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
 
-[[ -z "$VM_ID" ]] && VM_ID="$DEFAULT_VM_ID"
+if [[ -z "$VM_ID" ]]; then
+    if [[ "$EXISTING" == true ]]; then
+        VM_ID="${PROXMOX_TEST_VM:-}"
+        if [[ -z "$VM_ID" ]]; then
+            echo "An existing installer test requires an explicit --vm-id or PROXMOX_TEST_VM." >&2
+            exit 1
+        fi
+    else
+        VM_ID="$DEFAULT_VM_ID"
+    fi
+fi
+
+if [[ ! "$VM_ID" =~ ^[1-9][0-9]+$ ]]; then
+    echo "Select an explicit numeric VM ID without leading zeroes." >&2
+    exit 1
+fi
+
+if [[ "$VM_ID" == "100" || "$VM_ID" == "${ST_BROWSER_VM_ID:-100}" ]]; then
+    echo "Refusing installer test on the persistent browser VM ${VM_ID}; select a disposable test VM." >&2
+    exit 1
+fi
 
 # ─── Proxmox API helper ─────────────────────────────────────────
 pve_api() {
@@ -123,6 +144,12 @@ pve_api() {
     curl -sfk -X "$method" \
         -H "Authorization: PVEAPIToken=${PVE_TOKEN}=${PVE_SECRET}" \
         "${PVE_HOST}/api2/json${path}" "$@"
+}
+
+discover_vm_ip() {
+    pve_api GET "/nodes/${PVE_NODE}/qemu/${VM_ID}/agent/network-get-interfaces" \
+        | jq -r '.data.result[]? | select(.name != "lo") | .["ip-addresses"][]? | select(.["ip-address-type"] == "ipv4") | .["ip-address"]' \
+        | head -1
 }
 
 wait_for_task() {
@@ -244,11 +271,15 @@ echo ""
 
 if [[ "$EXISTING" == true ]]; then
     echo "Using existing VM ${VM_ID}"
-    VM_IP="${TEST_VM_HOST:-}"
-        if [[ -z "$VM_IP" ]]; then
-            echo "Set TEST_VM_HOST when using --existing." >&2
-            exit 1
-        fi
+    VM_IP=$(discover_vm_ip)
+    if [[ -z "$VM_IP" ]]; then
+        echo "Could not discover the selected existing VM address; refusing reset." >&2
+        exit 1
+    fi
+    if [[ -n "${TEST_VM_HOST:-}" && "$TEST_VM_HOST" != "$VM_IP" ]]; then
+        echo "TEST_VM_HOST does not match the selected VM; refusing reset." >&2
+        exit 1
+    fi
 else
     # Clone from template
     echo "Cloning template ${TEMPLATE_ID} → VM ${VM_ID} (${VM_NAME})..."
@@ -268,9 +299,7 @@ else
     # Discover IP via QEMU guest agent
     echo "Discovering VM IP..."
     for i in $(seq 1 30); do
-        VM_IP=$(pve_api GET "/nodes/${PVE_NODE}/qemu/${VM_ID}/agent/network-get-interfaces" 2>/dev/null \
-            | jq -r '.data.result[]? | select(.name != "lo") | .["ip-addresses"][]? | select(.["ip-address-type"] == "ipv4") | .["ip-address"]' \
-            | head -1 || true)
+        VM_IP=$(discover_vm_ip 2>/dev/null || true)
         [[ -n "$VM_IP" ]] && break
         sleep 5
     done
