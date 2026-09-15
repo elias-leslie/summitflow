@@ -46,6 +46,7 @@ def transport(monkeypatch):
     (["research", "catalogue", "--full"], "/api/research/capabilities?compact=false"),
     (["research", "show", "authorization.object-boundary.differential"], "/api/research/capabilities/authorization.object-boundary.differential"),
     (["research", "show", "identity/session", "--version", "1.1.0"], "/api/research/capabilities/identity%2Fsession?version=1.1.0"),
+    (["research", "case-schema", "identity/session", "--version", "1.1.0"], "/api/research/case-schema/identity%2Fsession?version=1.1.0"),
     (["research", "matrix"], "/api/research/matrix"),
     (["research", "context", INVESTIGATION], f"/api/runs/{INVESTIGATION}/research-context"),
     (["research", "context", INVESTIGATION, "--previous-digest", "b" * 64], f"/api/runs/{INVESTIGATION}/research-context?previous_digest={'b' * 64}"),
@@ -133,6 +134,75 @@ def test_exact_severity_not_found_does_not_fall_back_to_assessment_history(trans
     assert result.exit_code == 1
     assert json.loads(result.output)["status"] == 404
     assert calls == [("GET", f"/api/runs/{INVESTIGATION}/reports/{RECORD}/severity-assessments/{OTHER}", None)]
+
+
+@pytest.mark.parametrize(("args", "path"), [
+    (
+        ["research", "prepare-case", INVESTIGATION],
+        f"/api/runs/{INVESTIGATION}/research-cases/prepare",
+    ),
+    (
+        ["research", "associate-case", INVESTIGATION, RECORD],
+        f"/api/runs/{INVESTIGATION}/research-cases/{RECORD}/associate",
+    ),
+    (
+        ["research", "invalidate-case", INVESTIGATION, RECORD],
+        f"/api/runs/{INVESTIGATION}/research-cases/{RECORD}/invalidate",
+    ),
+])
+def test_research_case_rails_send_compact_payload_without_client_side_identity(
+    transport, args, path,
+):
+    calls, _ = transport
+    payload = {"request_key": "stable-case-request", "objective": "One bounded case."}
+    result = CliRunner().invoke(
+        neri.app, [*args, "--file", "-"], input=json.dumps(payload),
+    )
+    assert result.exit_code == 0, result.output
+    assert calls == [("POST", path, payload)]
+
+
+def test_structured_neri_problem_is_safe_and_actionable(transport):
+    _calls, response = transport
+    response.status = 422
+    response.body = {
+        "detail": {
+            "code": "report_revision_invalid",
+            "message": "private-sentinel-message",
+            "field": "private-sentinel-field",
+            "untrusted_extra": "must-not-leak",
+        }
+    }
+    result = CliRunner().invoke(
+        neri.app,
+        ["research", "associate-case", INVESTIGATION, RECORD, "--file", "-"],
+        input=json.dumps({"request_key": "safe-error"}),
+    )
+    assert result.exit_code == 1
+    output = json.loads(result.output)
+    assert output["problem"] == {
+        "code": "report_revision_invalid",
+        "message": "Use an exact report revision from this investigation.",
+        "field": "report_revision_id",
+    }
+    assert "must-not-leak" not in result.output
+    assert "private-sentinel" not in result.output
+
+    response.body = {
+        "detail": {
+            "code": "private-sentinel-code",
+            "message": "private-sentinel-message",
+            "field": "private-sentinel-field",
+        }
+    }
+    unknown = CliRunner().invoke(
+        neri.app,
+        ["research", "associate-case", INVESTIGATION, RECORD, "--file", "-"],
+        input=json.dumps({"request_key": "safe-error"}),
+    )
+    assert unknown.exit_code == 1
+    assert "problem" not in json.loads(unknown.output)
+    assert "private-sentinel" not in unknown.output
 
 
 MUTATIONS = [
@@ -620,6 +690,8 @@ def test_lean_surface_is_discoverable_and_retired_groups_are_gone():
             "st.neri.target.programs.list", "st.neri.target.programs.bind",
             "st.neri.target.programs.show", "st.neri.target.programs.history"} <= surfaces
     assert {"st.neri.research.catalogue", "st.neri.research.show", "st.neri.research.matrix",
+            "st.neri.research.case-schema", "st.neri.research.prepare-case",
+            "st.neri.research.associate-case", "st.neri.research.invalidate-case",
             "st.neri.research.context", "st.neri.research.recommend",
             "st.neri.research.links", "st.neri.research.associate",
             "st.neri.research.snapshot", "st.neri.research.snapshots",

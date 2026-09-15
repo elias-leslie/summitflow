@@ -61,6 +61,31 @@ NERI_LOCAL_WORKER_QUALIFICATION_PATH = "/api/research/local-worker/qualification
 NERI_LOCAL_WORKER_QUALIFICATION_DECISIONS_PATH = f"{NERI_LOCAL_WORKER_QUALIFICATION_PATH}/decisions"
 NERI_LOCAL_WORKER_SHADOW_ASSIGNMENTS_PATH = "/api/research/local-worker/shadow-assignments"
 LOCAL_WORKER_SHADOW_TIMEOUT_SECONDS = 330.0
+SAFE_NERI_PROBLEMS: dict[str, tuple[str, str | None]] = {
+    "control_evidence_incomplete": ("Add evidence for every required control.", "control_evidence"),
+    "control_evidence_unreviewed": ("Use control evidence covered by the exact review.", "control_evidence"),
+    "environment_mismatch": ("Use the environment pinned by the target.", "environment_kind"),
+    "evidence_reference_invalid": ("Use evidence saved in this investigation.", "evidence_refs"),
+    "missing_program_binding": ("Select the exact program and scope revision.", "program_binding_revision_id"),
+    "missing_required_tool": ("Include every tool required by this method.", "configuration_identity.tool_capability_ids"),
+    "report_revision_invalid": ("Use an exact report revision from this investigation.", "report_revision_id"),
+    "request_identity_conflict": ("This retry key belongs to different content.", "request_key"),
+    "request_key_conflict": ("This request key already belongs to another record.", "request_key"),
+    "research_case_invalid": ("The research case is not valid.", None),
+    "result_already_associated": ("This prospective case already has a saved result.", "selection_id"),
+    "review_revision_invalid": ("Use the review bound to the exact report.", "review_revision_id"),
+    "safety_policy_mismatch": ("Reload and acknowledge the current method safety rules.", "configuration_identity.safety_policy_digest"),
+    "selection_already_closed": ("This prospective case already has a closeout record.", "selection_id"),
+    "selection_already_exists": ("This prospective case selection already exists.", "request_key"),
+    "selection_has_result": ("A reviewed result cannot be replaced by case invalidation.", "selection_id"),
+    "selection_invalidated": ("This prospective case was closed without method evidence.", "selection_id"),
+    "selection_mismatch": ("Use the selection for this exact planned case.", "selection_link_id"),
+    "selection_not_found": ("The prospective case selection was not found.", "selection_id"),
+    "target_build_mismatch": ("Use the build pinned by this investigation.", "configuration_identity.target_build_identity"),
+    "target_manifest_mismatch": ("Reload the investigation's pinned target.", "run_id"),
+    "tool_not_permitted": ("Remove tools that are not allowed for this target.", "additional_tool_capability_ids"),
+    "unknown_capability_revision": ("Reload and select an available research method revision.", "capability_id"),
+}
 
 
 class Action(StrEnum):
@@ -159,8 +184,28 @@ def request(path: str, body: dict | None = None, *, method: str | None = None, e
         raise typer.Exit(2) from None
     except APIError as exc:
         # Validation errors can contain raw evidence input, including credentials.
-        output_json({"ok": False, "error": "neri_api_error", "status": exc.status_code, **identity,
-                     "hint": "Check the API schema and current record; reuse the request ID only for identical content"})
+        problem = None
+        if isinstance(exc.detail, dict):
+            code = exc.detail.get("code")
+            safe_problem = SAFE_NERI_PROBLEMS.get(code) if isinstance(code, str) else None
+            if safe_problem:
+                message, field = safe_problem
+                problem = {"code": code, "message": message}
+                if field:
+                    problem["field"] = field
+        output_json({
+            "ok": False,
+            "error": "neri_api_error",
+            "status": exc.status_code,
+            **identity,
+            **({"problem": problem} if problem else {}),
+            "hint": (
+                "Correct the named field and retry with the same request key only when "
+                "the saved content is unchanged"
+                if problem else
+                "Check the API schema and current record; reuse the request ID only for identical content"
+            ),
+        })
         raise typer.Exit(1) from None
 
 
@@ -595,6 +640,13 @@ def research_show(capability_id: str, version: str | None = None) -> None:
     request(f"{path}?{urlencode({'version': version})}" if version else path)
 
 
+@research_app.command("case-schema")
+@usage(surface="st.neri.research.case-schema", cmd="st neri research case-schema <capability-id> [--version VERSION]", when="read only the inputs, controls and safety rules needed to prepare one capability case", precautions=("read-only method contract; it grants no target authority",), task_types=("neri", "security-research"))
+def research_case_schema(capability_id: str, version: str | None = None) -> None:
+    path = f"/api/research/case-schema/{quote(capability_id, safe='')}"
+    request(f"{path}?{urlencode({'version': version})}" if version else path)
+
+
 @research_app.command("matrix")
 @usage(surface="st.neri.research.matrix", cmd="st neri research matrix", when="read technical evidence, implementation readiness and commercial outcomes", precautions=("projection is evidence-derived; inspect denominators, counterevidence and contamination",), task_types=("neri", "security-research"))
 def research_matrix() -> None:
@@ -627,6 +679,44 @@ def research_associate(investigation_id: UUID, file: Annotated[Path, typer.Optio
                        request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
     request(f"/api/runs/{investigation_id}/research-links",
             read_object(file, request_id=request_id, identified=True))
+
+
+@research_app.command("prepare-case")
+@usage(surface="st.neri.research.prepare-case", cmd="st neri research prepare-case <investigation-id> --file case.json", when="derive and save a prospective capability selection from a compact case description", precautions=("server derives target build, environment, required tools, safety digest and configuration digest; a needs_input response writes no selection",), task_types=("neri", "security-research"))
+def research_prepare_case(
+    investigation_id: UUID,
+    file: Annotated[Path, typer.Option()],
+) -> None:
+    request(
+        f"/api/runs/{investigation_id}/research-cases/prepare",
+        read_object(file),
+    )
+
+
+@research_app.command("associate-case")
+@usage(surface="st.neri.research.associate-case", cmd="st neri research associate-case <investigation-id> <selection-id> --file result.json", when="bind an exact report, review and controls to a prospective capability selection", precautions=("server copies immutable selection identity; the report and review remain authoritative for the verdict",), task_types=("neri", "security-research"))
+def research_associate_case(
+    investigation_id: UUID,
+    selection_id: UUID,
+    file: Annotated[Path, typer.Option()],
+) -> None:
+    request(
+        f"/api/runs/{investigation_id}/research-cases/{selection_id}/associate",
+        read_object(file),
+    )
+
+
+@research_app.command("invalidate-case")
+@usage(surface="st.neri.research.invalidate-case", cmd="st neri research invalidate-case <investigation-id> <selection-id> --file closeout.json", when="close a prospective case whose tooling, evidence, scope or authorization became unsuitable", precautions=("does not create method counterevidence or erase saved history; use a reviewed result for actual method outcomes",), task_types=("neri", "security-research"))
+def research_invalidate_case(
+    investigation_id: UUID,
+    selection_id: UUID,
+    file: Annotated[Path, typer.Option()],
+) -> None:
+    request(
+        f"/api/runs/{investigation_id}/research-cases/{selection_id}/invalidate",
+        read_object(file),
+    )
 
 
 @research_app.command("snapshot")
