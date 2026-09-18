@@ -122,7 +122,8 @@ def build_project_urls(
     root_path: str | None,
     summitflow_hosted: bool = False,
 ) -> tuple[str | None, str | None]:
-    """Build canonical stored base/public URL values for a project."""
+    if base_url == "":
+        return "", normalize_url(public_url)
     normalized_base_url = normalize_url(base_url)
     normalized_public_url = normalize_url(public_url)
     hosted_url = get_hosted_project_url(

@@ -120,6 +120,7 @@ def test_session_start_without_shell_binds_native_harness(monkeypatch):
 
 
 def test_native_learning_operator_is_bound_to_a_term_session(monkeypatch):
+    monkeypatch.delenv("AICO_SESSION_ID", raising=False)
     monkeypatch.setenv("A_TERM_SESSION_ID", "a-term-session-one")
     monkeypatch.setenv("CODEX_THREAD_ID", "codex-thread-one")
 

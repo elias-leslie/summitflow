@@ -42,6 +42,8 @@ async def probe_project_health(
     health_endpoint: str,
 ) -> tuple[str, str]:
     """Return a lightweight health label for project listings."""
+    if not base_url:
+        return project_id, "healthy"
     try:
         response = await client.get(f"{base_url}{health_endpoint}")
     except httpx.HTTPError:
@@ -128,6 +130,13 @@ async def check_registered_project_health(project_id: str) -> ProjectHealthRespo
         from fastapi import HTTPException
 
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+    if not row[0]:
+        return ProjectHealthResponse(
+            project_id=project_id,
+            healthy=True,
+            checked_at=datetime.now(UTC),
+        )
 
     url = f"{row[0]}{row[1]}"
     try:

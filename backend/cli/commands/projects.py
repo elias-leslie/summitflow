@@ -227,6 +227,10 @@ def create_project(
         bool,
         typer.Option("--initial-backup/--no-initial-backup", help="Queue an initial baseline backup during onboarding"),
     ] = True,
+    native: Annotated[
+        bool,
+        typer.Option("--native/--no-native", help="Register a native/standalone project without a web runtime URL"),
+    ] = False,
 ) -> None:
     """Create a new project.
 
@@ -234,6 +238,7 @@ def create_project(
         st projects create persona-sandbox "Persona Sandbox" --base-url http://localhost:3003
         st projects create my-app "My App" -u http://localhost:8080 -r /home/user/my-app
         st projects create test2 "Testbed" --summitflow-hosted --permission-tier full --auto-exec
+        st projects create fydor "Fydor" --native -r /srv/workspaces/projects/fydor
     """
     effective_onboard = summitflow_hosted if onboard is None else onboard
 
@@ -244,6 +249,7 @@ def create_project(
         root_path,
         health_endpoint,
         summitflow_hosted=summitflow_hosted,
+        native=native,
         permission_tier=permission_tier,
         auto_exec_enabled=auto_exec_enabled,
         execution_start_hour=execution_start_hour,

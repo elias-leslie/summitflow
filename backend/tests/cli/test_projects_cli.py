@@ -243,3 +243,19 @@ def test_projects_onboard_queues_standard_payload() -> None:
             "queue_initial_backup": False,
         },
     )
+
+
+def test_projects_create_native_without_base_url() -> None:
+    with patch(
+        "cli.commands._projects_helpers.projects_api",
+        return_value={"id": "fydor", "name": "Fydor", "base_url": ""},
+    ) as mock_projects_api:
+        result = runner.invoke(app, ["create", "fydor", "Fydor", "--native", "-r", "/srv/workspaces/projects/fydor"])
+
+    assert result.exit_code == 0
+    assert "Created project 'fydor'" in result.output
+    body = mock_projects_api.call_args.kwargs["json"]
+    assert body["native"] is True
+    assert body["base_url"] == ""
+    assert body["root_path"] == "/srv/workspaces/projects/fydor"
+

@@ -33,6 +33,8 @@ def resolve_project_create_urls(project: ProjectCreate) -> tuple[str, str | None
         summitflow_hosted=project.summitflow_hosted,
     )
     if not effective_base_url:
+        if project.native or project.base_url == "":
+            return "", None
         raise HTTPException(status_code=400, detail=ERR_BASE_URL_REQUIRED)
     return effective_base_url, effective_public_url
 

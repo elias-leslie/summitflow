@@ -75,6 +75,7 @@ class ProjectCreate(BaseModel):
     backend_port: int | None = None  # Canonical backend port
     category: ProjectCategory = "dev"
     summitflow_hosted: bool = False
+    native: bool = False
     agent_hub_permission: ProjectPermissionBootstrap | None = None
     onboarding: ProjectOnboardingRequest | None = None
 

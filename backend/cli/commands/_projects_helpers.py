@@ -26,7 +26,7 @@ SUMMITFLOW_PROJECTS_ROOT = str(Path.home() / ".local" / "share" / "summitflow" /
 NO_PROJECTS_MSG = "No projects found or API unavailable"
 UNEXPECTED_RESPONSE_MSG = "Unexpected API response"
 CREATE_FIELDS_MSG = (
-    "Provide --base-url or use --summitflow-hosted with backend-hosted defaults configured"
+    "Provide --base-url, use --native for standalone/no-runtime projects, or use --summitflow-hosted with backend-hosted defaults configured"
 )
 UPDATE_FIELDS_MSG = (
     "At least one field must be provided "
@@ -99,6 +99,7 @@ def _create_project_body(
     root_path: str | None,
     health_endpoint: str,
     summitflow_hosted: bool,
+    native: bool = False,
     permission_tier: str | None,
     auto_exec_enabled: bool | None,
     execution_start_hour: int | None,
@@ -117,9 +118,12 @@ def _create_project_body(
         "name": name,
         "health_endpoint": health_endpoint,
     }
+    if native:
+        body["native"] = True
+    effective_base_url = "" if (native and base_url is None) else base_url
     optional_fields = _normalize_fields(
         {
-            "base_url": base_url,
+            "base_url": effective_base_url,
             "root_path": effective_root_path,
         }
     )
@@ -280,6 +284,7 @@ def run_create(
     root_path: str | None,
     health_endpoint: str,
     summitflow_hosted: bool = False,
+    native: bool = False,
     permission_tier: str | None = None,
     auto_exec_enabled: bool | None = None,
     execution_start_hour: int | None = None,
@@ -290,7 +295,7 @@ def run_create(
     queue_initial_backup: bool = True,
 ) -> None:
     """Implementation for `projects create`."""
-    if not base_url and not summitflow_hosted:
+    if not base_url and not summitflow_hosted and not native:
         output_error(CREATE_FIELDS_MSG)
         raise typer.Exit(1)
 
@@ -301,6 +306,7 @@ def run_create(
         root_path=root_path,
         health_endpoint=health_endpoint,
         summitflow_hosted=summitflow_hosted,
+        native=native,
         permission_tier=permission_tier,
         auto_exec_enabled=auto_exec_enabled,
         execution_start_hour=execution_start_hour,

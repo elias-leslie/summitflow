@@ -1045,3 +1045,36 @@ def test_sync_project_identity_endpoint_reconciles_legacy_project_ids(client, mo
             conn.commit()
         project_identity_module._workspace_manifest_paths.cache_clear()
         project_identity_module._read_manifest.cache_clear()
+
+
+def test_create_native_project_without_runtime_url(client, monkeypatch) -> None:
+    """POST /api/projects with native=True should succeed without a base_url and report healthy."""
+    project_id = f"native-{uuid4().hex[:8]}"
+    root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
+    monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
+
+    try:
+        response = client.post(
+            "/api/projects",
+            json={
+                "id": project_id,
+                "name": "Native Project",
+                "native": True,
+                "root_path": root_path,
+            },
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["id"] == project_id
+        assert payload["base_url"] == ""
+
+        health_resp = client.get(f"/api/projects/{project_id}")
+        assert health_resp.status_code == 200
+        assert health_resp.json()["health_status"] == "healthy"
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
+
