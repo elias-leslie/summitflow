@@ -189,6 +189,7 @@ export interface AutonomousExecutionSettings {
   max_tasks_per_day: number | null
   cooldown_minutes: number
   allowed_types: string[] | null
+  external_origins: string[] | null
   max_self_fix_attempts: number
   max_supervisor_attempts: number
   max_extensions: number
@@ -211,6 +212,7 @@ export interface AutonomousExecutionSettingsUpdate {
   max_tasks_per_day?: number | null
   cooldown_minutes?: number
   allowed_types?: string[] | null
+  external_origins?: string[] | null
   max_self_fix_attempts?: number
   max_supervisor_attempts?: number
   max_extensions?: number

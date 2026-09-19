@@ -86,6 +86,13 @@ export function useAutonomousSettingsHandlers(
       : [...current, taskType]
     mutate({ allowed_types: next })
   }
+  const handleExternalOriginsChange = (value: string) => {
+    const origins = value
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+    mutate({ external_origins: origins.length ? origins : null })
+  }
   // --- Self-healing ---
   const handleSelfFixAttemptsChange = makeBoundedIntHandler(
     mutate,
@@ -131,6 +138,7 @@ export function useAutonomousSettingsHandlers(
     handleUpkeepFrequencyChange,
     handleUpkeepBatchLimitChange,
     handleTaskTypeToggle,
+    handleExternalOriginsChange,
     handleSelfFixAttemptsChange,
     handleSupervisorAttemptsChange,
     handleExtensionsChange,

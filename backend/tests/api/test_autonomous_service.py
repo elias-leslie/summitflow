@@ -32,6 +32,7 @@ def test_get_autonomous_settings_reads_extended_agent_config() -> None:
             "autonomous_max_tasks_per_day": 7,
             "autonomous_cooldown_minutes": 15,
             "autonomous_allowed_types": ["bug"],
+            "autonomous_external_origins": ["agent-hub-context-maintenance"],
             "autonomous_max_self_fix_attempts": 4,
             "autonomous_max_supervisor_attempts": 5,
             "autonomous_max_extensions": 2,
@@ -54,6 +55,7 @@ def test_get_autonomous_settings_reads_extended_agent_config() -> None:
     assert settings.max_tasks_per_day == 7
     assert settings.cooldown_minutes == 15
     assert settings.allowed_types == ["bug"]
+    assert settings.external_origins == ["agent-hub-context-maintenance"]
     assert settings.max_self_fix_attempts == 4
     assert settings.max_supervisor_attempts == 5
     assert settings.max_extensions == 2

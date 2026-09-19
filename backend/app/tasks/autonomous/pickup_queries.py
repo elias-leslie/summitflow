@@ -10,6 +10,7 @@ from typing import Any
 
 from app.services.task_execution_readiness import load_task_execution_readiness
 from app.storage import tasks as task_store
+from app.storage.agent_configs_autonomous import get_allowed_external_origins
 from app.storage.connection import get_cursor
 from app.storage.subtasks import get_subtasks_for_task
 from app.storage.task_spirit import get_task_spirit
@@ -71,15 +72,25 @@ def get_queued_autonomous_tasks(project_id: str, limit: int = 10) -> list[dict[s
     Returns:
         List of task dicts with id, title, task_type, complexity, status
     """
+    allowed_origins = get_allowed_external_origins(project_id)
+    origin_clause = ""
+    params: list[Any] = [project_id]
+    if allowed_origins is not None:
+        origin_clause = "AND EXISTS (SELECT 1 FROM task_external_requests ter WHERE ter.task_id = tasks.id AND ter.external_origin = ANY(%s))"
+        params.append(allowed_origins)
+    params.append(limit)
     with get_cursor() as cur:
         cur.execute(
-            """
-            SELECT id, title, task_type, complexity, status
+            f"""
+            SELECT id, title, task_type, complexity, status,
+                   (SELECT ter.external_origin FROM task_external_requests ter
+                    WHERE ter.task_id = tasks.id ORDER BY ter.external_origin LIMIT 1)
             FROM tasks
             WHERE project_id = %s
               AND status = 'pending'
               AND COALESCE(verification_result->'closeout'->>'state', '') <> 'pending'
               AND execution_mode = 'autonomous'
+              {origin_clause}
               AND (claimed_by IS NULL OR lock_expires_at < NOW())
             ORDER BY
                 priority ASC,
@@ -87,7 +98,7 @@ def get_queued_autonomous_tasks(project_id: str, limit: int = 10) -> list[dict[s
                 created_at ASC
             LIMIT %s
             """,
-            (project_id, limit),
+            tuple(params),
         )
         rows = cur.fetchall()
 
@@ -98,6 +109,7 @@ def get_queued_autonomous_tasks(project_id: str, limit: int = 10) -> list[dict[s
             "task_type": row[2],
             "complexity": row[3],
             "status": row[4],
+            "external_origin": row[5] if len(row) > 5 else None,
         }
         for row in rows
     ]

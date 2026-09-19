@@ -85,6 +85,9 @@ class AutonomousSettings(BaseModel):
     allowed_types: list[str] | None = Field(
         default=None, description="Task types allowed for autonomous execution (null = all types)"
     )
+    external_origins: list[str] | None = Field(
+        default=None, description="External origins allowed for autonomous pickup (null = all origins)"
+    )
 
     # Self-healing configuration
     max_self_fix_attempts: int = Field(
@@ -136,6 +139,7 @@ class AutonomousSettingsUpdate(BaseModel):
 
     # Allowed task types
     allowed_types: list[str] | None = None
+    external_origins: list[str] | None = None
 
     # Self-healing configuration
     max_self_fix_attempts: int | None = Field(default=None, ge=0, le=10)

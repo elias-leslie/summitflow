@@ -1,5 +1,7 @@
 import { Filter } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { Checkbox } from '../ui/checkbox'
+import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { TASK_TYPES } from './autonomous-utils'
 
@@ -7,13 +9,23 @@ interface TaskFilteringSectionProps {
   selectedTypes: string[]
   isPending: boolean
   onTaskTypeToggle: (taskType: string) => void
+  externalOrigins: string[] | null
+  onExternalOriginsChange: (value: string) => void
 }
 
 export function TaskFilteringSection({
   selectedTypes,
   isPending,
   onTaskTypeToggle,
+  externalOrigins,
+  onExternalOriginsChange,
 }: TaskFilteringSectionProps) {
+  const [draftOrigins, setDraftOrigins] = useState(
+    externalOrigins?.join(', ') ?? '',
+  )
+  useEffect(() => {
+    setDraftOrigins(externalOrigins?.join(', ') ?? '')
+  }, [externalOrigins])
   return (
     <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700 space-y-6">
       <h3 className="text-base font-medium text-slate-100 flex items-center gap-2">
@@ -46,6 +58,62 @@ export function TaskFilteringSection({
             All listed autonomous types allowed
           </p>
         )}
+      </div>
+      <div>
+        <Label
+          htmlFor="autonomous-external-origins"
+          className="text-slate-200 mb-2 block"
+        >
+          Work sources
+        </Label>
+        <p className="text-xs text-slate-400 mb-3">
+          Choose a source policy, or enter custom origins below.
+        </p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <button
+            type="button"
+            className="rounded border border-slate-600 px-3 py-1 text-xs text-slate-200"
+            onClick={() => {
+              setDraftOrigins('agent-hub-context-maintenance')
+              onExternalOriginsChange('agent-hub-context-maintenance')
+            }}
+            disabled={isPending}
+          >
+            Context maintenance only
+          </button>
+          <button
+            type="button"
+            className="rounded border border-slate-600 px-3 py-1 text-xs text-slate-200"
+            onClick={() => {
+              setDraftOrigins('')
+              onExternalOriginsChange('')
+            }}
+            disabled={isPending}
+          >
+            All work sources
+          </button>
+        </div>
+        <Label
+          htmlFor="autonomous-external-origins"
+          className="text-slate-300 text-sm mb-2 block"
+        >
+          Custom origins
+        </Label>
+        <Input
+          id="autonomous-external-origins"
+          value={draftOrigins}
+          onChange={(event) => setDraftOrigins(event.target.value)}
+          disabled={isPending}
+          placeholder="agent-hub-context-maintenance"
+        />
+        <button
+          type="button"
+          className="rounded border border-slate-600 px-3 py-1 text-xs text-slate-200 mt-2"
+          onClick={() => onExternalOriginsChange(draftOrigins)}
+          disabled={isPending}
+        >
+          Apply custom sources
+        </button>
       </div>
     </div>
   )

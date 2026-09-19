@@ -80,7 +80,15 @@ async def dispatch_task(task_id: str, project_id: str, *, manual_dispatch: bool 
         raise ValueError(f"Task {task_id} not found")
 
     task_type = str(task.get("task_type") or "").strip() or None
-    if guard_error := validate_autonomous_dispatch(project_id, task_type, require_enabled=not manual_dispatch):
+    if manual_dispatch:
+        guard_error = validate_autonomous_dispatch(project_id, task_type, require_enabled=False)
+    else:
+        guard_error = validate_autonomous_dispatch(
+            project_id,
+            task_type,
+            external_origin=task.get("external_origin"),
+        )
+    if guard_error:
         status = str(guard_error.get("status") or "blocked")
         reason = str(guard_error.get("reason") or status)
         logger.warning(

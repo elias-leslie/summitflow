@@ -252,13 +252,23 @@ async def execute_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
     task_type = str(task.get("task_type") or "").strip() or None
     claimed_by = str(task.get("claimed_by") or "").strip()
     preclaimed_execution = claimed_by.startswith(("pickup-", "dispatch-"))
-    if guard_error := validate_autonomous_dispatch(
-        input.project_id,
-        task_type,
-        require_enabled=not input.manual_dispatch,
-        exclude_task_id=input.task_id,
-        skip_concurrency=preclaimed_execution,
-    ):
+    if input.manual_dispatch:
+        guard_error = validate_autonomous_dispatch(
+            input.project_id,
+            task_type,
+            require_enabled=False,
+            exclude_task_id=input.task_id,
+            skip_concurrency=preclaimed_execution,
+        )
+    else:
+        guard_error = validate_autonomous_dispatch(
+            input.project_id,
+            task_type,
+            external_origin=task.get("external_origin"),
+            exclude_task_id=input.task_id,
+            skip_concurrency=preclaimed_execution,
+        )
+    if guard_error:
         status = str(guard_error.get("status") or "blocked")
         logger.warning(
             "Execution workflow blocked by autonomous guard",

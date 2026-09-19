@@ -53,6 +53,7 @@ class AgentConfig(TypedDict, total=False):
     autonomous_max_tasks_per_day: int | None  # Max tasks per day
     autonomous_cooldown_minutes: int  # Gap between autonomous dispatches
     autonomous_allowed_types: list[str] | None  # Allowed task types
+    autonomous_external_origins: list[str] | None  # External origins eligible for autonomous pickup
     autonomous_max_self_fix_attempts: int  # Max self-fix attempts
     autonomous_max_supervisor_attempts: int  # Max supervisor attempts
     autonomous_max_extensions: int  # Max extension requests

@@ -179,6 +179,8 @@ export function AutonomousSettingsPanel({
         selectedTypes={selectedTypes}
         isPending={isSaving}
         onTaskTypeToggle={handlers.handleTaskTypeToggle}
+        externalOrigins={settings.external_origins}
+        onExternalOriginsChange={handlers.handleExternalOriginsChange}
       />
 
       <QualityGateSection

@@ -97,7 +97,11 @@ def autonomous_work_pickup(
     """
     logger.info("Starting autonomous work pickup", project_id=project_id)
 
-    if error := validate_autonomous_dispatch(project_id, require_enabled=require_enabled):
+    if error := validate_autonomous_dispatch(
+        project_id,
+        require_enabled=require_enabled,
+        enforce_external_origin=False,
+    ):
         return error
 
     tasks = get_queued_autonomous_tasks(project_id, limit=limit)
@@ -166,7 +170,7 @@ def dispatch_task_immediate(
         )
         return dispatchable_error
 
-    if error := validate_autonomous_dispatch(project_id):
+    if error := validate_autonomous_dispatch(project_id, external_origin=task.get("external_origin")):
         return {**error, "task_id": task_id}
 
     if is_blocked(task_id):

@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from app.tasks.autonomous.pickup_guards import (
+    check_allowed_external_origin,
     check_allowed_task_type,
     check_autonomous_enabled,
     check_system_health,
@@ -13,6 +14,33 @@ from app.tasks.autonomous.pickup_guards import (
     get_concurrency_snapshot,
     validate_autonomous_dispatch,
 )
+
+
+def test_external_origin_allowlist_rejects_null_and_unrelated_origins() -> None:
+    with patch(
+        "app.tasks.autonomous.pickup_guards.get_allowed_external_origins",
+        return_value=["agent-hub-context-maintenance"],
+    ):
+        assert check_allowed_external_origin("summitflow", "agent-hub-context-maintenance") is None
+        assert check_allowed_external_origin("summitflow", None)["status"] == "external_origin_not_allowed"
+        assert check_allowed_external_origin("summitflow", "other-client")["status"] == "external_origin_not_allowed"
+
+
+def test_manual_dispatch_skips_external_origin_allowlist() -> None:
+    with (
+        patch("app.tasks.autonomous.pickup_guards.get_allowed_external_origins", return_value=["agent-hub-context-maintenance"]),
+        patch("app.tasks.autonomous.pickup_guards.check_agent_hub_execution_permission", return_value=None),
+        patch("app.tasks.autonomous.pickup_guards.check_work_pickup_enabled", return_value=None),
+        patch("app.tasks.autonomous.pickup_guards.check_system_health", return_value=None),
+        patch("app.tasks.autonomous.pickup_guards.check_concurrency_limit", return_value=None),
+        patch("app.tasks.autonomous.pickup_guards.check_max_tasks_per_day", return_value=None),
+        patch("app.tasks.autonomous.pickup_guards.check_cooldown_period", return_value=None),
+    ):
+        assert validate_autonomous_dispatch(
+            "summitflow",
+            require_enabled=False,
+            enforce_external_origin=False,
+        ) is None
 
 
 def _mock_response(data: dict) -> MagicMock:

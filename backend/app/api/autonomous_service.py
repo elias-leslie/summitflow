@@ -27,6 +27,7 @@ class _CoreSettingsPayload(TypedDict):
     max_tasks_per_day: int | None
     cooldown_minutes: int
     allowed_types: list[str] | None
+    external_origins: list[str] | None
 
 
 class _AdvancedSettingsPayload(TypedDict):
@@ -52,6 +53,12 @@ def _parse_core_settings(config: AgentConfig) -> _CoreSettingsPayload:
     max_tasks_per_day_raw = config.get("autonomous_max_tasks_per_day")
     max_tasks_per_day = int(max_tasks_per_day_raw) if max_tasks_per_day_raw else None
     allowed_types = normalize_allowed_task_types(config.get("autonomous_allowed_types"))
+    external_origins_raw = config.get("autonomous_external_origins")
+    external_origins = (
+        [str(origin).strip() for origin in external_origins_raw if str(origin).strip()]
+        if isinstance(external_origins_raw, list)
+        else None
+    )
     return {
         "frequency_minutes": frequency_minutes,
         "auto_merge_tiers": auto_merge_tiers,
@@ -63,6 +70,7 @@ def _parse_core_settings(config: AgentConfig) -> _CoreSettingsPayload:
         "max_tasks_per_day": max_tasks_per_day,
         "cooldown_minutes": int(config.get("autonomous_cooldown_minutes", 0) or 0),
         "allowed_types": allowed_types,
+        "external_origins": external_origins,
     }
 
 
@@ -110,6 +118,8 @@ def _build_updates(settings: AutonomousSettingsUpdate) -> AgentConfig:
         updates["autonomous_cooldown_minutes"] = settings.cooldown_minutes
     if settings.allowed_types is not None:
         updates["autonomous_allowed_types"] = settings.allowed_types
+    if "external_origins" in settings.model_fields_set:
+        updates["autonomous_external_origins"] = settings.external_origins
     if settings.max_self_fix_attempts is not None:
         updates["autonomous_max_self_fix_attempts"] = settings.max_self_fix_attempts
     if settings.max_supervisor_attempts is not None:

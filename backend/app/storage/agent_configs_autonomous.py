@@ -70,6 +70,16 @@ def get_allowed_task_types(project_id: str) -> list[str] | None:
     return normalize_allowed_task_types(config.get("autonomous_allowed_types"))
 
 
+def get_allowed_external_origins(project_id: str) -> list[str] | None:
+    """Return the optional autonomous external-origin allowlist."""
+    value = get_agent_config(project_id).get("autonomous_external_origins")
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        return None
+    return [origin for origin in (str(item).strip() for item in value) if origin]
+
+
 def get_max_self_fix_attempts(project_id: str) -> int:
     """Get max self-fix attempts before supervisor escalation.
 

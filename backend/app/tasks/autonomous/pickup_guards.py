@@ -11,6 +11,7 @@ from app.services._agent_hub_config import AGENT_HUB_URL, build_agent_hub_header
 from app.services.redis_pool import create_redis_client
 from app.storage import agent_configs
 from app.storage import tasks as task_store
+from app.storage.agent_configs_autonomous import get_allowed_external_origins
 from app.storage.connection import get_cursor
 
 # Constants
@@ -205,6 +206,20 @@ def check_allowed_task_type(project_id: str, task_type: str | None) -> dict[str,
     return None
 
 
+def check_allowed_external_origin(project_id: str, external_origin: str | None) -> dict[str, Any] | None:
+    """Return an error when configured autonomous pickup excludes the origin."""
+    allowed_origins = get_allowed_external_origins(project_id)
+    if allowed_origins is None:
+        return None
+    if external_origin not in allowed_origins:
+        return {
+            "status": "external_origin_not_allowed",
+            "external_origin": external_origin,
+            "allowed_external_origins": allowed_origins,
+        }
+    return None
+
+
 def check_system_health(project_id: str) -> dict[str, Any] | None:
     """Return error dict if any critical service is unhealthy, else None."""
     failing: list[str] = []
@@ -262,8 +277,10 @@ def check_task_dispatchable(task: dict[str, object]) -> dict[str, object] | None
 def validate_autonomous_dispatch(
     project_id: str,
     task_type: str | None = None,
+    external_origin: str | None = None,
     *,
     require_enabled: bool = True,
+    enforce_external_origin: bool | None = None,
     exclude_task_id: str | None = None,
     skip_concurrency: bool = False,
 ) -> dict[str, Any] | None:
@@ -288,6 +305,7 @@ def validate_autonomous_dispatch(
     for check in checks:
         if error := check(project_id):
             return error
-    if task_type is not None:
-        return check_allowed_task_type(project_id, task_type)
-    return None
+    if task_type is not None and (error := check_allowed_task_type(project_id, task_type)):
+        return error
+    should_enforce_origin = require_enabled if enforce_external_origin is None else enforce_external_origin
+    return check_allowed_external_origin(project_id, external_origin) if should_enforce_origin else None
