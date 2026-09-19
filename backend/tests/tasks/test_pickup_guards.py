@@ -22,8 +22,12 @@ def test_external_origin_allowlist_rejects_null_and_unrelated_origins() -> None:
         return_value=["agent-hub-context-maintenance"],
     ):
         assert check_allowed_external_origin("summitflow", "agent-hub-context-maintenance") is None
-        assert check_allowed_external_origin("summitflow", None)["status"] == "external_origin_not_allowed"
-        assert check_allowed_external_origin("summitflow", "other-client")["status"] == "external_origin_not_allowed"
+        missing_origin = check_allowed_external_origin("summitflow", None)
+        assert missing_origin is not None
+        assert missing_origin["status"] == "external_origin_not_allowed"
+        unrelated_origin = check_allowed_external_origin("summitflow", "other-client")
+        assert unrelated_origin is not None
+        assert unrelated_origin["status"] == "external_origin_not_allowed"
 
 
 def test_manual_dispatch_skips_external_origin_allowlist() -> None:
