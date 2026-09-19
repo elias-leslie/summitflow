@@ -19,6 +19,7 @@ from .._project_client import ProjectApi, ProjectApiClient, ProjectApiConnectErr
 from ..lib.usage import usage
 from ..output import output_json
 from ._api_paths import (
+    NERI_JEV_EVALUATE_PATH,
     NERI_LOCAL_WORKER_BENCHMARK_PATH,
     NERI_LOCAL_WORKER_EVALUATE_PATH,
     NERI_LOCAL_WORKER_STATUS_PATH,
@@ -42,6 +43,7 @@ research_app = typer.Typer(help="Read research capability progress and save exac
 worker_app = typer.Typer(
     help="Inspect the bounded local candidate and Neri-owned qualification evidence"
 )
+jev_app = typer.Typer(help="Run typed Jev evaluations through Agent Hub")
 app.add_typer(evidence_app, name="evidence")
 app.add_typer(notes_app, name="notes")
 app.add_typer(report_app, name="report")
@@ -56,6 +58,7 @@ target_app.add_typer(target_programs_app, name="programs")
 app.add_typer(runtime_app, name="runtime")
 app.add_typer(research_app, name="research")
 app.add_typer(worker_app, name="worker")
+app.add_typer(jev_app, name="jev")
 NERI_API = ProjectApi(project_id="neri", env_var="ST_NERI_API_URL", default_url="http://localhost:8017")
 NERI_LOCAL_WORKER_QUALIFICATION_PATH = "/api/research/local-worker/qualification"
 NERI_LOCAL_WORKER_QUALIFICATION_DECISIONS_PATH = f"{NERI_LOCAL_WORKER_QUALIFICATION_PATH}/decisions"
@@ -268,6 +271,34 @@ def bind_local_worker_run(payload: dict, run_id: UUID) -> dict:
         if parsed_run_id != run_id:
             raise typer.BadParameter("JSON run_id must match the positional run ID")
     return {**payload, "run_id": str(run_id)}
+
+
+@jev_app.command("evaluate")
+@usage(
+    surface="st.neri.jev.evaluate",
+    cmd="st neri jev evaluate --file request.json [--dry-run]",
+    when="submit one typed Jev evaluation request through Agent Hub",
+    task_types=("security-research", "model-review"),
+    precautions=(
+        "Use --dry-run to validate the exact request contract and preview its reservation without provider dispatch",
+    ),
+)
+def jev_evaluate(
+    file: Annotated[Path, typer.Option("--file", exists=True, dir_okay=False)],
+    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+) -> None:
+    """Forward one caller-authored typed Jev request and preserve its server response."""
+    payload = read_object(file)
+    if dry_run:
+        payload["dry_run"] = True
+    output_json(
+        agent_hub_request(
+            "POST",
+            NERI_JEV_EVALUATE_PATH,
+            json=payload,
+            tool_name="st neri jev evaluate",
+        )
+    )
 
 
 @worker_app.command("status")
