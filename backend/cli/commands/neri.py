@@ -826,6 +826,118 @@ def research_register_cohort(
     )
 
 
+@research_app.command("catalog-campaigns")
+@usage(
+    surface="st.neri.research.catalog_campaigns",
+    cmd="st neri research catalog-campaigns",
+    when="list frozen owned-lab catalog campaigns and their derived completion state",
+    precautions=("read-only; campaign completion requires every item and an exact cumulative replay",),
+    task_types=("neri", "security-research"),
+)
+def research_catalog_campaigns() -> None:
+    request("/api/research/catalog-campaigns")
+
+
+@research_app.command("catalog-campaign")
+@usage(
+    surface="st.neri.research.catalog_campaign",
+    cmd="st neri research catalog-campaign <campaign-id>",
+    when="inspect one frozen catalog denominator, item results and cumulative replay",
+    precautions=("read-only; preserve exact target, source, configuration and review identities",),
+    task_types=("neri", "security-research"),
+)
+def research_catalog_campaign(campaign_id: UUID) -> None:
+    request(f"/api/research/catalog-campaigns/{campaign_id}")
+
+
+@research_app.command("register-catalog-campaign")
+@usage(
+    surface="st.neri.research.catalog_campaign.register",
+    cmd="st neri research register-catalog-campaign --file campaign.json [--id UUID]",
+    when="freeze an exact owned-lab catalog denominator before result-generating work",
+    precautions=(
+        "bind the exact target build, source digests, runner, reset procedure and policy/configuration",
+        "a material identity or workflow change requires a successor campaign",
+    ),
+    task_types=("neri", "security-research"),
+)
+def research_register_catalog_campaign(
+    file: Annotated[Path, typer.Option()],
+    request_id: Annotated[UUID | None, typer.Option("--id")] = None,
+) -> None:
+    request(
+        "/api/research/catalog-campaigns",
+        read_object(file, request_id=request_id, identified=True),
+    )
+
+
+@research_app.command("record-catalog-plan")
+@usage(
+    surface="st.neri.research.catalog_campaign.plan",
+    cmd="st neri research record-catalog-plan <campaign-id> --file plan.json [--id UUID]",
+    when="persist a batch technique, clean setup and controls before catalog result evidence",
+    precautions=(
+        "the plan must cite a server-observed runtime snapshot and exact frozen item keys",
+        "record the plan before dispatching any result-generating operation",
+    ),
+    task_types=("neri", "security-research"),
+)
+def research_record_catalog_plan(
+    campaign_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    request_id: Annotated[UUID | None, typer.Option("--id")] = None,
+) -> None:
+    request(
+        f"/api/research/catalog-campaigns/{campaign_id}/plans",
+        read_object(file, request_id=request_id, identified=True),
+    )
+
+
+@research_app.command("verify-catalog-item")
+@usage(
+    surface="st.neri.research.catalog_campaign.verify_item",
+    cmd="st neri research verify-catalog-item <campaign-id> <item-key> --file result.json [--id UUID]",
+    when="append one catalog item's exact evidence-backed independently reviewed completion",
+    precautions=(
+        "requires authoritative solve, clean setup, controls, reproduction, report and supported review references",
+        "a status code, page appearance or model answer alone is not completion",
+    ),
+    task_types=("neri", "security-research"),
+)
+def research_verify_catalog_item(
+    campaign_id: UUID,
+    item_key: str,
+    file: Annotated[Path, typer.Option()],
+    request_id: Annotated[UUID | None, typer.Option("--id")] = None,
+) -> None:
+    request(
+        f"/api/research/catalog-campaigns/{campaign_id}/items/{quote(item_key, safe='')}/verify",
+        read_object(file, request_id=request_id, identified=True),
+    )
+
+
+@research_app.command("record-catalog-replay")
+@usage(
+    surface="st.neri.research.catalog_campaign.replay",
+    cmd="st neri research record-catalog-replay <campaign-id> --file replay.json [--id UUID]",
+    when="append the independently reviewed clean cumulative replay for an exact catalog denominator",
+    precautions=(
+        "the replay must cover exactly every frozen item and cite authoritative final solved-state evidence",
+        "recording a replay never repairs incomplete individual item evidence",
+    ),
+    task_types=("neri", "security-research"),
+)
+def research_record_catalog_replay(
+    campaign_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    request_id: Annotated[UUID | None, typer.Option("--id")] = None,
+) -> None:
+    request(
+        f"/api/research/catalog-campaigns/{campaign_id}/replays",
+        read_object(file, request_id=request_id, identified=True),
+    )
+
+
 @research_app.command("close-cohort")
 @usage(
     surface="st.neri.research.cohort.close",
@@ -1119,6 +1231,43 @@ def execute_operation(investigation_id: UUID, file: Annotated[Path, typer.Option
                       request_id: Annotated[UUID | None, typer.Option("--id")] = None) -> None:
     request(
         f"/api/workbench/{investigation_id}/operations",
+        read_object(file, request_id=request_id, identified=True),
+    )
+
+
+@executor_app.command("runtime")
+@usage(
+    surface="st.neri.execute.runtime",
+    cmd="st neri execute runtime <investigation-id>",
+    when="read the sanitized runner release and target-state identity for an exact workbench investigation",
+    precautions=(
+        "read-only runner identity; does not grant target authority or establish target reachability",
+        "record the observed release before freezing a campaign or replay configuration",
+    ),
+    task_types=("neri", "security-research"),
+)
+def execute_runtime(investigation_id: UUID) -> None:
+    request(f"/api/workbench/{investigation_id}/runtime")
+
+
+@executor_app.command("runtime-snapshot")
+@usage(
+    surface="st.neri.execute.runtime_snapshot",
+    cmd="st neri execute runtime-snapshot <investigation-id> --file snapshot.json [--id UUID]",
+    when="retain a server-observed runner release and target-generation identity",
+    precautions=(
+        "include the current controller identity; this records runtime identity but performs no target action",
+        "use the retained event identity in a prospective catalog plan or campaign registration",
+    ),
+    task_types=("neri", "security-research"),
+)
+def execute_runtime_snapshot(
+    investigation_id: UUID,
+    file: Annotated[Path, typer.Option()],
+    request_id: Annotated[UUID | None, typer.Option("--id")] = None,
+) -> None:
+    request(
+        f"/api/workbench/{investigation_id}/runtime-snapshots",
         read_object(file, request_id=request_id, identified=True),
     )
 

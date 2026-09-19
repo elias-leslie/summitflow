@@ -105,6 +105,7 @@ def transport(monkeypatch):
     (["target", "programs", "history", "document?version", RECORD, "--limit", "7", "--cursor", "next+page"], f"/api/targets/document%3Fversion/programs/{RECORD}/history?limit=7&cursor=next%2Bpage"),
     (["runtime", "show"], "/api/runtime-control"),
     (["operation", INVESTIGATION, RECORD], f"/api/workbench/{INVESTIGATION}/operations/{RECORD}"),
+    (["execute", "runtime", INVESTIGATION], f"/api/workbench/{INVESTIGATION}/runtime"),
 ])
 def test_reads_use_canonical_routes_and_preserve_server_projection(transport, args, path):
     calls, response = transport
@@ -678,6 +679,7 @@ def test_lean_surface_is_discoverable_and_retired_groups_are_gone():
     assert {"st.neri.investigations", "st.neri.create", "st.neri.activity", "st.neri.context",
             "st.neri.activity.record", "st.neri.execute.operation", "st.neri.execute.sequence",
             "st.neri.execute.reset",
+            "st.neri.execute.runtime",
             "st.neri.evidence.import", "st.neri.evidence.artifact", "st.neri.notes.add",
             "st.neri.report.save", "st.neri.report.review", "st.neri.report.download",
             "st.neri.report.revision", "st.neri.report.review-revision",
