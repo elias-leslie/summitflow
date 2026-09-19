@@ -141,6 +141,7 @@ def list_ready_tasks(project_id: str, limit: int = 50, offset: int = 0) -> list[
                     FROM task_subtasks GROUP BY task_id
                 ) sub ON t.id = sub.task_id
                 WHERE t.project_id = %s AND t.status = 'pending' AND {_not_blocked}
+                  AND COALESCE(t.verification_result->'closeout'->>'state', '') <> 'pending'
                 ORDER BY t.priority ASC, t.created_at ASC LIMIT %s OFFSET %s
                 """
             ),

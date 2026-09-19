@@ -206,6 +206,20 @@ def generate_index(project_id: str) -> str:
     return yaml.dump(index_data, default_flow_style=False, sort_keys=False)
 
 
+def _index_content(content: str) -> Any:
+    """Compare semantic index data without operational scan timestamps."""
+    try:
+        value = yaml.safe_load(content)
+    except yaml.YAMLError:
+        return content
+    if not isinstance(value, dict):
+        return value
+    value.pop("generated_at", None)
+    if isinstance(value.get("explorer"), dict):
+        value["explorer"].pop("last_completed_scan", None)
+    return value
+
+
 def write_index_file(project_id: str) -> str | None:
     """Generate and write .index.yaml to project root."""
     root_path = get_project_root(project_id)
@@ -215,7 +229,14 @@ def write_index_file(project_id: str) -> str | None:
     index_path = Path(root_path) / ".index.yaml"
     tmp_path = index_path.with_name(f"{index_path.name}.tmp")
     try:
-        tmp_path.write_text(generate_index(project_id))
+        generated = generate_index(project_id)
+        if index_path.exists():
+            previous = index_path.read_text()
+            # A scan heartbeat belongs to live Explorer state. Keep the last
+            # material snapshot byte-for-byte when only these timestamps move.
+            if _index_content(previous) == _index_content(generated):
+                return str(index_path)
+        tmp_path.write_text(generated)
         tmp_path.rename(index_path)
         logger.info("Wrote index file: %s", index_path)
         return str(index_path)

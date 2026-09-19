@@ -135,7 +135,8 @@ def reset_expired_claims() -> int:
                 claimed_at = NULL,
                 lock_expires_at = NULL,
                 status = 'pending',
-                verification_result = NULL,
+                verification_result = CASE WHEN verification_result->'closeout'->>'state' IN ('pending', 'blocked')
+                    THEN verification_result ELSE NULL END,
                 updated_at = NOW()
             WHERE status = 'running'
               AND lock_expires_at IS NOT NULL

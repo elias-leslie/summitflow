@@ -84,6 +84,9 @@ class CheckpointInfo(BaseModel):
     base_branch: str
     is_active: bool
     project_id: str | None = None
+    task_title: str = ""
+    state: str = "open"
+    detail: str = ""
 
 
 class CheckpointsResponse(BaseModel):

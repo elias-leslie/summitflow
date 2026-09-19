@@ -38,7 +38,7 @@ def evidence_result(evidence: dict[str, Any]) -> dict[str, Any]:
 
 def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
                 run_git: Callable[..., Any], push_revision: Callable[[str | None], Any] | None = None,
-                remote_name: str = "origin") -> dict[str, Any]:
+                remote_name: str = "origin", resume: bool = False) -> dict[str, Any]:
     remote = run_git(repo, ['remote', 'get-url', '--push', remote_name])
     if remote.returncode:
         raise PublishError('Cannot resolve origin push remote')
@@ -50,6 +50,11 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
         if client and plan and remote_sha is None and plan['requires_pr']:
             raise GitHubError('Empty repository requires a pull request; initialize its default branch under the applicable repository rules first')
         already_remote = bool(client and plan and remote_sha == sha)
+        if resume and client and plan and not plan['requires_pr'] and not already_remote:
+            comparison = client.api(f'compare/{sha}...{remote_sha}') if remote_sha else {}
+            already_remote = comparison.get('status') in {'ahead', 'identical'}
+            if not already_remote:
+                raise GitHubError('Retained source is no longer on the remote default branch')
     except GitHubError as exc:
         raise PublishError(str(exc)) from exc
     if client and plan and already_remote:
@@ -74,14 +79,19 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
         # Inspect and push the same remote; do not let push.default select another destination.
         destination_branch = current.stdout.strip()
         args = ['push', *(['--porcelain'] if client else []), remote_name, f'{sha}:refs/heads/{destination_branch}']
-    pushed = push_revision(head if plan and plan['requires_pr'] else None) if push_revision else run_git(repo, args)
-    if pushed.returncode:
-        raise PublishError(pushed.stderr.strip() or pushed.stdout.strip() or 'git push failed')
-    result: dict[str, Any] = {'pushed': True, 'sha': sha}
+    if resume:
+        if not client or not plan or not plan['requires_pr']:
+            raise PublishError('Cannot resume publication without retained remote delivery')
+        pushed = None
+    else:
+        pushed = push_revision(head if plan and plan['requires_pr'] else None) if push_revision else run_git(repo, args)
+        if pushed.returncode:
+            raise PublishError(pushed.stderr.strip() or pushed.stdout.strip() or 'git push failed')
+    result: dict[str, Any] = {'pushed': not resume, 'sha': sha}
     try:
         if client and plan:
             if destination_branch:
-                client.push_scope = push_scope(repo, name or '', destination_branch, sha, pushed.stdout or '')
+                client.push_scope = push_scope(repo, name or '', destination_branch, sha, pushed.stdout or '' if pushed else '')
                 if client.push_scope:
                     result['push_scope'] = client.push_scope
             if plan['requires_pr']:
@@ -90,7 +100,11 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
                 evidence = client.finish_pr(pull['number'], sha, plan)
                 if evidence.get('merge_sha'):
                     result['merge_sha'] = evidence['merge_sha']
-                    result['local_reconciliation'] = reconcile(repo, plan['base'], run_git, remote=remote_name)
+                    current = run_git(repo, ['rev-parse', 'HEAD']) if resume else None
+                    if resume and (current is None or current.returncode or current.stdout.strip() != sha):
+                        result['local_reconciliation'] = {'state': 'deferred', 'reason': 'later_checkout_work_preserved'}
+                    else:
+                        result['local_reconciliation'] = reconcile(repo, plan['base'], run_git, remote=remote_name)
             else:
                 if destination_branch and destination_branch != plan['base']:
                     evidence = client.observe_feature_branch(sha, plan['required'], destination_branch)

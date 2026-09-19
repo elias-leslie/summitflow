@@ -139,3 +139,32 @@ def test_empty_remote_publishes_initial_commit_with_ci_observation(monkeypatch):
     assert git.call_args.args[1] == ['push', '--porcelain', 'origin', 'a'*40 + ':refs/heads/main']
     assert result['status'] == 'PENDING'
     client.observe.assert_called_once_with('a'*40, [], branch='main')
+
+
+def test_resume_direct_commit_after_main_advances_only_observes_original_ci(monkeypatch):
+    client = Mock()
+    client.plan.return_value = {'base': 'main', 'requires_pr': False, 'required': []}
+    client.base_sha.return_value = 'b' * 40
+    client.api.return_value = {'status': 'ahead'}
+    client.observe.return_value = {'state': 'success', 'sha': 'a' * 40, 'checks': []}
+    monkeypatch.setattr(publish, 'GitHub', Mock(return_value=client))
+    git = Mock(return_value=Mock(returncode=0, stdout='git@github.com:owner/repo.git'))
+    result = publish.publish_git(Path('/repo'), sha='a' * 40, task_id='task-1', message='done', run_git=git, resume=True)
+    assert result['publication_complete'] is True
+    assert result['pushed'] is False
+    assert git.call_count == 1
+    client.observe.assert_called_once_with('a' * 40, [], branch='main')
+
+
+def test_resume_pr_does_not_recreate_remote_branch(monkeypatch):
+    client = Mock()
+    client.plan.return_value = {'base': 'main', 'requires_pr': True, 'required': []}
+    client.base_sha.return_value = 'b' * 40
+    client.pull_request.return_value = {'number': 7, 'html_url': 'https://github.com/owner/repo/pull/7'}
+    client.finish_pr.return_value = {'state': 'success', 'sha': 'a' * 40, 'checks': []}
+    monkeypatch.setattr(publish, 'GitHub', Mock(return_value=client))
+    git = Mock(return_value=Mock(returncode=0, stdout='git@github.com:owner/repo.git'))
+    result = publish.publish_git(Path('/repo'), sha='a' * 40, task_id='task-1', message='done', run_git=git, resume=True)
+    assert result['publication_complete'] is True
+    assert result['pushed'] is False
+    assert git.call_count == 1

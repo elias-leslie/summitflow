@@ -605,3 +605,36 @@ def test_initial_repository_closeout_requires_post_claim_initial_reflog(tmp_path
     else:
         with pytest.raises(typer.Exit):
             _run_diff_gate(str(tmp_path), "task-new", "test", "main", claimed_at=claimed_at)
+
+
+def test_queued_closeout_resume_does_not_rerun_commit_or_local_gates():
+    with (
+        patch('app.services.task_closeout.get_closeout', return_value={'state': 'pending'}),
+        patch('app.services.task_closeout.resume_closeout', return_value={'action': 'pending'}) as resume,
+        patch('cli.commands.done_task.ensure_checkpoint_clean') as commit,
+        patch('cli.commands.done_task._run_diff_gate') as gate,
+    ):
+        assert complete_task(MagicMock(), 'task-queued')['action'] == 'pending'
+    resume.assert_called_once_with('task-queued', explicit=True)
+    commit.assert_not_called()
+    gate.assert_not_called()
+
+
+def test_pending_commit_queues_only_after_completion_gates_pass():
+    from cli.commands.done_task_publish import PublicationPending
+
+    client = MagicMock()
+    client.get_task.return_value = {'status': 'pending'}
+    receipt = {'status': 'PENDING', 'sha': 'a' * 40, 'ci': {'state': 'pending', 'sha': 'a' * 40}}
+    with (
+        patch('app.services.task_closeout.get_closeout', return_value=None),
+        patch('app.services.task_closeout.request_closeout') as queue,
+        patch('cli.commands.done_task.get_snapshot_info', return_value={'project_id': 'summitflow', 'base_branch': 'main'}),
+        patch('cli.commands.done_task.ensure_checkpoint_clean', side_effect=PublicationPending(receipt)),
+        patch('cli.commands.done_task.is_working_tree_clean', return_value=True),
+        patch('cli.commands.done_task._run_diff_gate'),
+        patch('cli.commands.done_task._run_smart_prereqs', side_effect=Exit(1)),
+        pytest.raises(Exit),
+    ):
+        complete_task(client, 'task-queued')
+    queue.assert_not_called()

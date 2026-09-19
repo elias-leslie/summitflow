@@ -200,13 +200,22 @@ async def work_pickup_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
 async def reset_claims_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     from typing import cast
 
+    from ..services.task_closeout import pending_closeouts
     from ..tasks.autonomous.cleanup import reset_expired_task_claims
+    from .models import TaskInput
+    from .utility import checkpoint_cleanup_wf
+
+    # Completion requests are already authorized, revision-bound work. Reuse
+    # this existing maintenance cadence; no new polling agent or cron is needed.
+    closeouts = await asyncio.to_thread(pending_closeouts)
+    for closeout in closeouts:
+        await checkpoint_cleanup_wf.aio_run_no_wait(TaskInput(task_id=closeout["task_id"], project_id=closeout["project_id"]))
 
     if not _system_schedule_enabled("reset_claims"):
-        return _disabled_schedule_result("reset_claims")
+        return {**_disabled_schedule_result("reset_claims"), "closeouts_dispatched": len(closeouts)}
 
     result = await asyncio.to_thread(reset_expired_task_claims)
-    return cast(dict[str, Any], result)
+    return {**cast(dict[str, Any], result), "closeouts_dispatched": len(closeouts)}
 
 
 @hatchet.task(

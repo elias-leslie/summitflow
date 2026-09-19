@@ -40,7 +40,8 @@ def test_direct_main_closeout_retains_published_source_and_ci(monkeypatch, tmp_p
 
 def test_pending_then_clean_retry_persists_once_and_survives_completion(monkeypatch, tmp_path, test_project_id, cleanup_task):
     import pytest
-    from typer import Exit
+
+    from cli.commands.done_task_publish import PublicationPending
 
     task = tasks.create_task(test_project_id, 'Pending publication receipt')
     cleanup_task(task['id'])
@@ -55,7 +56,7 @@ def test_pending_then_clean_retry_persists_once_and_survives_completion(monkeypa
     monkeypatch.setattr(commit_workflow, 'commit_git_revision', lambda *_args, **_kwargs: evidence)
     monkeypatch.setattr(commit_workflow, '_cleanup_after_publish', lambda _repo, result, **_kwargs: result)
     monkeypatch.setattr(commit_workflow, '_refresh_symbols_after_publish', lambda _repo, result: result)
-    with pytest.raises(Exit):
+    with pytest.raises(PublicationPending):
         _commit_active_task_work(str(tmp_path), task['id'], 'Finish generic task')
     pending = tasks.get_task(task['id'])
     assert pending is not None

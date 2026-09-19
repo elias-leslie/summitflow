@@ -46,13 +46,11 @@ def _format_checkpoint_line(cp: dict[str, Any]) -> None:
     """Print a single checkpoint summary line and its subtask branches."""
     task_id = cp.get("task_id", "?")
     age = format_age(cp.get("created_at", ""))
-    size = cp.get("size", "?")
     project_id = cp.get("project_id")
 
     branches = get_task_branches(task_id, project_id=project_id)
-    branch_count = len(branches)
 
-    print(f"{task_id}|{age}|{branch_count} branches|{size}")
+    print(f"{project_id}|{task_id}|{cp.get('state', 'open')}|{age}|{cp.get('task_title', '')}")
     _format_subtask_branches(branches)
 
 

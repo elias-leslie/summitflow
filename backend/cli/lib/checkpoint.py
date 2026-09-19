@@ -107,8 +107,9 @@ def get_active_checkpoints(project_id: str | None = None) -> list[SnapshotMeta]:
 
 
 def get_stale_checkpoints(project_id: str | None = None) -> list[SnapshotMeta]:
-    """Return checkpoint metadata whose recorded lane no longer resolves cleanly."""
-    return [checkpoint for checkpoint in _iter_checkpoint_meta(project_id) if not _checkpoint_is_active(checkpoint)]
+    """Return terminal/missing task metadata; paused work remains resumable."""
+    return [checkpoint for checkpoint in _iter_checkpoint_meta(project_id)
+            if _task_status(checkpoint.task_id) in _TERMINAL_TASK_STATUSES]
 
 
 def has_active_task(project_id: str) -> str | None:
@@ -138,7 +139,7 @@ def get_snapshot_info(task_id: str) -> dict[str, str | int | None] | None:
 
 def _checkpoint_is_active(checkpoint: SnapshotMeta) -> bool:
     """Return True when checkpoint metadata still represents an open claim."""
-    return _task_status(checkpoint.task_id) not in _TERMINAL_TASK_STATUSES
+    return _task_status(checkpoint.task_id) not in (_TERMINAL_TASK_STATUSES | {"paused"})
 
 
 _MISSING_TASK_STATUS = "__missing__"

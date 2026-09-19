@@ -150,13 +150,22 @@ async def pr_review_wf(input: ReviewPRInput, ctx: Context) -> dict[str, Any]:
     execution_timeout="180s",
     retries=3,
     backoff_factor=2.0,
+    concurrency=ConcurrencyExpression(
+        expression="input.task_id",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_NEWEST,
+    ),
 )
 async def checkpoint_cleanup_wf(input: TaskInput, ctx: Context) -> dict[str, Any]:
     from typing import cast
 
+    from ..services.task_closeout import get_closeout, resume_closeout
     from ..tasks.autonomous.cleanup import cleanup_task_checkpoint
 
-    result = await asyncio.to_thread(cleanup_task_checkpoint, input.task_id)
+    intent = await asyncio.to_thread(get_closeout, input.task_id)
+    if intent and intent.get("project_id") == input.project_id and intent.get("state") == "pending":
+        return await asyncio.to_thread(resume_closeout, input.task_id)
+    result = await asyncio.to_thread(cleanup_task_checkpoint, input.task_id, project_id=input.project_id)
     return cast(dict[str, Any], result)
 
 

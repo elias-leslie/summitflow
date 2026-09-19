@@ -10,7 +10,7 @@ from typing import Annotated
 
 import typer
 
-from ..lib.checkpoint import SnapshotMeta, get_active_checkpoints, get_snapshot_info
+from ..lib.checkpoint import SnapshotMeta, get_active_checkpoints
 from ..output import output_json
 from ..output_context import OutputContext
 from .checkpoints_cleanup import auto_cleanup_safe_items
@@ -25,7 +25,15 @@ app = typer.Typer(help="Checkpoint management - show active checkpoints, cleanup
 
 
 def _checkpoint_to_dict(cp: SnapshotMeta) -> dict:
+    from app.services.task_closeout import checkpoint_state
+    from app.storage.tasks import get_task
+
+    task = get_task(cp.task_id) or {}
+    state, detail = checkpoint_state(task.get("status", ""), task.get("verification_result"))
     return {
+        "task_title": task.get("title", ""),
+        "state": state,
+        "detail": detail,
         "task_id": cp.task_id,
         "project_id": cp.project_id,
         "base_branch": cp.base_branch,
@@ -37,7 +45,7 @@ def _checkpoint_to_dict(cp: SnapshotMeta) -> dict:
 
 def _output_compact(ctx_obj: OutputContext, checkpoints: list, cleaned: tuple) -> None:
     cleaned_meta, cleaned_sql, cleaned_branches, needs_review = cleaned
-    checkpoint_data = [info for cp in checkpoints if (info := get_snapshot_info(cp.task_id))]
+    checkpoint_data = [_checkpoint_to_dict(cp) for cp in checkpoints]
     format_compact_checkpoints(checkpoint_data)
     format_cleanup_summary(cleaned_meta, cleaned_sql, cleaned_branches)
     format_review_needed(needs_review)

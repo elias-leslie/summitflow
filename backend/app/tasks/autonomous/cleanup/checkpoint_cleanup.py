@@ -77,6 +77,11 @@ def cleanup_task_checkpoint(
                 "reason": "no_checkpoint",
             }
 
+        from cli.lib.checkpoint import _TERMINAL_TASK_STATUSES, _task_status
+
+        if _task_status(task_id) not in _TERMINAL_TASK_STATUSES:
+            return {"task_id": task_id, "status": "skipped", "reason": "task_not_terminal"}
+
         meta_path.unlink()
         logger.info(
             "Cleaned up checkpoint metadata for task %s",

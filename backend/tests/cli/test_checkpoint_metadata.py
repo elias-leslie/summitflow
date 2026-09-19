@@ -75,3 +75,25 @@ def test_snapshot_meta_preserves_base_commit() -> None:
 
     assert loaded.base_commit == "abc123"
     assert loaded.to_dict()["base_commit"] == "abc123"
+
+
+def test_paused_checkpoint_is_retained_but_not_active(monkeypatch) -> None:
+    from cli.lib import checkpoint
+
+    meta = SnapshotMeta("task-paused", "agent-hub", "main", "2026-05-22T00:00:00+00:00", "tester")
+    monkeypatch.setattr(checkpoint, "_iter_checkpoint_meta", lambda _project: [meta])
+    monkeypatch.setattr(checkpoint, "_task_status", lambda _task: "paused")
+
+    assert checkpoint.get_active_checkpoints("agent-hub") == []
+    assert checkpoint.get_stale_checkpoints("agent-hub") == []
+
+
+def test_terminal_checkpoint_remains_eligible_for_metadata_cleanup(monkeypatch) -> None:
+    from cli.lib import checkpoint
+
+    meta = SnapshotMeta("task-completed", "agent-hub", "main", "2026-05-22T00:00:00+00:00", "tester")
+    monkeypatch.setattr(checkpoint, "_iter_checkpoint_meta", lambda _project: [meta])
+    monkeypatch.setattr(checkpoint, "_task_status", lambda _task: "completed")
+
+    assert checkpoint.get_active_checkpoints("agent-hub") == []
+    assert checkpoint.get_stale_checkpoints("agent-hub") == [meta]

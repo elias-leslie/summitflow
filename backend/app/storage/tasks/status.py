@@ -67,10 +67,18 @@ def _execute_status_update(
     error_message: str | None,
     *,
     validate_transition: bool,
+    expected_closeout_request_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Validate and update status atomically under a row lock."""
     resolved_task_id = canonicalize_task_id(task_id)
     with get_connection() as conn, conn.cursor() as cur:
+        if expected_closeout_request_id is not None:
+            cur.execute("SELECT status, verification_result FROM tasks WHERE id = %s FOR UPDATE", (resolved_task_id,))
+            current = cur.fetchone()
+            intent = ((current[1] or {}).get("closeout") or {}) if current else {}
+            if (not current or current[0] not in {"pending", "running", "completed"}
+                    or status != "completed" or intent.get("request_id") != expected_closeout_request_id):
+                raise ValueError("Completion request was superseded by a task lifecycle change")
         if validate_transition:
             cur.execute(
                 "SELECT status FROM tasks WHERE id = %s FOR UPDATE",
@@ -108,6 +116,7 @@ def update_task_status(
     status: str,
     error_message: str | None = None,
     validate_transition: bool = True,
+    *, expected_closeout_request_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Update task status with timestamp handling and transition validation.
 
@@ -130,6 +139,7 @@ def update_task_status(
         status,
         error_message,
         validate_transition=validate_transition,
+        expected_closeout_request_id=expected_closeout_request_id,
     )
 
 

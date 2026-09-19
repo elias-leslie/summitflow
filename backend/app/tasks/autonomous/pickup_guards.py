@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from app.config import DEFAULT_API_BASE, REDIS_URL
 from app.services._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
@@ -249,6 +249,9 @@ def check_system_health(project_id: str) -> dict[str, Any] | None:
 def check_task_dispatchable(task: dict[str, object]) -> dict[str, object] | None:
     """Return error dict if task cannot be dispatched, else None."""
     task_id, status = task["id"], task["status"]
+    verification = task.get("verification_result")
+    if isinstance(verification, dict) and (cast(dict[str, Any], verification).get("closeout") or {}).get("state") == "pending":
+        return {"status": "skipped", "task_id": task_id, "reason": "publication_closeout_pending"}
     if status == "running":
         return {"status": "already_running", "task_id": task_id}
     if status not in _DISPATCHABLE_STATUSES:

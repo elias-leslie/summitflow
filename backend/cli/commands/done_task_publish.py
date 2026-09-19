@@ -7,6 +7,14 @@ from pathlib import Path
 from typing import Any
 
 
+class PublicationPending(RuntimeError):
+    """Expected asynchronous CI state, carrying the exact publication receipt."""
+
+    def __init__(self, result: dict[str, Any]):
+        super().__init__("Publication is waiting for remote checks")
+        self.result = result
+
+
 def warn_on_publish_failure(result: Any, output_warning: Any) -> str | None:
     """Warn about a failed publish and return its actionable failure detail."""
     stdout = result.stdout.strip()
@@ -108,6 +116,13 @@ def publish_completed_work(
         )
     except (deps["subprocess"].SubprocessError, OSError) as exc:
         raise RuntimeError(f"publish failed to start: {exc}") from exc
+    try:
+        payload = json.loads(result.stdout)
+        evidence = (payload.get("repos") or [payload])[0]
+        if evidence.get("status") == "PENDING" and (evidence.get("ci") or {}).get("state") == "pending":
+            raise PublicationPending(evidence)
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+        pass  # The canonical unreadable/failed-result reporting below retains it.
     failure = deps["warn_on_publish_failure"](result)
     if failure:
         raise RuntimeError(f"publish did not complete cleanly: {failure}")

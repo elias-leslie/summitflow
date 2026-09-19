@@ -93,6 +93,9 @@ export interface CheckpointInfo {
   base_branch: string
   is_active: boolean
   project_id?: string
+  task_title?: string
+  state?: string
+  detail?: string
 }
 
 export interface BranchInfo {

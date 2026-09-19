@@ -7,6 +7,14 @@ export function CheckpointCompact({
 }: {
   checkpoint: CheckpointInfo
 }) {
+  const labels: Record<string, string> = {
+    open: 'Open',
+    claimed: 'Claimed',
+    waiting_checks: 'Waiting for checks',
+    blocked: 'Needs attention',
+    unknown: 'Unknown',
+  }
+  const label = labels[checkpoint.state ?? 'open'] ?? checkpoint.state
   return (
     <div className="flex items-center gap-3 px-3 py-2 rounded-md bg-slate-900/40 border border-slate-800/50 hover:border-phosphor-500/20 transition-colors">
       <div className="relative shrink-0">
@@ -17,15 +25,17 @@ export function CheckpointCompact({
       </div>
       <div className="flex-1 min-w-0">
         <span className="text-sm font-semibold text-slate-100">
-          {checkpoint.task_id}
+          {checkpoint.task_title || checkpoint.task_id}
         </span>
         <div className="flex items-center gap-2 text-[10px] text-slate-500">
           <span className="font-mono text-violet-300">
             base: {checkpoint.base_branch}
           </span>
+          {checkpoint.task_title && <span>{checkpoint.task_id}</span>}
         </div>
       </div>
       <span
+        title={checkpoint.detail}
         className={clsx(
           'text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0',
           checkpoint.is_active
@@ -33,7 +43,7 @@ export function CheckpointCompact({
             : 'bg-slate-800/50 text-slate-500 border-slate-700/50',
         )}
       >
-        {checkpoint.is_active ? 'ACTIVE' : 'IDLE'}
+        {label}
       </span>
     </div>
   )

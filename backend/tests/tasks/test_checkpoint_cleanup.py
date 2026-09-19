@@ -44,3 +44,17 @@ def test_cleanup_task_checkpoint_skips_when_project_id_missing() -> None:
         "status": "skipped",
         "reason": "missing_project_id",
     }
+
+
+@patch("cli.lib.checkpoint._task_status", return_value="running")
+@patch("cli.lib.checkpoint_metadata.get_meta_path")
+def test_delayed_cleanup_preserves_resumed_task(mock_path, _status, tmp_path) -> None:
+    meta_path = tmp_path / "task-1.meta.json"
+    meta_path.write_text("{}")
+    mock_path.return_value = meta_path
+
+    result = cleanup_task_checkpoint("task-1", project_id="proj")
+
+    assert result["status"] == "skipped"
+    assert result.get("reason") == "task_not_terminal"
+    assert meta_path.exists()

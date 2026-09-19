@@ -108,6 +108,16 @@ def _handle_task_completion(
     task_client = STClient(project_id=project_id) if project_id else client
     result = (complete_task(task_client, id, message, paths=paths) if paths
               else complete_task(task_client, id, message))
+    if result.get("action") == "pending":
+        output_success(f"Task {id}: publication is waiting for remote checks. Closeout will continue automatically.")
+        _release_task_leases(project_id, id)
+        return
+    if result.get("action") == "blocked":
+        output_error(f"Task {id} closeout needs attention: {result.get('reason', 'see retained evidence')}")
+        raise typer.Exit(1)
+    if result.get("action") == "skipped":
+        output_error(f"Task {id} was not closed: {result.get('reason', 'completion request changed')}")
+        raise typer.Exit(1)
     base_branch = result.get("base_branch", "main")
     if result.get("snapshot_removed"):
         output_success(f"Task {id} completed. Checkpoint removed.")

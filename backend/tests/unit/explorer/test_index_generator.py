@@ -367,3 +367,17 @@ class TestGetNetworkInfo:
         parsed = yaml.safe_load(result)
         assert parsed["network"]["host_ip"] == "10.0.0.1"
         assert parsed["network"]["hostname"] == "test-host"
+
+
+def test_scan_heartbeat_does_not_dirty_material_index(tmp_path, monkeypatch):
+    index = tmp_path / ".index.yaml"
+    original = "project: test\ngenerated_at: old\nexplorer:\n  last_completed_scan: old\n  symbol_count: 2\n"
+    index.write_text(original)
+    monkeypatch.setattr("app.services.explorer.index_generator.get_project_root", lambda _: str(tmp_path))
+    monkeypatch.setattr("app.services.explorer.index_generator.generate_index", lambda _: original.replace("old", "new"))
+    write_index_file("test")
+    assert index.read_text() == original
+    monkeypatch.setattr("app.services.explorer.index_generator.generate_index", lambda _: original.replace("old", "new").replace("count: 2", "count: 3"))
+    write_index_file("test")
+    assert "symbol_count: 3" in index.read_text()
+    assert "generated_at: new" in index.read_text()

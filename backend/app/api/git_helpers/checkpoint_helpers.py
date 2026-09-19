@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from psycopg import sql
 
+from ...services.task_closeout import checkpoint_state
 from ...storage.connection import get_cursor
 from ..models.git_models import CheckpointInfo, SnapshotInfo
 
@@ -12,15 +13,29 @@ def collect_checkpoints() -> list[CheckpointInfo]:
     """Collect active checkpoint metadata from the CLI checkpoint registry."""
     from cli.lib.checkpoint import get_active_checkpoints
 
-    return [
+    checkpoints = [
         CheckpointInfo(
             task_id=checkpoint.task_id,
             base_branch=checkpoint.base_branch,
-            is_active=True,
+            is_active=False,
             project_id=checkpoint.project_id,
         )
         for checkpoint in get_active_checkpoints()
     ]
+    if not checkpoints:
+        return checkpoints
+    with get_cursor() as cur:
+        cur.execute("SELECT id, title, status, verification_result FROM tasks WHERE id = ANY(%s)",
+                    ([checkpoint.task_id for checkpoint in checkpoints],))
+        rows = {row[0]: row for row in cur.fetchall()}
+    for checkpoint in checkpoints:
+        row = rows.get(checkpoint.task_id)
+        if row is None:
+            checkpoint.state, checkpoint.detail = "unknown", "Task state could not be resolved"
+            continue
+        checkpoint.task_title = row[1] or ""
+        checkpoint.state, checkpoint.detail = checkpoint_state(row[2], row[3])
+    return checkpoints
 
 
 def enrich_snapshots(snapshots: list[SnapshotInfo]) -> None:

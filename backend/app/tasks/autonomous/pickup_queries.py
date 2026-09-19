@@ -78,6 +78,7 @@ def get_queued_autonomous_tasks(project_id: str, limit: int = 10) -> list[dict[s
             FROM tasks
             WHERE project_id = %s
               AND status = 'pending'
+              AND COALESCE(verification_result->'closeout'->>'state', '') <> 'pending'
               AND execution_mode = 'autonomous'
               AND (claimed_by IS NULL OR lock_expires_at < NOW())
             ORDER BY
