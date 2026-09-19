@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
@@ -440,6 +441,18 @@ def _remote_activity_path() -> str:
     return candidate
 
 
+def _wait_for_remote_activity(expected_path: str, attempts: int = 5) -> str:
+    """Allow the provider's asynchronous start to publish its challenge identity."""
+    observed = ''
+    for attempt in range(attempts):
+        observed = _remote_activity_path()
+        if observed == expected_path:
+            return observed
+        if attempt + 1 < attempts:
+            time.sleep(0.5)
+    return observed
+
+
 def _session_action(study: dict[str, Any], action: str, harness: str, **values: Any) -> dict[str, Any]:
     return require_data(
         _study_url(study["id"], "/actions"),
@@ -487,15 +500,19 @@ def _open_study_terminal(study: dict[str, Any], harness: str):
             )
             study = _session_action(study, "remote_expired", harness, note=note)
             started = _ssh(["dojo", "start", _dojo_cli_path(path)])
-            if started.returncode != 0 and _remote_activity_path() != path:
+            observed_path = _wait_for_remote_activity(path)
+            if observed_path != path:
                 output_json(
                     {
                         "ok": False,
                         "error": "pwn_start_failed",
-                        "detail": f"dojo start exited {started.returncode}",
+                        "detail": (
+                            f"dojo start exited {started.returncode}; "
+                            f"selected activity was not observed after reconciliation"
+                        ),
                     }
                 )
-                raise typer.Exit(started.returncode)
+                raise typer.Exit(started.returncode or 1)
             study = _session_action(
                 study,
                 "remote_started",
