@@ -153,13 +153,11 @@ def _with_local_ai_session(args: list[str]) -> list[str]:
 
 def _local_ai_agent_args(args: list[str]) -> list[str]:
     try:
-        launch = browser_policy.local_launch(args, agent_browser_bin=_agent_browser_bin())
+        prefix = browser_policy.local_agent_prefix(args)
     except ValueError as exc:
         output_error(str(exc))
         raise typer.Exit(1) from None
-    prefix = launch["prefix"]
-    assert isinstance(prefix, list)
-    return [*(str(item) for item in prefix), *args]
+    return [*prefix, *args]
 
 
 def _run_local_ai_agent(args: list[str]):

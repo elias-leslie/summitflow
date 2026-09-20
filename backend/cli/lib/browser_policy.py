@@ -198,7 +198,8 @@ def local_ai_command_lock(env: Mapping[str, str] | None = None) -> Iterator[bool
         handle.close()
 
 
-def local_launch(args: list[str], *, agent_browser_bin: str, env: Mapping[str, str] | None = None) -> dict[str, object]:
+def local_agent_prefix(args: list[str], env: Mapping[str, str] | None = None) -> list[str]:
+    """Prepare local Chrome options without resolving or launching its executor."""
     values = os.environ if env is None else env
     prefix: list[str] = []
     if not has_agent_option(args, "--profile") and not values.get("AGENT_BROWSER_PROFILE", "").strip():
@@ -215,6 +216,13 @@ def local_launch(args: list[str], *, agent_browser_bin: str, env: Mapping[str, s
         prefix.append("--headed")
     if not has_agent_option(args, "--args") and not values.get("AGENT_BROWSER_ARGS", "").strip():
         prefix.extend(["--args", MINIMIZED_CHROME_ARGS if mode == "minimized" else HEADLESS_CHROME_ARGS]) if mode != "visible" else None
+    return prefix
+
+
+def local_launch(args: list[str], *, agent_browser_bin: str, env: Mapping[str, str] | None = None) -> dict[str, object]:
+    values = os.environ if env is None else env
+    prefix = local_agent_prefix(args, values)
+    mode = local_ai_window_mode(values)
     launch_options = ("--profile", "--executable-path", "--args", "--headed")
     launch_envs = (
         "AGENT_BROWSER_PROFILE", "AGENT_BROWSER_EXECUTABLE_PATH", "AGENT_BROWSER_ARGS", "AGENT_BROWSER_HEADED",

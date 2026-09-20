@@ -1234,6 +1234,18 @@ def test_browser_auto_open_normalizes_local_profile(tmp_path, monkeypatch: pytes
     ]
 
 
+def test_local_ai_agent_args_does_not_resolve_executor(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+
+    def unexpected_resolution() -> str:
+        raise AssertionError("Argument preparation must not require an installed executor")
+
+    monkeypatch.setattr(browser, "_agent_browser_bin", unexpected_resolution)
+    with patch("cli.lib.browser_policy.system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
+        args = browser._local_ai_agent_args(["open", "http://app.lan/"])
+    assert args[-2:] == ["open", "http://app.lan/"]
+
+
 def test_local_ai_agent_args_hardware_headless_is_default(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_local_ai_window_env(monkeypatch)
     with patch("cli.lib.browser_policy.system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
