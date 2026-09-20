@@ -5,8 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-from app.services.explorer.analyzers.ast_analyzer import parse_python_file
+from code_intelligence.analyzers.ast_analyzer import parse_python_file
 
 
 class TestParsePythonFile:

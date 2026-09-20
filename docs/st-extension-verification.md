@@ -142,3 +142,27 @@ system configuration was changed. Core `st pulse` coordination is unchanged.
 - Pre-existing unslop files and registration edits remain excluded from edits,
   command execution and publication. Publication uses an isolated copy because
   path-scoped commits cannot separate two owners' changes inside main.py.
+
+## Publication checkpoint
+
+SummitFlow implementation: `e0c55a9d2de6d297589c65b45cb80d1ec25c3f21`,
+pushed through ST after 3,105 tests passed (2 skipped, 71 deselected) and lint,
+types, architecture and Biome passed. Managed rebuild
+`7ad35879bfa4457ca66a5df1177fb210` succeeded. All 22 registered owner executables
+passed explicit prerequisite checks; this is not a blanket runtime-health claim.
+Only the five original unslop files and their two main.py registration lines
+remain outside publication; their hashes and content were preserved.
+
+Other managed owner checkpoints: Jobinator `856621acc4e3750fd3a64bbb2908e2afa27109eb`,
+Neri `288e2c49640e9dee65edff7c1103d9f6853265c7`,
+Learn `27420c9c4eae8e1c6efa71d43eba7e899ce60c68`,
+Portfolio `b51366aed562fce1bbe77b1705dd488106150131`. Their tasks are closed.
+Portfolio's lock-only audit repair passed 2,865 tests (433 skipped), managed
+rebuild, safe live market-status read and remote CI/audit/CodeQL gates.
+
+Final remote CI outcomes and Agent Hub's published revision are recorded in the
+parent task, including any test-only follow-up. Remote checks are not inferred
+from local checks. The temporary publication checkout initially triggered the
+existing durable-storage guard because it was under `/tmp`; moving the isolated
+checkout to a durable workspace location resolved all five failures without
+changing that guard (12 focused tests, then the full passing gate above).
