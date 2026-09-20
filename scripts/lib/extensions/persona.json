@@ -1,0 +1,43 @@
+{
+  "id": "agent-hub.persona",
+  "owner": "agent-hub",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Agent Hub-owned persona commands.",
+  "effects": [
+    "network",
+    "read-remote",
+    "write-remote",
+    "read-local",
+    "write-local",
+    "credentials",
+    "process"
+  ],
+  "namespace": "persona",
+  "help": {
+    "": "Usage: persona [OPTIONS] COMMAND [ARGS]...\n\n  Manage the persona identity\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  show          Show full persona configuration.\n  update        Update persona fields.\n  personality   Print or modify the personality document.\n  name          Show or set the persona's display name.\n  instructions  Print, modify, or export DB-backed heartbeat instructions.\n  preview       Show the effective runtime prompt/context preview for Jenny.\n  heartbeat     Trigger a heartbeat.\n  activity      Show recent persona activity sessions.\n  status        Show heartbeat state and persona overview.",
+    "show": "Usage: persona show [OPTIONS]\n\n  Show full persona configuration.\n\nOptions:\n  --help  Show this message and exit.",
+    "update": "Usage: persona update [OPTIONS]\n\n  Update persona fields. Text fields accept file paths.\n\nOptions:\n  -H, --heartbeat-instructions <str>\n                                  Import heartbeat instructions from file into\n                                  DB\n  -U, --user-context <str>        File with user context\n  --voice-enabled / --no-voice    Toggle voice\n  --voice-id <str>                Voice ID string\n  --heartbeat-interval <int>      Minutes between heartbeats (0-1440)\n  --session-reset-mode <str>      off, daily, or idle\n  --session-reset-hour <int>      Hour (0-23) for daily reset\n  --greeting <str>                Greeting message\n  --limits <str>                  JSON file for limits\n  --help                          Show this message and exit.",
+    "personality": "Usage: persona personality [OPTIONS]\n\n  Print or modify the personality document.\n\nOptions:\n  -e, --edit       Open $EDITOR to modify personality\n  -s, --set <str>  Set personality text directly\n  --help           Show this message and exit.",
+    "name": "Usage: persona name [OPTIONS] [new_name]\n\n  Show or set the persona's display name.\n\nArguments:\n  new_name  New name for the persona\n\nOptions:\n  --help  Show this message and exit.",
+    "instructions": "Usage: persona instructions [OPTIONS]\n\n  Print, modify, or export DB-backed heartbeat instructions.\n\nOptions:\n  -e, --edit       Open $EDITOR to modify\n  -s, --set <str>  Set heartbeat instructions directly\n  --export <str>   Export DB-backed heartbeat instructions to file\n  --help           Show this message and exit.",
+    "preview": "Usage: persona preview [OPTIONS]\n\n  Show the effective runtime prompt/context preview for Jenny.\n\nOptions:\n  -m, --mode <str>     Preview mode: chat, heartbeat, wake, review  [default:\n                       heartbeat]\n  -P, --project <str>  Optional project scope\n  --phase <str>        Optional phase/event hint\n  --input <str>        Optional prompt input placeholder\n  --json               Print raw JSON response\n  --combined-only      Print only the full combined context\n  --show-content       Print full section bodies plus full context.\n  --help               Show this message and exit.",
+    "heartbeat": "Usage: persona heartbeat [OPTIONS]\n\n  Trigger a heartbeat. With --watch, poll until it finishes.\n\nOptions:\n  -w, --watch          Poll until heartbeat completes\n  -P, --project <str>  Target project for this manual heartbeat\n  --help               Show this message and exit.",
+    "activity": "Usage: persona activity [OPTIONS]\n\n  Show recent persona activity sessions.\n\nOptions:\n  -H, --hours <int>  Lookback hours (default 24)  [default: 24]\n  -n, --limit <int>  Max sessions to show  [default: 10]\n  --help             Show this message and exit.",
+    "status": "Usage: persona status [OPTIONS]\n\n  Show heartbeat state and persona overview.\n\nOptions:\n  --help  Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.persona",
+      "tier": "reference",
+      "cmd": "st persona show",
+      "when": "inspect or manage the Agent Hub persona",
+      "task_types": [
+        "agent-admin"
+      ],
+      "on_demand": "agent administration"
+    }
+  ]
+}

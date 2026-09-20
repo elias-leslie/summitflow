@@ -20,7 +20,7 @@ RUN uv export --frozen --no-dev --no-editable --format requirements-txt \
     sed -i '/^\.$/d; /agent-hub-client$/d; /^\.\.\//d' requirements.txt && \
     uv venv .venv && \
     uv pip install --python .venv/bin/python \
-      -r requirements.txt /tmp/wheels/agent_hub_client-*.whl && \
+      -r requirements.txt /tmp/wheels/*.whl && \
     rm -rf /tmp/wheels /root/.cache/uv /root/.cache/pip requirements.txt
 
 # Copy application source

@@ -1,0 +1,33 @@
+{
+  "id": "agent-hub.note",
+  "owner": "agent-hub",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Agent Hub-owned note commands.",
+  "effects": [
+    "network",
+    "read-remote",
+    "write-remote",
+    "read-local",
+    "write-local",
+    "credentials"
+  ],
+  "namespace": "note",
+  "help": {
+    "": "Usage: note [OPTIONS] {text}\n\n  Save a quick note to memory, tagged #kind:note.\n\n  Examples: st note \"Check the deploy after merge\" | st note \"...\" --tags\n  \"#widget:claude-code\"\n\nArguments:\n  text  Note text  [required]\n\nOptions:\n  --topic <str>         Episode topic header  [default: Note]\n  -s, --summary <str>   Override summary (10-40 chars)\n  --tags <str>          Extra comma-separated tags\n  --scope <str>         Memory scope  [default: global]\n  --scope-id <str>      Scope id (for project scope)\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.note",
+      "tier": "reference",
+      "cmd": "st note <text> --scope project --scope-id <project>",
+      "when": "save a scoped note in Agent Hub memory",
+      "task_types": [
+        "memory-admin"
+      ],
+      "on_demand": "memory authoring"
+    }
+  ]
+}

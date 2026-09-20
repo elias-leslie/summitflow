@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import fcntl
 import importlib
+import json
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
@@ -964,37 +965,98 @@ def test_db_tables_counts_uses_exact_counts_not_pg_stats() -> None:
     assert "pg_stat_user_tables" not in sql
 
 
-def test_browser_health_uses_native_health() -> None:
-    with patch("cli.commands.browser._print_health") as health:
-        result = runner.invoke(main_app, ["browser", "--proxmox", "health"])
-
-    assert result.exit_code == 0
-    health.assert_called_once()
-
-
-def test_browser_health_defaults_to_local_ai() -> None:
-    with patch("cli.commands.browser._print_local_ai_health") as health:
-        result = runner.invoke(main_app, ["browser", "health"])
-
-    assert result.exit_code == 0
-    health.assert_called_once()
+def _browser_context(tmp_path: Path) -> dict[str, object]:
+    return {
+        "contract_version": 1,
+        "project_id": "fixture",
+        "project_root": str(tmp_path),
+        "cwd": str(tmp_path),
+        "api_base": "http://localhost:8001/api",
+        "agent_hub_url": "http://localhost:8003",
+        "output": {"human": False, "compact": True, "progress_only": False},
+    }
 
 
-def test_local_ai_health_shows_window_mode(
+@contextmanager
+def _available_browser_lock():
+    yield True
+
+
+def _registered_browser_request(
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    _clear_local_ai_window_env(monkeypatch)
-    with (
-        patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
-        patch("cli.commands.browser._agent_browser_bin", return_value="/usr/bin/agent-browser"),
-    ):
-        browser._print_local_ai_health()
+    tmp_path: Path,
+    argv: list[str],
+) -> tuple[int, dict[str, Any]]:
+    captured: list[list[str]] = []
+    monkeypatch.setattr(browser, "_agent_browser_bin", lambda: "/usr/bin/agent-browser")
+    monkeypatch.setattr(
+        "cli.lib.browser_policy.system_chrome_path",
+        lambda env=None: "/usr/bin/google-chrome-stable",
+    )
+    monkeypatch.setattr(browser, "_local_ai_command_lock", _available_browser_lock)
+    monkeypatch.setattr(browser, "_select_port", lambda engine: 9222)
+    monkeypatch.setattr(browser, "_host_for_engine", lambda engine=None: "browser-vm")
+    monkeypatch.setattr(browser, "_cdp_ws", lambda port, host=None: "ws://browser-vm/devtools/browser/id")
+    monkeypatch.setattr(
+        browser,
+        "_resolve_endpoint",
+        lambda engine=None: SimpleNamespace(
+            host="browser-vm", port=9222, source="ST_BROWSER_HOST", debug_local=False
+        ),
+    )
+    monkeypatch.setattr(
+        "cli.extensions.dispatch_extension",
+        lambda record, owner_argv, *, context: captured.append(owner_argv) or 0,
+    )
+    code = browser.run_registered(object(), argv, _browser_context(tmp_path))
+    assert captured and captured[0][0] == "--request"
+    return code, json.loads(captured[0][1])
 
-    output = capsys.readouterr().out
-    assert "window-mode: headless" in output
-    assert "no desktop window" in output
-    assert "software rasterizer disabled" in output
+
+def test_browser_health_uses_owner_with_resolved_remote_target(tmp_path, monkeypatch) -> None:
+    code, request = _registered_browser_request(monkeypatch, tmp_path, ["--proxmox", "health"])
+
+    assert code == 0
+    assert request["operation"] == "health"
+    assert request["target"] == "proxmox"
+    assert request["endpoint"] == {
+        "host": "browser-vm",
+        "port": 9222,
+        "ws": "ws://browser-vm:9222",
+        "source": "ST_BROWSER_HOST",
+        "debug_local": False,
+    }
+
+
+def test_browser_health_defaults_to_local_ai_with_fixed_session(tmp_path, monkeypatch) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    code, request = _registered_browser_request(monkeypatch, tmp_path, ["health"])
+
+    assert code == 0
+    assert request["target"] == "local-ai"
+    assert request["args"] == ["--session", "st-local-ai", "health"]
+    assert request["launch"]["window_mode"] == "headless"
+    assert request["launch"]["prefix"][-2:] == ["--args", _LOCAL_AI_HEADLESS_ARGS]
+
+
+def test_browser_update_needs_only_agent_browser_bin(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "cli.lib.browser_policy.system_chrome_path",
+        lambda env=None: pytest.fail("update consulted Chrome launch policy"),
+    )
+    code, request = _registered_browser_request(monkeypatch, tmp_path, ["update"])
+
+    assert code == 0
+    assert request["operation"] == "update"
+    assert request["args"] == ["update"]
+    assert request["launch"] == {
+        "agent_browser_bin": "/usr/bin/agent-browser",
+        "prefix": [],
+        "window_mode": "none",
+        "default_launch": False,
+        "minimize": False,
+        "window_class": "",
+    }
 
 
 def test_browser_help_explains_isolated_target() -> None:
@@ -1012,12 +1074,7 @@ def test_browser_help_explains_isolated_target() -> None:
 
 
 def test_browser_subcommand_help_does_not_run_health() -> None:
-    with patch("cli.commands.browser._print_health") as health:
-        result = runner.invoke(main_app, ["browser", "health", "--help"])
-
-    assert result.exit_code == 0
-    assert "Plain st browser commands use local system Chrome profile AI." in result.output
-    health.assert_not_called()
+    assert browser.run_registered(object(), ["health", "--help"], {}) == 0
 
 
 def test_vm_help_points_to_browser_target_workflow() -> None:
@@ -1103,38 +1160,37 @@ def test_browser_vm_ip_selection_honors_prefix() -> None:
     assert browser._select_browser_vm_ip(output, {"ST_BROWSER_VM_IP_PREFIX": "10."}) == "10.1.2.3"
 
 
-def test_browser_url_resolves_project() -> None:
+def test_browser_url_resolves_project(capsys) -> None:
     route = SimpleNamespace(url="https://terminal.example.com/", project_id="a-term", source="hosts.browser_frontend")
     with patch("cli.commands.browser.resolve_browser_project_route", return_value=route):
-        result = runner.invoke(main_app, ["browser", "url", "terminal"])
+        code = browser._browser_url(["terminal"])
 
-    assert result.exit_code == 0
-    assert "https://terminal.example.com/" in result.output
-    assert "a-term hosts.browser_frontend" in result.output
+    assert code == 0
+    assert capsys.readouterr().out == "https://terminal.example.com/ # a-term hosts.browser_frontend\n"
 
 
-def test_browser_endpoint_prints_canonical_http_url() -> None:
+def test_browser_endpoint_prints_canonical_http_url(capsys) -> None:
     with (
         patch("cli.commands.browser._select_port", return_value=9222),
         patch("cli.commands.browser._host_for_engine", return_value="browser-vm"),
         patch("cli.commands.browser._cdp_ws", return_value="ws://browser-vm/devtools/browser/abc"),
     ):
-        result = runner.invoke(main_app, ["browser", "--proxmox", "endpoint"])
+        code = browser._browser_endpoint([], None)
 
-    assert result.exit_code == 0
-    assert result.output == "http://browser-vm:9222\n"
+    assert code == 0
+    assert capsys.readouterr().out == "http://browser-vm:9222\n"
 
 
-def test_browser_endpoint_prints_canonical_ws_url() -> None:
+def test_browser_endpoint_prints_canonical_ws_url(capsys) -> None:
     with (
         patch("cli.commands.browser._select_port", return_value=9222),
         patch("cli.commands.browser._host_for_engine", return_value="browser-vm"),
         patch("cli.commands.browser._cdp_ws", return_value="ws://browser-vm/devtools/browser/abc"),
     ):
-        result = runner.invoke(main_app, ["browser", "--proxmox", "endpoint", "--ws"])
+        code = browser._browser_endpoint(["--ws"], None)
 
-    assert result.exit_code == 0
-    assert result.output == "ws://browser-vm/devtools/browser/abc\n"
+    assert code == 0
+    assert capsys.readouterr().out == "ws://browser-vm/devtools/browser/abc\n"
 
 
 def _clear_local_ai_window_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1161,36 +1217,26 @@ _LOCAL_AI_HEADLESS_ARGS = (
 )
 
 
-def test_browser_auto_open_prefers_local_ai_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_browser_auto_open_normalizes_local_profile(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_local_ai_window_env(monkeypatch)
-    with (
-        patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
-        patch("cli.commands.browser.resolve_browser_location", return_value="http://app.lan:3005/"),
-        patch("cli.commands.browser._maybe_minimize_local_ai_window"),
-        patch("cli.commands.browser._select_port") as select_port,
-        patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0, stdout="", stderr="")) as run_agent,
-    ):
-        result = runner.invoke(main_app, ["browser", "open", "portfolio-ai"])
+    monkeypatch.setattr(browser, "resolve_browser_location", lambda value: "http://app.lan:3005/")
+    code, request = _registered_browser_request(monkeypatch, tmp_path, ["open", "portfolio-ai"])
 
-    assert result.exit_code == 0
-    select_port.assert_not_called()
-    assert run_agent.call_args.args[0] == [
+    assert code == 0
+    assert request["args"] == ["--session", "st-local-ai", "open", "http://app.lan:3005/"]
+    assert request["launch"]["prefix"] == [
         "--profile",
         "AI",
         "--executable-path",
         "/usr/bin/google-chrome-stable",
         "--args",
         _LOCAL_AI_HEADLESS_ARGS,
-        "--session",
-        "st-local-ai",
-        "open",
-        "http://app.lan:3005/",
     ]
 
 
 def test_local_ai_agent_args_hardware_headless_is_default(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_local_ai_window_env(monkeypatch)
-    with patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
+    with patch("cli.lib.browser_policy.system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
         args = browser._local_ai_agent_args(["open", "http://app.lan/"])
     assert "--headed" not in args
     assert args[args.index("--args") + 1] == _LOCAL_AI_HEADLESS_ARGS
@@ -1204,110 +1250,13 @@ def test_local_ai_agent_args_hardware_headless_is_default(monkeypatch: pytest.Mo
 def test_local_ai_agent_args_minimized_is_explicit(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_local_ai_window_env(monkeypatch)
     monkeypatch.setenv("ST_BROWSER_LOCAL_AI_MINIMIZED", "1")
-    with patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
+    with patch("cli.lib.browser_policy.system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
         args = browser._local_ai_agent_args(["open", "http://app.lan/"])
     assert "--headed" in args
     assert args[args.index("--args") + 1] == _LOCAL_AI_MINIMIZED_ARGS
     # No injected Chrome flag may contain a comma (agent-browser splits --args on commas).
     for flag in _LOCAL_AI_MINIMIZED_ARGS.split(","):
         assert flag.count(",") == 0 and flag.startswith("--")
-
-
-def test_local_ai_agent_filters_default_daemon_warning(monkeypatch: pytest.MonkeyPatch) -> None:
-    _clear_local_ai_window_env(monkeypatch)
-    warning = "⚠ --executable-path, --profile, --args, --headed ignored: daemon already running. Use 'agent-browser close' first to restart with new options.\n"
-    with (
-        patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
-        patch("cli.commands.browser._maybe_minimize_local_ai_window"),
-        patch(
-            "cli.commands.browser._run_agent",
-            return_value=subprocess.CompletedProcess([], 0, stdout=f"{warning}snapshot\n", stderr=warning),
-        ),
-    ):
-        result = browser._run_local_ai_agent(["snapshot"])
-
-    assert result.stdout == "snapshot\n"
-    assert result.stderr == ""
-
-
-def test_local_ai_agent_keeps_custom_launch_warning(monkeypatch: pytest.MonkeyPatch) -> None:
-    _clear_local_ai_window_env(monkeypatch)
-    warning = "⚠ --profile ignored: daemon already running. Use 'agent-browser close' first to restart with new options.\n"
-    with (
-        patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
-        patch("cli.commands.browser._maybe_minimize_local_ai_window"),
-        patch(
-            "cli.commands.browser._run_agent",
-            return_value=subprocess.CompletedProcess([], 0, stdout=warning, stderr=""),
-        ),
-    ):
-        result = browser._run_local_ai_agent(["--profile", "Debug", "snapshot"])
-
-    assert result.stdout == warning
-
-
-_DAEMON_RUNNING_WARNING = (
-    "⚠ --executable-path, --profile, --headed ignored: daemon already running. "
-    "Use 'agent-browser close' first to restart with new options.\n"
-)
-
-
-def test_visible_window_ignored_emits_hint_when_daemon_running(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    _clear_local_ai_window_env(monkeypatch)
-    monkeypatch.setenv("ST_BROWSER_LOCAL_AI_VISIBLE", "1")
-    with (
-        patch(
-            "cli.commands.browser._run_local_ai_agent",
-            return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=_DAEMON_RUNNING_WARNING),
-        ),
-        patch("cli.commands.browser.emit_result_or_details"),
-    ):
-        rc = browser._run_local_ai_browser_command("snapshot", ["snapshot"])
-
-    assert rc == 0
-    err = capsys.readouterr().err
-    assert "visible window mode requested" in err
-    assert "st browser close" in err
-
-
-def test_visible_window_hint_silent_in_default_headless_mode(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    _clear_local_ai_window_env(monkeypatch)
-    with (
-        patch(
-            "cli.commands.browser._run_local_ai_agent",
-            return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=_DAEMON_RUNNING_WARNING),
-        ),
-        patch("cli.commands.browser.emit_result_or_details"),
-    ):
-        rc = browser._run_local_ai_browser_command("snapshot", ["snapshot"])
-
-    assert rc == 0
-    assert "visible window mode requested" not in capsys.readouterr().err
-
-
-def test_visible_window_hint_silent_when_daemon_not_running(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    _clear_local_ai_window_env(monkeypatch)
-    monkeypatch.setenv("ST_BROWSER_LOCAL_AI_VISIBLE", "1")
-    with (
-        patch(
-            "cli.commands.browser._run_local_ai_agent",
-            return_value=subprocess.CompletedProcess([], 0, stdout="snapshot\n", stderr=""),
-        ),
-        patch("cli.commands.browser.emit_result_or_details"),
-    ):
-        rc = browser._run_local_ai_browser_command("snapshot", ["snapshot"])
-
-    assert rc == 0
-    assert "visible window mode requested" not in capsys.readouterr().err
 
 
 def test_local_ai_screenshot_path_resolves_relative_path(
@@ -1327,7 +1276,7 @@ def test_local_ai_screenshot_path_resolves_relative_path(
 def test_local_ai_agent_args_visible_keeps_window_without_minimize_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_local_ai_window_env(monkeypatch)
     monkeypatch.setenv("ST_BROWSER_LOCAL_AI_VISIBLE", "1")
-    with patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
+    with patch("cli.lib.browser_policy.system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
         args = browser._local_ai_agent_args(["open", "http://app.lan/"])
     assert "--headed" in args
     assert "--args" not in args
@@ -1336,58 +1285,25 @@ def test_local_ai_agent_args_visible_keeps_window_without_minimize_flags(monkeyp
 def test_local_ai_agent_args_headless_omits_headed(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_local_ai_window_env(monkeypatch)
     monkeypatch.setenv("ST_BROWSER_LOCAL_AI_HEADLESS", "1")
-    with patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
+    with patch("cli.lib.browser_policy.system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
         args = browser._local_ai_agent_args(["open", "http://app.lan/"])
     assert "--headed" not in args
     assert args[args.index("--args") + 1] == _LOCAL_AI_HEADLESS_ARGS
 
 
-def test_local_ai_agent_uses_singleton_session(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_local_ai_policy_uses_singleton_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_local_ai_window_env(monkeypatch)
+    assert browser._with_local_ai_session(["snapshot"]) == ["--session", "st-local-ai", "snapshot"]
+
+
+def test_local_ai_policy_blocks_additional_session(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_local_ai_window_env(monkeypatch)
     with (
-        patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
-        patch("cli.commands.browser._maybe_minimize_local_ai_window"),
-        patch(
-            "cli.commands.browser._run_agent",
-            return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=""),
-        ) as run_agent,
-    ):
-        browser._run_local_ai_agent(["snapshot"])
-
-    args = run_agent.call_args.args[0]
-    assert args[args.index("--session") + 1] == "st-local-ai"
-
-
-def test_local_ai_agent_blocks_additional_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    _clear_local_ai_window_env(monkeypatch)
-    with (
-        patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
-        patch("cli.commands.browser._run_agent") as run_agent,
         pytest.raises(typer.Exit) as raised,
     ):
-        browser._run_local_ai_agent(["--session", "parallel", "snapshot"])
+        browser._with_local_ai_session(["--session", "parallel", "snapshot"])
 
     assert raised.value.exit_code == 75
-    run_agent.assert_not_called()
-
-
-def test_local_ai_startup_command_retries_only_missing_socket() -> None:
-    missing_socket = subprocess.CompletedProcess(
-        [],
-        1,
-        stdout="",
-        stderr="Failed to connect: No such file or directory (os error 2)",
-    )
-    success = subprocess.CompletedProcess([], 0, stdout="", stderr="")
-    with (
-        patch("cli.commands.browser._run_local_ai_agent", side_effect=[missing_socket, success]) as run_agent,
-        patch("cli.commands.browser.time.sleep") as sleep,
-    ):
-        result = browser._run_local_ai_startup_command(["console", "--clear"])
-
-    assert result.returncode == 0
-    assert run_agent.call_count == 2
-    sleep.assert_called_once_with(0.5)
 
 
 def test_local_ai_browser_fails_fast_when_command_lock_is_busy(
@@ -1396,17 +1312,18 @@ def test_local_ai_browser_fails_fast_when_command_lock_is_busy(
 ) -> None:
     _clear_local_ai_window_env(monkeypatch)
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
-    lock_path = browser._local_ai_lock_path()
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+", encoding="utf-8") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        with patch("cli.commands.browser._run_local_ai_agent") as run_agent:
-            result = runner.invoke(main_app, ["browser", "snapshot"])
+    @contextmanager
+    def busy():
+        yield False
 
-    assert result.exit_code == 75
-    assert "LOCAL_AI_BUSY" in result.output
-    assert "--proxmox" in result.output
-    run_agent.assert_not_called()
+    monkeypatch.setattr(browser, "_agent_browser_bin", lambda: "/usr/bin/agent-browser")
+    monkeypatch.setattr("cli.lib.browser_policy.system_chrome_path", lambda env=None: "/usr/bin/chrome")
+    monkeypatch.setattr(browser, "_local_ai_command_lock", busy)
+    with patch("cli.extensions.dispatch_extension") as dispatch:
+        code = browser.run_registered(object(), ["snapshot"], _browser_context(tmp_path))
+
+    assert code == 75
+    dispatch.assert_not_called()
 
 
 def test_explicit_visible_overrides_ambient_headless(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1416,73 +1333,33 @@ def test_explicit_visible_overrides_ambient_headless(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("ST_BROWSER_LOCAL_AI_HEADLESS", "1")
     monkeypatch.setenv("ST_BROWSER_LOCAL_AI_VISIBLE", "1")
     assert browser._local_ai_window_mode() == "visible"
-    with patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
+    with patch("cli.lib.browser_policy.system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
         args = browser._local_ai_agent_args(["open", "http://app.lan/"])
     assert "--headed" in args
 
 
 def test_local_ai_agent_args_respects_user_supplied_args(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_local_ai_window_env(monkeypatch)
-    with patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
+    with patch("cli.lib.browser_policy.system_chrome_path", return_value="/usr/bin/google-chrome-stable"):
         args = browser._local_ai_agent_args(["--args", "--no-sandbox", "open", "http://app.lan/"])
     assert args.count("--args") == 1
     assert _LOCAL_AI_MINIMIZED_ARGS not in args
     assert _LOCAL_AI_HEADLESS_ARGS not in args
 
 
-def test_maybe_minimize_local_ai_window_targets_only_our_class(monkeypatch: pytest.MonkeyPatch) -> None:
-    _clear_local_ai_window_env(monkeypatch)
-    monkeypatch.setenv("ST_BROWSER_LOCAL_AI_MINIMIZED", "1")
-    monkeypatch.setattr(browser, "_local_ai_minimized", False, raising=False)
-    calls: list[list[str]] = []
-
-    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append(cmd)
-        stdout = "44040197\n" if cmd[:2] == ["xdotool", "search"] else ""
-        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
-
-    with (
-        patch("cli.commands.browser.shutil.which", return_value="/usr/bin/xdotool"),
-        patch("cli.commands.browser.subprocess.run", side_effect=fake_run),
-    ):
-        browser._maybe_minimize_local_ai_window()
-
-    assert ["xdotool", "search", "--class", "st-browser-ai"] in calls
-    assert ["xdotool", "windowminimize", "44040197"] in calls
-    assert browser._local_ai_minimized is True
-
-
-def test_maybe_minimize_local_ai_window_noop_when_visible(monkeypatch: pytest.MonkeyPatch) -> None:
-    _clear_local_ai_window_env(monkeypatch)
-    monkeypatch.setenv("ST_BROWSER_LOCAL_AI_VISIBLE", "1")
-    monkeypatch.setattr(browser, "_local_ai_minimized", False, raising=False)
-    with patch("cli.commands.browser.subprocess.run") as run:
-        browser._maybe_minimize_local_ai_window()
-    run.assert_not_called()
-
-
-def test_browser_force_proxmox_skips_local_ai(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_browser_force_proxmox_normalizes_remote_request(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AGENT_BROWSER_SESSION", raising=False)
     monkeypatch.delenv("ST_BROWSER_SESSION", raising=False)
-    with (
-        patch("cli.commands.browser._system_chrome_path", return_value="/usr/bin/google-chrome-stable"),
-        patch("cli.commands.browser._select_port", return_value=9222),
-        patch("cli.commands.browser._host_for_engine", return_value="browser"),
-        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
-        patch("cli.commands.browser._default_browser_session", return_value="st-repo-1234"),
-        patch("cli.commands.browser._run_browser_reaper"),
-        patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0)) as run_agent,
-    ):
-        result = runner.invoke(main_app, ["browser", "--proxmox", "open", "https://example.com"])
+    monkeypatch.setattr(browser, "_default_browser_session", lambda: "st-repo-1234")
+    code, request = _registered_browser_request(
+        monkeypatch, tmp_path, ["--proxmox", "open", "https://example.com"]
+    )
 
-    assert result.exit_code == 0
-    assert run_agent.call_args_list[1].kwargs["cdp"] == "ws://browser"
-    assert run_agent.call_args_list[1].args[0] == [
-        "--session",
-        "st-repo-1234",
-        "open",
-        "https://example.com",
-    ]
+    assert code == 0
+    assert request["target"] == "proxmox"
+    assert request["args"] == ["--session", "st-repo-1234", "open", "https://example.com"]
+    assert request["default_viewport"] == {"width": "1600", "height": "900"}
+    assert request["endpoint"]["ws"] == "ws://browser-vm/devtools/browser/id"
 
 
 def test_browser_select_port_honors_explicit_port(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1495,206 +1372,64 @@ def test_browser_select_port_honors_explicit_port(monkeypatch: pytest.MonkeyPatc
     engine_up.assert_called_once_with(9333, host="192.0.2.10")
 
 
-def test_browser_open_uses_repo_scoped_session(monkeypatch) -> None:
+def test_browser_open_uses_repo_scoped_session(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("AGENT_BROWSER_SESSION", raising=False)
     monkeypatch.delenv("ST_BROWSER_SESSION", raising=False)
 
-    with (
-        patch("cli.commands.browser._select_port", return_value=9222),
-        patch("cli.commands.browser._host_for_engine", return_value="browser"),
-        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
-        patch("cli.commands.browser._default_browser_session", return_value="st-repo-1234"),
-        patch("cli.commands.browser._run_browser_reaper"),
-        patch("cli.commands.browser._close_blank_browser_targets") as close_blank,
-        patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0)) as run_agent,
-    ):
-        result = runner.invoke(main_app, ["browser", "--proxmox", "open", "https://example.com"])
+    monkeypatch.setattr(browser, "_default_browser_session", lambda: "st-repo-1234")
+    _, request = _registered_browser_request(
+        monkeypatch, tmp_path, ["--proxmox", "open", "https://example.com"]
+    )
 
-    assert result.exit_code == 0
-    assert run_agent.call_args_list[0].args[0] == [
-        "--session",
-        "st-repo-1234",
-        "set",
-        "viewport",
-        "1600",
-        "900",
-    ]
-    assert run_agent.call_args_list[1].args[0] == [
-        "--session",
-        "st-repo-1234",
-        "open",
-        "https://example.com",
-    ]
-    close_blank.assert_not_called()
+    assert request["args"][:2] == ["--session", "st-repo-1234"]
 
 
-def test_browser_open_blocks_loopback_url_before_selecting_browser(monkeypatch) -> None:
+def test_browser_open_blocks_loopback_url_before_selecting_browser(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("ST_BROWSER_CONFIRM_LOCAL_URL", raising=False)
 
-    with patch("cli.commands.browser._select_port") as select_port:
-        result = runner.invoke(main_app, ["browser", "--proxmox", "open", "http://127.0.0.1:3000/money"])
+    monkeypatch.setattr(browser, "_agent_browser_bin", lambda: "/usr/bin/agent-browser")
+    with patch("cli.commands.browser._select_port") as select_port, pytest.raises(typer.Exit) as raised:
+        browser.run_registered(
+            object(), ["--proxmox", "open", "http://127.0.0.1:3000/money"], _browser_context(tmp_path)
+        )
 
-    assert result.exit_code == 2
-    assert "LOCAL_BROWSER_URL_BLOCKED" in result.output
-    assert "browser VM 100" in result.output
-    assert "st browser url <project>" in result.output
-    assert "ST_BROWSER_CONFIRM_LOCAL_URL=" in result.output
+    assert raised.value.exit_code == 2
     select_port.assert_not_called()
 
 
-def test_browser_open_resolves_project_target(monkeypatch) -> None:
+def test_browser_open_resolves_project_target(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("AGENT_BROWSER_SESSION", raising=False)
     monkeypatch.delenv("ST_BROWSER_SESSION", raising=False)
 
-    with (
-        patch("cli.commands.browser._select_port", return_value=9222),
-        patch("cli.commands.browser._host_for_engine", return_value="browser"),
-        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
-        patch("cli.commands.browser._default_browser_session", return_value="st-repo-1234"),
-        patch("cli.commands.browser.resolve_browser_location", return_value="https://terminal.example.com/"),
-        patch("cli.commands.browser._run_browser_reaper"),
-        patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0)) as run_agent,
-    ):
-        result = runner.invoke(main_app, ["browser", "--proxmox", "open", "a-term"])
+    monkeypatch.setattr(browser, "_default_browser_session", lambda: "st-repo-1234")
+    monkeypatch.setattr(browser, "_resolve_guarded_browser_location", lambda value: "https://terminal.example.com/")
+    _, request = _registered_browser_request(monkeypatch, tmp_path, ["--proxmox", "open", "a-term"])
 
-    assert result.exit_code == 0
-    assert run_agent.call_args_list[1].args[0] == [
-        "--session",
-        "st-repo-1234",
-        "open",
-        "https://terminal.example.com/",
-    ]
+    assert request["args"][-2:] == ["open", "https://terminal.example.com/"]
 
 
-def test_browser_open_preserves_explicit_session() -> None:
-    with (
-        patch("cli.commands.browser._select_port", return_value=9222),
-        patch("cli.commands.browser._host_for_engine", return_value="browser"),
-        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
-        patch("cli.commands.browser._run_browser_reaper"),
-        patch("cli.commands.browser._close_blank_browser_targets") as close_blank,
-        patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0)) as run_agent,
-    ):
-        result = runner.invoke(main_app, ["browser", "--proxmox", "--session", "operator", "open", "https://example.com"])
+def test_browser_open_preserves_explicit_session(tmp_path, monkeypatch) -> None:
+    _, request = _registered_browser_request(
+        monkeypatch,
+        tmp_path,
+        ["--proxmox", "--session", "operator", "open", "https://example.com"],
+    )
 
-    assert result.exit_code == 0
-    assert run_agent.call_args_list[0].args[0] == [
-        "--session",
-        "operator",
-        "set",
-        "viewport",
-        "1600",
-        "900",
-    ]
-    assert run_agent.call_args_list[1].args[0] == [
-        "--session",
-        "operator",
-        "open",
-        "https://example.com",
-    ]
-    close_blank.assert_not_called()
+    assert request["args"][:2] == ["--session", "operator"]
 
 
-def test_browser_snapshot_prunes_remote_blank_targets(tmp_path: Path) -> None:
-    with (
-        patch("cli.commands.browser.current_root", return_value=tmp_path),
-        patch("cli.commands.browser._select_port", return_value=9222),
-        patch("cli.commands.browser._host_for_engine", return_value="browser"),
-        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
-        patch("cli.commands.browser._run_browser_reaper"),
-        patch("cli.commands.browser._close_blank_browser_targets") as close_blank,
-        patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0, stdout="(empty page)", stderr="")),
-    ):
-        result = runner.invoke(main_app, ["browser", "--proxmox", "snapshot"])
-
-    assert result.exit_code == 0
-    close_blank.assert_called_once_with("browser", 9222)
-
-
-def test_browser_check_closes_session_and_runs_reaper() -> None:
-    calls: list[list[str]] = []
-
-    def fake_run_agent(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
-        calls.append(args)
-        if args[-1].startswith("JSON.stringify"):
-            return subprocess.CompletedProcess(args, 0, stdout="{}", stderr="")
-        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-
-    with (
-        patch("cli.commands.browser._select_port", return_value=9222),
-        patch("cli.commands.browser._host_for_engine", return_value="browser"),
-        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
-        patch("cli.commands.browser._run_browser_reaper") as reaper,
-        patch("cli.lib.browser_check.browser_page_target_ids", side_effect=[{"before"}, {"before", "after"}]),
-        patch("cli.lib.browser_check.close_browser_targets") as close_targets,
-        patch("cli.commands.browser._run_agent", side_effect=fake_run_agent),
-    ):
-        result = runner.invoke(main_app, ["browser", "--proxmox", "check", "https://example.com", "/tmp/check.png"])
-
-    assert result.exit_code == 0
-    assert calls[-1][2:] == ["close"]
-    reaper.assert_called_once()
-    close_targets.assert_called_once_with("browser", 9222, {"after"})
-
-
-def test_browser_check_reports_console_history_from_initial_render(tmp_path: Path) -> None:
-    calls: list[list[str]] = []
-
-    def fake_run_agent(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
-        calls.append(args)
-        if args[-1] == "console":
-            return subprocess.CompletedProcess(
-                args,
-                0,
-                stdout="[error] initial render failed\n[warning] invalid chart dimensions\n",
-                stderr="",
-            )
-        if args[-1].startswith("JSON.stringify(performance"):
-            return subprocess.CompletedProcess(args, 0, stdout="[]", stderr="")
-        if args[-1].startswith("JSON.stringify"):
-            return subprocess.CompletedProcess(
-                args,
-                0,
-                stdout='{"url":"https://example.com","title":"Example"}',
-                stderr="",
-            )
-        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-
-    with (
-        patch("cli.commands.browser.current_root", return_value=tmp_path),
-        patch("cli.commands.browser._select_port", return_value=9222),
-        patch("cli.commands.browser._host_for_engine", return_value="browser"),
-        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
-        patch("cli.commands.browser._run_browser_reaper"),
-        patch("cli.lib.browser_check.browser_page_target_ids", return_value=set()),
-        patch("cli.lib.browser_check.close_browser_targets"),
-        patch("cli.commands.browser._run_agent", side_effect=fake_run_agent),
-    ):
-        result = runner.invoke(
-            main_app,
-            ["browser", "--proxmox", "check", "https://example.com", "/tmp/check.png"],
-        )
-
-    assert result.exit_code == 1
-    assert "BROWSER_CHECK:ISSUES|errors=1|warnings=1|network=0" in result.output
-    clear_index = next(index for index, call in enumerate(calls) if call[-2:] == ["console", "--clear"])
-    open_index = next(index for index, call in enumerate(calls) if "open" in call)
-    assert clear_index < open_index
-    details = tmp_path / ".dev-tools" / "browser-check-details.txt"
-    assert "[error] initial render failed" in details.read_text(encoding="utf-8")
-
-
-def test_browser_check_blocks_localhost_url_before_selecting_browser(monkeypatch) -> None:
+def test_browser_check_blocks_localhost_url_before_selecting_browser(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("ST_BROWSER_CONFIRM_LOCAL_URL", raising=False)
 
-    with patch("cli.commands.browser._select_port") as select_port:
-        result = runner.invoke(main_app, ["browser", "--proxmox", "check", "http://localhost:3000/money", "/tmp/check.png"])
+    monkeypatch.setattr(browser, "_agent_browser_bin", lambda: "/usr/bin/agent-browser")
+    with patch("cli.commands.browser._select_port") as select_port, pytest.raises(typer.Exit) as raised:
+        browser.run_registered(
+            object(),
+            ["--proxmox", "check", "http://localhost:3000/money", "/tmp/check.png"],
+            _browser_context(tmp_path),
+        )
 
-    assert result.exit_code == 2
-    assert "LOCAL_BROWSER_URL_BLOCKED" in result.output
-    assert "target_host=localhost:3000" in result.output
-    assert "localhost/127.0.0.1 is that VM" in result.output
-    assert "ST_BROWSER_CONFIRM_LOCAL_URL=" in result.output
+    assert raised.value.exit_code == 2
     select_port.assert_not_called()
 
 
@@ -1703,7 +1438,7 @@ def test_browser_local_url_confirmation_token_allows_intentional_target(monkeypa
     message = browser._local_browser_url_error(target)
 
     assert message is not None
-    assert "target_host=localhost:3000" in message
+    assert "target=localhost:3000" in message
     assert "token=secret" not in message
 
     monkeypatch.setenv("ST_BROWSER_CONFIRM_LOCAL_URL", browser._local_url_confirmation_token(target))
@@ -1711,135 +1446,23 @@ def test_browser_local_url_confirmation_token_allows_intentional_target(monkeypa
     assert browser._local_browser_url_error(target) is None
 
 
-def test_browser_check_treats_screenshot_timeout_as_warning(tmp_path: Path) -> None:
-    def fake_run_agent(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
-        if "screenshot" in args:
-            return subprocess.CompletedProcess(args, 124, stdout="", stderr="Operation timed out")
-        if args[-1].startswith("JSON.stringify(performance"):
-            return subprocess.CompletedProcess(args, 0, stdout="[]", stderr="")
-        if args[-1].startswith("JSON.stringify"):
-            return subprocess.CompletedProcess(args, 0, stdout="{}", stderr="")
-        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-
-    with (
-        patch("cli.commands.browser.current_root", return_value=tmp_path),
-        patch("cli.commands.browser._select_port", return_value=9222),
-        patch("cli.commands.browser._host_for_engine", return_value="browser"),
-        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
-        patch("cli.commands.browser._run_browser_reaper"),
-        patch("cli.lib.browser_check.browser_page_target_ids", return_value=set()),
-        patch("cli.lib.browser_check.close_browser_targets"),
-        patch("cli.commands.browser._run_agent", side_effect=fake_run_agent),
-    ):
-        result = runner.invoke(main_app, ["browser", "--proxmox", "check", "https://example.com", "/tmp/check.png"])
-
-    assert result.exit_code == 2
-    assert (
-        "BROWSER_CHECK:INCOMPLETE|errors=0|warnings=0|network=0|command_warnings=3"
-        in result.output
+def test_browser_check_normalizes_responsive_evidence_request(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ST_BROWSER_CHECK_SETTLE_MS", "750")
+    _, request = _registered_browser_request(
+        monkeypatch,
+        tmp_path,
+        ["--proxmox", "check", "--session", "operator", "https://example.com", "/tmp/check.png"],
     )
-    details = tmp_path / ".dev-tools" / "browser-check-details.txt"
-    assert "Browser command warnings (3):" in details.read_text(encoding="utf-8")
 
-
-def test_browser_check_failed_console_read_is_incomplete(tmp_path: Path) -> None:
-    def fake_run_agent(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
-        if args[-1] == "console":
-            return subprocess.CompletedProcess(
-                args,
-                1,
-                stdout="",
-                stderr="console transport unavailable",
-            )
-        if args[-1].startswith("JSON.stringify(performance"):
-            return subprocess.CompletedProcess(args, 0, stdout="[]", stderr="")
-        if args[-1].startswith("JSON.stringify"):
-            return subprocess.CompletedProcess(
-                args,
-                0,
-                stdout='{"url":"https://example.com","title":"Example"}',
-                stderr="",
-            )
-        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-
-    with (
-        patch("cli.commands.browser.current_root", return_value=tmp_path),
-        patch("cli.commands.browser._select_port", return_value=9222),
-        patch("cli.commands.browser._host_for_engine", return_value="browser"),
-        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
-        patch("cli.commands.browser._run_browser_reaper"),
-        patch("cli.lib.browser_check.browser_page_target_ids", return_value=set()),
-        patch("cli.lib.browser_check.close_browser_targets"),
-        patch("cli.commands.browser._run_agent", side_effect=fake_run_agent),
-    ):
-        result = runner.invoke(
-            main_app,
-            ["browser", "--proxmox", "check", "https://example.com", "/tmp/check.png"],
-        )
-
-    assert result.exit_code == 2
-    assert "BROWSER_CHECK:INCOMPLETE" in result.output
-    assert "command_warnings=1" in result.output
-
-
-def test_local_browser_check_failed_console_read_is_incomplete(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    def fake_run_agent(args: list[str]) -> subprocess.CompletedProcess[str]:
-        if args[-1] == "console":
-            return subprocess.CompletedProcess(
-                args,
-                1,
-                stdout="",
-                stderr="console transport unavailable",
-            )
-        if args[-1].startswith("JSON.stringify(performance"):
-            return subprocess.CompletedProcess(args, 0, stdout="[]", stderr="")
-        if args[-1].startswith("JSON.stringify"):
-            return subprocess.CompletedProcess(
-                args,
-                0,
-                stdout='{"url":"https://example.com","title":"Example"}',
-                stderr="",
-            )
-        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-
-    with (
-        patch("cli.commands.browser.current_root", return_value=tmp_path),
-        patch(
-            "cli.commands.browser._run_local_ai_agent",
-            side_effect=fake_run_agent,
-        ),
-    ):
-        result = browser._browser_local_ai_check(
-            ["https://example.com", str(tmp_path / "check.png")]
-        )
-
-    assert result == 2
-    output = capsys.readouterr().out
-    assert "BROWSER_CHECK:INCOMPLETE" in output
-    assert "command_warnings=1" in output
-
-
-def test_browser_large_forwarded_output_goes_to_details_file(tmp_path: Path) -> None:
-    output = "\n".join(f"node {index}" for index in range(45))
-    with (
-        patch("cli.commands.browser.current_root", return_value=tmp_path),
-        patch("cli.commands.browser._select_port", return_value=9222),
-        patch("cli.commands.browser._host_for_engine", return_value="browser"),
-        patch("cli.commands.browser._cdp_ws", return_value="ws://browser"),
-        patch("cli.commands.browser._run_browser_reaper"),
-        patch("cli.commands.browser._close_blank_browser_targets"),
-        patch("cli.commands.browser._run_agent", return_value=subprocess.CompletedProcess([], 0, stdout=output, stderr="")),
-    ):
-        result = runner.invoke(main_app, ["browser", "--proxmox", "snapshot"])
-
-    details = tmp_path / ".dev-tools" / "browser-snapshot-details.txt"
-    assert result.exit_code == 0
-    assert details.read_text(encoding="utf-8") == output
-    assert "node 0" not in result.output
-    assert "BROWSER:OK:0|lines=45|details:.dev-tools/browser-snapshot-details.txt" in result.output
+    assert request["operation"] == "check"
+    assert request["check"]["session"] == "operator"
+    assert request["check"]["settle_ms"] == "750"
+    assert [(row["label"], row["width"], row["height"]) for row in request["check"]["viewports"]] == [
+        ("desktop", 1600, 900),
+        ("narrow", 1180, 900),
+        ("mobile", 390, 844),
+    ]
+    assert request["check"]["viewports"][2]["path"] == "/tmp/check-mobile.png"
 
 
 def test_docker_large_output_goes_to_details_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -1867,54 +1490,28 @@ def test_setup_browser_refuses_server_local_install(monkeypatch) -> None:
     assert "Refusing server-local browser install" in result.output
 
 
-def test_web_runs_agent_hub_service_code() -> None:
-    with patch("cli.commands.web._run_agent_hub_web", return_value=0) as run_web:
-        result = runner.invoke(main_app, ["web", "search", "--query", "SummitFlow", "--limit", "1"])
+@pytest.mark.parametrize("arguments", [
+    ["search", "--query", "SummitFlow", "--limit", "1"],
+    ["fetch", "--url", "https://example.com", "--backend", "jina", "--max-chars", "500"],
+    ["research", "--query", "SummitFlow", "--backend", "direct"],
+    ["benchmark", "--iterations", "99", "--max-chars", "100000"],
+])
+def test_web_uses_registered_public_executable(arguments, tmp_path) -> None:
+    # Product normalization belongs to Agent Hub; ST preserves argv and presentation.
+    from pathlib import Path
 
-    assert result.exit_code == 0
-    assert run_web.call_args.args[0]["command"] == "search"
-    assert run_web.call_args.args[0]["query"] == "SummitFlow"
+    with (
+        patch("cli.extensions._resolve_executable", return_value=(Path("/trusted/web-research"), 0, "")),
+        patch("cli.extensions.extension_context", return_value={"cwd": str(tmp_path)}),
+        patch("cli.extensions._run_process", return_value=(0, '{"ok":true}\n', "")) as run_web,
+        patch("cli.extension_presentation.current_root", return_value=tmp_path),
+    ):
+        result = runner.invoke(main_app, ["web", *arguments])
 
-
-def test_web_fetch_passes_backend_to_agent_hub_service_code() -> None:
-    with patch("cli.commands.web._run_agent_hub_web", return_value=0) as run_web:
-        result = runner.invoke(
-            main_app,
-            ["web", "fetch", "--url", "https://example.com", "--backend", "jina", "--max-chars", "500"],
-        )
-
-    assert result.exit_code == 0
-    payload = run_web.call_args.args[0]
-    assert payload["command"] == "fetch"
-    assert payload["backend"] == "jina"
-    assert payload["max_chars"] == 500
-
-
-def test_web_research_passes_backend_to_agent_hub_service_code() -> None:
-    with patch("cli.commands.web._run_agent_hub_web", return_value=0) as run_web:
-        result = runner.invoke(
-            main_app,
-            ["web", "research", "--query", "SummitFlow", "--backend", "direct"],
-        )
-
-    assert result.exit_code == 0
-    payload = run_web.call_args.args[0]
-    assert payload["command"] == "research"
-    assert payload["backend"] == "direct"
-
-
-def test_web_benchmark_payload_is_bounded_and_repeatable() -> None:
-    with patch("cli.commands.web._run_agent_hub_web", return_value=0) as run_web:
-        result = runner.invoke(
-            main_app,
-            ["web", "benchmark", "--iterations", "99", "--max-chars", "100000"],
-        )
-
-    assert result.exit_code == 0
-    payload = run_web.call_args.args[0]
-    assert payload["command"] == "benchmark"
-    assert payload["iterations"] == 10
-    assert payload["max_chars"] == 5000
+    assert result.exit_code == 0, result.output
+    assert run_web.call_args.args[0] == ["/trusted/web-research", *arguments, "--compact"]
+    assert result.output.startswith(f"WEB:{arguments[0]}:OK:0|details:")
+    assert run_web.call_args.kwargs["capture"] is True
 
 
 class _FakeVmClient:

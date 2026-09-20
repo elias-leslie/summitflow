@@ -10,13 +10,12 @@ without updating its `@usage` is a PR-review concern, not a memory-hunting conce
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass
-from typing import Any
+from collections.abc import Iterable
 
-import typer
+from st_sdk.usage import UsageSpec as UsageSpec
+from st_sdk.usage import collect_usage_specs as collect_usage_specs
+from st_sdk.usage import usage as usage
 
-USAGE_ATTR = "__st_usage__"
 VALID_MANIFEST_DENSITIES = ("core", "task", "full", "adaptive")
 
 _CORE_SURFACES = {
@@ -86,45 +85,6 @@ def _surface_score(surface: str, scores: dict[str, float] | None) -> float:
     return best
 
 
-@dataclass(frozen=True)
-class UsageSpec:
-    """Policy metadata for one CLI surface."""
-
-    surface: str
-    cmd: str = ""
-    when: str = ""
-    why: str = ""
-    precautions: tuple[str, ...] = ()
-    examples: tuple[str, ...] = ()
-    task_types: tuple[str, ...] = ()
-    agent_slugs: tuple[str, ...] = ()
-    consumer_profiles: tuple[str, ...] = ()
-    on_demand: str = ""
-    tier: str = "reference"
-
-    def to_dict(self) -> dict[str, Any]:
-        out: dict[str, Any] = {"surface": self.surface, "tier": self.tier}
-        if self.cmd:
-            out["cmd"] = self.cmd
-        if self.when:
-            out["when"] = self.when
-        if self.why:
-            out["why"] = self.why
-        if self.precautions:
-            out["precautions"] = list(self.precautions)
-        if self.examples:
-            out["examples"] = list(self.examples)
-        if self.task_types:
-            out["task_types"] = list(self.task_types)
-        if self.agent_slugs:
-            out["agent_slugs"] = list(self.agent_slugs)
-        if self.consumer_profiles:
-            out["consumer_profiles"] = list(self.consumer_profiles)
-        if self.on_demand:
-            out["on_demand"] = self.on_demand
-        return out
-
-
 def _detail_spec(deferred_workflows: Iterable[str] = ()) -> UsageSpec:
     workflows = sorted(set(deferred_workflows))
     return UsageSpec(
@@ -134,89 +94,6 @@ def _detail_spec(deferred_workflows: Iterable[str] = ()) -> UsageSpec:
         why="On-demand workflows: " + "; ".join(workflows) if workflows else "",
         tier="mandate",
     )
-
-
-def usage(
-    *,
-    surface: str,
-    cmd: str = "",
-    when: str = "",
-    why: str = "",
-    precautions: Iterable[str] = (),
-    examples: Iterable[str] = (),
-    task_types: Iterable[str] = (),
-    agent_slugs: Iterable[str] = (),
-    consumer_profiles: Iterable[str] = (),
-    on_demand: str = "",
-    tier: str = "reference",
-) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Attach a UsageSpec to a Typer command callback.
-
-    Apply *inside* `@app.command()`:
-
-        @app.command()
-        @usage(surface="st.service.rebuild", ...)
-        def rebuild(...): ...
-    """
-    if not surface:
-        raise ValueError("@usage requires a non-empty surface")
-    if tier not in {"mandate", "guardrail", "reference"}:
-        raise ValueError(f"@usage tier must be mandate|guardrail|reference, got {tier!r}")
-
-    spec = UsageSpec(
-        surface=surface,
-        cmd=cmd,
-        when=when,
-        why=why,
-        precautions=tuple(precautions),
-        examples=tuple(examples),
-        task_types=tuple(task_types),
-        agent_slugs=tuple(agent_slugs),
-        consumer_profiles=tuple(consumer_profiles),
-        on_demand=on_demand,
-        tier=tier,
-    )
-
-    def _decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        setattr(func, USAGE_ATTR, spec)
-        return func
-
-    return _decorator
-
-
-def _walk(app: typer.Typer, seen: set[int]) -> Iterable[UsageSpec]:
-    # The app's own callback can carry a UsageSpec: callback-style commands like
-    # `st check` use @app.callback(invoke_without_command=True), so their @usage
-    # lives on registered_callback, not in registered_commands.
-    callback_info = getattr(app, "registered_callback", None)
-    cb = getattr(callback_info, "callback", None) if callback_info is not None else None
-    if cb is not None:
-        spec = getattr(cb, USAGE_ATTR, None)
-        if isinstance(spec, UsageSpec) and id(cb) not in seen:
-            seen.add(id(cb))
-            yield spec
-    for cmd in getattr(app, "registered_commands", []):
-        callback = getattr(cmd, "callback", None)
-        if callback is None:
-            continue
-        spec = getattr(callback, USAGE_ATTR, None)
-        if not isinstance(spec, UsageSpec):
-            continue
-        key = id(callback)
-        if key in seen:
-            continue
-        seen.add(key)
-        yield spec
-    for group in getattr(app, "registered_groups", []):
-        sub = getattr(group, "typer_instance", None)
-        if isinstance(sub, typer.Typer):
-            yield from _walk(sub, seen)
-
-
-def collect_usage_specs(app: typer.Typer) -> list[UsageSpec]:
-    """Return every UsageSpec reachable from `app`. Dedupes commands registered
-    in more than one place (e.g. hoisted to root and re-exposed via add_typer)."""
-    return list(_walk(app, set()))
 
 
 def _matches_task_type(task_types: Iterable[str], task_type: str) -> bool:

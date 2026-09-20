@@ -1,0 +1,52 @@
+{
+  "id": "desktop-automation.ui",
+  "owner": "desktop-automation",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Desktop UI control and capture.",
+  "effects": [
+    "desktop",
+    "read-local",
+    "write-local",
+    "process"
+  ],
+  "namespace": "ui",
+  "help": {
+    "": "Usage: ui [OPTIONS] COMMAND [ARGS]...\n\n  Desktop UI control: screenshot, OCR, window management, input (X11).\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  windows   List visible windows: id, name, geometry, focused.\n  shot      Capture a screenshot.\n  grab      Capture a screenshot *package*: native image + OCR text +...\n  gif       Record a window or region to a looping animated GIF (ffmpeg...\n  crop      Crop a region out of a saved image at full resolution.\n  ocr       Read text from a window or image via OCR.\n  diff      Compare two images; report differing-pixel count and percentage.\n  activate  Focus/raise a window.\n  move      Move a window.\n  resize    Resize a window.\n  close     Close a window (graceful).\n  click     Move the pointer and click.\n  type      Type text into the focused window.\n  key       Send a key or chord to the focused window.\n  clip      Read or write the clipboard.",
+    "windows": "Usage: ui windows [OPTIONS]\n\n  List visible windows: id, name, geometry, focused.\n\n  Examples: st ui windows | st ui windows --human\n\nOptions:\n  --help  Show this message and exit.",
+    "shot": "Usage: ui shot [OPTIONS]\n\n  Capture a screenshot. Default target is the focused window.\n\n  Examples: st ui shot | st ui shot -w aico -o /tmp/aico.png | st ui shot\n  --full\n\nOptions:\n  -w, --window <str>  Window id or name substring\n  --full              Capture the whole screen\n  --region <str>      Crop region WxH+X+Y\n  -o, --out <str>     Output PNG path\n  --help              Show this message and exit.",
+    "grab": "Usage: ui grab [OPTIONS]\n\n  Capture a screenshot *package*: native image + OCR text + metadata + an\n  index that ranks each item by token cost (cheapest first).\n\n  Solves the \"agent misreads a downscaled screenshot\" problem: the native\n  image is preserved for `st ui crop`, but the cheap text/meta come first so\n  the agent rarely needs to spend tokens (or risk a blurry read) on the full\n  image.\n\n  Examples: st ui grab -w aico | st ui grab --region 800x600+100+100 -o\n  /tmp/cap\n\nOptions:\n  -w, --window <str>  Window id or name substring\n  --full              Capture the whole screen\n  --region <str>      Crop region WxH+X+Y\n  -o, --out <str>     Output package directory\n  --ocr / --no-ocr    Include an OCR text representation  [default: ocr]\n  --help              Show this message and exit.",
+    "gif": "Usage: ui gif [OPTIONS]\n\n  Record a window or region to a looping animated GIF (ffmpeg x11grab +\n  palette).\n\n  `-t` bounds the recording, so for an interaction demo run this backgrounded\n  and drive the UI during the window:\n\n      st ui gif -w \"A-Term\" -t 12 -o /tmp/demo.gif &    # records 12s, then\n      exits     st ui activate \"A-Term\"; st ui click 200 80; ...  # drive\n      panes within 12s\n\n  Examples: st ui gif -w aico -t 6 -o /tmp/aico.gif | st ui gif --region\n  1280x720+0+0 -t 10 --fps 15 -o /tmp/clip.gif\n\nOptions:\n  -w, --window <str>      Window id or name substring\n  --full                  Capture the whole screen\n  --region <str>          Capture region WxH+X+Y\n  -t, --duration <float>  Seconds to record  [default: 8.0]\n  --fps <int>             Frames per second  [default: 12]\n  --width <int>           Output width in px (0 = native, keeps aspect)\n                          [default: 960]\n  -o, --out <str>         Output GIF path\n  --help                  Show this message and exit.",
+    "crop": "Usage: ui crop [OPTIONS] {image} {region}\n\n  Crop a region out of a saved image at full resolution.\n\n  The companion to `st ui grab`: when the package image is downscaled for\n  vision, crop the region of interest from the native file so its text reads\n  cleanly.\n\n  Examples: st ui crop /tmp/cap/image.png 600x300+1200+800 -o /tmp/roi.png\n\nArguments:\n  image   Source image path  [required]\n  region  Crop region WxH+X+Y (pixels in the source image)  [required]\n\nOptions:\n  -o, --out <str>  Output PNG path\n  --help           Show this message and exit.",
+    "ocr": "Usage: ui ocr [OPTIONS] [target]\n\n  Read text from a window or image via OCR. Default target is the focused\n  window.\n\n  Examples: st ui ocr | st ui ocr aico | st ui ocr /tmp/shot.png\n\nArguments:\n  target  Window id/name or image path; default = focused window\n\nOptions:\n  --help  Show this message and exit.",
+    "diff": "Usage: ui diff [OPTIONS] {a} {b}\n\n  Compare two images; report differing-pixel count and percentage.\n\n  Examples: st ui diff a.png b.png | st ui diff a.png b.png -o /tmp/diff.png\n\nArguments:\n  a  First image  [required]\n  b  Second image  [required]\n\nOptions:\n  -o, --out <str>  Diff image path\n  --help           Show this message and exit.",
+    "activate": "Usage: ui activate [OPTIONS] {target}\n\n  Focus/raise a window. Example: st ui activate aico\n\nArguments:\n  target  Window id or name substring  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "move": "Usage: ui move [OPTIONS] {target} {x} {y}\n\n  Move a window. Example: st ui move aico 100 100\n\nArguments:\n  target  Window id or name substring  [required]\n  x       X position  [required]\n  y       Y position  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "resize": "Usage: ui resize [OPTIONS] {target} {w} {h}\n\n  Resize a window. Example: st ui resize aico 1200 800\n\nArguments:\n  target  Window id or name substring  [required]\n  w       Width  [required]\n  h       Height  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "close": "Usage: ui close [OPTIONS] {target}\n\n  Close a window (graceful). Example: st ui close aico\n\nArguments:\n  target  Window id or name substring  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "click": "Usage: ui click [OPTIONS] {x} {y}\n\n  Move the pointer and click. Example: st ui click 1200 800\n\nArguments:\n  x  X coordinate  [required]\n  y  Y coordinate  [required]\n\nOptions:\n  -b, --button <int>  Mouse button (1=left,2=mid,3=right)  [default: 1]\n  --help              Show this message and exit.",
+    "type": "Usage: ui type [OPTIONS] {text}\n\n  Type text into the focused window. Example: st ui type \"hello\"\n\n  Goes to the focused window via uinput — run `st ui activate <win>` first.\n\nArguments:\n  text  Text to type  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "key": "Usage: ui key [OPTIONS] {keys}\n\n  Send a key or chord to the focused window. Example: st ui key ctrl+c\n\n  Chord syntax: modifiers and keys joined by '+', e.g. ctrl+c, alt+F4, Return.\n  X11/xdotool key names (Return, Escape, Page_Up, space, …) are accepted and\n  translated to ydotool's names. Goes to the focused window via uinput — run\n  `st ui activate <win>` first.\n\nArguments:\n  keys  Key/chord, e.g. ctrl+c or Return  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "clip": "Usage: ui clip [OPTIONS] {action} [text]\n\n  Read or write the clipboard. Examples: st ui clip get | st ui clip set \"hi\"\n\nArguments:\n  action  get | set  [required]\n  text    Text to set (for 'set')\n\nOptions:\n  --help  Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.ui.gif",
+      "tier": "reference",
+      "cmd": "st ui gif -w <window> -t <seconds> -o out.gif",
+      "when": "record a short animated GIF of a window/region — UI demos, bug repros, PR/launch evidence",
+      "precautions": [
+        "ffmpeg x11grab + palette encode; -t bounds the recording. For an interaction demo run it backgrounded and drive `st ui click/type/key` during the window",
+        "the GIF is publishable output — pre-stage panes and keep secrets/real paths off-screen",
+        "--width caps output width (default 960; 0 = native), --fps default 12; longer/wider/faster = larger file"
+      ],
+      "task_types": [
+        "recording",
+        "ui-demo"
+      ],
+      "on_demand": "UI recording"
+    }
+  ]
+}

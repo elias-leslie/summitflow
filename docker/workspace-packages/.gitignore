@@ -1,0 +1,9 @@
+*
+!.gitignore
+# Versioned release inputs required by backend/uv.lock in a fresh checkout.
+!agent_hub_client-0.4.1-py3-none-any.whl
+!summitflow_st_sdk-0.1.0-py3-none-any.whl
+!agent_hub_st-0.1.0-py3-none-any.whl
+!browser_automation-0.1.0-py3-none-any.whl
+!code_intelligence-0.1.0-py3-none-any.whl
+!design_tools-0.1.0-py3-none-any.whl

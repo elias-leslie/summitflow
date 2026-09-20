@@ -41,6 +41,28 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [[package]]
+name = "agent-hub-st"
+version = "0.1.0"
+source = { path = "../docker/workspace-packages/agent_hub_st-0.1.0-py3-none-any.whl" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pyyaml" },
+    { name = "summitflow-st-sdk" },
+    { name = "typer" },
+]
+wheels = [
+    { filename = "agent_hub_st-0.1.0-py3-none-any.whl", hash = "sha256:773f7ae10248474c904826ef84d27dc6a1f2050e209fbb271664435f88c11b1a" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pyyaml", specifier = ">=6.0.0" },
+    { name = "summitflow-st-sdk", specifier = "==0.1.0" },
+    { name = "typer", specifier = ">=0.15.0" },
+]
+
+[[package]]
 name = "aiohappyeyeballs"
 version = "2.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -196,6 +218,26 @@ wheels = [
 ]
 
 [[package]]
+name = "browser-automation"
+version = "0.1.0"
+source = { path = "../docker/workspace-packages/browser_automation-0.1.0-py3-none-any.whl" }
+dependencies = [
+    { name = "httpx" },
+    { name = "summitflow-st-sdk" },
+    { name = "typer" },
+]
+wheels = [
+    { filename = "browser_automation-0.1.0-py3-none-any.whl", hash = "sha256:4e27f82df8ed27efd2ebe19e11aea89e1bc582a148b11e89fd132b73d101511e" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27,<1" },
+    { name = "summitflow-st-sdk", specifier = "==0.1.0" },
+    { name = "typer", specifier = ">=0.12,<1" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.2.25"
 source = { registry = "https://pypi.org/simple" }
@@ -260,6 +302,25 @@ sdist = { url = "https://files.pythonhosted.org/packages/3d/fa/656b739db8587d7b5
 wheels = [
     { url = "https://files.pythonhosted.org/packages/98/78/01c019cdb5d6498122777c1a43056ebb3ebfeef2076d9d026bfe15583b2b/click-8.3.1-py3-none-any.whl", hash = "sha256:981153a64e25f12d547d3426c367a4857371575ee7ad18df2a6183ab0545b2a6", size = 108274, upload-time = "2025-11-15T20:45:41.139Z" },
 ]
+
+[[package]]
+name = "code-intelligence"
+version = "0.1.0"
+source = { path = "../docker/workspace-packages/code_intelligence-0.1.0-py3-none-any.whl" }
+dependencies = [
+    { name = "summitflow-st-sdk" },
+]
+wheels = [
+    { filename = "code_intelligence-0.1.0-py3-none-any.whl", hash = "sha256:76cf1f2fc7a0d69b11dd329354ab346fc0d10493521d4fd90712b4db79d49a84" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.0" },
+    { name = "summitflow-st-sdk", specifier = "==0.1.0" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "colorama"
@@ -410,6 +471,42 @@ sdist = { url = "https://files.pythonhosted.org/packages/0f/d5/c66da9b79e5bdb124
 wheels = [
     { url = "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl", hash = "sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61", size = 25604, upload-time = "2021-03-08T10:59:24.45Z" },
 ]
+
+[[package]]
+name = "design-tools"
+version = "0.1.0"
+source = { path = "../docker/workspace-packages/design_tools-0.1.0-py3-none-any.whl" }
+dependencies = [
+    { name = "agent-hub-client" },
+    { name = "agent-hub-st" },
+    { name = "defusedxml" },
+    { name = "pillow" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pydantic" },
+    { name = "summitflow-st-sdk" },
+    { name = "typer" },
+]
+wheels = [
+    { filename = "design_tools-0.1.0-py3-none-any.whl", hash = "sha256:2aeb2bd7a553a7613e32dc9297f0e9d56c6cf54f250c2bc591165b2a518fe503" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "agent-hub-client", specifier = "==0.4.1" },
+    { name = "agent-hub-st", specifier = "==0.1.0" },
+    { name = "defusedxml", specifier = ">=0.7.1" },
+    { name = "pillow", specifier = ">=11.3.0" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
+    { name = "pydantic", specifier = ">=2.10.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.15.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.0" },
+    { name = "summitflow-st-sdk", specifier = "==0.1.0" },
+    { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.17" },
+    { name = "typer", specifier = ">=0.15.0" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "execnet"
@@ -1688,9 +1785,13 @@ version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "agent-hub-client" },
+    { name = "agent-hub-st" },
     { name = "alembic" },
+    { name = "browser-automation" },
+    { name = "code-intelligence" },
     { name = "croniter" },
     { name = "defusedxml" },
+    { name = "design-tools" },
     { name = "fastapi" },
     { name = "hatchet-sdk" },
     { name = "httpx" },
@@ -1711,6 +1812,7 @@ dependencies = [
     { name = "redis" },
     { name = "sqlalchemy" },
     { name = "structlog" },
+    { name = "summitflow-st-sdk" },
     { name = "tenacity" },
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1732,9 +1834,13 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agent-hub-client", path = "../docker/workspace-packages/agent_hub_client-0.4.1-py3-none-any.whl" },
+    { name = "agent-hub-st", path = "../docker/workspace-packages/agent_hub_st-0.1.0-py3-none-any.whl" },
     { name = "alembic", specifier = ">=1.13.0" },
+    { name = "browser-automation", path = "../docker/workspace-packages/browser_automation-0.1.0-py3-none-any.whl" },
+    { name = "code-intelligence", path = "../docker/workspace-packages/code_intelligence-0.1.0-py3-none-any.whl" },
     { name = "croniter", specifier = ">=3.0.0" },
     { name = "defusedxml", specifier = ">=0.7.1" },
+    { name = "design-tools", path = "../docker/workspace-packages/design_tools-0.1.0-py3-none-any.whl" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "hatchet-sdk", specifier = ">=1.22.0" },
     { name = "httpx", specifier = ">=0.28.0" },
@@ -1763,12 +1869,33 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.0" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
     { name = "structlog", specifier = ">=24.0.0" },
+    { name = "summitflow-st-sdk", path = "../docker/workspace-packages/summitflow_st_sdk-0.1.0-py3-none-any.whl" },
     { name = "tenacity", specifier = ">=8.2.0" },
     { name = "typer", specifier = ">=0.15.0" },
     { name = "types-jsonschema", marker = "extra == 'dev'", specifier = ">=4.26.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
 ]
 provides-extras = ["dev"]
+
+[[package]]
+name = "summitflow-st-sdk"
+version = "0.1.0"
+source = { path = "../docker/workspace-packages/summitflow_st_sdk-0.1.0-py3-none-any.whl" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pyyaml" },
+    { name = "typer" },
+]
+wheels = [
+    { filename = "summitflow_st_sdk-0.1.0-py3-none-any.whl", hash = "sha256:64a3d0291c716bdd6c1f74cda91c77902519a31394527e46de17b19c3e02ef26" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pyyaml", specifier = ">=6.0.0" },
+    { name = "typer", specifier = ">=0.15.0" },
+]
 
 [[package]]
 name = "tenacity"

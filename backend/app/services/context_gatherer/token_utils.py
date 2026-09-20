@@ -1,25 +1,7 @@
-"""Token estimation and truncation utilities."""
+"""Compatibility import for the code_intelligence.precision.token_utils public package."""
 
-from __future__ import annotations
+from app.owner_modules import expose_module
+from app.services.code_intelligence_host import configure_code_intelligence
 
-# Approximate token counts (rough estimation: 4 chars = 1 token)
-MAX_RULES_TOKENS = 4000
-MAX_DOCS_TOKENS = 6000
-MAX_MEMORY_TOKENS = 2000
-MAX_EXPLORER_TOKENS = 3000
-MAX_GEMINI_TOKENS = 4000
-MAX_DESIGN_TOKENS = 2000
-MAX_TOTAL_TOKENS = 25000
-
-
-def estimate_tokens(text: str) -> int:
-    """Estimate token count from text (rough: 4 chars = 1 token)."""
-    return len(text) // 4
-
-
-def truncate_to_tokens(text: str, max_tokens: int) -> str:
-    """Truncate text to approximately max_tokens."""
-    max_chars = max_tokens * 4
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars] + "\n\n[... truncated ...]"
+configure_code_intelligence()
+expose_module(__name__, "code_intelligence.precision.token_utils")

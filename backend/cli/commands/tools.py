@@ -26,6 +26,23 @@ from ._http_errors import parse_error_detail, raise_connect_error, raise_timeout
 
 app = typer.Typer(help="Operator tool catalog and Agent Hub usage metrics")
 
+
+@app.command("extensions")
+@usage(
+    surface="st.tools.extensions",
+    cmd="st tools extensions [--check]",
+    when="inspect trusted extension registrations or diagnose owner installation",
+    precautions=("Default is passive metadata only; --check queries the ST project registry and checks executable files without running extensions. Prerequisites present does not prove runtime health.",),
+)
+def extensions(
+    check: Annotated[bool, typer.Option("--check", help="Check registered project and executable prerequisites without running owner code.")] = False,
+) -> None:
+    """Show localized extension diagnostics as JSON; discovery never executes owners."""
+    from ..extensions import extension_diagnostics
+    from ..main import app as root_app
+
+    output_json(extension_diagnostics(cast(Any, root_app)._st_extensions, check=check))
+
 DEFAULT_LOOKBACK_HOURS = 24
 DEFAULT_LIMIT = 10
 DEFAULT_COST_TASK = "verification"

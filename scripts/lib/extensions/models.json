@@ -1,0 +1,33 @@
+{
+  "id": "agent-hub.models",
+  "owner": "agent-hub",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Agent Hub-owned models commands.",
+  "effects": [
+    "network",
+    "read-remote",
+    "credentials"
+  ],
+  "namespace": "models",
+  "help": {
+    "": "Usage: models [OPTIONS] COMMAND [ARGS]...\n\n  Agent Hub model catalog\n\nOptions:\n  --id <str>            Filter by model id or alias.\n  --provider <str>      Filter by provider.\n  --free                Only models marked free/free-tier.\n  --coding              Only tool-capable coding candidates.\n  --limit <int range>   [default: 50; 1<=x<=500]\n  --json                Print filtered payload as JSON.\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  list  List canonical model catalog entries.",
+    "list": "Usage: models list [OPTIONS]\n\n  List canonical model catalog entries.\n\nOptions:\n  --id <str>           Filter by model id or alias.\n  --provider <str>     Filter by provider.\n  --free               Only models marked free/free-tier.\n  --coding             Only tool-capable coding candidates.\n  --limit <int range>  [default: 50; 1<=x<=500]\n  --json               Print filtered payload as JSON.\n  --help               Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.models",
+      "tier": "reference",
+      "cmd": "st models [list] [--id MODEL] [--provider PROVIDER] [--free] [--coding] --limit N",
+      "when": "inspect canonical Agent Hub model catalog without raw DB queries",
+      "task_types": [
+        "model-admin",
+        "prompt-tuning",
+        "model-review"
+      ],
+      "on_demand": "model administration"
+    }
+  ]
+}

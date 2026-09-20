@@ -1,0 +1,155 @@
+{
+  "id": "portfolio-ai.portfolio",
+  "owner": "portfolio-ai",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Agent-facing portfolio analytics and planning.",
+  "effects": [
+    "network",
+    "read-remote",
+    "write-remote",
+    "credentials"
+  ],
+  "namespace": "portfolio",
+  "help": {
+    "": "Usage: portfolio [OPTIONS] COMMAND [ARGS]...\n\n  Agent-facing portfolio analytics (TLH, IPS, drift, catalysts, retirement)\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  positions         Return current portfolio holdings, values, weights,...\n  market-status     Return portfolio-ai's market calendar/status contract.\n  briefing-context  Compose holdings, analytics, catalysts, Jenny...\n  household         Return household net worth, asset totals, and...\n  accounts          Return household accounts with balances and freshness...\n  budget            Return budget summary, category spend pace, and...\n  symbol-intel      Return the full symbol intelligence snapshot for one...\n  macro             Return the L1 macro deployment-gate /...\n  schema            Print the response JSON schema for a portfolio...\n  drift             Show how far each asset class is from its goal...\n  rebalance         Propose tax-aware trades to close the drift gap.\n  catalysts         List upcoming catalysts (earnings, ex-dividend, FOMC)...\n  tlh               Tax-loss harvesting + wash-sale detection\n  ips               Investment Policy Statement targets (allocation goals)\n  retirement-plan   Stress-test your retirement plan against thousands of...",
+    "positions": "Usage: portfolio positions [OPTIONS]\n\n  Return current portfolio holdings, values, weights, and quote freshness.\n\nOptions:\n  --limit INTEGER RANGE           Maximum positions to return  [default: 25;\n                                  1<=x<=200]\n  --include-paper / --no-include-paper\n                                  Include paper positions  [default: no-\n                                  include-paper]\n  --human                         Plain-English rendering\n  --remote                        Use production hosts.production_api endpoint\n  --help                          Show this message and exit.",
+    "market-status": "Usage: portfolio market-status [OPTIONS]\n\n  Return portfolio-ai's market calendar/status contract.\n\nOptions:\n  --human   Plain-English rendering\n  --remote  Use production hosts.production_api endpoint\n  --help    Show this message and exit.",
+    "briefing-context": "Usage: portfolio briefing-context [OPTIONS]\n\n  Compose holdings, analytics, catalysts, Jenny reviews, and market status for\n  Pulse.\n\nOptions:\n  --limit INTEGER RANGE           Maximum positions/watchlist rows  [default:\n                                  25; 1<=x<=200]\n  --catalyst-days INTEGER RANGE   Upcoming catalyst lookahead  [default: 14;\n                                  1<=x<=365]\n  --include-jenny / --no-include-jenny\n                                  Include Jenny position review context\n                                  [default: include-jenny]\n  --include-paper / --no-include-paper\n                                  Include paper positions  [default: no-\n                                  include-paper]\n  --human                         Plain-English rendering\n  --remote                        Use production hosts.production_api endpoint\n  --help                          Show this message and exit.",
+    "household": "Usage: portfolio household [OPTIONS]\n\n  Return household net worth, asset totals, and account-control status.\n\nOptions:\n  --human   Plain-English rendering\n  --remote  Use production hosts.production_api endpoint\n  --help    Show this message and exit.",
+    "accounts": "Usage: portfolio accounts [OPTIONS]\n\n  Return household accounts with balances and freshness flags.\n\nOptions:\n  --human   Plain-English rendering\n  --remote  Use production hosts.production_api endpoint\n  --help    Show this message and exit.",
+    "budget": "Usage: portfolio budget [OPTIONS]\n\n  Return budget summary, category spend pace, and savings rate.\n\nOptions:\n  --human   Plain-English rendering\n  --remote  Use production hosts.production_api endpoint\n  --help    Show this message and exit.",
+    "symbol-intel": "Usage: portfolio symbol-intel [OPTIONS] SYMBOL\n\n  Return the full symbol intelligence snapshot for one ticker.\n\nArguments:\n  SYMBOL  Ticker symbol, e.g. AAPL  [required]\n\nOptions:\n  --human   Plain-English rendering\n  --remote  Use production hosts.production_api endpoint\n  --help    Show this message and exit.",
+    "macro": "Usage: portfolio macro [OPTIONS]\n\n  Return the L1 macro deployment-gate / market-conditions snapshot.\n\nOptions:\n  --human   Plain-English rendering\n  --remote  Use production hosts.production_api endpoint\n  --help    Show this message and exit.",
+    "schema": "Usage: portfolio schema [OPTIONS] COMMAND\n\n  Print the response JSON schema for a portfolio subcommand.\n\n  Reads ``/openapi.json`` from the portfolio-ai backend and projects the\n  response schema for the path that backs ``<command>``. This lets agents\n  introspect contracts without a trial call.\n\nArguments:\n  COMMAND  Subcommand to introspect (e.g. tlh-candidates)  [required]\n\nOptions:\n  --remote  Use production hosts.production_api endpoint\n  --help    Show this message and exit.",
+    "drift": "Usage: portfolio drift [OPTIONS]\n\n  Show how far each asset class is from its goal allocation.\n\n  Default response is a single-line digest. Pass ``--no-summary`` for the full\n  per-class table.\n\nOptions:\n  --scope TEXT              household | account  [default: household]\n  --scope-id TEXT           Scope identifier  [default: default]\n  --summary / --no-summary  Compact digest (default) vs full row table\n                            [default: summary]\n  --human                   Plain-English rendering\n  --remote                  Use production hosts.production_api endpoint\n  --help                    Show this message and exit.",
+    "rebalance": "Usage: portfolio rebalance [OPTIONS]\n\n  Propose tax-aware trades to close the drift gap.\n\n  Three-pass: route buys to tax-advantaged first, prefer long-term\n  losses/gains over short-term on sells, run wash-sale check on every taxable\n  sell and reroute or flag conflicts.\n\nOptions:\n  --scope TEXT                    household | account  [default: household]\n  --scope-id TEXT                 Scope identifier  [default: default]\n  --prefer-tax-advantaged / --no-prefer-tax-advantaged\n                                  Route buys to Roth/IRA/401k first  [default:\n                                  prefer-tax-advantaged]\n  --prefer-ltcg / --no-prefer-ltcg\n                                  Prefer long-term over short-term gains on\n                                  sells  [default: prefer-ltcg]\n  --human                         Plain-English rendering\n  --remote                        Use production hosts.production_api endpoint\n  --help                          Show this message and exit.",
+    "catalysts": "Usage: portfolio catalysts [OPTIONS]\n\n  List upcoming catalysts (earnings, ex-dividend, FOMC) sorted by date.\n\n  Compact JSON projection by default — ``{symbol, kind, date, days_until}``\n  per row. Pass ``--detail`` for ``time_of_day``, ``confirmed``, and\n  ``source`` fields. ``--kinds`` narrows the merge to a subset.\n\nOptions:\n  --days INTEGER RANGE            Lookahead window in days  [default: 14;\n                                  1<=x<=365]\n  --limit INTEGER RANGE           Maximum events to return  [default: 20;\n                                  1<=x<=200]\n  --kinds TEXT                    Comma-separated subset of\n                                  earnings,ex_dividend,fomc\n  --include-watchlist / --no-include-watchlist\n                                  Include watchlist symbols (in addition to\n                                  portfolio holdings)  [default: include-\n                                  watchlist]\n  --symbols TEXT                  Comma-separated symbols (overrides default\n                                  universe)\n  --detail                        Add time_of_day, confirmed, source to each\n                                  row\n  --human                         Plain-English rendering\n  --remote                        Use production hosts.production_api endpoint\n  --help                          Show this message and exit.",
+    "tlh": "Usage: portfolio tlh [OPTIONS] COMMAND [ARGS]...\n\n  Tax-loss harvesting + wash-sale detection\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  candidates       List taxable positions trading below cost...\n  wash-sale-check  Check the household's 61-day window for...",
+    "tlh candidates": "Usage: portfolio tlh candidates [OPTIONS]\n\n  List taxable positions trading below cost (most-actionable first).\n\n  Compact JSON by default. ``--detail`` adds replacement, holding period,\n  ST/LT loss split, and wash-sale annotations.\n\nOptions:\n  --limit INTEGER RANGE       Maximum candidates to return  [default: 20;\n                              1<=x<=100]\n  --min-loss FLOAT RANGE      Minimum dollar loss  [default: 500.0; x>=0.0]\n  --min-loss-pct FLOAT RANGE  Minimum loss as fraction of cost basis\n                              [default: 0.05; 0.0<=x<=1.0]\n  --detail                    Include replacement, holding period, ST/LT\n                              split, wash-sale annotations\n  --summary                   Single-line digest only\n  --human                     Plain-English rendering\n  --remote                    Use the production hosts.production_api endpoint\n  --help                      Show this message and exit.",
+    "tlh wash-sale-check": "Usage: portfolio tlh wash-sale-check [OPTIONS]\n\n  Check the household's 61-day window for substantially-identical buys.\n\n  Per IRS Pub 550 and Rev. Rul. 2008-5, the scan covers spouse accounts and\n  tax-advantaged accounts (Roth, IRA, 401k, HSA).\n\nOptions:\n  --symbol TEXT        Ticker to check (e.g. AAPL)  [required]\n  --sell-date TEXT     Proposed sell date (YYYY-MM-DD)  [required]\n  --household-id TEXT  Household scope for cross-account check  [required]\n  --human              Plain-English rendering\n  --remote             Use production hosts.production_api endpoint\n  --help               Show this message and exit.",
+    "ips": "Usage: portfolio ips [OPTIONS] COMMAND [ARGS]...\n\n  Investment Policy Statement targets (allocation goals)\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list  List allocation goals for one scope.\n  set   Set or update one allocation goal (upsert).",
+    "ips list": "Usage: portfolio ips list [OPTIONS]\n\n  List allocation goals for one scope.\n\nOptions:\n  --scope TEXT     household | account  [default: household]\n  --scope-id TEXT  Scope identifier  [default: default]\n  --human          Plain-English rendering\n  --remote         Use production hosts.production_api endpoint\n  --help           Show this message and exit.",
+    "ips set": "Usage: portfolio ips set [OPTIONS]\n\n  Set or update one allocation goal (upsert).\n\nOptions:\n  --asset-class TEXT    us_equity | intl_equity | bonds | cash | alts |\n                        real_estate  [required]\n  --target FLOAT RANGE  Target weight (0-1)  [0.0<=x<=1.0; required]\n  --band FLOAT RANGE    Wiggle room ± (0-1)  [default: 0.05; 0.0<=x<=1.0]\n  --notes TEXT          Optional rationale\n  --scope TEXT          household | account  [default: household]\n  --scope-id TEXT       Scope identifier  [default: default]\n  --human               Plain-English rendering\n  --remote              Use production hosts.production_api endpoint\n  --help                Show this message and exit.",
+    "retirement-plan": "Usage: portfolio retirement-plan [OPTIONS] COMMAND [ARGS]...\n\n  Stress-test your retirement plan against thousands of futures\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  run   Run + persist one retirement Monte Carlo scenario.\n  list  List recent retirement scenarios for one household.\n  show  Show one retirement scenario by id.",
+    "retirement-plan run": "Usage: portfolio retirement-plan run [OPTIONS]\n\n  Run + persist one retirement Monte Carlo scenario.\n\n  Stress tests the household plan across ``--trials`` simulated futures\n  (default 10,000; capped at 50,000). Pass ``--seed N`` for a reproducible\n  run.\n\nOptions:\n  --household-id TEXT             Household scope identifier  [required]\n  --trials INTEGER RANGE          Number of simulated futures  [default:\n                                  10000; 1<=x<=50000]\n  --name TEXT                     Scenario label (auto-generated if omitted)\n  --seed INTEGER                  Deterministic random seed\n  --annual-expenses FLOAT RANGE   Override annual spend in dollars  [x>=0.0]\n  --retirement-age INTEGER RANGE  Override target retirement age  [18<=x<=120]\n  --horizon-years INTEGER RANGE   Override projection horizon  [1<=x<=70]\n  --human                         Plain-English rendering\n  --remote                        Use production hosts.production_api endpoint\n  --help                          Show this message and exit.",
+    "retirement-plan list": "Usage: portfolio retirement-plan list [OPTIONS]\n\n  List recent retirement scenarios for one household.\n\nOptions:\n  --household-id TEXT    Household scope identifier  [required]\n  --limit INTEGER RANGE  Maximum scenarios to return  [default: 20; 1<=x<=100]\n  --human                Plain-English rendering\n  --remote               Use production hosts.production_api endpoint\n  --help                 Show this message and exit.",
+    "retirement-plan show": "Usage: portfolio retirement-plan show [OPTIONS] SCENARIO_ID\n\n  Show one retirement scenario by id.\n\nArguments:\n  SCENARIO_ID  Scenario UUID returned by run/list  [required]\n\nOptions:\n  --detail  Include percentile paths and CMA snapshot\n  --human   Plain-English rendering\n  --remote  Use production hosts.production_api endpoint\n  --help    Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.portfolio.positions",
+      "tier": "mandate",
+      "cmd": "st portfolio positions --limit 25",
+      "when": "inspect current held positions and weights before market-aware briefings or portfolio impact analysis",
+      "precautions": [
+        "read-only; uses portfolio-ai API and excludes raw credentials"
+      ],
+      "task_types": [
+        "portfolio",
+        "briefing",
+        "market"
+      ]
+    },
+    {
+      "surface": "st.portfolio.market-status",
+      "tier": "mandate",
+      "cmd": "st portfolio market-status",
+      "when": "determine current NYSE trading-day/open/closed state for market-specific Pulse runs",
+      "precautions": [
+        "read-only; if portfolio-ai is down do not guess holiday/open status"
+      ],
+      "task_types": [
+        "portfolio",
+        "market",
+        "briefing"
+      ]
+    },
+    {
+      "surface": "st.portfolio.briefing-context",
+      "tier": "mandate",
+      "cmd": "st portfolio briefing-context --limit 25 --catalyst-days 14",
+      "when": "gather portfolio-aware context for Pulse agents so market news can be tied to held positions and likely impact",
+      "precautions": [
+        "read-only; outputs context and watchlist, not investment advice or trade execution"
+      ],
+      "task_types": [
+        "portfolio",
+        "briefing",
+        "market"
+      ]
+    },
+    {
+      "surface": "st.portfolio.household",
+      "tier": "reference",
+      "cmd": "st portfolio household",
+      "when": "answer household money questions: net worth, asset/liability totals, account-control trust status",
+      "precautions": [
+        "read-only; uses portfolio-ai API and excludes raw credentials"
+      ],
+      "task_types": [
+        "portfolio",
+        "household",
+        "advisor"
+      ]
+    },
+    {
+      "surface": "st.portfolio.accounts",
+      "tier": "reference",
+      "cmd": "st portfolio accounts",
+      "when": "list household accounts with balances and data-freshness flags before trusting totals or diagnosing stale accounts",
+      "precautions": [
+        "read-only; uses portfolio-ai API and excludes raw credentials"
+      ],
+      "task_types": [
+        "portfolio",
+        "household",
+        "advisor"
+      ]
+    },
+    {
+      "surface": "st.portfolio.budget",
+      "tier": "reference",
+      "cmd": "st portfolio budget",
+      "when": "answer spending questions: budget categories, spend pace, income, savings rate",
+      "precautions": [
+        "read-only; uses portfolio-ai API and excludes raw credentials"
+      ],
+      "task_types": [
+        "portfolio",
+        "household",
+        "advisor"
+      ]
+    },
+    {
+      "surface": "st.portfolio.symbol-intel",
+      "tier": "reference",
+      "cmd": "st portfolio symbol-intel AAPL",
+      "when": "answer questions about a specific stock: scores, signal, quote, news, portfolio context, recommendation",
+      "precautions": [
+        "read-only; probabilistic analysis, not trading advice or trade execution"
+      ],
+      "task_types": [
+        "portfolio",
+        "market",
+        "advisor"
+      ]
+    },
+    {
+      "surface": "st.portfolio.macro",
+      "tier": "reference",
+      "cmd": "st portfolio macro",
+      "when": "check macro deployment gate and market-conditions snapshot before deployment or market-timing questions",
+      "precautions": [
+        "read-only; probabilistic market read, not trading advice"
+      ],
+      "task_types": [
+        "portfolio",
+        "market",
+        "advisor"
+      ]
+    }
+  ]
+}

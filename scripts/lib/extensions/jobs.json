@@ -1,0 +1,285 @@
+{
+  "id": "jobinator-4000.jobs",
+  "owner": "jobinator-4000",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Find, evaluate, tailor for, and track job applications.",
+  "effects": [
+    "network",
+    "read-remote",
+    "write-remote",
+    "credentials"
+  ],
+  "namespace": "jobs",
+  "help": {
+    "": "Usage: jobs [OPTIONS] COMMAND [ARGS]...\n\n  Find, evaluate, tailor for, and track job applications\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  ready      Top-scoring open postings with no application on them yet.\n  show       Posting detail: description, evaluation report, skill gap,...\n  scan       Run a scan across the enabled sources and report its counters.\n  screen     Queue screening within the shared daily allowance.\n  evaluate   Run the evaluator agent over one posting and persist the...\n  tailor     Generate a tailored resume and/or cover letter for one posting.\n  apply      Record an application against a posting.\n  status     Move an application to a new status and record the transition.\n  track      List applications, most recently moved first.\n  followups  Pending follow-ups, earliest due first.\n  prep       The interview brief for one application.\n  stats      Application funnel and posting-state counts.\n  profile    The candidate profile every agent prompt is built from.\n  search     Postings narrowed by work mode, employment type, company...\n  companies  Tracked employers with their size, ownership, segments and...",
+    "ready": "Usage: jobs ready [OPTIONS]\n\n  Top-scoring open postings with no application on them yet.\n\nOptions:\n  --limit <int range>        [default: 10; 1<=x<=50]\n  --min-score <float range>  [default: 3.5; 0<=x<=5]\n  --human                    Plain-text rendering\n  --remote                   Use hosts.production_api\n  --help                     Show this message and exit.",
+    "show": "Usage: jobs show [OPTIONS] {posting_id}\n\n  Posting detail: description, evaluation report, skill gap, legitimacy.\n\nArguments:\n  posting_id  Posting id from st jobs ready  [required]\n\nOptions:\n  --description / --no-description\n                                  [default: description]\n  --human                         Plain-text rendering\n  --remote                        Use hosts.production_api\n  --help                          Show this message and exit.",
+    "scan": "Usage: jobs scan [OPTIONS]\n\n  Run a scan across the enabled sources and report its counters.\n\nOptions:\n  --source <str>   Limit to one source slug\n  --company <str>  Limit to one company\n  --background     Return immediately; read results from the UI\n  --human          Plain-text rendering\n  --remote         Use hosts.production_api\n  --help           Show this message and exit.",
+    "screen": "Usage: jobs screen [OPTIONS]\n\n  Queue screening within the shared daily allowance.\n\nOptions:\n  --limit <int>  Postings to screen; default is the daily cap\n  --human        Plain-text rendering\n  --remote       Use hosts.production_api\n  --help         Show this message and exit.",
+    "evaluate": "Usage: jobs evaluate [OPTIONS] {posting_id}\n\n  Run the evaluator agent over one posting and persist the report.\n\nArguments:\n  posting_id  Posting id  [required]\n\nOptions:\n  --human   Plain-text rendering\n  --remote  Use hosts.production_api\n  --help    Show this message and exit.",
+    "tailor": "Usage: jobs tailor [OPTIONS] {posting_id}\n\n  Generate a tailored resume and/or cover letter for one posting.\n\nArguments:\n  posting_id  Posting id  [required]\n\nOptions:\n  --kind <str>  resume | cover_letter | both  [default: both]\n  --human       Plain-text rendering\n  --remote      Use hosts.production_api\n  --help        Show this message and exit.",
+    "apply": "Usage: jobs apply [OPTIONS] {posting_id}\n\n  Record an application against a posting.\n\nArguments:\n  posting_id  Posting id  [required]\n\nOptions:\n  -m, --note <str>        Note on the transition\n  --on <str>              Submission date (YYYY-MM-DD); defaults to today\n  --submit / --no-submit  Mark it submitted  [default: submit]\n  --human                 Plain-text rendering\n  --remote                Use hosts.production_api\n  --help                  Show this message and exit.",
+    "status": "Usage: jobs status [OPTIONS] {application_id} {STATUS}\n\n  Move an application to a new status and record the transition.\n\nArguments:\n  application_id  Application id from st jobs track  [required]\n  STATUS          New status  [required]\n\nOptions:\n  -m, --note <str>  Note on the transition\n  --human           Plain-text rendering\n  --remote          Use hosts.production_api\n  --help            Show this message and exit.",
+    "track": "Usage: jobs track [OPTIONS]\n\n  List applications, most recently moved first.\n\nOptions:\n  --status <str>       Filter to one status\n  --limit <int range>  [default: 50; 1<=x<=500]\n  --human              Plain-text rendering\n  --remote             Use hosts.production_api\n  --help               Show this message and exit.",
+    "followups": "Usage: jobs followups [OPTIONS]\n\n  Pending follow-ups, earliest due first.\n\nOptions:\n  --due                Only follow-ups already due\n  --limit <int range>  [default: 50; 1<=x<=500]\n  --human              Plain-text rendering\n  --remote             Use hosts.production_api\n  --help               Show this message and exit.",
+    "prep": "Usage: jobs prep [OPTIONS] {application_id}\n\n  The interview brief for one application.\n\nArguments:\n  application_id  Application id from st jobs track  [required]\n\nOptions:\n  --write   Write a new brief instead of reading the last one\n  --human   Plain-text rendering\n  --remote  Use hosts.production_api\n  --help    Show this message and exit.",
+    "stats": "Usage: jobs stats [OPTIONS]\n\n  Application funnel and posting-state counts.\n\nOptions:\n  --human   Plain-text rendering\n  --remote  Use hosts.production_api\n  --help    Show this message and exit.",
+    "profile": "Usage: jobs profile [OPTIONS]\n\n  The candidate profile every agent prompt is built from.\n\nOptions:\n  --human   Plain-text rendering\n  --remote  Use hosts.production_api\n  --help    Show this message and exit.",
+    "search": "Usage: jobs search [OPTIONS]\n\n  Postings narrowed by work mode, employment type, company size and distance.\n\nOptions:\n  --state <str>              new|triaged|shortlisted|applied|discarded\n  --remote-kind <str>        remote|hybrid|onsite|unknown; repeatable\n  --employment <str>         full_time|part_time|contract|…; repeatable\n  --employee-band <str>      startup_1_50|small_51_200|…; repeatable\n  --segment <str>            msp|mssp|edr_xdr|…; repeatable\n  --channel-focus            Only companies that sell through MSPs\n  --max-distance <float>     Miles to the nearest researched office\n  --min-salary <int>         Advertised ceiling must reach this\n  --exclude-clearance        Drop postings that require a clearance\n  --min-score <float range>  [0<=x<=5]\n  --search <str>             Title or company substring\n  --limit <int range>        [default: 25; 1<=x<=200]\n  --human                    Plain-text rendering\n  --remote                   Use hosts.production_api\n  --help                     Show this message and exit.",
+    "companies": "Usage: jobs companies [OPTIONS]\n\n  Tracked employers with their size, ownership, segments and nearest office.\n\nOptions:\n  --segment <str>        Repeatable\n  --employee-band <str>  Repeatable\n  --channel-focus\n  --hiring               Only companies with open roles\n  --search <str>\n  --limit <int range>    [default: 50; 1<=x<=200]\n  --human                Plain-text rendering\n  --remote               Use hosts.production_api\n  --help                 Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.jobs.ready",
+      "tier": "mandate",
+      "cmd": "st jobs ready --limit 10",
+      "when": "pick the next job worth acting on; start of any job-search working session",
+      "why": "scored, still-open postings with no application yet — the actual queue, not the whole board",
+      "precautions": [
+        "read-only; postings already applied to are excluded, not ranked low"
+      ],
+      "examples": [
+        "st jobs ready --limit 5 --min-score 4.0"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.show",
+      "tier": "mandate",
+      "cmd": "st jobs show <posting-id>",
+      "when": "read one posting in full before evaluating, tailoring, or deciding to skip it",
+      "why": "returns the job description together with its evaluation, skill gap and legitimacy flags",
+      "precautions": [
+        "read-only; description can be long — use --no-description when only the verdict matters"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.scan",
+      "tier": "mandate",
+      "cmd": "st jobs scan --source greenhouse",
+      "when": "pull new postings from the tracked boards before triaging",
+      "why": "one run fetches, filters, de-duplicates and persists; counters say what was dropped and why",
+      "precautions": [
+        "a full sweep takes minutes — narrow with --source or --company, or use --background",
+        "network-bound; writes new postings but never modifies existing applications"
+      ],
+      "examples": [
+        "st jobs scan --company Anthropic",
+        "st jobs scan --background"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.screen",
+      "tier": "mandate",
+      "cmd": "st jobs screen --limit 50",
+      "when": "triage the postings a scan left in `new` so the scored queues stop coming back empty",
+      "why": "one cheap call per posting sorts it into shortlisted or discarded; nothing else moves a posting out of `new`",
+      "precautions": [
+        "spends one Agent Hub call per posting and runs serially — 50 takes several minutes",
+        "bounded by JOBINATOR_SCREEN_DAILY_CAP when --limit is omitted",
+        "the nightly worker already screens at 07:30 UTC; use this to work down a backlog"
+      ],
+      "examples": [
+        "st jobs screen --limit 25 --human"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.evaluate",
+      "tier": "mandate",
+      "cmd": "st jobs evaluate <posting-id>",
+      "when": "score a posting for fit before spending a tailoring run on it",
+      "why": "persists the full report, subscores, legitimacy signal and skill gap against the posting",
+      "precautions": [
+        "spends an Agent Hub call and takes tens of seconds; free-tier quota resets midnight Pacific",
+        "re-running records another evaluation rather than replacing the last one"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.tailor",
+      "tier": "mandate",
+      "cmd": "st jobs tailor <posting-id>",
+      "when": "produce the resume and cover letter for a posting you intend to submit",
+      "why": "writes both documents against this job description and stores them as versioned artifacts on the application",
+      "precautions": [
+        "spends Agent Hub calls and takes up to a minute per document",
+        "a blocked fact check exits 1 with the invented claims listed — fix the CV facts or regenerate, never hand-edit past it",
+        "generating opens an application record if the posting has none"
+      ],
+      "examples": [
+        "st jobs tailor 41 --kind cover_letter"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.apply",
+      "tier": "mandate",
+      "cmd": "st jobs apply <posting-id>",
+      "when": "you have submitted an application and it needs to be on the record",
+      "why": "opens the application, dates it, and moves the posting out of the discovery queue",
+      "precautions": [
+        "records state only — nothing is submitted to an employer from here",
+        "idempotent per posting: a second call re-uses the existing application",
+        "use --no-submit to open an application you have not sent yet"
+      ],
+      "examples": [
+        "st jobs apply 41 -m 'referred by a former colleague'"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.status",
+      "tier": "mandate",
+      "cmd": "st jobs status <app-id> <status> -m 'note'",
+      "when": "an application moved — a reply arrived, an interview was scheduled, a rejection landed",
+      "why": "writes a timeline transition as well as the new status, so funnel analytics stay truthful",
+      "precautions": [
+        "records state only; nothing is sent to an employer",
+        "statuses: evaluated applied responded interview offer rejected discarded skip hired"
+      ],
+      "examples": [
+        "st jobs status 9 interview -m 'panel scheduled for the 12th'"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.track",
+      "tier": "reference",
+      "cmd": "st jobs track --status interview",
+      "when": "review what is in flight, or find the application id for a status change",
+      "precautions": [
+        "read-only"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.followups",
+      "tier": "reference",
+      "cmd": "st jobs followups --due",
+      "when": "check which applications are owed a nudge",
+      "precautions": [
+        "read-only; sending is manual — mark one sent from the UI after you send it"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.prep",
+      "tier": "reference",
+      "cmd": "st jobs prep <app-id>",
+      "when": "an interview is scheduled and the candidate needs a brief for it",
+      "why": "reads the posting and the evaluation, then matches the story bank against what this interview will ask",
+      "precautions": [
+        "--write spends an Agent Hub call and takes about a minute; without it this only reads existing briefs",
+        "a story the bank does not hold is reported as a suggestion, never as prepared material"
+      ],
+      "examples": [
+        "st jobs prep 9 --write"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.stats",
+      "tier": "reference",
+      "cmd": "st jobs stats",
+      "when": "report on the search: how many applications sit at each stage, and what the board holds",
+      "precautions": [
+        "read-only; counts are current state, not a time series"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.profile",
+      "tier": "reference",
+      "cmd": "st jobs profile",
+      "when": "before writing anything on the candidate's behalf — targets, comp, authorization, allowed metrics",
+      "why": "the same candidate block the screener and tailor agents are given, so an agent-written draft cannot drift from theirs",
+      "precautions": [
+        "read-only; cv_facts.allow_metrics is the only set of numbers permitted in generated documents"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.search",
+      "tier": "mandate",
+      "cmd": "st jobs search --remote remote --employment full_time",
+      "when": "answer a shaped question about the board — remote full-time at small companies, anything within 50 miles, channel vendors only",
+      "why": "`ready` ranks the whole queue by score; this is the same list narrowed by work mode, employment type, company size, segment and distance",
+      "precautions": [
+        "read-only",
+        "--employee-band, --segment and --max-distance only match companies that have been researched; an unresearched company is unknown, not excluded on merit",
+        "--max-distance drops remote roles, which have no distance to measure — pass --remote remote instead"
+      ],
+      "examples": [
+        "st jobs search --remote remote --remote hybrid --employment full_time --employee-band startup_1_50 --employee-band small_51_200",
+        "st jobs search --channel-focus --min-score 3.5 --human"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.companies",
+      "tier": "reference",
+      "cmd": "st jobs companies --hiring",
+      "when": "judge an employer before reading its postings — size, ownership, offices, whether it sells through the channel",
+      "why": "the firmographics the posting filters depend on, plus which companies are still unresearched",
+      "precautions": [
+        "read-only",
+        "a null field on a researched company means it was looked for and could not be sourced; `not researched` means nobody has looked"
+      ],
+      "examples": [
+        "st jobs companies --segment msp --hiring --human"
+      ],
+      "task_types": [
+        "jobs",
+        "career"
+      ]
+    }
+  ]
+}

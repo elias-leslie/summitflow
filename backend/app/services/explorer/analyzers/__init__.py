@@ -1,6 +1,14 @@
-"""Explorer analyzers - code analysis utilities."""
+"""Compatibility import for the code_intelligence.analyzers public package."""
 
-from .ast_analyzer import parse_python_file
-from .symbol_extractor import extract_symbols
+from app.owner_modules import expose_module
+from app.services.code_intelligence_host import configure_code_intelligence
 
-__all__ = ["extract_symbols", "parse_python_file"]
+configure_code_intelligence()
+expose_module(__name__, "code_intelligence.analyzers", (
+    "_helpers",
+    "_python_extractor",
+    "_ts_extractor",
+    "ast_analyzer",
+    "symbol_extractor",
+    "symbol_types",
+))

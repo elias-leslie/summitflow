@@ -1,0 +1,34 @@
+{
+  "id": "agent-hub.complete",
+  "owner": "agent-hub",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Agent Hub-owned complete commands.",
+  "effects": [
+    "network",
+    "read-remote",
+    "write-remote",
+    "read-local",
+    "write-local",
+    "credentials"
+  ],
+  "namespace": "complete",
+  "help": {
+    "": "Usage: complete [OPTIONS] [message] COMMAND [ARGS]...\n\n  Agent Hub completion API\n\nArguments:\n  message  Message to send\n\nOptions:\n  --message <str>             Message to send without relying on positional\n                              ordering\n  -a, --agent <str>           Agent slug\n  -M, --model <str>           Model override (e.g.\n                              cloudflare/qwen2.5-coder-32b). Uses @mention\n                              injection to override agent's default model.\n  -p, --project <str>         Project ID\n  -s, --source <str>          Source client  [default: st-cli]\n  -S, --session <str>         Continue existing session\n  -m, --memory / --no-memory  Enable memory injection  [default: memory]\n  -g, --memory-group <str>    Memory group ID\n  --task-type <str>           Optional task type label (e.g. wake, heartbeat)\n  --thinking <str>            Thinking level:\n                              minimal|low|medium|high|ultrathink\n  --skip-cache                Bypass response cache\n  --stream                    Stream response via SSE\n  --trace <str>               Trace ID for event correlation\n  --roles <str>               Comma-separated prompt roles to include\n  -i, --image <str>           Image file path(s) for multimodal input\n  -A, --audio <str>           Audio file path(s): WAV, MP3, AIFF, AAC, OGG, or\n                              FLAC\n  -f, --file <str>            Read message from file\n  -t, --timeout <float>       Optional HTTP read-timeout ceiling in seconds.\n                              Omit to wait for completion.\n  --raw                       Output raw JSON\n  --install-completion        Install completion for the current shell.\n  --show-completion           Show completion for the current shell, to copy\n                              it or customize the installation.\n  --help                      Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.complete",
+      "tier": "reference",
+      "cmd": "st complete --agent <slug> --file <path>",
+      "when": "send an authorized completion request through Agent Hub",
+      "task_types": [
+        "agent-admin",
+        "research"
+      ],
+      "on_demand": "completion"
+    }
+  ]
+}

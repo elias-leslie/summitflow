@@ -1,0 +1,74 @@
+{
+  "id": "agent-hub.agents",
+  "owner": "agent-hub",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Agent Hub-owned agents commands.",
+  "effects": [
+    "network",
+    "read-remote",
+    "write-remote",
+    "read-local",
+    "write-local",
+    "credentials"
+  ],
+  "namespace": "agents",
+  "help": {
+    "": "Usage: agents [OPTIONS] COMMAND [ARGS]...\n\n  Agent management (Agent Hub)\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  list      List agents.\n  get       Get one agent by slug.\n  versions  Show compact agent version history.\n  activity  Show recent agent sessions and request logs.\n  create    Create an agent using the Agent Hub API.\n  preview   Show the effective runtime prompt/context preview for an agent.\n  update    Update an agent using the Agent Hub API.",
+    "list": "Usage: agents list [OPTIONS]\n\n  List agents.\n\nOptions:\n  --active-only / --all         [default: active-only]\n  --coding-only / --non-coding\n  --limit <int range>           [default: 100; 1<=x<=500]\n  --offset <int range>          [default: 0; x>=0]\n  --json                        Print full API payload.\n  --scores                      Show compact assignment rows with all score\n                                dimensions.\n  --by-model                    Group active agents by primary model.\n  --help                        Show this message and exit.",
+    "get": "Usage: agents get [OPTIONS] {slug}\n\n  Get one agent by slug.\n\nArguments:\n  slug  Agent slug  [required]\n\nOptions:\n  --json  Print full API payload.\n  --help  Show this message and exit.",
+    "versions": "Usage: agents versions [OPTIONS] {slug}\n\n  Show compact agent version history.\n\nArguments:\n  slug  Agent slug  [required]\n\nOptions:\n  --limit <int range>  [default: 20; 1<=x<=100]\n  --json               Print full API payload.\n  --help               Show this message and exit.",
+    "activity": "Usage: agents activity [OPTIONS] {slug}\n\n  Show recent agent sessions and request logs.\n\nArguments:\n  slug  Agent slug  [required]\n\nOptions:\n  --external-id <str>  Filter by caller external/task id.\n  --limit <int range>  [default: 10; 1<=x<=100]\n  --json               Print full API payload.\n  --help               Show this message and exit.",
+    "create": "Usage: agents create [OPTIONS] {slug} {name}\n\n  Create an agent using the Agent Hub API.\n\nArguments:\n  slug  Agent slug  [required]\n  name  Display name  [required]\n\nOptions:\n  --primary-model <str>           Primary model id.  [required]\n  --system-prompt-file <path>     System prompt file.  [required]\n  --description <str>\n  --temperature <float range>     [default: 0.1; 0.0<=x<=2.0]\n  --timeout-seconds <float range>\n                                  [x>=1.0]\n  --thinking-level <str>\n  --verbosity-level <str>\n  --active / --inactive           [default: active]\n  --coding-agent / --non-coding-agent\n                                  [default: non-coding-agent]\n  --fallback-model <str>\n  --escalation-model <str>\n  --memory-config-file <path>\n  --help                          Show this message and exit.",
+    "preview": "Usage: agents preview [OPTIONS] {slug}\n\n  Show the effective runtime prompt/context preview for an agent.\n\nArguments:\n  slug  Agent slug  [required]\n\nOptions:\n  -m, --mode <str>     Preview mode: chat, heartbeat, wake, review  [default:\n                       chat]\n  -P, --project <str>  Optional project scope\n  --phase <str>        Optional phase/event hint\n  --input <str>        Optional task input placeholder\n  --json               Print raw JSON response\n  --full-context-only  Print only the effective full context\n  --show-content       Print full section bodies plus full context.\n  --help               Show this message and exit.",
+    "update": "Usage: agents update [OPTIONS] {slug}\n\n  Update an agent using the Agent Hub API.\n\nArguments:\n  slug  Agent slug  [required]\n\nOptions:\n  --name <str>\n  --description <str>\n  --primary-model <str>\n  --escalation-model <str>\n  --routing-mode <str>\n  --temperature <float range>     [0.0<=x<=2.0]\n  --timeout-seconds <float range>\n                                  [x>=1.0]\n  --thinking-level <str>\n  --active / --inactive\n  --coding-agent / --non-coding-agent\n  --fallback-model <str>\n  --clear-fallback-models\n  --system-prompt-file <path>\n  --memory-config-file <path>\n  --clear-memory-config\n  --memory-enabled / --memory-disabled\n  --include-mandates / --no-include-mandates\n  --include-guardrails / --no-include-guardrails\n  --include-references / --no-include-references\n  --continuity-enabled / --no-continuity-enabled\n  --continuity-max-sessions <int range>\n                                  [1<=x<=20]\n  --audience-tags <str>\n  --add-audience-tags <str>\n  --remove-audience-tags <str>\n  --clear-audience-tags\n  --exclude-tags <str>\n  --add-exclude-tags <str>\n  --remove-exclude-tags <str>\n  --clear-exclude-tags\n  --change-reason <str>\n  --help                          Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.agents.get",
+      "tier": "reference",
+      "cmd": "st agents get <slug> [--json]",
+      "when": "inspect one agent's canonical routing, fallbacks, escalation, timeout, and memory summary",
+      "task_types": [
+        "agent-admin",
+        "prompt-tuning"
+      ],
+      "on_demand": "agent administration"
+    },
+    {
+      "surface": "st.agents.versions",
+      "tier": "reference",
+      "cmd": "st agents versions <slug> --limit N",
+      "when": "inspect compact agent routing/config version history without raw DB queries",
+      "task_types": [
+        "agent-admin",
+        "prompt-tuning"
+      ],
+      "on_demand": "agent administration"
+    },
+    {
+      "surface": "st.agents.activity",
+      "tier": "reference",
+      "cmd": "st agents activity <slug> [--external-id TASK] --limit N",
+      "when": "inspect recent agent sessions and complete requests without raw DB queries",
+      "task_types": [
+        "agent-admin",
+        "prompt-tuning"
+      ],
+      "on_demand": "agent administration"
+    },
+    {
+      "surface": "st.agents.preview",
+      "tier": "reference",
+      "cmd": "st agents preview <slug> --json",
+      "when": "inspect agent prompt/context size; verify injection",
+      "task_types": [
+        "agent-admin",
+        "prompt-tuning"
+      ],
+      "on_demand": "agent administration"
+    }
+  ]
+}

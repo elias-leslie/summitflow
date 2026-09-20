@@ -1,0 +1,26 @@
+[project]
+name = "summitflow-st-sdk"
+version = "0.1.0"
+description = "Public SDK for trusted SummitFlow ST command extensions"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28.0",
+    "PyYAML>=6.0.0",
+    "typer>=0.15.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["st_sdk"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+

@@ -1,0 +1,1477 @@
+{
+  "id": "neri.neri",
+  "owner": "neri",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Neri-owned investigations, evidence, and target metadata.",
+  "effects": [
+    "network",
+    "read-remote",
+    "write-remote",
+    "read-local",
+    "write-local",
+    "credentials"
+  ],
+  "namespace": "neri",
+  "help": {
+    "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Read and maintain Neri targets, investigations, notes, reports and\n  disclosure programs\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  investigations\n  create           Create a saved attempt through the legacy...\n  show\n  activity\n  record-activity\n  context\n  capabilities\n  reports\n  control\n  operation\n  evidence         Import evidence and inspect retained artifacts\n  notes            Save contextual notes and direction\n  report           Read exact report and review revisions, save reports...\n  execute          Submit explicit typed actions to a registered local...\n  target           Inspect and maintain registered target metadata\n  group            Read and organize passive investigations containing...\n  program          Maintain passive disclosure programs and exact policy...\n  runtime          Inspect or operate Neri's emergency admission stop\n  research         Read research capability progress and save exact...\n  worker           Inspect the bounded local candidate and Neri-owned...\n  jev              Run typed Jev evaluations through Agent Hub",
+    "investigations": "Usage: neri investigations [OPTIONS]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
+    "create": "Usage: neri create [OPTIONS]\n\n  Create a saved attempt through the legacy investigation API. --file - reads\n  JSON from stdin.\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "show": "Usage: neri show [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "activity": "Usage: neri activity [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --after <int range>  [default: 0; x>=0]\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --help               Show this message and exit.",
+    "record-activity": "Usage: neri record-activity [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "context": "Usage: neri context [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --after <int range>      [default: 0; x>=0]\n  --limit <int range>      [default: 40; 1<=x<=100]\n  --research-digest <str>\n  --help                   Show this message and exit.",
+    "capabilities": "Usage: neri capabilities [OPTIONS]\n\nOptions:\n  --full / --no-full  [default: no-full]\n  --help              Show this message and exit.",
+    "reports": "Usage: neri reports [OPTIONS]\n\nOptions:\n  --limit <int range>          [default: 40; 1<=x<=100]\n  --cursor <str>\n  --view <investigations>\n  --target, --target-id <str>\n  --help                       Show this message and exit.",
+    "control": "Usage: neri control [OPTIONS] {investigation_id} {action}:<pause|stop>\n\nArguments:\n  investigation_id     [required]\n  action:<pause|stop>  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "operation": "Usage: neri operation [OPTIONS] {investigation_id} {operation_id}\n\nArguments:\n  investigation_id  [required]\n  operation_id      [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "evidence": "Usage: neri evidence [OPTIONS] COMMAND [ARGS]...\n\n  Import evidence and inspect retained artifacts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  import\n  artifact\n  download",
+    "evidence list": "Usage: neri evidence list [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --after <int range>  [default: 0; x>=0]\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --help               Show this message and exit.",
+    "evidence show": "Usage: neri evidence show [OPTIONS] {investigation_id} {evidence_id}\n\nArguments:\n  investigation_id  [required]\n  evidence_id       UUID, E<number>, or operation:<UUID>  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "evidence import": "Usage: neri evidence import [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "evidence artifact": "Usage: neri evidence artifact [OPTIONS] {investigation_id} {evidence_id}\n\nArguments:\n  investigation_id  [required]\n  evidence_id       UUID, E<number>, or operation:<UUID>  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "evidence download": "Usage: neri evidence download [OPTIONS] {investigation_id} {evidence_id}\n\nArguments:\n  investigation_id  [required]\n  evidence_id       UUID, E<number>, or operation:<UUID>  [required]\n\nOptions:\n  --output <path>  [required]\n  --help           Show this message and exit.",
+    "notes": "Usage: neri notes [OPTIONS] COMMAND [ARGS]...\n\n  Save contextual notes and direction\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  add\n  state",
+    "notes list": "Usage: neri notes list [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "notes add": "Usage: neri notes add [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "notes state": "Usage: neri notes state [OPTIONS] {investigation_id} {note_id}\n                        {state}:<acknowledged|resolved>\n\nArguments:\n  investigation_id               [required]\n  note_id                        [required]\n  state:<acknowledged|resolved>  [required]\n\nOptions:\n  --id <uuid>\n  --help       Show this message and exit.",
+    "report": "Usage: neri report [OPTIONS] COMMAND [ARGS]...\n\n  Read exact report and review revisions, save reports and download drafts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  show\n  revision         Read one exact report revision without loading report...\n  review-revision  Read one exact review revision without loading report...\n  save\n  review\n  download\n  severity         Read and save immutable severity assessments for an...",
+    "report show": "Usage: neri report show [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "report revision": "Usage: neri report revision [OPTIONS] {investigation_id} {revision_id}\n\n  Read one exact report revision without loading report history.\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "report review-revision": "Usage: neri report review-revision [OPTIONS] {investigation_id} {revision_id}\n\n  Read one exact review revision without loading report history.\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "report save": "Usage: neri report save [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "report review": "Usage: neri report review [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "report download": "Usage: neri report download [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --output <path>    [required]\n  --revision <uuid>  Download this exact report revision\n  --review <uuid>    Bind this exact review revision and its report\n  --help             Show this message and exit.",
+    "report severity": "Usage: neri report severity [OPTIONS] COMMAND [ARGS]...\n\n  Read and save immutable severity assessments for an exact report revision\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  save",
+    "report severity list": "Usage: neri report severity list [OPTIONS] {investigation_id} {revision_id}\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --limit <int range>      [default: 40; 1<=x<=100]\n  --before-sequence <int>  Continue from the returned next_before_sequence\n  --help                   Show this message and exit.",
+    "report severity show": "Usage: neri report severity show [OPTIONS] {investigation_id} {revision_id}\n                                 {assessment_id}\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n  assessment_id     [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "report severity save": "Usage: neri report severity save [OPTIONS] {investigation_id} {revision_id}\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "execute": "Usage: neri execute [OPTIONS] COMMAND [ARGS]...\n\n  Submit explicit typed actions to a registered local target\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  operation\n  runtime\n  runtime-snapshot\n  sequence\n  reset",
+    "execute operation": "Usage: neri execute operation [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "execute runtime": "Usage: neri execute runtime [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "execute runtime-snapshot": "Usage: neri execute runtime-snapshot [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "execute sequence": "Usage: neri execute sequence [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "execute reset": "Usage: neri execute reset [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "target": "Usage: neri target [OPTIONS] COMMAND [ARGS]...\n\n  Inspect and maintain registered target metadata\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  register\n  status\n  notes     Save target direction and read its state history\n  programs  Record exact target applicability and its revision history",
+    "target list": "Usage: neri target list [OPTIONS]\n\nOptions:\n  --workspace / --no-workspace    [default: no-workspace]\n  --limit <int range>             [default: 40; 1<=x<=100]\n  --cursor <str>\n  --search <str>\n  --filter <all|active|attention|awaiting_review|reviewed_findings|reviewed_no_findings>\n  --help                          Show this message and exit.",
+    "target show": "Usage: neri target show [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --workspace / --no-workspace  [default: no-workspace]\n  --help                        Show this message and exit.",
+    "target register": "Usage: neri target register [OPTIONS]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
+    "target status": "Usage: neri target status [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
+    "target notes": "Usage: neri target notes [OPTIONS] COMMAND [ARGS]...\n\n  Save target direction and read its state history\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  add\n  show\n  history\n  state    Save a state revision.",
+    "target notes list": "Usage: neri target notes list [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --limit <int range>             [default: 40; 1<=x<=100]\n  --cursor <str>\n  --state <saved|acknowledged|resolved>\n  --help                          Show this message and exit.",
+    "target notes add": "Usage: neri target notes add [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "target notes show": "Usage: neri target notes show [OPTIONS] {target_id} {note_id}\n\nArguments:\n  target_id  [required]\n  note_id    [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "target notes history": "Usage: neri target notes history [OPTIONS] {target_id} {note_id}\n\nArguments:\n  target_id  [required]\n  note_id    [required]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
+    "target notes state": "Usage: neri target notes state [OPTIONS] {target_id} {note_id}\n\n  Save a state revision. JSON state accepts saved, acknowledged or resolved.\n\nArguments:\n  target_id  [required]\n  note_id    [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "target programs": "Usage: neri target programs [OPTIONS] COMMAND [ARGS]...\n\n  Record exact target applicability and its revision history\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  bind\n  show\n  history",
+    "target programs list": "Usage: neri target programs list [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --limit <int range>             [default: 40; 1<=x<=100]\n  --cursor <str>\n  --manifest-id <uuid>\n  --environment <str>\n  --include-history / --no-include-history\n                                  [default: no-include-history]\n  --help                          Show this message and exit.",
+    "target programs bind": "Usage: neri target programs bind [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "target programs show": "Usage: neri target programs show [OPTIONS] {target_id} {binding_id}\n\nArguments:\n  target_id   [required]\n  binding_id  [required]\n\nOptions:\n  --revision-id <uuid>\n  --help                Show this message and exit.",
+    "target programs history": "Usage: neri target programs history [OPTIONS] {target_id} {binding_id}\n\nArguments:\n  target_id   [required]\n  binding_id  [required]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
+    "group": "Usage: neri group [OPTIONS] COMMAND [ARGS]...\n\n  Read and organize passive investigations containing saved attempts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  create\n  show\n  classify\n  select-report\n  membership\n  notes          Save investigation direction and read its state history",
+    "group list": "Usage: neri group list [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --limit <int range>             [default: 40; 1<=x<=100]\n  --cursor <str>\n  --search <str>\n  --class-key <str>\n  --filter <all|active|attention|awaiting_review|reviewed_findings|reviewed_no_findings>\n  --include-empty / --no-include-empty\n                                  [default: no-include-empty]\n  --help                          Show this message and exit.",
+    "group create": "Usage: neri group create [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "group show": "Usage: neri group show [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --limit, --attempt-limit <int range>\n                                  [default: 40; 1<=x<=100]\n  --cursor, --attempt-cursor <str>\n  --report-limit <int range>      [default: 40; 1<=x<=100]\n  --report-cursor <str>\n  --help                          Show this message and exit.",
+    "group classify": "Usage: neri group classify [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "group select-report": "Usage: neri group select-report [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "group membership": "Usage: neri group membership [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "group notes": "Usage: neri group notes [OPTIONS] COMMAND [ARGS]...\n\n  Save investigation direction and read its state history\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  add\n  show\n  history\n  state    Save a state revision.",
+    "group notes list": "Usage: neri group notes list [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --limit <int range>             [default: 40; 1<=x<=100]\n  --cursor <str>\n  --state <saved|acknowledged|resolved>\n  --help                          Show this message and exit.",
+    "group notes add": "Usage: neri group notes add [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "group notes show": "Usage: neri group notes show [OPTIONS] {target_id} {group_id} {note_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n  note_id    [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "group notes history": "Usage: neri group notes history [OPTIONS] {target_id} {group_id} {note_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n  note_id    [required]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
+    "group notes state": "Usage: neri group notes state [OPTIONS] {target_id} {group_id} {note_id}\n\n  Save a state revision. JSON state accepts saved, acknowledged or resolved.\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n  note_id    [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "program": "Usage: neri program [OPTIONS] COMMAND [ARGS]...\n\n  Maintain passive disclosure programs and exact policy revisions\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  create\n  show\n  revisions\n  revise\n  revision   Read the full policy snapshot at one exact revision.",
+    "program list": "Usage: neri program list [OPTIONS]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
+    "program create": "Usage: neri program create [OPTIONS]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "program show": "Usage: neri program show [OPTIONS] {program_id}\n\nArguments:\n  program_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "program revisions": "Usage: neri program revisions [OPTIONS] {program_id}\n\nArguments:\n  program_id  [required]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
+    "program revise": "Usage: neri program revise [OPTIONS] {program_id}\n\nArguments:\n  program_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "program revision": "Usage: neri program revision [OPTIONS] {program_id} {revision_id}\n\n  Read the full policy snapshot at one exact revision.\n\nArguments:\n  program_id   [required]\n  revision_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "runtime": "Usage: neri runtime [OPTIONS] COMMAND [ARGS]...\n\n  Inspect or operate Neri's emergency admission stop\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  show\n  stop\n  release",
+    "runtime show": "Usage: neri runtime show [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
+    "runtime stop": "Usage: neri runtime stop [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
+    "runtime release": "Usage: neri runtime release [OPTIONS]\n\nOptions:\n  --revision <int range>  [x>=1; required]\n  --help                  Show this message and exit.",
+    "research": "Usage: neri research [OPTIONS] COMMAND [ARGS]...\n\n  Read research capability progress and save exact associations\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  catalogue\n  show\n  case-schema\n  matrix\n  context\n  recommend\n  links\n  associate\n  prepare-case\n  associate-case\n  invalidate-case\n  snapshot\n  snapshots\n  outcomes\n  record-outcome\n  cohorts\n  cohort\n  register-cohort\n  catalog-campaigns\n  catalog-campaign\n  register-catalog-campaign\n  record-catalog-plan\n  verify-catalog-item\n  record-catalog-replay\n  close-cohort\n  finalize-accounting\n  work\n  record-work\n  application\n  application-snapshots\n  snapshot-application",
+    "research catalogue": "Usage: neri research catalogue [OPTIONS]\n\nOptions:\n  --full / --no-full  [default: no-full]\n  --help              Show this message and exit.",
+    "research show": "Usage: neri research show [OPTIONS] {capability_id}\n\nArguments:\n  capability_id  [required]\n\nOptions:\n  --version <str>\n  --help           Show this message and exit.",
+    "research case-schema": "Usage: neri research case-schema [OPTIONS] {capability_id}\n\nArguments:\n  capability_id  [required]\n\nOptions:\n  --version <str>\n  --help           Show this message and exit.",
+    "research matrix": "Usage: neri research matrix [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
+    "research context": "Usage: neri research context [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --previous-digest <str>\n  --help                   Show this message and exit.",
+    "research recommend": "Usage: neri research recommend [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "research links": "Usage: neri research links [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "research associate": "Usage: neri research associate [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "research prepare-case": "Usage: neri research prepare-case [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
+    "research associate-case": "Usage: neri research associate-case [OPTIONS] {investigation_id}\n                                    {selection_id}\n\nArguments:\n  investigation_id  [required]\n  selection_id      [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
+    "research invalidate-case": "Usage: neri research invalidate-case [OPTIONS] {investigation_id}\n                                     {selection_id}\n\nArguments:\n  investigation_id  [required]\n  selection_id      [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
+    "research snapshot": "Usage: neri research snapshot [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "research snapshots": "Usage: neri research snapshots [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "research outcomes": "Usage: neri research outcomes [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "research record-outcome": "Usage: neri research record-outcome [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "research cohorts": "Usage: neri research cohorts [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
+    "research cohort": "Usage: neri research cohort [OPTIONS] {cohort_id}\n\nArguments:\n  cohort_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "research register-cohort": "Usage: neri research register-cohort [OPTIONS]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "research catalog-campaigns": "Usage: neri research catalog-campaigns [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
+    "research catalog-campaign": "Usage: neri research catalog-campaign [OPTIONS] {campaign_id}\n\nArguments:\n  campaign_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "research register-catalog-campaign": "Usage: neri research register-catalog-campaign [OPTIONS]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "research record-catalog-plan": "Usage: neri research record-catalog-plan [OPTIONS] {campaign_id}\n\nArguments:\n  campaign_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "research verify-catalog-item": "Usage: neri research verify-catalog-item [OPTIONS] {campaign_id} {item_key}\n\nArguments:\n  campaign_id  [required]\n  item_key     [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "research record-catalog-replay": "Usage: neri research record-catalog-replay [OPTIONS] {campaign_id}\n\nArguments:\n  campaign_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "research close-cohort": "Usage: neri research close-cohort [OPTIONS] {cohort_id}\n\nArguments:\n  cohort_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "research finalize-accounting": "Usage: neri research finalize-accounting [OPTIONS] {cohort_id}\n\nArguments:\n  cohort_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "research work": "Usage: neri research work [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "research record-work": "Usage: neri research record-work [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "research application": "Usage: neri research application [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "research application-snapshots": "Usage: neri research application-snapshots [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "research snapshot-application": "Usage: neri research snapshot-application [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "worker": "Usage: neri worker [OPTIONS] COMMAND [ARGS]...\n\n  Inspect the bounded local candidate and Neri-owned qualification evidence\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  status         Inspect the dedicated local runtime and promotion state.\n  evaluate       Run one fallback-free, tool-free local analysis over a...\n  benchmark      Run the bounded harness-arm suite sequentially on the...\n  qualification  Read current qualification state from Neri, not the...\n  qualify        Append one qualification decision while retaining its...\n  shadow         Create one predeclared shadow assignment through Neri.\n  assignments    List assignment projections, optionally narrowed to one...\n  assignment     Read one assignment using its server-issued identity...\n  review         Append one immutable frontier review to an exact...",
+    "worker status": "Usage: neri worker status [OPTIONS]\n\n  Inspect the dedicated local runtime and promotion state.\n\nOptions:\n  --help  Show this message and exit.",
+    "worker evaluate": "Usage: neri worker evaluate [OPTIONS]\n\n  Run one fallback-free, tool-free local analysis over a sanitized packet.\n\nOptions:\n  --task-family <facts_unknowns|evidence_consistency|scope_policy_parse|evidence_condensation|matrix_construction|hypothesis_controls|candidate_triage|learning_draft>\n                                  [required]\n  --file <file>                   [required]\n  --arm <bare_schema|role_checklist|grounded_decomposition|critique_repair>\n                                  [default: grounded_decomposition]\n  --reasoning-effort <low|medium|xhigh>\n                                  [default: xhigh]\n  --max-output-tokens <int range>\n                                  [default: 4096; 256<=x<=8192]\n  --help                          Show this message and exit.",
+    "worker benchmark": "Usage: neri worker benchmark [OPTIONS]\n\n  Run the bounded harness-arm suite sequentially on the single local GPU.\n\nOptions:\n  --split <development|locked>    [default: development]\n  --arm <bare_schema|role_checklist|grounded_decomposition|critique_repair>\n  --task-family <facts_unknowns|evidence_consistency|scope_policy_parse|evidence_condensation|matrix_construction|hypothesis_controls|candidate_triage|learning_draft>\n  --case-id <str>\n  --runs <int range>              [default: 1; 1<=x<=3]\n  --reasoning-effort <low|medium|xhigh>\n                                  [default: xhigh]\n  --max-output-tokens <int range>\n                                  [default: 4096; 256<=x<=8192]\n  --no-persist\n  --study-id <str>\n  --study-block <int range>       [1<=x<=8]\n  --study-case-position <int range>\n                                  [1<=x<=24]\n  --study-replacement <int range>\n                                  [default: 0; 0<=x<=3]\n  --help                          Show this message and exit.",
+    "worker qualification": "Usage: neri worker qualification [OPTIONS]\n\n  Read current qualification state from Neri, not the Agent Hub runtime.\n\nOptions:\n  --task-family <facts_unknowns|evidence_consistency|scope_policy_parse|evidence_condensation|matrix_construction|hypothesis_controls|candidate_triage|learning_draft>\n  --help                          Show this message and exit.",
+    "worker qualify": "Usage: neri worker qualify [OPTIONS]\n\n  Append one qualification decision while retaining its idempotency identity.\n\nOptions:\n  --file <file>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "worker shadow": "Usage: neri worker shadow [OPTIONS] {run_id}\n\n  Create one predeclared shadow assignment through Neri.\n\nArguments:\n  run_id  [required]\n\nOptions:\n  --file <file>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "worker assignments": "Usage: neri worker assignments [OPTIONS]\n\n  List assignment projections, optionally narrowed to one run or family.\n\nOptions:\n  --run-id <uuid>\n  --task-family <facts_unknowns|evidence_consistency|scope_policy_parse|evidence_condensation|matrix_construction|hypothesis_controls|candidate_triage|learning_draft>\n  --help                          Show this message and exit.",
+    "worker assignment": "Usage: neri worker assignment [OPTIONS] {assignment_id}\n\n  Read one assignment using its server-issued identity without fallback.\n\nArguments:\n  assignment_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "worker review": "Usage: neri worker review [OPTIONS] {run_id} {assignment_id}\n\n  Append one immutable frontier review to an exact assignment.\n\nArguments:\n  run_id         [required]\n  assignment_id  [required]\n\nOptions:\n  --file <file>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "jev": "Usage: neri jev [OPTIONS] COMMAND [ARGS]...\n\n  Run typed Jev evaluations through Agent Hub\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  evaluate  Forward one caller-authored typed Jev request and preserve...",
+    "jev evaluate": "Usage: neri jev evaluate [OPTIONS]\n\n  Forward one caller-authored typed Jev request and preserve its server\n  response.\n\nOptions:\n  --file <file>  [required]\n  --dry-run\n  --help         Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.neri.investigations",
+      "tier": "reference",
+      "cmd": "st neri investigations [--limit 40 --cursor TOKEN]",
+      "when": "list saved Neri attempts using the legacy investigation contract",
+      "precautions": [
+        "read-only; IDs identify runs, not passive groups; next_cursor resumes the saved listing"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.create",
+      "tier": "reference",
+      "cmd": "st neri create --file investigation.json [--id UUID]",
+      "when": "save an attempt with title, objective, scope and optional group membership",
+      "precautions": [
+        "passive creation; preserve group_id and role when supplied; JSON id or --id is retained, otherwise generated and printed; reuse only for identical content"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.show",
+      "tier": "reference",
+      "cmd": "st neri show <investigation-id>",
+      "when": "inspect a saved investigation",
+      "precautions": [
+        "read-only; saved state does not imply external terminal execution was observed"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.activity",
+      "tier": "reference",
+      "cmd": "st neri activity <investigation-id> [--after 0 --limit 40]",
+      "when": "read a page of retained investigation activity",
+      "precautions": [
+        "read-only; resume using the returned event sequence"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.activity.record",
+      "tier": "reference",
+      "cmd": "st neri record-activity <investigation-id> --file activity.json [--id UUID]",
+      "when": "record a public objective, hypothesis, decision, progress update, blocker or follow-up",
+      "precautions": [
+        "passive record only; cite exact evidence and SummitFlow task IDs; private chain-of-thought does not belong here; UUID is retained or generated"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.context",
+      "tier": "reference",
+      "cmd": "st neri context <investigation-id> [--after 0 --limit 40 --research-digest SHA256]",
+      "when": "load compact local investigation state, evidence references and independently invalidated research guidance",
+      "precautions": [
+        "read-only local projection; retrieval is not proof of model consumption"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.capabilities",
+      "tier": "reference",
+      "cmd": "st neri capabilities [--full]",
+      "when": "discover Neri API payload contracts",
+      "precautions": [
+        "read-only; compact output omits schemas and --full returns every payload schema"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.reports",
+      "tier": "reference",
+      "cmd": "st neri reports [--view investigations --target TARGET --limit 40 --cursor TOKEN]",
+      "when": "list saved attempt reports or explicitly selected investigation reports",
+      "precautions": [
+        "read-only; default retains run-valued investigation_id; investigations view preserves group, run and exact report/review IDs; next_cursor resumes the listing"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.control",
+      "tier": "reference",
+      "cmd": "st neri control <investigation-id> pause|stop",
+      "when": "pause or stop a Neri-managed operation",
+      "precautions": [
+        "in-flight work may finish; external terminals remain under their own control"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.operation",
+      "tier": "reference",
+      "cmd": "st neri operation <investigation-id> <operation-id>",
+      "when": "inspect a retained managed-operation result",
+      "precautions": [
+        "read-only; queued status is not completion evidence"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.evidence.list",
+      "tier": "reference",
+      "cmd": "st neri evidence list <investigation-id> [--after 0 --limit 40]",
+      "when": "list a page of retained evidence references",
+      "precautions": [
+        "read-only; resume with through_seq while has_more; preserve provenance and completeness"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.evidence.show",
+      "tier": "reference",
+      "cmd": "st neri evidence show <investigation-id> <evidence-id>",
+      "when": "inspect retained evidence detail",
+      "precautions": [
+        "read-only; ID accepts UUID, E<number>, or operation:<UUID>; imported evidence is not automatically independently verified"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.evidence.import",
+      "tier": "reference",
+      "cmd": "st neri evidence import <investigation-id> --file evidence.json [--id UUID]",
+      "when": "import an actual external capture with provenance",
+      "precautions": [
+        "JSON object or stdin; preserve provenance and completeness; UUID is retained or generated and printed"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.evidence.artifact",
+      "tier": "reference",
+      "cmd": "st neri evidence artifact <investigation-id> <evidence-id>",
+      "when": "inspect artifact metadata and its download URL",
+      "precautions": [
+        "read-only; ID accepts UUID, E<number>, or operation:<UUID>; does not print artifact bytes"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.evidence.download",
+      "tier": "reference",
+      "cmd": "st neri evidence download <investigation-id> <evidence-id> --output PATH",
+      "when": "save retained artifact bytes to a new local file",
+      "precautions": [
+        "ID accepts UUID, E<number>, or operation:<UUID>; does not overwrite files; download stays on the configured Neri API"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.notes.list",
+      "tier": "reference",
+      "cmd": "st neri notes list <investigation-id>",
+      "when": "read saved investigation notes and direction",
+      "precautions": [
+        "read-only; notes retain their context and state"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.notes.add",
+      "tier": "reference",
+      "cmd": "st neri notes add <investigation-id> --file note.json [--id UUID]",
+      "when": "save direction or a note linked to investigation activity, evidence or report",
+      "precautions": [
+        "JSON object or stdin; UUID is retained or generated and printed; saving direction does not run an agent"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.notes.state",
+      "tier": "reference",
+      "cmd": "st neri notes state <investigation-id> <note-id> acknowledged|resolved [--id UUID]",
+      "when": "acknowledge or resolve a saved note",
+      "precautions": [
+        "state mutation UUID is retained or generated and printed; no automatic retry"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.report.show",
+      "tier": "reference",
+      "cmd": "st neri report show <investigation-id>",
+      "when": "read a saved report and its reviews",
+      "precautions": [
+        "read-only; retain caveats and evidence references"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.report.revision",
+      "tier": "reference",
+      "cmd": "st neri report revision <investigation-id> <revision-id>",
+      "when": "read one immutable report revision",
+      "precautions": [
+        "read-only; fetches only the cited revision; retain caveats and evidence references"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.report.review-revision",
+      "tier": "reference",
+      "cmd": "st neri report review-revision <investigation-id> <revision-id>",
+      "when": "read one immutable review revision",
+      "precautions": [
+        "read-only; fetches only the cited revision; preserve its report_revision_id and objections"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.report.save",
+      "tier": "reference",
+      "cmd": "st neri report save <investigation-id> --file report.json [--id UUID]",
+      "when": "save a report revision based on retained evidence",
+      "precautions": [
+        "JSON object or stdin; UUID is retained or generated and printed; does not submit reports externally"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.report.review",
+      "tier": "reference",
+      "cmd": "st neri report review <investigation-id> --file review.json [--id UUID]",
+      "when": "record an independent review of a specific report revision",
+      "precautions": [
+        "preserve report_revision_id, objections and actual verification attempts; UUID is retained or generated and printed"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.report.download",
+      "tier": "reference",
+      "cmd": "st neri report download <investigation-id> --output PATH [--revision UUID --review UUID]",
+      "when": "download a saved report draft or exact report/review pair",
+      "precautions": [
+        "omit both selectors for the latest report; --review selects its bound report; supplying both pins the exact pair and mismatches are rejected; writes a new local file; no external submission"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.report.severity.list",
+      "tier": "reference",
+      "cmd": "st neri report severity list <investigation-id> <revision-id> [--limit 40 --before-sequence N]",
+      "when": "read immutable severity assessment history for an exact report revision",
+      "precautions": [
+        "read-only; preserve authority, scheme, native values and next_before_sequence; pass next_before_sequence to continue history"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.report.severity.show",
+      "tier": "reference",
+      "cmd": "st neri report severity show <investigation-id> <revision-id> <assessment-id>",
+      "when": "read one immutable severity assessment for an exact report revision",
+      "precautions": [
+        "read-only; preserve the assessment identity and source; no fallback to another assessment or report revision"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.report.severity.save",
+      "tier": "reference",
+      "cmd": "st neri report severity save <investigation-id> <revision-id> --file assessment.json [--id UUID]",
+      "when": "save an attributed severity assessment for an exact report revision",
+      "precautions": [
+        "JSON object or stdin; preserve authority, scheme, native values, rationale and source; id is retained or generated and printed; server validates assessment fields; no automatic retry"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.execute.operation",
+      "tier": "reference",
+      "cmd": "st neri execute operation <investigation-id> --file operation.json [--id UUID]",
+      "when": "submit one explicit HTTP or browser action to a run-pinned registered local target",
+      "precautions": [
+        "target action; include current agent controller identity; no automatic retry; inspect the same operation UUID after an uncertain response"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.execute.runtime",
+      "tier": "reference",
+      "cmd": "st neri execute runtime <investigation-id>",
+      "when": "read the sanitized runner release and target-state identity for an exact workbench investigation",
+      "precautions": [
+        "read-only runner identity; does not grant target authority or establish target reachability",
+        "record the observed release before freezing a campaign or replay configuration"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.execute.runtime_snapshot",
+      "tier": "reference",
+      "cmd": "st neri execute runtime-snapshot <investigation-id> --file snapshot.json [--id UUID]",
+      "when": "retain a server-observed runner release and target-generation identity",
+      "precautions": [
+        "include the current controller identity; this records runtime identity but performs no target action",
+        "use the retained event identity in a prospective catalog plan or campaign registration"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.execute.sequence",
+      "tier": "reference",
+      "cmd": "st neri execute sequence <investigation-id> --file sequence.json [--id UUID]",
+      "when": "submit a finite prepared action sequence to a run-pinned registered local target",
+      "precautions": [
+        "target actions; use only when intermediate judgment is unnecessary; include current controller identity; no automatic retry; inspect the same UUID after uncertainty"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.execute.reset",
+      "tier": "reference",
+      "cmd": "st neri execute reset <investigation-id> --file reset.json [--id UUID]",
+      "when": "recreate the exact run-pinned local target from its registered clean state",
+      "precautions": [
+        "target mutation; global stop and a settled run are required; bind expected_target_manifest_digest; reconcile the same UUID after uncertainty"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.list",
+      "tier": "reference",
+      "cmd": "st neri target list [--workspace --limit 40 --cursor TOKEN --search TEXT --filter FILTER]",
+      "when": "list compact manifests or logical target workspace summaries",
+      "precautions": [
+        "read-only; default preserves registered manifest metadata; workspace uses filter-bound cursors and bounded summaries"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.show",
+      "tier": "reference",
+      "cmd": "st neri target show <target-id> [--workspace]",
+      "when": "read a target manifest or its compact workspace context",
+      "precautions": [
+        "read-only; default preserves the manifest and digest; read workspace context before exact attempts"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.register",
+      "tier": "reference",
+      "cmd": "st neri target register --file target.json",
+      "when": "register target metadata through Neri",
+      "precautions": [
+        "JSON object or stdin; records metadata only; API validates boundaries and version identity"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.status",
+      "tier": "reference",
+      "cmd": "st neri target status <target-id> --file status.json",
+      "when": "update a registered target's active status",
+      "precautions": [
+        "preserve manifest_digest, expected_status, status and reason; conflicts are not retried"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.notes.list",
+      "tier": "reference",
+      "cmd": "st neri target notes list <target-id> [--state saved|acknowledged|resolved --limit 40 --cursor TOKEN]",
+      "when": "read a page of target direction notes",
+      "precautions": [
+        "read-only; previews may truncate bodies; preserve note IDs and next_cursor"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.notes.add",
+      "tier": "reference",
+      "cmd": "st neri target notes add <target-id> --file note.json [--id UUID]",
+      "when": "save target direction with exact saved context references",
+      "precautions": [
+        "JSON object or stdin; id is retained or generated and printed; preserve run/event/evidence/report/review references; passive notes do not imply delivery or execution"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.notes.show",
+      "tier": "reference",
+      "cmd": "st neri target notes show <target-id> <note-id>",
+      "when": "read one target direction note with its full body and context",
+      "precautions": [
+        "read-only; uses the exact note ID without falling back to a preview"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.notes.history",
+      "tier": "reference",
+      "cmd": "st neri target notes history <target-id> <note-id> [--limit 40 --cursor TOKEN]",
+      "when": "read immutable target note state transitions",
+      "precautions": [
+        "read-only; preserve state_revision_id, mutation_id, revision and next_cursor"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.notes.state",
+      "tier": "reference",
+      "cmd": "st neri target notes state <target-id> <note-id> --file state.json [--id UUID]",
+      "when": "acknowledge, resolve or reopen target direction",
+      "precautions": [
+        "JSON includes expected_revision, state and reason; --id identifies mutation_id; retained or generated ID is printed; same-state writes and stale revisions are rejected; no automatic retry"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.programs.list",
+      "tier": "reference",
+      "cmd": "st neri target programs list <target-id> [--manifest-id UUID --environment NAME --include-history --limit 40 --cursor TOKEN]",
+      "when": "read current target program applicability bindings or their revision history",
+      "precautions": [
+        "read-only; manifest and environment filters are exact; list previews omit full policy; preserve binding and binding revision IDs"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.programs.bind",
+      "tier": "reference",
+      "cmd": "st neri target programs bind <target-id> --file binding.json [--id UUID]",
+      "when": "save or revise exact target program applicability",
+      "precautions": [
+        "JSON preserves program_revision_id, manifest_id, environment and optional run/report/finding IDs; include expected_revision; target_scope_status and eligibility_status are separate; id identifies the immutable binding revision and is retained or generated; no automatic retry"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.programs.show",
+      "tier": "reference",
+      "cmd": "st neri target programs show <target-id> <binding-id> [--revision-id UUID]",
+      "when": "read full current or exact immutable binding detail and its pinned policy",
+      "precautions": [
+        "read-only; --revision-id pins an immutable binding revision; binding identity is distinct from its revision ID; no fallback"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.programs.history",
+      "tier": "reference",
+      "cmd": "st neri target programs history <target-id> <binding-id> [--limit 40 --cursor TOKEN]",
+      "when": "read immutable revisions of one exact applicability binding",
+      "precautions": [
+        "read-only; history omits full policy; preserve supersedes_revision_id and next_cursor"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.group.list",
+      "tier": "reference",
+      "cmd": "st neri group list <target-id> [--limit 40 --cursor TOKEN --search TEXT --class-key KEY --filter FILTER --include-empty]",
+      "when": "list passive investigations for a logical target",
+      "precautions": [
+        "read-only; filters apply before pagination; preserve group IDs and section continuation cursors; empty historical groups are omitted unless requested"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.group.create",
+      "tier": "reference",
+      "cmd": "st neri group create <target-id> --file group.json [--id UUID]",
+      "when": "save a sustained investigation before assigning attempts",
+      "precautions": [
+        "passive grouping only; JSON id or --id identifies the group and is retained or generated; reuse only for identical content"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.group.show",
+      "tier": "reference",
+      "cmd": "st neri group show <target-id> <group-id> [--limit 40 --cursor TOKEN --report-limit 40 --report-cursor TOKEN]",
+      "when": "read compact investigation context with paginated attempts and report history",
+      "precautions": [
+        "read-only; limit/cursor apply to attempts; report pagination is independent; preserve membership, selection and exact report/review IDs; no selection is a valid state"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.group.classify",
+      "tier": "reference",
+      "cmd": "st neri group classify <target-id> <group-id> --file classification.json [--id UUID]",
+      "when": "revise an investigation's primary class metadata",
+      "precautions": [
+        "preserve expected_revision, class_key, class_label and reason; --id identifies mutation_id; conflicts are not retried"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.group.select-report",
+      "tier": "reference",
+      "cmd": "st neri group select-report <target-id> <group-id> --file selection.json [--id UUID]",
+      "when": "select or explicitly clear an exact investigation report",
+      "precautions": [
+        "preserve expected_revision and reason; report_revision_id null clears selection; --id identifies mutation_id; newer reports never replace the selection automatically"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.group.membership",
+      "tier": "reference",
+      "cmd": "st neri group membership <target-id> <group-id> --file membership.json [--id UUID]",
+      "when": "assign or reassign an attempt to a passive investigation",
+      "precautions": [
+        "preserve run_id, expected_revision, role, exact predecessor/report references and reason; --id identifies mutation_id; clear a selected report before moving its owner run; no automatic retry"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.group.notes.list",
+      "tier": "reference",
+      "cmd": "st neri group notes list <target-id> <group-id> [--state saved|acknowledged|resolved --limit 40 --cursor TOKEN]",
+      "when": "read a page of passive investigation direction notes",
+      "precautions": [
+        "read-only; group IDs are distinct from run IDs; previews may truncate bodies; preserve next_cursor"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.group.notes.add",
+      "tier": "reference",
+      "cmd": "st neri group notes add <target-id> <group-id> --file note.json [--id UUID]",
+      "when": "save passive investigation direction with exact saved context references",
+      "precautions": [
+        "JSON object or stdin; id is retained or generated and printed; context survives reassignment; passive notes do not imply delivery, execution or blockers"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.group.notes.show",
+      "tier": "reference",
+      "cmd": "st neri group notes show <target-id> <group-id> <note-id>",
+      "when": "read one investigation direction note with its full body and context",
+      "precautions": [
+        "read-only; preserves the exact group, note and contextual record IDs"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.group.notes.history",
+      "tier": "reference",
+      "cmd": "st neri group notes history <target-id> <group-id> <note-id> [--limit 40 --cursor TOKEN]",
+      "when": "read immutable investigation note state transitions",
+      "precautions": [
+        "read-only; preserve state_revision_id, mutation_id, revision and next_cursor"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.group.notes.state",
+      "tier": "reference",
+      "cmd": "st neri group notes state <target-id> <group-id> <note-id> --file state.json [--id UUID]",
+      "when": "acknowledge, resolve or reopen investigation direction",
+      "precautions": [
+        "JSON includes expected_revision, state and reason; --id identifies mutation_id; retained or generated ID is printed; same-state writes and stale revisions are rejected; no automatic retry"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.program.list",
+      "tier": "reference",
+      "cmd": "st neri program list [--limit 40 --cursor TOKEN]",
+      "when": "read saved disclosure program identities",
+      "precautions": [
+        "read-only; program identity is distinct from its immutable policy revisions; preserve next_cursor"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.program.create",
+      "tier": "reference",
+      "cmd": "st neri program create --file program.json [--id UUID]",
+      "when": "save a named disclosure program identity",
+      "precautions": [
+        "JSON object or stdin; id is retained or generated and printed; passive record only; policy is saved separately as a revision"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.program.show",
+      "tier": "reference",
+      "cmd": "st neri program show <program-id>",
+      "when": "read one disclosure program identity and its current revision reference",
+      "precautions": [
+        "read-only; fetch the exact policy revision separately"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.program.revisions",
+      "tier": "reference",
+      "cmd": "st neri program revisions <program-id> [--limit 40 --cursor TOKEN]",
+      "when": "read a page of immutable disclosure policy revision summaries",
+      "precautions": [
+        "read-only; summaries omit policy_snapshot and may truncate summary; use revision for exact detail"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.program.revise",
+      "tier": "reference",
+      "cmd": "st neri program revise <program-id> --file revision.json [--id UUID]",
+      "when": "save an immutable disclosure policy snapshot and sources",
+      "precautions": [
+        "JSON includes expected_revision, policy_snapshot and sources; verification fields record manually supplied facts; id is retained or generated and printed; policy revisions never rewrite bindings; no automatic retry"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.program.revision",
+      "tier": "reference",
+      "cmd": "st neri program revision <program-id> <revision-id>",
+      "when": "read one full immutable disclosure policy revision",
+      "precautions": [
+        "read-only; exact revision ID is preserved; no fallback to the current policy"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.runtime.show",
+      "tier": "reference",
+      "cmd": "st neri runtime show",
+      "when": "inspect the Neri emergency admission stop and revision",
+      "precautions": [
+        "read-only; external terminals remain under their own control"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.runtime.stop",
+      "tier": "reference",
+      "cmd": "st neri runtime stop",
+      "when": "hold new Neri-managed work and request cancellation of owned work",
+      "precautions": [
+        "submitted work may finish; does not stop external terminals; stale stop revisions are accepted"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.runtime.release",
+      "tier": "reference",
+      "cmd": "st neri runtime release --revision N",
+      "when": "release emergency admission stop using its observed revision",
+      "precautions": [
+        "no conflict retry; releasing admission does not resume existing operations"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.research.catalogue",
+      "tier": "reference",
+      "cmd": "st neri research catalogue [--full]",
+      "when": "read versioned research capability definitions",
+      "precautions": [
+        "definitions are assessment metadata; draft or active state is explicit and grants no target authority"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.show",
+      "tier": "reference",
+      "cmd": "st neri research show <capability-id> [--version VERSION]",
+      "when": "read one exact research capability revision",
+      "precautions": [
+        "read-only definition; required tools and prerequisites must still be established"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.case-schema",
+      "tier": "reference",
+      "cmd": "st neri research case-schema <capability-id> [--version VERSION]",
+      "when": "read only the inputs, controls and safety rules needed to prepare one capability case",
+      "precautions": [
+        "read-only method contract; it grants no target authority"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.matrix",
+      "tier": "reference",
+      "cmd": "st neri research matrix",
+      "when": "read technical evidence, implementation readiness and commercial outcomes",
+      "precautions": [
+        "projection is evidence-derived; inspect denominators, counterevidence and contamination"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.context",
+      "tier": "reference",
+      "cmd": "st neri research context <investigation-id> [--previous-digest SHA256]",
+      "when": "read independently invalidated research guidance for an investigation",
+      "precautions": [
+        "read-only guidance; unchanged means the exact research input digest did not change"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.recommend",
+      "tier": "reference",
+      "cmd": "st neri research recommend <investigation-id>",
+      "when": "read deterministic capability guidance",
+      "precautions": [
+        "does not call a model, write state, grant authority or perform target interaction"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.links",
+      "tier": "reference",
+      "cmd": "st neri research links <investigation-id>",
+      "when": "read immutable capability selections and evidence associations",
+      "precautions": [
+        "technical verdicts remain owned by exact reviews"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.associate",
+      "tier": "reference",
+      "cmd": "st neri research associate <investigation-id> --file association.json [--id UUID]",
+      "when": "save a prospective selection or exact reviewed evidence association",
+      "precautions": [
+        "JSON or stdin; selection must precede all result evidence for prospective credit; no verdict is accepted here"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.prepare-case",
+      "tier": "reference",
+      "cmd": "st neri research prepare-case <investigation-id> --file case.json",
+      "when": "derive and save a prospective capability selection from a compact case description",
+      "precautions": [
+        "server derives target build, environment, required tools, safety digest and configuration digest; a needs_input response writes no selection"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.associate-case",
+      "tier": "reference",
+      "cmd": "st neri research associate-case <investigation-id> <selection-id> --file result.json",
+      "when": "bind an exact report, review and controls to a prospective capability selection",
+      "precautions": [
+        "server copies immutable selection identity; the report and review remain authoritative for the verdict"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.invalidate-case",
+      "tier": "reference",
+      "cmd": "st neri research invalidate-case <investigation-id> <selection-id> --file closeout.json",
+      "when": "close a prospective case whose tooling, evidence, scope or authorization became unsuitable",
+      "precautions": [
+        "does not create method counterevidence or erase saved history; use a reviewed result for actual method outcomes"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.snapshot",
+      "tier": "reference",
+      "cmd": "st neri research snapshot <investigation-id> --file snapshot.json [--id UUID]",
+      "when": "save the exact deterministic recommendation and input digest",
+      "precautions": [
+        "server rejects stale input digests; saving does not dispatch work"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.snapshots",
+      "tier": "reference",
+      "cmd": "st neri research snapshots <investigation-id>",
+      "when": "read saved deterministic recommendation history",
+      "precautions": [
+        "bounded read-only history; preserve input and source digests"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.outcomes",
+      "tier": "reference",
+      "cmd": "st neri research outcomes <investigation-id>",
+      "when": "read immutable commercial outcome history",
+      "precautions": [
+        "owner-confirmed program/report attribution only; technical support remains in reviews"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.record-outcome",
+      "tier": "reference",
+      "cmd": "st neri research record-outcome <investigation-id> --file outcome.json [--id UUID]",
+      "when": "append an owner-confirmed commercial status",
+      "precautions": [
+        "requires exact report, finding and program binding revisions; never infers acceptance or payment"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.cohorts",
+      "tier": "reference",
+      "cmd": "st neri research cohorts",
+      "when": "read prospective fixed-denominator evaluation cohorts and economics",
+      "precautions": [
+        "read-only; observed margin is not a statistical guarantee of future profit",
+        "unknown cost or human time blocks a complete economics claim"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.cohort",
+      "tier": "reference",
+      "cmd": "st neri research cohort <cohort-id>",
+      "when": "inspect one exact cohort, case denominator, work receipts, closure and economics",
+      "precautions": [
+        "read-only; preserve exact program, capability and configuration identities"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.cohort.register",
+      "tier": "reference",
+      "cmd": "st neri research register-cohort --file cohort.json [--id UUID]",
+      "when": "freeze a prospective evaluation before result-generating work",
+      "precautions": [
+        "requires exact current program scope, target build, capability/configuration and cases",
+        "new opportunities or material configuration changes require a successor cohort"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.catalog_campaigns",
+      "tier": "reference",
+      "cmd": "st neri research catalog-campaigns",
+      "when": "list frozen owned-lab catalog campaigns and their derived completion state",
+      "precautions": [
+        "read-only; campaign completion requires every item and an exact cumulative replay"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.catalog_campaign",
+      "tier": "reference",
+      "cmd": "st neri research catalog-campaign <campaign-id>",
+      "when": "inspect one frozen catalog denominator, item results and cumulative replay",
+      "precautions": [
+        "read-only; preserve exact target, source, configuration and review identities"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.catalog_campaign.register",
+      "tier": "reference",
+      "cmd": "st neri research register-catalog-campaign --file campaign.json [--id UUID]",
+      "when": "freeze an exact owned-lab catalog denominator before result-generating work",
+      "precautions": [
+        "bind the exact target build, source digests, runner, reset procedure and policy/configuration",
+        "a material identity or workflow change requires a successor campaign"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.catalog_campaign.plan",
+      "tier": "reference",
+      "cmd": "st neri research record-catalog-plan <campaign-id> --file plan.json [--id UUID]",
+      "when": "persist a batch technique, clean setup and controls before catalog result evidence",
+      "precautions": [
+        "the plan must cite a server-observed runtime snapshot and exact frozen item keys",
+        "record the plan before dispatching any result-generating operation"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.catalog_campaign.verify_item",
+      "tier": "reference",
+      "cmd": "st neri research verify-catalog-item <campaign-id> <item-key> --file result.json [--id UUID]",
+      "when": "append one catalog item's exact evidence-backed independently reviewed completion",
+      "precautions": [
+        "requires authoritative solve, clean setup, controls, reproduction, report and supported review references",
+        "a status code, page appearance or model answer alone is not completion"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.catalog_campaign.replay",
+      "tier": "reference",
+      "cmd": "st neri research record-catalog-replay <campaign-id> --file replay.json [--id UUID]",
+      "when": "append the independently reviewed clean cumulative replay for an exact catalog denominator",
+      "precautions": [
+        "the replay must cover exactly every frozen item and cite authoritative final solved-state evidence",
+        "recording a replay never repairs incomplete individual item evidence"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.cohort.close",
+      "tier": "reference",
+      "cmd": "st neri research close-cohort <cohort-id> --file closure.json [--id UUID]",
+      "when": "append the one outcome-independent closure assessment for a frozen cohort",
+      "precautions": [
+        "must retain every registered case and frozen coverage item",
+        "closure never authorizes submission or infers finding validity/payment"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.cohort.finalize_accounting",
+      "tier": "reference",
+      "cmd": "st neri research finalize-accounting <cohort-id> --file accounting.json [--id UUID]",
+      "when": "freeze the commercial measurement cutoff after research and later handling finish",
+      "precautions": [
+        "research closure must already exist; retain every registered case",
+        "complete accounting requires exact final outcomes and known time/direct costs",
+        "later payments or costs do not rewrite this immutable as-of measurement"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.work",
+      "tier": "reference",
+      "cmd": "st neri research work <investigation-id>",
+      "when": "read immutable research work receipts for an investigation",
+      "precautions": [
+        "read-only; zero and unknown measurements have distinct meanings"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.work.record",
+      "tier": "reference",
+      "cmd": "st neri research record-work <investigation-id> --file receipt.json [--id UUID]",
+      "when": "append measured agent, tool and owner work to a prospective cohort",
+      "precautions": [
+        "requires exact cohort/case/configuration and evidence references",
+        "never coerce missing time, token usage or direct cost to zero"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.application",
+      "tier": "reference",
+      "cmd": "st neri research application <investigation-id>",
+      "when": "inspect the experimental passive application-evidence projection",
+      "precautions": [
+        "read-only; static candidates do not establish reachability or vulnerability",
+        "projection executes no JavaScript, follows no links and calls no model"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.application.snapshots",
+      "tier": "reference",
+      "cmd": "st neri research application-snapshots <investigation-id>",
+      "when": "read immutable application-evidence snapshot history",
+      "precautions": [
+        "read-only; preserve source and build identities"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.application.snapshot",
+      "tier": "reference",
+      "cmd": "st neri research snapshot-application <investigation-id> --file snapshot.json [--id UUID]",
+      "when": "freeze the current exact application-evidence source projection",
+      "precautions": [
+        "server rejects a stale source digest",
+        "saving a projection performs no target interaction and grants no capability credit"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.worker.status",
+      "tier": "reference",
+      "cmd": "st neri worker status",
+      "when": "verify the exact local Neri candidate runtime before assigning passive work",
+      "task_types": [
+        "security-research",
+        "model-review"
+      ]
+    },
+    {
+      "surface": "st.neri.worker.evaluate",
+      "tier": "reference",
+      "cmd": "st neri worker evaluate --task-family FAMILY --file packet.json [--arm ARM]",
+      "when": "delegate a sanitized passive evidence task to an evidence-qualified local worker",
+      "precautions": [
+        "Packet must contain only sanitized objective/evidence/constraints; output is an unreviewed draft"
+      ],
+      "task_types": [
+        "security-research",
+        "model-review"
+      ]
+    },
+    {
+      "surface": "st.neri.worker.benchmark",
+      "tier": "reference",
+      "cmd": "st neri worker benchmark --split development|locked [--arm ARM] [--case-id ID] [--runs N] [--study-id ID --study-block N --study-case-position N --study-replacement N]",
+      "when": "compare model-alone and model-plus-harness behavior before routing any task family",
+      "precautions": [
+        "Locked cases are promotion evidence; never tune the harness against their answers",
+        "Study mode is frozen; attempts are durable one case at a time and outputs are unreviewed",
+        "Study replacements preserve originals and label a full block; they never enable selective case reruns"
+      ],
+      "task_types": [
+        "security-research",
+        "model-review"
+      ]
+    },
+    {
+      "surface": "st.neri.worker.qualification",
+      "tier": "reference",
+      "cmd": "st neri worker qualification [--task-family FAMILY]",
+      "when": "read the durable Neri promotion decision and evidence summary before assigning local work",
+      "precautions": [
+        "A held or missing family remains on its established frontier-model route",
+        "Qualification state grants no target authority and does not make the local worker a reviewer"
+      ],
+      "task_types": [
+        "security-research",
+        "model-review"
+      ]
+    },
+    {
+      "surface": "st.neri.worker.qualify",
+      "tier": "reference",
+      "cmd": "st neri worker qualify --file decision.json [--id UUID]",
+      "when": "append an independently reviewed qualification decision to Neri",
+      "precautions": [
+        "The JSON must cite the exact immutable benchmark and review evidence",
+        "Decisions are append-only; a promotion never grants scope or submission authority"
+      ],
+      "task_types": [
+        "security-research",
+        "model-review"
+      ]
+    },
+    {
+      "surface": "st.neri.worker.shadow",
+      "tier": "reference",
+      "cmd": "st neri worker shadow <run-id> --file assignment.json [--id UUID]",
+      "when": "save a passive local-worker shadow assignment before its draft exists",
+      "precautions": [
+        "Use only a sanitized referenced packet; the local worker gets no target, tool, memory, or network authority",
+        "The positional run is authoritative and a contradictory JSON run_id is rejected"
+      ],
+      "task_types": [
+        "security-research",
+        "model-review"
+      ]
+    },
+    {
+      "surface": "st.neri.worker.assignments",
+      "tier": "reference",
+      "cmd": "st neri worker assignments [--run-id UUID] [--task-family FAMILY]",
+      "when": "list saved local-worker shadow assignments and their current review disposition",
+      "precautions": [
+        "Read-only; assignment IDs are server-issued and identify exact retained drafts"
+      ],
+      "task_types": [
+        "security-research",
+        "model-review"
+      ]
+    },
+    {
+      "surface": "st.neri.worker.assignment",
+      "tier": "reference",
+      "cmd": "st neri worker assignment <assignment-id>",
+      "when": "read one exact saved shadow assignment, draft provenance, and review disposition",
+      "precautions": [
+        "Read-only; a retained draft remains inert until a frontier review accepts it"
+      ],
+      "task_types": [
+        "security-research",
+        "model-review"
+      ]
+    },
+    {
+      "surface": "st.neri.worker.review",
+      "tier": "reference",
+      "cmd": "st neri worker review <run-id> <assignment-id> --file review.json [--id UUID]",
+      "when": "append a frontier review and exact corrections for one local-worker shadow draft",
+      "precautions": [
+        "The reviewer must verify every reference, supported inference, and uncertainty",
+        "Reviews are immutable; acceptance records draft usefulness but grants no broad family promotion"
+      ],
+      "task_types": [
+        "security-research",
+        "model-review"
+      ]
+    },
+    {
+      "surface": "st.neri.jev.evaluate",
+      "tier": "reference",
+      "cmd": "st neri jev evaluate --file request.json [--dry-run]",
+      "when": "submit one typed Jev evaluation request through Agent Hub",
+      "precautions": [
+        "Use --dry-run to validate the exact request contract and preview its reservation without provider dispatch"
+      ],
+      "task_types": [
+        "security-research",
+        "model-review"
+      ]
+    }
+  ]
+}

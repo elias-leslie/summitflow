@@ -1,0 +1,43 @@
+{
+  "id": "browser.automation",
+  "owner": "browser-automation",
+  "namespace": "browser",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Managed browser automation with SummitFlow-owned routing policy.",
+  "effects": [
+    "read-local",
+    "write-local",
+    "read-remote",
+    "write-remote",
+    "network",
+    "process",
+    "desktop"
+  ],
+  "help": {
+    "": "Remote browser automation through st\n\nDefault target:\n  Plain st browser commands use local system Chrome profile AI.\n  Force Proxmox/VM with --proxmox or ST_BROWSER_TARGET=proxmox when VM isolation is better.\n  Override VM with ST_BROWSER_HOST, ST_BROWSER_DEFAULT_HOST, or ST_BROWSER_VM_ID.\n  Do not start arbitrary Chrome, CDP proxies, or agent-browser on the project/server host.\n  The approved local default is the local-AI profile flow.\n  Set ST_BROWSER_DISABLE_DEFAULT_VM_HOST=1 to require explicit host config.\n\nUsage:\n  st browser health\n  st browser --local-ai health\n  st browser --local-ai open <project-or-url>\n  st browser --proxmox check <project-or-url> [screenshot-path]\n  st browser url <project>\n  st browser check [--session <name>] <project-or-url> [screenshot-path]\n  st browser open <project-or-url>\n  st browser screenshot [path]\n  st browser snapshot\n  st browser eval <js>\n  st browser --proxmox endpoint [--http|--ws|--json]\n  st browser update\n  st browser [--chrome|--lp|--engine <name>] <agent-browser command> [args...]\n\nExamples:\n  st browser --local-ai open portfolio-ai\n  st browser --local-ai check portfolio-ai /tmp/portfolio-ai.png\n  st browser health\n  st browser url a-term\n  st browser check a-term /tmp/a-term.png\n  st browser --proxmox endpoint --ws\n  st vm status <browser-vm-id>\n  ST_BROWSER_HOST=<browser-vm-or-connector> st browser health\n  ST_BROWSER_HOST=<browser-vm-or-connector> st browser check http://app.lan:3001 /tmp/page.png\n  st browser --proxmox snapshot\n\nProxmox local page URL guard:\n  With --proxmox, localhost/127.0.0.1 targets are blocked because they point at the browser VM.\n  Use st browser url <project>; intentional Proxmox local targets print a confirmation token.\n\nDebug local CDP override:\n  ST_BROWSER_HOST=127.0.0.1 ST_BROWSER_ALLOW_LOCAL=1 st browser health\n\nLocal system Chrome:\n  Default mode uses system Chrome, profile `AI`, headless hardware GL, and no\n  software-rasterizer fallback. It creates no desktop window or focus change.\n  The host-local browser is a singleton; route parallel browser work through --proxmox.\n  Window control: ST_BROWSER_LOCAL_AI_VISIBLE=1 creates a normal watched window;\n  ST_BROWSER_LOCAL_AI_MINIMIZED=1 creates a minimized window. Both are explicit-only.\n  Override local Chrome with ST_BROWSER_LOCAL_CHROME, ST_BROWSER_LOCAL_AI_PROFILE.\n\nLocal desktop UI:\n  Use st ui when the already-open desktop/PWA is the right evidence source or browser automation is not enough.\n"
+  },
+  "usage": [
+    {
+      "surface": "st.browser",
+      "tier": "mandate",
+      "cmd": "st browser check <url> <png>",
+      "when": "UI render verification; screenshots; DOM snapshots",
+      "precautions": [
+        "plain st browser uses local Chrome AI profile by default",
+        "use --proxmox or ST_BROWSER_TARGET=proxmox when VM isolation is better for the task",
+        "use st ui when the open desktop/PWA is the right evidence source",
+        "never start arbitrary chrome/CDP on project or server host; local-AI is the approved local profile flow",
+        "only set ST_BROWSER_HOST / ST_BROWSER_VM_ID for explicit approved override"
+      ],
+      "task_types": [
+        "frontend",
+        "ui-design",
+        "design-review",
+        "verification"
+      ]
+    }
+  ]
+}

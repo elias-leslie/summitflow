@@ -1,0 +1,44 @@
+{
+  "effects": [
+    "network",
+    "read-remote",
+    "write-local",
+    "credentials"
+  ],
+  "help": {
+    "": "usage: st web [-h] {search,research,fetch,benchmark} ...\n\nRun centralized web research using Agent Hub's shared tool stack.\n\npositional arguments:\n  {search,research,fetch,benchmark}\n    search              Search the public web.\n    research            Search first, then fetch one result through the shared\n                        web stack.\n    fetch               Fetch and extract a webpage.\n    benchmark           Run deterministic local web fetch benchmarks.\n\noptions:\n  -h, --help            show this help message and exit\n",
+    "benchmark": "usage: st web benchmark [-h] [--iterations ITERATIONS] [--max-chars MAX_CHARS]\n                        [--compact]\n\noptions:\n  -h, --help            show this help message and exit\n  --iterations ITERATIONS\n  --max-chars MAX_CHARS\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\n",
+    "fetch": "usage: st web fetch [-h] [--url URL] [--max-chars MAX_CHARS]\n                    [--focus-query FOCUS_QUERY] [--backend {auto,direct,jina}]\n                    [--compact]\n                    [url_arg]\n\npositional arguments:\n  url_arg               HTTP or HTTPS URL\n\noptions:\n  -h, --help            show this help message and exit\n  --url URL             HTTP or HTTPS URL\n  --max-chars MAX_CHARS\n                        Maximum content characters to return\n  --focus-query FOCUS_QUERY\n                        Optional question/topic used to focus large pages\n                        before truncation\n  --backend {auto,direct,jina}\n                        Page fetch backend\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\n",
+    "research": "usage: st web research [-h] [--query QUERY] [--max-results MAX_RESULTS]\n                       [--result-index RESULT_INDEX]\n                       [--search-type {text,news}] [--timelimit {d,w,m,y}]\n                       [--max-chars MAX_CHARS] [--focus-query FOCUS_QUERY]\n                       [--backend {auto,direct,jina}] [--compact]\n                       [query_arg]\n\npositional arguments:\n  query_arg             Research query\n\noptions:\n  -h, --help            show this help message and exit\n  --query QUERY         Research query\n  --max-results, --limit MAX_RESULTS\n                        Max search results to consider\n  --result-index RESULT_INDEX\n                        1-based result rank to fetch\n  --search-type {text,news}\n                        Search scope\n  --timelimit {d,w,m,y}\n                        Optional search recency filter\n  --max-chars MAX_CHARS\n                        Maximum fetched content characters to return\n  --focus-query FOCUS_QUERY\n                        Optional question/topic used to focus the fetched page\n                        before truncation\n  --backend {auto,direct,jina}\n                        Page fetch backend\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\n",
+    "search": "usage: st web search [-h] [--query QUERY] [--max-results MAX_RESULTS]\n                     [--search-type {text,news}] [--timelimit {d,w,m,y}]\n                     [--compact]\n                     [query_arg]\n\npositional arguments:\n  query_arg             Search query\n\noptions:\n  -h, --help            show this help message and exit\n  --query QUERY         Search query\n  --max-results, --limit MAX_RESULTS\n                        Max results to return\n  --search-type {text,news}\n                        Search scope\n  --timelimit {d,w,m,y}\n                        Optional search recency filter\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\n"
+  },
+  "id": "agent-hub.web",
+  "namespace": "web",
+  "owner": "agent-hub",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Public web search, research, and fetch through Agent Hub.",
+  "usage": [
+    {
+      "cmd": "st web research --query <query>",
+      "examples": [
+        "st web search --query SummitFlow --limit 1",
+        "st web benchmark --iterations 10 --raw"
+      ],
+      "precautions": [
+        "Uses Agent Hub's supported web-research executable and owner-managed credentials.",
+        "Default ST output writes a local details artifact; --raw emits the owner's JSON.",
+        "Use --backend direct for deterministic local benchmark verification."
+      ],
+      "surface": "st.web",
+      "task_types": [
+        "web-research",
+        "research"
+      ],
+      "tier": "reference",
+      "when": "research public web sources; use search or fetch for a known page"
+    }
+  ],
+  "version": "1.0.0"
+}

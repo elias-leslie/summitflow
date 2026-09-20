@@ -1,0 +1,30 @@
+{
+  "id": "agent-hub.mandates",
+  "owner": "agent-hub",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Agent Hub-owned mandates commands.",
+  "effects": [
+    "network",
+    "read-remote",
+    "credentials"
+  ],
+  "namespace": "mandates",
+  "help": {
+    "": "Usage: mandates [OPTIONS]\n\n  Print the active mandate union (same set SessionStart hooks inject).\n\n  Examples: st mandates | st mandates --human | st mandates --no-compact\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.mandates",
+      "tier": "reference",
+      "cmd": "st mandates",
+      "when": "read the active canonical mandate union",
+      "task_types": [
+        "agent-admin"
+      ],
+      "on_demand": "agent context"
+    }
+  ]
+}

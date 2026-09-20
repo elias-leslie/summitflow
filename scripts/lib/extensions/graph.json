@@ -1,0 +1,44 @@
+{
+  "id": "code-intelligence.graph",
+  "owner": "code-intelligence",
+  "namespace": "graph",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Graph intelligence through the Code Intelligence owner.",
+  "effects": [
+    "read-local",
+    "write-local",
+    "read-remote",
+    "write-remote",
+    "network",
+    "process"
+  ],
+  "help": {
+    "": "Usage: st graph [OPTIONS] COMMAND [ARGS]...\n\n  Graphify topology and profiling helpers\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  status            Show Graphify status and diagnostics.\n  doctor            Report Graphify issues that affect agent usefulness.\n  refresh           Refresh a project's code-only Graphify graph.\n  context           Emit compact Graphify context for agents.\n  semantic-refresh  Launch an explicit semantic Graphify refresh through...\n  query             Run Graphify query against a project graph.\n  path              Find shortest Graphify path between two nodes.\n  explain           Explain one graph node and its neighbors.\n  fallow            Run Fallow with compact stdout and full details in...\n  profile           Profile st search vs Graphify command shapes for...",
+    "status": "Usage: st graph status [OPTIONS]\n\n  Show Graphify status and diagnostics.\n\nOptions:\n  -p, --project <str>       Project id. Defaults to current project.\n  --all                     Show every registered project.\n  --refresh / --no-refresh  Refresh stale code graphs before reporting.\n                            [default: refresh]\n  --help                    Show this message and exit.",
+    "doctor": "Usage: st graph doctor [OPTIONS]\n\n  Report Graphify issues that affect agent usefulness.\n\nOptions:\n  -p, --project <str>       Project id. Defaults to every project.\n  --refresh / --no-refresh  Refresh stale code graphs before diagnosis.\n                            [default: refresh]\n  --help                    Show this message and exit.",
+    "refresh": "Usage: st graph refresh [OPTIONS]\n\n  Refresh a project's code-only Graphify graph.\n\nOptions:\n  -p, --project <str>  Project id. Defaults to current project.\n  --help               Show this message and exit.",
+    "context": "Usage: st graph context [OPTIONS]\n\n  Emit compact Graphify context for agents.\n\nOptions:\n  -p, --project <str>   Project id. Defaults to current project.\n  --budget <int range>  Prompt context token budget.  [default: 1200;\n                        200<=x<=8000]\n  --help                Show this message and exit.",
+    "semantic-refresh": "Usage: st graph semantic-refresh [OPTIONS]\n\n  Launch an explicit semantic Graphify refresh through Agent Hub.\n\nOptions:\n  -p, --project <str>       Project id. Defaults to current project.\n  -a, --agent <str>         Purpose-built Agent Hub agent slug.  [default:\n                            graphify-semantic-extractor]\n  -M, --model <str>         Optional model override. Defaults to the agent\n                            model chain.\n  --timeout <int range>     Agent Hub read timeout seconds.  [default: 1800;\n                            60<=x<=7200]\n  --execute / --no-execute  Run Agent Hub; otherwise write prompt and print\n                            command.  [default: execute]\n  --help                    Show this message and exit.",
+    "query": "Usage: st graph query [OPTIONS] {question}\n\n  Run Graphify query against a project graph.\n\nArguments:\n  question  Topology question.  [required]\n\nOptions:\n  -p, --project <str>   Project id. Defaults to current project.\n  --budget <int range>  Graphify token budget.  [default: 1200; 100<=x<=8000]\n  --dfs                 Use depth-first traversal.\n  --help                Show this message and exit.",
+    "path": "Usage: st graph path [OPTIONS] {source} {target}\n\n  Find shortest Graphify path between two nodes.\n\nArguments:\n  source  Source node label.  [required]\n  target  Target node label.  [required]\n\nOptions:\n  -p, --project <str>  Project id. Defaults to current project.\n  --help               Show this message and exit.",
+    "explain": "Usage: st graph explain [OPTIONS] {node}\n\n  Explain one graph node and its neighbors.\n\nArguments:\n  node  Node label.  [required]\n\nOptions:\n  -p, --project <str>  Project id. Defaults to current project.\n  --help               Show this message and exit.",
+    "fallow": "Usage: st graph fallow [OPTIONS] [mode]\n\n  Run Fallow with compact stdout and full details in .dev-tools.\n\nArguments:\n  mode  Fallow mode: audit, changed, health, plugins, flags, dead-code, dupes.\n        [default: audit]\n\nOptions:\n  -p, --project <str>    Project id. Defaults to current project.\n  --changed-since <str>  Git ref for changed mode.  [default: main]\n  --top <int range>      Clone groups for dupes mode.  [default: 10;\n                         1<=x<=100]\n  --timeout <int range>  Command timeout in seconds.  [default: 120;\n                         5<=x<=600]\n  --help                 Show this message and exit.",
+    "profile": "Usage: st graph profile [OPTIONS]\n\n  Profile st search vs Graphify command shapes for agent work.\n\nOptions:\n  -q, --question <str>  Architecture question to profile.  [default: What are\n                        the central modules and relationship patterns in this\n                        project?]\n  -p, --project <str>   Project id. Defaults to current project.\n  --budget <int range>  Graphify token budget.  [default: 1200; 100<=x<=8000]\n  --codex               Probe Codex CLI availability and startup cost.\n  --agent-hub           Probe Agent Hub completion CLI availability.\n  --gitnexus            Evaluate optional GitNexus fit without installing or\n                        mutating MCP config.\n  --fallow              Evaluate optional Fallow JS/TS codebase-intelligence\n                        fit.\n  --help                Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.graph.doctor",
+      "tier": "reference",
+      "cmd": "st graph doctor --project <project>",
+      "when": "Graphify health; auto-refreshes stale code graph",
+      "task_types": [
+        "exploration",
+        "refactor",
+        "backend"
+      ]
+    }
+  ]
+}

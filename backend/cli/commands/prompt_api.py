@@ -1,13 +1,15 @@
-"""API interaction for prompt management."""
+"""Lazy compatibility API; implementation is owned by agent-hub-st 0.1.x."""
 
-from __future__ import annotations
-
+from importlib import import_module
 from typing import Any
 
-from ._api_paths import PROMPTS_BASE_PATH
-from .memory_api import agent_hub_request
+
+def prompt_api(*args: Any, **kwargs: Any) -> Any:
+    """Call the versioned public Agent Hub helper only during execution."""
+    return import_module("agent_hub_st.prompt_api").prompt_api(*args, **kwargs)
 
 
-def prompt_api(method: str, path: str, *, tool_name: str = "st prompt", **kwargs: Any) -> dict[str, Any]:
-    """Make API request to prompt endpoints."""
-    return agent_hub_request(method, f"{PROMPTS_BASE_PATH}{path}", tool_name=tool_name, **kwargs)
+def __getattr__(name: str) -> Any:
+    if name.startswith("__"):
+        raise AttributeError(name)
+    return getattr(import_module("agent_hub_st.prompt_api"), name)

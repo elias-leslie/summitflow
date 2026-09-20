@@ -13,8 +13,9 @@ from ..client import APIError, STClient
 from ..config import get_config_optional
 from ..output import handle_api_error, output_json
 from ._complete_http import call_complete
+from ._complete_http import completion_failed as _completion_failed
+from ._complete_http import resolve_message as _resolve_message
 from ._session_resolver import resolve_session_id
-from .complete import _completion_failed, _resolve_message
 
 app = typer.Typer(help="Run Agent Hub agents with tools", no_args_is_help=True)
 

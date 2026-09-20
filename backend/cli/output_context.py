@@ -1,32 +1,12 @@
-"""Output context for CLI commands.
-
-Passed via typer.Context.obj to avoid module-level mutable globals.
-"""
+"""Compatibility alias for the public ST SDK output context."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import sys
 
+from st_sdk import context as _implementation
+from st_sdk.context import OutputContext as OutputContext
 
-@dataclass
-class OutputContext:
-    """CLI output configuration passed through typer.Context.obj."""
+__all__ = ["OutputContext"]
 
-    human: bool = False
-    compact: bool = True
-    progress_only: bool = False
-
-    @property
-    def is_compact(self) -> bool:
-        """Check if compact TOON output is enabled."""
-        return self.compact or self.progress_only
-
-    @property
-    def is_progress_only(self) -> bool:
-        """Check if progress-only mode is enabled."""
-        return self.progress_only
-
-    @property
-    def indent(self) -> int | None:
-        """JSON indent level (2 for human-readable, None for compact)."""
-        return 2 if self.human else None
+sys.modules[__name__] = _implementation

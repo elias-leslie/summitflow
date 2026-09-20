@@ -1,0 +1,52 @@
+{
+  "id": "agent-hub.prompt",
+  "owner": "agent-hub",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Agent Hub-owned prompt commands.",
+  "effects": [
+    "network",
+    "read-remote",
+    "write-remote",
+    "read-local",
+    "write-local",
+    "credentials"
+  ],
+  "namespace": "prompt",
+  "help": {
+    "": "Usage: prompt [OPTIONS] COMMAND [ARGS]...\n\n  Prompt management (Agent Hub)\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  list\n  get\n  search\n  create\n  update\n  revisions\n  restore\n  measure\n  delete\n  assign\n  unassign\n  assignments\n  export       Export prompt(s) to YAML.\n  import       Import prompts from YAML.",
+    "list": "Usage: prompt list [OPTIONS]\n\nOptions:\n  --global / --no-global  Filter by global flag\n  --help                  Show this message and exit.",
+    "get": "Usage: prompt get [OPTIONS] {slug}\n\nArguments:\n  slug  Prompt slug  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "search": "Usage: prompt search [OPTIONS] {query}\n\nArguments:\n  query  Literal query to search in prompt metadata and content  [required]\n\nOptions:\n  --global / --no-global   Filter by global flag\n  --case-sensitive         Use case-sensitive matching\n  --limit <int range>      Maximum prompts to return  [default: 50; x>=1]\n  --max-lines <int range>  Maximum content line hits per prompt  [default: 5;\n                           x>=1]\n  --help                   Show this message and exit.",
+    "create": "Usage: prompt create [OPTIONS] {slug} {name}\n\nArguments:\n  slug  Prompt slug  [required]\n  name  Display name  [required]\n\nOptions:\n  -f, --file <path>        Markdown file path  [required]\n  --global / --no-global   Global prompt  [default: no-global]\n  -d, --description <str>\n  --help                   Show this message and exit.",
+    "update": "Usage: prompt update [OPTIONS] {slug}\n\nArguments:\n  slug  Prompt slug  [required]\n\nOptions:\n  -f, --file <path>        New content file\n  -n, --name <str>         New name\n  --global / --no-global   Global flag\n  --enabled / --disabled   Enabled flag\n  -d, --description <str>\n  --change-reason <str>    Optional reason recorded in memory revision history\n  --help                   Show this message and exit.",
+    "revisions": "Usage: prompt revisions [OPTIONS] {slug}\n\nArguments:\n  slug  Prompt slug  [required]\n\nOptions:\n  -l, --limit <int>  Max revisions to return (1-100)  [default: 20]\n  --help             Show this message and exit.",
+    "restore": "Usage: prompt restore [OPTIONS] {slug} {revision_id}\n\nArguments:\n  slug         Prompt slug  [required]\n  revision_id  Prompt revision UUID to restore  [required]\n\nOptions:\n  --change-reason <str>  Optional reason recorded in memory revision history\n  --help                 Show this message and exit.",
+    "measure": "Usage: prompt measure [OPTIONS] {slug}\n\nArguments:\n  slug  Prompt slug  [required]\n\nOptions:\n  -f, --file <path>  Candidate content file\n  --help             Show this message and exit.",
+    "delete": "Usage: prompt delete [OPTIONS] {slug}\n\nArguments:\n  slug  Prompt slug  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "assign": "Usage: prompt assign [OPTIONS] {agent} {prompt} {role}\n\nArguments:\n  agent   Agent slug  [required]\n  prompt  Prompt slug  [required]\n  role    Role (system, guardrail, etc.)  [required]\n\nOptions:\n  -p, --priority <int>  Priority (lower = first)  [default: 0]\n  --help                Show this message and exit.",
+    "unassign": "Usage: prompt unassign [OPTIONS] {agent} {prompt}\n\nArguments:\n  agent   Agent slug  [required]\n  prompt  Prompt slug  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "assignments": "Usage: prompt assignments [OPTIONS] {agent}\n\nArguments:\n  agent  Agent slug  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "export": "Usage: prompt export [OPTIONS] [slug]\n\n  Export prompt(s) to YAML. Use for editing, then re-import.\n\nArguments:\n  slug  Prompt slug (omit for all)\n\nOptions:\n  -o, --output <path>  Output file\n  --help               Show this message and exit.",
+    "import": "Usage: prompt import [OPTIONS] {file}\n\n  Import prompts from YAML. Creates if missing, updates if changed.\n\nArguments:\n  file  YAML file to import  [required]\n\nOptions:\n  --dry-run  Preview without changes\n  --help     Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.prompt",
+      "tier": "mandate",
+      "cmd": "st prompt list | get | update | measure",
+      "when": "editing agent prompts in DB",
+      "precautions": [
+        "run st prompt measure before and after edits",
+        "keep prompts in DB; never duplicate as checked-in markdown",
+        "goal-first; ordered workflow only when order matters"
+      ],
+      "task_types": [
+        "config",
+        "prompt-tuning"
+      ]
+    }
+  ]
+}

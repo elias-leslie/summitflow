@@ -1,0 +1,37 @@
+{
+  "id": "agent-hub.skills",
+  "owner": "agent-hub",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Agent Hub-owned skills commands.",
+  "effects": [
+    "read-local",
+    "write-local",
+    "process"
+  ],
+  "namespace": "skills",
+  "help": {
+    "": "Usage: skills [OPTIONS] COMMAND [ARGS]...\n\n  Manage harness-neutral agent skills (symlink distribution, audit, and\n  import)\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  audit          Run intelligent audit of canonical skills, link...\n  import-github  Import a skill from GitHub, normalize frontmatter, link,...\n  create         Scaffold a new canonical skill, link to all harnesses,...\n  install        Materialize canonical skills into each harness via...\n  doctor         Full drift report.\n  status         Compact health, cheap enough for SessionStart hooks.\n  sync           Pull canonical, re-install symlinks, reseed memory from...",
+    "audit": "Usage: skills audit [OPTIONS]\n\n  Run intelligent audit of canonical skills, link integrity, token bloat, and\n  overlaps.\n\nOptions:\n  -p, --profile <str>  Project profile (e.g. backend, game, general)\n  --strict             Exit nonzero on warnings or overlaps as well as errors\n  --fix                Automatically fix issues like script permissions (+x)\n  --json               Emit JSON audit report\n  --help               Show this message and exit.",
+    "import-github": "Usage: skills import-github [OPTIONS] {source}\n\n  Import a skill from GitHub, normalize frontmatter, link, and audit.\n\nArguments:\n  source  GitHub URL, 'owner/repo', or subpath URL  [required]\n\nOptions:\n  -n, --name <str>     Destination skill name\n  -r, --ref <str>      Git branch/tag  [default: main]\n  -s, --subpath <str>  Subpath within repository\n  --adopt              Adopt and materialize into all harnesses  [default:\n                       True]\n  --help               Show this message and exit.",
+    "create": "Usage: skills create [OPTIONS] {name}\n\n  Scaffold a new canonical skill, link to all harnesses, and audit.\n\nArguments:\n  name  Name of the skill (lowercase slug, e.g. docker-helper)  [required]\n\nOptions:\n  -d, --description <str>  Trigger description\n  --adopt                  Adopt and materialize symlinks immediately\n                           [default: True]\n  --help                   Show this message and exit.",
+    "install": "Usage: skills install [OPTIONS]\n\n  Materialize canonical skills into each harness via per-item symlinks.\n\nOptions:\n  -p, --profile <str>  Project profile (e.g. backend, game, general)\n  --adopt              Replace existing real dirs/files with symlinks\n  --dry-run            Show actions, change nothing\n  --help               Show this message and exit.",
+    "doctor": "Usage: skills doctor [OPTIONS]\n\n  Full drift report. Exits nonzero when any item diverges from canonical.\n\nOptions:\n  -p, --profile <str>  Project profile (e.g. backend, game, general)\n  --help               Show this message and exit.",
+    "status": "Usage: skills status [OPTIONS]\n\n  Compact health, cheap enough for SessionStart hooks.\n\nOptions:\n  -p, --profile <str>  Project profile (e.g. backend, game, general)\n  --json               Emit JSON\n  --quiet              One line; only emit when drifted\n  --help               Show this message and exit.",
+    "sync": "Usage: skills sync [OPTIONS]\n\n  Pull canonical, re-install symlinks, reseed memory from skills.\n\nOptions:\n  --help  Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.skills",
+      "tier": "reference",
+      "cmd": "st skills status",
+      "when": "inspect skill distribution across registered harnesses",
+      "task_types": [
+        "skill-admin"
+      ],
+      "on_demand": "skill management"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "agent-hub.feedback",
+  "owner": "agent-hub",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Agent Hub-owned feedback commands.",
+  "effects": [
+    "network",
+    "read-remote",
+    "write-remote",
+    "read-local",
+    "write-local",
+    "credentials"
+  ],
+  "namespace": "feedback",
+  "help": {
+    "": "Usage: feedback [OPTIONS] COMMAND [ARGS]...\n\n  Agent feedback system: report friction, ideas, improvements, and praise.\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  report   Report new feedback on a component.\n  search   Search feedback items by keyword.\n  list     List feedback items with filters.\n  get      Get full details of a feedback item including votes.\n  vote     Vote on an existing feedback item.\n  resolve  Resolve a feedback item.\n  archive  Archive a resolved or won't-fix feedback item.\n  merge    Merge a duplicate feedback item into a canonical feedback item.\n  delete   Delete a feedback item and all its votes.\n  summary  Get aggregated feedback summary.",
+    "report": "Usage: feedback report [OPTIONS] {component_id} {title}\n\n  Report new feedback on a component.\n\n  Examples:\n    st feedback report sf.cli \"Error message unhelpful\" --type friction --severity medium\n    st feedback report ah.memory \"Pre-load cross-project context\" --type idea\n    st feedback report sf.checkpoints \"Checkpoint flow worked perfectly\" --type praise\n    st feedback report sf.check \"Cache ruff results for unchanged files\" --type improvement\n    st feedback report sf.cli \"Same failure again\" --session sess-123 --vote-if-match\n\nArguments:\n  component_id  Component ID (e.g. sf.cli, ah.memory)  [required]\n  title         Short descriptive title  [required]\n\nOptions:\n  -t, --type <str>                Type: friction, idea, improvement, praise\n                                  [default: friction]\n  -s, --severity <str>            Severity: low, medium, high (friction only)\n  -d, --desc <str>                Detailed description\n  -p, --project <str>             Project ID  [default: summitflow]\n  --session <str>                 Session ID of the reporter\n  --agent <str>                   Agent slug\n  --model <str>                   Model used\n  --session-type <str>            Session type\n  --vote-if-match / --no-vote-if-match\n                                  Vote on the strongest duplicate candidate\n                                  instead of creating a new item  [default:\n                                  no-vote-if-match]\n  --help                          Show this message and exit.",
+    "search": "Usage: feedback search [OPTIONS] [query]\n\n  Search feedback items by keyword.\n\n  Examples:\n    st feedback search \"memory injection\"\n    st feedback search --query \"--frontend-only compiler flag\"\n    st feedback search \"error\" --component sf.cli --type friction\n\nArguments:\n  query  Search query\n\nOptions:\n  -q, --query <str>      Explicit search query; use when the text starts with\n                         - or --\n  -c, --component <str>  Filter by component\n  -t, --type <str>       Filter by type\n  --status <str>         Filter by status: active, open, acknowledged,\n                         resolved, wont_fix, archived\n  -p, --project <str>    Filter by project\n  --sort <str>           Sort: votes, newest, oldest  [default: votes]\n  -l, --limit <int>      Max results  [default: 20]\n  --help                 Show this message and exit.",
+    "list": "Usage: feedback list [OPTIONS]\n\n  List feedback items with filters.\n\n  Examples:\n    st feedback list\n    st feedback list --component ah.memory --type idea\n    st feedback list --sort votes --status active\n\nOptions:\n  -c, --component <str>  Filter by component\n  -t, --type <str>       Filter by type\n  --status <str>         Filter by status: active, open, acknowledged,\n                         resolved, wont_fix, archived\n  -p, --project <str>    Filter by project\n  --sort <str>           Sort: votes, newest, oldest  [default: votes]\n  -l, --limit <int>      Max results  [default: 50]\n  --help                 Show this message and exit.",
+    "get": "Usage: feedback get [OPTIONS] {item_id}\n\n  Get full details of a feedback item including votes.\n\n  Examples:\n    st feedback get a1b2c3d4-...\n\nArguments:\n  item_id  Feedback item ID  [required]\n\nOptions:\n  --json  Output raw JSON\n  --help  Show this message and exit.",
+    "vote": "Usage: feedback vote [OPTIONS] {item_id}\n\n  Vote on an existing feedback item.\n\n  Examples:\n    st feedback vote a1b2c3d4 --session sess-123\n    st feedback vote a1b2c3d4 --session sess-123 --comment \"Hit this during autocode\"\n\nArguments:\n  item_id  Feedback item ID to vote on  [required]\n\nOptions:\n  --session <str>      Session ID casting the vote\n  -m, --comment <str>  Optional comment\n  --agent <str>        Agent slug\n  --model <str>        Model used\n  --help               Show this message and exit.",
+    "resolve": "Usage: feedback resolve [OPTIONS] {item_id}\n\n  Resolve a feedback item.\n\n  Examples:\n    st feedback resolve a1b2c3d4 --note \"Fixed in commit abc123\"\n    st feedback resolve a1b2c3d4 -m \"Fixed in commit abc123\"\n\nArguments:\n  item_id  Feedback item ID to resolve  [required]\n\nOptions:\n  -n, -m, --note, --message <str>\n                                  Resolution note\n  --help                          Show this message and exit.",
+    "archive": "Usage: feedback archive [OPTIONS] {item_id}\n\n  Archive a resolved or won't-fix feedback item.\n\nArguments:\n  item_id  Feedback item ID to archive  [required]\n\nOptions:\n  -n, --note <str>  Archive note\n  --help            Show this message and exit.",
+    "merge": "Usage: feedback merge [OPTIONS] {item_id} {target_item_id}\n\n  Merge a duplicate feedback item into a canonical feedback item.\n\nArguments:\n  item_id         Duplicate feedback item ID to merge  [required]\n  target_item_id  Canonical feedback item ID  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "delete": "Usage: feedback delete [OPTIONS] {item_id}\n\n  Delete a feedback item and all its votes.\n\n  Examples:\n    st feedback delete a1b2c3d4-...\n\nArguments:\n  item_id  Feedback item ID to delete  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "summary": "Usage: feedback summary [OPTIONS]\n\n  Get aggregated feedback summary.\n\n  Examples:\n    st feedback summary\n    st feedback summary --project summitflow --days 7\n\nOptions:\n  -p, --project <str>  Filter by project\n  --days <int>         Lookback window in days  [default: 30]\n  --help               Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.feedback.report",
+      "tier": "reference",
+      "cmd": "st feedback report <component> 'desc' --type friction|idea|improvement|praise",
+      "when": "friction, idea, improvement, or praise discovered during work",
+      "precautions": [
+        "components: sf.cli sf.dt sf.quality sf.worktree sf.api sf.storage sf.workflows sf.explorer sf.frontend sf.scripts ah.memory ah.completion ah.sessions ah.hooks xc.tool_registry xc.error_handling xc.testing",
+        "inline alt: [[F:type:component:desc]]"
+      ]
+    }
+  ]
+}

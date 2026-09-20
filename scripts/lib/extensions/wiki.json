@@ -1,0 +1,73 @@
+{
+  "id": "vault-tools.wiki",
+  "owner": "vault-tools",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Vault wiki page lookup, search, lint, ingest, and log.",
+  "effects": [
+    "read-local",
+    "write-local"
+  ],
+  "namespace": "wiki",
+  "help": {
+    "": "Usage: wiki [OPTIONS] COMMAND [ARGS]...\n\n  Vault wiki: page lookup, search, lint, ingest, log.\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  page    Print a vault page by slug.\n  query   Keyword search over vault pages.\n  ingest  Ingest a source document into the vault.\n  lint    Lint the vault and regenerate index.md.\n  log     Tail the vault log.",
+    "page": "Usage: wiki page [OPTIONS] {slug}\n\n  Print a vault page by slug.\n\nArguments:\n  slug  Page slug  [required]\n\nOptions:\n  -f, --format <str>  concise|detailed  [default: concise]\n  --help              Show this message and exit.",
+    "query": "Usage: wiki query [OPTIONS] {query}\n\n  Keyword search over vault pages.\n\nArguments:\n  query  Search terms  [required]\n\nOptions:\n  -s, --scope <str>   Wiki sub-scope (e.g. projects/agent-hub)\n  -n, --limit <int>   Result count  [default: 10]\n  --include-memories  Also print related memory IDs from frontmatter\n  --help              Show this message and exit.",
+    "ingest": "Usage: wiki ingest [OPTIONS] {target}\n\n  Ingest a source document into the vault.\n\nArguments:\n  target  Local file path  [required]\n\nOptions:\n  -s, --scope <str>  Sub-scope under sources/\n  --help             Show this message and exit.",
+    "lint": "Usage: wiki lint [OPTIONS]\n\n  Lint the vault and regenerate index.md.\n\nOptions:\n  -s, --scope <str>   Limit scan to wiki sub-scope\n  --stale-days <int>  Pages older than this many days are stale  [default: 90]\n  --help              Show this message and exit.",
+    "log": "Usage: wiki log [OPTIONS]\n\n  Tail the vault log.\n\nOptions:\n  -n, --last <int>  Show last N day-entries  [default: 10]\n  --help            Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.wiki.page",
+      "tier": "reference",
+      "cmd": "st wiki page <slug> [--format concise|detailed]",
+      "when": "read a vault page by slug",
+      "precautions": [
+        "concise emits frontmatter + TL;DR (~50 tokens)",
+        "detailed emits full body — only when drilling"
+      ]
+    },
+    {
+      "surface": "st.wiki.query",
+      "tier": "reference",
+      "cmd": "st wiki query \"...\" [--scope ...] [--include-memories]",
+      "when": "search the vault for matching pages",
+      "precautions": [
+        "keyword + title-boost ranking; no embeddings yet",
+        "scope is a wiki subpath, e.g. projects/agent-hub"
+      ]
+    },
+    {
+      "surface": "st.wiki.ingest",
+      "tier": "reference",
+      "cmd": "st wiki ingest <path> [--scope ...]",
+      "when": "explicitly add a source document into the vault",
+      "precautions": [
+        "local paths only for now; URL ingest deferred — use `st web fetch --raw` then ingest the saved file",
+        "copies into vault/sources/[scope]/ with timestamp prefix; appends log entry"
+      ]
+    },
+    {
+      "surface": "st.wiki.lint",
+      "tier": "reference",
+      "cmd": "st wiki lint [--scope ...] [--stale-days N]",
+      "when": "check vault integrity; regenerate index.md",
+      "precautions": [
+        "flags orphans, broken wikilinks, stale last_verified, missing frontmatter",
+        "rewrites index.md from current pages"
+      ]
+    },
+    {
+      "surface": "st.wiki.log",
+      "tier": "reference",
+      "cmd": "st wiki log [--last N]",
+      "when": "review recent vault activity",
+      "precautions": [
+        "reads vault/log.md tail"
+      ]
+    }
+  ]
+}

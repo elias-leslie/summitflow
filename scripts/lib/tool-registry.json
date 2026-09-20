@@ -1,67 +1,660 @@
 {
   "version": 1,
+  "extensions": [
+    {
+      "id": "agent-hub.agents",
+      "owner": "agent-hub",
+      "namespace": "agents",
+      "manifest": "extensions/agents.json",
+      "executable": "backend/.venv/bin/agent-hub-st",
+      "arguments": [
+        "agents"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "write-local",
+          "credentials"
+        ]
+      },
+      "environment": []
+    },
+    {
+      "id": "agent-hub.complete",
+      "owner": "agent-hub",
+      "namespace": "complete",
+      "manifest": "extensions/complete.json",
+      "executable": "backend/.venv/bin/agent-hub-st",
+      "arguments": [
+        "complete"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "write-local",
+          "credentials"
+        ]
+      },
+      "environment": []
+    },
+    {
+      "id": "agent-hub.feedback",
+      "owner": "agent-hub",
+      "namespace": "feedback",
+      "manifest": "extensions/feedback.json",
+      "executable": "backend/.venv/bin/agent-hub-st",
+      "arguments": [
+        "feedback"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "write-local",
+          "credentials"
+        ]
+      },
+      "environment": []
+    },
+    {
+      "id": "agent-hub.mandates",
+      "owner": "agent-hub",
+      "namespace": "mandates",
+      "manifest": "extensions/mandates.json",
+      "executable": "backend/.venv/bin/agent-hub-st",
+      "arguments": [
+        "mandates"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "credentials"
+        ]
+      },
+      "environment": []
+    },
+    {
+      "id": "agent-hub.memory",
+      "owner": "agent-hub",
+      "namespace": "memory",
+      "manifest": "extensions/memory.json",
+      "executable": "backend/.venv/bin/agent-hub-st",
+      "arguments": [
+        "memory"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "write-local",
+          "credentials"
+        ]
+      },
+      "environment": []
+    },
+    {
+      "id": "agent-hub.models",
+      "owner": "agent-hub",
+      "namespace": "models",
+      "manifest": "extensions/models.json",
+      "executable": "backend/.venv/bin/agent-hub-st",
+      "arguments": [
+        "models"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "credentials"
+        ]
+      },
+      "environment": []
+    },
+    {
+      "id": "agent-hub.note",
+      "owner": "agent-hub",
+      "namespace": "note",
+      "manifest": "extensions/note.json",
+      "executable": "backend/.venv/bin/agent-hub-st",
+      "arguments": [
+        "note"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "write-local",
+          "credentials"
+        ]
+      },
+      "environment": []
+    },
+    {
+      "id": "agent-hub.persona",
+      "owner": "agent-hub",
+      "namespace": "persona",
+      "manifest": "extensions/persona.json",
+      "executable": "backend/.venv/bin/agent-hub-st",
+      "arguments": [
+        "persona"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "write-local",
+          "credentials",
+          "process"
+        ]
+      },
+      "environment": [
+        "EDITOR"
+      ]
+    },
+    {
+      "id": "agent-hub.prompt",
+      "owner": "agent-hub",
+      "namespace": "prompt",
+      "manifest": "extensions/prompt.json",
+      "executable": "backend/.venv/bin/agent-hub-st",
+      "arguments": [
+        "prompt"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "write-local",
+          "credentials"
+        ]
+      },
+      "environment": []
+    },
+    {
+      "id": "agent-hub.skills",
+      "owner": "agent-hub",
+      "namespace": "skills",
+      "manifest": "extensions/skills.json",
+      "executable": "backend/.venv/bin/agent-hub-st",
+      "arguments": [
+        "skills"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "read-local",
+          "write-local",
+          "process"
+        ]
+      },
+      "environment": [
+        "ST_AGENT_SKILLS_DIR",
+        "ST_SKILLS_PROFILE"
+      ]
+    },
+    {
+      "id": "neri.neri",
+      "owner": "neri",
+      "namespace": "neri",
+      "manifest": "extensions/neri.json",
+      "executable": "backend/.venv/bin/neri-st",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "write-local",
+          "credentials"
+        ]
+      },
+      "environment": [
+        "ST_NERI_API_URL"
+      ]
+    },
+    {
+      "id": "learn-o-tron.learn",
+      "owner": "learn-o-tron",
+      "namespace": "learn",
+      "manifest": "extensions/learn.json",
+      "executable": "backend/.venv/bin/learn-st",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "write-local",
+          "credentials",
+          "process"
+        ]
+      },
+      "environment": [
+        "ST_LEARN_API_URL",
+        "ST_LEARN_HARNESS",
+        "XDG_STATE_HOME",
+        "SSH_AUTH_SOCK",
+        "CLAUDECODE",
+        "CODEX_THREAD_ID",
+        "CURSOR_TRACE_ID",
+        "PI_CODING_AGENT_DIR",
+        "AICO_SESSION_ID",
+        "A_TERM_SESSION_ID",
+        "CLAUDE_SESSION_ID",
+        "PI_SESSION_ID"
+      ]
+    },
+    {
+      "id": "jobinator-4000.jobs",
+      "owner": "jobinator-4000",
+      "namespace": "jobs",
+      "manifest": "extensions/jobs.json",
+      "executable": "backend/.venv/bin/jobinator-st",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "credentials"
+        ]
+      },
+      "environment": [
+        "ST_JOBS_API_URL",
+        "ST_API_BASE"
+      ]
+    },
+    {
+      "id": "portfolio-ai.portfolio",
+      "owner": "portfolio-ai",
+      "namespace": "portfolio",
+      "manifest": "extensions/portfolio.json",
+      "executable": "backend/.venv/bin/portfolio-st",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "credentials"
+        ]
+      },
+      "environment": [
+        "ST_PORTFOLIO_API_URL",
+        "ST_API_BASE"
+      ]
+    },
+    {
+      "id": "desktop-automation.ui",
+      "owner": "desktop-automation",
+      "namespace": "ui",
+      "manifest": "extensions/ui.json",
+      "executable": ".venv/bin/desktop-st-ui",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "desktop",
+          "read-local",
+          "write-local",
+          "process"
+        ]
+      },
+      "environment": [
+        "DISPLAY",
+        "XAUTHORITY",
+        "ST_UI_DISPLAY",
+        "ST_UI_XAUTHORITY",
+        "XDG_RUNTIME_DIR",
+        "WAYLAND_DISPLAY",
+        "DBUS_SESSION_BUS_ADDRESS"
+      ]
+    },
+    {
+      "id": "desktop-automation.selection",
+      "owner": "desktop-automation",
+      "namespace": "selection",
+      "manifest": "extensions/selection.json",
+      "executable": ".venv/bin/desktop-st-selection",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote"
+        ]
+      },
+      "environment": [
+        "AICO_SIDECAR_HOST",
+        "AICO_SIDECAR_PORT"
+      ]
+    },
+    {
+      "id": "vault-tools.wiki",
+      "owner": "vault-tools",
+      "namespace": "wiki",
+      "manifest": "extensions/wiki.json",
+      "executable": ".venv/bin/vault-st",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "read-local",
+          "write-local"
+        ]
+      },
+      "environment": [
+        "ST_VAULT_ROOT"
+      ]
+    },
+    {
+      "id": "agent-hub.web",
+      "owner": "agent-hub",
+      "namespace": "web",
+      "manifest": "extensions/web.json",
+      "executable": "backend/.venv/bin/web-research",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-local",
+          "credentials"
+        ]
+      },
+      "environment": [
+        "WEB_SEARCH_SEARXNG_URL",
+        "WEB_FETCH_BROWSER_CDP_URL",
+        "ST_BROWSER_HOST"
+      ],
+      "presentation": "web-details"
+    },
+    {
+      "id": "browser.automation",
+      "owner": "browser-automation",
+      "namespace": "browser",
+      "manifest": "extensions/browser.json",
+      "executable": ".venv/bin/browser-st",
+      "environment": [
+        "DISPLAY",
+        "XAUTHORITY",
+        "XDG_RUNTIME_DIR",
+        "DBUS_SESSION_BUS_ADDRESS",
+        "AGENT_BROWSER_SESSION",
+        "AGENT_BROWSER_CONFIG",
+        "AGENT_BROWSER_ALLOW_FILE_ACCESS"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "read-local",
+          "write-local",
+          "read-remote",
+          "write-remote",
+          "network",
+          "process",
+          "desktop"
+        ]
+      },
+      "policy_adapter": "browser"
+    },
+    {
+      "id": "code-intelligence.graph",
+      "owner": "code-intelligence",
+      "namespace": "graph",
+      "manifest": "extensions/graph.json",
+      "executable": ".venv/bin/code-graph",
+      "environment": [
+        "GRAPHIFY_BIN",
+        "FALLOW_BIN"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "read-local",
+          "write-local",
+          "read-remote",
+          "write-remote",
+          "network",
+          "process"
+        ]
+      }
+    },
+    {
+      "id": "code-intelligence.search",
+      "owner": "code-intelligence",
+      "namespace": "search",
+      "manifest": "extensions/search.json",
+      "executable": ".venv/bin/code-search",
+      "environment": [],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "read-local",
+          "read-remote",
+          "write-remote",
+          "network"
+        ]
+      }
+    },
+    {
+      "id": "design-tools.design",
+      "owner": "design-tools",
+      "namespace": "design",
+      "manifest": "extensions/design.json",
+      "executable": ".venv/bin/design-st",
+      "environment": [],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "read-local",
+          "write-local",
+          "read-remote",
+          "write-remote",
+          "network",
+          "credentials"
+        ]
+      }
+    }
+  ],
   "description": "Centralized tool registry — single source of truth for operator tool discovery, redirects, and check-runner configuration.",
   "cmd_start": "(^|&&\\s*|;\\s*)",
   "operator_tools": [
     {
       "id": "service",
       "canonical": "st service",
-      "replaces": ["rebuild.sh", "status.sh", "start.sh", "restart.sh", "shutdown.sh"],
+      "replaces": [
+        "rebuild.sh",
+        "status.sh",
+        "start.sh",
+        "restart.sh",
+        "shutdown.sh"
+      ],
       "summary": "Project service lifecycle, rebuild, migrations, systemd sync, and health checks.",
       "safety": "mutating",
-      "commands": ["status", "rebuild", "restart", "start", "stop"],
-      "examples": ["st service status summitflow", "st service rebuild summitflow", "st service stop"],
-      "verify": ["st service status summitflow"]
+      "commands": [
+        "status",
+        "rebuild",
+        "restart",
+        "start",
+        "stop"
+      ],
+      "examples": [
+        "st service status summitflow",
+        "st service rebuild summitflow",
+        "st service stop"
+      ],
+      "verify": [
+        "st service status summitflow"
+      ]
     },
     {
       "id": "check",
       "canonical": "st check",
-      "replaces": ["dt", "dev-tools.sh"],
+      "replaces": [
+        "dt",
+        "dev-tools.sh"
+      ],
       "summary": "Quality gates and tool wrappers with TOON output.",
       "safety": "read-mostly",
-      "commands": ["--check", "--quick", "cleanroom", "codeql", "pytest", "ruff", "types", "biome", "tsc", "vitest", "actionlint", "shellcheck", "govulncheck"],
-      "examples": ["st check --quick --changed-only", "st check codeql", "st check cleanroom -- bash scripts/install.sh --skip-systemd", "st check pytest -- backend/tests/cli/test_tools_cli.py"],
-      "verify": ["st check --help"]
+      "commands": [
+        "--check",
+        "--quick",
+        "cleanroom",
+        "codeql",
+        "pytest",
+        "ruff",
+        "types",
+        "biome",
+        "tsc",
+        "vitest",
+        "actionlint",
+        "shellcheck",
+        "govulncheck"
+      ],
+      "examples": [
+        "st check --quick --changed-only",
+        "st check codeql",
+        "st check cleanroom -- bash scripts/install.sh --skip-systemd",
+        "st check pytest -- backend/tests/cli/test_tools_cli.py"
+      ],
+      "verify": [
+        "st check --help"
+      ]
     },
     {
       "id": "graph",
       "canonical": "st graph",
-      "replaces": ["graphify", "fallow"],
+      "replaces": [
+        "graphify",
+        "fallow"
+      ],
       "summary": "Graphify topology, auto-refresh diagnostics, and compact Fallow JS/TS audits.",
       "safety": "read-mostly",
-      "commands": ["status", "doctor", "refresh", "query", "path", "explain", "fallow", "profile"],
-      "examples": ["st graph doctor --project summitflow", "st graph query \"auth topology\" --project summitflow", "st graph fallow audit --project summitflow"],
-      "verify": ["st graph doctor --project summitflow"]
+      "commands": [
+        "status",
+        "doctor",
+        "refresh",
+        "query",
+        "path",
+        "explain",
+        "fallow",
+        "profile"
+      ],
+      "examples": [
+        "st graph doctor --project summitflow",
+        "st graph query \"auth topology\" --project summitflow",
+        "st graph fallow audit --project summitflow"
+      ],
+      "verify": [
+        "st graph doctor --project summitflow"
+      ]
     },
     {
       "id": "task_workflow",
       "canonical": "st pulse / st claim / st context / st done",
-      "replaces": ["manual task branch setup", "st tasks claim"],
+      "replaces": [
+        "manual task branch setup",
+        "st tasks claim"
+      ],
       "summary": "Task lifecycle workflow: inspect coordination gate, claim task checkpoint, read context, and close completed task.",
       "safety": "mutating",
-      "commands": ["pulse --gate", "claim <task-id>", "context <task-id>", "subtask list <task-id>", "done <subtask-id> -t <task-id> --none", "done <task-id>"],
-      "examples": ["st pulse --gate", "st claim task-abc123", "st context task-abc123", "st done task-abc123 -m \"complete\""],
-      "verify": ["st claim --help", "st done --help"]
+      "commands": [
+        "pulse --gate",
+        "claim <task-id>",
+        "context <task-id>",
+        "subtask list <task-id>",
+        "done <subtask-id> -t <task-id> --none",
+        "done <task-id>"
+      ],
+      "examples": [
+        "st pulse --gate",
+        "st claim task-abc123",
+        "st context task-abc123",
+        "st done task-abc123 -m \"complete\""
+      ],
+      "verify": [
+        "st claim --help",
+        "st done --help"
+      ]
     },
     {
       "id": "db",
       "canonical": "st db",
-      "replaces": ["db"],
+      "replaces": [
+        "db"
+      ],
       "summary": "Cross-project PostgreSQL inspection and Alembic migration operations.",
       "safety": "mixed",
-      "commands": ["tables", "schema", "count", "sample", "query", "exec", "ddl", "migrate"],
-      "examples": ["st db tables", "st db migrate status"],
-      "verify": ["st db tables"]
+      "commands": [
+        "tables",
+        "schema",
+        "count",
+        "sample",
+        "query",
+        "exec",
+        "ddl",
+        "migrate"
+      ],
+      "examples": [
+        "st db tables",
+        "st db migrate status"
+      ],
+      "verify": [
+        "st db tables"
+      ]
     },
     {
       "id": "vcs",
       "canonical": "st done / st commit / st jj / st git",
-      "replaces": ["commit.sh"],
+      "replaces": [
+        "commit.sh"
+      ],
       "summary": "Version-control workflow: st done for task closeout; st commit and st jj for blockers/checkpoints; st git only for inspection and residue repair.",
       "safety": "mutating",
-      "commands": ["done", "commit", "jj", "git status", "git sync", "git resolve-conflict"],
-      "examples": ["st done task-abc123 -m \"complete\"", "st commit --message \"checkpoint\" --push", "st jj status", "st git status"],
-      "verify": ["st git status"]
+      "commands": [
+        "done",
+        "commit",
+        "jj",
+        "git status",
+        "git sync",
+        "git resolve-conflict"
+      ],
+      "examples": [
+        "st done task-abc123 -m \"complete\"",
+        "st commit --message \"checkpoint\" --push",
+        "st jj status",
+        "st git status"
+      ],
+      "verify": [
+        "st git status"
+      ]
     },
     {
       "id": "browser",
@@ -69,59 +662,166 @@
       "replaces": [],
       "summary": "Remote browser health, responsive checks, screenshots, snapshots, and DOM evaluation.",
       "safety": "external",
-      "commands": ["health", "check", "open", "screenshot", "snapshot", "eval"],
-      "examples": ["st browser health", "st browser check http://localhost:3001 /tmp/summitflow.png"],
-      "verify": ["st browser health"]
+      "commands": [
+        "health",
+        "check",
+        "open",
+        "screenshot",
+        "snapshot",
+        "eval"
+      ],
+      "examples": [
+        "st browser health",
+        "st browser check http://localhost:3001 /tmp/summitflow.png"
+      ],
+      "verify": [
+        "st browser health"
+      ]
     },
     {
       "id": "web",
       "canonical": "st web",
-      "replaces": ["web-research"],
+      "replaces": [
+        "web-research"
+      ],
       "summary": "Centralized public web search, research, and fetch through Agent Hub.",
       "safety": "external",
-      "commands": ["search", "research", "fetch"],
-      "examples": ["st web search --query \"SummitFlow\" --limit 1"],
-      "verify": ["st web --help"]
+      "commands": [
+        "search",
+        "research",
+        "fetch"
+      ],
+      "examples": [
+        "st web search --query \"SummitFlow\" --limit 1"
+      ],
+      "verify": [
+        "st web --help"
+      ]
     },
     {
       "id": "backup",
       "canonical": "st backup",
-      "replaces": ["backup.sh", "restore.sh", "backup-all.sh", "backup-pending-upload.sh"],
+      "replaces": [
+        "backup.sh",
+        "restore.sh",
+        "backup-all.sh",
+        "backup-pending-upload.sh"
+      ],
       "summary": "Project/source backup creation, restore preview, schedules, pending drain, and infra backups.",
       "safety": "destructive-with-confirmation",
-      "commands": ["list", "create", "restore", "archives", "all", "status", "delete", "drain-pending", "infra", "storage", "testbed"],
-      "examples": ["st backup status", "st backup archives", "st backup restore bkp-123 --dry-run"],
-      "verify": ["st backup status"]
+      "commands": [
+        "list",
+        "create",
+        "restore",
+        "archives",
+        "all",
+        "status",
+        "delete",
+        "drain-pending",
+        "infra",
+        "storage",
+        "testbed"
+      ],
+      "examples": [
+        "st backup status",
+        "st backup archives",
+        "st backup restore bkp-123 --dry-run"
+      ],
+      "verify": [
+        "st backup status"
+      ]
     },
     {
       "id": "vm",
       "canonical": "st vm",
-      "replaces": ["proxmox-vm.sh"],
+      "replaces": [
+        "proxmox-vm.sh"
+      ],
       "summary": "Proxmox test VM list/status/snapshot/rollback/clone/start/stop/destroy/ip.",
       "safety": "destructive-with-confirmation",
-      "commands": ["list", "status", "snapshots", "snapshot", "rollback", "clone", "start", "stop", "destroy", "ip"],
-      "examples": ["st vm list", "st vm status 100"],
-      "verify": ["st vm --help"]
+      "commands": [
+        "list",
+        "status",
+        "snapshots",
+        "snapshot",
+        "rollback",
+        "clone",
+        "start",
+        "stop",
+        "destroy",
+        "ip"
+      ],
+      "examples": [
+        "st vm list",
+        "st vm status 100"
+      ],
+      "verify": [
+        "st vm --help"
+      ]
     },
     {
       "id": "setup",
       "canonical": "st setup",
-      "replaces": ["setup-services.sh", "setup-agent-browser.sh", "setup-agent-tooling.sh", "setup-test-dbs.sh"],
+      "replaces": [
+        "setup-services.sh",
+        "setup-agent-browser.sh",
+        "setup-agent-tooling.sh",
+        "setup-test-dbs.sh"
+      ],
       "summary": "Install, PATH, browser, agent tooling, and test database setup.",
       "safety": "mutating",
-      "commands": ["services", "browser", "agent-tooling", "test-dbs"],
-      "examples": ["st setup services --dry-run", "st setup browser --dry-run"],
-      "verify": ["st setup --help"]
+      "commands": [
+        "services",
+        "browser",
+        "agent-tooling",
+        "test-dbs"
+      ],
+      "examples": [
+        "st setup services --dry-run",
+        "st setup browser --dry-run"
+      ],
+      "verify": [
+        "st setup --help"
+      ]
     },
     {
       "id": "ui",
       "canonical": "st ui",
-      "replaces": ["scrot", "import", "tesseract", "wmctrl", "xdotool", "ydotool", "xclip", "compare"],
+      "replaces": [
+        "scrot",
+        "import",
+        "tesseract",
+        "wmctrl",
+        "xdotool",
+        "ydotool",
+        "xclip",
+        "compare"
+      ],
       "summary": "Desktop UI control on X11: list windows, screenshot, OCR, image diff, window move/resize/activate/close, click/type/key, and clipboard. TOON-compact output. Use to self-verify GUI changes.",
       "safety": "mutating",
-      "commands": ["windows", "shot", "ocr", "diff", "activate", "move", "resize", "close", "click", "type", "key", "clip"],
-      "examples": ["st ui windows", "st ui shot -w summitflow -o /tmp/summitflow.png", "st ui ocr summitflow", "st ui diff a.png b.png"],
-      "verify": ["st ui windows"]
+      "commands": [
+        "windows",
+        "shot",
+        "ocr",
+        "diff",
+        "activate",
+        "move",
+        "resize",
+        "close",
+        "click",
+        "type",
+        "key",
+        "clip"
+      ],
+      "examples": [
+        "st ui windows",
+        "st ui shot -w summitflow -o /tmp/summitflow.png",
+        "st ui ocr summitflow",
+        "st ui diff a.png b.png"
+      ],
+      "verify": [
+        "st ui windows"
+      ]
     }
   ],
   "wrapper_allowlist": [
@@ -226,38 +926,38 @@
         "pass_path": true
       }
     },
-  {
-    "name": "biome",
+    {
+      "name": "biome",
       "component_id": "sf.check",
       "redirect_patterns": [
         "(npx\\s+)?biome\\b"
       ],
       "redirect_message": "Use 'st check biome [args]' — handles TOON output and project detection.",
-    "check": {
-      "label": "BIOME",
-      "binary": "npx",
-      "args": "biome check . --max-diagnostics=100 --no-errors-on-unmatched",
-      "count_method": "biome_parse",
-      "working_dir": "frontend",
-      "fallback_global": true,
-      "pass_path": true
+      "check": {
+        "label": "BIOME",
+        "binary": "npx",
+        "args": "biome check . --max-diagnostics=100 --no-errors-on-unmatched",
+        "count_method": "biome_parse",
+        "working_dir": "frontend",
+        "fallback_global": true,
+        "pass_path": true
       }
     },
-  {
-    "name": "tsc",
+    {
+      "name": "tsc",
       "component_id": "sf.check",
       "redirect_patterns": [
         "(npx\\s+)?tsc\\b"
       ],
       "redirect_message": "Use 'st check tsc' — handles TOON output and project detection.",
-    "check": {
-      "label": "TSC",
-      "binary": "npx",
-      "args": "tsc --noEmit",
-      "count_method": "grep_error_ts",
-      "working_dir": "frontend",
-      "fallback_global": true,
-      "pass_path": false
+      "check": {
+        "label": "TSC",
+        "binary": "npx",
+        "args": "tsc --noEmit",
+        "count_method": "grep_error_ts",
+        "working_dir": "frontend",
+        "fallback_global": true,
+        "pass_path": false
       }
     },
     {
@@ -267,14 +967,14 @@
         "(npx\\s+|pnpm(?:\\s+exec)?\\s+)?vitest\\b"
       ],
       "redirect_message": "Use 'st check vitest [args]' — handles project detection and TOON output.",
-    "check": {
-      "label": "VITEST",
-      "binary": "vitest",
-      "args": "run",
-      "count_method": "vitest_parse",
-      "working_dir": "frontend",
-      "fallback_global": true,
-      "pass_path": false
+      "check": {
+        "label": "VITEST",
+        "binary": "vitest",
+        "args": "run",
+        "count_method": "vitest_parse",
+        "working_dir": "frontend",
+        "fallback_global": true,
+        "pass_path": false
       }
     },
     {

@@ -1,83 +1,24 @@
-"""Core output primitives: JSON, status messages, error handling."""
+"""Compatibility alias for public ST SDK output primitives."""
 
 from __future__ import annotations
 
-import json
 import sys
-from typing import TYPE_CHECKING, Any
 
-import typer
+from st_sdk import output as _implementation
+from st_sdk.output import handle_api_error as handle_api_error
+from st_sdk.output import output_error as output_error
+from st_sdk.output import output_json as output_json
+from st_sdk.output import output_success as output_success
+from st_sdk.output import output_warning as output_warning
+from st_sdk.output import require_explicit_project as require_explicit_project
 
-if TYPE_CHECKING:
-    from .client import APIError
-    from .config import Config
+__all__ = [
+    "handle_api_error",
+    "output_error",
+    "output_json",
+    "output_success",
+    "output_warning",
+    "require_explicit_project",
+]
 
-
-def output_json(data: Any) -> None:
-    """Output data as JSON to stdout."""
-    from ._output_state import _human_output as _ho
-
-    indent = 2 if _ho else None
-    print(json.dumps(data, default=str, indent=indent))
-
-
-def output_error(message: str) -> None:
-    """Output error message to stderr."""
-    from ._output_state import _compact_output as _co
-
-    if _co:
-        print(f"ERROR {message}", file=sys.stderr)
-    else:
-        print(json.dumps({"error": message}), file=sys.stderr)
-
-
-def output_success(message: str) -> None:
-    """Output success message."""
-    from ._output_state import _compact_output as _co
-
-    if _co:
-        print(f"PASS {message}")
-    else:
-        output_json({"success": True, "message": message})
-
-
-def output_warning(message: str) -> None:
-    """Output warning message to stderr."""
-    from ._output_state import _compact_output as _co
-
-    if _co:
-        print(f"WARN {message}", file=sys.stderr)
-    else:
-        print(json.dumps({"warning": message}), file=sys.stderr)
-
-
-def handle_api_error(e: APIError) -> None:
-    """Handle API error and exit."""
-    detail = e.detail
-    if isinstance(detail, dict):
-        message = detail.get("message", str(detail))
-        available_agents = detail.get("available_agents", [])
-        if available_agents:
-            output_error(message)
-            print("\nAvailable agents:", file=sys.stderr)
-            for agent in available_agents:
-                print(f"  {agent}", file=sys.stderr)
-            raise typer.Exit(1)
-        output_error(str(message))
-        raise typer.Exit(1)
-    elif isinstance(detail, list):
-        # Pydantic validation errors: extract msg from each error
-        messages = [err.get("msg", str(err)) for err in detail if isinstance(err, dict)]
-        output_error("; ".join(messages) if messages else str(detail))
-        raise typer.Exit(1)
-    output_error(detail)
-    raise typer.Exit(1)
-
-
-def require_explicit_project(config: Config) -> None:
-    """No-op: cwd auto-detection is canonical; -P stays an override.
-
-    Kept for backward compatibility with call sites and tests that still
-    import this symbol. Project resolution itself is enforced by get_config().
-    """
-    _ = config
+sys.modules[__name__] = _implementation

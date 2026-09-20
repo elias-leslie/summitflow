@@ -88,6 +88,24 @@ else
   echo "SKIP: agent-hub-client package root not found"
 fi
 
+echo "Building summitflow-st-sdk wheel..."
+(cd "$SUMMITFLOW_ROOT/packages/st-sdk" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
+
+if [ -n "$PACKAGES_DIR" ] && [ -d "$PACKAGES_DIR/st-cli" ]; then
+  echo "Building agent-hub-st wheel..."
+  (cd "$PACKAGES_DIR/st-cli" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
+fi
+
+for owner in browser-automation code-intelligence design-tools; do
+  owner_root="$(resolve_project_root "$owner" 2>/dev/null || true)"
+  if [ -n "$owner_root" ] && [ -f "$owner_root/pyproject.toml" ]; then
+    echo "Building $owner wheel..."
+    (cd "$owner_root" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
+  else
+    echo "SKIP: $owner package root not found; use its checked-in release wheel"
+  fi
+done
+
 echo ""
 echo "Packed workspace packages to $OUT_DIR:"
 ls -lh "$OUT_DIR"/*.tgz "$OUT_DIR"/*.whl 2>/dev/null || echo "  (none)"

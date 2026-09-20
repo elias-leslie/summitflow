@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from app.services.mockup_generator import storage_helpers
+storage_helpers = importlib.import_module("app.services.mockup_generator.storage_helpers")
 
 
 def test_mockup_base_dir_defaults_to_durable_project_data() -> None:
@@ -23,7 +23,7 @@ def test_mockup_base_dir_rejects_tmp_env_override(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("SUMMITFLOW_MOCKUP_BASE_DIR", "/tmp/summitflow/mockups")
 
     with pytest.raises(RuntimeError, match="Refusing to use /tmp"):
-        importlib.reload(storage_helpers)
+        storage_helpers.get_mockup_base_dir()
 
     monkeypatch.delenv("SUMMITFLOW_MOCKUP_BASE_DIR")
     importlib.reload(storage_helpers)

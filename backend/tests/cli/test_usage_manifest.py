@@ -41,7 +41,7 @@ def test_specialized_guidance_is_not_selected_by_unrelated_task_or_history(tmp_p
     assert result.exit_code == 0, result.output
     specs = {row["surface"]: row for row in json.loads(result.output)["tools"]}
     assert {"st.claim", "st.context", "st.check", "st.db", "st.service.rebuild"} <= specs.keys()
-    assert not {"st.design", "st.models", "st.tools.cost", "st.pulsebrief.schema", "st.ui.gif", "st.vm.status", "st.agents.get", "st.autonomous.upkeep"} & specs.keys()
+    assert not {"st.design", "st.models", "st.tools.cost", "st.ui.gif", "st.vm.status", "st.agents.get", "st.autonomous.upkeep"} & specs.keys()
     details = specs["st.details"]
     assert "before using" in details["when"]
     assert "precautions" in details["when"]
@@ -50,7 +50,7 @@ def test_specialized_guidance_is_not_selected_by_unrelated_task_or_history(tmp_p
 
 
 @pytest.mark.parametrize(("task", "surface"), [
-    ("design", "st.design"), ("ui-design", "st.design"), ("briefing", "st.pulsebrief.schema"),
+    ("design", "st.design"), ("ui-design", "st.design"),
     ("agent-admin", "st.agents.get"), ("model-admin", "st.models"),
     ("tool-governance", "st.tools.cost"), ("vm-repair", "st.vm.status"),
     ("recording", "st.ui.gif"), ("heartbeat", "st.autonomous.upkeep"),
@@ -61,6 +61,19 @@ def test_explicit_specialized_work_gets_complete_canonical_guidance(task, surfac
     assert selected.exit_code == full.exit_code == 0
     selected_spec = next(row for row in json.loads(selected.output)["tools"] if row["surface"] == surface)
     assert selected_spec == json.loads(full.output)["tools"][0]
+
+
+def test_retired_pulsebrief_is_absent_from_full_and_briefing_manifests() -> None:
+    full = runner.invoke(tools_app, ["manifest", "--density", "full", "--format", "json"])
+    briefing = runner.invoke(
+        tools_app,
+        ["manifest", "--task", "briefing", "--density", "task", "--format", "json"],
+    )
+
+    assert full.exit_code == briefing.exit_code == 0
+    for result in (full, briefing):
+        surfaces = {row["surface"] for row in json.loads(result.output)["tools"]}
+        assert not any(surface.startswith("st.pulsebrief") for surface in surfaces)
 
 
 def test_read_only_task_context_does_not_require_a_claim() -> None:

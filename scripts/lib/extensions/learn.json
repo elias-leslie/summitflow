@@ -1,0 +1,441 @@
+{
+  "id": "learn-o-tron.learn",
+  "owner": "learn-o-tron",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Learn-o-Tron learning sessions and reviewed improvements.",
+  "effects": [
+    "network",
+    "read-remote",
+    "write-remote",
+    "read-local",
+    "write-local",
+    "credentials",
+    "process"
+  ],
+  "namespace": "learn",
+  "help": {
+    "": "Usage: learn [OPTIONS] COMMAND [ARGS]...\n\n  Learn, research and review through Learn-o-Tron's canonical API\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  capabilities\n  context\n  profile\n  paths\n  show\n  focus\n  work\n  check\n  discussion\n  predictions\n  status\n  stop\n  attempt\n  lab\n  instructor\n  roadmap\n  conversation\n  authoring\n  source\n  draft\n  publish\n  challenge\n  agent-lab\n  pwn           Sync the public pwn.college self-study catalog, then...\n  session       Start in native SSH, close to pause, resume later, then...\n  improvements  Capture session lessons, triage them, then explicitly...",
+    "capabilities": "Usage: learn capabilities [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
+    "context": "Usage: learn context [OPTIONS]\n\nOptions:\n  --role <researcher|planner|tutor|reviewer>\n  --help                          Show this message and exit.",
+    "profile": "Usage: learn profile [OPTIONS]\n\nOptions:\n  --file <path>\n  --help         Show this message and exit.",
+    "paths": "Usage: learn paths [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
+    "show": "Usage: learn show [OPTIONS] {record_id}\n\nArguments:\n  record_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "focus": "Usage: learn focus [OPTIONS]\n\nOptions:\n  --path <str>    [required]\n  --lesson <str>  [required]\n  --step <int>    [default: 0]\n  --help          Show this message and exit.",
+    "work": "Usage: learn work [OPTIONS]\n                  {kind}:<recommend|curriculum|tutor|review|audio|content-\n                  review|prediction>\n\nArguments:\n  kind:<recommend|curriculum|tutor|review|audio|content-review|prediction>\n                                  [required]\n\nOptions:\n  --message <str>\n  --record <str>\n  --lesson <str>\n  --command-id <uuid>\n  --step <int>\n  --explanation-seen / --no-explanation-seen\n                                  [default: no-explanation-seen]\n  --context-file <path>           Structured learning-check section, saved\n                                  attempt or current draft; use capabilities\n                                  for its schema.\n  --help                          Show this message and exit.",
+    "check": "Usage: learn check [OPTIONS]\n\nOptions:\n  --path <str>     [required]\n  --lesson <str>   [required]\n  --attempt <str>\n  --help           Show this message and exit.",
+    "discussion": "Usage: learn discussion [OPTIONS]\n\nOptions:\n  --path <str>       [required]\n  --lesson <str>     [required]\n  --attempt <str>\n  --challenge <str>\n  --help             Show this message and exit.",
+    "predictions": "Usage: learn predictions [OPTIONS]\n\nOptions:\n  --path <str>        [required]\n  --lesson <str>      [required]\n  --step <int range>  [0<=x<=6; required]\n  --help              Show this message and exit.",
+    "status": "Usage: learn status [OPTIONS]\n\nOptions:\n  --job-id <uuid>\n  --help           Show this message and exit.",
+    "stop": "Usage: learn stop [OPTIONS] {job_id}\n\nArguments:\n  job_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "attempt": "Usage: learn attempt [OPTIONS]\n\nOptions:\n  --path <str>    [required]\n  --lesson <str>  [required]\n  --file <path>   [required]\n  --help          Show this message and exit.",
+    "lab": "Usage: learn lab [OPTIONS]\n\nOptions:\n  --path <str>    [required]\n  --lesson <str>  [required]\n  --file <path>\n  --help          Show this message and exit.",
+    "instructor": "Usage: learn instructor [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
+    "roadmap": "Usage: learn roadmap [OPTIONS]\n\nOptions:\n  --file <path>\n  --help         Show this message and exit.",
+    "conversation": "Usage: learn conversation [OPTIONS]\n\nOptions:\n  --before <str>\n  --file <path>\n  --help          Show this message and exit.",
+    "authoring": "Usage: learn authoring [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
+    "source": "Usage: learn source [OPTIONS]\n\nOptions:\n  --file <path>\n  --help         Show this message and exit.",
+    "draft": "Usage: learn draft [OPTIONS]\n\nOptions:\n  --file <path>\n  --id <str>\n  --help         Show this message and exit.",
+    "publish": "Usage: learn publish [OPTIONS] {draft_id}\n\nArguments:\n  draft_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "challenge": "Usage: learn challenge [OPTIONS]\n\nOptions:\n  --path <str>    [required]\n  --lesson <str>  [required]\n  --help          Show this message and exit.",
+    "agent-lab": "Usage: learn agent-lab [OPTIONS]\n\nOptions:\n  --path <str>    [required]\n  --lesson <str>  [required]\n  --file <path>   [required]\n  --help          Show this message and exit.",
+    "pwn": "Usage: learn pwn [OPTIONS] COMMAND [ARGS]...\n\n  Sync the public pwn.college self-study catalog, then choose an activity\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  sync\n  status\n  activities",
+    "pwn sync": "Usage: learn pwn sync [OPTIONS]\n\nOptions:\n  --username <str>\n  --full / --no-full  [default: no-full]\n  --dojo <str>\n  --help              Show this message and exit.",
+    "pwn status": "Usage: learn pwn status [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
+    "pwn activities": "Usage: learn pwn activities [OPTIONS]\n\nOptions:\n  --dojo <str>\n  --module <str>\n  --solved / --unsolved\n  --query <str>\n  --help                 Show this message and exit.",
+    "session": "Usage: learn session [OPTIONS] COMMAND [ARGS]...\n\n  Start in native SSH, close to pause, resume later, then finish with learner\n  evidence\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  start\n  continue\n  list\n  show\n  attach\n  handoff\n  resume\n  pause\n  finish\n  evidence\n  review\n  transcript",
+    "session start": "Usage: learn session start [OPTIONS]\n\nOptions:\n  --activity <str>    [required]\n  --objective <str>\n  --harness <str>\n  --agent-name <str>\n  --model <str>\n  --open / --no-open  [default: open]\n  --sync / --no-sync  [default: sync]\n  --help              Show this message and exit.",
+    "session continue": "Usage: learn session continue [OPTIONS]\n\nOptions:\n  --activity <str>\n  --objective <str>\n  --harness <str>\n  --agent-name <str>\n  --model <str>\n  --open / --no-open  [default: open]\n  --sync / --no-sync  [default: sync]\n  --help              Show this message and exit.",
+    "session list": "Usage: learn session list [OPTIONS]\n\nOptions:\n  --status <str>\n  --help          Show this message and exit.",
+    "session show": "Usage: learn session show [OPTIONS] {session_id}\n\nArguments:\n  session_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "session attach": "Usage: learn session attach [OPTIONS] {session_id}\n\nArguments:\n  session_id  [required]\n\nOptions:\n  --expected-revision <int>  [required]\n  --harness <str>\n  --agent-name <str>\n  --model <str>\n  --help                     Show this message and exit.",
+    "session handoff": "Usage: learn session handoff [OPTIONS] {session_id}\n\nArguments:\n  session_id  [required]\n\nOptions:\n  --to <str>                 [required]\n  --expected-revision <int>  [required]\n  --from <str>\n  --help                     Show this message and exit.",
+    "session resume": "Usage: learn session resume [OPTIONS] {session_id}\n\nArguments:\n  session_id  [required]\n\nOptions:\n  --harness <str>\n  --agent-name <str>\n  --model <str>\n  --open / --no-open  [default: open]\n  --help              Show this message and exit.",
+    "session pause": "Usage: learn session pause [OPTIONS] {session_id}\n\nArguments:\n  session_id  [required]\n\nOptions:\n  --harness <str>\n  --note <str>\n  --help           Show this message and exit.",
+    "session finish": "Usage: learn session finish [OPTIONS] {session_id}\n\nArguments:\n  session_id  [required]\n\nOptions:\n  --harness <str>\n  --file <path>\n  --help           Show this message and exit.",
+    "session evidence": "Usage: learn session evidence [OPTIONS] {session_id}\n\nArguments:\n  session_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
+    "session review": "Usage: learn session review [OPTIONS] {session_id}\n\nArguments:\n  session_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
+    "session transcript": "Usage: learn session transcript [OPTIONS] {session_id}\n\nArguments:\n  session_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "improvements": "Usage: learn improvements [OPTIONS] COMMAND [ARGS]...\n\n  Capture session lessons, triage them, then explicitly promote accepted work\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  add\n  triage\n  promote",
+    "improvements list": "Usage: learn improvements list [OPTIONS]\n\nOptions:\n  --status <str>\n  --project <str>\n  --help           Show this message and exit.",
+    "improvements add": "Usage: learn improvements add [OPTIONS]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
+    "improvements triage": "Usage: learn improvements triage [OPTIONS] {candidate_id}\n\nArguments:\n  candidate_id  [required]\n\nOptions:\n  --status <str>             [required]\n  --expected-revision <int>  [required]\n  --note <str>\n  --help                     Show this message and exit.",
+    "improvements promote": "Usage: learn improvements promote [OPTIONS] {candidate_id}\n\nArguments:\n  candidate_id  [required]\n\nOptions:\n  --project <str>\n  --priority <int>  [default: 2]\n  --help            Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.learn.capabilities",
+      "tier": "reference",
+      "cmd": "st learn capabilities",
+      "when": "discover learning API payloads and terminal workflow",
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.context",
+      "tier": "reference",
+      "cmd": "st learn context [--role tutor|researcher|planner|reviewer]",
+      "when": "resume learning or load canonical Agent Hub role instructions",
+      "precautions": [
+        "default is compact learning context; role instructions are supplied, not proof of model consumption"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.profile",
+      "tier": "reference",
+      "cmd": "st learn profile [--file profile.json]",
+      "when": "inspect or correct learner goals, experience and preferences",
+      "precautions": [
+        "updates require current revision; preserve source provenance"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.paths",
+      "tier": "reference",
+      "cmd": "st learn paths",
+      "when": "list saved learning paths",
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.show",
+      "tier": "reference",
+      "cmd": "st learn show <record-id>",
+      "when": "read curriculum, recommendation or lab details on demand",
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.focus",
+      "tier": "reference",
+      "cmd": "st learn focus --path ID --lesson ID [--step 0]",
+      "when": "save the shared PWA and terminal resume position",
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.work",
+      "tier": "reference",
+      "cmd": "st learn work recommend|curriculum|tutor|review|audio|content-review|prediction [--message TEXT] [--record ID] [--lesson ID] [--step N] [--explanation-seen] [--command-id UUID] [--context-file FILE]",
+      "when": "request subscription-only learning work, prediction feedback, independent draft review or local audio",
+      "precautions": [
+        "returns a durable job; inspect status before retrying; preserve command ID only for identical payloads; review record is an attempt ID; content-review record is a draft ID; prediction needs the actual learner answer and zero-based step; never invent a learner response"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.check",
+      "tier": "reference",
+      "cmd": "st learn check --path ID --lesson ID [--attempt ID]",
+      "when": "resume saved learning-check answers and their automatic Rowan review",
+      "precautions": [
+        "default is the latest submission; saving an attempt starts a review atomically; a queued review is not completion"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.discussion",
+      "tier": "reference",
+      "cmd": "st learn discussion --path ID --lesson ID --attempt ID | --challenge ID",
+      "when": "read saved questions, critiques and Rowan replies attached to a learning check",
+      "precautions": [
+        "send actual learner text with work tutor --context-file; do not fabricate learner messages or evidence"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.predictions",
+      "tier": "reference",
+      "cmd": "st learn predictions --path ID --lesson ID --step N",
+      "when": "read saved prediction answers, Rowan feedback and queued checks for a lesson step",
+      "precautions": [
+        "latest 20 requests; zero-based step; formative feedback is not mastery evidence"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.status",
+      "tier": "reference",
+      "cmd": "st learn status [--job-id UUID]",
+      "when": "read job completion or full learning state",
+      "precautions": [
+        "queued/running is not completion; full state is larger than st learn context"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.stop",
+      "tier": "reference",
+      "cmd": "st learn stop JOB_ID",
+      "when": "cancel queued work or suppress publication of an in-flight result",
+      "precautions": [
+        "already submitted provider work may finish; native harness processes remain under harness control"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.attempt",
+      "tier": "reference",
+      "cmd": "st learn attempt --path ID --lesson ID --file attempt.json",
+      "when": "record a learner's actual explanation, check answers, time and assistance",
+      "precautions": [
+        "load capabilities first; never label agent-written solutions independent; command ID must be stable for a retry"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.lab",
+      "tier": "reference",
+      "cmd": "st learn lab --path ID --lesson ID [--file action.json]",
+      "when": "inspect lab evidence or perform a controlled lab action",
+      "precautions": [
+        "use capabilities payload; CLI submissions are attributed to agent; no arbitrary host or network execution"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.instructor",
+      "tier": "reference",
+      "cmd": "st learn instructor",
+      "when": "load Rowan's shared teaching voice and evidence-based method",
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.roadmap",
+      "tier": "reference",
+      "cmd": "st learn roadmap [--file roadmap.json]",
+      "when": "read or revise the shared goals, milestones and optional certifications",
+      "precautions": [
+        "updates require the read revision and a reason; completed milestones need evidence; preserve unrelated goals"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.conversation",
+      "tier": "reference",
+      "cmd": "st learn conversation [--before ID] [--file exchange.json]",
+      "when": "read saved exchanges or preserve an actual native tutor conversation",
+      "precautions": [
+        "store actual user and instructor messages; no invented learner statements; this does not create mastery evidence"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.authoring",
+      "tier": "reference",
+      "cmd": "st learn authoring",
+      "when": "load the canonical source-to-publication workflow, schemas and supported labs",
+      "precautions": [
+        "read before authoring; primary-source evidence and independent editorial review precede publication"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.source",
+      "tier": "reference",
+      "cmd": "st learn source [--file source.json]",
+      "when": "inspect or preserve an actually retrieved primary-source excerpt",
+      "precautions": [
+        "read the original first; do not manufacture captures or claim the timestamp proves retrieval"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.draft",
+      "tier": "reference",
+      "cmd": "st learn draft --file draft.json | --id ID",
+      "when": "save an immutable curriculum draft or inspect checks, sources and review",
+      "precautions": [
+        "revisions use a new command ID; reading a draft includes answer keys intended for authors"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.publish",
+      "tier": "reference",
+      "cmd": "st learn publish DRAFT_ID",
+      "when": "publish the exact draft after passing checks and independent content review",
+      "precautions": [
+        "server rejects unreviewed, changed or blocked drafts; success is idempotent"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.challenge",
+      "tier": "reference",
+      "cmd": "st learn challenge --path ID --lesson ID",
+      "when": "load the current question variant and challenge ID before a learning check",
+      "precautions": [
+        "answer keys are withheld; stale challenges are rejected; finite question sets eventually repeat"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.agent_lab",
+      "tier": "reference",
+      "cmd": "st learn agent-lab --path ID --lesson ID --file action.json",
+      "when": "operate the local agent permission simulator and retain attributed evidence",
+      "precautions": [
+        "CLI actions are agent-assisted; deterministic policy test only, no live model or external effects"
+      ],
+      "task_types": [
+        "learning",
+        "learn-o-tron"
+      ]
+    },
+    {
+      "surface": "st.learn.pwn.sync",
+      "tier": "reference",
+      "cmd": "st learn pwn sync [--full] [--username NAME]",
+      "when": "synchronize the supported public pwn.college self-study catalog and solve observations",
+      "precautions": [
+        "read-only provider calls; lifecycle changes use the official SSH dojo CLI"
+      ],
+      "task_types": [
+        "learning",
+        "security"
+      ]
+    },
+    {
+      "surface": "st.learn.pwn.activities",
+      "tier": "reference",
+      "cmd": "st learn pwn activities [--dojo ID] [--module ID] [--solved/--unsolved] [--query TEXT]",
+      "when": "choose a synchronized pwn.college activity before starting a study session",
+      "task_types": [
+        "learning",
+        "security"
+      ]
+    },
+    {
+      "surface": "st.learn.session.start",
+      "tier": "reference",
+      "cmd": "st learn session start --activity ID [--objective TEXT] [--harness NAME] [--no-open]",
+      "when": "bind and open a private pwn.college study session in the native terminal",
+      "precautions": [
+        "OpenSSH owns the private key; only sanitized output is spooled and uploaded"
+      ],
+      "task_types": [
+        "learning",
+        "security"
+      ]
+    },
+    {
+      "surface": "st.learn.session.continue",
+      "tier": "reference",
+      "cmd": "st learn session continue [--activity ID] [--objective TEXT] [--no-open]",
+      "when": "atomically resume the one unfinished pwn.college study or create it when an activity is supplied",
+      "precautions": [
+        "one provider account admits one unfinished study; a different live native operator requires an explicit handoff"
+      ],
+      "task_types": [
+        "learning",
+        "security"
+      ]
+    },
+    {
+      "surface": "st.learn.session.handoff",
+      "tier": "reference",
+      "cmd": "st learn session handoff SESSION_ID --to HARNESS --expected-revision N [--from HARNESS]",
+      "when": "explicitly transfer the single live operator lease to an attached harness",
+      "precautions": [
+        "the receiving harness must attach first"
+      ],
+      "task_types": [
+        "learning",
+        "security"
+      ]
+    },
+    {
+      "surface": "st.learn.session.finish",
+      "tier": "reference",
+      "cmd": "st learn session finish SESSION_ID [--file evidence.json] [--harness NAME]",
+      "when": "sync platform solve state, save final evidence and close a study session",
+      "precautions": [
+        "a platform solve remains separate from human explanation, reproduction and delayed recall"
+      ],
+      "task_types": [
+        "learning",
+        "security"
+      ]
+    },
+    {
+      "surface": "st.learn.improvements.promote",
+      "tier": "reference",
+      "cmd": "st learn improvements promote CANDIDATE_ID [--project PROJECT] [--priority N]",
+      "when": "explicitly promote an accepted learning improvement into a SummitFlow idea task",
+      "precautions": [
+        "promotion is never automatic; task text contains the triaged candidate, not the private transcript"
+      ],
+      "task_types": [
+        "learning",
+        "planning"
+      ]
+    }
+  ]
+}

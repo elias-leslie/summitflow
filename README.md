@@ -105,8 +105,8 @@ UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, wi
 **Knowledge and coordination**
 
 - `st wiki` (markdown vault), `st skills` (harness-neutral agent skills via symlink
-  distribution), `st feedback` (agent feedback loop), `st pulsebrief`,
-  `st projects`, and `st portfolio` (agent-facing analytics delegated to
+  distribution), `st feedback` (agent feedback loop), `st projects`, and
+  `st portfolio` (agent-facing analytics delegated to
   portfolio-ai).
 
 ## How it compares

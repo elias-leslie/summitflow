@@ -1,0 +1,51 @@
+{
+  "id": "desktop-automation.selection",
+  "owner": "desktop-automation",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Aico selection-bus reads and explicit delivery.",
+  "effects": [
+    "network",
+    "read-remote",
+    "write-remote"
+  ],
+  "namespace": "selection",
+  "help": {
+    "": "Usage: selection [OPTIONS] COMMAND [ARGS]...\n\n  Selection bus: current selection and recent history (Aico).\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  current  Most recent captured selection (`{kind: \"empty\"}` when none).\n  history  Recent selections, newest first.\n  send     Write a capture to the selection bus — the CLI/desktop source.",
+    "current": "Usage: selection current [OPTIONS]\n\n  Most recent captured selection (`{kind: \"empty\"}` when none).\n\n  Examples: st selection current | st selection current --human\n\nOptions:\n  --help  Show this message and exit.",
+    "history": "Usage: selection history [OPTIONS]\n\n  Recent selections, newest first.\n\n  Examples: st selection history | st selection history --n 5\n\nOptions:\n  -n, --n <int>  Max selections to return (newest first)  [default: 10]\n  --help         Show this message and exit.",
+    "send": "Usage: selection send [OPTIONS] {kind}\n\n  Write a capture to the selection bus — the CLI/desktop source.\n\n  Captures come from `st ui`; this verb puts one on the bus. Default delivers\n  to the active Aico widget (the explicit-gesture path); --no-deliver stores\n  only (harvested later via the hotkey). The kind is validated by the sidecar.\n\n  Examples:   st ui shot -w aico -o /tmp/x.png && st selection send region -s\n  /tmp/x.png   st ui ocr aico | st selection send region --stdin\n\nArguments:\n  kind  Selection kind: dom | a11y | region  [required]\n\nOptions:\n  -s, --snippet <str>  Snippet text or file path\n  --stdin              Read the snippet from stdin\n  --meta <str>         Extra meta as a JSON object\n  --no-deliver         Store only; do not push to the active widget\n  --help               Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.selection",
+      "tier": "reference",
+      "cmd": "st selection current",
+      "when": "read the selection explicitly shared through Aico",
+      "precautions": [
+        "A missing sidecar reports an empty selection, not verified availability."
+      ],
+      "task_types": [
+        "desktop",
+        "ui"
+      ],
+      "on_demand": "selection bus"
+    },
+    {
+      "surface": "st.selection.send",
+      "tier": "reference",
+      "cmd": "st selection send <kind> --snippet <text>",
+      "when": "deliver an authorized capture to the active Aico widget",
+      "precautions": [
+        "Sends content to the active widget by default; --no-deliver only stores it. Effect metadata is not authorization to share content."
+      ],
+      "task_types": [
+        "desktop",
+        "ui"
+      ],
+      "on_demand": "selection bus"
+    }
+  ]
+}

@@ -12,6 +12,7 @@ from app.storage.connection import close_pool
 from app.storage.events import log_task_event
 
 from .config import set_project_override
+from .extensions import register_extensions
 from .lib.commit_workflow import CommitError, commit_repo, current_repo
 from .lib.usage import usage
 from .output import set_compact_output, set_human_output, set_progress_only
@@ -46,67 +47,43 @@ FORWARD_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": 
 OPTIONAL_COMMANDS = (
     "abandon",
     "agent",
-    "agents",
     "autonomous",
     "autosnapshot",
     "backup",
-    "browser",
     "checkpoints",
     "claim",
     "claude",
     "cleanup",
-    "complete",
     "db",
     "deps",
-    "design",
     "docker",
     "done",
     "exec_monitor",
-    "feedback",
     "git",
-    "graph",
     "health",
     "jj",
-    "jobs",
-    "neri",
-    "learn",
     "lease",
     "logs",
-    "mandates",
-    "memory",
     "migrate_branches",
-    "models",
-    "note",
-    "persona",
-    "portfolio",
     "projects",
-    "pulsebrief",
-    "prompt",
     "pulse",
     "refactor",
     "runtime",
-    "search",
-    "selection",
     "service",
     "session_events",
     "sessions",
     "setup",
-    "skills",
     "snapshots",
     "subtask",
     "tasks",
     "tests",
     "tools",
-    "ui",
     "vcs",
     "vm",
-    "web",
-    "wiki",
 )
 
 SUBCOMMAND_GROUPS = (
     ("dep", "deps"),
-    ("design", "design"),
     ("test", "tests"),
     ("subtask", "subtask"),
     ("autonomous", "autonomous"),
@@ -114,7 +91,6 @@ SUBCOMMAND_GROUPS = (
     ("sessions", "sessions"),
     ("projects", "projects"),
     ("git", "git"),
-    ("graph", "graph"),
     ("jj", "jj"),
     ("vcs", "vcs"),
     ("backup", "backup"),
@@ -122,35 +98,18 @@ SUBCOMMAND_GROUPS = (
     ("runtime", "runtime"),
     ("health", "health"),
     ("logs", "logs"),
-    ("memory", "memory"),
-    ("models", "models"),
-    ("complete", "complete"),
     ("agent", "agent"),
     ("tools", "tools"),
     ("cleanup", "cleanup"),
-    ("prompt", "prompt"),
     ("refactor", "refactor"),
-    ("feedback", "feedback"),
-    ("persona", "persona"),
-    ("portfolio", "portfolio"),
-    ("jobs", "jobs"),
-    ("neri", "neri"),
-    ("learn", "learn"),
-    ("pulsebrief", "pulsebrief"),
-    ("agents", "agents"),
     ("docker", "docker"),
     ("setup", "setup"),
     ("vm", "vm"),
-    ("wiki", "wiki"),
-    ("ui", "ui"),
-    ("selection", "selection"),
 )
 
 FORWARDED_ROOT_COMMANDS = (
     ("check", "check", "check"),
     ("db", "db", "db"),
-    ("browser", "browser", "browser"),
-    ("web", "web", "web"),
 )
 
 SNAPSHOT_COMMAND_NAMES = {"snap", "snaps", "recover", "rollback", "prune"}
@@ -305,10 +264,7 @@ app.command(SESSION_EVENTS_COMMAND, help="Agent Hub session events (observabilit
 app.command("pulse")(_COMMANDS["pulse"].pulse)
 app.command("lease")(_COMMANDS["lease"].lease_command)
 app.command("migrate-branches")(_COMMANDS["migrate_branches"].migrate_branches_command)
-app.command("search")(_COMMANDS["search"].search)
 app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
-app.command("mandates")(_COMMANDS["mandates"].mandates)
-app.command("note")(_COMMANDS["note"].note)
 
 
 @app.command("commit")
@@ -386,7 +342,6 @@ def progress_alias(
 # These are defined with @app.command() in their modules, so access via module.app
 _register_named_command(_COMMANDS["claim"].app, "claim")
 app.add_typer(_COMMANDS["checkpoints"].app, name="checkpoints")
-app.add_typer(_COMMANDS["skills"].app, name="skills")
 _register_snapshot_commands()
 app.add_typer(_COMMANDS["autosnapshot"].app, name="autosnap", hidden=True)
 for command_name in ROOT_TASK_COMMAND_NAMES:
@@ -428,6 +383,10 @@ def main(
     if project:
         set_project_override(project)
     _apply_output_context(ctx, human=human, compact=compact, progress_only=progress_only)
+
+
+# All core/hidden names are registered before extension collision checks.
+register_extensions(app)
 
 
 if __name__ == "__main__":
