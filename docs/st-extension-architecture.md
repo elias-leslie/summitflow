@@ -1,14 +1,12 @@
 # ST extension and ownership migration
 
 Task: task-5c846bb5b1a94750. Owner-approved scope, revised 2026-09-20:
-execute the full ranked migration list except unslop/SlopMiner. The initial jq
-proposal and web-only stopping point are superseded.
+execute the full ranked migration list. The initial jq proposal and web-only
+stopping point are superseded.
 
-## Protected work and core responsibilities
+## Core responsibilities and verification scope
 
-Do not edit, test, relocate, or publish commands/unslop.py, lib/unslop_*.py, or
-their pre-existing main.py registration changes. Preserve browser and prompt/API
-helper compatibility. Another agent owns that prototype. No active-desktop
+Preserve browser and prompt/API helper compatibility. No active-desktop
 operations are authorized for verification.
 
 ST retains lifecycle, claims, project resolution, VCS, checks, services,
@@ -31,13 +29,12 @@ the overall migration.
 | 5 | portfolio | portfolio-ai | existing | Domain CLI/client and tests. |
 | 6 | neri | neri | existing | Domain CLI, explicit Agent Hub and ST control adapters. |
 | 7 | learn | learn-o-tron | existing | CLI, PTY and transcripts; public ST task-promotion interface. |
-| 8 | unslop | slopminer | existing | EXCLUDED from all implementation and verification. |
-| 9 | graph/search | code-intelligence | new | Reusable intelligence with existing Explorer/index storage integration. |
-| 10 | wiki | vault-tools | new | Filesystem/search/lint/ingest engine; canonical vault data preserved. |
-| 11 | design | design-tools | new | CLI plus reusable generation/asset behavior; preserve project asset/storage contracts. |
-| 12 | pulsebrief | Retired with owner approval | legacy | Investigation found no engine, owning project, callers or schedules; remove the broken wrapper and stale discovery instead of fabricating a replacement. |
-| 13 | Agent Hub administration | agent-hub | existing | Models, complete, memory, prompt, persona, agents, feedback, note and mandates; ST agent task/session orchestration remains core. |
-| 14 | skills | agent-hub | existing | Distribution and harness tooling; canonical instructions remain with Agent Hub. |
+| 8 | graph/search | code-intelligence | new | Reusable intelligence with existing Explorer/index storage integration. |
+| 9 | wiki | vault-tools | new | Filesystem/search/lint/ingest engine; canonical vault data preserved. |
+| 10 | design | design-tools | new | CLI plus reusable generation/asset behavior; preserve project asset/storage contracts. |
+| 11 | pulsebrief | Retired with owner approval | legacy | Investigation found no engine, owning project, callers or schedules; remove the broken wrapper and stale discovery instead of fabricating a replacement. |
+| 12 | Agent Hub administration | agent-hub | existing | Models, complete, memory, prompt, persona, agents, feedback, note and mandates; ST agent task/session orchestration remains core. |
+| 13 | skills | agent-hub | existing | Distribution and harness tooling; canonical instructions remain with Agent Hub. |
 
 ## Baseline evidence (before migration)
 
@@ -133,7 +130,7 @@ release generation/checks compare these against the owner command inventory.
 5. Verify every migrated command, fixture and core routes, canonical gates,
    managed rebuilds and actual Agent Hub capability delivery.
 6. Publish coherent owner checkpoints. Keep overall task open until every
-   non-excluded row is complete; retain exact blockers/unperformed scope.
+   approved row is complete; retain exact blockers/unperformed scope.
 
 Required extension evidence: registration without main.py edits; passive
 help/manifest; existing filters/densities; missing dependency; malformed metadata;

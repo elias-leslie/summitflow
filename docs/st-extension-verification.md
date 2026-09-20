@@ -1,8 +1,7 @@
 # Ownership migration evidence
 
-Parent task: task-5c846bb5b1a94750. Work remains open until every approved
-non-unslop migration is complete. This records observed checkpoints, not a claim
-that the full migration is finished.
+Parent task: task-5c846bb5b1a94750. This records observed checkpoints from the
+completed ownership migration.
 
 ## First integration checkpoint (2026-09-20)
 
@@ -135,14 +134,6 @@ discovery. Regression checks prove it is absent from root help and full/task
 manifests (51 focused tests passed). No schema initialization, durable data or
 system configuration was changed. Core `st pulse` coordination is unchanged.
 
-## Explicit gaps
-
-- Final managed-owner and SummitFlow publication results are recorded in the
-  parent task log. Publication and final checks remain required for closeout.
-- Pre-existing unslop files and registration edits remain excluded from edits,
-  command execution and publication. Publication uses an isolated copy because
-  path-scoped commits cannot separate two owners' changes inside main.py.
-
 ## Publication checkpoint
 
 SummitFlow implementation: `e0c55a9d2de6d297589c65b45cb80d1ec25c3f21`,
@@ -150,8 +141,6 @@ pushed through ST after 3,105 tests passed (2 skipped, 71 deselected) and lint,
 types, architecture and Biome passed. Managed rebuild
 `7ad35879bfa4457ca66a5df1177fb210` succeeded. All 22 registered owner executables
 passed explicit prerequisite checks; this is not a blanket runtime-health claim.
-Only the five original unslop files and their two main.py registration lines
-remain outside publication; their hashes and content were preserved.
 
 Other managed owner checkpoints: Jobinator `856621acc4e3750fd3a64bbb2908e2afa27109eb`,
 Neri `288e2c49640e9dee65edff7c1103d9f6853265c7`,

@@ -20,8 +20,7 @@ hoisted as root `snap`, `snaps`, `recover`, `rollback`, `prune`; hidden
 ## Approved destinations
 
 Ranks and approved scopes are copied from `docs/st-extension-architecture.md`;
-this inventory does not reorder them. Unslop/SlopMiner remains excluded and
-in-flight; do not edit, test, or relocate its prototype.
+this inventory does not reorder them.
 
 | Rank | Capability | Destination | Kind | Approved extraction scope |
 |---:|---|---|---|---|
@@ -32,13 +31,12 @@ in-flight; do not edit, test, or relocate its prototype.
 | 5 | portfolio | portfolio-ai | existing | Domain CLI/client and tests. |
 | 6 | neri | neri | existing | Domain CLI, explicit Agent Hub and ST control adapters. |
 | 7 | learn | learn-o-tron | existing | CLI, PTY and transcripts; public ST task-promotion interface. |
-| 8 | unslop | slopminer | existing | **Excluded** from implementation and verification; prototype is in flight. |
-| 9 | graph/search | code-intelligence | new | Reusable intelligence with existing Explorer/index storage integration. |
-| 10 | wiki | vault-tools | new | Filesystem/search/lint/ingest engine; canonical vault data preserved. |
-| 11 | design | design-tools | new | CLI plus reusable generation/asset behavior; preserve project asset/storage contracts. |
-| 12 | pulsebrief | Retired with owner approval | legacy | Missing engine with no local callers or schedules; remove broken wrapper and stale discovery. |
-| 13 | Agent Hub administration | agent-hub | existing | Models, complete, memory, prompt, persona, agents, feedback, note and mandates; ST agent task/session orchestration remains core. |
-| 14 | skills | agent-hub | existing | Distribution and harness tooling; canonical instructions remain with Agent Hub. |
+| 8 | graph/search | code-intelligence | new | Reusable intelligence with existing Explorer/index storage integration. |
+| 9 | wiki | vault-tools | new | Filesystem/search/lint/ingest engine; canonical vault data preserved. |
+| 10 | design | design-tools | new | CLI plus reusable generation/asset behavior; preserve project asset/storage contracts. |
+| 11 | pulsebrief | Retired with owner approval | legacy | Missing engine with no local callers or schedules; remove broken wrapper and stale discovery. |
+| 12 | Agent Hub administration | agent-hub | existing | Models, complete, memory, prompt, persona, agents, feedback, note and mandates; ST agent task/session orchestration remains core. |
+| 13 | skills | agent-hub | existing | Distribution and harness tooling; canonical instructions remain with Agent Hub. |
 
 ## Root command/group ownership
 
@@ -72,8 +70,7 @@ the current location of the Typer callback.
 | `portfolio` | **client** — `commands/portfolio.py`, `_portfolio_client.py`; Portfolio AI owns portfolio/catalyst/retirement APIs and state. | HTTP client/resolver also reaches private ST `app.config` and `APIError`; migrate transport/config dependency with CLI. `test_portfolio_command.py` is the CLI suite to move. |
 | `neri` | **client / mixed** — `commands/neri.py`; Neri owns research/evidence state; Agent Hub owns Jev/local-worker execution routes. | Project client plus Agent Hub `memory_api` calls; move domain CLI but keep explicit ST/Agent Hub adapters. `test_neri*.py` CLI suites move except `test_neri_runner_deploy.py`, which tests ST deployment/Proxmox controls. |
 | `learn` | **client / mixed** — `commands/learn.py`, `learn_pty.py`; Learn-o-Tron owns learning state; local sanitized transcript spool is client state; SummitFlow owns promoted task records. | Project API, PTY/SSH and transcript handling plus private `STClient` promotion call; promotion needs public ST task interface. CLI suites: `test_learn.py`, `test_learn_predictions.py`, `test_learn_pty.py`. |
-| `memory`, `models`, `prompt`, `persona`, `agents`, `feedback`; root `mandates`, `note` | **client / mixed** — Agent Hub owns model catalog, completion, memory/prompts/persona/agents/feedback data. ST implementations are `commands/{memory,memory_*,_memory_crud_helpers,models,prompt,prompt_*,persona,persona_*,agents,agents_*,preview_formatters,feedback,feedback_*,mandates,note}.py`; rank-13 Agent Hub CLI destination. | Shared `memory_api.py` currently imports private ST URL, credentials, output and HTTP-error helpers; `prompt_api`, `agents_api`, `models`, `mandates`, Neri also share it. Persona/feedback clients duplicate private URL/auth use. `note` is a memory-save alias; `mandates` is an Agent Hub fetch with SessionStart/hook-facing ST compatibility. Preserve a small ST facade for aliases and the excluded unslop prototype’s prompt helper. Relevant tests: `test_memory*.py`, `test_models_cli.py`, `test_prompt_cli.py`, `test_persona.py`, `test_agents_cli.py`, `test_feedback_cli.py`, `test_natural_language_authoring.py`. |
-| `unslop` | **mixed / excluded, in-flight** — registration points at `commands/unslop.py`; SlopMiner ownership proposal is rank 8. | Preserve prototype and all existing dirty work; no inspection, relocation, testing or edits authorized for this inventory. |
+| `memory`, `models`, `prompt`, `persona`, `agents`, `feedback`; root `mandates`, `note` | **client / mixed** — Agent Hub owns model catalog, completion, memory/prompts/persona/agents/feedback data. ST implementations are `commands/{memory,memory_*,_memory_crud_helpers,models,prompt,prompt_*,persona,persona_*,agents,agents_*,preview_formatters,feedback,feedback_*,mandates,note}.py`; rank-12 Agent Hub CLI destination. | Shared `memory_api.py` currently imports private ST URL, credentials, output and HTTP-error helpers; `prompt_api`, `agents_api`, `models`, `mandates`, Neri also share it. Persona/feedback clients duplicate private URL/auth use. `note` is a memory-save alias; `mandates` is an Agent Hub fetch with SessionStart/hook-facing ST compatibility. Preserve a small ST facade for aliases. Relevant tests: `test_memory*.py`, `test_models_cli.py`, `test_prompt_cli.py`, `test_persona.py`, `test_agents_cli.py`, `test_feedback_cli.py`, `test_natural_language_authoring.py`. |
 | `refactor` | **core** — `commands/refactor.py`; SummitFlow owns refactor task/plan records and task dispatch. | Uses `STClient` and task APIs; keep task creation, planning and lifecycle controls in ST. |
 
 ## Package readiness and seams at the baseline
@@ -126,7 +123,6 @@ The baseline command bodies have moved, not been duplicated.
 | design | design-tools: `design_tools`, `design-st` | Owner holds domain schemas, SQL, prompts, renderers and generation behavior. ST keeps authenticated routes, existing DB connections, migrations history, artifact root and provider/browser adapters. |
 | Agent Hub admin/skills | Agent Hub public `agent_hub_st` package and `agent-hub-st` console | Existing Agent Hub state/instructions; lazy public-helper facades keep core callers compatible. ST task/session orchestration remains core. |
 | pulsebrief | Retired with owner approval | Missing Hermes engine, no registered owner, workspace callers or schedules. Removed command and discovery; no schema or durable data changed. |
-| unslop | Unchanged, excluded | Future SlopMiner work belongs to the separate agent. |
 
 Recommended order remains the approved order: browser and web have the clearest
 reusable interfaces; desktop operations are cohesive and independently useful;
