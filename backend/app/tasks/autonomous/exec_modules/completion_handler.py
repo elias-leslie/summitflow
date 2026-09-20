@@ -16,6 +16,11 @@ from .completion_status import (
 )
 from .diff_gate import check_diff_gate
 from .events import emit_error, emit_log
+from .external_work import (
+    checkout_is_clean_for_external_work,
+    external_work_receipt,
+    verify_external_work,
+)
 from .quality import run_quality_gate
 
 _TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled", "abandoned", "closed"}
@@ -54,6 +59,28 @@ def handle_successful_completion(
     dispatch: Callable[[str, str, str], None] | None = None,
 ) -> bool:
     """Handle successful task completion with diff and quality checks."""
+    # External work is valid only when the checkout is still clean.  The
+    # receipt was verified against the canonical Agent Hub item before this
+    # point; code-bearing work remains subject to every normal gate below.
+    task = task_store.get_task(task_id) or {}
+    if (
+        external_work_receipt(results)
+        and checkout_is_clean_for_external_work(task, project_path)
+        and (external_result := verify_external_work(task)).passed
+    ):
+        try:
+            verification_result = build_successful_completion_verification(
+                results, external_receipt=external_result.receipt,
+            )
+            task_store.update_task(task_id, verification_result=verification_result)
+            transition_to_complete(
+                task_id, project_id, "Canonical external work receipt verified", dispatch,
+            )
+            return True
+        except Exception as e:
+            handle_status_transition_error(task_id, project_id, e, {"Results": results})
+            return False
+
     # Diff gate: block completion if no meaningful changes
     diff_result = check_diff_gate(project_path)
     if not diff_result.passed:

@@ -5,6 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from .checkout import get_project_path
+from .external_work import (
+    capture_external_work_baseline,
+    checkout_is_clean_for_external_work,
+    is_external_work_candidate,
+    verify_external_work,
+)
+
 
 def load_subtasks(
     task_id: str,
@@ -81,6 +89,8 @@ def run_incomplete_subtasks(
         return "", [error], None, None
     assert project_path is not None
     _mark_running(task_id, task_store=task_store)
+    task = task_store.get_task(task_id) or {}
+    capture_external_work_baseline(task, project_path)
     results, _, wind_down_state = execute_subtask_loop(
         task_id, project_id, project_path, incomplete, total, completed,
         task_type, agent_override,
@@ -100,6 +110,41 @@ def execute_task_locked_impl(
     if not task:
         deps["emit_error"](task_id, "Task not found", recoverable=False, project_id=project_id)
         return {"task_id": task_id, "status": "error", "message": "Task not found"}
+
+    # Revalidate retained external work before scheduling another agent turn.
+    # This closes previously failed no-work-product tasks deterministically.
+    if (
+        task.get("status") not in {"completed", "cancelled", "abandoned", "closed"}
+        and is_external_work_candidate(task)
+    ):
+        try:
+            project_path = get_project_path(project_id)
+            if checkout_is_clean_for_external_work(task, project_path):
+                external_result = verify_external_work(task)
+                if external_result.passed:
+                    result = {
+                        "subtask_id": "external-work",
+                        "status": "passed",
+                        "step_results": [external_result.step_result()],
+                    }
+                    lifecycle = deps["handle_completion"](
+                        task_id,
+                        project_id,
+                        project_path,
+                        [result],
+                        [{"subtask_id": "external-work"}],
+                        dispatch,
+                        None,
+                    )
+                    return {
+                        "task_id": task_id,
+                        "status": "completed" if lifecycle == "passed" else lifecycle,
+                        "external_work": external_result.receipt,
+                    }
+        except (OSError, ValueError):
+            # A missing checkout or malformed task remains on the normal
+            # execution path, where the existing setup diagnostics apply.
+            pass
 
     error, incomplete, total, completed = deps["load_subtasks"](task_id, project_id)
     if error:

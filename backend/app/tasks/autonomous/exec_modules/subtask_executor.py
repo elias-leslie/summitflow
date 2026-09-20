@@ -8,12 +8,14 @@ from typing import Any
 
 from ....core.debug import debug, debug_error, debug_section
 from ....logging_config import get_logger
+from ....storage.tasks import get_task
 from .agent_execution import execute_agent_initial
 from .agent_helpers import agent_completion_failure
 from .agent_routing import get_agent_for_subtask
 from .ah_events import emit_prompt_harness_snapshot
 from .checkout import get_project_path
 from .events import emit_error, emit_log, emit_progress
+from .external_work import checkout_is_clean_for_external_work, external_work_step
 from .git_work_product import ensure_committed_work_product
 from .interruption import ExecutionInterrupted
 from .prompts import build_subtask_prompt_payload
@@ -86,6 +88,16 @@ def _ensure_mergeable_work_product(
 ) -> tuple[bool, list[dict[str, Any]]]:
     """Commit verified work so canonical task closure can merge it."""
     if not all_passed:
+        return all_passed, step_results
+
+    # A verified canonical receipt is an external work product.  It is
+    # already durably retained in the step result, so there is no checkout to
+    # commit or publish.  Code-bearing executions still take the normal path.
+    task = get_task(task_id) or {}
+    if (
+        external_work_step(step_results) is not None
+        and checkout_is_clean_for_external_work(task, project_path)
+    ):
         return all_passed, step_results
 
     commit_error = ensure_committed_work_product(

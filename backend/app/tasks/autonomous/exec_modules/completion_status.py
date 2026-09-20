@@ -12,6 +12,7 @@ from ....storage.notifications import (
     create_task_failure_notification,
 )
 from .events import emit_log
+from .external_work import external_work_receipt
 
 logger = get_logger(__name__)
 
@@ -73,6 +74,8 @@ def build_early_completion_verification(total_subtasks: int) -> dict[str, Any]:
 
 def build_successful_completion_verification(
     results: list[dict[str, Any]],
+    *,
+    external_receipt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build verification result when all subtasks pass."""
     execution_clean = all(
@@ -92,6 +95,8 @@ def build_successful_completion_verification(
         ),
         "total_extensions_granted": total_extensions,
     }
+    if receipt := external_receipt or external_work_receipt(results):
+        result["external_work"] = receipt
     return result
 
 

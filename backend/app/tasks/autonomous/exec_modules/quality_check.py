@@ -9,6 +9,7 @@ from ....logging_config import get_logger
 from ....storage.task_spirit import get_task_spirit
 from ....storage.tasks import get_task
 from .events import emit_log
+from .external_work import checkout_is_clean_for_external_work, verify_external_work
 
 logger = get_logger(__name__)
 
@@ -147,9 +148,24 @@ def run_execution_quality_check(
     """Confirm the agent produced work before the final `st check` closeout."""
     step_results: list[dict[str, Any]] = []
 
+    # A canonical receipt is the only supported no-code work product.  Check
+    # it only after confirming the checkout is clean; an external origin or
+    # task wording must never bypass code verification.
+    has_work_product = _has_work_product(project_path)
+    if not has_work_product:
+        task = get_task(task_id) or {}
+        if checkout_is_clean_for_external_work(task, project_path):
+            external_result = verify_external_work(task)
+            if external_result.passed:
+                step_results.append(external_result.step_result())
+                return True, step_results
+            if external_result.reason != "external_work_identity_missing_or_malformed":
+                step_results.append(external_result.step_result())
+                return False, step_results
+
     # Fail if no work product exists unless the task is explicitly no-code validation.
     if (
-        not _has_work_product(project_path)
+        not has_work_product
         and not _allows_no_code_verification(task_id)
         and not _allows_no_code_steps(steps)
     ):
