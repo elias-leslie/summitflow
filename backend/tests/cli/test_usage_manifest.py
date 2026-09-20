@@ -21,6 +21,15 @@ from cli.lib.usage import (
 runner = CliRunner()
 
 
+@pytest.mark.parametrize("density", ["core", "adaptive"])
+def test_memory_write_guidance_survives_startup_filtering(density):
+    result = runner.invoke(tools_app, ["manifest", "--density", density, "--profile", "agent_startup", "--format", "json"])
+    assert result.exit_code == 0
+    specs = {row["surface"]: row for row in json.loads(result.output)["tools"]}
+    assert {"st.memory.save", "st.memory.update"} <= specs.keys()
+    assert "explicit scope" in " ".join(specs["st.memory.save"]["precautions"])
+
+
 @pytest.mark.parametrize("task", [None, "backend", "verification"])
 def test_specialized_guidance_is_not_selected_by_unrelated_task_or_history(tmp_path, task) -> None:
     scores = tmp_path / "scores.json"

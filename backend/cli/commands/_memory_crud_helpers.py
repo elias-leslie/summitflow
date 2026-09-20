@@ -312,13 +312,14 @@ def _validate_update_and_normalize(
     agent_slugs: str | None, exclude_agent_slugs: str | None,
     audience_tags: str | None, exclude_audience_tags: str | None,
     render_mode: str | None = None,
+    scope: str | None = None,
 ) -> tuple[str | None, str | None, list[str] | None, str | None]:
     if tags and clear_tags:
         typer.echo("Error: Specify only one of --tags or --clear-tags")
         raise typer.Exit(1)
     _nullable = (content, tier, summary, trigger_types, trigger_phases, pinned, context_kind,
                  consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs,
-                 audience_tags, exclude_audience_tags, tags, render_mode)
+                 audience_tags, exclude_audience_tags, tags, render_mode, scope)
     if not any(f is not None for f in _nullable) and not clear_applicability and not clear_tags:
         typer.echo(
             "Error: Must specify at least one of: --content, --tier, --summary, --trigger-types,"

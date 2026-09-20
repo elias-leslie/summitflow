@@ -9,6 +9,8 @@ import typer
 from ..output import output_error, output_json
 from ..output_context import OutputContext
 from ._api_paths import (
+    CONTEXT_INVENTORY_PATH,
+    CONTEXT_SAVE_PATH,
     MEMORY_BATCH_GET_PATH,
     MEMORY_BULK_DELETE_PATH,
     MEMORY_BULK_TAG_PATH,
@@ -140,17 +142,46 @@ def status_impl(
     return bool(summary["healthy"])
 
 
+def validate_write_scope(scope: str | None, scope_id: str | None) -> tuple[str, str | None]:
+    """Require a deliberate scope, never silently broaden a write to global."""
+    if scope not in {"global", "project", "agent"}:
+        raise typer.BadParameter("Choose explicit --scope global, project, or agent; project/agent scope requires --scope-id.")
+    target = scope_id.strip() if scope_id else None
+    if scope == "global" and scope_id is not None:
+        raise typer.BadParameter("Global scope cannot have --scope-id.")
+    if scope != "global" and not target:
+        raise typer.BadParameter("Project/agent scope requires a non-empty --scope-id.")
+    return scope, target
+
+
+def retarget_memory(uuid: str, scope: str, scope_id: str | None, reason: str | None) -> None:
+    """Use the existing audited context editor, preserving all other policy fields."""
+    context = {"consumer_surface": "st", "consumer_profile": "agent_startup"}
+    view = agent_hub_request("POST", CONTEXT_INVENTORY_PATH, json=context, tool_name="st memory update")
+    matches = [source for source in view["sources"] if source["source_type"] == "memory" and source["source_id"].startswith(uuid)]
+    if len(matches) != 1:
+        raise typer.BadParameter("Memory UUID must identify exactly one source; use its full UUID.")
+    source = matches[0]
+    policy = {**source["policy"], "scope": scope, "targets": [scope_id] if scope_id else []}
+    result = agent_hub_request("POST", CONTEXT_SAVE_PATH, tool_name="st memory update", json={
+        "context": context, "reason": reason or "Correct memory scope through ST",
+        "edits": [{"source_type": "memory", "source_id": source["source_id"], "expected_revision": source["revision"], "policy": policy}],
+    })
+    typer.echo(f"Scope: {scope}:{scope_id or '-'} change={result['change_id']}")
+
+
 def save_impl(
     out: OutputContext, content: str, summary: str, tier: str, confidence: int,
     context: str | None, pinned: bool, trigger_types: str | None, trigger_phases: str | None,
     context_kind: str | None, consumer_profiles: str | None, exclude_consumer_profiles: str | None,
     agent_slugs: str | None, exclude_agent_slugs: str | None, audience_tags: str | None,
-    exclude_audience_tags: str | None, tags: str | None, scope: str, scope_id: str | None,
+    exclude_audience_tags: str | None, tags: str | None, scope: str | None, scope_id: str | None,
     change_reason: str | None = None, render_mode: str | None = None,
 ) -> None:
     summary = validate_save_inputs(tier, confidence, summary)
     validate_episode_content_present(content)
     validate_content_format(content, summary, tier)
+    scope, scope_id = validate_write_scope(scope, scope_id)
     payload = build_save_payload(
         content, summary, tier, confidence, context, pinned, trigger_types, trigger_phases,
         context_kind, consumer_profiles, exclude_consumer_profiles, agent_slugs, exclude_agent_slugs,
@@ -288,11 +319,14 @@ def update_impl(
     agent_slugs: str | None, exclude_agent_slugs: str | None, audience_tags: str | None,
     exclude_audience_tags: str | None, clear_applicability: bool, tags: str | None,
     clear_tags: bool, change_reason: str | None = None, render_mode: str | None = None,
+    *, scope: str | None = None, scope_id: str | None = None,
 ) -> None:
+    if scope is not None or scope_id is not None:
+        scope, scope_id = validate_write_scope(scope, scope_id)
     normalized_summary, normalized_tier, replacement_tags, normalized_render_mode = _validate_update_and_normalize(
         content, tier, summary, tags, clear_tags, clear_applicability, trigger_types, trigger_phases,
         pinned, context_kind, consumer_profiles, exclude_consumer_profiles, agent_slugs,
-        exclude_agent_slugs, audience_tags, exclude_audience_tags, render_mode=render_mode,
+        exclude_agent_slugs, audience_tags, exclude_audience_tags, render_mode=render_mode, scope=scope,
     )
     existing, effective_tier, target_uuid, existing_tags = _resolve_existing_state(
         uuid, content, normalized_tier, replacement_tags
@@ -300,6 +334,8 @@ def update_impl(
     if content is not None:
         existing_summary = str(existing.get("summary", "")) if existing is not None else ""
         validate_content_format(content, normalized_summary or existing_summary, effective_tier or "reference")
+    if scope is not None:
+        retarget_memory(uuid, scope, scope_id, change_reason)
     content_or_tier_changed = content is not None or normalized_tier is not None
     tags_changed = replacement_tags is not None or clear_tags
     if content_or_tier_changed:
@@ -318,7 +354,7 @@ def update_impl(
     )
     if not content_or_tier_changed and tags_changed:
         replace_episode_tags(target_uuid, replacement_tags or [])
-    if not content_or_tier_changed and not properties_patched and not tags_changed:
+    if not content_or_tier_changed and not properties_patched and not tags_changed and scope is None:
         typer.echo("No changes made.")
 
 

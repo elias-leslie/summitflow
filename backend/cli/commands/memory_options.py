@@ -8,6 +8,11 @@ from typing import Annotated
 import typer
 
 # Scope options
+WriteScopeOpt = Annotated[
+    str | None,
+    typer.Option("--scope", "-s", help="Explicit memory scope: global, project, or agent; omitted on update preserves scope"),
+]
+
 ScopeOpt = Annotated[
     str,
     typer.Option("--scope", "-s", help="Memory scope (global or project)"),

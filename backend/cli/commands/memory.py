@@ -88,6 +88,7 @@ from .memory_options import (
     UUIDsBatchArg,
     UUIDsDeleteArg,
     UUIDsOptArg,
+    WriteScopeOpt,
 )
 from .memory_validation import (
     build_episode_content,
@@ -187,11 +188,11 @@ def status(
 @app.command()
 @usage(
     surface="st.memory.save",
-    cmd='st memory save -S "summary" --content "rule"',
+    cmd='st memory save -s project --scope-id <id> -S "summary" --content "learning"',
     when="durable learning surfaced; correction or validated approach",
     precautions=(
-        "project-specific → -s project --scope-id <id>; else -s global",
-        "use st memory format/save discipline (atomic, bold topic, imperative)",
+        "choose explicit scope: project-specific → -s project --scope-id <id>; global only for cross-project knowledge",
+        "use ST for agent memory writes; reusable instructions belong in scoped DB prompts",
         "verify success on save; revisions are immutable",
     ),
     tier="mandate",
@@ -219,7 +220,7 @@ def save(
     audience_tags: AudienceTagsOpt = None,
     exclude_audience_tags: ExcludeAudienceTagsOpt = None,
     tags: TagsOpt = None,
-    scope: ScopeOpt = "global",
+    scope: WriteScopeOpt = None,
     scope_id: ScopeIdOpt = None,
     change_reason: ChangeReasonOpt = None,
     render_mode: RenderModeOpt = None,
@@ -309,6 +310,13 @@ def delete(uuids: UUIDsDeleteArg, change_reason: ChangeReasonOpt = None) -> None
 
 
 @app.command()
+@usage(
+    surface="st.memory.update",
+    cmd="st memory update <uuid> [--scope project --scope-id <id>]",
+    when="correcting memory content or targeting",
+    precautions=("recheck scope when content changes; omitted scope preserves it", "scope edits retain canonical before/after revisions and undo; inspect the saved result"),
+    tier="mandate",
+)
 def update(
     uuid: UUIDArg,
     content: ContentOpt = None,
@@ -330,6 +338,8 @@ def update(
     clear_tags: ClearTagsOpt = False,
     change_reason: ChangeReasonOpt = None,
     render_mode: RenderModeUpdateOpt = None,
+    scope: WriteScopeOpt = None,
+    scope_id: ScopeIdOpt = None,
 ) -> None:
     """Update an episode in place (content/tier and properties)."""
     resolved_content = _resolve_content(content, content_file, require_value=False)
@@ -339,6 +349,7 @@ def update(
         agent_slugs, exclude_agent_slugs, audience_tags, exclude_audience_tags,
         clear_applicability, tags, clear_tags, change_reason,
         render_mode=render_mode,
+        scope=scope, scope_id=scope_id,
     )
 
 

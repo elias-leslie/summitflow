@@ -26,6 +26,8 @@ _CORE_SURFACES = {
     "st.db",
     "st.service.rebuild",
     "st.memory.search",
+    "st.memory.save",
+    "st.memory.update",
     "st.tools.status",
     "st.tools.adoption",
     "st.tools.audit",
@@ -48,6 +50,8 @@ _FLOOR_SURFACES = {
     "st.claim",
     "st.done",
     "st.memory.search",
+    "st.memory.save",
+    "st.memory.update",
 }
 
 # Normalized (0-100) decay score at or above which a non-floor surface is

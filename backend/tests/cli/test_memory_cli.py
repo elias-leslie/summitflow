@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import typer
 from typer.testing import CliRunner
 
@@ -14,6 +15,29 @@ from cli.commands.memory_formatters import format_list_compact
 from cli.output_context import OutputContext
 
 runner = CliRunner()
+
+
+@pytest.mark.parametrize("options", [[], ["-s", "typo"], ["-s", "project"], ["-s", "global", "--scope-id", "neri"]])
+def test_save_rejects_ambiguous_scope_before_write(options):
+    with patch("cli.commands.memory_crud.agent_hub_request") as request:
+        result = runner.invoke(app, ["save", "-S", "Keep scoped knowledge", "--content", "**Scope**: Keep this learning in its project.", *options])
+    assert result.exit_code != 0
+    assert "scope" in result.output.lower()
+    request.assert_not_called()
+
+
+def test_update_scope_uses_revision_checked_canonical_policy():
+    policy = {"scope": "global", "targets": [], "workflows": [], "activation": "always", "required": True, "format": "full", "task_types": [], "phases": [], "applicability": {}}
+    source = {"source_type": "memory", "source_id": "abc12345-full", "revision": "sha256:before", "policy": policy}
+    with patch("cli.commands.memory_crud.agent_hub_request", side_effect=[{"sources": [source]}, {"change_id": "change-1"}]) as request:
+        result = runner.invoke(app, ["update", "abc12345", "--scope", "project", "--scope-id", "neri", "--change-reason", "Correct project scope"])
+    assert result.exit_code == 0, result.output
+    draft = request.call_args.kwargs["json"]
+    edit = draft["edits"][0]
+    assert edit["expected_revision"] == "sha256:before"
+    assert edit["policy"] == {**policy, "scope": "project", "targets": ["neri"]}
+    assert draft["reason"] == "Correct project scope"
+    assert "change-1" in result.output
 
 
 class TestMemoryUpdateContentInput:
@@ -390,7 +414,7 @@ class TestMemoryTagOptions:
             None,
             None,
             "finance-relevant,portfolio",
-            "global",
+            None,
             None,
             None,
         )
