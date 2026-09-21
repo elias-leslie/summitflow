@@ -47,6 +47,8 @@ def _tool_configs() -> dict[str, dict[str, object]]:
         name = item.get("name")
         if isinstance(name, str) and name:
             configs[name] = config
+    for name in ("gitleaks", "semgrep", "osv", "security"):
+        configs.setdefault(name, {"label": name.upper(), "internal_adapter": True})
     return configs
 
 

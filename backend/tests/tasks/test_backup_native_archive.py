@@ -16,13 +16,13 @@ def test_project_can_include_durable_artifacts_without_including_caches(tmp_path
     cache = tmp_path / "backend/.venv/cache"
     cache.parent.mkdir(parents=True)
     cache.write_text("cache")
-    (tmp_path / ".backupignore").write_text("!data/artifacts\n*.log\n")
+    (tmp_path / ".backupignore").write_text("*.log\n")
     with tarfile.open(tmp_path / "check.tar", "w") as output:
         archive._add_project_files(output, tmp_path, "example", archive._load_excludes(tmp_path))
     with tarfile.open(tmp_path / "check.tar") as result:
         assert "example/data/artifacts/resume.pdf" in result.getnames()
         assert "example/backend/.venv/cache" not in result.getnames()
-    assert archive._should_exclude("data/artifacts/resume.pdf", archive.DEFAULT_EXCLUDES)
+    assert not archive._should_exclude("data/artifacts/resume.pdf", archive.DEFAULT_EXCLUDES)
 
 
 def test_dump_database_prefers_passed_pg_credentials(

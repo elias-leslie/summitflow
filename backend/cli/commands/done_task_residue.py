@@ -128,8 +128,6 @@ def _finalize_terminal_missing_snapshot(
     project_id = deps["task_project_id"](task)
     base_branch = deps["task_base_branch"](task)
     deps["output_success"](f"No checkpoint residue for {task_id}; task already {status}.")
-    if status == "completed":
-        deps["publish_completed_work"](task_id, project_id)
     return deps["done_result"](
         task_id,
         merged=False,

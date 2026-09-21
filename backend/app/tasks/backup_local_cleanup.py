@@ -42,7 +42,8 @@ def cleanup_local_backup_archives(
     for root in cleanup_roots:
         if not root.exists():
             continue
-        for archive in sorted(root.glob("**/*.tar.gz")):
+        archives = sorted([*root.glob("**/*.tar.gz"), *root.glob("**/*.tar.gz.age")])
+        for archive in archives:
             if not archive.is_file() or archive.is_symlink():
                 continue
             scanned += 1
@@ -186,7 +187,7 @@ def _source_id_for_archive(root: Path, archive: Path) -> str:
 
 
 def _source_id_from_archive_name(name: str) -> str:
-    stem = name.removesuffix(".tar.gz")
+    stem = name.removesuffix(".age").removesuffix(".tar.gz")
     marker = "-"
     for idx, char in enumerate(stem):
         if char == marker and stem[idx + 1 : idx + 9].isdigit():

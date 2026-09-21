@@ -1,14 +1,15 @@
 """Done command for st CLI.
 
 Checkpoint-aware completion for tasks and subtasks.
-Publishes direct-main work and cleans up checkpoint metadata.
+Accepts local work and cleans up checkpoint metadata.
 
-Smart default: auto-verifies, checkpoints, publishes, closes, and cleans up.
+Smart default: checkpoints, accepts locally, closes, and cleans up.
 Use --strict for old gate-check-only behavior.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -94,7 +95,7 @@ def _handle_task_completion(
     client: STClient,
     id: str,
     message: str | None,
-    *, paths: tuple[str, ...] = (),
+    *, paths: tuple[str, ...] = (), evidence: Path | None = None,
 ) -> None:
     """Handle task completion (idempotent; docs/admin auto-routed)."""
     task = client.get_task(id)
@@ -105,6 +106,21 @@ def _handle_task_completion(
     _refuse_if_autocode_owned(task, id)
     project_id = str(task.get("project_id") or "") or None
     preflight(id, project_id, op="done")
+    if evidence:
+        from app.storage.projects import get_project_root_path
+        from app.storage.tasks.closeout import store_verification
+        from cli.lib.completion_evidence import load_completion_evidence
+
+        root = get_project_root_path(project_id) if project_id else None
+        if not project_id or not root:
+            output_error("Completion evidence requires a registered project checkout")
+            raise typer.Exit(1)
+        try:
+            receipts = load_completion_evidence(evidence, project_root=Path(root))
+            store_verification(id, project_id, receipts)
+        except (ValueError, OSError) as exc:
+            output_error(f"Completion evidence rejected: {exc}")
+            raise typer.Exit(1) from None
     task_client = STClient(project_id=project_id) if project_id else client
     result = (complete_task(task_client, id, message, paths=paths) if paths
               else complete_task(task_client, id, message))
@@ -131,10 +147,10 @@ def _handle_task_completion(
 @usage(
     surface="st.done",
     cmd='st done <task-id> -m "summary"',
-    when="assigned-task closeout (publish + checks + checkpoint + cleanup in one)",
+    when="assigned-task closeout (local acceptance + required evidence + checkpoint cleanup)",
     precautions=(
-        "use st commit/st jj only when st done names them as blockers, or for off-task work",
-        "never split closeout unless st done explicitly blocks",
+        "local commits are normal checkpoints; publication is separate and optional",
+        "use --evidence JSON for required same-source deployment and live checks; do not claim completion while acceptance remains",
     ),
     tier="mandate",
 )
@@ -166,10 +182,14 @@ def done_command(
         bool,
         typer.Option("--none", help="Acknowledge no memories were needed (subtask form)."),
     ] = False,
+    evidence: Annotated[
+        Path | None,
+        typer.Option("--evidence", help="JSON with deployment_receipt path and/or source-bound live_validation checks."),
+    ] = None,
 ) -> None:
     """Complete a task or subtask.
 
-    Auto-verifies, checkpoints, publishes, closes, and cleans up. Docs/config-only
+    Auto-verifies, checkpoints, accepts locally, closes, and cleans up. Docs/config-only
     diffs are detected automatically; admin/no-merge paths are routed by DB state.
     Escape hatch: `ST_DIFF_GATE=off` for emergencies.
 
@@ -177,8 +197,8 @@ def done_command(
     Already-completed task/subtask is a no-op (exit 0).
     """
     if is_subtask_id(id):
-        if paths:
-            output_error("--path / --paths only apply to task completion.")
+        if paths or evidence:
+            output_error("--path / --paths and --evidence only apply to task completion.")
             raise typer.Exit(1)
         client = STClient()
         _handle_subtask_completion(
@@ -193,4 +213,4 @@ def done_command(
             )
             raise typer.Exit(1)
         client = STClient(require_project=False)
-        _handle_task_completion(client, id, message, **({"paths": tuple(paths)} if paths else {}))
+        _handle_task_completion(client, id, message, paths=tuple(paths or ()), evidence=evidence)

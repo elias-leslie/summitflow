@@ -104,6 +104,18 @@ export function StorageBackendCard({
       </div>
 
       <div className="space-y-1 text-xs text-slate-400 mb-3">
+        {config.offsite_gio_uri && (
+          <div className="space-y-1">
+            <p className="text-slate-300">
+              Encrypted replication to Google Drive
+            </p>
+            <p className="font-mono break-all">{config.offsite_gio_uri}</p>
+            <p>
+              Uses each source's backup schedule and retention. Save the
+              separate recovery key in your password manager.
+            </p>
+          </div>
+        )}
         {location && (
           <div>
             <span className="text-slate-500">Location: </span>

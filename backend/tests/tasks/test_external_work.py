@@ -273,6 +273,7 @@ def test_fresh_external_proof_uses_normal_transition_helper() -> None:
             "verify_external_work",
             return_value=ExternalWorkResult(True, "ok", receipt),
         ),
+        patch.object(completion_handler, "store_execution_verification"),
         patch.object(completion_handler, "transition_to_complete") as transition,
         patch.object(completion_handler, "check_diff_gate") as diff_gate,
         patch.object(completion_handler, "run_quality_gate") as quality_gate,
@@ -281,6 +282,12 @@ def test_fresh_external_proof_uses_normal_transition_helper() -> None:
             TASK_ID, "agent-hub", "/tmp/project", results,
         )
 
-    transition.assert_called_once()
+    transition.assert_called_once_with(
+        TASK_ID,
+        "agent-hub",
+        "Canonical external work receipt verified",
+        None,
+        acceptance_required=False,
+    )
     diff_gate.assert_not_called()
     quality_gate.assert_not_called()

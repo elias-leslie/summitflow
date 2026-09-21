@@ -14,6 +14,10 @@
 set -eo pipefail
 
 ARCHIVE_PATH="${1:?Usage: infra-restore-drill.sh <archive_path>}"
+if [[ "$ARCHIVE_PATH" == *.age ]]; then
+    echo '{"ok":false,"components":[{"key":"archive","ok":false,"error":"Encrypted archives must be materialized by SummitFlow before running the drill"}],"duration_ms":0}'
+    exit 0
+fi
 DRILL_DIR="/tmp/infra-drill-$$"
 DRILL_PG_CONTAINER="sf-drill-pg-$$"
 DRILL_REDIS_CONTAINER="sf-drill-redis-$$"
@@ -38,6 +42,7 @@ add_result() {
     fi
 }
 
+umask 077
 mkdir -p "$DRILL_DIR"
 if ! tar xzf "$ARCHIVE_PATH" -C "$DRILL_DIR" 2>/dev/null; then
     echo '{"ok":false,"components":[{"key":"archive","ok":false,"error":"Failed to extract archive"}],"duration_ms":0}'

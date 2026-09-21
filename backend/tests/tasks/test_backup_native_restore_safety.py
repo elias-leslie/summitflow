@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import shutil
 import stat
 import tarfile
 from pathlib import Path
@@ -11,7 +12,11 @@ from subprocess import CompletedProcess
 
 import pytest
 
-from app.tasks.backup_native_restore import preview_restore_archive, restore_archive
+from app.tasks.backup_native_restore import (
+    preview_restore_archive,
+    restore_archive,
+    restore_isolated_archive,
+)
 
 
 def _archive_path(
@@ -125,13 +130,42 @@ def test_restore_rejects_links_and_device_members(
         [("source/unsafe", member_type, b"", linkname)],
     )
 
-    with pytest.raises(RuntimeError, match="Unsafe archive member type"):
+    with pytest.raises(RuntimeError, match=r"Unsafe archive (member type|symbolic link)"):
         restore_archive(
             archive,
             tmp_path / "project",
             dry_run=False,
             files_only=True,
         )
+
+
+def test_restore_preserves_safe_relative_symlink(tmp_path: Path) -> None:
+    archive = _archive_path(
+        tmp_path,
+        [
+            ("source/docs-link", tarfile.SYMTYPE, b"", "docs"),
+            _file("source/docs/readme.txt", b"linked\n"),
+        ],
+    )
+    destination = tmp_path / "project"
+
+    restore_archive(archive, destination, dry_run=False, files_only=True)
+
+    assert (destination / "docs-link").is_symlink()
+    assert (destination / "docs-link/readme.txt").read_bytes() == b"linked\n"
+
+
+def test_restore_rejects_member_beneath_archive_symlink(tmp_path: Path) -> None:
+    archive = _archive_path(
+        tmp_path,
+        [
+            ("source/linked", tarfile.SYMTYPE, b"", "safe-target"),
+            _file("source/linked/pwn.txt", b"must not write"),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="beneath symbolic link"):
+        restore_archive(archive, tmp_path / "project", dry_run=False, files_only=True)
 
 
 def test_restore_rejects_multiple_top_level_directories(tmp_path: Path) -> None:
@@ -361,3 +395,52 @@ def test_preview_rejects_unsafe_archive_layout(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="Unsafe archive path"):
         preview_restore_archive(archive, files_only=True)
+
+
+def test_restore_decrypts_new_archive_format_but_keeps_legacy_support(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plaintext = _archive_path(
+        tmp_path,
+        [_file("source/readme.txt", b"encrypted restore\n")],
+    )
+    encrypted = tmp_path / "backup.tar.gz.age"
+    encrypted.write_bytes(b"age ciphertext fixture")
+    identity = tmp_path / "identity.txt"
+    identity.write_text("fixture identity")
+    monkeypatch.setattr(
+        "app.tasks.backup_native_restore.get_backup_key_paths",
+        lambda **_kwargs: (tmp_path / "recipient.txt", identity),
+    )
+
+    def decrypt(command, **_kwargs):
+        output = Path(command[command.index("-o") + 1])
+        shutil.copy2(plaintext, output)
+        return CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("app.tasks.backup_native_restore.subprocess.run", decrypt)
+
+    destination = tmp_path / "restored"
+    restore_archive(encrypted, destination, dry_run=False, files_only=True)
+
+    assert (destination / "readme.txt").read_bytes() == b"encrypted restore\n"
+
+
+def test_isolated_restore_preserves_database_dump_without_running_psql(tmp_path: Path) -> None:
+    compressed_dump = gzip.compress(b"CREATE TABLE recovered(id integer);\n")
+    archive = _archive_path(
+        tmp_path,
+        [
+            _file("source/readme.txt"),
+            _file("source/database.sql.gz", compressed_dump),
+        ],
+    )
+    destination = tmp_path / "isolated"
+
+    result = restore_isolated_archive(archive, destination)
+
+    database_copy = Path(result["database_copy"])
+    assert database_copy == destination / ".summitflow-recovery" / "database.sql.gz"
+    assert gzip.decompress(database_copy.read_bytes()) == b"CREATE TABLE recovered(id integer);\n"
+    assert result["db_restored"] is None

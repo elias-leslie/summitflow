@@ -177,12 +177,17 @@ def format_status_line(status: JJRepoStatus) -> str:
     )
 
 
-def run_checks(repo: Path, *, paths: Sequence[str] = ()) -> tuple[bool, str]:
+def run_checks(
+    repo: Path,
+    *,
+    paths: Sequence[str] = (),
+    full: bool = False,
+) -> tuple[bool, str]:
     env = None
     if paths:
         env = {**dict(os.environ), "ST_CHECK_CHANGED_FILES": "\n".join(paths)}
     result = subprocess.run(
-        ["st", "check", "--check", "--changed-only"],
+        ["st", "check", "--check" if full else "--quick", "--changed-only"],
         cwd=repo,
         env=env,
         capture_output=True,

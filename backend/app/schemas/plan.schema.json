@@ -73,6 +73,16 @@
       "description": "Whether this task should be executed autonomously"
     },
 
+    "completion_requirements": {
+      "type": "object",
+      "description": "Explicit deployment and live checks required before task completion. Publication is independent.",
+      "properties": {
+        "deployment": { "type": "boolean", "default": false },
+        "live_checks": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    },
+
     "execution_contract": {
       "type": "object",
       "description": "Optional runtime-evaluation contract for frontend or hosted UX work.",

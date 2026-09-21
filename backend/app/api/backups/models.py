@@ -159,7 +159,7 @@ class BackupHealthItem(BaseModel):
     source_name: str
     source_type: str
     enabled: bool
-    health_status: str  # green | yellow | red
+    health_status: str  # green | yellow | red | disabled
     last_success_at: str | None = None
     next_run_at: str | None = None
     failure_count_7d: int = 0
@@ -177,6 +177,14 @@ class BackupHealthItem(BaseModel):
     last_drill_at: str | None = None
     last_drill_ok: bool | None = None
     last_drill_backup_id: str | None = None
+    latest_backup_id: str | None = None
+    offsite_status: str = "unconfigured"  # verified | pending | failed | unconfigured
+    last_offsite_verified_at: str | None = None
+    offsite_location: str | None = None
+    offsite_checksum: str | None = None
+    offsite_error: str | None = None
+    last_isolated_restore_at: str | None = None
+    last_isolated_restore_ok: bool | None = None
 
 
 class BackupHealthResponse(BaseModel):

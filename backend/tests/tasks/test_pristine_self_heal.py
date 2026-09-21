@@ -172,7 +172,7 @@ class TestPristineSelfHeal:
             "/test/project",
             "[pristine] Auto-fix quality issues before task-123",
             task_id="task-123",
-            push=True,
+            push=False,
         )
 
     def test_pristine_error_count_regression_reverts(

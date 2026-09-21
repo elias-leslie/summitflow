@@ -302,9 +302,20 @@ class TestNativeLocalStorage:
                 "verification": {"verified": True},
             }
 
+        def fake_encrypt(_source, destination, _env):
+            destination.write_bytes(b"encrypted")
+            return {
+                "content_checksum": "sha256:plain",
+                "checksum": "sha256:cipher",
+                "encrypted_bytes": 9,
+            }
+
         with patch(
             "app.tasks.backup_native._create_project_archive",
             side_effect=fake_create_project_archive,
+        ), patch(
+            "app.tasks.backup_native.encrypt_completed_archive",
+            side_effect=fake_encrypt,
         ):
             result = run_project_backup(
                 project_dir=str(project_dir),
@@ -320,9 +331,9 @@ class TestNativeLocalStorage:
             storage_root
             / "project-backups"
             / "source-1"
-            / "project-20260505-180000.tar.gz"
+            / "project-20260505-180000.tar.gz.age"
         )
-        assert destination.read_bytes() == b"archive"
+        assert destination.read_bytes() == b"encrypted"
         assert result["location"] == str(destination)
 
 

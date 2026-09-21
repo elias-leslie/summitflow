@@ -26,6 +26,7 @@ import {
 import { BackupExpandedRow } from '@/components/backup/BackupExpandedRow'
 import { CollapsibleSection } from '@/components/backup/CollapsibleSection'
 import { CreateBackupModal } from '@/components/backup/CreateBackupModal'
+import { EncryptionSetup } from '@/components/backup/EncryptionSetup'
 import { SetupChecklist } from '@/components/backup/SetupChecklist'
 import { SourcesManager } from '@/components/backup/SourcesManager'
 import { SourceTypeBadge } from '@/components/backup/SourceTypeBadge'
@@ -503,6 +504,8 @@ export function BackupsClient() {
       </CollapsibleSection>
 
       {/* Storage */}
+      <EncryptionSetup />
+
       <StorageCard
         backends={storageBackends}
         storageStatus={storageStatus}

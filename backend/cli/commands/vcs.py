@@ -181,16 +181,14 @@ def _issues(
         repo = str(row.get("name") or "?")
         if int(row.get("uncommitted") or 0):
             issues.append(VcsIssue(repo, "dirty", f"uncommitted:{row['uncommitted']}", f"st -P {repo} jj diff"))
-        if int(row.get("ahead") or 0):
-            issues.append(VcsIssue(repo, "ahead", f"ahead:{row['ahead']}", f"st commit -R {row['path']} --push -m '<message>'"))
+        # Unpublished local history is normal. Keep counts in the summary, not
+        # blockers that pressure agents into publishing unrelated work.
         if int(row.get("behind") or 0):
             issues.append(VcsIssue(repo, "behind", f"behind:{row['behind']}", "st vcs reconcile"))
     for row in jj_rows:
         repo = str(row.get("repo") or "?")
         if row.get("conflicted"):
             issues.append(VcsIssue(repo, "conflict", "jj_conflict:true", f"st -P {repo} jj conflicts"))
-        if int(row.get("unpublished") or 0):
-            issues.append(VcsIssue(repo, "unpublished", f"unpublished:{row['unpublished']}", f"st commit -R {row['path']} --push -m '<message>'"))
         state = str(row.get("state") or "")
         if state in {"dirty", "undescribed", "described", "failed"}:
             issues.append(VcsIssue(repo, "jj_state", f"state:{state}", f"st -P {repo} jj status"))
@@ -322,7 +320,7 @@ def doctor(
     fetch: Annotated[
         bool,
         typer.Option("--fetch/--no-fetch", help="Fetch jj remote bookmark state before reporting."),
-    ] = True,
+    ] = False,
     fail_on_issues: Annotated[
         bool,
         typer.Option("--fail-on-issues/--no-fail", help="Exit 2 when VCS debt remains."),
@@ -353,13 +351,14 @@ def _register_unmanaged(repos: list[Path]) -> list[dict[str, str]]:
 @usage(
     surface="st.vcs.reconcile",
     cmd="st vcs reconcile",
-    when="checkpoint, branch, jj publication, unmanaged repo, or snapshot debt",
+    when="explicit remote synchronization and VCS residue reconciliation",
     precautions=(
-        "if blockers remain, fix only listed blockers; never leave debt",
-        "never auto-clean ownerless residue; inspect, then commit/push or pause with handoff",
+        "this command pulls remotes and may delete already-integrated remote task refs; use only when that remote operation is intended",
+        "use st vcs doctor for local inspection; unpublished local commits are normal, not debt",
+        "preserve ownerless work; inspect before cleanup, and publish only when requested",
     ),
     task_types=("devops", "config"),
-    tier="mandate",
+    tier="reference",
 )
 def reconcile(
     ctx: typer.Context,

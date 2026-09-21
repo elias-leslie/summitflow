@@ -21,8 +21,10 @@ from .backup_native_archive import (
     _run_gzip_stream,
     verify_archive,
 )
+from .backup_native_offsite import encrypt_completed_archive, replicate_completed_archive
 from .backup_native_smb import StorageConfig, _save_pending, _smb_upload, _storage_config
 from .backup_native_storage import (
+    apply_local_retention,
     copy_to_local_backend,
     local_storage_config,
     storage_backend_type,
@@ -179,6 +181,7 @@ def _finish_infra_backup(
             local_dir = project_dir / "backups" / "infrastructure"
             local_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(archive_path, local_dir / archive_name)
+            apply_local_retention(local_dir, retention)
         update_backup_index(source_id, result, "ok", location, retention)
         return {**result, "location": location}
 
@@ -189,6 +192,7 @@ def _finish_infra_backup(
             local_dir = project_dir / "backups" / "infrastructure"
             local_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(archive_path, local_dir / archive_name)
+            apply_local_retention(local_dir, retention)
         update_backup_index(source_id, result, "ok", location, retention)
         return {**result, "location": location}
     logger.warning(
@@ -221,13 +225,61 @@ def run_infra_backup(
     with tempfile.TemporaryDirectory(prefix="infrastructure-backup-") as temp_dir:
         staging = Path(temp_dir)
         archive_path, _, result = _build_infra_archive(project_dir, staging, archive_name)
-        return _finish_infra_backup(
+        archive_path.chmod(0o600)
+        encrypted_name = f"{archive_name}.age"
+        encrypted_path = staging / encrypted_name
+        encryption = encrypt_completed_archive(archive_path, encrypted_path, run_env)
+        verification = dict(result["verification"])
+        verification.update(
+            {
+                "checksum": encryption["checksum"],
+                "content_checksum": encryption["content_checksum"],
+                "encrypted": True,
+            }
+        )
+        result.update(
+            {
+                "archive_name": encrypted_name,
+                "archive_path": encrypted_path,
+                "content_bytes": result["total_bytes"],
+                "total_bytes": encryption["encrypted_bytes"],
+                "verification": verification,
+            }
+        )
+        offsite_configured = bool(
+            run_env.get("BACKUP_OFFSITE_GIO_URI")
+            or os.environ.get("BACKUP_OFFSITE_GIO_URI")
+        )
+        backend_type = storage_backend_type(run_env)
+        local_dir = project_dir / "backups" / "infrastructure"
+        if offsite_configured and backend_type != "local":
+            local_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(encrypted_path, local_dir / encrypted_name)
+            apply_local_retention(local_dir, retention)
+        stored = _finish_infra_backup(
             project_dir,
             source_id,
             result,
-            archive_path,
+            encrypted_path,
             storage,
-            keep_local,
+            keep_local and not offsite_configured,
             retention,
             run_env=run_env,
         )
+        if offsite_configured:
+            replica_source = (
+                Path(str(stored["location"]))
+                if backend_type == "local"
+                else local_dir / encrypted_name
+            )
+            offsite = replicate_completed_archive(
+                replica_source,
+                source_id=source_id,
+                local_dir=replica_source.parent,
+                env=run_env,
+                retention_days=retention,
+            )
+            stored_verification = dict(stored["verification"])
+            stored_verification["offsite"] = offsite
+            stored["verification"] = stored_verification
+        return stored

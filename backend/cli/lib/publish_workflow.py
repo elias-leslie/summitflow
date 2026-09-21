@@ -68,6 +68,14 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
         return {'pushed': False, 'sha': sha, 'reason': 'already_on_remote', **evidence_result(evidence)}
     destination_branch: str | None = None
     head = 'st/' + (re.sub(r'[^a-zA-Z0-9_-]', '-', task_id) if task_id else sha[:16])
+    try:
+        existing_pull = (
+            client.source_pull_request(plan['base'], sha)
+            if client and plan and plan['requires_pr'] and not already_remote
+            else None
+        )
+    except GitHubError as exc:
+        raise PublishError(str(exc)) from exc
     if plan and plan['requires_pr']:
         args = ['push', remote_name, f'{sha}:refs/heads/{head}']
     elif push_revision:
@@ -79,7 +87,9 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
         # Inspect and push the same remote; do not let push.default select another destination.
         destination_branch = current.stdout.strip()
         args = ['push', *(['--porcelain'] if client else []), remote_name, f'{sha}:refs/heads/{destination_branch}']
-    if resume:
+    if existing_pull is not None:
+        pushed = None
+    elif resume:
         if not client or not plan or not plan['requires_pr']:
             raise PublishError('Cannot resume publication without retained remote delivery')
         pushed = None
@@ -87,7 +97,7 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
         pushed = push_revision(head if plan and plan['requires_pr'] else None) if push_revision else run_git(repo, args)
         if pushed.returncode:
             raise PublishError(pushed.stderr.strip() or pushed.stdout.strip() or 'git push failed')
-    result: dict[str, Any] = {'pushed': not resume, 'sha': sha}
+    result: dict[str, Any] = {'pushed': not resume and existing_pull is None, 'sha': sha}
     try:
         if client and plan:
             if destination_branch:
@@ -95,8 +105,9 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
                 if client.push_scope:
                     result['push_scope'] = client.push_scope
             if plan['requires_pr']:
-                pull = client.pull_request(head, plan['base'], message, sha)
-                result.update({'pr_url': pull['html_url'], 'publish_branch': head})
+                pull = existing_pull or client.pull_request(head, plan['base'], message, sha)
+                publish_branch = pull.get('head', {}).get('ref') if existing_pull else head
+                result.update({'pr_url': pull['html_url'], 'publish_branch': publish_branch})
                 evidence = client.finish_pr(pull['number'], sha, plan)
                 if evidence.get('merge_sha'):
                     result['merge_sha'] = evidence['merge_sha']

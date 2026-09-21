@@ -45,6 +45,7 @@ class CheckRuntime:
     skip_reason: SkipReason
     run_tool: Callable[[str, ToolConfig, list[str]], int]
     run_codeql_alert_check: Callable[[list[str]], int]
+    run_local_security_check: Callable[[str, Path, list[str], bool, list[str]], int]
 
 
 def run_scoped_quality_tool(
@@ -126,6 +127,11 @@ def run_selected(
     changed_files = runtime.changed_files(root) if changed_only else []
     failures = int(runtime.run_architecture_check(root, changed_files if changed_only else None) != 0)
     for name in selected:
+        if name in {"gitleaks", "semgrep", "osv", "security"}:
+            failures += int(
+                runtime.run_local_security_check(name, root, changed_files, changed_only, []) != 0
+            )
+            continue
         config = configs[name]
         scoped_result = run_scoped_quality_tool(name, config, [], changed_only=changed_only, runtime=runtime)
         if scoped_result is not None:
@@ -199,6 +205,12 @@ def run_named_tool(
 ) -> int:
     if first == "codeql":
         return runtime.run_codeql_alert_check(args[1:])
+    if first in {"gitleaks", "semgrep", "osv", "security"}:
+        root = runtime.resolve_repo_root()
+        changed_files = runtime.changed_files(root) if changed_only else []
+        return runtime.run_local_security_check(
+            first, root, changed_files, changed_only, args[1:]
+        )
     if first not in configs:
         return 2
     root = runtime.resolve_repo_root()
@@ -223,10 +235,12 @@ Required path:
 
 Usage:
   st check --check
+  st check --acceptance [--sha REV] [--task TASK] [--scope PATH]
   st check --changed-only
   st check --quick [--changed-only]
   st check --frontend-only
   st check codeql [--ref refs/heads/main]
+  st check <gitleaks|semgrep|osv|security> [--changed-only]
   st check cleanroom -- <command>
   st check <"""
         + names
@@ -251,7 +265,7 @@ def handle_check_args(
         return runtime.cleanroom_main(["--project-root", str(runtime.resolve_repo_root()), *args[1:]])
     if first == "codeql":
         return runtime.run_codeql_alert_check(args[1:])
-    if first in configs:
+    if first in configs or first in {"gitleaks", "semgrep", "osv", "security"}:
         return run_named_tool(first, args, configs, changed_only=changed_only, fix=fix, runtime=runtime)
 
     selection = runtime.tool_selections.get(first)

@@ -6,7 +6,7 @@ import json
 import os
 import shutil
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -109,7 +109,15 @@ def update_backup_index(
     index_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
 
 
-def apply_local_retention(local_dir: Path, keep: int = 5) -> None:
-    archives = sorted(local_dir.glob("*.tar.gz"), key=lambda item: item.stat().st_mtime, reverse=True)
-    for old in archives[keep:]:
-        old.unlink(missing_ok=True)
+def apply_local_retention(local_dir: Path, retention_days: int = 14) -> None:
+    """Remove expired native archives while always retaining the newest copy."""
+    archives = sorted(
+        [*local_dir.glob("*.tar.gz"), *local_dir.glob("*.tar.gz.age")],
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    )
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+    for old in archives[1:]:
+        modified = datetime.fromtimestamp(old.stat().st_mtime, UTC)
+        if modified < cutoff:
+            old.unlink(missing_ok=True)

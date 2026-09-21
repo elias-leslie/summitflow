@@ -151,6 +151,14 @@ class BackupSourceAPI:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
 
+    def sync_backup_offsite(self, source_id: str, backup_id: str) -> dict[str, Any]:
+        """Retry offsite replication without recapturing the source."""
+        url = f"{self.base_url}/backup-sources/{source_id}/backups/{backup_id}/sync-offsite"
+        response = httpx.post(url, timeout=self.timeout)
+        if response.status_code >= 400:
+            raise _make_api_error(response)
+        return cast(dict[str, Any], response.json())
+
 
 # BackupAPI preserved as an alias for backward-compatibility; prefer BackupProjectAPI directly.
 BackupAPI = BackupProjectAPI

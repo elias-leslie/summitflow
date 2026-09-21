@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
@@ -35,7 +36,7 @@ def test_scoped_git_commit_preserves_unrelated_staged_work(tmp_path: Path, monke
     monkeypatch.setattr(commit_workflow, "run_checks", lambda repo, **kw: (calls.append(kw) or (True, "")))
     result = commit_workflow.commit_git_revision(tmp_path, message="scoped docs", paths=("docs",), push=False)
     assert result["status"] == "SUCCESS"
-    assert calls == [{"paths": ["docs/note.md"]}]
+    assert calls == [{"paths": ["docs/note.md"], "full": False}]
     assert git("show", "--format=", "--name-only", "HEAD").strip() == "docs/note.md"
     assert git("diff", "--cached", "--name-only").strip() == "unrelated.py"
 
@@ -66,7 +67,7 @@ def test_st_commit_uses_canonical_workflow_and_logs_task(
         Path("/repo"),
         message="test",
         task_id="task-1",
-        push=True,
+        push=False,
         skip_checks=False,
         bookmark="",
         paths=(),
@@ -76,6 +77,20 @@ def test_st_commit_uses_canonical_workflow_and_logs_task(
         "st commit change=change commit=commit bookmark=task/task-1 op=op pushed=true",
     )
     assert "COMMIT[1]:status=SUCCESS pushed=true detail=commit" in result.stdout
+
+
+def test_st_commit_publication_is_explicit() -> None:
+    with (
+        patch("cli.main.current_repo", return_value=Path("/repo")),
+        patch(
+            "cli.main.commit_repo",
+            return_value={"repo": "repo", "status": "SUCCESS", "sha": "abc", "pushed": True},
+        ) as commit,
+    ):
+        result = runner.invoke(app, ["commit", "-m", "publish", "--push"])
+
+    assert result.exit_code == 0
+    assert commit.call_args.kwargs["push"] is True
 
 
 def test_commit_repo_rejects_publish_with_skipped_checks(tmp_path: Path) -> None:
@@ -95,6 +110,7 @@ def test_commit_repo_prunes_safe_residue_after_publish(tmp_path: Path) -> None:
             "cli.commands.cleanup_handlers.cleanup_safe_git_residue",
             return_value=(0, 0, 0, 0, 1, 2),
         ) as cleanup,
+        patch("cli.lib.commit_workflow.repo_lock", return_value=nullcontext()),
     ):
         result = commit_repo(tmp_path, message="test", push=True)
 
@@ -126,7 +142,7 @@ def test_st_commit_forwards_selected_paths(
         Path("/repo"),
         message="test",
         task_id="",
-        push=True,
+        push=False,
         skip_checks=False,
         bookmark="",
         paths=("a.py", "b.py"),
@@ -162,7 +178,7 @@ def test_st_commit_forwards_explicit_bookmark(
         Path("/repo"),
         message="test",
         task_id="",
-        push=True,
+        push=False,
         skip_checks=False,
         bookmark="main",
         paths=(),
@@ -198,6 +214,13 @@ def test_commit_repo_skips_gitignored_paths_in_add_step(tmp_path: Path) -> None:
         patch.object(commit_workflow, "_commit_selected_index", return_value=subprocess.CompletedProcess([], 0, "", "")),
         patch.object(commit_workflow, "run_checks", return_value=(True, "")),
         patch.object(commit_workflow, "publish_git", return_value={"status": "SUCCESS", "pushed": True, "publication_complete": True}),
+        patch.object(commit_workflow, "repo_lock", return_value=nullcontext()),
+        patch.object(commit_workflow, "workspace_fingerprint", return_value="stable"),
+        patch.object(
+            commit_workflow.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess([], 0, b"candidate", b""),
+        ),
     ):
         result = commit_repo(
             tmp_path,
@@ -234,6 +257,13 @@ def test_commit_repo_skips_gitignored_paths_in_add_step(tmp_path: Path) -> None:
         patch.object(commit_workflow, "run_git", side_effect=fake_run_git) as run,
         patch.object(commit_workflow, "run_checks", return_value=(True, "")),
         patch.object(commit_workflow, "publish_git", return_value={"status": "SUCCESS", "pushed": True, "publication_complete": True}),
+        patch.object(commit_workflow, "repo_lock", return_value=nullcontext()),
+        patch.object(commit_workflow, "workspace_fingerprint", return_value="stable"),
+        patch.object(
+            commit_workflow.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess([], 0, b"candidate", b""),
+        ),
         patch(
             "cli.commands.cleanup_handlers.cleanup_safe_git_residue",
             return_value=(0, 0, 0, 0, 0, 0),
@@ -248,18 +278,29 @@ def test_commit_repo_skips_gitignored_paths_in_add_step(tmp_path: Path) -> None:
     assert add_calls[0].args[1] == ["add", "--", "a.py"], "git add must be scoped, not -A"
 
 
-def test_jj_run_checks_scopes_changed_files_for_selected_paths(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("full", "mode"),
+    [(False, "--quick"), (True, "--check")],
+)
+def test_jj_run_checks_scopes_changed_files_for_selected_paths(
+    tmp_path: Path, full: bool, mode: str
+) -> None:
     with patch("cli.lib.jj.subprocess.run") as run:
         run.return_value.returncode = 0
         run.return_value.stdout = "ok"
         run.return_value.stderr = ""
 
-        ok, detail = jj.run_checks(tmp_path, paths=("frontend/a.tsx", "backend/b.py"))
+        ok, detail = jj.run_checks(
+            tmp_path,
+            paths=("frontend/a.tsx", "backend/b.py"),
+            full=full,
+        )
 
     assert ok is True
     assert detail == "ok"
     env = run.call_args.kwargs["env"]
     assert env["ST_CHECK_CHANGED_FILES"] == "frontend/a.tsx\nbackend/b.py"
+    assert run.call_args.args[0] == ["st", "check", mode, "--changed-only"]
 
 
 def _publish_result(**extra: object) -> dict[str, object]:
@@ -287,14 +328,18 @@ def test_refresh_symbols_after_publish_posts_changed_symbol_paths(mock_run_git: 
     assert posted == {"paths": ["backend/app/x.py", "frontend/y.tsx"]}
 
 
-def test_refresh_symbols_after_publish_skips_unpushed_result() -> None:
+def test_refresh_symbols_after_local_commit() -> None:
     from cli.lib.commit_workflow import _refresh_symbols_after_publish
 
-    with patch("cli.client.STClient") as client_cls:
+    with (
+        patch("cli.lib.commit_workflow.run_git", return_value=MagicMock(stdout="backend/a.py\n")),
+        patch("cli.lib.execution_context.resolve_checkout_project_id", return_value="summitflow"),
+        patch("cli.client.STClient") as client_cls,
+    ):
         result = _refresh_symbols_after_publish(Path("/repo"), _publish_result(pushed=False))
 
-    assert "symbol_refresh_queued" not in result
-    client_cls.assert_not_called()
+    assert result["symbol_refresh_queued"] == 1
+    client_cls.assert_called_once()
 
 
 @patch("cli.lib.commit_workflow.run_git")
@@ -330,12 +375,18 @@ def test_refresh_symbols_after_publish_swallows_api_errors(mock_run_git: MagicMo
     assert "symbol_refresh_queued" not in result
 
 
-def test_publication_checks_include_vitest(tmp_path):
+@pytest.mark.parametrize(
+    ("full", "mode"),
+    [(False, "--quick"), (True, "--check")],
+)
+def test_checkpoint_and_publication_use_distinct_check_modes(tmp_path, full, mode):
     from cli.lib import commit_workflow
     with patch.object(commit_workflow.subprocess, 'run') as run:
         run.return_value = subprocess.CompletedProcess([], 0, 'ok', '')
-        assert commit_workflow.run_checks(tmp_path, paths=['frontend/a.tsx'])[0]
-    assert run.call_args.args[0] == ['st', 'check', '--check', '--changed-only']
+        assert commit_workflow.run_checks(
+            tmp_path, paths=['frontend/a.tsx'], full=full
+        )[0]
+    assert run.call_args.args[0] == ['st', 'check', mode, '--changed-only']
 
 
 def test_outgoing_scope_includes_previously_committed_files(tmp_path):
@@ -351,11 +402,77 @@ def test_clean_ahead_failed_gate_does_not_push(tmp_path):
     from cli.lib import commit_workflow
     with (patch.object(commit_workflow, 'dirty', return_value=False),
           patch.object(commit_workflow, 'outgoing_paths', return_value=['backend/a.py']),
-          patch.object(commit_workflow, 'run_checks', return_value=(False, 'test failed')),
+          patch.object(commit_workflow, 'workspace_fingerprint', return_value='stable'),
+          patch.object(commit_workflow, 'run_checks', return_value=(False, 'test failed')) as checks,
           patch.object(commit_workflow, 'publish_git') as publish):
-        result = commit_workflow.commit_git_revision(tmp_path, message='resume')
+        result = commit_workflow.commit_git_revision(tmp_path, message='resume', push=True)
     assert result['status'] == 'BLOCKED'
+    checks.assert_called_once_with(tmp_path, paths=['backend/a.py'], full=True)
     publish.assert_not_called()
+
+
+def test_local_checkpoint_never_calls_publication(tmp_path: Path, monkeypatch) -> None:
+    from cli.lib import commit_workflow
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, text=True, capture_output=True, check=True
+        ).stdout
+
+    git("init", "-q", "--initial-branch=main")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    (tmp_path / "app.py").write_text("before\n")
+    git("add", ".")
+    git("commit", "-qm", "initial")
+    (tmp_path / "app.py").write_text("after\n")
+    monkeypatch.setattr(commit_workflow, "run_checks", lambda *_args, **_kwargs: (True, "ok"))
+    publish = Mock(side_effect=AssertionError("local checkpoint must not publish"))
+    monkeypatch.setattr(commit_workflow, "publish_git", publish)
+
+    result = commit_workflow.commit_git_revision(tmp_path, message="local checkpoint")
+
+    assert result["status"] == "SUCCESS"
+    assert result["pushed"] is False
+    assert result["check_count"] == 1
+    assert result["check_duration_ms"] >= 0
+    publish.assert_not_called()
+
+
+def test_checkpoint_blocks_if_checkout_changes_while_checks_run(tmp_path: Path, monkeypatch) -> None:
+    from cli.lib import commit_workflow
+
+    monkeypatch.setattr(commit_workflow, "dirty", lambda _repo: True)
+    monkeypatch.setattr(commit_workflow, "_selected_changed_files", lambda *_args: ["app.py"])
+    fingerprints = iter(("before", "after"))
+    monkeypatch.setattr(commit_workflow, "workspace_fingerprint", lambda _repo: next(fingerprints))
+    monkeypatch.setattr(commit_workflow, "run_checks", lambda *_args, **_kwargs: (True, "ok"))
+    publish = Mock()
+    monkeypatch.setattr(commit_workflow, "_publish_revision", publish)
+
+    result = commit_workflow.commit_git_revision(tmp_path, message="checkpoint")
+
+    assert result["status"] == "BLOCKED"
+    assert result["reason"] == "source_changed_during_checks"
+    publish.assert_not_called()
+
+
+def test_local_task_commit_is_linked_without_publication(monkeypatch, tmp_path: Path) -> None:
+    from cli.lib import commit_workflow
+
+    stored = Mock(return_value={"id": "task-one"})
+    monkeypatch.setattr("app.storage.tasks.add_commit", stored)
+    monkeypatch.setattr(
+        "cli.lib.execution_context.resolve_checkout_project_id", lambda _repo: "project-one"
+    )
+    result = commit_workflow._record_task_commit(
+        tmp_path,
+        {"status": "SUCCESS", "sha": "a" * 40, "pushed": False},
+        task_id="task-one",
+    )
+
+    stored.assert_called_once_with("task-one", "a" * 40, project_id="project-one")
+    assert result["task_commit"]["source_commit"] == "a" * 40
 
 
 def test_cli_pending_ci_returns_nonzero_and_prints_revision():
@@ -470,7 +587,10 @@ def test_initial_git_commit_checks_new_files_and_preserves_other_staging(tmp_pat
     monkeypatch.setattr(commit_workflow, "run_checks", lambda repo, **kw: (checks.append(kw) or (True, "")))
     result = commit_workflow.commit_git_revision(tmp_path, message="initial", push=False, paths=("app.py",) if scoped else ())
     assert result["status"] == "SUCCESS"
-    assert checks == [{"paths": ["app.py"] if scoped else ["app.py", "other.txt"]}]
+    assert checks == [{
+        "paths": ["app.py"] if scoped else ["app.py", "other.txt"],
+        "full": False,
+    }]
     assert git("ls-tree", "--name-only", "HEAD").splitlines() == (["app.py"] if scoped else ["app.py", "other.txt"])
     if scoped:
         assert git("diff", "--cached", "--name-only").strip() == "other.txt"

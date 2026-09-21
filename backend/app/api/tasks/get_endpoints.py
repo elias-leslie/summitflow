@@ -57,6 +57,9 @@ async def check_completion_readiness(task_id: str) -> dict[str, Any]:
     if incomplete:
         gates.append({"gate": "subtasks", "pass": False, "detail": incomplete[:5]})
 
+    from ...services.task_acceptance import completion_gates
+    gates.extend(completion_gates(task))
+
     return {"ready": not gates, "gates": gates}
 
 

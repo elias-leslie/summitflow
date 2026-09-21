@@ -306,12 +306,13 @@ def test_publish_rejects_failed_quality_gate(tmp_path: Path) -> None:
     )
     with (
         patch("cli.lib.jj_publish.revision_info", return_value=revision),
-        patch("cli.lib.jj_publish.run_checks", return_value=(False, "boom")),
+        patch("cli.lib.jj_publish.run_checks", return_value=(False, "boom")) as checks,
         patch("cli.lib.jj_publish.run_jj", return_value=subprocess.CompletedProcess([], 0, "a.py", "")) as mock_run_jj,
         pytest.raises(jj_lib.JJError, match="quality gates failed before jj push"),
     ):
         jj_lib.publish_current_revision(tmp_path, task_id="task-1")
 
+    checks.assert_called_once_with(tmp_path, paths=["a.py"], full=True)
     assert all(call.args[1][0] == "diff" for call in mock_run_jj.call_args_list)
 
 

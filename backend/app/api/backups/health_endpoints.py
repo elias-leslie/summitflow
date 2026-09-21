@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC
 
 from fastapi import APIRouter
@@ -9,6 +10,7 @@ from fastapi import APIRouter
 from ...logging_config import get_logger
 from ...storage import backups as backup_store
 from ...tasks.backup_coverage import get_coverage_summary
+from ...tasks.backup_utils import build_storage_env
 from .models import (
     BackupHealthItem,
     BackupHealthResponse,
@@ -41,6 +43,14 @@ async def backup_health() -> BackupHealthResponse:
         last_drill_at = row.get("last_drill_at")
         last_drill_ok = row.get("last_drill_ok")
         last_drill_backup_id = row.get("last_drill_backup_id")
+        verification = row.get("latest_verification_json")
+        verification = verification if isinstance(verification, Mapping) else {}
+        offsite = verification.get("offsite")
+        offsite = offsite if isinstance(offsite, Mapping) else {}
+        isolated_restore = verification.get("isolated_restore")
+        isolated_restore = isolated_restore if isinstance(isolated_restore, Mapping) else {}
+        offsite_configured = bool(build_storage_env(str(row["source_id"])).get("BACKUP_OFFSITE_GIO_URI"))
+        offsite_status = str(offsite.get("status") or ("pending" if offsite_configured and last_success else "unconfigured"))
 
         # Compute ages
         latest_backup_age_hours = _hours_since(last_success)
@@ -59,9 +69,16 @@ async def backup_health() -> BackupHealthResponse:
         # - red: most recent backup failed OR (infra: drill failed)
         # - yellow: pending upload, never succeeded, restore/drill stale or untested
         # - green: backup succeeded AND restore validation current
-        if last_status == "failed" or (source_type == "infrastructure" and last_drill_ok is False):
+        if not row["enabled"]:
+            health_status = "disabled"
+        elif last_status == "failed" or offsite_status == "failed" or (
+            source_type == "infrastructure" and last_drill_ok is False
+        ):
             health_status = "red"
-        elif last_status == "completed_pending_upload":
+        elif last_status == "completed_pending_upload" or offsite_status in {
+            "pending",
+            "unconfigured",
+        }:
             health_status = "yellow"
         elif source_type == "infrastructure":
             # Infrastructure: green requires drill passed
@@ -97,6 +114,14 @@ async def backup_health() -> BackupHealthResponse:
                 last_drill_at=last_drill_at,
                 last_drill_ok=last_drill_ok,
                 last_drill_backup_id=last_drill_backup_id,
+                latest_backup_id=row.get("latest_backup_id"),
+                offsite_status=offsite_status,
+                last_offsite_verified_at=_mapping_str(offsite, "verified_at"),
+                offsite_location=_mapping_str(offsite, "location"),
+                offsite_checksum=_mapping_str(offsite, "checksum"),
+                offsite_error=_mapping_str(offsite, "error"),
+                last_isolated_restore_at=_mapping_str(isolated_restore, "verified_at"),
+                last_isolated_restore_ok=_mapping_bool(isolated_restore, "ok"),
             )
         )
 
@@ -164,6 +189,16 @@ def _hours_since(iso_str: str | None) -> float | None:
         return round(delta.total_seconds() / 3600, 1)
     except (ValueError, TypeError):
         return None
+
+
+def _mapping_str(data: Mapping[object, object], key: str) -> str | None:
+    value = data.get(key)
+    return str(value) if value is not None else None
+
+
+def _mapping_bool(data: Mapping[object, object], key: str) -> bool | None:
+    value = data.get(key)
+    return value if isinstance(value, bool) else None
 
 
 def _compute_restore_confidence(

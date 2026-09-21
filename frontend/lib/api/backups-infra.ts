@@ -27,7 +27,7 @@ export interface BackupHealthItem {
   source_name: string
   source_type: string
   enabled: boolean
-  health_status: 'green' | 'yellow' | 'red'
+  health_status: 'green' | 'yellow' | 'red' | 'disabled'
   last_success_at: string | null
   next_run_at: string | null
   failure_count_7d: number
@@ -45,6 +45,14 @@ export interface BackupHealthItem {
   last_drill_at: string | null
   last_drill_ok: boolean | null
   last_drill_backup_id: string | null
+  latest_backup_id: string | null
+  offsite_status: 'verified' | 'pending' | 'failed' | 'unconfigured'
+  last_offsite_verified_at: string | null
+  offsite_location: string | null
+  offsite_checksum: string | null
+  offsite_error: string | null
+  last_isolated_restore_at: string | null
+  last_isolated_restore_ok: boolean | null
 }
 
 export interface BackupHealthResponse {
@@ -89,6 +97,70 @@ export function testStorageBackend(
 export function fetchBackupHealth(): Promise<BackupHealthResponse> {
   return fetchWithErrorHandling<BackupHealthResponse>('/api/backups/health', {
     errorMessage: 'Failed to fetch backup health',
+  })
+}
+
+export interface BackupEncryptionStatus {
+  configured: boolean
+  ready: boolean
+  key_id: string | null
+  roundtrip_verified_at: string | null
+  identity_exported: boolean
+  can_manage_key: boolean
+  protection_limit?: string
+}
+
+export function fetchBackupEncryption(): Promise<BackupEncryptionStatus> {
+  return fetchWithErrorHandling('/api/backups/encryption', {
+    cache: 'no-store',
+    errorMessage: 'Could not load backup encryption status',
+  })
+}
+
+export function setupBackupEncryption(): Promise<BackupEncryptionStatus> {
+  return postJson(
+    '/api/backups/encryption/setup',
+    {},
+    'Could not set up backup encryption',
+  )
+}
+
+// Secret responses are fetched only on explicit owner action, never through a
+// query cache. Callers keep them in memory only and clear revealed text on hide.
+export function exportBackupRecoveryKey(): Promise<{
+  key_id: string
+  recovery_key: string
+}> {
+  return fetchWithErrorHandling('/api/backups/encryption/export', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+    cache: 'no-store',
+    errorMessage: 'Could not retrieve the backup recovery key',
+  })
+}
+
+export function verifyBackupRecoveryKey(
+  recoveryKey: string,
+): Promise<BackupEncryptionStatus> {
+  return fetchWithErrorHandling('/api/backups/encryption/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recovery_key: recoveryKey }),
+    cache: 'no-store',
+    errorMessage: 'The recovery key did not decrypt the test backup',
+  })
+}
+
+export function importBackupRecoveryKey(
+  recoveryKey: string,
+): Promise<BackupEncryptionStatus> {
+  return fetchWithErrorHandling('/api/backups/encryption/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recovery_key: recoveryKey }),
+    cache: 'no-store',
+    errorMessage: 'Could not restore the saved recovery key',
   })
 }
 

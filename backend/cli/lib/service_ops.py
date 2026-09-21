@@ -11,7 +11,8 @@ import tempfile
 import time
 import tomllib
 import uuid
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ from app.project_identity import (
 from app.utils.shared_paths import get_repo_root
 
 from ..details import display_path, emit_result_or_details, summary_hint, write_details
+from . import service_release
 from .neri_runner_deploy import RunnerAdapter
 
 
@@ -48,6 +50,8 @@ class ProjectServices:
     health_endpoint: str
     backend_extras: tuple[str, ...] = ()
     runner_adapter: RunnerAdapter | None = None
+    host_config_root: Path | None = None
+    durable_data_root: Path | None = None
 
     @property
     def all_services(self) -> tuple[str, ...]:
@@ -114,6 +118,8 @@ def load_project(project_id: str) -> ProjectServices:
         health_endpoint=str(runtime.get("health_endpoint") or "/health"),
         backend_extras=tuple(dict.fromkeys(_as_str_list(extras))),
         runner_adapter=adapter,
+        host_config_root=root,
+        durable_data_root=root / "data",
     )
 
 
@@ -195,7 +201,8 @@ def sync_systemd_units(project: ProjectServices) -> int:
     systemd_dir = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "systemd" / "user"
     systemd_dir.mkdir(parents=True, exist_ok=True)
     synced = False
-    summitflow_root = str(get_repo_root())
+    summitflow_root = str(project.root if project.project_id == "summitflow" else get_repo_root())
+    durable_data_root = project.durable_data_root or project.root / "data"
     for service in project.all_services:
         template = project.root / "scripts" / "systemd" / service
         if not template.exists():
@@ -203,6 +210,7 @@ def sync_systemd_units(project: ProjectServices) -> int:
         text = template.read_text()
         text = text.replace("__PROJECT_ROOT__", str(project.root))
         text = text.replace("__SUMMITFLOW_ROOT__", summitflow_root)
+        text = text.replace("__SUMMITFLOW_DATA_ROOT__", str(durable_data_root))
         (systemd_dir / service).write_text(text)
         print(f"[service] synced {service}")
         synced = True
@@ -323,6 +331,13 @@ def restart_service(service: str, *, port: int = 0) -> int:
 
 def start_services(project: ProjectServices) -> int:
     errors = 0
+    try:
+        managed_root = service_release.current_source_root(project.project_id)
+        if managed_root is not None:
+            project = project_at_source(project, managed_root)
+    except service_release.ReleaseError as exc:
+        print(f"[service] cannot start invalid managed release: {exc}")
+        return 1
     if sync_systemd_units(project) != 0:
         return 1
     for service in project.all_services:
@@ -339,10 +354,16 @@ def stop_services(project: ProjectServices) -> int:
     return errors
 
 
-def ensure_infra() -> int:
-    compose_dir = get_repo_root() / "docker" / "compose"
+def ensure_infra(project: ProjectServices | None = None) -> int:
+    compose_root = project.root if project is not None else get_repo_root()
+    config_root = (
+        project.host_config_root
+        if project is not None and project.host_config_root is not None
+        else compose_root
+    )
+    compose_dir = compose_root / "docker" / "compose"
     compose_file = compose_dir / "docker-compose.yml"
-    env_file = compose_dir / ".env"
+    env_file = config_root / "docker" / "compose" / ".env"
     if not compose_file.exists():
         return 0
     missing = False
@@ -364,6 +385,12 @@ def ensure_infra() -> int:
             break
     if not missing:
         return 0
+    if not env_file.is_file():
+        print(
+            "[service] infrastructure is down and the host compose environment "
+            f"is unavailable: {env_file}"
+        )
+        return 1
     print("[service] starting Docker infra")
     env = os.environ.copy()
     for key in (
@@ -536,7 +563,81 @@ def verify_health(project: ProjectServices) -> int:
 def _job_path(job_id: str) -> Path:
     if not re.fullmatch(r"[0-9a-f]{32}", job_id):
         raise ServiceError("Invalid detached job id")
-    return get_repo_root() / ".dev-tools" / "service-jobs" / f"{job_id}.json"
+    return service_release.jobs_root() / f"{job_id}.json"
+
+
+def _acceptance_candidate(
+    project: ProjectServices,
+    receipt: Path | Mapping[str, Any] | None,
+) -> Path | Mapping[str, Any]:
+    from . import acceptance
+
+    if receipt is not None:
+        return receipt
+    identity = acceptance.source_identity(project.root)
+    sha = str(identity.get("source_commit") or identity.get("commit") or "")
+    if not sha:
+        raise ServiceError("Could not identify current source for local acceptance")
+    return acceptance.accept_revision(project.root, sha=sha, reuse=True)
+
+
+def resolve_accepted_source(
+    project: ProjectServices,
+    receipt: Path | Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate a full acceptance receipt for detached deployment evidence."""
+    from . import acceptance
+
+    candidate = _acceptance_candidate(project, receipt)
+    try:
+        with acceptance.repo_lock(project.root, purpose="deployment"):
+            descriptor = acceptance.validate_acceptance_receipt(project.root, candidate)
+    except Exception as exc:
+        if isinstance(exc, (ServiceError, service_release.ReleaseError)):
+            raise
+        raise ServiceError(f"Accepted source validation failed: {exc}") from exc
+    if isinstance(receipt, Path) and not descriptor.get("acceptance_artifact"):
+        descriptor = {**descriptor, "acceptance_artifact": str(receipt)}
+    if not isinstance(candidate, Path):
+        descriptor = {
+            **descriptor,
+            "reused": bool(candidate.get("reused", False)),
+            "reuse_lookup_ms": candidate.get("reuse_lookup_ms"),
+        }
+    service_release.AcceptedSource.from_descriptor(descriptor)
+    return descriptor
+
+
+def prepare_accepted_release(
+    project: ProjectServices,
+    receipt: Path | Mapping[str, Any] | None = None,
+) -> tuple[service_release.PreparedRelease, ProjectServices]:
+    """Validate and materialize accepted source while holding the repo mutation lock."""
+    candidate = _acceptance_candidate(project, receipt)
+    try:
+        release = service_release.prepare_release(project.project_id, project.root, candidate)
+    except Exception as exc:
+        if isinstance(exc, (ServiceError, service_release.ReleaseError)):
+            raise
+        raise ServiceError(f"Accepted source preparation failed: {exc}") from exc
+    return release, project_at_source(project, release.source_root)
+
+
+def project_at_source(project: ProjectServices, source_root: Path) -> ProjectServices:
+    """Retarget one managed service layout without changing services or ports."""
+    try:
+        backend_relative = project.backend_dir.relative_to(project.root)
+        frontend_relative = project.frontend_dir.relative_to(project.root)
+    except ValueError as exc:
+        raise ServiceError("Managed component directories must be inside the accepted source") from exc
+    return replace(
+        project,
+        root=source_root,
+        backend_dir=source_root / backend_relative,
+        frontend_dir=source_root / frontend_relative,
+        host_config_root=project.host_config_root or project.root,
+        durable_data_root=project.durable_data_root or project.root / "data",
+    )
 
 
 def _write_job(record: dict[str, Any]) -> None:
@@ -551,6 +652,9 @@ def _write_job(record: dict[str, Any]) -> None:
 
 def _read_job(job_id: str) -> dict[str, Any]:
     path = _job_path(job_id)
+    legacy = get_repo_root() / ".dev-tools" / "service-jobs" / f"{job_id}.json"
+    if not path.exists() and legacy.exists():
+        path = legacy
     try:
         record = json.loads(path.read_text())
     except (OSError, ValueError) as exc:
@@ -587,10 +691,34 @@ def run_detached_job(job_id: str) -> int:
     record.update(state="running", started_at=time.time(), invocation_id=os.environ.get("INVOCATION_ID", ""))
     _write_job(record)
     log_path = _job_path(job_id).with_suffix(".log")
+    deployment_path = _job_path(job_id).with_suffix(".deployment.json")
     try:
         with log_path.open("w") as log:
-            result = subprocess.run(record["command"], stdout=log, stderr=subprocess.STDOUT, check=False)
+            env = os.environ.copy()
+            env["SUMMITFLOW_DEPLOYMENT_RESULT"] = str(deployment_path)
+            result = subprocess.run(
+                record["command"],
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                env=env,
+                check=False,
+            )
         code = result.returncode if result.returncode >= 0 else 128 - result.returncode
+        if code == 0 and record.get("source"):
+            try:
+                deployment = service_release.validate_deployment_receipt(deployment_path)
+                queued_source = service_release.AcceptedSource.from_descriptor(record["source"])
+                if (
+                    deployment["source_commit"] != queued_source.source_commit
+                    or deployment["source_tree"] != queued_source.source_tree
+                    or deployment["acceptance_id"] != queued_source.acceptance_id
+                ):
+                    raise service_release.ReleaseError("Detached deployment source mismatch")
+                record["deployment"] = deployment
+            except service_release.ReleaseError as exc:
+                with log_path.open("a") as evidence_log:
+                    evidence_log.write(f"Detached deployment evidence invalid: {exc}\n")
+                code = 1
     except OSError as exc:
         log_path.write_text(f"Detached command could not start: {exc}\n")
         code = 1
@@ -600,7 +728,12 @@ def run_detached_job(job_id: str) -> int:
 
 
 def queue_detached(
-    project: str, include_all_workers: bool, *, scope: str = "full", workers: tuple[str, ...] = (),
+    project: str,
+    include_all_workers: bool,
+    *,
+    scope: str = "full",
+    workers: tuple[str, ...] = (),
+    accepted_source: Mapping[str, Any] | None = None,
 ) -> int:
     unit = f"sf-rebuild-{project}"
     if systemctl("is-active", f"{unit}.service").stdout.strip() in {"active", "activating", "deactivating", "reloading"}:
@@ -613,12 +746,21 @@ def queue_detached(
         command.extend(["--scope", scope])
     for worker in workers:
         command.extend(["--worker", worker])
+    source_evidence = None
+    if accepted_source is not None:
+        source = service_release.AcceptedSource.from_descriptor(accepted_source)
+        if not source.acceptance_artifact:
+            raise ServiceError("Accepted source has no durable receipt artifact")
+        command.extend(["--acceptance", source.acceptance_artifact])
+        source_evidence = source.evidence()
     command.append(project)
     job_id = uuid.uuid4().hex
-    record = {
+    record: dict[str, Any] = {
         "job_id": job_id, "project": project, "unit": f"{unit}.service",
         "state": "queued", "exit_code": None, "queued_at": time.time(), "command": command,
     }
+    if source_evidence is not None:
+        record["source"] = source_evidence
     _write_job(record)
     result = capture(
         [
@@ -627,6 +769,7 @@ def queue_detached(
             "--setenv", f"PATH={os.environ.get('PATH', '')}",
             "--setenv", f"HOME={Path.home()}",
             "--setenv", f"SUMMITFLOW_ROOT={get_repo_root()}",
+            "--setenv", f"SUMMITFLOW_SERVICE_STATE_ROOT={service_release.service_state_root()}",
             "st", "service", "_run-job", job_id,
         ]
     )

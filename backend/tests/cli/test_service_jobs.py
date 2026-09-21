@@ -3,21 +3,23 @@
 import json
 import subprocess
 from dataclasses import replace
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 from typer.testing import CliRunner
 
 from cli.commands import service
-from cli.lib import service_ops
+from cli.lib import service_ops, service_release
 
 
 @pytest.fixture
 def jobs(tmp_path, monkeypatch):
     monkeypatch.setattr(service_ops, "get_repo_root", lambda: tmp_path)
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(tmp_path / "service-state"))
     monkeypatch.setattr(service_ops, "systemctl", lambda *args: subprocess.CompletedProcess([], 0, "inactive\n", ""))
     monkeypatch.setattr(service_ops, "capture", lambda *args: subprocess.CompletedProcess([], 0, "queued\n", ""))
-    return tmp_path / ".dev-tools" / "service-jobs"
+    return tmp_path / "service-state" / "jobs"
 
 
 def queued_job(jobs):
@@ -33,6 +35,53 @@ def test_queue_creates_durable_unique_result(jobs):
     assert record["state"] == "queued"
     assert record["exit_code"] is None
     assert record["command"] == ["st", "service", "rebuild", "example"]
+
+
+def test_detached_job_binds_accepted_source_and_verified_deployment(jobs, monkeypatch):
+    source = {
+        "acceptance_id": "acceptance-1",
+        "acceptance_artifact": "/stable/acceptance-1.json",
+        "source_commit": "c" * 40,
+        "source_tree": "d" * 40,
+    }
+    assert service_ops.queue_detached("example", False, accepted_source=source) == 0
+    path = next(jobs.glob("*.json"))
+    identifier = path.stem
+    queued = json.loads(path.read_text())
+    assert queued["source"]["source_commit"] == "c" * 40
+    assert queued["command"] == [
+        "st",
+        "service",
+        "rebuild",
+        "--acceptance",
+        "/stable/acceptance-1.json",
+        "example",
+    ]
+
+    def run(command, **kwargs):
+        assert command == queued["command"]
+        result_path = kwargs["env"]["SUMMITFLOW_DEPLOYMENT_RESULT"]
+        Path(result_path).write_text("{}")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(service_ops.subprocess, "run", run)
+    monkeypatch.setattr(
+        service_release,
+        "validate_deployment_receipt",
+        lambda _path: {
+            "state": "succeeded",
+            "artifact": "/stable/deployment.json",
+            "build_id": "build-1",
+            "acceptance_id": "acceptance-1",
+            "source_commit": "c" * 40,
+            "source_tree": "d" * 40,
+        },
+    )
+    assert service_ops.run_detached_job(identifier) == 0
+    completed = service_ops.detached_result(identifier)
+    assert completed["state"] == "succeeded"
+    assert completed["deployment"]["build_id"] == "build-1"
+    assert completed["deployment"]["artifact"] == "/stable/deployment.json"
 
 
 @pytest.mark.parametrize("code,state", [(0, "succeeded"), (7, "failed")])
@@ -146,9 +195,10 @@ def test_real_detached_result_survives_collection(tmp_path, monkeypatch, code):
     shim.chmod(0o700)
     monkeypatch.setenv("PATH", str(isolated_bin) + os.pathsep + os.environ["PATH"])
     monkeypatch.setattr(service_ops, "get_repo_root", lambda: tmp_path)
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(tmp_path / "service-state"))
     project = "fixture-" + uuid.uuid4().hex[:12]
     assert service_ops.queue_detached(project, False) == 0
-    records = list((tmp_path / ".dev-tools" / "service-jobs").glob("*.json"))
+    records = list((tmp_path / "service-state" / "jobs").glob("*.json"))
     assert len(records) == 1
     identifier = records[0].stem
     deadline = time.monotonic() + 15

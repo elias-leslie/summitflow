@@ -43,7 +43,7 @@ def test_doctor_prints_one_compact_ok_line(tmp_path: Path) -> None:
     repo.mkdir()
     with (
         patch.object(vcs, "_target_repos", return_value=[repo]),
-        patch.object(vcs, "_fetch_jj_repos", return_value=[]),
+        patch.object(vcs, "_fetch_jj_repos", return_value=[]) as fetch,
         patch.object(
             vcs,
             "_status_rows",
@@ -67,6 +67,13 @@ def test_doctor_prints_one_compact_ok_line(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert result.stdout.splitlines()[0].startswith("VCS:OK repos=1")
     assert len(result.stdout.splitlines()) == 1
+    fetch.assert_not_called()
+
+
+def test_unpublished_local_history_is_information_not_a_blocker() -> None:
+    git_rows = [{"name": "repo", "path": "/repo", "ahead": 12, "behind": 0, "uncommitted": 0}]
+    jj_rows = [{"repo": "repo", "path": "/repo", "unpublished": 12, "state": "clean"}]
+    assert vcs._issues(git_rows, jj_rows, _cleanup_payload(), [], []) == []
 
 
 def test_doctor_exits_two_with_exact_blockers(tmp_path: Path) -> None:

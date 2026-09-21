@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import subprocess
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,7 @@ from typer.testing import CliRunner
 from cli.commands import service
 from cli.lib import neri_runner_deploy as deploy
 from cli.lib import neri_runner_guest as guest
-from cli.lib import service_ops
+from cli.lib import service_ops, service_release
 from cli.lib.proxmox import ProxmoxError
 
 ATTEMPT = "1" * 32
@@ -442,6 +443,43 @@ def test_lifecycle_scope_and_runner_failure_precede_host_mutations(monkeypatch, 
         runner_adapter=deploy.RunnerAdapter.neri_runner_v1,
     )
     monkeypatch.setattr(service, "_load", lambda _: project)
+    stable = checkout / "accepted-source"
+    release = service_release.PreparedRelease(
+        project_id="neri",
+        build_id="b" * 32,
+        source=service_release.AcceptedSource(
+            acceptance_id="acceptance-test",
+            source_commit="c" * 40,
+            source_tree="d" * 40,
+        ),
+        release_root=stable.parent,
+        source_root=stable,
+        receipt_path=stable.parent / "deployment.json",
+    )
+
+    def prepare(current, _receipt=None):
+        return release, replace(
+            current,
+            root=stable,
+            backend_dir=stable / "backend",
+            frontend_dir=stable / "frontend",
+            host_config_root=current.root,
+            durable_data_root=current.root / "data",
+        )
+
+    monkeypatch.setattr(service_ops, "prepare_accepted_release", prepare)
+    monkeypatch.setattr(service_release, "deployment_lock", lambda _project: nullcontext())
+    monkeypatch.setattr(service_release, "mark_phase", Mock())
+    monkeypatch.setattr(service_release, "fail_release", Mock())
+    monkeypatch.setattr(service_release, "complete_release", Mock())
+    monkeypatch.setattr(
+        service_release,
+        "publish_deployment_result",
+        lambda *_args, **_kwargs: {
+            "artifact": str(release.receipt_path),
+            "deployment_id": "e" * 64,
+        },
+    )
     adapter = Mock(return_value=1)
     monkeypatch.setattr(service, "deploy_runner", adapter)
     infrastructure = Mock(return_value=0)
@@ -453,7 +491,7 @@ def test_lifecycle_scope_and_runner_failure_precede_host_mutations(monkeypatch, 
     assert adapter.call_count == int(called)
     assert infrastructure.call_count == int(not called)
     if called:
-        adapter.assert_called_once_with(checkout, deploy.RunnerAdapter.neri_runner_v1)
+        adapter.assert_called_once_with(stable, deploy.RunnerAdapter.neri_runner_v1)
     # Existing projects without an adapter keep the native path.
     monkeypatch.setattr(service, "_load", lambda _: replace(project, runner_adapter=None))
     result = CliRunner().invoke(service.app, ["rebuild", "neri", "--scope", "frontend"])

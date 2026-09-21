@@ -54,10 +54,10 @@ _FIX_ARGS: dict[str, list[str]] = {"ruff": ["--fix"], "biome": ["--write"]}
 
 _TOOL_SELECTIONS: dict[str, tuple[tuple[str, ...], bool]] = {
     "--fix": (("ruff", "biome"), True),
-    "--check": (("ruff", "types", "pytest", "biome", "tsc", "vitest"), False),
-    "-c": (("ruff", "types", "pytest", "biome", "tsc", "vitest"), False),
-    "--quick": (("ruff", "types", "pytest", "biome", "tsc"), False),
-    "-q": (("ruff", "types", "pytest", "biome", "tsc"), False),
+    "--check": (("ruff", "types", "pytest", "biome", "tsc", "vitest", "security"), False),
+    "-c": (("ruff", "types", "pytest", "biome", "tsc", "vitest", "security"), False),
+    "--quick": (("ruff", "types", "pytest", "biome", "tsc", "gitleaks"), False),
+    "-q": (("ruff", "types", "pytest", "biome", "tsc", "gitleaks"), False),
     "--frontend-only": (("biome", "tsc", "vitest"), False),
     "--fe": (("biome", "tsc", "vitest"), False),
 }

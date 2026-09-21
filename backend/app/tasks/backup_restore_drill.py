@@ -9,6 +9,7 @@ from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
+from .backup_native_restore import materialize_plaintext_archive
 
 logger = get_logger(__name__)
 
@@ -73,7 +74,8 @@ def run_infra_drill() -> dict[str, Any]:
         return {"ok": False, "backup_id": backup_id, "error": error}
 
     try:
-        drill_result = _run_drill_script(archive_path, backup_id)
+        with materialize_plaintext_archive(Path(archive_path)) as plaintext_archive:
+            drill_result = _run_drill_script(str(plaintext_archive), backup_id)
         _record_drill_result(
             source_id,
             backup_id,

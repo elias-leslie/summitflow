@@ -8,10 +8,13 @@ import shutil
 import stat
 import subprocess
 import tarfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import unquote, urlsplit
+
+from .backup_native_recovery import _safe_relative_symlink, build_consistent_snapshot
 
 BACKUP_TIMEOUT = 600
 PROJECT_DATABASE_DUMP_NAME = "database.sql.gz"
@@ -35,9 +38,6 @@ DEFAULT_EXCLUDES = (
     ".tmp",
     ".tmp-*",
     ".claude/backups",
-    ".claude/plans",
-    "data/artifacts",
-    "data/evidence",
     "node_modules",
     "docker/compose/hatchet-config",
 )
@@ -187,11 +187,16 @@ def _add_project_files(
         root_path = Path(root)
         rel_root = root_path.relative_to(project_dir).as_posix()
         rel_root = "" if rel_root == "." else rel_root
-        dirs[:] = [
-            dirname
-            for dirname in dirs
-            if not _should_exclude((Path(rel_root) / dirname).as_posix(), excludes)
-        ]
+        retained_dirs: list[str] = []
+        for dirname in dirs:
+            rel = (Path(rel_root) / dirname).as_posix()
+            if _should_exclude(rel, excludes):
+                continue
+            if (root_path / dirname).is_symlink():
+                files.append(dirname)
+            else:
+                retained_dirs.append(dirname)
+        dirs[:] = retained_dirs
         count += _add_files_from_dir(archive, root_path, project_dir, project_name, excludes, files)
     return count
 
@@ -215,13 +220,20 @@ def _add_files_from_dir(
         if _should_exclude(rel, excludes) or is_reserved_database_path:
             continue
         try:
-            if not stat.S_ISREG(full.lstat().st_mode):
+            mode = full.lstat().st_mode
+            if not (stat.S_ISREG(mode) or stat.S_ISLNK(mode)):
+                continue
+            if stat.S_ISLNK(mode) and not _safe_relative_symlink(
+                full,
+                project_dir,
+                os.readlink(full),
+            ):
                 continue
             archive.add(
                 full,
                 arcname=f"{project_name}/{rel}",
                 recursive=False,
-                filter=_regular_file_filter,
+                filter=_recoverable_file_filter,
             )
             count += 1
         except FileNotFoundError:
@@ -234,12 +246,18 @@ def _regular_file_filter(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
     return member if member.isreg() else None
 
 
+def _recoverable_file_filter(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
+    """Allow only regular files and prevalidated relative symlinks."""
+    return member if member.isreg() or member.issym() else None
+
+
 def _create_project_archive(
     project_dir: Path,
     project_name: str,
     staging: Path,
     env: dict[str, str],
 ) -> dict[str, Any]:
+    capture_started = time.monotonic()
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     archive_name = f"{project_name}-{timestamp}.tar.gz"
     archive_path = staging / archive_name
@@ -248,8 +266,14 @@ def _create_project_archive(
     if db_size == 0 and expects_db:
         raise RuntimeError(f"Database dump skipped: missing credentials for {project_name}")
     excludes = _load_excludes(project_dir)
+    snapshot_dir, recovery = build_consistent_snapshot(
+        project_dir,
+        staging,
+        excludes,
+        _should_exclude,
+    )
     with tarfile.open(archive_path, "w:gz") as archive:
-        files_count = _add_project_files(archive, project_dir, project_name, excludes)
+        files_count = _add_project_files(archive, snapshot_dir, project_name, ())
         if db_dump.exists():
             archive.add(
                 db_dump,
@@ -263,6 +287,11 @@ def _create_project_archive(
         db_dump_name=PROJECT_DATABASE_DUMP_NAME,
         expects_db=expects_db,
     )
+    verification["recovery"] = recovery
+    verification["capture"] = {
+        "duration_ms": int((time.monotonic() - capture_started) * 1000),
+        "archive_bytes": archive_path.stat().st_size,
+    }
     total_size = archive_path.stat().st_size
     return {
         "archive_name": archive_name,
@@ -272,6 +301,7 @@ def _create_project_archive(
         "files_bytes": max(total_size - db_size, 0),
         "total_files": files_count,
         "verification": verification,
+        "recovery": recovery,
     }
 
 
@@ -337,7 +367,9 @@ def _archive_member_names(path: Path, expects_db: bool) -> tuple[list[str], dict
         with tarfile.open(path, "r:gz") as archive:
             members = archive.getmembers()
             unsafe_members = [
-                member.name for member in members if not (member.isdir() or member.isreg())
+                member.name
+                for member in members
+                if not (member.isdir() or member.isreg() or member.issym())
             ]
             if unsafe_members:
                 raise RuntimeError(
@@ -350,6 +382,13 @@ def _archive_member_names(path: Path, expects_db: bool) -> tuple[list[str], dict
             ]
             if unsafe_paths:
                 raise RuntimeError(f"Archive contains unsafe member path: {unsafe_paths[0]}")
+            unsafe_links = [
+                member.name
+                for member in members
+                if member.issym() and not _is_safe_archive_link(member)
+            ]
+            if unsafe_links:
+                raise RuntimeError(f"Archive contains unsafe symbolic link: {unsafe_links[0]}")
             return [member.name for member in members if member.isfile()], None
     except (tarfile.TarError, OSError, RuntimeError) as exc:
         return [], {
@@ -374,6 +413,30 @@ def _is_safe_archive_member_name(name: str) -> bool:
         and member_path.parts
         and all(part not in {"", ".", ".."} for part in member_path.parts)
     )
+
+
+def _is_safe_archive_link(member: tarfile.TarInfo) -> bool:
+    target = PurePosixPath(member.linkname)
+    if (
+        not member.linkname
+        or "\x00" in member.linkname
+        or "\\" in member.linkname
+        or target.is_absolute()
+    ):
+        return False
+    member_parent = PurePosixPath(member.name).parent
+    combined: list[str] = []
+    for part in (*member_parent.parts, *target.parts):
+        if part in {"", "."}:
+            continue
+        if part == "..":
+            if not combined:
+                return False
+            combined.pop()
+        else:
+            combined.append(part)
+    archive_root = PurePosixPath(member.name).parts[0]
+    return bool(combined and combined[0] == archive_root)
 
 
 def _archive_tree(names: list[str]) -> dict[str, dict[str, int]]:

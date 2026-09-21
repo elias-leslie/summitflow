@@ -38,3 +38,16 @@ def test_summitflow_units_use_root_placeholder_instead_of_hardcoded_home_path() 
         text = (SYSTEMD_DIR / service_name).read_text()
         assert "__SUMMITFLOW_ROOT__" in text
         assert "%h/summitflow" not in text
+
+
+def test_backend_and_worker_use_configurable_durable_data_placeholder() -> None:
+    for service_name in (
+        "summitflow-backend.service",
+        "summitflow-hatchet-worker.service",
+    ):
+        text = (SYSTEMD_DIR / service_name).read_text()
+        assert (
+            "SUMMITFLOW_MOCKUP_BASE_DIR="
+            "__SUMMITFLOW_DATA_ROOT__/design-studio/mockups"
+        ) in text
+        assert "EnvironmentFile=-%h/.env.local" in text

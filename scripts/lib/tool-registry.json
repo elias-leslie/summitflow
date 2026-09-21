@@ -540,6 +540,7 @@
       "safety": "read-mostly",
       "commands": [
         "--check",
+        "--acceptance",
         "--quick",
         "cleanroom",
         "codeql",
@@ -663,7 +664,7 @@
       ],
       "examples": [
         "st done task-abc123 -m \"complete\"",
-        "st commit --message \"checkpoint\" --push",
+        "st commit --message \"checkpoint\"",
         "st jj status",
         "st git status"
       ],

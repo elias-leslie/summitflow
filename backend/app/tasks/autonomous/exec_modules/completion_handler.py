@@ -6,11 +6,13 @@ from collections.abc import Callable
 from typing import Any
 
 from ....storage import tasks as task_store
+from ....storage.tasks.closeout import store_execution_verification
 from .ah_events import emit_task_transition
 from .completion_status import (
     build_early_completion_verification,
     build_successful_completion_verification,
     handle_status_transition_error,
+    mark_failed_with_evidence,
     notify_failure,
     transition_to_complete,
 )
@@ -35,7 +37,7 @@ def handle_early_completion(
     """Handle case where all subtasks are already complete."""
     try:
         verification_result = build_early_completion_verification(total_subtasks)
-        task_store.update_task(task_id, verification_result=verification_result)
+        store_execution_verification(task_id, project_id, verification_result)
         final_status = transition_to_complete(
             task_id, project_id, "All subtasks already complete", dispatch,
         )
@@ -72,9 +74,13 @@ def handle_successful_completion(
             verification_result = build_successful_completion_verification(
                 results, external_receipt=external_result.receipt,
             )
-            task_store.update_task(task_id, verification_result=verification_result)
+            store_execution_verification(task_id, project_id, verification_result)
             transition_to_complete(
-                task_id, project_id, "Canonical external work receipt verified", dispatch,
+                task_id,
+                project_id,
+                "Canonical external work receipt verified",
+                dispatch,
+                acceptance_required=False,
             )
             return True
         except Exception as e:
@@ -84,14 +90,24 @@ def handle_successful_completion(
     # Diff gate: block completion if no meaningful changes
     diff_result = check_diff_gate(project_path)
     if not diff_result.passed:
-        task_store.update_task_status(task_id, "failed")
+        mark_failed_with_evidence(
+            task_id,
+            project_id,
+            stage="diff_gate",
+            reason=diff_result.summary,
+        )
         emit_task_transition(task_id, "failed", f"Diff gate failed: {diff_result.summary}")
         emit_error(task_id, f"Diff gate blocked completion: {diff_result.summary}", project_id=project_id)
         notify_failure(task_id, project_id, f"No code changes detected: {diff_result.summary}")
         return False
 
     if not run_quality_gate(task_id, project_path, project_id):
-        task_store.update_task_status(task_id, "failed")
+        mark_failed_with_evidence(
+            task_id,
+            project_id,
+            stage="acceptance",
+            reason="Canonical source acceptance failed",
+        )
         emit_task_transition(task_id, "failed", "Quality gate failed")
         emit_error(task_id, "Final quality gate failed", project_id=project_id)
         notify_failure(task_id, project_id, "Quality gate failed.")
@@ -99,7 +115,7 @@ def handle_successful_completion(
 
     try:
         verification_result = build_successful_completion_verification(results)
-        task_store.update_task(task_id, verification_result=verification_result)
+        store_execution_verification(task_id, project_id, verification_result)
         execution_clean = verification_result["execution_clean"]
         log_message = f"All subtasks passed + quality gate passed (clean={execution_clean})"
         transition_to_complete(task_id, project_id, log_message, dispatch)
@@ -136,7 +152,13 @@ def handle_failed_execution(
                 break
 
     try:
-        task_store.update_task_status(task_id, "failed")
+        mark_failed_with_evidence(
+            task_id,
+            project_id,
+            stage="subtask_execution",
+            reason=blocker_summary or "Subtask verification failed",
+            subtask_id=subtask_id,
+        )
         emit_task_transition(task_id, "failed", f"All subtasks failed: {blocker_summary or 'unknown'}")
         emit_log(task_id, "info", "Execution paused - subtask verification failed", project_id=project_id)
         notify_failure(task_id, project_id, "All subtasks failed verification.",

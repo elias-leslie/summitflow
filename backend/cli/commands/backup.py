@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -35,6 +36,7 @@ from .backup_runtime import (
     list_sources_command,
     reject_backup_all_args,
     restore_backup_id_command,
+    restore_backup_isolated_command,
 )
 from .backup_storage import app as storage_app
 from .backup_testbed import app as testbed_app
@@ -296,10 +298,33 @@ def restore_backup(
     latest: Annotated[bool, typer.Option("--latest", help="Restore latest archive")] = False,
     archive_file: Annotated[str | None, typer.Option("--file", help="Restore archive path")] = None,
     archive_name: Annotated[str | None, typer.Option("--name", help="Restore named archive")] = None,
+    into: Annotated[
+        Path | None,
+        typer.Option("--into", help="Restore into an empty isolated directory"),
+    ] = None,
     db_only: Annotated[bool, typer.Option("--db-only", help="Restore database only for archive restores")] = False,
     files_only: Annotated[bool, typer.Option("--files-only", help="Restore files only for archive restores")] = False,
 ) -> None:
     """Restore from a backup ID or local/pending/SMB archive."""
+    if into is not None:
+        if dry_run or latest or archive_name or db_only or files_only or confirm:
+            output_error(
+                "--into cannot be combined with --dry-run, --latest, --name, "
+                "--db-only, --files-only, or --confirm."
+            )
+            raise typer.Exit(1) from None
+        if not backup_id:
+            output_error("Backup ID required with --into so archive checksum and source can be proven.")
+            raise typer.Exit(1) from None
+        restore_backup_isolated_command(
+            ctx,
+            backup_id=backup_id,
+            destination=into,
+            source=source,
+            archive_file=Path(archive_file).expanduser() if archive_file else None,
+        )
+        return
+
     if latest or archive_file or archive_name:
         run_archive_restore(
             latest=latest,
@@ -451,6 +476,26 @@ def drain_pending(
 ) -> None:
     """Upload pending backups to SMB and reconcile DB records."""
     drain_pending_command(ctx, dry_run=dry_run)
+
+
+@app.command("sync-offsite")
+def sync_offsite(
+    ctx: typer.Context,
+    backup_id: Annotated[str, typer.Argument(help="Completed backup ID")],
+    source: Annotated[str, typer.Option("--source", help="Backup source ID")],
+) -> None:
+    """Retry encrypted offsite sync from the retained local archive."""
+    try:
+        result = _get_source_api().sync_backup_offsite(source, backup_id)
+        if ctx.obj.is_compact:
+            print(
+                f"OFFSITE_SYNC {backup_id}|source:{source}|status:{result.get('status', 'queued')}|"
+                f"task:{result.get('task_id', '-')}"
+            )
+        else:
+            output_json(result)
+    except APIError as e:
+        handle_api_error(e)
 
 
 @app.command("cleanup-local")

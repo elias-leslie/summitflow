@@ -47,7 +47,7 @@ def publish_current_revision(
         changed = run_jj(repo, ["diff", "--name-only", "-r", f"remote_bookmarks(remote={remote})..{revision}"])
         require_success(changed, "jj outgoing check scope")
         scope = sorted(set([*changed.stdout.splitlines(), *check_paths]))
-        ok, detail = run_checks(repo, paths=scope)
+        ok, detail = run_checks(repo, paths=scope, full=True)
         if not ok:
             raise JJError(f"quality gates failed before jj push: {detail[-1200:]}")
 

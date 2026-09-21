@@ -11,12 +11,32 @@ from unittest.mock import Mock
 import pytest
 
 from app.tasks.backup_native_archive import (
+    DEFAULT_EXCLUDES,
     _add_project_files,
+    _load_excludes,
+    _should_exclude,
     archive_sha256,
     verify_archive,
 )
 from app.tasks.backup_native_infra import _copy_if_exists
 from app.tasks.backup_native_restore import restore_archive
+
+
+def test_durable_evidence_is_included_unless_project_explicitly_excludes_it(
+    tmp_path: Path,
+) -> None:
+    durable_paths = (
+        "data/artifacts/restore-proof.json",
+        "data/evidence/acceptance.json",
+        ".claude/plans/recovery.md",
+    )
+    assert all(not _should_exclude(path, DEFAULT_EXCLUDES) for path in durable_paths)
+
+    (tmp_path / ".backupignore").write_text("data/evidence\n", encoding="utf-8")
+    project_excludes = _load_excludes(tmp_path)
+
+    assert _should_exclude("data/evidence/acceptance.json", project_excludes)
+    assert not _should_exclude("data/artifacts/restore-proof.json", project_excludes)
 
 
 def test_archive_checksum_streams_instead_of_reading_whole_file(
@@ -114,7 +134,7 @@ def test_archive_verification_rejects_member_types_restore_cannot_handle(
     )
 
     assert result["verified"] is False
-    assert "unsupported member type" in result["errors"][0]
+    assert "unsafe symbolic link" in result["errors"][0]
 
 
 def test_archive_verification_rejects_path_restore_cannot_handle(tmp_path: Path) -> None:
@@ -216,6 +236,10 @@ def test_native_backup_rejects_invalid_source_before_storage(tmp_path, monkeypat
     if source_state == "populated":
         (project / "note.txt").write_text("recoverable content\n")
     monkeypatch.setattr(backup_native_archive, "_dump_database", lambda *a: (0, False))
+    def encrypt(source, destination, _env):
+        destination.write_bytes(b"encrypted")
+        return {"content_checksum": "sha256:plain", "checksum": "sha256:cipher", "encrypted_bytes": 9}
+    monkeypatch.setattr(backup_native, "encrypt_completed_archive", encrypt)
     store = Mock(return_value={"stored": True})
     monkeypatch.setattr(backup_native, "_store_local_project_archive", store)
     monkeypatch.setattr(backup_native, "_upload_project_archive", store)

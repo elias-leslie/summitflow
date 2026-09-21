@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
+
+from app.tasks.backup_executor import restore_backup_isolated
 
 from ..client import APIError
 from ..lib.confirm_token import confirm_gate
@@ -49,6 +53,36 @@ def restore_backup_id_command(
         _output_restore_result(ctx, result, backup_id=backup_id, source=source, project_id=project_id, dry_run=dry_run)
     except APIError as e:
         handle_api_error(e)
+
+
+def restore_backup_isolated_command(
+    ctx,
+    *,
+    backup_id: str,
+    destination: Path,
+    source: str | None,
+    archive_file: Path | None,
+) -> None:
+    """Restore a checksum-proven backup into an empty isolated directory."""
+    try:
+        result = restore_backup_isolated(
+            backup_id,
+            destination,
+            expected_source_id=source,
+            archive_file=archive_file,
+        )
+    except Exception as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
+
+    typer.echo("Database dumps are copied for inspection; no database was restored.")
+    if ctx.obj.is_compact:
+        typer.echo(
+            f"ISOLATED_RESTORE {backup_id}|destination:{destination}|"
+            "database_restored:false"
+        )
+    else:
+        output_json(result)
 
 
 def backup_schedule_command(ctx, source_api, source_id: str, enable: bool | None, frequency: str | None, retention_days: int | None) -> None:

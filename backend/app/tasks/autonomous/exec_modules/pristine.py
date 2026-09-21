@@ -49,7 +49,7 @@ def _on_heal_success(task_id: str, project_id: str, repo_path: Path, attempt: in
             str(repo_path),
             f"[pristine] Auto-fix quality issues before {task_id}",
             task_id=task_id,
-            push=True,
+            push=False,
         )
     logger.info("pristine_self_heal_success", project_id=project_id, attempts=attempt + 1)
     _emit(task_id, "info", f"Pristine self-heal succeeded after {attempt + 1} attempt(s)", project_id)

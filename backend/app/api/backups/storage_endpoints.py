@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from ...services.backup_keys import get_backup_key_status
 from ...storage import backups as backup_store
 from ...utils import safe_subprocess
 from .models import StorageBackendCreate, StorageBackendResponse, StorageBackendUpdate
@@ -213,5 +214,45 @@ async def test_storage_backend(backend_id: str) -> dict[str, object]:
             except OSError as exc:
                 message = f"Local storage unavailable: {exc}"
 
+    local_success = success
+    offsite_uri = optional_str(config.get("offsite_gio_uri"))
+    offsite_success: bool | None = None
+    offsite_message: str | None = None
+    encryption_ready = bool(get_backup_key_status().get("ready"))
+    success = local_success and encryption_ready
+    if not encryption_ready and not offsite_uri:
+        message = f"{message}; backup recovery key is not verified"
+    if offsite_uri:
+        try:
+            gio_result = safe_subprocess.run(
+                ["gio", "list", "-u", offsite_uri],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            offsite_success = gio_result.returncode == 0
+            offsite_message = (
+                "GIO destination reachable"
+                if offsite_success
+                else f"GIO destination unavailable: {gio_result.stderr.strip()[:200]}"
+            )
+        except subprocess.TimeoutExpired:
+            offsite_success = False
+            offsite_message = "GIO destination check timed out (30s)"
+        except FileNotFoundError:
+            offsite_success = False
+            offsite_message = "gio not installed"
+        success = local_success and offsite_success and encryption_ready
+        if not encryption_ready:
+            offsite_message = f"{offsite_message}; backup recovery key is not verified"
+
     backup_store.update_test_result(backend_id, success)
-    return {"success": success, "message": message, "backend_id": backend_id}
+    return {
+        "success": success,
+        "message": message,
+        "backend_id": backend_id,
+        "local_success": local_success,
+        "offsite_success": offsite_success,
+        "offsite_message": offsite_message,
+        "encryption_ready": encryption_ready,
+    }

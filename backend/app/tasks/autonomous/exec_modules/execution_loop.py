@@ -75,16 +75,21 @@ def _commit_subtask_changes(
             project_path,
             f"[FAILED] {commit_msg}",
             task_id=task_id,
-            push=True,
+            push=False,
             skip_checks=True,
         )
         if commit_result.get("success"):
             emit_log(task_id, "info", f"Preserved failing changes for subtask {subtask_short_id}", project_id=project_id)
             return
     else:
-        commit_result = smart_commit_result(project_path, commit_msg, task_id=task_id, push=True)
+        commit_result = smart_commit_result(project_path, commit_msg, task_id=task_id, push=False)
         if commit_result.get("success"):
-            emit_log(task_id, "info", f"Published changes for subtask {subtask_short_id}", project_id=project_id)
+            emit_log(
+                task_id,
+                "info",
+                f"Committed changes locally for subtask {subtask_short_id}",
+                project_id=project_id,
+            )
             return
 
     detail = str(commit_result.get("detail") or "unknown preservation failure")

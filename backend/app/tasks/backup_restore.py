@@ -129,7 +129,7 @@ def _resolve_archive_name(backup: dict[str, Any] | None) -> str | None:
         return Path(location).name
 
     name = str(backup.get("name") or "")
-    if name.endswith(".tar.gz"):
+    if name.endswith((".tar.gz", ".tar.gz.age")):
         return name
 
     return None

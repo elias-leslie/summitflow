@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import time
+from contextlib import suppress
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from ..lib import service_ops
+from ..lib import service_ops, service_release
 from ..lib.confirm_token import confirm_gate
 from ..lib.neri_runner_deploy import bootstrap_runner, deploy_runner
 from ..lib.usage import usage
@@ -75,6 +77,41 @@ def _load(project: str) -> service_ops.ProjectServices:
     except service_ops.ServiceError as exc:
         output_error(str(exc))
         raise typer.Exit(1) from None
+
+
+def _restore_previous_units(
+    project: service_ops.ProjectServices,
+    release: service_release.PreparedRelease,
+) -> None:
+    """Keep the next restart recoverable after candidate activation fails."""
+    try:
+        previous_root = service_release.previous_source_root(release)
+        if previous_root is None:
+            service_release.mark_phase(
+                release,
+                "rollback",
+                status="unavailable",
+                database="not_rolled_back",
+            )
+            return
+        previous = service_ops.project_at_source(project, previous_root)
+        restored = service_ops.sync_systemd_units(previous) == 0
+        service_release.mark_phase(
+            release,
+            "rollback",
+            status="units_restored" if restored else "units_restore_failed",
+            previous_source_root=str(previous_root),
+            database="not_rolled_back; migration downgrade is unsupported",
+            running_services="not_restarted_automatically",
+        )
+    except (service_ops.ServiceError, service_release.ReleaseError):
+        service_release.mark_phase(
+            release,
+            "rollback",
+            status="units_restore_failed",
+            database="not_rolled_back; migration downgrade is unsupported",
+            running_services="requires_manual_recovery",
+        )
 
 
 @app.command()
@@ -147,6 +184,13 @@ def rebuild(
         list[str] | None,
         typer.Option("--worker", help="Also restart this declared worker, including inactive optional workers. Repeatable."),
     ] = None,
+    acceptance: Annotated[
+        Path | None,
+        typer.Option(
+            "--acceptance",
+            help="Full successful local-acceptance receipt. Omit to accept the current clean HEAD locally.",
+        ),
+    ] = None,
 ) -> None:
     """Build, migrate, restart, and health-check a project."""
     services = _load(project)
@@ -163,11 +207,27 @@ def rebuild(
         print("[service] shared component directory; using full rebuild")
         scope = RebuildScope.full
     if detach:
-        if scope == RebuildScope.full and not requested_workers:
-            raise typer.Exit(service_ops.queue_detached(project, include_all_workers))
-        raise typer.Exit(service_ops.queue_detached(project, include_all_workers, scope=scope.value, workers=requested_workers))
+        try:
+            accepted_source = service_ops.resolve_accepted_source(services, acceptance)
+            raise typer.Exit(
+                service_ops.queue_detached(
+                    project,
+                    include_all_workers,
+                    scope=scope.value,
+                    workers=requested_workers,
+                    accepted_source=accepted_source,
+                )
+            )
+        except (service_ops.ServiceError, service_release.ReleaseError) as exc:
+            output_error(str(exc))
+            raise typer.Exit(1) from None
     backend = scope != RebuildScope.frontend
     frontend = scope in (RebuildScope.full, RebuildScope.frontend)
+    if scope != RebuildScope.full:
+        print(
+            "[service] stable releases build the full accepted source; "
+            f"restart scope remains {scope.value}"
+        )
     # Capture intent before any lifecycle mutation. Backend and worker scopes
     # share one environment, so all running consumers must receive the update.
     active_optional = tuple(
@@ -180,46 +240,147 @@ def rebuild(
     ))) if backend else ()
     start_time = time.time()
     errors = 0
-    print(f"Rebuilding {services.project_id} (scope: {scope.value})")
-    # Freeze and verify the runner before any host lifecycle mutation. Worker
-    # scope also updates backend consumers, so it follows the same contract.
-    if (backend and services.runner_adapter is not None
-            and deploy_runner(services.root, services.runner_adapter) != 0):
-        print("[service] rebuild stopped: runner deployment failed")
-        raise typer.Exit(1)
-    steps = [("infrastructure", service_ops.ensure_infra)]
-    if backend:
-        steps.append(("backend dependencies", lambda: service_ops.sync_backend(services)))
-    if frontend:
-        steps.append(("frontend build", lambda: service_ops.build_frontend(services)))
-    if backend:
-        steps.append(("migrations", lambda: service_ops.run_migrations(services)))
-    steps.append(("systemd units", lambda: service_ops.sync_systemd_units(services)))
-    for name, step in steps:
-        if step() != 0:
-            print(f"[service] rebuild stopped: {name} failed; services were not restarted")
-            raise typer.Exit(1)
-    skipped = [name for name in services.optional_workers if name not in workers]
-    if skipped:
-        print("[service] leaving optional workers unchanged: " + " ".join(skipped))
-    if backend and services.backend_service:
-        errors += service_ops.restart_service(services.backend_service, port=services.backend_port) != 0
-    for name in workers:
-        errors += service_ops.restart_service(name) != 0
-    if frontend and services.frontend_service:
-        errors += service_ops.restart_service(services.frontend_service, port=services.frontend_port) != 0
-    errors += service_ops.verify_health(services)
-    for name in workers:
-        state = service_ops.service_state(name)
-        print(f"[service] worker {name}: {state}")
-        errors += state != "active"
-    if errors == 0:
-        errors += service_ops.sync_seeds(services) != 0
-    if errors == 0:
-        print(f"[service] rebuild complete ({int(time.time() - start_time)}s)")
-    else:
-        print(f"[service] rebuild completed with {errors} error(s)")
-    raise typer.Exit(1 if errors else 0)
+    release: service_release.PreparedRelease | None = None
+    development_services = services
+    development_root = services.root
+    try:
+        with service_release.deployment_lock(services.project_id):
+            release, services = service_ops.prepare_accepted_release(services, acceptance)
+            service_release.mark_phase(
+                release,
+                "deployment_scope",
+                status="selected",
+                scope=scope.value,
+                release_scope="full",
+                workers=list(workers),
+            )
+            print(
+                f"Rebuilding {services.project_id} (scope: {scope.value}, "
+                f"source: {release.source.source_commit}, build: {release.build_id})"
+            )
+            # Freeze and verify the runner before any host lifecycle mutation. Worker
+            # scope also updates backend consumers, so it follows the same contract.
+            if (
+                backend
+                and services.runner_adapter is not None
+                and deploy_runner(services.root, services.runner_adapter) != 0
+            ):
+                service_release.fail_release(release, "runner")
+                print("[service] rebuild stopped: runner deployment failed")
+                raise typer.Exit(1)
+            steps = [("infrastructure", lambda: service_ops.ensure_infra(services))]
+            steps.append(("backend_dependencies", lambda: service_ops.sync_backend(services)))
+            steps.append(("frontend_build", lambda: service_ops.build_frontend(services)))
+            if backend:
+                steps.append(("migrations", lambda: service_ops.run_migrations(services)))
+            else:
+                service_release.mark_phase(
+                    release,
+                    "migrations",
+                    status="not_applicable",
+                    reason="frontend_restart_scope",
+                )
+            steps.append(("systemd_units", lambda: service_ops.sync_systemd_units(services)))
+            for name, step in steps:
+                phase_started = time.monotonic()
+                if step() != 0:
+                    service_release.mark_phase(
+                        release,
+                        name,
+                        status="failed",
+                        duration_seconds=time.monotonic() - phase_started,
+                    )
+                    if name == "systemd_units":
+                        _restore_previous_units(development_services, release)
+                    service_release.fail_release(release, name)
+                    print(
+                        f"[service] rebuild stopped: {name.replace('_', ' ')} failed; "
+                        "services were not restarted"
+                    )
+                    raise typer.Exit(1)
+                service_release.mark_phase(
+                    release,
+                    name,
+                    status="succeeded",
+                    duration_seconds=time.monotonic() - phase_started,
+                )
+            skipped = [name for name in services.optional_workers if name not in workers]
+            if skipped:
+                print("[service] leaving optional workers unchanged: " + " ".join(skipped))
+            restarted: list[str] = []
+            restart_started = time.monotonic()
+            if backend and services.backend_service:
+                errors += service_ops.restart_service(
+                    services.backend_service, port=services.backend_port
+                ) != 0
+                restarted.append(services.backend_service)
+            for name in workers:
+                errors += service_ops.restart_service(name) != 0
+                restarted.append(name)
+            if frontend and services.frontend_service:
+                errors += service_ops.restart_service(
+                    services.frontend_service, port=services.frontend_port
+                ) != 0
+                restarted.append(services.frontend_service)
+            service_release.mark_phase(
+                release,
+                "restart",
+                status="succeeded" if errors == 0 else "failed",
+                services=restarted,
+                duration_seconds=time.monotonic() - restart_started,
+            )
+            health_started = time.monotonic()
+            health_errors = service_ops.verify_health(services)
+            errors += health_errors
+            service_release.mark_phase(
+                release,
+                "health",
+                status="succeeded" if health_errors == 0 else "failed",
+                duration_seconds=time.monotonic() - health_started,
+            )
+            for name in workers:
+                state = service_ops.service_state(name)
+                print(f"[service] worker {name}: {state}")
+                errors += state != "active"
+            if errors == 0:
+                seeds_started = time.monotonic()
+                seed_errors = service_ops.sync_seeds(services) != 0
+                errors += seed_errors
+                service_release.mark_phase(
+                    release,
+                    "seeds",
+                    status="failed" if seed_errors else "succeeded",
+                    duration_seconds=time.monotonic() - seeds_started,
+                )
+            if errors:
+                _restore_previous_units(development_services, release)
+                service_release.fail_release(
+                    release,
+                    "restart_health",
+                    migrations=(
+                        "applied; automatic database rollback is unsupported"
+                        if backend
+                        else "not_applicable"
+                    ),
+                )
+                print(f"[service] rebuild completed with {errors} error(s)")
+                raise typer.Exit(1)
+            service_release.complete_release(release)
+            result = service_release.publish_deployment_result(
+                release, project_root=development_root
+            )
+            print(
+                f"[service] deployment_receipt={result['artifact']} "
+                f"deployment_id={result['deployment_id']}"
+            )
+            print(f"[service] rebuild complete ({int(time.time() - start_time)}s)")
+    except (service_ops.ServiceError, service_release.ReleaseError) as exc:
+        if release is not None:
+            with suppress(service_release.ReleaseError):
+                service_release.fail_release(release, "deployment")
+        output_error(str(exc))
+        raise typer.Exit(1) from None
+    raise typer.Exit(0)
 
 
 @app.command()
@@ -232,9 +393,20 @@ def restart(
     ] = False,
     scope: Annotated[RebuildScope, typer.Option("--scope", help="Same explicit component scope as rebuild.")] = RebuildScope.full,
     worker: Annotated[list[str] | None, typer.Option("--worker", help="Declared worker to restart; repeatable.")] = None,
+    acceptance: Annotated[
+        Path | None,
+        typer.Option("--acceptance", help="Full successful local-acceptance receipt."),
+    ] = None,
 ) -> None:
     """Restart a managed project through the rebuild path."""
-    rebuild(project, detach=detach, include_all_workers=include_all_workers, scope=scope, worker=worker)
+    rebuild(
+        project,
+        detach=detach,
+        include_all_workers=include_all_workers,
+        scope=scope,
+        worker=worker,
+        acceptance=acceptance,
+    )
 
 
 def _job_result(job_id: str) -> dict:

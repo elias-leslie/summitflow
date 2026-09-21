@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import tarfile
 from pathlib import Path
 from typing import Any
 
 import typer
 
 from app.storage.backups.storage_backends import list_backends as list_storage_backends
-from app.tasks.backup_native import restore_archive
+from app.tasks.backup_native import preview_restore_archive, restore_archive
 
 from ..config import get_config
 from ..lib.confirm_token import confirm_gate
@@ -76,8 +75,8 @@ def archive_paths() -> list[tuple[str, Path]]:
     seen: set[Path] = set()
     for label, directory in _archive_dirs():
         if directory.exists():
-            pattern = "**/*.tar.gz" if label == "STORAGE" else "*.tar.gz"
-            for path in sorted(directory.glob(pattern)):
+            patterns = ("**/*.tar.gz", "**/*.tar.gz.age") if label == "STORAGE" else ("*.tar.gz", "*.tar.gz.age")
+            for path in sorted(item for pattern in patterns for item in directory.glob(pattern)):
                 if not path.is_file():
                     continue
                 resolved = path.resolve()
@@ -107,16 +106,15 @@ def resolve_archive(*, latest: bool, archive_file: str | None, archive_name: str
 def preview_archive(path: Path, *, db_only: bool, files_only: bool, limit: int = 30) -> None:
     print(f"ARCHIVE {path}")
     print(f"MODE db_only:{str(db_only).lower()} files_only:{str(files_only).lower()}")
-    shown = omitted = 0
-    with tarfile.open(path, "r:gz") as archive:
-        for member in archive.getmembers():
-            if _skip_member(member.name, db_only=db_only, files_only=files_only):
-                continue
-            if shown < limit:
-                print(f"  {member.name}")
-                shown += 1
-            else:
-                omitted += 1
+    result = preview_restore_archive(
+        path,
+        db_only=db_only,
+        files_only=files_only,
+        limit=limit,
+    )
+    for entry in result["entries"]:
+        print(f"  {entry}")
+    omitted = int(result["omitted"])
     if omitted:
         print(f"  ... ({omitted} more)")
 
@@ -237,7 +235,3 @@ def _named_archive(matches: list[tuple[str, Path]], archive_name: str) -> Path:
             return path
     output_error(f"Archive not found: {archive_name}")
     raise typer.Exit(1) from None
-
-
-def _skip_member(name: str, *, db_only: bool, files_only: bool) -> bool:
-    return (db_only and not name.endswith("database.sql.gz")) or (files_only and name.endswith("database.sql.gz"))

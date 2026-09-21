@@ -21,7 +21,11 @@ def drain_pending_archives_from_dir(
     uploader: SmbUploader,
 ) -> dict[str, Any]:
     """Upload pending archives from an explicit pending directory."""
-    archives = sorted(pending_dir.glob("*.tar.gz")) if pending_dir.exists() else []
+    archives = (
+        sorted([*pending_dir.glob("*.tar.gz"), *pending_dir.glob("*.tar.gz.age")])
+        if pending_dir.exists()
+        else []
+    )
     if not archives:
         return {"status": "success", "message": "No pending uploads to drain", "uploaded": 0, "remaining": 0}
     if dry_run:
@@ -37,7 +41,11 @@ def drain_pending_archives_from_dir(
             uploaded_archives[archive.name] = str(upload["location"])
         else:
             failures.append(upload["failure"])
-    remaining = len(list(pending_dir.glob("*.tar.gz"))) if pending_dir.exists() else 0
+    remaining = (
+        len([*pending_dir.glob("*.tar.gz"), *pending_dir.glob("*.tar.gz.age")])
+        if pending_dir.exists()
+        else 0
+    )
     return {
         "status": "success" if remaining == 0 else "partial",
         "uploaded": uploaded,

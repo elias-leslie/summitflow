@@ -218,3 +218,28 @@ async def list_source_backups(
         backups=[backup_to_response(b) for b in backups],
         total=total,
     )
+
+
+@router.post(
+    "/backup-sources/{source_id}/backups/{backup_id}/sync-offsite",
+    response_model=RestoreResponse,
+)
+async def sync_source_backup_offsite(source_id: str, backup_id: str) -> RestoreResponse:
+    """Retry encrypted offsite sync from the retained local archive."""
+    backup = backup_store.get_backup(backup_id)
+    if not backup or str(backup.get("source_id") or backup.get("project_id")) != source_id:
+        raise HTTPException(status_code=404, detail=f"Backup {backup_id} not found in source {source_id}")
+    if backup.get("status") not in {"completed", "completed_pending_upload"}:
+        raise HTTPException(status_code=409, detail="Only completed backups can be synced offsite")
+    backup_store.merge_backup_verification_json(backup_id, {"offsite": {"status": "pending"}})
+    from ...workflows.models import OffsiteSyncInput
+    from ...workflows.utility import backup_offsite_sync_wf
+
+    workflow_run = await backup_offsite_sync_wf.aio_run_no_wait(
+        OffsiteSyncInput(source_id=source_id, backup_id=backup_id)
+    )
+    return RestoreResponse(
+        task_id=workflow_run.workflow_run_id,
+        status="queued",
+        message=f"Offsite sync queued for backup {backup_id}",
+    )

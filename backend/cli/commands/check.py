@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import shutil
@@ -13,10 +14,12 @@ from pathlib import Path
 import typer
 
 from ..details import display_path, summary_hint, write_details
+from ..lib.acceptance import AcceptanceError, accept_revision
 from ..lib.architecture_check import run_architecture_check
 from ..lib.cleanroom import main as cleanroom_main
 from ..lib.usage import usage
 from ..output import output_error
+from .check_artifacts import write_check_details
 from .check_changed import _changed_args, _changed_files, _skip_reason
 from .check_codeql import (
     _emit_codeql_result,
@@ -48,6 +51,7 @@ from .check_runner import (
     _tool_configs,
     _workdir,
 )
+from .check_security import run_local_security_check
 
 app = typer.Typer(
     help=(
@@ -138,7 +142,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
             print(f"{label}:SKIP:{name}:tool_not_installed")
             return 0
         output = f"{type(exc).__name__}: {exc}"
-        details = write_details(root, name, output)
+        details = write_check_details(root, name, output)
         print(
             tool_result_line(
                 label,
@@ -150,7 +154,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
         )
         return 127
     output = tool_output(result.stdout, result.stderr)
-    details = write_details(root, name, output)
+    details = write_check_details(root, name, output)
     print(
         tool_result_line(
             label,
@@ -203,6 +207,7 @@ def _runtime() -> CheckRuntime:
         skip_reason=_skip_reason,
         run_tool=_run_tool,
         run_codeql_alert_check=_run_codeql_alert_check,
+        run_local_security_check=run_local_security_check,
     )
 
 
@@ -265,6 +270,45 @@ def _help_text(names: str) -> str:
 
 
 def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]) -> int:
+    args = list(ctx.args)
+    if args and args[0] == "--acceptance":
+        if any(option in {"-h", "--help"} for option in args[1:]):
+            print(
+                "Usage: st check --acceptance [--sha REV] [--task TASK] "
+                "[--scope PATH] [--no-reuse]"
+            )
+            return 0
+        sha = "HEAD"
+        task_id = ""
+        scope: list[str] = []
+        reuse = True
+        index = 1
+        while index < len(args):
+            option = args[index]
+            if option == "--no-reuse":
+                reuse = False
+                index += 1
+                continue
+            if option not in {"--sha", "--task", "--scope"} or index + 1 >= len(args):
+                output_error(f"Unknown or incomplete st check --acceptance option: {option}")
+                return 2
+            value = args[index + 1]
+            if option == "--sha":
+                sha = value
+            elif option == "--task":
+                task_id = value
+            else:
+                scope.append(value)
+            index += 2
+        try:
+            receipt = accept_revision(
+                _resolve_repo_root(), sha=sha, task_id=task_id, scope=scope, reuse=reuse
+            )
+        except AcceptanceError as exc:
+            output_error(str(exc))
+            return 2
+        print("ACCEPTANCE:" + json.dumps(receipt, sort_keys=True, separators=(",", ":")))
+        return 0 if receipt.get("state") == "success" else 1
     return handle_check_args(ctx, configs, runtime=_runtime())
 
 

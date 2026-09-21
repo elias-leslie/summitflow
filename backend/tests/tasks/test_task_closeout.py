@@ -5,7 +5,11 @@ import pytest
 
 from app.services import task_closeout as closeout
 from app.storage import tasks
-from app.storage.tasks.closeout import closeout_lock, store_closeout
+from app.storage.tasks.closeout import (
+    closeout_lock,
+    store_closeout,
+    store_execution_verification,
+)
 from cli.lib import publish_workflow
 
 SHA = 'a' * 40
@@ -15,7 +19,10 @@ SHA = 'a' * 40
 def pending_task(test_project_id, cleanup_task, monkeypatch, tmp_path):
     task = tasks.create_task(test_project_id, 'Resume exact-source closeout')
     cleanup_task(task['id'])
-    tasks.update_task(task['id'], verification_result={'independent': {'retained': True}})
+    tasks.update_task(task['id'], verification_result={
+        'independent': {'retained': True},
+        'acceptance': {'state': 'success', 'source_commit': SHA},
+    })
     closeout.request_closeout(task['id'], test_project_id, source_sha=SHA, message='Finish tested work')
     monkeypatch.setattr('app.storage.projects.get_project_root_path', lambda _pid: str(tmp_path))
     monkeypatch.setattr('cli.lib.execution_context.resolve_checkout_project_id', lambda _root: test_project_id)
@@ -29,6 +36,42 @@ def evidence(state='pending', sha=SHA):
     return {'status': {'pending': 'PENDING', 'success': 'SUCCESS', 'failed': 'BLOCKED'}[state],
             'sha': SHA, 'publication_complete': state == 'success',
             'reason': f'remote_ci_{state}', 'ci': {'state': state, 'sha': sha, 'checks': []}}
+
+
+def test_execution_facts_merge_without_replacing_closeout_receipts(
+    pending_task,
+) -> None:
+    tid = pending_task['id']
+    tasks.update_task(
+        tid,
+        verification_result={
+            'acceptance': {'state': 'success', 'source_commit': SHA},
+            'deployment': {'state': 'succeeded', 'source_commit': SHA},
+            'live_validation': {'source_commit': SHA, 'checks': []},
+        },
+    )
+
+    store_execution_verification(
+        tid,
+        pending_task['project_id'],
+        {
+            'evidence_verified': True,
+            'verification_source': 'autonomous_quality_gate',
+            'execution_clean': True,
+            'subtask_count': 1,
+            'total_self_fix_attempts': 0,
+            'total_supervisor_attempts': 0,
+            'total_extensions_granted': 0,
+        },
+    )
+
+    stored = tasks.get_task(tid)
+    assert stored is not None
+    verification = stored['verification_result']
+    assert verification['acceptance']['source_commit'] == SHA
+    assert verification['deployment']['source_commit'] == SHA
+    assert verification['live_validation']['source_commit'] == SHA
+    assert verification['verification_source'] == 'autonomous_quality_gate'
 
 
 def test_pending_to_complete_preserves_source_and_other_receipts(pending_task, monkeypatch, tmp_path):

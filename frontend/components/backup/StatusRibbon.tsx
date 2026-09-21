@@ -82,6 +82,10 @@ export function StatusRibbon({
   const redCount = sources.filter((s) => s.health_status === 'red').length
   const totalBackups = storageSummary?.total_count ?? 0
   const totalBytes = storageSummary?.total_bytes ?? 0
+  const enabledSources = sources.filter((source) => source.enabled)
+  const offsiteVerified = enabledSources.filter(
+    (source) => source.offsite_status === 'verified',
+  ).length
 
   return (
     <div className="space-y-3">
@@ -109,6 +113,16 @@ export function StatusRibbon({
           value={totalBackups}
           label="backups"
           tone="bg-blue-500/8 text-blue-400 border-blue-500/20"
+        />
+        <StatPill
+          value={`${offsiteVerified}/${enabledSources.length}`}
+          label="Drive verified"
+          tone={
+            offsiteVerified === enabledSources.length &&
+            enabledSources.length > 0
+              ? 'bg-emerald-500/8 text-emerald-400 border-emerald-500/20'
+              : 'bg-amber-500/8 text-amber-400 border-amber-500/20'
+          }
         />
         {totalBytes > 0 && (
           <StatPill

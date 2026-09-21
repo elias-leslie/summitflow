@@ -37,6 +37,7 @@ from app.workflows.scheduled import (
 from app.workflows.utility import (
     arch_tasks_wf,
     backup_create_wf,
+    backup_offsite_sync_wf,
     backup_restore_wf,
     check_resolved_wf,
     checkpoint_cleanup_wf,
@@ -78,8 +79,9 @@ def main() -> None:
             restore_tests_wf,
             runtime_hygiene_wf,
             tool_governance_wf,
-            # Utility (11)
+            # Utility (12)
             backup_create_wf,
+            backup_offsite_sync_wf,
             backup_restore_wf,
             enrich_wf,
             pr_review_wf,

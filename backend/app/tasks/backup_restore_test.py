@@ -11,6 +11,7 @@ from typing import Any
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from .backup_coverage import verify_archive_coverage
+from .backup_native_restore import materialize_plaintext_archive
 from .backup_restore import restore_backup
 
 logger = get_logger(__name__)
@@ -98,46 +99,48 @@ def _validate_infra_archive(source_id: str, backup: dict[str, Any]) -> dict[str,
         backup_store.update_source_restore_test(source_id, ok=False, error=error)
         return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": error}
 
-    # 1. Tar integrity
     try:
-        result = subprocess.run(
-            ["tar", "tzf", archive_path],
-            capture_output=True, text=True, timeout=120,
-        )
-        if result.returncode != 0:
-            error = f"Archive integrity check failed: {result.stderr[:200]}"
-            backup_store.update_source_restore_test(source_id, ok=False, error=error)
-            _cleanup_temp_archive(archive_path, location)
-            return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": error}
-        file_listing = result.stdout.strip().splitlines()
+        with materialize_plaintext_archive(Path(archive_path)) as plaintext_archive:
+            # 1. Tar integrity
+            result = subprocess.run(
+                ["tar", "tzf", str(plaintext_archive)],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"Archive integrity check failed: {result.stderr[:200]}"
+                )
+            file_listing = result.stdout.strip().splitlines()
+
+            # 2. Coverage contract check
+            coverage_result = verify_archive_coverage(verification_json)
+            coverage_ok = coverage_result.complete
+
+            # 3. Validate pg_dumpall header (quick sanity check)
+            pg_ok = _validate_pgdump_header(str(plaintext_archive))
+
+            # 4. Validate Redis RDB header
+            redis_ok = _validate_redis_header(str(plaintext_archive))
+
+            errors: list[str] = []
+            if not coverage_ok:
+                errors.append(f"Missing required components: {', '.join(coverage_result.missing)}")
+            if not pg_ok:
+                errors.append("PostgreSQL dump header validation failed")
+            if not redis_ok and _has_file_in_listing(file_listing, "redis-dump.rdb"):
+                errors.append("Redis RDB header validation failed")
+
+            all_ok = coverage_ok and pg_ok
     except Exception as e:
         error = str(e)
         backup_store.update_source_restore_test(source_id, ok=False, error=error)
-        _cleanup_temp_archive(archive_path, location)
         return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": error}
+    finally:
+        _cleanup_temp_archive(archive_path, location)
 
-    # 2. Coverage contract check
-    coverage_result = verify_archive_coverage(verification_json)
-    coverage_ok = coverage_result.complete
-
-    # 3. Validate pg_dumpall header (quick sanity check)
-    pg_ok = _validate_pgdump_header(archive_path)
-
-    # 4. Validate Redis RDB header
-    redis_ok = _validate_redis_header(archive_path)
-
-    # Aggregate result
-    errors: list[str] = []
-    if not coverage_ok:
-        errors.append(f"Missing required components: {', '.join(coverage_result.missing)}")
-    if not pg_ok:
-        errors.append("PostgreSQL dump header validation failed")
-    if not redis_ok and _has_file_in_listing(file_listing, "redis-dump.rdb"):
-        errors.append("Redis RDB header validation failed")
-
-    all_ok = coverage_ok and pg_ok
     backup_store.update_source_restore_test(source_id, ok=all_ok, error="; ".join(errors) if errors else None)
-    _cleanup_temp_archive(archive_path, location)
 
     logger.info("restore_test_completed", source_id=source_id, ok=all_ok, files=len(file_listing),
                 coverage_complete=coverage_ok, pg_ok=pg_ok, redis_ok=redis_ok)

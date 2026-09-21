@@ -33,3 +33,8 @@ class RestoreInput(BaseModel):
     dry_run: bool = False
     db_only: bool = False
     files_only: bool = False
+
+
+class OffsiteSyncInput(BaseModel):
+    source_id: str
+    backup_id: str

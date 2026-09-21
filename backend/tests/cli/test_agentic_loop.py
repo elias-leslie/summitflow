@@ -195,12 +195,12 @@ class TestDoneIdempotency:
 
 
 # ---------------------------------------------------------------------------
-# §7 publish-before-cleanup ordering
+# §7 local-acceptance-before-cleanup ordering
 # ---------------------------------------------------------------------------
 
 
-class TestPublishBeforeCleanup:
-    def test_publish_runs_before_snapshot_remove(self) -> None:
+class TestAcceptanceBeforeCleanup:
+    def test_acceptance_runs_before_snapshot_remove(self) -> None:
         order: list[str] = []
         client = MagicMock()
         client.get_subtasks.return_value = {"subtasks": []}
@@ -219,8 +219,8 @@ class TestPublishBeforeCleanup:
             patch.object(done_task, "_run_diff_gate"),
             patch.object(done_task, "_run_smart_prereqs"),
             patch.object(
-                done_task, "_publish_completed_work",
-                side_effect=lambda *_a, **_kw: order.append("publish"),
+                done_task, "_accept_completed_work",
+                side_effect=lambda *_a, **_kw: order.append("accept"),
             ),
             patch.object(
                 done_task, "_capture_and_remove_snapshot",
@@ -228,14 +228,14 @@ class TestPublishBeforeCleanup:
             ),
         ):
             done_task.complete_task(client, "task-1")
-        assert order == ["publish", "status", "snapshot-remove"]
+        assert order == ["accept", "status", "snapshot-remove"]
         client.update_status.assert_called_once_with(
             "task-1",
             "completed",
             skip_gates=False,
         )
 
-    def test_publish_failure_preserves_snapshot_and_surfaces_retry(self) -> None:
+    def test_acceptance_failure_preserves_snapshot_and_surfaces_retry(self) -> None:
         client = MagicMock()
         client.get_subtasks.return_value = {"subtasks": []}
         client.get_task_completion_readiness.return_value = {"ready": True}
@@ -253,23 +253,23 @@ class TestPublishBeforeCleanup:
             patch.object(done_task, "_run_diff_gate"),
             patch.object(done_task, "_run_smart_prereqs"),
             patch.object(
-                done_task, "_publish_completed_work",
-                side_effect=RuntimeError("network glitch"),
+                done_task, "_accept_completed_work",
+                side_effect=RuntimeError("local check failed"),
             ),
             patch.object(done_task, "_capture_and_remove_snapshot") as mock_cleanup,
-            patch.object(done_task, "output_warning") as mock_warn,
+            patch.object(done_task, "output_error") as mock_error,
             pytest.raises(typer.Exit),
         ):
             done_task.complete_task(client, "task-1")
 
         mock_cleanup.assert_not_called()
         client.update_status.assert_not_called()
-        msg = mock_warn.call_args.args[0]
-        assert "Publish failed" in msg
-        assert "Resolution" in msg
+        msg = mock_error.call_args.args[0]
+        assert "local acceptance failed" in msg
+        assert "Checkpoint preserved" in msg
         assert "st done task-1" in msg
 
-    def test_completed_checkpoint_retries_publish_then_cleans_without_reclosing(self) -> None:
+    def test_completed_checkpoint_cleans_without_publishing_or_reclosing(self) -> None:
         client = MagicMock()
         client.get_task.return_value = {"status": "completed"}
         snapshot_info = {
@@ -290,12 +290,12 @@ class TestPublishBeforeCleanup:
         ):
             result = done_task.complete_task(client, "task-1")
 
-        mock_publish.assert_called_once_with("task-1", "summitflow")
+        mock_publish.assert_not_called()
         mock_cleanup.assert_called_once_with("task-1", "summitflow")
         mock_prereqs.assert_not_called()
         mock_finalize.assert_not_called()
         client.update_status.assert_not_called()
-        assert result["published"] is True
+        assert result["published"] is False
         assert result["snapshot_removed"] is True
 
     def test_completed_checkpoint_never_commits_new_dirty_work(self) -> None:
@@ -314,13 +314,13 @@ class TestPublishBeforeCleanup:
             patch.object(done_task, "_commit_active_task_work") as mock_commit,
             patch.object(done_task, "_publish_completed_work") as mock_publish,
             patch.object(done_task, "_capture_and_remove_snapshot") as mock_cleanup,
-            pytest.raises(typer.Exit),
         ):
             done_task.complete_task(client, "task-1")
 
         mock_commit.assert_not_called()
         mock_publish.assert_not_called()
-        mock_cleanup.assert_not_called()
+        # This removes only completed checkpoint metadata, not the working tree.
+        mock_cleanup.assert_called_once_with("task-1", "summitflow")
 
     def test_status_finalize_failure_preserves_checkpoint(self) -> None:
         client = MagicMock()
@@ -339,6 +339,7 @@ class TestPublishBeforeCleanup:
             patch.object(done_task, "is_working_tree_clean", return_value=True),
             patch.object(done_task, "_run_diff_gate"),
             patch.object(done_task, "_run_smart_prereqs"),
+            patch.object(done_task, "_accept_completed_work") as mock_accept,
             patch.object(done_task, "_publish_completed_work") as mock_publish,
             patch.object(done_task, "_capture_and_remove_snapshot") as mock_cleanup,
             patch.object(done_task, "output_error") as mock_error,
@@ -346,7 +347,8 @@ class TestPublishBeforeCleanup:
         ):
             done_task.complete_task(client, "task-1")
 
-        mock_publish.assert_called_once_with("task-1", "summitflow")
+        mock_accept.assert_called_once_with("task-1", "summitflow")
+        mock_publish.assert_not_called()
         mock_cleanup.assert_not_called()
         assert "recovery: st done task-1" in mock_error.call_args.args[0]
         assert "--admin" not in mock_error.call_args.args[0]

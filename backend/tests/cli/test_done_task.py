@@ -11,7 +11,7 @@ from cli.commands.done_task import _task_scope_paths, complete_task
 from cli.lib.checkpoint_branches import resolve_task_branch
 
 
-def test_complete_task_missing_checkpoint_completed_task_is_idempotent_and_publishes() -> None:
+def test_complete_task_missing_checkpoint_completed_task_is_idempotent_without_publication() -> None:
     client = MagicMock()
     client.get_task.return_value = {
         "status": "completed",
@@ -23,11 +23,11 @@ def test_complete_task_missing_checkpoint_completed_task_is_idempotent_and_publi
         patch("cli.commands.done_task.get_snapshot_info", return_value=None),
         patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None),
         patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-        patch("cli.commands.done_task._publish_completed_work") as mock_publish,
+        patch("cli.commands.done_task._accept_completed_work") as mock_publish,
     ):
         result = complete_task(client, "task-123")
 
-    mock_publish.assert_called_once_with("task-123", "summitflow")
+    mock_publish.assert_not_called()
     assert result["merged"] is False
     assert result["snapshot_removed"] is True
 
@@ -139,7 +139,7 @@ def test_complete_task_missing_checkpoint_active_task_closes_after_pushed_commit
         patch("cli.commands.done_task._task_has_published_commit_event", return_value=True),
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task._publish_completed_work") as mock_publish,
+        patch("cli.commands.done_task._accept_completed_work") as mock_publish,
         patch("cli.commands.done_task._run_smart_prereqs") as mock_prereqs,
         patch("cli.commands.done_task.output_success"),
     ):
@@ -188,7 +188,7 @@ def test_complete_task_missing_checkpoint_active_task_auto_commits_dirty_work() 
         patch("app.storage.events.log_task_event") as mock_log,
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task._publish_completed_work") as mock_publish,
+        patch("cli.commands.done_task._accept_completed_work") as mock_publish,
         patch("cli.commands.done_task._run_smart_prereqs") as mock_prereqs,
         patch("cli.commands.done_task.output_success"),
     ):
@@ -203,7 +203,7 @@ def test_complete_task_missing_checkpoint_active_task_auto_commits_dirty_work() 
     mock_commit.assert_called_once()
     assert mock_commit.call_args.kwargs["message"] == "finish task"
     assert mock_commit.call_args.kwargs["task_id"] == "task-789"
-    assert mock_commit.call_args.kwargs["push"] is True
+    assert mock_commit.call_args.kwargs["push"] is False
     mock_log.assert_called_once()
     assert mock_log.call_args.args[0] == "task-789"
     client.export_task_data.assert_called_once_with("task-789")
@@ -238,7 +238,7 @@ def test_complete_task_missing_checkpoint_active_task_commits_combined_dirty_che
         patch("app.storage.events.log_task_event") as mock_log,
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task._publish_completed_work") as mock_publish,
+        patch("cli.commands.done_task._accept_completed_work") as mock_publish,
         patch("cli.commands.done_task._run_smart_prereqs") as mock_prereqs,
         patch("cli.commands.done_task.output_success"),
     ):
@@ -253,7 +253,7 @@ def test_complete_task_missing_checkpoint_active_task_commits_combined_dirty_che
     mock_commit.assert_called_once()
     assert mock_commit.call_args.kwargs["message"] == "finish task"
     assert mock_commit.call_args.kwargs["task_id"] == "task-789"
-    assert mock_commit.call_args.kwargs["push"] is True
+    assert mock_commit.call_args.kwargs["push"] is False
     mock_log.assert_called_once()
     assert mock_log.call_args.args[0] == "task-789"
     mock_prereqs.assert_called_once_with(client, "task-789", "summitflow")
@@ -283,7 +283,7 @@ def test_complete_task_claimed_checkpoint_auto_commits_dirty_checkpoint() -> Non
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-1"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
         patch("cli.commands.done_task._capture_and_remove_snapshot"),
-        patch("cli.commands.done_task._publish_completed_work"),
+        patch("cli.commands.done_task._accept_completed_work"),
         patch("cli.commands.done_task.output_success"),
     ):
         mock_commit.return_value = {
@@ -298,12 +298,12 @@ def test_complete_task_claimed_checkpoint_auto_commits_dirty_checkpoint() -> Non
     mock_commit.assert_called_once()
     assert mock_commit.call_args.kwargs["message"] == "finish task"
     assert mock_commit.call_args.kwargs["task_id"] == "task-1"
-    assert mock_commit.call_args.kwargs["push"] is True
+    assert mock_commit.call_args.kwargs["push"] is False
     mock_log.assert_called_once()
     assert mock_log.call_args.args[0] == "task-1"
     client.update_status.assert_called_once_with("task-1", "completed", skip_gates=False)
     assert result["merged"] is False
-    assert result["published"] is True
+    assert result["published"] is False
 
 
 def test_complete_task_claimed_checkpoint_forces_close_when_status_transition_drifts() -> None:
@@ -328,7 +328,7 @@ def test_complete_task_claimed_checkpoint_forces_close_when_status_transition_dr
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-1"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
         patch("cli.commands.done_task._capture_and_remove_snapshot") as mock_cleanup,
-        patch("cli.commands.done_task._publish_completed_work") as mock_publish,
+        patch("cli.commands.done_task._accept_completed_work") as mock_publish,
         patch("cli.commands.done_task.output_warning") as mock_warning,
     ):
         mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
@@ -341,7 +341,7 @@ def test_complete_task_claimed_checkpoint_forces_close_when_status_transition_dr
     mock_publish.assert_called_once_with("task-1", "summitflow")
     assert any("forced close after direct-main finalization" in str(call.args[0]).lower() for call in mock_warning.call_args_list)
     assert result["merged"] is False
-    assert result["published"] is True
+    assert result["published"] is False
 
 
 def test_run_smart_prereqs_auto_closes_unpassed_subtasks() -> None:
@@ -427,7 +427,7 @@ def test_complete_task_diff_gate_checks_task_branch_not_current_head() -> None:
         patch("cli.commands.done_task.resolve_task_branch", return_value="task-1/main") as mock_resolve,
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
         patch("cli.commands.done_task._capture_and_remove_snapshot"),
-        patch("cli.commands.done_task._publish_completed_work"),
+        patch("cli.commands.done_task._accept_completed_work"),
     ):
         mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
 
@@ -460,7 +460,7 @@ def test_complete_task_diff_gate_uses_checkpoint_base_commit_for_direct_main() -
         patch("cli.commands.done_task.resolve_task_branch") as mock_resolve,
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
         patch("cli.commands.done_task._capture_and_remove_snapshot"),
-        patch("cli.commands.done_task._publish_completed_work"),
+        patch("cli.commands.done_task._accept_completed_work"),
     ):
         mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
 
@@ -492,7 +492,7 @@ def test_complete_task_diff_gate_checks_published_task_bookmark() -> None:
         patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-1") as mock_resolve,
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
         patch("cli.commands.done_task._capture_and_remove_snapshot"),
-        patch("cli.commands.done_task._publish_completed_work"),
+        patch("cli.commands.done_task._accept_completed_work"),
     ):
         mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
 
@@ -524,7 +524,7 @@ def test_complete_task_normalizes_head_base_branch_before_diff_gate() -> None:
         patch("cli.commands.done_task.resolve_task_branch", return_value="task-1/main"),
         patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
         patch("cli.commands.done_task._capture_and_remove_snapshot"),
-        patch("cli.commands.done_task._publish_completed_work"),
+        patch("cli.commands.done_task._accept_completed_work"),
         patch("cli.commands.done_task.normalize_base_branch", return_value="main") as mock_normalize,
     ):
         mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
@@ -551,10 +551,10 @@ def test_resolve_task_branch_prefers_st_commit_bookmark() -> None:
         assert resolve_task_branch("task-1", project_id="summitflow") == "task/task-1"
 
 
-def test_push_event_without_remote_verification_cannot_close_task():
+def test_local_commit_event_supports_linkage_before_separate_acceptance():
     from cli.commands.done_task import _task_has_published_commit_event
     with patch('app.storage.events.get_events_by_trace', return_value=[{'message': 'st commit commit=abcdef pushed=true'}]):
-        assert not _task_has_published_commit_event('task-123')
+        assert _task_has_published_commit_event('task-123')
 
 
 def test_verified_existing_remote_commit_can_support_closeout():
@@ -607,30 +607,32 @@ def test_initial_repository_closeout_requires_post_claim_initial_reflog(tmp_path
             _run_diff_gate(str(tmp_path), "task-new", "test", "main", claimed_at=claimed_at)
 
 
-def test_queued_closeout_resume_does_not_rerun_commit_or_local_gates():
+def test_historical_publication_does_not_redirect_local_closeout():
+    client = MagicMock()
+    client.get_task.return_value = {'status': 'running', 'project_id': 'summitflow'}
     with (
         patch('app.services.task_closeout.get_closeout', return_value={'state': 'pending'}),
         patch('app.services.task_closeout.resume_closeout', return_value={'action': 'pending'}) as resume,
-        patch('cli.commands.done_task.ensure_checkpoint_clean') as commit,
-        patch('cli.commands.done_task._run_diff_gate') as gate,
+        patch('cli.commands.done_task.get_snapshot_info', return_value={'project_id': 'summitflow', 'base_branch': 'main'}),
+        patch('cli.commands.done_task.ensure_checkpoint_clean'),
+        patch('cli.commands.done_task._accept_completed_work') as accept,
+        patch('cli.commands.done_task._capture_and_remove_snapshot'),
+        patch('cli.commands.done_task._run_diff_gate'),
     ):
-        assert complete_task(MagicMock(), 'task-queued')['action'] == 'pending'
-    resume.assert_called_once_with('task-queued', explicit=True)
-    commit.assert_not_called()
-    gate.assert_not_called()
+        assert complete_task(client, 'task-queued')['action'] == 'completed'
+    resume.assert_not_called()
+    accept.assert_called_once()
 
 
-def test_pending_commit_queues_only_after_completion_gates_pass():
-    from cli.commands.done_task_publish import PublicationPending
-
+def test_failed_local_acceptance_never_queues_publication_or_closes():
     client = MagicMock()
     client.get_task.return_value = {'status': 'pending'}
-    receipt = {'status': 'PENDING', 'sha': 'a' * 40, 'ci': {'state': 'pending', 'sha': 'a' * 40}}
     with (
         patch('app.services.task_closeout.get_closeout', return_value=None),
         patch('app.services.task_closeout.request_closeout') as queue,
         patch('cli.commands.done_task.get_snapshot_info', return_value={'project_id': 'summitflow', 'base_branch': 'main'}),
-        patch('cli.commands.done_task.ensure_checkpoint_clean', side_effect=PublicationPending(receipt)),
+        patch('cli.commands.done_task.ensure_checkpoint_clean'),
+        patch('cli.commands.done_task._accept_completed_work', side_effect=ValueError('checks failed')),
         patch('cli.commands.done_task.is_working_tree_clean', return_value=True),
         patch('cli.commands.done_task._run_diff_gate'),
         patch('cli.commands.done_task._run_smart_prereqs', side_effect=Exit(1)),
@@ -638,3 +640,4 @@ def test_pending_commit_queues_only_after_completion_gates_pass():
     ):
         complete_task(client, 'task-queued')
     queue.assert_not_called()
+    client.update_status.assert_not_called()

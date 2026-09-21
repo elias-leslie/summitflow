@@ -32,9 +32,56 @@ def pending_closeout_ids() -> list[str]:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("""SELECT id FROM tasks
                        WHERE verification_result->'closeout'->>'state' = 'pending'
-                       AND status NOT IN ('paused', 'cancelled', 'abandoned', 'closed', 'failed')
+                       AND status NOT IN ('paused', 'cancelled', 'abandoned', 'closed', 'failed', 'completed')
                        ORDER BY updated_at, id""")
         return [row[0] for row in cur.fetchall()]
+
+
+def store_verification(task_id: str, project_id: str, receipts: dict[str, Any]) -> None:
+    """Merge source-bound local evidence without overwriting publication/history."""
+    if not receipts or set(receipts) - {"acceptance", "deployment", "live_validation"}:
+        raise ValueError("Unsupported local verification receipt")
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """UPDATE tasks SET verification_result =
+               COALESCE(verification_result, '{}'::jsonb) || %s::jsonb,
+               updated_at = NOW() WHERE id = %s AND project_id = %s""",
+            (Jsonb(receipts), canonicalize_task_id(task_id), project_id),
+        )
+        if cur.rowcount != 1:
+            raise ValueError("Verification task does not belong to selected project")
+
+
+_EXECUTION_VERIFICATION_KEYS = {
+    "autonomous_failure",
+    "evidence_verified",
+    "execution_clean",
+    "external_work",
+    "subtask_count",
+    "total_extensions_granted",
+    "total_self_fix_attempts",
+    "total_supervisor_attempts",
+    "verification_source",
+}
+
+
+def store_execution_verification(
+    task_id: str,
+    project_id: str,
+    facts: dict[str, Any],
+) -> None:
+    """Merge generated execution facts while retaining independent receipts."""
+    if not facts or set(facts) - _EXECUTION_VERIFICATION_KEYS:
+        raise ValueError("Unsupported autonomous execution verification fact")
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """UPDATE tasks SET verification_result =
+               COALESCE(verification_result, '{}'::jsonb) || %s::jsonb,
+               updated_at = NOW() WHERE id = %s AND project_id = %s""",
+            (Jsonb(facts), canonicalize_task_id(task_id), project_id),
+        )
+        if cur.rowcount != 1:
+            raise ValueError("Verification task does not belong to selected project")
 
 
 @contextmanager

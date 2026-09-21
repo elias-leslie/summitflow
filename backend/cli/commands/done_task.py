@@ -21,7 +21,7 @@ from ..lib.checkpoint import get_snapshot_info, remove_snapshot
 from ..lib.checkpoint_branches import resolve_task_branch
 from ..lib.commit_workflow import CommitError, _normalize_paths, _selected_paths_dirty, commit_repo
 from ..output import output_error, output_success, output_warning
-from .done_git import git_stash_pop, git_stash_push, is_working_tree_clean
+from .done_git import is_working_tree_clean
 from .done_lifecycle import _reconstruct_snapshot_info
 from .done_subtask import auto_close_subtasks
 from .done_task_publish import (
@@ -125,7 +125,7 @@ def _task_has_published_commit_event(task_id: str) -> bool:
         from app.storage.events import get_events_by_trace
     except Exception:
         return False
-    commit_event_re = re.compile(r"\bst commit\b.*\bcommit=[0-9a-f]+\b.*\bpublication_complete=true\b")
+    commit_event_re = re.compile(r"\bst commit\b.*\bcommit=[0-9a-f]+\b")
     try:
         events = get_events_by_trace(task_id, limit=50)
     except Exception:
@@ -136,8 +136,8 @@ def _task_has_published_commit_event(task_id: str) -> bool:
 def _commit_active_task_work(repo_root: str, task_id: str, message: str | None, *, paths: tuple[str, ...] = ()) -> None:
     commit_message = (message or f"complete {task_id}").strip()
     try:
-        result = (commit_repo(Path(repo_root), message=commit_message, task_id=task_id, push=True, paths=paths)
-                  if paths else commit_repo(Path(repo_root), message=commit_message, task_id=task_id, push=True))
+        result = (commit_repo(Path(repo_root), message=commit_message, task_id=task_id, push=False, paths=paths)
+                  if paths else commit_repo(Path(repo_root), message=commit_message, task_id=task_id, push=False))
     except CommitError as exc:
         output_error(f"Task closeout blocked: st commit failed: {exc}")
         raise typer.Exit(1) from None
@@ -158,18 +158,8 @@ def _commit_active_task_work(repo_root: str, task_id: str, message: str | None, 
 
 
 def _close_missing_checkpoint_active_task(client: STClient, task_id: str, task: dict[str, Any], project_id: str | None, *, base_branch: str, repo_is_clean: bool, paths: tuple[str, ...] = ()) -> dict[str, str | bool]:
+    _accept_completed_work_or_exit(task_id, project_id, paths=paths)
     _run_smart_prereqs(client, task_id, project_id)
-    if repo_is_clean:
-        try:
-            _publish_completed_work(task_id, project_id, **({"paths": paths} if paths else {}))
-        except PublicationPending:
-            raise
-        except Exception as exc:
-            output_error(
-                f"Task closeout blocked: publish failed: {exc}\n"
-                f"  Task remains active; rerun `st done {task_id}` to retry."
-            )
-            raise typer.Exit(1) from None
     try:
         client.update_status(task_id, "completed", skip_gates=_completion_skip_gates(client, task_id))
     except APIError as e:
@@ -182,7 +172,7 @@ def _close_missing_checkpoint_active_task(client: STClient, task_id: str, task: 
         snapshot_removed=True,
         base_branch=base_branch,
         project_id=project_id,
-        published=repo_is_clean,
+        published=False,
     )
 
 
@@ -327,7 +317,7 @@ def _finalize_completed_task_status(
             except APIError:
                 pass
         output_error(
-            f"Work published but status update failed: {e.detail}\n"
+            f"Work accepted locally but status update failed: {e.detail}\n"
             f"  Checkpoint preserved; recovery: st done {task_id}"
         )
         raise typer.Exit(1) from None
@@ -339,6 +329,29 @@ def _capture_and_remove_snapshot(task_id: str, project_id: str | None) -> None:
     if lifecycle_snapshot:
         output_success(f"Protective snapshot captured before cleanup: {lifecycle_snapshot.id}")
     remove_snapshot(task_id, project_id=project_id)
+
+
+def _accept_completed_work(task_id: str, project_id: str | None, *, paths: tuple[str, ...] = ()) -> dict[str, Any]:
+    from app.storage.tasks.closeout import store_verification
+    from cli.lib.acceptance import accept_revision
+    from cli.lib.commit_workflow import run_git
+
+    root = _checkpoint_repo_root(project_id)
+    if not root or not project_id:
+        raise ValueError("Local acceptance requires a registered project checkout")
+    repo = Path(root)
+    sha = run_git(repo, ["rev-parse", "HEAD"]).stdout.strip()
+    receipt = accept_revision(repo, sha=sha, scope=paths, task_id=task_id)
+    store_verification(task_id, project_id, {"acceptance": receipt})
+    return receipt
+
+
+def _accept_completed_work_or_exit(task_id: str, project_id: str | None, *, paths: tuple[str, ...] = ()) -> None:
+    try:
+        _accept_completed_work(task_id, project_id, **({"paths": paths} if paths else {}))
+    except Exception as exc:
+        output_error(f"Task closeout blocked: local acceptance failed: {exc}\n  Checkpoint preserved; rerun st done {task_id} after resolving this blocker.")
+        raise typer.Exit(1) from None
 
 
 def _publish_completed_work(task_id: str, project_id: str | None, *, paths: tuple[str, ...] = ()) -> None:
@@ -357,29 +370,12 @@ def _publish_completed_work(task_id: str, project_id: str | None, *, paths: tupl
     )
 
 
-def _publish_completed_work_or_exit(task_id: str, project_id: str | None, *, paths: tuple[str, ...] = ()) -> None:
-    """Publish residue or block closeout with a concise retry path."""
-    try:
-        _publish_completed_work(task_id, project_id, **({"paths": paths} if paths else {}))
-    except PublicationPending:
-        raise
-    except Exception as exc:
-        output_error(
-            f"Task closeout blocked: publish failed: {exc}\n"
-            f"  Rerun `st done {task_id}` to retry."
-        )
-        raise typer.Exit(1) from None
-
-
 def complete_task(client: STClient, task_id: str, message: str | None = None, strict: bool = False, admin: bool = False, skip_diff_gate: bool = False, *, paths: tuple[str, ...] = ()) -> dict[str, str | bool]:
-    """Complete a task with direct-main publish and checkpoint cleanup.
+    """Complete a task with local acceptance and checkpoint cleanup.
 
-    Smart mode (default): auto-verifies, checkpoints, publishes, closes, and cleans up.
+    Smart mode (default): checkpoints, accepts locally, closes, and cleans up.
     Strict mode: fails if gates not pre-passed or main dirty.
     """
-    from app.services.task_closeout import get_closeout, resume_closeout
-    if not admin and (intent := get_closeout(task_id)) and intent.get("state") in {"pending", "blocked"}:
-        return resume_closeout(task_id, explicit=True)
     snapshot_info = get_snapshot_info(task_id)
     if snapshot_info:
         if admin:
@@ -393,16 +389,7 @@ def complete_task(client: STClient, task_id: str, message: str | None = None, st
         if admin:
             return _complete_admin(client, task_id, snapshot_info, message)
         return _complete_with_snapshot(client, task_id, snapshot_info, message=message, strict=strict, skip_diff_gate=skip_diff_gate, paths=paths)
-    try:
-        return _complete_without_snapshot(client, task_id, message=message, strict=strict, skip_diff_gate=skip_diff_gate, paths=paths)
-    except PublicationPending as pending:
-        task = client.get_task(task_id)
-        project_id = _task_project_id(task)
-        root = _checkpoint_repo_root(project_id)
-        if root and not skip_diff_gate:
-            _run_diff_gate(root, task_id, project_id, _task_base_branch(task))
-        _run_smart_prereqs(client, task_id, project_id)
-        return _queue_pending_closeout(task_id, project_id, pending, message=message, paths=paths)
+    return _complete_without_snapshot(client, task_id, message=message, strict=strict, skip_diff_gate=skip_diff_gate, paths=paths)
 
 
 def _complete_without_snapshot(client: STClient, task_id: str, *, message: str | None, strict: bool, skip_diff_gate: bool, paths: tuple[str, ...] = ()) -> dict[str, str | bool]:
@@ -426,7 +413,6 @@ def _complete_without_snapshot(client: STClient, task_id: str, *, message: str |
                 "is_working_tree_clean": lambda repo_root: _selected_work_is_clean(repo_root, paths),
                 "output_error": output_error,
                 "output_success": output_success,
-                "publish_completed_work": lambda *args: _publish_completed_work_or_exit(*args, **({"paths": paths} if paths else {})),
                 "run_diff_gate": _run_diff_gate,
                 "task_base_branch": _task_base_branch,
                 "task_has_published_commit_event": _task_has_published_commit_event,
@@ -457,8 +443,7 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
             f"  Checkpoint preserved; rerun `st done {task_id}` when the API is healthy."
         )
         raise typer.Exit(1) from None
-    pending: PublicationPending | None = None
-    try:
+    if not already_completed:
         ensure_checkpoint_clean(
             snapshot_info,
             task_id=task_id,
@@ -466,73 +451,32 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
             strict=strict or already_completed,
             **({"paths": paths} if paths else {}),
         )
-    except PublicationPending as exc:
-        pending = exc
     pid = snapshot_info.get("project_id")
     project_id = str(pid) if isinstance(pid, str) and pid else None
     repo_root = _checkpoint_repo_root(project_id)
     base_branch = normalize_base_branch(str(snapshot_info.get("base_branch", "main")), repo_root)
     snapshot_info["base_branch"] = base_branch
-    stashed = False
-    if not paths and not is_working_tree_clean():
-        if strict:
-            output_error("Main branch has uncommitted changes. Commit/stash them first or use smart mode.")
-            raise typer.Exit(1)
-        output_success("Main checkout dirty, stashing changes before finalization...")
-        git_stash_push()
-        stashed = True
-    publish_failed = False
     try:
         base_commit = str(snapshot_info.get("base_commit") or "") or None
-        if repo_root and not skip_diff_gate:
+        if not already_completed and repo_root and not skip_diff_gate:
             _run_diff_gate(repo_root, task_id, project_id, base_branch, base_commit=base_commit,
                            claimed_at=str(snapshot_info.get("created_at") or "") or None)
         if not already_completed:
+            _accept_completed_work_or_exit(task_id, project_id, paths=paths)
             if strict:
                 _auto_verify_readiness(client, task_id)
             else:
                 _run_smart_prereqs(client, task_id, project_id)
-        if pending:
-            return _queue_pending_closeout(task_id, project_id, pending, message=message, paths=paths)
-        # Publish before closing so an enqueue/network failure leaves both the task
-        # and checkpoint retryable instead of creating a completed-but-unpublished task.
-        try:
-            _publish_completed_work(task_id, project_id, **({"paths": paths} if paths else {}))
-        except PublicationPending as pending:
-            return _queue_pending_closeout(task_id, project_id, pending, message=message, paths=paths)
-        except Exception as publish_exc:
-            publish_failed = True
-            output_warning(
-                f"Publish failed mid-done: {publish_exc}\n"
-                f"Resolution: checkpoint preserved; rerun `st done {task_id}` to retry publish."
-            )
-            raise typer.Exit(1) from None
         if not already_completed:
             _finalize_completed_task_status(client, task_id, message=message)
         _capture_and_remove_snapshot(task_id, project_id)
     except SystemExit as exc:
         raise typer.Exit(exc.code if isinstance(exc.code, int) else 1) from None
-    finally:
-        if stashed:
-            git_stash_pop()
     return _done_result(
         task_id,
         merged=False,
-        published=not publish_failed,
-        snapshot_removed=not publish_failed,
+        published=False,
+        snapshot_removed=True,
         base_branch=base_branch,
         project_id=project_id,
     )
-
-
-def _queue_pending_closeout(task_id: str, project_id: str | None, pending: PublicationPending,
-                           *, message: str | None, paths: tuple[str, ...] = ()) -> dict[str, str | bool]:
-    from app.services.task_closeout import request_closeout
-
-    if not project_id:
-        raise ValueError("Cannot continue publication without an exact project")
-    result = pending.result
-    source = str(result.get("sha") or (result.get("ci") or {}).get("sha") or result.get("commit_id") or "")
-    request_closeout(task_id, project_id, source_sha=source, message=message, paths=paths)
-    return {"action": "pending", "task_id": task_id, "project_id": project_id,
-            "snapshot_removed": False, "published": False, "source_commit": source}

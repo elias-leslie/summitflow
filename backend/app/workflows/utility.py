@@ -1,6 +1,6 @@
 """Utility (on-demand) workflows for SummitFlow.
 
-11 workflows for backup/restore, enrichment, PR review, checkout cleanup,
+12 workflows for backup/restore, enrichment, PR review, checkout cleanup,
 and post-scan task generation.
 """
 
@@ -16,6 +16,7 @@ from .models import (
     AutoFixInput,
     BackupInput,
     EnrichInput,
+    OffsiteSyncInput,
     ProjectInput,
     RestoreInput,
     ReviewPRInput,
@@ -114,6 +115,27 @@ async def backup_restore_wf(input: RestoreInput, ctx: Context) -> dict[str, Any]
         input.files_only,
         input.source_id,
     )
+
+
+@hatchet.task(
+    name="summitflow-backup-offsite-sync",
+    input_validator=OffsiteSyncInput,
+    execution_timeout="900s",
+    retries=2,
+    backoff_factor=2.0,
+    concurrency=[
+        ConcurrencyExpression(
+            expression="input.source_id",
+            max_runs=1,
+            limit_strategy=ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN,
+        ),
+    ],
+)
+async def backup_offsite_sync_wf(input: OffsiteSyncInput, ctx: Context) -> dict[str, Any]:
+    """Retry Drive replication without capturing a new local archive."""
+    from ..tasks.backup_executor import sync_backup_offsite
+
+    return await asyncio.to_thread(sync_backup_offsite, input.backup_id)
 
 
 @hatchet.task(

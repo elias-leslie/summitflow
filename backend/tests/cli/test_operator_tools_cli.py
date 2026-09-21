@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import subprocess
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -16,7 +16,7 @@ import typer
 from typer.testing import CliRunner
 
 from cli.commands import browser, check, db, docker, service, setup, vm
-from cli.lib import service_ops
+from cli.lib import service_ops, service_release
 from cli.lib.proxmox import ProxmoxClient, ProxmoxConfig
 from cli.lib.service_ops import ProjectServices
 from cli.main import app as main_app
@@ -77,6 +77,14 @@ def _project() -> ProjectServices:
     )
 
 
+def _prepared_release() -> SimpleNamespace:
+    return SimpleNamespace(
+        source=SimpleNamespace(source_commit="c" * 40),
+        build_id="b" * 32,
+        receipt_path=Path("/release/deployment.json"),
+    )
+
+
 def test_service_status_reads_native_service_state() -> None:
     with (
         patch("cli.commands.service.service_ops.project_ids", return_value=["summitflow"]),
@@ -109,8 +117,21 @@ def test_service_status_rejects_conflicting_project_inputs() -> None:
 
 
 def test_service_rebuild_uses_native_steps() -> None:
+    project = _project()
+    release = _prepared_release()
     with (
-        patch("cli.commands.service._load", return_value=_project()),
+        patch("cli.commands.service._load", return_value=project),
+        patch(
+            "cli.commands.service.service_ops.prepare_accepted_release",
+            return_value=(release, project),
+        ),
+        patch("cli.commands.service.service_release.deployment_lock", return_value=nullcontext()),
+        patch("cli.commands.service.service_release.mark_phase"),
+        patch("cli.commands.service.service_release.complete_release"),
+        patch(
+            "cli.commands.service.service_release.publish_deployment_result",
+            return_value={"artifact": "/release/deployment.json", "deployment_id": "d" * 64},
+        ),
         patch("cli.commands.service.service_ops.ensure_infra", return_value=0),
         patch("cli.commands.service.service_ops.sync_backend", return_value=0),
         patch("cli.commands.service.service_ops.service_state", return_value="active"),
@@ -518,20 +539,26 @@ def test_check_bare_changed_only_defaults_to_quick() -> None:
     run_tool.assert_not_called()
 
 
-def test_check_changed_only_runs_pytest_for_app_only_python_changes() -> None:
+def test_check_changed_only_skips_unmapped_app_change_with_targeted_direction(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "backend" / "app" / "api" / "unmapped.py"
+    source.parent.mkdir(parents=True)
+    source.touch()
     configs = {
         "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
     }
     with (
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
         patch("cli.commands.check._tool_configs", return_value=configs),
-        patch("cli.commands.check._changed_files", return_value=["backend/app/api/tasks.py"]),
+        patch("cli.commands.check._changed_files", return_value=["backend/app/api/unmapped.py"]),
         patch("cli.commands.check._run_tool", return_value=0) as run_tool,
     ):
         result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
 
     assert result.exit_code == 0
-    assert "TEST:SKIP" not in result.output
-    run_tool.assert_called_once_with("pytest", configs["pytest"], [])
+    assert "TEST:SKIP:pytest:no_deterministic_focused_tests" in result.output
+    run_tool.assert_not_called()
 
 
 def test_check_changed_only_targets_changed_pytest_files() -> None:
@@ -625,7 +652,7 @@ def test_check_changed_only_runs_broad_pytest_for_config_changes() -> None:
         result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
 
     assert result.exit_code == 0
-    run_tool.assert_called_once_with("pytest", configs["pytest"], [])
+    run_tool.assert_called_once_with("pytest", configs["pytest"], ["."])
 
 
 def test_check_architecture_blocks_raw_subprocess_in_web_app(tmp_path: Path) -> None:
@@ -796,11 +823,14 @@ def test_check_tool_output_goes_to_details_file(tmp_path: Path, capsys: pytest.C
         exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
 
     captured = capsys.readouterr()
-    details = tmp_path / ".dev-tools" / "pytest-details.txt"
+    details = next((tmp_path / ".dev-tools").glob("pytest-*-details.txt"))
     assert exit_code == 0
     assert details.read_text(encoding="utf-8") == "line 1\n2187 passed in 19.87s\n"
     assert "line 1" not in captured.out
-    assert "TEST:OK:0|details:.dev-tools/pytest-details.txt|hint:2187 passed in 19.87s" in captured.out
+    assert (
+        f"TEST:OK:0|details:.dev-tools/{details.name}|hint:2187 passed in 19.87s"
+        in captured.out
+    )
 
 
 def test_check_missing_binary_skips_when_no_project_env(
@@ -898,11 +928,11 @@ def test_check_tool_failure_prints_only_hint_and_details_path(
         exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
 
     captured = capsys.readouterr()
-    details = tmp_path / ".dev-tools" / "pytest-details.txt"
+    details = next((tmp_path / ".dev-tools").glob("pytest-*-details.txt"))
     assert exit_code == 1
     assert "very long output" in details.read_text(encoding="utf-8")
     assert "very long output" not in captured.out
-    assert "TEST:FAIL:1|details:.dev-tools/pytest-details.txt|hint:traceback details" in captured.out
+    assert f"TEST:FAIL:1|details:.dev-tools/{details.name}|hint:traceback details" in captured.out
 
 
 def test_db_runs_native_migration_status() -> None:
@@ -1660,8 +1690,15 @@ def test_systemd_bus_discovery_uses_existing_owned_socket(tmp_path, monkeypatch)
 
 
 def test_rebuild_fails_when_restarted_worker_is_not_active():
+    project = _project()
+    release = _prepared_release()
     with (
-        patch("cli.commands.service._load", return_value=_project()),
+        patch("cli.commands.service._load", return_value=project),
+        patch.object(service_ops, "prepare_accepted_release", return_value=(release, project)),
+        patch.object(service_release, "deployment_lock", return_value=nullcontext()),
+        patch.object(service_release, "mark_phase"),
+        patch.object(service_release, "fail_release"),
+        patch("cli.commands.service._restore_previous_units"),
         patch.object(service_ops, "ensure_infra", return_value=0),
         patch.object(service_ops, "sync_backend", return_value=0),
         patch.object(service_ops, "build_frontend", return_value=0),

@@ -90,19 +90,16 @@ class TestWorkProductDetection:
         assert "master..HEAD" in log_call[0][0]
 
     @patch("app.tasks.autonomous.exec_modules.git_work_product.emit_log")
-    @patch("app.tasks.autonomous.exec_modules.git_work_product.has_unpublished_commits")
     @patch("app.tasks.autonomous.exec_modules.git_work_product.smart_commit_result")
     @patch("app.tasks.autonomous.exec_modules.git_work_product.has_uncommitted_changes")
     def test_ensure_committed_work_product_commits_dirty_changes(
         self,
         mock_has_uncommitted_changes: MagicMock,
         mock_smart_commit_result: MagicMock,
-        mock_has_unpublished_commits: MagicMock,
         mock_emit_log: MagicMock,
     ) -> None:
         from app.tasks.autonomous.exec_modules.git_work_product import ensure_committed_work_product
 
-        mock_has_unpublished_commits.side_effect = [False, False]
         mock_has_uncommitted_changes.return_value = True
         mock_smart_commit_result.return_value = {"success": True}
 
@@ -114,21 +111,18 @@ class TestWorkProductDetection:
             "/tmp/test-checkout",
             "autocode(task-1): complete subtask 1.1",
             task_id="task-1",
-            push=True,
+            push=False,
         )
 
     @patch("app.tasks.autonomous.exec_modules.git_work_product.smart_commit_result")
     @patch("app.tasks.autonomous.exec_modules.git_work_product.has_uncommitted_changes")
-    @patch("app.tasks.autonomous.exec_modules.git_work_product.has_unpublished_commits")
     def test_ensure_committed_work_product_surfaces_commit_failure_detail(
         self,
-        mock_has_unpublished_commits: MagicMock,
         mock_has_uncommitted_changes: MagicMock,
         mock_smart_commit_result: MagicMock,
     ) -> None:
         from app.tasks.autonomous.exec_modules.git_work_product import ensure_committed_work_product
 
-        mock_has_unpublished_commits.return_value = False
         mock_has_uncommitted_changes.return_value = True
         mock_smart_commit_result.return_value = {
             "success": False,
@@ -146,38 +140,43 @@ class TestWorkProductDetection:
         assert "--task task-1" in result
         assert "changed_only_types failed for backend/app/foo.py" in result
 
-    @patch("app.tasks.autonomous.exec_modules.git_work_product.publish_existing_commits")
-    @patch("app.tasks.autonomous.exec_modules.git_work_product.has_unpublished_commits")
-    def test_ensure_committed_work_product_publishes_existing_commits(
+    @patch("app.storage.tasks.get_task")
+    @patch("app.tasks.autonomous.exec_modules.git_work_product._run_git")
+    @patch("app.tasks.autonomous.exec_modules.git_work_product.has_uncommitted_changes")
+    def test_ensure_committed_work_product_accepts_task_linked_local_commit(
         self,
-        mock_has_unpublished_commits: MagicMock,
-        mock_publish_existing_commits: MagicMock,
+        mock_has_uncommitted_changes: MagicMock,
+        mock_run_git: MagicMock,
+        mock_get_task: MagicMock,
     ) -> None:
         from app.tasks.autonomous.exec_modules.git_work_product import ensure_committed_work_product
 
-        mock_has_unpublished_commits.return_value = True
-        mock_publish_existing_commits.return_value = True
+        mock_has_uncommitted_changes.return_value = False
+        mock_run_git.return_value = MagicMock(returncode=0, stdout="abc123\n")
+        mock_get_task.return_value = {"commits": ["abc123"]}
 
         result = ensure_committed_work_product("task-1", "1.1", "/tmp/test-checkout", "agent-hub")
 
         assert result is None
-        mock_publish_existing_commits.assert_called_once_with("/tmp/test-checkout")
+        mock_run_git.assert_called_once_with("/tmp/test-checkout", "rev-parse", "HEAD")
 
+    @patch("app.storage.tasks.get_task", return_value={"commits": []})
+    @patch("app.tasks.autonomous.exec_modules.git_work_product._run_git")
     @patch("app.tasks.autonomous.exec_modules.git_work_product.has_uncommitted_changes")
-    @patch("app.tasks.autonomous.exec_modules.git_work_product.has_unpublished_commits")
-    def test_ensure_committed_work_product_fails_when_nothing_to_publish(
+    def test_ensure_committed_work_product_fails_without_task_linkage(
         self,
-        mock_has_unpublished_commits: MagicMock,
         mock_has_uncommitted_changes: MagicMock,
+        mock_run_git: MagicMock,
+        _mock_get_task: MagicMock,
     ) -> None:
         from app.tasks.autonomous.exec_modules.git_work_product import ensure_committed_work_product
 
-        mock_has_unpublished_commits.return_value = False
         mock_has_uncommitted_changes.return_value = False
+        mock_run_git.return_value = MagicMock(returncode=0, stdout="unlinked\n")
 
         result = ensure_committed_work_product("task-1", "1.1", "/tmp/test-checkout", "agent-hub")
 
-        assert result == "No committed or dirty work product remains to publish"
+        assert result == "No task-linked local commit or dirty work product remains"
 
     @patch("app.tasks.autonomous.exec_modules.quality_check.subprocess.run")
     def test_has_no_work_product_when_branch_clean_and_no_commits(

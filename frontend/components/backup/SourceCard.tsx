@@ -21,13 +21,14 @@ import {
   updateBackupSource,
 } from '@/lib/api/backups'
 import { formatBytes, formatDate, formatTimeAgo } from '@/lib/format'
+import { OffsiteStatus } from './OffsiteStatus'
 import { SourceTypeBadge } from './SourceTypeBadge'
 import { StatusBadge } from './StatusBadge'
 
 // ─── Constants ──────────────────────────────────────────────────
 
 const SOURCE_CONTENTS: Record<string, string> = {
-  project: 'Code, assets, and project database',
+  project: 'Code, Git history, working files, assets, and project database',
   config: 'Application settings and preferences',
   workspace: 'Shared workspace files',
   infrastructure: 'PostgreSQL, Redis, Hatchet config, and secrets',
@@ -361,6 +362,7 @@ export function SourceCard({
             )}
 
             {/* Metrics row */}
+            {health && <OffsiteStatus health={health} onSaved={onSaved} />}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
               <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
                 <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">

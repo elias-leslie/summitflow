@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 import time
@@ -14,6 +15,7 @@ from .backup_native_archive import (
     _create_project_archive,
 )
 from .backup_native_infra import INFRA_BACKUP_TIMEOUT, run_infra_backup
+from .backup_native_offsite import encrypt_completed_archive, replicate_completed_archive
 from .backup_native_pending import drain_pending_archives_from_dir
 from .backup_native_restore import (
     archive_age_days,
@@ -65,6 +67,7 @@ def _store_local_project_archive(
     final_dir.mkdir(parents=True, exist_ok=True)
     final_path = final_dir / archive_name
     shutil.copy2(archive_path, final_path)
+    apply_local_retention(final_dir, retention)
     location = str(final_path)
     update_backup_index(source_id, result, "ok", location, retention)
     return {**result, "archive_path": final_path, "location": location}
@@ -88,7 +91,7 @@ def _upload_project_archive(
             local_dir = project_path / "backups"
             local_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(archive_path, local_dir / archive_name)
-            apply_local_retention(local_dir)
+            apply_local_retention(local_dir, retention)
         update_backup_index(source_id, result, "ok", location, retention)
         return {**result, "location": location}
 
@@ -102,7 +105,7 @@ def _upload_project_archive(
                 local_dir = project_path / "backups"
                 local_dir.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(archive_path, local_dir / archive_name)
-                apply_local_retention(local_dir)
+                apply_local_retention(local_dir, retention)
             update_backup_index(source_id, result, "ok", location, retention)
             return {**result, "location": location}
         logger.warning(
@@ -146,12 +149,66 @@ def run_project_backup(
     with tempfile.TemporaryDirectory(prefix=f"{project_name}-backup-") as temp_dir:
         result = _create_project_archive(project_path, project_name, Path(temp_dir), run_env)
         require_verified_backup_output(result)
-        archive_name = str(result["archive_name"])
-        archive_path = Path(result["archive_path"])
+        plaintext_path = Path(result["archive_path"])
+        plaintext_path.chmod(0o600)
+        archive_name = f"{result['archive_name']}.age"
+        archive_path = Path(temp_dir) / archive_name
+        encryption = encrypt_completed_archive(plaintext_path, archive_path, run_env)
+        verification = dict(result["verification"])
+        verification["content_checksum"] = encryption["content_checksum"]
+        verification["checksum"] = encryption["checksum"]
+        verification["encrypted"] = True
+        result.update(
+            {
+                "archive_name": archive_name,
+                "archive_path": archive_path,
+                "content_bytes": result["total_bytes"],
+                "total_bytes": encryption["encrypted_bytes"],
+                "verification": verification,
+            }
+        )
         if local_only:
             return _store_local_project_archive(project_path, source_id, result, archive_path, archive_name, retention)
+        offsite_configured = bool(
+            run_env.get("BACKUP_OFFSITE_GIO_URI")
+            or os.environ.get("BACKUP_OFFSITE_GIO_URI")
+        )
+        backend_type = storage_backend_type(run_env)
+        local_archive = project_path / "backups" / archive_name
+        if offsite_configured and backend_type != "local":
+            local_archive.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(archive_path, local_archive)
+            apply_local_retention(local_archive.parent, retention)
         storage = _storage_config(project_name, run_env)
-        return _upload_project_archive(project_path, source_id, result, archive_path, storage, run_env, keep_local, retention)
+        stored = _upload_project_archive(
+            project_path,
+            source_id,
+            result,
+            archive_path,
+            storage,
+            run_env,
+            keep_local and not offsite_configured,
+            retention,
+        )
+        if offsite_configured:
+            replica_source = (
+                Path(str(stored["location"]))
+                if backend_type == "local"
+                else local_archive
+            )
+            offsite = replicate_completed_archive(
+                replica_source,
+                source_id=source_id,
+                local_dir=replica_source.parent,
+                env=run_env,
+                retention_days=retention,
+            )
+            verification = dict(stored.get("verification") or {})
+            verification["offsite"] = offsite
+            stored["verification"] = verification
+            stored["offsite"] = offsite
+            update_backup_index(source_id, stored, "ok", str(stored.get("location") or replica_source), retention)
+        return stored
 
 
 def drain_pending_archives(*, dry_run: bool = False) -> dict[str, Any]:

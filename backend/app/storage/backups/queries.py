@@ -277,7 +277,23 @@ def get_backup_health_summary() -> list[dict[str, Any]]:
                 bs.last_restore_test_ok,
                 bs.last_drill_at,
                 bs.last_drill_ok,
-                bs.last_drill_backup_id
+                bs.last_drill_backup_id,
+                (
+                    SELECT b.verification_json
+                    FROM backups b
+                    WHERE b.source_id = bs.id
+                      AND b.status IN ('completed', 'completed_pending_upload')
+                    ORDER BY b.completed_at DESC
+                    LIMIT 1
+                ) AS latest_verification_json,
+                (
+                    SELECT b.id
+                    FROM backups b
+                    WHERE b.source_id = bs.id
+                      AND b.status IN ('completed', 'completed_pending_upload')
+                    ORDER BY b.completed_at DESC
+                    LIMIT 1
+                ) AS latest_backup_id
             FROM backup_sources bs
             ORDER BY bs.source_type, bs.name
             """
@@ -300,6 +316,8 @@ def get_backup_health_summary() -> list[dict[str, Any]]:
             "last_drill_at": row[11].isoformat() if row[11] else None,
             "last_drill_ok": row[12],
             "last_drill_backup_id": row[13],
+            "latest_verification_json": row[14],
+            "latest_backup_id": str(row[15]) if row[15] else None,
         }
         for row in rows
     ]

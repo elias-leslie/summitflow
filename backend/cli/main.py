@@ -270,10 +270,10 @@ app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
 @app.command("commit")
 @usage(
     surface="st.commit",
-    cmd='st commit -m "msg" --push',
+    cmd='st commit -m "msg"',
     when="authorized implementation reaches a verified checkpoint",
     precautions=(
-        "review the diff for secrets, destructive changes, and task scope before publication",
+        "review the diff for secrets, destructive changes, and task scope before committing",
         "use --paths to preserve unrelated work; include generated changes belonging to the checkpoint",
         "after publish, trust printed COMMIT summary not local-clean state",
         "commit before destructive ops (abandon, rollback)",
@@ -283,7 +283,7 @@ app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
 def commit_command(
     ctx: typer.Context,
     message: Annotated[str, typer.Option("--message", "--msg", "-m", help="Required commit/change description.")],
-    push: Annotated[bool, typer.Option("--push/--no-push", help="Publish after describing the change.")] = True,
+    push: Annotated[bool, typer.Option("--push/--no-push", help="Explicitly publish after the local commit.")] = False,
     task_id: Annotated[str, typer.Option("--task", help="Task id for bookmark and audit log.")] = "",
     repo: Annotated[str | None, typer.Option("--repo", "-R", help="Repository path. Defaults to current repo.")] = None,
     skip_checks: Annotated[

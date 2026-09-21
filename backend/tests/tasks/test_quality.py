@@ -8,6 +8,7 @@ from app.tasks.autonomous.exec_modules.quality import (
     _run_gate_subprocess,
     build_final_quality_gate_command,
     run_final_quality_gate,
+    run_quality_gate,
 )
 
 
@@ -98,3 +99,37 @@ def test_run_gate_subprocess_passes_committed_task_file_scope(
         mock_run.call_args.kwargs["env"]["ST_CHECK_CHANGED_FILES"]
         == "frontend/app/example.tsx"
     )
+
+
+@patch("app.tasks.autonomous.exec_modules.quality.emit_quality_gate_result")
+@patch("cli.commands.done_task._accept_completed_work")
+def test_normal_quality_gate_uses_canonical_source_acceptance(
+    mock_accept: MagicMock,
+    mock_emit: MagicMock,
+) -> None:
+    mock_accept.return_value = {"state": "success", "reused": False}
+
+    assert run_quality_gate("task-1", "/workspace/project", "summitflow") is True
+
+    mock_accept.assert_called_once_with("task-1", "summitflow")
+    mock_emit.assert_called_once_with("task-1", True, "passed")
+
+
+@patch("app.tasks.autonomous.exec_modules.quality.store_execution_verification")
+@patch("app.tasks.autonomous.exec_modules.quality.emit_quality_gate_result")
+@patch("cli.commands.done_task._accept_completed_work")
+def test_acceptance_failure_is_recorded_and_blocks_quality_gate(
+    mock_accept: MagicMock,
+    mock_emit: MagicMock,
+    mock_store: MagicMock,
+) -> None:
+    mock_accept.side_effect = RuntimeError(
+        "acceptance_checks_failed; acceptance evidence: /tmp/receipt.json"
+    )
+
+    assert run_quality_gate("task-1", "/workspace/project", "summitflow") is False
+
+    evidence = mock_store.call_args.args[2]["autonomous_failure"]
+    assert evidence["stage"] == "acceptance"
+    assert "receipt.json" in evidence["reason"]
+    mock_emit.assert_called_once_with("task-1", False, evidence["reason"])

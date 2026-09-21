@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from app.storage.agent_configs_quality import build_st_check_command
+from app.storage.tasks.closeout import store_execution_verification
 
 from .ah_events import emit_quality_gate_result
 from .events import emit_log
@@ -164,7 +165,7 @@ def run_quality_gate(
     project_path: str,
     project_id: str,
 ) -> bool:
-    """Run the final task-scoped quality gate and emit its result event.
+    """Run canonical source-bound acceptance and emit its result event.
 
     Args:
         task_id: The task ID
@@ -174,7 +175,35 @@ def run_quality_gate(
     Returns:
         True if quality gate passed, False otherwise
     """
-    final_gate_passed = run_final_quality_gate(task_id, project_path, project_id)
-    detail = "passed" if final_gate_passed else "failed"
-    emit_quality_gate_result(task_id, final_gate_passed, detail)
-    return final_gate_passed
+    del project_path
+    from cli.commands.done_task import _accept_completed_work
+
+    try:
+        _accept_completed_work(task_id, project_id)
+    except Exception as exc:
+        detail = str(exc) or type(exc).__name__
+        try:
+            store_execution_verification(
+                task_id,
+                project_id,
+                {
+                    "autonomous_failure": {
+                        "state": "failed",
+                        "stage": "acceptance",
+                        "reason": detail,
+                    }
+                },
+            )
+        except Exception as storage_exc:
+            emit_log(
+                task_id,
+                "warn",
+                f"Could not retain acceptance failure evidence: {storage_exc}",
+                source="quality",
+                project_id=project_id,
+            )
+        emit_quality_gate_result(task_id, False, detail)
+        return False
+
+    emit_quality_gate_result(task_id, True, "passed")
+    return True

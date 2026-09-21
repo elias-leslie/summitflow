@@ -11,10 +11,13 @@ from ....storage.notifications import (
     create_task_completion_notification,
     create_task_failure_notification,
 )
+from ....storage.tasks.closeout import store_execution_verification, store_verification
 from .events import emit_log
 from .external_work import external_work_receipt
 
 logger = get_logger(__name__)
+
+_RECEIPT_KEYS = {"acceptance", "deployment", "live_validation"}
 
 
 def _notify_completion(task_id: str, project_id: str) -> None:
@@ -60,6 +63,64 @@ def notify_failure(
         logger.exception("Failed to create failure notification", task_id=task_id)
 
 
+def mark_failed_with_evidence(
+    task_id: str,
+    project_id: str,
+    *,
+    stage: str,
+    reason: str,
+    subtask_id: str | None = None,
+) -> None:
+    """Fail a task without silently discarding closeout or failure evidence."""
+    task = task_store.get_task(task_id) or {}
+    verification = task.get("verification_result") or {}
+    receipts = {
+        key: verification[key]
+        for key in _RECEIPT_KEYS
+        if key in verification
+    }
+    task_store.update_task_status(task_id, "failed")
+
+    if receipts:
+        try:
+            store_verification(task_id, project_id, receipts)
+        except Exception as exc:
+            emit_log(
+                task_id,
+                "error",
+                f"Failed to retain closeout receipts after failure: {exc}",
+                project_id=project_id,
+            )
+
+    existing_failure = verification.get("autonomous_failure")
+    failure: dict[str, Any] = (
+        dict(existing_failure)
+        if isinstance(existing_failure, dict)
+        and existing_failure.get("state") == "failed"
+        and existing_failure.get("stage") == stage
+        else {
+            "state": "failed",
+            "stage": stage,
+            "reason": reason,
+        }
+    )
+    if subtask_id:
+        failure["subtask_id"] = subtask_id
+    try:
+        store_execution_verification(
+            task_id,
+            project_id,
+            {"autonomous_failure": failure},
+        )
+    except Exception as exc:
+        emit_log(
+            task_id,
+            "error",
+            f"Failed to retain autonomous failure evidence: {exc}",
+            project_id=project_id,
+        )
+
+
 def build_early_completion_verification(total_subtasks: int) -> dict[str, Any]:
     """Build verification result for early completion (all subtasks already done)."""
     return {
@@ -100,10 +161,20 @@ def build_successful_completion_verification(
     return result
 
 
-def _do_complete_transition(task_id: str, project_id: str, log_message: str) -> str:
+def _do_complete_transition(
+    task_id: str,
+    project_id: str,
+    log_message: str,
+    *,
+    acceptance_required: bool = True,
+) -> str:
     """Set task to completed and send a completion notification."""
+    from cli.commands.done_task import _accept_completed_work
+
     from ....tasks.autonomous.cleanup.checkpoint_cleanup import cleanup_task_checkpoint
 
+    if acceptance_required:
+        _accept_completed_work(task_id, project_id)
     task_store.update_task_status(task_id, "completed")
     emit_log(
         task_id,
@@ -130,13 +201,20 @@ def transition_to_complete(
     project_id: str,
     log_message: str,
     dispatch: Callable[[str, str, str], None] | None = None,
+    *,
+    acceptance_required: bool = True,
 ) -> str:
     """Transition task to a merge-derived terminal state ("completed" or "failed").
 
     `dispatch` is unused; deterministic quality gates replaced the LLM review tier.
     """
     del dispatch
-    return _do_complete_transition(task_id, project_id, log_message)
+    return _do_complete_transition(
+        task_id,
+        project_id,
+        log_message,
+        acceptance_required=acceptance_required,
+    )
 
 
 def handle_status_transition_error(
@@ -153,7 +231,12 @@ def handle_status_transition_error(
         error_msg = "\n".join(parts)
 
     emit_log(task_id, "error", error_msg, project_id=project_id)
-    task_store.update_task_status(task_id, "failed")
+    mark_failed_with_evidence(
+        task_id,
+        project_id,
+        stage="status_transition",
+        reason=str(error),
+    )
     emit_log(
         task_id,
         "error",

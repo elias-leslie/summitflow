@@ -328,7 +328,7 @@ def _missing_helper_result() -> dict[str, Any]:
 
 def _published_after_commit(project_path: str, *, push: bool, returncode: int) -> bool:
     if returncode != 0 or not push:
-        return True
+        return False
     return not has_unpublished_commits(project_path)
 
 
@@ -412,7 +412,7 @@ def smart_commit_result(
     project_path: str,
     message: str,
     task_id: str = "",
-    push: bool = True,
+    push: bool = False,
     skip_checks: bool = False,
 ) -> dict[str, Any]:
     """Run the canonical commit helper and preserve failure detail."""
@@ -427,7 +427,7 @@ def smart_commit_result(
     try:
         result = _run_commit_helper(project_path, args)
         published = _published_after_commit(project_path, push=push, returncode=result.returncode)
-        if result.returncode == 0 and published:
+        if result.returncode == 0 and (not push or published):
             logger.info("smart_commit_success", message=message[:80])
             return _success_result(
                 args=args,
@@ -468,7 +468,7 @@ def smart_commit(
     project_path: str,
     message: str,
     task_id: str = "",
-    push: bool = True,
+    push: bool = False,
     skip_checks: bool = False,
 ) -> bool:
     """Preserve work via the canonical commit helper.

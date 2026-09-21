@@ -8,6 +8,17 @@ import {
 // Re-export infra types and functions so existing imports from this module keep working
 export * from './backups-infra'
 
+export function syncBackupOffsite(
+  sourceId: string,
+  backupId: string,
+): Promise<TaskResponse> {
+  return postJson<TaskResponse>(
+    `/api/backup-sources/${encodeURIComponent(sourceId)}/backups/${encodeURIComponent(backupId)}/sync-offsite`,
+    {},
+    'Could not sync the retained backup to Google Drive',
+  )
+}
+
 export interface BackupVerification {
   verified: boolean
   verified_at: string

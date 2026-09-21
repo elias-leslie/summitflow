@@ -27,6 +27,7 @@ _CONTEXT_DERIVED_FIELDS = (
     "testing_strategy",
     "second_opinion",
     "execution_contract",
+    "completion_requirements",
     "subtasks",
 )
 _PLAN_EXPORT_DEFAULTS: dict[str, str | list[Any] | None] = {
@@ -39,6 +40,7 @@ _PLAN_EXPORT_DEFAULTS: dict[str, str | list[Any] | None] = {
     "files_to_modify": [],
     "references": [],
     "testing_strategy": None,
+    "completion_requirements": None,
 }
 
 
@@ -159,6 +161,13 @@ def build_task_plan_context(payload: dict[str, Any] | None) -> dict[str, Any]:
     )
     if execution_contract:
         context["execution_contract"] = execution_contract
+
+    requirements = source.get("completion_requirements") or context.get("completion_requirements")
+    if isinstance(requirements, dict):
+        context["completion_requirements"] = {
+            "deployment": requirements.get("deployment") is True,
+            "live_checks": _clean_string_list(requirements.get("live_checks")),
+        }
 
     if subtasks := normalize_plan_subtasks(source.get("subtasks")):
         context["subtasks"] = subtasks

@@ -67,6 +67,8 @@ def resume_closeout(task_id: str, *, explicit: bool = False) -> dict[str, Any]:
         intent = ((task or {}).get("verification_result") or {}).get("closeout") or {}
         if not task or not intent:
             return {"action": "skipped", "task_id": task_id, "reason": "no_completion_request"}
+        locally_complete = (task["status"] == "completed"
+                            and (task.get("verification_result") or {}).get("acceptance", {}).get("state") == "success")
         if task["status"] in {"paused", "cancelled", "abandoned", "closed", "failed"}:
             return {"action": "skipped", "task_id": task_id, "reason": "task_not_active"}
         if intent["state"] == "complete":
@@ -81,7 +83,7 @@ def resume_closeout(task_id: str, *, explicit: bool = False) -> dict[str, Any]:
         result: dict[str, Any] = {}
         previous_state = intent["state"]
         try:
-            if not (intent.get("publication") or {}).get("publication_complete"):
+            if not locally_complete and not (intent.get("publication") or {}).get("publication_complete"):
                 result = publish_git(Path(root), sha=intent["source_sha"], task_id=task_id,
                                      message=str(intent["message"]), run_git=run_git, resume=True)
                 result = _record_task_publication(Path(root), result, task_id=task_id, push=True)
@@ -117,9 +119,11 @@ def resume_closeout(task_id: str, *, explicit: bool = False) -> dict[str, Any]:
             intent.update(state="complete", completed_at=datetime.now(UTC).isoformat(), reason="")
             if not store_closeout(task_id, project_id, intent, expected_request_id=request_id):
                 return {"action": "skipped", "task_id": task_id, "reason": "completion_request_superseded"}
-            log_task_event(task_id, "Closeout completed automatically from retained source and publication evidence.")
+            log_task_event(task_id, "Closeout cleanup completed from retained acceptance evidence; publication is independent.")
+            publication = intent.get("publication")
+            published = isinstance(publication, dict) and bool(publication.get("publication_complete"))
             return {"action": "completed", "task_id": task_id, "project_id": project_id,
-                    "snapshot_removed": True, "published": True,
+                    "snapshot_removed": True, "published": published,
                     "base_branch": task.get("base_branch") or "main"}
         except Exception as exc:
             intent.update(state="blocked", reason=str(exc), observed_at=datetime.now(UTC).isoformat())
@@ -133,6 +137,8 @@ def resume_closeout(task_id: str, *, explicit: bool = False) -> dict[str, Any]:
 def checkpoint_state(status: str, verification: dict[str, Any] | None) -> tuple[str, str]:
     """Shared UI/CLI description; a checkpoint does not prove a live agent."""
     verification = verification or {}
+    if status == "completed" and (verification.get("acceptance") or {}).get("state") == "success":
+        return "complete", "Completed locally; publication is independent"
     closeout = verification.get("closeout") or {}
     publication = verification.get("publication") or {}
     if closeout.get("state") == "pending":

@@ -8,16 +8,44 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from ..services.backup_keys import get_backup_key_paths
 from .backup_native_archive import (
     BACKUP_TIMEOUT,
     INFRASTRUCTURE_DATABASE_DUMP_NAME,
     PROJECT_DATABASE_DUMP_NAME,
+    _is_safe_archive_link,
     _load_db_config,
 )
+from .backup_native_recovery import RECOVERY_DIR_NAME, restore_git_recovery
+
+
+@contextmanager
+def materialize_plaintext_archive(path: Path) -> Iterator[Path]:
+    """Yield a tar archive, decrypting new encrypted artifacts in private temp space."""
+    if not path.name.endswith(".age"):
+        yield path
+        return
+    _recipient, identity = get_backup_key_paths(require_validated=True)
+    with tempfile.TemporaryDirectory(prefix="backup-restore-") as temp_dir:
+        plaintext = Path(temp_dir) / path.name.removesuffix(".age")
+        result = subprocess.run(
+            ["age", "--decrypt", "-i", str(identity), "-o", str(plaintext), str(path)],
+            capture_output=True,
+            text=True,
+            timeout=BACKUP_TIMEOUT,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = result.stderr.strip()
+            raise RuntimeError(f"Backup decryption failed: {detail[-500:] or result.returncode}")
+        plaintext.chmod(0o600)
+        yield plaintext
 
 
 def locate_archive(project_dir: Path, backup: dict[str, Any] | None = None, backup_file: str | None = None) -> Path | None:
@@ -42,7 +70,7 @@ def preview_restore_archive(path: Path, *, db_only: bool = False, files_only: bo
     """Return archive restore preview metadata."""
     entries: list[str] = []
     omitted = 0
-    with tarfile.open(path, "r:gz") as archive:
+    with materialize_plaintext_archive(path) as plaintext, tarfile.open(plaintext, "r:gz") as archive:
         members = archive.getmembers()
         _, database_member_name = _validate_archive_layout(members)
         for member in members:
@@ -59,13 +87,15 @@ def preview_restore_archive(path: Path, *, db_only: bool = False, files_only: bo
 
 
 def _validated_member_parts(member: tarfile.TarInfo) -> tuple[str, ...]:
-    """Return safe POSIX path components for a regular file/directory member."""
+    """Return safe path components for a regular file, directory, or safe link."""
     name = member.name
     path = PurePosixPath(name)
     if not name or "\x00" in name or "\\" in name or path.is_absolute():
         raise RuntimeError(f"Unsafe archive path: {name}")
-    if not (member.isdir() or member.isreg()):
+    if not (member.isdir() or member.isreg() or member.issym()):
         raise RuntimeError(f"Unsafe archive member type: {name}")
+    if member.issym() and not _is_safe_archive_link(member):
+        raise RuntimeError(f"Unsafe archive symbolic link: {name}")
 
     parts = path.parts
     if not parts or any(part in {"", ".", ".."} for part in parts):
@@ -116,6 +146,9 @@ def _validate_archive_layout(members: list[tarfile.TarInfo]) -> tuple[str, str |
     regular_file_names = {
         name for member, name in normalized_members if member.isreg()
     }
+    symlink_names = {
+        name for member, name in normalized_members if member.issym()
+    }
     for _, name in normalized_members:
         for parent in PurePosixPath(name).parents:
             parent_name = parent.as_posix()
@@ -124,6 +157,10 @@ def _validate_archive_layout(members: list[tarfile.TarInfo]) -> tuple[str, str |
             if parent_name in regular_file_names:
                 raise RuntimeError(
                     f"Backup archive contains file/directory collision: {parent_name}"
+                )
+            if parent_name in symlink_names:
+                raise RuntimeError(
+                    f"Backup archive contains member beneath symbolic link: {parent_name}"
                 )
 
     if not database_members:
@@ -152,11 +189,16 @@ def _validate_destination_targets(
         target = root / rel
         if not target.resolve().is_relative_to(root):
             raise RuntimeError(f"Unsafe archive path: {member.name}")
-        if member.isdir() and target.exists() and not target.is_dir():
+        target_exists = os.path.lexists(target)
+        if member.isdir() and target_exists and not target.is_dir():
             raise RuntimeError(
                 f"Backup archive directory conflicts with existing file: {member.name}"
             )
-        if member.isreg() and target.exists() and not target.is_file():
+        if member.issym() and target_exists:
+            raise RuntimeError(
+                f"Backup archive file conflicts with existing path: {member.name}"
+            )
+        if member.isreg() and target_exists and not target.is_file():
             raise RuntimeError(
                 f"Backup archive file conflicts with existing directory: {member.name}"
             )
@@ -181,6 +223,9 @@ def _safe_extract_member(
         target.mkdir(parents=True, exist_ok=True)
         return
     target.parent.mkdir(parents=True, exist_ok=True)
+    if member.issym():
+        target.symlink_to(member.linkname)
+        return
     src = archive.extractfile(member)
     if src is None:
         return
@@ -252,13 +297,22 @@ def _restore_database_member(
     return restored
 
 
-def restore_archive(path: Path, project_dir: Path, *, dry_run: bool, db_only: bool = False, files_only: bool = False) -> dict[str, Any]:
+def restore_archive(
+    path: Path,
+    project_dir: Path,
+    *,
+    dry_run: bool,
+    db_only: bool = False,
+    files_only: bool = False,
+    database_copy_dir: Path | None = None,
+) -> dict[str, Any]:
     """Restore a local archive safely, or preview when dry_run is true."""
     if dry_run:
         return preview_restore_archive(path, db_only=db_only, files_only=files_only)
     restored = 0
     db_restored: str | None = None
-    with tarfile.open(path, "r:gz") as archive:
+    db_copy: str | None = None
+    with materialize_plaintext_archive(path) as plaintext, tarfile.open(plaintext, "r:gz") as archive:
         members = archive.getmembers()
         expected_top_level, database_member_name = _validate_archive_layout(members)
         extractable_members = [
@@ -277,6 +331,16 @@ def restore_archive(path: Path, project_dir: Path, *, dry_run: bool, db_only: bo
             if db_only and not is_db:
                 continue
             if files_only and is_db:
+                if database_copy_dir is not None:
+                    database_copy_dir.mkdir(parents=True, exist_ok=True)
+                    copied_dump = database_copy_dir / PurePosixPath(member.name).name
+                    source = archive.extractfile(member)
+                    if source is None:
+                        raise RuntimeError(f"Unable to read database dump: {member.name}")
+                    with source, copied_dump.open("wb") as output:
+                        shutil.copyfileobj(source, output)
+                    copied_dump.chmod(0o600)
+                    db_copy = str(copied_dump)
                 continue
             if is_db:
                 db_restored = _restore_database_member(
@@ -291,7 +355,30 @@ def restore_archive(path: Path, project_dir: Path, *, dry_run: bool, db_only: bo
             restored += 1
     if db_only and not db_restored:
         raise RuntimeError("Archive does not contain a database dump")
-    return {"status": "completed", "dry_run": False, "archive": str(path), "files_restored": restored, "db_restored": db_restored}
+    return {
+        "status": "completed",
+        "dry_run": False,
+        "archive": str(path),
+        "files_restored": restored,
+        "db_restored": db_restored,
+        "database_copy": db_copy,
+    }
+
+
+def restore_isolated_archive(path: Path, destination: Path) -> dict[str, Any]:
+    """Restore files and VCS metadata into a new, isolated destination."""
+    if destination.exists() and any(destination.iterdir()):
+        raise RuntimeError("Isolated restore destination must be empty")
+    destination.mkdir(parents=True, exist_ok=True)
+    restored = restore_archive(
+        path,
+        destination,
+        dry_run=False,
+        files_only=True,
+        database_copy_dir=destination / RECOVERY_DIR_NAME,
+    )
+    recovery = restore_git_recovery(destination)
+    return {**restored, "isolated": True, "recovery": recovery}
 
 
 def archive_age_days(path: Path) -> int:

@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import hmac
+from datetime import UTC, datetime
+from pathlib import Path
+
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..storage.notifications import create_notification
 from .backup_lock import acquire_backup_lock, maintain_backup_lock
 from .backup_native import BACKUP_TIMEOUT, run_project_backup
+from .backup_native_archive import archive_sha256
+from .backup_native_offsite import replicate_completed_archive
+from .backup_native_restore import restore_isolated_archive
 from .backup_utils import (
     as_mapping,
     build_storage_env,
@@ -20,6 +27,109 @@ from .backup_utils import (
 )
 
 logger = get_logger(__name__)
+
+
+def sync_backup_offsite(backup_id: str) -> dict[str, object]:
+    """Retry offsite replication from a completed retained local archive."""
+    backup = backup_store.get_backup(backup_id)
+    if not backup:
+        raise FileNotFoundError(f"Backup {backup_id} not found")
+    if backup.get("status") not in {"completed", "completed_pending_upload"}:
+        raise RuntimeError("Only completed backups can be synced offsite")
+    source_id = str(backup.get("source_id") or backup.get("project_id") or "")
+    source = backup_store.get_source(source_id)
+    if not source:
+        raise RuntimeError(f"Backup source {source_id} not found")
+    source_path = Path(str(source.get("path") or ""))
+    archive_name = str(backup.get("name") or "")
+    recorded_location = Path(str(backup.get("location") or ""))
+    archive_candidates = (
+        recorded_location,
+        source_path / "backups" / archive_name,
+        source_path / "backups" / "infrastructure" / archive_name,
+    )
+    archive = next((path for path in archive_candidates if path.is_file()), archive_candidates[1])
+    if not archive.is_file():
+        raise FileNotFoundError(f"Retained local archive not found: {archive_name}")
+    backup_store.merge_backup_verification_json(
+        backup_id,
+        {"offsite": {"status": "pending"}},
+    )
+    result = replicate_completed_archive(
+        archive,
+        source_id=source_id,
+        local_dir=archive.parent,
+        env=build_storage_env(source_id),
+        retention_days=int(source.get("retention_days") or 14),
+        retry=True,
+    )
+    updated = backup_store.merge_backup_verification_json(
+        backup_id,
+        {"offsite": result},
+    )
+    return updated or {**backup, "verification_json": {"offsite": result}}
+
+
+def restore_backup_isolated(
+    backup_id: str,
+    destination: Path,
+    *,
+    expected_source_id: str | None = None,
+    archive_file: Path | None = None,
+) -> dict[str, object]:
+    """Restore one retained archive in isolation and persist drill evidence."""
+    backup = backup_store.get_backup(backup_id)
+    if not backup:
+        raise FileNotFoundError(f"Backup {backup_id} not found")
+    source_id = str(backup.get("source_id") or backup.get("project_id") or "")
+    if expected_source_id and source_id != expected_source_id:
+        raise RuntimeError(
+            f"Backup {backup_id} belongs to source {source_id}, not {expected_source_id}"
+        )
+    source = backup_store.get_source(source_id)
+    if not source:
+        raise RuntimeError(f"Backup source {source_id} not found")
+    source_path = Path(str(source.get("path") or ""))
+    archive_name = str(backup.get("name") or "")
+    recorded_location = Path(str(backup.get("location") or ""))
+    archive_candidates = (
+        recorded_location,
+        source_path / "backups" / archive_name,
+        source_path / "backups" / "infrastructure" / archive_name,
+    )
+    archive = (
+        archive_file.expanduser()
+        if archive_file is not None
+        else next((path for path in archive_candidates if path.is_file()), archive_candidates[1])
+    )
+    expected_checksum = str(backup.get("checksum") or "")
+    if archive_file is not None and not expected_checksum:
+        raise RuntimeError("Downloaded archive has no recorded checksum; isolated restore refused")
+    if not archive.is_file():
+        raise FileNotFoundError(f"Backup archive not found: {archive}")
+    if expected_checksum and not hmac.compare_digest(archive_sha256(archive), expected_checksum):
+        raise RuntimeError("Archive checksum mismatch: refusing isolated restore")
+    verified_at = datetime.now(UTC).isoformat()
+    try:
+        result = restore_isolated_archive(archive, destination)
+        evidence: dict[str, object] = {
+            "ok": True,
+            "verified_at": verified_at,
+            "archive_checksum": backup.get("checksum"),
+            "git_restored": bool((result.get("recovery") or {}).get("git_restored")),
+            "database_copy_preserved": bool(result.get("database_copy")),
+        }
+    except Exception as exc:
+        backup_store.merge_backup_verification_json(
+            backup_id,
+            {"isolated_restore": {"ok": False, "verified_at": verified_at, "error": str(exc)}},
+        )
+        raise
+    backup_store.merge_backup_verification_json(
+        backup_id,
+        {"isolated_restore": evidence},
+    )
+    return {**result, "evidence": evidence}
 
 
 def create_backup(

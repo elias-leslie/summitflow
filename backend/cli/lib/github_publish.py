@@ -266,6 +266,19 @@ class GitHub:
         return self.api('pulls', method='POST', body={'head': head, 'base': base, 'title': title,
                         'body': 'Publish verified task changes through the canonical ST workflow.'})
 
+    def source_pull_request(self, base: str, sha: str) -> dict[str, Any] | None:
+        """Find an existing PR for the exact source, independent of its task branch."""
+        pulls = self.pages(f'commits/{sha}/pulls')
+        candidates = [
+            pull
+            for pull in pulls
+            if pull.get('head', {}).get('sha') == sha
+            and pull.get('base', {}).get('ref') == base
+            and (pull.get('state') == 'open' or pull.get('merged_at'))
+        ]
+        candidates.sort(key=lambda pull: (pull.get('state') != 'open', pull.get('number', 0)))
+        return candidates[0] if candidates else None
+
     def finish_pr(self, number: int, sha: str, plan: dict[str, Any]) -> dict[str, Any]:
         self.pull_number = number
         pull = self.api(f'pulls/{number}')

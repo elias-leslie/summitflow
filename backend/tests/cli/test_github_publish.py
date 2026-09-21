@@ -85,6 +85,27 @@ def test_closed_merged_pr_is_reused(monkeypatch):
     assert api.call_count == 1
 
 
+def test_same_source_pull_request_lookup_is_branch_independent(monkeypatch):
+    client = GitHub(Path('/repo'), 'owner/repo')
+    pulls = [
+        {
+            'number': 9,
+            'state': 'open',
+            'head': {'sha': 'a' * 40, 'ref': 'st/task-old'},
+            'base': {'ref': 'main'},
+        },
+        {
+            'number': 10,
+            'state': 'open',
+            'head': {'sha': 'b' * 40, 'ref': 'st/task-other'},
+            'base': {'ref': 'main'},
+        },
+    ]
+    monkeypatch.setattr(client, 'pages', Mock(return_value=pulls))
+
+    assert client.source_pull_request('main', 'a' * 40) == pulls[0]
+
+
 def test_dependency_update_creation_is_separate_from_commit_validation(monkeypatch):
     client = GitHub(Path('/repo'), 'owner/repo')
     workflow = {'path': 'dynamic/dependabot/dependabot-updates', 'check_suite_id': 9, 'name': 'Update dependency', 'conclusion': 'failure'}

@@ -1,12 +1,25 @@
-"""Task closeout must retain the source and checks returned by publication."""
+"""Optional publication retains source/checks independently of local closeout."""
+from contextlib import nullcontext
+
+import pytest
+
 from app.storage import tasks
-from cli.commands.done_task import _commit_active_task_work
 from cli.lib import commit_workflow
 
 SHA = 'a' * 40
 
 
-def test_direct_main_closeout_retains_published_source_and_ci(monkeypatch, tmp_path, test_project_id, cleanup_task, client):
+@pytest.fixture(autouse=True)
+def mocked_commit_boundary(monkeypatch):
+    # These tests cover DB receipt correlation, not Git mutation/lock behavior.
+    monkeypatch.setattr(commit_workflow, 'repo_lock', lambda *args, **kwargs: nullcontext())
+
+
+def _publish_work(repo, task_id, message):
+    return commit_workflow.commit_repo(repo, message=message, task_id=task_id, push=True)
+
+
+def test_explicit_publication_retains_published_source_and_ci(monkeypatch, tmp_path, test_project_id, cleanup_task, client):
     task = tasks.create_task(test_project_id, 'Publication receipt regression')
     cleanup_task(task['id'])
     monkeypatch.setattr('cli.lib.execution_context.resolve_checkout_project_id', lambda _repo: test_project_id)
@@ -19,7 +32,7 @@ def test_direct_main_closeout_retains_published_source_and_ci(monkeypatch, tmp_p
     monkeypatch.setattr(commit_workflow, 'commit_git_revision', lambda *_args, **_kwargs: evidence)
     monkeypatch.setattr(commit_workflow, '_cleanup_after_publish', lambda _repo, result, **_kwargs: result)
     monkeypatch.setattr(commit_workflow, '_refresh_symbols_after_publish', lambda _repo, result: result)
-    _commit_active_task_work(str(tmp_path), task['id'], 'Finish generic task')
+    _publish_work(tmp_path, task['id'], 'Publish generic task')
     updated = tasks.get_task(task['id'])
     assert updated is not None
     assert updated['commits'] == [SHA]
@@ -39,10 +52,6 @@ def test_direct_main_closeout_retains_published_source_and_ci(monkeypatch, tmp_p
 
 
 def test_pending_then_clean_retry_persists_once_and_survives_completion(monkeypatch, tmp_path, test_project_id, cleanup_task):
-    import pytest
-
-    from cli.commands.done_task_publish import PublicationPending
-
     task = tasks.create_task(test_project_id, 'Pending publication receipt')
     cleanup_task(task['id'])
     tasks.update_task_status(task['id'], 'running')
@@ -56,16 +65,19 @@ def test_pending_then_clean_retry_persists_once_and_survives_completion(monkeypa
     monkeypatch.setattr(commit_workflow, 'commit_git_revision', lambda *_args, **_kwargs: evidence)
     monkeypatch.setattr(commit_workflow, '_cleanup_after_publish', lambda _repo, result, **_kwargs: result)
     monkeypatch.setattr(commit_workflow, '_refresh_symbols_after_publish', lambda _repo, result: result)
-    with pytest.raises(PublicationPending):
-        _commit_active_task_work(str(tmp_path), task['id'], 'Finish generic task')
+    assert _publish_work(tmp_path, task['id'], 'Publish generic task')['status'] == 'PENDING'
     pending = tasks.get_task(task['id'])
     assert pending is not None
     assert pending['commits'] == [SHA]
     assert pending['verification_result']['publication']['publication_complete'] is False
     evidence.update(status='SUCCESS', pushed=False, publication_complete=True,
                     ci={'state': 'success', 'sha': SHA, 'checks': [{'name': 'backend', 'state': 'success'}]})
-    _commit_active_task_work(str(tmp_path), task['id'], 'Finish generic task')
-    _commit_active_task_work(str(tmp_path), task['id'], 'Finish generic task')
+    _publish_work(tmp_path, task['id'], 'Publish generic task')
+    _publish_work(tmp_path, task['id'], 'Publish generic task')
+    from app.storage.tasks.closeout import store_verification
+    store_verification(task['id'], test_project_id, {
+        'acceptance': {'state': 'success', 'source_commit': SHA},
+    })
     completed = tasks.update_task_status(task['id'], 'completed')
     assert completed is not None
     assert completed['commits'] == [SHA]
@@ -120,9 +132,48 @@ def test_legacy_add_commit_remains_compatible_and_nonpublication_has_no_proof(te
     assert stored['verification_result'] is None
 
 
+def test_new_commit_invalidates_but_preserves_prior_acceptance(test_project_id, cleanup_task):
+    import pytest
+    task = tasks.create_task(test_project_id, 'New work requires new acceptance')
+    cleanup_task(task['id'])
+    tasks.add_commit(task['id'], SHA)
+    tasks.update_task(task['id'], verification_result={
+        'acceptance': {'state': 'success', 'source_commit': SHA, 'acceptance_artifact': '/retained/receipt.json'},
+        'deployment': {'state': 'succeeded', 'source_commit': SHA},
+    })
+    # Idempotent task linkage does not invalidate the already accepted source.
+    same = tasks.add_commit(task['id'], SHA)
+    assert same is not None
+    assert same['verification_result']['acceptance']['state'] == 'success'
+    stored = tasks.add_commit(task['id'], 'b' * 40)
+    assert stored is not None
+    assert stored['verification_result']['acceptance']['state'] == 'stale'
+    assert stored['verification_result']['acceptance']['acceptance_artifact'] == '/retained/receipt.json'
+    assert stored['verification_result']['deployment']['source_commit'] == SHA
+    with pytest.raises(ValueError, match='acceptance remains incomplete'):
+        tasks.update_task_status(task['id'], 'completed')
+
+
+def test_pause_retains_durable_evidence_but_invalidates_completion_intent(test_project_id, cleanup_task):
+    task = tasks.create_task(test_project_id, 'Pause preserves evidence')
+    cleanup_task(task['id'])
+    tasks.update_task_status(task['id'], 'running')
+    tasks.update_task(task['id'], verification_result={
+        'acceptance': {'state': 'success', 'source_commit': SHA, 'acceptance_artifact': '/retained/receipt.json'},
+        'deployment': {'state': 'succeeded', 'source_commit': SHA},
+        'closeout': {'state': 'pending', 'request_id': 'obsolete-request'},
+    })
+    stored = tasks.update_task_status(task['id'], 'paused')
+    assert stored is not None
+    proof = stored['verification_result']
+    assert proof['acceptance']['state'] == 'stale'
+    assert proof['acceptance']['acceptance_artifact'] == '/retained/receipt.json'
+    assert proof['deployment']['source_commit'] == SHA
+    assert 'closeout' not in proof
+
+
 def test_receipt_persistence_failure_blocks_closeout(monkeypatch, tmp_path, test_project_id, cleanup_task):
     import pytest
-    from typer import Exit
     task = tasks.create_task(test_project_id, 'Receipt storage failure')
     cleanup_task(task['id'])
     monkeypatch.setattr('cli.lib.execution_context.resolve_checkout_project_id', lambda _repo: test_project_id)
@@ -134,8 +185,8 @@ def test_receipt_persistence_failure_blocks_closeout(monkeypatch, tmp_path, test
         raise RuntimeError('storage unavailable')
 
     monkeypatch.setattr(tasks, 'add_commit', unavailable)
-    with pytest.raises(Exit):
-        _commit_active_task_work(str(tmp_path), task['id'], 'Finish task')
+    with pytest.raises(commit_workflow.CommitError):
+        _publish_work(tmp_path, task['id'], 'Publish task')
     unchanged = tasks.get_task(task['id'])
     assert unchanged is not None
     assert unchanged['status'] != 'completed'

@@ -1,14 +1,17 @@
 """Regression coverage for managed lifecycle selection and failure reporting."""
 
+import subprocess
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 from typer.testing import CliRunner
 
 from cli.commands import service
-from cli.lib import service_ops
+from cli.lib import service_ops, service_release
 
 
 @pytest.fixture
@@ -31,6 +34,34 @@ def lifecycle(monkeypatch, project):
         calls[name] = Mock(return_value=0)
         monkeypatch.setattr(service_ops, name, calls[name])
     monkeypatch.setattr(service_ops, "service_state", lambda name: "inactive" if name == "stopped.service" else "active")
+    release = service_release.PreparedRelease(
+        project_id=project.project_id,
+        build_id="b" * 32,
+        source=service_release.AcceptedSource(
+            acceptance_id="acceptance-test",
+            source_commit="c" * 40,
+            source_tree="d" * 40,
+            acceptance_artifact="/tmp/acceptance-test.json",
+        ),
+        release_root=project.root / "release",
+        source_root=project.root,
+        receipt_path=project.root / "deployment.json",
+    )
+    monkeypatch.setattr(
+        service_ops, "prepare_accepted_release", lambda current, _receipt=None: (release, current)
+    )
+    monkeypatch.setattr(service_release, "deployment_lock", lambda _project: nullcontext())
+    monkeypatch.setattr(service_release, "mark_phase", Mock())
+    monkeypatch.setattr(service_release, "fail_release", Mock())
+    monkeypatch.setattr(service_release, "complete_release", Mock())
+    monkeypatch.setattr(
+        service_release,
+        "publish_deployment_result",
+        lambda *_args, **_kwargs: {
+            "artifact": str(release.receipt_path),
+            "deployment_id": "e" * 64,
+        },
+    )
     return calls
 
 
@@ -61,7 +92,10 @@ def test_explicit_scope_restarts_shared_backend_consumers(lifecycle, scope, expe
     result = CliRunner().invoke(service.app, ["rebuild", "example", "--scope", scope])
     assert result.exit_code == 0, result.output
     assert [call.args[0] for call in lifecycle["restart_service"].call_args_list] == expected
-    assert lifecycle["build_frontend"].call_count == int(scope == "frontend")
+    lifecycle["sync_backend"].assert_called_once()
+    lifecycle["build_frontend"].assert_called_once()
+    assert lifecycle["run_migrations"].call_count == int(scope != "frontend")
+    assert "stable releases build the full accepted source" in result.output
 
 
 def test_named_optional_worker_is_explicit_start(lifecycle):
@@ -86,6 +120,22 @@ def test_lifecycle_failure_cannot_claim_completion(lifecycle, step):
         lifecycle["restart_service"].assert_not_called()
 
 
+def test_failed_health_restores_previous_release_units(
+    lifecycle, project, monkeypatch, tmp_path
+):
+    previous = tmp_path / "previous" / "source"
+    monkeypatch.setattr(service_release, "previous_source_root", lambda _release: previous)
+    lifecycle["verify_health"].return_value = 1
+
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+
+    assert result.exit_code == 1, result.output
+    assert lifecycle["sync_systemd_units"].call_count == 2
+    restored = lifecycle["sync_systemd_units"].call_args_list[-1].args[0]
+    assert restored.root == previous
+    assert restored.backend_dir == previous / "backend"
+
+
 def test_frontend_frozen_install_runs_at_workspace_root_and_keeps_cache(project, monkeypatch):
     project.frontend_dir.mkdir()
     (project.frontend_dir / "package.json").write_text("{}")
@@ -102,6 +152,66 @@ def test_frontend_frozen_install_runs_at_workspace_root_and_keeps_cache(project,
     assert run.call_args_list[0].kwargs["cwd"] == project.root
     assert run.call_args_list[-1].args[0] == ["pnpm", "build"]
     assert (cache / "retained").exists()
+
+
+def test_infrastructure_uses_accepted_compose_and_existing_host_secret_source(
+    project, monkeypatch, tmp_path
+):
+    accepted_root = tmp_path / "release" / "source"
+    host_root = tmp_path / "host-checkout"
+    accepted_compose = accepted_root / "docker" / "compose" / "docker-compose.yml"
+    host_env = host_root / "docker" / "compose" / ".env"
+    accepted_compose.parent.mkdir(parents=True)
+    host_env.parent.mkdir(parents=True)
+    accepted_compose.write_text("services: {}\n")
+    host_env.write_text("POSTGRES_PASSWORD=test-only\n")
+    deployed = replace(
+        project,
+        root=accepted_root,
+        backend_dir=accepted_root / "backend",
+        frontend_dir=accepted_root / "frontend",
+        host_config_root=host_root,
+    )
+
+    def capture(command, **_kwargs):
+        if command[:2] == ["docker", "ps"]:
+            return subprocess.CompletedProcess(command, 0, "", "")
+        return subprocess.CompletedProcess(command, 0, "ready", "")
+
+    run = Mock(return_value=0)
+    monkeypatch.setattr(service_ops, "capture", capture)
+    monkeypatch.setattr(service_ops, "run", run)
+    monkeypatch.setattr(service_ops.httpx, "get", lambda *_args, **_kwargs: SimpleNamespace(status_code=200))
+
+    assert service_ops.ensure_infra(deployed) == 0
+    command = run.call_args.args[0]
+    assert command[command.index("--env-file") + 1] == str(host_env)
+    assert command[command.index("-f") + 1] == str(accepted_compose)
+
+
+def test_infrastructure_fails_safely_when_host_secret_source_is_missing(
+    project, monkeypatch, tmp_path, capsys
+):
+    accepted_root = tmp_path / "release" / "source"
+    compose_file = accepted_root / "docker" / "compose" / "docker-compose.yml"
+    compose_file.parent.mkdir(parents=True)
+    compose_file.write_text("services: {}\n")
+    deployed = replace(
+        project,
+        root=accepted_root,
+        host_config_root=tmp_path / "missing-host",
+    )
+    monkeypatch.setattr(
+        service_ops,
+        "capture",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, "", ""),
+    )
+    run = Mock()
+    monkeypatch.setattr(service_ops, "run", run)
+
+    assert service_ops.ensure_infra(deployed) == 1
+    assert "host compose environment is unavailable" in capsys.readouterr().out
+    run.assert_not_called()
 
 
 def test_failed_frontend_install_does_not_build(project, monkeypatch):
@@ -146,14 +256,44 @@ def test_daemon_reload_failure_propagates(project, monkeypatch, tmp_path):
     assert service_ops.sync_systemd_units(project) == 1
 
 
+def test_start_uses_last_verified_release_instead_of_development_checkout(
+    project, monkeypatch, tmp_path
+):
+    stable = tmp_path / "managed-release" / "source"
+    synced = Mock(return_value=0)
+    monkeypatch.setattr(service_release, "current_source_root", lambda _project: stable)
+    monkeypatch.setattr(service_ops, "sync_systemd_units", synced)
+    monkeypatch.setattr(service_ops, "service_exists", lambda _service: False)
+
+    assert service_ops.start_services(project) == 0
+
+    deployed = synced.call_args.args[0]
+    assert deployed.root == stable
+    assert deployed.backend_dir == stable / "backend"
+    assert deployed.frontend_dir == stable / "frontend"
+
+
 def test_detached_rebuild_preserves_scope_and_named_worker(lifecycle, monkeypatch):
     queue = Mock(return_value=0)
     monkeypatch.setattr(service_ops, "queue_detached", queue)
+    accepted = {
+        "acceptance_id": "acceptance-test",
+        "acceptance_artifact": "/tmp/acceptance-test.json",
+        "source_commit": "c" * 40,
+        "source_tree": "d" * 40,
+    }
+    monkeypatch.setattr(service_ops, "resolve_accepted_source", lambda *_args: accepted)
     result = CliRunner().invoke(service.app, [
         "rebuild", "example", "--detach", "--scope", "worker", "--worker", "stopped.service",
     ])
     assert result.exit_code == 0, result.output
-    queue.assert_called_once_with("example", False, scope="worker", workers=("stopped.service",))
+    queue.assert_called_once_with(
+        "example",
+        False,
+        scope="worker",
+        workers=("stopped.service",),
+        accepted_source=accepted,
+    )
     lifecycle["ensure_infra"].assert_not_called()
 
 
@@ -162,6 +302,7 @@ def test_detached_command_carries_scope_and_workers(monkeypatch, tmp_path):
     import subprocess
 
     monkeypatch.setattr(service_ops, "get_repo_root", lambda: tmp_path)
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(tmp_path / "service-state"))
 
     monkeypatch.setattr(service_ops, "systemctl", lambda *args: subprocess.CompletedProcess([], 3, "inactive", ""))
     capture = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
@@ -169,7 +310,7 @@ def test_detached_command_carries_scope_and_workers(monkeypatch, tmp_path):
     assert service_ops.queue_detached("example", False, scope="worker", workers=("optional.service",)) == 0
     command = capture.call_args.args[0]
     assert command[command.index("st"):command.index("st") + 3] == ["st", "service", "_run-job"]
-    records = list((tmp_path / ".dev-tools" / "service-jobs").glob("*.json"))
+    records = list((tmp_path / "service-state" / "jobs").glob("*.json"))
     assert len(records) == 1
     assert json.loads(records[0].read_text())["command"] == [
         "st", "service", "rebuild", "--scope", "worker", "--worker", "optional.service", "example",
@@ -197,12 +338,12 @@ def test_nested_component_directory_falls_back_to_full(project, lifecycle, monke
     lifecycle["run_migrations"].assert_called_once()
 
 
-def test_restart_keeps_rebuild_and_scope_contract(lifecycle):
+def test_restart_keeps_scoped_restart_with_self_contained_release_build(lifecycle):
     result = CliRunner().invoke(service.app, ["restart", "example", "--scope", "backend"])
     assert result.exit_code == 0, result.output
     lifecycle["sync_backend"].assert_called_once()
     lifecycle["run_migrations"].assert_called_once()
-    lifecycle["build_frontend"].assert_not_called()
+    lifecycle["build_frontend"].assert_called_once()
 
 
 def test_native_build_builds_only_workspace_dependencies_before_consumer(project):

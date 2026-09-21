@@ -10,7 +10,7 @@ from ._model_constants import (
     DEFAULT_BACKUP_TYPE,
     DEFAULT_PROJECT_ID,
 )
-from ._models_backup import BackupInput, RestoreInput
+from ._models_backup import BackupInput, OffsiteSyncInput, RestoreInput
 from ._models_core import EmptyInput, ProjectInput, TaskInput
 from ._models_maintenance import ScanInput, StaleCleanupInput
 from ._models_monitor import SelfHealingInput
@@ -23,6 +23,7 @@ __all__ = [
     "BackupInput",
     "EmptyInput",
     "EnrichInput",
+    "OffsiteSyncInput",
     "ProjectInput",
     "RestoreInput",
     "ReviewPRInput",

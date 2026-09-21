@@ -41,6 +41,14 @@ def _api_post(path: str, data: dict[str, Any] | None = None) -> Any:
     return resp.json()
 
 
+def _api_put(path: str, data: dict[str, Any]) -> Any:
+    url = f"{_get_base_url()}/{path.lstrip('/')}"
+    resp = httpx.put(url, json=data, timeout=30.0)
+    if resp.status_code >= 400:
+        raise APIError(resp.status_code, resp.text)
+    return resp.json()
+
+
 def _api_delete(path: str) -> Any:
     url = f"{_get_base_url()}/{path.lstrip('/')}"
     resp = httpx.delete(url, timeout=30.0)
@@ -165,6 +173,33 @@ def test_backend(
         if ctx.obj.is_compact:
             status = "OK" if result.get("success") else "FAIL"
             print(f"TEST {status}|{result.get('message', '')}")
+        else:
+            output_json(result)
+    except APIError as e:
+        handle_api_error(e)
+
+
+@app.command("update")
+def update_backend(
+    ctx: typer.Context,
+    backend_id: Annotated[str, typer.Argument(help="Existing backend ID")],
+    offsite_gio_uri: Annotated[
+        str | None,
+        typer.Option("--offsite-gio-uri", help="Existing GIO destination URI"),
+    ] = None,
+) -> None:
+    """Add encrypted offsite settings to an existing storage backend."""
+    if offsite_gio_uri is None:
+        typer.echo("Error: provide --offsite-gio-uri", err=True)
+        raise typer.Exit(1)
+    try:
+        existing = _api_get(f"backup-storage/{backend_id}")
+        config = existing.get("config")
+        merged = dict(config) if isinstance(config, dict) else {}
+        merged["offsite_gio_uri"] = offsite_gio_uri
+        result = _api_put(f"backup-storage/{backend_id}", {"config": merged})
+        if ctx.obj.is_compact:
+            print(f"UPDATED {result['id']}|offsite:{'configured' if merged.get('offsite_gio_uri') else 'unconfigured'}")
         else:
             output_json(result)
     except APIError as e:

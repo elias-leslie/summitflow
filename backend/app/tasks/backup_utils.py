@@ -354,5 +354,6 @@ def build_storage_env(source_id: str) -> dict[str, str]:
         env_map["SMB_USER"] = str(config["user"])
     if config.get("credentials_file"):
         env_map["CREDENTIALS_FILE"] = str(config["credentials_file"])
-
+    if config.get("offsite_gio_uri"):
+        env_map["BACKUP_OFFSITE_GIO_URI"] = str(config["offsite_gio_uri"])
     return env_map

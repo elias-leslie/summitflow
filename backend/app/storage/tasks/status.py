@@ -37,7 +37,14 @@ _UPDATE_SQL = f"""
             ELSE completed_at
         END,
         error_message = CASE WHEN %s IN ('pending','running','paused') THEN NULL WHEN %s IN ('completed','failed','cancelled') THEN %s ELSE error_message END,
-        verification_result = CASE WHEN %s = 'completed' THEN verification_result ELSE NULL END,
+        verification_result = CASE WHEN %s = 'completed' THEN verification_result ELSE
+            NULLIF(jsonb_strip_nulls(jsonb_build_object(
+                'acceptance', CASE WHEN verification_result ? 'acceptance' THEN
+                    verification_result->'acceptance' ||
+                    '{{"state":"stale","reason":"task_lifecycle_changed_requires_acceptance"}}'::jsonb END,
+                'deployment', verification_result->'deployment',
+                'live_validation', verification_result->'live_validation'
+            )), '{{}}'::jsonb) END,
         current_phase = CASE WHEN %s = 'completed' THEN 'complete' ELSE current_phase END,
         claimed_by = CASE WHEN %s IN ('completed','failed','cancelled','paused') THEN NULL ELSE claimed_by END,
         claimed_at = CASE WHEN %s IN ('completed','failed','cancelled','paused') THEN NULL ELSE claimed_at END,
@@ -72,6 +79,20 @@ def _execute_status_update(
     """Validate and update status atomically under a row lock."""
     resolved_task_id = canonicalize_task_id(task_id)
     with get_connection() as conn, conn.cursor() as cur:
+        if status == "completed":
+            from app.services.task_acceptance import completion_gates
+
+            cur.execute(
+                """SELECT t.verification_result, ts.context, t.commits FROM tasks t
+                   LEFT JOIN task_spirit ts ON ts.task_id = t.id
+                   WHERE t.id = %s FOR UPDATE OF t""", (resolved_task_id,),
+            )
+            evidence_row = cur.fetchone()
+            if evidence_row:
+                gates = completion_gates({"verification_result": evidence_row[0], "context": evidence_row[1],
+                                          "commits": evidence_row[2]})
+                if gates:
+                    raise ValueError(f"Task acceptance remains incomplete: {gates}")
         if expected_closeout_request_id is not None:
             cur.execute("SELECT status, verification_result FROM tasks WHERE id = %s FOR UPDATE", (resolved_task_id,))
             current = cur.fetchone()
@@ -162,13 +183,22 @@ def add_commit(
             f"""UPDATE tasks SET
                 commits = CASE WHEN %s = ANY(COALESCE(commits, ARRAY[]::text[]))
                     THEN commits ELSE array_append(COALESCE(commits, ARRAY[]::text[]), %s) END,
-                verification_result = CASE WHEN %s::jsonb IS NULL THEN verification_result
-                    ELSE COALESCE(verification_result, '{{}}'::jsonb) || %s::jsonb END,
+                verification_result = CASE WHEN verification_result IS NULL AND %s::jsonb IS NULL THEN NULL
+                ELSE COALESCE(CASE
+                    WHEN verification_result ? 'acceptance'
+                         AND NOT (%s = ANY(COALESCE(commits, ARRAY[]::text[])))
+                         AND verification_result->'acceptance'->>'source_commit' IS DISTINCT FROM %s
+                    THEN jsonb_set(verification_result, '{{acceptance}}',
+                        verification_result->'acceptance' ||
+                        '{{"state":"stale","reason":"new_task_commit_requires_acceptance"}}'::jsonb)
+                    ELSE verification_result
+                END, '{{}}'::jsonb) || COALESCE(%s::jsonb, '{{}}'::jsonb) END,
                 merge_sha = COALESCE(%s, merge_sha), updated_at = NOW()
                 WHERE id = %s AND (%s::text IS NULL OR project_id = %s)
                 RETURNING {TASK_COLUMNS}""",
             (commit_sha, commit_sha,
              Jsonb({"publication": publication}) if publication is not None else None,
+             commit_sha, commit_sha,
              Jsonb({"publication": publication}) if publication is not None else None,
              merge_sha, resolved_task_id, project_id, project_id),
         )

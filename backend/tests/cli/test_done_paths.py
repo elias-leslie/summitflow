@@ -72,15 +72,14 @@ def test_scoped_done_preserves_unrelated_index_and_worktree(tmp_path: Path, monk
     })
     monkeypatch.setattr('cli.lib.execution_context.resolve_checkout_project_id', lambda _repo: 'example')
     monkeypatch.setattr('app.storage.tasks.add_commit', Mock(return_value={'id': 'task-1'}))
-    publications = []
+    acceptances = []
 
-    def publish(task, project, *, paths=()):
-        publications.append(paths)
-        commit_workflow.commit_git_revision(tmp_path, message='publish', paths=paths)
+    def accept(task, project, *, paths=()):
+        acceptances.append(paths)
 
-    monkeypatch.setattr(done_task, '_publish_completed_work', publish)
+    monkeypatch.setattr(done_task, '_accept_completed_work', accept)
     stash = Mock(side_effect=AssertionError('must not move unrelated work'))
-    monkeypatch.setattr(done_task, 'git_stash_push', stash)
+    monkeypatch.setattr('cli.commands.done_git.git_stash_push', stash)
     if not gate_passes:
         with pytest.raises(typer.Exit):
             done_task.complete_task(client, 'task-1', paths=('task.txt',))
@@ -96,7 +95,7 @@ def test_scoped_done_preserves_unrelated_index_and_worktree(tmp_path: Path, monk
     assert git('diff', '--cached', '--name-only') == 'other.txt'
     assert (tmp_path / '.index.yaml').read_text() == 'unrelated host metadata'
     assert (tmp_path / 'other.txt').read_text() == 'unrelated staged work'
-    assert publications == [('task.txt',)]
+    assert acceptances == [('task.txt',)]
     checks.assert_called()
     stash.assert_not_called()
 
