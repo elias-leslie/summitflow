@@ -172,19 +172,28 @@ def _changed_args(
     cwd: Path,
     config: dict[str, object],
     changed_files: list[str],
+    *,
+    defer_full_pytest: bool = False,
 ) -> list[str]:
     if not changed_files or (name != "pytest" and not config.get("pass_path")):
         return []
     if name == "pytest":
         # Configuration, fixtures, and deletions can affect the whole suite.
+        cross_cutting: set[str] = set()
         for rel_path in changed_files:
             path = Path(rel_path)
-            if path.name in _TOOL_CONFIG_PATHS["pytest"]:
-                return ["."]
-            if path.suffix in _TOOL_FILE_SUFFIXES["pytest"] and (
-                path.name == "conftest.py" or not (root / path).is_file()
+            if path.name in _TOOL_CONFIG_PATHS["pytest"] or (
+                path.suffix in _TOOL_FILE_SUFFIXES["pytest"]
+                and (path.name == "conftest.py" or not (root / path).is_file())
             ):
-                return ["."]
+                cross_cutting.add(rel_path)
+        if cross_cutting and not defer_full_pytest:
+            return ["."]
+        if defer_full_pytest:
+            # A quick checkpoint runs only tests directly attributable to the
+            # candidate. Cross-cutting coverage remains a mandatory full
+            # acceptance concern and is reported by the dispatcher.
+            changed_files = [path for path in changed_files if path not in cross_cutting]
         focused = _focused_pytest_paths(root, changed_files)
         if focused is None:
             return []
@@ -216,6 +225,19 @@ def _changed_args(
     return paths
 
 
+def _pytest_requires_full_scope(root: Path, changed_files: list[str]) -> bool:
+    """Return whether changed inputs require the full acceptance pytest suite."""
+    for rel_path in changed_files:
+        path = Path(rel_path)
+        if path.name in _TOOL_CONFIG_PATHS["pytest"]:
+            return True
+        if path.suffix in _TOOL_FILE_SUFFIXES["pytest"] and (
+            path.name == "conftest.py" or not (root / path).is_file()
+        ):
+            return True
+    return False
+
+
 def _skip_reason(
     name: str,
     config: dict[str, object],
@@ -224,6 +246,7 @@ def _skip_reason(
     changed_files: list[str],
     scoped_args: list[str],
     explicit_args: bool = False,
+    deferred_full_pytest: bool = False,
 ) -> str | None:
     if not changed_only or explicit_args:
         return None
@@ -235,6 +258,8 @@ def _skip_reason(
         return path.suffix in _TOOL_FILE_SUFFIXES.get(name, set())
 
     has_relevant = any(is_relevant(rel_path) for rel_path in changed_files)
+    if name == "pytest" and deferred_full_pytest and not scoped_args:
+        return "requires_full_acceptance:cross_cutting_config"
     if name == "pytest" and has_relevant and not scoped_args:
         return "no_deterministic_focused_tests;run_targeted_pytest_or_full_acceptance"
     if config.get("pass_path"):

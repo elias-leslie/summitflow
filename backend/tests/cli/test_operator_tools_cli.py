@@ -640,7 +640,7 @@ def test_check_changed_only_runs_broad_path_tool_for_config_changes() -> None:
     run_tool.assert_called_once_with("biome", configs["biome"], [])
 
 
-def test_check_changed_only_runs_broad_pytest_for_config_changes() -> None:
+def test_quick_changed_only_defers_broad_pytest_for_config_changes() -> None:
     configs = {
         "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
     }
@@ -652,6 +652,52 @@ def test_check_changed_only_runs_broad_pytest_for_config_changes() -> None:
         result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
 
     assert result.exit_code == 0
+    assert "TEST:DEFER:pytest:requires_full_acceptance:cross_cutting_config" in result.output
+    assert "TEST:SKIP:pytest:requires_full_acceptance:cross_cutting_config" in result.output
+    run_tool.assert_not_called()
+
+
+def test_quick_config_change_still_runs_directly_changed_test(tmp_path: Path) -> None:
+    changed_test = tmp_path / "backend/tests/test_check.py"
+    changed_test.parent.mkdir(parents=True)
+    changed_test.touch()
+    configs = {
+        "pytest": {
+            "label": "TEST",
+            "binary": "pytest",
+            "working_dir": "backend",
+            "pass_path": False,
+        },
+    }
+    with (
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
+        patch("cli.commands.check._tool_configs", return_value=configs),
+        patch(
+            "cli.commands.check._changed_files",
+            return_value=["pyproject.toml", "backend/tests/test_check.py"],
+        ),
+        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
+    ):
+        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
+
+    assert result.exit_code == 0
+    assert "TEST:DEFER:pytest:requires_full_acceptance:cross_cutting_config" in result.output
+    run_tool.assert_called_once_with("pytest", configs["pytest"], ["tests/test_check.py"])
+
+
+def test_publication_changed_only_keeps_broad_pytest_for_config_changes() -> None:
+    configs = {
+        "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
+    }
+    with (
+        patch("cli.commands.check._tool_configs", return_value=configs),
+        patch("cli.commands.check._changed_files", return_value=["pyproject.toml"]),
+        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
+    ):
+        result = runner.invoke(main_app, ["check", "--check", "--changed-only"])
+
+    assert result.exit_code == 0
+    assert "TEST:DEFER" not in result.output
     run_tool.assert_called_once_with("pytest", configs["pytest"], ["."])
 
 

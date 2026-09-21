@@ -27,7 +27,21 @@ class SkipReason(Protocol):
         changed_files: list[str],
         scoped_args: list[str],
         explicit_args: bool = False,
+        deferred_full_pytest: bool = False,
     ) -> str | None: ...
+
+
+class ChangedArgs(Protocol):
+    def __call__(
+        self,
+        name: str,
+        root: Path,
+        cwd: Path,
+        config: ToolConfig,
+        changed_files: list[str],
+        *,
+        defer_full_pytest: bool = False,
+    ) -> list[str]: ...
 
 
 @dataclass(frozen=True)
@@ -41,7 +55,8 @@ class CheckRuntime:
     workdir: Callable[[Path, ToolConfig], Path]
     normalize_explicit_args: Callable[[Path, Path, list[str]], list[str]]
     changed_files: Callable[[Path], list[str]]
-    changed_args: Callable[[str, Path, Path, ToolConfig, list[str]], list[str]]
+    changed_args: ChangedArgs
+    pytest_requires_full_scope: Callable[[Path, list[str]], bool]
     skip_reason: SkipReason
     run_tool: Callable[[str, ToolConfig, list[str]], int]
     run_codeql_alert_check: Callable[[list[str]], int]
@@ -121,6 +136,7 @@ def run_selected(
     *,
     fix: bool,
     changed_only: bool,
+    quick_checkpoint: bool = False,
     runtime: CheckRuntime,
 ) -> int:
     root = runtime.resolve_repo_root()
@@ -150,13 +166,33 @@ def run_selected(
                 continue
             name, config = frontend
         # Arbitrary scripts may depend on fixtures/config of any suffix; run their full suite.
-        scoped_args = [] if name == "frontend-test" else runtime.changed_args(name, root, cwd, config, changed_files)
+        deferred_full_pytest = (
+            quick_checkpoint
+            and changed_only
+            and name == "pytest"
+            and runtime.pytest_requires_full_scope(root, changed_files)
+        )
+        if deferred_full_pytest:
+            print("TEST:DEFER:pytest:requires_full_acceptance:cross_cutting_config")
+        scoped_args = (
+            []
+            if name == "frontend-test"
+            else runtime.changed_args(
+                name,
+                root,
+                cwd,
+                config,
+                changed_files,
+                defer_full_pytest=deferred_full_pytest,
+            )
+        )
         skip_reason = runtime.skip_reason(
             name,
             config,
             changed_only=changed_only and not (name == "frontend-test" and changed_files),
             changed_files=changed_files,
             scoped_args=scoped_args,
+            deferred_full_pytest=deferred_full_pytest,
         )
         if skip_reason:
             print(f"{config.get('label') or name.upper()!s}:SKIP:{name}:{skip_reason}")
@@ -274,4 +310,11 @@ def handle_check_args(
         return 2
     names, selected_fix = selection
     selected = [name for name in names if name in configs]
-    return run_selected(selected, configs, fix=fix or selected_fix, changed_only=changed_only, runtime=runtime)
+    return run_selected(
+        selected,
+        configs,
+        fix=fix or selected_fix,
+        changed_only=changed_only,
+        quick_checkpoint=first in {"--quick", "-q"},
+        runtime=runtime,
+    )

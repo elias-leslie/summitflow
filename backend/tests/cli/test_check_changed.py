@@ -4,7 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from cli.commands.check_changed import _changed_args, _skip_reason
+from cli.commands.check_changed import (
+    _changed_args,
+    _pytest_requires_full_scope,
+    _skip_reason,
+)
 
 
 def test_python_changes_select_direct_importing_tests(tmp_path: Path) -> None:
@@ -43,6 +47,49 @@ def test_cross_cutting_or_deleted_python_changes_retain_full_scope(
     assert _changed_args(
         "pytest", tmp_path, tmp_path / "backend", {"pass_path": False}, changed
     ) == ["."]
+    assert _pytest_requires_full_scope(tmp_path, changed)
+
+
+def test_quick_cross_cutting_change_keeps_directly_changed_tests(
+    tmp_path: Path,
+) -> None:
+    test_file = tmp_path / "backend/tests/test_service.py"
+    test_file.parent.mkdir(parents=True)
+    test_file.touch()
+    changed = ["pyproject.toml", "backend/tests/test_service.py"]
+
+    assert _changed_args(
+        "pytest",
+        tmp_path,
+        tmp_path / "backend",
+        {"pass_path": False},
+        changed,
+        defer_full_pytest=True,
+    ) == ["tests/test_service.py"]
+
+
+def test_quick_cross_cutting_change_without_direct_test_requires_acceptance(
+    tmp_path: Path,
+) -> None:
+    changed = ["pyproject.toml"]
+    args = _changed_args(
+        "pytest",
+        tmp_path,
+        tmp_path / "backend",
+        {"pass_path": False},
+        changed,
+        defer_full_pytest=True,
+    )
+
+    assert args == []
+    assert _skip_reason(
+        "pytest",
+        {"pass_path": False},
+        changed_only=True,
+        changed_files=changed,
+        scoped_args=args,
+        deferred_full_pytest=True,
+    ) == "requires_full_acceptance:cross_cutting_config"
 
 
 def test_unmapped_implementation_skips_quick_suite_with_explicit_direction(

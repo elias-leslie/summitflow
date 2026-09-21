@@ -20,7 +20,12 @@ from ..lib.cleanroom import main as cleanroom_main
 from ..lib.usage import usage
 from ..output import output_error
 from .check_artifacts import write_check_details
-from .check_changed import _changed_args, _changed_files, _skip_reason
+from .check_changed import (
+    _changed_args,
+    _changed_files,
+    _pytest_requires_full_scope,
+    _skip_reason,
+)
 from .check_codeql import (
     _emit_codeql_result,
     _fetch_codeql_alerts,
@@ -204,6 +209,7 @@ def _runtime() -> CheckRuntime:
         normalize_explicit_args=_normalize_explicit_args,
         changed_files=_changed_files,
         changed_args=_changed_args,
+        pytest_requires_full_scope=_pytest_requires_full_scope,
         skip_reason=_skip_reason,
         run_tool=_run_tool,
         run_codeql_alert_check=_run_codeql_alert_check,

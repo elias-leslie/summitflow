@@ -83,6 +83,9 @@ def test_release_backup_lock_compares_owner_before_delete() -> None:
     )
 
 
+_LEASE_OWNER = "test-only-owner"
+
+
 def test_maintain_backup_lock_renews_and_releases_owner() -> None:
     renewed = Event()
 
@@ -94,13 +97,13 @@ def test_maintain_backup_lock_renews_and_releases_owner() -> None:
         patch("app.tasks.backup_lock.renew_backup_lock", side_effect=mark_renewed) as renew,
         patch("app.tasks.backup_lock.release_backup_lock", return_value=True) as release,
         maintain_backup_lock(
-            "source-1", "owner-token", renewal_interval_seconds=0.001
+            "source-1", _LEASE_OWNER, renewal_interval_seconds=0.001
         ),
     ):
         assert renewed.wait(timeout=1)
 
     renew.assert_called()
-    release.assert_called_once_with("source-1", "owner-token")
+    release.assert_called_once_with("source-1", _LEASE_OWNER)
 
 
 def test_maintain_backup_lock_surfaces_lost_ownership() -> None:
@@ -115,7 +118,7 @@ def test_maintain_backup_lock_surfaces_lost_ownership() -> None:
         patch("app.tasks.backup_lock.release_backup_lock", return_value=False),
         pytest.raises(BackupLockLeaseError, match="ownership lost"),
         maintain_backup_lock(
-            "source-1", "owner-token", renewal_interval_seconds=0.001
+            "source-1", _LEASE_OWNER, renewal_interval_seconds=0.001
         ),
     ):
         assert attempted.wait(timeout=1)
@@ -133,7 +136,7 @@ def test_maintain_backup_lock_does_not_mask_operation_failure() -> None:
         patch("app.tasks.backup_lock.release_backup_lock", return_value=False),
         pytest.raises(ValueError, match="archive failed") as raised,
         maintain_backup_lock(
-            "source-1", "owner-token", renewal_interval_seconds=0.001
+            "source-1", _LEASE_OWNER, renewal_interval_seconds=0.001
         ),
     ):
         assert attempted.wait(timeout=1)

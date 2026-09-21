@@ -234,6 +234,39 @@ their saved copy through the authenticated UI.
   A supplied archive must match the backup checksum. This restores files/VCS and
   preserves a database dump; it does not restore a production database or prove
   the database dump can be loaded. Containerized database drill remains separate.
+- First local checkpoint is `db3f78afd6090d6a5a8951f555d450c5eb1771c9`, no push.
+  Its canonical checkpoint gate passed in 42.84 s wall (36.13 s user, 7.54 s
+  system, peak 561,804 KiB). This large cross-cutting change is not a typical
+  single-file checkpoint.
+- Exact-source full acceptance with an empty GitHub CLI config, empty GitHub token
+  variables and disabled Git SSH completed in 79.02 s wall: 3,231 backend tests and
+  188 frontend tests passed; 2 backend tests skipped and 71 deselected by existing
+  test configuration. Ruff/Biome/TypeScript passed. Acceptance remained **failed**:
+  356 Python type diagnostics, three gitleaks findings and OSV dependency findings.
+  Receipt: `.git/st/acceptance/24166d407962a0c587bfd336c2a5784bda26d43da6b7deb0ae25baf03a663ac6.json`.
+  This disabled account credentials for that process; it was not an all-network
+  isolation experiment. Public dependency-advisory access remained available.
+- Type diagnostics were traced to existing dynamic owner-module aliases: installed
+  owner packages/runtime tests work, but static facades lack explicit exports. Exact
+  typed compatibility stubs are being added without `Any`, ignores or exclusions.
+  Dependency findings are being fixed with bounded patched versions, not suppressed.
+- All three gitleaks findings were the same fake lease-owner test argument pattern,
+  not production credentials. A named test-only owner fixture removes the misleading
+  inline pattern; whole-candidate gitleaks now passes without allowlisting or disabling
+  scanner rules. Focused backup/lock/retention tests: 20 passed.
+- Remote retention now protects both the newest copy and the specific copy just
+  verified. A retry of an old archive after an extended outage cannot immediately
+  delete its own verified recovery artifact. No live remote deletion was performed.
+- Representative one-backend-file quick feedback: 2.65 s wall, 12 tests passed in
+  0.95 s; Ruff/types/gitleaks passed, unrelated frontend checks skipped. This is
+  an actual scoped-check measurement, not measured end-to-end task savings.
+- Optional later publication was tested with real Git and a disposable local bare
+  remote. Publishing an older accepted revision preserved newer local commits and
+  another agent's untracked work; no GitHub client was consulted. This tests local
+  publication mechanics, not current GitHub policy/API availability.
+- Existing GNOME Drive integration is active; user-manager lingering is enabled
+  and GVfs/GOA services are active. Cold-boot credential/keyring availability has
+  not been tested by logging out or rebooting the owner's workstation.
 
 ## Remaining work
 
@@ -290,3 +323,70 @@ separately supplied saved key decrypts a fresh test message; this is not itself 
 full backup restore. Actual owner custody and a downloaded archive restore remain
 separate evidence requirements. A fresh installation can import the saved key,
 but cannot silently replace existing configured key material.
+
+## Everyday workflow after verified rollout
+
+### Final gate repair evidence
+
+- Full Python typing now passes. Runtime owner-module facades needed explicit
+  source-adjacent re-export stubs; no type ignores, `Any` escape hatches or runtime
+  behavior changes were used to hide the 356 diagnostics.
+- Patched dependency locks were synced into the actual development environments.
+  OSV now reports zero findings; 991 focused backend tests, 188 frontend tests and
+  TypeScript passed against those versions. The narrow esbuild 0.28.1 override
+  still needs the real managed production build, including notes-ui, before rollout
+  can be called verified.
+- Quick checkpoints now run directly attributable tests and explicitly defer
+  cross-cutting configuration coverage to mandatory full acceptance. Explicit
+  full checks retain the complete suite; lint, types and secret checks remain.
+  The refinement passed 167 focused tests. This avoids converting every lockfile
+  checkpoint into another broad test cycle without weakening final acceptance.
+- Candidate gitleaks passes after replacing misleading fake-token fixture strings;
+  no allowlist or detection rule was disabled. Drive retention now preserves both
+  the just-verified object and the newest recovery point, including an old archive
+  retried after an outage. Twenty focused backup tests passed.
+
+1. Claim the task once and use existing file/lane ownership for parallel agents.
+   Each agent edits its assigned files; commits are local and path-scoped where
+   another agent has unrelated edits. No per-task PR or branch is required.
+2. Use focused feedback during development and `st commit --no-push --task TASK`
+   at meaningful checkpoints. Publication is not implied by a commit or task event.
+3. Integrate the compatible changes, then accept the actual clean candidate with
+   `st check --acceptance --task TASK`. Reuse only matching receipts; a changed
+   source, relevant configuration or failed check does not inherit success.
+4. For a task that requires deployment, rebuild the existing managed destination
+   from that acceptance receipt. Observe actual health and required live behavior;
+   a queued rebuild is not a deployed release. Import matching deployment/live
+   receipts with `st done TASK --evidence FILE` when required.
+5. Complete the task locally once its acceptance work is finished. Backups run on
+   the existing schedules: one encrypted local capture, then the same ciphertext
+   copied to Drive. Failed transfer retries do not recapture source/databases.
+6. Publish later only when the owner chooses. No weekly schedule is imposed.
+   Existing GitHub protections still govern optional publication, and same-source
+   publication is reused instead of generating a task-linkage-only duplicate PR.
+
+## Rollout and rollback boundaries
+
+- Checkpoint code locally before rollout; preserve existing histories, local
+  archives, package artifacts and unfinished task state. No force pushes or
+  destructive repository operations are part of this migration.
+- Full acceptance must pass before the managed rebuild. The release directory is
+  outside the editable checkout; registered ports/services and existing durable
+  configuration/data paths remain in use. Failed activation retains/restores prior
+  service definitions. Database migrations require their own compatibility/recovery
+  evidence; reverting a service unit does not undo migrated database state.
+- Do not enable the seven previously disabled real sources or remove valuable-state
+  exclusions until the encrypted runtime is active. Preserve their existing schedule
+  and retention. Leave fixtures/deleted projects disabled.
+- Generate/import the recovery key through the existing owner session, save it
+  independently, and verify the saved copy. Then demonstrate a real local capture,
+  Drive upload/download checksum match, decryption and isolated restore. Restore
+  database dumps only into disposable infrastructure, never production for this test.
+- Keep legacy plaintext archives until normal retention or a separately approved
+  migration handles them. New native encryption does not retroactively encrypt
+  previous archives or establish Veeam image encryption. Do not rotate/delete working
+  recovery material simply to make the UI report a cleaner state.
+- Rollback cannot mean silently resuming plaintext captures after encryption was
+  promised. If an older runtime must be restored, retain ciphertext/key material and
+  explicitly stop affected capture jobs until an encryption-capable runtime is ready.
+  No schedules have been disabled as part of the work so far.

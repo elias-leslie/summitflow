@@ -129,15 +129,21 @@ def _write_manifest(local_dir: Path, entry: dict[str, Any]) -> None:
     os.replace(temporary, path)
 
 
-def _apply_remote_retention(folder_uri: str, retention_days: int) -> list[str]:
+def _apply_remote_retention(folder_uri: str, retention_days: int, preserve_uri: str | None = None) -> list[str]:
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
     deleted: list[str] = []
+    archives: list[tuple[datetime, dict[str, str]]] = []
     for child in _list_children(folder_uri):
         match = _ARCHIVE_TIMESTAMP.search(child["display_name"])
         if not match:
             continue
         created = datetime.strptime(match.group(1), "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
-        if created >= cutoff:
+        archives.append((created, child))
+    newest_uri = max(archives, key=lambda entry: entry[0])[1]["uri"] if archives else None
+    for created, child in archives:
+        # An old retained archive can be retried after an extended outage. Never
+        # delete the copy just verified, or the last/newest recovery point.
+        if created >= cutoff or child["uri"] in {preserve_uri, newest_uri}:
             continue
         result = _run(["gio", "remove", child["uri"]], timeout=60)
         if result.returncode != 0:
@@ -235,7 +241,7 @@ def replicate_completed_archive(
             "verified_at": verified_at,
         }
         _write_manifest(local_dir, entry)
-        deleted = _apply_remote_retention(source_folder_uri, retention_days)
+        deleted = _apply_remote_retention(source_folder_uri, retention_days, remote_uri)
         return {
             "status": "verified",
             "location": remote_uri,
