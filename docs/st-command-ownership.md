@@ -1,5 +1,31 @@
 # ST command ownership inventory
 
+## Current ownership rule
+
+ST is the canonical operator wrapper and facade across managed projects. A command's
+presence under `st` does not make SummitFlow the owner of its domain implementation.
+Domain behavior, schemas, durable state, CLI handlers, and domain-specific tests belong
+in the project that owns that capability. Extend the owner's existing public interface
+when a domain command needs a new behavior or output projection.
+
+SummitFlow retains task and service lifecycle, project and execution routing, safety
+and authorization adapters, extension discovery, shared command/output conventions,
+cross-project telemetry, and genuinely cross-cutting mechanics. Owners retain their
+domain authorization checks, evidence contracts, and state invariants. Shared
+conventions do not transfer ownership of a domain's semantics or records.
+
+Integrate owner implementations through the existing versioned extension and public
+SDK contracts. Do not copy domain handlers back into SummitFlow or have owner packages
+import private ST backend modules. Add a shared ST mechanism only when more than one
+owner has a demonstrated need and its contract is independent of either domain.
+Preserve the canonical `st` interface, exact receipts, recovery behavior, and existing
+owner state while improving either side of that boundary.
+
+The global Agent Hub `platform-context` prompt carries this reusable instruction to
+native clients. This document records the architecture and implementation ownership;
+the baseline inventory below remains historical evidence, and the implemented table
+near the end identifies the extracted owners.
+
 Pre-migration evidence snapshot (base `4568b22b3`): `backend/cli/main.py` statically lists optional command
 modules, subcommand groups, and forwarded root commands (`:46-156`), then adds
 specific root aliases and hidden groups (`:267-397`). Optional import failure
