@@ -481,6 +481,21 @@
           "credentials"
         ]
       }
+    },
+    {
+      "id": "slopminer.slopminer",
+      "owner": "slopminer",
+      "namespace": "slopminer",
+      "manifest": "extensions/slopminer.json",
+      "executable": "bin/slopminer",
+      "environment": [],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "read-local",
+          "network"
+        ]
+      }
     }
   ],
   "description": "Centralized tool registry — single source of truth for operator tool discovery, redirects, and check-runner configuration.",

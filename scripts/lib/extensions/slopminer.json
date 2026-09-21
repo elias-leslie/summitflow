@@ -1,0 +1,49 @@
+{
+  "id": "slopminer.slopminer",
+  "owner": "slopminer",
+  "namespace": "slopminer",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Profile-guided product copy authoring and rendered-text inspection; agent judgment with optional focused Jev signals.",
+  "effects": [
+    "read-local",
+    "network"
+  ],
+  "help": {
+    "": "usage: st slopminer [-h] [--version]\n                 {review,profile,inspect,jev-request,scope,classify,capture-script} ...\n\nFind unclear, unnecessary or overloaded product copy.\n\npositional arguments:\n  {review,profile,inspect,jev-request,scope,classify,capture-script}\n    review              Review a snapshot or supplied text against a profile\n    profile             Validate a requirements profile\n    inspect             Present a snapshot and all pending profile guidance\n                        without evaluation\n    jev-request         Compile a Jev request for the caller's managed\n                        transport; does not dispatch\n    scope               Select one complete captured component subtree\n    classify            Compile or replay an experimental Jev classification\n    capture-script      Print a read-only extractor for the caller's browser\n                        eval capability\n\noptions:\n  -h, --help            show this help message and exit\n  --version             show program's version number and exit\n",
+    "review": "usage: st slopminer review [-h] [--input-format {snapshot,text}]\n                        --profile PROFILE [--format {text,json}]\n                        [--evaluator {local,deterministic,jev}]\n                        [--jev-discovery JEV_DISCOVERY]\n                        [--jev-evidence JEV_EVIDENCE]\n                        [--jev-details JEV_DETAILS]\n                        [--jev-compiler-version {1,2,3,4}] [--model MODEL]\n                        [--ollama-url OLLAMA_URL]\n                        [--context-length CONTEXT_LENGTH] [--timeout TIMEOUT]\n                        [--task TASK]\n                        input\n\npositional arguments:\n  input                 Input file, or - for stdin\n\noptions:\n  -h, --help            show this help message and exit\n  --input-format {snapshot,text}\n  --profile PROFILE\n  --format {text,json}\n  --evaluator {local,deterministic,jev}\n  --jev-discovery JEV_DISCOVERY\n                        Saved budget-accounted Jev discovery response\n  --jev-evidence JEV_EVIDENCE\n                        Saved matching Jev primary-evidence response for\n                        compiler 3 or 4\n  --jev-details JEV_DETAILS\n                        Saved matching Jev grounding/impact response, if\n                        candidates were found\n  --jev-compiler-version {1,2,3,4}\n                        Jev request compiler version; 4 is opt-in and 1 or 2\n                        replay older responses\n  --model MODEL         Exact installed Ollama model name; required for local\n                        review\n  --ollama-url OLLAMA_URL\n  --context-length CONTEXT_LENGTH\n                        Explicit Ollama context allocation; otherwise use\n                        runtime configuration\n  --timeout TIMEOUT     Optional HTTP timeout in seconds; no retries\n  --task TASK           Explicit reader task for this review\n",
+    "profile": "usage: st slopminer profile [-h] {validate,guidance} ...\n\npositional arguments:\n  {validate,guidance}\n    guidance           Render the complete validated profile for an agent\n\noptions:\n  -h, --help           show this help message and exit\n",
+    "profile validate": "usage: st slopminer profile validate [-h] path\n\npositional arguments:\n  path\n\noptions:\n  -h, --help  show this help message and exit\n",
+    "profile guidance": "usage: st slopminer profile guidance [-h] path\n\npositional arguments:\n  path\n\noptions:\n  -h, --help  show this help message and exit\n",
+    "inspect": "usage: st slopminer inspect [-h] --profile PROFILE [--format {text,json}] input\n\npositional arguments:\n  input                 Snapshot JSON file, or - for stdin\n\noptions:\n  -h, --help            show this help message and exit\n  --profile PROFILE\n  --format {text,json}\n",
+    "jev-request": "usage: st slopminer jev-request [-h] --profile PROFILE [--discovery DISCOVERY]\n                             [--evidence EVIDENCE]\n                             [--jev-compiler-version {1,2,3,4}]\n                             input\n\npositional arguments:\n  input                 Snapshot JSON file, or - for stdin\n\noptions:\n  -h, --help            show this help message and exit\n  --profile PROFILE\n  --discovery DISCOVERY\n                        Compile grounding questions for this saved discovery\n                        response\n  --evidence EVIDENCE   Compile companion/impact questions for this primary-\n                        evidence response\n  --jev-compiler-version {1,2,3,4}\n                        Jev request compiler version; 4 is opt-in and 1 or 2\n                        replay older responses\n",
+    "scope": "usage: st slopminer scope [-h] --component-id COMPONENT_ID [--task TASK] input\n\npositional arguments:\n  input                 Snapshot JSON file, or - for stdin\n\noptions:\n  -h, --help            show this help message and exit\n  --component-id COMPONENT_ID\n                        Captured component to make the scoped root\n  --task TASK           Optional reader task for this scoped review\n",
+    "classify": "usage: st slopminer classify [-h] {request,result} ...\n\npositional arguments:\n  {request,result}\n\noptions:\n  -h, --help        show this help message and exit\n",
+    "classify request": "usage: st slopminer classify request [-h] --catalog CATALOG --kind KIND\n                                  --focus-id FOCUS_ID\n                                  [--context-id CONTEXT_ID]\n                                  input\n\npositional arguments:\n  input                 Snapshot JSON file, or - for stdin\n\noptions:\n  -h, --help            show this help message and exit\n  --catalog CATALOG\n  --kind KIND\n  --focus-id FOCUS_ID   Exact text component to classify; repeat as needed\n  --context-id CONTEXT_ID\n                        Exact surrounding text component; repeat as needed\n",
+    "classify result": "usage: st slopminer classify result [-h] --catalog CATALOG --kind KIND\n                                 --focus-id FOCUS_ID [--context-id CONTEXT_ID]\n                                 --response RESPONSE\n                                 input\n\npositional arguments:\n  input                 Snapshot JSON file, or - for stdin\n\noptions:\n  -h, --help            show this help message and exit\n  --catalog CATALOG\n  --kind KIND\n  --focus-id FOCUS_ID   Exact text component to classify; repeat as needed\n  --context-id CONTEXT_ID\n                        Exact surrounding text component; repeat as needed\n  --response RESPONSE   Saved budget-accounted Jev response\n",
+    "capture-script": "usage: st slopminer capture-script [-h] --task TASK [--purpose PURPOSE]\n                                [--state STATE] [--audience AUDIENCE]\n\noptions:\n  -h, --help           show this help message and exit\n  --task TASK\n  --purpose PURPOSE\n  --state STATE\n  --audience AUDIENCE\n"
+  },
+  "usage": [
+    {
+      "surface": "st.slopminer",
+      "tier": "guardrail",
+      "cmd": "st slopminer profile guidance PROFILE | st slopminer inspect SNAPSHOT --profile PROFILE",
+      "when": "writing or reviewing product UI copy, or performing a requested slop cleanup",
+      "precautions": [
+        "Load the complete agreed profile before writing; use product-copy skill.",
+        "Inspect rendered text and coverage; deterministic success is not semantic approval.",
+        "Jev request compilation and replay are local; paid dispatch uses the separately authorized shared transport.",
+        "Agent judges usefulness and edits within authorization; verify UI visually."
+      ],
+      "task_types": [
+        "frontend",
+        "ui-design",
+        "code-review",
+        "writing"
+      ],
+      "on_demand": "product copy review"
+    }
+  ]
+}
