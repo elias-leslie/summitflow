@@ -21,6 +21,7 @@ RECOVERY_DIR_NAME = ".summitflow-recovery"
 RECOVERY_MANIFEST_NAME = "manifest.json"
 GIT_BUNDLE_NAME = "git.bundle"
 GIT_INDEX_NAME = "git-index"
+SQLITE_TRANSIENT_SUFFIXES = ("-wal", "-shm", "-journal")
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,7 @@ class SnapshotEntry:
     mtime_ns: int
     inode: int
     link_target: str | None = None
+    sqlite_database: bool = False
 
 
 def _sha256(path: Path) -> str:
@@ -79,6 +81,7 @@ def inventory_project_tree(
                 retained_dirs.append(dirname)
         dirs[:] = retained_dirs
 
+        sqlite_databases: set[str] = set()
         for filename in files:
             path = root_path / filename
             rel = (Path(rel_root) / filename).as_posix()
@@ -87,16 +90,38 @@ def inventory_project_tree(
             try:
                 metadata = path.lstat()
             except FileNotFoundError:
+                continue
+            if stat.S_ISREG(metadata.st_mode) and _is_sqlite_database(path):
+                sqlite_databases.add(filename)
+
+        for filename in files:
+            path = root_path / filename
+            rel = (Path(rel_root) / filename).as_posix()
+            if should_exclude(rel, excludes):
+                continue
+            try:
+                metadata = path.lstat()
+            except FileNotFoundError:
+                if _is_sqlite_transient_file(path, sqlite_databases):
+                    continue
                 raise RuntimeError(f"Backup source changed during inventory: {rel}") from None
             if stat.S_ISLNK(metadata.st_mode):
                 _record_symlink(inventory, path, rel, project_dir)
             elif stat.S_ISREG(metadata.st_mode):
+                if _is_sqlite_transient_file(path, sqlite_databases):
+                    continue
+                sqlite_database = filename in sqlite_databases
                 inventory[rel] = SnapshotEntry(
                     kind="file",
                     mode=stat.S_IMODE(metadata.st_mode),
-                    size=metadata.st_size,
-                    mtime_ns=metadata.st_mtime_ns,
+                    # An online SQLite backup is transactionally consistent even
+                    # while a writer advances WAL or checkpoints the main file.
+                    # Retain identity and permissions checks, but do not treat
+                    # legitimate database size/mtime churn as an unrelated edit.
+                    size=0 if sqlite_database else metadata.st_size,
+                    mtime_ns=0 if sqlite_database else metadata.st_mtime_ns,
                     inode=metadata.st_ino,
+                    sqlite_database=sqlite_database,
                 )
     return inventory
 
@@ -129,6 +154,18 @@ def _is_sqlite_database(path: Path) -> bool:
         return False
 
 
+def _is_sqlite_transient_file(
+    path: Path,
+    sqlite_databases: set[str],
+) -> bool:
+    """Return whether path is a standard sidecar for a recognized SQLite DB."""
+    for suffix in SQLITE_TRANSIENT_SUFFIXES:
+        if path.name.endswith(suffix):
+            database_name = path.name[: -len(suffix)]
+            return database_name in sqlite_databases
+    return False
+
+
 def _copy_sqlite_database(source: Path, destination: Path) -> None:
     source_uri = f"file:{source.resolve().as_posix()}?mode=ro"
     with sqlite3.connect(source_uri, uri=True) as source_db, sqlite3.connect(destination) as destination_db:
@@ -149,7 +186,7 @@ def copy_inventory_snapshot(
         target.parent.mkdir(parents=True, exist_ok=True)
         if entry.kind == "symlink":
             target.symlink_to(entry.link_target or "")
-        elif _is_sqlite_database(source):
+        elif entry.sqlite_database:
             _copy_sqlite_database(source, target)
         else:
             shutil.copy2(source, target, follow_symlinks=False)
@@ -161,11 +198,13 @@ def _run_git(
     *,
     text: bool = True,
     env: dict[str, str] | None = None,
+    input_data: str | None = None,
 ) -> subprocess.CompletedProcess[Any]:
     return subprocess.run(
         ["git", "-C", str(project_dir), *args],
         capture_output=True,
         text=text,
+        input=input_data,
         env={**os.environ, **env} if env else None,
         timeout=120,
         check=False,
@@ -244,16 +283,35 @@ def _create_git_bundle(
     state: dict[str, Any],
     saved_index: Path | None,
 ) -> None:
-    """Bundle refs plus the exact index tree without mutating source refs."""
+    """Bundle refs and index objects, including non-commit-ready indexes."""
     index_commit_id: str | None = None
     if saved_index is not None:
         with tempfile.TemporaryDirectory(prefix="backup-git-index-") as temporary:
             working_index = Path(temporary) / "index"
             shutil.copy2(saved_index, working_index)
+            entries = _run_git(
+                project_dir,
+                ["ls-files", "--stage", "-z"],
+                env={"GIT_INDEX_FILE": str(working_index)},
+            )
+            if entries.returncode != 0:
+                raise RuntimeError("Git index object inventory failed")
+            # The original index bytes retain paths, stages and intent-to-add
+            # flags. A flat synthetic tree only keeps referenced objects alive;
+            # write-tree cannot encode unmerged or file/directory-conflict states.
+            objects: dict[str, str] = {}
+            for entry in entries.stdout.split("\0"):
+                if not entry:
+                    continue
+                mode, object_id, _stage = entry.split("\t", 1)[0].split()
+                if mode == "160000":
+                    continue  # Submodule commits belong to the submodule repo.
+                object_type = "tree" if mode == "040000" else "blob"
+                objects[object_id] = f"{mode} {object_type} {object_id}\t{object_id}\0"
             index_tree = _run_git(
                 project_dir,
-                ["write-tree"],
-                env={"GIT_INDEX_FILE": str(working_index)},
+                ["mktree", "-z"],
+                input_data="".join(objects[key] for key in sorted(objects)),
             )
             if index_tree.returncode != 0:
                 raise RuntimeError(f"Git index tree capture failed: {index_tree.stderr.strip()}")

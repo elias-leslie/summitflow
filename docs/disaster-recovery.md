@@ -18,14 +18,14 @@ Keep these in `SummitFlowBackups`:
 - the source-only companion runbook as `OFFLINE-RESTORE.md`;
 - `recovery-bootstrap.py`;
 - the dated `recovery-inventory.json` and `SHA256SUMS`;
-- the exact encrypted infrastructure archive named by that inventory; and
-- the exact encrypted project, config, and workspace archives named by that
-  inventory, including the SummitFlow source archive.
+- retained encrypted infrastructure, project, config, and workspace archives
+  in their source folders, including the SummitFlow source archive.
 
-The inventory is a dated recovery point, not a permanent `latest` pointer. Do
-not substitute newer files without checking their capture and offsite
-verification status. Retain the originally downloaded ciphertext even after
-making a working copy.
+The inventory is a dated, verified recovery point and source-folder map, not a
+permanent `latest` pointer. Normal retention can expire an archive it names.
+Use the selection procedure below when that happens; do not depend on an old
+filename remaining forever. Retain downloaded ciphertext after making a working
+copy.
 
 The age private key must **not** be in Google Drive beside the archives. Obtain
 the separately saved file containing the `AGE-SECRET-KEY-...` identity. A
@@ -49,7 +49,8 @@ cached. This kit is not an offline package mirror.
 
 ## 1. Preserve and verify the recovery point
 
-Download the whole dated kit and every archive it names. A browser is enough;
+Download the whole kit and select one archive per required source. Prefer the
+dated inventory's verified archives when still available. A browser is enough;
 the replacement host does not yet have to be signed into Google Online Accounts.
 Work on a private local disk:
 
@@ -66,8 +67,10 @@ cd /srv/recovery/summitflow-drive-original
 sha256sum --check SHA256SUMS
 ```
 
-Stop if any file is absent or has a different checksum. Do not edit the files in
-that directory. Copy selected ciphertext archives to `/srv/recovery/work` for
+`SHA256SUMS` covers the four static kit files, not expiring backup archives.
+Stop if a kit file is absent or has a different checksum. For each archive still
+named in the inventory, compare its SHA-256 with that inventory's recorded value.
+Do not edit the downloaded files. Copy selected ciphertext to `/srv/recovery/work` for
 decryption and retain the originals until the replacement system has completed a
 new, independently verified backup cycle.
 
@@ -82,6 +85,30 @@ ciphertext SHA-256, at least:
 It should also record the key ID and the infrastructure capture coverage. A
 missing or incomplete component is a recovery limitation to resolve, not a
 warning to ignore.
+
+### If a dated archive has expired, or a newer recovery point is needed
+
+Use the same source folder identified by the inventory. Select its newest
+timestamped `.tar.gz.age` archive, download it completely, and record its filename,
+size and local SHA-256 in your recovery notes. Check all source folders for
+projects added after the inventory was written; later compare them with the
+recovered backup-source registry. Do not silently omit new projects or substitute
+an archive from another source folder.
+
+An independent matching checksum or offsite verification record is preferable.
+If none survived, say so in the recovery notes: a newly computed checksum proves
+subsequent copies match, not that this was a previously verified backup. Omit the
+optional expected-checksum argument only in that case. The age authentication
+check, safe archive validation and restore checks remain mandatory. Encryption
+authentication detects damaged ciphertext; it does not independently establish
+who created a file in a writable Drive account.
+
+For project/config archives, complete the isolated restore and verify Git history
+and saved index where present. For infrastructure, inspect its capture manifest
+for every required component and complete the disposable database/Redis restore
+checks below before using it. If the newest retained archive fails, preserve the
+failure evidence and try the next newest in that same source folder. Do not
+replace a failed restore with a success claim based only on decryption.
 
 ## 2. Recover SummitFlow source without a running service
 

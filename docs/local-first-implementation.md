@@ -618,6 +618,33 @@ source-bound closeout evidence. The overall task remains open.
 
 ## Everyday workflow after verified rollout
 
+### Final live recovery verification (in progress)
+
+- Infrastructure backup `bkp-d52d5305f5074eee` has exact 10/10 component
+  coverage and a verified Drive copy. Its downloaded ciphertext was checked and
+  decrypted with the protected host identity; all six disposable restore checks
+  passed in 177,016 ms. No production database was restored or overwritten.
+- Real Claude/Codex captures exposed intent-to-add file/directory index states
+  that Git cannot turn into a commit tree. A minimized regression reproduced
+  the exact failure in 0.47 seconds. The fix bundles a synthetic flat tree of
+  referenced index objects while preserving the original index bytes, rather
+  than requiring a commit-ready index. Both actual configuration repositories
+  passed isolated Git restoration with identical original/restored index hashes;
+  neither source index was modified. Full encrypted captures remain pending.
+- BlackBox/Ominull exposed live SQLite WAL/SHM churn in the generic source
+  stability check; the existing transactional SQLite copy needs matching
+  inventory treatment. A focused regression/fix is underway, not yet deployed.
+- Learn-o-Tron's local ciphertext completed, but one Drive listing timed out.
+  Retry uses that same artifact and record, not another capture.
+- The first final SummitFlow capture correctly rejected a new generated test
+  artifact during capture. Retry follows the final checkpoint with a quiet
+  source tree; this failed attempt is not counted as protection.
+- The hard-loss runbook now handles normal archive retention: the dated
+  inventory maps source folders, but is not a permanent filename lock. Static
+  kit checksums are separate from expiring archives. Newer selected archives
+  still require authenticated decryption and actual restore validation; absent
+  independent prior checksum evidence is recorded honestly.
+
 1. Claim the task once and use existing file/lane ownership for parallel agents.
    Each agent edits its assigned files; commits are local and path-scoped where
    another agent has unrelated edits. No per-task PR or branch is required.

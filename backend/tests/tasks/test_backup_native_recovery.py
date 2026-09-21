@@ -102,6 +102,131 @@ def test_snapshot_fails_closed_when_source_changes_during_copy(
         recovery.build_consistent_snapshot(project, tmp_path / "stage", (), lambda *_args: False)
 
 
+@pytest.mark.parametrize(
+    "relative_database",
+    (
+        ".e2e/vault/meta/blackbox.db",
+        "build/ominull.db",
+    ),
+)
+def test_snapshot_accepts_live_sqlite_wal_churn_and_keeps_transactional_copy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    relative_database: str,
+) -> None:
+    from app.tasks import backup_native_recovery as recovery
+
+    project = tmp_path / "project"
+    database = project / relative_database
+    database.parent.mkdir(parents=True)
+    writer = sqlite3.connect(database)
+    try:
+        assert writer.execute("PRAGMA journal_mode=WAL").fetchone() == ("wal",)
+        writer.execute("CREATE TABLE evidence(value TEXT)")
+        writer.execute("INSERT INTO evidence VALUES ('before-capture')")
+        writer.commit()
+        assert database.with_name(f"{database.name}-wal").is_file()
+        assert database.with_name(f"{database.name}-shm").is_file()
+
+        original_copy = recovery._copy_sqlite_database
+
+        def copy_then_write(source: Path, destination: Path) -> None:
+            original_copy(source, destination)
+            writer.execute("INSERT INTO evidence VALUES ('after-snapshot')")
+            writer.commit()
+
+        monkeypatch.setattr(recovery, "_copy_sqlite_database", copy_then_write)
+
+        snapshot, _manifest = recovery.build_consistent_snapshot(
+            project,
+            tmp_path / "stage",
+            (),
+            lambda *_args: False,
+        )
+    finally:
+        writer.close()
+
+    captured_database = snapshot / database.relative_to(project)
+    assert not captured_database.with_name(f"{captured_database.name}-wal").exists()
+    assert not captured_database.with_name(f"{captured_database.name}-shm").exists()
+    with sqlite3.connect(captured_database) as captured:
+        assert captured.execute("SELECT value FROM evidence ORDER BY rowid").fetchall() == [
+            ("before-capture",),
+        ]
+
+
+def test_snapshot_rejects_sqlite_database_replacement_during_copy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.tasks import backup_native_recovery as recovery
+
+    project = tmp_path / "project"
+    project.mkdir()
+    database = project / "state.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE evidence(value TEXT)")
+        connection.execute("INSERT INTO evidence VALUES ('original')")
+
+    original_copy = recovery._copy_sqlite_database
+
+    def copy_then_replace(source: Path, destination: Path) -> None:
+        original_copy(source, destination)
+        replacement = source.with_name("replacement.db")
+        with sqlite3.connect(replacement) as connection:
+            connection.execute("CREATE TABLE evidence(value TEXT)")
+            connection.execute("INSERT INTO evidence VALUES ('replacement')")
+        replacement.replace(source)
+
+    monkeypatch.setattr(recovery, "_copy_sqlite_database", copy_then_replace)
+
+    with pytest.raises(RuntimeError, match="changed during capture"):
+        recovery.build_consistent_snapshot(
+            project,
+            tmp_path / "stage",
+            (),
+            lambda *_args: False,
+        )
+
+
+def test_snapshot_preserves_orphan_sidecars_and_sidecars_of_excluded_database(
+    tmp_path: Path,
+) -> None:
+    from app.tasks import backup_native_recovery as recovery
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "orphan.db-wal").write_bytes(b"valuable orphan WAL")
+
+    excluded_database = project / "excluded.db"
+    writer = sqlite3.connect(excluded_database)
+    try:
+        assert writer.execute("PRAGMA journal_mode=WAL").fetchone() == ("wal",)
+        writer.execute("CREATE TABLE evidence(value TEXT)")
+        writer.execute("INSERT INTO evidence VALUES ('excluded-main')")
+        writer.commit()
+        excluded_wal = excluded_database.with_name(f"{excluded_database.name}-wal")
+        excluded_shm = excluded_database.with_name(f"{excluded_database.name}-shm")
+        assert excluded_wal.is_file()
+        assert excluded_shm.is_file()
+        expected_wal = excluded_wal.read_bytes()
+        expected_shm = excluded_shm.read_bytes()
+
+        snapshot, _manifest = recovery.build_consistent_snapshot(
+            project,
+            tmp_path / "stage",
+            ("excluded.db",),
+            lambda rel, patterns: rel in patterns,
+        )
+    finally:
+        writer.close()
+
+    assert (snapshot / "orphan.db-wal").read_bytes() == b"valuable orphan WAL"
+    assert not (snapshot / "excluded.db").exists()
+    assert (snapshot / "excluded.db-wal").read_bytes() == expected_wal
+    assert (snapshot / "excluded.db-shm").read_bytes() == expected_shm
+
+
 def test_snapshot_always_excludes_private_backup_key_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
