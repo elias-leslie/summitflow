@@ -22,6 +22,11 @@ from app.tasks.backup_native_infra import _copy_if_exists
 from app.tasks.backup_native_restore import restore_archive
 
 
+@pytest.mark.parametrize("path", [".venv/pyvenv.cfg", "tools/.venv/lib/package.py", "backend/.venv/bin/python"])
+def test_rebuildable_virtualenvs_are_excluded_at_every_project_layout(path: str) -> None:
+    assert _should_exclude(path, DEFAULT_EXCLUDES)
+
+
 def test_durable_evidence_is_included_unless_project_explicitly_excludes_it(
     tmp_path: Path,
 ) -> None:
@@ -238,7 +243,7 @@ def test_native_backup_rejects_invalid_source_before_storage(tmp_path, monkeypat
     monkeypatch.setattr(backup_native_archive, "_dump_database", lambda *a: (0, False))
     def encrypt(source, destination, _env):
         destination.write_bytes(b"encrypted")
-        return {"content_checksum": "sha256:plain", "checksum": "sha256:cipher", "encrypted_bytes": 9}
+        return {"content_checksum": "sha256:plain", "checksum": "sha256:cipher", "encrypted_bytes": 9, "duration_ms": 25}
     monkeypatch.setattr(backup_native, "encrypt_completed_archive", encrypt)
     store = Mock(return_value={"stored": True})
     monkeypatch.setattr(backup_native, "_store_local_project_archive", store)
@@ -248,6 +253,7 @@ def test_native_backup_rejects_invalid_source_before_storage(tmp_path, monkeypat
         assert backup_native.run_project_backup(project_dir=str(project), source_id="source", local_only=local_only) == {"stored": True}
         assert store.call_count == 1
         assert store.call_args.args[2]["verification"]["verified"] is True
+        assert store.call_args.args[2]["verification"]["encryption"] == {"duration_ms": 25}
     else:
         with pytest.raises((RuntimeError, FileNotFoundError), match=r"does not exist|no regular files"):
             backup_native.run_project_backup(project_dir=str(project), source_id="source", local_only=local_only)

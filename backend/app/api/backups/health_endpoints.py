@@ -9,7 +9,7 @@ from fastapi import APIRouter
 
 from ...logging_config import get_logger
 from ...storage import backups as backup_store
-from ...tasks.backup_coverage import get_coverage_summary
+from ...tasks.backup_coverage import get_coverage_summary, verify_archive_coverage
 from ...tasks.backup_utils import build_storage_env
 from .models import (
     BackupHealthItem,
@@ -45,6 +45,11 @@ async def backup_health() -> BackupHealthResponse:
         last_drill_backup_id = row.get("last_drill_backup_id")
         verification = row.get("latest_verification_json")
         verification = verification if isinstance(verification, Mapping) else {}
+        coverage_complete = (
+            verify_archive_coverage(dict(verification)).complete
+            if source_type == "infrastructure"
+            else None
+        )
         offsite = verification.get("offsite")
         offsite = offsite if isinstance(offsite, Mapping) else {}
         isolated_restore = verification.get("isolated_restore")
@@ -81,8 +86,15 @@ async def backup_health() -> BackupHealthResponse:
         }:
             health_status = "yellow"
         elif source_type == "infrastructure":
-            # Infrastructure: green requires drill passed
-            if last_success and last_drill_ok is True:
+            # An older successful drill cannot validate a new recovery point.
+            if (
+                last_success
+                and last_drill_ok is True
+                and restore_confidence == "verified"
+                and coverage_complete is True
+                and row.get("latest_backup_id") is not None
+                and last_drill_backup_id == row.get("latest_backup_id")
+            ):
                 health_status = "green"
             elif last_success:
                 health_status = "yellow"
@@ -111,6 +123,7 @@ async def backup_health() -> BackupHealthResponse:
                 latest_backup_age_hours=latest_backup_age_hours,
                 latest_restore_test_age_hours=latest_restore_test_age_hours,
                 restore_confidence=restore_confidence,
+                coverage_complete=coverage_complete,
                 last_drill_at=last_drill_at,
                 last_drill_ok=last_drill_ok,
                 last_drill_backup_id=last_drill_backup_id,

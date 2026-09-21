@@ -288,6 +288,7 @@ def encrypt_completed_archive(
     env: dict[str, str],
 ) -> dict[str, str | int]:
     """Encrypt a verified archive before it leaves restrictive staging."""
+    started = time.monotonic()
     del env
     recipient_file, _identity_file = get_backup_key_paths(require_validated=True)
     if not shutil.which("age"):
@@ -303,4 +304,5 @@ def encrypt_completed_archive(
         "content_checksum": _checksum(plaintext_path),
         "checksum": _checksum(encrypted_path),
         "encrypted_bytes": encrypted_path.stat().st_size,
+        "duration_ms": int((time.monotonic() - started) * 1000),
     }

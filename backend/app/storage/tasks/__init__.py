@@ -14,7 +14,13 @@ Modules:
     dedup: Semantic deduplication helpers
 """
 
-from .claims import claim_task, count_running_tasks, release_task, reset_expired_claims
+from .claims import (
+    claim_task,
+    count_running_tasks,
+    release_task,
+    renew_task_claim,
+    reset_expired_claims,
+)
 from .core import (
     EXPECTED_TASK_COLUMNS,
     TASK_COLUMNS,
@@ -79,6 +85,7 @@ __all__ = [
     "list_tasks",
     "purge_terminal_tasks",
     "release_task",
+    "renew_task_claim",
     "reset_expired_claims",
     "task_exists_for_file",
     "update_task",

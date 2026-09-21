@@ -5,12 +5,34 @@ This module handles task locking for concurrent worker access.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, LiteralString
 
+from ...logging_config import get_logger
 from ..connection import get_connection, get_cursor
 from .core import TASK_COLUMNS, _row_to_dict, canonicalize_task_id
 
 _CLAIMABLE_STATUSES = {"pending", "paused", "failed"}
+_DEFAULT_LOCK_MINUTES = 30
+logger = get_logger(__name__)
+
+
+def _preserved_verification_sql(
+    column: LiteralString = "verification_result", *, preserve_closeout: bool = False
+) -> LiteralString:
+    """Build the established lifecycle projection for durable task evidence."""
+    evidence: LiteralString = f"""NULLIF(jsonb_strip_nulls(jsonb_build_object(
+        'acceptance', CASE WHEN {column} ? 'acceptance' THEN
+            {column}->'acceptance' ||
+            '{{"state":"stale","reason":"task_lifecycle_changed_requires_acceptance"}}'::jsonb END,
+        'deployment', {column}->'deployment',
+        'live_validation', {column}->'live_validation'
+    )), '{{}}'::jsonb)"""
+    if not preserve_closeout:
+        return evidence
+    return f"""CASE WHEN {column}->'closeout'->>'state' IN ('pending', 'blocked')
+        THEN COALESCE({evidence}, '{{}}'::jsonb) ||
+            jsonb_build_object('closeout', {column}->'closeout')
+        ELSE {evidence} END"""
 
 
 def _has_valid_lock(task: dict[str, Any], cur: Any) -> bool:
@@ -27,6 +49,8 @@ def claim_task(
     task_id: str,
     worker_id: str,
     lock_duration_minutes: int = 30,
+    *,
+    renew_only: bool = False,
 ) -> dict[str, Any] | None:
     """Atomically claim a task for execution.
 
@@ -48,6 +72,24 @@ def claim_task(
             return None
 
         task = _row_to_dict(row)
+        if task["status"] == "running":
+            if task["claimed_by"] != worker_id:
+                return None
+            cur.execute(
+                f"""
+                UPDATE tasks
+                SET lock_expires_at = NOW() + (%s * INTERVAL '1 minute'),
+                    updated_at = NOW()
+                WHERE id = %s AND status = 'running' AND claimed_by = %s
+                RETURNING {TASK_COLUMNS}
+                """,
+                (lock_duration_minutes, resolved_task_id, worker_id),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return _row_to_dict(row) if row else None
+        if renew_only:
+            return None
         if task["status"] not in _CLAIMABLE_STATUSES:
             return None
         if _has_valid_lock(task, cur):
@@ -60,7 +102,7 @@ def claim_task(
                 claimed_at = NOW(),
                 lock_expires_at = NOW() + (%s * INTERVAL '1 minute'),
                 status = 'running',
-                verification_result = NULL,
+                verification_result = {_preserved_verification_sql()},
                 started_at = COALESCE(started_at, NOW()),
                 updated_at = NOW()
             WHERE id = %s
@@ -74,6 +116,29 @@ def claim_task(
     if not row:
         return None
     return _row_to_dict(row)
+
+
+def renew_task_claim(
+    task_id: str,
+    expected_worker_id: str,
+    lock_duration_minutes: int = _DEFAULT_LOCK_MINUTES,
+) -> dict[str, Any] | None:
+    """Extend an active claim only while the exact worker still owns it."""
+    resolved_task_id = canonicalize_task_id(task_id)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            UPDATE tasks
+            SET lock_expires_at = NOW() + (%s * INTERVAL '1 minute'),
+                updated_at = NOW()
+            WHERE id = %s AND status = 'running' AND claimed_by = %s
+            RETURNING {TASK_COLUMNS}
+            """,
+            (lock_duration_minutes, resolved_task_id, expected_worker_id),
+        )
+        row = cur.fetchone()
+        conn.commit()
+    return _row_to_dict(row) if row else None
 
 
 def release_task(
@@ -105,7 +170,7 @@ def release_task(
                 claimed_at = NULL,
                 lock_expires_at = NULL,
                 status = 'pending',
-                verification_result = NULL,
+                verification_result = {_preserved_verification_sql()},
                 updated_at = NOW()
             WHERE id = %s
               {owner_clause}
@@ -129,25 +194,53 @@ def reset_expired_claims() -> int:
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """
-            UPDATE tasks
-            SET claimed_by = NULL,
-                claimed_at = NULL,
-                lock_expires_at = NULL,
-                status = 'pending',
-                verification_result = CASE WHEN verification_result->'closeout'->>'state' IN ('pending', 'blocked')
-                    THEN verification_result ELSE NULL END,
-                updated_at = NOW()
-            WHERE status = 'running'
-              AND lock_expires_at IS NOT NULL
-              AND lock_expires_at < NOW()
-              AND claimed_by IS NOT NULL
+            f"""
+            WITH expired AS (
+                SELECT id, project_id, claimed_by, claimed_at, lock_expires_at
+                FROM tasks
+                WHERE status = 'running'
+                  AND lock_expires_at IS NOT NULL
+                  AND lock_expires_at < NOW()
+                  AND claimed_by IS NOT NULL
+                FOR UPDATE
+            ), updated AS (
+                UPDATE tasks AS task
+                SET claimed_by = NULL,
+                    claimed_at = NULL,
+                    lock_expires_at = NULL,
+                    status = 'pending',
+                    verification_result = {_preserved_verification_sql(preserve_closeout=True)},
+                    updated_at = NOW()
+                FROM expired
+                WHERE task.id = expired.id
+                RETURNING expired.id, expired.claimed_by, expired.claimed_at,
+                          expired.lock_expires_at
+            )
+            SELECT id, claimed_by, claimed_at, lock_expires_at FROM updated
             """
         )
-        count = cur.rowcount
+        reset_claims = cur.fetchall()
         conn.commit()
+    if reset_claims:
+        from ..events import log_task_event
 
-    return count
+        for task_id, claimed_by, claimed_at, lock_expires_at in reset_claims:
+            try:
+                log_task_event(
+                    task_id,
+                    "Task claim reset after lock expiry",
+                    source="summitflow-reset-claims",
+                    event_type="task_claim_reset",
+                    attributes={
+                        "reason": "lock_expired",
+                        "claimed_by": claimed_by,
+                        "claimed_at": claimed_at.isoformat() if claimed_at else None,
+                        "lock_expires_at": lock_expires_at.isoformat() if lock_expires_at else None,
+                    },
+                )
+            except Exception:
+                logger.exception("Failed to audit expired claim reset for task %s", task_id)
+    return len(reset_claims)
 
 
 def count_running_tasks(project_id: str, *, exclude_task_id: str | None = None) -> int:

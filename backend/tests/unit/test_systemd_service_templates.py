@@ -50,4 +50,7 @@ def test_backend_and_worker_use_configurable_durable_data_placeholder() -> None:
             "SUMMITFLOW_MOCKUP_BASE_DIR="
             "__SUMMITFLOW_DATA_ROOT__/design-studio/mockups"
         ) in text
+        assert (
+            "SUMMITFLOW_HOST_CONFIG_ROOT=__SUMMITFLOW_HOST_CONFIG_ROOT__"
+        ) in text
         assert "EnvironmentFile=-%h/.env.local" in text

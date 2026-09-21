@@ -5,7 +5,7 @@ Checkpoint-aware task and subtask claiming with git+metadata checkpoints.
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 from typing import Annotated, Any
 
 import typer
@@ -17,6 +17,11 @@ from ..lib.checkpoint import (
     create_task_snapshot,
     get_snapshot_info,
     remove_snapshot,
+)
+from ..lib.task_claims import (
+    TaskClaimRenewalError,
+    current_worker_id,
+    renew_local_owned_claim,
 )
 from ..lib.usage import usage
 from ..output import output_error, output_success, output_warning
@@ -35,15 +40,10 @@ app = typer.Typer(help="Claim task or subtask to start work")
 def _current_caller_id() -> str:
     """Identify the current caller for idempotent re-claim detection.
 
-    Matches the worker_id convention used by `client.claim_task` (AGENT_ID env
-    or whoami fallback). When both match the existing `claimed_by`, a re-claim
-    is treated as a resumed success rather than a conflict.
+    Matches the hostname worker convention used by `client.claim_task`. When
+    both match the existing `claimed_by`, re-claim renews the existing lock.
     """
-    explicit = os.getenv("AGENT_ID")
-    if explicit:
-        return explicit
-    user = os.getenv("USER") or os.getenv("LOGNAME") or ""
-    return user or "unknown"
+    return current_worker_id()
 
 
 def _is_same_caller(claimed_by: object) -> bool:
@@ -107,6 +107,21 @@ def _claim_task(
 
     # Idempotent re-claim: same caller, already running, existing checkpoint → resume.
     if status == "running" and existing and _is_same_caller(task.get("claimed_by")):
+        try:
+            client.claim_task(task_id, renew_only=True)
+        except APIError as api_error:
+            if api_error.status_code != 409:
+                output_error(f"Failed to renew task claim: {api_error.detail}")
+                raise typer.Exit(1) from None
+            try:
+                from ..config import get_config_optional
+
+                config = get_config_optional()
+                root = Path(str(config.project_root or "")) if config else Path()
+                renew_local_owned_claim(root, task_id)
+            except (OSError, TaskClaimRenewalError, ValueError):
+                output_error(f"Failed to renew task claim: {api_error.detail}")
+                raise typer.Exit(1) from None
         return {
             "task_id": task_id,
             "action": "resumed",

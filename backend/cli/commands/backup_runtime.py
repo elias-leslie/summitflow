@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import re
+import tempfile
 from pathlib import Path
 
 import typer
 
 from app.tasks.backup_executor import restore_backup_isolated
+from app.tasks.backup_native_offsite import decrypt_offsite_archive
+from app.tasks.backup_native_restore import restore_isolated_archive
 
 from ..client import APIError
 from ..lib.confirm_token import confirm_gate
@@ -19,6 +25,8 @@ def backup_all_command(source_api) -> None:
     try:
         queued = 0
         for source in source_api.list_sources():
+            if not source.get("enabled", False):
+                continue
             source_id = source.get("id")
             if not source_id:
                 continue
@@ -83,6 +91,92 @@ def restore_backup_isolated_command(
         )
     else:
         output_json(result)
+
+
+def restore_backup_offline_command(
+    ctx,
+    *,
+    archive_file: Path,
+    destination: Path,
+    identity_file: Path,
+    expected_checksum: str | None,
+) -> None:
+    """Restore an encrypted archive without API, database, or key-store access."""
+    try:
+        archive = archive_file.expanduser()
+        identity = identity_file.expanduser()
+        if not archive.is_file():
+            raise FileNotFoundError(f"Backup archive not found: {archive}")
+        if not archive.name.endswith(".tar.gz.age"):
+            raise RuntimeError("Offline isolated restore requires an encrypted .tar.gz.age archive")
+        if not identity.is_file():
+            raise FileNotFoundError("Saved age identity file not found")
+
+        with tempfile.TemporaryDirectory(prefix="backup-offline-restore-") as temporary:
+            staged_ciphertext = Path(temporary) / archive.name
+            actual_checksum = _copy_ciphertext_with_sha256(archive, staged_ciphertext)
+            checksum_verified = False
+            if expected_checksum is not None:
+                normalized = expected_checksum.strip()
+                if re.fullmatch(r"sha256:[0-9a-f]{64}", normalized) is None:
+                    raise RuntimeError(
+                        "Expected checksum must use sha256:<64 lowercase hex characters>"
+                    )
+                if not hmac.compare_digest(actual_checksum, normalized):
+                    raise RuntimeError(
+                        "Ciphertext checksum mismatch: refusing offline restore"
+                    )
+                checksum_verified = True
+
+            plaintext = Path(temporary) / archive.name.removesuffix(".age")
+            decrypt_offsite_archive(staged_ciphertext, plaintext, identity)
+            plaintext.chmod(0o600)
+            restored = restore_isolated_archive(plaintext, destination)
+        result = {
+            **restored,
+            "offline": True,
+            "ciphertext_checksum": actual_checksum,
+            "ciphertext_checksum_verified": checksum_verified,
+        }
+    except Exception as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
+
+    typer.echo("Database dumps are copied for inspection; no database was restored.")
+    if checksum_verified:
+        typer.echo("Ciphertext SHA-256 matched the supplied external checksum.")
+    else:
+        typer.echo(
+            "No external SHA-256 was supplied; ciphertext integrity was authenticated by age."
+        )
+    if ctx.obj.is_compact:
+        recovery = result.get("recovery")
+        git_restored = (
+            bool(recovery.get("git_restored")) if isinstance(recovery, dict) else False
+        )
+        typer.echo(
+            f"OFFLINE_ISOLATED_RESTORE {archive.name}|destination:{destination}|"
+            f"git_restored:{str(git_restored).lower()}|"
+            "database_restored:false"
+        )
+    else:
+        output_json(result)
+
+
+def _copy_ciphertext_with_sha256(
+    source: Path,
+    destination: Path,
+    *,
+    chunk_size: int = 1024 * 1024,
+) -> str:
+    """Copy ciphertext once into private staging while hashing those exact bytes."""
+    digest = hashlib.sha256()
+    destination.touch(mode=0o600, exist_ok=False)
+    with source.open("rb") as input_file, destination.open("wb") as output_file:
+        for chunk in iter(lambda: input_file.read(chunk_size), b""):
+            digest.update(chunk)
+            output_file.write(chunk)
+    return f"sha256:{digest.hexdigest()}"
 
 
 def backup_schedule_command(ctx, source_api, source_id: str, enable: bool | None, frequency: str | None, retention_days: int | None) -> None:

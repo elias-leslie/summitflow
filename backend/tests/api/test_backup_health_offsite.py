@@ -9,6 +9,34 @@ import pytest
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("drill_backup_id", "confidence", "coverage_complete", "expected"),
+    [("older-backup", "verified", True, "yellow"), ("backup-current", "verified", True, "green"),
+     ("backup-current", "stale", True, "yellow"), (None, "verified", True, "yellow"),
+     ("backup-current", "verified", False, "yellow")],
+)
+async def test_infra_green_requires_current_source_bound_drill(
+    monkeypatch, drill_backup_id, confidence, coverage_complete, expected,
+) -> None:
+    from app.api.backups import health_endpoints
+
+    monkeypatch.setattr(health_endpoints.backup_store, "get_backup_health_summary", lambda: [{
+        "source_id": "infrastructure", "source_name": "System Backup",
+        "source_type": "infrastructure", "enabled": True,
+        "last_success_at": "2026-09-21T12:00:00+00:00", "last_backup_status": "completed",
+        "latest_backup_id": "backup-current", "last_drill_backup_id": drill_backup_id,
+        "last_drill_ok": True, "latest_verification_json": {"offsite": {"status": "verified"}},
+    }])
+    monkeypatch.setattr(health_endpoints, "build_storage_env", lambda _: {})
+    monkeypatch.setattr(health_endpoints, "_compute_restore_confidence", lambda **_: confidence)
+    monkeypatch.setattr(health_endpoints, "verify_archive_coverage", lambda _: SimpleNamespace(complete=coverage_complete))
+
+    result = await health_endpoints.backup_health()
+    assert result.sources[0].health_status == expected
+    assert result.sources[0].coverage_complete is coverage_complete
+
+
+@pytest.mark.asyncio
 async def test_health_projects_latest_offsite_evidence_and_disabled_state(monkeypatch) -> None:
     from app.api.backups import health_endpoints
 
@@ -88,9 +116,11 @@ async def test_offsite_retry_marks_latest_backup_pending_and_queues_workflow(mon
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("encryption_ready", [True, False])
 async def test_storage_probe_reports_local_key_and_gio_readiness(
     tmp_path,
     monkeypatch,
+    encryption_ready,
 ) -> None:
     from app.api.backups import storage_endpoints
 
@@ -115,7 +145,7 @@ async def test_storage_probe_reports_local_key_and_gio_readiness(
     monkeypatch.setattr(
         storage_endpoints,
         "get_backup_key_status",
-        lambda: {"ready": True},
+        lambda: {"ready": encryption_ready},
     )
     monkeypatch.setattr(
         storage_endpoints.safe_subprocess,
@@ -125,8 +155,13 @@ async def test_storage_probe_reports_local_key_and_gio_readiness(
 
     result = await storage_endpoints.test_storage_backend("local-1")
 
-    assert result["success"] is True
+    assert result["success"] is encryption_ready
     assert result["local_success"] is True
     assert result["offsite_success"] is True
-    assert result["encryption_ready"] is True
-    assert updates == [("local-1", True)]
+    assert result["encryption_ready"] is encryption_ready
+    assert updates == [("local-1", encryption_ready)]
+    message = result["message"]
+    assert isinstance(message, str)
+    assert "Google Drive reachable" in message
+    if not encryption_ready:
+        assert "recovery key is not verified" in message

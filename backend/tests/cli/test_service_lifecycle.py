@@ -54,6 +54,7 @@ def lifecycle(monkeypatch, project):
     monkeypatch.setattr(service_release, "mark_phase", Mock())
     monkeypatch.setattr(service_release, "fail_release", Mock())
     monkeypatch.setattr(service_release, "complete_release", Mock())
+    monkeypatch.setattr(service_ops, "release_references_for_services", Mock(return_value=set()))
     monkeypatch.setattr(
         service_release,
         "publish_deployment_result",
@@ -212,6 +213,82 @@ def test_infrastructure_fails_safely_when_host_secret_source_is_missing(
     assert service_ops.ensure_infra(deployed) == 1
     assert "host compose environment is unavailable" in capsys.readouterr().out
     run.assert_not_called()
+
+
+def test_release_reference_discovery_includes_inactive_service_units(
+    monkeypatch, tmp_path
+):
+    releases = tmp_path / "projects" / "summitflow" / "releases"
+    active = releases / ("a" * 32)
+    inactive = releases / ("b" * 32)
+    system = releases / ("c" * 32)
+    active.mkdir(parents=True)
+    inactive.mkdir()
+    system.mkdir()
+
+    def systemctl(*args):
+        if args[0] == "list-unit-files":
+            return subprocess.CompletedProcess(
+                args, 0, "active.service enabled\ninactive.service disabled\n", ""
+            )
+        if args[0] == "list-units":
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                "active.service loaded active running\n"
+                "stale.service not-found failed failed\n",
+                "",
+            )
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            (
+                f"Id=active.service\nLoadState=loaded\n"
+                f"WorkingDirectory={active}/source/backend\n\n"
+                f"Id=inactive.service\nLoadState=loaded\n"
+                f"WorkingDirectory={inactive}/source/backend\n\n"
+                "Id=stale.service\nLoadState=not-found\nWorkingDirectory=\n"
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(service_ops, "systemctl", systemctl)
+    monkeypatch.setattr(
+        service_ops,
+        "system_systemctl",
+        lambda *args: (
+            subprocess.CompletedProcess(args, 0, "system.service enabled\n", "")
+            if args[0] == "list-unit-files"
+            else subprocess.CompletedProcess(args, 0, "", "")
+            if args[0] == "list-units"
+            else subprocess.CompletedProcess(
+                args,
+                0,
+                f"Id=system.service\nLoadState=loaded\nWorkingDirectory={system}/source\n",
+                "",
+            )
+        ),
+    )
+
+    assert service_ops.release_references_for_services(releases) == {
+        active,
+        inactive,
+        system,
+    }
+
+
+def test_release_reference_discovery_fails_closed_on_unknown_unit(monkeypatch, tmp_path):
+    releases = tmp_path / "releases"
+
+    def systemctl(*args):
+        if args[0].startswith("list-"):
+            return subprocess.CompletedProcess(args, 0, "unknown.service disabled\n", "")
+        return subprocess.CompletedProcess(args, 1, "", "unavailable")
+
+    monkeypatch.setattr(service_ops, "systemctl", systemctl)
+    monkeypatch.setattr(service_ops, "system_systemctl", systemctl)
+
+    assert service_ops.release_references_for_services(releases) is None
 
 
 def test_failed_frontend_install_does_not_build(project, monkeypatch):

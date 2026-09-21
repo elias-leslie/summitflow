@@ -7,6 +7,18 @@ from typer.testing import CliRunner
 runner = CliRunner()
 
 
+def test_storage_probe_failure_returns_nonzero(monkeypatch) -> None:
+    from cli.commands import backup_storage
+    from cli.main import app
+
+    monkeypatch.setattr(backup_storage, "_api_post", lambda _path: {
+        "success": False, "message": "Backup recovery key is not verified",
+    })
+    result = runner.invoke(app, ["backup", "storage", "test", "local-1"])
+    assert result.exit_code == 1
+    assert "Backup recovery key is not verified" in result.output
+
+
 def test_storage_update_merges_offsite_settings_into_existing_backend(monkeypatch) -> None:
     from cli.commands import backup_storage
     from cli.main import app

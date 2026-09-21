@@ -10,6 +10,7 @@ import signal
 import subprocess
 from contextlib import suppress
 from pathlib import Path
+from typing import cast
 
 import typer
 
@@ -17,6 +18,7 @@ from ..details import display_path, summary_hint, write_details
 from ..lib.acceptance import AcceptanceError, accept_revision
 from ..lib.architecture_check import run_architecture_check
 from ..lib.cleanroom import main as cleanroom_main
+from ..lib.task_claims import TaskClaimRenewalError, renew_owned_claim
 from ..lib.usage import usage
 from ..output import output_error
 from .check_artifacts import write_check_details
@@ -275,24 +277,51 @@ def _help_text(names: str) -> str:
     return help_text(names)
 
 
+def _acceptance_summary(receipt: dict[str, object]) -> str:
+    source = receipt.get("source")
+    source_commit = receipt.get("source_commit")
+    if not source_commit and isinstance(source, dict):
+        source_commit = cast(dict[str, object], source).get("commit")
+    checks = receipt.get("checks")
+    check_count = receipt.get("check_count")
+    if check_count is None and isinstance(checks, list):
+        check_count = len(checks)
+    return "|".join(
+        (
+            f"ACCEPTANCE:state={receipt.get('state', 'unknown')}",
+            f"source={source_commit or 'unknown'}",
+            f"id={receipt.get('acceptance_id') or 'unknown'}",
+            f"artifact={receipt.get('acceptance_artifact') or 'unknown'}",
+            f"reused={str(bool(receipt.get('reused'))).lower()}",
+            f"duration_ms={receipt.get('duration_ms', 'unknown')}",
+            f"checks={check_count if check_count is not None else 'unknown'}",
+        )
+    )
+
+
 def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]) -> int:
     args = list(ctx.args)
     if args and args[0] == "--acceptance":
         if any(option in {"-h", "--help"} for option in args[1:]):
             print(
                 "Usage: st check --acceptance [--sha REV] [--task TASK] "
-                "[--scope PATH] [--no-reuse]"
+                "[--scope PATH] [--no-reuse] [--json]"
             )
             return 0
         sha = "HEAD"
         task_id = ""
         scope: list[str] = []
         reuse = True
+        json_output = False
         index = 1
         while index < len(args):
             option = args[index]
             if option == "--no-reuse":
                 reuse = False
+                index += 1
+                continue
+            if option == "--json":
+                json_output = True
                 index += 1
                 continue
             if option not in {"--sha", "--task", "--scope"} or index + 1 >= len(args):
@@ -307,13 +336,19 @@ def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]
                 scope.append(value)
             index += 2
         try:
+            root = _resolve_repo_root()
+            if task_id:
+                renew_owned_claim(root, task_id)
             receipt = accept_revision(
-                _resolve_repo_root(), sha=sha, task_id=task_id, scope=scope, reuse=reuse
+                root, sha=sha, task_id=task_id, scope=scope, reuse=reuse
             )
-        except AcceptanceError as exc:
+        except (AcceptanceError, TaskClaimRenewalError) as exc:
             output_error(str(exc))
             return 2
-        print("ACCEPTANCE:" + json.dumps(receipt, sort_keys=True, separators=(",", ":")))
+        if json_output:
+            print("ACCEPTANCE:" + json.dumps(receipt, sort_keys=True, separators=(",", ":")))
+        else:
+            print(_acceptance_summary(receipt))
         return 0 if receipt.get("state") == "success" else 1
     return handle_check_args(ctx, configs, runtime=_runtime())
 

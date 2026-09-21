@@ -81,6 +81,7 @@ def _prepared_release() -> SimpleNamespace:
     return SimpleNamespace(
         source=SimpleNamespace(source_commit="c" * 40),
         build_id="b" * 32,
+        release_root=Path("/release/releases") / ("b" * 32),
         receipt_path=Path("/release/deployment.json"),
     )
 
@@ -138,6 +139,10 @@ def test_service_rebuild_uses_native_steps() -> None:
         patch("cli.commands.service.service_ops.build_frontend", return_value=0),
         patch("cli.commands.service.service_ops.run_migrations", return_value=0),
         patch("cli.commands.service.service_ops.sync_systemd_units", return_value=0),
+        patch(
+            "cli.commands.service.service_ops.release_references_for_services",
+            return_value=set(),
+        ),
         patch("cli.commands.service.service_ops.restart_service", return_value=0) as restart,
         patch("cli.commands.service.service_ops.verify_health", return_value=0),
         patch("cli.commands.service.service_ops.sync_seeds", return_value=0),

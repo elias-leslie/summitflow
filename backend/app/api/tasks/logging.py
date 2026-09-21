@@ -108,6 +108,7 @@ async def claim_task(project_id: str, task_id: str, request: ClaimTaskRequest) -
         task_id=task_id,
         worker_id=request.worker_id,
         lock_duration_minutes=request.lock_minutes,
+        renew_only=request.renew_only,
     )
 
     if not claimed:

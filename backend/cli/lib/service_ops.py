@@ -11,7 +11,7 @@ import tempfile
 import time
 import tomllib
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -186,6 +186,11 @@ def systemctl(*args: str) -> subprocess.CompletedProcess[str]:
     return capture(["systemctl", "--user", *args])
 
 
+def system_systemctl(*args: str) -> subprocess.CompletedProcess[str]:
+    """Read system-manager state without requiring service mutation privileges."""
+    return capture(["systemctl", *args])
+
+
 def service_state(service: str) -> str:
     if not service:
         return "missing"
@@ -197,12 +202,109 @@ def service_exists(service: str) -> bool:
     return systemctl("cat", service).returncode == 0
 
 
+def _release_references_for_manager(
+    releases_root: Path,
+    manager: Callable[..., subprocess.CompletedProcess[str]],
+) -> set[Path] | None:
+    """Return release references for one complete systemd manager inventory.
+
+    ``None`` means the inventory was incomplete and cleanup must be skipped.
+    Listing unit files includes inactive services; listing loaded units also covers
+    transient services that have no persistent unit file.
+    """
+    listings = (
+        manager(
+            "list-unit-files",
+            "--type=service",
+            "--no-legend",
+            "--no-pager",
+            "--plain",
+        ),
+        manager(
+            "list-units",
+            "--type=service",
+            "--all",
+            "--no-legend",
+            "--no-pager",
+            "--plain",
+        ),
+    )
+    if any(result.returncode != 0 for result in listings):
+        return None
+    units = {
+        line.split(maxsplit=1)[0]
+        for result in listings
+        for line in result.stdout.splitlines()
+        if line.strip() and line.split(maxsplit=1)[0].endswith(".service")
+    }
+    try:
+        release_prefix = str(releases_root.resolve(strict=True)) + "/"
+    except OSError:
+        return None
+    build_pattern = re.compile(re.escape(release_prefix) + r'([^/\s"\';]+)')
+    references: set[Path] = set()
+    templates = {unit for unit in units if "@.service" in unit}
+    units -= templates
+    if templates:
+        template_result = manager("cat", "--no-pager", *sorted(templates))
+        if template_result.returncode != 0:
+            return None
+        if release_prefix in template_result.stdout:
+            matches = build_pattern.findall(template_result.stdout)
+            if not matches or any(
+                not re.fullmatch(r"[0-9a-f]{32}", item) for item in matches
+            ):
+                return None
+            references.update(releases_root / item for item in matches)
+    if not units:
+        return references
+    result = manager(
+        "show",
+        "--property=Id,Names,LoadState,FragmentPath,DropInPaths,ExecStart,WorkingDirectory,Environment",
+        *sorted(units),
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    blocks = result.stdout.strip().split("\n\n")
+    ordered_units = sorted(units)
+    if len(blocks) != len(ordered_units):
+        return None
+    for requested_unit, block in zip(ordered_units, blocks, strict=True):
+        properties = dict(
+            line.split("=", 1) for line in block.splitlines() if "=" in line
+        )
+        unit = properties.get("Id", "")
+        names = set(properties.get("Names", "").split())
+        if (
+            (unit != requested_unit and requested_unit not in names)
+            or properties.get("LoadState") is None
+        ):
+            return None
+        if release_prefix not in block:
+            continue
+        matches = build_pattern.findall(block)
+        if not matches or any(not re.fullmatch(r"[0-9a-f]{32}", item) for item in matches):
+            return None
+        references.update(releases_root / item for item in matches)
+    return references
+
+
+def release_references_for_services(releases_root: Path) -> set[Path] | None:
+    """Return references from both user and system services, or fail closed."""
+    user_references = _release_references_for_manager(releases_root, systemctl)
+    system_references = _release_references_for_manager(releases_root, system_systemctl)
+    if user_references is None or system_references is None:
+        return None
+    return user_references | system_references
+
+
 def sync_systemd_units(project: ProjectServices) -> int:
     systemd_dir = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "systemd" / "user"
     systemd_dir.mkdir(parents=True, exist_ok=True)
     synced = False
     summitflow_root = str(project.root if project.project_id == "summitflow" else get_repo_root())
     durable_data_root = project.durable_data_root or project.root / "data"
+    host_config_root = project.host_config_root or project.root
     for service in project.all_services:
         template = project.root / "scripts" / "systemd" / service
         if not template.exists():
@@ -211,6 +313,7 @@ def sync_systemd_units(project: ProjectServices) -> int:
         text = text.replace("__PROJECT_ROOT__", str(project.root))
         text = text.replace("__SUMMITFLOW_ROOT__", summitflow_root)
         text = text.replace("__SUMMITFLOW_DATA_ROOT__", str(durable_data_root))
+        text = text.replace("__SUMMITFLOW_HOST_CONFIG_ROOT__", str(host_config_root))
         (systemd_dir / service).write_text(text)
         print(f"[service] synced {service}")
         synced = True

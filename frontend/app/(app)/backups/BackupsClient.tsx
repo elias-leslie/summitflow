@@ -40,6 +40,7 @@ import {
   type Backup,
   type BackupSource,
   fetchAllBackups,
+  fetchBackupEncryption,
   fetchBackupHealth,
   fetchBackupSources,
   fetchStorageBackends,
@@ -313,6 +314,13 @@ export function BackupsClient() {
     queryFn: fetchStorageStatus,
   })
 
+  // Shares the non-secret status query with EncryptionSetup; key responses are
+  // never stored in this cache.
+  const { data: encryptionStatus } = useQuery({
+    queryKey: ['backup-encryption'],
+    queryFn: fetchBackupEncryption,
+  })
+
   const { data: healthData, isLoading: healthLoading } = useQuery({
     queryKey: ['backup-health'],
     queryFn: fetchBackupHealth,
@@ -486,6 +494,7 @@ export function BackupsClient() {
           storageStatus={storageStatus}
           sources={sources}
           healthItems={healthData?.sources ?? []}
+          encryptionReady={encryptionStatus?.ready === true}
           isLoading={storageLoading || healthLoading}
           onSourceChanged={refreshSources}
           onBackupTriggered={invalidateAll}

@@ -37,6 +37,7 @@ from .backup_runtime import (
     reject_backup_all_args,
     restore_backup_id_command,
     restore_backup_isolated_command,
+    restore_backup_offline_command,
 )
 from .backup_storage import app as storage_app
 from .backup_testbed import app as testbed_app
@@ -302,16 +303,50 @@ def restore_backup(
         Path | None,
         typer.Option("--into", help="Restore into an empty isolated directory"),
     ] = None,
+    identity_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--identity-file",
+            help="Saved age identity for DB-free isolated restore",
+        ),
+    ] = None,
+    expected_checksum: Annotated[
+        str | None,
+        typer.Option(
+            "--expected-checksum",
+            help="Expected ciphertext checksum in sha256:<hex> form",
+        ),
+    ] = None,
     db_only: Annotated[bool, typer.Option("--db-only", help="Restore database only for archive restores")] = False,
     files_only: Annotated[bool, typer.Option("--files-only", help="Restore files only for archive restores")] = False,
 ) -> None:
-    """Restore from a backup ID or local/pending/SMB archive."""
+    """Restore by backup ID, archive selector, or DB-free encrypted archive."""
     if into is not None:
         if dry_run or latest or archive_name or db_only or files_only or confirm:
             output_error(
                 "--into cannot be combined with --dry-run, --latest, --name, "
                 "--db-only, --files-only, or --confirm."
             )
+            raise typer.Exit(1) from None
+        if identity_file is not None:
+            if backup_id or source:
+                output_error(
+                    "Offline restore with --identity-file cannot use a backup ID or --source."
+                )
+                raise typer.Exit(1) from None
+            if archive_file is None:
+                output_error("Offline restore requires --file with --identity-file.")
+                raise typer.Exit(1) from None
+            restore_backup_offline_command(
+                ctx,
+                archive_file=Path(archive_file).expanduser(),
+                destination=into,
+                identity_file=identity_file,
+                expected_checksum=expected_checksum,
+            )
+            return
+        if expected_checksum is not None:
+            output_error("--expected-checksum requires --identity-file for offline restore.")
             raise typer.Exit(1) from None
         if not backup_id:
             output_error("Backup ID required with --into so archive checksum and source can be proven.")
@@ -324,6 +359,10 @@ def restore_backup(
             archive_file=Path(archive_file).expanduser() if archive_file else None,
         )
         return
+
+    if identity_file is not None or expected_checksum is not None:
+        output_error("--identity-file and --expected-checksum require --into with --file.")
+        raise typer.Exit(1) from None
 
     if latest or archive_file or archive_name:
         run_archive_restore(

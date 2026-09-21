@@ -220,8 +220,6 @@ async def test_storage_backend(backend_id: str) -> dict[str, object]:
     offsite_message: str | None = None
     encryption_ready = bool(get_backup_key_status().get("ready"))
     success = local_success and encryption_ready
-    if not encryption_ready and not offsite_uri:
-        message = f"{message}; backup recovery key is not verified"
     if offsite_uri:
         try:
             gio_result = safe_subprocess.run(
@@ -232,7 +230,7 @@ async def test_storage_backend(backend_id: str) -> dict[str, object]:
             )
             offsite_success = gio_result.returncode == 0
             offsite_message = (
-                "GIO destination reachable"
+                "Google Drive reachable"
                 if offsite_success
                 else f"GIO destination unavailable: {gio_result.stderr.strip()[:200]}"
             )
@@ -243,8 +241,9 @@ async def test_storage_backend(backend_id: str) -> dict[str, object]:
             offsite_success = False
             offsite_message = "gio not installed"
         success = local_success and offsite_success and encryption_ready
-        if not encryption_ready:
-            offsite_message = f"{offsite_message}; backup recovery key is not verified"
+        message = f"{message}; {offsite_message}"
+    if not encryption_ready:
+        message = f"{message}; backup recovery key is not verified"
 
     backup_store.update_test_result(backend_id, success)
     return {

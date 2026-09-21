@@ -128,6 +128,108 @@ def test_successful_release_preserves_previous_usable_release(
     assert receipt["previous_usable_release"] == first.build_id
 
 
+def _release_for_cleanup(state: Path, build_id: str) -> service_release.PreparedRelease:
+    release_root = state / "projects" / "example" / "releases" / build_id
+    (release_root / "source").mkdir(parents=True)
+    return service_release.PreparedRelease(
+        project_id="example",
+        build_id=build_id,
+        source=service_release.AcceptedSource(
+            acceptance_id="acceptance-cleanup",
+            source_commit="c" * 40,
+            source_tree="d" * 40,
+        ),
+        release_root=release_root,
+        source_root=release_root / "source",
+        receipt_path=state / "projects" / "example" / "receipts" / f"{build_id}.json",
+    )
+
+
+def test_release_cleanup_preserves_pointers_service_references_receipts_and_logs(
+    tmp_path: Path,
+) -> None:
+    state = tmp_path / "state"
+    current = _release_for_cleanup(state, "1" * 32)
+    previous = _release_for_cleanup(state, "2" * 32)
+    inactive_service = _release_for_cleanup(state, "3" * 32)
+    rebuildable = _release_for_cleanup(state, "4" * 32)
+    project_state = state / "projects" / "example"
+    (project_state / "current").symlink_to(current.release_root)
+    (project_state / "previous").symlink_to(previous.release_root)
+    receipts = project_state / "receipts"
+    receipts.mkdir()
+    retained_receipt = receipts / f"{rebuildable.build_id}.json"
+    retained_receipt.write_text("durable receipt\n")
+    jobs = state / "jobs"
+    jobs.mkdir()
+    retained_log = jobs / "rollout.log"
+    retained_log.write_text("durable log\n")
+
+    removed = service_release.prune_old_releases(
+        current, service_references={inactive_service.release_root}
+    )
+
+    assert removed == (rebuildable.release_root,)
+    assert current.release_root.is_dir()
+    assert previous.release_root.is_dir()
+    assert inactive_service.release_root.is_dir()
+    assert not rebuildable.release_root.exists()
+    assert retained_receipt.read_text() == "durable receipt\n"
+    assert retained_log.read_text() == "durable log\n"
+
+
+@pytest.mark.parametrize("references", [None, {Path("/outside/managed/releases")}])
+def test_release_cleanup_fails_closed_for_unknown_or_invalid_service_references(
+    tmp_path: Path, references: set[Path] | None
+) -> None:
+    state = tmp_path / "state"
+    current = _release_for_cleanup(state, "1" * 32)
+    rebuildable = _release_for_cleanup(state, "4" * 32)
+    project_state = state / "projects" / "example"
+    (project_state / "current").symlink_to(current.release_root)
+
+    assert service_release.prune_old_releases(
+        current, service_references=references
+    ) == ()
+    assert rebuildable.release_root.is_dir()
+
+
+def test_release_cleanup_fails_closed_when_release_entry_is_a_symlink(
+    tmp_path: Path,
+) -> None:
+    state = tmp_path / "state"
+    current = _release_for_cleanup(state, "1" * 32)
+    rebuildable = _release_for_cleanup(state, "4" * 32)
+    project_state = state / "projects" / "example"
+    (project_state / "current").symlink_to(current.release_root)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (current.release_root.parent / ("5" * 32)).symlink_to(outside)
+
+    assert service_release.prune_old_releases(
+        current, service_references=set()
+    ) == ()
+    assert rebuildable.release_root.is_dir()
+    assert outside.is_dir()
+
+
+def test_complete_release_rejects_non_symlink_current_pointer(
+    accepted_repo: tuple[Path, service_release.AcceptedSource], tmp_path: Path
+) -> None:
+    repo, source = accepted_repo
+    state = tmp_path / "state"
+    release = service_release._materialize_release(
+        "example", repo, source, state_root=state
+    )
+    current = state / "projects" / "example" / "current"
+    current.write_text("invalid pointer\n")
+
+    with pytest.raises(service_release.ReleaseError, match="not a symlink"):
+        service_release.complete_release(release, service_references=set())
+
+    assert current.read_text() == "invalid pointer\n"
+
+
 def test_failed_release_records_safeguards_without_replacing_current(
     accepted_repo: tuple[Path, service_release.AcceptedSource],
     tmp_path: Path,
@@ -252,6 +354,7 @@ def test_release_systemd_unit_points_only_at_stable_source(
     (templates / "api.service").write_text(
         "[Service]\nWorkingDirectory=__PROJECT_ROOT__/backend\n"
         "Environment=SUMMITFLOW_MOCKUP_BASE_DIR=__SUMMITFLOW_DATA_ROOT__/design-studio/mockups\n"
+        "Environment=SUMMITFLOW_HOST_CONFIG_ROOT=__SUMMITFLOW_HOST_CONFIG_ROOT__\n"
         "ExecStart=__SUMMITFLOW_ROOT__/backend/.venv/bin/python -m app\n"
     )
     _git(repo, "add", ".")
@@ -276,6 +379,7 @@ def test_release_systemd_unit_points_only_at_stable_source(
         backend_dir=release.source_root / "backend",
         frontend_dir=release.source_root / "frontend",
         health_endpoint="/health",
+        host_config_root=repo,
         durable_data_root=repo / "data",
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -288,6 +392,8 @@ def test_release_systemd_unit_points_only_at_stable_source(
     assert f"WorkingDirectory={repo}" not in unit
     assert f"ExecStart={repo}" not in unit
     assert f"SUMMITFLOW_MOCKUP_BASE_DIR={repo}/data/design-studio/mockups" in unit
+    assert f"SUMMITFLOW_HOST_CONFIG_ROOT={repo}" in unit
+    assert f"SUMMITFLOW_HOST_CONFIG_ROOT={release.source_root}" not in unit
 
 
 def test_service_preparation_consumes_canonical_acceptance_receipt(

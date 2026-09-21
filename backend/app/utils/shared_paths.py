@@ -18,6 +18,14 @@ def get_repo_root() -> Path:
     return _REPO_ROOT
 
 
+def get_host_config_root() -> Path:
+    """Return the stable host configuration root, independent of release source."""
+    override = os.environ.get("SUMMITFLOW_HOST_CONFIG_ROOT", "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return get_repo_root()
+
+
 def get_scripts_dir() -> Path:
     """Return the shared SummitFlow scripts directory."""
     return get_repo_root() / "scripts"

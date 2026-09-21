@@ -93,9 +93,55 @@ def test_st_commit_publication_is_explicit() -> None:
     assert commit.call_args.kwargs["push"] is True
 
 
+def test_failed_checkpoint_prints_existing_gate_artifact_hints() -> None:
+    with (
+        patch("cli.main.current_repo", return_value=Path("/repo")),
+        patch("cli.main.commit_repo", return_value={
+            "status": "BLOCKED", "reason": "quality_gates_failed",
+            "detail": "LINT:OK:0|details:lint.txt\nTYPE:FAIL:1|details:types.txt\nTEST:FAIL:1|details:tests.txt",
+        }),
+    ):
+        result = runner.invoke(app, ["commit", "-m", "checkpoint"])
+    assert result.exit_code == 2
+    assert "TYPE:FAIL:1|details:types.txt" in result.stdout
+    assert "TEST:FAIL:1|details:tests.txt" in result.stdout
+    assert "LINT:OK" not in result.stdout
+
+
 def test_commit_repo_rejects_publish_with_skipped_checks(tmp_path: Path) -> None:
     with pytest.raises(CommitError, match="refusing to publish with --skip-checks"):
         commit_repo(tmp_path, message="test", push=True, skip_checks=True)
+
+
+def test_local_task_commit_renews_owned_claim_before_repository_work(tmp_path: Path) -> None:
+    with (
+        patch("cli.lib.commit_workflow.renew_owned_claim") as renew,
+        patch("cli.lib.commit_workflow.repo_lock", return_value=nullcontext()),
+        patch(
+            "cli.lib.commit_workflow.commit_git_revision",
+            return_value={"repo": "repo", "status": "SKIP", "pushed": False},
+        ) as commit,
+        patch("cli.lib.commit_workflow._record_task_commit", side_effect=lambda _repo, result, **_: result),
+    ):
+        commit_repo(tmp_path, message="checkpoint", task_id="task-one", skip_checks=True)
+
+    renew.assert_called_once_with(tmp_path, "task-one")
+    commit.assert_called_once()
+
+
+def test_publication_does_not_require_active_implementation_claim(tmp_path: Path) -> None:
+    with (
+        patch("cli.lib.commit_workflow.renew_owned_claim") as renew,
+        patch("cli.lib.commit_workflow.repo_lock", return_value=nullcontext()),
+        patch(
+            "cli.lib.commit_workflow.commit_git_revision",
+            return_value={"repo": "repo", "status": "SKIP", "pushed": False},
+        ),
+        patch("cli.lib.commit_workflow._record_task_publication", side_effect=lambda _repo, result, **_: result),
+    ):
+        commit_repo(tmp_path, message="publish", task_id="task-one", push=True)
+
+    renew.assert_not_called()
 
 
 def test_commit_repo_prunes_safe_residue_after_publish(tmp_path: Path) -> None:

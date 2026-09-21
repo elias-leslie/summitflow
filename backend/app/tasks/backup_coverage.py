@@ -66,6 +66,34 @@ INFRA_COVERAGE: tuple[CoverageComponent, ...] = (
         archive_marker="configs/redis-dump.rdb",
     ),
     CoverageComponent(
+        key="host_ingress",
+        label="Host ingress configuration",
+        category="required",
+        description="Cloudflared and Caddy configuration plus host-held credentials",
+        archive_marker="state/host-ingress/manifest.json",
+    ),
+    CoverageComponent(
+        key="systemd_user",
+        label="User service state",
+        category="required",
+        description="User systemd unit files and enablement link identities",
+        archive_marker="state/systemd-user/manifest.json",
+    ),
+    CoverageComponent(
+        key="agent_hub_state",
+        label="Agent Hub durable state",
+        category="required",
+        description="Agent Hub context-delivery evidence, adapter backups, and journals",
+        archive_marker="state/agent-hub/manifest.json",
+    ),
+    CoverageComponent(
+        key="managed_service_state",
+        label="Managed service evidence",
+        category="required",
+        description="Deployment receipts, jobs, and current/previous release identities",
+        archive_marker="state/managed-services/manifest.json",
+    ),
+    CoverageComponent(
         key="pg_basebackup",
         label="Physical base backup",
         category="excluded",
@@ -114,52 +142,33 @@ class CoverageResult:
 
 def _parse_tree_context(
     verification_json: dict[str, Any] | None,
-) -> tuple[set[str], bool, bool, int]:
+) -> tuple[set[str], bool]:
     """Extract tree-matching signals from verification_json.
 
     Returns:
-        (tree_keys, has_db, infra_wrapped, infra_file_count)
+        (tree_keys, has_db)
     """
     tree = verification_json.get("tree", {}) if verification_json else {}
     tree_keys = set(tree.keys()) if tree else set()
     has_db = verification_json.get("has_db", False) if verification_json else False
 
-    # Infrastructure archives wrap everything under infrastructure/ prefix.
-    # When tree only has the prefix key, use file count + has_db as signals.
-    infra_wrapped = "infrastructure" in tree_keys and len(tree_keys) == 1
-    infra_file_count = tree.get("infrastructure", {}).get("count", 0) if infra_wrapped else 0
-
-    return tree_keys, has_db, infra_wrapped, infra_file_count
+    return tree_keys, has_db
 
 
 def _marker_present(
     marker: str,
     tree_keys: set[str],
     has_db: bool,
-    infra_wrapped: bool,
-    infra_file_count: int,
 ) -> bool:
-    """Determine whether a single archive marker is present.
+    """Determine whether an exact top-level archive marker is present.
 
-    Infrastructure archives nest everything under "infrastructure/" prefix,
-    so tree may be {"infrastructure": {"count": N}} — check total_files instead.
-    configs/ files: env.local, compose-env, smbcredentials, redis-dump.rdb,
-    hatchet-config/* (at least 1 file) = minimum 5 config files.
-    Total: pgdumpall.sql.gz + configs/* = at least 6 files.
+    Nested markers require explicit per-component capture evidence. The archive
+    tree stores only top-level counts, which cannot prove any individual file.
     """
     if marker == "pgdumpall.sql.gz":
         return has_db or marker in tree_keys
-
-    if infra_wrapped:
-        # Config files present if total >= 6 (pgdump + 5 config items)
-        if "configs/" in marker:
-            return infra_file_count >= 6
-        return marker in tree_keys
-
     if "/" in marker:
-        # Path like "configs/env.local" — check if parent dir exists in tree
-        parent = marker.split("/")[0]
-        return parent in tree_keys
+        return False
 
     return marker in tree_keys
 
@@ -168,8 +177,7 @@ def _check_component(
     comp: CoverageComponent,
     tree_keys: set[str],
     has_db: bool,
-    infra_wrapped: bool,
-    infra_file_count: int,
+    capture_components: dict[str, Any] | None = None,
 ) -> ComponentResult:
     """Evaluate a single coverage component and return its result."""
     if comp.category == "excluded" or comp.archive_marker is None:
@@ -178,9 +186,27 @@ def _check_component(
             present=False,
         )
 
-    present = _marker_present(
-        comp.archive_marker, tree_keys, has_db, infra_wrapped, infra_file_count,
-    )
+    captured = (capture_components or {}).get(comp.key)
+    if isinstance(captured, dict):
+        status = captured.get("status")
+        present = status == "captured"
+        captured_error = captured.get("error")
+        error = (
+            str(captured_error)
+            if not present and isinstance(captured_error, str) and captured_error
+            else f"{comp.label} capture status: {status or 'unknown'}"
+            if not present and comp.category == "required"
+            else None
+        )
+        return ComponentResult(
+            key=comp.key,
+            label=comp.label,
+            category=comp.category,
+            present=present,
+            error=error,
+        )
+
+    present = _marker_present(comp.archive_marker, tree_keys, has_db)
     error = (
         f"{comp.label} not found in archive"
         if not present and comp.category == "required"
@@ -224,10 +250,19 @@ def verify_archive_coverage(verification_json: dict[str, Any] | None) -> Coverag
     Returns:
         CoverageResult with per-component pass/fail.
     """
-    tree_keys, has_db, infra_wrapped, infra_file_count = _parse_tree_context(verification_json)
+    tree_keys, has_db = _parse_tree_context(verification_json)
+    coverage = verification_json.get("coverage", {}) if verification_json else {}
+    capture_components = coverage.get("components", {}) if isinstance(coverage, dict) else {}
+    if not isinstance(capture_components, dict):
+        capture_components = {}
 
     components = [
-        _check_component(comp, tree_keys, has_db, infra_wrapped, infra_file_count)
+        _check_component(
+            comp,
+            tree_keys,
+            has_db,
+            capture_components,
+        )
         for comp in INFRA_COVERAGE
     ]
 

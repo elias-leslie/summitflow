@@ -245,20 +245,141 @@ class TestUpdateTaskStatus:
         assert 3500 <= lock_span.total_seconds() <= 3700
         assert claimed["updated_at"] >= claimed["claimed_at"]
 
-    def test_claim_task_clears_stale_verification_result(
+    def test_same_owner_claim_renews_without_starting_a_new_attempt(
         self, test_task: dict[str, Any]
     ) -> None:
-        """A new execution must not inherit evidence from an earlier run."""
+        claimed = task_store.claim_task(test_task["id"], "test-worker", lock_duration_minutes=1)
+        assert claimed is not None
+        task_store.update_task(test_task["id"], verification_result={"acceptance": {"state": "success"}})
+
+        renewed = task_store.claim_task(test_task["id"], "test-worker", lock_duration_minutes=30)
+
+        assert renewed is not None
+        assert renewed["status"] == "running"
+        assert renewed["claimed_by"] == "test-worker"
+        assert renewed["claimed_at"] == claimed["claimed_at"]
+        assert renewed["lock_expires_at"] > claimed["lock_expires_at"]
+        assert renewed["verification_result"] == {"acceptance": {"state": "success"}}
+
+    def test_renew_task_claim_is_strictly_owner_bound(
+        self, test_task: dict[str, Any]
+    ) -> None:
+        claimed = task_store.claim_task(test_task["id"], "current-worker")
+        assert claimed is not None
+
+        assert task_store.renew_task_claim(test_task["id"], "other-worker") is None
+        still_owned = task_store.get_task(test_task["id"])
+        assert still_owned is not None
+        assert still_owned["claimed_by"] == "current-worker"
+        assert still_owned["lock_expires_at"] == claimed["lock_expires_at"]
+
+        task_store.release_task(test_task["id"], expected_worker_id="current-worker")
+        assert task_store.renew_task_claim(test_task["id"], "current-worker") is None
+
+    def test_expired_claim_reset_is_audited(
+        self, test_task: dict[str, Any]
+    ) -> None:
+        claimed = task_store.claim_task(
+            test_task["id"], "expired-worker", lock_duration_minutes=-1
+        )
+        assert claimed is not None
         task_store.update_task(
             test_task["id"],
-            verification_result={"evidence_verified": True},
+            verification_result={
+                "acceptance": {"state": "success", "source_commit": "accepted-sha"},
+                "deployment": {"state": "succeeded", "source_commit": "accepted-sha"},
+                "live_validation": {"state": "success", "source_commit": "accepted-sha"},
+                "closeout": {"state": "pending", "request_id": "closeout-one"},
+                "ephemeral": {"drop": True},
+            },
+        )
+
+        assert task_store.reset_expired_claims() >= 1
+
+        reset = task_store.get_task(test_task["id"])
+        assert reset is not None
+        assert reset["verification_result"] == {
+            "acceptance": {
+                "state": "stale",
+                "source_commit": "accepted-sha",
+                "reason": "task_lifecycle_changed_requires_acceptance",
+            },
+            "deployment": {"state": "succeeded", "source_commit": "accepted-sha"},
+            "live_validation": {"state": "success", "source_commit": "accepted-sha"},
+            "closeout": {"state": "pending", "request_id": "closeout-one"},
+        }
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT source, message, attributes
+                FROM events
+                WHERE trace_id = %s AND event_type = 'task_claim_reset'
+                ORDER BY timestamp DESC LIMIT 1
+                """,
+                (test_task["id"],),
+            )
+            event = cur.fetchone()
+        assert event is not None
+        assert event[0] == "summitflow-reset-claims"
+        assert event[1] == "Task claim reset after lock expiry"
+        assert event[2]["reason"] == "lock_expired"
+        assert event[2]["claimed_by"] == "expired-worker"
+
+    def test_fresh_claim_preserves_durable_receipts_and_stales_acceptance(
+        self, test_task: dict[str, Any]
+    ) -> None:
+        task_store.update_task(
+            test_task["id"],
+            verification_result={
+                "acceptance": {"state": "success", "source_commit": "accepted-sha"},
+                "deployment": {"state": "succeeded", "source_commit": "accepted-sha"},
+                "live_validation": {"state": "success", "source_commit": "accepted-sha"},
+                "closeout": {"state": "blocked"},
+                "ephemeral": {"drop": True},
+            },
         )
 
         claimed = task_store.claim_task(test_task["id"], "test-worker")
 
         assert claimed is not None
         assert claimed["status"] == "running"
-        assert claimed["verification_result"] is None
+        assert claimed["verification_result"] == {
+            "acceptance": {
+                "state": "stale",
+                "source_commit": "accepted-sha",
+                "reason": "task_lifecycle_changed_requires_acceptance",
+            },
+            "deployment": {"state": "succeeded", "source_commit": "accepted-sha"},
+            "live_validation": {"state": "success", "source_commit": "accepted-sha"},
+        }
+
+    def test_release_preserves_durable_receipts(self, test_task: dict[str, Any]) -> None:
+        claimed = task_store.claim_task(test_task["id"], "current-worker")
+        assert claimed is not None
+        task_store.update_task(
+            test_task["id"],
+            verification_result={
+                "acceptance": {"state": "success", "source_commit": "accepted-sha"},
+                "deployment": {"state": "succeeded", "source_commit": "accepted-sha"},
+                "live_validation": {"state": "success", "source_commit": "accepted-sha"},
+            },
+        )
+
+        released = task_store.release_task(
+            test_task["id"], expected_worker_id="current-worker"
+        )
+
+        assert released is not None
+        assert released["verification_result"] == {
+            "acceptance": {
+                "state": "stale",
+                "source_commit": "accepted-sha",
+                "reason": "task_lifecycle_changed_requires_acceptance",
+            },
+            "deployment": {"state": "succeeded", "source_commit": "accepted-sha"},
+            "live_validation": {"state": "success", "source_commit": "accepted-sha"},
+        }
 
     def test_release_task_only_releases_expected_worker(
         self, test_task: dict[str, Any]

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import socket
 from typing import TYPE_CHECKING, Any, cast
 
 from app.storage.tasks import canonicalize_task_id
+
+from .lib.task_claims import current_worker_id
 
 if TYPE_CHECKING:
     import httpx
@@ -146,12 +147,15 @@ def claim_task(
     task_id: str,
     lock_minutes: int = 30,
     worker_id: str | None = None,
+    renew_only: bool = False,
 ) -> dict[str, Any]:
     """Claim a task for exclusive execution."""
     if worker_id is None:
-        worker_id = socket.gethostname()
+        worker_id = current_worker_id()
 
     data = {"worker_id": worker_id, "lock_minutes": lock_minutes}
+    if renew_only:
+        data["renew_only"] = True
     response = client.post(url_fn(f"/tasks/{canonicalize_task_id(task_id)}/claim"), json=data)
     return cast(dict[str, Any], handle_response(response))
 
@@ -187,5 +191,3 @@ def execute_task(
     """Queue task for autonomous execution and immediate dispatch."""
     response = client.post(url_fn(f"/tasks/{canonicalize_task_id(task_id)}/execute"))
     return cast(dict[str, Any], handle_response(response))
-
-

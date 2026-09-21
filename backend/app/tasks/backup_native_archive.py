@@ -20,7 +20,7 @@ BACKUP_TIMEOUT = 600
 PROJECT_DATABASE_DUMP_NAME = "database.sql.gz"
 INFRASTRUCTURE_DATABASE_DUMP_NAME = "pgdumpall.sql.gz"
 DEFAULT_EXCLUDES = (
-    "backend/.venv",
+    ".venv",
     "frontend/node_modules",
     "frontend/.next",
     ".git",

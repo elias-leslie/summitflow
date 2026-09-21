@@ -175,6 +175,8 @@ def test_backend(
             print(f"TEST {status}|{result.get('message', '')}")
         else:
             output_json(result)
+        if not result.get("success"):
+            raise typer.Exit(1)
     except APIError as e:
         handle_api_error(e)
 

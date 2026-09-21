@@ -83,7 +83,9 @@ def test_infrastructure_restore_test_accepts_new_encrypted_archive(
         member.size = len(dump)
         archive.addfile(member, io.BytesIO(dump))
     ciphertext = plaintext.with_suffix(plaintext.suffix + ".age")
-    encrypt_completed_archive(plaintext, ciphertext, {})
+    encryption = encrypt_completed_archive(plaintext, ciphertext, {})
+    assert isinstance(encryption["duration_ms"], int)
+    assert encryption["duration_ms"] >= 0
 
     recorded: list[tuple[bool, str | None]] = []
     monkeypatch.setattr(

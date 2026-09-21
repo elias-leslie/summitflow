@@ -158,6 +158,7 @@ def run_project_backup(
         verification["content_checksum"] = encryption["content_checksum"]
         verification["checksum"] = encryption["checksum"]
         verification["encrypted"] = True
+        verification["encryption"] = {"duration_ms": encryption.get("duration_ms")}
         result.update(
             {
                 "archive_name": archive_name,

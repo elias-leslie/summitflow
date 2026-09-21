@@ -202,6 +202,12 @@ def _emit_commit_output(ctx: typer.Context, result: dict[str, object]) -> None:
                 detail=detail,
             )
         )
+        if result.get("reason") == "quality_gates_failed":
+            check_detail = result.get("detail")
+            if isinstance(check_detail, str):
+                for line in check_detail.splitlines():
+                    if ":FAIL:" in line:
+                        print(line)
         if "ci" in result:
             ci = cast(dict[str, Any], result["ci"])
             if isinstance(ci, dict):

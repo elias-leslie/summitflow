@@ -16,6 +16,7 @@ from .acceptance import AcceptanceError, repo_lock, workspace_fingerprint
 from .jj import JJError, commit_current_revision
 from .jj import run_checks as run_jj_checks
 from .publish_workflow import PublishError, publish_git
+from .task_claims import TaskClaimRenewalError, renew_owned_claim
 
 
 class CommitError(RuntimeError):
@@ -431,6 +432,11 @@ def commit_repo(
 ) -> dict[str, Any]:
     if push and skip_checks:
         raise CommitError("refusing to publish with --skip-checks")
+    if task_id and not push:
+        try:
+            renew_owned_claim(repo, task_id)
+        except TaskClaimRenewalError as exc:
+            raise CommitError(str(exc)) from exc
     try:
         with repo_lock(repo, purpose="commit"):
             if (repo / ".jj").is_dir():

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import stat
@@ -13,8 +14,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from ..logging_config import get_logger
-from ..utils.shared_paths import get_repo_root
+from ..services.backup_keys import backup_key_directory
+from ..utils.shared_paths import get_host_config_root, get_repo_root
 from .backup_native_archive import (
     INFRASTRUCTURE_DATABASE_DUMP_NAME,
     _regular_file_filter,
@@ -34,6 +38,7 @@ from .backup_native_storage import (
 logger = get_logger(__name__)
 
 INFRA_BACKUP_TIMEOUT = 900
+CAPTURE_MANIFEST_VERSION = 1
 
 
 def _find_compose_container(service: str) -> str | None:
@@ -68,6 +73,8 @@ def _dump_infra_database(destination: Path) -> int:
 
 
 def _copy_if_exists(src: Path, dest: Path) -> int:
+    if _path_is_within(src, backup_key_directory()):
+        return 0
     try:
         source_mode = src.lstat().st_mode
     except FileNotFoundError:
@@ -93,6 +100,9 @@ def _ignore_unsafe_copy_entries(directory: str, names: list[str]) -> list[str]:
     ignored: list[str] = []
     root = Path(directory)
     for name in names:
+        if _path_is_within(root / name, backup_key_directory()):
+            ignored.append(name)
+            continue
         try:
             mode = (root / name).lstat().st_mode
         except OSError:
@@ -106,6 +116,413 @@ def _ignore_unsafe_copy_entries(directory: str, names: list[str]) -> list[str]:
 def _safe_config_archive_filter(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
     """Exclude member types restore rejects."""
     return member if member.isdir() or member.isreg() else None
+
+
+def _absolute_path(path: Path) -> Path:
+    """Normalize a host path lexically without following links."""
+    return Path(os.path.abspath(os.fspath(path.expanduser())))
+
+
+def _path_is_within(path: Path, root: Path) -> bool:
+    path = _absolute_path(path)
+    root = _absolute_path(root)
+    return path == root or root in path.parents
+
+
+def _copy_regular_path(
+    source: Path,
+    destination: Path,
+    *,
+    excluded_roots: tuple[Path, ...] = (),
+) -> dict[str, Any]:
+    """Copy regular files/directories without dereferencing links.
+
+    Link identities are returned for recovery manifests, but link targets are
+    never opened. Any unreadable regular entry raises so its component can be
+    marked incomplete rather than silently presented as covered.
+    """
+    source = _absolute_path(source)
+    destination = _absolute_path(destination)
+    exclusions = tuple(
+        _absolute_path(item) for item in (*excluded_roots, backup_key_directory())
+    )
+    result: dict[str, Any] = {
+        "files": 0,
+        "links": [],
+        "special_files_skipped": 0,
+        "excluded_paths": 0,
+    }
+
+    def excluded(path: Path) -> bool:
+        return any(_path_is_within(path, root) for root in exclusions)
+
+    def copy_entry(path: Path, target: Path, relative: Path) -> None:
+        if excluded(path):
+            result["excluded_paths"] += 1
+            return
+        mode = path.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            result["links"].append(
+                {"path": relative.as_posix(), "target": os.readlink(path)}
+            )
+            return
+        if stat.S_ISREG(mode):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target, follow_symlinks=False)
+            result["files"] += 1
+            return
+        if not stat.S_ISDIR(mode):
+            result["special_files_skipped"] += 1
+            return
+
+        target.mkdir(parents=True, exist_ok=True)
+        with os.scandir(path) as entries:
+            children = sorted(entries, key=lambda item: item.name)
+        for child in children:
+            child_path = Path(child.path)
+            copy_entry(child_path, target / child.name, relative / child.name)
+
+    copy_entry(source, destination, Path("."))
+    result["links"] = sorted(result["links"], key=lambda item: item["path"])
+    return result
+
+
+def _write_capture_manifest(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _path_kind(path: Path) -> str:
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        return "missing"
+    if stat.S_ISREG(mode):
+        return "file"
+    if stat.S_ISDIR(mode):
+        return "directory"
+    return "unsupported"
+
+
+def _cloudflared_credential_path(config_path: Path) -> Path:
+    """Resolve Cloudflared's exact credential reference from safe YAML."""
+    try:
+        document = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise ValueError("cloudflared config is invalid") from exc
+    if not isinstance(document, dict):
+        raise ValueError("cloudflared config is not a mapping")
+    raw_reference = document.get("credentials-file")
+    if not isinstance(raw_reference, str) or not raw_reference.strip():
+        raise ValueError("cloudflared credential reference is missing or unsupported")
+    if "\x00" in raw_reference:
+        raise ValueError("cloudflared credential reference is missing or unsupported")
+    referenced = Path(raw_reference.strip()).expanduser()
+    if not referenced.is_absolute():
+        referenced = config_path.parent / referenced
+    return _absolute_path(referenced)
+
+
+def _capture_host_ingress(destination: Path) -> dict[str, Any]:
+    """Capture configured host ingress state without exposing secret content."""
+    destination.mkdir(parents=True, exist_ok=True)
+    cloud_config = _absolute_path(
+        Path(os.environ.get("CLOUDFLARED_CONFIG", "/etc/cloudflared/config.yml"))
+    )
+    caddy_config = _absolute_path(
+        Path(os.environ.get("CADDY_CONFIG", "/etc/caddy/Caddyfile"))
+    )
+    caddy_env = _absolute_path(
+        Path(os.environ.get("CADDY_ENV_FILE", "/etc/caddy/env"))
+    )
+    result: dict[str, Any] = {
+        "status": "missing",
+        "files": 0,
+        "missing": [],
+    }
+    errors: list[str] = []
+    try:
+        cloud_kind = _path_kind(cloud_config)
+        if cloud_kind == "file":
+            copied = _copy_regular_path(
+                cloud_config,
+                destination / "cloudflared" / "config.yml",
+            )
+            result["files"] += copied["files"]
+            try:
+                credential_file = _cloudflared_credential_path(cloud_config)
+            except ValueError:
+                errors.append("cloudflared credential reference is missing or unsupported")
+            else:
+                credential_kind = _path_kind(credential_file)
+                if credential_kind == "file":
+                    copied = _copy_regular_path(
+                        credential_file,
+                        destination / "cloudflared" / credential_file.name,
+                    )
+                    result["files"] += copied["files"]
+                    if copied["files"] != 1:
+                        errors.append("cloudflared credential reference is excluded")
+                    else:
+                        result["credential_file"] = credential_file.name
+                elif credential_kind == "missing":
+                    result["missing"].append("cloudflared_credentials")
+                else:
+                    errors.append("cloudflared credential reference is unsupported")
+        elif cloud_kind != "missing":
+            errors.append("cloudflared config is not a regular file")
+        else:
+            result["missing"].append("cloudflared_config")
+
+        for label, source, target_name in (
+            ("caddy_config", caddy_config, "Caddyfile"),
+            ("caddy_env", caddy_env, "env"),
+        ):
+            kind = _path_kind(source)
+            if kind == "file":
+                copied = _copy_regular_path(source, destination / "caddy" / target_name)
+                result["files"] += copied["files"]
+            else:
+                result["missing"].append(label)
+    except OSError:
+        errors.append("required ingress state is unreadable")
+
+    if errors:
+        result.update(status="error", error="; ".join(dict.fromkeys(errors)))
+    elif not result["missing"]:
+        result["status"] = "captured"
+
+    _write_capture_manifest(
+        destination / "manifest.json",
+        {"schema_version": CAPTURE_MANIFEST_VERSION, **result},
+    )
+    return result
+
+
+def _capture_user_systemd(destination: Path) -> dict[str, Any]:
+    """Capture user unit files and link identities representing enablement."""
+    config_home = Path(
+        os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
+    ).expanduser()
+    source = _absolute_path(config_home / "systemd" / "user")
+    destination.mkdir(parents=True, exist_ok=True)
+    result: dict[str, Any] = {"status": "missing", "files": 0, "enablement": []}
+    try:
+        kind = _path_kind(source)
+        if kind == "directory":
+            copied = _copy_regular_path(
+                source,
+                destination / "files",
+                excluded_roots=(backup_key_directory(),),
+            )
+            result.update(
+                status="captured",
+                files=copied["files"],
+                enablement=copied["links"],
+                special_files_skipped=copied["special_files_skipped"],
+            )
+        elif kind != "missing":
+            result.update(status="error", error="systemd user state is not a directory")
+    except OSError:
+        result.update(status="error", error="systemd user state is unreadable")
+    _write_capture_manifest(
+        destination / "manifest.json",
+        {"schema_version": CAPTURE_MANIFEST_VERSION, **result},
+    )
+    return result
+
+
+def _capture_agent_hub_state(destination: Path) -> dict[str, Any]:
+    """Capture Agent Hub durable host state while excluding backup keys."""
+    state_home = Path(
+        os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))
+    ).expanduser()
+    source = _absolute_path(state_home / "agent-hub")
+    result: dict[str, Any] = {"status": "missing", "files": 0}
+    try:
+        kind = _path_kind(source)
+        if kind == "directory":
+            copied = _copy_regular_path(
+                source,
+                destination / "files",
+                excluded_roots=(backup_key_directory(),),
+            )
+            result.update(
+                status="captured",
+                files=copied["files"],
+                links_skipped=len(copied["links"]),
+                special_files_skipped=copied["special_files_skipped"],
+                key_paths_excluded=copied["excluded_paths"],
+            )
+        elif kind != "missing":
+            result.update(status="error", error="Agent Hub state is not a directory")
+    except OSError:
+        result.update(status="error", error="Agent Hub state is unreadable")
+    _write_capture_manifest(
+        destination / "manifest.json",
+        {"schema_version": CAPTURE_MANIFEST_VERSION, **result},
+    )
+    return result
+
+
+def _service_state_root() -> Path:
+    configured = os.environ.get("SUMMITFLOW_SERVICE_STATE_ROOT", "").strip()
+    return _absolute_path(
+        Path(configured) if configured else Path.home() / ".summitflow" / "services"
+    )
+
+
+def _release_identity(link: Path, releases: Path) -> tuple[str | None, str | None]:
+    """Return a release build identity without dereferencing its source tree."""
+    try:
+        mode = link.lstat().st_mode
+    except FileNotFoundError:
+        return None, None
+    if not stat.S_ISLNK(mode):
+        return None, "pointer is not a symbolic link"
+    try:
+        raw_target = os.readlink(link)
+    except OSError:
+        return None, "pointer is unreadable"
+    target = Path(raw_target)
+    candidate = _absolute_path(target if target.is_absolute() else link.parent / target)
+    releases = _absolute_path(releases)
+    if candidate.parent != releases or not candidate.name:
+        return None, "pointer target is outside release storage"
+    return candidate.name, None
+
+
+def _capture_managed_service_state(destination: Path) -> dict[str, Any]:
+    """Capture service receipts/jobs and release identities, never release trees."""
+    source = _service_state_root()
+    destination.mkdir(parents=True, exist_ok=True)
+    result: dict[str, Any] = {"status": "missing", "files": 0, "projects": {}}
+    pointer_errors: list[str] = []
+    try:
+        kind = _path_kind(source)
+        if kind == "directory":
+            projects_root = source / "projects"
+            if _path_kind(projects_root) == "directory":
+                with os.scandir(projects_root) as entries:
+                    projects = sorted(entries, key=lambda item: item.name)
+                for entry in projects:
+                    project_path = Path(entry.path)
+                    if not entry.is_dir(follow_symlinks=False):
+                        continue
+                    project_manifest: dict[str, Any] = {}
+                    releases = project_path / "releases"
+                    for pointer in ("current", "previous"):
+                        build_id, error = _release_identity(project_path / pointer, releases)
+                        project_manifest[f"{pointer}_build"] = build_id
+                        if error:
+                            pointer_errors.append(f"{entry.name}:{pointer}")
+                    receipts = project_path / "receipts"
+                    if _path_kind(receipts) == "directory":
+                        copied = _copy_regular_path(
+                            receipts,
+                            destination / "projects" / entry.name / "receipts",
+                            excluded_roots=(backup_key_directory(),),
+                        )
+                        result["files"] += copied["files"]
+                        project_manifest["receipt_files"] = copied["files"]
+                    else:
+                        project_manifest["receipt_files"] = 0
+                    result["projects"][entry.name] = project_manifest
+
+            jobs = source / "jobs"
+            if _path_kind(jobs) == "directory":
+                copied = _copy_regular_path(
+                    jobs,
+                    destination / "jobs",
+                    excluded_roots=(backup_key_directory(),),
+                )
+                result["files"] += copied["files"]
+                result["job_files"] = copied["files"]
+            else:
+                result["job_files"] = 0
+            result["status"] = "error" if pointer_errors else "captured"
+            if pointer_errors:
+                result["error"] = "managed service release pointers are invalid"
+                result["invalid_pointers"] = pointer_errors
+        elif kind != "missing":
+            result.update(status="error", error="managed service state is not a directory")
+    except OSError:
+        result.update(status="error", error="managed service state is unreadable")
+    _write_capture_manifest(
+        destination / "manifest.json",
+        {"schema_version": CAPTURE_MANIFEST_VERSION, **result},
+    )
+    return result
+
+
+def _base_config_components(configs: Path) -> dict[str, dict[str, str]]:
+    """Record exact base configuration artifacts copied into private staging."""
+
+    def regular_file_status(path: Path) -> str:
+        try:
+            metadata = path.lstat()
+            return (
+                "captured"
+                if stat.S_ISREG(metadata.st_mode) and metadata.st_size > 0
+                else "missing"
+            )
+        except FileNotFoundError:
+            return "missing"
+
+    def populated_directory_status(path: Path) -> str:
+        try:
+            for candidate in path.rglob("*"):
+                metadata = candidate.lstat()
+                if stat.S_ISREG(metadata.st_mode) and metadata.st_size > 0:
+                    return "captured"
+        except FileNotFoundError:
+            pass
+        return "missing"
+
+    return {
+        "env_local": {"status": regular_file_status(configs / "env.local")},
+        "compose_env": {"status": regular_file_status(configs / "compose-env")},
+        "smb_credentials": {
+            "status": regular_file_status(configs / "smbcredentials")
+        },
+        "hatchet_config": {
+            "status": populated_directory_status(configs / "hatchet-config")
+        },
+        "redis_state": {"status": regular_file_status(configs / "redis-dump.rdb")},
+    }
+
+
+def _capture_recovery_state(
+    staging: Path,
+    base_components: dict[str, dict[str, str]],
+) -> dict[str, Any]:
+    state = staging / "state"
+    components = {
+        **base_components,
+        "host_ingress": _capture_host_ingress(state / "host-ingress"),
+        "systemd_user": _capture_user_systemd(state / "systemd-user"),
+        "agent_hub_state": _capture_agent_hub_state(state / "agent-hub"),
+        "managed_service_state": _capture_managed_service_state(
+            state / "managed-services"
+        ),
+    }
+    verification_components = {
+        key: {
+            field: value
+            for field, value in component.items()
+            if field in {"status", "error", "files", "missing"}
+        }
+        for key, component in components.items()
+    }
+    manifest = {
+        "schema_version": CAPTURE_MANIFEST_VERSION,
+        "components": components,
+    }
+    _write_capture_manifest(state / "capture-manifest.json", manifest)
+    return {
+        "schema_version": CAPTURE_MANIFEST_VERSION,
+        "components": verification_components,
+    }
 
 
 def _collect_redis_dump(destination: Path) -> None:
@@ -123,16 +540,27 @@ def _collect_redis_dump(destination: Path) -> None:
         subprocess.run(["docker", "exec", container, "cat", "/data/dump.rdb"], stdout=out, check=False)
 
 
-def _build_infra_archive(project_dir: Path, staging: Path, archive_name: str) -> tuple[Path, int, dict[str, Any]]:
+def _build_infra_archive(
+    project_dir: Path,
+    staging: Path,
+    archive_name: str,
+    *,
+    host_config_root: Path | None = None,
+) -> tuple[Path, int, dict[str, Any]]:
+    config_root = host_config_root or project_dir
     configs = staging / "configs"
     configs.mkdir(parents=True, exist_ok=True)
     db_dump = staging / INFRASTRUCTURE_DATABASE_DUMP_NAME
     db_size = _dump_infra_database(db_dump)
     _copy_if_exists(Path.home() / ".env.local", configs / "env.local")
-    _copy_if_exists(project_dir / "docker" / "compose" / ".env", configs / "compose-env")
+    _copy_if_exists(config_root / "docker" / "compose" / ".env", configs / "compose-env")
     _copy_if_exists(Path.home() / ".smbcredentials", configs / "smbcredentials")
-    _copy_if_exists(project_dir / "docker" / "compose" / "hatchet-config", configs / "hatchet-config")
+    _copy_if_exists(
+        config_root / "docker" / "compose" / "hatchet-config",
+        configs / "hatchet-config",
+    )
     _collect_redis_dump(configs / "redis-dump.rdb")
+    coverage = _capture_recovery_state(staging, _base_config_components(configs))
     archive_path = staging / archive_name
     with tarfile.open(archive_path, "w:gz") as archive:
         archive.add(
@@ -147,11 +575,18 @@ def _build_infra_archive(project_dir: Path, staging: Path, archive_name: str) ->
             recursive=True,
             filter=_safe_config_archive_filter,
         )
+        archive.add(
+            staging / "state",
+            arcname="infrastructure/state",
+            recursive=True,
+            filter=_safe_config_archive_filter,
+        )
     verification = verify_archive(
         archive_path,
         db_dump_name=INFRASTRUCTURE_DATABASE_DUMP_NAME,
         expects_db=True,
     )
+    verification["coverage"] = coverage
     result = {
         "archive_name": archive_name,
         "archive_path": archive_path,
@@ -216,6 +651,7 @@ def run_infra_backup(
     """Create an infrastructure backup archive."""
     source_id = "infrastructure"
     project_dir = get_repo_root()
+    host_config_root = get_host_config_root()
     run_env = dict(env or {})
     storage_env = {**run_env, "SMB_PATH": run_env.get("SMB_PATH", "project-backups/infrastructure")}
     storage = _storage_config(source_id, storage_env)
@@ -224,7 +660,12 @@ def run_infra_backup(
     archive_name = f"infrastructure-{timestamp}.tar.gz"
     with tempfile.TemporaryDirectory(prefix="infrastructure-backup-") as temp_dir:
         staging = Path(temp_dir)
-        archive_path, _, result = _build_infra_archive(project_dir, staging, archive_name)
+        archive_path, _, result = _build_infra_archive(
+            project_dir,
+            staging,
+            archive_name,
+            host_config_root=host_config_root,
+        )
         archive_path.chmod(0o600)
         encrypted_name = f"{archive_name}.age"
         encrypted_path = staging / encrypted_name
@@ -235,6 +676,7 @@ def run_infra_backup(
                 "checksum": encryption["checksum"],
                 "content_checksum": encryption["content_checksum"],
                 "encrypted": True,
+                "encryption": {"duration_ms": encryption.get("duration_ms")},
             }
         )
         result.update(

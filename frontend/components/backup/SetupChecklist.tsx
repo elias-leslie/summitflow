@@ -36,6 +36,7 @@ function computeSteps(
   storageStatus: StorageStatus | undefined,
   sources: BackupSource[],
   healthItems: BackupHealthItem[],
+  encryptionReady: boolean,
 ): Step[] {
   const hasStorage = storageStatus?.configured ?? false
   const hasSources = sources.length > 0
@@ -45,14 +46,28 @@ function computeSteps(
     (h) => h.source_type === 'infrastructure',
   )
   const infraHealthy =
-    hasInfra && infraHealth != null && infraHealth.health_status !== 'red'
+    hasInfra &&
+    infraHealth?.enabled === true &&
+    infraHealth.last_success_at != null &&
+    infraHealth.coverage_complete === true &&
+    infraHealth.health_status !== 'red'
 
   const failingCount = healthItems.filter(
-    (h) => h.health_status === 'red',
+    (h) => h.enabled && h.health_status === 'red',
   ).length
 
   const restoreConfidence = infraHealth?.restore_confidence ?? null
-  const restoreValidated = restoreConfidence === 'verified'
+  const restoreValidated =
+    restoreConfidence === 'verified' &&
+    infraHealth?.latest_backup_id != null &&
+    infraHealth.last_drill_backup_id === infraHealth.latest_backup_id
+  const scheduled = sources.filter((source) => source.enabled)
+  const driveVerified = scheduled.filter((source) =>
+    healthItems.some(
+      (item) =>
+        item.source_id === source.id && item.offsite_status === 'verified',
+    ),
+  ).length
 
   return [
     {
@@ -82,18 +97,36 @@ function computeSteps(
       description: hasInfra
         ? infraHealthy
           ? 'PostgreSQL, Redis, Hatchet config, and secrets are backed up'
-          : 'System backup source exists but last backup failed'
+          : infraHealth?.coverage_complete === false
+            ? 'Required recovery state is missing from the latest system backup.'
+            : 'System backup needs a successful, verified capture.'
         : 'Backs up PostgreSQL, Redis, Hatchet config, and secrets for infrastructure recovery.',
       complete: infraHealthy,
+    },
+    {
+      id: 'encryption',
+      icon: <ShieldCheck className="w-4 h-4" />,
+      title: 'Recovery key',
+      description: encryptionReady
+        ? 'A saved recovery key has decrypted a test message.'
+        : 'Save and verify your recovery key in Backup encryption below.',
+      complete: encryptionReady,
+    },
+    {
+      id: 'drive',
+      icon: <HardDrive className="w-4 h-4" />,
+      title: 'Google Drive copies',
+      description: `${driveVerified} of ${scheduled.length} scheduled sources have a verified Drive copy of their latest backup.`,
+      complete: scheduled.length > 0 && driveVerified === scheduled.length,
     },
     {
       id: 'restore_validation',
       icon: <ShieldCheck className="w-4 h-4" />,
       title: 'Restore validation',
       description: restoreValidated
-        ? 'Latest restore drill passed — recovery verified'
+        ? 'The latest infrastructure backup passed its restore drill.'
         : restoreConfidence === 'stale'
-          ? 'Restore drill passed but is stale — re-run to verify current backup'
+          ? 'The restore drill is stale. Verify the latest infrastructure backup.'
           : restoreConfidence === 'partial'
             ? 'Restore drill ran but some components failed'
             : 'Run a restore drill to verify backups can actually be restored.',
@@ -108,6 +141,7 @@ interface SetupChecklistProps {
   storageStatus: StorageStatus | undefined
   sources: BackupSource[]
   healthItems: BackupHealthItem[]
+  encryptionReady?: boolean
   isLoading: boolean
   onSourceChanged: () => void
   onBackupTriggered: () => void
@@ -117,6 +151,7 @@ export function SetupChecklist({
   storageStatus,
   sources,
   healthItems,
+  encryptionReady = false,
   isLoading,
   onSourceChanged,
   onBackupTriggered,
@@ -125,12 +160,17 @@ export function SetupChecklist({
   const [actionError, setActionError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
 
-  const steps = computeSteps(storageStatus, sources, healthItems)
+  const steps = computeSteps(
+    storageStatus,
+    sources,
+    healthItems,
+    encryptionReady,
+  )
   const doneCount = steps.filter((s) => s.complete).length
   const allDone = doneCount === steps.length
   const remainingCount = steps.length - doneCount
   const summary = allDone
-    ? 'All protection steps are configured and restore validation is current.'
+    ? 'Saved key, latest Drive copies and infrastructure restore drill are verified.'
     : `${doneCount} of ${steps.length} complete. ${remainingCount} ${remainingCount === 1 ? 'step still needs attention.' : 'steps still need attention.'}`
 
   if (isLoading) return null
@@ -193,10 +233,10 @@ export function SetupChecklist({
           <div>
             <h2 className="text-sm font-medium text-slate-100">
               {allDone
-                ? 'Backup protection fully configured'
+                ? 'Backup protection checks passed'
                 : doneCount === 0
                   ? 'Set up backup protection'
-                  : `Backup setup — ${doneCount} of ${steps.length} complete`}
+                  : `Backup setup: ${doneCount} of ${steps.length} complete`}
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">{summary}</p>
           </div>

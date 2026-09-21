@@ -6,6 +6,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -360,16 +361,107 @@ def _replace_symlink(path: Path, target: Path) -> None:
     os.replace(temporary, path)
 
 
-def complete_release(release: PreparedRelease) -> None:
+def _pointer_release(path: Path, releases: Path) -> Path | None:
+    if not path.is_symlink():
+        if path.exists():
+            raise ReleaseError(f"Managed release pointer is not a symlink: {path.name}")
+        return None
+    try:
+        raw_target = Path(os.readlink(path))
+        target = path.resolve(strict=True)
+    except OSError as exc:
+        raise ReleaseError(f"Managed release pointer is unavailable: {path.name}") from exc
+    entry_name = raw_target.name
+    entry = releases / entry_name
+    try:
+        resolved_entry = entry.resolve(strict=True)
+    except OSError as exc:
+        raise ReleaseError(f"Managed release pointer is unavailable: {path.name}") from exc
+    if (
+        target.parent != releases
+        or target != resolved_entry
+        or entry.is_symlink()
+        or not entry.is_dir()
+        or not re.fullmatch(r"[0-9a-f]{32}", entry_name)
+    ):
+        raise ReleaseError(f"Managed release pointer leaves the release root: {path.name}")
+    return target
+
+
+def prune_old_releases(
+    release: PreparedRelease, *, service_references: set[Path] | None
+) -> tuple[Path, ...]:
+    """Remove only validated, rebuildable releases unused by pointers or services."""
+    if service_references is None:
+        print("[service] release cleanup skipped: service references are unavailable")
+        return ()
+    releases = release.release_root.parent
+    project_state = releases.parent
+    try:
+        resolved_releases = releases.resolve(strict=True)
+        resolved_release = release.release_root.resolve(strict=True)
+        if (
+            resolved_release.parent != resolved_releases
+            or resolved_release.name != release.build_id
+            or not re.fullmatch(r"[0-9a-f]{32}", release.build_id)
+        ):
+            raise ReleaseError("Completed release path is outside managed release storage")
+        protected = {resolved_release}
+        for pointer_name in ("current", "previous"):
+            target = _pointer_release(project_state / pointer_name, resolved_releases)
+            if target is not None:
+                protected.add(target)
+        for reference in service_references:
+            if reference.is_symlink():
+                raise ReleaseError("Service release reference is not a real directory")
+            resolved = reference.resolve(strict=True)
+            if (
+                resolved.parent != resolved_releases
+                or not resolved.is_dir()
+                or resolved.is_symlink()
+                or not re.fullmatch(r"[0-9a-f]{32}", resolved.name)
+            ):
+                raise ReleaseError("Service release reference is outside managed release storage")
+            protected.add(resolved)
+        candidates: list[Path] = []
+        for entry in releases.iterdir():
+            if not re.fullmatch(r"[0-9a-f]{32}", entry.name):
+                continue
+            if entry.is_symlink() or not entry.is_dir():
+                raise ReleaseError("Managed release entry is not a real directory")
+            resolved = entry.resolve(strict=True)
+            if resolved.parent != resolved_releases:
+                raise ReleaseError("Managed release entry leaves release storage")
+            if resolved not in protected:
+                candidates.append(resolved)
+    except (OSError, ReleaseError) as exc:
+        print(f"[service] release cleanup skipped: {exc}")
+        return ()
+
+    removed: list[Path] = []
+    for candidate in sorted(candidates):
+        try:
+            shutil.rmtree(candidate)
+        except OSError as exc:
+            print(f"[service] release cleanup stopped: {candidate.name}: {exc}")
+            break
+        print(f"[service] removed rebuildable release {candidate.name}")
+        removed.append(candidate)
+    return tuple(removed)
+
+
+def complete_release(
+    release: PreparedRelease, *, service_references: set[Path] | None = None
+) -> None:
     """Mark health-verified source current while retaining the prior release."""
     receipt = _read_receipt(release)
     project_state = _project_state(release.project_id, release.release_root.parents[3])
     current = project_state / "current"
     previous = project_state / "previous"
-    if current.is_symlink():
-        old_target = current.resolve(strict=True)
-        if old_target.parent != project_state / "releases":
-            raise ReleaseError("Managed current release points outside the release root")
+    releases = project_state / "releases"
+    old_target = _pointer_release(current, releases)
+    _pointer_release(previous, releases)
+    if old_target is not None:
         _replace_symlink(previous, old_target)
         receipt["previous_usable_release"] = old_target.name
     _replace_symlink(current, release.release_root)
@@ -378,6 +470,7 @@ def complete_release(release: PreparedRelease) -> None:
         {"phase": "completed", "status": "succeeded", "at": time.time()}
     )
     _write_receipt(release.receipt_path, receipt)
+    prune_old_releases(release, service_references=service_references)
 
 
 def validate_deployment_receipt(

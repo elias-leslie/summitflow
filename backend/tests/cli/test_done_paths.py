@@ -66,6 +66,8 @@ def test_scoped_done_preserves_unrelated_index_and_worktree(tmp_path: Path, monk
     monkeypatch.setattr('app.storage.events.log_task_event', Mock())
     checks = Mock(return_value=(gate_passes, 'test gate failed'))
     monkeypatch.setattr(commit_workflow, 'run_checks', checks)
+    renew_claim = Mock(return_value={'id': 'task-1', 'status': 'running'})
+    monkeypatch.setattr(commit_workflow, 'renew_owned_claim', renew_claim)
     monkeypatch.setattr(commit_workflow, 'publish_git', lambda _repo, *, sha, **_kwargs: {
         'status': 'SUCCESS', 'publication_complete': True,
         'ci': {'state': 'success', 'sha': sha, 'checks': []},
@@ -88,6 +90,7 @@ def test_scoped_done_preserves_unrelated_index_and_worktree(tmp_path: Path, monk
         assert (tmp_path / '.index.yaml').read_text() == 'unrelated host metadata'
         client.update_status.assert_not_called()
         capture_snapshot.assert_not_called()
+        renew_claim.assert_called_once_with(tmp_path, 'task-1')
         return
     result = done_task.complete_task(client, 'task-1', paths=('task.txt',))
     assert result['action'] == 'completed'
@@ -97,6 +100,7 @@ def test_scoped_done_preserves_unrelated_index_and_worktree(tmp_path: Path, monk
     assert (tmp_path / 'other.txt').read_text() == 'unrelated staged work'
     assert acceptances == [('task.txt',)]
     checks.assert_called()
+    renew_claim.assert_called_once_with(tmp_path, 'task-1')
     stash.assert_not_called()
 
 

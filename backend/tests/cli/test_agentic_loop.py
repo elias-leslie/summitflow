@@ -94,6 +94,7 @@ class TestClaimIdempotency:
         ):
             result = claim._claim_task(client, "task-1")
         assert result["action"] == "resumed"
+        client.claim_task.assert_called_once_with("task-1", renew_only=True)
         # Same-caller resume is the idempotent shortcut — no gates fire.
         mock_preflight.assert_not_called()
 
@@ -114,6 +115,39 @@ class TestClaimIdempotency:
         msg = mock_error.call_args.args[0]
         assert "already claimed" in msg
         assert "Resolution" in msg
+
+    def test_same_owner_resume_falls_back_to_strict_local_renewal_for_old_api(self) -> None:
+        """Editable CLI can renew during rollout before the API has new claim semantics."""
+        client = MagicMock()
+        client.get_task.return_value = _running_task()
+        client.claim_task.side_effect = APIError(409, "already running")
+        config = MagicMock(project_root="/repo")
+        with (
+            patch.object(claim, "get_snapshot_info", return_value={"base_branch": "main"}),
+            patch.object(claim, "_is_same_caller", return_value=True),
+            patch("cli.config.get_config_optional", return_value=config),
+            patch.object(claim, "renew_local_owned_claim", return_value={"status": "running"}) as renew,
+        ):
+            result = claim._claim_task(client, "task-1")
+
+        assert result["action"] == "resumed"
+        assert str(renew.call_args.args[0]) == "/repo"
+        assert renew.call_args.args[1] == "task-1"
+
+    def test_same_owner_resume_never_bypasses_api_authorization_failure(self) -> None:
+        client = MagicMock()
+        client.get_task.return_value = _running_task()
+        client.claim_task.side_effect = APIError(403, "forbidden")
+        with (
+            patch.object(claim, "get_snapshot_info", return_value={"base_branch": "main"}),
+            patch.object(claim, "_is_same_caller", return_value=True),
+            patch.object(claim, "renew_local_owned_claim") as renew,
+            patch.object(claim, "output_error"),
+            pytest.raises(typer.Exit),
+        ):
+            claim._claim_task(client, "task-1")
+
+        renew.assert_not_called()
 
 
 class TestSinglePreflight:

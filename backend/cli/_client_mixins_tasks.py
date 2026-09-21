@@ -106,10 +106,20 @@ class _TaskWorkflowMixin(_MixinBase):
         return self.update_status(task_id, "pending", reason=reason)
 
     def claim_task(
-        self, task_id: str, lock_minutes: int = 30, worker_id: str | None = None
+        self,
+        task_id: str,
+        lock_minutes: int = 30,
+        worker_id: str | None = None,
+        renew_only: bool = False,
     ) -> dict[str, Any]:
         return tasks_ops.claim_task(
-            self._client, self._url, self._handle_response, task_id, lock_minutes, worker_id,
+            self._client,
+            self._url,
+            self._handle_response,
+            task_id,
+            lock_minutes,
+            worker_id,
+            renew_only,
         )
 
     def release_task(self, task_id: str) -> dict[str, Any]:

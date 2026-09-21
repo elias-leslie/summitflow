@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from typer.testing import CliRunner
@@ -151,10 +152,24 @@ def test_check_acceptance_surface_forwards_exact_source(repo: Path, monkeypatch)
 
     def accept(root: Path, **kwargs: object) -> dict[str, object]:
         captured.update({"root": root, **kwargs})
-        return {"state": "success", "source_commit": "a" * 40}
+        return {
+            "state": "success",
+            "source_commit": "a" * 40,
+            "acceptance_id": "acceptance-one",
+            "acceptance_artifact": "/tmp/acceptance-one.json",
+            "reused": True,
+            "duration_ms": 12.5,
+            "check_count": 1,
+            "inputs": {"large_manifest": "must-not-be-printed"},
+            "checks": [{"detail": "must-not-be-printed"}],
+        }
 
     monkeypatch.setattr("cli.commands.check._resolve_repo_root", lambda: repo)
     monkeypatch.setattr("cli.commands.check.accept_revision", accept)
+    monkeypatch.setattr(
+        "cli.commands.check.renew_owned_claim",
+        lambda root, task_id: captured.update({"renewed_root": root, "renewed_task": task_id}),
+    )
     result = CliRunner().invoke(
         app,
         [
@@ -177,8 +192,51 @@ def test_check_acceptance_surface_forwards_exact_source(repo: Path, monkeypatch)
         "task_id": "task-one",
         "scope": ["backend"],
         "reuse": False,
+        "renewed_root": repo,
+        "renewed_task": "task-one",
     }
-    assert result.stdout.startswith("ACCEPTANCE:")
+    assert result.stdout == (
+        "ACCEPTANCE:state=success|source="
+        + "a" * 40
+        + "|id=acceptance-one|artifact=/tmp/acceptance-one.json|"
+        "reused=true|duration_ms=12.5|checks=1\n"
+    )
+
+
+def test_check_acceptance_json_preserves_full_machine_receipt(repo: Path, monkeypatch) -> None:
+    receipt: dict[str, object] = {
+        "state": "success",
+        "source_commit": "a" * 40,
+        "inputs": {"fingerprint": "input-one"},
+        "checks": [{"detail": "retained detail"}],
+    }
+    monkeypatch.setattr("cli.commands.check._resolve_repo_root", lambda: repo)
+    monkeypatch.setattr("cli.commands.check.accept_revision", lambda *_args, **_kwargs: receipt)
+
+    result = CliRunner().invoke(app, ["check", "--acceptance", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout.removeprefix("ACCEPTANCE:")) == receipt
+
+
+def test_check_acceptance_blocks_when_owned_claim_cannot_be_renewed(
+    repo: Path, monkeypatch
+) -> None:
+    from cli.lib.task_claims import TaskClaimRenewalError
+
+    monkeypatch.setattr("cli.commands.check._resolve_repo_root", lambda: repo)
+    monkeypatch.setattr(
+        "cli.commands.check.renew_owned_claim",
+        lambda *_args: (_ for _ in ()).throw(TaskClaimRenewalError("claim lost")),
+    )
+    accept = Mock()
+    monkeypatch.setattr("cli.commands.check.accept_revision", accept)
+
+    result = CliRunner().invoke(app, ["check", "--acceptance", "--task", "task-one"])
+
+    assert result.exit_code == 2
+    assert "claim lost" in result.stderr
+    accept.assert_not_called()
 
 
 def test_check_acceptance_help_is_available_without_running_checks() -> None:
@@ -187,3 +245,4 @@ def test_check_acceptance_help_is_available_without_running_checks() -> None:
     assert result.exit_code == 0
     assert "Usage: st check --acceptance" in result.stdout
     assert "--no-reuse" in result.stdout
+    assert "--json" in result.stdout

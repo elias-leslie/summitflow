@@ -365,7 +365,12 @@ def rebuild(
                 )
                 print(f"[service] rebuild completed with {errors} error(s)")
                 raise typer.Exit(1)
-            service_release.complete_release(release)
+            service_references = service_ops.release_references_for_services(
+                release.release_root.parent
+            )
+            service_release.complete_release(
+                release, service_references=service_references
+            )
             result = service_release.publish_deployment_result(
                 release, project_root=development_root
             )

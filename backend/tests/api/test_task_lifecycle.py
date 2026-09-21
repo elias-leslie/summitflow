@@ -446,6 +446,21 @@ class TestTaskLifecycleEndpoints:
         assert claim_data["status"] == "running"
         assert claim_data["started_at"] is not None
 
+        renewed_response = client.post(
+            f"/api/projects/{test_project_id}/tasks/{task_id}/claim",
+            json={"worker_id": "worker-1", "lock_minutes": 30, "renew_only": True},
+        )
+        assert renewed_response.status_code == 200
+        renewed = renewed_response.json()
+        assert renewed["started_at"] == claim_data["started_at"]
+        assert renewed["lock_expires_at"] > claim_data["lock_expires_at"]
+
+        wrong_owner_response = client.post(
+            f"/api/projects/{test_project_id}/tasks/{task_id}/claim",
+            json={"worker_id": "worker-2", "lock_minutes": 30, "renew_only": True},
+        )
+        assert wrong_owner_response.status_code == 409
+
         release_response = client.post(
             f"/api/projects/{test_project_id}/tasks/{task_id}/release",
         )
@@ -454,6 +469,12 @@ class TestTaskLifecycleEndpoints:
         release_data = release_response.json()
         assert release_data["id"] == task_id
         assert release_data["status"] == "pending"
+
+        pending_renewal = client.post(
+            f"/api/projects/{test_project_id}/tasks/{task_id}/claim",
+            json={"worker_id": "worker-1", "lock_minutes": 30, "renew_only": True},
+        )
+        assert pending_renewal.status_code == 409
 
     def test_claim_accepts_short_task_suffix(
         self,

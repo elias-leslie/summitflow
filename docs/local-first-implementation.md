@@ -12,62 +12,71 @@ live validation must remain protected.
 An unchecked item remains outstanding. Implementation alone does not establish
 verification; record actual evidence before checking an item.
 
-Current phase: implementation and focused regression coverage are present;
-integration acceptance and managed rollout are still pending. No production
-recovery key has been generated and no encrypted Drive backup or live restore has
-been claimed as complete. Key custody will require the owner to save and submit
-their saved copy through the authenticated UI.
+Current phase: full acceptance and the first immutable managed rollout passed.
+Live UI review found a legacy protection-summary mismatch; its correction and
+additional durable-state coverage are being integrated. The owner saved and
+verified their recovery key through the authenticated UI at 22:21:59 UTC. The
+first real encrypted local/Drive capture and isolated Git restore passed;
+all-source coverage and a disposable database restore drill remain open.
 
 ### Local commits, integration, and validation
 
-- [ ] Local commits are the default; explicit publication remains available.
-- [ ] Frequent checkpoint commits use appropriate fast feedback and secret guards.
-- [ ] Local commits are associated with their task immediately.
-- [ ] Manual and autonomous execution preserve local work without a push.
-- [ ] Acceptance checks run against the actual integrated source being accepted.
-- [ ] Evidence records source, dependency/configuration inputs, scope, and results.
-- [ ] Matching validation evidence is reused; changed inputs invalidate it.
+- [x] Local commits are the default; explicit publication remains available.
+- [x] Frequent checkpoint commits use appropriate fast feedback and secret guards.
+- [x] Local commits are associated with their task immediately.
+- [x] Manual and autonomous execution preserve local work without a push
+      (regression-tested; overall live closeout remains open).
+- [x] Acceptance checks run against the actual integrated source being accepted.
+- [x] Evidence records source, dependency/configuration inputs, scope, and results.
+- [x] Matching validation evidence is reused; changed inputs invalidate it.
 - [ ] Full relevant tests, builds, fresh schema/migrations, package and context
       integration checks can run locally through the existing check surface.
-- [ ] Existing local security scanners are usable through ST; findings and CodeQL
+- [x] Existing local security scanners are usable through ST; findings and CodeQL
       coverage differences remain explicit, with no claim of unproved equivalence.
-- [ ] Existing leases remain effective; commit/acceptance/deployment concurrency
+- [x] Existing leases remain effective; commit/acceptance/deployment concurrency
       cannot overwrite other work or silently validate a different candidate.
 
 ### Completion and optional publication
 
-- [ ] Local acceptance, required deployment, and required live validation determine
+- [x] Local acceptance, required deployment, and required live validation determine
       completion; publication is independent.
-- [ ] Missing required acceptance keeps the task open with an accurate reason.
+- [x] Missing required acceptance keeps the task open with an accurate reason.
 - [ ] Closeout records completion promptly and idempotently; agents report actual
       persisted state rather than equating a merge or queued job with success.
-- [ ] Optional publication adopts an existing same-source PR/receipt rather than
+- [x] Optional publication adopts an existing same-source PR/receipt rather than
       creating a duplicate to repair task linkage.
-- [ ] Later publication preserves newer local work and existing GitHub protections.
-- [ ] Pending historical publication requests are preserved and safely reconciled.
-- [ ] Local search/index refresh and cleanup no longer depend on publication.
+- [x] Later publication preserves newer local work and existing GitHub protections.
+- [x] Pending historical publication requests are preserved; compatibility paths
+      are regression-tested without executing unwanted historical pushes.
+- [x] Local search/index refresh and cleanup no longer depend on publication.
 
 ### Managed deployment
 
-- [ ] Managed rebuild accepts stable, accepted source and identifies its revision.
-- [ ] Runtime cannot accidentally import later unaccepted development edits.
-- [ ] Receipts bind source/build identity, migrations, restart/health and applicable
+- [x] Managed rebuild accepts stable, accepted source and identifies its revision.
+- [x] Runtime cannot accidentally import later unaccepted development edits.
+- [x] Receipts bind source/build identity, migrations, restart/health and applicable
       live checks; queued work is never reported as completed.
-- [ ] Previous release remains recoverable; database migration rollback limits are
+- [x] Previous release remains recoverable; database migration rollback limits are
       explicit. No new per-task services or ports.
-- [ ] Required workers and current deployment destinations retain their safeguards.
+- [x] Required workers and current deployment destinations retain their safeguards.
 
 ### Independent recovery
 
-- [ ] Backups preserve full unpublished Git history/refs and applicable JJ metadata.
-- [ ] Staged, unstaged, valuable untracked/ignored work, and safe symlinks survive.
-- [ ] Backup capture is consistent with concurrent repository writes.
+- [x] Backups preserve full unpublished Git history/refs and applicable JJ metadata
+      (isolated recovery regressions; real downloaded restore remains below).
+- [x] Staged, unstaged, valuable untracked/ignored work, and safe symlinks survive
+      isolated recovery regressions, including staged-only Git objects.
+- [x] Capture detects concurrent repository writes and refuses inconsistent success;
+      valuable SQLite files use consistent snapshots (regression-tested).
 - [ ] Required source/config/packaged dependencies have recoverable local copies.
 - [ ] Task metadata, prompts/memory, PostgreSQL and valuable SQLite state, evidence,
       required secrets/configuration and encryption-key recovery are accounted for.
 - [ ] Existing backup disk/Veeam/schedules are reused; actual retention is verified.
-- [ ] Snapshot workspace configuration and observed lack of snapshots are resolved.
-- [ ] Sensitive archives are protected without exposing or committing secrets.
+- [x] Snapshot availability is diagnosed and not counted as recovery protection:
+      these project directories are not Btrfs subvolumes. No filesystem conversion
+      or disabling of protection is part of this bounded workflow change.
+- [x] New native archives require encryption; key/error-output protections and
+      source secret scanning passed. Historical archive/image limits are explicit.
 - [ ] Capture each source once locally, then encrypt and replicate that completed
       archive to Drive under the same backup record. Failed transfer retries reuse
       the existing artifact and do not trigger a second source/database backup.
@@ -85,29 +94,33 @@ their saved copy through the authenticated UI.
       the owner's password manager and verify it decrypts a downloaded archive.
 - [ ] New native local and Drive archives are both encrypted: one ciphertext
       artifact, not independent captures or independent encryption passes.
-- [ ] Key setup generates once, allows deliberate download/copy/reveal through the
+- [x] Key setup generates once, allows deliberate download/copy/reveal through the
       existing Cloudflare Access owner session, and proves a saved copy can decrypt.
       No new authentication challenge. No secrets in logs, query caches or browser storage.
-- [ ] Later key retrieval uses the same authenticated owner controls; no destructive
+- [x] Later key retrieval uses the same authenticated owner controls; no destructive
       key regeneration. Recovery-key directory is excluded from encrypted archives.
-- [ ] Actual owner custody is confirmed by the owner, not inferred from agent tests.
+- [x] Actual owner custody is confirmed by the owner, not inferred from agent tests.
+- [ ] Hard-loss recovery instructions, source-bootstrap utility, dated archive
+      inventory and checksums are downloaded/read-back verified in the existing
+      Google Drive SummitFlowBackups folder. No private recovery key is uploaded.
 
 ### Agent behavior and independence
 
-- [ ] Canonical scoped DB prompts and computed capabilities reflect local-first
+- [x] Canonical scoped DB prompts and computed capabilities reflect local-first
       defaults; effective context is previewed before and after changes.
 - [x] Authentication scope bounded: the example's one-off Agent Hub Codex OAuth
       repair/human login wait is not a recurring workflow defect. No auth-flow
       redesign or claimed savings from removing that necessary wait.
 - [ ] Validation reuses tested secret-safe helpers and supported model/environment
       capabilities rather than repeating the observed helper/model mistakes.
-- [ ] Account-specific GitHub dependencies are distinguished from upstream GitHub,
+- [x] Account-specific GitHub dependencies are distinguished from upstream GitHub,
       registries, model providers and actual deployment destination dependencies.
-- [ ] No-account and no-GitHub tests are non-destructive and isolated.
-- [ ] Later publication is tested locally against a disposable remote; actual GitHub
+- [x] No-account and no-GitHub-client tests are non-destructive and isolated;
+      no complete network-isolation claim is made.
+- [x] Later publication is tested locally against a disposable remote; actual GitHub
       publication remains a separate owner decision.
 - [ ] Independent review and canonical quality gates pass.
-- [ ] Actual managed runtime behavior is exercised after authorized rebuild.
+- [x] Actual managed runtime behavior is exercised after authorized rebuild.
 - [ ] Task is closed locally only after all required work is verified.
 
 ### Performance and token impact
@@ -117,13 +130,13 @@ their saved copy through the authenticated UI.
       authorization waits and necessary live validation.
 - [ ] Record check/tool-call counts and avoid repeated full gates for the same
       immutable inputs. Every continuing administrative step needs a concrete purpose.
-- [ ] Include redundant tool invocations, repeated reads, and unnecessarily broad
+- [x] Include redundant tool invocations, repeated reads, and unnecessarily broad
       tool output in the overhead comparison; consolidate related read-only queries
       and return bounded evidence, preserving required inspect-before-act boundaries.
-- [ ] Quantify removed recurring workflow steps (duplicate PR/CI,
+- [x] Quantify removed recurring workflow steps (duplicate PR/CI,
       polling, redundant validation and administrative agent exchanges), separating
       measured time/token savings from modeled savings and necessary retained work.
-- [ ] Preview effective instructions before/after and measure injected context size;
+- [x] Preview effective instructions before/after and measure injected context size;
       use observed token usage when available, explicitly label estimates otherwise.
 - [ ] Profile one local backup capture, encryption, Drive upload/download and
       isolated restore: elapsed time, bytes and retry behavior, without a second capture.
@@ -324,7 +337,7 @@ full backup restore. Actual owner custody and a downloaded archive restore remai
 separate evidence requirements. A fresh installation can import the saved key,
 but cannot silently replace existing configured key material.
 
-## Everyday workflow after verified rollout
+## Verification and measured evidence
 
 ### Final gate repair evidence
 
@@ -334,8 +347,8 @@ but cannot silently replace existing configured key material.
 - Patched dependency locks were synced into the actual development environments.
   OSV now reports zero findings; 991 focused backend tests, 188 frontend tests and
   TypeScript passed against those versions. The narrow esbuild 0.28.1 override
-  still needs the real managed production build, including notes-ui, before rollout
-  can be called verified.
+  subsequently passed the real managed production build, including notes-ui;
+  see the accepted revision and live evidence below.
 - Quick checkpoints now run directly attributable tests and explicitly defer
   cross-cutting configuration coverage to mandatory full acceptance. Explicit
   full checks retain the complete suite; lint, types and secret checks remain.
@@ -345,6 +358,265 @@ but cannot silently replace existing configured key material.
   no allowlist or detection rule was disabled. Drive retention now preserves both
   the just-verified object and the newest recovery point, including an old archive
   retried after an outage. Twenty focused backup tests passed.
+
+### Accepted revision and live evidence, 2026-09-21
+
+- Local checkpoints: `db3f78a`, `5f461d9`, `7a6e19b`; no push or PR. A final
+  focused-test correction excludes shared `conftest.py` from inferred test targets;
+  explicitly changed fixtures still require full acceptance. Twelve regressions
+  passed. The second checkpoint took 59.77 seconds before this correction.
+- Full acceptance of `7a6e19bc6b93c9428767fd5d0df8c9821b7e4f14` passed with a
+  temporary empty GitHub CLI configuration, empty GitHub token variables, disabled
+  Git SSH and noninteractive Git. No stored credential was changed. This is an
+  account-independence test, not complete network isolation.
+- Acceptance: 78.89 seconds wall time; 3,237 backend tests passed, 2 skipped,
+  71 deselected; 188 frontend tests passed; Ruff, Biome, Python types, TypeScript,
+  gitleaks and OSV passed. Semgrep explicitly skipped because no local rules are
+  configured. Artifact: `.git/st/acceptance/b8b2611853970101f6bdb5514d09313e729a5c4a0ea5760a3687f696791b897f.json`.
+- Unchanged receipt reuse: 0.75 seconds end-to-end, 270.87 ms lookup. This avoided
+  about 78 seconds of repeated checks for these exact inputs, not 78 seconds on
+  every future task. Gate stdout was 1,337 bytes; the CLI unnecessarily expanded
+  its full receipt to 15,507 bytes. Compact default output is now 319 bytes for
+  that receipt (97.94% less). Character/4 estimates: about 3,877 to 80 tokens;
+  these are not billed-token measurements. `--json` retains full machine output
+  and the complete durable artifact is unchanged.
+- Managed rebuild job `2e0b2c072ace4805ad193d4c507aa722` succeeded in 23.56 seconds.
+  Frontend build took 16.90 seconds, migrations 0.86, restart 2.06, health 2.04.
+  Build `b94042cce8e64e8a983ffef02aab6547` binds the accepted revision; deployment
+  receipt is `/home/kasadis/.summitflow/services/jobs/2e0b2c072ace4805ad193d4c507aa722.deployment.json`.
+  The backend, frontend and required Hatchet worker are active with WorkingDirectory
+  inside that immutable release, not the subsequently edited checkout. Actual
+  `/health` is healthy. The production build also exercised the patched esbuild
+  override and notes-ui package successfully.
+- Managed browser `/backups` check passed with zero reported errors/warnings;
+  screenshot `/tmp/summitflow-backups-local-first.png`. Actual encryption status
+  is unconfigured and local key setup returns 403, as intended: existing Cloudflare
+  owner authentication is required, not a new authentication layer. The old
+  protection summary incorrectly claimed complete setup. Regression reproduced it;
+  the correction accounts for saved-key proof, latest Drive copies and matching
+  infrastructure restore-drill backup identity. Three frontend tests and TSC pass;
+  correction still requires final integrated rollout and rendered recheck.
+- Fresh schema proof ran through `st check cleanroom` in a uniquely named,
+  loopback-only tmpfs container from cached `pgvector/pgvector:pg16`: 1.571 seconds.
+  Fresh snapshot restore, full migration chain, retained upgrade fixture and repeat
+  upgrade passed. Container `sf-bootstrap-verify-20260921-a7c4` was stopped and
+  auto-removed, with no remaining volume. Production databases were untouched.
+- After the encrypted runtime went live, seven real sources were enabled with
+  their existing daily schedule and 14-day retention: browser-automation,
+  code-intelligence, design-tools, desktop-automation, security-research, slopminer,
+  vault-tools. Fixtures/retired sources remain disabled. No captures were requested
+  before owner key proof. `.codex/.backupignore` now preserves history, sessions,
+  local instructions and durable state SQLite; `.claude/.backupignore` preserves
+  project conversations, file history, sessions, tasks, todos and plans. Diagnostic
+  caches, generated environment snapshots and provider-login files remain excluded.
+  The non-project CLI dry-run only reports that capture is server-side; it did not
+  prove these archives and is not counted as backup/restore evidence.
+- Read-only recovery inventory confirms shared PostgreSQL contains ST tasks,
+  Agent Hub prompts/history and Hatchet; the infrastructure capture already covers
+  those DBs plus global/compose configuration and Redis. Additional live ingress,
+  service receipt/unit and Agent Hub durable-state gaps are being added to that same
+  capture, not a separate backup system. Root-owned unreadable state must be reported,
+  not silently omitted. Existing Veeam status is successful but its CLI job-info
+  exposed no encryption status; image encryption remains unverified and unchanged.
+
+Remaining live prerequisites: owner saves and verifies the recovery key through
+the normal Cloudflare-authenticated UI; finish final coverage/UI rollout, perform
+real encrypted captures and verified Drive transfers, download/decrypt/isolated
+restore (including disposable infrastructure), complete rendered copy review and
+source-bound closeout evidence. The overall task remains open.
+
+### Final integration findings and explicit human prerequisites
+
+- Infrastructure recovery capture now includes exact Cloudflared config and its
+  referenced credential file, exact Caddy config/environment, user systemd unit
+  files and enablement-link metadata, Agent Hub durable host state, and managed
+  service receipts/jobs/current+previous build identities. Release trees and
+  dependency caches are rebuilt, not duplicated. Link targets are recorded rather
+  than followed; the recovery-key directory is hard-excluded. Missing/unreadable
+  components are explicit incomplete-coverage facts without throwing away the
+  database archive. Focused coverage, safe-reference, secret-exclusion and error
+  regressions pass. Root ingress capture is not yet operationally complete.
+- Live inspection confirms the required worker is native user-systemd, PID
+  1854271 at inspection, inside accepted release `b94042cce8e64e8a983ffef02aab6547`.
+  Exactly one SummitFlow `app.worker` process was present; no live or stopped
+  `summitflow-worker` Docker container exists. Its journal shows active Hatchet
+  assignments. An earlier container-mount concern was disproved by live evidence;
+  no container mount change is needed.
+- Only two host credential files currently need additional read authority:
+  `/etc/caddy/env` and
+  `/etc/cloudflared/2757c3c8-caa6-444b-8f88-dc02b21bd1a8.json`, both root-owned 0600.
+  The owner was asked before granting the backup user read-only access. No ACL,
+  permission, credential or security-boundary change has been made. Until resolved,
+  the encrypted infrastructure archive preserves other state but reports the gap.
+- Owner key custody was requested through the existing authenticated UI. The key
+  is still unconfigured at the last check. Agent-generated test keys do not satisfy
+  this requirement. There is no additional login or show-once recovery restriction.
+- Actual storage probe found writable local storage; its old compact output hid
+  the separate offsite/key result and returned zero even on failure. The API now
+  combines those facts into its diagnostic, and failed CLI tests return nonzero.
+  Regression sequence: three reproduced failures, then 12 passing focused API/CLI
+  cases. Infrastructure health and setup summary also require complete required
+  coverage and a current, matching restore drill before reporting protection checks
+  passed. Frontend regressions pass.
+- The native `/backups` and `/backups/storage` routes rendered with zero reported
+  errors/warnings. SlopMiner inspected the complete rendered encryption section
+  using the owner-approved general voice and this product's developer audience,
+  not Neri's research-record semantics: no deterministic findings. Agent review
+  retained the concrete setup action, same-archive explanation and host-compromise
+  limit. Only the visible local-session/setup-required state was reviewed; secret
+  retrieval states require the owner's existing Cloudflare session. Artifacts:
+  `.dev-tools/backup-key-copy.json` and `.dev-tools/backup-key-copy-review.json`.
+- Actual schedules are current: 29 enabled real sources, with representative
+  SummitFlow/infrastructure/Codex last runs on September 21 and next runs on
+  September 22. Old July storage-test timestamps are not evidence of stopped backup
+  scheduling. Six fixtures/retired sources remain disabled.
+- Unexpected task `running` to `pending` transitions were traced to the existing
+  30-minute claim expiry and 15-minute reset cron, not local commits or deployment.
+  Claims at 19:40:39 and 20:26:30 UTC expired before resets at 20:15 and 21:00.
+  Parent resumed at 21:42:03. A targeted renewal/auditing correction is being
+  integrated; no longer TTL, periodic agent polling or idle-liveness assumption.
+- Deployment subtask metadata closeout was attempted while other integration edits
+  remained. The existing clean-checkout guard refused it. Parent task-level closeout
+  was not substituted: the overall work is unfinished. Subtasks will be closed at
+  a coherent verified checkpoint, not by committing another agent's unfinished work.
+- Existing Veeam image encryption remains an explicit exception, not covered by
+  native age encryption. Its vendor uses job password-based encryption; this is
+  not automatically the age recovery key or retroactive image encryption.
+  [Veeam encryption settings](https://helpcenter.veeam.com/docs/agentforlinux/userguide/backup_job_encryption.html).
+  No Veeam job, password, legacy archive or recovery point has been changed/deleted.
+- Cold-start review found that the ID-based isolated restore still needs ST backup
+  records. A DB/API-free explicit archive-and-external-key CLI path is being added
+  using the existing decrypt/safe-extract/Git-recovery primitives, with a separate
+  short recovery runbook. No second archive engine or backup capture is needed.
+  Downloaded ciphertext authentication and internal Git/index checksums must be
+  distinguished from an externally retained ciphertext SHA-256. The existing
+  offsite manifest is local-only, so Drive-only recovery cannot currently obtain
+  that independent expected SHA-256 from the sidecar.
+- Actual release storage is 1.1 GB for the first immutable build (job metadata
+  16 KB). Older build directories currently accumulate. The owner was asked before
+  adding guarded removal of rebuildable releases: preserve current/previous and
+  every service-referenced build, all Git history, receipts and logs. No release
+  directory has been deleted. This is an explicit pending retention/authority
+  decision, not a silently completed cleanup feature.
+- Live same-owner renewal at 22:12:14 UTC preserved `claimed_at=21:42:03.323722`,
+  owner `davion-sidarli` and `running` state, extending expiry to 22:42:14.461698.
+  This exercised the editable CLI against the prior API without changing another
+  task. The renewal/security/receipt-preservation slice passed 140 focused tests
+  in 15.14 seconds, targeted Ruff and Python types. API authorization failures
+  never fall through to local DB access; the old-server compatibility path is
+  restricted to loopback HTTP 409 and exact configured project/owner matching.
+  Task-bound claim, commit and acceptance renew the existing lease. More than
+  30 minutes without task-bound activity can still expire; no longer TTL or
+  periodic agent polling was introduced.
+- Final immutable-runtime review found infrastructure capture resolving ignored
+  compose configuration relative to released source. A stable host-configuration
+  root is being integrated for backend/worker capture; executable code remains
+  bound to the immutable release.
+- Owner confirmed saved-key custody. Non-secret status independently reports
+  `configured=true`, `ready=true`, `identity_exported=true`, and
+  `roundtrip_verified_at=2026-09-21T22:21:59.124862+00:00`.
+  No recovery key was retrieved into this conversation.
+- Owner approved narrow read-only access to the two root-owned ingress secrets.
+  Applied `user:kasadis:r--` ACLs to `/etc/caddy/env` and
+  `/etc/cloudflared/2757c3c8-caa6-444b-8f88-dc02b21bd1a8.json` only.
+  Both remain root-owned; effective read=yes/write=no, other/group access absent.
+  Their contents were not printed. Rollback is removal of these two named-user
+  ACL entries; capture coverage must then report the missing state again.
+- Owner approved guarded cleanup of rebuildable releases that are neither current,
+  previous rollback nor referenced by any service. Implementation passed 53 focused
+  tests plus one edge-case regression, Ruff and Python types. Read-only live
+  inventory completed for both systemd managers (one user reference, zero system
+  references). Ambiguous paths/inventory skip cleanup; receipts/jobs/logs remain.
+  Arbitrary non-systemd processes are not claimed as service references.
+  No real release deletion has yet occurred.
+- First real encrypted local/Drive archive: SlopMiner `bkp-0cf933039a1d416b`,
+  created 22:23:56.168019 UTC, completed 22:24:01.140978 UTC. Capture 2,027 ms;
+  plaintext compressed bytes 5,480,869, ciphertext 5,482,397; replication/full
+  verification download 2,839 ms, transfer 10,964,794 bytes. Local and downloaded
+  ciphertext SHA-256 matched; no remote retention deletion occurred.
+- Separately downloaded that Drive object in 0.79 seconds and restored it through
+  `st backup restore --into` in 1.00 second at
+  `/tmp/summitflow-drive-restore.yKptsl/restored`. Git fsck passed (an expected
+  synthetic staged-index commit is dangling); restored HEAD
+  `73b87d92e9b33626c5c9d6f84c90b247e137bef5`, five HEAD-history commits.
+  This actual restore used the host identity after the owner's separate saved-key
+  proof; it is not a claim that the agent read their password manager.
+- Retrying offsite sync kept the same backup ID, capture timestamp, local checksum
+  and Drive object. It took 1,300 ms and transferred 5,482,397 bytes (verification
+  download only), with `reused_local_archive=true`. No second capture/upload.
+- The live inventory exposed 532 rebuildable root `.venv` files because the old
+  default only excluded `backend/.venv`. Generic `.venv` exclusion now handles
+  nested project layouts; regression failed first, then all 20 archive-safety
+  tests and Ruff passed. Valuable `.dev-tools` evidence remains included.
+- DB/API-free cold recovery plus host-config capture passed 54 focused tests.
+  The offline test forbids project configuration, API and backup-store access;
+  wrong keys, tampering, checksum mismatch and nonempty destinations fail safely.
+  Cold-start instructions are in `docs/local-first-recovery.md`.
+- The real downloaded SlopMiner ciphertext also passed the new DB/API-free CLI
+  restore in 0.98 seconds with its independent expected SHA-256 and host identity,
+  into `/tmp/summitflow-drive-restore.yKptsl/offline-restored`; Git fsck passed.
+  No production database or source directory was overwritten.
+- Owner explicitly requested a fire/electrical-loss recovery kit in Drive and
+  confirmed that the saved encryption key stays in their password manager.
+  The kit must cover replacement-host prerequisites, fresh-volume database/Redis
+  restore, durable config/state, rebuilding releases and ingress restoration.
+  It is not a bootable OS image, and normal fresh-install instructions must not
+  regenerate restored secrets or initialize conflicting database roles first.
+- Existing scheduling independently ran the seven newly enabled real sources
+  from 22:30:00 to 22:30:42 UTC after key verification. All seven completed and
+  verified their Drive copies; their next scheduled runs are September 22.
+  This is live schedule evidence, not a manually substituted scheduler demo.
+  SlopMiner's scheduled run is a separate legitimate recovery point after the
+  earlier manual transfer-retry test. Already verified sources need not be
+  recaptured just to fill the all-source verification checklist.
+- Standalone `scripts/recovery-bootstrap.py` unlocks SummitFlow source when ST
+  and its database do not exist. Nine focused tests cover valid extraction,
+  wrong key, tamper, checksum mismatch, nonempty destination, traversal, wrong
+  root and forbidden member types. Private staging is cleaned on failure; it
+  never installs dependencies, restores databases, starts services or prints keys.
+- Cross-component infrastructure coverage/health review passed 19 tests after
+  removing the false directory-count inference. Offline restore now hashes and
+  decrypts the same private staged ciphertext bytes. `backup all` excludes
+  disabled sources, while explicit per-source capture remains available.
+- `docs/disaster-recovery.md` now covers replacement-host recovery in full,
+  including source/WIP, fresh PostgreSQL/Redis volumes, config/state, key import,
+  managed builds and ingress. The real Redis 7/Compose test disproved direct
+  AOF-enabled startup from a copied RDB (all three test databases lost their keys).
+  Loading RDB first, enabling/waiting for AOF rewrite and restarting normally
+  preserved all three databases, even without the disposable RDB. The guide uses
+  that verified sequence. All test containers/volumes were removed; production
+  data and service configuration were untouched.
+- Integration checkpoint correctly blocked on five test-only type diagnostics
+  and two scoped-closeout fixtures that had not mocked the new owned-claim renewal
+  seam (844 other focused tests passed). Assertions/fixtures were corrected without
+  weakening runtime ownership or backup checks. The failed checkpoint took 47.99
+  seconds. Its compact output hid the existing failed-gate artifact hints; those
+  hints now print directly, without repeating successful checks or raw test logs.
+- Independent review found that legacy top-level `configs` tree counts could
+  falsely imply every required infrastructure configuration file existed. Exact
+  per-component evidence is being corrected before the final rollout; the new
+  protection-summary claim must not depend on directory counts alone.
+
+### Recurring work removed and retained
+
+- Ordinary local tasks no longer need a push, task-linked PR, remote CI wait or
+  publication polling. The incident's duplicate-publication interval was 8:26;
+  this is not a guaranteed savings rate. The human OAuth interval is excluded.
+- Matching acceptance avoids a second full check run (measured 78.89 seconds
+  versus 0.75 seconds reuse). Changed inputs still require validation.
+- Default receipt output is 319 rather than 15,507 bytes for the measured receipt.
+  Full machine output remains available; unique detail artifacts avoid reruns
+  caused by another agent overwriting a result.
+- Necessary costs remain: integration reasoning, correctness/security gates,
+  destination-specific deployment/live acceptance, one encrypted local capture,
+  offsite transfer verification and restore exercises. Backup and final closeout
+  timings remain unmeasured until their actual live runs.
+- This implementation session itself included avoidable repeated path lookups,
+  overly broad tool output and a subtask closeout attempt while agents were still
+  editing. These are waste, not product savings. Billed-token telemetry for the
+  incident was unavailable; zero recorded usage is not zero consumption.
+
+## Everyday workflow after verified rollout
 
 1. Claim the task once and use existing file/lane ownership for parallel agents.
    Each agent edits its assigned files; commits are local and path-scoped where
