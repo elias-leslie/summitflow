@@ -13,8 +13,8 @@ from .check_constants import _TOOL_CONFIG_PATHS, _TOOL_FILE_SUFFIXES
 
 
 def _is_pytest_test_path(path: Path) -> bool:
-    return path.suffix in {".py", ".pyi"} and (
-        "tests" in path.parts or path.name.startswith("test_") or path.name.endswith("_test.py")
+    return path.suffix == ".py" and (
+        path.name.startswith("test_") or path.name.endswith("_test.py")
     )
 
 

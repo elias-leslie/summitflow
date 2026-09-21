@@ -28,6 +28,23 @@ def test_python_changes_select_direct_importing_tests(tmp_path: Path) -> None:
     ) is None
 
 
+def test_dependency_mapping_never_promotes_conftest_to_full_suite(tmp_path: Path) -> None:
+    source = tmp_path / "backend/app/facade.pyi"
+    conftest = tmp_path / "backend/tests/conftest.py"
+    source.parent.mkdir(parents=True)
+    conftest.parent.mkdir(parents=True)
+    source.write_text("def exported() -> str: ...\n")
+    conftest.write_text("from app import facade\n")
+
+    assert _changed_args(
+        "pytest",
+        tmp_path,
+        tmp_path / "backend",
+        {"pass_path": False},
+        ["backend/app/facade.pyi"],
+    ) == []
+
+
 @pytest.mark.parametrize(
     "changed",
     [
