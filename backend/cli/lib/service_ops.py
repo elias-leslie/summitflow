@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from dotenv import dotenv_values
 
 from app.project_identity import (
     get_project_identity,
@@ -24,6 +25,7 @@ from app.project_identity import (
     identity_lifecycle,
     list_project_identities,
 )
+from app.utils.env_files import project_env_files
 from app.utils.shared_paths import get_repo_root
 
 from ..details import display_path, emit_result_or_details, summary_hint, write_details
@@ -607,16 +609,35 @@ def run_migrations(project: ProjectServices) -> int:
         print("[service] configured migrations require an installed Alembic executable")
         return 1
     env = os.environ.copy()
-    for key in (
+    database_keys = {
         "DATABASE_URL",
-        "REDIS_URL",
         "AGENT_HUB_DB_URL",
-        "AGENT_HUB_REDIS_URL",
         "PORTFOLIO_DB_URL",
         "PORTFOLIO_AI_DB_URL",
-        "HATCHET_CLIENT_TOKEN",
-    ):
+        "NERI_DB_URL",
+        "JOBINATOR_DB_URL",
+        "POSTGRES_ADMIN_URL",
+        "DATABASE_ADMIN_URL",
+    }
+    for key in database_keys | {"REDIS_URL", "AGENT_HUB_REDIS_URL", "HATCHET_CLIENT_TOKEN"}:
         env.pop(key, None)
+    # Alembic runs from immutable accepted source, which deliberately excludes
+    # project env files. Supply only the owning project's database credentials
+    # from the same stable host configuration used by its systemd service.
+    owner_database_keys = {
+        "summitflow": {"DATABASE_URL"},
+        "agent-hub": {"AGENT_HUB_DB_URL"},
+        "portfolio-ai": {"PORTFOLIO_DB_URL"},
+        "neri": {"NERI_DB_URL", "POSTGRES_ADMIN_URL", "DATABASE_ADMIN_URL"},
+        "jobinator-4000": {"JOBINATOR_DB_URL"},
+    }.get(project.project_id, {"DATABASE_URL"})
+    host_root = project.host_config_root or project.root
+    for path in project_env_files(host_root):
+        if path.name == ".env.example" or not path.is_file():
+            continue
+        for key, value in dotenv_values(path, interpolate=False).items():
+            if key in owner_database_keys and value is not None:
+                env[key] = value
     print("[service] running migrations")
     return run([str(alembic), "upgrade", "head"], cwd=project.backend_dir, env=env, quiet_success=True)
 

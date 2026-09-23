@@ -308,6 +308,47 @@ def test_configured_migrations_require_alembic(project):
     assert service_ops.run_migrations(project) == 1
 
 
+def test_migrations_use_host_project_database_env_from_accepted_source(
+    project, monkeypatch, tmp_path
+):
+    accepted_root = tmp_path / "release" / "source"
+    backend_dir = accepted_root / "backend"
+    (backend_dir / ".venv" / "bin").mkdir(parents=True)
+    (backend_dir / "alembic.ini").touch()
+    (backend_dir / ".venv" / "bin" / "alembic").touch()
+    (accepted_root / ".env").write_text("PORTFOLIO_DB_URL=postgresql://source-stale\n")
+    host_root = tmp_path / "host-checkout"
+    host_root.mkdir()
+    (host_root / ".env").write_text("PORTFOLIO_DB_URL=postgresql://host-base\n")
+    (host_root / ".env.local").write_text(
+        "PORTFOLIO_DB_URL=postgresql://host-local\n"
+        "JOBINATOR_DB_URL=postgresql://jobinator-host\n"
+        "INTERNAL_SERVICE_SECRET=host-secret-not-for-migrations\n"
+    )
+    deployed = replace(
+        project,
+        project_id="portfolio-ai",
+        root=accepted_root,
+        backend_dir=backend_dir,
+        frontend_dir=accepted_root / "frontend",
+        host_config_root=host_root,
+    )
+    monkeypatch.setenv("PORTFOLIO_DB_URL", "postgresql://stale-shell")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://other-project")
+    monkeypatch.setenv("JOBINATOR_DB_URL", "postgresql://jobinator-stale-shell")
+    monkeypatch.delenv("INTERNAL_SERVICE_SECRET", raising=False)
+    run = Mock(return_value=0)
+    monkeypatch.setattr(service_ops, "run", run)
+
+    assert service_ops.run_migrations(deployed) == 0
+    migration_env = run.call_args.kwargs["env"]
+    assert migration_env["PORTFOLIO_DB_URL"] == "postgresql://host-local"
+    assert "JOBINATOR_DB_URL" not in migration_env
+    assert "DATABASE_URL" not in migration_env
+    assert "INTERNAL_SERVICE_SECRET" not in migration_env
+    assert run.call_args.kwargs["cwd"] == backend_dir
+
+
 def test_seed_export_failure_propagates(project, monkeypatch):
     (project.backend_dir / "scripts").mkdir(parents=True)
     (project.backend_dir / "scripts" / "export_seeds.py").touch()
