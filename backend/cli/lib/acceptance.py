@@ -550,5 +550,11 @@ def accept_revision(
             artifact = _receipt_path(repo, receipt["acceptance_id"])
         _write_receipt(artifact, receipt)
         if state != "success":
-            raise AcceptanceError(f"{reason}; acceptance evidence: {artifact}")
+            failed_check = next((check for check in checks if check["state"] == "failed"), None)
+            failure_line = next(
+                (line for line in (failed_check or {}).get("detail", "").splitlines() if ":FAIL:" in line),
+                None,
+            )
+            summary = f"{reason}; {failure_line}" if failure_line else reason
+            raise AcceptanceError(f"{summary}; acceptance evidence: {artifact}")
         return _descriptor(receipt, artifact, reused=False)

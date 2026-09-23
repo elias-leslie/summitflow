@@ -708,7 +708,10 @@ def _acceptance_candidate(
     sha = str(identity.get("source_commit") or identity.get("commit") or "")
     if not sha:
         raise ServiceError("Could not identify current source for local acceptance")
-    return acceptance.accept_revision(project.root, sha=sha, reuse=True)
+    try:
+        return acceptance.accept_revision(project.root, sha=sha, reuse=True)
+    except acceptance.AcceptanceError as exc:
+        raise ServiceError(f"Local acceptance failed: {exc}") from exc
 
 
 def resolve_accepted_source(

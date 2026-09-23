@@ -529,6 +529,23 @@ def test_detached_rebuild_preserves_scope_and_named_worker(lifecycle, monkeypatc
     lifecycle["ensure_infra"].assert_not_called()
 
 
+def test_detached_rebuild_reports_local_acceptance_failure_without_traceback(lifecycle, monkeypatch):
+    from cli.lib import acceptance
+
+    monkeypatch.setattr(acceptance, "source_identity", lambda _root: {"source_commit": "c" * 40})
+    monkeypatch.setattr(
+        acceptance,
+        "accept_revision",
+        Mock(side_effect=acceptance.AcceptanceError("acceptance_checks_failed; TEST:FAIL:1; acceptance evidence: /tmp/check.json")),
+    )
+    result = CliRunner().invoke(service.app, ["rebuild", "example", "--detach"])
+
+    assert result.exit_code == 1
+    assert "TEST:FAIL:1" in result.output
+    assert "/tmp/check.json" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_detached_command_carries_scope_and_workers(monkeypatch, tmp_path):
     import json
     import subprocess

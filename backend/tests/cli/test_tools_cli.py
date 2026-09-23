@@ -53,6 +53,34 @@ def test_cost_query_measures_real_payloads_not_json_null(test_db_url: str) -> No
     assert "literal" not in scoped
 
 
+def test_native_usage_query_separates_response_and_cumulative_evidence(test_db_url: str) -> None:
+    import psycopg
+    from psycopg import sql
+
+    from cli.commands.tools import _native_usage_query
+
+    fixtures = sql.SQL("""
+        WITH session_events(session_id, event_type, usage, source_timestamp, created_at) AS (
+          VALUES
+            ('sess-1', 'usage', '{"scope":"response","source":"native","input_tokens":10,"output_tokens":0,"cached_input_tokens":4}'::json, now(), now()),
+            ('sess-1', 'usage', '{"scope":"response","source":"native","input_tokens":5}'::json, now(), now()),
+            ('sess-1', 'usage_counter', '{"scope":"thread","source":"counter","input_tokens":100}'::json, now(), now()),
+            ('sess-2', 'usage', '{"scope":"response","source":"native","input_tokens":999}'::json, now(), now()),
+            ('sess-1', 'usage', '{"scope":"response","source":"native","input_tokens":999}'::json, now() - interval '2 days', now())
+        )
+    """)
+    with psycopg.connect(test_db_url) as connection:
+        rows = connection.execute(fixtures + _native_usage_query(), (24, "sess-1", "sess-1")).fetchall()
+    response = next(row for row in rows if row[0] == "response")
+    counter = next(row for row in rows if row[0] == "thread")
+    assert response[2] == 2
+    assert response[3:8] == (15, 0, 4, None, None)
+    assert response[8:13] == (2, 1, 1, 0, 0)
+    assert counter[2] == 1
+    assert counter[3:8] == (None,) * 5
+    assert counter[8:13] == (0,) * 5
+
+
 def test_cost_output_reports_missing_and_partial_coverage(capsys: pytest.CaptureFixture[str]) -> None:
     _format_cost_compact({"tool_output_hotspots": [
         {"tool_name": "missing", "events": 2, "output_chars": None, "output_tokens_approx": None, "output_samples": 0, "stored_tokens": None, "stored_tokens_samples": 0, "unmeasured_events": 2},
@@ -66,11 +94,30 @@ def test_cost_output_reports_missing_and_partial_coverage(capsys: pytest.Capture
     assert "out~0t chars=0" in output
 
 
+def test_cost_output_labels_native_coverage_and_counters(capsys: pytest.CaptureFixture[str]) -> None:
+    _format_cost_compact({"native_usage": [
+        {"scope": "response", "source": "codex", "events": 2,
+         "input_tokens": 15, "output_tokens": 0, "cached_input_tokens": None,
+         "cache_write_input_tokens": None, "reasoning_output_tokens": None,
+         "input_tokens_samples": 2, "output_tokens_samples": 1,
+         "cached_input_tokens_samples": 0, "cache_write_input_tokens_samples": 0,
+         "reasoning_output_tokens_samples": 0},
+        {"scope": "thread", "source": "counter", "events": 3},
+    ]})
+    output = capsys.readouterr().out
+    assert "native per-response" in output
+    assert "in=15" in output and "out=0[1/2 measured]" in output
+    assert "cached=unknown" in output
+    assert "cumulative counters: thread/counter observations=3" in output
+    assert "billed cost unknown" in output
+
+
 def test_cost_distinguishes_unmeasured_tokens_from_measured_zero() -> None:
     from contextlib import nullcontext
     connection = MagicMock()
     connection.execute.side_effect = [
         MagicMock(fetchall=lambda: [("unmeasured", "cli", 2, None, 0, 12.0, 100.0, 0, 2)]),
+        MagicMock(fetchall=lambda: []),
         MagicMock(fetchall=lambda: []),
     ]
     with (

@@ -198,6 +198,21 @@ def test_failed_full_gate_raises_and_retains_bounded_evidence(repo: Path) -> Non
     assert payload["checks"][0]["output_bytes"] == 5007
 
 
+def test_failed_full_gate_names_failed_check_before_receipt_path(repo: Path) -> None:
+    def fail(command: list[str], _cwd: Path):
+        return subprocess.CompletedProcess(
+            command, 1,
+            "TEST:FAIL:1|details:.dev-tools/pytest-details.txt|hint:2 failed\n",
+            "",
+        )
+
+    with pytest.raises(acceptance.AcceptanceError) as error:
+        acceptance.accept_revision(repo, sha="HEAD", runner=fail)
+
+    assert "TEST:FAIL:1|details:.dev-tools/pytest-details.txt|hint:2 failed" in str(error.value)
+    assert "acceptance evidence: " in str(error.value)
+
+
 def test_later_success_does_not_overwrite_failed_acceptance_evidence(repo: Path) -> None:
     def fail(command, _cwd):
         return subprocess.CompletedProcess(command, 1, "failure artifact remains useful", "")

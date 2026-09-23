@@ -684,6 +684,33 @@ def _cost_queries(hours: int, limit: int) -> tuple[sql.SQL, sql.SQL]:
     return request_sql, output_sql
 
 
+def _native_usage_query() -> sql.SQL:
+    """Keep per-response usage separate from cumulative counter observations."""
+    return sql.SQL("""
+        SELECT
+            usage->>'scope' AS scope,
+            COALESCE(usage->>'source', 'unknown') AS source,
+            count(*)::int AS events,
+            sum((usage->>'input_tokens')::bigint) FILTER (WHERE event_type = 'usage') AS input_tokens,
+            sum((usage->>'output_tokens')::bigint) FILTER (WHERE event_type = 'usage') AS output_tokens,
+            sum((usage->>'cached_input_tokens')::bigint) FILTER (WHERE event_type = 'usage') AS cached_input_tokens,
+            sum((usage->>'cache_write_input_tokens')::bigint) FILTER (WHERE event_type = 'usage') AS cache_write_input_tokens,
+            sum((usage->>'reasoning_output_tokens')::bigint) FILTER (WHERE event_type = 'usage') AS reasoning_output_tokens,
+            count(usage->>'input_tokens') FILTER (WHERE event_type = 'usage')::int AS input_samples,
+            count(usage->>'output_tokens') FILTER (WHERE event_type = 'usage')::int AS output_samples,
+            count(usage->>'cached_input_tokens') FILTER (WHERE event_type = 'usage')::int AS cached_samples,
+            count(usage->>'cache_write_input_tokens') FILTER (WHERE event_type = 'usage')::int AS cache_write_samples,
+            count(usage->>'reasoning_output_tokens') FILTER (WHERE event_type = 'usage')::int AS reasoning_samples
+        FROM session_events
+        WHERE event_type IN ('usage', 'usage_counter')
+          AND usage IS NOT NULL
+          AND COALESCE(source_timestamp, created_at) >= now() - (%s * interval '1 hour')
+          AND (%s::text IS NULL OR session_id = %s)
+        GROUP BY 1, 2
+        ORDER BY (usage->>'scope' = 'response') DESC, events DESC, source;
+    """)
+
+
 def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_TASK, session: str | None = None) -> dict[str, Any]:
     """Summarize context and persisted tool/request token cost hotspots."""
     import psycopg
@@ -693,6 +720,7 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_
     request_sql, output_sql = _cost_queries(hours, limit)
     request_rows: list[tuple[Any, ...]]
     output_rows: list[tuple[Any, ...]]
+    native_rows: list[tuple[Any, ...]]
     with (
         _psql_project_lock("agent-hub"),
         psycopg.connect(
@@ -702,6 +730,7 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_
     ):
         request_rows = conn.execute(request_sql, (hours, session, session, limit)).fetchall()
         output_rows = conn.execute(output_sql, (hours, session, session, limit)).fetchall()
+        native_rows = conn.execute(_native_usage_query(), (hours, session, session)).fetchall()
 
     request_hotspots = [
         {
@@ -744,12 +773,31 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_
             output_samples, stored_tokens_samples, unmeasured_events,
         ) in output_rows
     ]
+    native_usage = [
+        {
+            "scope": str(scope), "source": str(source), "events": int(events),
+            "input_tokens": input_tokens, "output_tokens": output_tokens,
+            "cached_input_tokens": cached_input_tokens,
+            "cache_write_input_tokens": cache_write_input_tokens,
+            "reasoning_output_tokens": reasoning_output_tokens,
+            "input_tokens_samples": int(input_samples), "output_tokens_samples": int(output_samples),
+            "cached_input_tokens_samples": int(cached_samples),
+            "cache_write_input_tokens_samples": int(cache_write_samples),
+            "reasoning_output_tokens_samples": int(reasoning_samples),
+        }
+        for (
+            scope, source, events, input_tokens, output_tokens, cached_input_tokens,
+            cache_write_input_tokens, reasoning_output_tokens, input_samples,
+            output_samples, cached_samples, cache_write_samples, reasoning_samples,
+        ) in native_rows
+    ]
     return {
         "window_hours": hours,
         "session": session,
         "manifest_costs": _manifest_density_costs(task),
         "request_hotspots": request_hotspots,
         "tool_output_hotspots": output_hotspots,
+        "native_usage": native_usage,
     }
 
 
@@ -776,7 +824,7 @@ def _format_cost_compact(data: dict[str, Any]) -> None:
         f"task({task_name})~{task.get('tokens_approx', 0)}t "
         f"full~{full.get('tokens_approx', 0)}t saved_core_vs_full~{saved}t"
     )
-    print("  Manifest figures estimate generated text; native/cache usage and billed cost are not measured here.")
+    print("  Manifest figures estimate generated text; billed cost unknown.")
     if data.get("session"):
         print(f"  Session filter: {data['session']}")
     request_hotspots = data.get("request_hotspots", [])
@@ -803,6 +851,25 @@ def _format_cost_compact(data: dict[str, Any]) -> None:
                 f" stored={_token_measurement(item, 'stored_tokens')}"
                 f" missing={item.get('unmeasured_events', 'unknown')}"
             )
+    native_usage = data.get("native_usage", [])
+    if native_usage:
+        print("  Native usage (source timestamps; field coverage shown):")
+        for item in native_usage:
+            scope = item.get("scope", "unknown")
+            source = item.get("source", "unknown")
+            if scope != "response":
+                print(f"    cumulative counters: {scope}/{source} observations={item.get('events', 0)}; totals excluded")
+                continue
+            print(
+                f"    native per-response {source} responses={item.get('events', 0)}"
+                f" in={_token_measurement(item, 'input_tokens')}"
+                f" out={_token_measurement(item, 'output_tokens')}"
+                f" cached={_token_measurement(item, 'cached_input_tokens')}"
+                f" cache_write={_token_measurement(item, 'cache_write_input_tokens')}"
+                f" reasoning={_token_measurement(item, 'reasoning_output_tokens')}"
+            )
+    else:
+        print("  Native usage: unavailable in this window; missing data is not zero.")
 
 
 def _emit_feedback_for_cost(data: dict[str, Any]) -> None:
