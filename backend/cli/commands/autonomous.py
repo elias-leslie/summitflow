@@ -17,12 +17,12 @@ app = typer.Typer(help="Autonomous execution management")
 @usage(
     surface="st.autonomous.status",
     cmd="st autonomous status",
-    when="inspect autonomous execution permission and project settings",
+    when="inspect Agent Hub execution permission and find canonical automation policy/profile read commands",
     task_types=("autonomous", "upkeep", "heartbeat",),
     on_demand="autonomous operations",
 )
 def status() -> None:
-    """Show autonomous execution settings for the project.
+    """Show the execution permission gate and canonical automation read paths.
 
     Examples:
         st autonomous status
@@ -35,7 +35,24 @@ def status() -> None:
         handle_api_error(e)
         return
 
-    output_json(result)
+    project_id = client.project_id
+    output_json(
+        {
+            "project_id": project_id,
+            "execution_permission": {
+                "source": "agent_hub_project_permission",
+                "auto_exec_enabled": result.get("enabled"),
+                "execution_allowed": result.get("execution_allowed"),
+                "execution_in_time_window": result.get("execution_in_time_window"),
+                "permission_tier": result.get("permission_tier"),
+                "permission_reason": result.get("permission_reason"),
+            },
+            "automations": {
+                "policy": f"st automations policy {project_id}",
+                "profiles": f"st automations list --project {project_id}",
+            },
+        }
+    )
 
 
 @app.command(hidden=True)
@@ -87,12 +104,12 @@ def disable(
 @usage(
     surface="st.autonomous.schedules",
     cmd="st autonomous schedules",
-    when="inspect autonomous schedule enablement for the current project",
-    task_types=("autonomous", "upkeep", "heartbeat",),
+    when="inspect SummitFlow-owned system schedules; use st automations list for Agent Hub workflows",
+    task_types=("devops",),
     on_demand="autonomous operations",
 )
 def schedules() -> None:
-    """List autonomous schedule states for the project."""
+    """List SummitFlow-owned schedules; Agent Hub profiles are listed centrally."""
     client = STClient()
 
     try:

@@ -1,7 +1,8 @@
 """Autonomous execution service layer.
 
-Access control (enabled, schedule hours) is now managed by Agent Hub's
-project_permissions. This service handles execution behavior settings only.
+Read-only compatibility snapshot of local behavior settings. Agent Hub owns
+scheduled profile and project policy values; its project permission remains a
+separate execution authorization gate.
 """
 
 from __future__ import annotations

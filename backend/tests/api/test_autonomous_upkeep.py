@@ -41,6 +41,7 @@ def test_get_routine_upkeep_status(client, ensure_test_project, mocker) -> None:
     payload = response.json()
     assert payload["settings"]["enabled"] is True
     assert payload["settings"]["frequency_minutes"] == 120
+    assert payload["settings"]["source"] == "legacy_local_inspection"
     assert payload["latest"]["workflow_name"] == "routine_upkeep"
     assert payload["recent"][0]["summary"]["tasks_created"] == 1
     list_runs.assert_called_once_with(
@@ -85,7 +86,18 @@ def test_get_autonomous_schedules_returns_registry_state(client, ensure_test_pro
                 "default_enabled": True,
                 "enabled": False,
                 "managed_project_id": ensure_test_project,
-            }
+            },
+            {
+                "schedule_id": "scheduled_backups",
+                "config_key": "scheduled_backups_enabled",
+                "label": "Scheduled backups",
+                "description": "Creates backup snapshots.",
+                "cron": "30 * * * *",
+                "scope": "system",
+                "default_enabled": True,
+                "enabled": True,
+                "managed_project_id": "summitflow",
+            },
         ],
     )
 
@@ -93,8 +105,8 @@ def test_get_autonomous_schedules_returns_registry_state(client, ensure_test_pro
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload[0]["schedule_id"] == "work_pickup"
-    assert payload[0]["enabled"] is False
+    assert [item["schedule_id"] for item in payload] == ["scheduled_backups"]
+    assert payload[0]["enabled"] is True
     list_schedules.assert_called_once_with(ensure_test_project)
 
 

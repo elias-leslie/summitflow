@@ -415,15 +415,30 @@ def test_db_schema_uses_command_specific_detail_name() -> None:
     assert run_psql.call_args.kwargs["detail_name"] == "db-summitflow-schema-agent_tools"
 
 
-def test_autonomous_status_reads_settings() -> None:
-    settings = {"enabled": True, "upkeep_enabled": False}
+def test_autonomous_status_reports_permission_and_canonical_reads_only() -> None:
+    settings = {
+        "enabled": True,
+        "execution_allowed": False,
+        "execution_in_time_window": True,
+        "permission_tier": "read",
+        "permission_reason": "permission_tier_read",
+        "upkeep_enabled": False,
+        "frequency_minutes": 120,
+    }
     with patch("cli.commands.autonomous.STClient") as client_cls:
-        client_cls.return_value.get_autonomous_settings.return_value = settings
+        client = client_cls.return_value
+        client.project_id = "summitflow"
+        client.get_autonomous_settings.return_value = settings
         result = runner.invoke(main_app, ["autonomous", "status"])
 
     assert result.exit_code == 0
-    assert '"enabled": true' in result.output
-    client_cls.return_value.get_autonomous_settings.assert_called_once_with()
+    assert '"auto_exec_enabled": true' in result.output
+    assert '"execution_allowed": false' in result.output
+    assert "st automations policy summitflow" in result.output
+    assert "st automations list --project summitflow" in result.output
+    assert "upkeep_enabled" not in result.output
+    assert "frequency_minutes" not in result.output
+    client.get_autonomous_settings.assert_called_once_with()
 
 
 def test_autonomous_enable_directs_to_agent_hub_without_local_writes() -> None:
@@ -445,13 +460,13 @@ def test_autonomous_disable_directs_to_agent_hub_without_local_writes() -> None:
 
 
 def test_autonomous_schedules_lists_schedule_states() -> None:
-    schedules = [{"schedule_id": "work_pickup", "enabled": True}]
+    schedules = [{"schedule_id": "scheduled_backups", "scope": "system", "enabled": True}]
     with patch("cli.commands.autonomous.STClient") as client_cls:
         client_cls.return_value.list_autonomous_schedules.return_value = schedules
         result = runner.invoke(main_app, ["autonomous", "schedules"])
 
     assert result.exit_code == 0
-    assert '"schedule_id": "work_pickup"' in result.output
+    assert '"schedule_id": "scheduled_backups"' in result.output
     client_cls.return_value.list_autonomous_schedules.assert_called_once_with()
 
 

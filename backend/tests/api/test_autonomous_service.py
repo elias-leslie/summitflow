@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
 
 from app.api.autonomous import update_settings as update_autonomous_endpoint
-from app.api.autonomous_models import AutonomousSettingsUpdate
+from app.api.autonomous_models import AutonomousSettings, AutonomousSettingsUpdate
 from app.api.autonomous_service import get_autonomous_settings
 from app.constants import TASK_TYPE_VALUES
 from app.storage.agent_configs import DEFAULT_AGENT_CONFIG, AgentConfig
@@ -88,6 +88,25 @@ def test_get_autonomous_settings_preserves_explicit_narrow_allowed_types() -> No
         settings = get_autonomous_settings("test-project")
 
     assert settings.allowed_types == ["bug"]
+
+
+def test_get_settings_marks_legacy_behavior_and_central_management(client, ensure_test_project) -> None:
+    with (
+        patch("app.api.autonomous._get_settings", return_value=AutonomousSettings(frequency_minutes=45)),
+        patch(
+            "app.api.autonomous._fetch_agent_hub_execution_permission",
+            new_callable=AsyncMock,
+            return_value={"auto_exec_enabled": True, "allowed": True, "permission_tier": "full"},
+        ),
+    ):
+        response = client.get(f"/api/projects/{ensure_test_project}/autonomous/settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["behavior_settings_source"] == "legacy_local_inspection"
+    assert payload["automation_management_source"] == "agent_hub"
+    assert payload["enabled"] is True
+    assert payload["frequency_minutes"] == 45
 
 
 @pytest.mark.asyncio

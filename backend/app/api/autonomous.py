@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from ..config import AGENT_HUB_URL
 from ..services._agent_hub_config import build_agent_hub_headers
 from ..services.autonomous_schedule_registry import (
+    AGENT_HUB_OWNED_SCHEDULES,
     get_autonomous_schedule_definition,
     list_autonomous_schedule_states,
     set_autonomous_schedule_enabled,
@@ -40,8 +41,9 @@ __all__ = [
 
 
 class RoutineUpkeepSettingsResponse(BaseModel):
-    """Routine upkeep settings exposed in status responses."""
+    """Local fallback settings and their provenance, not the Agent Hub policy."""
 
+    source: Literal["legacy_local_inspection"] = "legacy_local_inspection"
     enabled: bool
     frequency_minutes: int
     batch_limit: int
@@ -160,7 +162,10 @@ async def _settings_with_execution_permission(project_id: str) -> AutonomousSett
 
 @router.get("/{project_id}/autonomous/settings", response_model=AutonomousSettings)
 async def get_settings(project_id: str) -> AutonomousSettings:
-    """Get autonomous execution settings for a project."""
+    """Inspect local compatibility settings and live Agent Hub execution permission.
+
+    Agent Hub Automations owns current schedule and policy configuration.
+    """
     validate_project_exists(project_id)
     return await _settings_with_execution_permission(project_id)
 
@@ -177,7 +182,7 @@ async def update_settings(project_id: str, update: AutonomousSettingsUpdate) -> 
 
 @router.get("/{project_id}/autonomous/upkeep/status", response_model=RoutineUpkeepStatusResponse)
 async def get_upkeep_status(project_id: str) -> RoutineUpkeepStatusResponse:
-    """Get routine upkeep settings and recent run history."""
+    """Get local fallback settings and recent SummitFlow upkeep run history."""
     validate_project_exists(project_id)
     settings = get_routine_upkeep_settings(project_id)
     recent = [
@@ -201,9 +206,13 @@ async def get_upkeep_status(project_id: str) -> RoutineUpkeepStatusResponse:
 
 @router.get("/{project_id}/autonomous/schedules", response_model=list[AutonomousScheduleResponse])
 async def get_autonomous_schedules(project_id: str) -> list[AutonomousScheduleResponse]:
-    """List every SummitFlow schedule with its current enablement source."""
+    """List locally owned schedules; Agent Hub Automations owns project workflows."""
     validate_project_exists(project_id)
-    return [AutonomousScheduleResponse(**item) for item in list_autonomous_schedule_states(project_id)]
+    return [
+        AutonomousScheduleResponse(**item)
+        for item in list_autonomous_schedule_states(project_id)
+        if item["schedule_id"] not in AGENT_HUB_OWNED_SCHEDULES
+    ]
 
 
 @router.patch(
@@ -219,7 +228,7 @@ async def update_autonomous_schedule(
     validate_project_exists(project_id)
     try:
         definition = get_autonomous_schedule_definition(schedule_id)
-        if definition.schedule_id in {"work_pickup", "task_generation"}:
+        if definition.schedule_id in AGENT_HUB_OWNED_SCHEDULES:
             raise HTTPException(
                 status_code=410,
                 detail="This schedule is managed in Agent Hub Automations. Use st automations list and enable/disable for its profile.",

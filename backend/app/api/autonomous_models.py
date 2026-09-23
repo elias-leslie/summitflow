@@ -5,6 +5,8 @@ by Agent Hub's project_permissions table. This module retains execution
 behavior settings only.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from ..constants import TASK_TYPE_VALUES
@@ -13,11 +15,14 @@ VALID_TASK_TYPES = list(TASK_TYPE_VALUES)
 
 
 class AutonomousSettings(BaseModel):
-    """Autonomous execution behavior settings for a project.
+    """Legacy local behavior snapshot plus live Agent Hub execution permission.
 
-    Access control (enabled, schedule hours) is managed by Agent Hub's
-    project_permissions. These settings control HOW execution proceeds.
+    Agent Hub Automation profiles and project policy govern scheduled runs.
+    Local behavior fields remain available for compatibility and manual paths.
     """
+
+    behavior_settings_source: Literal["legacy_local_inspection"] = "legacy_local_inspection"
+    automation_management_source: Literal["agent_hub"] = "agent_hub"
 
     enabled: bool = Field(
         default=False,

@@ -9,6 +9,7 @@ from app.storage.agent_configs import AgentConfig, get_agent_config, update_agen
 
 ScheduleScope = Literal["project", "system"]
 SUMMITFLOW_CONTROL_PROJECT_ID = "summitflow"
+AGENT_HUB_OWNED_SCHEDULES = frozenset({"work_pickup", "task_generation"})
 
 
 @dataclass(frozen=True)
@@ -250,7 +251,7 @@ def set_autonomous_schedule_enabled(
     enabled: bool,
 ) -> AutonomousScheduleState:
     definition = get_autonomous_schedule_definition(schedule_id)
-    if schedule_id in {"work_pickup", "task_generation"}:
+    if schedule_id in AGENT_HUB_OWNED_SCHEDULES:
         raise ValueError("Agent Hub owns work pickup and task generation schedules")
     managed_project_id = _control_project_id(project_id, definition)
     update_agent_config(
