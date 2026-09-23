@@ -44,3 +44,8 @@ Discovery measurement from the same live registry: before the change, `st tools 
 - [x] Use this coding task's failed `--surface browser` discovery as a recorded recurring-pattern candidate and repair its cause in the ST registry CLI. This specific lookup now takes one successful call rather than a failed call and correction; aggregate per-task recurrence remains unproven.
 - [x] Demonstrate fewer avoidable calls and generated output without worse acceptance: the observed unique `browser` surface lookup fell from two calls to one, the default manifest is 4,171 vs 72,676 bytes for full output from the same registry, and Agent Hub exact-source full acceptance passed after the change. Billed token and elapsed-task savings are unmeasured. The optimized Agent Hub test removed a measured 10.6-second local hot spot; broader full-suite savings require comparable run conditions and are not claimed.
 - [ ] Complete integrated managed checks, actual route/UI checks, task-scoped diff review, coherent local commits and task closeout. GitHub publication is optional.
+
+## Owner-approved memory workflow follow-on
+
+- [ ] Simplify the Agent Hub inspector around name, content and scope, with advanced policy controls, clear changed-field preview, preserved history and a rendered UI check.
+- [ ] Replace the failed ST memory scope call with a narrow authenticated preview/apply path. Verify real service-client attribution and project authority, stale revision rejection, no mixed partial updates, and existing undo/history.
