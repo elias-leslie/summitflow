@@ -635,9 +635,9 @@ def run_migrations(project: ProjectServices) -> int:
         "jobinator-4000": {"JOBINATOR_DB_URL"},
     }.get(project.project_id, {"DATABASE_URL"})
     host_root = project.host_config_root or project.root
-    # Neri's service unit reads the operator's shared env before its own
-    # backend env; Alembic needs the same source when running from a release.
-    shared_env = [Path.home() / ".env.local"] if project.project_id == "neri" else []
+    # Neri and Jobinator read their database URLs from the operator's shared
+    # env; Alembic needs that source when running from an accepted release.
+    shared_env = [Path.home() / ".env.local"] if project.project_id in {"neri", "jobinator-4000"} else []
     for path in [*shared_env, *project_env_files(host_root)]:
         if path.name == ".env.example" or not path.is_file():
             continue

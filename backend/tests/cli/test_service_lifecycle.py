@@ -373,6 +373,30 @@ def test_neri_migrations_use_approved_operator_db_env(project, monkeypatch, tmp_
     assert "INTERNAL_SERVICE_SECRET" not in migration_env
 
 
+def test_jobinator_migrations_use_approved_operator_db_env(project, monkeypatch, tmp_path):
+    backend_dir = tmp_path / "release" / "backend"
+    (backend_dir / ".venv" / "bin").mkdir(parents=True)
+    (backend_dir / "alembic.ini").touch()
+    (backend_dir / ".venv" / "bin" / "alembic").touch()
+    operator_home = tmp_path / "operator"
+    operator_home.mkdir()
+    (operator_home / ".env.local").write_text(
+        "JOBINATOR_DB_URL=postgresql://approved-jobinator\n"
+        "NERI_DB_URL=postgresql://other-project\n"
+        "INTERNAL_SERVICE_SECRET=not-for-migrations\n"
+    )
+    monkeypatch.setattr(service_ops.Path, "home", lambda: operator_home)
+    run = Mock(return_value=0)
+    monkeypatch.setattr(service_ops, "run", run)
+    deployed = replace(project, project_id="jobinator-4000", backend_dir=backend_dir)
+
+    assert service_ops.run_migrations(deployed) == 0
+    migration_env = run.call_args.kwargs["env"]
+    assert migration_env["JOBINATOR_DB_URL"] == "postgresql://approved-jobinator"
+    assert "NERI_DB_URL" not in migration_env
+    assert "INTERNAL_SERVICE_SECRET" not in migration_env
+
+
 def test_seed_export_failure_propagates(project, monkeypatch):
     (project.backend_dir / "scripts").mkdir(parents=True)
     (project.backend_dir / "scripts" / "export_seeds.py").touch()
