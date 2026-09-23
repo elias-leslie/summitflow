@@ -31,23 +31,26 @@ def test_cost_query_measures_real_payloads_not_json_null(test_db_url: str) -> No
 
     # Shadow the source relation with read-only fixtures; never write a table.
     fixtures = sql.SQL("""
-        WITH session_events(tool_name, tool_output, content, tokens, duration_ms, created_at) AS (
+        WITH session_events(session_id, tool_name, tool_output, content, tokens, duration_ms, created_at) AS (
           VALUES
-            ('missing', 'null'::json, NULL::text, NULL::int, 1.0, now()),
-            ('missing', NULL::json, NULL::text, NULL::int, 1.0, now()),
-            ('mixed', 'null'::json, 'abcd', NULL::int, 1.0, now()),
-            ('mixed', NULL::json, NULL::text, 7, 1.0, now()),
-            ('empty', NULL::json, '', 0, 1.0, now()),
-            ('literal', '\"null\"'::json, NULL::text, NULL::int, 1.0, now())
+            ('sess-1', 'missing', 'null'::json, NULL::text, NULL::int, 1.0, now()),
+            ('sess-1', 'missing', NULL::json, NULL::text, NULL::int, 1.0, now()),
+            ('sess-1', 'mixed', 'null'::json, 'abcd', NULL::int, 1.0, now()),
+            ('sess-1', 'mixed', NULL::json, NULL::text, 7, 1.0, now()),
+            ('sess-1', 'empty', NULL::json, '', 0, 1.0, now()),
+            ('sess-2', 'literal', '\"null\"'::json, NULL::text, NULL::int, 1.0, now())
         )
     """)
-    _, query, _ = _cost_queries(24, 10)
+    _, query = _cost_queries(24, 10)
     with psycopg.connect(test_db_url) as connection:
-        rows = {row[0]: row[1:] for row in connection.execute(fixtures + query, (24, 10)).fetchall()}
+        rows = {row[0]: row[1:] for row in connection.execute(fixtures + query, (24, None, None, 10)).fetchall()}
     assert rows["missing"] == (2, None, None, 1.0, 0, 0, 2)
     assert rows["mixed"] == (2, 7, 4, 1.0, 1, 1, 0)
     assert rows["empty"] == (1, 0, 0, 1.0, 1, 1, 0)
     assert rows["literal"] == (1, None, 6, 1.0, 1, 0, 0)
+    with psycopg.connect(test_db_url) as connection:
+        scoped = {row[0] for row in connection.execute(fixtures + query, (24, "sess-1", "sess-1", 10)).fetchall()}
+    assert "literal" not in scoped
 
 
 def test_cost_output_reports_missing_and_partial_coverage(capsys: pytest.CaptureFixture[str]) -> None:
@@ -68,7 +71,7 @@ def test_cost_distinguishes_unmeasured_tokens_from_measured_zero() -> None:
     connection = MagicMock()
     connection.execute.side_effect = [
         MagicMock(fetchall=lambda: [("unmeasured", "cli", 2, None, 0, 12.0, 100.0, 0, 2)]),
-        MagicMock(fetchall=lambda: []), MagicMock(fetchone=lambda: None),
+        MagicMock(fetchall=lambda: []),
     ]
     with (
         patch("psycopg.connect", return_value=nullcontext(connection)),
@@ -187,12 +190,14 @@ def test_status_compact_includes_top_tool_names(capsys: pytest.CaptureFixture[st
                 }
             ],
             "by_endpoint": [],
-        }
+        },
+        hours=168,
     )
 
     out = capsys.readouterr().out
-    assert "Top tools:" in out
-    assert "st memory search  2 reqs  100.0%  9ms" in out
+    assert "TOOLS[168h]" in out
+    assert "Top tools (HTTP outcome):" in out
+    assert "st memory search  2 reqs  http_success=100.0%  9ms" in out
 
 
 def test_adoption_compact_summarizes_st_wrapper_use(capsys: pytest.CaptureFixture[str]) -> None:
@@ -214,11 +219,41 @@ def test_adoption_compact_summarizes_st_wrapper_use(capsys: pytest.CaptureFixtur
     assert "st check  4" in out
 
 
+def test_adoption_compact_shows_session_scope_and_missing_capture(capsys: pytest.CaptureFixture[str]) -> None:
+    _format_adoption_compact({
+        "window_hours": 24,
+        "session": "session-1",
+        "summary": {"shell_tool_events": 0, "st_commands": 0, "st_command_rate": None},
+    })
+    out = capsys.readouterr().out
+    assert "st_rate=unknown" in out
+    assert "capture completeness unknown" in out
+    assert "Session filter: session-1" in out
+
+
+def test_adoption_without_inspectable_shell_events_is_unknown(capsys: pytest.CaptureFixture[str]) -> None:
+    _format_adoption_compact({
+        "window_hours": 24,
+        "summary": {
+            "shell_tool_events": 0,
+            "st_commands": 0,
+            "st_command_rate": None,
+            "raw_quality_commands": 0,
+        },
+        "top_st_surfaces": [],
+    })
+
+    out = capsys.readouterr().out
+    assert "st_rate=unknown" in out
+    assert "capture completeness unknown" in out
+
+
 def test_adoption_command_uses_fetcher(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "cli.commands.tools._fetch_adoption_metrics",
-        lambda hours, limit: {
+        lambda hours, limit, session: {
             "window_hours": hours,
+            "session": session,
             "summary": {
                 "shell_tool_events": 5,
                 "st_commands": 5,
@@ -256,26 +291,33 @@ def test_audit_compact_surfaces_expected_tool_findings(capsys: pytest.CaptureFix
     )
 
     out = capsys.readouterr().out
-    assert "TOOLS_AUDIT[24h]:findings=1 events=2" in out
+    assert "TOOLS_AUDIT[24h]:findings=1 finding_events=2" in out
     assert "raw_quality_tool_bypass|expected=st.check|count=2" in out
     assert "ex: pytest backend/tests/foo.py" in out
+
+
+def test_audit_rules_do_not_classify_git_inspection_as_waste() -> None:
+    from cli.commands.tools import _RAW_AUDIT_RULES
+
+    assert not any(rule["finding_type"] == "raw_vcs_tool_bypass" for rule in _RAW_AUDIT_RULES)
 
 
 def test_audit_command_uses_fetcher(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "cli.commands.tools._fetch_audit_metrics",
-        lambda hours, limit, project: {
+        lambda hours, limit, project, session: {
             "window_hours": hours,
             "project": project,
+            "session": session,
             "summary": {"finding_groups": 0, "events": 0},
             "findings": [],
         },
     )
 
-    result = runner.invoke(app, ["audit", "--hours", "2", "--limit", "3", "-P", "summitflow"])
+    result = runner.invoke(app, ["audit", "--hours", "2", "--limit", "3", "-P", "summitflow", "--session", "sess-1"])
 
     assert result.exit_code == 0
-    assert "TOOLS_AUDIT[2h]:findings=0 events=0" in result.output
+    assert "TOOLS_AUDIT[2h]:findings=0 finding_events=0" in result.output
     assert "No high-confidence tool-governance findings." in result.output
 
 
@@ -357,15 +399,16 @@ def test_cost_compact_shows_manifest_and_hotspots(capsys: pytest.CaptureFixture[
 
     out = capsys.readouterr().out
     assert "manifest_core~100t task(verification)~160t full~400t" in out
-    assert "sdk.complete|sdk reqs=2 in=300 out=50 success=100.0%" in out
+    assert "sdk.complete|sdk reqs=2 in=300 out=50 http_success=100.0%" in out
     assert "Bash events=4 out~120t chars=480" in out
 
 
 def test_cost_command_uses_fetcher(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "cli.commands.tools._fetch_cost_metrics",
-        lambda hours, limit, task: {
+        lambda hours, limit, task, session: {
             "window_hours": hours,
+            "session": session,
             "manifest_costs": [
                 {"density": "core", "task": None, "tokens_approx": 10},
                 {"density": "task", "task": task, "tokens_approx": 20},
@@ -376,7 +419,7 @@ def test_cost_command_uses_fetcher(monkeypatch: pytest.MonkeyPatch) -> None:
         },
     )
 
-    result = runner.invoke(app, ["cost", "--hours", "2", "--limit", "3", "--task", "backend"])
+    result = runner.invoke(app, ["cost", "--hours", "2", "--limit", "3", "--task", "backend", "--session", "sess-1"])
 
     assert result.exit_code == 0
     assert "TOOLS_COST[2h]:manifest_core~10t task(backend)~20t full~40t" in result.output
@@ -387,7 +430,7 @@ def test_cost_emit_feedback_requires_session_id(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(
         "cli.commands.tools._fetch_cost_metrics",
-        lambda hours, limit, task: {
+        lambda hours, limit, task, session: {
             "window_hours": hours,
             "manifest_costs": [
                 {"density": "core", "task": None, "tokens_approx": 100},
@@ -409,12 +452,12 @@ def test_cost_emit_feedback_requires_session_id(monkeypatch: pytest.MonkeyPatch)
     assert not calls
 
 
-def test_cost_emit_feedback_flags_high_cost_request_hotspot(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cost_emit_feedback_does_not_treat_aggregate_tokens_as_waste(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(
         "cli.commands.tools._fetch_cost_metrics",
-        lambda hours, limit, task: {
+        lambda hours, limit, task, session: {
             "window_hours": hours,
             "feedback_session_id": "session-123",
             "manifest_costs": [
@@ -443,19 +486,17 @@ def test_cost_emit_feedback_flags_high_cost_request_hotspot(monkeypatch: pytest.
     result = runner.invoke(app, ["cost", "--emit-feedback"])
 
     assert result.exit_code == 0
-    assert calls
-    kwargs = cast(dict[str, Any], calls[0]["kwargs"])
-    assert kwargs["session_id"] == "session-123"
-    assert kwargs["severity"] == "medium"
+    assert not calls
+    assert "No feedback emitted" in result.output
 
 
 @pytest.mark.parametrize("success_rate", [0.0, 30.0])
-def test_cost_emit_feedback_flags_failing_request_hotspot(monkeypatch: pytest.MonkeyPatch, success_rate: float) -> None:
+def test_cost_emit_feedback_does_not_equate_http_failure_with_task_failure(monkeypatch: pytest.MonkeyPatch, success_rate: float) -> None:
     calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(
         "cli.commands.tools._fetch_cost_metrics",
-        lambda hours, limit, task: {
+        lambda hours, limit, task, session: {
             "window_hours": hours,
             "feedback_session_id": "session-456",
             "manifest_costs": [],
@@ -480,18 +521,15 @@ def test_cost_emit_feedback_flags_failing_request_hotspot(monkeypatch: pytest.Mo
     result = runner.invoke(app, ["cost", "--emit-feedback"])
 
     assert result.exit_code == 0
-    assert calls
-    kwargs = cast(dict[str, Any], calls[0]["kwargs"])
-    assert kwargs["session_id"] == "session-456"
-    assert kwargs["severity"] == "high"
+    assert not calls
 
 
-def test_cost_emit_feedback_flags_excessive_output_hotspot(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cost_emit_feedback_does_not_treat_aggregate_output_as_waste(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(
         "cli.commands.tools._fetch_cost_metrics",
-        lambda hours, limit, task: {
+        lambda hours, limit, task, session: {
             "window_hours": hours,
             "feedback_session_id": "session-789",
             "manifest_costs": [],
@@ -514,7 +552,4 @@ def test_cost_emit_feedback_flags_excessive_output_hotspot(monkeypatch: pytest.M
     result = runner.invoke(app, ["cost", "--emit-feedback"])
 
     assert result.exit_code == 0
-    assert calls
-    kwargs = cast(dict[str, Any], calls[0]["kwargs"])
-    assert kwargs["session_id"] == "session-789"
-    assert kwargs["severity"] == "medium"
+    assert not calls

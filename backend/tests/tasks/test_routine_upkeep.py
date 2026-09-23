@@ -310,7 +310,7 @@ def test_create_feedback_task_links_agent_hub_item(mocker) -> None:
     link_feedback.assert_called_once_with("fb-123", "task-feedback")
 
 
-def test_create_feedback_task_prioritizes_tool_governance(mocker) -> None:
+def test_create_feedback_task_does_not_restore_retired_governance_workflow(mocker) -> None:
     from app.tasks.autonomous import upkeep
 
     feedback = {
@@ -338,14 +338,11 @@ def test_create_feedback_task_prioritizes_tool_governance(mocker) -> None:
     created = upkeep._create_feedback_tasks("summitflow", limit=2)
 
     assert created == ["task-feedback"]
-    assert create_task.call_args.kwargs["priority"] == 1
+    assert create_task.call_args.kwargs["priority"] == 2
     context = create_spirit.call_args.kwargs["context"]
-    assert context["upkeep"]["tool_governance"] is True
-    assert "backend/cli/commands/tools.py" in context["files_to_modify"]
-    assert create_subtask.call_args.kwargs["description"] == "Resolve tool-governance feedback item fb-governance"
-    steps = create_subtask.call_args.kwargs["steps"]
-    assert steps[0]["description"].startswith("Verify the current governance signal")
-    assert steps[2]["spec"]["verify_commands"] == ["st check --quick --changed-only"]
+    assert "tool_governance" not in context["upkeep"]
+    assert "files_to_modify" not in context
+    assert create_subtask.call_args.kwargs["description"] == "Resolve feedback item fb-governance"
 
 
 def test_create_feedback_task_replaces_stale_linked_task(mocker) -> None:

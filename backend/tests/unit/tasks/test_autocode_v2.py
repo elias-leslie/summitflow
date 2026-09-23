@@ -404,104 +404,12 @@ class TestAgentRouting:
         assert result == DEFAULT_AGENT
 
 # =============================================================================
-# T8: Memory write points
+# T8: Cited memory feedback
 # =============================================================================
 
 
 class TestMemoryWrites:
-    """Tests for memory_writes.py functions."""
-
-    @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
-    def test_save_subtask_learning_clean_pass_skips(self, mock_client: MagicMock) -> None:
-        """Clean pass (first attempt) should NOT save learning."""
-        from app.tasks.autonomous.exec_modules.memory_writes import (
-            save_subtask_learning,
-        )
-
-        save_subtask_learning(
-            task_id="task-1",
-            subtask_short_id="1.1",
-            subtask_type="backend",
-            project_id="test-project",
-            passed=True,
-            self_fix_attempts=0,
-            supervisor_guided_attempts=0,
-            step_results=[],
-        )
-
-        mock_client.return_value.save_learning.assert_not_called()
-
-    @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
-    def test_save_subtask_learning_passed_with_retries(self, mock_client: MagicMock) -> None:
-        """Passed subtask that required retries → save learning with issues."""
-        from app.tasks.autonomous.exec_modules.memory_writes import (
-            save_subtask_learning,
-        )
-
-        save_subtask_learning(
-            task_id="task-1",
-            subtask_short_id="1.1",
-            subtask_type="backend",
-            project_id="test-project",
-            passed=True,
-            self_fix_attempts=2,
-            supervisor_guided_attempts=1,
-            step_results=[
-                {"step_number": 1, "status": "failed", "reason": "missing import"},
-                {"step_number": 2, "status": "passed"},
-            ],
-        )
-
-        mock_client.return_value.save_learning.assert_called_once()
-        call_kwargs = mock_client.return_value.save_learning.call_args
-        content = call_kwargs[1].get("content") or call_kwargs[0][0]
-        assert "1.1" in content
-        assert "reference" in str(call_kwargs)
-
-    @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
-    def test_save_subtask_learning_failed(self, mock_client: MagicMock) -> None:
-        """Failed subtask → save learning with failure info."""
-        from app.tasks.autonomous.exec_modules.memory_writes import (
-            save_subtask_learning,
-        )
-
-        save_subtask_learning(
-            task_id="task-1",
-            subtask_short_id="1.1",
-            subtask_type="backend",
-            project_id="test-project",
-            passed=False,
-            self_fix_attempts=3,
-            supervisor_guided_attempts=3,
-            step_results=[
-                {"step_number": 1, "status": "failed", "reason": "compilation error"},
-            ],
-        )
-
-        mock_client.return_value.save_learning.assert_called_once()
-        call_kwargs = mock_client.return_value.save_learning.call_args
-        content = call_kwargs[1].get("content") or call_kwargs[0][0]
-        assert "FAILED" in content
-
-    @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
-    def test_save_qa_fix_pattern(self, mock_client: MagicMock) -> None:
-        """QA fix pattern → save learning with correct content."""
-        from app.tasks.autonomous.exec_modules.memory_writes import (
-            save_qa_fix_pattern,
-        )
-
-        save_qa_fix_pattern(
-            task_id="task-1",
-            project_id="test-project",
-            concern="Missing error handling",
-            fix_iteration=2,
-        )
-
-        mock_client.return_value.save_learning.assert_called_once()
-        call_kwargs = mock_client.return_value.save_learning.call_args
-        content = call_kwargs[1].get("content") or call_kwargs[0][0]
-        assert "QA fix pattern" in content
-        assert "Missing error handling" in content
+    """Tests for cited memory feedback."""
 
     @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
     def test_rate_cited_memories(self, mock_client: MagicMock) -> None:
@@ -533,27 +441,6 @@ class TestMemoryWrites:
         rate_cited_memories(uuids)
 
         assert mock_client.return_value.rate_episode.call_count == 10
-
-    @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
-    def test_save_subtask_learning_handles_exception(self, mock_client: MagicMock) -> None:
-        """Exception in save_learning should NOT propagate."""
-        from app.tasks.autonomous.exec_modules.memory_writes import (
-            save_subtask_learning,
-        )
-
-        mock_client.return_value.save_learning.side_effect = Exception("API error")
-
-        # Should not raise
-        save_subtask_learning(
-            task_id="task-1",
-            subtask_short_id="1.1",
-            subtask_type="backend",
-            project_id="test-project",
-            passed=False,
-            self_fix_attempts=1,
-            supervisor_guided_attempts=0,
-            step_results=[{"step_number": 1, "status": "failed", "reason": "err"}],
-        )
 
     @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
     def test_rate_cited_memories_handles_exception(self, mock_client: MagicMock) -> None:

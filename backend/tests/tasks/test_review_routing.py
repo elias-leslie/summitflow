@@ -269,12 +269,34 @@ class TestRunQALoop:
         client.complete.side_effect = responses
         return client
 
-    @patch("app.tasks.autonomous.review_modules.actions.save_qa_fix_pattern")
+    @patch("app.tasks.autonomous.exec_modules.memory_writes.get_sync_client")
+    @patch("app.tasks.autonomous.review_modules.actions.log_task_event")
+    @patch("app.tasks.autonomous.review_modules.actions.get_sync_client")
+    def test_approved_fix_records_concern_without_saving_learning(
+        self, mock_get_client: MagicMock, mock_log: MagicMock,
+        mock_memory_client: MagicMock, tmp_path: Any,
+    ) -> None:
+        client = self._mock_client(['{"verdict": "APPROVED", "concerns": []}'])
+        mock_get_client.return_value = client
+
+        result = run_qa_loop(
+            "task-1", "test-project",
+            {"concerns": ["missing type hints"], "recommendation": "Add types"},
+            str(tmp_path),
+        )
+
+        assert result == "APPROVED"
+        assert any(
+            "missing type hints" in call.args[1] and "iteration 1" in call.args[1]
+            for call in mock_log.call_args_list
+        )
+        mock_memory_client.assert_not_called()
+        client.save_learning.assert_not_called()
+
     @patch("app.tasks.autonomous.review_modules.actions.log_task_event")
     @patch("app.tasks.autonomous.review_modules.actions.get_sync_client")
     def test_approved_on_first_iteration(
-        self, mock_get_client: MagicMock, mock_log: MagicMock,
-        mock_save: MagicMock, tmp_path: Any,
+        self, mock_get_client: MagicMock, mock_log: MagicMock, tmp_path: Any,
     ) -> None:
         client = self._mock_client(['{"verdict": "APPROVED", "concerns": []}'])
         mock_get_client.return_value = client
@@ -288,7 +310,6 @@ class TestRunQALoop:
         assert result == "APPROVED"
         assert client.complete.call_count == 2  # debugger + reviewer
         assert "max_turns" not in client.complete.call_args_list[0].kwargs
-        mock_save.assert_called_once()
 
     @patch("app.tasks.autonomous.review_modules.actions._run_reviewer")
     @patch("app.tasks.autonomous.review_modules.actions._get_diff_text", return_value="diff")
@@ -314,12 +335,10 @@ class TestRunQALoop:
         )
         mock_diff_text.assert_called_once_with(str(tmp_path))
 
-    @patch("app.tasks.autonomous.review_modules.actions.save_qa_fix_pattern")
     @patch("app.tasks.autonomous.review_modules.actions.log_task_event")
     @patch("app.tasks.autonomous.review_modules.actions.get_sync_client")
     def test_approved_after_multiple_iterations(
-        self, mock_get_client: MagicMock, mock_log: MagicMock,
-        mock_save: MagicMock, tmp_path: Any,
+        self, mock_get_client: MagicMock, mock_log: MagicMock, tmp_path: Any,
     ) -> None:
         client = self._mock_client([
             '{"verdict": "NEEDS_FIX", "concerns": ["still broken"], "recommendation": "try again"}',

@@ -242,7 +242,7 @@ def test_manifest_command_emits_json_with_version() -> None:
 
 
 def test_manifest_command_orders_root_task_surfaces_deterministically() -> None:
-    result = runner.invoke(tools_app, ["manifest", "--format", "json"])
+    result = runner.invoke(tools_app, ["manifest", "--density", "full", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     surfaces = [tool["surface"] for tool in json.loads(result.output)["tools"]]
@@ -286,8 +286,8 @@ def test_manifest_command_filter_excludes_task_specific_surfaces() -> None:
 
 
 def test_manifest_command_core_density_is_compact_and_drillable() -> None:
-    full = runner.invoke(tools_app, ["manifest", "--format", "json"])
-    core = runner.invoke(tools_app, ["manifest", "--density", "core", "--format", "json"])
+    full = runner.invoke(tools_app, ["manifest", "--density", "full", "--format", "json"])
+    core = runner.invoke(tools_app, ["manifest", "--format", "json"])
 
     assert full.exit_code == 0, full.output
     assert core.exit_code == 0, core.output
@@ -300,6 +300,42 @@ def test_manifest_command_core_density_is_compact_and_drillable() -> None:
     assert "st.create" in full_surfaces
     assert "st.create" not in core_surfaces
     assert len(core_surfaces) < len(full_surfaces)
+
+
+def test_manifest_default_is_compact_but_explicit_task_and_full_are_available() -> None:
+    default = runner.invoke(tools_app, ["manifest", "--format", "json"])
+    task = runner.invoke(tools_app, ["manifest", "--task", "frontend", "--format", "json"])
+    full = runner.invoke(tools_app, ["manifest", "--density", "full", "--format", "json"])
+
+    assert default.exit_code == task.exit_code == full.exit_code == 0
+    assert json.loads(default.output)["density"] == "core"
+    assert json.loads(task.output)["density"] == "task"
+    assert json.loads(full.output)["density"] == "full"
+    assert len(json.loads(default.output)["tools"]) < len(json.loads(full.output)["tools"])
+    assert "st.browser" in {spec["surface"] for spec in json.loads(task.output)["tools"]}
+
+
+def test_manifest_unknown_surface_suggests_nearest_and_full_catalogue() -> None:
+    result = runner.invoke(tools_app, ["manifest", "--surface", "st.service.rebulid"])
+
+    assert result.exit_code == 1
+    assert "st.service.rebuild" in result.output
+    assert "st tools manifest --density full" in result.output
+
+
+def test_manifest_unique_short_surface_avoids_discovery_retry() -> None:
+    result = runner.invoke(tools_app, ["manifest", "--surface", "browser", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert [row["surface"] for row in json.loads(result.output)["tools"]] == ["st.browser"]
+
+
+def test_manifest_ambiguous_short_surface_lists_choices() -> None:
+    result = runner.invoke(tools_app, ["manifest", "--surface", "status"])
+
+    assert result.exit_code == 1
+    assert "Ambiguous --surface 'status'" in result.output
+    assert "st.tools.status" in result.output
 
 
 def test_manifest_command_task_density_keeps_matching_surfaces() -> None:

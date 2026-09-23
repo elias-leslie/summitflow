@@ -9,7 +9,6 @@ from typing import Any, cast
 from ....logging_config import get_logger
 from ....services.agent_hub_client import get_sync_client
 from ....storage import log_task_event
-from ..exec_modules.memory_writes import save_qa_fix_pattern
 from ..verification_helpers import get_diff_range
 from .parsing import parse_review_response
 
@@ -158,7 +157,10 @@ def run_qa_loop(
             return "ESCALATE"
         if verdict == "APPROVED":
             for concern in concerns:
-                save_qa_fix_pattern(task_id, project_id, concern, iteration)
+                log_task_event(
+                    task_id,
+                    f"QA Loop iteration {iteration}: resolved concern: {concern[:120]}",
+                )
             return "APPROVED"
         if verdict == "ESCALATE":
             return "ESCALATE"

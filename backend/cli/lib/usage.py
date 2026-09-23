@@ -90,7 +90,7 @@ def _detail_spec(deferred_workflows: Iterable[str] = ()) -> UsageSpec:
     return UsageSpec(
         surface="st.details",
         cmd="st tools manifest --surface <surface>",
-        when="before using an omitted surface or starting an on-demand workflow, load its full canonical guidance and follow its precautions; use unfiltered st tools manifest to discover surfaces",
+        when="before using an omitted surface or starting an on-demand workflow, load its canonical guidance and precautions with --surface; use compact st tools manifest to discover common surfaces, or --density full for the complete catalogue",
         why="On-demand workflows: " + "; ".join(workflows) if workflows else "",
         tier="mandate",
     )

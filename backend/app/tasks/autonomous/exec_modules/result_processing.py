@@ -8,7 +8,6 @@ from ....core.debug import debug_error, debug_success
 from ....logging_config import get_logger
 from ....storage.subtasks import get_subtask, update_subtask_passes
 from .events import emit_log
-from .memory_writes import save_subtask_learning
 from .session import extract_handoff_summary
 from .step_issue import compute_issue_id
 
@@ -84,11 +83,8 @@ def _handle_failed_result(
     )
 
 
-def _save_learning_and_build_result(
-    task_id: str,
+def _build_result(
     subtask_short_id: str,
-    subtask_type: str | None,
-    project_id: str,
     all_passed: bool,
     step_results: list[dict[str, Any]],
     issue_counts: dict[str, int],
@@ -96,17 +92,7 @@ def _save_learning_and_build_result(
     supervisor_guided_attempts: int,
     extensions_granted: int,
 ) -> dict[str, Any]:
-    """Save subtask learning and build the final result dictionary."""
-    save_subtask_learning(
-        task_id,
-        subtask_short_id,
-        subtask_type,
-        project_id,
-        all_passed,
-        self_fix_attempts,
-        supervisor_guided_attempts,
-        step_results,
-    )
+    """Build the final result with task-local verification evidence."""
     return {
         "subtask_id": subtask_short_id,
         "status": "passed" if all_passed else "failed",
@@ -151,8 +137,8 @@ def process_final_result(
             duration, total_attempts, self_fix_attempts,
             supervisor_guided_attempts, issue_counts,
         )
-    return _save_learning_and_build_result(
-        task_id, subtask_short_id, subtask_type, project_id,
+    return _build_result(
+        subtask_short_id,
         all_passed, step_results, issue_counts,
         self_fix_attempts, supervisor_guided_attempts, extensions_granted,
     )

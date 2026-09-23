@@ -6,8 +6,12 @@ Focused regression coverage for the bugs caught by the lease-hook wargame.
 from __future__ import annotations
 
 import pytest
+from typer.testing import CliRunner
 
+from cli.commands import lease as lease_command
 from cli.lib import leases
+
+runner = CliRunner()
 
 
 @pytest.fixture
@@ -123,3 +127,70 @@ def test_check_returns_ok_for_unmanaged_path(isolated_store, monkeypatch):
     )
     assert ok
     assert holder is None
+
+
+def test_cli_relative_check_blocks_other_agent(isolated_store, monkeypatch):
+    root = str(isolated_store / "example")
+    monkeypatch.setattr(lease_command, "_resolve_project", lambda: ("example", root))
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
+    leases.acquire("example", ["docs/README.md"], project_root=root)
+
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "bob")
+    result = runner.invoke(lease_command.app, ["lease", "--check", "docs/README.md"])
+    assert result.exit_code == 2
+    assert "BLOCKED" in result.output
+
+
+def test_check_rejects_foreign_overlap_even_when_own_lease_matches(
+    isolated_store, monkeypatch
+):
+    root = str(isolated_store / "example")
+    path = f"{root}/docs/README.md"
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
+    leases.acquire("example", ["docs/README.md"], project_root=root)
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "bob")
+    leases.acquire("example", ["docs/**"], project_root=root)
+
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
+    ok, holder = leases.check("example", path)
+    assert not ok
+    assert holder is not None
+    assert holder.agent_id == "cc:bob"
+
+
+def test_lease_check_does_not_block_other_projects(isolated_store, monkeypatch):
+    root = str(isolated_store / "example")
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
+    leases.acquire("example", ["docs/README.md"], project_root=root)
+
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "bob")
+    assert leases.check("another-project", f"{root}/docs/README.md") == (True, None)
+
+
+def test_relative_take_and_release_use_project_root(isolated_store, monkeypatch):
+    root = str(isolated_store / "example")
+    monkeypatch.setattr(lease_command, "_resolve_project", lambda: ("example", root))
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
+    leases.acquire("example", ["docs/README.md"], project_root=root)
+
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "bob")
+    taken = runner.invoke(lease_command.app, ["lease", "--take", "docs/README.md"])
+    assert taken.exit_code == 0
+    assert [(lease.agent_id, lease.globs) for lease in leases.list_active("example")] == [
+        ("cc:bob", [f"{root}/docs/README.md"])
+    ]
+
+    released = runner.invoke(lease_command.app, ["lease", "--release", "docs/README.md"])
+    assert released.exit_code == 0
+    assert leases.list_active("example") == []
+
+
+def test_relative_wait_observes_foreign_lease(isolated_store, monkeypatch):
+    root = str(isolated_store / "example")
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
+    leases.acquire("example", ["docs/README.md"], project_root=root)
+
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "bob")
+    assert not leases.wait(
+        "example", "docs/README.md", timeout=0.01, poll=0.02, project_root=root
+    )

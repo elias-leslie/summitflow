@@ -128,6 +128,13 @@ def _purge_stale(leases: list[Lease]) -> list[Lease]:
     return [lease for lease in leases if not lease.is_stale()]
 
 
+def _project_path(path: str, project_root: str | None) -> str:
+    """Use the project checkout for relative lease paths, independent of cwd."""
+    if project_root and not Path(path).is_absolute():
+        path = str(Path(project_root) / path)
+    return os.path.normpath(path)
+
+
 def acquire(
     project_id: str,
     globs: list[str],
@@ -142,9 +149,7 @@ def acquire(
     Lease.matches() (which compares against absolute paths from the hook)
     works regardless of which cwd the caller used.
     """
-    if project_root:
-        root_path = Path(project_root)
-        globs = [g if Path(g).is_absolute() else str(root_path / g) for g in globs]
+    globs = [_project_path(g, project_root) for g in globs]
     agent_id, slug, sid, provider = identify_agent()
     now = datetime.now(UTC).isoformat()
     with _lock(project_id):
@@ -180,24 +185,29 @@ def list_active(project_id: str) -> list[Lease]:
         return leases
 
 
-def check(project_id: str, path: str) -> tuple[bool, Lease | None]:
+def check(
+    project_id: str, path: str, project_root: str | None = None
+) -> tuple[bool, Lease | None]:
     """Return (ok_to_edit, conflicting_lease).
 
-    ok_to_edit=False only when ANOTHER agent's lease matches the path. Same
-    agent's lease is always OK (heartbeat extended as a side effect).
+    ok_to_edit=False when another agent's lease matches the path, even if the
+    current agent also has a matching lease. An uncontested own lease extends
+    its heartbeat as a side effect.
     """
+    path = _project_path(path, project_root)
     agent_id, _, _, _ = identify_agent()
     now = datetime.now(UTC).isoformat()
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
-        for lease in leases:
-            if lease.matches(path):
-                if lease.agent_id == agent_id:
-                    lease.last_heartbeat = now
-                    _save(project_id, leases)
-                    return True, lease
+        matching = [lease for lease in leases if lease.matches(path)]
+        for lease in matching:
+            if lease.agent_id != agent_id:
                 _save(project_id, leases)
                 return False, lease
+        if matching:
+            matching[0].last_heartbeat = now
+            _save(project_id, leases)
+            return True, matching[0]
         _save(project_id, leases)
         return True, None
 
@@ -217,8 +227,10 @@ def heartbeat(project_id: str) -> int:
         return touched
 
 
-def release(project_id: str, glob: str | None = None) -> int:
+def release(project_id: str, glob: str | None = None, project_root: str | None = None) -> int:
     """Release current agent's leases. Glob None → release all. Returns count released."""
+    if glob is not None:
+        glob = _project_path(glob, project_root)
     agent_id, _, _, _ = identify_agent()
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
@@ -252,8 +264,9 @@ def release_task(project_id: str, task_id: str) -> int:
         return before - len(leases)
 
 
-def take(project_id: str, path: str) -> Lease:
+def take(project_id: str, path: str, project_root: str | None = None) -> Lease:
     """Forcibly claim a path. Drops other agents' matching leases, logs takeover, then acquires."""
+    path = _project_path(path, project_root)
     agent_id, _, _, _ = identify_agent()
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
@@ -274,11 +287,17 @@ def take(project_id: str, path: str) -> Lease:
     return new_lease
 
 
-def wait(project_id: str, path: str, timeout: float = 1800.0, poll: float = 2.0) -> bool:
+def wait(
+    project_id: str,
+    path: str,
+    timeout: float = 1800.0,
+    poll: float = 2.0,
+    project_root: str | None = None,
+) -> bool:
     """Block until path is free for the current agent. Returns True if freed, False on timeout."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        ok, _ = check(project_id, path)
+        ok, _ = check(project_id, path, project_root=project_root)
         if ok:
             return True
         time.sleep(poll)

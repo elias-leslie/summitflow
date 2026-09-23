@@ -402,28 +402,6 @@ async def task_generation_wf(input: ProjectInput, ctx: Context) -> dict[str, Any
 
 
 @hatchet.task(
-    name="summitflow-tool-governance",
-    input_validator=EmptyInput,
-    execution_timeout="300s",
-    retries=2,
-    backoff_factor=2.0,
-    on_crons=["40 16 * * *"],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-tool-governance'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
-)
-async def tool_governance_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.tool_governance import run_tool_governance_scan
-
-    if not _system_schedule_enabled("tool_governance"):
-        return _disabled_schedule_result("tool_governance")
-
-    return await asyncio.to_thread(run_tool_governance_scan)
-
-
-@hatchet.task(
     name="summitflow-self-healing",
     input_validator=SelfHealingInput,
     execution_timeout="900s",

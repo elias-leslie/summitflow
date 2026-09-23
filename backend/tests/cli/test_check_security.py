@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 from unittest.mock import Mock
@@ -85,6 +86,47 @@ def test_semgrep_uses_only_local_rules_without_metrics_or_version_network(
     assert command[:4] == ["semgrep", "scan", "--config", str(tmp_path / ".semgrep.yml")]
     assert command[4:6] == ["--metrics", "off"]
     assert "--disable-version-check" in command
+
+
+@pytest.mark.skipif(shutil.which("semgrep") is None, reason="Semgrep is not installed")
+def test_local_shell_rule_detects_execution_without_flagging_argv_or_guard(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rules = Path(__file__).resolve().parents[3] / ".semgrep.yml"
+    shutil.copyfile(rules, tmp_path / ".semgrep.yml")
+    source = tmp_path / "src" / "processes.py"
+    source.parent.mkdir()
+    source.write_text(
+        "import asyncio\n"
+        "import subprocess\n"
+        "subprocess.run(['git', 'status'], shell=False)\n"
+        "subprocess.run(['git', 'status'])\n"
+        "asyncio.create_subprocess_exec('git', 'status')\n",
+        encoding="utf-8",
+    )
+    assert check_security.run_local_security_check(
+        "semgrep", tmp_path, ["src/processes.py"], True, []
+    ) == 0
+
+    source.write_text(
+        "import asyncio\n"
+        "import subprocess\n"
+        "subprocess.run(command, shell=True)\n"
+        "subprocess.Popen(command, shell=True)\n"
+        "asyncio.create_subprocess_shell(command)\n",
+        encoding="utf-8",
+    )
+    assert check_security.run_local_security_check(
+        "semgrep", tmp_path, ["src/processes.py"], True, []
+    ) == 1
+    output = capsys.readouterr().out
+    assert "SEMGREP:FAIL:1" in output
+    details = list((tmp_path / ".dev-tools").glob("security-semgrep-*-details.txt"))
+    assert details
+    assert any(
+        "summitflow-python-shell-execution" in path.read_text(encoding="utf-8")
+        for path in details
+    )
 
 
 def test_osv_scans_only_candidate_lockfiles(

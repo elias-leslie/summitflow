@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 from typer.testing import CliRunner
 
-from cli.lib import jj
+from cli.lib import jj, leases
 from cli.lib.commit_workflow import CommitError, commit_repo
 from cli.main import app
 
@@ -39,6 +39,75 @@ def test_scoped_git_commit_preserves_unrelated_staged_work(tmp_path: Path, monke
     assert calls == [{"paths": ["docs/note.md"], "full": False}]
     assert git("show", "--format=", "--name-only", "HEAD").strip() == "docs/note.md"
     assert git("diff", "--cached", "--name-only").strip() == "unrelated.py"
+
+
+def test_commit_blocks_foreign_lease_on_changed_file(tmp_path: Path, monkeypatch) -> None:
+    from cli.lib import commit_workflow
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, text=True, capture_output=True, check=True
+        ).stdout.strip()
+
+    git("init", "-q")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    (tmp_path / "shared.py").write_text("before\n")
+    git("add", ".")
+    git("commit", "-qm", "baseline")
+    baseline = git("rev-parse", "HEAD")
+    (tmp_path / "shared.py").write_text("after\n")
+
+    monkeypatch.setattr(leases, "LEASES_DIR", tmp_path / "leases")
+    monkeypatch.setattr(
+        "cli.lib.execution_context.resolve_checkout_project_id", lambda _repo: "example"
+    )
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
+    leases.acquire("example", ["shared.py"], project_root=str(tmp_path))
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "bob")
+
+    with pytest.raises(CommitError, match="leased by another agent"):
+        commit_workflow.commit_repo(
+            tmp_path, message="overwrite shared", skip_checks=True
+        )
+    assert git("rev-parse", "HEAD") == baseline
+
+
+def test_scoped_commit_ignores_foreign_lease_outside_selection(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from cli.lib import commit_workflow
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, text=True, capture_output=True, check=True
+        ).stdout.strip()
+
+    git("init", "-q")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    (tmp_path / "mine.py").write_text("before\n")
+    (tmp_path / "shared.py").write_text("before\n")
+    git("add", ".")
+    git("commit", "-qm", "baseline")
+    (tmp_path / "mine.py").write_text("after\n")
+    (tmp_path / "shared.py").write_text("other agent work\n")
+
+    monkeypatch.setattr(leases, "LEASES_DIR", tmp_path / "leases")
+    monkeypatch.setattr(
+        "cli.lib.execution_context.resolve_checkout_project_id", lambda _repo: "example"
+    )
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
+    leases.acquire("example", ["shared.py"], project_root=str(tmp_path))
+    leases.acquire("another-project", ["mine.py"], project_root=str(tmp_path))
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "bob")
+
+    result = commit_workflow.commit_git_revision(
+        tmp_path, message="mine", paths=("mine.py",), skip_checks=True
+    )
+    assert result["status"] == "SUCCESS"
+    assert git("show", "--format=", "--name-only", "HEAD") == "mine.py"
+    assert git("status", "--porcelain", "--", "shared.py")
 
 
 @patch("cli.main.log_task_event")
@@ -262,6 +331,7 @@ def test_commit_repo_skips_gitignored_paths_in_add_step(tmp_path: Path) -> None:
         patch.object(commit_workflow, "publish_git", return_value={"status": "SUCCESS", "pushed": True, "publication_complete": True}),
         patch.object(commit_workflow, "repo_lock", return_value=nullcontext()),
         patch.object(commit_workflow, "workspace_fingerprint", return_value="stable"),
+        patch.object(commit_workflow, "_require_foreign_leases_clear"),
         patch.object(
             commit_workflow.subprocess,
             "run",
@@ -305,6 +375,7 @@ def test_commit_repo_skips_gitignored_paths_in_add_step(tmp_path: Path) -> None:
         patch.object(commit_workflow, "publish_git", return_value={"status": "SUCCESS", "pushed": True, "publication_complete": True}),
         patch.object(commit_workflow, "repo_lock", return_value=nullcontext()),
         patch.object(commit_workflow, "workspace_fingerprint", return_value="stable"),
+        patch.object(commit_workflow, "_require_foreign_leases_clear"),
         patch.object(
             commit_workflow.subprocess,
             "run",

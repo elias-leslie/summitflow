@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from . import leases
 from .acceptance import AcceptanceError, repo_lock, workspace_fingerprint
 from .jj import JJError, commit_current_revision
 from .jj import run_checks as run_jj_checks
@@ -151,6 +152,26 @@ def _selected_changed_files(repo: Path, paths: Sequence[str]) -> list[str]:
     return sorted(files) or list(paths)
 
 
+def _require_foreign_leases_clear(repo: Path, changed_paths: Sequence[str]) -> None:
+    """Keep a Git checkpoint from absorbing another agent's leased work."""
+    if not changed_paths:
+        return
+    from .execution_context import resolve_checkout_project_id
+
+    project_id = resolve_checkout_project_id(repo)
+    if not project_id:
+        return
+    for path in changed_paths:
+        ok, holder = leases.check(
+            project_id, path, project_root=str(repo.resolve())
+        )
+        if not ok and holder is not None:
+            raise CommitError(
+                f"cannot commit {path}: leased by another agent {holder.agent_id} "
+                f"(task={holder.task_id or '--'}); coordinate or select only your own paths"
+            )
+
+
 def _addable_paths(repo: Path, paths: Sequence[str]) -> list[str]:
     """Drop paths that git refuses to `add` (currently gitignored).
 
@@ -228,6 +249,7 @@ def commit_git_revision(
         return {**result, "reason": "no_changes_in_selected_paths" if selected_paths else "clean"}
     selected_files = _selected_changed_files(repo, selected_paths) if selected_paths and has_changes else []
     changed_scope = (selected_files if selected_paths else _selected_changed_files(repo, ["."])) if has_changes else []
+    _require_foreign_leases_clear(repo, changed_scope)
     scope = sorted(set([*changed_scope, *(outgoing_paths(repo) if push else [])]))
     if not skip_checks and (has_changes or scope):
         before_checks = workspace_fingerprint(repo)

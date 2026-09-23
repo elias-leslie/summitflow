@@ -61,10 +61,6 @@ _RAW_QUALITY_RE = (
     r"(pytest|python[0-9.]*\s+-m\s+pytest|ruff|mypy|ty|npx\s+biome|biome|"
     r"npx\s+tsc|tsc|vitest|pnpm\s+(exec\s+)?vitest)\b"
 )
-_RAW_VCS_RE = (
-    r"(^|&&\s*|;\s*)(git|jj)\s+"
-    r"(status|diff|show|log|commit|checkout|reset|push|pull|rebase|merge|branch)\b"
-)
 _RAW_DB_RE = r"(^|&&\s*|;\s*)(psql|pgcli)\b"
 _RAW_SERVICE_RE = (
     r"(^|&&\s*|;\s*)"
@@ -78,13 +74,6 @@ _RAW_AUDIT_RULES = (
         "component": "sf.quality",
         "severity": "high",
         "pattern": _RAW_QUALITY_RE,
-    },
-    {
-        "finding_type": "raw_vcs_tool_bypass",
-        "expected_surface": "st.vcs/st.commit",
-        "component": "sf.worktree",
-        "severity": "medium",
-        "pattern": _RAW_VCS_RE,
     },
     {
         "finding_type": "raw_db_tool_bypass",
@@ -150,7 +139,7 @@ def _api_request(path: str, params: dict[str, Any] | None = None) -> dict[str, A
         raise typer.Exit(1) from None
 
 
-def _format_status_compact(data: dict[str, Any]) -> None:
+def _format_status_compact(data: dict[str, Any], *, hours: int = 24) -> None:
     """Format tool status in TOON style."""
     summary = data.get("summary", {})
     by_endpoint = data.get("by_endpoint", [])
@@ -161,32 +150,32 @@ def _format_status_compact(data: dict[str, Any]) -> None:
     success_rate = summary.get("success_rate", 100.0)
     avg_latency = summary.get("avg_latency_ms", 0)
 
-    print(f"TOOLS[24h]:requests={total} success={success_rate:.1f}% latency={avg_latency:.0f}ms")
+    print(f"TOOLS[{hours}h]:http_requests={total} http_success={success_rate:.1f}% latency={avg_latency:.0f}ms")
 
     if by_tool_type:
         parts = [f"{t['tool_type']}={t['count']}" for t in by_tool_type]
         print(f"  By type: {' '.join(parts)}")
 
     if by_tool_name:
-        print("  Top tools:")
+        print("  Top tools (HTTP outcome):")
         for tool in by_tool_name[:5]:
             name = str(tool.get("tool_name") or "?")[:40]
             count = tool.get("count", 0)
             rate = tool.get("success_rate", 100.0)
             latency = tool.get("avg_latency_ms", 0)
-            print(f"    {name}  {count} reqs  {rate:.1f}%  {latency:.0f}ms")
+            print(f"    {name}  {count} reqs  http_success={rate:.1f}%  {latency:.0f}ms")
 
     if by_endpoint:
-        print("  Top endpoints:")
+        print("  Top endpoints (HTTP outcome):")
         for ep in by_endpoint[:5]:
             endpoint = ep.get("endpoint", "?")[:40]
             count = ep.get("count", 0)
             rate = ep.get("success_rate", 100.0)
             latency = ep.get("avg_latency_ms", 0)
-            print(f"    {endpoint}  {count} reqs  {rate:.1f}%  {latency:.0f}ms")
+            print(f"    {endpoint}  {count} reqs  http_success={rate:.1f}%  {latency:.0f}ms")
 
 
-def _fetch_adoption_metrics(hours: int, limit: int) -> dict[str, Any]:
+def _fetch_adoption_metrics(hours: int, limit: int, session: str | None = None) -> dict[str, Any]:
     """Summarize agent shell-tool events from Agent Hub session_events."""
     import psycopg
 
@@ -197,6 +186,7 @@ def _fetch_adoption_metrics(hours: int, limit: int) -> dict[str, Any]:
             SELECT COALESCE(tool_input->>'cmd', tool_input->>'command') AS command
             FROM session_events
             WHERE created_at >= now() - (%s * interval '1 hour')
+              AND (%s::text IS NULL OR session_id = %s)
               AND tool_name IN ('Bash', 'bash', 'exec_command')
               AND COALESCE(tool_input->>'cmd', tool_input->>'command') IS NOT NULL
         )
@@ -211,6 +201,7 @@ def _fetch_adoption_metrics(hours: int, limit: int) -> dict[str, Any]:
             SELECT COALESCE(tool_input->>'cmd', tool_input->>'command') AS command
             FROM session_events
             WHERE created_at >= now() - (%s * interval '1 hour')
+              AND (%s::text IS NULL OR session_id = %s)
               AND tool_name IN ('Bash', 'bash', 'exec_command')
               AND COALESCE(tool_input->>'cmd', tool_input->>'command') IS NOT NULL
               AND COALESCE(tool_input->>'cmd', tool_input->>'command') ~ %s
@@ -232,21 +223,22 @@ def _fetch_adoption_metrics(hours: int, limit: int) -> dict[str, Any]:
     ):
         summary_row = cast(
             tuple[int, int, int] | None,
-            conn.execute(summary_sql, (hours, _ST_COMMAND_RE, _RAW_QUALITY_RE)).fetchone(),
+            conn.execute(summary_sql, (hours, session, session, _ST_COMMAND_RE, _RAW_QUALITY_RE)).fetchone(),
         )
         top_st_rows = cast(
             list[tuple[str, int]],
             conn.execute(
                 top_st_sql,
-                (hours, _ST_COMMAND_RE, _ST_SURFACE_RE, _ST_SURFACE_RE, limit),
+                (hours, session, session, _ST_COMMAND_RE, _ST_SURFACE_RE, _ST_SURFACE_RE, limit),
             ).fetchall(),
         )
         top_st = [{"surface": surface, "count": count} for surface, count in top_st_rows]
 
     shell_events, st_commands, raw_quality = summary_row or (0, 0, 0)
-    st_rate = (st_commands / shell_events * 100.0) if shell_events else 0.0
+    st_rate = (st_commands / shell_events * 100.0) if shell_events else None
     return {
         "window_hours": hours,
+        "session": session,
         "summary": {
             "shell_tool_events": shell_events,
             "st_commands": st_commands,
@@ -262,12 +254,17 @@ def _format_adoption_compact(data: dict[str, Any]) -> None:
     hours = data.get("window_hours", 24)
     shell_events = int(summary.get("shell_tool_events") or 0)
     st_commands = int(summary.get("st_commands") or 0)
-    st_rate = float(summary.get("st_command_rate") or 0.0)
+    measured_rate = summary.get("st_command_rate")
+    st_rate = f"{float(measured_rate):.1f}%" if measured_rate is not None else "unknown"
     raw_quality = int(summary.get("raw_quality_commands") or 0)
     print(
         f"TOOLS_ADOPTION[{hours}h]:shell={shell_events} "
-        f"st={st_commands} st_rate={st_rate:.1f}% raw_quality={raw_quality}"
+        f"st={st_commands} st_rate={st_rate} raw_quality={raw_quality}"
     )
+    if shell_events == 0:
+        print("  No inspectable shell commands recorded; capture completeness unknown.")
+    if data.get("session"):
+        print(f"  Session filter: {data['session']}")
     top_st = data.get("top_st_surfaces", [])
     if top_st:
         print("  Top st surfaces:")
@@ -275,7 +272,7 @@ def _format_adoption_compact(data: dict[str, Any]) -> None:
             print(f"    {item.get('surface', '?')}  {item.get('count', 0)}")
 
 
-def _audit_queries(hours: int, project: str | None, limit: int) -> tuple[sql.SQL, sql.SQL, tuple[Any, ...], tuple[Any, ...]]:
+def _audit_queries(hours: int, project: str | None, limit: int, session: str | None = None) -> tuple[sql.SQL, sql.SQL, tuple[Any, ...], tuple[Any, ...]]:
     raw_sql = sql.SQL("""
         WITH tool_cmds AS (
             SELECT
@@ -290,6 +287,7 @@ def _audit_queries(hours: int, project: str | None, limit: int) -> tuple[sql.SQL
               AND e.tool_name IN ('Bash', 'bash', 'exec_command')
               AND COALESCE(e.tool_input->>'cmd', e.tool_input->>'command') IS NOT NULL
               AND (%s::text IS NULL OR s.project_id = %s)
+              AND (%s::text IS NULL OR e.session_id = %s)
         )
         SELECT
             %s::text AS finding_type,
@@ -325,6 +323,7 @@ def _audit_queries(hours: int, project: str | None, limit: int) -> tuple[sql.SQL
             LEFT JOIN sessions s ON s.id = e.session_id
             WHERE e.created_at >= now() - (%s * interval '1 hour')
               AND (%s::text IS NULL OR s.project_id = %s)
+              AND (%s::text IS NULL OR e.session_id = %s)
             GROUP BY e.session_id
         )
         SELECT
@@ -347,18 +346,31 @@ def _audit_queries(hours: int, project: str | None, limit: int) -> tuple[sql.SQL
     return (
         raw_sql,
         missing_gate_sql,
-        (hours, project, project),
-        (_ST_CHECK_RE, hours, project, project, limit),
+        (hours, project, project, session, session),
+        (_ST_CHECK_RE, hours, project, project, session, session, limit),
     )
 
 
-def _fetch_audit_metrics(hours: int, limit: int, project: str | None = None) -> dict[str, Any]:
+def _fetch_audit_metrics(hours: int, limit: int, project: str | None = None, session: str | None = None) -> dict[str, Any]:
     """Find high-confidence tool-governance misses from Agent Hub telemetry."""
     import psycopg
 
     from .db import _db_url, _psql_project_lock
 
-    raw_sql, missing_gate_sql, raw_base_params, missing_gate_params = _audit_queries(hours, project, limit)
+    raw_sql, missing_gate_sql, raw_base_params, missing_gate_params = _audit_queries(hours, project, limit, session)
+    coverage_sql = """
+        SELECT count(*)::int,
+               count(*) FILTER (
+                   WHERE e.tool_name IN ('Bash', 'bash', 'exec_command')
+                     AND COALESCE(e.tool_input->>'cmd', e.tool_input->>'command') IS NOT NULL
+               )::int,
+               count(DISTINCT e.session_id)::int
+        FROM session_events e
+        LEFT JOIN sessions s ON s.id = e.session_id
+        WHERE e.created_at >= now() - (%s * interval '1 hour')
+          AND (%s::text IS NULL OR s.project_id = %s)
+          AND (%s::text IS NULL OR e.session_id = %s)
+    """
     findings: list[dict[str, Any]] = []
     with (
         _psql_project_lock("agent-hub"),
@@ -383,6 +395,9 @@ def _fetch_audit_metrics(hours: int, limit: int, project: str | None = None) -> 
 
         rows = conn.execute(missing_gate_sql, missing_gate_params).fetchall()
         findings.extend(_audit_rows_to_findings(rows))
+        coverage = conn.execute(
+            coverage_sql, (hours, project, project, session, session)
+        ).fetchone()
 
     severity_rank = {"high": 0, "medium": 1, "low": 2}
     findings.sort(key=lambda item: (severity_rank.get(item["severity"], 9), -item["count"]))
@@ -393,9 +408,13 @@ def _fetch_audit_metrics(hours: int, limit: int, project: str | None = None) -> 
     return {
         "window_hours": hours,
         "project": project,
+        "session": session,
         "summary": {
             "finding_groups": len(findings),
             "events": sum(item["count"] for item in findings),
+            "observed_events": int(coverage[0]) if coverage else None,
+            "inspected_shell_events": int(coverage[1]) if coverage else None,
+            "observed_sessions": int(coverage[2]) if coverage else None,
             "by_type": [{"finding_type": key, "count": count} for key, count in by_type.items()],
         },
         "findings": findings,
@@ -436,7 +455,13 @@ def _format_audit_compact(data: dict[str, Any]) -> None:
     hours = data.get("window_hours", 24)
     groups = int(summary.get("finding_groups") or 0)
     events = int(summary.get("events") or 0)
-    print(f"TOOLS_AUDIT[{hours}h]:findings={groups} events={events}")
+    inspected = summary.get("inspected_shell_events")
+    inspected_text = str(inspected) if inspected is not None else "unknown"
+    observed = summary.get("observed_events")
+    observed_text = str(observed) if observed is not None else "unknown"
+    print(f"TOOLS_AUDIT[{hours}h]:findings={groups} finding_events={events} inspected_shell={inspected_text} observed={observed_text}")
+    if inspected == 0:
+        print("  No inspectable shell commands recorded; capture completeness is unknown.")
     findings = data.get("findings", [])
     if not findings:
         print("  No high-confidence tool-governance findings.")
@@ -609,7 +634,7 @@ def _manifest_density_costs(task: str | None) -> list[dict[str, Any]]:
     return costs
 
 
-def _cost_queries(hours: int, limit: int) -> tuple[sql.SQL, sql.SQL, sql.SQL]:
+def _cost_queries(hours: int, limit: int) -> tuple[sql.SQL, sql.SQL]:
     request_sql = sql.SQL("""
         SELECT
             COALESCE(tool_name, endpoint, 'unknown') AS tool_name,
@@ -627,6 +652,7 @@ def _cost_queries(hours: int, limit: int) -> tuple[sql.SQL, sql.SQL, sql.SQL]:
             count(tokens_out)::int AS tokens_out_samples
         FROM request_logs
         WHERE created_at >= now() - (%s * interval '1 hour')
+          AND (%s::text IS NULL OR session_id = %s)
         GROUP BY 1, 2
         ORDER BY (COALESCE(sum(tokens_in), 0) + COALESCE(sum(tokens_out), 0)) DESC,
                  count(*) DESC,
@@ -648,33 +674,25 @@ def _cost_queries(hours: int, limit: int) -> tuple[sql.SQL, sql.SQL, sql.SQL]:
                 COALESCE(NULLIF(tool_output::text, 'null'), content) AS output_text
             FROM session_events
             WHERE created_at >= now() - (%s * interval '1 hour')
+              AND (%s::text IS NULL OR session_id = %s)
               AND tool_name IS NOT NULL
         ) AS measured_outputs
         GROUP BY 1
         ORDER BY output_chars DESC NULLS LAST, events DESC, tool_name
         LIMIT %s;
     """)
-    session_sql = sql.SQL("""
-        SELECT session_id
-        FROM session_events
-        WHERE created_at >= now() - (%s * interval '1 hour')
-          AND session_id IS NOT NULL
-        ORDER BY created_at DESC
-        LIMIT 1;
-    """)
-    return request_sql, output_sql, session_sql
+    return request_sql, output_sql
 
 
-def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_TASK) -> dict[str, Any]:
+def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_TASK, session: str | None = None) -> dict[str, Any]:
     """Summarize context and persisted tool/request token cost hotspots."""
     import psycopg
 
     from .db import _db_url, _psql_project_lock
 
-    request_sql, output_sql, session_sql = _cost_queries(hours, limit)
+    request_sql, output_sql = _cost_queries(hours, limit)
     request_rows: list[tuple[Any, ...]]
     output_rows: list[tuple[Any, ...]]
-    feedback_session_id: str | None
     with (
         _psql_project_lock("agent-hub"),
         psycopg.connect(
@@ -682,10 +700,8 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_
             application_name="st-tools-cost",
         ) as conn,
     ):
-        request_rows = conn.execute(request_sql, (hours, limit)).fetchall()
-        output_rows = conn.execute(output_sql, (hours, limit)).fetchall()
-        session_row = conn.execute(session_sql, (hours,)).fetchone()
-        feedback_session_id = str(session_row[0]) if session_row else None
+        request_rows = conn.execute(request_sql, (hours, session, session, limit)).fetchall()
+        output_rows = conn.execute(output_sql, (hours, session, session, limit)).fetchall()
 
     request_hotspots = [
         {
@@ -730,10 +746,10 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_
     ]
     return {
         "window_hours": hours,
+        "session": session,
         "manifest_costs": _manifest_density_costs(task),
         "request_hotspots": request_hotspots,
         "tool_output_hotspots": output_hotspots,
-        "feedback_session_id": feedback_session_id,
     }
 
 
@@ -760,15 +776,18 @@ def _format_cost_compact(data: dict[str, Any]) -> None:
         f"task({task_name})~{task.get('tokens_approx', 0)}t "
         f"full~{full.get('tokens_approx', 0)}t saved_core_vs_full~{saved}t"
     )
+    print("  Manifest figures estimate generated text; native/cache usage and billed cost are not measured here.")
+    if data.get("session"):
+        print(f"  Session filter: {data['session']}")
     request_hotspots = data.get("request_hotspots", [])
     if request_hotspots:
-        print("  Request token hotspots:")
+        print("  HTTP request telemetry (task outcome unknown):")
         for item in request_hotspots[:10]:
             print(
                 f"    {item.get('tool_name', '?')}|{item.get('tool_type', '?')}"
                 f" reqs={item.get('requests', 0)}"
                 f" in={_token_measurement(item, 'tokens_in')} out={_token_measurement(item, 'tokens_out')}"
-                f" success={float(item.get('success_rate') or 0):.1f}%"
+                f" http_success={float(item.get('success_rate') or 0):.1f}%"
             )
     output_hotspots = data.get("tool_output_hotspots", [])
     if output_hotspots:
@@ -787,58 +806,8 @@ def _format_cost_compact(data: dict[str, Any]) -> None:
 
 
 def _emit_feedback_for_cost(data: dict[str, Any]) -> None:
-    """Emit feedback for actionable cost anomalies.
-
-    Compact manifest savings (core < full) is an intentional design feature,
-    not a transient issue.  Do not auto-emit feedback for it; that creates
-    perpetual noise.  Only emit when a specific hotspot exceeds thresholds.
-    """
-    request_hotspots = data.get("request_hotspots", [])
-    output_hotspots = data.get("tool_output_hotspots", [])
-    feedback_session_id = data.get("feedback_session_id")
-    if not feedback_session_id:
-        return
-
-    # Flag request hotspots with >10k tokens_in or <50% success rate
-    for item in request_hotspots:
-        tokens_in = int(item.get("tokens_in") or 0)
-        measured_rate = item.get("success_rate")
-        success_rate = float(measured_rate) if measured_rate is not None else None
-        failing = success_rate is not None and success_rate < 50.0
-        if tokens_in > 10000 or failing:
-            rate_text = f"{success_rate:.1f}%" if success_rate is not None else "unknown"
-            _report_or_vote_feedback(
-                "xc.tool_registry",
-                "Tool governance: high-cost or failing request hotspot",
-                feedback_type="friction",
-                severity="high" if failing else "medium",
-                description=(
-                    f"{item.get('tool_name', '?')}|{item.get('tool_type', '?')} "
-                    f"reqs={item.get('requests', 0)} in={_token_measurement(item, 'tokens_in')} "
-                    f"success={rate_text}"
-                ),
-                project_id="summitflow",
-                session_id=str(feedback_session_id),
-            )
-            return
-
-    # Flag tool-output hotspots with >5k tokens of output
-    for item in output_hotspots:
-        output_tokens = int(item.get("output_tokens_approx") or 0)
-        if output_tokens > 5000:
-            _report_or_vote_feedback(
-                "xc.tool_registry",
-                "Tool governance: excessive tool output volume",
-                feedback_type="friction",
-                severity="medium",
-                description=(
-                    f"{item.get('tool_name', '?')} events={item.get('events', 0)} "
-                    f"out~{output_tokens}t chars={item.get('output_chars', 0)}"
-                ),
-                project_id="summitflow",
-                session_id=str(feedback_session_id),
-            )
-            return
+    """Retain CLI compatibility without inferring waste from aggregate telemetry."""
+    print("  No feedback emitted: request HTTP status and aggregate output do not establish task waste.")
 
 
 def _format_catalog_compact(tools: list[dict[str, Any]]) -> None:
@@ -894,7 +863,7 @@ def status(
     )
 
     if ctx.obj.is_compact:
-        _format_status_compact(result)
+        _format_status_compact(result, hours=hours)
     else:
         output_json(result)
 
@@ -912,9 +881,10 @@ def adoption(
     ctx: typer.Context,
     hours: Annotated[int, typer.Option("--hours", "-h", help="Hours to look back")] = 24,
     limit: Annotated[int, typer.Option("--limit", "-l", help="Max st surfaces to show")] = 10,
+    session: Annotated[str | None, typer.Option("--session", help="Limit to one Agent Hub session ID")] = None,
 ) -> None:
     """Show agent st-wrapper adoption from persisted session_events."""
-    result = _fetch_adoption_metrics(hours, limit)
+    result = _fetch_adoption_metrics(hours, limit, session)
     if ctx.obj.is_compact:
         _format_adoption_compact(result)
     else:
@@ -938,13 +908,17 @@ def audit(
         str | None,
         typer.Option("--project", "-P", help="Limit findings to one Agent Hub project_id"),
     ] = None,
+    session: Annotated[
+        str | None,
+        typer.Option("--session", help="Limit findings to one Agent Hub session ID"),
+    ] = None,
     emit_feedback: Annotated[
         bool,
         typer.Option("--emit-feedback", help="Create/vote feedback items for surfaced findings"),
     ] = False,
 ) -> None:
     """Audit recent agent sessions for high-confidence missed st tool usage."""
-    result = _fetch_audit_metrics(hours, limit, project)
+    result = _fetch_audit_metrics(hours, limit, project, session)
     if ctx.obj.is_compact:
         _format_audit_compact(result)
         if emit_feedback:
@@ -970,13 +944,17 @@ def cost(
         str | None,
         typer.Option("--task", help="Task type used for task-density manifest cost"),
     ] = "verification",
+    session: Annotated[
+        str | None,
+        typer.Option("--session", help="Limit recorded requests and events to one session ID"),
+    ] = None,
     emit_feedback: Annotated[
         bool,
-        typer.Option("--emit-feedback", help="Create/vote feedback for actionable cost findings"),
+        typer.Option("--emit-feedback", help="Explain why aggregate-cost feedback is disabled"),
     ] = False,
 ) -> None:
     """Show tool-governance token/cost hotspots from existing telemetry."""
-    result = _fetch_cost_metrics(hours, limit, task)
+    result = _fetch_cost_metrics(hours, limit, task, session)
     if ctx.obj.is_compact:
         _format_cost_compact(result)
         if emit_feedback:
@@ -1108,8 +1086,8 @@ def manifest(
         str | None, typer.Option("--profile", help="Filter to surfaces declaring this consumer_profile")
     ] = None,
     density: Annotated[
-        str, typer.Option("--density", help="core | task | full | adaptive")
-    ] = "full",
+        str | None, typer.Option("--density", help="core | task | full | adaptive; default core (task with --task)")
+    ] = None,
     fmt: Annotated[
         str, typer.Option("--format", help="inject | yaml | json | markdown")
     ] = INJECT_FORMAT,
@@ -1124,10 +1102,12 @@ def manifest(
     """Emit the registered tool-usage manifest for injection into agentic surfaces.
 
     Source of truth is the `@usage(...)` decorator on each Typer command.
-    Default `inject` is the token-optimal grouped form for context injection.
+    Default output is a compact `core` discovery slice in the grouped inject form.
+    An explicit --task defaults to task density; --density full exports everything.
     Examples:
-        st tools manifest --task devops                    # inject form (default)
-        st tools manifest --density core                   # compact generic context
+        st tools manifest                                 # compact generic context
+        st tools manifest --task devops                    # task-specific context
+        st tools manifest --density full                   # complete export
         st tools manifest --task frontend --density task    # compact task context
         st tools manifest --density adaptive --scores-file scores.json
         st tools manifest --surface st.service.rebuild --format yaml
@@ -1135,12 +1115,23 @@ def manifest(
     """
     from ..main import app as root_app
 
+    density = density or ("task" if task else "core")
+
     if density not in VALID_MANIFEST_DENSITIES:
         expected = "|".join(VALID_MANIFEST_DENSITIES)
         output_error(f"Unknown --density {density!r}; expected {expected}")
         raise typer.Exit(1)
 
     scores = _load_scores_file(scores_file)
+
+    known_surfaces = [spec.surface for spec in collect_usage_specs(root_app)] if surface else []
+    if surface and surface not in known_surfaces:
+        matches = [name for name in known_surfaces if name.endswith(f".{surface}")]
+        if len(matches) == 1:
+            surface = matches[0]
+        elif len(matches) > 1:
+            output_error(f"Ambiguous --surface {surface!r}; choose one of: {', '.join(matches)}")
+            raise typer.Exit(1)
 
     specs = _manifest_specs(
         root_app,
@@ -1151,6 +1142,16 @@ def manifest(
         density=density,
         scores=scores,
     )
+    if surface is not None and not specs:
+        from difflib import get_close_matches
+
+        nearby = get_close_matches(surface, known_surfaces, n=3)
+        hint = f" Did you mean: {', '.join(nearby)}?" if nearby else ""
+        output_error(
+            f"Unknown or filtered --surface {surface!r}.{hint} "
+            "Use st tools manifest --density full to list registered surfaces."
+        )
+        raise typer.Exit(1)
     _emit_manifest_payload(specs, density=density, fmt=fmt)
 
 

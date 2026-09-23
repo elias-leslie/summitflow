@@ -14,7 +14,6 @@ from app.workflows.scheduled import (
     refresh_precision_indexes_wf,
     scan_projects_wf,
     scheduled_backups_wf,
-    tool_governance_wf,
 )
 
 
@@ -118,20 +117,14 @@ async def test_refresh_graphify_graphs_wf_uses_shared_maintenance_lane(monkeypat
     refresh_existing_graphify_graphs.assert_called_once_with()
 
 
-@pytest.mark.asyncio
-async def test_tool_governance_wf_runs_scheduled_scan(monkeypatch) -> None:
-    run_tool_governance_scan = Mock(return_value={"status": "completed", "audit_events": 2})
+def test_tool_governance_has_no_schedule_or_worker_route() -> None:
+    from app.services.autonomous_schedule_registry import list_autonomous_schedule_definitions
+    from app.worker import _registered_workflows
 
-    monkeypatch.setattr("app.workflows.scheduled._system_schedule_enabled", lambda _schedule_id: True)
-    monkeypatch.setattr("app.workflows.scheduled.asyncio.to_thread", _run_inline)
-    monkeypatch.setattr("app.tasks.tool_governance.run_tool_governance_scan", run_tool_governance_scan)
-
-    call = tool_governance_wf._task.fn(EmptyInput(), None)
-    assert isinstance(call, Awaitable)
-    result = await call
-
-    assert result == {"status": "completed", "audit_events": 2}
-    run_tool_governance_scan.assert_called_once_with()
+    assert "tool_governance" not in {item.schedule_id for item in list_autonomous_schedule_definitions()}
+    assert "summitflow-tool-governance" not in {
+        workflow._task.name for workflow in _registered_workflows()
+    }
 
 
 @pytest.mark.asyncio

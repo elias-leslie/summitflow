@@ -37,7 +37,6 @@ from app.workflows.scheduled import (
     self_healing_wf,
     stale_cleanup_wf,
     task_generation_wf,
-    tool_governance_wf,
     work_pickup_wf,
 )
 from app.workflows.utility import (
@@ -69,7 +68,7 @@ def _registered_workflows() -> list[Any]:
         escalation_wf,
         automation_owner_run_wf,
         automation_outbox_reconcile_wf,
-        # Scheduled (16)
+        # Scheduled
         work_pickup_wf,
         reset_claims_wf,
         scan_projects_wf,
@@ -85,7 +84,6 @@ def _registered_workflows() -> list[Any]:
         pending_drain_wf,
         restore_tests_wf,
         runtime_hygiene_wf,
-        tool_governance_wf,
         # Utility (12)
         backup_create_wf,
         backup_offsite_sync_wf,

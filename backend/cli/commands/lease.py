@@ -102,7 +102,7 @@ def lease_command(
         return
 
     if check_path:
-        ok, holder = check(pid, check_path)
+        ok, holder = check(pid, check_path, project_root=project_root)
         if ok:
             return
         assert holder is not None
@@ -114,19 +114,19 @@ def lease_command(
         raise typer.Exit(2)
 
     if take_path:
-        lease = take(pid, take_path)
+        lease = take(pid, take_path, project_root=project_root)
         output_success(f"Took over {take_path}. lease_id={lease.lease_id}")
         return
 
     if wait_path:
-        if wait(pid, wait_path):
+        if wait(pid, wait_path, project_root=project_root):
             output_success(f"{wait_path} is now free.")
             return
         output_error(f"Timeout waiting for {wait_path}.")
         raise typer.Exit(1)
 
     if release_all or release_glob is not None:
-        n = release(pid, release_glob if not release_all else None)
+        n = release(pid, release_glob if not release_all else None, project_root=project_root)
         output_success(f"Released {n} lease(s).")
         return
 
