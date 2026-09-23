@@ -14,10 +14,30 @@ from app.tasks.backup_lock import (
     BACKUP_LOCK_TTL,
     BackupLockLeaseError,
     acquire_backup_lock,
+    has_active_backup_lease,
     maintain_backup_lock,
     release_backup_lock,
     renew_backup_lock,
 )
+
+
+@pytest.mark.parametrize("exists", [0, 1])
+def test_active_lease_lookup_uses_existing_owner_key(exists: int) -> None:
+    redis_client = MagicMock()
+    redis_client.exists.return_value = exists
+    with patch("app.tasks.backup_lock.get_redis", return_value=redis_client):
+        assert has_active_backup_lease("source-1") is bool(exists)
+    redis_client.exists.assert_called_once_with(f"{BACKUP_LOCK_PREFIX}source-1")
+
+
+def test_active_lease_lookup_does_not_treat_redis_failure_as_absent() -> None:
+    redis_client = MagicMock()
+    redis_client.exists.side_effect = ConnectionError("Redis unavailable")
+    with (
+        patch("app.tasks.backup_lock.get_redis", return_value=redis_client),
+        pytest.raises(ConnectionError),
+    ):
+        has_active_backup_lease("source-1")
 
 
 def test_acquire_backup_lock_stores_unique_owner_token() -> None:
@@ -220,5 +240,6 @@ def test_lease_loss_marks_record_failed_before_success_persistence() -> None:
         "backup-1",
         "ownership lost",
         "project-1",
+        expected_run_id=None,
     )
     handle_success.assert_not_called()

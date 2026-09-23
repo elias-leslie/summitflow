@@ -90,7 +90,7 @@ function computeSteps(
       title: 'Backup sources',
       description: hasSources
         ? failingCount > 0
-          ? `${sources.length} sources registered, but ${failingCount} ha${failingCount === 1 ? 's' : 've'} a failed last backup`
+          ? `${sources.length} sources registered; ${failingCount} need attention. Check local backup and Drive status below.`
           : `${sources.length} sources registered, schedules active`
         : 'Sources define what gets backed up: project code and databases, config, workspaces.',
       complete: hasSources && hasSchedules && failingCount === 0,

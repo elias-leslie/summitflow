@@ -39,6 +39,17 @@ def _lock_key(source_id: str) -> str:
     return f"{BACKUP_LOCK_PREFIX}{source_id}"
 
 
+def has_active_backup_lease(source_id: str) -> bool:
+    """Check worker ownership, not byte progress; errors must not imply orphaned."""
+    return bool(get_redis().exists(_lock_key(source_id)))
+
+
+def owns_backup_lease(source_id: str, owner_token: str) -> bool:
+    """Do not let a delayed queued attempt adopt a newer attempt's lease."""
+    value = get_redis().get(_lock_key(source_id))
+    return value in {owner_token, owner_token.encode()}
+
+
 def acquire_backup_lock(source_id: str) -> str | None:
     """Acquire a per-source lock and return its unique owner token."""
     owner_token = uuid4().hex

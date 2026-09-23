@@ -97,6 +97,11 @@ Use the same source folder identified by the inventory. Select either its newest
 timestamped `.tar.gz.age` object or its newest `.tar.gz.age.parts.json` manifest.
 For a manifest, download the manifest and **all** sibling part names it lists
 from that same source folder; an isolated part or incomplete set is not a backup.
+If both a raw archive and a complete parts set share the same archive name,
+prefer the parts set. An earlier failed whole-file upload can leave a raw object
+beside the later verified parts. A matching timestamp or filename does not prove
+that the raw object is complete. Verify the manifest, every part, and the
+assembled ciphertext before decryption.
 Record every downloaded object's filename, size, and local SHA-256, plus the
 manifest's full ciphertext checksum, in your recovery notes. Check all source
 folders for projects added after the inventory was written; later compare them

@@ -65,6 +65,10 @@ class RestoreResponse(BaseModel):
     message: str
 
 
+class BackupCancelRequest(BaseModel):
+    run_id: str
+
+
 class BackupSourceCreate(BaseModel):
     """Request model for registering a backup source."""
 
@@ -185,6 +189,7 @@ class BackupHealthItem(BaseModel):
     offsite_error: str | None = None
     last_isolated_restore_at: str | None = None
     last_isolated_restore_ok: bool | None = None
+    backup_activity: dict[str, object] | None = None
 
 
 class BackupHealthResponse(BaseModel):

@@ -3,17 +3,17 @@ from __future__ import annotations
 import fnmatch
 import gzip
 import hashlib
+import io
 import os
-import shutil
 import stat
-import subprocess
 import tarfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, BinaryIO
 from urllib.parse import unquote, urlsplit
 
+from .backup_activity import BackupCancelled, backup_phase, check_backup_cancelled, run_bulk_process
 from .backup_native_recovery import _safe_relative_symlink, build_consistent_snapshot
 
 BACKUP_TIMEOUT = 600
@@ -127,19 +127,46 @@ def _run_gzip_stream(
     destination: Path,
     *,
     env: dict[str, str] | None,
-    timeout: int,
+    timeout: float,
 ) -> tuple[int, bytes]:
-    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
-    try:
-        assert proc.stdout is not None
+    """Stream a dump without a total-duration kill or stderr pipe deadlock."""
+    def compress(source: BinaryIO) -> None:
         with gzip.open(destination, "wb") as out:
-            shutil.copyfileobj(proc.stdout, out)
-        _, stderr = proc.communicate(timeout=timeout)
-        return proc.returncode or 0, stderr
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        _, stderr = proc.communicate()
-        raise TimeoutError from None
+            while True:
+                check_backup_cancelled()
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+
+    result = run_bulk_process(
+        command, env=env, phase="database_dump", object_name=destination.name,
+        attention_after=timeout, stdout_sink=compress, text=False,
+    )
+    return result.returncode, result.stderr
+
+
+class _CheckedReader(io.BufferedReader):
+    """Keep long tar/compression reads responsive without changing their bytes."""
+
+    def read(self, size: int | None = -1) -> bytes:
+        check_backup_cancelled()
+        return super().read(size)
+
+
+def _add_checked_file(
+    archive: tarfile.TarFile, source: Path, arcname: str, *, regular_only: bool = False,
+) -> None:
+    check_backup_cancelled()
+    member_filter = _regular_file_filter if regular_only else _recoverable_file_filter
+    member = member_filter(archive.gettarinfo(str(source), arcname))
+    if member is None:
+        return
+    if member.isreg():
+        with source.open("rb") as source_file, _CheckedReader(source_file) as checked:
+            archive.addfile(member, checked)
+    else:
+        archive.addfile(member)
 
 
 def _dump_database(project_name: str, destination: Path, env: dict[str, str]) -> tuple[int, bool]:
@@ -184,6 +211,7 @@ def _add_project_files(
         raise error
 
     for root, dirs, files in os.walk(project_dir, onerror=walk_error):
+        check_backup_cancelled()
         root_path = Path(root)
         rel_root = root_path.relative_to(project_dir).as_posix()
         rel_root = "" if rel_root == "." else rel_root
@@ -211,6 +239,7 @@ def _add_files_from_dir(
 ) -> int:
     count = 0
     for filename in files:
+        check_backup_cancelled()
         full = root_path / filename
         rel = full.relative_to(project_dir).as_posix()
         is_reserved_database_path = rel == PROJECT_DATABASE_DUMP_NAME or (
@@ -229,12 +258,7 @@ def _add_files_from_dir(
                 os.readlink(full),
             ):
                 continue
-            archive.add(
-                full,
-                arcname=f"{project_name}/{rel}",
-                recursive=False,
-                filter=_recoverable_file_filter,
-            )
+            _add_checked_file(archive, full, f"{project_name}/{rel}")
             count += 1
         except FileNotFoundError:
             continue
@@ -258,6 +282,7 @@ def _create_project_archive(
     env: dict[str, str],
 ) -> dict[str, Any]:
     capture_started = time.monotonic()
+    backup_phase("capture")
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     archive_name = f"{project_name}-{timestamp}.tar.gz"
     archive_path = staging / archive_name
@@ -272,15 +297,11 @@ def _create_project_archive(
         excludes,
         _should_exclude,
     )
+    backup_phase("archive", archive_name)
     with tarfile.open(archive_path, "w:gz") as archive:
         files_count = _add_project_files(archive, snapshot_dir, project_name, ())
         if db_dump.exists():
-            archive.add(
-                db_dump,
-                arcname=f"{project_name}/{PROJECT_DATABASE_DUMP_NAME}",
-                recursive=False,
-                filter=_regular_file_filter,
-            )
+            _add_checked_file(archive, db_dump, f"{project_name}/{PROJECT_DATABASE_DUMP_NAME}", regular_only=True)
             files_count += 1
     verification = verify_archive(
         archive_path,
@@ -356,15 +377,18 @@ def verify_archive(path: Path, *, db_dump_name: str, expects_db: bool) -> dict[s
 def archive_sha256(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
     """Return a bounded-memory SHA-256 checksum for an archive."""
     digest = hashlib.sha256()
+    backup_phase("checksum", path.name)
     with path.open("rb") as archive_file:
         for chunk in iter(lambda: archive_file.read(chunk_size), b""):
+            check_backup_cancelled()
             digest.update(chunk)
     return f"sha256:{digest.hexdigest()}"
 
 
 def _archive_member_names(path: Path, expects_db: bool) -> tuple[list[str], dict[str, Any] | None]:
+    backup_phase("archive_verification", path.name)
     try:
-        with tarfile.open(path, "r:gz") as archive:
+        with path.open("rb") as raw, _CheckedReader(raw) as checked, tarfile.open(fileobj=checked, mode="r:gz") as archive:
             members = archive.getmembers()
             unsafe_members = [
                 member.name
@@ -390,6 +414,8 @@ def _archive_member_names(path: Path, expects_db: bool) -> tuple[list[str], dict
             if unsafe_links:
                 raise RuntimeError(f"Archive contains unsafe symbolic link: {unsafe_links[0]}")
             return [member.name for member in members if member.isfile()], None
+    except BackupCancelled:
+        raise
     except (tarfile.TarError, OSError, RuntimeError) as exc:
         return [], {
             "verified": False,

@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.tasks.backup_activity import run_bulk_process
+
 
 @dataclass(frozen=True)
 class StorageConfig:
@@ -105,16 +107,21 @@ def _smb_output(stdout: str, stderr: str, limit: int = 1200) -> str:
     return detail[-limit:]
 
 
-def _smb_command(storage: StorageConfig, command: str, *, timeout: int) -> subprocess.CompletedProcess[str]:
+def _smb_command(
+    storage: StorageConfig, command: str, *, timeout: int, bulk: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    args = [
+        "smbclient",
+        f"//{storage.host}/{storage.share}",
+        "-A",
+        str(storage.credentials_file),
+        "-c",
+        command,
+    ]
+    if bulk:
+        return run_bulk_process(args, phase="local-storage", attention_after=timeout)
     return subprocess.run(
-        [
-            "smbclient",
-            f"//{storage.host}/{storage.share}",
-            "-A",
-            str(storage.credentials_file),
-            "-c",
-            command,
-        ],
+        args,
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -199,7 +206,7 @@ def _smb_upload(path: Path, archive_name: str, storage: StorageConfig) -> SmbUpl
         )
 
     command = f'cd {storage.remote_path}; put "{path}" "{archive_name}"; ls "{archive_name}"'
-    result = _smb_command(storage, command, timeout=300)
+    result = _smb_command(storage, command, timeout=300, bulk=True)
     output = result.stdout + result.stderr
     ok = result.returncode == 0 and archive_name in output
     error = None if ok else f"upload failed rc={result.returncode}: {_smb_output(result.stdout, result.stderr)}"

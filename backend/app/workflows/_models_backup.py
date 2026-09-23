@@ -38,3 +38,5 @@ class RestoreInput(BaseModel):
 class OffsiteSyncInput(BaseModel):
     source_id: str
     backup_id: str
+    owner_token: str | None = None
+    attempt_id: str | None = None

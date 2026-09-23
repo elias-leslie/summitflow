@@ -15,6 +15,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ..services.backup_keys import get_backup_key_paths
+from .backup_activity import run_bulk_process
 from .backup_native_archive import (
     BACKUP_TIMEOUT,
     INFRASTRUCTURE_DATABASE_DUMP_NAME,
@@ -34,12 +35,9 @@ def materialize_plaintext_archive(path: Path) -> Iterator[Path]:
     _recipient, identity = get_backup_key_paths(require_validated=True)
     with tempfile.TemporaryDirectory(prefix="backup-restore-") as temp_dir:
         plaintext = Path(temp_dir) / path.name.removesuffix(".age")
-        result = subprocess.run(
+        result = run_bulk_process(
             ["age", "--decrypt", "-i", str(identity), "-o", str(plaintext), str(path)],
-            capture_output=True,
-            text=True,
-            timeout=BACKUP_TIMEOUT,
-            check=False,
+            phase="decryption", object_name=path.name, attention_after=BACKUP_TIMEOUT,
         )
         if result.returncode != 0:
             detail = result.stderr.strip()

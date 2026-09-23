@@ -220,17 +220,33 @@ def _merge_json_dicts(
 def merge_backup_verification_json(
     backup_id: str,
     verification_updates: Mapping[str, Any],
+    *,
+    expected_activity_run_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Merge additional verification metadata into an existing backup record."""
-    backup = get_backup(backup_id)
-    if not backup:
-        return None
-
-    current = backup.get("verification_json")
-    current_mapping = current if isinstance(current, Mapping) else {}
-    merged = _merge_json_dicts(current_mapping, verification_updates)
-
     with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT verification_json FROM backups WHERE id = %s FOR UPDATE", (backup_id,))
+        existing = cur.fetchone()
+        if existing is None:
+            return None
+        current = existing[0]
+        current_mapping = current if isinstance(current, Mapping) else {}
+        activity = current_mapping.get("activity")
+        if expected_activity_run_id is not None and (
+            not isinstance(activity, Mapping)
+            or str(activity.get("run_id") or "") != expected_activity_run_id
+        ):
+            return None
+        merged = _merge_json_dicts(current_mapping, verification_updates)
+        previous_activity = current_mapping.get("activity")
+        next_activity = merged.get("activity")
+        if (
+            isinstance(previous_activity, Mapping) and isinstance(next_activity, dict)
+            and previous_activity.get("run_id") == next_activity.get("run_id")
+            and previous_activity.get("cancel_requested") is True
+        ):
+            # Once accepted, cancellation is monotonic within this exact run.
+            next_activity["cancel_requested"] = True
         cur.execute(
             static_sql(
                 f"UPDATE backups SET verification_json = %s WHERE id = %s RETURNING {BACKUP_COLUMNS}"
@@ -241,6 +257,24 @@ def merge_backup_verification_json(
         conn.commit()
 
     return row_to_backup(row) if row else None
+
+
+def request_backup_cancellation(backup_id: str, run_id: str) -> bool:
+    """Signal only the active attempt the owner actually selected."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE backups
+            SET verification_json = jsonb_set(verification_json, '{activity,cancel_requested}', 'true'::jsonb)
+            WHERE id = %s AND verification_json #>> '{activity,run_id}' = %s
+              AND verification_json #>> '{activity,active}' = 'true'
+            RETURNING id
+            """,
+            (backup_id, run_id),
+        )
+        changed = cur.fetchone() is not None
+        conn.commit()
+    return changed
 
 
 def delete_backup_record(backup_id: str) -> bool:

@@ -6,10 +6,12 @@ import os
 import shutil
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from ..logging_config import get_logger
+from .backup_activity import backup_phase, current_activity, record_local_archive
 from .backup_native_archive import (
     BACKUP_TIMEOUT,
     _create_project_archive,
@@ -63,6 +65,7 @@ def _store_local_project_archive(
     archive_name: str,
     retention: int,
 ) -> dict[str, Any]:
+    backup_phase("local-storage")
     final_dir = project_path / "backups"
     final_dir.mkdir(parents=True, exist_ok=True)
     final_path = final_dir / archive_name
@@ -83,6 +86,7 @@ def _upload_project_archive(
     keep_local: bool,
     retention: int,
 ) -> dict[str, Any]:
+    backup_phase("local-storage")
     archive_name = str(result["archive_name"])
     if storage_backend_type(run_env) == "local":
         local_storage = local_storage_config(source_id, run_env)
@@ -138,6 +142,7 @@ def run_project_backup(
     keep_local: bool = False,
     local_only: bool = False,
     retention_days: int | None = None,
+    on_progress: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Create a project/source archive and return parsed backup metadata."""
     project_path = Path(project_dir)
@@ -192,6 +197,7 @@ def run_project_backup(
             retention,
         )
         if offsite_configured:
+            record_local_archive(stored)
             replica_source = (
                 Path(str(stored["location"]))
                 if backend_type == "local"
@@ -203,8 +209,12 @@ def run_project_backup(
                 local_dir=replica_source.parent,
                 env=run_env,
                 retention_days=retention,
+                on_progress=on_progress,
             )
             verification = dict(stored.get("verification") or {})
+            activity = current_activity()
+            if activity:
+                activity.record_offsite_result(offsite)
             verification["offsite"] = offsite
             stored["verification"] = verification
             stored["offsite"] = offsite

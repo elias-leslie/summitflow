@@ -15,9 +15,8 @@ The existing account remounted without prompts in 0.435 seconds. The transfer
 path now retries that specific mount failure once using the same account.
 AfterTimes (4,604,444,264 bytes) and Codex (5,372,374,294 bytes) retain completed
 local ciphertext; multipart transfer and standalone reassembly pass focused
-regressions, including an actual producer-to-consumer manifest test. Live large
-transfer proof remains pending. Current integration gate passed 90 tests,
-lint/types/frontend checks and secret scanning.
+regressions, including an actual producer-to-consumer manifest test. Both large
+transfers subsequently passed live readback verification, recorded below.
 
 The seven smaller archives total 5,185,110 bytes versus 72,907,291 previously
 (about 93% smaller). File-count differences match the new rebuildable `.venv`
@@ -27,17 +26,56 @@ already exist; the 48-hour missed-drill warning remains. A newer archive does
 not erase dated successful drill evidence, and the UI explicitly identifies
 which backup was tested rather than implying the latest one was restored.
 
+Live follow-up: accepted source `cc9424650e087a6135de219f6bbe631a6f42b5f0`
+passed 3,346 backend and 189 frontend tests in 105.56 seconds wall, 119.81 user,
+19.97 system, peak 672,056 KiB. Managed deployment
+`64f7889c175c4863ae2bca265ca025d2` succeeded from that exact source; all services
+passed health. Seven small retained-ciphertext retries each took 1.45–2.30
+seconds, transferring 10,370,220 bytes including complete readback, with no new
+capture. AfterTimes verified nine parts in 323.896 seconds (329.110 seconds
+queue-to-result), preserving its 4,604,444,264-byte ciphertext and full history.
+Transfer bytes including readback and manifest: 9,208,892,740. Worker/descendant
+RSS alone is not whole-transfer memory: the separate GVfs daemon must be counted.
+AfterTimes did not have a complete daemon RSS time series, so its full peak is
+not claimed. Codex returned an explicit provider HTTP 500 after 547.693 seconds;
+its retry reused the same archive and verified parts, not another capture.
+That retry succeeded: 11 parts, 5,372,374,294 ciphertext bytes, 210.431 seconds
+replication / 214.081 seconds queue-to-result. Transfer bytes were 5,912,915,220:
+nine existing 512 MiB parts avoided 4,831,838,208 bytes of repeated upload while
+the full ciphertext was still downloaded and verified. Sampled worker/children
+peak was 352,944 KiB; separate GVfs peak was 3,102,656 KiB, with daemon lifetime
+high-water mark 3,373,188 KiB. These are separate measurements, not a falsely
+small whole-transfer peak. All 29 enabled sources now have latest Drive copies
+verified. The full measurements are in `.dev-tools/large-backup-live-evidence.json`.
+
+Owner follow-up requires that slow work not be killed by arbitrary elapsed
+duration. Changes awaiting final verification/rollout: a visible activity
+controller maintains workflow liveness separately from verified byte progress;
+live Redis leases protect long-running captures from orphan
+cleanup, hourly schedules skip overlapping runs instead of cancelling them,
+and historical transfer errors are not displayed as current failures after
+successful retry. The remaining transfer lifecycle correction is explicitly
+open: GIO progress may represent local buffering, so opaque waits must be shown
+as unknown/needs attention, not called a proved stall. The former 600-second
+bulk-copy kill becomes an attention threshold, not a claim that work failed.
+Active-run retry exclusion and real child-process cancellation accompany that
+change. The UI shows the phase and last verified part, and keeps cancellation
+in a requested state until work actually stops. Metadata requests retain
+their distinct bounds. No new OAuth integration or transfer platform is planned.
+
 An unchecked item remains outstanding. Implementation alone does not establish
 verification; record actual evidence before checking an item.
 
 Current phase (2026-09-23): local-first acceptance and immutable managed rollout
 passed. The owner saved and verified the recovery key; downloaded infrastructure
 recovery passed all six disposable restore checks with 10/10 component coverage.
-Twenty of 29 enabled sources have a verified latest Drive copy. Seven small
-copies need retry after an unmounted Drive connection; two retained large
-archives need the multipart transfer correction now being verified. Final
-all-source coverage, updated Drive recovery kit, recovered runnable SummitFlow
-proof, live UI review and persisted task closeout remain open.
+All 29 enabled sources have a verified latest Drive copy. Seven small copies,
+the 4.60 GB AfterTimes archive and 5.37 GB Codex archive passed retained-ciphertext
+retry. Final lifecycle rollout and live UI review, a fresh SummitFlow capture
+and recovered runnable SummitFlow proof, updated Drive recovery kit and persisted
+task closeout remain open. The latest lifecycle checkpoint passed 161 focused
+backend tests plus three SMB upload regressions; these are not a substitute for
+the pending managed rollout and actual cancellation demonstration.
 
 ### Local commits, integration, and validation
 
@@ -82,6 +120,14 @@ proof, live UI review and persisted task closeout remain open.
 
 ### Independent recovery
 
+- [ ] Long-running capture/transfer management uses real ownership and observed
+      progress, not an arbitrary total-duration cutoff. Opaque waits are clearly
+      labeled unknown/needs attention; they are not falsely declared stalled.
+- [ ] The Backups UI presents local capture, Drive copy and restore-test status
+      separately, shows current phase/last verified progress, prevents duplicate
+      active retries, and offers cancellation that actually stops owned work.
+      Verify these states and actions through the rendered UI without key access.
+
 - [x] Backups preserve full unpublished Git history/refs and applicable JJ metadata
       (isolated recovery regressions; real downloaded restore remains below).
 - [x] Staged, unstaged, valuable untracked/ignored work, and safe symlinks survive
@@ -109,7 +155,7 @@ proof, live UI review and persisted task closeout remain open.
       connection where available, encrypted completed archives, verified retention,
       and a download/decrypt/restore demonstration. Identify any missing machine
       credential or key-custody requirement explicitly; connection alone is not proof.
-- [ ] All real SummitFlow-managed/backed-up solutions have explicit local and Drive
+- [x] All real SummitFlow-managed/backed-up solutions have explicit local and Drive
       coverage; intentionally disabled fixtures are distinguished from missing coverage.
 - [ ] SummitFlow's existing backup UI shows separate local/Drive status, failures,
       source coverage, retention and restore evidence with appropriate recovery controls.
@@ -126,7 +172,7 @@ proof, live UI review and persisted task closeout remain open.
 - [x] Actual owner custody is confirmed by the owner, not inferred from agent tests.
 - [ ] Hard-loss recovery instructions, source-bootstrap utility, dated archive
       inventory and checksums are downloaded/read-back verified in the existing
-      Google Drive SummitFlowBackups folder. No private recovery key is uploaded.
+      Google Drive “SummitFlow Backups” folder. No private recovery key is uploaded.
 
 ### Agent behavior and independence
 

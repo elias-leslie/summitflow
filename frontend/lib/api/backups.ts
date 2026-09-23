@@ -1,3 +1,4 @@
+import type { BackupActivity } from './backups-infra'
 import {
   buildQueryString,
   fetchWithErrorHandling,
@@ -7,6 +8,30 @@ import {
 
 // Re-export infra types and functions so existing imports from this module keep working
 export * from './backups-infra'
+
+export function backupDriveFolderUrl(location: string | null): string | null {
+  if (!location) return null
+  try {
+    const uri = new URL(location)
+    const ids = uri.pathname.split('/').slice(1)
+    // Native backup receipts contain resolved provider IDs, not display names.
+    // The final object is an archive or parts manifest; its parent holds the set.
+    if (
+      uri.protocol !== 'google-drive:' ||
+      !uri.hostname ||
+      uri.password ||
+      uri.port ||
+      uri.search ||
+      uri.hash ||
+      ids.length < 3 ||
+      ids.some((id) => !/^[A-Za-z0-9_-]+$/.test(id))
+    )
+      return null
+    return `https://drive.google.com/drive/folders/${ids[ids.length - 2]}`
+  } catch {
+    return null
+  }
+}
 
 export function syncBackupOffsite(
   sourceId: string,
@@ -19,7 +44,20 @@ export function syncBackupOffsite(
   )
 }
 
+export function cancelBackup(
+  sourceId: string,
+  backupId: string,
+  runId: string,
+): Promise<TaskResponse> {
+  return postJson<TaskResponse>(
+    `/api/backup-sources/${encodeURIComponent(sourceId)}/backups/${encodeURIComponent(backupId)}/cancel`,
+    { run_id: runId },
+    'Could not cancel the backup operation',
+  )
+}
+
 export interface BackupVerification {
+  activity?: BackupActivity | null
   verified: boolean
   verified_at: string
   errors: string[]

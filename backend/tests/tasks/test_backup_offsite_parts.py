@@ -3,6 +3,7 @@
 import hashlib
 import json
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -66,14 +67,33 @@ def drive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     return state
 
 
-def replicate(drive: dict[str, Any], *, retry: bool = False) -> dict[str, Any]:
+def replicate(
+    drive: dict[str, Any], *, retry: bool = False, on_progress: Callable[[], None] | None = None,
+) -> dict[str, Any]:
     from app.tasks import backup_native_offsite as offsite
 
     return offsite.replicate_completed_archive(
         drive["archive"], source_id="source", local_dir=drive["archive"].parent,
         env={"BACKUP_OFFSITE_GIO_URI": "google-drive://account/root"},
-        retention_days=14, retry=retry,
+        retention_days=14, retry=retry, on_progress=on_progress,
     )
+
+
+@pytest.mark.parametrize("failure_part", [None, ".part000001", ".part000002"])
+def test_progress_only_follows_verified_parts(drive: dict[str, Any], failure_part: str | None) -> None:
+    drive["corrupt_download"] = failure_part
+    progress: list[int] = []
+    result = replicate(drive, on_progress=lambda: progress.append(len(drive["remote"])))
+    expected = 4 if failure_part is None else (0 if failure_part.endswith("1") else 1)
+    assert len(progress) == expected
+    assert result["status"] == ("verified" if failure_part is None else "failed")
+
+
+def test_retry_verified_existing_parts_reports_progress(drive: dict[str, Any]) -> None:
+    assert replicate(drive)["status"] == "verified"
+    progress: list[bool] = []
+    assert replicate(drive, retry=True, on_progress=lambda: progress.append(True))["status"] == "verified"
+    assert len(progress) == 4
 
 
 def uploads(drive: dict[str, Any]) -> list[str]:

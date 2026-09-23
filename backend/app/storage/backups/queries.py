@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from .._sql import static_sql
@@ -12,41 +13,66 @@ from .models import BACKUP_COLUMNS, row_to_backup
 def fail_stale_running_backups(
     max_age_minutes: int = 30,
     error_message: str | None = None,
+    *,
+    is_source_active: Callable[[str], bool],
 ) -> int:
-    """Mark long-running backups as failed once they exceed the expected runtime.
+    """Fail old orphaned rows, never a backup with an active worker lease.
 
     Args:
-        max_age_minutes: Maximum allowed runtime before a backup is considered stale
+        max_age_minutes: Minimum row age before checking for orphaned ownership
         error_message: Optional override for the failure reason stored on the row
+        is_source_active: Existing source-lease lookup; lookup errors abort cleanup
 
     Returns:
         Number of running rows that were failed
     """
     resolved_error = error_message or (
-        f"Backup exceeded expected runtime and was marked failed after {max_age_minutes} minutes"
+        f"Backup has no active backup lease and its running record is older than {max_age_minutes} minutes"
     )
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            UPDATE backups
-            SET status = 'failed',
-                error_message = COALESCE(error_message, %s),
-                completed_at = NOW()
-            WHERE status = 'running'
-              AND COALESCE(started_at, created_at) < NOW() - INTERVAL '1 minute' * %s
-            RETURNING id
+            SELECT id, COALESCE(source_id, project_id), COALESCE(verification_json #>> '{activity,run_id}', '')
+            FROM backups
+            WHERE (status = 'running'
+              AND COALESCE(started_at, created_at) < NOW() - INTERVAL '1 minute' * %s)
+              OR verification_json #>> '{activity,active}' = 'true'
             """,
-            (resolved_error, max_age_minutes),
+            (max_age_minutes,),
+        )
+        candidates = cur.fetchall()
+        # Resolve every lease before mutation. A Redis outage is unknown, not
+        # evidence of a stopped worker. Cache sources to avoid repeated lookups.
+        active = {str(source_id): is_source_active(str(source_id)) for source_id in {row[1] for row in candidates}}
+        orphan_ids = [row[0] for row in candidates if not active[str(row[1])]]
+        orphan_runs = [row[2] for row in candidates if not active[str(row[1])]]
+        if not orphan_ids:
+            return 0
+        cur.execute(
+            """
+            UPDATE backups
+            SET status = CASE WHEN status = 'running' THEN 'failed' ELSE status END,
+                error_message = CASE WHEN status = 'running' THEN COALESCE(error_message, %s) ELSE error_message END,
+                completed_at = CASE WHEN status = 'running' THEN NOW() ELSE completed_at END,
+                verification_json = CASE WHEN verification_json #>> '{activity,active}' = 'true' THEN
+                    jsonb_set(verification_json, '{activity}', verification_json -> 'activity' ||
+                      '{"active":false,"phase":"failed","attention":true,"remote_outcome_unknown":true}'::jsonb)
+                    ELSE verification_json END
+            WHERE (id, COALESCE(verification_json #>> '{activity,run_id}', '')) IN
+                (SELECT * FROM unnest(%s::text[], %s::text[]))
+            RETURNING status
+            """,
+            (resolved_error, orphan_ids, orphan_runs),
         )
         failed_rows = cur.fetchall()
         conn.commit()
 
-    return len(failed_rows)
+    return sum(row[0] == "failed" for row in failed_rows)
 
 
 def cleanup_stale_backup_records(max_age_days: int = 30) -> int:
-    """Delete failed/running backup records older than max_age_days.
+    """Delete failed records; running rows first need the lease-aware orphan check.
 
     Args:
         max_age_days: Delete stale records older than this many days
@@ -58,7 +84,7 @@ def cleanup_stale_backup_records(max_age_days: int = 30) -> int:
         cur.execute(
             """
             DELETE FROM backups
-            WHERE status IN ('failed', 'running')
+            WHERE status = 'failed'
               AND created_at < NOW() - INTERVAL '%s days'
             RETURNING id
             """,
@@ -91,6 +117,7 @@ def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: i
             """
             DELETE FROM backups
             WHERE status IN ('completed', 'completed_pending_upload')
+              AND (verification_json #>> '{activity,active}') IS DISTINCT FROM 'true'
               AND created_at < NOW() - INTERVAL '1 day' * COALESCE(
                 (SELECT bs.retention_days FROM backup_sources bs
                  WHERE bs.id = backups.source_id),
@@ -293,7 +320,14 @@ def get_backup_health_summary() -> list[dict[str, Any]]:
                       AND b.status IN ('completed', 'completed_pending_upload')
                     ORDER BY b.completed_at DESC
                     LIMIT 1
-                ) AS latest_backup_id
+                ) AS latest_backup_id,
+                (
+                    SELECT b.verification_json -> 'activity'
+                    FROM backups b
+                    WHERE b.source_id = bs.id AND b.verification_json ? 'activity'
+                    ORDER BY (b.verification_json #>> '{activity,active}' = 'true') DESC, b.created_at DESC
+                    LIMIT 1
+                ) AS backup_activity
             FROM backup_sources bs
             ORDER BY bs.source_type, bs.name
             """
@@ -318,6 +352,7 @@ def get_backup_health_summary() -> list[dict[str, Any]]:
             "last_drill_backup_id": row[13],
             "latest_verification_json": row[14],
             "latest_backup_id": str(row[15]) if row[15] else None,
+            "backup_activity": row[16],
         }
         for row in rows
     ]

@@ -1,10 +1,16 @@
 """Backup source endpoints."""
 
-from fastapi import APIRouter, HTTPException
+from uuid import uuid4
 
+from fastapi import APIRouter, HTTPException, Request
+
+from ...access_control import require_owner
 from ...storage import backups as backup_store
+from ...tasks.backup_lock import acquire_backup_lock, release_backup_lock
 from .converters import backup_to_response
+from .key_endpoints import _require_same_origin
 from .models import (
+    BackupCancelRequest,
     BackupCreate,
     BackupListResponse,
     BackupSourceCreate,
@@ -231,15 +237,54 @@ async def sync_source_backup_offsite(source_id: str, backup_id: str) -> RestoreR
         raise HTTPException(status_code=404, detail=f"Backup {backup_id} not found in source {source_id}")
     if backup.get("status") not in {"completed", "completed_pending_upload"}:
         raise HTTPException(status_code=409, detail="Only completed backups can be synced offsite")
-    backup_store.merge_backup_verification_json(backup_id, {"offsite": {"status": "pending"}})
+    owner_token = acquire_backup_lock(source_id)
+    if owner_token is None:
+        raise HTTPException(status_code=409, detail="A backup or Drive sync is already active for this source")
     from ...workflows.models import OffsiteSyncInput
     from ...workflows.utility import backup_offsite_sync_wf
 
-    workflow_run = await backup_offsite_sync_wf.aio_run_no_wait(
-        OffsiteSyncInput(source_id=source_id, backup_id=backup_id)
-    )
+    attempt_id = str(uuid4())
+    try:
+        backup_store.merge_backup_verification_json(backup_id, {
+            "offsite": {"status": "pending"},
+            "activity": {
+                "backup_id": backup_id, "run_id": attempt_id, "active": True, "phase": "queued",
+                "operation_started_at": None, "last_verified_at": None, "last_verified_part": None,
+                "verified_parts": 0, "attention": False, "cancel_requested": False,
+                "remote_outcome_unknown": False,
+            },
+        })
+        workflow_run = await backup_offsite_sync_wf.aio_run_no_wait(
+            OffsiteSyncInput(source_id=source_id, backup_id=backup_id, owner_token=owner_token, attempt_id=attempt_id)
+        )
+    except Exception:
+        try:
+            backup_store.merge_backup_verification_json(backup_id, {
+                "activity": {"active": False, "phase": "failed"},
+                "offsite": {"status": "failed", "error": "Drive sync could not be queued"},
+            }, expected_activity_run_id=attempt_id)
+        finally:
+            release_backup_lock(source_id, owner_token)
+        raise
+    # The stable public attempt ID needs no post-enqueue write. A fast worker
+    # may already have finished and a later attempt may own this backup now.
     return RestoreResponse(
         task_id=workflow_run.workflow_run_id,
         status="queued",
         message=f"Offsite sync queued for backup {backup_id}",
     )
+
+
+@router.post("/backup-sources/{source_id}/backups/{backup_id}/cancel", response_model=RestoreResponse)
+async def cancel_source_backup(
+    source_id: str, backup_id: str, body: BackupCancelRequest, request: Request,
+) -> RestoreResponse:
+    """Request cooperative cancellation without deleting completed recovery data."""
+    require_owner(request)
+    _require_same_origin(request)
+    backup = backup_store.get_backup(backup_id)
+    if not backup or str(backup.get("source_id") or backup.get("project_id")) != source_id:
+        raise HTTPException(status_code=404, detail="Backup not found in source")
+    if not backup_store.request_backup_cancellation(backup_id, body.run_id):
+        raise HTTPException(status_code=409, detail="This backup attempt is no longer active")
+    return RestoreResponse(task_id=body.run_id, status="cancelling", message="Cancellation requested; saved recovery data will be retained")

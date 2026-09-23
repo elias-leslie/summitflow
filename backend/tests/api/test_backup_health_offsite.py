@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -91,11 +92,35 @@ async def test_health_projects_latest_offsite_evidence_and_disabled_state(monkey
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("offsite_status", "expected_error"),
+    [("verified", None), ("pending", None), ("failed", "previous transfer failed")],
+)
+async def test_health_only_projects_current_offsite_failure(monkeypatch, offsite_status, expected_error) -> None:
+    from app.api.backups import health_endpoints
+
+    verification = {"offsite": {"status": offsite_status, "error": "previous transfer failed"}}
+    monkeypatch.setattr(health_endpoints.backup_store, "get_backup_health_summary", lambda: [{
+        "source_id": "summitflow", "source_name": "SummitFlow", "source_type": "project", "enabled": True,
+        "last_success_at": "2026-09-21T12:00:00+00:00", "last_backup_status": "completed",
+        "latest_verification_json": verification,
+    }])
+    monkeypatch.setattr(health_endpoints, "build_storage_env", lambda _: {})
+
+    result = await health_endpoints.backup_health()
+
+    assert result.sources[0].offsite_error == expected_error
+    assert verification["offsite"]["error"] == "previous transfer failed"
+
+
+@pytest.mark.asyncio
 async def test_offsite_retry_marks_latest_backup_pending_and_queues_workflow(monkeypatch) -> None:
     from app.api.backups import source_endpoints
     from app.workflows import utility
 
-    merged: list[tuple[str, object]] = []
+    monkeypatch.setattr(source_endpoints, "acquire_backup_lock", lambda _: "owner")
+
+    merged: list[tuple[str, dict[str, Any]]] = []
     monkeypatch.setattr(
         source_endpoints.backup_store,
         "get_backup",
@@ -117,8 +142,28 @@ async def test_offsite_retry_marks_latest_backup_pending_and_queues_workflow(mon
 
     assert result.status == "queued"
     assert result.task_id == "workflow-1"
-    assert merged == [("backup-1", {"offsite": {"status": "pending"}})]
+    assert len(merged) == 1  # No late queue response can overwrite a newer run.
+    first = merged[0][1]
+    assert first["offsite"] == {"status": "pending"}
     queued.assert_awaited_once()
+    dispatched = queued.call_args.args[0]
+    assert first["activity"]["run_id"] == dispatched.attempt_id
+    assert dispatched.attempt_id not in {None, "", dispatched.owner_token}
+
+
+@pytest.mark.asyncio
+async def test_offsite_duplicate_retry_is_blocked_by_source_lease(monkeypatch) -> None:
+    from fastapi import HTTPException
+
+    from app.api.backups import source_endpoints
+
+    monkeypatch.setattr(source_endpoints.backup_store, "get_backup", lambda _: {
+        "id": "backup-1", "source_id": "source", "status": "completed",
+    })
+    monkeypatch.setattr(source_endpoints, "acquire_backup_lock", lambda _: None)
+    with pytest.raises(HTTPException) as error:
+        await source_endpoints.sync_source_backup_offsite("source", "backup-1")
+    assert error.value.status_code == 409
 
 
 @pytest.mark.asyncio

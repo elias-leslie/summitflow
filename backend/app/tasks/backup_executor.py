@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import hmac
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..storage.notifications import create_notification
-from .backup_lock import acquire_backup_lock, maintain_backup_lock
+from .backup_activity import BackupActivity, bind_backup_activity, current_activity
+from .backup_lock import acquire_backup_lock, maintain_backup_lock, owns_backup_lease
 from .backup_native import BACKUP_TIMEOUT, run_project_backup
 from .backup_native_archive import archive_sha256
 from .backup_native_offsite import replicate_completed_archive
@@ -29,7 +31,9 @@ from .backup_utils import (
 logger = get_logger(__name__)
 
 
-def sync_backup_offsite(backup_id: str) -> dict[str, object]:
+def sync_backup_offsite(
+    backup_id: str, *, on_progress: Callable[[], None] | None = None, owner_token: str | None = None,
+) -> dict[str, object]:
     """Retry offsite replication from a completed retained local archive."""
     backup = backup_store.get_backup(backup_id)
     if not backup:
@@ -51,22 +55,27 @@ def sync_backup_offsite(backup_id: str) -> dict[str, object]:
     archive = next((path for path in archive_candidates if path.is_file()), archive_candidates[1])
     if not archive.is_file():
         raise FileNotFoundError(f"Retained local archive not found: {archive_name}")
-    backup_store.merge_backup_verification_json(
-        backup_id,
-        {"offsite": {"status": "pending"}},
-    )
-    result = replicate_completed_archive(
-        archive,
-        source_id=source_id,
-        local_dir=archive.parent,
-        env=build_storage_env(source_id),
-        retention_days=int(source.get("retention_days") or 14),
-        retry=True,
-    )
-    updated = backup_store.merge_backup_verification_json(
-        backup_id,
-        {"offsite": result},
-    )
+    token = owner_token or acquire_backup_lock(source_id)
+    if token is None:
+        raise RuntimeError("A backup or Drive sync is already active for this source")
+    if owner_token is not None and not owns_backup_lease(source_id, owner_token):
+        raise RuntimeError("This queued Drive sync no longer owns the source lease")
+    if isinstance(on_progress, BackupActivity):
+        on_progress.lease_owned = lambda: owns_backup_lease(source_id, token)
+    with maintain_backup_lock(source_id, token), bind_backup_activity(backup_id, on_progress):
+        backup_store.merge_backup_verification_json(backup_id, {"offsite": {"status": "pending"}})
+        result = replicate_completed_archive(
+            archive, source_id=source_id, local_dir=archive.parent,
+            env=build_storage_env(source_id), retention_days=int(source.get("retention_days") or 14),
+            retry=True, on_progress=on_progress,
+        )
+        activity = current_activity()
+        if activity:
+            activity.record_offsite_result(result)
+        updated = backup_store.merge_backup_verification_json(
+            backup_id, {"offsite": result},
+            expected_activity_run_id=activity.run_id if activity else None,
+        )
     return updated or {**backup, "verification_json": {"offsite": result}}
 
 
@@ -140,6 +149,7 @@ def create_backup(
     local_only: bool = False,
     retention_days: int | None = None,
     source_id: str | None = None,
+    on_progress: Callable[[], None] | None = None,
 ) -> dict[str, object]:
     """Create a backup for a source through the native backup engine."""
     resolved_source_id = source_id or project_id
@@ -158,6 +168,7 @@ def create_backup(
             backup_type=backup_type,
             keep_local=keep_local,
             retention_days=retention_days,
+            on_progress=on_progress,
         )
 
     backup_dir = get_source_path(resolved_source_id) if source_id else None
@@ -183,6 +194,7 @@ def create_backup(
         retention_days,
         resolved_source_id,
         owner_token,
+        on_progress=on_progress,
     )
 
 
@@ -196,6 +208,7 @@ def _run_backup(
     retention_days: int | None = None,
     source_id: str | None = None,
     owner_token: str | None = None,
+    on_progress: Callable[[], None] | None = None,
 ) -> dict[str, object]:
     """Execute backup with lock already held."""
     resolved_source_id = source_id or project_id
@@ -213,15 +226,24 @@ def _run_backup(
             )
             backup_id = str(backup_record["id"])
             backup_store.update_backup_status(backup_id, "running")
+            if isinstance(on_progress, BackupActivity):
+                on_progress.lease_owned = lambda: owns_backup_lease(resolved_source_id, owner_token)
 
-            parsed_output = run_project_backup(
-                project_dir=project_dir,
-                source_id=resolved_source_id,
-                env=build_storage_env(resolved_source_id),
-                keep_local=keep_local,
-                local_only=local_only,
-                retention_days=retention_days,
-            )
+            with bind_backup_activity(backup_id, on_progress):
+                parsed_output = run_project_backup(
+                    project_dir=project_dir,
+                    source_id=resolved_source_id,
+                    env=build_storage_env(resolved_source_id),
+                    keep_local=keep_local,
+                    local_only=local_only,
+                    retention_days=retention_days,
+                    on_progress=on_progress,
+                )
+                if isinstance(on_progress, BackupActivity):
+                    backup_store.merge_backup_verification_json(
+                        backup_id, dict(as_mapping(parsed_output.get("verification")) or {}),
+                        expected_activity_run_id=on_progress.run_id,
+                    )
             require_verified_backup_output(parsed_output)
     except TimeoutError:
         if backup_id is None:
@@ -231,7 +253,8 @@ def _run_backup(
                 "project_id": project_id,
             }
         return _handle_backup_failure(
-            backup_id, f"Backup timed out after {BACKUP_TIMEOUT // 60} minutes", project_id
+            backup_id, f"Backup timed out after {BACKUP_TIMEOUT // 60} minutes", project_id,
+            expected_run_id=on_progress.run_id if isinstance(on_progress, BackupActivity) else None,
         )
     except Exception as e:
         if backup_id is None:
@@ -241,7 +264,10 @@ def _run_backup(
                 error=str(e),
             )
             return {"status": "failed", "error": str(e), "project_id": project_id}
-        return _handle_backup_failure(backup_id, str(e), project_id)
+        return _handle_backup_failure(
+            backup_id, str(e), project_id,
+            expected_run_id=on_progress.run_id if isinstance(on_progress, BackupActivity) else None,
+        )
 
     if parsed_output.get("pending_path"):
         return _handle_backup_pending(backup_id, project_id, parsed_output)
@@ -256,10 +282,17 @@ def _handle_backup_success(
     """Handle successful backup completion."""
     size_info = dict(parsed_output)
     verification_raw = size_info.pop("verification", None)
-    verification = as_mapping(verification_raw)
+    verification = dict(as_mapping(verification_raw) or {})
+    existing_activity = ((backup_store.get_backup(backup_id) or {}).get("verification_json") or {}).get("activity")
+    if existing_activity:
+        verification["activity"] = existing_activity
     archive_name = str(size_info.pop("archive_name", "") or "")
     size_info.pop("pending_path", None)
     vkw = build_verification_kwargs(verification) if verification else {}
+    if existing_activity:
+        # Managed verification was persisted while its lease was still held.
+        # A retry may now own this same retained archive; do not replace it.
+        vkw.pop("verification_json", None)
     backup_store.update_backup_status(
         backup_id, "completed",
         name=archive_name or None,
@@ -289,6 +322,8 @@ def _handle_backup_pending(
     archive_name = str(size_info.pop("archive_name", "") or "")
     pending_path = str(size_info.get("pending_path", "") or "")
     vkw = build_verification_kwargs(verification) if verification else {}
+    if ((backup_store.get_backup(backup_id) or {}).get("verification_json") or {}).get("activity"):
+        vkw.pop("verification_json", None)
     backup_store.update_backup_status(
         backup_id,
         "completed_pending_upload",
@@ -315,8 +350,17 @@ def _handle_backup_pending(
     }
 
 
-def _handle_backup_failure(backup_id: str, error_msg: str, project_id: str) -> dict[str, object]:
+def _handle_backup_failure(
+    backup_id: str, error_msg: str, project_id: str, *, expected_run_id: str | None = None,
+) -> dict[str, object]:
     """Handle backup failure, timeout, or exception."""
+    saved = backup_store.get_backup(backup_id)
+    if saved and saved.get("status") == "completed" and saved.get("verified") is True:
+        backup_store.merge_backup_verification_json(
+            backup_id, {"offsite": {"status": "failed", "error": error_msg}},
+            expected_activity_run_id=expected_run_id,
+        )
+        return {"status": "completed", "backup_id": backup_id, "location": saved.get("location"), "offsite_error": error_msg}
     backup_store.update_backup_status(backup_id, "failed", error_message=error_msg)
     logger.error("create_backup_failed", backup_id=backup_id, error=error_msg[:200])
     try:

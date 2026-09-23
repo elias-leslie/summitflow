@@ -10,6 +10,7 @@ import subprocess
 import tarfile
 import tempfile
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,13 @@ import yaml
 from ..logging_config import get_logger
 from ..services.backup_keys import backup_key_directory
 from ..utils.shared_paths import get_host_config_root, get_repo_root
+from .backup_activity import (
+    backup_phase,
+    check_backup_cancelled,
+    current_activity,
+    record_local_archive,
+    run_bulk_process,
+)
 from .backup_native_archive import (
     INFRASTRUCTURE_DATABASE_DUMP_NAME,
     _regular_file_filter,
@@ -157,6 +165,7 @@ def _copy_regular_path(
         return any(_path_is_within(path, root) for root in exclusions)
 
     def copy_entry(path: Path, target: Path, relative: Path) -> None:
+        check_backup_cancelled()
         if excluded(path):
             result["excluded_paths"] += 1
             return
@@ -528,16 +537,19 @@ def _capture_recovery_state(
 def _collect_redis_dump(destination: Path) -> None:
     redis_cli = shutil.which("redis-cli")
     if redis_cli:
-        result = subprocess.run([redis_cli, "-h", os.environ.get("REDIS_HOST", "localhost"), "-p", os.environ.get("REDIS_PORT", "6379"), "--rdb", str(destination)], check=False)
+        result = run_bulk_process([redis_cli, "-h", os.environ.get("REDIS_HOST", "localhost"), "-p", os.environ.get("REDIS_PORT", "6379"), "--rdb", str(destination)], phase="capture", object_name="Redis snapshot")
         if result.returncode == 0 and destination.exists() and destination.stat().st_size > 0:
             return
     container = _find_compose_container("redis")
     if not container:
         return
-    subprocess.run(["docker", "exec", container, "redis-cli", "BGSAVE"], check=False)
+    run_bulk_process(["docker", "exec", container, "redis-cli", "BGSAVE"], phase="capture", object_name="Redis snapshot request")
     time.sleep(2)
     with destination.open("wb") as out:
-        subprocess.run(["docker", "exec", container, "cat", "/data/dump.rdb"], stdout=out, check=False)
+        run_bulk_process(
+            ["docker", "exec", container, "cat", "/data/dump.rdb"], phase="capture", object_name="Redis snapshot",
+            stdout_sink=lambda source: shutil.copyfileobj(source, out),
+        )
 
 
 def _build_infra_archive(
@@ -647,6 +659,7 @@ def run_infra_backup(
     env: dict[str, str] | None = None,
     keep_local: bool = False,
     retention_days: int | None = None,
+    on_progress: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Create an infrastructure backup archive."""
     source_id = "infrastructure"
@@ -698,6 +711,7 @@ def run_infra_backup(
             local_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(encrypted_path, local_dir / encrypted_name)
             apply_local_retention(local_dir, retention)
+        backup_phase("local-storage")
         stored = _finish_infra_backup(
             project_dir,
             source_id,
@@ -709,6 +723,7 @@ def run_infra_backup(
             run_env=run_env,
         )
         if offsite_configured:
+            record_local_archive(stored)
             replica_source = (
                 Path(str(stored["location"]))
                 if backend_type == "local"
@@ -720,8 +735,12 @@ def run_infra_backup(
                 local_dir=replica_source.parent,
                 env=run_env,
                 retention_days=retention,
+                on_progress=on_progress,
             )
             stored_verification = dict(stored["verification"])
+            activity = current_activity()
+            if activity:
+                activity.record_offsite_result(offsite)
             stored_verification["offsite"] = offsite
             stored["verification"] = stored_verification
         return stored

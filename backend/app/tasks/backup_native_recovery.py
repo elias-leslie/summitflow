@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ..services.backup_keys import backup_key_directory
+from .backup_activity import BackupCancelled, backup_phase, check_backup_cancelled, run_bulk_process
 
 RECOVERY_DIR_NAME = ".summitflow-recovery"
 RECOVERY_MANIFEST_NAME = "manifest.json"
@@ -43,6 +44,7 @@ def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            check_backup_cancelled()
             digest.update(chunk)
     return f"sha256:{digest.hexdigest()}"
 
@@ -62,11 +64,13 @@ def inventory_project_tree(
 ) -> dict[str, SnapshotEntry]:
     """Inventory included regular files and safe in-tree relative symlinks."""
     inventory: dict[str, SnapshotEntry] = {}
+    backup_phase("inventory")
 
     def walk_error(error: OSError) -> None:
         raise error
 
     for root, dirs, files in os.walk(project_dir, followlinks=False, onerror=walk_error):
+        check_backup_cancelled()
         root_path = Path(root)
         rel_root = root_path.relative_to(project_dir).as_posix()
         rel_root = "" if rel_root == "." else rel_root
@@ -85,6 +89,7 @@ def inventory_project_tree(
 
         sqlite_databases: set[str] = set()
         for filename in files:
+            check_backup_cancelled()
             path = root_path / filename
             rel = (Path(rel_root) / filename).as_posix()
             if should_exclude(rel, excludes):
@@ -97,6 +102,7 @@ def inventory_project_tree(
                 sqlite_databases.add(filename)
 
         for filename in files:
+            check_backup_cancelled()
             path = root_path / filename
             rel = (Path(rel_root) / filename).as_posix()
             if should_exclude(rel, excludes):
@@ -172,9 +178,15 @@ def _is_sqlite_transient_file(
 
 
 def _copy_sqlite_database(source: Path, destination: Path) -> None:
+    check_backup_cancelled()
     source_uri = f"file:{source.resolve().as_posix()}?mode=ro"
     with sqlite3.connect(source_uri, uri=True) as source_db, sqlite3.connect(destination) as destination_db:
-        source_db.backup(destination_db)
+        page_size = int(source_db.execute("PRAGMA page_size").fetchone()[0])
+        source_db.backup(
+            destination_db,
+            pages=max(1, (1024 * 1024) // page_size),
+            progress=lambda _status, _remaining, _total: check_backup_cancelled(),
+        )
     shutil.copystat(source, destination, follow_symlinks=False)
 
 
@@ -184,8 +196,10 @@ def copy_inventory_snapshot(
     inventory: dict[str, SnapshotEntry],
 ) -> None:
     """Copy exactly one inventory without following links or special files."""
+    backup_phase("snapshot")
     destination.mkdir(parents=True, exist_ok=True)
     for rel, entry in sorted(inventory.items()):
+        check_backup_cancelled()
         source = project_dir / Path(*PurePosixPath(rel).parts)
         target = destination / Path(*PurePosixPath(rel).parts)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -196,7 +210,17 @@ def copy_inventory_snapshot(
         elif entry.append_only_jsonl:
             _copy_jsonl_prefix(source, target, entry, rel)
         else:
-            shutil.copy2(source, target, follow_symlinks=False)
+            if source.is_symlink():
+                shutil.copy2(source, target, follow_symlinks=False)
+            else:
+                with source.open("rb") as input_file, target.open("wb") as output_file:
+                    while True:
+                        check_backup_cancelled()
+                        chunk = input_file.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        output_file.write(chunk)
+                shutil.copystat(source, target, follow_symlinks=False)
 
 
 def _copy_jsonl_prefix(
@@ -220,6 +244,7 @@ def _copy_jsonl_prefix(
             if not _jsonl_identity_matches(os.fstat(input_file.fileno()), entry):
                 raise RuntimeError
             while remaining:
+                check_backup_cancelled()
                 chunk = input_file.read(min(1024 * 1024, remaining))
                 if not chunk:
                     raise RuntimeError
@@ -228,6 +253,8 @@ def _copy_jsonl_prefix(
             if not _jsonl_identity_matches(os.fstat(input_file.fileno()), entry):
                 raise RuntimeError
         shutil.copystat(source, destination, follow_symlinks=False)
+    except BackupCancelled:
+        raise
     except (OSError, RuntimeError):
         raise RuntimeError(
             f"Backup source changed during capture: {relative_path}"
@@ -257,6 +284,7 @@ def _jsonl_prefix_matches(
                 return False
             remaining = entry.size
             while remaining:
+                check_backup_cancelled()
                 length = min(1024 * 1024, remaining)
                 if source_file.read(length) != captured_file.read(length):
                     return False
@@ -274,6 +302,15 @@ def _run_git(
     env: dict[str, str] | None = None,
     input_data: str | None = None,
 ) -> subprocess.CompletedProcess[Any]:
+    check_backup_cancelled()
+    if args and args[0] in {"bundle", "pack-objects", "index-pack", "unpack-objects", "fsck"}:
+        if input_data is not None:
+            raise ValueError("Bulk Git recovery commands do not accept buffered stdin")
+        return run_bulk_process(
+            ["git", "-C", str(project_dir), *args],
+            env={**os.environ, **env} if env else None,
+            phase="git_recovery", attention_after=120, text=text,
+        )
     return subprocess.run(
         ["git", "-C", str(project_dir), *args],
         capture_output=True,

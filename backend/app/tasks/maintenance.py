@@ -15,6 +15,7 @@ from ..storage import quality_check_results as qcr_store
 from ..storage import scan_history
 from ..storage.tasks import purge_terminal_tasks
 from .autonomous.cleanup_operations import cleanup_stale_tasks
+from .backup_lock import has_active_backup_lease
 from .host_retention import cleanup_host_artifacts
 
 logger = get_logger(__name__)
@@ -100,6 +101,7 @@ def run_daily_maintenance(
             "stale_running_backups",
             backup_store.fail_stale_running_backups,
             max_age_minutes=30,
+            is_source_active=has_active_backup_lease,
         )
         stale_backups_deleted = _run_step(
             "stale_backups",

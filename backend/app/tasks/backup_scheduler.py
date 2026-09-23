@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -10,6 +11,7 @@ from ..storage import backups as backup_store
 from ..storage import maintenance_runs as maintenance_store
 from .backup_executor import create_backup
 from .backup_local_cleanup import cleanup_local_backup_archives
+from .backup_lock import has_active_backup_lease
 from .backup_utils import calculate_next_run
 
 logger = get_logger(__name__)
@@ -26,14 +28,18 @@ def _cleanup_stale_records() -> int:
 
 
 def _fail_stale_running_records() -> int:
-    """Fail backup rows that exceeded the expected runtime."""
-    failed = backup_store.fail_stale_running_backups(max_age_minutes=STALE_RUNNING_AGE_MINUTES)
+    """Fail old orphaned rows without imposing a total runtime on live backups."""
+    failed = backup_store.fail_stale_running_backups(
+        max_age_minutes=STALE_RUNNING_AGE_MINUTES, is_source_active=has_active_backup_lease,
+    )
     if failed:
         logger.warning("failed_stale_running_backups", count=failed)
     return failed
 
 
-def _process_due_source(source: dict[str, Any]) -> dict[str, Any]:
+def _process_due_source(
+    source: dict[str, Any], *, on_progress: Callable[[], None] | None = None,
+) -> dict[str, Any]:
     """Trigger a backup for a single due source.
 
     Args:
@@ -59,6 +65,7 @@ def _process_due_source(source: dict[str, Any]) -> dict[str, Any]:
         note=f"Scheduled {frequency} backup",
         retention_days=retention_days,
         source_id=source_id,
+        on_progress=on_progress,
     )
 
     status = str(result.get("status", "unknown"))
@@ -111,7 +118,7 @@ def _cleanup_local_archives() -> dict[str, Any]:
     return result
 
 
-def run_scheduled_backups() -> dict[str, Any]:
+def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> dict[str, Any]:
     """Check and run due scheduled backups.
 
     Queries backup_sources for any that are due and triggers backups.
@@ -168,7 +175,7 @@ def run_scheduled_backups() -> dict[str, Any]:
         results: list[dict[str, Any]] = []
         for source in due_sources:
             try:
-                results.append(_process_due_source(source))
+                results.append(_process_due_source(source, on_progress=on_progress))
             except Exception as exc:
                 logger.exception(
                     "scheduled_backup_source_unhandled_error",

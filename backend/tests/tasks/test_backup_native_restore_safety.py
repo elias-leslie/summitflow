@@ -356,6 +356,7 @@ def test_database_restore_streams_decompressed_dump_from_disk(
         observed["command"] = command
         observed["input"] = kwargs["stdin"].read()
         assert "input" not in kwargs
+        assert kwargs["timeout"] == 600
         return CompletedProcess(command, 0, stdout=b"", stderr=b"")
 
     monkeypatch.setattr("app.tasks.backup_native_restore.subprocess.run", fake_run)
@@ -414,17 +415,45 @@ def test_restore_decrypts_new_archive_format_but_keeps_legacy_support(
         lambda **_kwargs: (tmp_path / "recipient.txt", identity),
     )
 
-    def decrypt(command, **_kwargs):
+    def decrypt(command, **kwargs):
+        assert "timeout" not in kwargs
+        assert kwargs["attention_after"] == 600
+        assert kwargs["phase"] == "decryption"
         output = Path(command[command.index("-o") + 1])
         shutil.copy2(plaintext, output)
         return CompletedProcess(command, 0, stdout="", stderr="")
 
-    monkeypatch.setattr("app.tasks.backup_native_restore.subprocess.run", decrypt)
+    monkeypatch.setattr("app.tasks.backup_native_restore.run_bulk_process", decrypt, raising=False)
 
     destination = tmp_path / "restored"
     restore_archive(encrypted, destination, dry_run=False, files_only=True)
 
     assert (destination / "readme.txt").read_bytes() == b"encrypted restore\n"
+
+
+def test_failed_decryption_never_yields_plaintext_or_modifies_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.tasks import backup_native_restore as restore
+
+    encrypted = tmp_path / "backup.tar.gz.age"
+    encrypted.write_bytes(b"invalid ciphertext fixture")
+    monkeypatch.setattr(restore, "get_backup_key_paths", lambda **_: (tmp_path / "recipient", tmp_path / "identity"))
+    observed: list[Path] = []
+
+    def fail(command, **kwargs):
+        assert "timeout" not in kwargs
+        output = Path(command[command.index("-o") + 1])
+        output.write_bytes(b"unverified partial plaintext")
+        observed.append(output)
+        return CompletedProcess(command, 1, stdout="", stderr="invalid ciphertext")
+
+    monkeypatch.setattr(restore, "run_bulk_process", fail, raising=False)
+    with pytest.raises(RuntimeError, match="Backup decryption failed: invalid ciphertext"), restore.materialize_plaintext_archive(encrypted):
+        pytest.fail("Failed decryption must not yield plaintext")
+    assert len(observed) == 1
+    assert not observed[0].exists()
+    assert encrypted.read_bytes() == b"invalid ciphertext fixture"
 
 
 def test_isolated_restore_preserves_database_dump_without_running_psql(tmp_path: Path) -> None:

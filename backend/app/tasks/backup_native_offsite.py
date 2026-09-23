@@ -10,12 +10,14 @@ import shutil
 import subprocess
 import tempfile
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
 
 from ..services.backup_keys import get_backup_key_paths
+from .backup_activity import check_backup_cancelled, current_activity, run_bulk_process
 
 OFFSITE_MANIFEST_NAME = "offsite-manifest.json"
 _ARCHIVE_TIMESTAMP = re.compile(
@@ -30,11 +32,22 @@ def _checksum(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            check_backup_cancelled()
             digest.update(chunk)
     return f"sha256:{digest.hexdigest()}"
 
 
 def _run(command: list[str], *, timeout: int = TRANSFER_TIMEOUT) -> subprocess.CompletedProcess[str]:
+    check_backup_cancelled()
+    if command[:2] == ["gio", "copy"] or command[0] == "age":
+        phase = "encryption" if command[0] == "age" else (
+            "verification" if command[-2].startswith("google-drive://") else "upload"
+        )
+        return run_bulk_process(
+            command, env={**os.environ, "LC_ALL": "C"}, phase=phase,
+            object_name=Path(command[-1]).name if phase != "upload" else Path(command[-2]).name,
+            attention_after=timeout,
+        )
     return subprocess.run(
         command,
         stdin=subprocess.DEVNULL,
@@ -314,6 +327,7 @@ def _replicate_parts(
     local_checksum: str,
     temporary_dir: Path,
     retry: bool,
+    on_progress: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Publish a large ciphertext as verified bounded-size objects."""
     aggregate = hashlib.sha256()
@@ -351,6 +365,11 @@ def _replicate_parts(
                 verification_path=temporary_dir / "verification-download.part",
                 retry=retry,
             )
+            if on_progress is not None:
+                on_progress()
+            activity = current_activity()
+            if activity:
+                activity.verified_part(part_name)
             transfer_bytes += int(published["uploaded_bytes"]) + int(
                 published["downloaded_bytes"]
             )
@@ -430,6 +449,7 @@ def replicate_completed_archive(
     env: dict[str, str],
     retention_days: int,
     retry: bool = False,
+    on_progress: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Upload and download-verify one already encrypted completed archive."""
     started = time.monotonic()
@@ -457,6 +477,7 @@ def replicate_completed_archive(
                     local_checksum=local_checksum,
                     temporary_dir=temp_path,
                     retry=retry,
+                    on_progress=on_progress,
                 )
                 if encrypted_bytes > PART_SIZE_BYTES
                 else _replicate_single_file(

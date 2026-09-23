@@ -388,6 +388,69 @@ class TestCleanupExpiredRecords:
 class TestFailStaleRunningBackups:
     """Tests for fail_stale_running_backups."""
 
+    def test_active_old_completed_archive_survives_expiry_until_orphan_reconciled(self, conn: Any, cleanup_project: str) -> None:
+        old = backups.create_backup_record(cleanup_project)
+        backups.update_backup_status(old["id"], "completed", verification_json={"activity": {
+            "run_id": "active-run", "active": True, "phase": "upload",
+        }})
+        for _ in range(3):
+            fresh = backups.create_backup_record(cleanup_project)
+            backups.update_backup_status(fresh["id"], "completed")
+        with conn.cursor() as cur:
+            cur.execute("UPDATE backups SET created_at = NOW() - INTERVAL '40 days' WHERE id = %s", (old["id"],))
+            conn.commit()
+        assert backups.cleanup_expired_backup_records() == 0
+        assert backups.fail_stale_running_backups(is_source_active=lambda _: False) == 0
+        row = backups.get_backup(old["id"])
+        assert row is not None and row["status"] == "completed"
+        assert row["verification_json"]["activity"]["active"] is False
+        assert row["verification_json"]["activity"]["attention"] is True
+        assert backups.cleanup_expired_backup_records() == 1
+
+    def test_same_run_cancel_survives_activity_start_and_local_checkpoint(self, cleanup_project: str) -> None:
+        backup = backups.create_backup_record(cleanup_project)
+        backup_id = backup["id"]
+        backups.merge_backup_verification_json(backup_id, {"activity": {
+            "run_id": "run-1", "active": True, "cancel_requested": False,
+        }})
+        assert backups.request_backup_cancellation(backup_id, "run-1")
+        backups.merge_backup_verification_json(backup_id, {"activity": {
+            "run_id": "run-1", "phase": "capture", "cancel_requested": False,
+        }})
+        backups.update_backup_status(backup_id, "completed", verification_json={
+            "verified": True, "activity": {"run_id": "run-1", "cancel_requested": False},
+        })
+        row = backups.get_backup(backup_id)
+        assert row is not None
+        assert row["verification_json"]["activity"]["cancel_requested"] is True
+        backups.merge_backup_verification_json(backup_id, {"activity": {
+            "run_id": "run-2", "active": True, "cancel_requested": False,
+        }})
+        row = backups.get_backup(backup_id)
+        assert row is not None
+        assert row["verification_json"]["activity"]["cancel_requested"] is False
+        assert backups.merge_backup_verification_json(
+            backup_id, {"activity": {"active": False}, "offsite": {"status": "failed"}},
+            expected_activity_run_id="run-1",
+        ) is None
+        row = backups.get_backup(backup_id)
+        assert row is not None and row["verification_json"]["activity"]["active"] is True
+
+    def test_retention_never_deletes_running_rows_by_age(self, conn: Any, cleanup_project: str) -> None:
+        running = backups.create_backup_record(cleanup_project)
+        failed = backups.create_backup_record(cleanup_project)
+        backups.update_backup_status(running["id"], "running")
+        backups.update_backup_status(failed["id"], "failed")
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE backups SET created_at = NOW() - INTERVAL '40 days' WHERE id = ANY(%s)",
+                ([running["id"], failed["id"]],),
+            )
+            conn.commit()
+        assert backups.cleanup_stale_backup_records() == 1
+        assert backups.get_backup(running["id"]) is not None
+        assert backups.get_backup(failed["id"]) is None
+
     def test_fail_stale_running_backups_marks_old_rows_failed(
         self, conn: Any, cleanup_project: str
     ) -> None:
@@ -409,7 +472,7 @@ class TestFailStaleRunningBackups:
             )
             conn.commit()
 
-        failed = backups.fail_stale_running_backups(max_age_minutes=30)
+        failed = backups.fail_stale_running_backups(max_age_minutes=30, is_source_active=lambda _: False)
 
         stale_row = backups.get_backup(stale["id"])
         fresh_row = backups.get_backup(fresh["id"])
@@ -418,6 +481,30 @@ class TestFailStaleRunningBackups:
         assert stale_row is not None
         assert stale_row["status"] == "failed"
         assert stale_row["completed_at"] is not None
-        assert "exceeded expected runtime" in (stale_row["error_message"] or "")
+        assert "no active backup lease" in (stale_row["error_message"] or "")
         assert fresh_row is not None
         assert fresh_row["status"] == "running"
+
+    @pytest.mark.parametrize("lease_state", ["active", "unknown"])
+    def test_long_running_backup_is_not_an_orphan_with_active_or_unknown_lease(
+        self, conn: Any, cleanup_project: str, lease_state: str,
+    ) -> None:
+        stale = backups.create_backup_record(cleanup_project)
+        backups.update_backup_status(stale["id"], "running")
+        with conn.cursor() as cur:
+            cur.execute("UPDATE backups SET started_at = NOW() - INTERVAL '2 hours' WHERE id = %s", (stale["id"],))
+            conn.commit()
+
+        def is_active(source_id: str) -> bool:
+            assert source_id == cleanup_project
+            if lease_state == "unknown":
+                raise ConnectionError("Redis unavailable")
+            return True
+
+        if lease_state == "unknown":
+            with pytest.raises(ConnectionError, match="Redis unavailable"):
+                backups.fail_stale_running_backups(is_source_active=is_active)
+        else:
+            assert backups.fail_stale_running_backups(is_source_active=is_active) == 0
+        row = backups.get_backup(stale["id"])
+        assert row is not None and row["status"] == "running"

@@ -21,7 +21,7 @@ import {
   updateBackupSource,
 } from '@/lib/api/backups'
 import { formatBytes, formatDate, formatTimeAgo } from '@/lib/format'
-import { OffsiteStatus } from './OffsiteStatus'
+import { backupActivityLabel, OffsiteStatus } from './OffsiteStatus'
 import { SourceTypeBadge } from './SourceTypeBadge'
 import { StatusBadge } from './StatusBadge'
 
@@ -181,6 +181,8 @@ export function SourceCard({
   const [coverage, setCoverage] = useState<CoverageResponse | null>(null)
 
   const isInfra = source.source_type === 'infrastructure'
+  const activity = health?.backup_activity
+  const backupActive = isBackingUp || activity?.active === true
 
   useEffect(() => {
     if (expanded && isInfra && !coverage) {
@@ -258,6 +260,16 @@ export function SourceCard({
           {source.name}
         </span>
         <SourceTypeBadge type={source.source_type} />
+        {activity?.active && (
+          <span
+            className={clsx(
+              'text-2xs',
+              activity.attention ? 'text-amber-300' : 'text-blue-300',
+            )}
+          >
+            {backupActivityLabel(activity)}
+          </span>
+        )}
 
         {/* Schedule info */}
         <div className="hidden sm:flex items-center gap-2 text-2xs text-slate-500 ml-auto mr-2">
@@ -298,11 +310,11 @@ export function SourceCard({
           <button
             type="button"
             onClick={onBackupNow}
-            disabled={isBackingUp}
+            disabled={backupActive}
             className="text-2xs px-2 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 disabled:opacity-40 transition-colors"
             title="Backup now"
           >
-            {isBackingUp ? (
+            {backupActive ? (
               <Loader2 className="w-3 h-3 animate-spin" />
             ) : (
               <Play className="w-3 h-3" />

@@ -131,7 +131,12 @@ def build_backup_updates(
         params.append(total_files)
 
     if verification_json is not None:
-        updates.append("verification_json = %s")
+        # Activity is current attempt state, not archive verification. Preserve
+        # accepted cancellation and live phase updates across artifact writes.
+        updates.append(
+            "verification_json = %s::jsonb || CASE WHEN verification_json ? 'activity' "
+            "THEN jsonb_build_object('activity', verification_json -> 'activity') ELSE '{}'::jsonb END"
+        )
         params.append(verification_json)
 
     # Update timestamps based on status

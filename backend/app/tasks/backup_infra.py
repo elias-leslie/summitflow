@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..storage.notifications import create_notification
-from .backup_lock import acquire_backup_lock, maintain_backup_lock
+from .backup_activity import BackupActivity, bind_backup_activity
+from .backup_lock import acquire_backup_lock, maintain_backup_lock, owns_backup_lease
 from .backup_native import INFRA_BACKUP_TIMEOUT, run_infra_backup
 from .backup_utils import (
     as_mapping,
@@ -24,6 +27,7 @@ def create_infra_backup(
     backup_type: str = "manual",
     keep_local: bool = False,
     retention_days: int | None = None,
+    on_progress: Callable[[], None] | None = None,
 ) -> dict[str, object]:
     """Create an infrastructure backup (pg_dumpall + configs)."""
     logger.info("create_infra_backup_started", source_id=source_id, backup_type=backup_type)
@@ -40,6 +44,7 @@ def create_infra_backup(
         keep_local,
         retention_days,
         owner_token,
+        on_progress=on_progress,
     )
 
 
@@ -50,6 +55,7 @@ def _run_infra_backup(
     keep_local: bool,
     retention_days: int | None,
     owner_token: str | None = None,
+    on_progress: Callable[[], None] | None = None,
 ) -> dict[str, object]:
     """Execute infrastructure backup with lock held."""
     # Use a pseudo project_id for infrastructure
@@ -69,11 +75,20 @@ def _run_infra_backup(
             )
             backup_id = str(backup_record["id"])
             backup_store.update_backup_status(backup_id, "running")
-            parsed_output = run_infra_backup(
-                env=build_storage_env(source_id),
-                keep_local=keep_local,
-                retention_days=retention_days,
-            )
+            if isinstance(on_progress, BackupActivity):
+                on_progress.lease_owned = lambda: owns_backup_lease(source_id, owner_token)
+            with bind_backup_activity(backup_id, on_progress):
+                parsed_output = run_infra_backup(
+                    env=build_storage_env(source_id),
+                    keep_local=keep_local,
+                    retention_days=retention_days,
+                    on_progress=on_progress,
+                )
+                if isinstance(on_progress, BackupActivity):
+                    backup_store.merge_backup_verification_json(
+                        backup_id, dict(as_mapping(parsed_output.get("verification")) or {}),
+                        expected_activity_run_id=on_progress.run_id,
+                    )
             require_verified_backup_output(parsed_output)
     except TimeoutError:
         if backup_id is None:
@@ -81,12 +96,17 @@ def _run_infra_backup(
                 "status": "failed",
                 "error": f"Infrastructure backup timed out after {INFRA_BACKUP_TIMEOUT // 60} minutes",
             }
-        return _handle_failure(backup_id, f"Infrastructure backup timed out after {INFRA_BACKUP_TIMEOUT // 60} minutes")
+        return _handle_failure(
+            backup_id, f"Infrastructure backup timed out after {INFRA_BACKUP_TIMEOUT // 60} minutes",
+            expected_run_id=on_progress.run_id if isinstance(on_progress, BackupActivity) else None,
+        )
     except Exception as e:
         if backup_id is None:
             logger.error("create_infra_backup_failed_before_record", error=str(e))
             return {"status": "failed", "error": str(e)}
-        return _handle_failure(backup_id, str(e))
+        return _handle_failure(
+            backup_id, str(e), expected_run_id=on_progress.run_id if isinstance(on_progress, BackupActivity) else None,
+        )
 
     if parsed_output.get("pending_path"):
         return _handle_pending(backup_id, parsed_output)
@@ -97,10 +117,15 @@ def _handle_success(backup_id: str, parsed: dict[str, object]) -> dict[str, obje
     """Handle successful infrastructure backup."""
     info = dict(parsed)
     verification_raw = info.pop("verification", None)
-    verification = as_mapping(verification_raw)
+    verification = dict(as_mapping(verification_raw) or {})
+    existing_activity = ((backup_store.get_backup(backup_id) or {}).get("verification_json") or {}).get("activity")
+    if existing_activity:
+        verification["activity"] = existing_activity
     archive_name = str(info.pop("archive_name", "") or "")
     info.pop("pending_path", None)
     vkw = build_verification_kwargs(verification) if verification else {}
+    if existing_activity:
+        vkw.pop("verification_json", None)
 
     backup_store.update_backup_status(
         backup_id, "completed",
@@ -123,6 +148,8 @@ def _handle_pending(backup_id: str, parsed: dict[str, object]) -> dict[str, obje
     archive_name = str(info.pop("archive_name", "") or "")
     pending_path = str(info.get("pending_path", "") or "")
     vkw = build_verification_kwargs(verification) if verification else {}
+    if ((backup_store.get_backup(backup_id) or {}).get("verification_json") or {}).get("activity"):
+        vkw.pop("verification_json", None)
 
     backup_store.update_backup_status(
         backup_id, "completed_pending_upload",
@@ -137,8 +164,15 @@ def _handle_pending(backup_id: str, parsed: dict[str, object]) -> dict[str, obje
     return {"status": "completed_pending_upload", "backup_id": backup_id, "location": pending_path or "pending_upload", **info}
 
 
-def _handle_failure(backup_id: str, error_msg: str) -> dict[str, object]:
+def _handle_failure(backup_id: str, error_msg: str, *, expected_run_id: str | None = None) -> dict[str, object]:
     """Handle infrastructure backup failure."""
+    saved = backup_store.get_backup(backup_id)
+    if saved and saved.get("status") == "completed" and saved.get("verified") is True:
+        backup_store.merge_backup_verification_json(
+            backup_id, {"offsite": {"status": "failed", "error": error_msg}},
+            expected_activity_run_id=expected_run_id,
+        )
+        return {"status": "completed", "backup_id": backup_id, "location": saved.get("location"), "offsite_error": error_msg}
     backup_store.update_backup_status(backup_id, "failed", error_message=error_msg)
     logger.error("create_infra_backup_failed", backup_id=backup_id, error=error_msg[:200])
     try:

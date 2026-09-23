@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from ...logging_config import get_logger
 from ...storage import backups as backup_store
 from ...tasks.backup_coverage import get_coverage_summary, verify_archive_coverage
+from ...tasks.backup_lock import has_active_backup_lease
 from ...tasks.backup_utils import build_storage_env
 from .models import (
     BackupHealthItem,
@@ -56,6 +57,16 @@ async def backup_health() -> BackupHealthResponse:
         isolated_restore = isolated_restore if isinstance(isolated_restore, Mapping) else {}
         offsite_configured = bool(build_storage_env(str(row["source_id"])).get("BACKUP_OFFSITE_GIO_URI"))
         offsite_status = str(offsite.get("status") or ("pending" if offsite_configured and last_success else "unconfigured"))
+        raw_activity = row.get("backup_activity")
+        activity = dict(raw_activity) if isinstance(raw_activity, Mapping) else None
+        if activity and activity.get("active") is True:
+            try:
+                if not has_active_backup_lease(str(row["source_id"])):
+                    activity.update(active=False, phase="failed", attention=True, remote_outcome_unknown=True)
+            except Exception:
+                # Loss of the coordination service is unknown, not proof that
+                # another attempt can safely be started.
+                activity["attention"] = True
 
         # Compute ages
         latest_backup_age_hours = _hours_since(last_success)
@@ -135,9 +146,10 @@ async def backup_health() -> BackupHealthResponse:
                 last_offsite_verified_at=_mapping_str(offsite, "verified_at"),
                 offsite_location=_mapping_str(offsite, "location"),
                 offsite_checksum=_mapping_str(offsite, "checksum"),
-                offsite_error=_mapping_str(offsite, "error"),
+                offsite_error=_mapping_str(offsite, "error") if offsite_status == "failed" else None,
                 last_isolated_restore_at=_mapping_str(isolated_restore, "verified_at"),
                 last_isolated_restore_ok=_mapping_bool(isolated_restore, "ok"),
+                backup_activity=activity,
             )
         )
 

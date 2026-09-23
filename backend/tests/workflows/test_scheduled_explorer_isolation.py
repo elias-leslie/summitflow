@@ -4,7 +4,7 @@ from collections.abc import Awaitable
 from unittest.mock import Mock
 
 import pytest
-from hatchet_sdk import ConcurrencyLimitStrategy
+from hatchet_sdk import ConcurrencyExpression, ConcurrencyLimitStrategy
 
 from app.workflows.models import EmptyInput
 from app.workflows.scheduled import (
@@ -44,6 +44,16 @@ def test_hatchet_retention_schedule_is_registry_managed() -> None:
 def test_scheduled_backups_timeout_covers_a_full_source_sweep() -> None:
     """Do not retry a partially completed sweep and duplicate large archives."""
     assert scheduled_backups_wf._task.execution_timeout == "7200s"
+
+
+def test_scheduled_backups_skip_overlapping_cron_instead_of_killing_active_sweep() -> None:
+    concurrency = scheduled_backups_wf._task.concurrency
+    assert concurrency is not None
+    constraints = concurrency if isinstance(concurrency, list) else [concurrency]
+    assert len(constraints) == 1
+    constraint = constraints[0]
+    assert isinstance(constraint, ConcurrencyExpression)
+    assert constraint.limit_strategy == ConcurrencyLimitStrategy.CANCEL_NEWEST
 
 
 @pytest.mark.asyncio

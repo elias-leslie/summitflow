@@ -52,6 +52,9 @@ Download `recovery-bootstrap.py` from the Drive recovery kit (the repository cop
 is `scripts/recovery-bootstrap.py`). Verify the kit with its `SHA256SUMS` file.
 Use the archive checksum in the dated recovery inventory when it matches your
 chosen archive; omit that argument if the archive is newer than the inventory.
+When choosing without a matching inventory record, prefer a complete parts set
+over a same-named raw archive. A failed older whole-file upload may coexist with
+the later verified parts; its filename alone does not establish completeness.
 Create the private workspace before copying or assembling recovery material:
 
 ```bash

@@ -12,6 +12,7 @@ from typing import Any, cast
 from hatchet_sdk import ConcurrencyExpression, ConcurrencyLimitStrategy, Context
 
 from ..hatchet_app import hatchet
+from .backup_progress import make_backup_progress_callback
 from .models import (
     AutoFixInput,
     BackupInput,
@@ -85,6 +86,7 @@ async def backup_create_wf(input: BackupInput, ctx: Context) -> dict[str, Any]:
         keep_local=input.keep_local,
         retention_days=input.retention_days,
         source_id=input.source_id,
+        on_progress=make_backup_progress_callback(ctx),
     )
 
 
@@ -133,9 +135,28 @@ async def backup_restore_wf(input: RestoreInput, ctx: Context) -> dict[str, Any]
 )
 async def backup_offsite_sync_wf(input: OffsiteSyncInput, ctx: Context) -> dict[str, Any]:
     """Retry Drive replication without capturing a new local archive."""
+    from ..storage import backups as backup_store
     from ..tasks.backup_executor import sync_backup_offsite
+    from ..tasks.backup_lock import release_backup_lock
 
-    return await asyncio.to_thread(sync_backup_offsite, input.backup_id)
+    try:
+        return await asyncio.to_thread(
+            sync_backup_offsite, input.backup_id, on_progress=make_backup_progress_callback(ctx, input.attempt_id),
+            owner_token=input.owner_token,
+        )
+    except Exception as exc:
+        failure = {
+            "activity": {"active": False, "phase": "failed", "attention": True},
+            "offsite": {"status": "failed", "error": str(exc)},
+        }
+        try:
+            backup_store.merge_backup_verification_json(
+                input.backup_id, failure, expected_activity_run_id=input.attempt_id or str(ctx.workflow_run_id),
+            )
+        finally:
+            if input.owner_token:
+                release_backup_lock(input.source_id, input.owner_token)
+        return {"status": "failed", "backup_id": input.backup_id, "error": str(exc)}
 
 
 @hatchet.task(

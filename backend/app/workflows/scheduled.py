@@ -25,6 +25,7 @@ from ..services.autonomous_schedule_registry import (
     SUMMITFLOW_CONTROL_PROJECT_ID,
     is_schedule_enabled,
 )
+from .backup_progress import make_backup_progress_callback
 from .models import (
     EmptyInput,
     ProjectInput,
@@ -298,7 +299,9 @@ async def refresh_graphify_graphs_wf(input: EmptyInput, ctx: Context) -> dict[st
     concurrency=ConcurrencyExpression(
         expression="'summitflow-scheduled-backups'",
         max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+        # Skip the next hourly trigger rather than cancel a healthy long sweep
+        # or accumulate overlapping scheduled work.
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_NEWEST,
     ),
 )
 async def scheduled_backups_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
@@ -307,7 +310,7 @@ async def scheduled_backups_wf(input: EmptyInput, ctx: Context) -> dict[str, Any
     if not _system_schedule_enabled("scheduled_backups"):
         return _disabled_schedule_result("scheduled_backups")
 
-    return await asyncio.to_thread(run_scheduled_backups)
+    return await asyncio.to_thread(run_scheduled_backups, on_progress=make_backup_progress_callback(ctx))
 
 
 @hatchet.task(

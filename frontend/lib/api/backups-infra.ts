@@ -22,6 +22,20 @@ export interface StorageStatus {
   default_backend_name: string | null
 }
 
+export interface BackupActivity {
+  backup_id: string
+  run_id: string | null
+  active: boolean
+  phase: string
+  operation_started_at: string | null
+  last_verified_at: string | null
+  last_verified_part: string | null
+  verified_parts: number
+  attention: boolean
+  cancel_requested: boolean
+  remote_outcome_unknown: boolean
+}
+
 export interface BackupHealthItem {
   source_id: string
   source_name: string
@@ -53,6 +67,7 @@ export interface BackupHealthItem {
   offsite_error: string | null
   last_isolated_restore_at: string | null
   last_isolated_restore_ok: boolean | null
+  backup_activity?: BackupActivity | null
 }
 
 export interface BackupHealthResponse {
