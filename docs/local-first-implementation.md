@@ -70,6 +70,28 @@ file ownership and source-change guards remain required.
       worker binaries do not yet honor the barrier; defensive rechecks cannot
       retroactively eliminate that old-binary race. Runtime rollout remains below.
 
+Final integration evidence: local checkpoint `23ca1bea27060cbfaeacd951083c29cdc42067e1`
+passed 3,480 backend and 226 frontend tests plus types/lint/security gates in
+104.63 seconds wall (125.13 user, 21.16 system, peak 685,984 KiB). Its receipt is
+`.git/st/acceptance/4735fd7bdb57705cdc2503aefc27dfd73a8e26212165bdb4871f72b5fec295d5.json`.
+One preceding full run failed because the checkout had an older installed SDK
+than the correct committed wheel. Synchronizing the existing locked local wheels
+and development extras resolved it without changing the other agent's feature.
+The failed run cost 107.28 seconds; it is retained as failure evidence, not savings.
+A 37.32-second checkpoint failure exposed two lifecycle tests missing a guard
+mock; those fixtures are now isolated from live backup ownership. The successful
+checkpoint took 38.03 seconds. The new same-run diagnostic report avoided an
+additional run merely to identify the failing tests.
+
+Managed build `bb20a2781359436786a4dfb74bca10ad` then stopped safely before any
+service restart: the remote Outfit font-loader generated invalid Turbopack module
+queries. Layout and lockfile matched the previously successful release, so no
+application/source drift explains that failure. Its exact upstream cause is not
+claimed. Reusing all eleven existing licensed WOFF2 assets (181,780 bytes) locally
+removes the failing build-time font-loader/network dependency without new packages
+or a visual redesign. This focused deployment repair is underway; there is no
+further exploratory improvement scope open.
+
 ### Resolved coordination blocker
 
 Option 1 is **not complete**. Its archive and explicit-receipt closeout fixes are

@@ -1,31 +1,6 @@
-import clsx from 'clsx'
 import type { Metadata, Viewport } from 'next'
-import { Bricolage_Grotesque, JetBrains_Mono, Outfit } from 'next/font/google'
 import './globals.css'
-
-// Primary body font — warm geometric sans
-const outfit = Outfit({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-body',
-  display: 'swap',
-})
-
-// Display font for headings — editorial, angular, characterful
-const bricolageGrotesque = Bricolage_Grotesque({
-  subsets: ['latin'],
-  weight: ['500', '600', '700', '800'],
-  variable: '--font-display',
-  display: 'swap',
-})
-
-// Primary mono font
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--font-mono',
-  display: 'swap',
-})
+import './fonts.css'
 
 export const metadata: Metadata = {
   title: 'SummitFlow',
@@ -44,16 +19,29 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html
-      lang="en"
-      className={clsx(
-        'dark',
-        outfit.variable,
-        bricolageGrotesque.variable,
-        jetbrainsMono.variable,
-      )}
-    >
+    <html lang="en" className="dark">
       <head>
+        <link
+          rel="preload"
+          href="/fonts/1b99372b3eaef0c8-s.p.1gsd1jahc5dg_.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
+        <link
+          rel="preload"
+          href="/fonts/017d9bea37084d9b-s.p.41rroleoq1br7.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
+        <link
+          rel="preload"
+          href="/fonts/051742360c26797e-s.p.1bkzbscqrt8rl.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
         <link
           rel="icon"
           type="image/png"
