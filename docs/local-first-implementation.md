@@ -7,7 +7,69 @@ workflow change, not a new reusable instruction store. GitHub publication is not
 requested. Existing security controls, histories, unrelated work, and necessary
 live validation must remain protected.
 
-## Owner-approved sequencing, 2026-09-23
+## Final result, 2026-09-23
+
+**Completed locally.** Task `task-a6bee0c09e0e4a3c` and all five subtasks are
+persisted as completed. Closeout imported matching acceptance, deployment and
+live evidence, removed its checkpoint, and repeated closeout was a successful
+no-op. No GitHub push, PR, Actions run or publication was performed. No approved
+implementation work remains deferred to the other agent or owner. Historical
+checkpoint notes below are not the current outstanding-work list.
+
+Accepted/deployed executable source: `f8c85f5cfef9cbcf52f7083bacdbc45cf924a64b`.
+The final documentation-only checkpoint records these results; it does not claim
+a new deployment or require another capture merely for this closeout timestamp.
+
+| Evidence | Final result |
+| --- | --- |
+| Acceptance | 3,480 backend and 229 frontend tests passed, plus types/lint/configured security gates. Semgrep had no local rules and was explicitly skipped; CodeQL equivalence is not claimed. |
+| Deployment | Job `205bc8335c044a258edb55b8bf060e1a` succeeded on the exact accepted source. All three services active; live health passed; previous release retained. |
+| Drive coverage | All 29 enabled sources have encrypted verified recovery points; no latest-unverified source. Infrastructure `bkp-89eb08ecdfb74be5` includes its SQL dump and all nine required file/configuration groups. |
+| Actual recovery | SummitFlow `bkp-a15e1019462d432f`: verified Drive parts/full ciphertext, standalone bootstrap, recovered offline CLI, Git refs/history/exact index/files, real disposable SQL restore, and application health/OpenAPI with unchanged middleware and non-superuser DB role. |
+| Capture correction | SummitFlow's formerly omitted nested backup modules now run; Neri `bkp-5dee5d83a1684091` preserves all 29 previously omitted nested snapshot files, checked by SHA-256. |
+| UI | Existing open page discovered external backup work, showed qualified part progress/cancellation, Drive completion and the exact backup's passed restore without forced refresh. Three fonts loaded locally; zero Google Fonts requests. |
+| Recovery kit | Five uploaded files independently downloaded/hash-matched: `START-HERE.md`, `OFFLINE-RESTORE.md`, `recovery-bootstrap.py`, `recovery-inventory.json`, `SHA256SUMS`. No private key uploaded. |
+
+Recovery folder: [SummitFlow Backups](https://drive.google.com/drive/folders/1u49hftdtwOEfY7pe_zaORj7ZmlO8-Qqq).
+After a hard loss, start with `START-HERE.md` and obtain the saved age identity
+from the owner's password manager, not Drive. The inventory is dated, not a
+permanent latest pointer; the runbook handles normal retention/newer archives.
+
+Final artifacts in `.dev-tools`: `final-local-first-closeout.json`,
+`final-drive-restore-evidence.json`, `final-drive-restore-proof/`,
+`final-backup-ui-evidence.json`, `neri-nested-recovery-evidence.json`, and
+`recovery-kit-evidence.json`. Prior infrastructure/Redis, cancellation and large
+transfer proofs remain dated evidence, not claims of rerunning them on final source.
+
+Final timings: full acceptance **101.56 s wall**, matching receipt reuse **0.83 s**,
+managed deployment **22.16 s** (frontend build 14.37 s), local closeout **1.02 s**,
+idempotent closeout **0.54 s**. Acceptance used 121.75 s user CPU, 21.41 s system
+CPU, 680,824 KiB peak RSS. Restored SQL import took 3.030 s and actual application
+routes 3.807 s. Earlier successful restore phases were reused; their timings were
+not retained, so no total restore-speed claim is made. Two temporary harness
+assumptions needed correction: auth requires DB access, and PostgreSQL image
+initialization expects its standard socket. Those failures were investigation
+overhead, not production defects or savings. Matching acceptance saved 100.73 s
+in this observed comparison, not after changed inputs. Raw timings are in
+`.dev-tools/final-*-performance.txt`. Billed-token totals remain unavailable;
+output-size estimates below are not billing measurements.
+
+The backup admission barrier is deployed. Interrupted transfers reused retained
+ciphertext; the orphaned infrastructure attempt was reconciled only after lease
+expiry, followed by a verified replacement. Removed two task-created acceptance
+worktrees and approximately 5.3 GiB of old private failed-restore copies after
+preserving diagnostics. Original archives/key, production state and the other
+agent's checkout remain untouched.
+
+Boundaries, not hidden unfinished implementation: this is not an OS image,
+offline registry mirror or boot test of every application. Captures are separate
+recovery points. Public registries, Drive and existing Cloudflare policy remain
+dependencies. The final application probe did not start Redis, workers or a
+frontend; separate infrastructure/live-runtime evidence is dated below. Veeam
+bare-metal restoration/encryption and CodeQL-equivalent local coverage remain
+unverified. Pulse cannot infer unreported external-agent edits.
+
+## Historical owner-approved sequencing, 2026-09-23
 
 Finish option 1 now: the confirmed archive-exclusion defect, backup UI freshness,
 safe explicit-receipt closeout with unrelated work preserved, then source-bound
@@ -15,8 +77,8 @@ verification, coordinated deployment, real Drive recovery, the recovery kit and
 accurate task closeout. Do not add more UI polish or a generic workflow-status API.
 
 After that, the owner wants the remaining broader follow-ups completed **only
-after explicit confirmation that the other agent has finished**. These are
-pending, not silently dropped and not included in an option-1 completion claim:
+after explicit confirmation that the other agent has finished**. These were
+initially pending; all three are now addressed:
 
 - [x] Review the repeated full-check/deployment cost for small frontend changes;
       reuse verified unchanged inputs only where the existing evidence contract
@@ -30,7 +92,7 @@ pending, not silently dropped and not included in an option-1 completion claim:
       rather than introducing a second orchestration system.
 
 The owner subsequently confirmed the other agent is done and authorized resuming
-all remaining work. The follow-ups above are now active, not blocked on approval.
+all remaining work. The follow-ups above are complete, not blocked on approval.
 
 Efficiency disposition: keep focused changed-only feedback, batch compatible edits,
 then run full acceptance once for the exact candidate. Deployment and closeout reuse
@@ -68,7 +130,8 @@ file ownership and source-change guards remain required.
       active leases before lifecycle mutations. Sixty-seven focused tests plus
       types/Ruff passed. First activation still needs an idle window because old
       worker binaries do not yet honor the barrier; defensive rechecks cannot
-      retroactively eliminate that old-binary race. Runtime rollout remains below.
+      retroactively eliminate that old-binary race. The subsequent idle-window
+      rollout succeeded; the final result above records the active source.
 
 Final integration evidence: local checkpoint `23ca1bea27060cbfaeacd951083c29cdc42067e1`
 passed 3,480 backend and 226 frontend tests plus types/lint/security gates in
@@ -89,12 +152,12 @@ queries. Layout and lockfile matched the previously successful release, so no
 application/source drift explains that failure. Its exact upstream cause is not
 claimed. Reusing all eleven existing licensed WOFF2 assets (181,780 bytes) locally
 removes the failing build-time font-loader/network dependency without new packages
-or a visual redesign. This focused deployment repair is underway; there is no
-further exploratory improvement scope open.
+or a visual redesign. This focused deployment repair passed acceptance and live
+rollout; there is no further exploratory improvement scope open.
 
-### Resolved coordination blocker
+### Historical coordination blocker (resolved)
 
-Option 1 is **not complete**. Its archive and explicit-receipt closeout fixes are
+At this earlier checkpoint, option 1 was **not complete**. Its archive and explicit-receipt closeout fixes were
 reviewed and focused tests passed (61 archive/recovery tests and 90 closeout
 tests, with types/lint checks). The previously committed UI freshness correction
 is not yet deployed. Two normal path-scoped `st commit --no-push` attempts were
@@ -218,7 +281,7 @@ the pending managed rollout and actual cancellation demonstration.
 - [x] Frequent checkpoint commits use appropriate fast feedback and secret guards.
 - [x] Local commits are associated with their task immediately.
 - [x] Manual and autonomous execution preserve local work without a push
-      (regression-tested; overall live closeout remains open).
+      (regression-tested; actual final local closeout also passed).
 - [x] Acceptance checks run against the actual integrated source being accepted.
 - [x] Evidence records source, dependency/configuration inputs, scope, and results.
 - [x] Matching validation evidence is reused; changed inputs invalidate it.
@@ -234,7 +297,7 @@ the pending managed rollout and actual cancellation demonstration.
 - [x] Local acceptance, required deployment, and required live validation determine
       completion; publication is independent.
 - [x] Missing required acceptance keeps the task open with an accurate reason.
-- [ ] Closeout records completion promptly and idempotently; agents report actual
+- [x] Closeout records completion promptly and idempotently; agents report actual
       persisted state rather than equating a merge or queued job with success.
 - [x] Optional publication adopts an existing same-source PR/receipt rather than
       creating a duplicate to repair task linkage.
@@ -258,7 +321,7 @@ the pending managed rollout and actual cancellation demonstration.
 - [x] Long-running capture/transfer management uses real ownership and observed
       progress, not an arbitrary total-duration cutoff. Opaque waits are clearly
       labeled unknown/needs attention; they are not falsely declared stalled.
-- [ ] The Backups UI presents local capture, Drive copy and restore-test status
+- [x] The Backups UI presents local capture, Drive copy and restore-test status
       separately, shows current phase/last verified progress, prevents duplicate
       active retries, and offers cancellation that actually stops owned work.
       Verify these states and actions through the rendered UI without key access.
@@ -269,7 +332,7 @@ the pending managed rollout and actual cancellation demonstration.
       isolated recovery regressions, including staged-only Git objects.
 - [x] Capture detects concurrent repository writes and refuses inconsistent success;
       valuable SQLite files use consistent snapshots (regression-tested).
-- [ ] Required source/config/packaged dependencies have recoverable local copies.
+- [x] Required source/config/packaged dependencies have recoverable local copies.
 - [x] Task metadata, prompts/memory, PostgreSQL and valuable SQLite state, evidence,
       required secrets/configuration and encryption-key recovery are accounted for.
 - [x] Existing backup disk/Veeam/schedules are reused; native retention settings
@@ -284,7 +347,7 @@ the pending managed rollout and actual cancellation demonstration.
 - [x] Capture each source once locally, then encrypt and replicate that completed
       archive to Drive under the same backup record. Failed transfer retries reuse
       the existing artifact and do not trigger a second source/database backup.
-- [ ] An isolated restore proves history, work, database state, and runnable software
+- [x] An isolated restore proves history, work, database state, and runnable software
       without relying on GitHub or mutating production databases.
 - [x] Google Drive is an implemented offsite destination using the existing
       connection where available, encrypted completed archives, verified retention,
@@ -292,7 +355,7 @@ the pending managed rollout and actual cancellation demonstration.
       credential or key-custody requirement explicitly; connection alone is not proof.
 - [x] All real SummitFlow-managed/backed-up solutions have explicit local and Drive
       coverage; intentionally disabled fixtures are distinguished from missing coverage.
-- [ ] SummitFlow's existing backup UI shows separate local/Drive status, failures,
+- [x] SummitFlow's existing backup UI shows separate local/Drive status, failures,
       source coverage, retention and restore evidence with appropriate recovery controls.
 - [x] The owner exported and saved the recovery key separately, then verified the
       saved copy through the UI. That configured identity decrypted downloaded
@@ -305,7 +368,7 @@ the pending managed rollout and actual cancellation demonstration.
 - [x] Later key retrieval uses the same authenticated owner controls; no destructive
       key regeneration. Recovery-key directory is excluded from encrypted archives.
 - [x] Actual owner custody is confirmed by the owner, not inferred from agent tests.
-- [ ] Hard-loss recovery instructions, source-bootstrap utility, dated archive
+- [x] Hard-loss recovery instructions, source-bootstrap utility, dated archive
       inventory and checksums are downloaded/read-back verified in the existing
       Google Drive “SummitFlow Backups” folder. No private recovery key is uploaded.
 
@@ -328,11 +391,11 @@ the pending managed rollout and actual cancellation demonstration.
       publication remains a separate owner decision.
 - [x] Independent review and canonical quality gates pass.
 - [x] Actual managed runtime behavior is exercised after authorized rebuild.
-- [ ] Task is closed locally only after all required work is verified.
+- [x] Task is closed locally only after all required work is verified.
 
 ### Performance and token impact
 
-- [ ] Measure baseline and changed fast-checkpoint, full acceptance, acceptance
+- [x] Measure baseline and changed fast-checkpoint, full acceptance, acceptance
       reuse, deployment and closeout durations; distinguish CPU work, remote waits,
       authorization waits and necessary live validation.
 - [x] Record available check/tool-call counts and avoid repeated full gates for
@@ -342,6 +405,8 @@ the pending managed rollout and actual cancellation demonstration.
 - [x] Include redundant tool invocations, repeated reads, and unnecessarily broad
       tool output in the overhead comparison; consolidate related read-only queries
       and return bounded evidence, preserving required inspect-before-act boundaries.
+      This is not a claim that this long implementation session was overhead-free;
+      broad lookups and proof-harness corrections are recorded as costs, not savings.
 - [x] Quantify removed recurring workflow steps (duplicate PR/CI,
       polling, redundant validation and administrative agent exchanges), separating
       measured time/token savings from modeled savings and necessary retained work.
@@ -492,8 +557,9 @@ the pending managed rollout and actual cancellation demonstration.
 
 ## Remaining work
 
-All unchecked items above. Update this record at coherent implementation and
-verification boundaries; do not count substitute demonstrations as completion.
+None in the approved implementation scope. Routine scheduled backups, restore
+drills and owner-chosen publication remain ongoing operations, not hidden deferred
+features. Unverified system/dependency boundaries are listed in the final result.
 
 ## Evidence-backed bottlenecks and intended corrections
 
@@ -862,7 +928,7 @@ source-bound closeout evidence. The overall task remains open.
   safeguards remain. No LLM is used for monitoring; state polling is local and
   sparse, and renewed liveness is never described as verified byte progress.
 
-### Final live recovery verification (in progress)
+### Historical live recovery verification checkpoints (now complete)
 
 - Owner explicitly approved practical AfterTimes cleanup while retaining large
   backup support. Its worktree was clean; 3,953,640,722 of 3,967,008,566 Git-object
