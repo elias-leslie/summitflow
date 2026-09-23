@@ -18,12 +18,6 @@ vi.mock('next/navigation', () => ({
   useParams: navigationMocks.useParams,
 }))
 
-vi.mock('@/components/settings/AutonomousSettings', () => ({
-  AutonomousSettingsPanel: ({ projectId }: { projectId: string }) => (
-    <div data-testid="autonomous-settings">{projectId}</div>
-  ),
-}))
-
 vi.mock('@/lib/api', () => ({
   fetchProject: apiMocks.fetchProject,
   fetchProjectHealth: apiMocks.fetchProjectHealth,
@@ -118,11 +112,15 @@ describe('ProjectSettingsClient', () => {
     expect(await screen.findByText('123ms')).toBeInTheDocument()
     expect(await screen.findByText('3 open')).toBeInTheDocument()
 
-    // Automation tab shows autonomous settings
+    // Agent Hub owns this project's automation controls.
     fireEvent.click(screen.getByRole('button', { name: /Automation/i }))
-    expect(screen.getByTestId('autonomous-settings')).toHaveTextContent(
-      'summitflow',
+    expect(
+      screen.getByRole('link', { name: 'Open Agent Hub Automations' }),
+    ).toHaveAttribute(
+      'href',
+      'https://agent.summitflow.dev/automations?project_id=summitflow',
     )
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
   })
 
   it('saves normalized registration changes', async () => {

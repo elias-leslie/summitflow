@@ -2,19 +2,14 @@
 
 from __future__ import annotations
 
-from typing import cast
-from unittest.mock import AsyncMock, _Call, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
 
-from app.api.autonomous import _sync_auto_exec_permission, _validate_update
 from app.api.autonomous import update_settings as update_autonomous_endpoint
-from app.api.autonomous_models import AutonomousSettings, AutonomousSettingsUpdate
-from app.api.autonomous_service import (
-    get_autonomous_settings,
-    update_autonomous_settings,
-)
+from app.api.autonomous_models import AutonomousSettingsUpdate
+from app.api.autonomous_service import get_autonomous_settings
 from app.constants import TASK_TYPE_VALUES
 from app.storage.agent_configs import DEFAULT_AGENT_CONFIG, AgentConfig
 
@@ -95,109 +90,21 @@ def test_get_autonomous_settings_preserves_explicit_narrow_allowed_types() -> No
     assert settings.allowed_types == ["bug"]
 
 
-def test_update_autonomous_settings_writes_partial_agent_config() -> None:
-    updated_config: AgentConfig = DEFAULT_AGENT_CONFIG.copy()
-    updated_config.update(
-        {
-            "autonomous_frequency_minutes": 60,
-            "upkeep_enabled": True,
-            "upkeep_batch_limit": 6,
-            "quality_gate_mode": "check",
-        }
-    )
-
+@pytest.mark.asyncio
+async def test_update_settings_rejects_legacy_local_writer() -> None:
     with (
-        patch("app.api.autonomous_service.update_agent_config") as mock_update,
-        patch("app.api.autonomous_service.get_agent_config", return_value=updated_config),
+        patch("app.api.autonomous.validate_project_exists"),
+        pytest.raises(HTTPException) as exc,
     ):
-        settings = update_autonomous_settings(
+        await update_autonomous_endpoint(
             "test-project",
             AutonomousSettingsUpdate(
-                frequency_minutes=60,
+                enabled=True,
                 upkeep_enabled=True,
-                upkeep_batch_limit=6,
+                frequency_minutes=60,
                 quality_gate_mode="check",
             ),
         )
 
-    mock_update.assert_called_once_with(
-        "test-project",
-        {
-            "autonomous_frequency_minutes": 60,
-            "upkeep_enabled": True,
-            "upkeep_batch_limit": 6,
-            "quality_gate_mode": "check",
-        },
-    )
-    assert settings.frequency_minutes == 60
-    assert settings.quality_gate_mode == "check"
-
-
-def test_validate_update_accepts_vitest_quality_gate_tool() -> None:
-    _validate_update(
-        AutonomousSettingsUpdate(quality_gate_tools=["biome", "tsc", "vitest"])
-    )
-
-
-def test_validate_update_accepts_ready_ranked_task_types() -> None:
-    _validate_update(AutonomousSettingsUpdate(allowed_types=["task", "debt", "regression"]))
-
-
-def test_validate_update_rejects_stale_task_types() -> None:
-    with pytest.raises(HTTPException):
-        _validate_update(AutonomousSettingsUpdate(allowed_types=["chore"]))
-
-
-@pytest.mark.asyncio
-async def test_sync_auto_exec_permission_preserves_existing_agent_hub_fields() -> None:
-    with (
-        patch(
-            "app.api.autonomous._fetch_agent_hub_project_permission",
-            return_value={
-                "project_id": "test-project",
-                "permission_tier": "full",
-                "auto_exec_enabled": False,
-                "execution_start_hour": 1,
-                "execution_end_hour": 23,
-                "root_path": "/repo",
-                "daily_cost_budget_usd": 5.0,
-                "monthly_cost_budget_usd": 100.0,
-                "budget_alert_threshold": 0.9,
-            },
-        ),
-        patch("app.api.autonomous.sync_agent_hub_project_permission", new_callable=AsyncMock) as mock_sync,
-    ):
-        await _sync_auto_exec_permission("test-project", True)
-
-    await_args = cast(_Call, mock_sync.await_args)
-    args = await_args.args
-    assert args[0] == "test-project"
-    assert args[1].permission_tier == "full"
-    assert args[1].auto_exec_enabled is True
-    assert args[1].execution_start_hour == 1
-    assert args[1].execution_end_hour == 23
-    assert args[1].root_path == "/repo"
-    assert args[1].daily_cost_budget_usd == 5.0
-    assert args[1].monthly_cost_budget_usd == 100.0
-    assert args[1].budget_alert_threshold == 0.9
-    assert args[2] == "/repo"
-
-
-@pytest.mark.asyncio
-async def test_update_settings_syncs_agent_hub_permission_when_enabled_present() -> None:
-    settings = AutonomousSettings()
-
-    with (
-        patch("app.api.autonomous.validate_project_exists"),
-        patch("app.api.autonomous._update_settings", return_value=settings),
-        patch("app.api.autonomous._sync_auto_exec_permission", new_callable=AsyncMock) as mock_sync,
-        patch("app.api.autonomous._settings_with_execution_permission", new_callable=AsyncMock, return_value=settings) as mock_settings,
-    ):
-        result = await update_autonomous_endpoint(
-            "test-project",
-            AutonomousSettingsUpdate(enabled=True),
-        )
-
-    assert result == settings
-    mock_sync.assert_awaited_once_with("test-project", True)
-    mock_settings.assert_awaited_once_with("test-project")
+    assert exc.value.status_code == 410
+    assert "Agent Hub Automations" in str(exc.value.detail)

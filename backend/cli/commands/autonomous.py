@@ -8,7 +8,7 @@ import typer
 
 from ..client import APIError, STClient
 from ..lib.usage import usage
-from ..output import handle_api_error, output_json
+from ..output import handle_api_error, output_error, output_json
 
 app = typer.Typer(help="Autonomous execution management")
 
@@ -38,14 +38,7 @@ def status() -> None:
     output_json(result)
 
 
-@app.command()
-@usage(
-    surface="st.autonomous.enable",
-    cmd="st autonomous enable",
-    when="enable autonomous project execution and scheduled work pickup",
-    precautions=("syncs SummitFlow settings, Agent Hub execution permission, and work-pickup schedules",),
-    task_types=("devops",),
-)
+@app.command(hidden=True)
 def enable(
     work_pickup: Annotated[
         bool,
@@ -62,36 +55,16 @@ def enable(
         ),
     ] = True,
 ) -> None:
-    """Enable autonomous execution for the project.
-
-    Examples:
-        st autonomous enable
-        st autonomous enable --no-upkeep
-    """
-    client = STClient()
-
-    try:
-        result = client.update_autonomous_settings(enabled=True, upkeep_enabled=upkeep)
-        schedules = [
-            client.update_autonomous_schedule("work_pickup", enabled=work_pickup),
-            client.update_autonomous_schedule("task_generation", enabled=upkeep),
-        ]
-    except APIError as e:
-        handle_api_error(e)
-        return
-
-    result["schedules"] = schedules
-    output_json(result)
+    """Legacy command retained only to direct callers to Agent Hub."""
+    output_error(
+        "Automation controls moved to Agent Hub. Use st automations list --project PROJECT, "
+        "st automations policy PROJECT, then st automations enable/disable PROFILE_ID --revision N "
+        "or st automations policy-apply PROJECT --file POLICY.json."
+    )
+    raise typer.Exit(2)
 
 
-@app.command()
-@usage(
-    surface="st.autonomous.disable",
-    cmd="st autonomous disable",
-    when="disable autonomous execution and scheduled work pickup",
-    precautions=("also disables work pickup; routine upkeep schedule is left configurable with --keep-upkeep",),
-    task_types=("devops",),
-)
+@app.command(hidden=True)
 def disable(
     keep_upkeep: Annotated[
         bool,
@@ -101,26 +74,13 @@ def disable(
         ),
     ] = True,
 ) -> None:
-    """Disable autonomous execution for the project.
-
-    Examples:
-        st autonomous disable
-        st autonomous disable --disable-upkeep
-    """
-    client = STClient()
-
-    try:
-        result = client.update_autonomous_settings(enabled=False)
-        schedules = [client.update_autonomous_schedule("work_pickup", enabled=False)]
-        if not keep_upkeep:
-            result = client.update_autonomous_settings(enabled=False, upkeep_enabled=False)
-            schedules.append(client.update_autonomous_schedule("task_generation", enabled=False))
-    except APIError as e:
-        handle_api_error(e)
-        return
-
-    result["schedules"] = schedules
-    output_json(result)
+    """Legacy command retained only to direct callers to Agent Hub."""
+    output_error(
+        "Automation controls moved to Agent Hub. Use st automations list --project PROJECT, "
+        "st automations policy PROJECT, then st automations enable/disable PROFILE_ID --revision N "
+        "or st automations policy-apply PROJECT --file POLICY.json."
+    )
+    raise typer.Exit(2)
 
 
 @app.command()

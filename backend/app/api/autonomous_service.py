@@ -8,12 +8,9 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from ..storage.agent_configs import AgentConfig, get_agent_config, update_agent_config
+from ..storage.agent_configs import AgentConfig, get_agent_config
 from ..storage.agent_configs_autonomous import normalize_allowed_task_types
-from .autonomous_models import (
-    AutonomousSettings,
-    AutonomousSettingsUpdate,
-)
+from .autonomous_models import AutonomousSettings
 
 
 class _CoreSettingsPayload(TypedDict):
@@ -92,57 +89,3 @@ def get_autonomous_settings(project_id: str) -> AutonomousSettings:
     """Get autonomous settings from agent config."""
     config = get_agent_config(project_id)
     return AutonomousSettings(**_parse_core_settings(config), **_parse_advanced_settings(config))
-
-
-def _build_updates(settings: AutonomousSettingsUpdate) -> AgentConfig:
-    """Build the updates dict from an AutonomousSettingsUpdate."""
-    updates: AgentConfig = {}
-
-    if settings.frequency_minutes is not None:
-        updates["autonomous_frequency_minutes"] = settings.frequency_minutes
-    if settings.auto_merge_tiers is not None:
-        updates["autonomous_auto_merge_tiers"] = settings.auto_merge_tiers
-    if settings.task_types is not None:
-        updates["autonomous_task_types"] = settings.task_types
-    if settings.upkeep_enabled is not None:
-        updates["upkeep_enabled"] = settings.upkeep_enabled
-    if settings.upkeep_frequency_minutes is not None:
-        updates["upkeep_frequency_minutes"] = settings.upkeep_frequency_minutes
-    if settings.upkeep_batch_limit is not None:
-        updates["upkeep_batch_limit"] = settings.upkeep_batch_limit
-    if settings.max_concurrent is not None:
-        updates["autonomous_max_concurrent"] = settings.max_concurrent
-    if settings.max_tasks_per_day is not None:
-        updates["autonomous_max_tasks_per_day"] = settings.max_tasks_per_day
-    if settings.cooldown_minutes is not None:
-        updates["autonomous_cooldown_minutes"] = settings.cooldown_minutes
-    if settings.allowed_types is not None:
-        updates["autonomous_allowed_types"] = settings.allowed_types
-    if "external_origins" in settings.model_fields_set:
-        updates["autonomous_external_origins"] = settings.external_origins
-    if settings.max_self_fix_attempts is not None:
-        updates["autonomous_max_self_fix_attempts"] = settings.max_self_fix_attempts
-    if settings.max_supervisor_attempts is not None:
-        updates["autonomous_max_supervisor_attempts"] = settings.max_supervisor_attempts
-    if settings.max_extensions is not None:
-        updates["autonomous_max_extensions"] = settings.max_extensions
-    if settings.require_review is not None:
-        updates["autonomous_require_review"] = settings.require_review
-    if settings.quality_gate_tools is not None:
-        updates["quality_gate_tools"] = settings.quality_gate_tools
-    if settings.quality_gate_mode is not None:
-        updates["quality_gate_mode"] = settings.quality_gate_mode
-    if settings.quality_gate_fix_enabled is not None:
-        updates["quality_gate_fix_enabled"] = settings.quality_gate_fix_enabled
-
-    return updates
-
-
-def update_autonomous_settings(
-    project_id: str, settings: AutonomousSettingsUpdate
-) -> AutonomousSettings:
-    """Update autonomous settings in agent config."""
-    updates = _build_updates(settings)
-    if updates:
-        update_agent_config(project_id, updates)
-    return get_autonomous_settings(project_id)

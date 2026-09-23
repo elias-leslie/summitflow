@@ -583,13 +583,7 @@ export function ProjectSettingsClient() {
 
       {activeTab === 'automation' && (
         <div className="animate-in">
-          <div className="card rounded-xl p-6">
-            <p className="mb-5 text-sm text-slate-400">
-              Autonomous execution, quality gates, and merge posture for{' '}
-              <span className="text-slate-200">{project.name}</span>.
-            </p>
-            <AutonomousSettingsPanel projectId={projectId} />
-          </div>
+          <AutonomousSettingsPanel projectId={projectId} />
         </div>
       )}
 

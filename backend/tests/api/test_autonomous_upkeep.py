@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
+from app.services.autonomous_schedule_registry import set_autonomous_schedule_enabled
+
 
 def _run_row(status: str = "completed") -> dict[str, object]:
     now = datetime.now(UTC)
@@ -94,20 +98,9 @@ def test_get_autonomous_schedules_returns_registry_state(client, ensure_test_pro
     list_schedules.assert_called_once_with(ensure_test_project)
 
 
-def test_update_autonomous_schedule_toggles_registry_state(client, ensure_test_project, mocker) -> None:
+def test_update_agent_hub_schedule_rejects_legacy_local_writer(client, ensure_test_project, mocker) -> None:
     update_schedule = mocker.patch(
         "app.api.autonomous.set_autonomous_schedule_enabled",
-        return_value={
-            "schedule_id": "work_pickup",
-            "config_key": "work_pickup_enabled",
-            "label": "Autonomous work pickup",
-            "description": "Dispatches pending autonomous tasks.",
-            "cron": "15 */2 * * *",
-            "scope": "project",
-            "default_enabled": True,
-            "enabled": False,
-            "managed_project_id": ensure_test_project,
-        },
     )
 
     response = client.patch(
@@ -115,12 +108,42 @@ def test_update_autonomous_schedule_toggles_registry_state(client, ensure_test_p
         json={"enabled": False},
     )
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["schedule_id"] == "work_pickup"
-    assert payload["enabled"] is False
-    update_schedule.assert_called_once_with(
-        ensure_test_project,
-        "work_pickup",
-        enabled=False,
+    assert response.status_code == 410
+    assert "Agent Hub Automations" in response.json()["message"]
+    update_schedule.assert_not_called()
+
+
+def test_update_system_schedule_preserves_local_control(client, ensure_test_project, mocker) -> None:
+    update_schedule = mocker.patch(
+        "app.api.autonomous.set_autonomous_schedule_enabled",
+        return_value={
+            "schedule_id": "scheduled_backups",
+            "config_key": "scheduled_backups_enabled",
+            "label": "Scheduled backups",
+            "description": "Creates backup snapshots.",
+            "cron": "30 * * * *",
+            "scope": "system",
+            "default_enabled": True,
+            "enabled": False,
+            "managed_project_id": "summitflow",
+        },
     )
+
+    response = client.patch(
+        f"/api/projects/{ensure_test_project}/autonomous/schedules/scheduled_backups",
+        json={"enabled": False},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["enabled"] is False
+    update_schedule.assert_called_once_with(ensure_test_project, "scheduled_backups", enabled=False)
+
+
+@pytest.mark.parametrize("schedule_id", ["work_pickup", "task_generation"])
+def test_registry_rejects_agent_hub_schedule_writes(schedule_id, mocker) -> None:
+    update_config = mocker.patch("app.services.autonomous_schedule_registry.update_agent_config")
+
+    with pytest.raises(ValueError, match="Agent Hub owns"):
+        set_autonomous_schedule_enabled("summitflow", schedule_id, enabled=True)
+
+    update_config.assert_not_called()

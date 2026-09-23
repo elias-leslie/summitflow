@@ -18,33 +18,12 @@ def get_autonomous_settings(
     return cast(dict[str, Any], handle_response(response))
 
 
-def update_autonomous_settings(
-    client: httpx.Client, url_fn: Any, handle_response: Any, **updates: Any
-) -> dict[str, Any]:
-    """Update autonomous execution settings."""
-    response = client.patch(url_fn("/autonomous/settings"), json=updates)
-    return cast(dict[str, Any], handle_response(response))
-
-
 def list_autonomous_schedules(
     client: httpx.Client, url_fn: Any, handle_response: Any
 ) -> list[dict[str, Any]]:
     """List autonomous schedule states."""
     response = client.get(url_fn("/autonomous/schedules"))
     return cast(list[dict[str, Any]], handle_response(response))
-
-
-def update_autonomous_schedule(
-    client: httpx.Client,
-    url_fn: Any,
-    handle_response: Any,
-    schedule_id: str,
-    *,
-    enabled: bool,
-) -> dict[str, Any]:
-    """Update one autonomous schedule state."""
-    response = client.patch(url_fn(f"/autonomous/schedules/{schedule_id}"), json={"enabled": enabled})
-    return cast(dict[str, Any], handle_response(response))
 
 
 def run_routine_upkeep(

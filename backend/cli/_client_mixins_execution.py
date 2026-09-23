@@ -40,22 +40,8 @@ class ExecutionOperationsMixin:
     def get_autonomous_settings(self) -> dict[str, Any]:
         return exec_ops.get_autonomous_settings(self._client, self._url, self._handle_response)
 
-    def update_autonomous_settings(self, **updates: Any) -> dict[str, Any]:
-        return exec_ops.update_autonomous_settings(
-            self._client, self._url, self._handle_response, **updates
-        )
-
     def list_autonomous_schedules(self) -> list[dict[str, Any]]:
         return exec_ops.list_autonomous_schedules(self._client, self._url, self._handle_response)
-
-    def update_autonomous_schedule(self, schedule_id: str, *, enabled: bool) -> dict[str, Any]:
-        return exec_ops.update_autonomous_schedule(
-            self._client,
-            self._url,
-            self._handle_response,
-            schedule_id,
-            enabled=enabled,
-        )
 
     def run_routine_upkeep(self) -> dict[str, Any]:
         return exec_ops.run_routine_upkeep(self._client, self._url, self._handle_response)

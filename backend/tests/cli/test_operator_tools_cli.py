@@ -426,25 +426,22 @@ def test_autonomous_status_reads_settings() -> None:
     client_cls.return_value.get_autonomous_settings.assert_called_once_with()
 
 
-def test_autonomous_enable_wires_work_pickup_and_upkeep_schedules() -> None:
-    settings = {"enabled": True, "upkeep_enabled": True}
+def test_autonomous_enable_directs_to_agent_hub_without_local_writes() -> None:
     with patch("cli.commands.autonomous.STClient") as client_cls:
-        client = client_cls.return_value
-        client.update_autonomous_settings.return_value = settings
-        client.update_autonomous_schedule.side_effect = [
-            {"schedule_id": "work_pickup", "enabled": True},
-            {"schedule_id": "task_generation", "enabled": True},
-        ]
-
         result = runner.invoke(main_app, ["autonomous", "enable"])
 
-    assert result.exit_code == 0
-    client.update_autonomous_settings.assert_called_once_with(enabled=True, upkeep_enabled=True)
-    assert client.update_autonomous_schedule.call_args_list[0].args == ("work_pickup",)
-    assert client.update_autonomous_schedule.call_args_list[0].kwargs == {"enabled": True}
-    assert client.update_autonomous_schedule.call_args_list[1].args == ("task_generation",)
-    assert client.update_autonomous_schedule.call_args_list[1].kwargs == {"enabled": True}
-    assert '"schedule_id": "work_pickup"' in result.output
+    assert result.exit_code == 2
+    assert "st automations" in result.output
+    client_cls.assert_not_called()
+
+
+def test_autonomous_disable_directs_to_agent_hub_without_local_writes() -> None:
+    with patch("cli.commands.autonomous.STClient") as client_cls:
+        result = runner.invoke(main_app, ["autonomous", "disable", "--disable-upkeep"])
+
+    assert result.exit_code == 2
+    assert "st automations" in result.output
+    client_cls.assert_not_called()
 
 
 def test_autonomous_schedules_lists_schedule_states() -> None:
