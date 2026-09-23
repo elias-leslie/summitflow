@@ -24,6 +24,7 @@ import {
   useState,
 } from 'react'
 import { BackupExpandedRow } from '@/components/backup/BackupExpandedRow'
+import { useBackupHistoryRefresh } from '@/components/backup/backupPolling'
 import { CollapsibleSection } from '@/components/backup/CollapsibleSection'
 import { CreateBackupModal } from '@/components/backup/CreateBackupModal'
 import { EncryptionSetup } from '@/components/backup/EncryptionSetup'
@@ -340,6 +341,7 @@ export function BackupsClient() {
     queryFn: fetchBackupHealth,
     refetchInterval: POLL_NOTIFICATIONS,
   })
+  useBackupHistoryRefresh(healthData?.sources)
 
   const { data: storageBackends = [] } = useQuery({
     queryKey: ['storage-backends'],
