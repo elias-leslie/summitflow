@@ -145,11 +145,56 @@ describe('SetupChecklist', () => {
       />,
     )
     expect(
+      screen.getByText('Backup protection checks passed'),
+    ).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: /backup protection checks passed/i }),
+    )
+    expect(
+      screen.getByText(/Restore drill passed for older-backup on/),
+    ).toBeInTheDocument()
+    expect(
+      screen.getAllByText(/The latest backup has not had a restore drill/)
+        .length,
+    ).toBeGreaterThan(0)
+    rerender(
+      <SetupChecklist
+        {...props}
+        encryptionReady
+        healthItems={[
+          {
+            ...health,
+            offsite_status: 'verified',
+            last_drill_backup_id: 'older-backup',
+            restore_confidence: 'stale',
+          },
+        ]}
+      />,
+    )
+    expect(
       screen.queryByText('Backup protection checks passed'),
     ).not.toBeInTheDocument()
     expect(
-      screen.getByText('5 of 6 complete. 1 step still needs attention.'),
+      screen.getByText(/The scheduled restore drill is overdue/),
     ).toBeInTheDocument()
+    for (const lastDrillOk of [false, null]) {
+      rerender(
+        <SetupChecklist
+          {...props}
+          encryptionReady
+          healthItems={[
+            {
+              ...health,
+              offsite_status: 'verified',
+              last_drill_ok: lastDrillOk,
+            },
+          ]}
+        />,
+      )
+      expect(
+        screen.queryByText('Backup protection checks passed'),
+      ).not.toBeInTheDocument()
+    }
     rerender(
       <SetupChecklist
         {...props}
@@ -162,7 +207,6 @@ describe('SetupChecklist', () => {
     expect(
       screen.queryByText('Backup protection checks passed'),
     ).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /backup setup:/i }))
     expect(
       screen.getByText(
         'Required recovery state is missing from the latest system backup.',

@@ -10,13 +10,16 @@ import pytest
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("drill_backup_id", "confidence", "coverage_complete", "expected"),
-    [("older-backup", "verified", True, "yellow"), ("backup-current", "verified", True, "green"),
-     ("backup-current", "stale", True, "yellow"), (None, "verified", True, "yellow"),
-     ("backup-current", "verified", False, "yellow")],
+    ("drill_backup_id", "confidence", "coverage_complete", "drill_ok", "expected"),
+    [("older-backup", "verified", True, True, "green"), ("backup-current", "verified", True, True, "green"),
+     ("backup-current", "stale", True, True, "yellow"),
+     ("older-backup", "stale", True, True, "yellow"), (None, "verified", True, True, "yellow"),
+     ("backup-current", "verified", False, True, "yellow"),
+     ("older-backup", "partial", True, False, "red"),
+     (None, "untested", True, None, "yellow")],
 )
-async def test_infra_green_requires_current_source_bound_drill(
-    monkeypatch, drill_backup_id, confidence, coverage_complete, expected,
+async def test_infra_green_requires_fresh_dated_drill_and_current_coverage(
+    monkeypatch, drill_backup_id, confidence, coverage_complete, drill_ok, expected,
 ) -> None:
     from app.api.backups import health_endpoints
 
@@ -25,7 +28,8 @@ async def test_infra_green_requires_current_source_bound_drill(
         "source_type": "infrastructure", "enabled": True,
         "last_success_at": "2026-09-21T12:00:00+00:00", "last_backup_status": "completed",
         "latest_backup_id": "backup-current", "last_drill_backup_id": drill_backup_id,
-        "last_drill_ok": True, "latest_verification_json": {"offsite": {"status": "verified"}},
+        "last_drill_ok": drill_ok, "last_drill_at": "2026-09-21T12:10:00+00:00",
+        "latest_verification_json": {"offsite": {"status": "verified"}},
     }])
     monkeypatch.setattr(health_endpoints, "build_storage_env", lambda _: {})
     monkeypatch.setattr(health_endpoints, "_compute_restore_confidence", lambda **_: confidence)
@@ -34,6 +38,8 @@ async def test_infra_green_requires_current_source_bound_drill(
     result = await health_endpoints.backup_health()
     assert result.sources[0].health_status == expected
     assert result.sources[0].coverage_complete is coverage_complete
+    assert result.sources[0].last_drill_backup_id == drill_backup_id
+    assert result.sources[0].latest_backup_id == "backup-current"
 
 
 @pytest.mark.asyncio

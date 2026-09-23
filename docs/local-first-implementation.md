@@ -9,15 +9,35 @@ live validation must remain protected.
 
 ## Completion checklist
 
+Resume evidence, 2026-09-23: seven small scheduled transfers failed because
+the existing Google Drive mount disappeared, not demonstrated concurrency.
+The existing account remounted without prompts in 0.435 seconds. The transfer
+path now retries that specific mount failure once using the same account.
+AfterTimes (4,604,444,264 bytes) and Codex (5,372,374,294 bytes) retain completed
+local ciphertext; multipart transfer and standalone reassembly pass focused
+regressions, including an actual producer-to-consumer manifest test. Live large
+transfer proof remains pending. Current integration gate passed 90 tests,
+lint/types/frontend checks and secret scanning.
+
+The seven smaller archives total 5,185,110 bytes versus 72,907,291 previously
+(about 93% smaller). File-count differences match the new rebuildable `.venv`
+exclusion and Git HEAD/bundle evidence remains present. These are different
+capture times, not a controlled benchmark. Daily infrastructure restore drills
+already exist; the 48-hour missed-drill warning remains. A newer archive does
+not erase dated successful drill evidence, and the UI explicitly identifies
+which backup was tested rather than implying the latest one was restored.
+
 An unchecked item remains outstanding. Implementation alone does not establish
 verification; record actual evidence before checking an item.
 
-Current phase: full acceptance and the first immutable managed rollout passed.
-Live UI review found a legacy protection-summary mismatch; its correction and
-additional durable-state coverage are being integrated. The owner saved and
-verified their recovery key through the authenticated UI at 22:21:59 UTC. The
-first real encrypted local/Drive capture and isolated Git restore passed;
-all-source coverage and a disposable database restore drill remain open.
+Current phase (2026-09-23): local-first acceptance and immutable managed rollout
+passed. The owner saved and verified the recovery key; downloaded infrastructure
+recovery passed all six disposable restore checks with 10/10 component coverage.
+Twenty of 29 enabled sources have a verified latest Drive copy. Seven small
+copies need retry after an unmounted Drive connection; two retained large
+archives need the multipart transfer correction now being verified. Final
+all-source coverage, updated Drive recovery kit, recovered runnable SummitFlow
+proof, live UI review and persisted task closeout remain open.
 
 ### Local commits, integration, and validation
 
@@ -29,7 +49,7 @@ all-source coverage and a disposable database restore drill remain open.
 - [x] Acceptance checks run against the actual integrated source being accepted.
 - [x] Evidence records source, dependency/configuration inputs, scope, and results.
 - [x] Matching validation evidence is reused; changed inputs invalidate it.
-- [ ] Full relevant tests, builds, fresh schema/migrations, package and context
+- [x] Full relevant tests, builds, fresh schema/migrations, package and context
       integration checks can run locally through the existing check surface.
 - [x] Existing local security scanners are usable through ST; findings and CodeQL
       coverage differences remain explicit, with no claim of unproved equivalence.
@@ -69,20 +89,23 @@ all-source coverage and a disposable database restore drill remain open.
 - [x] Capture detects concurrent repository writes and refuses inconsistent success;
       valuable SQLite files use consistent snapshots (regression-tested).
 - [ ] Required source/config/packaged dependencies have recoverable local copies.
-- [ ] Task metadata, prompts/memory, PostgreSQL and valuable SQLite state, evidence,
+- [x] Task metadata, prompts/memory, PostgreSQL and valuable SQLite state, evidence,
       required secrets/configuration and encryption-key recovery are accounted for.
-- [ ] Existing backup disk/Veeam/schedules are reused; actual retention is verified.
+- [x] Existing backup disk/Veeam/schedules are reused; native retention settings
+      and protected-retention regressions are verified. No production expiry was
+      forced. Veeam retention/image encryption/bare-metal restore remain unverified;
+      native encrypted recovery does not depend on them.
 - [x] Snapshot availability is diagnosed and not counted as recovery protection:
       these project directories are not Btrfs subvolumes. No filesystem conversion
       or disabling of protection is part of this bounded workflow change.
 - [x] New native archives require encryption; key/error-output protections and
       source secret scanning passed. Historical archive/image limits are explicit.
-- [ ] Capture each source once locally, then encrypt and replicate that completed
+- [x] Capture each source once locally, then encrypt and replicate that completed
       archive to Drive under the same backup record. Failed transfer retries reuse
       the existing artifact and do not trigger a second source/database backup.
 - [ ] An isolated restore proves history, work, database state, and runnable software
       without relying on GitHub or mutating production databases.
-- [ ] Google Drive is an implemented offsite destination using the existing
+- [x] Google Drive is an implemented offsite destination using the existing
       connection where available, encrypted completed archives, verified retention,
       and a download/decrypt/restore demonstration. Identify any missing machine
       credential or key-custody requirement explicitly; connection alone is not proof.
@@ -90,9 +113,10 @@ all-source coverage and a disposable database restore drill remain open.
       coverage; intentionally disabled fixtures are distinguished from missing coverage.
 - [ ] SummitFlow's existing backup UI shows separate local/Drive status, failures,
       source coverage, retention and restore evidence with appropriate recovery controls.
-- [ ] Provide the actual encryption recovery key as a restricted separate file for
-      the owner's password manager and verify it decrypts a downloaded archive.
-- [ ] New native local and Drive archives are both encrypted: one ciphertext
+- [x] The owner exported and saved the recovery key separately, then verified the
+      saved copy through the UI. That configured identity decrypted downloaded
+      archives. The agent did not access the password manager or upload the key.
+- [x] New native local and Drive archives are both encrypted: one ciphertext
       artifact, not independent captures or independent encryption passes.
 - [x] Key setup generates once, allows deliberate download/copy/reveal through the
       existing Cloudflare Access owner session, and proves a saved copy can decrypt.
@@ -111,15 +135,17 @@ all-source coverage and a disposable database restore drill remain open.
 - [x] Authentication scope bounded: the example's one-off Agent Hub Codex OAuth
       repair/human login wait is not a recurring workflow defect. No auth-flow
       redesign or claimed savings from removing that necessary wait.
-- [ ] Validation reuses tested secret-safe helpers and supported model/environment
-      capabilities rather than repeating the observed helper/model mistakes.
+- [x] Validation uses tested secret-safe helpers and working managed capabilities.
+      The historical unsupported-model/helper sequence was agent-reported; it was
+      not rerun or independently proven fixed. No claim of savings from the rare
+      owner-authentication wait or unrelated model repair is made.
 - [x] Account-specific GitHub dependencies are distinguished from upstream GitHub,
       registries, model providers and actual deployment destination dependencies.
 - [x] No-account and no-GitHub-client tests are non-destructive and isolated;
       no complete network-isolation claim is made.
 - [x] Later publication is tested locally against a disposable remote; actual GitHub
       publication remains a separate owner decision.
-- [ ] Independent review and canonical quality gates pass.
+- [x] Independent review and canonical quality gates pass.
 - [x] Actual managed runtime behavior is exercised after authorized rebuild.
 - [ ] Task is closed locally only after all required work is verified.
 
@@ -128,8 +154,10 @@ all-source coverage and a disposable database restore drill remain open.
 - [ ] Measure baseline and changed fast-checkpoint, full acceptance, acceptance
       reuse, deployment and closeout durations; distinguish CPU work, remote waits,
       authorization waits and necessary live validation.
-- [ ] Record check/tool-call counts and avoid repeated full gates for the same
-      immutable inputs. Every continuing administrative step needs a concrete purpose.
+- [x] Record available check/tool-call counts and avoid repeated full gates for
+      unchanged accepted inputs. Latest receipt records one canonical full-check
+      invocation, 3,305 backend tests and 189 frontend tests. Session-wide tool-call
+      and billed-token totals are unavailable; do not infer them from test counts.
 - [x] Include redundant tool invocations, repeated reads, and unnecessarily broad
       tool output in the overhead comparison; consolidate related read-only queries
       and return bounded evidence, preserving required inspect-before-act boundaries.
@@ -138,9 +166,9 @@ all-source coverage and a disposable database restore drill remain open.
       measured time/token savings from modeled savings and necessary retained work.
 - [x] Preview effective instructions before/after and measure injected context size;
       use observed token usage when available, explicitly label estimates otherwise.
-- [ ] Profile one local backup capture, encryption, Drive upload/download and
+- [x] Profile one local backup capture, encryption, Drive upload/download and
       isolated restore: elapsed time, bytes and retry behavior, without a second capture.
-- [ ] Document residual costs and evidence-based simplifications for one developer
+- [x] Document residual costs and evidence-based simplifications for one developer
       managing agents. Do not invent performance budgets or token savings.
 
 ## Owner decisions retained from the approved plan
@@ -619,6 +647,62 @@ source-bound closeout evidence. The overall task remains open.
 ## Everyday workflow after verified rollout
 
 ### Final live recovery verification (in progress)
+
+- Owner explicitly approved practical AfterTimes cleanup while retaining large
+  backup support. Its worktree was clean; 3,953,640,722 of 3,967,008,566 Git-object
+  bytes are reachable from refs (about 99.7%). History is not disposable bloat.
+  Only two reproducible environments were excluded from future captures:
+  `.dev-tools/vendor/spritefusion-pixel-snapper/target` (~71 MB) and
+  `.dev-tools/yaml-env` (~13 MB). Installed tools, graph results, useful audio/
+  animation evidence, assets and all history remain. Local AfterTimes checkpoint
+  `c3cf1d764e9791dc12dd2ad1e223cf57eaf93a77` contains only `.backupignore`; no push,
+  deletion, garbage collection or history rewrite occurred.
+- Large-file support remains required independently of that cleanup. The actual
+  retained AfterTimes ciphertext is **4,633,275,582 bytes**, not the earlier
+  approximate small-backup estimate. Two whole-object uploads hit the existing
+  600-second deadline; the helper reached roughly 8 GiB RSS. Upstream installed
+  GVfs/libgdata code confirms whole-request buffering and non-resumable upload;
+  no hard 4 GiB limit was established. The proposed correction transfers the same
+  ciphertext in verified 512 MiB parts (below the already successful 853 MB
+  transfer), publishes an ordered checksummed manifest last, and reuses good parts
+  on retry. No new key, account, service or independent backup is introduced.
+  The standalone utility assembles and verifies the original ciphertext before
+  normal age decryption. Implementation/large live proof are in progress.
+  Primary references: [installed GVfs upload path](https://gitlab.gnome.org/GNOME/gvfs/-/blob/1.54.4/daemon/gvfsbackendgoogle.c#L3240),
+  [non-resumable libgdata API](https://gitlab.gnome.org/Archive/libgdata/-/blob/0.18.1/gdata/services/documents/gdata-documents-service.c#L807),
+  [whole-body buffering](https://gitlab.gnome.org/Archive/libgdata/-/blob/0.18.1/gdata/gdata-upload-stream.c#L1035).
+- Claude, BlackBox and Ominull now have real encrypted, Drive-verified captures
+  after their fixes. Codex's next observed failure was active JSONL appends and
+  changing JJ metadata, not the repaired Git-index conflict. A bounded raw-prefix
+  JSONL capture preserves active transcripts without reading a growing tail;
+  prefix mutation/truncation and meaningful JJ changes still fail closed. Its
+  isolated test overlapped a real JJ operation, so final capture needs a quiet VCS
+  window after the integration checks. Only an exact empty JJ import/export lock
+  is disposable; no valuable JJ metadata was excluded.
+
+- Follow-up source `13124290b31d903b06c14e3dfc8334e822363cec` passed full
+  acceptance with process-only GitHub credentials unavailable: 100.09 seconds
+  wall, 119.54 user, 19.87 system, peak 673,528 KiB; 3,305 backend tests and
+  189 frontend tests passed. Lint/types/gitleaks/OSV passed; Semgrep remains an
+  explicit no-local-rules skip, not CodeQL-equivalent coverage.
+- Managed job `6ab6eab95e284423ba25d3ad0c465efc` deployed that exact accepted
+  source successfully in 22.068 seconds. Live health passed. Approved cleanup
+  removed only unused rebuildable release `b94042cce8e64e8a983ffef02aab6547`;
+  current/previous releases, source, receipts and logs were preserved.
+- Both SQLite fixes and the Git-index fix are now deployed. Focused regressions
+  passed for live WAL churn, orphan/excluded-database sidecars, database replacement
+  and unrelated source mutation. The two real configuration Git restores preserved
+  exact index bytes; full encrypted recaptures are still pending.
+- A 600-second AfterTimes Drive upload timeout blocked other GIO requests. Once
+  the timed-out operation settled, the exact same root listed successfully in
+  0.58 seconds. No daemon restart, unmount, reauthentication or credential change
+  occurred. Remaining transfers are being verified sequentially; the cause is not
+  proven to be concurrency. Learn-o-Tron retry reused its existing archive and
+  verified in 9.536 seconds. The AfterTimes retry is pending.
+- `START-HERE.md`, `OFFLINE-RESTORE.md` and `recovery-bootstrap.py` were uploaded
+  to the existing Drive folder and individually downloaded/hash-matched.
+  `.dev-tools/recovery-kit-evidence.json` records their SHA-256 values. The final
+  source inventory and `SHA256SUMS` are not uploaded yet. No private key is in the kit.
 
 - Infrastructure backup `bkp-d52d5305f5074eee` has exact 10/10 component
   coverage and a verified Drive copy. Its downloaded ciphertext was checked and

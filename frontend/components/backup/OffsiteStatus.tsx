@@ -88,10 +88,6 @@ export function OffsiteStatus({
           )}
         </div>
       </dl>
-      <p className="text-slate-400">
-        One encrypted local archive, copied unchanged to Drive. Sync retries
-        reuse that archive.
-      </p>
       {queued && status !== 'verified' && (
         <p role="status" className="text-slate-400">
           Drive sync queued. Verification is still pending.

@@ -1,7 +1,7 @@
 # SummitFlow hard-loss recovery
 
 Use this runbook when the original computer and its disks are unavailable. It
-recovers SummitFlow from the encrypted archives in the `SummitFlowBackups`
+recovers SummitFlow from the encrypted archives in the `SummitFlow Backups`
 Google Drive folder plus the recovery key that the owner saved separately.
 
 This is not an operating-system image. It does not recreate Linux packages,
@@ -12,14 +12,16 @@ Docker volume.
 
 ## What must still exist
 
-Keep these in `SummitFlowBackups`:
+Keep these in `SummitFlow Backups`:
 
 - this runbook as `START-HERE.md`;
 - the source-only companion runbook as `OFFLINE-RESTORE.md`;
 - `recovery-bootstrap.py`;
 - the dated `recovery-inventory.json` and `SHA256SUMS`;
 - retained encrypted infrastructure, project, config, and workspace archives
-  in their source folders, including the SummitFlow source archive.
+  in their source folders, including the SummitFlow source archive. A large
+  archive may be stored as an ordered `.parts.json` manifest and all of its
+  `.partNNNNNN` siblings instead of one `.tar.gz.age` object.
 
 The inventory is a dated, verified recovery point and source-folder map, not a
 permanent `latest` pointer. Normal retention can expire an archive it names.
@@ -67,15 +69,18 @@ cd /srv/recovery/summitflow-drive-original
 sha256sum --check SHA256SUMS
 ```
 
-`SHA256SUMS` covers the four static kit files, not expiring backup archives.
-Stop if a kit file is absent or has a different checksum. For each archive still
-named in the inventory, compare its SHA-256 with that inventory's recorded value.
-Do not edit the downloaded files. Copy selected ciphertext to `/srv/recovery/work` for
-decryption and retain the originals until the replacement system has completed a
-new, independently verified backup cycle.
+`SHA256SUMS` covers the four static kit files, not expiring backup archives,
+parts, or part manifests. Stop if a kit file is absent or has a different
+checksum. The inventory's `artifacts` array records the object name, size, and
+SHA-256 for a raw archive, or for the `.parts.json` manifest and every part of a
+segmented archive. Compare every downloaded object with that record. Do not edit
+the downloaded files. Copy or assemble selected ciphertext in
+`/srv/recovery/work` and retain the originals until the replacement system has
+completed a new, independently verified backup cycle.
 
-Review the inventory before continuing. It must identify, by filename and
-ciphertext SHA-256, at least:
+Review the inventory before continuing. It must identify each raw archive or
+complete segmented artifact set, including the full ciphertext SHA-256, for at
+least:
 
 1. the SummitFlow source archive;
 2. the infrastructure archive; and
@@ -88,12 +93,16 @@ warning to ignore.
 
 ### If a dated archive has expired, or a newer recovery point is needed
 
-Use the same source folder identified by the inventory. Select its newest
-timestamped `.tar.gz.age` archive, download it completely, and record its filename,
-size and local SHA-256 in your recovery notes. Check all source folders for
-projects added after the inventory was written; later compare them with the
-recovered backup-source registry. Do not silently omit new projects or substitute
-an archive from another source folder.
+Use the same source folder identified by the inventory. Select either its newest
+timestamped `.tar.gz.age` object or its newest `.tar.gz.age.parts.json` manifest.
+For a manifest, download the manifest and **all** sibling part names it lists
+from that same source folder; an isolated part or incomplete set is not a backup.
+Record every downloaded object's filename, size, and local SHA-256, plus the
+manifest's full ciphertext checksum, in your recovery notes. Check all source
+folders for projects added after the inventory was written; later compare them
+with the recovered backup-source registry. Do not silently omit new projects,
+mix parts from different manifests, or substitute an archive from another source
+folder.
 
 An independent matching checksum or offsite verification record is preferable.
 If none survived, say so in the recovery notes: a newly computed checksum proves
@@ -102,6 +111,26 @@ optional expected-checksum argument only in that case. The age authentication
 check, safe archive validation and restore checks remain mandatory. Encryption
 authentication detects damaged ciphertext; it does not independently establish
 who created a file in a writable Drive account.
+
+### Assemble a segmented ciphertext
+
+Raw `.tar.gz.age` objects need no assembly. For a `.parts.json` recovery point,
+keep its parts beside the manifest and let the bootstrap utility stream and
+verify them; do not concatenate them manually:
+
+```bash
+python3 recovery-bootstrap.py \
+  --assemble-parts /srv/recovery/summitflow-drive-original/<archive>.parts.json \
+  --output-file /srv/recovery/work/<archive>
+```
+
+The output filename must be the manifest's exact `archive_name`. The utility
+requires the version-1 `summitflow-age-parts` contract, consecutive safe part
+names, regular non-linked files, exact sizes, each part checksum, and the final
+ciphertext checksum. It refuses to overwrite an output and removes an incomplete
+temporary output on failure. Assembly does not use the age key and manifest
+checksums are not independent authentication: successful age decryption of the
+reassembled ciphertext remains mandatory.
 
 For project/config archives, complete the isolated restore and verify Git history
 and saved index where present. For infrastructure, inspect its capture manifest
@@ -112,9 +141,10 @@ replace a failed restore with a success claim based only on decryption.
 
 ## 2. Recover SummitFlow source without a running service
 
-Choose an absent or empty output directory. The bootstrap script only decrypts,
-validates, and extracts the SummitFlow source. It does not install packages,
-contact the API, load a database, create a key, or start a service.
+Choose an absent or empty output directory. Use the raw downloaded archive or
+the verified archive produced by the assembly step. The bootstrap script only
+decrypts, validates, and extracts the SummitFlow source. It does not install
+packages, contact the API, load a database, create a key, or start a service.
 
 ```bash
 python3 recovery-bootstrap.py \
@@ -625,7 +655,7 @@ are intentionally not allowed to import or reveal recovery keys.
 Next sign the Linux desktop into the Google account again through Google Online
 Accounts, or establish another supported authenticated GIO mount. GOA/GVfs
 tokens and keyring contents are not backup contents. Configure the recovered
-`BACKUP_OFFSITE_GIO_URI` for the newly mounted `SummitFlowBackups` folder and
+`BACKUP_OFFSITE_GIO_URI` for the newly mounted `SummitFlow Backups` folder and
 verify that GIO can list it. Initial recovery may use browser downloads; future
 offsite replication requires the mounted provider URI.
 

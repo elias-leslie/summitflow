@@ -13,13 +13,17 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from ..services.backup_keys import get_backup_key_paths
 
 OFFSITE_MANIFEST_NAME = "offsite-manifest.json"
-_ARCHIVE_TIMESTAMP = re.compile(r"-(\d{8}-\d{6})\.tar\.gz\.age$")
+_ARCHIVE_TIMESTAMP = re.compile(
+    r"^(?P<archive>.+-(?P<timestamp>\d{8}-\d{6})\.tar\.gz\.age)"
+    r"(?P<suffix>\.parts\.json|\.part\d{6})?$"
+)
 TRANSFER_TIMEOUT = 600
+PART_SIZE_BYTES = 512 * 1024 * 1024
 
 
 def _checksum(path: Path) -> str:
@@ -33,6 +37,8 @@ def _checksum(path: Path) -> str:
 def _run(command: list[str], *, timeout: int = TRANSFER_TIMEOUT) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
+        stdin=subprocess.DEVNULL,
+        env={**os.environ, "LC_ALL": "C"},
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -53,18 +59,28 @@ def _safe_source_id(source_id: str) -> str:
 
 
 def _list_children(uri: str) -> list[dict[str, str]]:
-    result = _run(
-        [
-            "gio",
-            "list",
-            "-u",
-            "-l",
-            "-a",
-            "standard::display-name,standard::type,time::modified",
-            uri,
-        ],
-        timeout=60,
-    )
+    command = [
+        "gio", "list", "-u", "-l", "-a",
+        "standard::display-name,standard::type,time::modified", uri,
+    ]
+    result = _run(command, timeout=60)
+    parsed = urlsplit(uri)
+    if (
+        result.returncode != 0
+        and parsed.scheme == "google-drive"
+        and parsed.netloc
+        and "The specified location is not mounted" in result.stderr
+    ):
+        # GVfs mounts may disappear after logout/restart while the existing GOA
+        # account remains configured. Reuse that account once, without prompts.
+        mounted = _run(["gio", "mount", f"google-drive://{parsed.netloc}/"], timeout=60)
+        if mounted.returncode != 0:
+            raise RuntimeError(
+                "Google Drive mount failed; check the existing Google Online Account "
+                "connection and sign in there if required. "
+                f"{_command_error('GIO mount', mounted)}"
+            )
+        result = _run(command, timeout=60)
     if result.returncode != 0:
         raise _command_error("GIO list", result)
     children: list[dict[str, str]] = []
@@ -129,27 +145,281 @@ def _write_manifest(local_dir: Path, entry: dict[str, Any]) -> None:
     os.replace(temporary, path)
 
 
-def _apply_remote_retention(folder_uri: str, retention_days: int, preserve_uri: str | None = None) -> list[str]:
+def _apply_remote_retention(
+    folder_uri: str,
+    retention_days: int,
+    preserve_uri: str | None = None,
+) -> list[str]:
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
     deleted: list[str] = []
-    archives: list[tuple[datetime, dict[str, str]]] = []
-    for child in _list_children(folder_uri):
-        match = _ARCHIVE_TIMESTAMP.search(child["display_name"])
+    children = _list_children(folder_uri)
+    groups: dict[str, tuple[datetime, list[dict[str, str]]]] = {}
+    complete_dates: list[datetime] = []
+    for child in children:
+        match = _ARCHIVE_TIMESTAMP.fullmatch(child["display_name"])
         if not match:
             continue
-        created = datetime.strptime(match.group(1), "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
-        archives.append((created, child))
-    newest_uri = max(archives, key=lambda entry: entry[0])[1]["uri"] if archives else None
-    for created, child in archives:
+        try:
+            created = datetime.strptime(match["timestamp"], "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
+        except ValueError:
+            continue  # Not a managed archive timestamp; leave it untouched.
+        groups.setdefault(match["archive"], (created, []))[1].append(child)
+        if match["suffix"] in {None, ".parts.json"}:
+            complete_dates.append(created)
+    # Never reclaim incomplete uploads without an available complete archive.
+    if not complete_dates:
+        return []
+    newest_created = max(complete_dates)
+    for created, targets in groups.values():
         # An old retained archive can be retried after an extended outage. Never
         # delete the copy just verified, or the last/newest recovery point.
-        if created >= cutoff or child["uri"] in {preserve_uri, newest_uri}:
+        if (
+            created >= cutoff
+            or any(child["uri"] == preserve_uri for child in targets)
+            or created == newest_created
+        ):
             continue
-        result = _run(["gio", "remove", child["uri"]], timeout=60)
-        if result.returncode != 0:
-            raise _command_error("GIO retention removal", result)
-        deleted.append(child["uri"])
+        # Withdraw the completion marker before removing its parts, so a failed
+        # cleanup cannot leave a manifest advertising an incomplete archive.
+        for target in sorted(targets, key=lambda item: not item["display_name"].endswith(".parts.json")):
+            result = _run(["gio", "remove", target["uri"]], timeout=60)
+            if result.returncode != 0:
+                raise _command_error("GIO retention removal", result)
+            deleted.append(target["uri"])
     return deleted
+
+
+def _download_matches(
+    remote_uri: str,
+    destination: Path,
+    *,
+    expected_size: int,
+    expected_checksum: str,
+) -> tuple[bool, int]:
+    """Download one object and compare only after a successful transfer."""
+    destination.unlink(missing_ok=True)
+    copied = _run(
+        ["gio", "copy", "-T", remote_uri, str(destination)],
+        timeout=TRANSFER_TIMEOUT,
+    )
+    if copied.returncode != 0:
+        raise _command_error("GIO verification download", copied)
+    if not destination.is_file():
+        raise RuntimeError("GIO verification download did not create a file")
+    downloaded_bytes = destination.stat().st_size
+    matches = (
+        downloaded_bytes == expected_size
+        and _checksum(destination) == expected_checksum
+    )
+    return matches, downloaded_bytes
+
+
+def _publish_verified_file(
+    local_path: Path,
+    *,
+    folder_uri: str,
+    remote_name: str,
+    expected_checksum: str,
+    verification_path: Path,
+    retry: bool,
+) -> dict[str, Any]:
+    """Publish one object and prove its exact bytes through a readback."""
+    expected_size = local_path.stat().st_size
+    remote_uri = _find_display_child(folder_uri, remote_name)
+    preexisting_remote = remote_uri is not None
+    uploaded_bytes = 0
+    downloaded_bytes = 0
+
+    if remote_uri:
+        matches, transferred = _download_matches(
+            remote_uri,
+            verification_path,
+            expected_size=expected_size,
+            expected_checksum=expected_checksum,
+        )
+        downloaded_bytes += transferred
+        if matches:
+            return {
+                "location": remote_uri,
+                "uploaded_bytes": 0,
+                "downloaded_bytes": downloaded_bytes,
+                "reused": True,
+            }
+        if not retry:
+            raise RuntimeError("Offsite verification checksum mismatch")
+        removed = _run(["gio", "remove", remote_uri], timeout=60)
+        if removed.returncode != 0:
+            raise _command_error("GIO stale archive removal", removed)
+        remote_uri = None
+
+    if not remote_uri:
+        requested_uri = f"{folder_uri.rstrip('/')}/{quote(remote_name, safe='')}"
+        uploaded = _run(
+            ["gio", "copy", "-T", str(local_path), requested_uri],
+            timeout=TRANSFER_TIMEOUT,
+        )
+        if uploaded.returncode != 0:
+            raise _command_error("GIO upload", uploaded)
+        remote_uri = _find_display_child(folder_uri, remote_name)
+        if not remote_uri:
+            raise RuntimeError("Uploaded archive provider id could not be resolved")
+        uploaded_bytes = expected_size
+
+    matches, transferred = _download_matches(
+        remote_uri,
+        verification_path,
+        expected_size=expected_size,
+        expected_checksum=expected_checksum,
+    )
+    downloaded_bytes += transferred
+    if not matches:
+        raise RuntimeError("Offsite verification checksum mismatch")
+    return {
+        "location": remote_uri,
+        "uploaded_bytes": uploaded_bytes,
+        "downloaded_bytes": downloaded_bytes,
+        "reused": preexisting_remote,
+    }
+
+
+def _replicate_single_file(
+    archive_path: Path,
+    *,
+    source_folder_uri: str,
+    local_checksum: str,
+    temporary_dir: Path,
+    retry: bool,
+) -> dict[str, Any]:
+    published = _publish_verified_file(
+        archive_path,
+        folder_uri=source_folder_uri,
+        remote_name=archive_path.name,
+        expected_checksum=local_checksum,
+        verification_path=temporary_dir / "verification-download.age",
+        retry=retry,
+    )
+    return {
+        "location": published["location"],
+        "transfer_bytes": (
+            int(published["uploaded_bytes"])
+            + int(published["downloaded_bytes"])
+        ),
+    }
+
+
+def _replicate_parts(
+    archive_path: Path,
+    *,
+    source_folder_uri: str,
+    local_checksum: str,
+    temporary_dir: Path,
+    retry: bool,
+) -> dict[str, Any]:
+    """Publish a large ciphertext as verified bounded-size objects."""
+    aggregate = hashlib.sha256()
+    parts: list[dict[str, Any]] = []
+    artifacts: list[dict[str, Any]] = []
+    transfer_bytes = 0
+    with archive_path.open("rb") as source:
+        part_number = 0
+        while True:
+            part_path = temporary_dir / "upload.part"
+            part_path.unlink(missing_ok=True)
+            part_digest = hashlib.sha256()
+            part_bytes = 0
+            with part_path.open("wb") as part_file:
+                while part_bytes < PART_SIZE_BYTES:
+                    chunk = source.read(min(1024 * 1024, PART_SIZE_BYTES - part_bytes))
+                    if not chunk:
+                        break
+                    part_file.write(chunk)
+                    part_digest.update(chunk)
+                    aggregate.update(chunk)
+                    part_bytes += len(chunk)
+            if part_bytes == 0:
+                part_path.unlink(missing_ok=True)
+                break
+            part_path.chmod(0o600)
+            part_number += 1
+            part_name = f"{archive_path.name}.part{part_number:06d}"
+            part_checksum = f"sha256:{part_digest.hexdigest()}"
+            published = _publish_verified_file(
+                part_path,
+                folder_uri=source_folder_uri,
+                remote_name=part_name,
+                expected_checksum=part_checksum,
+                verification_path=temporary_dir / "verification-download.part",
+                retry=retry,
+            )
+            transfer_bytes += int(published["uploaded_bytes"]) + int(
+                published["downloaded_bytes"]
+            )
+            parts.append(
+                {
+                    "name": part_name,
+                    "size_bytes": part_bytes,
+                    "checksum": part_checksum,
+                }
+            )
+            artifacts.append(
+                {
+                    "role": "part",
+                    "name": part_name,
+                    "size_bytes": part_bytes,
+                    "checksum": part_checksum,
+                    "location": published["location"],
+                }
+            )
+
+    aggregate_checksum = f"sha256:{aggregate.hexdigest()}"
+    if aggregate_checksum != local_checksum:
+        raise RuntimeError("Local archive changed while publishing offsite parts")
+    if not parts:
+        raise RuntimeError("Offsite parts archive is empty")
+
+    manifest = {
+        "version": 1,
+        "format": "summitflow-age-parts",
+        "archive_name": archive_path.name,
+        "size_bytes": sum(part["size_bytes"] for part in parts),
+        "checksum": local_checksum,
+        "parts": parts,
+    }
+    manifest_name = f"{archive_path.name}.parts.json"
+    manifest_path = temporary_dir / manifest_name
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    manifest_path.chmod(0o600)
+    manifest_checksum = _checksum(manifest_path)
+    published_manifest = _publish_verified_file(
+        manifest_path,
+        folder_uri=source_folder_uri,
+        remote_name=manifest_name,
+        expected_checksum=manifest_checksum,
+        verification_path=temporary_dir / "verification-download.manifest",
+        retry=retry,
+    )
+    transfer_bytes += int(published_manifest["uploaded_bytes"]) + int(
+        published_manifest["downloaded_bytes"]
+    )
+    artifacts.append(
+        {
+            "role": "manifest",
+            "name": manifest_name,
+            "size_bytes": manifest_path.stat().st_size,
+            "checksum": manifest_checksum,
+            "location": published_manifest["location"],
+        }
+    )
+    return {
+        "location": published_manifest["location"],
+        "layout": "parts-v1",
+        "part_count": len(parts),
+        "artifacts": artifacts,
+        "transfer_bytes": transfer_bytes,
+    }
 
 
 def replicate_completed_archive(
@@ -179,58 +449,25 @@ def replicate_completed_archive(
         with tempfile.TemporaryDirectory(prefix="backup-offsite-") as temporary_dir:
             encrypted_checksum = local_checksum
             encrypted_bytes = archive_path.stat().st_size
-            remote_uri = _find_display_child(source_folder_uri, archive_path.name)
-            preexisting_remote = remote_uri is not None
-            uploaded_bytes = 0
-            if not remote_uri:
-                requested_uri = f"{source_folder_uri.rstrip('/')}/{quote(archive_path.name, safe='')}"
-                uploaded = _run(
-                    ["gio", "copy", "-T", str(archive_path), requested_uri],
-                    timeout=TRANSFER_TIMEOUT,
+            temp_path = Path(temporary_dir)
+            replicated = (
+                _replicate_parts(
+                    archive_path,
+                    source_folder_uri=source_folder_uri,
+                    local_checksum=local_checksum,
+                    temporary_dir=temp_path,
+                    retry=retry,
                 )
-                if uploaded.returncode != 0:
-                    raise _command_error("GIO upload", uploaded)
-                remote_uri = _find_display_child(source_folder_uri, archive_path.name)
-                if not remote_uri:
-                    raise RuntimeError("Uploaded archive provider id could not be resolved")
-                uploaded_bytes = encrypted_bytes
-            downloaded = Path(temporary_dir) / "verification-download.age"
-            copied_back = _run(["gio", "copy", "-T", remote_uri, str(downloaded)], timeout=TRANSFER_TIMEOUT)
-            verification_download_bytes = downloaded.stat().st_size if downloaded.is_file() else 0
-            verification_failed = copied_back.returncode != 0 or (
-                downloaded.is_file() and _checksum(downloaded) != encrypted_checksum
+                if encrypted_bytes > PART_SIZE_BYTES
+                else _replicate_single_file(
+                    archive_path,
+                    source_folder_uri=source_folder_uri,
+                    local_checksum=local_checksum,
+                    temporary_dir=temp_path,
+                    retry=retry,
+                )
             )
-            if copied_back.returncode == 0 and not downloaded.is_file():
-                verification_failed = True
-
-            if verification_failed and retry and preexisting_remote:
-                removed = _run(["gio", "remove", remote_uri], timeout=60)
-                if removed.returncode != 0:
-                    raise _command_error("GIO stale archive removal", removed)
-                requested_uri = f"{source_folder_uri.rstrip('/')}/{quote(archive_path.name, safe='')}"
-                uploaded = _run(
-                    ["gio", "copy", "-T", str(archive_path), requested_uri],
-                    timeout=TRANSFER_TIMEOUT,
-                )
-                if uploaded.returncode != 0:
-                    raise _command_error("GIO replacement upload", uploaded)
-                remote_uri = _find_display_child(source_folder_uri, archive_path.name)
-                if not remote_uri:
-                    raise RuntimeError("Replacement archive provider id could not be resolved")
-                uploaded_bytes += encrypted_bytes
-                downloaded = Path(temporary_dir) / "replacement-verification-download.age"
-                copied_back = _run(
-                    ["gio", "copy", "-T", remote_uri, str(downloaded)],
-                    timeout=TRANSFER_TIMEOUT,
-                )
-                verification_download_bytes += (
-                    downloaded.stat().st_size if downloaded.is_file() else 0
-                )
-
-            if copied_back.returncode != 0:
-                raise _command_error("GIO verification download", copied_back)
-            if not downloaded.is_file() or _checksum(downloaded) != encrypted_checksum:
-                raise RuntimeError("Offsite verification checksum mismatch")
+            remote_uri = str(replicated["location"])
         verified_at = datetime.now(UTC).isoformat()
         entry = {
             "archive_name": archive_path.name,
@@ -239,6 +476,11 @@ def replicate_completed_archive(
             "encrypted_checksum": encrypted_checksum,
             "remote_uri": remote_uri,
             "verified_at": verified_at,
+            **{
+                key: replicated[key]
+                for key in ("layout", "part_count", "artifacts")
+                if key in replicated
+            },
         }
         _write_manifest(local_dir, entry)
         deleted = _apply_remote_retention(source_folder_uri, retention_days, remote_uri)
@@ -251,8 +493,13 @@ def replicate_completed_archive(
             "retention_deleted": len(deleted),
             "replication_duration_ms": int((time.monotonic() - started) * 1000),
             "encrypted_bytes": encrypted_bytes,
-            "transfer_bytes": uploaded_bytes + verification_download_bytes,
+            "transfer_bytes": replicated["transfer_bytes"],
             "reused_local_archive": retry,
+            **{
+                key: replicated[key]
+                for key in ("layout", "part_count", "artifacts")
+                if key in replicated
+            },
         }
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
         failure = {

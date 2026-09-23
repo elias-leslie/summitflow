@@ -7,7 +7,9 @@ database.
 ## Required material
 
 - The downloaded native SummitFlow project archive. New archives are named
-  `summitflow-YYYYMMDD-HHMMSS.tar.gz.age`.
+  `summitflow-YYYYMMDD-HHMMSS.tar.gz.age`. A large archive may instead be a
+  `.parts.json` manifest plus all of its `.partNNNNNN` files from the same
+  source folder.
 - The separately saved age identity exported by SummitFlow. Keep the file private;
   it contains one `AGE-SECRET-KEY-...` line.
 - Linux with `age`, Git, Python 3.13+, and `uv`. The standalone source bootstrap
@@ -50,10 +52,34 @@ Download `recovery-bootstrap.py` from the Drive recovery kit (the repository cop
 is `scripts/recovery-bootstrap.py`). Verify the kit with its `SHA256SUMS` file.
 Use the archive checksum in the dated recovery inventory when it matches your
 chosen archive; omit that argument if the archive is newer than the inventory.
+Create the private workspace before copying or assembling recovery material:
 
 ```bash
 umask 077
 recovery_workspace=$(mktemp -d)
+```
+
+If the selected recovery point is segmented, download its `.parts.json` manifest
+and every part it names into one private directory. The inventory's `artifacts`
+array records those individual objects; the kit's `SHA256SUMS` covers only its
+four static files. Assemble with the utility rather than `cat`:
+
+```bash
+python3 recovery-bootstrap.py \
+  --assemble-parts <downloaded-archive.tar.gz.age.parts.json> \
+  --output-file "$recovery_workspace/downloaded-archive.tar.gz.age"
+```
+
+Assembly needs no key. It streams the parts in their required order and verifies
+their safe names, regular non-linked file type, sizes, individual checksums, and
+the final ciphertext checksum before publishing a mode-`0600` output. It refuses
+to overwrite an existing output and removes incomplete temporary output on
+failure. The manifest and its checksums are not independent authentication;
+successful age decryption is still mandatory. Use the assembled output as the
+archive in the commands below. Its basename must exactly match the manifest's
+`archive_name`.
+
+```bash
 python3 recovery-bootstrap.py <downloaded-summitflow.tar.gz.age> \
   --identity-file <saved-recovery-key-file> \
   --output-dir "$recovery_workspace/bootstrap" \

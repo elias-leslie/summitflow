@@ -499,6 +499,11 @@ export function BackupsClient() {
           onSourceChanged={refreshSources}
           onBackupTriggered={invalidateAll}
         />
+        <p className="text-xs text-slate-400" data-backup-transfer-note>
+          Each backup creates one encrypted local archive. Large Drive copies
+          transfer in verified parts; the recovery utility joins them before
+          restore. Sync retries reuse saved data.
+        </p>
       </section>
 
       <CollapsibleSection title="Sources & Schedules" summary={sourcesSummary}>

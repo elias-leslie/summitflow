@@ -59,6 +59,11 @@ function computeSteps(
   const restoreConfidence = infraHealth?.restore_confidence ?? null
   const restoreValidated =
     restoreConfidence === 'verified' &&
+    infraHealth?.last_drill_ok === true &&
+    infraHealth.last_drill_at != null &&
+    infraHealth.last_drill_backup_id != null &&
+    infraHealth.latest_backup_id != null
+  const latestDrillTested =
     infraHealth?.latest_backup_id != null &&
     infraHealth.last_drill_backup_id === infraHealth.latest_backup_id
   const scheduled = sources.filter((source) => source.enabled)
@@ -124,11 +129,11 @@ function computeSteps(
       icon: <ShieldCheck className="w-4 h-4" />,
       title: 'Restore validation',
       description: restoreValidated
-        ? 'The latest infrastructure backup passed its restore drill.'
-        : restoreConfidence === 'stale'
-          ? 'The restore drill is stale. Verify the latest infrastructure backup.'
-          : restoreConfidence === 'partial'
-            ? 'Restore drill ran but some components failed'
+        ? `Restore drill passed for ${infraHealth.last_drill_backup_id} on ${infraHealth.last_drill_at?.slice(0, 10)}. ${latestDrillTested ? 'This is the latest backup.' : 'The latest backup has not had a restore drill.'}`
+        : infraHealth?.last_drill_ok === false
+          ? 'The last restore drill failed. Review its results before relying on recovery.'
+          : restoreConfidence === 'stale'
+            ? 'The scheduled restore drill is overdue. Check the backup schedule or run a drill.'
             : 'Run a restore drill to verify backups can actually be restored.',
       complete: restoreValidated,
     },
@@ -169,8 +174,16 @@ export function SetupChecklist({
   const doneCount = steps.filter((s) => s.complete).length
   const allDone = doneCount === steps.length
   const remainingCount = steps.length - doneCount
+  const infraHealth = healthItems.find(
+    (item) => item.source_type === 'infrastructure',
+  )
+  const latestDrillTested =
+    infraHealth?.latest_backup_id != null &&
+    infraHealth.last_drill_backup_id === infraHealth.latest_backup_id
   const summary = allDone
-    ? 'Saved key, latest Drive copies and infrastructure restore drill are verified.'
+    ? latestDrillTested
+      ? 'Saved key, latest Drive copies and infrastructure restore drill are verified.'
+      : 'Saved key and latest Drive copies are verified. The latest backup has not had a restore drill; a previous backup passed.'
     : `${doneCount} of ${steps.length} complete. ${remainingCount} ${remainingCount === 1 ? 'step still needs attention.' : 'steps still need attention.'}`
 
   if (isLoading) return null

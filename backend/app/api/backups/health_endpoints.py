@@ -70,10 +70,10 @@ async def backup_health() -> BackupHealthResponse:
             last_restore_tested_at=row.get("last_restore_tested_at"),
         )
 
-        # Health logic — tighter for infrastructure:
+        # Infrastructure combines current archive checks with dated drill evidence.
         # - red: most recent backup failed OR (infra: drill failed)
-        # - yellow: pending upload, never succeeded, restore/drill stale or untested
-        # - green: backup succeeded AND restore validation current
+        # - yellow: pending upload, missing coverage, or stale/untested drill evidence
+        # - green: current archive checks pass AND a recent recorded drill succeeded
         if not row["enabled"]:
             health_status = "disabled"
         elif last_status == "failed" or offsite_status == "failed" or (
@@ -86,14 +86,17 @@ async def backup_health() -> BackupHealthResponse:
         }:
             health_status = "yellow"
         elif source_type == "infrastructure":
-            # An older successful drill cannot validate a new recovery point.
+            # A new capture does not invalidate a demonstrated restore process.
+            # Return the tested backup ID/date separately; this is not a claim
+            # that the newest recovery point itself passed a restore drill.
             if (
                 last_success
                 and last_drill_ok is True
                 and restore_confidence == "verified"
+                and last_drill_at is not None
+                and last_drill_backup_id is not None
                 and coverage_complete is True
                 and row.get("latest_backup_id") is not None
-                and last_drill_backup_id == row.get("latest_backup_id")
             ):
                 health_status = "green"
             elif last_success:

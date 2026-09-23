@@ -22,6 +22,7 @@ RECOVERY_MANIFEST_NAME = "manifest.json"
 GIT_BUNDLE_NAME = "git.bundle"
 GIT_INDEX_NAME = "git-index"
 SQLITE_TRANSIENT_SUFFIXES = ("-wal", "-shm", "-journal")
+JJ_GIT_IMPORT_EXPORT_LOCK = ".jj/repo/git_import_export.lock"
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,7 @@ class SnapshotEntry:
     inode: int
     link_target: str | None = None
     sqlite_database: bool = False
+    append_only_jsonl: bool = False
 
 
 def _sha256(path: Path) -> str:
@@ -108,6 +110,8 @@ def inventory_project_tree(
             if stat.S_ISLNK(metadata.st_mode):
                 _record_symlink(inventory, path, rel, project_dir)
             elif stat.S_ISREG(metadata.st_mode):
+                if rel == JJ_GIT_IMPORT_EXPORT_LOCK and metadata.st_size == 0:
+                    continue
                 if _is_sqlite_transient_file(path, sqlite_databases):
                     continue
                 sqlite_database = filename in sqlite_databases
@@ -122,6 +126,7 @@ def inventory_project_tree(
                     mtime_ns=0 if sqlite_database else metadata.st_mtime_ns,
                     inode=metadata.st_ino,
                     sqlite_database=sqlite_database,
+                    append_only_jsonl=not sqlite_database and path.suffix.lower() == ".jsonl",
                 )
     return inventory
 
@@ -188,8 +193,77 @@ def copy_inventory_snapshot(
             target.symlink_to(entry.link_target or "")
         elif entry.sqlite_database:
             _copy_sqlite_database(source, target)
+        elif entry.append_only_jsonl:
+            _copy_jsonl_prefix(source, target, entry, rel)
         else:
             shutil.copy2(source, target, follow_symlinks=False)
+
+
+def _copy_jsonl_prefix(
+    source: Path,
+    destination: Path,
+    entry: SnapshotEntry,
+    relative_path: str,
+) -> None:
+    """Copy the raw point-in-time prefix inventoried for an append-only log.
+
+    The prefix is deliberately not parsed: a writer may have an in-flight final
+    record, and recovery preserves those exact bytes without reading a growing
+    tail indefinitely.
+    """
+    try:
+        metadata = source.lstat()
+        if not _jsonl_identity_matches(metadata, entry):
+            raise RuntimeError
+        remaining = entry.size
+        with source.open("rb") as input_file, destination.open("xb") as output_file:
+            if not _jsonl_identity_matches(os.fstat(input_file.fileno()), entry):
+                raise RuntimeError
+            while remaining:
+                chunk = input_file.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    raise RuntimeError
+                output_file.write(chunk)
+                remaining -= len(chunk)
+            if not _jsonl_identity_matches(os.fstat(input_file.fileno()), entry):
+                raise RuntimeError
+        shutil.copystat(source, destination, follow_symlinks=False)
+    except (OSError, RuntimeError):
+        raise RuntimeError(
+            f"Backup source changed during capture: {relative_path}"
+        ) from None
+
+
+def _jsonl_identity_matches(metadata: os.stat_result, entry: SnapshotEntry) -> bool:
+    return (
+        stat.S_ISREG(metadata.st_mode)
+        and stat.S_IMODE(metadata.st_mode) == entry.mode
+        and metadata.st_ino == entry.inode
+        and metadata.st_size >= entry.size
+    )
+
+
+def _jsonl_prefix_matches(
+    source: Path,
+    captured: Path,
+    entry: SnapshotEntry,
+) -> bool:
+    """Confirm the source still begins with the exact captured raw prefix."""
+    try:
+        if captured.stat().st_size != entry.size:
+            return False
+        with source.open("rb") as source_file, captured.open("rb") as captured_file:
+            if not _jsonl_identity_matches(os.fstat(source_file.fileno()), entry):
+                return False
+            remaining = entry.size
+            while remaining:
+                length = min(1024 * 1024, remaining)
+                if source_file.read(length) != captured_file.read(length):
+                    return False
+                remaining -= length
+            return _jsonl_identity_matches(os.fstat(source_file.fileno()), entry)
+    except OSError:
+        return False
 
 
 def _run_git(
@@ -397,8 +471,18 @@ def build_consistent_snapshot(
     recovery = create_git_recovery_payload(project_dir, snapshot_dir, git_before)
     after = inventory_project_tree(project_dir, effective_excludes, should_exclude)
     git_after = git_state(project_dir)
-    if before != after or git_before != git_after:
-        changed = sorted(set(before) ^ set(after))
+    changed = sorted(
+        relative_path
+        for relative_path in set(before) | set(after)
+        if not _snapshot_entry_is_stable(
+            project_dir,
+            snapshot_dir,
+            relative_path,
+            before.get(relative_path),
+            after.get(relative_path),
+        )
+    )
+    if changed or git_before != git_after:
         raise RuntimeError(
             "Backup source changed during capture"
             + (f": {', '.join(changed[:5])}" if changed else "")
@@ -413,6 +497,30 @@ def build_consistent_snapshot(
     manifest_path = snapshot_dir / RECOVERY_DIR_NAME / RECOVERY_MANIFEST_NAME
     manifest_path.write_text(json.dumps(recovery, indent=2, sort_keys=True) + "\n")
     return snapshot_dir, recovery
+
+
+def _snapshot_entry_is_stable(
+    project_dir: Path,
+    snapshot_dir: Path,
+    relative_path: str,
+    before: SnapshotEntry | None,
+    after: SnapshotEntry | None,
+) -> bool:
+    if before is None or after is None:
+        return False
+    if not before.append_only_jsonl:
+        return before == after
+    if (
+        not after.append_only_jsonl
+        or after.kind != before.kind
+        or after.mode != before.mode
+        or after.inode != before.inode
+        or after.size < before.size
+    ):
+        return False
+    source = project_dir / Path(*PurePosixPath(relative_path).parts)
+    captured = snapshot_dir / Path(*PurePosixPath(relative_path).parts)
+    return _jsonl_prefix_matches(source, captured, before)
 
 
 def restore_git_recovery(project_dir: Path) -> dict[str, Any]:
