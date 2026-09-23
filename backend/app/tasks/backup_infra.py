@@ -35,7 +35,7 @@ def create_infra_backup(
     owner_token = acquire_backup_lock(source_id)
     if owner_token is None:
         logger.info("create_infra_backup_skipped_locked", source_id=source_id)
-        return {"status": "skipped", "error": f"Backup already running for {source_id}"}
+        return {"status": "skipped", "error": f"Backup already running for {source_id}, or managed backup worker restart in progress"}
 
     return _run_infra_backup(
         source_id,

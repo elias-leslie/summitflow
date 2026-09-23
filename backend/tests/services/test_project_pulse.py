@@ -9,6 +9,50 @@ import pytest
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({}, 1),
+        ({"is_stale": True}, 0),
+        ({"session_status": "completed"}, 0),
+        ({"ownership_kind": "retired"}, 0),
+        ({"workstream_status": "superseded"}, 0),
+        ({"session_status": None}, 0),
+    ],
+)
+async def test_live_owner_outside_session_page_is_not_lost(
+    overrides: dict[str, object], expected: int,
+) -> None:
+    """The sampled project session page is not the complete ownership inventory."""
+    owner = {
+        "session_id": "outside-page", "task_id": "task-owned",
+        "session_status": "active", "is_stale": False,
+        "ownership_kind": "scoped", "workstream_status": None,
+        "scope_confidence": "declared", "declared_scope_paths": ["app.py"],
+        **overrides,
+    }
+    with (
+        patch("app.services.project_pulse._agent_hub_get", new=AsyncMock(side_effect=[
+            {"active_owners": [owner], "active_specialists": []}, {"sessions": []},
+        ])),
+        patch("app.services.project_pulse.list_tasks", return_value=[{
+            "id": "task-owned", "title": "Owned", "status": "running", "priority": 2,
+        }]),
+        patch("app.services.project_pulse.build_project_cleanup_status", return_value={
+            "active_checkpoints": 0, "dirty_checkpoints": 0, "needs_cleanup": False,
+        }),
+    ):
+        from app.services.project_pulse import build_project_pulse
+
+        payload = await build_project_pulse("summitflow")
+
+    assert payload["summary"]["active_owners"] == expected
+    assert payload["summary"]["running_tasks"] == expected
+    assert payload["summary"]["stranded_tasks"] == 1 - expected
+    assert payload["active_sessions"] == []  # Do not invent session telemetry.
+
+
+@pytest.mark.asyncio
 async def test_build_project_pulse_separates_stale_sessions_from_live_coordination() -> None:
     fresh = (datetime.now(UTC) - timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
     stale = (datetime.now(UTC) - timedelta(hours=6)).isoformat().replace("+00:00", "Z")

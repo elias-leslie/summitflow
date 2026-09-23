@@ -37,8 +37,9 @@ async def _agent_hub_get(path: str, params: dict[str, Any] | None = None) -> dic
 def _filter_ownership_by_active_sessions(
     records: Any,
     active_session_ids: set[str],
+    listed_session_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Keep ownership rows only when backed by an active session row."""
+    """Use listed lifecycle evidence without treating a sampled page as exhaustive."""
     if not isinstance(records, list):
         return []
     filtered: list[dict[str, Any]] = []
@@ -46,7 +47,20 @@ def _filter_ownership_by_active_sessions(
         if not isinstance(record, dict):
             continue
         session_id = str(record.get("session_id") or "")
-        if session_id and session_id in active_session_ids:
+        if not session_id:
+            continue
+        if session_id in active_session_ids:
+            filtered.append(record)
+        elif (
+            listed_session_ids is not None
+            and session_id not in listed_session_ids
+            and record.get("session_status") == "active"
+            and record.get("is_stale") is False
+            and record.get("ownership_kind") not in {"stale", "retired", "superseded"}
+            and record.get("workstream_status") not in {"retired", "superseded"}
+        ):
+            # Agent Hub owns this live inventory. Missing from its separate
+            # project session page means unlisted, not inactive or unowned.
             filtered.append(record)
     return filtered
 
@@ -54,9 +68,10 @@ def _filter_ownership_by_active_sessions(
 def _partition_active_ownership(
     records: Any,
     active_session_ids: set[str],
+    listed_session_ids: set[str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Split live ownership rows into write owners and read-only telemetry."""
-    active = _filter_ownership_by_active_sessions(records, active_session_ids)
+    active = _filter_ownership_by_active_sessions(records, active_session_ids, listed_session_ids)
     writers: list[dict[str, Any]] = []
     readers: list[dict[str, Any]] = []
     for record in active:
@@ -81,7 +96,8 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
     preliminary_sessions, _, _ = _bucket_sessions(raw_sessions, set(), set())
     active_session_ids = {str(session.get("id") or "") for session in preliminary_sessions}
     active_owners, active_readers = _partition_active_ownership(
-        raw_active_owners, active_session_ids
+        raw_active_owners, active_session_ids,
+        {str(session.get("id") or "") for session in raw_sessions if isinstance(session, dict)},
     )
     active_specialists = _filter_ownership_by_active_sessions(
         raw_active_specialists, active_session_ids

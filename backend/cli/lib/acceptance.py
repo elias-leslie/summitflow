@@ -544,6 +544,10 @@ def accept_revision(
             "completed_at": datetime.now(UTC).isoformat(),
         }
         receipt["acceptance_id"] = _receipt_digest(receipt)
+        if state != "success":
+            # A retry of these exact inputs may later pass. Its reusable cache
+            # entry must not erase the failure artifact already given to users.
+            artifact = _receipt_path(repo, receipt["acceptance_id"])
         _write_receipt(artifact, receipt)
         if state != "success":
             raise AcceptanceError(f"{reason}; acceptance evidence: {artifact}")

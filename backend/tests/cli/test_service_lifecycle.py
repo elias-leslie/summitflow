@@ -1,7 +1,7 @@
 """Regression coverage for managed lifecycle selection and failure reporting."""
 
 import subprocess
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -82,6 +82,72 @@ def test_full_rebuild_preserves_optional_worker_intent(lifecycle):
     assert result.exit_code == 0, result.output
     restarted = [call.args[0] for call in lifecycle["restart_service"].call_args_list]
     assert restarted == ["backend.service", "required.service", "active.service", "frontend.service"]
+
+
+@pytest.mark.parametrize("scope", ["full", "backend", "worker"])
+def test_summitflow_rebuild_refuses_busy_backup_before_mutation(lifecycle, project, monkeypatch, scope):
+    from app.tasks.backup_lock import BackupLockLeaseError
+
+    monkeypatch.setattr(service, "_load", lambda _: replace(project, project_id="summitflow"))
+    guard = Mock(side_effect=BackupLockLeaseError("Backups active: AfterTimes; wait or cancel in Backups, then retry"))
+    monkeypatch.setattr(service, "backup_worker_restart_guard", guard, raising=False)
+    result = CliRunner().invoke(service.app, ["rebuild", "summitflow", "--scope", scope])
+    assert result.exit_code == 1
+    assert "Backups active" in result.output
+    lifecycle["ensure_infra"].assert_not_called()
+    lifecycle["restart_service"].assert_not_called()
+
+
+@pytest.mark.parametrize("scope", ["full", "frontend"])
+def test_restart_barrier_lifetime_and_frontend_exemption(lifecycle, project, monkeypatch, scope):
+    monkeypatch.setattr(service, "_load", lambda _: replace(project, project_id="summitflow"))
+    events = []
+    owned = Mock()
+
+    @contextmanager
+    def guard():
+        events.append("held")
+        try:
+            yield owned
+        finally:
+            events.append("released")
+
+    monkeypatch.setattr(service, "backup_worker_restart_guard", guard, raising=False)
+
+    def restart(*_args, **_kwargs):
+        assert events == (["held"] if scope == "full" else [])
+        return 0
+
+    lifecycle["restart_service"].side_effect = restart
+    result = CliRunner().invoke(service.app, ["rebuild", "summitflow", "--scope", scope])
+    assert result.exit_code == 0, result.output
+    assert events == (["held", "released"] if scope == "full" else [])
+    assert owned.called is (scope == "full")
+
+
+def test_guard_loss_before_restart_refuses_stop_and_releases_barrier(lifecycle, project, monkeypatch):
+    from app.tasks.backup_lock import BackupLockLeaseError
+
+    monkeypatch.setattr(service, "_load", lambda _: replace(project, project_id="summitflow"))
+    released = Mock()
+
+    def assert_owned():
+        if lifecycle["sync_systemd_units"].called:
+            raise BackupLockLeaseError("Backup restart ownership unavailable")
+
+    @contextmanager
+    def guard():
+        try:
+            yield assert_owned
+        finally:
+            released()
+
+    monkeypatch.setattr(service, "backup_worker_restart_guard", guard)
+    result = CliRunner().invoke(service.app, ["rebuild", "summitflow"])
+    assert result.exit_code == 1
+    assert "ownership unavailable" in result.output
+    lifecycle["restart_service"].assert_not_called()
+    released.assert_called_once()
 
 
 @pytest.mark.parametrize("scope,expected", [

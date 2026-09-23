@@ -198,6 +198,20 @@ def test_failed_full_gate_raises_and_retains_bounded_evidence(repo: Path) -> Non
     assert payload["checks"][0]["output_bytes"] == 5007
 
 
+def test_later_success_does_not_overwrite_failed_acceptance_evidence(repo: Path) -> None:
+    def fail(command, _cwd):
+        return subprocess.CompletedProcess(command, 1, "failure artifact remains useful", "")
+
+    with pytest.raises(acceptance.AcceptanceError) as error:
+        acceptance.accept_revision(repo, sha="HEAD", runner=fail)
+    failed_path = Path(str(error.value).split("acceptance evidence: ", 1)[1])
+    failed_bytes = failed_path.read_bytes()
+    successful = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
+    assert Path(successful["acceptance_artifact"]) != failed_path
+    assert failed_path.read_bytes() == failed_bytes
+    assert json.loads(failed_bytes)["state"] == "failed"
+
+
 def test_repo_lock_reports_concurrent_mutation(repo: Path) -> None:
     with (
         acceptance.repo_lock(repo, purpose="first"),

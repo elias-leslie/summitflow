@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import time
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
 import typer
+
+from app.tasks.backup_lock import BackupLockLeaseError, backup_worker_restart_guard
 
 from ..lib import service_ops, service_release
 from ..lib.confirm_token import confirm_gate
@@ -244,7 +246,11 @@ def rebuild(
     development_services = services
     development_root = services.root
     try:
-        with service_release.deployment_lock(services.project_id):
+        with (
+            service_release.deployment_lock(services.project_id),
+            (backup_worker_restart_guard() if services.project_id == "summitflow" and backend
+             else nullcontext(lambda: None)) as assert_backup_restart_owned,
+        ):
             release, services = service_ops.prepare_accepted_release(services, acceptance)
             service_release.mark_phase(
                 release,
@@ -282,6 +288,7 @@ def rebuild(
                 )
             steps.append(("systemd_units", lambda: service_ops.sync_systemd_units(services)))
             for name, step in steps:
+                assert_backup_restart_owned()
                 phase_started = time.monotonic()
                 if step() != 0:
                     service_release.mark_phase(
@@ -310,14 +317,17 @@ def rebuild(
             restarted: list[str] = []
             restart_started = time.monotonic()
             if backend and services.backend_service:
+                assert_backup_restart_owned()
                 errors += service_ops.restart_service(
                     services.backend_service, port=services.backend_port
                 ) != 0
                 restarted.append(services.backend_service)
             for name in workers:
+                assert_backup_restart_owned()
                 errors += service_ops.restart_service(name) != 0
                 restarted.append(name)
             if frontend and services.frontend_service:
+                assert_backup_restart_owned()
                 errors += service_ops.restart_service(
                     services.frontend_service, port=services.frontend_port
                 ) != 0
@@ -379,7 +389,7 @@ def rebuild(
                 f"deployment_id={result['deployment_id']}"
             )
             print(f"[service] rebuild complete ({int(time.time() - start_time)}s)")
-    except (service_ops.ServiceError, service_release.ReleaseError) as exc:
+    except (service_ops.ServiceError, service_release.ReleaseError, BackupLockLeaseError) as exc:
         if release is not None:
             with suppress(service_release.ReleaseError):
                 service_release.fail_release(release, "deployment")

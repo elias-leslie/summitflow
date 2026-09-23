@@ -239,7 +239,7 @@ async def sync_source_backup_offsite(source_id: str, backup_id: str) -> RestoreR
         raise HTTPException(status_code=409, detail="Only completed backups can be synced offsite")
     owner_token = acquire_backup_lock(source_id)
     if owner_token is None:
-        raise HTTPException(status_code=409, detail="A backup or Drive sync is already active for this source")
+        raise HTTPException(status_code=409, detail="A backup/Drive sync is active for this source, or its worker is restarting; retry after it finishes")
     from ...workflows.models import OffsiteSyncInput
     from ...workflows.utility import backup_offsite_sync_wf
 

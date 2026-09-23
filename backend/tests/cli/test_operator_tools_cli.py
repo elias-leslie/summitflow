@@ -121,6 +121,7 @@ def test_service_rebuild_uses_native_steps() -> None:
     project = _project()
     release = _prepared_release()
     with (
+        patch.object(service, "backup_worker_restart_guard", return_value=nullcontext(lambda: None)),
         patch("cli.commands.service._load", return_value=project),
         patch(
             "cli.commands.service.service_ops.prepare_accepted_release",
@@ -1756,6 +1757,7 @@ def test_rebuild_fails_when_restarted_worker_is_not_active():
     project = _project()
     release = _prepared_release()
     with (
+        patch.object(service, "backup_worker_restart_guard", return_value=nullcontext(lambda: None)),
         patch("cli.commands.service._load", return_value=project),
         patch.object(service_ops, "prepare_accepted_release", return_value=(release, project)),
         patch.object(service_release, "deployment_lock", return_value=nullcontext()),

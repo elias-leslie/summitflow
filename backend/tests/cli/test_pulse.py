@@ -86,6 +86,7 @@ def test_pulse_compact_renders_canonical_summary() -> None:
 
     assert result.exit_code == 0
     assert "PULSE:agent-hub|tasks=1|writers=1|readers=0|specialists=0|sessions=2|stale=1|reapable=1|checkpoints=1|dirty=0|cleanup=no|stranded=0" in result.output
+    assert "|visibility=registered-observed-only" in result.output
     assert "PREFLIGHT:agent-hub|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
     assert "RUN task-1 | running | P2 | Refactor timeline" in result.output
     assert "WRITE task-1 | refactor | sess-own | kind=scoped | paths=frontend/src/app.tsx" in result.output
@@ -416,13 +417,14 @@ def test_pulse_gate_allows_dirty_cleanup_with_read_only_session() -> None:
     assert "REVIEW:a-term|ownerless=yes" not in result.output
 
 
-def test_pulse_gate_blocks_dirty_cleanup_with_nonwriter_write_session() -> None:
+@pytest.mark.parametrize("other_writers", [0, 1])
+def test_pulse_gate_blocks_dirty_cleanup_with_nonwriter_write_session(other_writers: int) -> None:
     mock_client = MagicMock()
     mock_client.get.return_value = {
         "project_id": "a-term",
         "summary": {
             "running_tasks": 0,
-            "active_owners": 0,
+            "active_owners": other_writers,
             "active_readers": 1,
             "active_specialists": 0,
             "active_sessions": 1,
@@ -437,7 +439,7 @@ def test_pulse_gate_blocks_dirty_cleanup_with_nonwriter_write_session() -> None:
             "needs_cleanup": True,
         },
         "running_tasks": [],
-        "active_owners": [],
+        "active_owners": [{"session_id": "other-owner"}] if other_writers else [],
         "active_readers": [
             {
                 "session_id": "sess-unassigned",
@@ -454,7 +456,7 @@ def test_pulse_gate_blocks_dirty_cleanup_with_nonwriter_write_session() -> None:
         result = runner.invoke(app, ["pulse", "--project", "a-term", "--gate"])
 
     assert result.exit_code == 2
-    assert "PULSE:a-term|tasks=0|writers=0|readers=1|specialists=0|sessions=1|" in result.output
+    assert f"PULSE:a-term|tasks=0|writers={other_writers}|readers=1|specialists=0|sessions=1|" in result.output
     assert "PREFLIGHT:a-term|claim=blocked|edit=blocked|reasons=active_nonwriter_write_session|source=st-pulse" in result.output
     assert "SESSION-REVIEW:a-term|nonwriter_writes=1|dirty=1|checkpoints=0|" in result.output
     assert "REVIEW:a-term|ownerless=yes" not in result.output

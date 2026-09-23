@@ -42,7 +42,7 @@ def test_active_lease_lookup_does_not_treat_redis_failure_as_absent() -> None:
 
 def test_acquire_backup_lock_stores_unique_owner_token() -> None:
     redis_client = MagicMock()
-    redis_client.set.return_value = True
+    redis_client.eval.return_value = True
     owner = MagicMock(hex="owner-token")
 
     with (
@@ -52,20 +52,75 @@ def test_acquire_backup_lock_stores_unique_owner_token() -> None:
         token = acquire_backup_lock("source-1")
 
     assert token == "owner-token"
-    redis_client.set.assert_called_once_with(
-        f"{BACKUP_LOCK_PREFIX}source-1",
-        "owner-token",
-        nx=True,
-        ex=BACKUP_LOCK_TTL,
-    )
+    script, count, key, barrier, token_arg, ttl = redis_client.eval.call_args.args
+    assert "redis.call('exists', KEYS[2])" in script
+    assert "redis.call('set', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[2])" in script
+    assert (count, key, token_arg, ttl) == (2, f"{BACKUP_LOCK_PREFIX}source-1", "owner-token", BACKUP_LOCK_TTL)
+    assert barrier.startswith(BACKUP_LOCK_PREFIX)
 
 
 def test_acquire_backup_lock_does_not_return_token_when_already_owned() -> None:
     redis_client = MagicMock()
-    redis_client.set.return_value = None
+    redis_client.eval.return_value = None
 
     with patch("app.tasks.backup_lock.get_redis", return_value=redis_client):
         assert acquire_backup_lock("source-1") is None
+
+
+@pytest.mark.parametrize("failure", ["active", "unavailable", "held"])
+def test_restart_barrier_refuses_existing_or_unknown_work_and_releases_only_own_guard(failure):
+    from app.tasks import backup_lock
+
+    redis_client = MagicMock()
+    redis_client.set.return_value = failure != "held"
+    redis_client.eval.return_value = 1
+    redis_client.scan_iter.return_value = [f"{BACKUP_LOCK_PREFIX}AfterTimes".encode()]
+    if failure == "unavailable":
+        redis_client.scan_iter.side_effect = ConnectionError("Redis unavailable")
+    with patch.object(backup_lock, "get_redis", return_value=redis_client), pytest.raises(BackupLockLeaseError), backup_lock.backup_worker_restart_guard():
+        pytest.fail("no restart may occur")
+    assert redis_client.eval.call_count == int(failure != "held")
+    if failure != "held":
+        assert "redis.call('del', KEYS[1])" in redis_client.eval.call_args.args[0]
+
+
+def test_restart_barrier_holds_admission_until_exit_and_detects_lost_owner():
+    from app.tasks import backup_lock
+
+    redis_client = MagicMock()
+    redis_client.set.return_value = True
+    redis_client.scan_iter.return_value = []
+    redis_client.get.return_value = "test-only-owner"
+    redis_client.eval.return_value = 1
+    with (
+        patch.object(backup_lock, "get_redis", return_value=redis_client),
+        patch.object(backup_lock, "uuid4", return_value=MagicMock(hex="test-only-owner")),
+        backup_lock.backup_worker_restart_guard() as assert_owned,
+    ):
+        assert_owned()
+        redis_client.eval.assert_not_called()
+        redis_client.get.return_value = "another-owner"
+        with pytest.raises(BackupLockLeaseError, match="ownership"):
+            assert_owned()
+    assert "redis.call('del', KEYS[1])" in redis_client.eval.call_args.args[0]
+
+
+def test_restart_guard_rechecks_legacy_worker_admission_before_mutation():
+    from app.tasks import backup_lock
+
+    redis_client = MagicMock()
+    redis_client.set.return_value = True
+    redis_client.scan_iter.return_value = []
+    redis_client.get.return_value = "test-only-owner"
+    redis_client.eval.return_value = 1
+    with (
+        patch.object(backup_lock, "get_redis", return_value=redis_client),
+        patch.object(backup_lock, "uuid4", return_value=MagicMock(hex="test-only-owner")),
+        backup_lock.backup_worker_restart_guard() as assert_owned,
+    ):
+        redis_client.scan_iter.return_value = [f"{BACKUP_LOCK_PREFIX}infrastructure"]
+        with pytest.raises(BackupLockLeaseError, match="Backups active: infrastructure"):
+            assert_owned()
 
 
 def test_renew_backup_lock_compares_owner_before_extending_ttl() -> None:

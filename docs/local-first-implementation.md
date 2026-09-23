@@ -18,19 +18,57 @@ After that, the owner wants the remaining broader follow-ups completed **only
 after explicit confirmation that the other agent has finished**. These are
 pending, not silently dropped and not included in an option-1 completion claim:
 
-- [ ] Review the repeated full-check/deployment cost for small frontend changes;
+- [x] Review the repeated full-check/deployment cost for small frontend changes;
       reuse verified unchanged inputs only where the existing evidence contract
       can prove this safely. Do not weaken required acceptance checks.
-- [ ] Improve failure diagnostics and bounded discovery/output where the observed
+- [x] Improve failure diagnostics and bounded discovery/output where the observed
       failures justify a targeted change. Record operator mistakes separately
       from product defects; do not invent billed-token savings.
-- [ ] Check cross-project coordination visibility: another Agent Hub agent made
+- [x] Check cross-project coordination visibility: another Agent Hub agent made
       SummitFlow changes while the compact SummitFlow pulse exposed only one
       writer. Make the existing ownership and deployment coordination accurate
       rather than introducing a second orchestration system.
 
 The owner subsequently confirmed the other agent is done and authorized resuming
 all remaining work. The follow-ups above are now active, not blocked on approval.
+
+Efficiency disposition: keep focused changed-only feedback, batch compatible edits,
+then run full acceptance once for the exact candidate. Deployment and closeout reuse
+that receipt only while source/configuration/toolchain still match. No new check or
+build framework and no cross-source reuse are justified. The measured 0.75-second
+reuse versus 78.89-second full run is one observed case, not a universal speedup.
+
+Diagnostic correction: canonical pytest now retains a unique JUnit report from
+the same invocation, including when console output is empty. Existing explicitly
+configured reporters remain respected. Failed acceptance receipts use immutable
+receipt-ID paths; a later same-input success cannot overwrite failure evidence.
+Seventy-three focused tests, types and Ruff passed. No extra test run, timeout,
+weaker success criterion or verbose result dump was introduced. The cause of the
+earlier empty stdout remains unproven; the `/tmp` durable-root guard remains intact.
+Overbroad lookups and two blocked commit attempts were operator/workflow overhead,
+not claimed savings. Session-wide billed-token totals remain unavailable.
+
+Coordination correction: preserve explicitly live Agent Hub ownership absent from
+the separately sampled session page, retain observed-write contention warnings
+even when another writer exists, and label pulse visibility as registered/observed
+only. Forty-nine focused tests plus types/Ruff passed. No Agent Hub mutation or
+new telemetry system was needed. Existing relative scope paths lack reliable
+cross-project origin; unreported external edits cannot be inferred safely. This
+does not claim to reconstruct the earlier unidentified writer. Claims, explicit
+file ownership and source-change guards remain required.
+
+- [x] Protect active native backups during SummitFlow worker rebuild. An observed
+      managed restart interrupted AfterTimes verification (GIO exit -15) and left
+      an infrastructure dump record orphaned. Implement a narrow atomic backup
+      admission barrier around worker restart: refuse busy/unknown ownership,
+      prevent new captures during restart, release safely afterward. No arbitrary
+      backup runtime deadline, automatic cancellation or general job framework.
+      Implemented with existing owned-lease renewal: atomic acquisition checks the
+      restart barrier; rebuild refuses busy/unknown state and checks ownership and
+      active leases before lifecycle mutations. Sixty-seven focused tests plus
+      types/Ruff passed. First activation still needs an idle window because old
+      worker binaries do not yet honor the barrier; defensive rechecks cannot
+      retroactively eliminate that old-binary race. Runtime rollout remains below.
 
 ### Resolved coordination blocker
 

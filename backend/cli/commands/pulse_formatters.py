@@ -195,8 +195,6 @@ def _format_nonwriter_session_review(
     cleanup: dict[str, Any],
     payload: dict[str, Any] | None = None,
 ) -> str | None:
-    if _truthy_count(summary.get("active_owners")) or _truthy_count(summary.get("active_specialists")):
-        return None
     nonwriter_writes = _nonwriter_write_sessions(payload or {})
     if not nonwriter_writes:
         return None
@@ -431,7 +429,8 @@ def _print_leases(project_id: Any) -> None:
 def _print_summary_line(project_id: Any, summary: dict[str, Any], cleanup: dict[str, Any]) -> None:
     print(
         "PULSE:{project}|tasks={tasks}|writers={writers}|readers={readers}|specialists={specialists}|"
-        "sessions={sessions}|stale={stale}|reapable={reapable}|checkpoints={checkpoints}|dirty={dirty}|cleanup={cleanup_needed}|stranded={stranded}".format(
+        "sessions={sessions}|stale={stale}|reapable={reapable}|checkpoints={checkpoints}|dirty={dirty}|cleanup={cleanup_needed}|stranded={stranded}"
+        "|visibility=registered-observed-only".format(
             project=project_id,
             tasks=summary.get("running_tasks", 0),
             writers=summary.get("active_owners", 0),

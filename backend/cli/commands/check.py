@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -11,10 +12,11 @@ import subprocess
 from contextlib import suppress
 from pathlib import Path
 from typing import cast
+from uuid import uuid4
 
 import typer
 
-from ..details import display_path, summary_hint, write_details
+from ..details import detail_path, display_path, summary_hint, write_details
 from ..lib.acceptance import AcceptanceError, accept_revision
 from ..lib.architecture_check import run_architecture_check
 from ..lib.cleanroom import main as cleanroom_main
@@ -128,6 +130,13 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
     base_args, extra_args = adjusted_tool_args(name, base_args, extra_args, root)
     command = [*_resolve_command(binary, root, cwd, base_args), *extra_args]
     label = str(config.get("label") or name.upper())
+    report: Path | None = None
+    # A real full-suite failure produced empty stdout/stderr. Retain pytest's
+    # built-in report from this same run, not a second diagnostic test run.
+    pytest_options = " ".join([*command, os.environ.get("PYTEST_ADDOPTS", "")])
+    if name == "pytest" and not re.search(r"(?:^|\s)--junit-?xml(?:=|\s)|no:junitxml", pytest_options):
+        report = detail_path(root, f"pytest-{uuid4().hex}").with_suffix(".xml")
+        command.append(f"--junitxml={report}")
     print(f"{label}:{name}:start")
 
     try:
@@ -161,6 +170,10 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
         )
         return 127
     output = tool_output(result.stdout, result.stderr)
+    if name == "pytest" and not output.strip():
+        output = f"pytest exited {result.returncode} with no console output."
+        if report is not None and not report.is_file():
+            output += " The requested JUnit report was not written."
     details = write_check_details(root, name, output)
     print(
         tool_result_line(
@@ -169,7 +182,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
             result.returncode,
             display_path(root, details),
             summary_hint(output),
-        )
+        ) + (f"|report:{display_path(root, report)}" if report is not None and report.is_file() else "")
     )
     return result.returncode
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from threading import Event, Thread
 from uuid import uuid4
@@ -14,6 +14,14 @@ BACKUP_LOCK_PREFIX = "summitflow:backup_lock:"
 BACKUP_LOCK_TTL = 900  # 15 minutes (matches time_limit)
 BACKUP_LOCK_RENEW_INTERVAL = BACKUP_LOCK_TTL // 3
 BACKUP_LOCK_JOIN_TIMEOUT = 6
+_RESTART_GUARD_SOURCE = "__managed_worker_restart__"
+
+_ACQUIRE_UNLESS_RESTARTING = """
+if redis.call('exists', KEYS[2]) == 1 then
+    return 0
+end
+return redis.call('set', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[2])
+"""
 
 _RENEW_IF_OWNER = """
 if redis.call('get', KEYS[1]) == ARGV[1] then
@@ -53,8 +61,9 @@ def owns_backup_lease(source_id: str, owner_token: str) -> bool:
 def acquire_backup_lock(source_id: str) -> str | None:
     """Acquire a per-source lock and return its unique owner token."""
     owner_token = uuid4().hex
-    result = get_redis().set(
-        _lock_key(source_id), owner_token, nx=True, ex=BACKUP_LOCK_TTL
+    result = get_redis().eval(
+        _ACQUIRE_UNLESS_RESTARTING, 2,
+        _lock_key(source_id), _lock_key(_RESTART_GUARD_SOURCE), owner_token, BACKUP_LOCK_TTL,
     )
     return owner_token if result else None
 
@@ -80,6 +89,49 @@ def release_backup_lock(source_id: str, owner_token: str) -> bool:
         owner_token,
     )
     return bool(result)
+
+
+@contextmanager
+def backup_worker_restart_guard() -> Iterator[Callable[[], None]]:
+    """Refuse busy workers and atomically exclude new native backup admission.
+
+    The existing owner-token lease/renewal conventions protect this short
+    maintenance window; it is not a wait deadline or a backup cancellation.
+    """
+    token = uuid4().hex
+    key = _lock_key(_RESTART_GUARD_SOURCE)
+    try:
+        acquired = get_redis().set(key, token, nx=True, ex=BACKUP_LOCK_TTL)
+    except Exception as exc:
+        raise BackupLockLeaseError("Cannot verify backup ownership; rebuild refused. Restore Redis access, then retry.") from exc
+    if not acquired:
+        raise BackupLockLeaseError("A backup worker restart is already reserved; retry after that rebuild finishes.")
+
+    def assert_owned() -> None:
+        try:
+            # Upgraded workers cannot enter while the barrier is held. Recheck
+            # for pre-upgrade workers during the first activation as well.
+            active = sorted(
+                decoded.removeprefix(BACKUP_LOCK_PREFIX)
+                for item in get_redis().scan_iter(match=f"{BACKUP_LOCK_PREFIX}*")
+                if (decoded := item.decode() if isinstance(item, bytes) else str(item)) != key
+            )
+            owned = owns_backup_lease(_RESTART_GUARD_SOURCE, token)
+        except Exception as exc:
+            raise BackupLockLeaseError("Cannot verify backup restart ownership; rebuild refused.") from exc
+        if active:
+            raise BackupLockLeaseError(
+                "Backups active: " + ", ".join(active)
+                + ". Wait for completion or explicitly cancel in Backups, then retry the rebuild."
+            )
+        if not owned:
+            raise BackupLockLeaseError("Backup restart ownership lost; rebuild refused. Inspect active backups before retrying.")
+
+    with maintain_backup_lock(_RESTART_GUARD_SOURCE, token):
+        # Reserve before scanning: acquisition and the barrier check are one
+        # Redis operation, so no upgraded source can slip through the scan.
+        assert_owned()
+        yield assert_owned
 
 
 @contextmanager

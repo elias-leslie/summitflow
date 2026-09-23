@@ -57,7 +57,7 @@ def sync_backup_offsite(
         raise FileNotFoundError(f"Retained local archive not found: {archive_name}")
     token = owner_token or acquire_backup_lock(source_id)
     if token is None:
-        raise RuntimeError("A backup or Drive sync is already active for this source")
+        raise RuntimeError("A backup/Drive sync is active for this source, or its worker is restarting; retry after it finishes")
     if owner_token is not None and not owns_backup_lease(source_id, owner_token):
         raise RuntimeError("This queued Drive sync no longer owns the source lease")
     if isinstance(on_progress, BackupActivity):
@@ -182,7 +182,7 @@ def create_backup(
     owner_token = acquire_backup_lock(resolved_source_id)
     if owner_token is None:
         logger.info("create_backup_skipped_locked", source_id=resolved_source_id)
-        return {"status": "skipped", "error": f"Backup already running for {resolved_source_id}"}
+        return {"status": "skipped", "error": f"Backup already running for {resolved_source_id}, or managed backup worker restart in progress"}
 
     return _run_backup(
         project_id,
