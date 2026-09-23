@@ -7,7 +7,7 @@
   "effects": ["network", "read-remote", "write-remote", "read-local", "credentials"],
   "namespace": "automations",
   "help": {
-    "": "Usage: automations [OPTIONS] COMMAND [ARGS]...\n\nManage canonical Agent Hub background automations.\n\nCommands: catalog, list, show, validate, apply, import, cutover, enable, disable, policy, policy-apply, run, runs, review.",
+    "": "Usage: automations [OPTIONS] COMMAND [ARGS]...\n\nManage canonical Agent Hub background automations.\n\nCommands: catalog, list, show, validate, apply, import, cutover, enable, disable, policy, policy-apply, execution, execution-set, run, runs, review.",
     "catalog": "st automations catalog [--project PROJECT] [--json]",
     "list": "st automations list [--project PROJECT] [--limit N] [--offset N] [--json]",
     "show": "st automations show PROFILE_ID [--json]",
@@ -19,6 +19,8 @@
     "disable": "st automations disable PROFILE_ID --revision N [--json]",
     "policy": "st automations policy PROJECT_ID [--json]",
     "policy-apply": "st automations policy-apply PROJECT_ID --file POLICY.json|yaml|- [--json]",
+    "execution": "st automations execution PROJECT_ID [--json]",
+    "execution-set": "st automations execution-set PROJECT_ID [--auto-exec on|off] [--start-hour 0..23 --end-hour 1..24] [--json]",
     "run": "st automations run PROFILE_ID [--idempotency-key KEY] [--json]",
     "runs": "st automations runs [--profile ID] [--project PROJECT] [--limit N] [--json]",
     "review": "st automations review PROFILE_ID [--through-run-id RUN_ID] [--json]"
@@ -35,6 +37,8 @@
     {"surface":"st.automations.disable","tier":"reference","cmd":"st automations disable PROFILE_ID --revision N","when":"stop future background runs while retaining accepted work","task_types":["automation-admin","incident"],"on_demand":"autonomous operations"},
     {"surface":"st.automations.policy","tier":"reference","cmd":"st automations policy PROJECT_ID [--json]","when":"inspect shared project limits and revision","task_types":["automation-admin","incident"],"on_demand":"autonomous operations"},
     {"surface":"st.automations.policy-apply","tier":"reference","cmd":"st automations policy-apply PROJECT_ID --file POLICY.json|yaml|-","when":"revise project-wide policy with expected revision","task_types":["automation-admin"],"on_demand":"autonomous operations"},
+    {"surface":"st.automations.execution","tier":"reference","cmd":"st automations execution PROJECT_ID [--json]","when":"inspect the project execution permission gate and hours before changing automated work","task_types":["automation-admin","incident"],"on_demand":"autonomous operations"},
+    {"surface":"st.automations.execution-set","tier":"reference","cmd":"st automations execution-set PROJECT_ID [--auto-exec on|off] [--start-hour 0..23 --end-hour 1..24] [--json]","when":"change the project execution permission gate or hours through its existing authorized API","task_types":["automation-admin"],"on_demand":"autonomous operations"},
     {"surface":"st.automations.run","tier":"reference","cmd":"st automations run PROFILE_ID [--idempotency-key KEY]","when":"start an audited explicit cycle under registered manual-run rules","task_types":["automation-admin"],"on_demand":"autonomous operations"},
     {"surface":"st.automations.runs","tier":"reference","cmd":"st automations runs [--profile ID] [--project PROJECT] [--json]","when":"inspect run status and owner receipts","task_types":["automation-admin","incident"],"on_demand":"autonomous operations"},
     {"surface":"st.automations.review","tier":"reference","cmd":"st automations review PROFILE_ID","when":"record review of an imported or changed automation profile","task_types":["automation-admin"],"on_demand":"autonomous operations"}
