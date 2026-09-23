@@ -33,6 +33,34 @@ def test_done_rejects_path_selection_for_subtask_before_api(monkeypatch):
     client.assert_not_called()
 
 
+@pytest.mark.parametrize("selected", [True, False])
+def test_done_forwards_explicit_acceptance_only_with_paths(tmp_path, monkeypatch, selected):
+    client = Mock()
+    client.get_task.return_value = {"status": "running", "project_id": "example"}
+    monkeypatch.setattr(done, "STClient", Mock(return_value=client))
+    monkeypatch.setattr(done, "preflight", Mock())
+    monkeypatch.setattr(done, "_release_task_leases", Mock())
+    monkeypatch.setattr("app.storage.projects.get_project_root_path", lambda _: str(tmp_path))
+    receipt = {"state": "success"}
+    monkeypatch.setattr("cli.lib.completion_evidence.load_completion_evidence", Mock(return_value={"acceptance": receipt}))
+    stored = Mock()
+    monkeypatch.setattr("app.storage.tasks.closeout.store_verification", stored)
+    complete = Mock(return_value={})
+    monkeypatch.setattr(done, "complete_task", complete)
+    arguments = ["task-1", "--evidence", str(tmp_path / "evidence.json")]
+    if selected:
+        arguments.extend(["--paths", "src"])
+    result = CliRunner().invoke(done.app, arguments)
+    if selected:
+        assert result.exit_code == 0, result.output
+        assert complete.call_args.kwargs == {"paths": ("src",), "acceptance_receipt": receipt}
+    else:
+        assert result.exit_code != 0
+        assert "requires explicit --paths" in result.output
+        stored.assert_not_called()
+        complete.assert_not_called()
+
+
 @pytest.mark.parametrize('has_snapshot', [True, False])
 @pytest.mark.parametrize('gate_passes', [True, False])
 def test_scoped_done_preserves_unrelated_index_and_worktree(tmp_path: Path, monkeypatch, has_snapshot, gate_passes):

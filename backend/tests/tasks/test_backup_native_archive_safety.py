@@ -27,6 +27,29 @@ def test_rebuildable_virtualenvs_are_excluded_at_every_project_layout(path: str)
     assert _should_exclude(path, DEFAULT_EXCLUDES)
 
 
+@pytest.mark.parametrize("path", [
+    "backend/app/storage/backups/__init__.py",
+    "backend/app/api/backups/source_endpoints.py",
+    "frontend/app/(app)/backups/page.tsx",
+    "feature/backups/unfinished.txt",
+])
+def test_default_backup_output_exclusion_does_not_drop_nested_source(path: str) -> None:
+    assert not _should_exclude(path, DEFAULT_EXCLUDES)
+
+
+@pytest.mark.parametrize("path", ["backups", "backups/saved.tar.gz.age", "./backups/old/archive"])
+def test_default_excludes_root_backup_output(path: str) -> None:
+    assert _should_exclude(path, DEFAULT_EXCLUDES)
+
+
+def test_explicit_root_pattern_is_anchored_but_user_broad_patterns_stay_broad() -> None:
+    assert _should_exclude("backups/saved.age", ("./backups",))
+    assert not _should_exclude("app/backups/source.py", ("./backups",))
+    assert _should_exclude("app/backups/source.py", ("backups",))
+    assert _should_exclude("app/backups/source.py", ("backup*",))
+    assert _should_exclude("app/cache/debug.log", ("*.log",))
+
+
 def test_durable_evidence_is_included_unless_project_explicitly_excludes_it(
     tmp_path: Path,
 ) -> None:

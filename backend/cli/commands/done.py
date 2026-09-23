@@ -106,6 +106,7 @@ def _handle_task_completion(
     _refuse_if_autocode_owned(task, id)
     project_id = str(task.get("project_id") or "") or None
     preflight(id, project_id, op="done")
+    acceptance_receipt = None
     if evidence:
         from app.storage.projects import get_project_root_path
         from app.storage.tasks.closeout import store_verification
@@ -117,13 +118,19 @@ def _handle_task_completion(
             raise typer.Exit(1)
         try:
             receipts = load_completion_evidence(evidence, project_root=Path(root))
+            acceptance_receipt = receipts.get("acceptance")
+            if acceptance_receipt is not None and not paths:
+                raise ValueError("Imported acceptance requires explicit --paths for task closeout")
             store_verification(id, project_id, receipts)
         except (ValueError, OSError) as exc:
             output_error(f"Completion evidence rejected: {exc}")
             raise typer.Exit(1) from None
     task_client = STClient(project_id=project_id) if project_id else client
-    result = (complete_task(task_client, id, message, paths=paths) if paths
-              else complete_task(task_client, id, message))
+    if acceptance_receipt is not None:
+        result = complete_task(task_client, id, message, paths=paths, acceptance_receipt=acceptance_receipt)
+    else:
+        result = (complete_task(task_client, id, message, paths=paths) if paths
+                  else complete_task(task_client, id, message))
     if result.get("action") == "pending":
         output_success(f"Task {id}: publication is waiting for remote checks. Closeout will continue automatically.")
         _release_task_leases(project_id, id)
@@ -184,7 +191,7 @@ def done_command(
     ] = False,
     evidence: Annotated[
         Path | None,
-        typer.Option("--evidence", help="JSON with deployment_receipt path and/or source-bound live_validation checks."),
+        typer.Option("--evidence", help="JSON with acceptance_receipt (requires --paths), deployment_receipt and/or source-bound live_validation checks."),
     ] = None,
 ) -> None:
     """Complete a task or subtask.

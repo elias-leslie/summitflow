@@ -111,6 +111,66 @@ def test_validate_receipt_rejects_tampered_payload(repo: Path) -> None:
         acceptance.validate_acceptance_receipt(repo, payload)
 
 
+@pytest.mark.parametrize("mutation", ["count", "missing", "command", "failed", "returncode", "plan"])
+def test_receipt_success_label_does_not_override_actual_checks(repo: Path, mutation: str) -> None:
+    receipt = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
+    payload = json.loads(Path(receipt["acceptance_artifact"]).read_text())
+    if mutation == "count":
+        payload["check_count"] = 0
+    elif mutation == "missing":
+        payload["checks"] = []
+    elif mutation == "command":
+        payload["checks"][0]["command"] = ["echo", "not a check"]
+    elif mutation == "failed":
+        payload["checks"][0]["state"] = "failed"
+    elif mutation == "returncode":
+        payload["checks"][0]["returncode"] = 7
+    else:
+        payload["plan"]["commands"] = [["echo", "not a check"]]
+        payload["checks"][0]["command"] = payload["plan"]["commands"][0]
+    payload["acceptance_id"] = acceptance._receipt_digest(payload)
+    with pytest.raises(acceptance.AcceptanceError, match=r"checks|plan"):
+        acceptance.validate_acceptance_receipt(repo, payload, sha="HEAD")
+
+
+def test_done_reuses_explicit_receipt_without_touching_unrelated_wip(repo: Path, monkeypatch) -> None:
+    from cli.commands import done_task
+
+    receipt = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
+    (repo / "unrelated.txt").write_bytes(b"other agent work")
+    git(repo, "add", "unrelated.txt")
+    before = git(repo, "diff", "--cached", "--binary")
+    monkeypatch.setattr(done_task, "_checkpoint_repo_root", lambda _: str(repo))
+    stored = Mock()
+    monkeypatch.setattr("app.storage.tasks.closeout.store_verification", stored)
+    monkeypatch.setattr(acceptance, "accept_revision", Mock(side_effect=AssertionError("do not repeat checks")))
+    result = done_task._accept_completed_work("task", "project", paths=("app.py",), acceptance_receipt=receipt)
+    assert result["source_commit"] == git(repo, "rev-parse", "HEAD")
+    assert result["reused"] is True
+    assert (repo / "unrelated.txt").read_bytes() == b"other agent work"
+    assert git(repo, "diff", "--cached", "--binary") == before
+    stored.assert_called_once()
+
+
+@pytest.mark.parametrize("blocker", ["no-paths", "selected-dirty", "head-changed"])
+def test_done_receipt_cannot_bypass_scope_or_new_checkpoint(repo: Path, monkeypatch, blocker: str) -> None:
+    from cli.commands import done_task
+
+    receipt = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
+    paths = () if blocker == "no-paths" else ("app.py",)
+    if blocker != "no-paths":
+        (repo / "app.py").write_text("value = 2\n")
+        if blocker == "head-changed":
+            git(repo, "add", "app.py")
+            git(repo, "commit", "-qm", "task checkpoint")
+    monkeypatch.setattr(done_task, "_checkpoint_repo_root", lambda _: str(repo))
+    stored = Mock()
+    monkeypatch.setattr("app.storage.tasks.closeout.store_verification", stored)
+    with pytest.raises((ValueError, acceptance.AcceptanceError)):
+        done_task._accept_completed_work("task", "project", paths=paths, acceptance_receipt=receipt)
+    stored.assert_not_called()
+
+
 def test_changed_local_acceptance_plan_invalidates_receipt(repo: Path, monkeypatch) -> None:
     receipt = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
     monkeypatch.setattr(

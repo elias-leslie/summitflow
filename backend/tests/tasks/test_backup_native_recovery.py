@@ -20,6 +20,47 @@ def _git(project: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def test_archive_restores_nested_backup_modules_staged_index_and_wip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.tasks import backup_native_archive
+    from app.tasks.backup_native_restore import restore_isolated_archive
+
+    project = tmp_path / "project"
+    project.mkdir()
+    _git(project, "init", "-b", "main")
+    _git(project, "config", "user.name", "Fixture")
+    _git(project, "config", "user.email", "fixture@example.invalid")
+    module = "backend/app/storage/backups/__init__.py"
+    (project / module).parent.mkdir(parents=True)
+    (project / module).write_text("base\n")
+    _git(project, "add", ".")
+    _git(project, "commit", "-m", "backup module")
+    original_head = _git(project, "rev-parse", "HEAD")
+    (project / module).write_text("staged\n")
+    _git(project, "add", module)
+    (project / module).write_text("working tree\n")
+    wip_paths = ("backend/app/api/backups/unfinished.py", "frontend/app/(app)/backups/page.tsx")
+    for relative in wip_paths:
+        (project / relative).parent.mkdir(parents=True)
+        (project / relative).write_text("uncommitted source\n")
+    (project / "backups").mkdir()
+    (project / "backups/previous.tar.gz.age").write_bytes(b"do not recursively back up output")
+
+    monkeypatch.setattr(backup_native_archive, "_dump_database", lambda *_args: (0, False))
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    result = backup_native_archive._create_project_archive(project, "project", staging, {})
+    restored = tmp_path / "restored"
+    restore_isolated_archive(Path(result["archive_path"]), restored)
+
+    assert (restored / module).read_text() == "working tree\n"
+    assert _git(restored, "show", f":{module}") == "staged"
+    assert _git(restored, "rev-parse", "HEAD") == original_head
+    assert all((restored / relative).read_text() == "uncommitted source\n" for relative in wip_paths)
+    assert not (restored / "backups").exists()
+
+
 def test_archive_restores_git_history_index_worktree_sqlite_and_safe_links(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

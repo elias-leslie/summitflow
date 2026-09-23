@@ -422,8 +422,24 @@ def validate_acceptance_receipt(
     if local_inputs != inputs.get("local_inputs"):
         raise AcceptanceError("accepted local environment/configuration inputs no longer match")
     current_plan = _acceptance_plan()
-    if current_plan["fingerprint"] != plan.get("fingerprint"):
+    if current_plan != plan:
         raise AcceptanceError("acceptance plan or local toolchain changed; rerun full acceptance")
+    checks = value.get("checks")
+    commands = current_plan["commands"]
+    if (
+        not isinstance(checks, list)
+        or len(checks) != len(commands)
+        or value.get("check_count") != len(commands)
+        or any(
+            not isinstance(check, dict)
+            or check.get("command") != command
+            or check.get("state") != "success"
+            or type(check.get("returncode")) is not int
+            or check["returncode"] != 0
+            for check, command in zip(checks, commands, strict=True)
+        )
+    ):
+        raise AcceptanceError("acceptance checks do not record successful completion of the full plan")
     if artifact is None:
         artifact = _receipt_path(repo, acceptance_id)
     return _descriptor(value, artifact, reused=False)

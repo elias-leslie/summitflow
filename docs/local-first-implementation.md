@@ -7,6 +7,81 @@ workflow change, not a new reusable instruction store. GitHub publication is not
 requested. Existing security controls, histories, unrelated work, and necessary
 live validation must remain protected.
 
+## Owner-approved sequencing, 2026-09-23
+
+Finish option 1 now: the confirmed archive-exclusion defect, backup UI freshness,
+safe explicit-receipt closeout with unrelated work preserved, then source-bound
+verification, coordinated deployment, real Drive recovery, the recovery kit and
+accurate task closeout. Do not add more UI polish or a generic workflow-status API.
+
+After that, the owner wants the remaining broader follow-ups completed **only
+after explicit confirmation that the other agent has finished**. These are
+pending, not silently dropped and not included in an option-1 completion claim:
+
+- [ ] Review the repeated full-check/deployment cost for small frontend changes;
+      reuse verified unchanged inputs only where the existing evidence contract
+      can prove this safely. Do not weaken required acceptance checks.
+- [ ] Improve failure diagnostics and bounded discovery/output where the observed
+      failures justify a targeted change. Record operator mistakes separately
+      from product defects; do not invent billed-token savings.
+- [ ] Check cross-project coordination visibility: another Agent Hub agent made
+      SummitFlow changes while the compact SummitFlow pulse exposed only one
+      writer. Make the existing ownership and deployment coordination accurate
+      rather than introducing a second orchestration system.
+
+The owner subsequently confirmed the other agent is done and authorized resuming
+all remaining work. The follow-ups above are now active, not blocked on approval.
+
+### Resolved coordination blocker
+
+Option 1 is **not complete**. Its archive and explicit-receipt closeout fixes are
+reviewed and focused tests passed (61 archive/recovery tests and 90 closeout
+tests, with types/lint checks). The previously committed UI freshness correction
+is not yet deployed. Two normal path-scoped `st commit --no-push` attempts were
+refused with `source_changed_during_checks`: another agent is actively changing
+unrelated files, and the existing commit guard fingerprints the whole checkout.
+Neither attempt created a commit or published anything. Do not bypass that guard,
+repeat the same failing checks indefinitely, or commit the other agent's work.
+
+The next required coordination point is a quiet shared-checkout checkpoint from
+the other agent. Then commit only the eleven reviewed task files, run one exact
+candidate acceptance in the existing clean `/srv` worktree, and check the current
+release/schema before managed deployment. Preserve any intervening commits and
+deployment from the other agent; never replace them with an older candidate.
+
+After that: recapture SummitFlow and Neri using the corrected exclusion, verify
+Drive copies, prove downloaded SummitFlow bootstrap/CLI/application recovery,
+publish and read back all five key-free recovery-kit files, verify the UI once,
+record final performance and close the task with matching evidence. Reuse the
+existing actual infrastructure/Redis restore, cancellation, large-transfer,
+key-custody and optional-publication proofs; these fixes do not require repeating
+them. The broader follow-ups above still require the owner's explicit confirmation
+that the other agent is done. This coordination blocker is not an option-1
+completion claim and does not remove any remaining scope.
+
+Resume inspection: the other agent committed eight checkpoints through
+`02a0b5767`; only these eleven task-owned files remain dirty. All managed services
+are active and the schema is now `b81f04c7a22d`. Integrate on that new HEAD and
+preserve its migrations; never deploy the previous pre-coordination candidate.
+
+Option-1 recovery finding: Drive transport verification for
+`bkp-7139e803626c452a` succeeded, but the independent recovered application import
+failed because the default bare `backups` exclusion omitted nested source
+modules. This is a real capture defect, not a transfer failure or successful
+application restore. The fix anchors the generated-output exclusion to the
+project root and preserves explicit user broad patterns. Regression coverage
+restores nested modules, the staged index and uncommitted work. A metadata-only
+review of all 29 sources identified two worthwhile recaptures: SummitFlow
+(30 tracked files) and Neri (29 durable source-scan snapshot files). Other
+matches were generated caches or old backup outputs. New captures and a real
+Drive-to-application recovery proof remain required before option-1 closeout.
+
+Concurrent closeout now accepts an explicit full acceptance receipt with explicit
+task paths. It revalidates exact HEAD, local inputs, toolchain and every recorded
+check under the existing repository lock, and refuses dirty selected paths.
+It does not accept unrelated work, waive deployment/live evidence, or rerun
+full checks solely because another agent has unrelated uncommitted changes.
+
 ## Completion checklist
 
 Resume evidence, 2026-09-23: seven small scheduled transfers failed because

@@ -33,8 +33,9 @@ DEFAULT_EXCLUDES = (
     ".ruff_cache",
     "backend/.pytest_cache",
     ".pytest_cache",
+    # Only generated output at the project root, never source modules named
+    # backups (for example backend/app/storage/backups or UI routes).
     "./backups",
-    "backups",
     ".tmp",
     ".tmp-*",
     ".claude/backups",
@@ -95,6 +96,10 @@ def _should_exclude(rel_path: str, patterns: tuple[str, ...]) -> bool:
     parts = normalized.split("/")
     for pattern in patterns:
         pat = pattern.removeprefix("./").rstrip("/")
+        if pattern.startswith("./"):
+            if fnmatch.fnmatch(normalized, pat) or normalized.startswith(f"{pat}/"):
+                return True
+            continue
         if fnmatch.fnmatch(normalized, pat) or fnmatch.fnmatch(Path(normalized).name, pat):
             return True
         if any(fnmatch.fnmatch(part, pat) for part in parts):

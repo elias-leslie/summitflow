@@ -157,8 +157,8 @@ def _commit_active_task_work(repo_root: str, task_id: str, message: str | None, 
     output_success(f"Committed task work before completion: {result.get('commit_id') or result.get('sha')}")
 
 
-def _close_missing_checkpoint_active_task(client: STClient, task_id: str, task: dict[str, Any], project_id: str | None, *, base_branch: str, repo_is_clean: bool, paths: tuple[str, ...] = ()) -> dict[str, str | bool]:
-    _accept_completed_work_or_exit(task_id, project_id, paths=paths)
+def _close_missing_checkpoint_active_task(client: STClient, task_id: str, task: dict[str, Any], project_id: str | None, *, base_branch: str, repo_is_clean: bool, paths: tuple[str, ...] = (), acceptance_receipt: dict[str, Any] | None = None) -> dict[str, str | bool]:
+    _accept_completed_work_or_exit(task_id, project_id, paths=paths, **({"acceptance_receipt": acceptance_receipt} if acceptance_receipt is not None else {}))
     _run_smart_prereqs(client, task_id, project_id)
     try:
         client.update_status(task_id, "completed", skip_gates=_completion_skip_gates(client, task_id))
@@ -331,24 +331,41 @@ def _capture_and_remove_snapshot(task_id: str, project_id: str | None) -> None:
     remove_snapshot(task_id, project_id=project_id)
 
 
-def _accept_completed_work(task_id: str, project_id: str | None, *, paths: tuple[str, ...] = ()) -> dict[str, Any]:
+def _accept_completed_work(task_id: str, project_id: str | None, *, paths: tuple[str, ...] = (), acceptance_receipt: dict[str, Any] | None = None) -> dict[str, Any]:
     from app.storage.tasks.closeout import store_verification
-    from cli.lib.acceptance import accept_revision
+    from cli.lib.acceptance import accept_revision, repo_lock, validate_acceptance_receipt
     from cli.lib.commit_workflow import run_git
 
     root = _checkpoint_repo_root(project_id)
     if not root or not project_id:
         raise ValueError("Local acceptance requires a registered project checkout")
     repo = Path(root)
-    sha = run_git(repo, ["rev-parse", "HEAD"]).stdout.strip()
-    receipt = accept_revision(repo, sha=sha, scope=paths, task_id=task_id)
-    store_verification(task_id, project_id, {"acceptance": receipt})
+    if acceptance_receipt is not None:
+        if not paths:
+            raise ValueError("Imported acceptance requires explicit --paths for task closeout")
+        with repo_lock(repo, purpose="closeout receipt validation"):
+            if not _selected_work_is_clean(root, paths):
+                raise ValueError("Selected task paths must be committed before accepting closeout evidence")
+            # Check again after checkpointing: an older receipt must never
+            # accept a newly created commit or another agent's later revision.
+            validated = validate_acceptance_receipt(repo, acceptance_receipt, sha="HEAD")
+            receipt = {**validated, "task_id": task_id, "scope": list(paths), "reused": True}
+            store_verification(task_id, project_id, {"acceptance": receipt})
+    else:
+        sha = run_git(repo, ["rev-parse", "HEAD"]).stdout.strip()
+        receipt = accept_revision(repo, sha=sha, scope=paths, task_id=task_id)
+        store_verification(task_id, project_id, {"acceptance": receipt})
     return receipt
 
 
-def _accept_completed_work_or_exit(task_id: str, project_id: str | None, *, paths: tuple[str, ...] = ()) -> None:
+def _accept_completed_work_or_exit(task_id: str, project_id: str | None, *, paths: tuple[str, ...] = (), acceptance_receipt: dict[str, Any] | None = None) -> None:
     try:
-        _accept_completed_work(task_id, project_id, **({"paths": paths} if paths else {}))
+        if acceptance_receipt is not None:
+            _accept_completed_work(task_id, project_id, paths=paths, acceptance_receipt=acceptance_receipt)
+        elif paths:
+            _accept_completed_work(task_id, project_id, paths=paths)
+        else:
+            _accept_completed_work(task_id, project_id)
     except Exception as exc:
         output_error(f"Task closeout blocked: local acceptance failed: {exc}\n  Checkpoint preserved; rerun st done {task_id} after resolving this blocker.")
         raise typer.Exit(1) from None
@@ -370,7 +387,7 @@ def _publish_completed_work(task_id: str, project_id: str | None, *, paths: tupl
     )
 
 
-def complete_task(client: STClient, task_id: str, message: str | None = None, strict: bool = False, admin: bool = False, skip_diff_gate: bool = False, *, paths: tuple[str, ...] = ()) -> dict[str, str | bool]:
+def complete_task(client: STClient, task_id: str, message: str | None = None, strict: bool = False, admin: bool = False, skip_diff_gate: bool = False, *, paths: tuple[str, ...] = (), acceptance_receipt: dict[str, Any] | None = None) -> dict[str, str | bool]:
     """Complete a task with local acceptance and checkpoint cleanup.
 
     Smart mode (default): checkpoints, accepts locally, closes, and cleans up.
@@ -380,7 +397,7 @@ def complete_task(client: STClient, task_id: str, message: str | None = None, st
     if snapshot_info:
         if admin:
             return _complete_admin(client, task_id, snapshot_info, message)
-        return _complete_with_snapshot(client, task_id, snapshot_info, message=message, strict=strict, skip_diff_gate=skip_diff_gate, paths=paths)
+        return _complete_with_snapshot(client, task_id, snapshot_info, message=message, strict=strict, skip_diff_gate=skip_diff_gate, paths=paths, acceptance_receipt=acceptance_receipt)
     if admin:
         _close_task_safely(client, task_id, message)
         return _done_result(task_id)
@@ -388,11 +405,11 @@ def complete_task(client: STClient, task_id: str, message: str | None = None, st
     if snapshot_info:
         if admin:
             return _complete_admin(client, task_id, snapshot_info, message)
-        return _complete_with_snapshot(client, task_id, snapshot_info, message=message, strict=strict, skip_diff_gate=skip_diff_gate, paths=paths)
-    return _complete_without_snapshot(client, task_id, message=message, strict=strict, skip_diff_gate=skip_diff_gate, paths=paths)
+        return _complete_with_snapshot(client, task_id, snapshot_info, message=message, strict=strict, skip_diff_gate=skip_diff_gate, paths=paths, acceptance_receipt=acceptance_receipt)
+    return _complete_without_snapshot(client, task_id, message=message, strict=strict, skip_diff_gate=skip_diff_gate, paths=paths, acceptance_receipt=acceptance_receipt)
 
 
-def _complete_without_snapshot(client: STClient, task_id: str, *, message: str | None, strict: bool, skip_diff_gate: bool, paths: tuple[str, ...] = ()) -> dict[str, str | bool]:
+def _complete_without_snapshot(client: STClient, task_id: str, *, message: str | None, strict: bool, skip_diff_gate: bool, paths: tuple[str, ...] = (), acceptance_receipt: dict[str, Any] | None = None) -> dict[str, str | bool]:
     task: dict[str, Any] | None = None
     try:
         task = client.get_task(task_id)
@@ -403,7 +420,7 @@ def _complete_without_snapshot(client: STClient, task_id: str, *, message: str |
             client, task_id, task, message=message, strict=strict, skip_diff_gate=skip_diff_gate,
             deps={
                 "checkpoint_repo_root": _checkpoint_repo_root,
-                "close_missing_checkpoint_active_task": lambda *args, **kwargs: _close_missing_checkpoint_active_task(*args, **kwargs, **({"paths": paths} if paths else {})),
+                "close_missing_checkpoint_active_task": lambda *args, **kwargs: _close_missing_checkpoint_active_task(*args, **kwargs, **({"paths": paths} if paths else {}), **({"acceptance_receipt": acceptance_receipt} if acceptance_receipt is not None else {})),
                 "commit_active_task_work": lambda *args: _commit_active_task_work(*args, **({"paths": paths} if paths else {})),
                 "dirty_paths_in_task_scope": lambda repo_root, t: [
                     path for path in _git_dirty_paths(repo_root)
@@ -434,7 +451,7 @@ def _complete_admin(client: STClient, task_id: str, snapshot_info: dict[str, str
     return _done_result(task_id, snapshot_removed=True, base_branch=str(snapshot_info.get("base_branch", "main")), project_id=project_id)
 
 
-def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[str, str | int | None], *, message: str | None, strict: bool, skip_diff_gate: bool, paths: tuple[str, ...] = ()) -> dict[str, str | bool]:
+def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[str, str | int | None], *, message: str | None, strict: bool, skip_diff_gate: bool, paths: tuple[str, ...] = (), acceptance_receipt: dict[str, Any] | None = None) -> dict[str, str | bool]:
     try:
         already_completed = client.get_task(task_id).get("status") == "completed"
     except APIError as exc:
@@ -462,7 +479,7 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
             _run_diff_gate(repo_root, task_id, project_id, base_branch, base_commit=base_commit,
                            claimed_at=str(snapshot_info.get("created_at") or "") or None)
         if not already_completed:
-            _accept_completed_work_or_exit(task_id, project_id, paths=paths)
+            _accept_completed_work_or_exit(task_id, project_id, paths=paths, **({"acceptance_receipt": acceptance_receipt} if acceptance_receipt is not None else {}))
             if strict:
                 _auto_verify_readiness(client, task_id)
             else:

@@ -1,4 +1,4 @@
-"""Import source-bound deployment and observed live-validation evidence."""
+"""Import source-bound acceptance, deployment and observed live evidence."""
 from __future__ import annotations
 
 import hashlib
@@ -10,9 +10,19 @@ from typing import Any
 
 def load_completion_evidence(path: Path, *, project_root: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text())
-    if not isinstance(payload, dict) or set(payload) - {"deployment_receipt", "live_validation"}:
-        raise ValueError("Expected deployment_receipt and/or live_validation evidence")
+    if not isinstance(payload, dict) or set(payload) - {"acceptance_receipt", "deployment_receipt", "live_validation"}:
+        raise ValueError("Expected acceptance_receipt, deployment_receipt and/or live_validation evidence")
     receipts: dict[str, Any] = {}
+    if acceptance := payload.get("acceptance_receipt"):
+        from cli.lib.acceptance import AcceptanceError, validate_acceptance_receipt
+
+        artifact = Path(acceptance)
+        if not artifact.is_absolute():
+            artifact = path.parent / artifact
+        try:
+            receipts["acceptance"] = validate_acceptance_receipt(project_root, artifact, sha="HEAD")
+        except AcceptanceError as exc:
+            raise ValueError(str(exc)) from exc
     if deployment := payload.get("deployment_receipt"):
         from cli.lib.service_release import validate_deployment_receipt
 
