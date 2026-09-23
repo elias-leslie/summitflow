@@ -76,7 +76,6 @@ def test_projects_create_sends_permission_bootstrap_fields() -> None:
                 "/srv/workspaces/projects/test2",
                 "--permission-tier",
                 "full",
-                "--auto-exec",
             ],
         )
 
@@ -91,10 +90,33 @@ def test_projects_create_sends_permission_bootstrap_fields() -> None:
             "root_path": "/srv/workspaces/projects/test2",
             "agent_hub_permission": {
                 "permission_tier": "full",
-                "auto_exec_enabled": True,
             },
         },
     )
+
+
+def test_projects_create_rejects_legacy_auto_exec_option_without_creating_project() -> None:
+    with patch("cli.commands._projects_helpers.projects_api") as mock_projects_api:
+        result = runner.invoke(
+            app,
+            ["create", "test2", "Testbed", "--base-url", "https://test2.example.com", "--auto-exec"],
+        )
+
+    assert result.exit_code == 2
+    assert "Agent Hub Automations" in result.output
+    mock_projects_api.assert_not_called()
+
+
+def test_projects_create_rejects_legacy_execution_window_option_without_creating_project() -> None:
+    with patch("cli.commands._projects_helpers.projects_api") as mock_projects_api:
+        result = runner.invoke(
+            app,
+            ["create", "test2", "Testbed", "--base-url", "https://test2.example.com", "--execution-start-hour", "8"],
+        )
+
+    assert result.exit_code == 2
+    assert "Agent Hub Automations" in result.output
+    mock_projects_api.assert_not_called()
 
 
 def test_detect_current_project_returns_none_when_cwd_deleted() -> None:
@@ -258,4 +280,3 @@ def test_projects_create_native_without_base_url() -> None:
     assert body["native"] is True
     assert body["base_url"] == ""
     assert body["root_path"] == "/srv/workspaces/projects/fydor"
-

@@ -77,16 +77,10 @@ def _project_update_fields(
 def _permission_payload(
     *,
     permission_tier: str | None,
-    auto_exec_enabled: bool | None,
-    execution_start_hour: int | None,
-    execution_end_hour: int | None,
 ) -> dict[str, Any]:
     return _normalize_fields(
         {
             "permission_tier": permission_tier,
-            "auto_exec_enabled": auto_exec_enabled,
-            "execution_start_hour": execution_start_hour,
-            "execution_end_hour": execution_end_hour,
         }
     )
 
@@ -101,9 +95,6 @@ def _create_project_body(
     summitflow_hosted: bool,
     native: bool = False,
     permission_tier: str | None,
-    auto_exec_enabled: bool | None,
-    execution_start_hour: int | None,
-    execution_end_hour: int | None,
     onboarding: bool,
     backup_frequency: str,
     backup_retention_days: int,
@@ -133,9 +124,6 @@ def _create_project_body(
 
     permission_payload = _permission_payload(
         permission_tier=permission_tier,
-        auto_exec_enabled=auto_exec_enabled,
-        execution_start_hour=execution_start_hour,
-        execution_end_hour=execution_end_hour,
     )
     if permission_payload:
         body["agent_hub_permission"] = permission_payload
@@ -286,9 +274,6 @@ def run_create(
     summitflow_hosted: bool = False,
     native: bool = False,
     permission_tier: str | None = None,
-    auto_exec_enabled: bool | None = None,
-    execution_start_hour: int | None = None,
-    execution_end_hour: int | None = None,
     onboarding: bool = False,
     backup_frequency: str = "daily",
     backup_retention_days: int = 30,
@@ -308,9 +293,6 @@ def run_create(
         summitflow_hosted=summitflow_hosted,
         native=native,
         permission_tier=permission_tier,
-        auto_exec_enabled=auto_exec_enabled,
-        execution_start_hour=execution_start_hour,
-        execution_end_hour=execution_end_hour,
         onboarding=onboarding,
         backup_frequency=backup_frequency,
         backup_retention_days=backup_retention_days,

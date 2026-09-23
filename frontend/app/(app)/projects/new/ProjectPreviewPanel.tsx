@@ -8,7 +8,6 @@ interface ProjectPreviewPanelProps {
   normalizedRootPath: string
   syncAgentHubPermission: boolean
   permissionTier: string
-  autoExecEnabled: boolean
 }
 
 export function ProjectPreviewPanel({
@@ -17,11 +16,8 @@ export function ProjectPreviewPanel({
   normalizedRootPath,
   syncAgentHubPermission,
   permissionTier,
-  autoExecEnabled,
 }: ProjectPreviewPanelProps) {
-  const agentHubDisplay = syncAgentHubPermission
-    ? `${permissionTier}${autoExecEnabled ? ' + auto-exec' : ''}`
-    : 'disabled'
+  const agentHubDisplay = syncAgentHubPermission ? permissionTier : 'disabled'
 
   return (
     <aside className="space-y-3">

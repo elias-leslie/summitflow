@@ -42,7 +42,6 @@ export function useNewProjectForm() {
   const [category, setCategory] = useState<ProjectCategory>('dev')
   const [syncAgentHubPermission, setSyncAgentHubPermission] = useState(true)
   const [permissionTier, setPermissionTier] = useState(DEFAULT_PERMISSION_TIER)
-  const [autoExecEnabled, setAutoExecEnabled] = useState(false)
   const [errors, setErrors] = useState<FormErrors>({})
 
   const mutation = useMutation({
@@ -167,7 +166,7 @@ export function useNewProjectForm() {
       agent_hub_permission: syncAgentHubPermission
         ? {
             permission_tier: permissionTier,
-            auto_exec_enabled: autoExecEnabled,
+            auto_exec_enabled: false,
             execution_start_hour: EXECUTION_START_HOUR,
             execution_end_hour: EXECUTION_END_HOUR,
           }
@@ -181,7 +180,7 @@ export function useNewProjectForm() {
 
   return {
     fields: { name, projectId, baseUrl, healthEndpoint, rootPath, category },
-    agentHub: { syncAgentHubPermission, permissionTier, autoExecEnabled },
+    agentHub: { syncAgentHubPermission, permissionTier },
     errors,
     isPending: mutation.isPending,
     preview: { normalizedRootPath, healthPreview },
@@ -195,7 +194,6 @@ export function useNewProjectForm() {
       handleSubmit,
       setSyncAgentHubPermission,
       setPermissionTier,
-      setAutoExecEnabled,
     },
   }
 }

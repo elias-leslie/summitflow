@@ -5,19 +5,15 @@ import { Label } from '@/components/ui/label'
 interface AgentHubSectionProps {
   syncAgentHubPermission: boolean
   permissionTier: string
-  autoExecEnabled: boolean
   onSyncChange: (value: boolean) => void
   onTierChange: (value: string) => void
-  onAutoExecChange: (value: boolean) => void
 }
 
 export function AgentHubSection({
   syncAgentHubPermission,
   permissionTier,
-  autoExecEnabled,
   onSyncChange,
   onTierChange,
-  onAutoExecChange,
 }: AgentHubSectionProps) {
   return (
     <div className="space-y-3 rounded-xl border border-slate-800/70 bg-slate-950/40 p-4">
@@ -42,7 +38,7 @@ export function AgentHubSection({
       </label>
 
       {syncAgentHubPermission && (
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+        <div className="space-y-2">
           <div className="space-y-2">
             <Label htmlFor="permissionTier">Permission Tier</Label>
             <select
@@ -56,18 +52,21 @@ export function AgentHubSection({
               <option value="full">Full</option>
             </select>
           </div>
-
-          <label className="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-950 px-3 text-sm text-slate-300">
-            <input
-              type="checkbox"
-              checked={autoExecEnabled}
-              onChange={(event) => onAutoExecChange(event.target.checked)}
-              className="h-4 w-4 rounded border-slate-700 bg-slate-950"
-            />
-            Auto Exec
-          </label>
         </div>
       )}
+
+      <p className="text-xs text-slate-400">
+        Automated execution starts disabled. After creating the project, set
+        execution permission and schedules in Agent Hub.
+      </p>
+      <a
+        href="https://agent.summitflow.dev/automations"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-block text-xs text-phosphor-300 underline underline-offset-2 hover:text-phosphor-200"
+      >
+        Open Agent Hub Automations
+      </a>
     </div>
   )
 }

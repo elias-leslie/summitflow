@@ -24,7 +24,7 @@ export function NewProjectClient() {
     useNewProjectForm()
   const { name, projectId, baseUrl, healthEndpoint, rootPath, category } =
     fields
-  const { syncAgentHubPermission, permissionTier, autoExecEnabled } = agentHub
+  const { syncAgentHubPermission, permissionTier } = agentHub
   const {
     handleNameChange,
     handleProjectIdChange,
@@ -35,7 +35,6 @@ export function NewProjectClient() {
     handleSubmit,
     setSyncAgentHubPermission,
     setPermissionTier,
-    setAutoExecEnabled,
   } = handlers
   const categoryOptions: ProjectCategory[] = ['production', 'testing', 'dev']
 
@@ -205,10 +204,8 @@ export function NewProjectClient() {
           <AgentHubSection
             syncAgentHubPermission={syncAgentHubPermission}
             permissionTier={permissionTier}
-            autoExecEnabled={autoExecEnabled}
             onSyncChange={setSyncAgentHubPermission}
             onTierChange={setPermissionTier}
-            onAutoExecChange={setAutoExecEnabled}
           />
 
           <div className="flex items-center gap-3 pt-2">
@@ -241,7 +238,6 @@ export function NewProjectClient() {
           normalizedRootPath={preview.normalizedRootPath}
           syncAgentHubPermission={syncAgentHubPermission}
           permissionTier={permissionTier}
-          autoExecEnabled={autoExecEnabled}
         />
       </div>
     </div>

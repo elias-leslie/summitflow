@@ -11,7 +11,7 @@ from typing import Annotated
 import typer
 
 from ..config import get_config
-from ..output import output_json
+from ..output import output_error, output_json
 from ._projects_helpers import (
     DEFAULT_HEALTH_ENDPOINT,
     ENV_PROJECT_ID,
@@ -198,15 +198,15 @@ def create_project(
     ] = None,
     auto_exec_enabled: Annotated[
         bool | None,
-        typer.Option("--auto-exec/--no-auto-exec", help="Bootstrap Agent Hub auto-exec setting"),
+        typer.Option("--auto-exec/--no-auto-exec", hidden=True),
     ] = None,
     execution_start_hour: Annotated[
         int | None,
-        typer.Option("--execution-start-hour", min=0, max=23, help="Bootstrap Agent Hub execution window start hour"),
+        typer.Option("--execution-start-hour", min=0, max=23, hidden=True),
     ] = None,
     execution_end_hour: Annotated[
         int | None,
-        typer.Option("--execution-end-hour", min=1, max=24, help="Bootstrap Agent Hub execution window end hour"),
+        typer.Option("--execution-end-hour", min=1, max=24, hidden=True),
     ] = None,
     onboard: Annotated[
         bool | None,
@@ -237,9 +237,20 @@ def create_project(
     Examples:
         st projects create persona-sandbox "Persona Sandbox" --base-url http://localhost:3003
         st projects create my-app "My App" -u http://localhost:8080 -r /home/user/my-app
-        st projects create test2 "Testbed" --summitflow-hosted --permission-tier full --auto-exec
+        st projects create test2 "Testbed" --summitflow-hosted --permission-tier full
         st projects create fydor "Fydor" --native -r /srv/workspaces/projects/fydor
+
+    Automated execution starts disabled. Configure permission and schedules in
+    Agent Hub Automations after project creation.
     """
+    if any(value is not None for value in (auto_exec_enabled, execution_start_hour, execution_end_hour)):
+        output_error(
+            "Project creation cannot set automated execution permission or hours. "
+            "Create the project, then configure it in Agent Hub Automations "
+            "(https://agent.summitflow.dev/automations)."
+        )
+        raise typer.Exit(2)
+
     effective_onboard = summitflow_hosted if onboard is None else onboard
 
     run_create(
@@ -251,9 +262,6 @@ def create_project(
         summitflow_hosted=summitflow_hosted,
         native=native,
         permission_tier=permission_tier,
-        auto_exec_enabled=auto_exec_enabled,
-        execution_start_hour=execution_start_hour,
-        execution_end_hour=execution_end_hour,
         onboarding=effective_onboard,
         backup_frequency=backup_frequency,
         backup_retention_days=backup_retention_days,

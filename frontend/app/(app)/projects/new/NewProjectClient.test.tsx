@@ -62,6 +62,11 @@ describe('NewProjectClient', () => {
   it('normalizes project registration fields before submitting', async () => {
     renderClient()
 
+    expect(screen.queryByLabelText('Auto Exec')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Open Agent Hub Automations' }),
+    ).toHaveAttribute('href', 'https://agent.summitflow.dev/automations')
+
     fireEvent.change(screen.getByLabelText('Project Name *'), {
       target: { value: 'My Project!!' },
     })
