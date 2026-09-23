@@ -30,7 +30,10 @@ import { EncryptionSetup } from '@/components/backup/EncryptionSetup'
 import { SetupChecklist } from '@/components/backup/SetupChecklist'
 import { SourcesManager } from '@/components/backup/SourcesManager'
 import { SourceTypeBadge } from '@/components/backup/SourceTypeBadge'
-import { StatusBadge } from '@/components/backup/StatusBadge'
+import {
+  backupDisplayStatus,
+  StatusBadge,
+} from '@/components/backup/StatusBadge'
 import { StatusRibbon } from '@/components/backup/StatusRibbon'
 import { StorageCard } from '@/components/backup/StorageCard'
 import { SystemImageBackupCard } from '@/components/backup/SystemImageBackupCard'
@@ -86,14 +89,20 @@ function BackupGridCard({
   backup: Backup
   source: BackupSource | undefined
 }) {
+  const displayStatus = backupDisplayStatus(
+    backup.status,
+    backup.verification_json?.activity,
+  )
   const accentClass =
-    backup.status === 'completed'
-      ? 'border-l-emerald-500'
-      : backup.status === 'failed'
-        ? 'border-l-red-500'
-        : backup.status === 'running'
-          ? 'border-l-blue-500'
-          : 'border-l-amber-500'
+    displayStatus === 'cancelled'
+      ? 'border-l-slate-500'
+      : backup.status === 'completed'
+        ? 'border-l-emerald-500'
+        : backup.status === 'failed'
+          ? 'border-l-red-500'
+          : backup.status === 'running'
+            ? 'border-l-blue-500'
+            : 'border-l-amber-500'
 
   return (
     <div
@@ -107,13 +116,15 @@ function BackupGridCard({
         <div
           className={clsx(
             'w-2 h-2 rounded-full shrink-0',
-            backup.status === 'completed'
-              ? 'bg-emerald-500'
-              : backup.status === 'failed'
-                ? 'bg-red-500'
-                : backup.status === 'running'
-                  ? 'bg-blue-500'
-                  : 'bg-amber-500',
+            displayStatus === 'cancelled'
+              ? 'bg-slate-500'
+              : backup.status === 'completed'
+                ? 'bg-emerald-500'
+                : backup.status === 'failed'
+                  ? 'bg-red-500'
+                  : backup.status === 'running'
+                    ? 'bg-blue-500'
+                    : 'bg-amber-500',
           )}
         />
         <span className="font-medium text-slate-100 text-sm truncate flex-1">
@@ -132,7 +143,10 @@ function BackupGridCard({
 
       {/* Tags */}
       <div className="mb-2.5 flex flex-wrap gap-1.5">
-        <StatusBadge status={backup.status} />
+        <StatusBadge
+          status={backup.status}
+          activity={backup.verification_json?.activity}
+        />
         {source && <SourceTypeBadge type={source.source_type} />}
         <span
           className={clsx(
@@ -707,7 +721,10 @@ export function BackupsClient() {
                         </td>
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-1.5">
-                            <StatusBadge status={backup.status} />
+                            <StatusBadge
+                              status={backup.status}
+                              activity={backup.verification_json?.activity}
+                            />
                             {backup.verified != null && (
                               <span
                                 title={

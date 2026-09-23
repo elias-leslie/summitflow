@@ -2,7 +2,7 @@
 
 import { clsx } from 'clsx'
 import { CheckCircle2, Clock, RefreshCw, Upload, XCircle } from 'lucide-react'
-import type { Backup } from '@/lib/api/backups'
+import type { Backup, BackupActivity } from '@/lib/api/backups'
 
 const STATUS_CONFIG = {
   pending: {
@@ -25,10 +25,32 @@ const STATUS_CONFIG = {
     icon: XCircle,
     className: 'bg-red-500/20 text-red-400 border-red-500/30',
   },
+  cancelled: {
+    icon: XCircle,
+    className: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+  },
 } as const
 
-export function StatusBadge({ status }: { status: Backup['status'] }) {
-  const config = STATUS_CONFIG[status]
+export function backupDisplayStatus(
+  status: Backup['status'],
+  activity?: Pick<BackupActivity, 'phase' | 'active'> | null,
+): Backup['status'] | 'cancelled' {
+  return status === 'failed' &&
+    activity?.phase === 'cancelled' &&
+    !activity.active
+    ? 'cancelled'
+    : status
+}
+
+export function StatusBadge({
+  status,
+  activity,
+}: {
+  status: Backup['status']
+  activity?: Pick<BackupActivity, 'phase' | 'active'> | null
+}) {
+  const displayStatus = backupDisplayStatus(status, activity)
+  const config = STATUS_CONFIG[displayStatus]
   const Icon = config.icon
 
   return (
@@ -41,7 +63,7 @@ export function StatusBadge({ status }: { status: Backup['status'] }) {
       <Icon
         className={clsx('w-3 h-3', status === 'running' && 'animate-spin')}
       />
-      {status}
+      {displayStatus}
     </span>
   )
 }

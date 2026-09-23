@@ -481,7 +481,10 @@ export function SourceCard({
                     key={b.id}
                     className="flex items-center gap-3 text-xs px-2.5 py-1.5 rounded bg-slate-950/40 border border-slate-800/40"
                   >
-                    <StatusBadge status={b.status} />
+                    <StatusBadge
+                      status={b.status}
+                      activity={b.verification_json?.activity}
+                    />
                     <span className="text-slate-400">
                       {formatDate(b.completed_at ?? b.created_at)}
                     </span>

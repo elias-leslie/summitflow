@@ -120,7 +120,7 @@ the pending managed rollout and actual cancellation demonstration.
 
 ### Independent recovery
 
-- [ ] Long-running capture/transfer management uses real ownership and observed
+- [x] Long-running capture/transfer management uses real ownership and observed
       progress, not an arbitrary total-duration cutoff. Opaque waits are clearly
       labeled unknown/needs attention; they are not falsely declared stalled.
 - [ ] The Backups UI presents local capture, Drive copy and restore-test status
@@ -691,6 +691,41 @@ source-bound closeout evidence. The overall task remains open.
   incident was unavailable; zero recorded usage is not zero consumption.
 
 ## Everyday workflow after verified rollout
+
+### Final lifecycle rollout and live cancellation, 2026-09-23
+
+- Local checkpoint `c29a1402f0bddc8dfd64518744291f3e006ba98a` passed full
+  acceptance: 3,406 backend tests, two skipped, 71 deselected; 214 frontend tests;
+  Ruff, types, Biome, TSC, gitleaks and OSV passed. Semgrep has no configured
+  local rules and is explicitly skipped; CodeQL equivalence is not claimed.
+  Wall time was 100.43 seconds, user 120.40, system 20.04, peak RSS 679,808 KiB.
+  Evidence: `.dev-tools/final-lifecycle-acceptance-performance.txt` and acceptance
+  `68fe1072e74a325bd2d8bad7958762ac722bfff738a1b49dfe7a89a80947ff9a`.
+- Managed rollout `c75e7fed0df54e969723c5a8d6f632f2` used that accepted source
+  and passed service health. Prepared-to-completed time was 21.68 seconds,
+  including 14.50 seconds frontend build and 2.63 seconds service restart.
+  This is an observed rollout duration, not an attributed speedup over an
+  earlier rollout with different restart timing.
+- The rendered UI started and cancelled one real SummitFlow capture:
+  `bkp-8ab9c6ba4df54c12`, run `ab6ce4c0-c908-42c8-9493-ed24ef60ab5f`.
+  The cancel click at 14:40:10.417 UTC preceded terminal cancellation at
+  14:40:10.934887 UTC by about 0.52 seconds. The worker lease was released;
+  no capture subprocess remained. The prior completed backup
+  `bkp-f7eeb8884e604903` retained its SHA-256 and verified Drive status.
+  UI showed cancellation requested, then cancelled, without claiming the
+  previous recovery point was lost. Screenshots are in
+  `/tmp/summitflow-backup-ui.rDr8Mv`; a durable compact receipt follows.
+- This live check found generic labels for several real capture phases.
+  A frontend-only wording correction is being completed before the final
+  successful capture. No additional cancellation attempt is needed for labels;
+  final render/progress verification remains required.
+- Independent review closed an enqueue race with stable non-secret attempt IDs:
+  a late queue response or failed old attempt cannot overwrite a newer retry.
+  Cancellation persists atomically through local-checkpoint writes and binding.
+  Former bulk timeouts for GIO, age, Git, database capture and SMB upload now
+  signal attention, not failure. Metadata bounds and production database restore
+  safeguards remain. No LLM is used for monitoring; state polling is local and
+  sparse, and renewed liveness is never described as verified byte progress.
 
 ### Final live recovery verification (in progress)
 

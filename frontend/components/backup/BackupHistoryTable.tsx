@@ -143,7 +143,10 @@ export function BackupHistoryTable({
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
-                      <StatusBadge status={backup.status} />
+                      <StatusBadge
+                        status={backup.status}
+                        activity={backup.verification_json?.activity}
+                      />
                       {backup.verified != null && (
                         <span
                           title={
