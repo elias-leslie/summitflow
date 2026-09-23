@@ -85,6 +85,8 @@ def autonomous_work_pickup(
     dispatch: Callable[[str, str, str], None] | None = None,
     limit: int = 10,
     require_enabled: bool = True,
+    policy_config: dict[str, object] | None = None,
+    agent_hub_owned: bool = False,
 ) -> dict[str, object]:
     """Pick up pending autonomous tasks and dispatch to appropriate pipeline stage.
 
@@ -97,10 +99,33 @@ def autonomous_work_pickup(
     """
     logger.info("Starting autonomous work pickup", project_id=project_id)
 
+    from app.services.autonomous_policy import use_execution_policy
+
+    # The caller's versioned Agent Hub policy snapshot must govern every
+    # downstream read for this dispatch. Legacy callers retain local settings.
+    with use_execution_policy(policy_config):
+        return _autonomous_work_pickup(
+            project_id,
+            dispatch=dispatch,
+            limit=limit,
+            require_enabled=require_enabled,
+            agent_hub_owned=agent_hub_owned,
+        )
+
+
+def _autonomous_work_pickup(
+    project_id: str,
+    dispatch: Callable[[str, str, str], None] | None,
+    *,
+    limit: int,
+    require_enabled: bool,
+    agent_hub_owned: bool,
+) -> dict[str, object]:
     if error := validate_autonomous_dispatch(
         project_id,
         require_enabled=require_enabled,
         enforce_external_origin=False,
+        check_work_pickup_setting=not agent_hub_owned,
     ):
         return error
 

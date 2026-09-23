@@ -261,6 +261,8 @@ def run_routine_upkeep(
     dispatch: Callable[[str, str, str], None] | None = None,
     *,
     force: bool = False,
+    policy_config: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run one routine upkeep discovery cycle.
 
@@ -273,8 +275,20 @@ def run_routine_upkeep(
     schedule is disabled. Scheduled callers never pass ``force``, so this
     does not re-enable any automation.
     """
+    from app.services.autonomous_policy import use_execution_policy
+
     started_at = datetime.now(UTC)
-    settings = get_routine_upkeep_settings(project_id)
+    with use_execution_policy(policy_config):
+        settings = get_routine_upkeep_settings(project_id)
+    # Agent Hub owns cadence/enabled state; its dispatched config snapshot
+    # supplies the bounded discovery batch size for this occurrence.
+    if config is not None:
+        settings = RoutineUpkeepSettings.model_validate(
+            {
+                **settings.model_dump(),
+                "batch_limit": config.get("upkeep_batch_limit", settings.batch_limit),
+            }
+        )
     if not settings.enabled and not force:
         return _upkeep_result(project_id, STATUS_DISABLED)
     if not force and not _is_due(project_id, settings):

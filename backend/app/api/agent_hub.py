@@ -21,8 +21,10 @@ from ..services._agent_hub_config import (
     AGENT_HUB_URL,
     build_agent_hub_headers,
 )
+from .automation_dispatch import router as automation_dispatch_router
 
 router = APIRouter()
+router.include_router(automation_dispatch_router)
 
 # ---------------------------------------------------------------------------
 # Constants

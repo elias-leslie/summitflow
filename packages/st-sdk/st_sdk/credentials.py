@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -13,6 +14,7 @@ _ENV_FILE = ".env.local"
 _KEY_CLIENT_ID = "SUMMITFLOW_CLIENT_ID"
 _KEY_CLIENT_ID_LEGACY = "CONSULT_CLIENT_ID"
 _KEY_REQUEST_SOURCE = "SUMMITFLOW_REQUEST_SOURCE"
+_KEY_INTERNAL_SECRET = "INTERNAL_SERVICE_SECRET"
 
 
 @lru_cache
@@ -47,3 +49,13 @@ def load_credentials(default_source: str = "st-cli") -> tuple[str, str]:
         raise typer.Exit(1)
     return client_id, creds.get(_KEY_REQUEST_SOURCE, default_source)
 
+
+def load_internal_service_secret() -> str:
+    """Load the existing shared service secret from approved operator sources."""
+    secret = os.getenv(_KEY_INTERNAL_SECRET, "").strip() or _read_env_local().get(
+        _KEY_INTERNAL_SECRET, ""
+    ).strip()
+    if not secret:
+        output_error(f"Missing {_KEY_INTERNAL_SECRET} in the process env or ~/{_ENV_FILE}")
+        raise typer.Exit(1)
+    return secret

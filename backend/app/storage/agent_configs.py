@@ -8,6 +8,7 @@ from psycopg.types.json import Jsonb
 
 from ..constants import TASK_TYPE_VALUES
 from ..logging_config import get_logger
+from ..services.autonomous_policy import current_execution_policy
 from .connection import get_connection, get_cursor
 
 logger = get_logger(__name__)
@@ -110,15 +111,8 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
 }
 
 
-def get_agent_config(project_id: str) -> AgentConfig:
-    """Get agent configuration for a project.
-
-    Args:
-        project_id: Project ID
-
-    Returns:
-        AgentConfig dict, or default config if not set
-    """
+def _get_stored_agent_config(project_id: str) -> AgentConfig:
+    """Read the persisted SummitFlow config without execution context overlays."""
     with get_cursor() as cur:
         cur.execute(
             """
@@ -130,18 +124,30 @@ def get_agent_config(project_id: str) -> AgentConfig:
         )
         row = cur.fetchone()
 
+    if row is None or row[0] is None:
         if row is None:
             logger.warning("Project %s not found, returning default config", project_id)
-            return DEFAULT_AGENT_CONFIG.copy()
+        return DEFAULT_AGENT_CONFIG.copy()
 
-        config = row[0]
-        if config is None:
-            return DEFAULT_AGENT_CONFIG.copy()
+    result = DEFAULT_AGENT_CONFIG.copy()
+    result.update(row[0])
+    return result
 
-        # Merge with defaults for any missing keys
-        result = DEFAULT_AGENT_CONFIG.copy()
-        result.update(config)
-        return result
+
+def get_agent_config(project_id: str) -> AgentConfig:
+    """Get effective config, overlaying a callback's policy snapshot if bound.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        AgentConfig dict, or default config if not set
+    """
+    result = _get_stored_agent_config(project_id)
+    execution_policy = current_execution_policy()
+    if execution_policy is not None:
+        result.update(execution_policy)
+    return result
 
 
 def update_agent_config(project_id: str, config: AgentConfig) -> AgentConfig:
@@ -158,7 +164,7 @@ def update_agent_config(project_id: str, config: AgentConfig) -> AgentConfig:
         ValueError: If project not found
     """
     # Get current config
-    current = get_agent_config(project_id)
+    current = _get_stored_agent_config(project_id)
 
     # Merge with new values
     current.update(config)

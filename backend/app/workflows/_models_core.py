@@ -13,6 +13,7 @@ class TaskInput(BaseModel):
     task_id: str
     project_id: str
     manual_dispatch: bool = False
+    execution_policy: dict[str, Any] | None = None
 
 
 class ProjectInput(BaseModel):

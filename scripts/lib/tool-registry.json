@@ -109,6 +109,27 @@
       "environment": []
     },
     {
+      "id": "agent-hub.automations",
+      "owner": "agent-hub",
+      "namespace": "automations",
+      "manifest": "extensions/automations.json",
+      "executable": "backend/.venv/bin/agent-hub-st",
+      "arguments": [
+        "automations"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "credentials"
+        ]
+      },
+      "environment": []
+    },
+    {
       "id": "agent-hub.models",
       "owner": "agent-hub",
       "namespace": "models",

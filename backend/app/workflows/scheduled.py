@@ -104,9 +104,22 @@ def _record_work_pickup(project_id: str, started_at: datetime, result: dict[str,
 
 
 async def _run_work_pickup_for_project(project_id: str) -> dict[str, Any]:
+    from ..storage.automation_clock_fences import automation_clock_lock
+
+    with automation_clock_lock(project_id, "work_pickup"):
+        return await _run_work_pickup_with_clock_lock(project_id)
+
+
+async def _run_work_pickup_with_clock_lock(project_id: str) -> dict[str, Any]:
+    from ..services.agent_hub_automations import legacy_clock_owns
+    from ..storage.automation_clock_fences import is_agent_hub_clock_fenced
     from ..tasks.autonomous.pickup import autonomous_work_pickup
     from .pipeline import _make_dispatch_callback
 
+    if is_agent_hub_clock_fenced(project_id, "work_pickup"):
+        return {"schedule_id": "work_pickup", "status": "skipped", "reason": "agent_hub_clock_fence", "project_id": project_id}
+    if not legacy_clock_owns(project_id, "work_pickup"):
+        return {"schedule_id": "work_pickup", "status": "skipped", "reason": "agent_hub_clock_owner", "project_id": project_id}
     if not _project_schedule_enabled(project_id, "work_pickup"):
         return _disabled_schedule_result("work_pickup", project_id=project_id)
     if not _work_pickup_due(project_id):
@@ -125,8 +138,21 @@ async def _run_work_pickup_for_project(project_id: str) -> dict[str, Any]:
 
 
 async def _run_task_generation_for_project(project_id: str) -> dict[str, Any]:
+    from ..storage.automation_clock_fences import automation_clock_lock
+
+    with automation_clock_lock(project_id, "task_generation"):
+        return await _run_task_generation_with_clock_lock(project_id)
+
+
+async def _run_task_generation_with_clock_lock(project_id: str) -> dict[str, Any]:
+    from ..services.agent_hub_automations import legacy_clock_owns
+    from ..storage.automation_clock_fences import is_agent_hub_clock_fenced
     from ..tasks.autonomous.upkeep import run_routine_upkeep
 
+    if is_agent_hub_clock_fenced(project_id, "task_generation"):
+        return {"schedule_id": "task_generation", "status": "skipped", "reason": "agent_hub_clock_fence", "project_id": project_id}
+    if not legacy_clock_owns(project_id, "task_generation"):
+        return {"schedule_id": "task_generation", "status": "skipped", "reason": "agent_hub_clock_owner", "project_id": project_id}
     if not _project_schedule_enabled(project_id, "task_generation"):
         return _disabled_schedule_result("task_generation", project_id=project_id)
 
