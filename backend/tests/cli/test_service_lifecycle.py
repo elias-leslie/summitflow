@@ -349,6 +349,30 @@ def test_migrations_use_host_project_database_env_from_accepted_source(
     assert run.call_args.kwargs["cwd"] == backend_dir
 
 
+def test_neri_migrations_use_approved_operator_db_env(project, monkeypatch, tmp_path):
+    backend_dir = tmp_path / "release" / "backend"
+    (backend_dir / ".venv" / "bin").mkdir(parents=True)
+    (backend_dir / "alembic.ini").touch()
+    (backend_dir / ".venv" / "bin" / "alembic").touch()
+    operator_home = tmp_path / "operator"
+    operator_home.mkdir()
+    (operator_home / ".env.local").write_text(
+        "NERI_DB_URL=postgresql://approved-neri\n"
+        "PORTFOLIO_DB_URL=postgresql://other-project\n"
+        "INTERNAL_SERVICE_SECRET=not-for-migrations\n"
+    )
+    monkeypatch.setattr(service_ops.Path, "home", lambda: operator_home)
+    run = Mock(return_value=0)
+    monkeypatch.setattr(service_ops, "run", run)
+    deployed = replace(project, project_id="neri", backend_dir=backend_dir)
+
+    assert service_ops.run_migrations(deployed) == 0
+    migration_env = run.call_args.kwargs["env"]
+    assert migration_env["NERI_DB_URL"] == "postgresql://approved-neri"
+    assert "PORTFOLIO_DB_URL" not in migration_env
+    assert "INTERNAL_SERVICE_SECRET" not in migration_env
+
+
 def test_seed_export_failure_propagates(project, monkeypatch):
     (project.backend_dir / "scripts").mkdir(parents=True)
     (project.backend_dir / "scripts" / "export_seeds.py").touch()

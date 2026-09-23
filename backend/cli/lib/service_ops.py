@@ -619,7 +619,10 @@ def run_migrations(project: ProjectServices) -> int:
         "POSTGRES_ADMIN_URL",
         "DATABASE_ADMIN_URL",
     }
-    for key in database_keys | {"REDIS_URL", "AGENT_HUB_REDIS_URL", "HATCHET_CLIENT_TOKEN"}:
+    for key in database_keys | {
+        "REDIS_URL", "AGENT_HUB_REDIS_URL", "HATCHET_CLIENT_TOKEN",
+        "INTERNAL_SERVICE_SECRET", "AGENT_HUB_INTERNAL_SECRET",
+    }:
         env.pop(key, None)
     # Alembic runs from immutable accepted source, which deliberately excludes
     # project env files. Supply only the owning project's database credentials
@@ -632,7 +635,10 @@ def run_migrations(project: ProjectServices) -> int:
         "jobinator-4000": {"JOBINATOR_DB_URL"},
     }.get(project.project_id, {"DATABASE_URL"})
     host_root = project.host_config_root or project.root
-    for path in project_env_files(host_root):
+    # Neri's service unit reads the operator's shared env before its own
+    # backend env; Alembic needs the same source when running from a release.
+    shared_env = [Path.home() / ".env.local"] if project.project_id == "neri" else []
+    for path in [*shared_env, *project_env_files(host_root)]:
         if path.name == ".env.example" or not path.is_file():
             continue
         for key, value in dotenv_values(path, interpolate=False).items():
