@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import tomllib
 from pathlib import Path
@@ -21,13 +22,19 @@ _EMPTY_VULNS: dict[str, int] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
 def scan_python_dependencies(project_id: str, root_path: Path) -> list[ExplorerEntryCreate]:
     """Scan Python dependencies from pyproject.toml and uv.lock."""
     pyproject_files = [p for p in root_path.rglob("pyproject.toml") if not _SKIP_DIRS.intersection(p.parts)]
-    audit_result = _run_python_audit(root_path)
-    audit_results, audit_status = audit_result if isinstance(audit_result, tuple) else (audit_result, "unknown")
-    outdated_results = _run_python_outdated(root_path)
-    installed_results = _run_python_installed(root_path)
+    environment_evidence: dict[Path, tuple[dict[str, dict[str, Any]], str, dict[str, dict[str, Any]], dict[str, str]]] = {}
     entries: list[ExplorerEntryCreate] = []
     for pp in pyproject_files:
         try:
+            # A monorepo can keep each Python environment beside its manifest.
+            env_root = pp.parent if (pp.parent / ".venv" / "bin" / "python").exists() else root_path
+            if env_root not in environment_evidence:
+                audit_result = _run_python_audit(env_root)
+                audit_results, audit_status = audit_result if isinstance(audit_result, tuple) else (audit_result, "unknown")
+                environment_evidence[env_root] = (
+                    audit_results, audit_status, _run_python_outdated(env_root), _run_python_installed(env_root),
+                )
+            audit_results, audit_status, outdated_results, installed_results = environment_evidence[env_root]
             deps = _parse_pyproject_toml(pp)
             locks = _parse_uv_lock(pp.parent / "uv.lock")
             rel = pp.parent.relative_to(root_path)
@@ -130,6 +137,19 @@ def _venv_cmd(root_path: Path, tool: str) -> list[str]:
     return [str(p)]
 
 
+def _package_list_cmd(root_path: Path, *, outdated: bool = False) -> list[str]:
+    """Read the selected venv through pip or uv without using host packages."""
+    venv = root_path / ".venv" / "bin"
+    pip = venv / "pip"
+    if pip.exists():
+        return [str(pip), "list", *(["--outdated"] if outdated else []), "--format", "json"]
+    python = venv / "python"
+    uv = shutil.which("uv")
+    if python.exists() and uv:
+        return [uv, "pip", "list", "--python", str(python), *(["--outdated"] if outdated else []), "--format", "json", "--no-python-downloads"]
+    raise FileNotFoundError(f"No pip or uv package listing for {venv}")
+
+
 def _run_python_audit(root_path: Path) -> tuple[dict[str, dict[str, Any]], str]:
     """Run pip-audit and return vulnerability info by package."""
     results: dict[str, dict[str, Any]] = {}
@@ -164,8 +184,10 @@ def _run_python_outdated(root_path: Path) -> dict[str, dict[str, Any]]:
     """Check for outdated Python packages."""
     results: dict[str, dict[str, Any]] = {}
     try:
-        proc = safe_subprocess.run([*_venv_cmd(root_path, "pip"), "list", "--outdated", "--format", "json"],
+        proc = safe_subprocess.run(_package_list_cmd(root_path, outdated=True),
                               cwd=root_path, capture_output=True, text=True, timeout=60)
+        if proc.returncode != 0:
+            return results
         if not proc.stdout:
             return results
         for pkg in json.loads(proc.stdout):
@@ -180,7 +202,7 @@ def _run_python_installed(root_path: Path) -> dict[str, str]:
     """Read versions in the project venv without treating lock entries as installed."""
     try:
         proc = safe_subprocess.run(
-            [*_venv_cmd(root_path, "pip"), "list", "--format", "json"],
+            _package_list_cmd(root_path),
             cwd=root_path, capture_output=True, text=True, timeout=60,
         )
         if proc.returncode != 0:

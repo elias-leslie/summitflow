@@ -14,6 +14,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.services.explorer.types.dependencies_nodejs import scan_nodejs_dependencies
+from app.services.explorer.types.dependencies_python import (
+    _package_list_cmd,
+    scan_python_dependencies,
+)
 
 
 class TestStandaloneProjectDetection:
@@ -195,3 +199,32 @@ def test_workspace_root_scans_root_and_member_manifests(tmp_path: Path) -> None:
     ):
         entries = scan_nodejs_dependencies("test-project", root)
     assert {entry.name for entry in entries} == {"root-package", "frontend-package"}
+
+
+def test_python_scan_uses_manifest_local_environment(tmp_path: Path) -> None:
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    (backend / "pyproject.toml").write_text('[project]\ndependencies = ["fastapi>=0.115"]\n')
+    python = backend / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.touch()
+    with (
+        patch("app.services.explorer.types.dependencies_python._run_python_audit", return_value=({}, "unknown")),
+        patch("app.services.explorer.types.dependencies_python._run_python_outdated", return_value={}),
+        patch("app.services.explorer.types.dependencies_python._run_python_installed", return_value={"fastapi": "0.136.3"}) as installed,
+    ):
+        entries = scan_python_dependencies("test-project", tmp_path)
+    installed.assert_called_once_with(backend)
+    assert entries[0].metadata["installed_version"] == "0.136.3"
+
+
+def test_python_package_listing_uses_uv_for_pipless_venv(tmp_path: Path) -> None:
+    python = tmp_path / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.touch()
+    with patch("app.services.explorer.types.dependencies_python.shutil.which", return_value="/usr/bin/uv"):
+        command = _package_list_cmd(tmp_path)
+    assert command == [
+        "/usr/bin/uv", "pip", "list", "--python", str(python),
+        "--format", "json", "--no-python-downloads",
+    ]
