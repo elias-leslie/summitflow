@@ -81,12 +81,14 @@ def attach_task(project_id: str, entry_path: str, event_id: int, task_id: str) -
             f"UPDATE dependency_review_events SET task_id = %s "
             f"WHERE id = %s AND project_id = %s AND entry_path = %s "
             f"AND decision = 'update' AND (task_id IS NULL OR task_id = %s) "
+            f"AND revision = (SELECT MAX(revision) FROM dependency_review_events "
+            f"WHERE project_id = %s AND entry_path = %s) "
             f"RETURNING {_COLUMNS}",
-            (task_id, event_id, project_id, entry_path, task_id),
+            (task_id, event_id, project_id, entry_path, task_id, project_id, entry_path),
         )
         row = cur.fetchone()
         if row is None:
-            raise ValueError("Dependency decision could not be linked to the queued task")
+            raise ValueError("Dependency decision was superseded before its task could be linked")
         conn.commit()
     return _row(row)
 

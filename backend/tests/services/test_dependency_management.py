@@ -155,6 +155,42 @@ def test_queue_identity_is_stable_for_same_update(monkeypatch) -> None:
     assert identities[0] == identities[1]
 
 
+def test_new_decision_same_version_gets_its_own_task_identity(monkeypatch) -> None:
+    reviewed = {
+        "revision": 1, "evidence_hash": "digest",
+        "evidence": {"inventory": {"name": "fastapi"}},
+    }
+    identities: list[str] = []
+    latest: list[dict] = [reviewed]
+    event_ids = iter((42, 43))
+    monkeypatch.setattr(management.dependency_reviews, "latest", lambda *_args: latest[0])
+
+    def append(*_args, **_kwargs):
+        record = {
+            **latest[0], "id": next(event_ids), "revision": latest[0]["revision"] + 1,
+            "decision": "update", "recommended_version": "0.141.1",
+            "rationale": "Reviewed release", "task_id": None,
+        }
+        latest[0] = record
+        return record, True
+
+    monkeypatch.setattr(management.dependency_reviews, "append", append)
+    monkeypatch.setattr(management.dependency_reviews, "attach_task", lambda *_args: {"task_id": "task-linked"})
+
+    def fake_task(*_args, **kwargs):
+        identities.append(kwargs["external_identity"]["external_request_key"])
+        return {"id": "task-linked"}
+
+    with patch("app.storage.tasks.core.create_task", side_effect=fake_task):
+        for expected_revision in (1, 2):
+            management.record_decision(
+                "summitflow", "python/backend/fastapi", decision="update",
+                rationale="Reviewed release", expected_revision=expected_revision,
+                recommended_version="0.141.1", queue_task=True,
+            )
+    assert identities[0] != identities[1]
+
+
 def test_stale_decision_does_not_create_update_task(monkeypatch) -> None:
     previous = {"revision": 1, "evidence_hash": "digest", "evidence": {"inventory": {"name": "fastapi"}}}
     monkeypatch.setattr(management.dependency_reviews, "latest", lambda *_args: previous)
@@ -236,6 +272,33 @@ def test_queued_decision_reuses_task_after_link_failure(monkeypatch) -> None:
     assert create_task.call_count == 2
     assert attach_task.call_count == 2
     assert linked["task_id"] == "task-existing"
+
+
+def test_superseded_decision_cancels_newly_created_task(monkeypatch) -> None:
+    previous = {
+        "revision": 1, "evidence_hash": "digest",
+        "evidence": {"inventory": {"name": "fastapi"}},
+    }
+    monkeypatch.setattr(management.dependency_reviews, "latest", lambda *_args: previous)
+    monkeypatch.setattr(
+        management.dependency_reviews, "append",
+        lambda *_args, **_kwargs: ({"id": 42, "revision": 2, "evidence": previous["evidence"]}, True),
+    )
+    monkeypatch.setattr(
+        management.dependency_reviews, "attach_task",
+        lambda *_args: (_ for _ in ()).throw(ValueError("superseded")),
+    )
+    with (
+        patch("app.storage.tasks.core.create_task", return_value={"id": "task-stale"}),
+        patch("app.storage.tasks.status.update_task_status") as update_status,
+        pytest.raises(ValueError, match="superseded"),
+    ):
+        management.record_decision(
+            "summitflow", "python/backend/fastapi", decision="update",
+            rationale="Reviewed release", expected_revision=1,
+            recommended_version="0.141.1", queue_task=True,
+        )
+    update_status.assert_called_once_with("task-stale", "cancelled")
 
 
 def test_scheduled_review_skips_unchanged_recent_evidence(monkeypatch) -> None:

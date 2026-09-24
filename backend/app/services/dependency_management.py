@@ -291,7 +291,8 @@ def record_decision(
         from ..storage.tasks.core import create_task
 
         name = record["evidence"]["inventory"]["name"]
-        identity_key = f"{project_id}:{entry_path}:{recommended_version}"
+        # A later decision for the same version needs its own task and evidence.
+        identity_key = f"{project_id}:{entry_path}:{record['id']}:{recommended_version}"
         task = create_task(
             project_id, f"Update {name} to {recommended_version}",
             description=(
@@ -306,5 +307,11 @@ def record_decision(
                 "external_payload_digest": hashlib.sha256(identity_key.encode()).hexdigest(),
             },
         )
-        record = dependency_reviews.attach_task(project_id, entry_path, record["id"], task["id"])
+        try:
+            record = dependency_reviews.attach_task(project_id, entry_path, record["id"], task["id"])
+        except ValueError:
+            from ..storage.tasks.status import update_task_status
+
+            update_task_status(task["id"], "cancelled")
+            raise
     return record
