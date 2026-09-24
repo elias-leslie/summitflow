@@ -873,6 +873,90 @@ def test_check_biome_explicit_paths_replace_default_dot(
     assert "BIOME:OK:0" in capsys.readouterr().out
 
 
+def test_check_biome_skips_undeclared_pure_python_repo(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / "tests" / "evaluation").mkdir(parents=True)
+    (tmp_path / "tests" / "evaluation" / "evidence.json").write_text("{}\n", encoding="utf-8")
+    # Other node dependencies do not imply that this formatter is installed.
+    (tmp_path / "node_modules" / ".bin").mkdir(parents=True)
+    with (
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
+        patch("cli.commands.check.subprocess.run") as run,
+    ):
+        exit_code = check._run_tool(
+            "biome",
+            {"label": "BIOME", "binary": "npx", "args": "biome check . --no-errors-on-unmatched"},
+            ["tests/evaluation/evidence.json"],
+        )
+
+    assert exit_code == 0
+    assert "BIOME:SKIP:biome:tool_not_installed" in capsys.readouterr().out
+    run.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "declaration", ["package", "config", "tool_path", "tool_path_with_default", "empty_tool_path_with_default"]
+)
+def test_check_biome_declared_but_missing_fails_without_npx(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], declaration: str,
+) -> None:
+    if declaration == "package":
+        (tmp_path / "package.json").write_text(
+            '{"devDependencies":{"@biomejs/biome":"1.9.0"}}', encoding="utf-8"
+        )
+    elif declaration == "config":
+        (tmp_path / "biome.json").write_text("{}\n", encoding="utf-8")
+    else:
+        configured_path = "" if declaration == "empty_tool_path_with_default" else "frontend/managed/.bin"
+        (tmp_path / ".st-check.toml").write_text(
+            f'[paths]\nbiome = "{configured_path}"\n', encoding="utf-8"
+        )
+        if declaration.endswith("with_default"):
+            other_binary = tmp_path / "frontend" / "node_modules" / ".bin" / "biome"
+            other_binary.parent.mkdir(parents=True)
+            other_binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    with (
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
+        patch("cli.commands.check.subprocess.run") as run,
+    ):
+        exit_code = check._run_tool(
+            "biome",
+            {"label": "BIOME", "binary": "npx", "args": "biome check . --no-errors-on-unmatched"},
+            [],
+        )
+
+    assert exit_code == 127
+    assert "BIOME:FAIL:127" in capsys.readouterr().out
+    assert "Biome is declared" in next((tmp_path / ".dev-tools").glob("biome-*-details.txt")).read_text()
+    run.assert_not_called()
+
+
+def test_check_biome_uses_declared_local_binary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / ".st-check.toml").write_text(
+        '[paths]\nbiome = "frontend/managed/.bin"\n', encoding="utf-8"
+    )
+    binary = tmp_path / "frontend" / "managed" / ".bin" / "biome"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    with (
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
+        patch("cli.commands.check.subprocess.run", return_value=completed) as run,
+    ):
+        exit_code = check._run_tool(
+            "biome",
+            {"label": "BIOME", "binary": "npx", "args": "biome check . --no-errors-on-unmatched"},
+            [],
+        )
+
+    assert exit_code == 0
+    assert run.call_args.args[0] == [str(binary), "check", ".", "--no-errors-on-unmatched"]
+    assert "BIOME:OK:0" in capsys.readouterr().out
+
+
 def test_check_tool_output_goes_to_details_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     result = subprocess.CompletedProcess(
         args=["pytest"],

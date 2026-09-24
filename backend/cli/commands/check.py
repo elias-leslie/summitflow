@@ -49,6 +49,7 @@ from .check_dispatch import (
 )
 from .check_execution import (
     adjusted_tool_args,
+    read_tool_paths,
     tool_env,
     tool_not_installed,
     tool_output,
@@ -80,6 +81,14 @@ def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str]) -
     # npx foo -> search node_modules for foo, not for npx itself.
     if binary == "npx" and base_args:
         tool = base_args[0]
+        if tool == "biome" and "biome" in (declared_paths := read_tool_paths(root)):
+            declared = declared_paths["biome"]
+            declared_candidate = root / declared / tool
+            if declared and declared_candidate.is_file():
+                return [str(declared_candidate), *base_args[1:]]
+            # Preserve the declared path as authoritative, including an empty
+            # declaration. The caller reports the missing binary before npx.
+            return [shutil.which("npx") or "npx", "--no-install", *base_args]
         for search_root in (cwd, root / "frontend", root):
             npx_candidate = search_root / "node_modules" / ".bin" / tool
             if npx_candidate.exists():
@@ -128,8 +137,27 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
     binary = str(config.get("binary") or name)
     base_args = shlex.split(str(config.get("args") or ""))
     base_args, extra_args = adjusted_tool_args(name, base_args, extra_args, root)
-    command = [*_resolve_command(binary, root, cwd, base_args), *extra_args]
+    resolved_command = _resolve_command(binary, root, cwd, base_args)
+    command = [*resolved_command, *extra_args]
     label = str(config.get("label") or name.upper())
+    print(f"{label}:{name}:start")
+    if (
+        name == "biome"
+        and binary == "npx"
+        and base_args[:1] == ["biome"]
+        and resolved_command[1:2] == ["--no-install"]
+    ):
+        if tool_not_installed(name, root):
+            print(f"{label}:SKIP:{name}:tool_not_installed")
+            return 0
+        output = (
+            "Biome is declared for this project, but no project-local "
+            "node_modules/.bin/biome was found. Install the project's frontend "
+            "dependencies or fix its .st-check.toml [paths].biome declaration."
+        )
+        details = write_check_details(root, name, output)
+        print(tool_result_line(label, name, 127, display_path(root, details), summary_hint(output)))
+        return 127
     report: Path | None = None
     # A real full-suite failure produced empty stdout/stderr. Retain pytest's
     # built-in report from this same run, not a second diagnostic test run.
@@ -137,8 +165,6 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
     if name == "pytest" and not re.search(r"(?:^|\s)--junit-?xml(?:=|\s)|no:junitxml", pytest_options):
         report = detail_path(root, f"pytest-{uuid4().hex}").with_suffix(".xml")
         command.append(f"--junitxml={report}")
-    print(f"{label}:{name}:start")
-
     try:
         if name == "frontend-test":
             result = _run_frontend_script(command, cwd, tool_env(root, os.environ, name))

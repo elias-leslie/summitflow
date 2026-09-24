@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 import tomllib
 from collections.abc import Mapping
 from pathlib import Path
@@ -69,8 +71,46 @@ def tool_not_installed(name: str, root: Path) -> bool:
     """
     if name in read_tool_paths(root):
         return False
+    if name == "biome":
+        if any(
+            (root / candidate / "biome").is_file()
+            for candidate in _DEFAULT_TOOL_PATH_CANDIDATES["biome"]
+        ):
+            return False
+        if any(
+            (directory / config).is_file()
+            for directory in (root, root / "frontend")
+            for config in ("biome.json", "biome.jsonc")
+        ):
+            return False
+        return not any(
+            _package_declares_biome(directory / "package.json")
+            for directory in (root, root / "frontend")
+        )
     candidates = _DEFAULT_TOOL_PATH_CANDIDATES.get(name, ())
     return not any((root / candidate).exists() for candidate in candidates)
+
+
+def _package_declares_biome(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        package = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        # A malformed frontend manifest is an intended but broken environment,
+        # never a reason to silently skip its configured formatter.
+        return True
+    if not isinstance(package, dict):
+        return True
+    for section in ("dependencies", "devDependencies", "optionalDependencies"):
+        dependencies = package.get(section)
+        if isinstance(dependencies, dict) and "@biomejs/biome" in dependencies:
+            return True
+    scripts = package.get("scripts")
+    return isinstance(scripts, dict) and any(
+        isinstance(command, str) and re.search(r"\b(?:npx\s+)?biome\b", command)
+        for command in scripts.values()
+    )
 
 
 def read_pytest_no_cov(root: Path) -> bool:
