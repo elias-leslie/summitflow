@@ -207,6 +207,7 @@ export interface DependencyInventoryItem {
   vulnerabilities: Record<string, number> | null
   checks: Record<string, string>
   last_scanned_at: string | null
+  last_review_checked_at: string | null
   review: DependencyReviewRecord | null
 }
 

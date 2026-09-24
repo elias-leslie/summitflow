@@ -29,6 +29,17 @@ def create_explorer_tables(cur: psycopg.Cursor) -> None:
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS dependency_review_checks (
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            entry_path TEXT NOT NULL,
+            evidence_hash TEXT NOT NULL,
+            checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (project_id, entry_path)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS explorer_symbols (
             id BIGSERIAL PRIMARY KEY,
             project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,

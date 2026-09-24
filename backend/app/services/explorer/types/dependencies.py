@@ -27,6 +27,7 @@ from ....logging_config import get_logger
 from ..base import BaseScanner, get_project_root
 from ..health import calculate_health_for_entry
 from ..models import ExplorerEntryCreate
+from .dependencies_browser_runtime import scan_browser_runtime_dependencies
 from .dependencies_nodejs import scan_nodejs_dependencies
 from .dependencies_python import scan_python_dependencies
 
@@ -66,9 +67,13 @@ class DependencyScanner(BaseScanner):
         node_entries = scan_nodejs_dependencies(self.project_id, self.root_path)
         entries.extend(node_entries)
 
+        # Browser ownership stays in its versioned ST extension; Explorer ingests its result.
+        browser_entries = scan_browser_runtime_dependencies(self.project_id, self.root_path)
+        entries.extend(browser_entries)
+
         logger.info(
-            "Dependency scan found %d entries (%d Python, %d Node.js)",
-            len(entries), len(python_entries), len(node_entries),
+            "Dependency scan found %d entries (%d Python, %d Node.js, %d browser runtimes)",
+            len(entries), len(python_entries), len(node_entries), len(browser_entries),
         )
         return entries
 

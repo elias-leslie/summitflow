@@ -352,7 +352,16 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
     if not command:
         output_error("Usage: st browser <agent-browser command> [args...]")
         raise typer.Exit(2)
-    operation = command if command in {"check", "health", "update"} else "agent"
+    operation = command if command in {"check", "health", "update", "inventory"} else "agent"
+    if operation == "inventory":
+        if target != "local-ai":
+            output_error("Browser runtime inventory is available only for the local host")
+            raise typer.Exit(2)
+        index = browser_policy.command_index(browser_args)
+        if index is None or browser_args[index + 1 :] not in ([], ["--json"]):
+            output_error("Usage: st browser inventory [--json]")
+            raise typer.Exit(2)
+        browser_args = []
     agent_bin = "agent-browser" if target == "proxmox" and operation == "health" else _agent_browser_bin()
     check = None
     if operation == "check":
@@ -371,7 +380,7 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
         elif operation == "health":
             browser_args = ["--session", _local_ai_session(), *browser_args]
         if operation != "update":
-            if operation not in {"health", "check"}:
+            if operation not in {"health", "check", "inventory"}:
                 browser_args = _with_local_ai_session(browser_args)
             if operation == "agent":
                 browser_args = _with_navigation(browser_args, command, guarded=False)
@@ -443,6 +452,7 @@ Usage:
   st browser eval <js>
   st browser --proxmox endpoint [--http|--ws|--json]
   st browser update
+  st browser inventory --json
   st browser [--chrome|--lp|--engine <name>] <agent-browser command> [args...]
 
 Examples:

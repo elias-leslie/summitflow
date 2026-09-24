@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from app.services import dependency_management as management
 from app.services.explorer.types.dependencies_nodejs import _parse_pnpm_lock
 from app.services.explorer.types.dependencies_python import _parse_pyproject_toml
@@ -27,6 +29,32 @@ def test_inventory_does_not_treat_lock_or_missing_audit_as_installed_or_clear() 
     assert item["vulnerabilities"] is None
     assert item["checks"]["installed"] == "unknown"
     assert item["checks"]["advisories"] == "unknown"
+
+
+def test_transitive_inventory_does_not_invent_declared_or_runtime_classification() -> None:
+    entry = _entry()
+    entry["metadata"].update({"relationship": "transitive", "constraint": None, "is_dev_dependency": False})
+    item = management._inventory_entry(entry, None)
+    assert item["checks"]["declared"] == "unknown"
+    assert item["kind"] == "unknown"
+
+
+def test_browser_runtime_inventory_keeps_unchecked_versions_unknown() -> None:
+    entry = _entry()
+    entry["path"] = "browser-runtime/agent-browser"
+    entry["metadata"] = {
+        "package_type": "browser-runtime", "relationship": "direct", "constraint": None,
+        "installed_version": "0.26.0", "installed_check_status": "checked",
+        "latest_version": None, "latest_check_status": "unknown",
+        "recommended_version": None, "recommended_check_status": "unknown",
+        "environment": "local-host", "audit_check_status": "unknown",
+    }
+    item = management._inventory_entry(entry, None)
+    assert item["checks"]["declared"] == "unknown"
+    assert item["checks"]["installed"] == "checked"
+    assert item["checks"]["latest"] == "unknown"
+    assert item["installed_version"] == "0.26.0"
+    assert item["environment"] == "local-host"
 
 
 def test_review_reuses_unchanged_evidence(monkeypatch) -> None:
@@ -50,8 +78,9 @@ def test_review_reuses_unchanged_evidence(monkeypatch) -> None:
     assert first["packet"]["engines"]["dependabot_cli"] in {"unavailable", "available_unrun"}
 
 
-def test_refresh_removes_entries_missing_from_current_scan() -> None:
+def test_refresh_removes_entries_missing_from_current_scan(tmp_path: Path, monkeypatch) -> None:
     entry = SimpleNamespace(path="python/backend/fastapi", model_dump=lambda: {"path": "python/backend/fastapi"})
+    monkeypatch.setattr(management, "get_project_root_path", lambda *_args: str(tmp_path))
     with (
         patch("app.services.explorer.types.dependencies.DependencyScanner.scan", return_value=[entry]),
         patch.object(management.explorer_entries, "upsert_entries") as upsert_mock,
@@ -60,6 +89,28 @@ def test_refresh_removes_entries_missing_from_current_scan() -> None:
         management._refresh_scan("summitflow")
     upsert_mock.assert_called_once()
     cleanup_mock.assert_called_once_with("summitflow", "dependency", {"python/backend/fastapi"})
+
+
+def test_refresh_confirms_empty_project_before_pruning(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(management, "get_project_root_path", lambda *_args: str(tmp_path))
+    with (
+        patch("app.services.explorer.types.dependencies.DependencyScanner.scan", return_value=[]),
+        patch.object(management.explorer_entries, "cleanup_stale_entries") as cleanup_mock,
+    ):
+        management._refresh_scan("summitflow")
+    cleanup_mock.assert_called_once_with("summitflow", "dependency", set(), confirmed_empty=True)
+
+
+def test_refresh_retains_inventory_if_manifest_scan_is_empty(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='fixture'\n")
+    monkeypatch.setattr(management, "get_project_root_path", lambda *_args: str(tmp_path))
+    with (
+        patch("app.services.explorer.types.dependencies.DependencyScanner.scan", return_value=[]),
+        patch.object(management.explorer_entries, "cleanup_stale_entries") as cleanup_mock,
+        pytest.raises(ValueError, match="retained prior inventory"),
+    ):
+        management._refresh_scan("summitflow")
+    cleanup_mock.assert_not_called()
 
 
 def test_pyproject_parser_reads_standard_and_dev_groups(tmp_path: Path) -> None:
@@ -89,7 +140,8 @@ def test_queue_identity_is_stable_for_same_update(monkeypatch) -> None:
         return {"id": "task-existing"}
 
     monkeypatch.setattr(management.dependency_reviews, "latest", lambda *_args: previous)
-    monkeypatch.setattr(management.dependency_reviews, "append", lambda *_args, **_kwargs: ({"revision": 2}, True))
+    monkeypatch.setattr(management.dependency_reviews, "append", lambda *_args, **_kwargs: ({"id": 42, "revision": 2}, True))
+    monkeypatch.setattr(management.dependency_reviews, "attach_task", lambda *_args: {"id": 42, "revision": 2, "task_id": "task-existing"})
     with patch("app.storage.tasks.core.create_task", side_effect=fake_task):
         for _ in range(2):
             management.record_decision(
@@ -100,6 +152,21 @@ def test_queue_identity_is_stable_for_same_update(monkeypatch) -> None:
     assert identities[0] == identities[1]
 
 
+def test_stale_decision_does_not_create_update_task(monkeypatch) -> None:
+    previous = {"revision": 1, "evidence_hash": "digest", "evidence": {"inventory": {"name": "fastapi"}}}
+    monkeypatch.setattr(management.dependency_reviews, "latest", lambda *_args: previous)
+    monkeypatch.setattr(
+        management.dependency_reviews, "append",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("Stale dependency review revision")),
+    )
+    with patch("app.storage.tasks.core.create_task") as create_task, pytest.raises(ValueError, match="Stale dependency review revision"):
+        management.record_decision(
+            "summitflow", "python/backend/fastapi", decision="update", rationale="Confirmed fix",
+            expected_revision=1, recommended_version="0.111", queue_task=True,
+        )
+    create_task.assert_not_called()
+
+
 def test_scheduled_review_skips_unchanged_recent_evidence(monkeypatch) -> None:
     now = datetime(2026, 9, 23, tzinfo=UTC)
     item = {
@@ -107,6 +174,21 @@ def test_scheduled_review_skips_unchanged_recent_evidence(monkeypatch) -> None:
         "advisories": [],
         "review": {
             "created_at": now.isoformat(),
+            "evidence": {"inventory": {"advisories": []}},
+        },
+    }
+    monkeypatch.setattr(management, "list_inventory", lambda *_args, **_kwargs: {"items": [item]})
+    monkeypatch.setattr(management, "_hosted_pulls", lambda *_args: (_ for _ in ()).throw(AssertionError("unneeded fetch")))
+    assert management.review_due_dependencies("summitflow", now=now)["due"] == 0
+
+
+def test_scheduled_review_uses_last_check_after_unchanged_evidence(monkeypatch) -> None:
+    now = datetime(2026, 9, 23, tzinfo=UTC)
+    item = {
+        "entry_path": "python/backend/fastapi", "relationship": "direct",
+        "advisories": [], "last_review_checked_at": now.isoformat(),
+        "review": {
+            "created_at": datetime(2026, 9, 1, tzinfo=UTC).isoformat(),
             "evidence": {"inventory": {"advisories": []}},
         },
     }

@@ -8,11 +8,16 @@ Tests verify multi-context discovery:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.services.explorer.types.dependencies_browser_runtime import (
+    scan_browser_runtime_dependencies,
+)
 from app.services.explorer.types.dependencies_nodejs import scan_nodejs_dependencies
 from app.services.explorer.types.dependencies_python import (
     _package_list_cmd,
@@ -228,3 +233,30 @@ def test_python_package_listing_uses_uv_for_pipless_venv(tmp_path: Path) -> None
         "/usr/bin/uv", "pip", "list", "--python", str(python),
         "--format", "json", "--no-python-downloads",
     ]
+
+
+def test_browser_runtime_scan_ingests_versioned_owner_inventory(tmp_path: Path) -> None:
+    payload = {
+        "schema_version": 1, "owner": "browser-automation", "scope": "local-host",
+        "runtimes": [{
+            "id": "agent-browser", "executable": "/usr/bin/agent-browser",
+            "installed_version": "0.26.0", "installed_status": "observed",
+            "latest_version": None, "latest_status": "unchecked",
+            "recommended_version": None, "recommended_status": "unchecked",
+        }],
+    }
+    with (
+        patch("app.services.explorer.types.dependencies_browser_runtime.shutil.which", return_value="/usr/bin/st"),
+        patch("app.services.explorer.types.dependencies_browser_runtime.safe_subprocess.run", return_value=SimpleNamespace(returncode=0, stdout=json.dumps(payload))) as run,
+    ):
+        entries = scan_browser_runtime_dependencies("browser-automation", tmp_path)
+    run.assert_called_once()
+    assert entries[0].path == "browser-runtime/agent-browser"
+    assert entries[0].metadata["installed_version"] == "0.26.0"
+    assert entries[0].metadata["latest_check_status"] == "unknown"
+
+
+def test_other_projects_do_not_probe_browser_owner(tmp_path: Path) -> None:
+    with patch("app.services.explorer.types.dependencies_browser_runtime.safe_subprocess.run") as run:
+        assert scan_browser_runtime_dependencies("summitflow", tmp_path) == []
+    run.assert_not_called()

@@ -319,14 +319,16 @@ def delete_entries(project_id: str, entry_type: str | None = None) -> int:
         return deleted
 
 
-def cleanup_stale_entries(project_id: str, entry_type: str, current_paths: set[str]) -> int:
+def cleanup_stale_entries(
+    project_id: str, entry_type: str, current_paths: set[str], *, confirmed_empty: bool = False,
+) -> int:
     """Delete explorer entries that no longer exist in the codebase.
 
     The Explorer represents a current-state snapshot, NOT historical accumulation.
     This function removes entries for paths not found in the current scan.
     """
-    if not current_paths:
-        # Safety: if scan returned nothing, don't delete everything
+    if not current_paths and not confirmed_empty:
+        # A zero-result scan can also mean a scanner failure.
         return 0
 
     with get_connection() as conn, conn.cursor() as cur:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import pytest
 import typer
@@ -89,3 +90,23 @@ def test_allowed_local_request_is_normalized_and_dispatched_inside_policy(tmp_pa
     assert request["launch"]["prefix"][:4] == ["--profile", "AI", "--executable-path", "/usr/bin/chrome"]
     assert observed[0][1] == _context(tmp_path)
     assert "example.test" not in capsys.readouterr().out
+
+
+def test_inventory_uses_structured_owner_contract_without_browser_lock(tmp_path, monkeypatch) -> None:
+    requests: list[dict[str, Any]] = []
+
+    def dispatch(_record, argv, *, context):
+        requests.append(json.loads(argv[1]))
+        assert context == _context(tmp_path)
+        return 0
+
+    monkeypatch.setattr(browser, "_agent_browser_bin", lambda: "/bin/agent-browser")
+    monkeypatch.setattr("cli.lib.browser_policy.system_chrome_path", lambda env=None: "/usr/bin/chrome")
+    monkeypatch.setattr(browser, "_local_ai_command_lock", lambda: pytest.fail("inventory must not acquire the browser lock"))
+    monkeypatch.setattr("cli.extensions.dispatch_extension", dispatch)
+    assert browser.run_registered(object(), ["inventory", "--json"], _context(tmp_path)) == 0
+    assert requests[0]["operation"] == "inventory"
+    assert requests[0]["command"] == "inventory"
+    assert requests[0]["args"] == []
+    assert requests[0]["endpoint"] is None
+    assert requests[0]["launch"]["prefix"][:4] == ["--profile", "AI", "--executable-path", "/usr/bin/chrome"]

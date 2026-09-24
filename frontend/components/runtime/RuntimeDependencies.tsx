@@ -229,7 +229,7 @@ export function RuntimeDependencies() {
               {review.isPending ? 'Checking…' : 'Review evidence'}
             </button>
           </div>
-          <div className="grid gap-1 text-xs text-slate-400 sm:grid-cols-3">
+          <div className="grid gap-1 text-xs text-slate-400 sm:grid-cols-2 xl:grid-cols-4">
             <span>Source: {selected.source_file || 'Unknown'}</span>
             <span>
               Scanned:{' '}
@@ -238,6 +238,12 @@ export function RuntimeDependencies() {
                 : 'Unknown'}
             </span>
             <span>Advisory check: {selected.checks.advisories}</span>
+            <span>
+              Review checked:{' '}
+              {selected.last_review_checked_at
+                ? new Date(selected.last_review_checked_at).toLocaleString()
+                : 'Unknown'}
+            </span>
           </div>
           {selected.advisories.length > 0 && (
             <ul className="list-disc pl-5 text-sm text-amber-300">

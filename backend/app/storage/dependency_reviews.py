@@ -52,6 +52,45 @@ def latest_for_project(project_id: str) -> dict[str, dict[str, Any]]:
     return {str(row[2]): _row(row) for row in rows}
 
 
+def checks_for_project(project_id: str) -> dict[str, str]:
+    """Return the last actual evidence-check time for weekly scheduling."""
+    with get_cursor() as cur:
+        cur.execute(
+            "SELECT entry_path, checked_at FROM dependency_review_checks WHERE project_id = %s",
+            (project_id,),
+        )
+        rows = cur.fetchall()
+    return {str(path): checked_at.isoformat() for path, checked_at in rows}
+
+
+def _record_check(cur: Any, project_id: str, entry_path: str, evidence_hash: str) -> None:
+    cur.execute(
+        """INSERT INTO dependency_review_checks (project_id, entry_path, evidence_hash)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (project_id, entry_path) DO UPDATE SET
+            evidence_hash = EXCLUDED.evidence_hash,
+            checked_at = NOW()""",
+        (project_id, entry_path, evidence_hash),
+    )
+
+
+def attach_task(project_id: str, entry_path: str, event_id: int, task_id: str) -> dict[str, Any]:
+    """Link a queued task to the already committed decision that authorized it."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"UPDATE dependency_review_events SET task_id = %s "
+            f"WHERE id = %s AND project_id = %s AND entry_path = %s "
+            f"AND decision = 'update' AND (task_id IS NULL OR task_id = %s) "
+            f"RETURNING {_COLUMNS}",
+            (task_id, event_id, project_id, entry_path, task_id),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise ValueError("Dependency decision could not be linked to the queued task")
+        conn.commit()
+    return _row(row)
+
+
 def append(
     project_id: str,
     entry_path: str,
@@ -83,6 +122,8 @@ def append(
         if expected_revision is not None and prev_revision != expected_revision:
             raise ValueError(f"Stale dependency review revision: current {prev_revision}")
         if previous and skip_same_evidence and previous[4] == evidence_hash:
+            _record_check(cur, project_id, entry_path, evidence_hash)
+            conn.commit()
             return _row(previous), False
         cur.execute(
             """INSERT INTO dependency_review_events
@@ -98,6 +139,8 @@ def append(
             ),
         )
         row = cur.fetchone()
+        if skip_same_evidence:
+            _record_check(cur, project_id, entry_path, evidence_hash)
         conn.commit()
     if row is None:
         raise RuntimeError("Dependency review insert returned no row")

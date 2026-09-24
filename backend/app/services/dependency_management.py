@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -17,15 +19,18 @@ from ..storage.projects import get_project_root_path
 from ..utils import safe_subprocess
 
 REVIEW_INTERVAL = timedelta(days=7)
+_DEPENDENCY_MANIFESTS = {"pyproject.toml", "uv.lock", "package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lockb"}
+_SCAN_SKIP_DIRS = {".git", ".venv", "node_modules", "references"}
 
 
 def _inventory_entry(entry: dict[str, Any], review: dict[str, Any] | None) -> dict[str, Any]:
     meta = entry.get("metadata") or {}
     checks = {
-        "declared": "checked",
+        "declared": "checked" if meta.get("relationship", "direct") == "direct" and meta.get("constraint") is not None else "unknown",
         "locked": "checked" if meta.get("locked_version") else "unknown",
-        "installed": "checked" if meta.get("installed_version") else "unknown",
-        "latest": "checked" if meta.get("latest_version") else "unknown",
+        "installed": meta.get("installed_check_status") or ("checked" if meta.get("installed_version") else "unknown"),
+        "latest": meta.get("latest_check_status") or ("checked" if meta.get("latest_version") else "unknown"),
+        "recommended": meta.get("recommended_check_status") or ("checked" if review and review.get("recommended_version") else "unknown"),
         "advisories": meta.get("audit_check_status", "unknown"),
     }
     return {
@@ -33,7 +38,11 @@ def _inventory_entry(entry: dict[str, Any], review: dict[str, Any] | None) -> di
         "entry_path": entry["path"],
         "name": entry["name"],
         "ecosystem": meta.get("package_type", "unknown"),
-        "kind": "dev" if meta.get("is_dev_dependency") else "runtime",
+        "kind": (
+            "dev" if meta.get("is_dev_dependency")
+            else "unknown" if meta.get("relationship") == "transitive"
+            else "runtime"
+        ),
         "relationship": meta.get("relationship", "direct"),
         "owner": entry["project_id"],
         "environment": meta.get("environment", "project"),
@@ -42,7 +51,7 @@ def _inventory_entry(entry: dict[str, Any], review: dict[str, Any] | None) -> di
         "locked_version": meta.get("locked_version"),
         "installed_version": meta.get("installed_version"),
         "latest_version": meta.get("latest_version"),
-        "recommended_version": review.get("recommended_version") if review else None,
+        "recommended_version": (review.get("recommended_version") if review and review.get("recommended_version") else meta.get("recommended_version")),
         "advisories": meta.get("audit_advisories") or [],
         "vulnerabilities": meta.get("vulnerabilities") if checks["advisories"] == "checked" else None,
         "checks": checks,
@@ -59,7 +68,10 @@ def list_inventory(
     """Read the existing Explorer dataset with the latest decision revision."""
     entries = explorer_entries.get_entries(project_id, {"type": "dependency", "limit": 10000})
     reviews = dependency_reviews.latest_for_project(project_id)
+    last_checked = dependency_reviews.checks_for_project(project_id)
     items = [_inventory_entry(entry, reviews.get(entry["path"])) for entry in entries]
+    for item in items:
+        item["last_review_checked_at"] = last_checked.get(item["entry_path"])
     if ecosystem:
         items = [item for item in items if item["ecosystem"] == ecosystem]
     if status:
@@ -142,6 +154,10 @@ def _hosted_proposals(
 def _refresh_scan(project_id: str) -> None:
     from .explorer.types.dependencies import DependencyScanner
 
+    root_text = get_project_root_path(project_id)
+    root = Path(root_text) if root_text else None
+    if root is None or not root.is_dir():
+        raise ValueError(f"Dependency project root unavailable: {project_id}")
     entries = DependencyScanner(project_id).scan()
     if entries:
         explorer_entries.upsert_entries(
@@ -150,6 +166,12 @@ def _refresh_scan(project_id: str) -> None:
         explorer_entries.cleanup_stale_entries(
             project_id, "dependency", {entry.path for entry in entries},
         )
+        return
+    for _directory, dirs, files in os.walk(root):
+        dirs[:] = [name for name in dirs if name not in _SCAN_SKIP_DIRS]
+        if _DEPENDENCY_MANIFESTS.intersection(files):
+            raise ValueError("Empty dependency scan with manifests present; retained prior inventory")
+    explorer_entries.cleanup_stale_entries(project_id, "dependency", set(), confirmed_empty=True)
 
 
 def _entry_for_path(project_id: str, entry_path: str, *, refresh: bool) -> dict[str, Any]:
@@ -207,8 +229,9 @@ def review_due_dependencies(project_id: str, *, now: datetime | None = None) -> 
             if previous else []
         )
         new_advisory = bool(item["advisories"]) and item["advisories"] != prior_advisories
-        created_at = datetime.fromisoformat(previous["created_at"]) if previous else None
-        weekly_due = created_at is None or now - created_at >= REVIEW_INTERVAL
+        checked_at_text = item.get("last_review_checked_at") or (previous or {}).get("created_at")
+        checked_at = datetime.fromisoformat(checked_at_text) if checked_at_text else None
+        weekly_due = checked_at is None or now - checked_at >= REVIEW_INTERVAL
         if (item["relationship"] == "direct" and weekly_due) or new_advisory:
             due.append(item["entry_path"])
     if not due:
@@ -240,10 +263,16 @@ def record_decision(
         raise ValueError("A reason is required")
     if decision == "update" and not recommended_version:
         raise ValueError("An update decision requires a recommended version")
-    task_id = previous.get("task_id")
+    if queue_task and decision != "update":
+        raise ValueError("Only a justified update can queue work")
+    record, _ = dependency_reviews.append(
+        project_id, entry_path, evidence_hash=previous["evidence_hash"],
+        evidence=previous["evidence"], decision=decision,
+        recommended_version=recommended_version if decision == "update" else None,
+        rationale=rationale.strip(),
+        expected_revision=expected_revision,
+    )
     if queue_task:
-        if decision != "update":
-            raise ValueError("Only a justified update can queue work")
         from ..storage.tasks.core import create_task
 
         name = previous["evidence"]["inventory"]["name"]
@@ -251,7 +280,7 @@ def record_decision(
         task = create_task(
             project_id, f"Update {name} to {recommended_version}",
             description=(
-                f"Dependency review revision {expected_revision} for {entry_path}. "
+                f"Dependency decision revision {record['revision']} for {entry_path}. "
                 f"Reason: {rationale.strip()}. Review evidence before changing lockfiles."
             ),
             labels=["dependencies"],
@@ -262,12 +291,5 @@ def record_decision(
                 "external_payload_digest": hashlib.sha256(identity_key.encode()).hexdigest(),
             },
         )
-        task_id = task["id"]
-    record, _ = dependency_reviews.append(
-        project_id, entry_path, evidence_hash=previous["evidence_hash"],
-        evidence=previous["evidence"], decision=decision,
-        recommended_version=recommended_version if decision == "update" else None,
-        rationale=rationale.strip(), task_id=task_id,
-        expected_revision=expected_revision,
-    )
+        record = dependency_reviews.attach_task(project_id, entry_path, record["id"], task["id"])
     return record
