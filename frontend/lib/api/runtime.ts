@@ -169,6 +169,53 @@ export interface MaintenanceStatus {
   recent: MaintenanceRun[]
 }
 
+export interface DependencyReviewRecord {
+  revision: number
+  decision: 'pending' | 'update' | 'hold' | 'investigate'
+  recommended_version: string | null
+  rationale: string | null
+  task_id: string | null
+  created_at: string
+  evidence: {
+    hosted_proposals?: Array<{
+      engine: string
+      number: number
+      title: string
+      url: string
+    }>
+    proposal_check_status?: string
+    engines?: Record<string, string>
+  }
+}
+
+export interface DependencyInventoryItem {
+  project_id: string
+  entry_path: string
+  name: string
+  ecosystem: string
+  kind: string
+  relationship: string
+  owner: string
+  environment: string
+  source_file: string | null
+  declared_version: string | null
+  locked_version: string | null
+  installed_version: string | null
+  latest_version: string | null
+  recommended_version: string | null
+  advisories: string[]
+  vulnerabilities: Record<string, number> | null
+  checks: Record<string, string>
+  last_scanned_at: string | null
+  review: DependencyReviewRecord | null
+}
+
+export interface DependencyInventoryResponse {
+  project_id: string
+  total: number
+  items: DependencyInventoryItem[]
+}
+
 function apiUrl(path: string): string {
   // Keep runtime traffic same-origin so Next can proxy protected actions/logs
   // and inject the internal service secret server-side, including SSE requests.
@@ -187,6 +234,54 @@ function queryString(
 }
 
 export const runtimeApi = {
+  getDependencies: (
+    projectId: string,
+    params?: {
+      query?: string
+      status?: string
+      offset?: number
+      limit?: number
+    },
+  ) =>
+    fetchWithErrorHandling<DependencyInventoryResponse>(
+      apiUrl(
+        `/api/projects/${encodeURIComponent(projectId)}/dependencies${queryString(
+          {
+            query: params?.query,
+            status: params?.status,
+            offset: params?.offset,
+            limit: params?.limit,
+          },
+        )}`,
+      ),
+      { errorMessage: 'Failed to fetch dependencies' },
+    ),
+  reviewDependency: (projectId: string, entryPath: string) =>
+    postJson<{ record: DependencyReviewRecord; new_evidence: boolean }>(
+      apiUrl(
+        `/api/projects/${encodeURIComponent(projectId)}/dependencies/review`,
+      ),
+      { entry_path: entryPath },
+      'Failed to review dependency',
+    ),
+  recordDependencyDecision: (
+    projectId: string,
+    payload: {
+      entry_path: string
+      decision: 'update' | 'hold' | 'investigate'
+      rationale: string
+      expected_revision: number
+      recommended_version?: string
+      queue_task: boolean
+    },
+  ) =>
+    postJson<{ record: DependencyReviewRecord }>(
+      apiUrl(
+        `/api/projects/${encodeURIComponent(projectId)}/dependencies/record`,
+      ),
+      payload,
+      'Failed to record dependency decision',
+    ),
   getStatus: () =>
     fetchWithErrorHandling<RuntimeServiceStatus[]>(
       apiUrl('/api/docker/status'),

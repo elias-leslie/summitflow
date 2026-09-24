@@ -8,7 +8,6 @@
 import {
   AlertTriangle,
   ArrowRight,
-  CheckCircle2,
   ExternalLink,
   FileCode,
   Package,
@@ -28,7 +27,10 @@ export function DependencyDetail({ entry }: DependencyDetailProps) {
   const packageType = (meta.package_type as 'python' | 'nodejs') || 'python'
   const constraint = meta.constraint as string | null
   const lockedVersion = meta.locked_version as string | null
+  const installedVersion = meta.installed_version as string | null
   const latestVersion = meta.latest_version as string | null
+  const recommendedVersion = meta.recommended_version as string | null
+  const auditStatus = meta.audit_check_status as string | undefined
   const isOutdated = meta.is_outdated as boolean
   const isWorkspaceRef = meta.is_workspace_ref as boolean
   const isDevDep = meta.is_dev_dependency as boolean
@@ -94,7 +96,7 @@ export function DependencyDetail({ entry }: DependencyDetailProps) {
       </div>
 
       {/* Version info */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <div>
           <span className="text-xs text-slate-500 uppercase tracking-wide">
             Constraint
@@ -105,10 +107,18 @@ export function DependencyDetail({ entry }: DependencyDetailProps) {
         </div>
         <div>
           <span className="text-xs text-slate-500 uppercase tracking-wide">
-            Installed
+            Locked
           </span>
           <p className="font-mono text-sm text-slate-200 mt-1">
             {lockedVersion || '-'}
+          </p>
+        </div>
+        <div>
+          <span className="text-xs text-slate-500 uppercase tracking-wide">
+            Installed
+          </span>
+          <p className="font-mono text-sm text-slate-200 mt-1">
+            {installedVersion || 'Unknown'}
           </p>
         </div>
         <div>
@@ -122,6 +132,14 @@ export function DependencyDetail({ entry }: DependencyDetailProps) {
             )}
           >
             {latestVersion || '-'}
+          </p>
+        </div>
+        <div>
+          <span className="text-xs text-slate-500 uppercase tracking-wide">
+            Recommended
+          </span>
+          <p className="font-mono text-sm text-slate-200 mt-1">
+            {recommendedVersion || 'Unknown'}
           </p>
         </div>
       </div>
@@ -149,7 +167,9 @@ export function DependencyDetail({ entry }: DependencyDetailProps) {
           <span className="text-xs text-slate-500 uppercase tracking-wide">
             Security Status
           </span>
-          {totalVulns === 0 ? (
+          {totalVulns === 0 && auditStatus !== 'checked' ? (
+            <span className="text-xs text-slate-400">Not checked</span>
+          ) : totalVulns === 0 ? (
             <span className="flex items-center gap-1 text-xs text-emerald-400">
               <Shield className="w-3.5 h-3.5" />
               No vulnerabilities
@@ -212,11 +232,10 @@ export function DependencyDetail({ entry }: DependencyDetailProps) {
         )}
 
         {/* All clear indicator */}
-        {totalVulns === 0 && (
+        {totalVulns === 0 && auditStatus === 'checked' && (
           <div className="flex items-center gap-2 mt-3 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
-            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
             <p className="text-sm text-emerald-300">
-              No known security vulnerabilities
+              No advisories returned by the last audit
             </p>
           </div>
         )}

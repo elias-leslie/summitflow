@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 from pathlib import Path
 from typing import TypedDict
+
+import yaml
 
 from ....logging_config import get_logger
 from ....utils import safe_subprocess
@@ -33,9 +34,12 @@ def scan_nodejs_dependencies(project_id: str, root_path: Path) -> list[ExplorerE
         pkg = root_path / "package.json"
         return _scan_standalone_node_project(pkg) if pkg.exists() else []
     workspace_packages = _parse_pnpm_workspace(workspace_root)
+    root_package = workspace_root / "package.json"
+    if root_path == workspace_root and root_package.exists():
+        workspace_packages.insert(0, root_package)
     is_in_workspace = _is_project_in_workspace(root_path, workspace_packages)
     has_own_lockfile = _has_own_lockfile(root_path)
-    if not is_in_workspace or has_own_lockfile:
+    if not is_in_workspace or (has_own_lockfile and root_path != workspace_root):
         logger.info(
             "Project %s has own resolution context "
             "(in_workspace=%s, own_lockfile=%s), "
@@ -46,7 +50,8 @@ def scan_nodejs_dependencies(project_id: str, root_path: Path) -> list[ExplorerE
         return _scan_standalone_node_project(pkg) if pkg.exists() else []
     logger.debug("Scanning %s as part of pnpm workspace at %s", project_id, workspace_root)
     lock_versions = _parse_pnpm_lock(workspace_root / "pnpm-lock.yaml")
-    audit_results = _run_pnpm_audit(workspace_root)
+    audit_result = _run_pnpm_audit(workspace_root)
+    audit_results, audit_status = audit_result if isinstance(audit_result, tuple) else (audit_result, "unknown")
     outdated_results = _run_pnpm_outdated(workspace_root)
     entries: list[ExplorerEntryCreate] = []
     for pkg_path in (p for p in workspace_packages if str(p).startswith(str(root_path))):
@@ -55,10 +60,18 @@ def scan_nodejs_dependencies(project_id: str, root_path: Path) -> list[ExplorerE
             for name, info in _parse_package_json(pkg_path).items():
                 constraint = str(info.get("version", ""))
                 od, vi = outdated_results.get(name, {}), audit_results.get(name, _AuditEntry(vulnerabilities=dict(_EMPTY_VULNS), advisories=[]))
-                meta = {"package_type": "nodejs", "constraint": constraint, "locked_version": lock_versions.get(name), "latest_version": od.get("latest"), "is_outdated": od.get("outdated", False), "is_workspace_ref": "workspace:" in constraint, "is_dev_dependency": info.get("dev", False), "vulnerabilities": vi["vulnerabilities"], "audit_advisories": vi["advisories"], "source_file": str(pkg_path)}
+                meta = {"package_type": "nodejs", "constraint": constraint, "locked_version": lock_versions.get(name), "installed_version": _installed_node_version(pkg_path.parent, name), "latest_version": od.get("latest"), "is_outdated": od.get("outdated", False), "is_workspace_ref": "workspace:" in constraint, "is_dev_dependency": info.get("dev", False), "relationship": "direct", "audit_check_status": audit_status, "vulnerabilities": vi["vulnerabilities"], "audit_advisories": vi["advisories"], "source_file": str(pkg_path)}
                 entries.append(ExplorerEntryCreate(path=f"nodejs/{rel}/{name}", name=name, health_status=calculate_health_for_entry("dependency", meta), metadata=meta))
         except (KeyError, TypeError, ValueError, OSError) as e:
             logger.warning("Failed to parse %s: %s", pkg_path, e)
+    if root_path == workspace_root:
+        direct_names = {entry.name for entry in entries}
+        for name, locked_version in lock_versions.items():
+            if name in direct_names:
+                continue
+            vi = audit_results.get(name, _AuditEntry(vulnerabilities=dict(_EMPTY_VULNS), advisories=[]))
+            meta = {"package_type": "nodejs", "constraint": None, "locked_version": locked_version, "installed_version": None, "latest_version": None, "relationship": "transitive", "is_dev_dependency": False, "audit_check_status": audit_status, "vulnerabilities": vi["vulnerabilities"], "audit_advisories": vi["advisories"], "source_file": str(workspace_root / "pnpm-lock.yaml")}
+            entries.append(ExplorerEntryCreate(path=f"nodejs/transitive/{name}", name=name, health_status="unknown", metadata=meta))
     return entries
 
 
@@ -117,14 +130,16 @@ def _parse_pnpm_lock(path: Path) -> dict[str, str]:
     if not path.exists():
         return versions
     try:
-        for line in path.read_text().splitlines():
-            m = re.match(r"['\"]?/?([^@]+)@([^:'\"]+)", line.strip())
-            if m:
-                name, version = m.group(1), m.group(2)
-                if "/" not in name and not version.startswith("http"):
-                    versions[name] = version
-    except (OSError, re.error) as e:
-        logger.warning("Failed to parse pnpm-lock.yaml: %s", e)
+        payload = yaml.safe_load(path.read_text()) or {}
+        for key in (payload.get("packages") or {}):
+            if "@" not in key:
+                continue
+            name, version = str(key).rsplit("@", 1)
+            version = version.split("(", 1)[0]
+            if name and version and not version.startswith("http"):
+                versions[name] = version
+    except (OSError, yaml.YAMLError, TypeError) as exc:
+        logger.warning("Failed to parse pnpm-lock.yaml: %s", exc)
     return versions
 
 
@@ -147,22 +162,33 @@ def _parse_package_json(path: Path) -> dict[str, dict[str, str | bool]]:
 def _scan_standalone_node_project(package_json: Path) -> list[ExplorerEntryCreate]:
     entries: list[ExplorerEntryCreate] = []
     try:
+        root = package_json.parent
+        lock_versions = _parse_pnpm_lock(root / "pnpm-lock.yaml")
+        audit_result = _run_pnpm_audit(root) if (root / "pnpm-lock.yaml").exists() else ({}, "unknown")
+        audit, audit_status = audit_result if isinstance(audit_result, tuple) else (audit_result, "unknown")
+        outdated = _run_pnpm_outdated(root) if (root / "pnpm-lock.yaml").exists() else {}
         for name, info in _parse_package_json(package_json).items():
-            meta = {"package_type": "nodejs", "constraint": info.get("version", ""), "locked_version": None, "latest_version": None, "is_outdated": False, "is_workspace_ref": False, "is_dev_dependency": info.get("dev", False), "vulnerabilities": dict(_EMPTY_VULNS), "audit_advisories": [], "source_file": str(package_json)}
+            vi = audit.get(name, _AuditEntry(vulnerabilities=dict(_EMPTY_VULNS), advisories=[]))
+            meta = {"package_type": "nodejs", "constraint": info.get("version", ""), "locked_version": lock_versions.get(name), "installed_version": _installed_node_version(root, name), "latest_version": outdated.get(name, {}).get("latest"), "is_outdated": outdated.get(name, {}).get("outdated", False), "is_workspace_ref": False, "is_dev_dependency": info.get("dev", False), "relationship": "direct", "audit_check_status": audit_status, "vulnerabilities": vi["vulnerabilities"], "audit_advisories": vi["advisories"], "source_file": str(package_json)}
             entries.append(ExplorerEntryCreate(path=f"nodejs/{name}", name=name, health_status="unknown", metadata=meta))
+        direct_names = {entry.name for entry in entries}
+        for name, locked_version in lock_versions.items():
+            if name not in direct_names:
+                entries.append(ExplorerEntryCreate(path=f"nodejs/transitive/{name}", name=name, health_status="unknown", metadata={"package_type": "nodejs", "constraint": None, "locked_version": locked_version, "installed_version": _installed_node_version(root, name), "latest_version": None, "relationship": "transitive", "audit_check_status": audit_status, "source_file": str(root / "pnpm-lock.yaml")}))
     except (KeyError, TypeError, ValueError) as e:
         logger.warning("Failed to scan standalone Node project: %s", e)
     return entries
 
 
-def _run_pnpm_audit(workspace_root: Path) -> dict[str, _AuditEntry]:
+def _run_pnpm_audit(workspace_root: Path) -> tuple[dict[str, _AuditEntry], str]:
     results: dict[str, _AuditEntry] = {}
     try:
         proc = safe_subprocess.run(["pnpm", "audit", "--json"], cwd=workspace_root, capture_output=True, text=True, timeout=120)
         if not proc.stdout:
-            return results
+            return results, "failed"
         try:
-            for _id, adv in json.loads(proc.stdout).get("advisories", {}).items():
+            payload = json.loads(proc.stdout)
+            for _id, adv in payload.get("advisories", {}).items():
                 pkg = adv.get("module_name", "")
                 if pkg not in results:
                     results[pkg] = _AuditEntry(vulnerabilities=dict(_EMPTY_VULNS), advisories=[])
@@ -171,6 +197,7 @@ def _run_pnpm_audit(workspace_root: Path) -> dict[str, _AuditEntry]:
                     results[pkg]["vulnerabilities"][severity] += 1
                 cves = adv.get("cves") or ["Unknown"]
                 results[pkg]["advisories"].append(f"{cves[0]}: {adv.get('title', '')[:100]}")
+            return results, "checked" if "advisories" in payload else "unknown"
         except json.JSONDecodeError:
             pass
     except FileNotFoundError:
@@ -179,7 +206,16 @@ def _run_pnpm_audit(workspace_root: Path) -> dict[str, _AuditEntry]:
         logger.warning("pnpm audit timed out")
     except (subprocess.SubprocessError, OSError) as e:
         logger.warning("pnpm audit failed: %s", e)
-    return results
+    return results, "unknown"
+
+
+def _installed_node_version(package_root: Path, name: str) -> str | None:
+    """Read the installed package version, separately from the lockfile."""
+    try:
+        package_file = package_root / "node_modules" / name / "package.json"
+        return str(json.loads(package_file.read_text())["version"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def _run_pnpm_outdated(workspace_root: Path) -> dict[str, dict[str, str | bool | None]]:

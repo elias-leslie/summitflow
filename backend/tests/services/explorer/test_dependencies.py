@@ -179,3 +179,19 @@ class TestStandaloneProjectDetection:
             # Should be treated as standalone
             mock_standalone.assert_called_once()
             assert len(result) == 1
+
+
+def test_workspace_root_scans_root_and_member_manifests(tmp_path: Path) -> None:
+    root = tmp_path
+    (root / "pnpm-workspace.yaml").write_text("packages:\n  - frontend\n")
+    (root / "package.json").write_text('{"dependencies":{"root-package":"1.0.0"}}')
+    frontend = root / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text('{"devDependencies":{"frontend-package":"2.0.0"}}')
+    (root / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\npackages:\n  'root-package@1.0.0': {}\n  'frontend-package@2.0.0': {}\n")
+    with (
+        patch("app.services.explorer.types.dependencies_nodejs._run_pnpm_audit", return_value=({}, "unknown")),
+        patch("app.services.explorer.types.dependencies_nodejs._run_pnpm_outdated", return_value={}),
+    ):
+        entries = scan_nodejs_dependencies("test-project", root)
+    assert {entry.name for entry in entries} == {"root-package", "frontend-package"}

@@ -28,7 +28,24 @@ _RG_EXCLUDE_GLOBS = (
     "!**/dist/**",
     "!**/build/**",
     "!**/coverage/**",
+    "!**/.env*",
+    "!**/*.pem",
+    "!**/*.key",
+    "!**/credentials.json",
+    "!**/secrets.json",
+    "!**/secrets/**",
+    "!**/credentials/**",
 )
+
+_SECRET_PARTS = {"secrets", "credentials", "credentials.json", "secrets.json"}
+
+
+def _safe_search_path(path: str) -> bool:
+    parts = PurePosixPath(path).parts
+    return not any(
+        part.lower() in _SECRET_PARTS or part.lower().startswith(".env") or part.lower().endswith((".pem", ".key"))
+        for part in parts
+    )
 
 
 def _normalize_path_prefix(path_prefix: str | None) -> str | None:
@@ -76,6 +93,7 @@ def _search_text_with_ripgrep(
     query: str,
     *,
     limit: int,
+    offset: int = 0,
     path_prefix: str | None = None,
 ) -> dict[str, Any] | None:
     rg_path = shutil.which("rg")
@@ -83,6 +101,8 @@ def _search_text_with_ripgrep(
         return None
 
     normalized_prefix = _normalize_path_prefix(path_prefix)
+    if normalized_prefix and not _safe_search_path(normalized_prefix):
+        return {"count": 0, "files_searched": 0, "items": [], "truncated": False, "next_offset": None, "strategy": "ripgrep", "path_prefix": normalized_prefix}
     if normalized_prefix:
         root = Path(root_path).resolve()
         target_path = (root / normalized_prefix).resolve()
@@ -92,6 +112,7 @@ def _search_text_with_ripgrep(
                 "files_searched": 0,
                 "items": [],
                 "truncated": False,
+                "next_offset": None,
                 "strategy": "ripgrep",
                 "path_prefix": normalized_prefix,
             }
@@ -144,13 +165,13 @@ def _search_text_with_ripgrep(
         event_type = str(event.get("type", ""))
         data = event.get("data") or {}
         if event_type == "match":
-            total_matches += 1
-            if len(items) >= limit:
-                continue
             path = _extract_rg_path(data.get("path"))
             line_number = data.get("line_number")
             line_text = str((data.get("lines") or {}).get("text", "")).rstrip("\n")
-            if not path or not isinstance(line_number, int) or not _path_matches_prefix(path, normalized_prefix):
+            if not path or not _safe_search_path(path) or not isinstance(line_number, int) or not _path_matches_prefix(path, normalized_prefix):
+                continue
+            total_matches += 1
+            if total_matches <= offset or len(items) >= limit:
                 continue
             items.append(
                 {
@@ -171,10 +192,11 @@ def _search_text_with_ripgrep(
         files_searched = _fallback_file_total(project_id)
 
     return {
-        "count": len(items),
+        "count": total_matches,
         "files_searched": files_searched,
         "items": items,
-        "truncated": total_matches > len(items),
+        "truncated": total_matches > offset + len(items),
+        "next_offset": offset + len(items) if total_matches > offset + len(items) else None,
         "strategy": "ripgrep",
         "path_prefix": normalized_prefix,
     }
@@ -186,6 +208,7 @@ def _search_text_from_index(
     query_value: str,
     *,
     limit: int,
+    offset: int = 0,
     path_prefix: str | None = None,
 ) -> dict[str, Any]:
     """Fallback text search using indexed file entries and file reads."""
@@ -193,6 +216,7 @@ def _search_text_from_index(
     normalized_prefix = _normalize_path_prefix(path_prefix)
     items: list[dict[str, Any]] = []
     files_searched = 0
+    total_matches = 0
 
     file_entries = explorer_storage.get_entries(
         project_id,
@@ -207,7 +231,7 @@ def _search_text_from_index(
 
     for entry in file_entries:
         path = str(entry.get("path", "")).strip()
-        if not path:
+        if not path or not _safe_search_path(path):
             continue
         if not _path_matches_prefix(path, normalized_prefix):
             continue
@@ -225,7 +249,9 @@ def _search_text_from_index(
         for line_number, line in enumerate(content.splitlines(), start=1):
             if query_lower not in line.lower():
                 continue
-
+            total_matches += 1
+            if total_matches <= offset or len(items) >= limit:
+                continue
             items.append(
                 {
                     "path": path,
@@ -235,21 +261,12 @@ def _search_text_from_index(
                     "truncated_file": bool(file_data.get("truncated")),
                 }
             )
-            if len(items) >= limit:
-                return {
-                    "count": len(items),
-                    "files_searched": files_searched,
-                    "items": items,
-                    "truncated": True,
-                    "strategy": "indexed_fallback",
-                    "path_prefix": normalized_prefix,
-                }
-
     return {
-        "count": len(items),
+        "count": total_matches,
         "files_searched": files_searched,
         "items": items,
-        "truncated": False,
+        "truncated": total_matches > offset + len(items),
+        "next_offset": offset + len(items) if total_matches > offset + len(items) else None,
         "strategy": "indexed_fallback",
         "path_prefix": normalized_prefix,
     }
@@ -260,6 +277,7 @@ def search_text(
     query: str,
     *,
     limit: int = 20,
+    offset: int = 0,
     path_prefix: str | None = None,
 ) -> dict[str, Any]:
     """Search indexed project files for case-insensitive line matches."""
@@ -272,6 +290,7 @@ def search_text(
             "files_searched": 0,
             "items": [],
             "truncated": False,
+            "next_offset": None,
             "path_prefix": None,
             "error": "invalid_path_prefix",
         }
@@ -281,6 +300,7 @@ def search_text(
             "files_searched": 0,
             "items": [],
             "truncated": False,
+            "next_offset": None,
             "path_prefix": normalized_prefix,
         }
 
@@ -291,6 +311,7 @@ def search_text(
             "files_searched": 0,
             "items": [],
             "truncated": False,
+            "next_offset": None,
             "path_prefix": normalized_prefix,
         }
 
@@ -300,6 +321,7 @@ def search_text(
         root_path,
         query_value,
         limit=capped_limit,
+        offset=offset,
         path_prefix=normalized_prefix,
     )
     if fast_result is not None:
@@ -309,5 +331,6 @@ def search_text(
         root_path,
         query_value,
         limit=capped_limit,
+        offset=offset,
         path_prefix=normalized_prefix,
     )

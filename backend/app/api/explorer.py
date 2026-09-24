@@ -129,11 +129,12 @@ async def search_text(
     project_id: str,
     q: str = Query(..., min_length=1, description="Text query"),
     limit: int = Query(20, ge=1, le=100, description="Maximum results"),
+    offset: int = Query(0, ge=0, description="Result offset"),
     path_prefix: str | None = Query(None, description="Optional relative file/subtree prefix filter"),
 ) -> dict[str, Any]:
     """Search indexed project file contents for matching lines."""
     validate_project_exists(project_id)
-    result = explorer.search_text(project_id, q, limit=limit, path_prefix=path_prefix)
+    result = explorer.search_text(project_id, q, limit=limit, offset=offset, path_prefix=path_prefix)
     return {
         "query": q,
         **result,
@@ -147,22 +148,23 @@ async def search_symbols(
     language: str | None = Query(None, description="Optional language filter"),
     kind: str | None = Query(None, description="Optional kind filter"),
     limit: int = Query(20, ge=1, le=100, description="Maximum results"),
+    offset: int = Query(0, ge=0, description="Result offset"),
     path_prefix: str | None = Query(None, description="Optional relative file/subtree prefix filter"),
 ) -> dict[str, Any]:
     """Search project symbols by name, signature, or summary."""
     validate_project_exists(project_id)
-    rows = explorer_storage.search_symbols(
+    result = explorer_storage.search_symbols_page(
         project_id,
         q,
         language=language,
         kind=kind,
         limit=limit,
+        offset=offset,
         path_prefix=path_prefix,
     )
     return {
         "query": q,
-        "count": len(rows),
-        "items": rows,
+        **result,
         "path_prefix": path_prefix,
     }
 
@@ -172,6 +174,7 @@ async def list_file_symbols(
     project_id: str,
     file_path: str = Query(..., min_length=1, description="Relative file path within the project"),
     limit: int = Query(100, ge=1, le=500, description="Maximum symbols to return"),
+    offset: int = Query(0, ge=0, description="Result offset"),
 ) -> dict[str, Any]:
     """List all symbols in a specific file, ordered by source position.
 
@@ -180,6 +183,8 @@ async def list_file_symbols(
     """
     validate_project_exists(project_id)
     fragment = file_path.lstrip("/").removeprefix("./")
+    if not explorer_storage.is_safe_symbol_path(fragment):
+        raise HTTPException(status_code=404, detail="File not found")
     rows = explorer_storage.list_symbols_for_file(project_id, fragment)
     payload: dict[str, Any] = {"file_path": fragment, "count": 0, "items": []}
     if not rows:
@@ -194,8 +199,10 @@ async def list_file_symbols(
         elif explorer_storage.get_entry(project_id, "file", fragment):
             payload["file_exists"] = True
             return payload
-    payload["count"] = len(rows[:limit])
-    payload["items"] = rows[:limit]
+    payload["count"] = len(rows)
+    payload["items"] = rows[offset:offset + limit]
+    payload["truncated"] = offset + len(payload["items"]) < len(rows)
+    payload["next_offset"] = offset + len(payload["items"]) if payload["truncated"] else None
     return payload
 
 

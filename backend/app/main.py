@@ -25,6 +25,7 @@ from .api import (
     checkpoints,
     console_errors,
     db_workbench,
+    dependency_management,
     design_assets,
     design_standards,
     docker,
@@ -129,6 +130,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(viewer.router, prefix="/api/viewer", tags=["viewer"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
+app.include_router(dependency_management.router, prefix="/api/projects", tags=["dependencies"])
 app.include_router(files.project_router, prefix="/api/projects", tags=["files"])
 app.include_router(files.global_router, prefix="/api", tags=["files"])
 app.include_router(graphify.router, prefix="/api/projects", tags=["graphify"])

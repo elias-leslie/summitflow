@@ -12,6 +12,7 @@ from app.services.explorer.types.endpoints import EndpointScanner
 from app.services.explorer.types.files import FileScanner
 from app.services.explorer.types.pages import PageScanner
 from app.storage.connection import get_connection
+from app.storage.projects import get_project_root_path
 
 
 def _create_test_repo(root: Path) -> None:
@@ -33,6 +34,10 @@ def get_file_tree(path: str) -> dict[str, str]:
     """List directory entries for file tree navigation."""
     marker = "special fallback token"
     return {"path": path, "marker": marker}
+
+
+def normalize_file_path(path: str) -> str:
+    return path.strip()
 ''',
         encoding="utf-8",
     )
@@ -116,6 +121,52 @@ class TestExplorerSymbolSearchEndpoint:
         assert data["items"][0]["symbol_id"] == "backend/app/api/files.py::get_file_tree#function"
         assert data["items"][0]["file_path"] == "backend/app/api/files.py"
         assert "source" not in data["items"][0]
+
+    def test_search_symbols_paginates_with_total(
+        self, client: TestClient, symbol_api_project: str,
+    ) -> None:
+        response = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/symbols/search",
+            params={"q": "Files", "limit": 1, "offset": 1},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["count"] >= 2
+        assert len(data["items"]) == 1
+        assert data["next_offset"] == (2 if data["count"] > 2 else None)
+
+    def test_text_search_excludes_secret_paths_and_reports_page(
+        self, client: TestClient, symbol_api_project: str,
+    ) -> None:
+        root = Path(str(get_project_root_path(symbol_api_project)))
+        (root / ".env.local").write_text("special fallback token\n")
+        (root / "second.py").write_text("special fallback token\n")
+        response = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/text/search",
+            params={"q": "special fallback token", "limit": 1, "offset": 1},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["count"] == 2
+        assert len(data["items"]) == 1
+        assert data["next_offset"] is None
+        assert all(".env" not in item["path"] for item in data["items"])
+
+    def test_by_file_paginates_and_hides_secret_filename(
+        self, client: TestClient, symbol_api_project: str,
+    ) -> None:
+        page = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/symbols/by-file",
+            params={"file_path": "backend/app/api/files.py", "limit": 1, "offset": 1},
+        )
+        assert page.status_code == 200
+        assert page.json()["count"] >= 2
+        assert len(page.json()["items"]) == 1
+        hidden = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/symbols/by-file",
+            params={"file_path": ".env.local"},
+        )
+        assert hidden.status_code == 404
 
     def test_search_symbols_applies_filters(
         self,
@@ -216,7 +267,7 @@ class TestExplorerSymbolDetailEndpoint:
         assert data["symbol"]["name"] == "get_file_tree"
         assert "def get_file_tree" in data["source"]
         assert data["file_entry"]["path"] == "backend/app/api/files.py"
-        assert data["file_entry"]["metadata"]["symbol_count"] == 1
+        assert data["file_entry"]["metadata"]["symbol_count"] == 2
         assert [entry["path"] for entry in data["related_entries"]] == ["GET /files/tree"]
 
     def test_get_symbol_detail_returns_404_for_missing_symbol(

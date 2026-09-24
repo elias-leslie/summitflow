@@ -90,7 +90,12 @@ export function DependencyRow({ entry }: DependencyRowProps) {
   const versionConflict = meta.version_conflict as boolean | undefined
   const healthStatus = (entry.healthStatus ?? 'unknown') as HealthStatus
 
-  const vulnBadge = getVulnBadge(vulns)
+  const vulnBadge = getVulnBadge(
+    meta.audit_check_status === 'checked' ||
+      (meta.audit_advisories as string[] | undefined)?.length
+      ? vulns
+      : undefined,
+  )
   const VulnIcon = vulnBadge.icon
 
   return (

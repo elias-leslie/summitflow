@@ -72,6 +72,14 @@ SCHEDULE_DEFINITIONS: tuple[AutonomousScheduleDefinition, ...] = (
         scope="system",
     ),
     AutonomousScheduleDefinition(
+        schedule_id="dependency_reviews",
+        config_key="dependency_reviews_enabled",
+        label="Dependency reviews",
+        description="Checks direct packages weekly and reviews newly observed advisories without installing updates.",
+        cron="45 */6 * * *",
+        scope="system",
+    ),
+    AutonomousScheduleDefinition(
         schedule_id="refresh_precision_indexes",
         config_key="refresh_precision_indexes_enabled",
         label="Precision index refresh",

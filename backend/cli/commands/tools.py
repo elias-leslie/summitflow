@@ -26,6 +26,10 @@ from ._http_errors import parse_error_detail, raise_connect_error, raise_timeout
 
 app = typer.Typer(help="Operator tool catalog and Agent Hub usage metrics")
 
+from .tools_dependencies import app as dependencies_app  # noqa: E402
+
+app.add_typer(dependencies_app, name="dependencies")
+
 
 @app.command("extensions")
 @usage(

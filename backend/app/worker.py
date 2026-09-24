@@ -23,6 +23,7 @@ from app.workflows.pipeline import (
     triage_wf,
 )
 from app.workflows.scheduled import (
+    dependency_reviews_wf,
     hatchet_retention_wf,
     health_monitor_wf,
     pending_drain_wf,
@@ -72,6 +73,7 @@ def _registered_workflows() -> list[Any]:
         work_pickup_wf,
         reset_claims_wf,
         scan_projects_wf,
+        dependency_reviews_wf,
         refresh_precision_indexes_wf,
         refresh_graphify_graphs_wf,
         scheduled_backups_wf,

@@ -3,17 +3,20 @@
 import { useQuery } from '@tanstack/react-query'
 import { Boxes } from 'lucide-react'
 import { motion } from 'motion/react'
+import { useState } from 'react'
 import { SystemHealthWidget } from '@/components/dashboard/SystemHealthWidget'
 import { GpuStatusCard } from '@/components/runtime/GpuStatusCard'
 import { HealthBar } from '@/components/runtime/HealthBar'
 import { MaintenanceStatusCard } from '@/components/runtime/MaintenanceStatusCard'
 import { ProxmoxStatusCard } from '@/components/runtime/ProxmoxStatusCard'
+import { RuntimeDependencies } from '@/components/runtime/RuntimeDependencies'
 import { RuntimeModeBanner } from '@/components/runtime/RuntimeModeBanner'
 import { ServiceGrid } from '@/components/runtime/ServiceGrid'
 import { runtimeApi } from '@/lib/api/runtime'
 import { POLL_MONITOR } from '@/lib/polling'
 
 export default function RuntimePage() {
+  const [tab, setTab] = useState<'services' | 'dependencies'>('services')
   const {
     data: health,
     isLoading: healthLoading,
@@ -75,33 +78,54 @@ export default function RuntimePage() {
         )}
       </motion.div>
 
-      {/* Error state */}
-      {error && !isLoading && (
-        <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-300">
-          Failed to load runtime data. Verify the backend is running.
-        </div>
+      <nav
+        className="flex gap-2 border-b border-slate-700/60"
+        aria-label="Runtime sections"
+      >
+        {(['services', 'dependencies'] as const).map((section) => (
+          <button
+            key={section}
+            className={`px-3 py-2 text-sm capitalize ${tab === section ? 'border-b-2 border-cyan-400 text-cyan-300' : 'text-slate-400'}`}
+            onClick={() => setTab(section)}
+            aria-current={tab === section ? 'page' : undefined}
+          >
+            {section}
+          </button>
+        ))}
+      </nav>
+      {tab === 'dependencies' ? (
+        <RuntimeDependencies />
+      ) : (
+        <>
+          {/* Error state */}
+          {error && !isLoading && (
+            <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-300">
+              Failed to load runtime data. Verify the backend is running.
+            </div>
+          )}
+
+          {/* System resources */}
+          <SystemHealthWidget />
+
+          {/* GPU utilization + what's using VRAM */}
+          <GpuStatusCard />
+
+          {/* Health visualization bar */}
+          {services && services.length > 0 && <HealthBar services={services} />}
+
+          {/* Runtime mode — compact banner instead of full card */}
+          <RuntimeModeBanner />
+
+          {/* Maintenance — compact row */}
+          <MaintenanceStatusCard />
+
+          {/* Service grid with list/grid toggle */}
+          <ServiceGrid />
+
+          {/* Proxmox — collapsible */}
+          <ProxmoxStatusCard />
+        </>
       )}
-
-      {/* System resources */}
-      <SystemHealthWidget />
-
-      {/* GPU utilization + what's using VRAM */}
-      <GpuStatusCard />
-
-      {/* Health visualization bar */}
-      {services && services.length > 0 && <HealthBar services={services} />}
-
-      {/* Runtime mode — compact banner instead of full card */}
-      <RuntimeModeBanner />
-
-      {/* Maintenance — compact row */}
-      <MaintenanceStatusCard />
-
-      {/* Service grid with list/grid toggle */}
-      <ServiceGrid />
-
-      {/* Proxmox — collapsible */}
-      <ProxmoxStatusCard />
     </div>
   )
 }
