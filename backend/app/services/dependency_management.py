@@ -147,6 +147,9 @@ def _refresh_scan(project_id: str) -> None:
         explorer_entries.upsert_entries(
             project_id, "dependency", [entry.model_dump() for entry in entries],
         )
+        explorer_entries.cleanup_stale_entries(
+            project_id, "dependency", {entry.path for entry in entries},
+        )
 
 
 def _entry_for_path(project_id: str, entry_path: str, *, refresh: bool) -> dict[str, Any]:

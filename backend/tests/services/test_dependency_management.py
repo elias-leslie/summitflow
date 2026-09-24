@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.services import dependency_management as management
@@ -47,6 +48,18 @@ def test_review_reuses_unchanged_evidence(monkeypatch) -> None:
     assert second["new_evidence"] is False
     assert len(records) == 1
     assert first["packet"]["engines"]["dependabot_cli"] in {"unavailable", "available_unrun"}
+
+
+def test_refresh_removes_entries_missing_from_current_scan() -> None:
+    entry = SimpleNamespace(path="python/backend/fastapi", model_dump=lambda: {"path": "python/backend/fastapi"})
+    with (
+        patch("app.services.explorer.types.dependencies.DependencyScanner.scan", return_value=[entry]),
+        patch.object(management.explorer_entries, "upsert_entries") as upsert_mock,
+        patch.object(management.explorer_entries, "cleanup_stale_entries") as cleanup_mock,
+    ):
+        management._refresh_scan("summitflow")
+    upsert_mock.assert_called_once()
+    cleanup_mock.assert_called_once_with("summitflow", "dependency", {"python/backend/fastapi"})
 
 
 def test_pyproject_parser_reads_standard_and_dev_groups(tmp_path: Path) -> None:
