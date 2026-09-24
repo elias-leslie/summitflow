@@ -1,7 +1,7 @@
 {
   "id": "jobinator-4000.jobs",
   "owner": "jobinator-4000",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "st_contract_versions": [
     1
   ],
@@ -14,8 +14,8 @@
   ],
   "namespace": "jobs",
   "help": {
-    "": "Usage: jobs [OPTIONS] COMMAND [ARGS]...\n\n  Find, evaluate, tailor for, and track job applications\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  ready      Top-scoring open postings with no application on them yet.\n  show       Posting detail: description, evaluation report, skill gap,...\n  scan       Run a scan across the enabled sources and report its counters.\n  screen     Queue screening within the shared daily allowance.\n  evaluate   Run the evaluator agent over one posting and persist the...\n  tailor     Generate a tailored resume and/or cover letter for one posting.\n  apply      Record an application against a posting.\n  status     Move an application to a new status and record the transition.\n  track      List applications, most recently moved first.\n  followups  Pending follow-ups, earliest due first.\n  prep       The interview brief for one application.\n  stats      Application funnel and posting-state counts.\n  profile    The candidate profile every agent prompt is built from.\n  search     Postings narrowed by work mode, employment type, company...\n  companies  Tracked employers with their size, ownership, segments and...",
-    "ready": "Usage: jobs ready [OPTIONS]\n\n  Top-scoring open postings with no application on them yet.\n\nOptions:\n  --limit <int range>        [default: 10; 1<=x<=50]\n  --min-score <float range>  [default: 3.5; 0<=x<=5]\n  --human                    Plain-text rendering\n  --remote                   Use hosts.production_api\n  --help                     Show this message and exit.",
+    "": "Usage: jobs [OPTIONS] COMMAND [ARGS]...\n\n  Find, evaluate, tailor for, and track job applications\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  ready                  Open strong and possible roles; score is optional.\n  show                   Posting detail: description, evaluation report,...\n  scan                   Run a scan across the enabled sources and report...\n  screen                 Queue screening within the shared daily allowance.\n  evaluate               Run the evaluator agent over one posting and...\n  tailor                 Generate a tailored resume and/or cover letter...\n  apply                  Record an application against a posting.\n  status                 Move an application to a new status and record...\n  track                  List applications, most recently moved first.\n  followups              Pending follow-ups, earliest due first.\n  prep                   The interview brief for one application.\n  stats                  Application funnel and posting-state counts.\n  profile                The candidate profile every agent prompt is...\n  profile-edit\n  update-profile\n  cv-versions\n  save-cv\n  search                 Postings narrowed by work mode, employment type,...\n  session\n  cv\n  assess\n  review-company\n  record-board\n  event-add\n  events\n  feedback\n  feedback-queue\n  feedback-claim\n  feedback-outcome\n  feedback-answer\n  feedback-undo\n  qualify-company\n  company-qualification\n  company-exception\n  application-readiness\n  prepare-application\n  set-preferences\n  exclude-company\n  coverage\n  import-posting\n  supply-document\n  companies              Tracked employers with their size, ownership,...",
+    "ready": "Usage: jobs ready [OPTIONS]\n\n  Open strong and possible roles; score is optional.\n\nOptions:\n  --limit <int range>        [default: 10; 1<=x<=50]\n  --min-score <float range>  Explicit scored-only filter  [0<=x<=5]\n  --human                    Plain-text rendering\n  --remote                   Use hosts.production_api\n  --help                     Show this message and exit.",
     "show": "Usage: jobs show [OPTIONS] {posting_id}\n\n  Posting detail: description, evaluation report, skill gap, legitimacy.\n\nArguments:\n  posting_id  Posting id from st jobs ready  [required]\n\nOptions:\n  --description / --no-description\n                                  [default: description]\n  --human                         Plain-text rendering\n  --remote                        Use hosts.production_api\n  --help                          Show this message and exit.",
     "scan": "Usage: jobs scan [OPTIONS]\n\n  Run a scan across the enabled sources and report its counters.\n\nOptions:\n  --source <str>   Limit to one source slug\n  --company <str>  Limit to one company\n  --background     Return immediately; read results from the UI\n  --human          Plain-text rendering\n  --remote         Use hosts.production_api\n  --help           Show this message and exit.",
     "screen": "Usage: jobs screen [OPTIONS]\n\n  Queue screening within the shared daily allowance.\n\nOptions:\n  --limit <int>  Postings to screen; default is the daily cap\n  --human        Plain-text rendering\n  --remote       Use hosts.production_api\n  --help         Show this message and exit.",
@@ -28,7 +28,34 @@
     "prep": "Usage: jobs prep [OPTIONS] {application_id}\n\n  The interview brief for one application.\n\nArguments:\n  application_id  Application id from st jobs track  [required]\n\nOptions:\n  --write   Write a new brief instead of reading the last one\n  --human   Plain-text rendering\n  --remote  Use hosts.production_api\n  --help    Show this message and exit.",
     "stats": "Usage: jobs stats [OPTIONS]\n\n  Application funnel and posting-state counts.\n\nOptions:\n  --human   Plain-text rendering\n  --remote  Use hosts.production_api\n  --help    Show this message and exit.",
     "profile": "Usage: jobs profile [OPTIONS]\n\n  The candidate profile every agent prompt is built from.\n\nOptions:\n  --human   Plain-text rendering\n  --remote  Use hosts.production_api\n  --help    Show this message and exit.",
-    "search": "Usage: jobs search [OPTIONS]\n\n  Postings narrowed by work mode, employment type, company size and distance.\n\nOptions:\n  --state <str>              new|triaged|shortlisted|applied|discarded\n  --remote-kind <str>        remote|hybrid|onsite|unknown; repeatable\n  --employment <str>         full_time|part_time|contract|…; repeatable\n  --employee-band <str>      startup_1_50|small_51_200|…; repeatable\n  --segment <str>            msp|mssp|edr_xdr|…; repeatable\n  --channel-focus            Only companies that sell through MSPs\n  --max-distance <float>     Miles to the nearest researched office\n  --min-salary <int>         Advertised ceiling must reach this\n  --exclude-clearance        Drop postings that require a clearance\n  --min-score <float range>  [0<=x<=5]\n  --search <str>             Title or company substring\n  --limit <int range>        [default: 25; 1<=x<=200]\n  --human                    Plain-text rendering\n  --remote                   Use hosts.production_api\n  --help                     Show this message and exit.",
+    "profile-edit": "Usage: jobs profile-edit [OPTIONS]\n\nOptions:\n  --remote\n  --help    Show this message and exit.",
+    "update-profile": "Usage: jobs update-profile [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "cv-versions": "Usage: jobs cv-versions [OPTIONS]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "save-cv": "Usage: jobs save-cv [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --base-cv-id <int range>  [x>=1; required]\n  --verified\n  --label <str>             [default: Reviewed CV revision]\n  --human\n  --remote\n  --help                    Show this message and exit.",
+    "search": "Usage: jobs search [OPTIONS]\n\n  Postings narrowed by work mode, employment type, company size and distance.\n\nOptions:\n  --state <str>              new|triaged|shortlisted|applied|discarded\n  --fit <str>                matches|strong|possible|poor|pending|all\n                             [default: matches]\n  --remote-kind <str>        remote|hybrid|onsite|unknown; repeatable\n  --employment <str>         full_time|part_time|contract|…; repeatable\n  --employee-band <str>      startup_1_50|small_51_200|…; repeatable\n  --segment <str>            msp|mssp|edr_xdr|…; repeatable\n  --channel-focus            Only companies that sell through MSPs\n  --max-distance <float>     Miles to the nearest researched office\n  --min-salary <int>         Advertised ceiling must reach this\n  --exclude-clearance        Drop postings that require a clearance\n  --min-score <float range>  [0<=x<=5]\n  --search <str>             Title or company substring\n  --limit <int range>        [default: 25; 1<=x<=200]\n  --human                    Plain-text rendering\n  --remote                   Use hosts.production_api\n  --help                     Show this message and exit.",
+    "session": "Usage: jobs session [OPTIONS]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "cv": "Usage: jobs cv [OPTIONS]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "assess": "Usage: jobs assess [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "review-company": "Usage: jobs review-company [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "record-board": "Usage: jobs record-board [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "event-add": "Usage: jobs event-add [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "events": "Usage: jobs events [OPTIONS]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "feedback": "Usage: jobs feedback [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "feedback-queue": "Usage: jobs feedback-queue [OPTIONS]\n\nOptions:\n  --limit <int range>   [default: 100; 1<=x<=500]\n  --offset <int range>  [default: 0; x>=0]\n  --status <str>\n  --human\n  --remote\n  --help                Show this message and exit.",
+    "feedback-claim": "Usage: jobs feedback-claim [OPTIONS] {feedback_id} {expected_revision}\n\nArguments:\n  feedback_id        [required]\n  expected_revision  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "feedback-outcome": "Usage: jobs feedback-outcome [OPTIONS] {feedback_id} {path}\n\nArguments:\n  feedback_id  [required]\n  path         [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "feedback-answer": "Usage: jobs feedback-answer [OPTIONS] {feedback_id} {path}\n\nArguments:\n  feedback_id  [required]\n  path         [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "feedback-undo": "Usage: jobs feedback-undo [OPTIONS] {feedback_id} {path}\n\nArguments:\n  feedback_id  [required]\n  path         [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "qualify-company": "Usage: jobs qualify-company [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "company-qualification": "Usage: jobs company-qualification [OPTIONS] {company_id}\n\nArguments:\n  company_id  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "company-exception": "Usage: jobs company-exception [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "application-readiness": "Usage: jobs application-readiness [OPTIONS] {application_id}\n\nArguments:\n  application_id  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "prepare-application": "Usage: jobs prepare-application [OPTIONS] {application_id} {path}\n\nArguments:\n  application_id  [required]\n  path            [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "set-preferences": "Usage: jobs set-preferences [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "exclude-company": "Usage: jobs exclude-company [OPTIONS] {company_id}\n\nArguments:\n  company_id  [required]\n\nOptions:\n  --reason <str>  Owner's reason for exclusion  [required]\n  --human\n  --remote\n  --help          Show this message and exit.",
+    "coverage": "Usage: jobs coverage [OPTIONS]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "import-posting": "Usage: jobs import-posting [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "supply-document": "Usage: jobs supply-document [OPTIONS] {posting_id} {kind} {path}\n\nArguments:\n  posting_id  [required]\n  kind        [required]\n  path        [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
     "companies": "Usage: jobs companies [OPTIONS]\n\n  Tracked employers with their size, ownership, segments and nearest office.\n\nOptions:\n  --segment <str>        Repeatable\n  --employee-band <str>  Repeatable\n  --channel-focus\n  --hiring               Only companies with open roles\n  --search <str>\n  --limit <int range>    [default: 50; 1<=x<=200]\n  --human                Plain-text rendering\n  --remote               Use hosts.production_api\n  --help                 Show this message and exit."
   },
   "usage": [
@@ -37,7 +64,7 @@
       "tier": "mandate",
       "cmd": "st jobs ready --limit 10",
       "when": "pick the next job worth acting on; start of any job-search working session",
-      "why": "scored, still-open postings with no application yet — the actual queue, not the whole board",
+      "why": "strong and possible open postings, including unscored roles, with pending screening shown separately",
       "precautions": [
         "read-only; postings already applied to are excluded, not ranked low"
       ],
@@ -244,6 +271,46 @@
       ]
     },
     {
+      "surface": "st.jobs.profile-edit",
+      "tier": "reference",
+      "cmd": "st jobs profile-edit",
+      "when": "read the exact editable candidate requirements and their revision",
+      "why": "prepare a specific profile change without overwriting unrelated fields",
+      "precautions": [
+        "private candidate data; read-only"
+      ]
+    },
+    {
+      "surface": "st.jobs.update-profile",
+      "tier": "reference",
+      "cmd": "st jobs update-profile changes.json",
+      "when": "save owner-requested target roles, pay, location, or other candidate requirements",
+      "why": "updates the canonical profile and refreshes role matching",
+      "precautions": [
+        "read profile-edit first; changes replace only named fields; stale revisions are rejected"
+      ]
+    },
+    {
+      "surface": "st.jobs.cv-versions",
+      "tier": "reference",
+      "cmd": "st jobs cv-versions --human",
+      "when": "inspect base CV versions before drafting or restoring one",
+      "why": "preserves the reviewed CV history",
+      "precautions": [
+        "private candidate data; JSON includes full CV text"
+      ]
+    },
+    {
+      "surface": "st.jobs.save-cv",
+      "tier": "reference",
+      "cmd": "st jobs save-cv revised.md --base-cv-id 4 --verified",
+      "when": "activate a revised base CV after its exact text and facts were reviewed with the owner",
+      "why": "creates a version and refreshes the candidate's role matching",
+      "precautions": [
+        "replaces the active CV; never set --verified before the owner reviews the exact draft"
+      ]
+    },
+    {
       "surface": "st.jobs.search",
       "tier": "mandate",
       "cmd": "st jobs search --remote remote --employment full_time",
@@ -261,6 +328,225 @@
       "task_types": [
         "jobs",
         "career"
+      ]
+    },
+    {
+      "surface": "st.jobs.session",
+      "tier": "mandate",
+      "cmd": "st jobs session",
+      "when": "start a weekly job-search session",
+      "why": "one snapshot of ready and pending roles, scans, failures, decisions, and events",
+      "precautions": [
+        "read-only; no employer contact or notifications"
+      ]
+    },
+    {
+      "surface": "st.jobs.cv",
+      "tier": "mandate",
+      "cmd": "st jobs cv",
+      "when": "read the reviewed CV before a posting assessment or document draft",
+      "why": "returns the active CV, fact constraints, and revision identifiers",
+      "precautions": [
+        "private candidate data; read-only"
+      ]
+    },
+    {
+      "surface": "st.jobs.assess",
+      "tier": "mandate",
+      "cmd": "st jobs assess review.json",
+      "when": "save a sourced human or TUI posting assessment",
+      "why": "binds verdict and unknowns to the CV and posting revisions",
+      "precautions": [
+        "evidence URLs and matching revisions are required"
+      ]
+    },
+    {
+      "surface": "st.jobs.review-company",
+      "tier": "reference",
+      "cmd": "st jobs review-company review.json",
+      "when": "record owner interest and sourced company culture findings",
+      "why": "keeps the owner's rating separate from inferred company fit",
+      "precautions": [
+        "a positive or conflicting culture claim needs cited evidence"
+      ]
+    },
+    {
+      "surface": "st.jobs.record-board",
+      "tier": "reference",
+      "cmd": "st jobs record-board board.json",
+      "when": "record a verified official board or unsupported employer",
+      "why": "monitored boards enter Jobinator's collector with their official link evidence",
+      "precautions": [
+        "monitored entries require an installed source and official evidence"
+      ]
+    },
+    {
+      "surface": "st.jobs.event-add",
+      "tier": "reference",
+      "cmd": "st jobs event-add event.json",
+      "when": "save a dated, sourced professional event",
+      "why": "feeds the upcoming events calendar with known cost or explicit unknown",
+      "precautions": [
+        "no registration or notification is sent"
+      ]
+    },
+    {
+      "surface": "st.jobs.events",
+      "tier": "reference",
+      "cmd": "st jobs events",
+      "when": "review upcoming sourced events",
+      "precautions": [
+        "read-only; past events are excluded"
+      ]
+    },
+    {
+      "surface": "st.jobs.feedback",
+      "tier": "reference",
+      "cmd": "st jobs feedback feedback.json",
+      "when": "record a like, dislike, or mixed reaction to a role, company, or event",
+      "why": "creates a durable pending reaction for explicit review",
+      "precautions": [
+        "nothing is sent to employers or organizers"
+      ]
+    },
+    {
+      "surface": "st.jobs.feedback-queue",
+      "tier": "reference",
+      "cmd": "st jobs feedback-queue --status pending --limit 100 --offset 0",
+      "when": "review pending and clarified owner reactions",
+      "precautions": [
+        "read-only private feedback"
+      ]
+    },
+    {
+      "surface": "st.jobs.feedback-claim",
+      "tier": "reference",
+      "cmd": "st jobs feedback-claim 12 1",
+      "when": "atomically claim one pending reaction for review",
+      "precautions": [
+        "revision mismatch returns a conflict"
+      ]
+    },
+    {
+      "surface": "st.jobs.feedback-outcome",
+      "tier": "reference",
+      "cmd": "st jobs feedback-outcome 12 outcome.json",
+      "when": "record a sourced preference effect or clarification question",
+      "precautions": [
+        "only soft preferences apply; exclusions are proposals"
+      ]
+    },
+    {
+      "surface": "st.jobs.feedback-answer",
+      "tier": "reference",
+      "cmd": "st jobs feedback-answer 12 answer.json",
+      "when": "record the owner's answer to a clarification question",
+      "precautions": [
+        "revision mismatch returns a conflict"
+      ]
+    },
+    {
+      "surface": "st.jobs.feedback-undo",
+      "tier": "reference",
+      "cmd": "st jobs feedback-undo 12 undo.json",
+      "when": "undo an applied soft preference after owner correction",
+      "precautions": [
+        "preserves original reaction and reason"
+      ]
+    },
+    {
+      "surface": "st.jobs.qualify-company",
+      "tier": "reference",
+      "cmd": "st jobs qualify-company baseline.json",
+      "when": "save direct-employer, official careers, Florida, and ownership evidence",
+      "precautions": [
+        "unresolved employers remain research-only"
+      ]
+    },
+    {
+      "surface": "st.jobs.company-qualification",
+      "tier": "reference",
+      "cmd": "st jobs company-qualification 12",
+      "when": "check an employer's current monitoring gate",
+      "precautions": [
+        "read-only"
+      ]
+    },
+    {
+      "surface": "st.jobs.company-exception",
+      "tier": "reference",
+      "cmd": "st jobs company-exception exception.json",
+      "when": "record a private owner exception to PE-controlled MSP exclusion",
+      "precautions": [
+        "named exclusions and non-employers still block monitoring"
+      ]
+    },
+    {
+      "surface": "st.jobs.application-readiness",
+      "tier": "reference",
+      "cmd": "st jobs application-readiness 12",
+      "when": "check current preparation blockers and provenance before applying",
+      "precautions": [
+        "read-only; does not submit an application"
+      ]
+    },
+    {
+      "surface": "st.jobs.prepare-application",
+      "tier": "reference",
+      "cmd": "st jobs prepare-application 12 preparation.json",
+      "when": "save a sourced official JD and preparation notes",
+      "precautions": [
+        "requires current CV, profile, and posting revisions; does not submit"
+      ]
+    },
+    {
+      "surface": "st.jobs.set-preferences",
+      "tier": "reference",
+      "cmd": "st jobs set-preferences preferences.json",
+      "when": "record the owner's company and culture priorities for future search sessions",
+      "why": "keeps explicit owner values separate from inferred company fit",
+      "precautions": [
+        "does not contact employers or change the reviewed CV"
+      ]
+    },
+    {
+      "surface": "st.jobs.exclude-company",
+      "tier": "reference",
+      "cmd": "st jobs exclude-company 123 --reason 'former employer'",
+      "when": "the owner does not want a company in the search",
+      "why": "stops monitoring, hides its current postings, and blocks future imports for this profile",
+      "precautions": [
+        "preserves global postings and other profiles' choices"
+      ]
+    },
+    {
+      "surface": "st.jobs.coverage",
+      "tier": "reference",
+      "cmd": "st jobs coverage",
+      "when": "review monitored, failed, unsupported, and unexplored employers",
+      "why": "includes latest board health and missed daily scans",
+      "precautions": [
+        "read-only"
+      ]
+    },
+    {
+      "surface": "st.jobs.import-posting",
+      "tier": "reference",
+      "cmd": "st jobs import-posting posting.json",
+      "when": "import a posting found on an unsupported official board with st web",
+      "why": "stores a sourced URL and description in Jobinator for the normal review flow",
+      "precautions": [
+        "the input URL must be the actual posting source"
+      ]
+    },
+    {
+      "surface": "st.jobs.supply-document",
+      "tier": "reference",
+      "cmd": "st jobs supply-document 41 resume draft.md",
+      "when": "save a TUI-written application document",
+      "why": "passes it through the CV fact check and stores a versioned artifact",
+      "precautions": [
+        "a draft only; nothing is submitted to an employer"
       ]
     },
     {
