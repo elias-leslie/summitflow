@@ -256,6 +256,8 @@ def test_adoption_compact_summarizes_st_wrapper_use(capsys: pytest.CaptureFixtur
                 "st_commands": 7,
                 "st_command_rate": 70.0,
                 "raw_quality_commands": 0,
+                "native_web_hints": 3,
+                "native_browser_hints": 2,
             },
             "top_st_surfaces": [{"surface": "st check", "count": 4}],
         }
@@ -264,6 +266,7 @@ def test_adoption_compact_summarizes_st_wrapper_use(capsys: pytest.CaptureFixtur
     out = capsys.readouterr().out
     assert "TOOLS_ADOPTION[24h]:shell=10 st=7 st_rate=70.0% raw_quality=0" in out
     assert "st check  4" in out
+    assert "Native tool hints: web=3 browser=2 (permitted; outside ST rate)" in out
 
 
 def test_adoption_compact_shows_session_scope_and_missing_capture(capsys: pytest.CaptureFixture[str]) -> None:
@@ -322,7 +325,10 @@ def test_audit_compact_surfaces_expected_tool_findings(capsys: pytest.CaptureFix
     _format_audit_compact(
         {
             "window_hours": 24,
-            "summary": {"finding_groups": 1, "events": 2},
+            "summary": {
+                "finding_groups": 1, "events": 2,
+                "native_web_hints": 3, "native_browser_hints": 2,
+            },
             "findings": [
                 {
                     "severity": "high",
@@ -340,6 +346,7 @@ def test_audit_compact_surfaces_expected_tool_findings(capsys: pytest.CaptureFix
     out = capsys.readouterr().out
     assert "TOOLS_AUDIT[24h]:findings=1 finding_events=2" in out
     assert "raw_quality_tool_bypass|expected=st.check|count=2" in out
+    assert "Permitted native tool hints: web=3 browser=2" in out
     assert "ex: pytest backend/tests/foo.py" in out
 
 

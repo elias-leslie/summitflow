@@ -218,6 +218,14 @@ def _fetch_adoption_metrics(hours: int, limit: int, session: str | None = None) 
         ORDER BY count DESC, surface
         LIMIT %s;
     """
+    native_hints_sql = """
+        SELECT
+            count(*) FILTER (WHERE tool_input->'native_tool_hints' ? 'web__run')::int,
+            count(*) FILTER (WHERE tool_input->'native_tool_hints' ? 'mcp__cua_repl.js')::int
+        FROM session_events
+        WHERE created_at >= now() - (%s * interval '1 hour')
+          AND (%s::text IS NULL OR session_id = %s);
+    """
     with (
         _psql_project_lock("agent-hub"),
         psycopg.connect(
@@ -237,6 +245,7 @@ def _fetch_adoption_metrics(hours: int, limit: int, session: str | None = None) 
             ).fetchall(),
         )
         top_st = [{"surface": surface, "count": count} for surface, count in top_st_rows]
+        native_hints = conn.execute(native_hints_sql, (hours, session, session)).fetchone()
 
     shell_events, st_commands, raw_quality = summary_row or (0, 0, 0)
     st_rate = (st_commands / shell_events * 100.0) if shell_events else None
@@ -248,6 +257,8 @@ def _fetch_adoption_metrics(hours: int, limit: int, session: str | None = None) 
             "st_commands": st_commands,
             "st_command_rate": st_rate,
             "raw_quality_commands": raw_quality,
+            "native_web_hints": int(native_hints[0]) if native_hints else 0,
+            "native_browser_hints": int(native_hints[1]) if native_hints else 0,
         },
         "top_st_surfaces": top_st,
     }
@@ -267,6 +278,9 @@ def _format_adoption_compact(data: dict[str, Any]) -> None:
     )
     if shell_events == 0:
         print("  No inspectable shell commands recorded; capture completeness unknown.")
+    web_hints = int(summary.get("native_web_hints") or 0)
+    browser_hints = int(summary.get("native_browser_hints") or 0)
+    print(f"  Native tool hints: web={web_hints} browser={browser_hints} (permitted; outside ST rate)")
     if data.get("session"):
         print(f"  Session filter: {data['session']}")
     top_st = data.get("top_st_surfaces", [])
@@ -368,7 +382,9 @@ def _fetch_audit_metrics(hours: int, limit: int, project: str | None = None, ses
                    WHERE e.tool_name IN ('Bash', 'bash', 'exec_command')
                      AND COALESCE(e.tool_input->>'cmd', e.tool_input->>'command') IS NOT NULL
                )::int,
-               count(DISTINCT e.session_id)::int
+               count(DISTINCT e.session_id)::int,
+               count(*) FILTER (WHERE e.tool_input->'native_tool_hints' ? 'web__run')::int,
+               count(*) FILTER (WHERE e.tool_input->'native_tool_hints' ? 'mcp__cua_repl.js')::int
         FROM session_events e
         LEFT JOIN sessions s ON s.id = e.session_id
         WHERE e.created_at >= now() - (%s * interval '1 hour')
@@ -419,6 +435,8 @@ def _fetch_audit_metrics(hours: int, limit: int, project: str | None = None, ses
             "observed_events": int(coverage[0]) if coverage else None,
             "inspected_shell_events": int(coverage[1]) if coverage else None,
             "observed_sessions": int(coverage[2]) if coverage else None,
+            "native_web_hints": int(coverage[3]) if coverage else None,
+            "native_browser_hints": int(coverage[4]) if coverage else None,
             "by_type": [{"finding_type": key, "count": count} for key, count in by_type.items()],
         },
         "findings": findings,
@@ -464,6 +482,12 @@ def _format_audit_compact(data: dict[str, Any]) -> None:
     observed = summary.get("observed_events")
     observed_text = str(observed) if observed is not None else "unknown"
     print(f"TOOLS_AUDIT[{hours}h]:findings={groups} finding_events={events} inspected_shell={inspected_text} observed={observed_text}")
+    if summary.get("native_web_hints") is not None or summary.get("native_browser_hints") is not None:
+        print(
+            "  Permitted native tool hints: "
+            f"web={summary.get('native_web_hints') or 0} "
+            f"browser={summary.get('native_browser_hints') or 0}"
+        )
     if inspected == 0:
         print("  No inspectable shell commands recorded; capture completeness is unknown.")
     findings = data.get("findings", [])
