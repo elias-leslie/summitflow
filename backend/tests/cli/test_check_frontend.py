@@ -28,6 +28,29 @@ def aggregate(root: Path, runner: Mock | None = None) -> int:
             return check._run_selected(["vitest"], {"vitest": CONFIG}, fix=False, changed_only=False)
 
 
+def test_implicit_tsc_skips_python_only_repository(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    runner = Mock(return_value=0)
+    tsc_config: dict[str, object] = {"label": "TSC", "args": "tsc --noEmit", "working_dir": "frontend"}
+    with patch.object(check, "_resolve_repo_root", return_value=tmp_path), patch.object(
+        check, "run_architecture_check", return_value=0
+    ), patch.object(check, "_run_tool", runner):
+        assert check._run_selected(["tsc"], {"tsc": tsc_config}, fix=False, changed_only=False) == 0
+    runner.assert_not_called()
+    assert "TSC:SKIP:tsc:no_tsconfig" in capsys.readouterr().out
+
+
+def test_implicit_tsc_runs_when_root_config_exists(tmp_path: Path) -> None:
+    (tmp_path / "frontend").mkdir()
+    (tmp_path / "tsconfig.json").write_text("{}")
+    runner = Mock(return_value=1)
+    tsc_config: dict[str, object] = {"label": "TSC", "args": "tsc --noEmit", "working_dir": "frontend"}
+    with patch.object(check, "_resolve_repo_root", return_value=tmp_path), patch.object(
+        check, "run_architecture_check", return_value=0
+    ), patch.object(check, "_run_tool", runner):
+        assert check._run_selected(["tsc"], {"tsc": tsc_config}, fix=False, changed_only=False) == 1
+    runner.assert_called_once()
+
+
 @pytest.mark.parametrize("script", ["vitest", "vitest run"])
 def test_existing_vitest_projects_keep_full_suite(tmp_path: Path, script: str) -> None:
     frontend = tmp_path / "frontend"

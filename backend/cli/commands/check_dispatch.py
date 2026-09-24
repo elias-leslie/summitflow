@@ -154,6 +154,11 @@ def run_selected(
             failures += int(scoped_result != 0)
             continue
         cwd = runtime.workdir(root, config)
+        if (name == "tsc" and config.get("args") == "tsc --noEmit"
+                and not (cwd / "tsconfig.json").is_file()
+                and not (root / "tsconfig.json").is_file()):
+            print("TSC:SKIP:tsc:no_tsconfig")
+            continue
         if name == "vitest":
             try:
                 frontend = frontend_test_config(root, cwd, config)
