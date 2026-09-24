@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pytest
+from typer.core import TyperGroup
+from typer.main import get_command
 from typer.testing import CliRunner
 
 try:
@@ -34,6 +36,30 @@ class TestCLIReferenceCompact:
         assert result.exit_code == 0
         assert "--plan" in result.output
         assert "--from-file" in result.output
+
+    @pytest.mark.parametrize("name", ["create", "verify"])
+    def test_root_task_help_preserves_owner_description(self, name: str) -> None:
+        root = get_command(app)
+        assert isinstance(root, TyperGroup)
+        command = root.commands[name]
+        task_group = root.commands["task"]
+        assert isinstance(task_group, TyperGroup)
+        owner = task_group.commands[name]
+
+        assert command.help
+        assert command.help == owner.help
+        assert command.short_help == owner.short_help
+        assert command.epilog == owner.epilog
+        result = runner.invoke(app, [name, "--help"])
+        assert result.exit_code == 0
+        assert "live schema" in result.output
+
+    def test_global_output_help_explains_precedence(self) -> None:
+        result = runner.invoke(app, ["--help"])
+
+        assert result.exit_code == 0
+        assert "requires --no-compact" in result.output
+        assert "Global options precede the command" in result.output
 
     def test_claim_and_abandon_help_keep_examples_readable(self) -> None:
         claim = runner.invoke(app, ["claim", "--help"])

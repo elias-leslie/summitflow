@@ -276,16 +276,19 @@ Required path:
 
 Usage:
   st check --check
-  st check --acceptance [--sha REV] [--task TASK] [--scope PATH]
+  st check --acceptance [--sha REV] [--task TASK] [--scope PATH] [--no-reuse] [--json]
   st check --changed-only
   st check --quick [--changed-only]
+  st check --fix [--changed-only]  # apply Ruff and Biome fixes
   st check --frontend-only
   st check codeql [--ref refs/heads/main]
   st check <gitleaks|semgrep|osv|security> [--changed-only]
   st check cleanroom -- <command>
   st check <"""
         + names
-        + "> [-- <tool args>]\n"
+        + "> [-- <tool args>]\n\n"
+        "Acceptance reuses a successful same-source receipt by default; --no-reuse reruns checks.\n"
+        "Use --json for the full receipt instead of the compact acceptance summary.\n"
     )
 
 

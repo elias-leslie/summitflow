@@ -1,0 +1,76 @@
+{
+  "namespace": "web",
+  "owner": "agent-hub",
+  "owner_root": "/srv/workspaces/projects/agent-hub",
+  "manifest_path": "/srv/workspaces/projects/summitflow/scripts/lib/extensions/web.json",
+  "manifest_sha256": "53e6076b4f2ffbe7d603c98ac91eb8e8c5fef8737d83259e6f4f40c91c99202c",
+  "owner_revision": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+  "owner_dirty_tracked_paths": [],
+  "owner_description": {
+    "help": {
+      "": "usage: -c [-h] {search,research,fetch,benchmark} ...\n\nRun centralized web research using Agent Hub's shared tool stack.\n\npositional arguments:\n  {search,research,fetch,benchmark}\n    search              Search the public web.\n    research            Search first, then fetch one result through the shared\n                        web stack.\n    fetch               Fetch and extract a webpage.\n    benchmark           Run deterministic local web fetch benchmarks.\n\noptions:\n  -h, --help            show this help message and exit\n",
+      "search": "usage: -c search [-h] [--query QUERY] [--max-results MAX_RESULTS]\n                 [--search-type {text,news}] [--timelimit {d,w,m,y}]\n                 [--compact]\n                 [query_arg]\n\npositional arguments:\n  query_arg             Search query\n\noptions:\n  -h, --help            show this help message and exit\n  --query QUERY         Search query\n  --max-results, --limit MAX_RESULTS\n                        Max results to return\n  --search-type {text,news}\n                        Search scope\n  --timelimit {d,w,m,y}\n                        Optional search recency filter\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\n",
+      "research": "usage: -c research [-h] [--query QUERY] [--max-results MAX_RESULTS]\n                   [--result-index RESULT_INDEX] [--search-type {text,news}]\n                   [--timelimit {d,w,m,y}] [--max-chars MAX_CHARS]\n                   [--focus-query FOCUS_QUERY] [--backend {auto,direct,jina}]\n                   [--compact]\n                   [query_arg]\n\npositional arguments:\n  query_arg             Research query\n\noptions:\n  -h, --help            show this help message and exit\n  --query QUERY         Research query\n  --max-results, --limit MAX_RESULTS\n                        Max search results to consider\n  --result-index RESULT_INDEX\n                        1-based result rank to fetch\n  --search-type {text,news}\n                        Search scope\n  --timelimit {d,w,m,y}\n                        Optional search recency filter\n  --max-chars MAX_CHARS\n                        Maximum fetched content characters to return\n  --focus-query FOCUS_QUERY\n                        Optional question/topic used to focus the fetched page\n                        before truncation\n  --backend {auto,direct,jina}\n                        Page fetch backend\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\n",
+      "fetch": "usage: -c fetch [-h] [--url URL] [--max-chars MAX_CHARS]\n                [--focus-query FOCUS_QUERY] [--backend {auto,direct,jina}]\n                [--compact]\n                [url_arg]\n\npositional arguments:\n  url_arg               HTTP or HTTPS URL\n\noptions:\n  -h, --help            show this help message and exit\n  --url URL             HTTP or HTTPS URL\n  --max-chars MAX_CHARS\n                        Maximum content characters to return\n  --focus-query FOCUS_QUERY\n                        Optional question/topic used to focus large pages\n                        before truncation\n  --backend {auto,direct,jina}\n                        Page fetch backend\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\n",
+      "benchmark": "usage: -c benchmark [-h] [--iterations ITERATIONS] [--max-chars MAX_CHARS]\n                    [--compact]\n\noptions:\n  -h, --help            show this help message and exit\n  --iterations ITERATIONS\n  --max-chars MAX_CHARS\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\n"
+    },
+    "usage": []
+  },
+  "owner_capture": {
+    "argv": [
+      "/srv/workspaces/projects/agent-hub/backend/.venv/bin/python",
+      "-c",
+      "import argparse, json\nfrom app.cli.web_research import _build_parser\nroot = _build_parser()\nresult = {}\ndef visit(parser, path):\n    result[path] = parser.format_help()\n    for action in parser._actions:\n        if isinstance(action, argparse._SubParsersAction):\n            for name, child in action.choices.items():\n                visit(child, (path + ' ' + name).strip())\nvisit(root, '')\nprint(json.dumps({'help': result, 'usage': []}))"
+    ],
+    "cwd": "/srv/workspaces/projects/agent-hub",
+    "returncode": 0,
+    "stdout": "{\"help\": {\"\": \"usage: -c [-h] {search,research,fetch,benchmark} ...\\n\\nRun centralized web research using Agent Hub's shared tool stack.\\n\\npositional arguments:\\n  {search,research,fetch,benchmark}\\n    search              Search the public web.\\n    research            Search first, then fetch one result through the shared\\n                        web stack.\\n    fetch               Fetch and extract a webpage.\\n    benchmark           Run deterministic local web fetch benchmarks.\\n\\noptions:\\n  -h, --help            show this help message and exit\\n\", \"search\": \"usage: -c search [-h] [--query QUERY] [--max-results MAX_RESULTS]\\n                 [--search-type {text,news}] [--timelimit {d,w,m,y}]\\n                 [--compact]\\n                 [query_arg]\\n\\npositional arguments:\\n  query_arg             Search query\\n\\noptions:\\n  -h, --help            show this help message and exit\\n  --query QUERY         Search query\\n  --max-results, --limit MAX_RESULTS\\n                        Max results to return\\n  --search-type {text,news}\\n                        Search scope\\n  --timelimit {d,w,m,y}\\n                        Optional search recency filter\\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\\n\", \"research\": \"usage: -c research [-h] [--query QUERY] [--max-results MAX_RESULTS]\\n                   [--result-index RESULT_INDEX] [--search-type {text,news}]\\n                   [--timelimit {d,w,m,y}] [--max-chars MAX_CHARS]\\n                   [--focus-query FOCUS_QUERY] [--backend {auto,direct,jina}]\\n                   [--compact]\\n                   [query_arg]\\n\\npositional arguments:\\n  query_arg             Research query\\n\\noptions:\\n  -h, --help            show this help message and exit\\n  --query QUERY         Research query\\n  --max-results, --limit MAX_RESULTS\\n                        Max search results to consider\\n  --result-index RESULT_INDEX\\n                        1-based result rank to fetch\\n  --search-type {text,news}\\n                        Search scope\\n  --timelimit {d,w,m,y}\\n                        Optional search recency filter\\n  --max-chars MAX_CHARS\\n                        Maximum fetched content characters to return\\n  --focus-query FOCUS_QUERY\\n                        Optional question/topic used to focus the fetched page\\n                        before truncation\\n  --backend {auto,direct,jina}\\n                        Page fetch backend\\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\\n\", \"fetch\": \"usage: -c fetch [-h] [--url URL] [--max-chars MAX_CHARS]\\n                [--focus-query FOCUS_QUERY] [--backend {auto,direct,jina}]\\n                [--compact]\\n                [url_arg]\\n\\npositional arguments:\\n  url_arg               HTTP or HTTPS URL\\n\\noptions:\\n  -h, --help            show this help message and exit\\n  --url URL             HTTP or HTTPS URL\\n  --max-chars MAX_CHARS\\n                        Maximum content characters to return\\n  --focus-query FOCUS_QUERY\\n                        Optional question/topic used to focus large pages\\n                        before truncation\\n  --backend {auto,direct,jina}\\n                        Page fetch backend\\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\\n\", \"benchmark\": \"usage: -c benchmark [-h] [--iterations ITERATIONS] [--max-chars MAX_CHARS]\\n                    [--compact]\\n\\noptions:\\n  -h, --help            show this help message and exit\\n  --iterations ITERATIONS\\n  --max-chars MAX_CHARS\\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\\n\"}, \"usage\": []}\n",
+    "stderr": ""
+  },
+  "installed_root_help": {
+    "argv": [
+      "st",
+      "web",
+      "--help"
+    ],
+    "cwd": "/srv/workspaces/projects/summitflow",
+    "returncode": 0,
+    "stdout": "usage: st web [-h] {search,research,fetch,benchmark} ...\n\nRun centralized web research using Agent Hub's shared tool stack.\n\npositional arguments:\n  {search,research,fetch,benchmark}\n    search              Search the public web.\n    research            Search first, then fetch one result through the shared\n                        web stack.\n    fetch               Fetch and extract a webpage.\n    benchmark           Run deterministic local web fetch benchmarks.\n\noptions:\n  -h, --help            show this help message and exit\n\n",
+    "stderr": ""
+  },
+  "installed_manifest_help": {
+    "": "usage: st web [-h] {search,research,fetch,benchmark} ...\n\nRun centralized web research using Agent Hub's shared tool stack.\n\npositional arguments:\n  {search,research,fetch,benchmark}\n    search              Search the public web.\n    research            Search first, then fetch one result through the shared\n                        web stack.\n    fetch               Fetch and extract a webpage.\n    benchmark           Run deterministic local web fetch benchmarks.\n\noptions:\n  -h, --help            show this help message and exit\n",
+    "benchmark": "usage: st web benchmark [-h] [--iterations ITERATIONS] [--max-chars MAX_CHARS]\n                        [--compact]\n\noptions:\n  -h, --help            show this help message and exit\n  --iterations ITERATIONS\n  --max-chars MAX_CHARS\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\n",
+    "fetch": "usage: st web fetch [-h] [--url URL] [--max-chars MAX_CHARS]\n                    [--focus-query FOCUS_QUERY] [--backend {auto,direct,jina}]\n                    [--compact]\n                    [url_arg]\n\npositional arguments:\n  url_arg               HTTP or HTTPS URL\n\noptions:\n  -h, --help            show this help message and exit\n  --url URL             HTTP or HTTPS URL\n  --max-chars MAX_CHARS\n                        Maximum content characters to return\n  --focus-query FOCUS_QUERY\n                        Optional question/topic used to focus large pages\n                        before truncation\n  --backend {auto,direct,jina}\n                        Page fetch backend\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\n",
+    "research": "usage: st web research [-h] [--query QUERY] [--max-results MAX_RESULTS]\n                       [--result-index RESULT_INDEX]\n                       [--search-type {text,news}] [--timelimit {d,w,m,y}]\n                       [--max-chars MAX_CHARS] [--focus-query FOCUS_QUERY]\n                       [--backend {auto,direct,jina}] [--compact]\n                       [query_arg]\n\npositional arguments:\n  query_arg             Research query\n\noptions:\n  -h, --help            show this help message and exit\n  --query QUERY         Research query\n  --max-results, --limit MAX_RESULTS\n                        Max search results to consider\n  --result-index RESULT_INDEX\n                        1-based result rank to fetch\n  --search-type {text,news}\n                        Search scope\n  --timelimit {d,w,m,y}\n                        Optional search recency filter\n  --max-chars MAX_CHARS\n                        Maximum fetched content characters to return\n  --focus-query FOCUS_QUERY\n                        Optional question/topic used to focus the fetched page\n                        before truncation\n  --backend {auto,direct,jina}\n                        Page fetch backend\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\n",
+    "search": "usage: st web search [-h] [--query QUERY] [--max-results MAX_RESULTS]\n                     [--search-type {text,news}] [--timelimit {d,w,m,y}]\n                     [--compact]\n                     [query_arg]\n\npositional arguments:\n  query_arg             Search query\n\noptions:\n  -h, --help            show this help message and exit\n  --query QUERY         Search query\n  --max-results, --limit MAX_RESULTS\n                        Max results to return\n  --search-type {text,news}\n                        Search scope\n  --timelimit {d,w,m,y}\n                        Optional search recency filter\n  --compact, --raw      Emit compact single-line JSON instead of pretty JSON\n"
+  },
+  "installed_manifest_usage": [
+    {
+      "cmd": "st web research --query <query>",
+      "examples": [
+        "st web search --query SummitFlow --limit 1",
+        "st web benchmark --iterations 10 --raw"
+      ],
+      "precautions": [
+        "Uses Agent Hub's supported web-research executable and owner-managed credentials.",
+        "Default ST output writes a local details artifact; --raw emits the owner's JSON.",
+        "Use --backend direct for deterministic local benchmark verification."
+      ],
+      "surface": "st.web",
+      "task_types": [
+        "web-research",
+        "research"
+      ],
+      "tier": "reference",
+      "when": "research public web sources; use search or fetch for a known page"
+    }
+  ],
+  "installed_manifest_summary": "Public web search, research, and fetch through Agent Hub.",
+  "installed_manifest_effects": [
+    "network",
+    "read-remote",
+    "write-local",
+    "credentials"
+  ]
+}

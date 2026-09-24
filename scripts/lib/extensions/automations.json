@@ -2,45 +2,205 @@
   "id": "agent-hub.automations",
   "owner": "agent-hub",
   "version": "0.1.0",
-  "st_contract_versions": [1],
+  "st_contract_versions": [
+    1
+  ],
   "summary": "Agent Hub-owned automation profiles, shared policy, and run controls for agents.",
-  "effects": ["network", "read-remote", "write-remote", "read-local", "credentials"],
+  "effects": [
+    "network",
+    "read-remote",
+    "write-remote",
+    "read-local",
+    "credentials"
+  ],
   "namespace": "automations",
   "help": {
-    "": "Usage: automations [OPTIONS] COMMAND [ARGS]...\n\nManage canonical Agent Hub background automations.\n\nCommands: catalog, list, show, validate, apply, import, cutover, enable, disable, policy, policy-apply, execution, execution-set, run, runs, review.",
-    "catalog": "st automations catalog [--project PROJECT] [--json]",
-    "list": "st automations list [--project PROJECT] [--limit N] [--offset N] [--json]",
-    "show": "st automations show PROFILE_ID [--json]",
-    "validate": "st automations validate --file PROFILE.json|yaml|- [--json]",
-    "apply": "st automations apply --file PROFILE.json|yaml|- [--json]",
-    "import": "st automations import --file OWNER_STATE.json|yaml|- [--json]",
-    "cutover": "st automations cutover PROFILE_ID --revision N --fence-receipt RECEIPT [--next-run-at ISO] [--json]",
-    "enable": "st automations enable PROFILE_ID --revision N [--json]",
-    "disable": "st automations disable PROFILE_ID --revision N [--json]",
-    "policy": "st automations policy PROJECT_ID [--json]",
-    "policy-apply": "st automations policy-apply PROJECT_ID --file POLICY.json|yaml|- [--json]",
-    "execution": "st automations execution PROJECT_ID [--json]",
-    "execution-set": "st automations execution-set PROJECT_ID [--auto-exec on|off] [--start-hour 0..23 --end-hour 1..24] [--json]",
-    "run": "st automations run PROFILE_ID [--idempotency-key KEY] [--json]",
-    "runs": "st automations runs [--profile ID] [--project PROJECT] [--limit N] [--json]",
-    "review": "st automations review PROFILE_ID [--through-run-id RUN_ID] [--json]"
+    "": "Usage: automations [OPTIONS] COMMAND [ARGS]...\n\n  Manage canonical Agent Hub background automations\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  catalog        List registered background workflow types, optionally by...\n  list           List automation profiles and effective state with...\n  show           Show one automation profile, revision, gates, and schedule.\n  validate       Validate a profile against its registered workflow...\n  apply          Create or revise an automation profile with revision...\n  import         Register an owner's schedule and cursor without...\n  cutover        Transfer an imported schedule after its owner durably...\n  enable         Enable scheduled background admissions for a profile.\n  disable        Stop new background admissions for a profile.\n  policy         Inspect one project's shared automation policy.\n  policy-apply   Update shared policy using the current revision in the...\n  execution      Read the execution permission from its existing...\n  execution-set  Update only execution fields; access tier stays in...\n  run            Start an audited manual cycle under the workflow's...\n  runs           Inspect accepted, running, failed, and unknown...\n  review         Mark one profile reviewed through its current or...",
+    "catalog": "Usage: automations catalog [OPTIONS]\n\n  List registered background workflow types, optionally by owner project.\n\nOptions:\n  --project <str>\n  --json\n  --help           Show this message and exit.",
+    "list": "Usage: automations list [OPTIONS]\n\n  List automation profiles and effective state with pagination.\n\nOptions:\n  --project <str>\n  --limit <int range>   [default: 100; 1<=x<=500]\n  --offset <int range>  [default: 0; x>=0]\n  --json\n  --help                Show this message and exit.",
+    "show": "Usage: automations show [OPTIONS] {profile_id}\n\n  Show one automation profile, revision, gates, and schedule.\n\nArguments:\n  profile_id  [required]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
+    "validate": "Usage: automations validate [OPTIONS]\n\n  Validate a profile against its registered workflow contract without saving.\n\nOptions:\n  --file <str>  JSON/YAML path or - for stdin  [required]\n  --json\n  --help        Show this message and exit.",
+    "apply": "Usage: automations apply [OPTIONS]\n\n  Create or revise an automation profile with revision protection.\n\nOptions:\n  --file <str>  JSON/YAML path or - for stdin  [required]\n  --json\n  --help        Show this message and exit.",
+    "import": "Usage: automations import [OPTIONS]\n\n  Register an owner's schedule and cursor without transferring its clock.\n\nOptions:\n  --file <str>  JSON/YAML path or - for stdin  [required]\n  --json\n  --help        Show this message and exit.",
+    "cutover": "Usage: automations cutover [OPTIONS] {profile_id}\n\n  Transfer an imported schedule after its owner durably fences the old clock.\n\nArguments:\n  profile_id  [required]\n\nOptions:\n  --revision <int range>  [x>=1; required]\n  --fence-receipt <str>   [required]\n  --next-run-at <str>\n  --json\n  --help                  Show this message and exit.",
+    "enable": "Usage: automations enable [OPTIONS] {profile_id}\n\n  Enable scheduled background admissions for a profile.\n\nArguments:\n  profile_id  [required]\n\nOptions:\n  --revision <int range>  [x>=1; required]\n  --json\n  --help                  Show this message and exit.",
+    "disable": "Usage: automations disable [OPTIONS] {profile_id}\n\n  Stop new background admissions for a profile.\n\nArguments:\n  profile_id  [required]\n\nOptions:\n  --revision <int range>  [x>=1; required]\n  --json\n  --help                  Show this message and exit.",
+    "policy": "Usage: automations policy [OPTIONS] {project_id}\n\n  Inspect one project's shared automation policy.\n\nArguments:\n  project_id  [required]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
+    "policy-apply": "Usage: automations policy-apply [OPTIONS] {project_id}\n\n  Update shared policy using the current revision in the input.\n\nArguments:\n  project_id  [required]\n\nOptions:\n  --file <str>  JSON/YAML path or - for stdin  [required]\n  --json\n  --help        Show this message and exit.",
+    "execution": "Usage: automations execution [OPTIONS] {project_id}\n\n  Read the execution permission from its existing authorized API.\n\nArguments:\n  project_id  [required]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
+    "execution-set": "Usage: automations execution-set [OPTIONS] {project_id}\n\n  Update only execution fields; access tier stays in Access Control.\n\nArguments:\n  project_id  [required]\n\nOptions:\n  --auto-exec <str>\n  --start-hour <int range>  [0<=x<=23]\n  --end-hour <int range>    [1<=x<=24]\n  --json\n  --help                    Show this message and exit.",
+    "run": "Usage: automations run [OPTIONS] {profile_id}\n\n  Start an audited manual cycle under the workflow's registered policy.\n\nArguments:\n  profile_id  [required]\n\nOptions:\n  --idempotency-key <str>\n  --json\n  --help                   Show this message and exit.",
+    "runs": "Usage: automations runs [OPTIONS]\n\n  Inspect accepted, running, failed, and unknown automation runs.\n\nOptions:\n  --profile <str>\n  --project <str>\n  --limit <int range>   [default: 50; 1<=x<=500]\n  --offset <int range>  [default: 0; x>=0]\n  --json\n  --help                Show this message and exit.",
+    "review": "Usage: automations review [OPTIONS] {profile_id}\n\n  Mark one profile reviewed through its current or selected run.\n\nArguments:\n  profile_id  [required]\n\nOptions:\n  --through-run-id <str>\n  --json\n  --help                  Show this message and exit."
   },
   "usage": [
-    {"surface":"st.automations.catalog","tier":"reference","cmd":"st automations catalog [--project PROJECT] [--json]","when":"discover registered workflow types before creating a profile","task_types":["automation-admin"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.list","tier":"reference","cmd":"st automations list [--project PROJECT] [--json]","when":"inspect effective background automation state and find profile IDs","task_types":["automation-admin","incident"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.show","tier":"reference","cmd":"st automations show PROFILE_ID [--json]","when":"read profile gates, policy, and revision before editing","task_types":["automation-admin","incident"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.validate","tier":"reference","cmd":"st automations validate --file PROFILE.json|yaml|-","when":"check profile input against its registered workflow schema without saving","task_types":["automation-admin"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.apply","tier":"reference","cmd":"st automations apply --file PROFILE.json|yaml|-","when":"create or revise a profile with revision protection","task_types":["automation-admin"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.import","tier":"reference","cmd":"st automations import --file OWNER_STATE.json|yaml|-","when":"attest existing owner schedule and cursor while its legacy clock still runs","task_types":["automation-admin"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.cutover","tier":"reference","cmd":"st automations cutover PROFILE_ID --revision N --fence-receipt RECEIPT [--next-run-at ISO]","when":"transfer one imported clock after the owner returns a durable fence receipt","task_types":["automation-admin"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.enable","tier":"reference","cmd":"st automations enable PROFILE_ID --revision N","when":"enable future background runs after review","task_types":["automation-admin"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.disable","tier":"reference","cmd":"st automations disable PROFILE_ID --revision N","when":"stop future background runs while retaining accepted work","task_types":["automation-admin","incident"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.policy","tier":"reference","cmd":"st automations policy PROJECT_ID [--json]","when":"inspect shared project limits and revision","task_types":["automation-admin","incident"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.policy-apply","tier":"reference","cmd":"st automations policy-apply PROJECT_ID --file POLICY.json|yaml|-","when":"revise project-wide policy with expected revision","task_types":["automation-admin"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.execution","tier":"reference","cmd":"st automations execution PROJECT_ID [--json]","when":"inspect the project execution permission gate and hours before changing automated work","task_types":["automation-admin","incident"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.execution-set","tier":"reference","cmd":"st automations execution-set PROJECT_ID [--auto-exec on|off] [--start-hour 0..23 --end-hour 1..24] [--json]","when":"change the project execution permission gate or hours through its existing authorized API","task_types":["automation-admin"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.run","tier":"reference","cmd":"st automations run PROFILE_ID [--idempotency-key KEY]","when":"start an audited explicit cycle under registered manual-run rules","task_types":["automation-admin"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.runs","tier":"reference","cmd":"st automations runs [--profile ID] [--project PROJECT] [--json]","when":"inspect run status and owner receipts","task_types":["automation-admin","incident"],"on_demand":"autonomous operations"},
-    {"surface":"st.automations.review","tier":"reference","cmd":"st automations review PROFILE_ID","when":"record review of an imported or changed automation profile","task_types":["automation-admin"],"on_demand":"autonomous operations"}
+    {
+      "surface": "st.automations.catalog",
+      "tier": "reference",
+      "cmd": "st automations catalog [--project PROJECT] [--json]",
+      "when": "discover registered Agent Hub background workflow types before creating a profile",
+      "task_types": [
+        "automation-admin",
+        "agent-admin"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.list",
+      "tier": "reference",
+      "cmd": "st automations list [--project PROJECT] [--limit N] [--json]",
+      "when": "inspect effective background automation state and find profile IDs",
+      "task_types": [
+        "automation-admin",
+        "incident",
+        "agent-admin"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.show",
+      "tier": "reference",
+      "cmd": "st automations show PROFILE_ID [--json]",
+      "when": "read one profile and its revision before editing",
+      "task_types": [
+        "automation-admin",
+        "incident"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.validate",
+      "tier": "reference",
+      "cmd": "st automations validate --file PROFILE.json|yaml|- [--json]",
+      "when": "validate an automation profile against its registered workflow contract without saving",
+      "task_types": [
+        "automation-admin"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.apply",
+      "tier": "reference",
+      "cmd": "st automations apply --file PROFILE.json|yaml|- [--json]",
+      "when": "create or revise a registered automation profile with revision protection",
+      "task_types": [
+        "automation-admin"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.import",
+      "tier": "reference",
+      "cmd": "st automations import --file OWNER_STATE.json|yaml|- [--json]",
+      "when": "register an owner's existing schedule and cursor without transferring its clock",
+      "task_types": [
+        "automation-admin"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.cutover",
+      "tier": "reference",
+      "cmd": "st automations cutover PROFILE_ID --revision N --fence-receipt RECEIPT [--next-run-at ISO]",
+      "when": "transfer one imported schedule after its owner has durably fenced the old clock",
+      "task_types": [
+        "automation-admin"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.enable",
+      "tier": "reference",
+      "cmd": "st automations enable PROFILE_ID --revision N",
+      "when": "enable future background runs after inspecting a profile revision",
+      "task_types": [
+        "automation-admin"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.disable",
+      "tier": "reference",
+      "cmd": "st automations disable PROFILE_ID --revision N",
+      "when": "stop future background runs without deleting accepted work",
+      "task_types": [
+        "automation-admin",
+        "incident"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.policy",
+      "tier": "reference",
+      "cmd": "st automations policy PROJECT_ID [--json]",
+      "when": "inspect shared project automation limits and policy revision",
+      "task_types": [
+        "automation-admin",
+        "incident"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.policy-apply",
+      "tier": "reference",
+      "cmd": "st automations policy-apply PROJECT_ID --file POLICY.json|yaml|-",
+      "when": "revise project-wide automation limits with an expected revision",
+      "task_types": [
+        "automation-admin"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.execution",
+      "tier": "reference",
+      "cmd": "st automations execution PROJECT_ID [--json]",
+      "when": "inspect the project execution permission gate and hours before changing automated work",
+      "task_types": [
+        "automation-admin",
+        "incident"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.execution-set",
+      "tier": "reference",
+      "cmd": "st automations execution-set PROJECT_ID [--auto-exec on|off] [--start-hour 0..23 --end-hour 1..24]",
+      "when": "change the project execution permission gate or hours through its existing authorized API",
+      "task_types": [
+        "automation-admin"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.run",
+      "tier": "reference",
+      "cmd": "st automations run PROFILE_ID [--idempotency-key KEY] [--json]",
+      "when": "start an explicit audited cycle under registered manual-run rules",
+      "task_types": [
+        "automation-admin"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.runs",
+      "tier": "reference",
+      "cmd": "st automations runs [--profile ID] [--project PROJECT] [--limit N] [--json]",
+      "when": "inspect background run results and owner receipts",
+      "task_types": [
+        "automation-admin",
+        "incident"
+      ],
+      "on_demand": "autonomous operations"
+    },
+    {
+      "surface": "st.automations.review",
+      "tier": "reference",
+      "cmd": "st automations review PROFILE_ID [--through-run-id RUN_ID]",
+      "when": "record review of an imported or changed automation profile",
+      "task_types": [
+        "automation-admin"
+      ],
+      "on_demand": "autonomous operations"
+    }
   ]
 }

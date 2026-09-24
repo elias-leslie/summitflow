@@ -1,0 +1,44 @@
+{
+  "title": "Review and align all ST help for agent use",
+  "description": "Inventory all native, extension, nested, alias and manual ST help. Fix source-backed inaccuracies for agent use, preserve command contracts, refresh owner metadata/packages, verify installed and managed runtime parity, and retain evidence. No publication or unrelated owner changes.",
+  "objective": "Agents can choose and invoke ST tools from accurate concise help and canonical capability guidance.",
+  "task_type": "task",
+  "complexity": "STANDARD",
+  "autonomous": false,
+  "done_when": [
+    "All discovered ST help paths have explicit inventory and review evidence.",
+    "Supported help defects and routing defects are fixed with focused regressions and no unexplained flag/default changes.",
+    "Canonical quality gates pass and installed/runtime help matches the managed source.",
+    "Independent review and measured output tradeoffs are retained; local checkpoints are complete."
+  ],
+  "completion_requirements": {
+    "deployment": true,
+    "live_checks": [
+      "st-help-inventory",
+      "st-help-runtime-parity"
+    ]
+  },
+  "subtasks": [
+    {
+      "id": "1.1",
+      "description": "Inventory and review native and owner extension help, including aliases and manual routes.",
+      "steps": [
+        "Retain source-backed native and extension audit artifacts."
+      ]
+    },
+    {
+      "id": "1.2",
+      "description": "Correct native help, shared help routing, generated metadata and package artifacts.",
+      "steps": [
+        "Run focused regressions and canonical quality gates."
+      ]
+    },
+    {
+      "id": "1.3",
+      "description": "Verify installed and managed runtime help and close out with independent evidence.",
+      "steps": [
+        "Retain installed help inventory, output comparison, runtime parity and review report."
+      ]
+    }
+  ]
+}

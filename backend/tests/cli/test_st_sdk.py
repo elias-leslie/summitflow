@@ -197,6 +197,13 @@ def test_describe_app_returns_complete_static_help_and_usage() -> None:
     nested = typer.Typer(help="Nested help")
     app.add_typer(nested, name="sub")
 
+    @app.callback()
+    def root(
+        item: str | None = typer.Option(None, "--id", "-i"),
+        enabled: bool = typer.Option(False, "--enabled/--no-enabled"),
+    ) -> None:
+        raise AssertionError("description must not execute callbacks")
+
     @nested.command("work", help="Do owner work")
     @usage(surface="st.owner.work", cmd="st owner sub work")
     def work(
@@ -216,6 +223,10 @@ def test_describe_app_returns_complete_static_help_and_usage() -> None:
     assert "ITEM" in description["help"]["sub work"]
     assert "--count" in description["help"]["sub work"]
     assert "Number of passes" in description["help"]["sub work"]
+    assert description["help_options"][""]["--id"] == 1
+    assert description["help_options"][""]["-i"] == 1
+    assert description["help_options"][""]["--enabled"] == 0
+    assert description["help_options"][""]["--no-enabled"] == 0
     assert description["usage"] == [
         {
             "surface": "st.owner.work",

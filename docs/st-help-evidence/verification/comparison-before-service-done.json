@@ -1,0 +1,199 @@
+{
+  "source_stable": true,
+  "removed_click_routes": [],
+  "added_click_routes": [],
+  "changed_click_signatures": [],
+  "removed_extension_namespaces": [],
+  "added_extension_namespaces": [],
+  "changed_extension_bindings": [],
+  "removed_metadata_routes": [],
+  "added_metadata_routes": [
+    [
+      "neri",
+      "report",
+      "readiness"
+    ],
+    [
+      "neri",
+      "research",
+      "application-model-projection"
+    ],
+    [
+      "neri",
+      "research",
+      "hypotheses"
+    ],
+    [
+      "neri",
+      "research",
+      "hypothesis"
+    ],
+    [
+      "neri",
+      "research",
+      "hypothesis-revision"
+    ],
+    [
+      "neri",
+      "research",
+      "promote-application-source"
+    ],
+    [
+      "neri",
+      "research",
+      "record-hypothesis"
+    ]
+  ],
+  "metadata_missing_parents": [],
+  "failed_or_empty_help": [],
+  "metadata_output_mismatch": [],
+  "costs": {
+    "before": {
+      "click": {
+        "routes": 244,
+        "bytes": 105874,
+        "estimated_tokens": 26562,
+        "median_estimated_tokens": 75.0,
+        "p90_estimated_tokens": 213
+      },
+      "extension_metadata": {
+        "routes": 406,
+        "bytes": 152254,
+        "estimated_tokens": 38222,
+        "median_estimated_tokens": 61.0,
+        "p90_estimated_tokens": 201
+      },
+      "manual_help": {
+        "routes": 15,
+        "bytes": 9914,
+        "estimated_tokens": 2485,
+        "median_estimated_tokens": 191,
+        "p90_estimated_tokens": 191
+      }
+    },
+    "after": {
+      "click": {
+        "routes": 244,
+        "bytes": 110789,
+        "estimated_tokens": 27791,
+        "median_estimated_tokens": 77.0,
+        "p90_estimated_tokens": 218
+      },
+      "extension_metadata": {
+        "routes": 413,
+        "bytes": 158849,
+        "estimated_tokens": 39873,
+        "median_estimated_tokens": 62,
+        "p90_estimated_tokens": 203
+      },
+      "manual_help": {
+        "routes": 24,
+        "bytes": 4053,
+        "estimated_tokens": 1023,
+        "median_estimated_tokens": 26.0,
+        "p90_estimated_tokens": 65
+      }
+    }
+  },
+  "representative_costs": [
+    {
+      "path": [],
+      "before_estimated_tokens": 1466,
+      "after_estimated_tokens": 1560
+    },
+    {
+      "path": [
+        "create"
+      ],
+      "before_estimated_tokens": 232,
+      "after_estimated_tokens": 447
+    },
+    {
+      "path": [
+        "claim"
+      ],
+      "before_estimated_tokens": 163,
+      "after_estimated_tokens": 163
+    },
+    {
+      "path": [
+        "check"
+      ],
+      "before_estimated_tokens": 158,
+      "after_estimated_tokens": 221
+    },
+    {
+      "path": [
+        "db"
+      ],
+      "before_estimated_tokens": 191,
+      "after_estimated_tokens": 197
+    },
+    {
+      "path": [
+        "search"
+      ],
+      "before_estimated_tokens": 425,
+      "after_estimated_tokens": 551
+    },
+    {
+      "path": [
+        "graph"
+      ],
+      "before_estimated_tokens": 258,
+      "after_estimated_tokens": 258
+    },
+    {
+      "path": [
+        "graph",
+        "query"
+      ],
+      "before_estimated_tokens": 101,
+      "after_estimated_tokens": 101
+    },
+    {
+      "path": [
+        "neri"
+      ],
+      "before_estimated_tokens": 335,
+      "after_estimated_tokens": 335
+    },
+    {
+      "path": [
+        "neri",
+        "research"
+      ],
+      "before_estimated_tokens": 186,
+      "after_estimated_tokens": 218
+    },
+    {
+      "path": [
+        "jobs"
+      ],
+      "before_estimated_tokens": 474,
+      "after_estimated_tokens": 474
+    },
+    {
+      "path": [
+        "jobs",
+        "search"
+      ],
+      "before_estimated_tokens": 295,
+      "after_estimated_tokens": 295
+    },
+    {
+      "path": [
+        "browser"
+      ],
+      "before_estimated_tokens": 741,
+      "after_estimated_tokens": 741
+    },
+    {
+      "path": [
+        "service"
+      ],
+      "before_estimated_tokens": 211,
+      "after_estimated_tokens": 211
+    }
+  ]
+}

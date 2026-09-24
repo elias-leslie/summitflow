@@ -5,7 +5,7 @@
   "st_contract_versions": [
     1
   ],
-  "summary": "Agent Hub-owned agents commands.",
+  "summary": "Inspect and manage Agent Hub agents and prompt previews.",
   "effects": [
     "network",
     "read-remote",

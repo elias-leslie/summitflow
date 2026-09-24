@@ -5,7 +5,7 @@
   "st_contract_versions": [
     1
   ],
-  "summary": "Agent Hub-owned memory commands.",
+  "summary": "Search, save, and revise Agent Hub memory episodes.",
   "effects": [
     "network",
     "read-remote",

@@ -37,8 +37,9 @@
     "notes list": "Usage: neri notes list [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "notes add": "Usage: neri notes add [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "notes state": "Usage: neri notes state [OPTIONS] {investigation_id} {note_id}\n                        {state}:<acknowledged|resolved>\n\nArguments:\n  investigation_id               [required]\n  note_id                        [required]\n  state:<acknowledged|resolved>  [required]\n\nOptions:\n  --id <uuid>\n  --help       Show this message and exit.",
-    "report": "Usage: neri report [OPTIONS] COMMAND [ARGS]...\n\n  Read exact report and review revisions, save reports and download drafts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  show\n  revision                  Read one exact report revision without...\n  review-revision           Read one exact review revision without...\n  impact-checks\n  impact-check\n  record-impact-check\n  decide-impact-check\n  duplicate-dossiers\n  duplicate-dossier\n  record-duplicate-dossier\n  save\n  review\n  download\n  severity                  Read and save immutable severity assessments...",
+    "report": "Usage: neri report [OPTIONS] COMMAND [ARGS]...\n\n  Read exact report and review revisions, save reports and download drafts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  show\n  readiness\n  revision                  Read one exact report revision without...\n  review-revision           Read one exact review revision without...\n  impact-checks\n  impact-check\n  record-impact-check\n  decide-impact-check\n  duplicate-dossiers\n  duplicate-dossier\n  record-duplicate-dossier\n  save\n  review\n  download\n  severity                  Read and save immutable severity assessments...",
     "report show": "Usage: neri report show [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "report readiness": "Usage: neri report readiness [OPTIONS] {investigation_id} {report_revision_id}\n                             {program_binding_revision_id}\n\nArguments:\n  investigation_id             [required]\n  report_revision_id           [required]\n  program_binding_revision_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "report revision": "Usage: neri report revision [OPTIONS] {investigation_id} {revision_id}\n\n  Read one exact report revision without loading report history.\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --help  Show this message and exit.",
     "report review-revision": "Usage: neri report review-revision [OPTIONS] {investigation_id} {revision_id}\n\n  Read one exact review revision without loading report history.\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --help  Show this message and exit.",
     "report impact-checks": "Usage: neri report impact-checks [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --status <str>\n  --effect-class <str>\n  --offset <int range>  [default: 0; x>=0]\n  --limit <int range>   [default: 40; 1<=x<=100]\n  --help                Show this message and exit.",
@@ -57,7 +58,7 @@
     "report severity save": "Usage: neri report severity save [OPTIONS] {investigation_id} {revision_id}\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "execute": "Usage: neri execute [OPTIONS] COMMAND [ARGS]...\n\n  Submit explicit typed actions to a registered local target\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  operation\n  external-http\n  runtime\n  runtime-snapshot\n  sequence\n  reset",
     "execute operation": "Usage: neri execute operation [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
-    "execute external-http": "Usage: neri execute external-http [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "execute external-http": "Usage: neri execute external-http [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --full\n  --help         Show this message and exit.",
     "execute runtime": "Usage: neri execute runtime [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "execute runtime-snapshot": "Usage: neri execute runtime-snapshot [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "execute sequence": "Usage: neri execute sequence [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
@@ -79,7 +80,7 @@
     "target programs show": "Usage: neri target programs show [OPTIONS] {target_id} {binding_id}\n\nArguments:\n  target_id   [required]\n  binding_id  [required]\n\nOptions:\n  --revision-id <uuid>\n  --help                Show this message and exit.",
     "target programs history": "Usage: neri target programs history [OPTIONS] {target_id} {binding_id}\n\nArguments:\n  target_id   [required]\n  binding_id  [required]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
     "group": "Usage: neri group [OPTIONS] COMMAND [ARGS]...\n\n  Read and organize passive investigations containing saved attempts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  create\n  show\n  classify\n  select-report\n  membership\n  notes          Save investigation direction and read its state history",
-    "group list": "Usage: neri group list [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --limit <int range>             [default: 40; 1<=x<=100]\n  --cursor <str>\n  --search <str>\n  --class-key <str>\n  --filter <all|active|attention|awaiting_review|reviewed_findings|reviewed_no_findings>\n  --include-empty / --no-include-empty\n                                  [default: no-include-empty]\n  --help                          Show this message and exit.",
+    "group list": "Usage: neri group list [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --limit <int range>             [default: 40; 1<=x<=100]\n  --cursor <str>\n  --search <str>\n  --class-key <str>\n  --filter <all|active|attention|awaiting_review|reviewed_findings|reviewed_no_findings>\n  --include-empty / --no-include-empty\n                                  [default: no-include-empty]\n  --sections / --no-sections      [default: no-sections]\n  --help                          Show this message and exit.",
     "group create": "Usage: neri group create [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "group show": "Usage: neri group show [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --limit, --attempt-limit <int range>\n                                  [default: 40; 1<=x<=100]\n  --cursor, --attempt-cursor <str>\n  --report-limit <int range>      [default: 40; 1<=x<=100]\n  --report-cursor <str>\n  --help                          Show this message and exit.",
     "group classify": "Usage: neri group classify [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
@@ -102,12 +103,17 @@
     "runtime show": "Usage: neri runtime show [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
     "runtime stop": "Usage: neri runtime stop [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
     "runtime release": "Usage: neri runtime release [OPTIONS]\n\nOptions:\n  --revision <int range>  [x>=1; required]\n  --help                  Show this message and exit.",
-    "research": "Usage: neri research [OPTIONS] COMMAND [ARGS]...\n\n  Read research capability progress and save exact associations\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  catalogue\n  application-models\n  application-model-current\n  application-model\n  save-application-model\n  show\n  case-schema\n  matrix\n  context\n  recommend\n  links\n  associate\n  prepare-case\n  associate-case\n  invalidate-case\n  snapshot\n  snapshots\n  outcomes\n  record-outcome\n  cohorts\n  cohort\n  register-cohort\n  catalog-campaigns\n  catalog-campaign\n  register-catalog-campaign\n  record-catalog-plan\n  verify-catalog-item\n  record-catalog-replay\n  close-cohort\n  finalize-accounting\n  work\n  record-work\n  application\n  application-snapshots\n  snapshot-application",
+    "research": "Usage: neri research [OPTIONS] COMMAND [ARGS]...\n\n  Read research capability progress and save exact associations\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  catalogue\n  application-models\n  application-model-projection\n  application-model-current\n  application-model\n  save-application-model\n  hypotheses\n  hypothesis\n  hypothesis-revision\n  record-hypothesis\n  show\n  case-schema\n  matrix\n  context\n  recommend\n  links\n  associate\n  prepare-case\n  associate-case\n  invalidate-case\n  snapshot\n  snapshots\n  outcomes\n  record-outcome\n  cohorts\n  cohort\n  register-cohort\n  catalog-campaigns\n  catalog-campaign\n  register-catalog-campaign\n  record-catalog-plan\n  verify-catalog-item\n  record-catalog-replay\n  close-cohort\n  finalize-accounting\n  work\n  record-work\n  application\n  promote-application-source\n  application-snapshots\n  snapshot-application",
     "research catalogue": "Usage: neri research catalogue [OPTIONS]\n\nOptions:\n  --full / --no-full  [default: no-full]\n  --help              Show this message and exit.",
     "research application-models": "Usage: neri research application-models [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "research application-model-projection": "Usage: neri research application-model-projection [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "research application-model-current": "Usage: neri research application-model-current [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "research application-model": "Usage: neri research application-model [OPTIONS] {investigation_id}\n                                       {snapshot_id}\n\nArguments:\n  investigation_id  [required]\n  snapshot_id       [required]\n\nOptions:\n  --help  Show this message and exit.",
     "research save-application-model": "Usage: neri research save-application-model [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "research hypotheses": "Usage: neri research hypotheses [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "research hypothesis": "Usage: neri research hypothesis [OPTIONS] {investigation_id} {hypothesis_id}\n\nArguments:\n  investigation_id  [required]\n  hypothesis_id     [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "research hypothesis-revision": "Usage: neri research hypothesis-revision [OPTIONS] {investigation_id}\n                                         {hypothesis_id} {revision_id}\n\nArguments:\n  investigation_id  [required]\n  hypothesis_id     [required]\n  revision_id       [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "research record-hypothesis": "Usage: neri research record-hypothesis [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "research show": "Usage: neri research show [OPTIONS] {capability_id}\n\nArguments:\n  capability_id  [required]\n\nOptions:\n  --version <str>\n  --help           Show this message and exit.",
     "research case-schema": "Usage: neri research case-schema [OPTIONS] {capability_id}\n\nArguments:\n  capability_id  [required]\n\nOptions:\n  --version <str>\n  --help           Show this message and exit.",
     "research matrix": "Usage: neri research matrix [OPTIONS]\n\nOptions:\n  --full / --no-full         [default: no-full]\n  --capability <str>\n  --publication-state <str>\n  --tier <str>\n  --offset <int range>       [default: 0; x>=0]\n  --limit <int range>        [default: 20; 1<=x<=100]\n  --help                     Show this message and exit.",
@@ -136,6 +142,7 @@
     "research work": "Usage: neri research work [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "research record-work": "Usage: neri research record-work [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "research application": "Usage: neri research application [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "research promote-application-source": "Usage: neri research promote-application-source [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "research application-snapshots": "Usage: neri research application-snapshots [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "research snapshot-application": "Usage: neri research snapshot-application [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "worker": "Usage: neri worker [OPTIONS] COMMAND [ARGS]...\n\n  Inspect the bounded local candidate and Neri-owned qualification evidence\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  status         Inspect the dedicated local runtime and promotion state.\n  evaluate       Run one fallback-free, tool-free local analysis over a...\n  benchmark      Run the bounded harness-arm suite sequentially on the...\n  qualification  Read current qualification state from Neri, not the...\n  qualify        Append one qualification decision while retaining its...\n  shadow         Create one predeclared shadow assignment through Neri.\n  assignments    List assignment projections, optionally narrowed to one...\n  assignment     Read one assignment using its server-issued identity...\n  review         Append one immutable frontier review to an exact...",
@@ -379,6 +386,19 @@
       ],
       "task_types": [
         "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.report.readiness",
+      "tier": "reference",
+      "cmd": "st neri report readiness <investigation-id> <report-revision-id> <program-binding-revision-id>",
+      "when": "join the exact report, review, scope, severity and passive readiness records",
+      "precautions": [
+        "read-only; blockers do not submit a report or infer eligibility, novelty, award or payment"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
       ]
     },
     {
@@ -808,10 +828,10 @@
     {
       "surface": "st.neri.group.list",
       "tier": "reference",
-      "cmd": "st neri group list <target-id> [--limit 40 --cursor TOKEN --search TEXT --class-key KEY --filter FILTER --include-empty]",
+      "cmd": "st neri group list <target-id> [--limit 40 --cursor TOKEN --search TEXT --class-key KEY --filter FILTER --include-empty --sections]",
       "when": "list passive investigations for a logical target",
       "precautions": [
-        "read-only; filters apply before pagination; preserve group IDs and section continuation cursors; empty historical groups are omitted unless requested"
+        "read-only; compact default returns each investigation once; --sections adds categorized projections; filters apply before pagination; empty historical groups are omitted unless requested"
       ],
       "task_types": [
         "neri"
@@ -1072,6 +1092,21 @@
       ]
     },
     {
+      "surface": "st.neri.research.application_model.projection",
+      "tier": "reference",
+      "cmd": "st neri research application-model-projection <investigation-id>",
+      "when": "rebuild current application understanding from retained evidence",
+      "precautions": [
+        "read-only; inferred claims remain distinct from observed claims",
+        "unknown, uncovered, conflicting, stale and superseded states are explicit",
+        "the projection grants no testing authority"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
       "surface": "st.neri.research.application_model.current",
       "tier": "reference",
       "cmd": "st neri research application-model-current <investigation-id>",
@@ -1105,6 +1140,59 @@
       "precautions": [
         "passive record only; does not grant authority or execute target actions",
         "candidate, observed and gap states require exact cited sources"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.hypotheses",
+      "tier": "reference",
+      "cmd": "st neri research hypotheses <investigation-id>",
+      "when": "read the current typed hypothesis queue in explicit priority order",
+      "precautions": [
+        "read-only; queue order is supplied, not a probability or authority grant"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.hypothesis",
+      "tier": "reference",
+      "cmd": "st neri research hypothesis <investigation-id> <hypothesis-id>",
+      "when": "read one typed hypothesis and its compact immutable revision history",
+      "precautions": [
+        "read-only; inspect the current exact revision before superseding it"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.hypothesis.revision",
+      "tier": "reference",
+      "cmd": "st neri research hypothesis-revision <investigation-id> <hypothesis-id> <revision-id>",
+      "when": "read one exact immutable hypothesis revision",
+      "precautions": [
+        "read-only; no fallback to the current revision"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.hypothesis.record",
+      "tier": "reference",
+      "cmd": "st neri research record-hypothesis <investigation-id> --file revision.json [--id UUID]",
+      "when": "record a typed prospective question or append-only lifecycle revision",
+      "precautions": [
+        "passive record only; bind the exact manifest, scope and cited application model",
+        "priority is owner/model supplied and does not authorize target action"
       ],
       "task_types": [
         "neri",
@@ -1480,6 +1568,21 @@
       "precautions": [
         "read-only; static candidates do not establish reachability or vulnerability",
         "projection executes no JavaScript, follows no links and calls no model"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.application.promote_source",
+      "tier": "reference",
+      "cmd": "st neri research promote-application-source <investigation-id> --file promotion.json [--id UUID]",
+      "when": "derive route-only immutable source evidence from one existing complete capture",
+      "precautions": [
+        "passive runner-ledger read; sends no target request",
+        "requires the exact retained response body digest and media type",
+        "raw source, query values and credential-bearing URLs are omitted"
       ],
       "task_types": [
         "neri",

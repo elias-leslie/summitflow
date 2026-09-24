@@ -146,6 +146,7 @@ def _collect_help(
     context: Any,
     prefix: str,
     out: dict[str, str],
+    options: dict[str, dict[str, int]],
 ) -> None:
     """Render Click's complete static help without invoking command callbacks."""
     rich_markup_mode = getattr(command, "rich_markup_mode", None)
@@ -163,13 +164,19 @@ def _collect_help(
     get_command = getattr(command, "get_command", None)
     if not callable(list_commands) or not callable(get_command):
         return
+    options[prefix] = {
+        spelling: 0 if parameter.is_flag else parameter.nargs
+        for parameter in command.get_params(context)
+        if hasattr(parameter, "is_flag")
+        for spelling in (*parameter.opts, *parameter.secondary_opts)
+    }
     for name in list_commands(context):
         child = get_command(context, name)
         if child is None:
             continue
         child_path = " ".join(part for part in (prefix, name) if part)
         child_context = child.make_context(name, [], parent=context, resilient_parsing=True)
-        _collect_help(child, child_context, child_path, out)
+        _collect_help(child, child_context, child_path, out, options)
 
 
 def describe_app(app: typer.Typer, namespace: str) -> dict[str, Any]:
@@ -178,10 +185,12 @@ def describe_app(app: typer.Typer, namespace: str) -> dict[str, Any]:
         raise ValueError("extension namespace must be non-empty")
     root = typer.main.get_command(app)
     help_by_path: dict[str, str] = {}
+    help_options: dict[str, dict[str, int]] = {}
     root_context = root.make_context(namespace, [], resilient_parsing=True)
-    _collect_help(root, root_context, "", help_by_path)
+    _collect_help(root, root_context, "", help_by_path, help_options)
     return {
         "namespace": namespace,
         "help": help_by_path,
+        "help_options": help_options,
         "usage": [spec.to_dict() for spec in collect_usage_specs(app)],
     }

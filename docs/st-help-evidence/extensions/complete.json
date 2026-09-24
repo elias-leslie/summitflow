@@ -1,0 +1,75 @@
+{
+  "namespace": "complete",
+  "owner": "agent-hub",
+  "owner_root": "/srv/workspaces/projects/agent-hub",
+  "manifest_path": "/srv/workspaces/projects/summitflow/scripts/lib/extensions/complete.json",
+  "manifest_sha256": "c2364489f789f15d005ecadc06e9582ffb2a29f5210ebed9b039feb29af4931a",
+  "owner_revision": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+  "owner_dirty_tracked_paths": [],
+  "owner_description": {
+    "namespace": "complete",
+    "help": {
+      "": "Usage: complete [OPTIONS] [message] COMMAND [ARGS]...\n\n  Agent Hub completion API\n\nArguments:\n  message  Message to send\n\nOptions:\n  --message <str>             Message to send without relying on positional\n                              ordering\n  -a, --agent <str>           Agent slug\n  -M, --model <str>           Model override (e.g.\n                              cloudflare/qwen2.5-coder-32b). Uses @mention\n                              injection to override agent's default model.\n  -p, --project <str>         Project ID\n  -s, --source <str>          Source client  [default: st-cli]\n  -S, --session <str>         Continue existing session\n  -m, --memory / --no-memory  Enable memory injection  [default: memory]\n  -g, --memory-group <str>    Memory group ID\n  --task-type <str>           Optional task type label (e.g. wake, heartbeat)\n  --thinking <str>            Thinking level:\n                              minimal|low|medium|high|ultrathink\n  --skip-cache                Bypass response cache\n  --stream                    Stream response via SSE\n  --trace <str>               Trace ID for event correlation\n  --roles <str>               Comma-separated prompt roles to include\n  -i, --image <str>           Image file path(s) for multimodal input\n  -A, --audio <str>           Audio file path(s): WAV, MP3, AIFF, AAC, OGG, or\n                              FLAC\n  -f, --file <str>            Read message from file\n  -t, --timeout <float>       Optional HTTP read-timeout ceiling in seconds.\n                              Omit to wait for completion.\n  --raw                       Output raw JSON\n  --install-completion        Install completion for the current shell.\n  --show-completion           Show completion for the current shell, to copy\n                              it or customize the installation.\n  --help                      Show this message and exit."
+    },
+    "usage": [
+      {
+        "surface": "st.complete",
+        "tier": "reference",
+        "cmd": "st complete --agent <slug> --file <path>",
+        "when": "send an authorized completion request through Agent Hub",
+        "task_types": [
+          "agent-admin",
+          "research"
+        ],
+        "on_demand": "completion"
+      }
+    ]
+  },
+  "owner_capture": {
+    "argv": [
+      "/srv/workspaces/projects/agent-hub/backend/.venv/bin/python",
+      "-c",
+      "import json\nfrom st_sdk.runtime import describe_app\nfrom agent_hub_st.__main__ import OWNED_APPS\nprint(json.dumps(describe_app(OWNED_APPS['complete'], 'complete')))"
+    ],
+    "cwd": "/srv/workspaces/projects/agent-hub",
+    "returncode": 0,
+    "stdout": "{\"namespace\": \"complete\", \"help\": {\"\": \"Usage: complete [OPTIONS] [message] COMMAND [ARGS]...\\n\\n  Agent Hub completion API\\n\\nArguments:\\n  message  Message to send\\n\\nOptions:\\n  --message <str>             Message to send without relying on positional\\n                              ordering\\n  -a, --agent <str>           Agent slug\\n  -M, --model <str>           Model override (e.g.\\n                              cloudflare/qwen2.5-coder-32b). Uses @mention\\n                              injection to override agent's default model.\\n  -p, --project <str>         Project ID\\n  -s, --source <str>          Source client  [default: st-cli]\\n  -S, --session <str>         Continue existing session\\n  -m, --memory / --no-memory  Enable memory injection  [default: memory]\\n  -g, --memory-group <str>    Memory group ID\\n  --task-type <str>           Optional task type label (e.g. wake, heartbeat)\\n  --thinking <str>            Thinking level:\\n                              minimal|low|medium|high|ultrathink\\n  --skip-cache                Bypass response cache\\n  --stream                    Stream response via SSE\\n  --trace <str>               Trace ID for event correlation\\n  --roles <str>               Comma-separated prompt roles to include\\n  -i, --image <str>           Image file path(s) for multimodal input\\n  -A, --audio <str>           Audio file path(s): WAV, MP3, AIFF, AAC, OGG, or\\n                              FLAC\\n  -f, --file <str>            Read message from file\\n  -t, --timeout <float>       Optional HTTP read-timeout ceiling in seconds.\\n                              Omit to wait for completion.\\n  --raw                       Output raw JSON\\n  --install-completion        Install completion for the current shell.\\n  --show-completion           Show completion for the current shell, to copy\\n                              it or customize the installation.\\n  --help                      Show this message and exit.\"}, \"usage\": [{\"surface\": \"st.complete\", \"tier\": \"reference\", \"cmd\": \"st complete --agent <slug> --file <path>\", \"when\": \"send an authorized completion request through Agent Hub\", \"task_types\": [\"agent-admin\", \"research\"], \"on_demand\": \"completion\"}]}\n",
+    "stderr": ""
+  },
+  "installed_root_help": {
+    "argv": [
+      "st",
+      "complete",
+      "--help"
+    ],
+    "cwd": "/srv/workspaces/projects/summitflow",
+    "returncode": 0,
+    "stdout": "Usage: complete [OPTIONS] [message] COMMAND [ARGS]...\n\n  Agent Hub completion API\n\nArguments:\n  message  Message to send\n\nOptions:\n  --message <str>             Message to send without relying on positional\n                              ordering\n  -a, --agent <str>           Agent slug\n  -M, --model <str>           Model override (e.g.\n                              cloudflare/qwen2.5-coder-32b). Uses @mention\n                              injection to override agent's default model.\n  -p, --project <str>         Project ID\n  -s, --source <str>          Source client  [default: st-cli]\n  -S, --session <str>         Continue existing session\n  -m, --memory / --no-memory  Enable memory injection  [default: memory]\n  -g, --memory-group <str>    Memory group ID\n  --task-type <str>           Optional task type label (e.g. wake, heartbeat)\n  --thinking <str>            Thinking level:\n                              minimal|low|medium|high|ultrathink\n  --skip-cache                Bypass response cache\n  --stream                    Stream response via SSE\n  --trace <str>               Trace ID for event correlation\n  --roles <str>               Comma-separated prompt roles to include\n  -i, --image <str>           Image file path(s) for multimodal input\n  -A, --audio <str>           Audio file path(s): WAV, MP3, AIFF, AAC, OGG, or\n                              FLAC\n  -f, --file <str>            Read message from file\n  -t, --timeout <float>       Optional HTTP read-timeout ceiling in seconds.\n                              Omit to wait for completion.\n  --raw                       Output raw JSON\n  --install-completion        Install completion for the current shell.\n  --show-completion           Show completion for the current shell, to copy\n                              it or customize the installation.\n  --help                      Show this message and exit.\n",
+    "stderr": ""
+  },
+  "installed_manifest_help": {
+    "": "Usage: complete [OPTIONS] [message] COMMAND [ARGS]...\n\n  Agent Hub completion API\n\nArguments:\n  message  Message to send\n\nOptions:\n  --message <str>             Message to send without relying on positional\n                              ordering\n  -a, --agent <str>           Agent slug\n  -M, --model <str>           Model override (e.g.\n                              cloudflare/qwen2.5-coder-32b). Uses @mention\n                              injection to override agent's default model.\n  -p, --project <str>         Project ID\n  -s, --source <str>          Source client  [default: st-cli]\n  -S, --session <str>         Continue existing session\n  -m, --memory / --no-memory  Enable memory injection  [default: memory]\n  -g, --memory-group <str>    Memory group ID\n  --task-type <str>           Optional task type label (e.g. wake, heartbeat)\n  --thinking <str>            Thinking level:\n                              minimal|low|medium|high|ultrathink\n  --skip-cache                Bypass response cache\n  --stream                    Stream response via SSE\n  --trace <str>               Trace ID for event correlation\n  --roles <str>               Comma-separated prompt roles to include\n  -i, --image <str>           Image file path(s) for multimodal input\n  -A, --audio <str>           Audio file path(s): WAV, MP3, AIFF, AAC, OGG, or\n                              FLAC\n  -f, --file <str>            Read message from file\n  -t, --timeout <float>       Optional HTTP read-timeout ceiling in seconds.\n                              Omit to wait for completion.\n  --raw                       Output raw JSON\n  --install-completion        Install completion for the current shell.\n  --show-completion           Show completion for the current shell, to copy\n                              it or customize the installation.\n  --help                      Show this message and exit."
+  },
+  "installed_manifest_usage": [
+    {
+      "surface": "st.complete",
+      "tier": "reference",
+      "cmd": "st complete --agent <slug> --file <path>",
+      "when": "send an authorized completion request through Agent Hub",
+      "task_types": [
+        "agent-admin",
+        "research"
+      ],
+      "on_demand": "completion"
+    }
+  ],
+  "installed_manifest_summary": "Agent Hub-owned complete commands.",
+  "installed_manifest_effects": [
+    "network",
+    "read-remote",
+    "write-remote",
+    "read-local",
+    "write-local",
+    "credentials"
+  ]
+}

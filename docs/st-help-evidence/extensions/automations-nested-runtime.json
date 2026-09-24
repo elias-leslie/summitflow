@@ -1,0 +1,13 @@
+{
+  "runs": {
+    "argv": [
+      "st",
+      "automations",
+      "runs",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "st automations runs [--profile ID] [--project PROJECT] [--limit N] [--json]\n",
+    "stderr": ""
+  }
+}

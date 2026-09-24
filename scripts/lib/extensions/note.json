@@ -5,7 +5,7 @@
   "st_contract_versions": [
     1
   ],
-  "summary": "Agent Hub-owned note commands.",
+  "summary": "Save a quick tagged note as an Agent Hub memory episode.",
   "effects": [
     "network",
     "read-remote",

@@ -548,10 +548,6 @@
       "why": "resolves company identity while leaving the employer qualification gate in place",
       "precautions": [
         "confirm the posting names this employer before associating"
-      ],
-      "task_types": [
-        "jobs",
-        "career"
       ]
     },
     {

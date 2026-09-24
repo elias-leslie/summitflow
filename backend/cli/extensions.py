@@ -202,17 +202,30 @@ class ExtensionCommand(TyperCommand):
         return super().parse_args(ctx, args)
 
 
-def _help_path(arguments: list[str], help_pages: dict[str, str]) -> str:
-    # Metadata contains command routes, not the owner's argument parser. Select
-    # registered command words in order; positional values and flags are not
-    # route components. Never interpret tokens after an explicit `--`.
+def _help_path(
+    arguments: list[str], help_pages: dict[str, str], help_options: dict[str, dict[str, int]],
+) -> str:
+    # Follow a contiguous route, skipping only options whose arity the owner
+    # declares. Unknown arguments stop discovery instead of turning a later
+    # operand into an unrelated command. This never imports or runs the owner.
     path = ""
-    for value in arguments:
+    index = 0
+    while index < len(arguments):
+        value = arguments[index]
+        if value in {"--", "--help", "-h"}:
+            break
         if value.startswith("-"):
+            option, separator, _ = value.partition("=")
+            arity = help_options.get(path, {}).get(option)
+            if arity is None or (separator and arity == 0):
+                break
+            index += 1 + arity - bool(separator)
             continue
         candidate = f"{path} {value}".strip()
-        if candidate in help_pages:
-            path = candidate
+        if candidate not in help_pages:
+            break
+        path = candidate
+        index += 1
     return path
 
 
@@ -226,7 +239,7 @@ def _callback(record: ExtensionRecord):
             if metadata is None:
                 typer.echo(record.diagnostic)
                 raise typer.Exit(2)
-            path = _help_path(options, metadata.help)
+            path = _help_path(options, metadata.help, metadata.help_options)
             typer.echo(metadata.help[path])
             return
         context = extension_context(ctx.find_root().obj) if record.status == "unverified" else None

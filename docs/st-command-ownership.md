@@ -143,6 +143,17 @@ For a Python tool-owner change, refresh just its release wheel with
 The default packaging command still builds the complete workspace bundle. Refresh
 the backend lockfile for the changed wheel and sync its locked environment before
 local checks; activate service changes with `st service rebuild summitflow --detach`.
+Use `--python-owner summitflow` to refresh only the public ST SDK wheel.
+Use `--python-owner agent-hub` to refresh only Agent Hub's ST CLI wheel.
+
+Extension help remains passive: owners generate Typer help and usage with the
+public `st_sdk.describe_app`. Its optional `help_options` metadata maps each group
+route to option spellings and value counts (zero for flags). ST uses those counts
+to distinguish a group option's value from a subcommand without importing the
+owner. Regenerate this metadata when group options change. Older manifests remain
+valid; without option metadata, help discovery stops at an unknown prefix option
+and shows the nearest registered route. Install new metadata with the supporting
+ST reader; ordinary owner dispatch and grants are unchanged.
 
 | Capability | Current implementation owner/interface | State and remaining ST coupling |
 |---|---|---|

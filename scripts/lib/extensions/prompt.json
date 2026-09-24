@@ -5,7 +5,7 @@
   "st_contract_versions": [
     1
   ],
-  "summary": "Agent Hub-owned prompt commands.",
+  "summary": "Search and manage versioned Agent Hub prompts.",
   "effects": [
     "network",
     "read-remote",

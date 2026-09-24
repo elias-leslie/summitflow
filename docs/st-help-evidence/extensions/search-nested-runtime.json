@@ -1,0 +1,12 @@
+{
+  "": {
+    "argv": [
+      "st",
+      "search",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "Usage: st search [OPTIONS] [query]...\n\n  Search codebase symbols, endpoints, and tables with Precision Code Search.\n\nArguments:\n  query...  Search query (symbol name, function, class, endpoint)\n\nOptions:\n  -P, --project <str>             Project ID (overrides auto-detection for\n                                  this search)\n  -b, --budget <int>              Token budget for prompt context  [default:\n                                  1200]\n  -l, --limit <int>               Maximum primitive results  [default: 20]\n  --offset <int>                  Primitive result offset for text, symbols,\n                                  or file listings  [default: 0]\n  --text                          Use the text/content search primitive\n  --symbols                       Use the symbol search primitive\n  -j, --json                      Emit full JSON payload\n  -f, --file <str>                List all symbols in a specific file\n  --path <str>                    Restrict search to a relative file/subtree\n                                  prefix\n  --hint / --no-hint              Show refinement hints when results are poor\n                                  [default: hint]\n  --scope <auto|project|checkout>\n                                  Search scope: canonical project index,\n                                  current checkout, or auto-detect both when\n                                  needed  [default: auto]\n  --install-completion            Install completion for the current shell.\n  --show-completion               Show completion for the current shell, to\n                                  copy it or customize the installation.\n  --help                          Show this message and exit.\n",
+    "stderr": ""
+  }
+}

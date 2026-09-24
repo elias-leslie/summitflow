@@ -166,7 +166,7 @@ def status(
     examples=(
         "st service rebuild summitflow",
         "st service rebuild agent-hub --detach",
-        "st -P agent-hub service rebuild",
+        "st -P agent-hub service rebuild agent-hub",
     ),
     task_types=("devops", "config", "frontend", "backend"),
     tier="mandate",
@@ -176,11 +176,11 @@ def rebuild(
     detach: Annotated[bool, typer.Option("--detach", help="Queue rebuild in background")] = False,
     include_all_workers: Annotated[
         bool,
-        typer.Option("--include-all-workers", help="Restart protected optional workers too"),
+        typer.Option("--include-all-workers", help="Start or restart all declared optional workers, including inactive ones"),
     ] = False,
     scope: Annotated[
         RebuildScope,
-        typer.Option("--scope", help="Explicit isolated component; use full for shared or uncertain changes. Worker includes backend consumers."),
+        typer.Option("--scope", help="Restart/migration scope; release build uses full accepted source. Worker includes backend consumers; use full for shared changes."),
     ] = RebuildScope.full,
     worker: Annotated[
         list[str] | None,
@@ -404,7 +404,7 @@ def restart(
     detach: Annotated[bool, typer.Option("--detach", help="Queue restart in background")] = False,
     include_all_workers: Annotated[
         bool,
-        typer.Option("--include-all-workers", help="Restart protected optional workers too"),
+        typer.Option("--include-all-workers", help="Start or restart all declared optional workers, including inactive ones"),
     ] = False,
     scope: Annotated[RebuildScope, typer.Option("--scope", help="Same explicit component scope as rebuild.")] = RebuildScope.full,
     worker: Annotated[list[str] | None, typer.Option("--worker", help="Declared worker to restart; repeatable.")] = None,

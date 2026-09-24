@@ -77,6 +77,7 @@ class ExtensionManifest(StrictModel):
     summary: str = Field(min_length=1)
     effects: list[Effect]
     help: dict[str, str]
+    help_options: dict[str, dict[str, int]] = Field(default_factory=dict)
     usage: list[dict[str, object]]
     structured_operations: dict[str, StructuredOperation] = Field(default_factory=dict)
 
@@ -84,6 +85,11 @@ class ExtensionManifest(StrictModel):
     def validate_guidance(self) -> ExtensionManifest:
         if "" not in self.help or not self.help[""]:
             raise ValueError("root help is required")
+        for path, options in self.help_options.items():
+            if path not in self.help:
+                raise ValueError("help options require a registered help route")
+            if any(not name.startswith("-") or name == "--" or arity < 0 for name, arity in options.items()):
+                raise ValueError("help options require option spellings and nonnegative arities")
         for name, operation in self.structured_operations.items():
             if not name or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in name):
                 raise ValueError("invalid structured operation name")

@@ -28,7 +28,7 @@
     "check": "Usage: learn check [OPTIONS]\n\nOptions:\n  --path <str>     [required]\n  --lesson <str>   [required]\n  --attempt <str>\n  --help           Show this message and exit.",
     "discussion": "Usage: learn discussion [OPTIONS]\n\nOptions:\n  --path <str>       [required]\n  --lesson <str>     [required]\n  --attempt <str>\n  --challenge <str>\n  --help             Show this message and exit.",
     "predictions": "Usage: learn predictions [OPTIONS]\n\nOptions:\n  --path <str>        [required]\n  --lesson <str>      [required]\n  --step <int range>  [0<=x<=6; required]\n  --help              Show this message and exit.",
-    "status": "Usage: learn status [OPTIONS]\n\nOptions:\n  --job-id <uuid>\n  --help           Show this message and exit.",
+    "status": "Usage: learn status [OPTIONS]\n\nOptions:\n  --job-id <uuid>\n  --full\n  --help           Show this message and exit.",
     "stop": "Usage: learn stop [OPTIONS] {job_id}\n\nArguments:\n  job_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "attempt": "Usage: learn attempt [OPTIONS]\n\nOptions:\n  --path <str>    [required]\n  --lesson <str>  [required]\n  --file <path>   [required]\n  --help          Show this message and exit.",
     "lab": "Usage: learn lab [OPTIONS]\n\nOptions:\n  --path <str>    [required]\n  --lesson <str>  [required]\n  --file <path>\n  --help          Show this message and exit.",
@@ -43,7 +43,7 @@
     "agent-lab": "Usage: learn agent-lab [OPTIONS]\n\nOptions:\n  --path <str>    [required]\n  --lesson <str>  [required]\n  --file <path>   [required]\n  --help          Show this message and exit.",
     "pwn": "Usage: learn pwn [OPTIONS] COMMAND [ARGS]...\n\n  Sync the public pwn.college self-study catalog, then choose an activity\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  sync\n  status\n  activities",
     "pwn sync": "Usage: learn pwn sync [OPTIONS]\n\nOptions:\n  --username <str>\n  --full / --no-full  [default: no-full]\n  --dojo <str>\n  --help              Show this message and exit.",
-    "pwn status": "Usage: learn pwn status [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
+    "pwn status": "Usage: learn pwn status [OPTIONS]\n\nOptions:\n  --full\n  --help  Show this message and exit.",
     "pwn activities": "Usage: learn pwn activities [OPTIONS]\n\nOptions:\n  --dojo <str>\n  --module <str>\n  --solved / --unsolved\n  --query <str>\n  --help                 Show this message and exit.",
     "session": "Usage: learn session [OPTIONS] COMMAND [ARGS]...\n\n  Start in native SSH, close to pause, resume later, then finish with learner\n  evidence\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  start\n  continue\n  list\n  show\n  attach\n  handoff\n  resume\n  pause\n  finish\n  evidence\n  review\n  transcript",
     "session start": "Usage: learn session start [OPTIONS]\n\nOptions:\n  --activity <str>    [required]\n  --objective <str>\n  --harness <str>\n  --agent-name <str>\n  --model <str>\n  --open / --no-open  [default: open]\n  --sync / --no-sync  [default: sync]\n  --help              Show this message and exit.",
@@ -186,10 +186,10 @@
     {
       "surface": "st.learn.status",
       "tier": "reference",
-      "cmd": "st learn status [--job-id UUID]",
-      "when": "read job completion or full learning state",
+      "cmd": "st learn status [--job-id UUID] [--full]",
+      "when": "read job completion or a compact learning-state summary",
       "precautions": [
-        "queued/running is not completion; full state is larger than st learn context"
+        "queued/running is not completion; use --full only when the complete state is required"
       ],
       "task_types": [
         "learning",

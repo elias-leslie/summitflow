@@ -35,14 +35,15 @@ def _emit(payload: dict[str, Any], compact: bool) -> None:
     precautions=("Unknown checks remain unknown; listing never installs packages or runs update engines.",),
 )
 def list_dependencies(
-    project: Annotated[str | None, typer.Option("--project", "-P")] = None,
-    ecosystem: Annotated[str | None, typer.Option("--ecosystem")] = None,
-    status: Annotated[str | None, typer.Option("--status")] = None,
-    query: Annotated[str | None, typer.Option("--query")] = None,
-    limit: Annotated[int, typer.Option("--limit", min=1, max=500)] = 50,
-    offset: Annotated[int, typer.Option("--offset", min=0)] = 0,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
+    project: Annotated[str | None, typer.Option("--project", "-P", help="Project ID; defaults to the detected project.")] = None,
+    ecosystem: Annotated[str | None, typer.Option("--ecosystem", help="Filter by package ecosystem.")] = None,
+    status: Annotated[str | None, typer.Option("--status", help="Review decision: unreviewed, update, hold, or investigate.")] = None,
+    query: Annotated[str | None, typer.Option("--query", help="Case-insensitive package name filter.")] = None,
+    limit: Annotated[int, typer.Option("--limit", min=1, max=500, help="Maximum entries per page.")] = 50,
+    offset: Annotated[int, typer.Option("--offset", min=0, help="Skip this many matching entries.")] = 0,
+    json_output: Annotated[bool, typer.Option("--json", help="Include full inventory and review records as JSON.")] = False,
 ) -> None:
+    """List package evidence and review decisions; use review on an entry path next."""
     from app.services.dependency_management import list_inventory
 
     result = list_inventory(_project(project), ecosystem=ecosystem, status=status, query=query, limit=limit, offset=offset)
@@ -63,9 +64,10 @@ def list_dependencies(
 @app.command("review")
 def review(
     entry_path: Annotated[str, typer.Argument(help="Explorer dependency entry path")],
-    project: Annotated[str | None, typer.Option("--project", "-P")] = None,
+    project: Annotated[str | None, typer.Option("--project", "-P", help="Project ID; defaults to the detected project.")] = None,
     refresh: Annotated[bool, typer.Option("--refresh", help="Refresh the Explorer dependency scan first")] = False,
 ) -> None:
+    """Build a decision packet for one dependency; use record with record.revision."""
     from app.services.dependency_management import review_dependency
 
     try:
@@ -79,12 +81,13 @@ def review(
 def record(
     entry_path: Annotated[str, typer.Argument(help="Explorer dependency entry path")],
     decision: Annotated[str, typer.Argument(help="update, hold, or investigate")],
-    revision: Annotated[int, typer.Option("--revision", min=1)],
-    reason: Annotated[str, typer.Option("--reason")],
-    project: Annotated[str | None, typer.Option("--project", "-P")] = None,
-    version: Annotated[str | None, typer.Option("--version")] = None,
-    queue: Annotated[bool, typer.Option("--queue", help="Queue a deduplicated update task")] = False,
+    revision: Annotated[int, typer.Option("--revision", min=1, help="Current record.revision from st tools dependencies review; stale revisions fail.")],
+    reason: Annotated[str, typer.Option("--reason", help="Rationale for this decision.")],
+    project: Annotated[str | None, typer.Option("--project", "-P", help="Project ID; defaults to the detected project.")] = None,
+    version: Annotated[str | None, typer.Option("--version", help="Recommended version for an update decision.")] = None,
+    queue: Annotated[bool, typer.Option("--queue", help="Queue a deduplicated update task for an update decision.")] = False,
 ) -> None:
+    """Record a decision against a reviewed evidence revision."""
     from app.services.dependency_management import record_decision
 
     try:

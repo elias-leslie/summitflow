@@ -1,0 +1,11 @@
+{
+  "": {
+    "argv": [
+      "/srv/workspaces/projects/slopminer/bin/slopminer",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "usage: slopminer [-h] [--version]\n                 {review,profile,inspect,jev-request,scope,classify,capture-script}\n                 ...\n\nFind unclear, unnecessary or overloaded product copy.\n\npositional arguments:\n  {review,profile,inspect,jev-request,scope,classify,capture-script}\n    review              Review a snapshot or supplied text against a profile\n    profile             Validate a requirements profile\n    inspect             Present a snapshot and all pending profile guidance\n                        without evaluation\n    jev-request         Compile a Jev request for the caller's managed\n                        transport; does not dispatch\n    scope               Select one complete captured component subtree\n    classify            Compile or replay an experimental Jev classification\n    capture-script      Print a read-only extractor for the caller's browser\n                        eval capability\n\noptions:\n  -h, --help            show this help message and exit\n  --version             show program's version number and exit\n",
+    "stderr": ""
+  }
+}

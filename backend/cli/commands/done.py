@@ -198,7 +198,7 @@ def done_command(
 
     Auto-verifies, checkpoints, accepts locally, closes, and cleans up. Docs/config-only
     diffs are detected automatically; admin/no-merge paths are routed by DB state.
-    Escape hatch: `ST_DIFF_GATE=off` for emergencies.
+    `ST_DIFF_GATE=off` bypasses the gate; use only for explicitly authorized recovery.
 
     Subtasks: pass --citation or --none to record memory citations before close.
     Already-completed task/subtask is a no-op (exit 0).

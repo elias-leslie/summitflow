@@ -42,7 +42,7 @@ MonitorFollowOption = Annotated[
 ]
 MonitorLimitOption = Annotated[
     int,
-    typer.Option("-n", "--limit", help="Maximum events to show"),
+    typer.Option("-n", "--limit", help="Max sessions in overview; max events for a session target"),
 ]
 MonitorDebugOption = Annotated[
     bool,

@@ -5,7 +5,7 @@
   "st_contract_versions": [
     1
   ],
-  "summary": "Agent Hub-owned feedback commands.",
+  "summary": "Report, search, vote on, and resolve agent feedback.",
   "effects": [
     "network",
     "read-remote",

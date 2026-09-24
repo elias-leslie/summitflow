@@ -151,7 +151,7 @@ def _pulse_payloads(
 def pulse(
     project_id: Annotated[
         str | None,
-        typer.Option("--project", "-P", help="Show pulse for one project instead of the global overview"),
+        typer.Option("--project", "-P", help="Select one project; defaults to the detected project. Use --all for every project."),
     ] = None,
     all_projects: Annotated[
         bool,

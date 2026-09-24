@@ -24,6 +24,7 @@ def registration(tmp_path, *, namespace="fixture", manifest_changes=None, bindin
         "namespace": namespace, "st_contract_versions": [1], "summary": "Isolated fixture",
         "effects": ["read-local"],
         "help": {"": "Usage: st fixture [OPTIONS]\nFixture help", "inspect": "Inspect --json"},
+        "help_options": {"": {"--json": 0, "--id": 1, "--pair": 2}},
         "usage": [{"surface": f"st.{namespace}", "cmd": f"st {namespace}",
                    "when": "inspect fixture", "task_types": ["fixture-work"],
                    "on_demand": "fixture inspection"}],
@@ -67,6 +68,12 @@ def test_help_and_metadata_never_resolve_or_execute(tmp_path, monkeypatch):
     assert "Inspect --json" in runner.invoke(app, ["fixture", "inspect", "--help"]).output
     assert "Inspect --json" in runner.invoke(app, ["fixture", "inspect", "a positional value", "--help"]).output
     assert "Inspect --json" in runner.invoke(app, ["fixture", "--json", "inspect", "--help"]).output
+    assert "Fixture help" in runner.invoke(app, ["fixture", "--id", "inspect", "--help"]).output
+    assert "Inspect --json" in runner.invoke(app, ["fixture", "--id", "value", "inspect", "--help"]).output
+    assert "Inspect --json" in runner.invoke(app, ["fixture", "--id=value", "inspect", "--help"]).output
+    assert "Fixture help" in runner.invoke(app, ["fixture", "--pair", "inspect", "inspect", "--help"]).output
+    assert "Fixture help" in runner.invoke(app, ["fixture", "invalid", "inspect", "--help"]).output
+    assert "Fixture help" in runner.invoke(app, ["fixture", "--unknown", "inspect", "--help"]).output
     assert "Fixture help" in runner.invoke(app, ["fixture", "a positional value", "--help"]).output
     specs = collect_usage_specs(app)
     assert filter_specs(specs, surface="st.fixture")[0].cmd == "st fixture"
@@ -79,6 +86,8 @@ def test_help_and_metadata_never_resolve_or_execute(tmp_path, monkeypatch):
     ({"usage": [{"surface": "st.claim"}]}, "malformed"),
     ({"owner": "imposter"}, "malformed"),
     ({"unexpected": True}, "malformed"),
+    ({"help_options": {"missing": {"--id": 1}}}, "malformed"),
+    ({"help_options": {"": {"--id": -1}}}, "malformed"),
 ])
 def test_bad_metadata_is_localized(tmp_path, changes, code):
     registry = registration(tmp_path, manifest_changes=changes)

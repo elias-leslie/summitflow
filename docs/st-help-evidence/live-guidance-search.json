@@ -1,0 +1,38 @@
+[
+  {
+    "command": [
+      "st",
+      "tools",
+      "manifest",
+      "--surface",
+      "st.search"
+    ],
+    "exit_code": 0,
+    "stdout": "mandates:\n  st.search:\n    cmd: st search \"query\"\n    when: repo/code discovery; before adding any function/endpoint/command/component \u2014 search first and extend a close match instead of writing new\n    careful: start with default search; it validates indexed candidates against current source and recovers local definitions; use 1-4 identifier or filename terms and consume the returned source; narrow with --path or --file, and use --text for literal content; if mode=text-fallback or empty, refine the query or use a primitive; --scope checkout is for alternate or offline roots; on a close match, extend/reuse it rather than adding a near-duplicate\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "st",
+      "tools",
+      "manifest",
+      "--surface",
+      "st.create"
+    ],
+    "exit_code": 0,
+    "stdout": "mandates:\n  st.create:\n    cmd: st create \"title\"\n    when: create a task; project auto-detected from cwd\n    careful: bare title triggers auto-enrichment; pass --draft for kernel-only intake; --plan plan.json for pre-validated structured plans; --type bug|idea for typed kernels\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "st",
+      "-P",
+      "neri",
+      "search",
+      "ProgramRevisionInput"
+    ],
+    "exit_code": 0,
+    "stdout": "SEARCH:ProgramRevisionInput|mode=symbol-first|symbols=3|tokens=393|saved=8146|baseline=unique-current-files\n\nPrecision Code Search: symbol-first\n\n## Relevant Symbols\n\n- `ProgramRevisionInput` (class) in backend/app/passive_context.py:99 - class ProgramRevisionInput(BaseModel)\n- `ProgramRevisionInput.explicit_verification` (method) in backend/app/passive_context.py:110 - def explicit_verification(self)\n- `add_program_revision` (function) in backend/app/passive_context.py:600 - async def add_program_revision(program_id: UUID, body: ProgramRevisionInput, principal: Principal=Depends(require_owner))\n\n## Exact Source Slices\n\n### `ProgramRevisionInput, ProgramRevisionInput.explicit_verification` (backend/app/passive_context.py:99-115)\n```\nclass ProgramRevisionInput(BaseModel):\n    model_config = ConfigDict(extra='forbid')\n    id: UUID = Field(default_factory=uuid4)\n    expected_revision: int = Field(ge=0)\n    summary: str = Field(default='', max_length=1000)\n    policy_snapshot: str = Field(min_length=1, max_length=50000)\n    sources: list[ProgramSource] = Field(min_length=1, max_length=20)\n    verified_at: AwareDatetime | None = None\n    verified_fact: str | None = Field(default=None, min_length=1, max_length=1000)\n\n    @model_validator(mode='after')\n    def explicit_verification(self):\n        if (self.verified_at is None) != (self.verified_fact is None):\n            raise ValueError('verified_at and verified_fact must be supplied together')\n        if not self.policy_snapshot.strip() or (self.verified_fact is not None and not self.verified_fact.strip()):\n            raise ValueError('Policy and verification facts must contain text')\n        return self\n```\n",
+    "stderr": ""
+  }
+]

@@ -1,0 +1,292 @@
+{
+  "rows": [
+    {
+      "namespace": "agents",
+      "owner_revision_at_capture": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "owner_help_routes": 8,
+      "manifest_help_routes": 8,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "complete",
+      "owner_revision_at_capture": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "owner_help_routes": 1,
+      "manifest_help_routes": 1,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "feedback",
+      "owner_revision_at_capture": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "owner_help_routes": 11,
+      "manifest_help_routes": 11,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "mandates",
+      "owner_revision_at_capture": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "owner_help_routes": 1,
+      "manifest_help_routes": 1,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "memory",
+      "owner_revision_at_capture": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "owner_help_routes": 18,
+      "manifest_help_routes": 18,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "automations",
+      "owner_revision_at_capture": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "owner_help_routes": 17,
+      "manifest_help_routes": 17,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "models",
+      "owner_revision_at_capture": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "owner_help_routes": 2,
+      "manifest_help_routes": 2,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "note",
+      "owner_revision_at_capture": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "owner_help_routes": 1,
+      "manifest_help_routes": 1,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "persona",
+      "owner_revision_at_capture": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "owner_help_routes": 10,
+      "manifest_help_routes": 10,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "prompt",
+      "owner_revision_at_capture": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "owner_help_routes": 15,
+      "manifest_help_routes": 15,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "skills",
+      "owner_revision_at_capture": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "owner_help_routes": 8,
+      "manifest_help_routes": 8,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "neri",
+      "owner_revision_at_capture": "f2b2612c805c68658ef0f182d38ee678e5478aa5",
+      "owner_help_routes": 141,
+      "manifest_help_routes": 141,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "learn",
+      "owner_revision_at_capture": "dcfef116fba7f47a5136f4421e1226da3cdd1ece",
+      "owner_help_routes": 46,
+      "manifest_help_routes": 46,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "jobs",
+      "owner_revision_at_capture": "8f2eae305dfac372e345313970a7b089f945ef1e",
+      "owner_help_routes": 44,
+      "manifest_help_routes": 44,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "portfolio",
+      "owner_revision_at_capture": "2e140cb4e342257933683993adf59a627d27ce79",
+      "owner_help_routes": 23,
+      "manifest_help_routes": 23,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "ui",
+      "owner_revision_at_capture": "93d0553c5b580ff2bdb3c193b91450aa7d13f12f",
+      "owner_help_routes": 16,
+      "manifest_help_routes": 16,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "selection",
+      "owner_revision_at_capture": "93d0553c5b580ff2bdb3c193b91450aa7d13f12f",
+      "owner_help_routes": 4,
+      "manifest_help_routes": 4,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "wiki",
+      "owner_revision_at_capture": "69138bd5bcb8ffc144fa8ac1f89dcfd80640704e",
+      "owner_help_routes": 6,
+      "manifest_help_routes": 6,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "web",
+      "owner_revision_at_capture": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "owner_help_routes": 5,
+      "manifest_help_routes": 5,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "browser",
+      "owner_revision_at_capture": "00e2b379e1fe58db1e7c2fb177e9db11dbbe13a3",
+      "owner_help_routes": 1,
+      "manifest_help_routes": 1,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "graph",
+      "owner_revision_at_capture": "d7479c5e336d975760540009913c9931e7208399",
+      "owner_help_routes": 11,
+      "manifest_help_routes": 11,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "search",
+      "owner_revision_at_capture": "d7479c5e336d975760540009913c9931e7208399",
+      "owner_help_routes": 1,
+      "manifest_help_routes": 1,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "design",
+      "owner_revision_at_capture": "9c21ac07c9d93b6d168fc8cbfccc737bd2c7ed0d",
+      "owner_help_routes": 11,
+      "manifest_help_routes": 11,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    },
+    {
+      "namespace": "slopminer",
+      "owner_revision_at_capture": "0e4166d1b51039b3c8e2223084292584fb005e34",
+      "owner_help_routes": 12,
+      "manifest_help_routes": 12,
+      "route_differences": {
+        "owner_only": [],
+        "manifest_only": []
+      },
+      "option_name_differences": [],
+      "default_value_differences": []
+    }
+  ]
+}

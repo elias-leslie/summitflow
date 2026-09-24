@@ -5,7 +5,7 @@
   "st_contract_versions": [
     1
   ],
-  "summary": "Agent Hub-owned persona commands.",
+  "summary": "Inspect and edit persona identity; trigger heartbeat.",
   "effects": [
     "network",
     "read-remote",

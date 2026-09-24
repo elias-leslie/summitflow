@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import typer
 
 from ..client import APIError, STClient
@@ -21,19 +19,21 @@ def autocode_task(
     next_task: bool = False,
 ) -> None:
     """Queue task for autonomous execution via Hatchet."""
+    if at is not None:
+        output_error("Scheduled autocode is unavailable. Omit --at to queue the task now.")
+        raise typer.Exit(2)
+
     task_id, selected_from_ready = _resolve_task_id(task_id, client, next_task=next_task)
     task = _fetch_task(task_id, client)
     client = _get_task_client(task, client)
     subtasks = _fetch_subtasks(task_id, client)
     _validate_task_for_autocode(task_id, task, subtasks, client)
-    schedule = _parse_schedule(at)
-
     if dry_run:
-        _output_dry_run(task_id, subtasks, schedule, selected_from_ready=selected_from_ready)
+        _output_dry_run(task_id, subtasks, selected_from_ready=selected_from_ready)
         return
 
     _queue_task_for_execution(task_id, client)
-    _output_queue_result(task_id, schedule, selected_from_ready=selected_from_ready)
+    _output_queue_result(task_id, selected_from_ready=selected_from_ready)
 
 
 def _resolve_task_id(
@@ -126,25 +126,9 @@ def _validate_task_for_autocode(
         raise typer.Exit(1)
 
 
-def _parse_schedule(at: str | None) -> Any | None:
-    """Parse schedule from --at parameter."""
-    if not at:
-        return None
-
-    from app.scheduling.types import OnceSchedule, parse_at_time
-
-    try:
-        scheduled_time = parse_at_time(at)
-        return OnceSchedule(timestamp=scheduled_time)
-    except ValueError as e:
-        output_error(f"Invalid --at value: {e}")
-        raise typer.Exit(1) from None
-
-
 def _output_dry_run(
     task_id: str,
     subtasks: list[dict[str, object]],
-    schedule: Any | None,
     *,
     selected_from_ready: bool,
 ) -> None:
@@ -159,8 +143,6 @@ def _output_dry_run(
         "next_subtask": incomplete[0]["subtask_id"] if incomplete else None,
         "message": f"Would queue {task_id} for autonomous execution",
     }
-    if schedule and hasattr(schedule, "timestamp"):
-        result["scheduled_for"] = schedule.timestamp.isoformat()
     output_json(result)
 
 
@@ -173,23 +155,13 @@ def _queue_task_for_execution(task_id: str, client: STClient) -> None:
         raise typer.Exit(1) from None
 
 
-def _output_queue_result(task_id: str, schedule: Any | None, *, selected_from_ready: bool) -> None:
+def _output_queue_result(task_id: str, *, selected_from_ready: bool) -> None:
     """Output task queueing result."""
-    if schedule and hasattr(schedule, "timestamp"):
-        msg = f"Task scheduled for {schedule.timestamp.strftime('%Y-%m-%d %H:%M UTC')}"
-        output_json({
-            "task_id": task_id,
-            "status": "scheduled",
-            "selected_from_ready": selected_from_ready,
-            "scheduled_for": schedule.timestamp.isoformat(),
-            "message": msg,
-        })
-    else:
-        msg = f"Task queued for immediate execution. Monitor via: st context {task_id}"
-        output_json({
-            "task_id": task_id,
-            "status": "queued",
-            "dispatch": "immediate",
-            "selected_from_ready": selected_from_ready,
-            "message": msg,
-        })
+    msg = f"Task queued for immediate execution. Monitor via: st context {task_id}"
+    output_json({
+        "task_id": task_id,
+        "status": "queued",
+        "dispatch": "immediate",
+        "selected_from_ready": selected_from_ready,
+        "message": msg,
+    })

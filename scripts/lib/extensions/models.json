@@ -5,7 +5,7 @@
   "st_contract_versions": [
     1
   ],
-  "summary": "Agent Hub-owned models commands.",
+  "summary": "Find models by provider and coding capability.",
   "effects": [
     "network",
     "read-remote",
@@ -29,5 +29,18 @@
       ],
       "on_demand": "model administration"
     }
-  ]
+  ],
+  "help_options": {
+    "": {
+      "--id": 1,
+      "--provider": 1,
+      "--free": 0,
+      "--coding": 0,
+      "--limit": 1,
+      "--json": 0,
+      "--install-completion": 0,
+      "--show-completion": 0,
+      "--help": 0
+    }
+  }
 }

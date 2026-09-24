@@ -5,7 +5,7 @@
   "st_contract_versions": [
     1
   ],
-  "summary": "Agent Hub-owned complete commands.",
+  "summary": "Request an Agent Hub agent or model completion.",
   "effects": [
     "network",
     "read-remote",

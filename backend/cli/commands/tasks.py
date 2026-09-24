@@ -34,7 +34,7 @@ _DEFAULT_CRITIQUE_AGENT = "specifier"
     when="create a task; project auto-detected from cwd",
     precautions=(
         "bare title triggers auto-enrichment; pass --draft for kernel-only intake",
-        "--plan plan.md for pre-validated structured plans",
+        "--plan plan.json for pre-validated structured plans",
         "--type bug|idea for typed kernels",
     ),
     tier="mandate",
@@ -45,25 +45,28 @@ def create(
         Path | None,
         typer.Option("--from-file", help=FROM_FILE_OPTION_HELP),
     ] = None,
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview --plan or --from-file only; a bare title cannot be dry-run."),
+    ] = False,
     draft: Annotated[
         bool,
         typer.Option("--draft", help="Create kernel only; skip auto-enrichment pipeline."),
     ] = False,
-    description: Annotated[str | None, typer.Option("-d", "--description")] = None,
-    priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4)] = 2,
-    labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
+    description: Annotated[str | None, typer.Option("-d", "--description", help="Task details beyond the title.")] = None,
+    priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4, help="0 is highest priority; default is 2.")] = 2,
+    labels: Annotated[str | None, typer.Option("-l", "--labels", help="Comma-separated labels.")] = None,
     task_type: Annotated[
         str,
         typer.Option("-t", "--type", help="Task type: task, bug, idea, refactor, ..."),
     ] = _DEFAULT_TASK_TYPE,
-    parent: Annotated[str | None, typer.Option("--parent")] = None,
+    parent: Annotated[str | None, typer.Option("--parent", help="Parent task ID for a child task.")] = None,
     plan: Annotated[
         Path | None,
         typer.Option("--plan", help=PLAN_OPTION_HELP),
     ] = None,
-    task_id: Annotated[str | None, typer.Option("--task")] = None,
-    blocked_by: Annotated[str | None, typer.Option("--blocked-by")] = None,
+    task_id: Annotated[str | None, typer.Option("--task", help="With --plan, update this existing task instead of creating one.")] = None,
+    blocked_by: Annotated[str | None, typer.Option("--blocked-by", help="Create a blocking dependency on this task ID.")] = None,
     execution_mode: Annotated[str | None, typer.Option("--execution-mode", hidden=True)] = None,
     manual_only: Annotated[bool, typer.Option("--manual-only", hidden=True)] = False,
     autonomous: Annotated[
@@ -82,13 +85,13 @@ def create(
 
 @app.command("list")
 def list_tasks(
-    status: Annotated[str | None, typer.Option("-s", "--status")] = None,
-    task_type: Annotated[str | None, typer.Option("-t", "--type")] = None,
-    priority: Annotated[int | None, typer.Option("-p", "--priority", min=0, max=4)] = None,
-    tier: Annotated[int | None, typer.Option("--tier", min=1, max=4)] = None,
-    labels: Annotated[str | None, typer.Option("-l", "--labels")] = None,
-    limit: Annotated[int, typer.Option("--limit")] = 50,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
+    status: Annotated[str | None, typer.Option("-s", "--status", help="Filter by task status.")] = None,
+    task_type: Annotated[str | None, typer.Option("-t", "--type", help="Filter by task type.")] = None,
+    priority: Annotated[int | None, typer.Option("-p", "--priority", min=0, max=4, help="Filter by priority (0 highest).")] = None,
+    tier: Annotated[int | None, typer.Option("--tier", min=1, max=4, help="Filter by the tier:N label.")] = None,
+    labels: Annotated[str | None, typer.Option("-l", "--labels", help="Comma-separated labels to match.")] = None,
+    limit: Annotated[int, typer.Option("--limit", help="Maximum tasks returned.")] = 50,
+    json_output: Annotated[bool, typer.Option("--json", help="Return task objects as JSON.")] = False,
     compact: Annotated[bool | None, typer.Option("--compact/--no-compact")] = None,
 ) -> None:
     """List tasks with optional filters."""
@@ -112,9 +115,9 @@ def list_tasks(
 )
 def ready(
     limit: Annotated[int, typer.Option("--limit")] = 50,
-    blocked: Annotated[bool, typer.Option("--blocked")] = False,
+    blocked: Annotated[bool, typer.Option("--blocked", help="Show pending tasks with incomplete blocking dependencies instead.")] = False,
 ) -> None:
-    """List tasks ready to work on (not blocked)."""
+    """List claimable tasks, or use --blocked to inspect blocked pending tasks."""
     from .tasks_ready import list_ready_tasks
 
     try:
@@ -129,8 +132,8 @@ def ready_all(
 ) -> None:
     """Cross-project summary: ready and blocked tasks across all projects.
 
-    Shows per-project counts with top tasks prioritized by:
-    blocked first, then bugs, then by priority level.
+    Shows per-project counts and up to --limit tasks from each active, stale,
+    blocked, and ready section. Projects with more blocked tasks appear first.
 
     Examples:
         st ready-all
@@ -330,10 +333,13 @@ def autocode(
         bool,
         typer.Option("--next", help="Queue the first execution-ready task from this project's ready queue."),
     ] = False,
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-    at: Annotated[str | None, typer.Option("--at")] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Check readiness and show the selected task without dispatching.")] = False,
+    at: Annotated[
+        str | None,
+        typer.Option("--at", help="Scheduling is unavailable; omit --at to queue now."),
+    ] = None,
 ) -> None:
-    """Queue task for autonomous execution via Hatchet."""
+    """Queue an execution-ready task for immediate autonomous dispatch."""
     from .tasks_autocode import autocode_task
 
     autocode_task(task_id, dry_run, at, STClient(require_project=False), next_task=next_task)

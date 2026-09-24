@@ -1,0 +1,70 @@
+{
+  "namespace": "mandates",
+  "owner": "agent-hub",
+  "owner_root": "/srv/workspaces/projects/agent-hub",
+  "manifest_path": "/srv/workspaces/projects/summitflow/scripts/lib/extensions/mandates.json",
+  "manifest_sha256": "101e685a2441f264cb36a780c7e631660c3c5e3efac1081c4d8d20da066530e9",
+  "owner_revision": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+  "owner_dirty_tracked_paths": [],
+  "owner_description": {
+    "namespace": "mandates",
+    "help": {
+      "": "Usage: mandates [OPTIONS]\n\n  Print the active mandate union (same set SessionStart hooks inject).\n\n  Examples: st mandates | st mandates --human | st mandates --no-compact\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit."
+    },
+    "usage": [
+      {
+        "surface": "st.mandates",
+        "tier": "reference",
+        "cmd": "st mandates",
+        "when": "read the active canonical mandate union",
+        "task_types": [
+          "agent-admin"
+        ],
+        "on_demand": "agent context"
+      }
+    ]
+  },
+  "owner_capture": {
+    "argv": [
+      "/srv/workspaces/projects/agent-hub/backend/.venv/bin/python",
+      "-c",
+      "import json\nfrom st_sdk.runtime import describe_app\nfrom agent_hub_st.__main__ import OWNED_APPS\nprint(json.dumps(describe_app(OWNED_APPS['mandates'], 'mandates')))"
+    ],
+    "cwd": "/srv/workspaces/projects/agent-hub",
+    "returncode": 0,
+    "stdout": "{\"namespace\": \"mandates\", \"help\": {\"\": \"Usage: mandates [OPTIONS]\\n\\n  Print the active mandate union (same set SessionStart hooks inject).\\n\\n  Examples: st mandates | st mandates --human | st mandates --no-compact\\n\\nOptions:\\n  --install-completion  Install completion for the current shell.\\n  --show-completion     Show completion for the current shell, to copy it or\\n                        customize the installation.\\n  --help                Show this message and exit.\"}, \"usage\": [{\"surface\": \"st.mandates\", \"tier\": \"reference\", \"cmd\": \"st mandates\", \"when\": \"read the active canonical mandate union\", \"task_types\": [\"agent-admin\"], \"on_demand\": \"agent context\"}]}\n",
+    "stderr": ""
+  },
+  "installed_root_help": {
+    "argv": [
+      "st",
+      "mandates",
+      "--help"
+    ],
+    "cwd": "/srv/workspaces/projects/summitflow",
+    "returncode": 0,
+    "stdout": "Usage: mandates [OPTIONS]\n\n  Print the active mandate union (same set SessionStart hooks inject).\n\n  Examples: st mandates | st mandates --human | st mandates --no-compact\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n",
+    "stderr": ""
+  },
+  "installed_manifest_help": {
+    "": "Usage: mandates [OPTIONS]\n\n  Print the active mandate union (same set SessionStart hooks inject).\n\n  Examples: st mandates | st mandates --human | st mandates --no-compact\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit."
+  },
+  "installed_manifest_usage": [
+    {
+      "surface": "st.mandates",
+      "tier": "reference",
+      "cmd": "st mandates",
+      "when": "read the active canonical mandate union",
+      "task_types": [
+        "agent-admin"
+      ],
+      "on_demand": "agent context"
+    }
+  ],
+  "installed_manifest_summary": "Agent Hub-owned mandates commands.",
+  "installed_manifest_effects": [
+    "network",
+    "read-remote",
+    "credentials"
+  ]
+}

@@ -98,16 +98,17 @@ def create_backup(
     note: Annotated[str | None, typer.Option("--note", "-n", help="Backup note")] = None,
     keep_local: Annotated[bool, typer.Option("--keep-local", help="Keep local copy")] = False,
     source: Annotated[str | None, typer.Option("--source", help="Source ID (for non-project backups)")] = None,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview what would be backed up without queuing an archive")] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview project backup contents without queuing; --source only reports that a local preview is unavailable."),
+    ] = False,
 ) -> None:
     """Create a new backup. Use --source for non-project sources.
 
-    With --dry-run, no archive is created and no server task is queued.
-    Instead the local project tree is scanned with the same exclusion
-    logic the server uses (DEFAULT_EXCLUDES + .backupignore) and a
-    summary is printed: included/excluded file counts, total size, and
-    a per-top-level breakdown. Useful for tuning .backupignore before
-    running a real backup.
+    For a project backup, --dry-run scans the local project tree with the
+    server's exclusion rules and reports file counts and sizes without
+    queuing an archive. Source backups are assembled server-side, so
+    --dry-run --source cannot preview their contents.
     """
     try:
         if dry_run:
@@ -155,11 +156,10 @@ def _create_backup_dry_run(*, source: str | None) -> None:
     from ..config import get_config
 
     if source:
-        # Source backups are assembled server-side; the local view is
-        # only a partial preview. Print a clear note and exit.
+        # Source backups are assembled server-side; no local preview exists.
         print(f"DRY-RUN SOURCE={source}")
         print("Source backups are assembled server-side from the registered source path.")
-        print("Run this from the project that owns the source for a faithful preview.")
+        print("No local --source preview is available; omit --source to preview the current project backup.")
         return
 
     config = get_config()
@@ -399,10 +399,16 @@ def restore_backup(
 @app.command("status")
 def backup_status(
     ctx: typer.Context,
-    task_id: Annotated[str | None, typer.Argument(help="Job ID")] = None,
+    task_id: Annotated[
+        str | None,
+        typer.Argument(help="Legacy job ID lookup is unavailable; use st backup list."),
+    ] = None,
     local: Annotated[bool, typer.Option("--local", help="Show local/SMB archive status")] = False,
 ) -> None:
-    """Show most recent backup status."""
+    """Show the most recent backup, or use --local for local/SMB archive status.
+
+    Job ID lookup is unavailable; use `st backup list` to inspect backup records.
+    """
     if local:
         local_status_command()
         return

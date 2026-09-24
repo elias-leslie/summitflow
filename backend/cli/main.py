@@ -21,13 +21,13 @@ from .output_context import OutputContext
 # Ensure connection pool is closed on exit to avoid thread cleanup warnings
 atexit.register(close_pool)
 
-CLI_REFERENCE = """ST CLI - SummitFlow Tasks.
+CLI_REFERENCE = """ST: managed-project tools for agents.
 
-Core loop: pulse --gate | ready | create "<title>" | claim <id> | context <id> | done <id>.
-Lifecycle: pause <id> | reopen <id> | cancel <id> | update <id> | abandon <id>.
-VCS: vcs doctor | vcs reconcile | commit -m MSG [--task T] | jj diff | jj show.
-Tools: check | graph | service | runtime | db | browser | web | wiki | sessions | agent | cleanup | logs | ui.
-Use `<command> --help` for command-specific syntax."""
+Discover: search "<query>" | tools manifest --surface <surface>.
+Task work: ready | claim <id> | context <id> | pulse --gate | check | commit -m MSG | done <id>.
+Task state: pause <id> | reopen <id> | cancel <id> | update <id>.
+Inspect: vcs doctor | service status | browser --help.
+Use `st <command> --help` for command-specific syntax. Global options precede the command."""
 
 SESSION_EVENTS_COMMAND = "session-events"
 PROGRESS_COMMAND = "progress"
@@ -157,7 +157,10 @@ _COMMANDS["check"] = _load_command_module("check", required=True)
 def _register_root_task_commands() -> None:
     for cmd in _COMMANDS["tasks"].app.registered_commands:
         if cmd.callback is not None:
-            app.command(name=cmd.name, hidden=cmd.hidden)(cmd.callback)
+            app.command(
+                name=cmd.name, hidden=cmd.hidden,
+                help=cmd.help, short_help=cmd.short_help, epilog=cmd.epilog,
+            )(cmd.callback)
 
 
 def _register_subcommand_groups() -> None:
@@ -230,13 +233,18 @@ def _emit_commit_output(ctx: typer.Context, result: dict[str, object]) -> None:
 def _register_named_command(command_group: typer.Typer, command_name: str) -> None:
     for cmd in command_group.registered_commands:
         if cmd.callback is not None and cmd.name == command_name:
-            app.command(name=command_name)(cmd.callback)
+            app.command(
+                name=command_name, help=cmd.help, short_help=cmd.short_help, epilog=cmd.epilog,
+            )(cmd.callback)
 
 
 def _register_snapshot_commands() -> None:
     for cmd in _COMMANDS["snapshots"].app.registered_commands:
         if cmd.callback is not None and cmd.name in SNAPSHOT_COMMAND_NAMES:
-            app.command(name=cmd.name, context_settings=cmd.context_settings or {})(cmd.callback)
+            app.command(
+                name=cmd.name, context_settings=cmd.context_settings or {},
+                help=cmd.help, short_help=cmd.short_help, epilog=cmd.epilog,
+            )(cmd.callback)
 
 
 def _apply_output_context(ctx: typer.Context, *, human: bool, compact: bool, progress_only: bool) -> None:
@@ -262,7 +270,7 @@ _register_root_task_commands()
 # Also register task as a subcommand group for `st task verify` / `st task import`
 app.add_typer(_COMMANDS["tasks"].app, name="task", hidden=True)
 
-# Register subcommand groups (hidden from main help - reference above is complete)
+# Register the native command groups in root help.
 _register_subcommand_groups()
 app.command(SESSION_EVENTS_COMMAND, help="Agent Hub session events (observability)")(
     _COMMANDS["session_events"].show_events
@@ -309,7 +317,7 @@ def commit_command(
         ),
     ] = None,
 ) -> None:
-    """High-level st-owned commit workflow."""
+    """Run checks and commit locally. Add --push to publish explicitly."""
     try:
         repo_path = current_repo() if repo is None else Path(repo).expanduser().resolve()
         result = commit_repo(
@@ -370,14 +378,14 @@ def main(
     ] = None,
     human: Annotated[
         bool,
-        typer.Option("--human", help="Pretty-print JSON"),
+        typer.Option("--human", help="Indent JSON; requires --no-compact and no --progress-only"),
     ] = False,
     compact: Annotated[
         bool,
         typer.Option(
             "--compact/--no-compact",
             "-c",
-            help="TOON-style compact output (default: compact)",
+            help="Compact structured output; --no-compact selects JSON where supported",
         ),
     ] = True,
     progress_only: Annotated[

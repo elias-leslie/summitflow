@@ -39,7 +39,7 @@ def status(ctx: typer.Context) -> None:
 
     Examples:
         st health status
-        st health status --human
+        st --no-compact health status
     """
     try:
         client = STClient()

@@ -1,0 +1,209 @@
+{
+  "argv": [
+    "st",
+    "--help"
+  ],
+  "returncode": 0,
+  "stdout": "Usage: st [OPTIONS] COMMAND [ARGS]...\n\n  ST: managed-project tools for agents.\n\n  Discover: search \"<query>\" | tools manifest --surface <surface>. Task work:\n  ready | claim <id> | context <id> | pulse --gate | check | commit -m MSG |\n  done <id>. Task state: pause <id> | reopen <id> | cancel <id> | update <id>.\n  Inspect: vcs doctor | service status | browser --help. Use `st <command>\n  --help` for command-specific syntax. Global options precede the command.\n\nOptions:\n  -P, --project TEXT            Project ID (overrides auto-detection)  [env\n                                var: ST_PROJECT_ID]\n  --human                       Indent JSON; requires --no-compact and no\n                                --progress-only\n  -c, --compact / --no-compact  Compact structured output; --no-compact\n                                selects JSON where supported  [default:\n                                compact]\n  --progress-only               Progress summary only\n  --install-completion          Install completion for the current shell.\n  --show-completion             Show completion for the current shell, to copy\n                                it or customize the installation.\n  --help                        Show this message and exit.\n\nCommands:\n  create            Create a task.\n  list              List tasks with optional filters.\n  ready             List claimable tasks, or use --blocked to inspect...\n  ready-all         Cross-project summary: ready and blocked tasks across...\n  context           Get task or subtask context in a single call.\n  export            Export complete task details to JSON file.\n  cancel            Cancel a task (mark as cancelled from any state).\n  pause             Pause a task and release its active claim.\n  reopen            Reopen a task (move it back to pending).\n  delete            Delete a task.\n  update            Update in-flight task fields.\n  log               Append a task log entry.\n  sync-progress     Sync subtask pass state from already-completed steps.\n  verify            Verify a plan.json file against the live schema and...\n  autocode          Queue an execution-ready task for immediate...\n  critique          Request and store a second-opinion critique for a task.\n  session-events    Agent Hub session events (observability)\n  pulse             Show the canonical live coordination pulse and...\n  lease             File-level lease for parallel-agent coordination.\n  migrate-branches  Delete legacy task-XXX refs left over from the...\n  exec-log          View execution progress for a task.\n  commit            Run checks and commit locally.\n  check             Quality checks through st.\n  db                Database inspection and migration commands through...\n  claim             Claim a task or subtask to start work.\n  snap              Capture a Btrfs snapshot for the current project scope.\n  snaps             List snapshots for the current project scope.\n  recover           Recover a snapshot into a sibling project copy.\n  rollback          Destructively restore the current project root to a...\n  prune             Remove old auto snapshots per retention policy.\n  done              Complete a task or subtask.\n  abandon           Abandon a task or subtask and roll back tracked code...\n  agents            Inspect and manage Agent Hub agents and prompt previews.\n  complete          Request an Agent Hub agent or model completion.\n  feedback          Report, search, vote on, and resolve agent feedback.\n  mandates          Read active mandates injected into new agent sessions.\n  memory            Search, save, and revise Agent Hub memory episodes.\n  automations       Agent Hub-owned automation profiles, shared policy,...\n  models            Find models by provider and coding capability.\n  note              Save a quick tagged note as an Agent Hub memory episode.\n  persona           Inspect and edit persona identity; trigger heartbeat.\n  prompt            Search and manage versioned Agent Hub prompts.\n  skills            Audit and sync canonical skills across harnesses.\n  neri              Neri-owned investigations, evidence, and target...\n  learn             Learn-o-Tron learning sessions and reviewed...\n  jobs              Find, evaluate, tailor for, and track job applications.\n  portfolio         Agent-facing portfolio analytics and planning.\n  ui                Desktop UI control and capture.\n  selection         Aico selection-bus reads and explicit delivery.\n  wiki              Vault wiki page lookup, search, lint, ingest, and log.\n  web               Public web search, research, and fetch through Agent...\n  browser           Managed browser automation with SummitFlow-owned...\n  graph             Graph intelligence through the Code Intelligence owner.\n  search            Search code with automatic current-source verification.\n  design            Design standards, mockups and assets through Design...\n  slopminer         Profile-guided product copy authoring, rendered-text...\n  dep               Dependency management commands\n  test              Test management commands\n  subtask           Subtask management commands\n  autonomous        Autonomous execution management\n  claude            Claude Code worker dispatch\n  sessions          Agent session management.\n  projects          Project management commands\n  git               Low-level Git inspection and residue repair.\n  jj                Jujutsu workflow through st.\n  vcs               Canonical VCS hygiene.\n  backup            Backup management commands\n  service           Project service lifecycle through st.\n  runtime           Runtime observability.\n  health            Quality gate health and status\n  logs              View and tail service logs\n  agent             Run Agent Hub agents with tools\n  tools             Operator tool catalog and Agent Hub usage metrics\n  cleanup           Clean up git/checkpoint residue plus managed...\n  refactor          Refactor task management\n  docker            Docker container management for the SummitFlow...\n  setup             Host, service, browser, tooling, and test database...\n  vm                Proxmox VM lifecycle through st.\n  checkpoints       Checkpoint management - show active checkpoints,...\n",
+  "stderr": "",
+  "rows": [
+    {
+      "namespace": "agents",
+      "summary": "Inspect and manage Agent Hub agents and prompt previews.",
+      "root_help_line": "  agents            Inspect and manage Agent Hub agents and prompt previews.",
+      "source_capture": "extensions/agents.json",
+      "source_paths": [
+        "list",
+        "get",
+        "preview",
+        "create",
+        "update"
+      ],
+      "source_revision": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "registered_effects": [
+        "network",
+        "read-remote",
+        "write-remote",
+        "read-local",
+        "write-local",
+        "credentials"
+      ],
+      "displayed_in_full": true
+    },
+    {
+      "namespace": "complete",
+      "summary": "Request an Agent Hub agent or model completion.",
+      "root_help_line": "  complete          Request an Agent Hub agent or model completion.",
+      "source_capture": "extensions/complete.json",
+      "source_paths": [
+        ""
+      ],
+      "source_revision": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "registered_effects": [
+        "network",
+        "read-remote",
+        "write-remote",
+        "read-local",
+        "write-local",
+        "credentials"
+      ],
+      "displayed_in_full": true
+    },
+    {
+      "namespace": "feedback",
+      "summary": "Report, search, vote on, and resolve agent feedback.",
+      "root_help_line": "  feedback          Report, search, vote on, and resolve agent feedback.",
+      "source_capture": "extensions/feedback.json",
+      "source_paths": [
+        "report",
+        "search",
+        "vote",
+        "resolve"
+      ],
+      "source_revision": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "registered_effects": [
+        "network",
+        "read-remote",
+        "write-remote",
+        "read-local",
+        "write-local",
+        "credentials"
+      ],
+      "displayed_in_full": true
+    },
+    {
+      "namespace": "mandates",
+      "summary": "Read active mandates injected into new agent sessions.",
+      "root_help_line": "  mandates          Read active mandates injected into new agent sessions.",
+      "source_capture": "extensions/mandates.json",
+      "source_paths": [
+        ""
+      ],
+      "source_revision": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "registered_effects": [
+        "network",
+        "read-remote",
+        "credentials"
+      ],
+      "displayed_in_full": true
+    },
+    {
+      "namespace": "memory",
+      "summary": "Search, save, and revise Agent Hub memory episodes.",
+      "root_help_line": "  memory            Search, save, and revise Agent Hub memory episodes.",
+      "source_capture": "extensions/memory.json",
+      "source_paths": [
+        "search",
+        "save",
+        "update"
+      ],
+      "source_revision": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "registered_effects": [
+        "network",
+        "read-remote",
+        "write-remote",
+        "read-local",
+        "write-local",
+        "credentials"
+      ],
+      "displayed_in_full": true
+    },
+    {
+      "namespace": "models",
+      "summary": "Find models by provider and coding capability.",
+      "root_help_line": "  models            Find models by provider and coding capability.",
+      "source_capture": "extensions/models.json",
+      "source_paths": [
+        "",
+        "list"
+      ],
+      "source_revision": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "registered_effects": [
+        "network",
+        "read-remote",
+        "credentials"
+      ],
+      "displayed_in_full": true
+    },
+    {
+      "namespace": "note",
+      "summary": "Save a quick tagged note as an Agent Hub memory episode.",
+      "root_help_line": "  note              Save a quick tagged note as an Agent Hub memory episode.",
+      "source_capture": "extensions/note.json",
+      "source_paths": [
+        ""
+      ],
+      "source_revision": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "registered_effects": [
+        "network",
+        "read-remote",
+        "write-remote",
+        "read-local",
+        "write-local",
+        "credentials"
+      ],
+      "displayed_in_full": true
+    },
+    {
+      "namespace": "persona",
+      "summary": "Inspect and edit persona identity; trigger heartbeat.",
+      "root_help_line": "  persona           Inspect and edit persona identity; trigger heartbeat.",
+      "source_capture": "extensions/persona.json",
+      "source_paths": [
+        "show",
+        "update",
+        "heartbeat"
+      ],
+      "source_revision": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "registered_effects": [
+        "network",
+        "read-remote",
+        "write-remote",
+        "read-local",
+        "write-local",
+        "credentials",
+        "process"
+      ],
+      "displayed_in_full": true
+    },
+    {
+      "namespace": "prompt",
+      "summary": "Search and manage versioned Agent Hub prompts.",
+      "root_help_line": "  prompt            Search and manage versioned Agent Hub prompts.",
+      "source_capture": "extensions/prompt.json",
+      "source_paths": [
+        "search",
+        "revisions",
+        "assign",
+        "update"
+      ],
+      "source_revision": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "registered_effects": [
+        "network",
+        "read-remote",
+        "write-remote",
+        "read-local",
+        "write-local",
+        "credentials"
+      ],
+      "displayed_in_full": true
+    },
+    {
+      "namespace": "skills",
+      "summary": "Audit and sync canonical skills across harnesses.",
+      "root_help_line": "  skills            Audit and sync canonical skills across harnesses.",
+      "source_capture": "extensions/skills.json",
+      "source_paths": [
+        "audit",
+        "sync"
+      ],
+      "source_revision": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+      "registered_effects": [
+        "read-local",
+        "write-local",
+        "process"
+      ],
+      "displayed_in_full": true
+    }
+  ]
+}

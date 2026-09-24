@@ -1,0 +1,73 @@
+{
+  "namespace": "note",
+  "owner": "agent-hub",
+  "owner_root": "/srv/workspaces/projects/agent-hub",
+  "manifest_path": "/srv/workspaces/projects/summitflow/scripts/lib/extensions/note.json",
+  "manifest_sha256": "441f600d018944a44a1cef5271d45da60f3bfda004c7c21e5295826d01fcf761",
+  "owner_revision": "b65b0f6bb38f224da73eb693f2df55c9679db94a",
+  "owner_dirty_tracked_paths": [],
+  "owner_description": {
+    "namespace": "note",
+    "help": {
+      "": "Usage: note [OPTIONS] {text}\n\n  Save a quick note to memory, tagged #kind:note.\n\n  Examples: st note \"Check the deploy after merge\" | st note \"...\" --tags\n  \"#widget:claude-code\"\n\nArguments:\n  text  Note text  [required]\n\nOptions:\n  --topic <str>         Episode topic header  [default: Note]\n  -s, --summary <str>   Override summary (10-40 chars)\n  --tags <str>          Extra comma-separated tags\n  --scope <str>         Memory scope  [default: global]\n  --scope-id <str>      Scope id (for project scope)\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit."
+    },
+    "usage": [
+      {
+        "surface": "st.note",
+        "tier": "reference",
+        "cmd": "st note <text> --scope project --scope-id <project>",
+        "when": "save a scoped note in Agent Hub memory",
+        "task_types": [
+          "memory-admin"
+        ],
+        "on_demand": "memory authoring"
+      }
+    ]
+  },
+  "owner_capture": {
+    "argv": [
+      "/srv/workspaces/projects/agent-hub/backend/.venv/bin/python",
+      "-c",
+      "import json\nfrom st_sdk.runtime import describe_app\nfrom agent_hub_st.__main__ import OWNED_APPS\nprint(json.dumps(describe_app(OWNED_APPS['note'], 'note')))"
+    ],
+    "cwd": "/srv/workspaces/projects/agent-hub",
+    "returncode": 0,
+    "stdout": "{\"namespace\": \"note\", \"help\": {\"\": \"Usage: note [OPTIONS] {text}\\n\\n  Save a quick note to memory, tagged #kind:note.\\n\\n  Examples: st note \\\"Check the deploy after merge\\\" | st note \\\"...\\\" --tags\\n  \\\"#widget:claude-code\\\"\\n\\nArguments:\\n  text  Note text  [required]\\n\\nOptions:\\n  --topic <str>         Episode topic header  [default: Note]\\n  -s, --summary <str>   Override summary (10-40 chars)\\n  --tags <str>          Extra comma-separated tags\\n  --scope <str>         Memory scope  [default: global]\\n  --scope-id <str>      Scope id (for project scope)\\n  --install-completion  Install completion for the current shell.\\n  --show-completion     Show completion for the current shell, to copy it or\\n                        customize the installation.\\n  --help                Show this message and exit.\"}, \"usage\": [{\"surface\": \"st.note\", \"tier\": \"reference\", \"cmd\": \"st note <text> --scope project --scope-id <project>\", \"when\": \"save a scoped note in Agent Hub memory\", \"task_types\": [\"memory-admin\"], \"on_demand\": \"memory authoring\"}]}\n",
+    "stderr": ""
+  },
+  "installed_root_help": {
+    "argv": [
+      "st",
+      "note",
+      "--help"
+    ],
+    "cwd": "/srv/workspaces/projects/summitflow",
+    "returncode": 0,
+    "stdout": "Usage: note [OPTIONS] {text}\n\n  Save a quick note to memory, tagged #kind:note.\n\n  Examples: st note \"Check the deploy after merge\" | st note \"...\" --tags\n  \"#widget:claude-code\"\n\nArguments:\n  text  Note text  [required]\n\nOptions:\n  --topic <str>         Episode topic header  [default: Note]\n  -s, --summary <str>   Override summary (10-40 chars)\n  --tags <str>          Extra comma-separated tags\n  --scope <str>         Memory scope  [default: global]\n  --scope-id <str>      Scope id (for project scope)\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n",
+    "stderr": ""
+  },
+  "installed_manifest_help": {
+    "": "Usage: note [OPTIONS] {text}\n\n  Save a quick note to memory, tagged #kind:note.\n\n  Examples: st note \"Check the deploy after merge\" | st note \"...\" --tags\n  \"#widget:claude-code\"\n\nArguments:\n  text  Note text  [required]\n\nOptions:\n  --topic <str>         Episode topic header  [default: Note]\n  -s, --summary <str>   Override summary (10-40 chars)\n  --tags <str>          Extra comma-separated tags\n  --scope <str>         Memory scope  [default: global]\n  --scope-id <str>      Scope id (for project scope)\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit."
+  },
+  "installed_manifest_usage": [
+    {
+      "surface": "st.note",
+      "tier": "reference",
+      "cmd": "st note <text> --scope project --scope-id <project>",
+      "when": "save a scoped note in Agent Hub memory",
+      "task_types": [
+        "memory-admin"
+      ],
+      "on_demand": "memory authoring"
+    }
+  ],
+  "installed_manifest_summary": "Agent Hub-owned note commands.",
+  "installed_manifest_effects": [
+    "network",
+    "read-remote",
+    "write-remote",
+    "read-local",
+    "write-local",
+    "credentials"
+  ]
+}

@@ -1,0 +1,129 @@
+{
+  "rows": [
+    {
+      "namespace": "automations",
+      "path": "",
+      "argv": [
+        "st",
+        "automations",
+        "--help"
+      ],
+      "returncode": 0,
+      "stdout": "Usage: automations [OPTIONS] COMMAND [ARGS]...\n\n  Manage canonical Agent Hub background automations\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  catalog        List registered background workflow types, optionally by...\n  list           List automation profiles and effective state with...\n  show           Show one automation profile, revision, gates, and schedule.\n  validate       Validate a profile against its registered workflow...\n  apply          Create or revise an automation profile with revision...\n  import         Register an owner's schedule and cursor without...\n  cutover        Transfer an imported schedule after its owner durably...\n  enable         Enable scheduled background admissions for a profile.\n  disable        Stop new background admissions for a profile.\n  policy         Inspect one project's shared automation policy.\n  policy-apply   Update shared policy using the current revision in the...\n  execution      Read the execution permission from its existing...\n  execution-set  Update only execution fields; access tier stays in...\n  run            Start an audited manual cycle under the workflow's...\n  runs           Inspect accepted, running, failed, and unknown...\n  review         Mark one profile reviewed through its current or...\n",
+      "stderr": "",
+      "matches_source": true
+    },
+    {
+      "namespace": "automations",
+      "path": "catalog",
+      "argv": [
+        "st",
+        "automations",
+        "catalog",
+        "--help"
+      ],
+      "returncode": 0,
+      "stdout": "Usage: automations catalog [OPTIONS]\n\n  List registered background workflow types, optionally by owner project.\n\nOptions:\n  --project <str>\n  --json\n  --help           Show this message and exit.\n",
+      "stderr": "",
+      "matches_source": true
+    },
+    {
+      "namespace": "automations",
+      "path": "list",
+      "argv": [
+        "st",
+        "automations",
+        "list",
+        "--help"
+      ],
+      "returncode": 0,
+      "stdout": "Usage: automations list [OPTIONS]\n\n  List automation profiles and effective state with pagination.\n\nOptions:\n  --project <str>\n  --limit <int range>   [default: 100; 1<=x<=500]\n  --offset <int range>  [default: 0; x>=0]\n  --json\n  --help                Show this message and exit.\n",
+      "stderr": "",
+      "matches_source": true
+    },
+    {
+      "namespace": "automations",
+      "path": "show",
+      "argv": [
+        "st",
+        "automations",
+        "show",
+        "--help"
+      ],
+      "returncode": 0,
+      "stdout": "Usage: automations show [OPTIONS] {profile_id}\n\n  Show one automation profile, revision, gates, and schedule.\n\nArguments:\n  profile_id  [required]\n\nOptions:\n  --json\n  --help  Show this message and exit.\n",
+      "stderr": "",
+      "matches_source": true
+    },
+    {
+      "namespace": "automations",
+      "path": "validate",
+      "argv": [
+        "st",
+        "automations",
+        "validate",
+        "--help"
+      ],
+      "returncode": 0,
+      "stdout": "Usage: automations validate [OPTIONS]\n\n  Validate a profile against its registered workflow contract without saving.\n\nOptions:\n  --file <str>  JSON/YAML path or - for stdin  [required]\n  --json\n  --help        Show this message and exit.\n",
+      "stderr": "",
+      "matches_source": true
+    },
+    {
+      "namespace": "automations",
+      "path": "apply",
+      "argv": [
+        "st",
+        "automations",
+        "apply",
+        "--help"
+      ],
+      "returncode": 0,
+      "stdout": "Usage: automations apply [OPTIONS]\n\n  Create or revise an automation profile with revision protection.\n\nOptions:\n  --file <str>  JSON/YAML path or - for stdin  [required]\n  --json\n  --help        Show this message and exit.\n",
+      "stderr": "",
+      "matches_source": true
+    },
+    {
+      "namespace": "automations",
+      "path": "import",
+      "argv": [
+        "st",
+        "automations",
+        "import",
+        "--help"
+      ],
+      "returncode": 0,
+      "stdout": "Usage: automations import [OPTIONS]\n\n  Register an owner's schedule and cursor without transferring its clock.\n\nOptions:\n  --file <str>  JSON/YAML path or - for stdin  [required]\n  --json\n  --help        Show this message and exit.\n",
+      "stderr": "",
+      "matches_source": true
+    },
+    {
+      "namespace": "automations",
+      "path": "cutover",
+      "argv": [
+        "st",
+        "automations",
+        "cutover",
+        "--help"
+      ],
+      "returncode": 0,
+      "stdout": "Usage: automations cutover [OPTIONS] {profile_id}\n\n  Transfer an imported schedule after its owner durably fences the old clock.\n\nArguments:\n  profile_id  [required]\n\nOptions:\n  --revision <int range>  [x>=1; required]\n  --fence-receipt <str>   [required]\n  --next-run-at <str>\n  --json\n  --help                  Show this message and exit.\n",
+      "stderr": "",
+      "matches_source": true
+    },
+    {
+      "namespace": "mandates",
+      "path": "",
+      "argv": [
+        "st",
+        "mandates",
+        "--help"
+      ],
+      "returncode": 0,
+      "stdout": "Usage: mandates [OPTIONS]\n\n  Print the active mandate union (same set SessionStart hooks inject).\n\n  Examples:\n    st mandates\n    st --no-compact mandates\n    st --no-compact --human mandates\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n",
+      "stderr": "",
+      "matches_source": true
+    }
+  ],
+  "all_match": true
+}

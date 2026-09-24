@@ -5,7 +5,7 @@
   "st_contract_versions": [
     1
   ],
-  "summary": "Agent Hub-owned mandates commands.",
+  "summary": "Read active mandates injected into new agent sessions.",
   "effects": [
     "network",
     "read-remote",
@@ -13,7 +13,7 @@
   ],
   "namespace": "mandates",
   "help": {
-    "": "Usage: mandates [OPTIONS]\n\n  Print the active mandate union (same set SessionStart hooks inject).\n\n  Examples: st mandates | st mandates --human | st mandates --no-compact\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit."
+    "": "Usage: mandates [OPTIONS]\n\n  Print the active mandate union (same set SessionStart hooks inject).\n\n  Examples:\n    st mandates\n    st --no-compact mandates\n    st --no-compact --human mandates\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit."
   },
   "usage": [
     {

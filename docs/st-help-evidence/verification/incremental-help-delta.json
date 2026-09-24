@@ -1,0 +1,37 @@
+{
+  "changed_help_routes": [
+    {
+      "kind": "click",
+      "path": [
+        "done"
+      ],
+      "prior_tokens": 305,
+      "final_tokens": 314,
+      "prior_stdout_sha256": "9f91fa73163a2920b86fec0a7a293fac51c59a401c4bf36f221b0e40b818cdef",
+      "final_stdout_sha256": "1db71f8256b28e2af06c6e27b6cf5a4c0957df3bb46bca4ea3f2b2f829dc8ad2"
+    },
+    {
+      "kind": "click",
+      "path": [
+        "service",
+        "rebuild"
+      ],
+      "prior_tokens": 258,
+      "final_tokens": 275,
+      "prior_stdout_sha256": "8407123e797fa197e0e3cbc583763215c807c8cef831cfb58483baf0fca5478e",
+      "final_stdout_sha256": "be0f04149720d5ee41feb00d0eb152322ea5822ea41bd000aa425b68540a675f"
+    },
+    {
+      "kind": "click",
+      "path": [
+        "service",
+        "restart"
+      ],
+      "prior_tokens": 172,
+      "final_tokens": 189,
+      "prior_stdout_sha256": "39ed815f21ba89b415228d7e1202378a5b55cfb0f1b5b3192db2e14ceace8a44",
+      "final_stdout_sha256": "c50e7feb8393bcf6b0a6aaab1d804f141268f01006f491fbce2a50cf672a1fc1"
+    }
+  ],
+  "unchanged_route_count": 678
+}

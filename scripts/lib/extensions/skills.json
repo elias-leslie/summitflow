@@ -5,7 +5,7 @@
   "st_contract_versions": [
     1
   ],
-  "summary": "Agent Hub-owned skills commands.",
+  "summary": "Audit and sync canonical skills across harnesses.",
   "effects": [
     "read-local",
     "write-local",

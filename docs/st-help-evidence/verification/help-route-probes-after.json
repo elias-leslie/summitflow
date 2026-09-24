@@ -1,0 +1,338 @@
+{
+  "captured_utc": "2026-09-24T18:57:55.139985+00:00",
+  "results": [
+    {
+      "name": "st_option_value_equals_command",
+      "argv": [
+        "/srv/workspaces/projects/summitflow/backend/.venv/bin/st",
+        "feedback",
+        "--id",
+        "resolve",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "Usage: feedback [OPTIONS] COMMAND [ARGS]...\n\n  Agent feedback system: report friction, ideas, improvements, and praise.\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  report   Report new feedback on a component.\n  search   Search feedback items by keyword.\n  list     List feedback items with filters.\n  get      Get full details of a feedback item including votes.\n  vote     Vote on an existing feedback item.\n  resolve  Resolve a feedback item.\n  archive  Archive a resolved or won't-fix feedback item.\n  merge    Merge a duplicate feedback item into a canonical feedback item.\n  delete   Delete a feedback item and all its votes.\n  summary  Get aggregated feedback summary.\n",
+      "stderr": "",
+      "stdout_sha256": "ecb9c29e1eae56d645aad7feb40f89dc853d6531e50c7fc0d1f4fbd10c29de15",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "owner_option_value_equals_command",
+      "argv": [
+        "/srv/workspaces/projects/agent-hub/backend/.venv/bin/agent-hub-st",
+        "feedback",
+        "--id",
+        "resolve",
+        "--help"
+      ],
+      "exit_code": 2,
+      "stdout": "",
+      "stderr": "Usage: agent-hub-st [OPTIONS] COMMAND [ARGS]...\nTry 'agent-hub-st --help' for help.\n\u256d\u2500 Error \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 No such option: --id                                                         \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "ce33c82be3b7c8bbb4148cd7451fd27a7bd36352d3e73e2a5a39006b2e136bbf"
+    },
+    {
+      "name": "st_positional_id_equals_command",
+      "argv": [
+        "/srv/workspaces/projects/summitflow/backend/.venv/bin/st",
+        "feedback",
+        "get",
+        "resolve",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "Usage: feedback get [OPTIONS] {item_id}\n\n  Get full details of a feedback item including votes.\n\n  Examples:\n    st feedback get a1b2c3d4-...\n\nArguments:\n  item_id  Feedback item ID  [required]\n\nOptions:\n  --json  Output raw JSON\n  --help  Show this message and exit.\n",
+      "stderr": "",
+      "stdout_sha256": "6726977f37fcbb5b7bfce411d83da711fdfb5a027ec14d855707243171ee8180",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "owner_positional_id_equals_command",
+      "argv": [
+        "/srv/workspaces/projects/agent-hub/backend/.venv/bin/agent-hub-st",
+        "feedback",
+        "get",
+        "resolve",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "                                                                                \n Usage: agent-hub-st get [OPTIONS] {item_id}                                    \n                                                                                \n Get full details of a feedback item including votes.                           \n                                                                                \n                                                                                \n Examples:                                                                      \n   st feedback get a1b2c3d4-...                                                 \n                                                                                \n\u256d\u2500 Arguments \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 *    item_id      <str>  Feedback item ID [required]                         \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n\u256d\u2500 Options \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 --json          Output raw JSON                                              \u2502\n\u2502 --help          Show this message and exit.                                  \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n\n",
+      "stderr": "",
+      "stdout_sha256": "3fe61844e964f906dd7006599e2fe96a70244b046b3bdb24ec3492fabfbfc431",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "st_unknown_prefix_then_command",
+      "argv": [
+        "/srv/workspaces/projects/summitflow/backend/.venv/bin/st",
+        "feedback",
+        "bogus",
+        "resolve",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "Usage: feedback [OPTIONS] COMMAND [ARGS]...\n\n  Agent feedback system: report friction, ideas, improvements, and praise.\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  report   Report new feedback on a component.\n  search   Search feedback items by keyword.\n  list     List feedback items with filters.\n  get      Get full details of a feedback item including votes.\n  vote     Vote on an existing feedback item.\n  resolve  Resolve a feedback item.\n  archive  Archive a resolved or won't-fix feedback item.\n  merge    Merge a duplicate feedback item into a canonical feedback item.\n  delete   Delete a feedback item and all its votes.\n  summary  Get aggregated feedback summary.\n",
+      "stderr": "",
+      "stdout_sha256": "ecb9c29e1eae56d645aad7feb40f89dc853d6531e50c7fc0d1f4fbd10c29de15",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "owner_unknown_prefix_then_command",
+      "argv": [
+        "/srv/workspaces/projects/agent-hub/backend/.venv/bin/agent-hub-st",
+        "feedback",
+        "bogus",
+        "resolve",
+        "--help"
+      ],
+      "exit_code": 2,
+      "stdout": "",
+      "stderr": "Usage: agent-hub-st [OPTIONS] COMMAND [ARGS]...\nTry 'agent-hub-st --help' for help.\n\u256d\u2500 Error \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 No such command 'bogus'.                                                     \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "d57c0e3b4330e4ce283f610fdab176b28025a63b67f08f32f5a2c2883f539d50"
+    },
+    {
+      "name": "st_models_value_equals_command",
+      "argv": [
+        "/srv/workspaces/projects/summitflow/backend/.venv/bin/st",
+        "models",
+        "--id",
+        "list",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "Usage: models [OPTIONS] COMMAND [ARGS]...\n\n  Agent Hub model catalog\n\nOptions:\n  --id <str>            Filter by model id or alias.\n  --provider <str>      Filter by provider.\n  --free                Only models marked free/free-tier.\n  --coding              Only tool-capable coding candidates.\n  --limit <int range>   [default: 50; 1<=x<=500]\n  --json                Print filtered payload as JSON.\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  list  List canonical model catalog entries.\n",
+      "stderr": "",
+      "stdout_sha256": "4424c720b7a50bd8e5dfead96bf3d7342c96dc63d49cc289327bb1341bf60f68",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "owner_models_value_equals_command",
+      "argv": [
+        "/srv/workspaces/projects/agent-hub/backend/.venv/bin/agent-hub-st",
+        "models",
+        "--id",
+        "list",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "                                                                                \n Usage: agent-hub-st [OPTIONS] COMMAND [ARGS]...                                \n                                                                                \n Agent Hub model catalog                                                        \n                                                                                \n\u256d\u2500 Options \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 --id                        <str>                    Filter by model id or   \u2502\n\u2502                                                      alias.                  \u2502\n\u2502 --provider                  <str>                    Filter by provider.     \u2502\n\u2502 --free                                               Only models marked      \u2502\n\u2502                                                      free/free-tier.         \u2502\n\u2502 --coding                                             Only tool-capable       \u2502\n\u2502                                                      coding candidates.      \u2502\n\u2502 --limit                     <int range> [1<=x<=500]  [default: 50]           \u2502\n\u2502 --json                                               Print filtered payload  \u2502\n\u2502                                                      as JSON.                \u2502\n\u2502 --install-completion                                 Install completion for  \u2502\n\u2502                                                      the current shell.      \u2502\n\u2502 --show-completion                                    Show completion for the \u2502\n\u2502                                                      current shell, to copy  \u2502\n\u2502                                                      it or customize the     \u2502\n\u2502                                                      installation.           \u2502\n\u2502 --help                                               Show this message and   \u2502\n\u2502                                                      exit.                   \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n\u256d\u2500 Commands \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 list  List canonical model catalog entries.                                  \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n\n",
+      "stderr": "",
+      "stdout_sha256": "a8203aface47156f1eeba2cb11de66682f18ad8ca29116002d6ca2c3b6f83bea",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "st_models_value_before_command",
+      "argv": [
+        "/srv/workspaces/projects/summitflow/backend/.venv/bin/st",
+        "models",
+        "--id",
+        "foo",
+        "list",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "Usage: models list [OPTIONS]\n\n  List canonical model catalog entries.\n\nOptions:\n  --id <str>           Filter by model id or alias.\n  --provider <str>     Filter by provider.\n  --free               Only models marked free/free-tier.\n  --coding             Only tool-capable coding candidates.\n  --limit <int range>  [default: 50; 1<=x<=500]\n  --json               Print filtered payload as JSON.\n  --help               Show this message and exit.\n",
+      "stderr": "",
+      "stdout_sha256": "9fa0811ce0158cf9960cecfbe0821b9df4db1a6d0fc282c7ce2d4f2d65a3761f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "owner_models_value_before_command",
+      "argv": [
+        "/srv/workspaces/projects/agent-hub/backend/.venv/bin/agent-hub-st",
+        "models",
+        "--id",
+        "foo",
+        "list",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "                                                                                \n Usage: agent-hub-st list [OPTIONS]                                             \n                                                                                \n List canonical model catalog entries.                                          \n                                                                                \n\u256d\u2500 Options \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 --id              <str>                    Filter by model id or alias.      \u2502\n\u2502 --provider        <str>                    Filter by provider.               \u2502\n\u2502 --free                                     Only models marked                \u2502\n\u2502                                            free/free-tier.                   \u2502\n\u2502 --coding                                   Only tool-capable coding          \u2502\n\u2502                                            candidates.                       \u2502\n\u2502 --limit           <int range> [1<=x<=500]  [default: 50]                     \u2502\n\u2502 --json                                     Print filtered payload as JSON.   \u2502\n\u2502 --help                                     Show this message and exit.       \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n\n",
+      "stderr": "",
+      "stdout_sha256": "60c16ccf739a9c3918e03eb3d3c4bfcba2e3fd50cad2b89ae804ed40ddd5c7cb",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "st_models_boolean_before_command",
+      "argv": [
+        "/srv/workspaces/projects/summitflow/backend/.venv/bin/st",
+        "models",
+        "--free",
+        "list",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "Usage: models list [OPTIONS]\n\n  List canonical model catalog entries.\n\nOptions:\n  --id <str>           Filter by model id or alias.\n  --provider <str>     Filter by provider.\n  --free               Only models marked free/free-tier.\n  --coding             Only tool-capable coding candidates.\n  --limit <int range>  [default: 50; 1<=x<=500]\n  --json               Print filtered payload as JSON.\n  --help               Show this message and exit.\n",
+      "stderr": "",
+      "stdout_sha256": "9fa0811ce0158cf9960cecfbe0821b9df4db1a6d0fc282c7ce2d4f2d65a3761f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "owner_models_boolean_before_command",
+      "argv": [
+        "/srv/workspaces/projects/agent-hub/backend/.venv/bin/agent-hub-st",
+        "models",
+        "--free",
+        "list",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "                                                                                \n Usage: agent-hub-st list [OPTIONS]                                             \n                                                                                \n List canonical model catalog entries.                                          \n                                                                                \n\u256d\u2500 Options \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 --id              <str>                    Filter by model id or alias.      \u2502\n\u2502 --provider        <str>                    Filter by provider.               \u2502\n\u2502 --free                                     Only models marked                \u2502\n\u2502                                            free/free-tier.                   \u2502\n\u2502 --coding                                   Only tool-capable coding          \u2502\n\u2502                                            candidates.                       \u2502\n\u2502 --limit           <int range> [1<=x<=500]  [default: 50]                     \u2502\n\u2502 --json                                     Print filtered payload as JSON.   \u2502\n\u2502 --help                                     Show this message and exit.       \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n\n",
+      "stderr": "",
+      "stdout_sha256": "60c16ccf739a9c3918e03eb3d3c4bfcba2e3fd50cad2b89ae804ed40ddd5c7cb",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "st_models_equals_value_before_command",
+      "argv": [
+        "/srv/workspaces/projects/summitflow/backend/.venv/bin/st",
+        "models",
+        "--id=foo",
+        "list",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "Usage: models list [OPTIONS]\n\n  List canonical model catalog entries.\n\nOptions:\n  --id <str>           Filter by model id or alias.\n  --provider <str>     Filter by provider.\n  --free               Only models marked free/free-tier.\n  --coding             Only tool-capable coding candidates.\n  --limit <int range>  [default: 50; 1<=x<=500]\n  --json               Print filtered payload as JSON.\n  --help               Show this message and exit.\n",
+      "stderr": "",
+      "stdout_sha256": "9fa0811ce0158cf9960cecfbe0821b9df4db1a6d0fc282c7ce2d4f2d65a3761f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "owner_models_equals_value_before_command",
+      "argv": [
+        "/srv/workspaces/projects/agent-hub/backend/.venv/bin/agent-hub-st",
+        "models",
+        "--id=foo",
+        "list",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "                                                                                \n Usage: agent-hub-st list [OPTIONS]                                             \n                                                                                \n List canonical model catalog entries.                                          \n                                                                                \n\u256d\u2500 Options \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 --id              <str>                    Filter by model id or alias.      \u2502\n\u2502 --provider        <str>                    Filter by provider.               \u2502\n\u2502 --free                                     Only models marked                \u2502\n\u2502                                            free/free-tier.                   \u2502\n\u2502 --coding                                   Only tool-capable coding          \u2502\n\u2502                                            candidates.                       \u2502\n\u2502 --limit           <int range> [1<=x<=500]  [default: 50]                     \u2502\n\u2502 --json                                     Print filtered payload as JSON.   \u2502\n\u2502 --help                                     Show this message and exit.       \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n\n",
+      "stderr": "",
+      "stdout_sha256": "60c16ccf739a9c3918e03eb3d3c4bfcba2e3fd50cad2b89ae804ed40ddd5c7cb",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "st_models_value_and_same_named_command",
+      "argv": [
+        "/srv/workspaces/projects/summitflow/backend/.venv/bin/st",
+        "models",
+        "--id",
+        "list",
+        "list",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "Usage: models list [OPTIONS]\n\n  List canonical model catalog entries.\n\nOptions:\n  --id <str>           Filter by model id or alias.\n  --provider <str>     Filter by provider.\n  --free               Only models marked free/free-tier.\n  --coding             Only tool-capable coding candidates.\n  --limit <int range>  [default: 50; 1<=x<=500]\n  --json               Print filtered payload as JSON.\n  --help               Show this message and exit.\n",
+      "stderr": "",
+      "stdout_sha256": "9fa0811ce0158cf9960cecfbe0821b9df4db1a6d0fc282c7ce2d4f2d65a3761f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "owner_models_value_and_same_named_command",
+      "argv": [
+        "/srv/workspaces/projects/agent-hub/backend/.venv/bin/agent-hub-st",
+        "models",
+        "--id",
+        "list",
+        "list",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "                                                                                \n Usage: agent-hub-st list [OPTIONS]                                             \n                                                                                \n List canonical model catalog entries.                                          \n                                                                                \n\u256d\u2500 Options \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 --id              <str>                    Filter by model id or alias.      \u2502\n\u2502 --provider        <str>                    Filter by provider.               \u2502\n\u2502 --free                                     Only models marked                \u2502\n\u2502                                            free/free-tier.                   \u2502\n\u2502 --coding                                   Only tool-capable coding          \u2502\n\u2502                                            candidates.                       \u2502\n\u2502 --limit           <int range> [1<=x<=500]  [default: 50]                     \u2502\n\u2502 --json                                     Print filtered payload as JSON.   \u2502\n\u2502 --help                                     Show this message and exit.       \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n\n",
+      "stderr": "",
+      "stdout_sha256": "60c16ccf739a9c3918e03eb3d3c4bfcba2e3fd50cad2b89ae804ed40ddd5c7cb",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "st_models_missing_value",
+      "argv": [
+        "/srv/workspaces/projects/summitflow/backend/.venv/bin/st",
+        "models",
+        "--id",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "Usage: models [OPTIONS] COMMAND [ARGS]...\n\n  Agent Hub model catalog\n\nOptions:\n  --id <str>            Filter by model id or alias.\n  --provider <str>      Filter by provider.\n  --free                Only models marked free/free-tier.\n  --coding              Only tool-capable coding candidates.\n  --limit <int range>   [default: 50; 1<=x<=500]\n  --json                Print filtered payload as JSON.\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  list  List canonical model catalog entries.\n",
+      "stderr": "",
+      "stdout_sha256": "4424c720b7a50bd8e5dfead96bf3d7342c96dc63d49cc289327bb1341bf60f68",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "owner_models_missing_value",
+      "argv": [
+        "/srv/workspaces/projects/agent-hub/backend/.venv/bin/agent-hub-st",
+        "models",
+        "--id",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "MODELS[0 shown/0 total]\nid  provider  C  T  R  $/M in/out  speed  tools  availability\n--  --------  -  -  -  ----------  -----  -----  ------------\n",
+      "stderr": "",
+      "stdout_sha256": "59af28e87bea16400d26282e4a69eb0e711de18a909e02fb817c9572bf0deb2e",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "st_models_unknown_option_before_command",
+      "argv": [
+        "/srv/workspaces/projects/summitflow/backend/.venv/bin/st",
+        "models",
+        "--unknown",
+        "list",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "Usage: models [OPTIONS] COMMAND [ARGS]...\n\n  Agent Hub model catalog\n\nOptions:\n  --id <str>            Filter by model id or alias.\n  --provider <str>      Filter by provider.\n  --free                Only models marked free/free-tier.\n  --coding              Only tool-capable coding candidates.\n  --limit <int range>   [default: 50; 1<=x<=500]\n  --json                Print filtered payload as JSON.\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  list  List canonical model catalog entries.\n",
+      "stderr": "",
+      "stdout_sha256": "4424c720b7a50bd8e5dfead96bf3d7342c96dc63d49cc289327bb1341bf60f68",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "owner_models_unknown_option_before_command",
+      "argv": [
+        "/srv/workspaces/projects/agent-hub/backend/.venv/bin/agent-hub-st",
+        "models",
+        "--unknown",
+        "list",
+        "--help"
+      ],
+      "exit_code": 2,
+      "stdout": "",
+      "stderr": "Usage: agent-hub-st [OPTIONS] COMMAND [ARGS]...\nTry 'agent-hub-st --help' for help.\n\u256d\u2500 Error \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 No such option: --unknown                                                    \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "f2cff43b0ca1f19903a8b2c414079bdd5eaf14228ef3ae27c9f9658f45fbfe8c"
+    },
+    {
+      "name": "st_neri_unknown_prefix_before_leaf",
+      "argv": [
+        "/srv/workspaces/projects/summitflow/backend/.venv/bin/st",
+        "neri",
+        "research",
+        "bogus",
+        "hypotheses",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "Usage: neri research [OPTIONS] COMMAND [ARGS]...\n\n  Read research capability progress and save exact associations\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  catalogue\n  application-models\n  application-model-projection\n  application-model-current\n  application-model\n  save-application-model\n  hypotheses\n  hypothesis\n  hypothesis-revision\n  record-hypothesis\n  show\n  case-schema\n  matrix\n  context\n  recommend\n  links\n  associate\n  prepare-case\n  associate-case\n  invalidate-case\n  snapshot\n  snapshots\n  outcomes\n  record-outcome\n  cohorts\n  cohort\n  register-cohort\n  catalog-campaigns\n  catalog-campaign\n  register-catalog-campaign\n  record-catalog-plan\n  verify-catalog-item\n  record-catalog-replay\n  close-cohort\n  finalize-accounting\n  work\n  record-work\n  application\n  promote-application-source\n  application-snapshots\n  snapshot-application\n",
+      "stderr": "",
+      "stdout_sha256": "fda615ee4fd75f7d21002f1f0a96a5e5da1bb5bee23776658089edde715a138d",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "owner_neri_unknown_prefix_before_leaf",
+      "argv": [
+        "/srv/workspaces/projects/neri/backend/.venv/bin/neri-st",
+        "research",
+        "bogus",
+        "hypotheses",
+        "--help"
+      ],
+      "exit_code": 2,
+      "stdout": "",
+      "stderr": "Usage: neri-st research [OPTIONS] COMMAND [ARGS]...\nTry 'neri-st research --help' for help.\n\u256d\u2500 Error \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 No such command 'bogus'.                                                     \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "0ccd1728da358f8f2467b343a991df2c65543f4297bb8220c9689f0a86d7dd9f"
+    }
+  ]
+}

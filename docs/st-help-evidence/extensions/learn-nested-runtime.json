@@ -1,0 +1,25 @@
+{
+  "status": {
+    "argv": [
+      "st",
+      "learn",
+      "status",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "Usage: learn status [OPTIONS]\n\nOptions:\n  --job-id <uuid>\n  --help           Show this message and exit.\n",
+    "stderr": ""
+  },
+  "pwn status": {
+    "argv": [
+      "st",
+      "learn",
+      "pwn",
+      "status",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "Usage: learn pwn status [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.\n",
+    "stderr": ""
+  }
+}
