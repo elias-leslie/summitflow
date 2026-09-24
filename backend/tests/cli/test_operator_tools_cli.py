@@ -1157,7 +1157,8 @@ def test_browser_help_explains_isolated_target() -> None:
     result = runner.invoke(main_app, ["browser", "--help"])
 
     assert result.exit_code == 0
-    assert "Plain st browser commands use local system Chrome profile AI." in result.output
+    assert "Interactive commands use local system Chrome profile AI." in result.output
+    assert "Checks use a fresh isolated headless profile by default." in result.output
     assert "Force Proxmox/VM with --proxmox" in result.output
     assert "st browser url <project>" in result.output
     assert "st browser check a-term" in result.output
