@@ -138,6 +138,12 @@ and reviewed descriptions now live in `scripts/lib/tool-registry.json` and
 `scripts/lib/extensions/`; `backend/cli/extensions.py` registers them generically.
 The baseline command bodies have moved, not been duplicated.
 
+For a Python tool-owner change, refresh just its release wheel with
+`docker/scripts/pack-workspace-packages.sh docker/workspace-packages --python-owner code-intelligence`.
+The default packaging command still builds the complete workspace bundle. Refresh
+the backend lockfile for the changed wheel and sync its locked environment before
+local checks; activate service changes with `st service rebuild summitflow --detach`.
+
 | Capability | Current implementation owner/interface | State and remaining ST coupling |
 |---|---|---|
 | browser | browser-automation: `browser_automation`, `browser-st` | Browser/profile state remains local or on the managed VM. ST's `commands/browser.py` and `lib/browser_policy.py` keep routes, confirmation, session/lock and launch policy. |

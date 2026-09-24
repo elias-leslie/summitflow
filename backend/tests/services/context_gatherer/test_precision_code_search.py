@@ -1,106 +1,52 @@
-"""Tests for precision code search fallback and metadata helpers."""
+"""Host adapter contracts; retrieval behavior is exercised with current source."""
 
-from __future__ import annotations
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from unittest.mock import MagicMock
 
-from typing import Any
-from unittest.mock import patch
+import pytest
+from code_intelligence.precision import current_search
 
-from app.services.context_gatherer.precision_code_search import (
-    _definition_matched_terms,
-    _per_term_text_union,
-    _text_fallback,
-)
+from app.services.context_gatherer import precision_code_search as adapter
 
 
-def _text_result(items: list[dict[str, Any]], *, truncated: bool = False, files: int = 10) -> dict[str, Any]:
-    return {"count": len(items), "files_searched": files, "items": items, "truncated": truncated}
+@pytest.mark.parametrize(("minutes", "stale"), [(119, False), (151, True)])
+def test_scheduled_index_age_remains_diagnostic(monkeypatch, minutes: int, stale: bool) -> None:
+    stamp = (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
+    monkeypatch.setattr(adapter.explorer_service, "get_stats", lambda *_a, **_k: {"total": 12, "last_scanned": stamp})
+    monkeypatch.setattr(adapter, "get_symbol_stats", lambda _: {"count": 4, "last_updated": stamp})
+    status = adapter._get_precision_index_status("project-1")
+    assert status["should_refresh"] is stale
+    assert status["file_total"] == 12
+    assert bool(status["refresh_reasons"]) is stale
 
 
-class TestPerTermTextUnion:
-    def test_phrase_miss_unions_rare_terms(self) -> None:
-        results = {
-            "_lever_impacts spend_less": _text_result([]),
-            "_lever_impacts": _text_result([{"path": "a.py", "line": 1, "content": "def _lever_impacts("}]),
-            "spend_less": _text_result([{"path": "a.py", "line": 9, "content": '"spend_less",'}]),
-        }
-        with patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            side_effect=lambda pid, q, **kw: results[q],
-        ):
-            text_results, section = _text_fallback("p1", ["_lever_impacts spend_less"], "")
-
-        assert text_results["per_term_union"] is True
-        assert [(i["path"], i["line"]) for i in text_results["items"]] == [("a.py", 1), ("a.py", 9)]
-        assert section
-
-    def test_common_word_terms_are_dropped_from_union(self) -> None:
-        junk = [{"path": f"f{i}.py", "line": i, "content": "session everywhere"} for i in range(12)]
-        results = {
-            "session rare_identifier": _text_result([]),
-            "session": _text_result(junk, truncated=True),
-            "rare_identifier": _text_result([{"path": "b.py", "line": 5, "content": "rare_identifier = 1"}]),
-        }
-        with patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            side_effect=lambda pid, q, **kw: results[q],
-        ):
-            union = _per_term_text_union("p1", "session rare_identifier")
-
-        assert union is not None
-        assert [i["path"] for i in union["items"]] == ["b.py"]
-
-    def test_single_term_phrase_does_not_retry(self) -> None:
-        with patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-        ) as mock_search:
-            assert _per_term_text_union("p1", "lone_term") is None
-        mock_search.assert_not_called()
-
-    def test_all_terms_junk_returns_none(self) -> None:
-        junk = [{"path": f"f{i}.py", "line": i, "content": "x"} for i in range(12)]
-        with patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            return_value=_text_result(junk, truncated=True),
-        ):
-            assert _per_term_text_union("p1", "session request") is None
-
-    def test_duplicate_lines_across_terms_dedupe(self) -> None:
-        shared = {"path": "a.py", "line": 3, "content": "alpha_thing beta_thing"}
-        results = {
-            "alpha_thing beta_thing zzz_qqq": _text_result([]),
-            "alpha_thing": _text_result([shared]),
-            "beta_thing": _text_result([dict(shared)]),
-            "zzz_qqq": _text_result([]),
-        }
-        with patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            side_effect=lambda pid, q, **kw: results[q],
-        ):
-            union = _per_term_text_union("p1", "alpha_thing beta_thing zzz_qqq")
-
-        assert union is not None
-        assert union["count"] == 1
+def test_host_forwards_root_limits_and_optional_transport(monkeypatch, tmp_path: Path) -> None:
+    collect = MagicMock()
+    monkeypatch.setattr(current_search, "collect_current_search_context", collect)
+    monkeypatch.setattr(adapter, "_get_precision_index_status", lambda _: {"should_refresh": False})
+    monkeypatch.setattr(adapter.explorer_service, "get_project_root", lambda _: str(tmp_path))
+    returned = adapter.collect_precision_code_search_context("p", ["exact_symbol"], budget_tokens=800, symbol_limit=3, path_prefix="api", include_candidates=True)
+    assert returned is collect.return_value
+    kwargs = collect.call_args.kwargs
+    assert kwargs["project_root"] == tmp_path
+    assert kwargs["budget_tokens"] == 800
+    assert kwargs["symbol_limit"] == 3
+    assert kwargs["path_prefix"] == "api"
+    assert kwargs["include_candidates"] is True
+    assert kwargs["index_status"]["refreshed_index"] is False
 
 
-class TestDefinitionMatchedTerms:
-    def test_detects_definition_line(self) -> None:
-        items = [{"path": "a.py", "line": 61, "content": "def tool_not_installed(name: str, root: Path) -> bool:"}]
-        assert _definition_matched_terms(["tool_not_installed"], items) == ["tool_not_installed"]
-
-    def test_ignores_call_sites(self) -> None:
-        items = [
-            {"path": "a.py", "line": 109, "content": "if isinstance(exc, FileNotFoundError) and tool_not_installed(name, root):"},
-            {"path": "a.py", "line": 39, "content": "tool_not_installed,"},
-        ]
-        assert _definition_matched_terms(["tool_not_installed"], items) == []
-
-    def test_detects_class_and_const_definitions(self) -> None:
-        items = [
-            {"path": "a.ts", "line": 2, "content": "const RetryBudget = makeBudget()"},
-            {"path": "b.py", "line": 8, "content": "class PaymentRouter:"},
-        ]
-        assert _definition_matched_terms(["PaymentRouter RetryBudget"], items) == ["PaymentRouter", "RetryBudget"]
-
-    def test_empty_items_returns_empty(self) -> None:
-        assert _definition_matched_terms(["anything"], []) == []
-        assert _definition_matched_terms(["anything"], None) == []
+def test_unavailable_index_and_root_are_reported_without_private_connection_details(monkeypatch) -> None:
+    def unavailable(*_args):
+        raise ConnectionError("private connection detail")
+    collect = MagicMock()
+    monkeypatch.setattr(current_search, "collect_current_search_context", collect)
+    monkeypatch.setattr(adapter, "_get_precision_index_status", unavailable)
+    monkeypatch.setattr(adapter.explorer_service, "get_project_root", unavailable)
+    adapter.collect_precision_code_search_context("p", ["exact_symbol"])
+    kwargs = collect.call_args.kwargs
+    assert kwargs["project_root"] is None
+    assert kwargs["index_status"]["index_status_error"] == "ConnectionError"
+    assert kwargs["index_status"]["root_lookup_error"] == "ConnectionError"
+    assert "private connection detail" not in repr(kwargs)

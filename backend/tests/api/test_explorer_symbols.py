@@ -204,6 +204,63 @@ class TestExplorerSymbolSearchEndpoint:
         assert "`get_file_tree`" in data["prompt_context"]
         assert data["metadata"]["used_symbol_first"] is True
         assert data["metadata"]["symbol_count"] >= 1
+        assert set(data) == {"query", "prompt_context", "metadata"}
+        assert "related (indexed): endpoint" in data["prompt_context"]
+
+    def test_precision_transport_is_optional_and_uses_current_source(
+        self, client: TestClient, symbol_api_project: str,
+    ) -> None:
+        root_path = get_project_root_path(symbol_api_project)
+        assert root_path is not None
+        root = Path(root_path)
+        path = root / "backend/app/api/files.py"
+        path.write_text("# shifted café\n" + path.read_text().replace("return path.strip()", "return path.lstrip()"))
+        response = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/precision-search",
+            params={"q": "normalize_file_path", "include_candidates": True},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "return path.lstrip()" in data["prompt_context"]
+        assert data["metadata"]["source_verified"] is True
+        assert data["candidates"]
+        candidate = data["candidates"][0]
+        assert candidate["file_path"] == "backend/app/api/files.py"
+        assert candidate["source_verified"] is True
+        assert "source" not in candidate
+
+    def test_precision_finds_added_definition_despite_incidental_index_hit(
+        self, client: TestClient, symbol_api_project: str,
+    ) -> None:
+        root_path = get_project_root_path(symbol_api_project)
+        assert root_path is not None
+        root = Path(root_path)
+        (root / "backend/app/api/new.py").write_text(
+            "class FilesClient:\n    current_field: str\n"
+        )
+        response = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/precision-search",
+            params={"q": "FilesClient", "include_candidates": True},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "current_field: str" in data["prompt_context"]
+        assert any(row["file_path"] == "backend/app/api/new.py" for row in data["candidates"])
+
+    def test_precision_removes_deleted_definitions_without_scan(
+        self, client: TestClient, symbol_api_project: str,
+    ) -> None:
+        root_path = get_project_root_path(symbol_api_project)
+        assert root_path is not None
+        root = Path(root_path)
+        (root / "backend/app/api/files.py").unlink()
+        response = client.get(
+            f"/api/projects/{symbol_api_project}/explorer/precision-search",
+            params={"q": "get_file_tree", "include_candidates": True},
+        )
+        assert response.status_code == 200
+        assert response.json()["metadata"]["symbol_count"] == 0
+        assert not response.json()["candidates"]
 
     def test_search_text_returns_matching_lines(
         self,

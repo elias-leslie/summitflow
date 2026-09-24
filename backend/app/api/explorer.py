@@ -103,6 +103,7 @@ async def precision_search(
     budget: int = Query(1200, ge=100, le=10000, description="Token budget for prompt context"),
     limit: int = Query(5, ge=1, le=20, description="Maximum symbol results"),
     path_prefix: str | None = Query(None, description="Optional relative file/subtree prefix filter"),
+    include_candidates: bool = Query(False, description="Include structured symbol candidates for CLI checkout assembly"),
 ) -> dict[str, Any]:
     """Full Precision Code Search: symbol-first retrieval with fallback and token budgeting."""
     validate_project_exists(project_id)
@@ -110,18 +111,23 @@ async def precision_search(
         collect_precision_code_search_context,
     )
 
-    result = collect_precision_code_search_context(
+    result = await asyncio.to_thread(
+        collect_precision_code_search_context,
         project_id,
         [q],
         budget_tokens=budget,
         symbol_limit=limit,
         path_prefix=path_prefix,
+        include_candidates=include_candidates,
     )
-    return {
+    payload: dict[str, Any] = {
         "query": q,
         "prompt_context": result.prompt_context,
         "metadata": result.metadata,
     }
+    if include_candidates:
+        payload["candidates"] = result.candidates or []
+    return payload
 
 
 @router.get("/{project_id}/explorer/text/search")

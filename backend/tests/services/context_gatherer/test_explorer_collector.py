@@ -1,849 +1,171 @@
-"""Tests for explorer-backed context gathering."""
+"""Source-backed compatibility coverage for hosted precision context gathering."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
+import pytest
+from code_intelligence.analyzers import extract_symbols
+from code_intelligence.precision import ranking
+from code_intelligence.precision.token_utils import estimate_tokens
+
+from app.services.context_gatherer import precision_code_search as adapter
 from app.services.context_gatherer.explorer_collector import gather_explorer_context
-from app.services.context_gatherer.precision_code_search import (
-    collect_precision_code_search_context,
-)
+
+
+@pytest.fixture
+def source_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, list[dict[str, Any]]]:
+    root = tmp_path / "project"
+    root.mkdir()
+    rows: list[dict[str, Any]] = []
+    monkeypatch.setattr(adapter.explorer_service, "get_project_root", lambda _: str(root))
+    monkeypatch.setattr(adapter, "_get_precision_index_status", lambda _: {
+        "should_refresh": False, "refresh_reasons": [], "file_total": 1,
+    })
+    monkeypatch.setattr(ranking, "search_symbols", lambda _project, q, **_: [
+        row for row in rows if q.lower() in " ".join(str(row.get(k, "")) for k in (
+            "name", "qualified_name", "file_path", "signature", "summary",
+        )).lower()
+    ])
+    return root, rows
+
+
+def index_source(project: tuple[Path, list[dict[str, Any]]], path: str, content: str) -> Path:
+    root, rows = project
+    target = root / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content)
+    rows.extend({**row, "file_path": path} for row in extract_symbols(target, path))
+    return target
 
 
 def test_gather_explorer_context_includes_symbol_matches() -> None:
-    """Relevant symbol matches should be included ahead of broader file listings."""
-    expected = "Precision Code Search: symbol-first\n\n## Relevant Symbols\n\n- `get_file_tree` ..."
-    with patch(
-        "app.services.context_gatherer.explorer_collector.collect_precision_code_search_context"
-    ) as mock_collect:
-        mock_collect.return_value.prompt_context = expected
-        context = gather_explorer_context("project-1", "get_file_tree")
-
-    mock_collect.assert_called_once()
-    assert "Precision Code Search: symbol-first" in context
-    assert "## Relevant Symbols" in context
-    assert "`get_file_tree`" in context
+    expected = "Precision Code Search: symbol-first\n\n- `get_file_tree`"
+    with patch("app.services.context_gatherer.explorer_collector.collect_precision_code_search_context") as collect:
+        collect.return_value.prompt_context = expected
+        assert expected in gather_explorer_context("project-1", "get_file_tree")
+    collect.assert_called_once()
 
 
-def test_collect_precision_code_search_context_tracks_token_savings() -> None:
-    with (
-        patch("app.services.context_gatherer._precision_ranking.search_symbols") as mock_search,
-        patch(
-            "app.services.context_gatherer._precision_sections.list_related_entries_for_file"
-        ) as mock_related,
-        patch("app.services.context_gatherer._precision_sections.get_symbol") as mock_get_symbol,
-        patch(
-            "app.services.context_gatherer.precision_code_search.estimate_naive_file_tokens",
-            return_value=2000,
-        ),
-        patch(
-            "app.services.context_gatherer._precision_sections.read_symbol_source"
-        ) as mock_read_symbol_source,
-    ):
-        mock_search.return_value = [
-            {
-                "symbol_id": "backend/app/api/files.py::get_file_tree#function",
-                "qualified_name": "get_file_tree",
-                "name": "get_file_tree",
-                "kind": "function",
-                "file_path": "backend/app/api/files.py",
-                "start_line": 7,
-                "end_line": 9,
-                "signature": "def get_file_tree(path: str) -> dict[str, str]",
-                "summary": "List directory entries for file tree navigation.",
-            }
-        ]
-        mock_related.return_value = []
-        mock_get_symbol.return_value = {
-            "symbol_id": "backend/app/api/files.py::get_file_tree#function",
-            "qualified_name": "get_file_tree",
-            "file_path": "backend/app/api/files.py",
-            "start_line": 7,
-            "end_line": 9,
-        }
-        mock_read_symbol_source.return_value = "def get_file_tree(path: str) -> dict[str, str]: ..."
-
-        result = collect_precision_code_search_context("project-1", ["get_file_tree"])
-
-    assert result.metadata["used_symbol_first"]
-    assert result.metadata["symbol_count"] == 1
-    assert result.metadata["naive_file_tokens"] == 2000
-    assert cast(int, result.metadata["estimated_tokens_saved"]) > 0
-    assert "Exact Source Slices" in result.prompt_context
-
-
-def test_collect_precision_code_search_context_runs_workflow_vocabulary_queries() -> None:
-    """Workflow-vocabulary queries name real code (dispatch, validation, ...) and must search."""
-    with (
-        patch("app.services.context_gatherer._precision_ranking.search_symbols", return_value=[]),
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            return_value={
-                "items": [
-                    {
-                        "path": "backend/cli/commands/check_dispatch.py",
-                        "line": 4,
-                        "content": "def dispatch_validation_checks() -> None:",
-                        "language": "python",
-                    }
-                ],
-                "count": 1,
-                "files_searched": 3,
-                "truncated": False,
-            },
-        ) as mock_search_text,
-    ):
-        result = collect_precision_code_search_context("project-1", ["task dispatch validation"])
-
-    mock_search_text.assert_called()
-    assert "skipped_reason" not in result.metadata
-    assert "check_dispatch.py" in result.prompt_context
-
-
-def test_collect_precision_code_search_context_formats_text_fallback_matches() -> None:
-    with (
-        patch("app.services.context_gatherer._precision_ranking.search_symbols", return_value=[]),
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            return_value={
-                "items": [
-                    {
-                        "path": "backend/app/api/tasks.py",
-                        "line": 12,
-                        "content": 'router = APIRouter(tags=["tasks api"])',
-                        "language": "python",
-                    }
-                ],
-                "count": 1,
-                "files_searched": 2,
-                "truncated": False,
-            },
-        ),
-    ):
-        result = collect_precision_code_search_context("project-1", ["tasks api"])
-
-    assert "backend/app/api/tasks.py" in result.prompt_context
-    assert "tasks api" in result.prompt_context
-    assert result.metadata["fallback_mode"] == "text"
-    assert result.metadata["text_match_count"] == 1
-
-
-def test_collect_precision_code_search_context_skips_fallback_fetch_on_symbol_hits() -> None:
-    with (
-        patch(
-            "app.services.context_gatherer._precision_ranking.search_symbols",
-            return_value=[
-                {
-                    "symbol_id": "backend/app/api/files.py::get_file_tree#function",
-                    "qualified_name": "get_file_tree",
-                    "name": "get_file_tree",
-                    "kind": "function",
-                    "file_path": "backend/app/api/files.py",
-                    "start_line": 7,
-                    "end_line": 9,
-                    "signature": "def get_file_tree(path: str) -> dict[str, str]",
-                    "summary": "List directory entries for file tree navigation.",
-                }
-            ],
-        ),
-        patch(
-            "app.services.context_gatherer._precision_sections.list_related_entries_for_file",
-            return_value=[],
-        ),
-        patch(
-            "app.services.context_gatherer._precision_sections.get_symbol",
-            return_value={
-                "symbol_id": "backend/app/api/files.py::get_file_tree#function",
-                "qualified_name": "get_file_tree",
-                "file_path": "backend/app/api/files.py",
-                "start_line": 7,
-                "end_line": 9,
-            },
-        ),
-        patch(
-            "app.services.context_gatherer._precision_sections.read_symbol_source",
-            return_value="def get_file_tree(path: str) -> dict[str, str]: ...",
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.estimate_naive_file_tokens",
-            return_value=2000,
-        ),
-        patch("app.services.context_gatherer.precision_code_search.search_text") as mock_search_text,
-    ):
-        result = collect_precision_code_search_context("project-1", ["get_file_tree"])
-
-    mock_search_text.assert_not_called()
-    assert result.metadata["used_symbol_first"]
-    assert not result.metadata["used_fallback"]
-
-
-def test_collect_precision_code_search_context_probes_text_for_weak_multiword_symbol_hits() -> None:
-    with (
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_and_rank_symbols",
-            return_value=[
-                {
-                    "symbol_id": "backend/app/services/explorer/index_generator.py::get_explorer_summary#function",
-                    "qualified_name": "get_explorer_summary",
-                    "name": "get_explorer_summary",
-                    "kind": "function",
-                    "file_path": "backend/app/services/explorer/index_generator.py",
-                    "start_line": 122,
-                    "end_line": 141,
-                    "signature": "def get_explorer_summary(project_id: str) -> dict[str, Any]",
-                    "summary": "Get Explorer trust metadata.",
-                }
-            ],
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.build_symbol_section",
-            return_value="## Relevant Symbols\n\n- `get_explorer_summary`",
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            return_value={
-                "items": [
-                    {
-                        "path": "frontend/components/design/UiDesignWorkspace.tsx",
-                        "line": 762,
-                        "content": "Pixel audit",
-                        "language": "typescript",
-                    }
-                ],
-                "count": 1,
-                "files_searched": 120,
-                "truncated": False,
-            },
-        ) as mock_search_text,
-    ):
-        result = collect_precision_code_search_context("project-1", ["Pixel audit"])
-
-    mock_search_text.assert_called_once_with("project-1", "Pixel audit", limit=12)
-    # Weak coverage appends text matches but never discards the symbol hits.
-    assert result.metadata["used_symbol_first"] is True
-    assert result.metadata["used_fallback"] is True
-    assert result.metadata["text_match_count"] == 1
-    assert "get_explorer_summary" in result.prompt_context
-    assert "frontend/components/design/UiDesignWorkspace.tsx:762" in result.prompt_context
-
-
-def test_collect_precision_code_search_context_combined_budget_keeps_text_section() -> None:
-    oversized_symbol_section = "## Relevant Symbols\n\n" + "\n".join(
-        f"- `get_explorer_summary_{i}` backend/app/services/explorer/index_generator.py:{i}" for i in range(60)
+def test_accounting_uses_actual_final_prompt_and_unique_source_files(source_project) -> None:
+    target = index_source(source_project, "files.py", "# context\n" * 100 + "def get_file_tree(path):\n    return {'path': path}\n")
+    result = adapter.collect_precision_code_search_context("project-1", ["get_file_tree"])
+    assert "return {'path': path}" in result.prompt_context
+    assert result.metadata["source_verified"] is True
+    assert result.metadata["measurement_available"] is True
+    assert result.metadata["final_tokens"] == estimate_tokens(result.prompt_context)
+    assert result.metadata["naive_file_tokens"] == estimate_tokens(target.read_text())
+    assert result.metadata["estimated_tokens_saved"] == max(
+        estimate_tokens(target.read_text()) - estimate_tokens(result.prompt_context), 0,
     )
-    with (
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_and_rank_symbols",
-            return_value=[
-                {
-                    "symbol_id": "backend/app/services/explorer/index_generator.py::get_explorer_summary#function",
-                    "qualified_name": "get_explorer_summary",
-                    "name": "get_explorer_summary",
-                    "kind": "function",
-                    "file_path": "backend/app/services/explorer/index_generator.py",
-                    "start_line": 122,
-                    "end_line": 141,
-                    "signature": "def get_explorer_summary(project_id: str) -> dict[str, Any]",
-                    "summary": "Get Explorer trust metadata.",
-                }
-            ],
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.build_symbol_section",
-            return_value=oversized_symbol_section,
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            return_value={
-                "items": [
-                    {
-                        "path": "frontend/components/design/UiDesignWorkspace.tsx",
-                        "line": 762,
-                        "content": "Pixel audit",
-                        "language": "typescript",
-                    }
-                ],
-                "count": 1,
-                "files_searched": 120,
-                "truncated": False,
-            },
-        ),
-    ):
-        result = collect_precision_code_search_context("project-1", ["Pixel audit"], budget_tokens=300)
-
-    # Symbols alone exceed the budget; the corrective text matches must survive truncation.
-    assert result.metadata["used_symbol_first"] is True
-    assert result.metadata["used_fallback"] is True
-    assert "frontend/components/design/UiDesignWorkspace.tsx:762" in result.prompt_context
-    assert "[... truncated ...]" in result.prompt_context
 
 
-def test_collect_precision_code_search_context_keeps_strong_multiword_symbol_hits() -> None:
-    with (
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_and_rank_symbols",
-            return_value=[
-                {
-                    "symbol_id": "frontend/components/layout/ProjectSelector.tsx::ProjectSelector#function",
-                    "qualified_name": "ProjectSelector",
-                    "name": "ProjectSelector",
-                    "kind": "function",
-                    "file_path": "frontend/components/layout/ProjectSelector.tsx",
-                    "start_line": 21,
-                    "end_line": 180,
-                    "signature": "export function ProjectSelector({ onProjectChange })",
-                    "summary": "Project selection dropdown component.",
-                }
-            ],
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.build_symbol_section",
-            return_value="## Relevant Symbols\n\n- `ProjectSelector`",
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.estimate_naive_file_tokens",
-            return_value=2000,
-        ),
-        patch("app.services.context_gatherer.precision_code_search.search_text") as mock_search_text,
-    ):
-        result = collect_precision_code_search_context("project-1", ["project selector"])
-
-    mock_search_text.assert_not_called()
-    assert result.metadata["used_symbol_first"] is True
-    assert result.metadata["used_fallback"] is False
+@pytest.mark.parametrize("query", ["ProjectSelector", "project selector", "where is the project selector"])
+def test_natural_language_and_exact_queries_find_current_definition(source_project, query) -> None:
+    index_source(source_project, "selector.tsx", "export function ProjectSelector() {\n  return <div>Select</div>;\n}\n")
+    result = adapter.collect_precision_code_search_context("project-1", [query])
     assert "ProjectSelector" in result.prompt_context
-
-
-def test_collect_precision_code_search_context_ignores_stop_words_in_coverage_check() -> None:
-    """English function words in a sentence query must not force a text probe."""
-    with (
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_and_rank_symbols",
-            return_value=[
-                {
-                    "symbol_id": "frontend/components/layout/ProjectSelector.tsx::ProjectSelector#function",
-                    "qualified_name": "ProjectSelector",
-                    "name": "ProjectSelector",
-                    "kind": "function",
-                    "file_path": "frontend/components/layout/ProjectSelector.tsx",
-                    "start_line": 21,
-                    "end_line": 180,
-                    "signature": "export function ProjectSelector({ onProjectChange })",
-                    "summary": "Project selection dropdown component.",
-                }
-            ],
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.build_symbol_section",
-            return_value="## Relevant Symbols\n\n- `ProjectSelector`",
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.estimate_naive_file_tokens",
-            return_value=2000,
-        ),
-        patch("app.services.context_gatherer.precision_code_search.search_text") as mock_search_text,
-    ):
-        result = collect_precision_code_search_context("project-1", ["where is the project selector"])
-
-    mock_search_text.assert_not_called()
+    assert "<div>Select</div>" in result.prompt_context
     assert result.metadata["used_symbol_first"] is True
-    assert result.metadata["used_fallback"] is False
 
 
-def test_collect_precision_code_search_context_uses_text_search_primitive_for_fallback() -> None:
-    with (
-        patch("app.services.context_gatherer._precision_ranking.search_symbols", return_value=[]),
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            return_value={
-                "items": [
-                    {
-                        "path": "backend/app/api/files.py",
-                        "line": 8,
-                        "content": '    marker = "special fallback token"',
-                        "language": "python",
-                    }
-                ],
-                "count": 1,
-                "files_searched": 4,
-                "truncated": False,
-            },
-        ) as mock_search_text,
-    ):
-        result = collect_precision_code_search_context("project-1", ["special fallback token"])
+def test_existing_hit_is_refreshed_after_source_shift_and_edit(source_project) -> None:
+    target = index_source(source_project, "files.py", "def get_file_tree(path):\n    return path\n")
+    target.write_text("# café\n\ndef get_file_tree(path):\n    return path.strip()\n")
+    result = adapter.collect_precision_code_search_context("project-1", ["get_file_tree"], include_candidates=True)
+    assert "return path.strip()" in result.prompt_context
+    assert result.candidates and result.candidates[0]["start_line"] == 3
+    assert result.metadata["source_verified"] is True
 
-    mock_search_text.assert_called_once_with("project-1", "special fallback token", limit=12)
-    assert result.metadata["used_symbol_first"] is False
+
+def test_partial_index_match_does_not_hide_new_exact_definition(source_project) -> None:
+    root, _rows = source_project
+    index_source(source_project, "consumer.py", "def consume(value: ProgramRevisionInput):\n    return value\n")
+    (root / "models.py").write_text("class ProgramRevisionInput:\n    revision: int\n    source: str\n")
+    result = adapter.collect_precision_code_search_context("project-1", ["ProgramRevisionInput"])
+    assert "class ProgramRevisionInput:" in result.prompt_context
+    assert "revision: int" in result.prompt_context
+    assert result.prompt_context.index("ProgramRevisionInput") < result.prompt_context.index("consume")
+
+
+def test_deleted_symbol_does_not_survive_index_hit(source_project) -> None:
+    target = index_source(source_project, "files.py", "def removed_function():\n    return 'removed'\n")
+    target.unlink()
+    result = adapter.collect_precision_code_search_context("project-1", ["removed_function"])
+    assert "return 'removed'" not in result.prompt_context
+    assert result.metadata["symbol_count"] == 0
+
+
+def test_file_rename_recovers_current_path(source_project) -> None:
+    root, _rows = source_project
+    target = index_source(source_project, "old.py", "def renamed_function():\n    return 42\n")
+    target.rename(root / "new.py")
+    result = adapter.collect_precision_code_search_context("project-1", ["renamed_function"])
+    assert "new.py:1" in result.prompt_context
+    assert "old.py:" not in result.prompt_context
+
+
+def test_import_query_preserves_text_mode_and_line_evidence(source_project) -> None:
+    root, _rows = source_project
+    (root / "imports.py").write_text("from pathlib import Path\n")
+    result = adapter.collect_precision_code_search_context("project-1", ["from pathlib import Path"])
     assert result.metadata["used_fallback"] is True
-    assert result.metadata["fallback_mode"] == "text"
-    assert result.metadata["text_match_count"] == 1
-    assert "## Relevant Text Matches" in result.prompt_context
-    assert "backend/app/api/files.py:8" in result.prompt_context
+    assert "imports.py:1" in result.prompt_context
 
 
-def test_collect_precision_code_search_context_ranks_multi_term_matches_by_coverage() -> None:
-    """Multi-term queries should not let early broad hits crowd out better later matches."""
-
-    def _search_side_effect(project_id: str, query: str, limit: int = 50) -> list[dict[str, object]]:
-        assert project_id == "project-1"
-        assert limit >= 5
-        quality_symbols: list[dict[str, object]] = [
-            {
-                "symbol_id": "backend/app/tasks/autonomous/exec_modules/quality_gates.py::run_final_quality_gate#function",
-                "qualified_name": "run_final_quality_gate",
-                "name": "run_final_quality_gate",
-                "kind": "function",
-                "file_path": "backend/app/tasks/autonomous/exec_modules/quality_gates.py",
-                "start_line": 69,
-                "end_line": 88,
-                "signature": "def run_final_quality_gate(task_id: str, project_path: str, project_id: str) -> bool",
-                "summary": "Run the task-scoped closeout check.",
-            },
-            {
-                "symbol_id": "frontend/components/projects/ProjectOverview.tsx::formatCheckLabel#function",
-                "qualified_name": "formatCheckLabel",
-                "name": "formatCheckLabel",
-                "kind": "function",
-                "file_path": "frontend/components/projects/ProjectOverview.tsx",
-                "start_line": 120,
-                "end_line": 127,
-                "signature": "function formatCheckLabel(checkType: string, checkName?: string | null): string",
-                "summary": "Format a quality check label for the project overview.",
-            },
-            {
-                "symbol_id": "backend/app/tasks/autonomous/exec_modules/ah_events.py::emit_quality_gate_result#function",
-                "qualified_name": "emit_quality_gate_result",
-                "name": "emit_quality_gate_result",
-                "kind": "function",
-                "file_path": "backend/app/tasks/autonomous/exec_modules/ah_events.py",
-                "start_line": 108,
-                "end_line": 125,
-                "signature": "def emit_quality_gate_result(task_id: str, passed: bool, detail: str = '') -> None",
-                "summary": "Emit a quality gate pass or fail event.",
-            },
-            {
-                "symbol_id": "frontend/lib/api/projects.ts::fetchQualityGateHealth#function",
-                "qualified_name": "fetchQualityGateHealth",
-                "name": "fetchQualityGateHealth",
-                "kind": "function",
-                "file_path": "frontend/lib/api/projects.ts",
-                "start_line": 70,
-                "end_line": 74,
-                "signature": "export async function fetchQualityGateHealth(id: string): Promise<QualityGateHealth>",
-                "summary": "Fetch quality gate health for a project.",
-            },
-            {
-                "symbol_id": "backend/app/storage/agent_configs_quality.py::get_quality_gate_fix_enabled#function",
-                "qualified_name": "get_quality_gate_fix_enabled",
-                "name": "get_quality_gate_fix_enabled",
-                "kind": "function",
-                "file_path": "backend/app/storage/agent_configs_quality.py",
-                "start_line": 40,
-                "end_line": 50,
-                "signature": "def get_quality_gate_fix_enabled(project_id: str) -> bool",
-                "summary": "Check if auto-fix is enabled for quality gates.",
-            },
-        ]
-        health_symbols: list[dict[str, object]] = [
-            {
-                "symbol_id": "backend/app/api/quality_gate.py::get_health_summary#function",
-                "qualified_name": "get_health_summary",
-                "name": "get_health_summary",
-                "kind": "function",
-                "file_path": "backend/app/api/quality_gate.py",
-                "start_line": 24,
-                "end_line": 35,
-                "signature": "async def get_health_summary(project_id: str) -> HealthSummaryResponse",
-                "summary": "Get quality gate health summary for a project.",
-            }
-        ]
-        if query in ("quality health api", "api"):
-            return []
-        if query == "quality":
-            return quality_symbols
-        if query == "health":
-            return health_symbols
-        return []
-
-    with (
-        patch(
-            "app.services.context_gatherer._precision_ranking.search_symbols",
-            side_effect=_search_side_effect,
-        ),
-        patch(
-            "app.services.context_gatherer._precision_sections.list_related_entries_for_file"
-        ) as mock_related,
-        patch("app.services.context_gatherer._precision_sections.get_symbol") as mock_get_symbol,
-        patch(
-            "app.services.context_gatherer._precision_sections.read_symbol_source",
-            return_value="async def get_health_summary(project_id: str) -> HealthSummaryResponse: ...",
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.estimate_naive_file_tokens",
-            return_value=3000,
-        ),
-    ):
-        mock_related.side_effect = lambda _project_id, file_path: (
-            [
-                {
-                    "entry_type": "endpoint",
-                    "path": "/projects/{project_id}/quality/health",
-                    "metadata": {"depends_on_tables": ["quality_check_results"]},
-                }
-            ]
-            if file_path == "backend/app/api/quality_gate.py"
-            else []
-        )
-        mock_get_symbol.side_effect = lambda _project_id, symbol_id: (
-            {
-                "symbol_id": symbol_id,
-                "qualified_name": "get_health_summary",
-                "file_path": "backend/app/api/quality_gate.py",
-                "start_line": 24,
-                "end_line": 35,
-                "byte_offset": 0,
-                "byte_length": 0,
-            }
-            if symbol_id == "backend/app/api/quality_gate.py::get_health_summary#function"
-            else None
-        )
-
-        result = collect_precision_code_search_context("project-1", ["quality health api"])
-
-    assert result.metadata["used_symbol_first"]
-    assert result.metadata["symbol_count"] == 5
-    assert "`get_health_summary`" in result.prompt_context
-    assert "/projects/{project_id}/quality/health" in result.prompt_context
+def test_phrase_fallback_and_rare_term_union_keep_both_terms(source_project) -> None:
+    root, _rows = source_project
+    (root / "data.txt").write_text("alpha_thing first\nbeta_thing second\n")
+    result = adapter.collect_precision_code_search_context("project-1", ["alpha_thing beta_thing"])
+    assert "alpha_thing first" in result.prompt_context
+    assert "beta_thing second" in result.prompt_context
+    assert result.metadata["text_match_count"] == 2
 
 
-def test_collect_precision_code_search_context_defers_stale_only_refresh() -> None:
-    with (
-        patch(
-            "app.services.context_gatherer.precision_code_search.explorer_service.get_stats",
-            return_value={"total": 12, "last_scanned": "2026-03-10T17:00:00+00:00"},
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.get_symbol_stats",
-            return_value={"count": 4, "last_updated": "2026-03-10T17:00:00+00:00"},
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.explorer_service.scan"
-        ) as mock_scan,
-        patch(
-            "app.services.context_gatherer._precision_ranking.search_symbols",
-            return_value=[],
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            return_value={"items": [], "count": 0, "files_searched": 0, "truncated": False},
-        ),
-    ):
-        mock_scan.return_value.success = True
-        mock_scan.return_value.entries_found = 12
-        mock_scan.return_value.entries_saved = 12
-        mock_scan.return_value.duration_ms = 100
-
-        result = collect_precision_code_search_context("project-1", ["get_file_tree"])
-
-    mock_scan.assert_not_called()
-    assert not result.metadata["refreshed_index"]
-    assert result.metadata["stale_hit"]
-    assert result.metadata["refresh_reasons"] == ["stale_file_index", "stale_symbol_index"]
-    assert result.metadata["file_index_age_minutes"] is not None
-    assert result.metadata["symbol_index_age_minutes"] is not None
-
-
-def test_collect_precision_code_search_context_refreshes_missing_index() -> None:
-    with (
-        patch(
-            "app.services.context_gatherer.precision_code_search.explorer_service.get_stats",
-            return_value={"total": 0, "last_scanned": None},
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.get_symbol_stats",
-            return_value={"count": 0, "last_updated": None},
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.explorer_service.scan"
-        ) as mock_scan,
-        patch(
-            "app.services.context_gatherer._precision_ranking.search_symbols",
-            return_value=[],
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            return_value={"items": [], "count": 0, "files_searched": 0, "truncated": False},
-        ),
-    ):
-        mock_scan.return_value.success = True
-        mock_scan.return_value.entries_found = 12
-        mock_scan.return_value.entries_saved = 12
-        mock_scan.return_value.duration_ms = 100
-
-        result = collect_precision_code_search_context("project-1", ["get_file_tree"])
-
-    mock_scan.assert_called_once_with("project-1", "file")
-    assert result.metadata["refreshed_index"]
-    assert result.metadata["stale_hit"]
-    assert result.metadata["refresh_reasons"] == [
-        "missing_file_index",
-        "missing_symbol_index",
-        "missing_file_scan_timestamp",
-        "missing_symbol_timestamp",
-    ]
-
-
-def test_collect_precision_code_search_context_tracks_fresh_index_telemetry() -> None:
-    with (
-        patch(
-            "app.services.context_gatherer.precision_code_search.explorer_service.get_stats",
-            return_value={"total": 12, "last_scanned": "3026-03-10T17:00:00+00:00"},
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.get_symbol_stats",
-            return_value={"count": 4, "last_updated": "3026-03-10T17:00:00+00:00"},
-        ),
-        patch(
-            "app.services.context_gatherer._precision_ranking.search_symbols",
-            return_value=[],
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            return_value={"items": [], "count": 0, "files_searched": 0, "truncated": False},
-        ),
-    ):
-        result = collect_precision_code_search_context("project-1", ["get_file_tree"])
-
-    assert not result.metadata["stale_hit"]
-    assert result.metadata["refresh_reasons"] == []
-    assert result.metadata["file_total"] == 12
-    assert result.metadata["file_last_scanned"] == "3026-03-10T17:00:00+00:00"
-    assert result.metadata["symbol_last_updated"] == "3026-03-10T17:00:00+00:00"
-
-
-def _collect_with_index_age(age: timedelta) -> Any:
-    stamp = (datetime.now(UTC) - age).isoformat()
-    with (
-        patch(
-            "app.services.context_gatherer.precision_code_search.explorer_service.get_stats",
-            return_value={"total": 12, "last_scanned": stamp},
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.get_symbol_stats",
-            return_value={"count": 4, "last_updated": stamp},
-        ),
-        patch(
-            "app.services.context_gatherer._precision_ranking.search_symbols",
-            return_value=[],
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            return_value={"items": [], "count": 0, "files_searched": 0, "truncated": False},
-        ),
-    ):
-        return collect_precision_code_search_context("project-1", ["get_file_tree"])
-
-
-def test_collect_precision_code_search_context_index_within_sweep_cadence_is_not_stale() -> None:
-    """The refresh sweep runs bi-hourly; an index younger than a full cycle
-    plus slack must not be flagged stale (was: 30m threshold -> stale_hit
-    true ~75% of the time on a healthy system)."""
-    result = _collect_with_index_age(timedelta(minutes=119))
-
-    assert not result.metadata["stale_hit"]
-    assert result.metadata["refresh_reasons"] == []
-
-
-def test_collect_precision_code_search_context_index_older_than_sweep_cycle_is_stale() -> None:
-    result = _collect_with_index_age(timedelta(minutes=151))
-
-    assert result.metadata["stale_hit"]
-    assert result.metadata["refresh_reasons"] == ["stale_file_index", "stale_symbol_index"]
-
-
-def test_collect_precision_code_search_context_respects_symbol_limit() -> None:
-    """symbol_limit parameter should control how many symbols are returned."""
-
-    def _search_side_effect(project_id: str, query: str, limit: int = 50) -> list[dict[str, object]]:
-        return [
-            {
-                "symbol_id": f"sym_{i}",
-                "qualified_name": f"func_{i}",
-                "name": f"func_{i}",
-                "kind": "function",
-                "file_path": f"backend/mod{i}.py",
-                "start_line": i * 10,
-                "end_line": i * 10 + 5,
-                "signature": f"def func_{i}()",
-                "summary": f"Function {i}",
-            }
-            for i in range(10)
-        ]
-
-    with (
-        patch(
-            "app.services.context_gatherer._precision_ranking.search_symbols",
-            side_effect=_search_side_effect,
-        ),
-        patch(
-            "app.services.context_gatherer._precision_sections.list_related_entries_for_file",
-            return_value=[],
-        ),
-        patch(
-            "app.services.context_gatherer._precision_sections.get_symbol",
-            return_value=None,
-        ),
-        patch(
-            "app.services.context_gatherer._precision_sections.read_symbol_source",
-            return_value="def func(): ...",
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.estimate_naive_file_tokens",
-            return_value=5000,
-        ),
-    ):
-        result_default = collect_precision_code_search_context("project-1", ["func"])
-        result_limited = collect_precision_code_search_context("project-1", ["func"], symbol_limit=3)
-
-    assert result_default.metadata["symbol_count"] == 5  # default _SEARCH_LIMIT
-    assert result_limited.metadata["symbol_count"] == 3
-
-
-def test_collect_precision_code_search_context_routes_natural_language_to_text() -> None:
-    """NL queries try symbol search with case variants first, fall back to text if no symbols."""
-    with (
-        patch(
-            "app.services.context_gatherer._precision_ranking.search_symbols",
-            return_value=[],  # No symbol matches for NL variants
-        ) as mock_symbols,
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            return_value={
-                "items": [
-                    {
-                        "path": "backend/app/storage/explorer_symbols.py",
-                        "line": 237,
-                        "content": "CASE WHEN LOWER(name) = %s THEN 100",
-                        "language": "python",
-                    }
-                ],
-                "count": 1,
-                "files_searched": 5,
-                "truncated": False,
-            },
-        ),
-    ):
-        result = collect_precision_code_search_context("project-1", ["scoring logic"])
-
-    # NL queries now try symbol search with case variants (e.g. "ScoringLogic")
-    mock_symbols.assert_called()
-    assert result.metadata["used_fallback"] is True
-    assert result.metadata["fallback_mode"] == "text"
-
-
-def test_collect_precision_code_search_context_nl_query_finds_symbols_via_case_variants() -> None:
-    """NL query 'project selector' should find ProjectSelector symbol via case expansion."""
-    with (
-        patch(
-            "app.services.context_gatherer._precision_ranking.search_symbols",
-        ) as mock_symbols,
-        patch(
-            "app.services.context_gatherer._precision_sections.list_related_entries_for_file",
-            return_value=[],
-        ),
-        patch(
-            "app.services.context_gatherer._precision_sections.get_symbol",
-            return_value={
-                "symbol_id": "frontend/components/layout/ProjectSelector.tsx::ProjectSelector#function",
-                "qualified_name": "ProjectSelector",
-                "file_path": "frontend/components/layout/ProjectSelector.tsx",
-                "start_line": 21,
-                "end_line": 180,
-            },
-        ),
-        patch(
-            "app.services.context_gatherer._precision_sections.read_symbol_source",
-            return_value="export function ProjectSelector({ onProjectChange }: Props) {",
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.estimate_naive_file_tokens",
-            return_value=2000,
-        ),
-    ):
-        mock_symbols.return_value = [
-            {
-                "symbol_id": "frontend/components/layout/ProjectSelector.tsx::ProjectSelector#function",
-                "qualified_name": "ProjectSelector",
-                "name": "ProjectSelector",
-                "kind": "function",
-                "file_path": "frontend/components/layout/ProjectSelector.tsx",
-                "start_line": 21,
-                "end_line": 180,
-                "signature": "export function ProjectSelector({ onProjectChange })",
-                "summary": "Project selection dropdown component.",
-            }
-        ]
-
-        result = collect_precision_code_search_context("project-1", ["project selector"])
-
-    # NL query should find symbols via CamelCase expansion ("ProjectSelector")
-    assert result.metadata["used_symbol_first"] is True
-    assert result.metadata["symbol_count"] == 1
-    assert "ProjectSelector" in result.prompt_context
-
-
-def test_collect_precision_code_search_context_text_fallback_retries_per_term_then_empty() -> None:
-    """A phrase miss retries each meaningful term once; all-miss still returns empty."""
-    with (
-        patch(
-            "app.services.context_gatherer._precision_ranking.search_symbols",
-            return_value=[],
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            return_value={"items": [], "count": 0, "files_searched": 10, "truncated": False},
-        ) as mock_search_text,
-    ):
-        result = collect_precision_code_search_context("project-1", ["open settings"])
-
-    queries = [call.args[1] for call in mock_search_text.call_args_list]
-    assert queries == ["open settings", "open", "settings"]
+def test_absent_query_stays_empty_without_rescan(source_project) -> None:
+    with patch.object(adapter.explorer_service, "scan") as scan:
+        result = adapter.collect_precision_code_search_context("project-1", ["truly_absent_symbol"])
+    scan.assert_not_called()
     assert result.prompt_context == ""
-    assert result.metadata["used_fallback"] is False
+    assert result.metadata["symbol_count"] == 0
     assert result.metadata["text_match_count"] == 0
+    assert result.metadata["measurement_available"] is False
 
 
-def test_collect_precision_code_search_context_reports_missed_identifier_terms() -> None:
-    """Coverage info from ranking must surface in result metadata for the hint layer."""
+def test_budget_is_honest_and_truncation_explicit(source_project) -> None:
+    index_source(source_project, "large.py", "def large_function():\n" + "    value = 'context'\n" * 100)
+    result = adapter.collect_precision_code_search_context("project-1", ["large_function"], budget_tokens=100)
+    assert estimate_tokens(result.prompt_context) <= 100
+    assert result.metadata["prompt_truncated"] is True
+    assert result.metadata["final_tokens"] == estimate_tokens(result.prompt_context)
 
-    def fake_rank(
-        project_id: str,
-        queries: list[str],
-        *,
-        symbol_limit: int = 5,
-        path_prefix: str | None = None,
-        identifier_tokens: list[str] | None = None,
-        coverage: dict[str, object] | None = None,
-    ) -> list[dict[str, object]]:
-        if coverage is not None:
-            coverage["missed_identifier_tokens"] = ["resolve_search_timeout"]
-            coverage["suppressed_generic_symbols"] = 17
-        return []
 
-    with (
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_and_rank_symbols",
-            side_effect=fake_rank,
-        ),
-        patch(
-            "app.services.context_gatherer.precision_code_search.search_text",
-            return_value={"items": [], "count": 0, "files_searched": 100, "truncated": False},
-        ),
-    ):
-        result = collect_precision_code_search_context("project-1", ["resolve_search_timeout handler"])
+def test_symbol_limit_and_path_restriction(source_project) -> None:
+    index_source(source_project, "one.py", "def helper_one():\n    return 1\n\ndef helper_two():\n    return 2\n")
+    index_source(source_project, "other.py", "def helper_other():\n    return 3\n")
+    result = adapter.collect_precision_code_search_context("project-1", ["helper"], symbol_limit=1, path_prefix="one.py")
+    assert result.metadata["symbol_count"] == 1
+    assert "other.py" not in result.prompt_context
 
-    assert result.metadata["missed_identifier_terms"] == ["resolve_search_timeout"]
-    assert result.metadata["suppressed_generic_symbols"] == 17
-    assert result.prompt_context == ""
+
+def test_transport_candidates_are_opt_in(source_project) -> None:
+    index_source(source_project, "files.py", "def get_file_tree(path):\n    return path\n")
+    ordinary = adapter.collect_precision_code_search_context("project-1", ["get_file_tree"])
+    transport = adapter.collect_precision_code_search_context("project-1", ["get_file_tree"], include_candidates=True)
+    assert ordinary.candidates is None
+    assert transport.candidates
+    assert transport.prompt_context == ordinary.prompt_context
+    assert all("source" not in candidate for candidate in transport.candidates)
+
+
+def test_index_outage_still_returns_verified_local_source(source_project, monkeypatch) -> None:
+    root, _rows = source_project
+    (root / "local.py").write_text("def local_function():\n    return 'available'\n")
+    def unavailable(*_args, **_kwargs):
+        raise ConnectionError("unavailable")
+    monkeypatch.setattr(ranking, "search_symbols", unavailable)
+    result = adapter.collect_precision_code_search_context("project-1", ["local_function"])
+    assert "return 'available'" in result.prompt_context
+    assert result.metadata["source_verified"] is True

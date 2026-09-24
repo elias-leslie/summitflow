@@ -19,6 +19,34 @@ OUT_DIR="${1:-/tmp/workspace-packages}"
 mkdir -p "$OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 
+PYTHON_TOOL_OWNERS=(browser-automation code-intelligence design-tools)
+
+# A package-only change must not run unrelated JavaScript prepack builds.
+# The default still produces the complete Docker dependency bundle.
+if [ "$#" -gt 1 ]; then
+  if [ "$#" -ne 3 ] || [ "$2" != "--python-owner" ]; then
+    echo "Usage: $0 [output-directory [--python-owner OWNER]]" >&2
+    exit 2
+  fi
+  selected_owner="$3"
+  known_owner=false
+  for owner in "${PYTHON_TOOL_OWNERS[@]}"; do
+    [ "$owner" != "$selected_owner" ] || known_owner=true
+  done
+  if [ "$known_owner" != true ]; then
+    echo "Unknown Python tool owner: $selected_owner" >&2
+    exit 2
+  fi
+  owner_root="$(resolve_project_root "$selected_owner" 2>/dev/null || true)"
+  if [ -z "$owner_root" ] || [ ! -f "$owner_root/pyproject.toml" ]; then
+    echo "Python tool owner root unavailable: $selected_owner" >&2
+    exit 1
+  fi
+  echo "Building $selected_owner wheel..."
+  (cd "$owner_root" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
+  exit 0
+fi
+
 AGENT_HUB_ROOT="${AGENT_HUB_ROOT:-}"
 if [ -z "$AGENT_HUB_ROOT" ]; then
   AGENT_HUB_ROOT="$(resolve_project_root agent-hub 2>/dev/null || true)"
@@ -96,7 +124,7 @@ if [ -n "$PACKAGES_DIR" ] && [ -d "$PACKAGES_DIR/st-cli" ]; then
   (cd "$PACKAGES_DIR/st-cli" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
 fi
 
-for owner in browser-automation code-intelligence design-tools; do
+for owner in "${PYTHON_TOOL_OWNERS[@]}"; do
   owner_root="$(resolve_project_root "$owner" 2>/dev/null || true)"
   if [ -n "$owner_root" ] && [ -f "$owner_root/pyproject.toml" ]; then
     echo "Building $owner wheel..."
