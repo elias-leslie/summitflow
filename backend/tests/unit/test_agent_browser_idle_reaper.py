@@ -1,70 +1,56 @@
-"""Regression tests for safe cleanup of agent-browser temporary artifacts."""
-
+"""The host cleanup caller must only dispatch to the registered owner capability."""
 from __future__ import annotations
 
 import json
-import os
 import subprocess
-import sys
-import time
 from pathlib import Path
 
 REAPER = Path(__file__).resolve().parents[3] / "scripts" / "agent-browser-idle-reaper.js"
 
 
-def _run_temp_cleanup(temp_root: Path) -> dict[str, list[str]]:
-    script = (
-        f"const r=require({json.dumps(str(REAPER))});"
-        "process.stdout.write(JSON.stringify(r.cleanupTempArtifacts({env:process.env})));"
+def test_cleanup_wrapper_dispatches_owner_from_nonproject_cwd(tmp_path):
+    recorded = tmp_path / "arguments.json"
+    stub = tmp_path / "st"
+    stub.write_text(
+        "#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\n"
+        + f"Path({str(recorded)!r}).write_text(json.dumps(sys.argv[1:]))\n"
     )
+    stub.chmod(0o700)
+    script = f"const r=require({json.dumps(str(REAPER))});process.exitCode=r.runIsolatedCleanup({{st:{json.dumps(str(stub))},dryRun:true}});"
+    result = subprocess.run(["node", "-e", script], cwd=tmp_path, capture_output=True, text=True)
+    assert result.returncode == 0
+    assert json.loads(recorded.read_text()) == ["browser", "--local-ai", "reap-isolated", "--dry-run"]
+
+
+def test_cleanup_wrapper_never_falls_back_to_global_reaper(tmp_path):
+    script = f"const r=require({json.dumps(str(REAPER))});process.exitCode=r.runIsolatedCleanup({{st:{json.dumps(str(tmp_path / 'missing'))}}});"
+    result = subprocess.run(["node", "-e", script], cwd=tmp_path, capture_output=True, text=True)
+    assert result.returncode == 2
+    assert "owner unavailable" in result.stderr
+
+
+def test_legacy_wrapper_runs_only_requested_command_without_cleanup(tmp_path):
+    import os
+
+    root = Path(__file__).resolve().parents[3]
+    stub = tmp_path / "agent-browser"
+    stub.write_text("#!/usr/bin/env python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n")
+    stub.chmod(0o700)
+    reaper = tmp_path / "unexpected-reaper"
+    marker = tmp_path / "reaper-ran"
+    reaper.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 99\n")
+    reaper.chmod(0o700)
     env = {
         **os.environ,
-        "AGENT_BROWSER_TEMP_ROOT": str(temp_root),
-        "AGENT_BROWSER_TEMP_ARTIFACT_RETENTION_MS": "60000",
+        "AGENT_BROWSER_REAL_BIN": str(stub),
+        "AGENT_BROWSER_REAPER_BIN": str(reaper),
+        "AGENT_BROWSER_SOCKET_DIR": str(tmp_path / "sockets"),
+        "AGENT_BROWSER_SKIP_NO_SANDBOX": "1",
     }
     result = subprocess.run(
-        ["node", "-e", script],
-        check=True,
-        capture_output=True,
-        text=True,
-        env=env,
+        ["node", str(root / "scripts/agent-browser-wrapper.js"), "--session", "fixture", "snapshot"],
+        env=env, cwd=tmp_path, capture_output=True, text=True,
     )
-    return json.loads(result.stdout)
-
-
-def test_temp_cleanup_removes_only_old_inactive_known_artifacts(tmp_path: Path) -> None:
-    stale_profile = tmp_path / "agent-browser-profile-stale"
-    active_profile = tmp_path / "agent-browser-profile-active"
-    stale_fetcher = tmp_path / "com.google.Chrome.chrome_chrome_url_fetcher_.stale"
-    unrelated = tmp_path / "project-build-cache"
-    for candidate in (stale_profile, active_profile, stale_fetcher, unrelated):
-        candidate.mkdir()
-        old = time.time() - 3600
-        os.utime(candidate, (old, old))
-
-    active = subprocess.Popen(
-        [sys.executable, "-c", "import time; time.sleep(30)", str(active_profile)]
-    )
-    try:
-        summary = _run_temp_cleanup(tmp_path)
-    finally:
-        active.terminate()
-        active.wait(timeout=5)
-
-    assert not stale_profile.exists()
-    assert not stale_fetcher.exists()
-    assert active_profile.exists()
-    assert unrelated.exists()
-    assert sorted(summary["cleaned"]) == sorted([stale_profile.name, stale_fetcher.name])
-    assert summary["skippedActive"] == [active_profile.name]
-
-
-def test_temp_cleanup_keeps_recent_artifact(tmp_path: Path) -> None:
-    recent = tmp_path / "agent-browser-profile-recent"
-    recent.mkdir()
-
-    summary = _run_temp_cleanup(tmp_path)
-
-    assert recent.exists()
-    assert summary["cleaned"] == []
-    assert summary["skippedRecent"] == [recent.name]
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == ["--session", "fixture", "snapshot"]
+    assert not marker.exists()

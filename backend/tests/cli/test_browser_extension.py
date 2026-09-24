@@ -175,3 +175,16 @@ def test_default_check_ignores_shared_profile_and_session_overrides(tmp_path, mo
     assert check["session"] != "custom-shared"
     assert launch["window_mode"] == "headless"
     assert "/tmp/shared-profile" not in launch["prefix"]
+
+
+def test_isolated_reaper_routes_without_chrome_or_project_resolution(tmp_path, monkeypatch):
+    requests = []
+    monkeypatch.setattr(browser, "_agent_browser_bin", lambda: "/managed/agent-browser")
+    monkeypatch.setattr(browser, "current_root", lambda: tmp_path)
+    monkeypatch.setattr("cli.lib.browser_policy.system_chrome_path", lambda *a: pytest.fail("cleanup must not prepare a Chrome launch"))
+    monkeypatch.setattr("cli.extensions.dispatch_extension", lambda record, argv, **kw: requests.append(json.loads(argv[1])) or 0)
+    assert browser.run_registered(object(), ["reap-isolated", "--dry-run"], {}) == 0
+    assert requests[0]["operation"] == "reap-isolated"
+    assert requests[0]["args"] == ["--dry-run"]
+    assert requests[0]["launch"]["prefix"] == []
+    assert requests[0]["launch"]["window_mode"] == "none"

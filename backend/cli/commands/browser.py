@@ -346,7 +346,14 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
     if not command:
         output_error("Usage: st browser <agent-browser command> [args...]")
         raise typer.Exit(2)
-    operation = command if command in {"check", "health", "update", "inventory"} else "agent"
+    operation = command if command in {"check", "health", "update", "inventory", "reap-isolated"} else "agent"
+    if operation == "reap-isolated":
+        index = browser_policy.command_index(browser_args)
+        tail = browser_args[index + 1 :] if index is not None else []
+        if target != "local-ai" or tail not in ([], ["--dry-run"]):
+            output_error("Usage: st browser reap-isolated [--dry-run] (local target only)")
+            raise typer.Exit(2)
+        browser_args = tail
     if operation == "inventory":
         if target != "local-ai":
             output_error("Browser runtime inventory is available only for the local host")
@@ -362,7 +369,7 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
         index = browser_policy.command_index(browser_args)
         browser_args, check = _check_payload(target, browser_args[index + 1 :] if index is not None else [])
     if target == "local-ai":
-        if operation == "update":
+        if operation in {"update", "reap-isolated"}:
             launch = {
                 "agent_browser_bin": agent_bin,
                 "prefix": [],
@@ -373,7 +380,7 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
             }
         elif operation == "health":
             browser_args = ["--session", _local_ai_session(), *browser_args]
-        if operation != "update":
+        if operation not in {"update", "reap-isolated"}:
             if operation not in {"health", "check", "inventory"}:
                 browser_args = _with_local_ai_session(browser_args)
             if operation == "agent":
@@ -442,6 +449,7 @@ Default target:
 
 Usage:
   st browser health
+  st browser reap-isolated [--dry-run]
   st browser --local-ai health
   st browser --local-ai open <project-or-url>
   st browser --proxmox check <project-or-url> [screenshot-path]

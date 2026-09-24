@@ -13,10 +13,8 @@ const {
   needsWebSocketAuth,
 } = require('./agent-browser-cloudflare-auth.js');
 
-const SCRIPT_DIR = __dirname;
 const MANAGED_ROOT = process.env.AGENT_BROWSER_MANAGED_ROOT || path.join(process.env.HOME, '.local', 'share', 'agent-browser-managed');
 const REAL_AGENT_BROWSER = process.env.AGENT_BROWSER_REAL_BIN || path.join(MANAGED_ROOT, 'node_modules', '.bin', 'agent-browser');
-const REAPER = process.env.AGENT_BROWSER_REAPER_BIN || path.join(SCRIPT_DIR, 'agent-browser-idle-reaper.js');
 const LOCAL_LIB_ROOT = path.join(process.env.HOME || os.homedir(), '.agent-browser', 'linux-deps', 'root');
 const EXTRA_LIB_DIRS = [
   path.join(LOCAL_LIB_ROOT, 'usr', 'lib', 'x86_64-linux-gnu'),
@@ -142,11 +140,6 @@ function runAgentBrowser(args) {
 
   try {
     // Serialize per-session CLI calls so open/snapshot/eval do not race the same daemon socket.
-    execFileSync('flock', ['-w', '30', lockPath, 'node', REAPER], {
-      stdio: ['ignore', 'ignore', 'ignore'],
-      env: process.env,
-    });
-
     execFileSync('flock', ['-w', '30', lockPath, REAL_AGENT_BROWSER, ...forwardedArgs], {
       stdio: 'inherit',
       env: process.env,
