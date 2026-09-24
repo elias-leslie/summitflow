@@ -30,6 +30,14 @@ _COLUMNS = (
 )
 
 
+def _lock_review(cur: Any, project_id: str, entry_path: str) -> None:
+    """Serialize every revision and task-link change for one dependency."""
+    cur.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+        (f"dependency-review:{project_id}:{entry_path}",),
+    )
+
+
 def latest(project_id: str, entry_path: str) -> dict[str, Any] | None:
     with get_cursor() as cur:
         cur.execute(
@@ -77,6 +85,7 @@ def _record_check(cur: Any, project_id: str, entry_path: str, evidence_hash: str
 def attach_task(project_id: str, entry_path: str, event_id: int, task_id: str) -> dict[str, Any]:
     """Link a queued task to the already committed decision that authorized it."""
     with get_connection() as conn, conn.cursor() as cur:
+        _lock_review(cur, project_id, entry_path)
         cur.execute(
             f"UPDATE dependency_review_events SET task_id = %s "
             f"WHERE id = %s AND project_id = %s AND entry_path = %s "
@@ -110,10 +119,7 @@ def append(
     if decision not in {"pending", "update", "hold", "investigate"}:
         raise ValueError("Invalid dependency decision")
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-            (f"dependency-review:{project_id}:{entry_path}",),
-        )
+        _lock_review(cur, project_id, entry_path)
         cur.execute(
             f"SELECT {_COLUMNS} FROM dependency_review_events "
             "WHERE project_id = %s AND entry_path = %s ORDER BY revision DESC LIMIT 1",
