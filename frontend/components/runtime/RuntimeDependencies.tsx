@@ -9,10 +9,13 @@ function version(value: string | null) {
   return value || 'Unknown'
 }
 
+const PAGE_SIZE = 50
+
 export function RuntimeDependencies() {
   const queryClient = useQueryClient()
   const [projectId, setProjectId] = useState('summitflow')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(0)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [decision, setDecision] = useState<'update' | 'hold' | 'investigate'>(
     'investigate',
@@ -25,11 +28,12 @@ export function RuntimeDependencies() {
     queryFn: fetchProjects,
   })
   const { data, isLoading, error } = useQuery({
-    queryKey: ['runtime', 'dependencies', projectId, search],
+    queryKey: ['runtime', 'dependencies', projectId, search, page],
     queryFn: () =>
       runtimeApi.getDependencies(projectId, {
         query: search || undefined,
-        limit: 500,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
       }),
   })
   const selected = data?.items.find((item) => item.entry_path === selectedPath)
@@ -71,6 +75,7 @@ export function RuntimeDependencies() {
             onChange={(event) => {
               setProjectId(event.target.value)
               setSelectedPath(null)
+              setPage(0)
             }}
           >
             {(projects || [{ id: 'summitflow', name: 'SummitFlow' }]).map(
@@ -87,7 +92,11 @@ export function RuntimeDependencies() {
           className="rounded border border-slate-700 bg-slate-900 px-3 py-1 text-sm text-slate-200"
           placeholder="Search packages"
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={(event) => {
+            setSearch(event.target.value)
+            setSelectedPath(null)
+            setPage(0)
+          }}
         />
         {data && (
           <span className="text-sm text-slate-500">
@@ -172,11 +181,35 @@ export function RuntimeDependencies() {
           </table>
         </div>
       )}
-      {data && data.total > data.items.length && (
-        <p className="text-sm text-amber-300">
-          Showing {data.items.length} of {data.total}. Narrow the package search
-          to see more.
-        </p>
+      {data && data.total > PAGE_SIZE && (
+        <div className="flex items-center justify-between text-sm text-slate-400">
+          <span>
+            Showing {page * PAGE_SIZE + 1}–
+            {Math.min((page + 1) * PAGE_SIZE, data.total)} of {data.total}
+          </span>
+          <div className="flex gap-2">
+            <button
+              className="rounded border border-slate-700 px-3 py-1 disabled:opacity-50"
+              disabled={page === 0}
+              onClick={() => {
+                setSelectedPath(null)
+                setPage(page - 1)
+              }}
+            >
+              Previous
+            </button>
+            <button
+              className="rounded border border-slate-700 px-3 py-1 disabled:opacity-50"
+              disabled={(page + 1) * PAGE_SIZE >= data.total}
+              onClick={() => {
+                setSelectedPath(null)
+                setPage(page + 1)
+              }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
       )}
       {selected && (
         <div className="space-y-3 rounded-lg border border-slate-700/60 bg-slate-900/60 p-4">
