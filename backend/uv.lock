@@ -316,7 +316,7 @@ dependencies = [
     { name = "tree-sitter-typescript" },
 ]
 wheels = [
-    { filename = "code_intelligence-0.1.0-py3-none-any.whl", hash = "sha256:5e215fd1c2632871f94ed624df0192d4ab6db678b20cdea015b52bfe145018e7" },
+    { filename = "code_intelligence-0.1.0-py3-none-any.whl", hash = "sha256:d6c3968b252a63db145e4aeb22c197f655845da43a38ee827c0c8aed9a409e4e" },
 ]
 
 [package.metadata]
