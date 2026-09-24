@@ -1596,6 +1596,144 @@ def test_setup_browser_refuses_server_local_install(monkeypatch) -> None:
     assert "Refusing server-local browser install" in result.output
 
 
+def test_setup_browser_managed_release_requires_qualified_pin_and_previews_without_install() -> None:
+    with patch("cli.commands.setup._promote_local_browser") as promote:
+        invalid = runner.invoke(setup.app, ["browser", "latest", "--promote-local-ai", "--dry-run"])
+        preview = runner.invoke(setup.app, ["browser", "0.38.1", "--promote-local-ai", "--dry-run"])
+    assert invalid.exit_code != 0
+    assert "qualified exact version 0.38.1" in invalid.output
+    assert preview.exit_code == 0, preview.output
+    assert "Stage exact npm package" in preview.output
+    promote.assert_not_called()
+
+
+def test_setup_browser_managed_release_confirms_scoped_command() -> None:
+    with (
+        patch("cli.commands.setup.confirm_gate") as confirm_gate,
+        patch("cli.commands.setup._promote_local_browser") as promote,
+    ):
+        result = runner.invoke(setup.app, ["browser", "0.38.1", "--promote-local-ai", "--confirm", "token"])
+    assert result.exit_code == 0, result.output
+    assert confirm_gate.call_args.args[0] == "st-setup-browser-0.38.1---promote-local-ai"
+    promote.assert_called_once_with("0.38.1", rollback=False)
+
+
+def test_managed_browser_switch_and_rollback_preserve_previous_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    managed = tmp_path / "agent-browser-managed"
+    root = tmp_path / "agent-browser-releases"
+    release = root / "0.38.1"
+    previous = root / "previous"
+    for directory in (managed, release):
+        binary = directory / "node_modules" / ".bin" / "agent-browser"
+        binary.parent.mkdir(parents=True)
+        package_binary = directory / "node_modules" / "agent-browser" / "bin" / "agent-browser.js"
+        package_binary.parent.mkdir(parents=True)
+        package_binary.write_text("browser")
+        binary.symlink_to(package_binary)
+    monkeypatch.setattr(setup, "_browser_release_paths", lambda: (managed, root, previous))
+    monkeypatch.setattr(setup, "_stage_browser_release", lambda _root, _version: release)
+    monkeypatch.setattr(setup, "_verify_managed_browser", lambda _version: "BROWSER_CHECK:OK|readiness=ready")
+    monkeypatch.setattr(setup, "_default_local_ai_session_active", lambda: False)
+    monkeypatch.setattr(setup.browser_support, "agent_browser_bin", lambda _configured: str(setup._browser_binary(managed)))
+    monkeypatch.setattr(setup, "_browser_version", lambda binary: "0.38.1" if "0.38.1" in str(binary) else "0.26.0")
+
+    legacy = setup._browser_binary(managed).resolve()
+    setup._promote_local_browser("0.38.1", rollback=False)
+    assert managed.is_dir() and not managed.is_symlink()
+    assert setup._browser_binary(managed).resolve() == setup._browser_binary(release).resolve()
+    assert previous.is_symlink()
+    assert previous.resolve() == legacy
+    assert legacy.is_file()
+    first_receipt = json.loads(next(root.glob("promotion-*.json")).read_text())
+    assert first_receipt["version"] == "0.38.1"
+    assert first_receipt["managed_check"].startswith("BROWSER_CHECK:OK")
+
+    setup._promote_local_browser("", rollback=True)
+    assert setup._browser_binary(managed).resolve() == legacy
+    assert previous.resolve() == setup._browser_binary(release).resolve()
+    assert len(list(root.glob("promotion-*.json"))) == 2
+
+
+def test_managed_browser_failed_smoke_restores_legacy_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    managed = tmp_path / "agent-browser-managed"
+    root = tmp_path / "agent-browser-releases"
+    release = root / "0.38.1"
+    previous = root / "previous"
+    for directory in (managed, release):
+        binary = directory / "node_modules" / ".bin" / "agent-browser"
+        binary.parent.mkdir(parents=True)
+        package_binary = directory / "node_modules" / "agent-browser" / "bin" / "agent-browser.js"
+        package_binary.parent.mkdir(parents=True)
+        package_binary.write_text("browser")
+        binary.symlink_to(package_binary)
+    monkeypatch.setattr(setup, "_browser_release_paths", lambda: (managed, root, previous))
+    monkeypatch.setattr(setup, "_stage_browser_release", lambda _root, _version: release)
+    monkeypatch.setattr(setup, "_verify_managed_browser", lambda _version: (_ for _ in ()).throw(RuntimeError("smoke failed")))
+    monkeypatch.setattr(setup, "_default_local_ai_session_active", lambda: False)
+    monkeypatch.setattr(setup.browser_support, "agent_browser_bin", lambda _configured: str(setup._browser_binary(managed)))
+
+    with pytest.raises(RuntimeError, match="smoke failed"):
+        setup._promote_local_browser("0.38.1", rollback=False)
+    assert managed.is_dir() and not managed.is_symlink()
+    assert setup._browser_binary(managed).is_symlink()
+    assert setup._browser_binary(managed).is_file()
+    assert release.is_dir()
+    assert not previous.exists()
+
+
+def test_browser_release_refuses_existing_install_with_wrong_registry_integrity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    release = tmp_path / "0.38.1"
+    binary = setup._browser_binary(release)
+    binary.parent.mkdir(parents=True)
+    binary.write_text("browser")
+    (release / "package-lock.json").write_text(json.dumps({
+        "packages": {"node_modules/agent-browser": {"version": "0.38.1", "integrity": "sha512-wrong"}},
+    }))
+    monkeypatch.setattr(setup, "_browser_version", lambda _binary: "0.38.1")
+    with (
+        patch("cli.commands.setup._run") as install,
+        pytest.raises(RuntimeError, match="integrity/version"),
+    ):
+        setup._stage_browser_release(tmp_path, "0.38.1")
+    install.assert_not_called()
+
+
+def test_browser_promotion_refuses_active_default_session_before_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    managed = tmp_path / "managed"
+    root = tmp_path / "releases"
+    monkeypatch.setattr(setup, "_browser_release_paths", lambda: (managed, root, root / "previous"))
+    monkeypatch.setattr(setup, "_default_local_ai_session_active", lambda: True)
+    monkeypatch.setattr(setup.browser_support, "agent_browser_bin", lambda _configured: None)
+    with (
+        patch("cli.commands.setup._stage_browser_release") as install,
+        pytest.raises(RuntimeError, match="close it through `st browser close`"),
+    ):
+        setup._promote_local_browser("0.38.1", rollback=False)
+    install.assert_not_called()
+
+
+def test_browser_promotion_rejects_path_that_would_keep_old_binary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    managed = tmp_path / "managed"
+    root = tmp_path / "releases"
+    current = setup._browser_binary(managed)
+    current.parent.mkdir(parents=True)
+    package_binary = managed / "node_modules" / "agent-browser" / "bin" / "agent-browser.js"
+    package_binary.parent.mkdir(parents=True)
+    package_binary.write_text("browser")
+    current.symlink_to(package_binary)
+    shadow = tmp_path / "agent-browser"
+    shadow.symlink_to(package_binary)
+    monkeypatch.setattr(setup, "_browser_release_paths", lambda: (managed, root, root / "previous"))
+    monkeypatch.setattr(setup, "_default_local_ai_session_active", lambda: False)
+    monkeypatch.setattr(setup.browser_support, "agent_browser_bin", lambda _configured: str(shadow))
+    with (
+        patch("cli.commands.setup._stage_browser_release") as install,
+        pytest.raises(RuntimeError, match="external browser executable"),
+    ):
+        setup._promote_local_browser("0.38.1", rollback=False)
+    install.assert_not_called()
+
+
 @pytest.mark.parametrize("arguments", [
     ["search", "--query", "SummitFlow", "--limit", "1"],
     ["fetch", "--url", "https://example.com", "--backend", "jina", "--max-chars", "500"],
