@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+from uuid import uuid4
 
 import typer
 
@@ -314,16 +314,10 @@ def _check_payload(target: str, args: list[str]) -> tuple[list[str], dict[str, o
     except BrowserRouteError as exc:
         output_error(str(exc))
         raise typer.Exit(2) from None
-    screenshot = args[1] if len(args) > 1 else ("/tmp/st-browser-local-ai-check.png" if target == "local-ai" else "/tmp/st-browser-check.png")
+    session = session or f"st-check-{uuid4().hex[:12]}"
+    screenshot = args[1] if len(args) > 1 else f"/tmp/st-browser-check-{uuid4().hex[:12]}.png"
     if target == "local-ai":
         screenshot = _absolute_local_output_path(screenshot)
-        try:
-            session = browser_policy.with_local_ai_session(["--session", session or _local_ai_session()])[1]
-        except ValueError as exc:
-            output_error(str(exc))
-            raise typer.Exit(75) from None
-    else:
-        session = session or f"st-browser-check-{os.getpid()}-{time.time_ns()}"
     viewports = [
         {"label": "desktop", "width": int(os.environ.get("ST_BROWSER_CHECK_DESKTOP_WIDTH", "1600")), "height": int(os.environ.get("ST_BROWSER_CHECK_DESKTOP_HEIGHT", "900")), "path": screenshot},
         {"label": "narrow", "width": int(os.environ.get("ST_BROWSER_CHECK_NARROW_WIDTH", "1180")), "height": int(os.environ.get("ST_BROWSER_CHECK_NARROW_HEIGHT", "900")), "path": _suffixed(screenshot, "-narrow")},
@@ -386,7 +380,10 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
                 browser_args = _with_navigation(browser_args, command, guarded=False)
                 browser_args = _with_resolved_local_screenshot_path(browser_args, command)
             try:
-                launch = browser_policy.local_launch(browser_args, agent_browser_bin=agent_bin)
+                if check is not None and check["session"] != _local_ai_session():
+                    launch = browser_policy.isolated_check_launch(str(check["session"]), agent_browser_bin=agent_bin)
+                else:
+                    launch = browser_policy.local_launch(browser_args, agent_browser_bin=agent_bin)
             except ValueError as exc:
                 output_error(str(exc))
                 raise typer.Exit(1) from None
@@ -422,9 +419,12 @@ def run_registered(record: Any, argv: list[str], context: dict[str, Any]) -> int
     owner_args = ["--request", json.dumps(request, separators=(",", ":"))]
     if not needs_lock:
         return dispatch_extension(record, owner_args, context=context)
-    with _local_ai_command_lock() as acquired:
+    launch = cast(dict[str, object], request["launch"])
+    isolation_root = cast(str | None, launch.get("isolation_root"))
+    lock = _local_ai_command_lock(isolation_root=isolation_root) if isolation_root else _local_ai_command_lock()
+    with lock as acquired:
         if not acquired:
-            output_error("LOCAL_AI_BUSY: another host-local browser operation is active; use `st browser --proxmox ...` for parallel work")
+            output_error("LOCAL_AI_BUSY: this local browser session is active; use `st browser check <url> <png>` for an isolated check or `st browser --proxmox ...`")
             return 75
         return dispatch_extension(record, owner_args, context=context)
 
@@ -432,7 +432,8 @@ def run_registered(record: Any, argv: list[str], context: dict[str, Any]) -> int
 _USAGE = """Remote browser automation through st
 
 Default target:
-  Plain st browser commands use local system Chrome profile AI.
+  Interactive commands use local system Chrome profile AI.
+  Checks use a fresh isolated headless profile by default.
   Force Proxmox/VM with --proxmox or ST_BROWSER_TARGET=proxmox when VM isolation is better.
   Override VM with ST_BROWSER_HOST, ST_BROWSER_DEFAULT_HOST, or ST_BROWSER_VM_ID.
   Do not start arbitrary Chrome, CDP proxies, or agent-browser on the project/server host.
@@ -475,9 +476,13 @@ Debug local CDP override:
   ST_BROWSER_HOST=127.0.0.1 ST_BROWSER_ALLOW_LOCAL=1 st browser health
 
 Local system Chrome:
-  Default mode uses system Chrome, profile `AI`, headless hardware GL, and no
-  software-rasterizer fallback. It creates no desktop window or focus change.
-  The host-local browser is a singleton; route parallel browser work through --proxmox.
+  Local mode uses system Chrome with headless hardware GL and no software-rasterizer
+  fallback. Checks create no desktop window or focus change.
+  Checks use a fresh isolated headless session, profile, and socket directory by default.
+  Named checks: check --session <name> <url> [png]; distinct names can run concurrently.
+  Fresh checks have no shared login state. Use check --session st-local-ai for
+  authenticated checks with the shared AI profile (serialized; closes that session).
+  Interactive open/snapshot/click commands share the AI profile and remain serialized.
   Window control: ST_BROWSER_LOCAL_AI_VISIBLE=1 creates a normal watched window;
   ST_BROWSER_LOCAL_AI_MINIMIZED=1 creates a minimized window. Both are explicit-only.
   Override local Chrome with ST_BROWSER_LOCAL_CHROME, ST_BROWSER_LOCAL_AI_PROFILE.
@@ -493,7 +498,7 @@ _HELP = _USAGE
     surface="st.browser", cmd="st browser check <url> <png>",
     when="UI render verification; screenshots; DOM snapshots",
     precautions=(
-        "plain st browser uses local Chrome AI profile by default",
+        "local checks use isolated headless sessions; interactive commands share the Chrome AI profile",
         "use --proxmox or ST_BROWSER_TARGET=proxmox when VM isolation is better for the task",
         "use st ui when the open desktop/PWA is the right evidence source",
         "never start arbitrary chrome/CDP on project or server host; local-AI is the approved local profile flow",

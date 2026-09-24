@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import errno
 import fcntl
 import os
+import re
 import shutil
+import socket
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from hashlib import sha1
@@ -180,7 +183,22 @@ def local_ai_lock_path(env: Mapping[str, str] | None = None) -> Path:
 
 
 @contextmanager
-def local_ai_command_lock(env: Mapping[str, str] | None = None) -> Iterator[bool]:
+def local_ai_command_lock(
+    env: Mapping[str, str] | None = None, *, isolation_root: str | None = None
+) -> Iterator[bool]:
+    if isolation_root:
+        # Abstract Unix sockets are kernel-owned: no stale file or unlink/inode race.
+        address = f"\0st-browser-check-{os.getuid()}-{sha1(os.fsencode(isolation_root)).hexdigest()}"
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as lock:
+            try:
+                lock.bind(address)
+            except OSError as exc:
+                if exc.errno != errno.EADDRINUSE:
+                    raise
+                yield False
+            else:
+                yield True
+        return
     lock_path = local_ai_lock_path(env)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     handle = lock_path.open("a+", encoding="utf-8")
@@ -238,6 +256,26 @@ def local_launch(args: list[str], *, agent_browser_bin: str, env: Mapping[str, s
         "default_launch": default_launch,
         "minimize": mode == "minimized",
         "window_class": LOCAL_AI_WINDOW_CLASS,
+    }
+
+
+def isolated_check_launch(session: str, *, agent_browser_bin: str) -> dict[str, object]:
+    """Resolve an ephemeral headless check independently of the interactive AI profile."""
+    if re.fullmatch(r"[A-Za-z0-9_-]+", session) is None:
+        raise ValueError("check session must contain only letters, digits, underscores, or hyphens")
+    runtime = local_ai_lock_path().parent.parent
+    root = runtime / "st-browser-checks" / sha1(session.encode()).hexdigest()[:12]
+    # agent-browser uses a Unix socket named after the session (Linux limit: 108 bytes).
+    if len(os.fsencode(root / "sockets" / f"{session}.sock")) >= 108:
+        raise ValueError("check session/runtime path is too long for a local browser socket; use a shorter session name")
+    chrome = system_chrome_path()
+    if not chrome:
+        raise ValueError("Local system Chrome not found; set ST_BROWSER_LOCAL_CHROME or use `st browser --proxmox`")
+    return {
+        "agent_browser_bin": agent_browser_bin,
+        "prefix": ["--profile", str(root / "profile"), "--executable-path", chrome, "--args", HEADLESS_CHROME_ARGS],
+        "window_mode": "headless", "default_launch": True, "minimize": False, "window_class": "",
+        "isolation_root": str(root),
     }
 
 
