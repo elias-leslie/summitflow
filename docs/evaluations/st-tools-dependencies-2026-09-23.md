@@ -13,11 +13,11 @@ The managed local target used the approved headless Chrome AI profile. `st brows
 | Managed fixture with no recorded response | 7.6 s | `INCOMPLETE`: unavailable response evidence |
 | ST no-op dispatch, warm median | 714 ms | Wrapper floor |
 | Installed agent-browser 0.26.0, isolated single viewport | 5.79 s median before batching; 5.47 s after | Same managed interface |
-| Reviewed agent-browser 0.38.1, isolated single viewport | 3.55 s median before batching | Candidate only; later 3.49–5.81 s timings were noisy |
+| Reviewed agent-browser 0.38.1, isolated single viewport | 3.55 s median before batching; confirming trio 3.54 s | Candidate only; individual timings varied |
 | Playwright CLI 0.1.21 attached to isolated ST-managed CDP | Snapshot 209 ms; eval 717 ms medians | Targeted operations, not an end-to-end check |
 | Native browser route and Proxmox Chrome/Lightpanda | Unavailable | The isolated endpoints were down; the available personal Chrome profile was not used for an automated comparison |
 
-The browser target remains unverified: there is no comparable isolated native successful-task token measurement. The 0.38.1 candidate and Playwright CLI results are useful for the next managed-interface iteration, not evidence of universal engine parity. The managed default remains 0.26.0. Browser task `task-5ec32b95802f4271` owns a policy-managed Playwright CLI backend with the same evidence and ST lock; the browser project's `BENCHMARK.md` holds the raw run notes.
+The browser target remains unverified: there is no comparable isolated native successful-task token measurement. The 0.38.1 candidate and Playwright CLI results are useful for the next managed-interface iteration, not evidence of universal engine parity. The managed default remains 0.26.0. Browser task `task-4a3f92eb9d12497c` owns upgrade qualification; `task-5ec32b95802f4271` owns a policy-managed Playwright CLI backend with the same evidence and ST lock. The browser project's `BENCHMARK.md` holds the raw run notes.
 
 ## Code search
 
@@ -43,4 +43,4 @@ The Runtime Dependencies view shares this inventory and exposes review and decis
 
 Scoped Agent Hub DB prompts now state capability-based routing and evidence policy. The measured effective dependency-manager context changed from roughly 1,349 to 1,519 estimated tokens; delivery preview included the updated prompt. Centrally managed ST skill guidance holds the detailed comparison. The ST registry advertises `st tools dependencies` on demand. Native web/browser call hints are reported as permitted telemetry outside the ST shell-command adoption rate; absent hints remain unclassified. Historical session events are not backfilled.
 
-All implementation commits are local. SummitFlow’s last managed rebuild passed its full gate with 3,500 Python tests, 229 frontend tests, lint, types, and security checks. Agent Hub and code-intelligence passed their managed gates. The browser project’s focused gate passed; its final upgrade scorecard and follow-up are recorded in its own benchmark file.
+All implementation commits are local. SummitFlow’s last managed rebuild passed its full gate with 3,500 Python tests, 229 frontend tests, lint, types, and security checks. Agent Hub and code-intelligence passed their managed gates. Browser automation passed its full gate, including 24 tests; its final upgrade scorecard is recorded in its own benchmark file.
