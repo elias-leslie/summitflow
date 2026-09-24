@@ -188,3 +188,26 @@ def test_isolated_reaper_routes_without_chrome_or_project_resolution(tmp_path, m
     assert requests[0]["args"] == ["--dry-run"]
     assert requests[0]["launch"]["prefix"] == []
     assert requests[0]["launch"]["window_mode"] == "none"
+
+
+def test_registered_browser_help_and_manifest_describe_isolated_checks():
+    from typer.testing import CliRunner
+
+    from cli.extensions import register_extensions
+    from cli.lib.usage import collect_usage_specs
+
+    app = typer.Typer()
+
+    @app.callback()
+    def root():
+        pass
+
+    register_extensions(app)
+    result = CliRunner().invoke(app, ["browser", "--help"])
+    assert result.exit_code == 0
+    assert "Checks use a fresh isolated headless profile by default" in result.output
+    assert "check --session st-local-ai" in result.output
+    assert "reap-isolated" in result.output
+    specs = [spec for spec in collect_usage_specs(app) if spec.surface == "st.browser"]
+    assert len(specs) == 1
+    assert "local checks use isolated headless sessions; interactive commands share the Chrome AI profile" in specs[0].precautions

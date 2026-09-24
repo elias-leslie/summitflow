@@ -248,3 +248,20 @@ def test_real_cancellation_forwards_signal_and_reaps(tmp_path, signum):
         if process.poll() is None:
             process.kill()
             process.wait()
+
+
+def test_structured_operation_metadata_is_strict_and_version_bound(tmp_path):
+    operation = {"request_contract_version": 1, "response_schema_version": 1}
+    registry = registration(tmp_path, manifest_changes={"structured_operations": {"inventory": operation}})
+    record = load_extensions(set(), registry_path=registry).records[0]
+    assert record.status == "unverified"
+    assert record.manifest is not None
+    assert record.manifest.structured_operations["inventory"].response_schema_version == 1
+    for invalid in (
+        {**operation, "request_contract_version": 2},
+        {**operation, "response_schema_version": 0},
+        {**operation, "response_schema_version": "1"},
+        {**operation, "unexpected": True},
+    ):
+        registry = registration(tmp_path, manifest_changes={"structured_operations": {"inventory": invalid}})
+        assert load_extensions(set(), registry_path=registry).records[0].status == "malformed"

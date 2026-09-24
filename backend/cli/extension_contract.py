@@ -61,6 +61,13 @@ class ExtensionBinding(StrictModel):
         return values
 
 
+class StructuredOperation(StrictModel):
+    """Version declarations for owner-defined structured operation payloads."""
+
+    request_contract_version: int = Field(ge=1)
+    response_schema_version: int = Field(ge=1)
+
+
 class ExtensionManifest(StrictModel):
     id: str = Field(min_length=1)
     owner: str = Field(min_length=1)
@@ -71,11 +78,17 @@ class ExtensionManifest(StrictModel):
     effects: list[Effect]
     help: dict[str, str]
     usage: list[dict[str, object]]
+    structured_operations: dict[str, StructuredOperation] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_guidance(self) -> ExtensionManifest:
         if "" not in self.help or not self.help[""]:
             raise ValueError("root help is required")
+        for name, operation in self.structured_operations.items():
+            if not name or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in name):
+                raise ValueError("invalid structured operation name")
+            if operation.request_contract_version not in self.st_contract_versions:
+                raise ValueError("structured operation requires an unsupported request contract version")
         allowed = {field.name for field in fields(UsageSpec)}
         sequences = {"precautions", "examples", "task_types", "agent_slugs", "consumer_profiles"}
         surfaces: set[str] = set()
