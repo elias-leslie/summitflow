@@ -140,7 +140,10 @@ def test_queue_identity_is_stable_for_same_update(monkeypatch) -> None:
         return {"id": "task-existing"}
 
     monkeypatch.setattr(management.dependency_reviews, "latest", lambda *_args: previous)
-    monkeypatch.setattr(management.dependency_reviews, "append", lambda *_args, **_kwargs: ({"id": 42, "revision": 2}, True))
+    monkeypatch.setattr(
+        management.dependency_reviews, "append",
+        lambda *_args, **_kwargs: ({"id": 42, "revision": 2, "evidence": previous["evidence"]}, True),
+    )
     monkeypatch.setattr(management.dependency_reviews, "attach_task", lambda *_args: {"id": 42, "revision": 2, "task_id": "task-existing"})
     with patch("app.storage.tasks.core.create_task", side_effect=fake_task):
         for _ in range(2):
@@ -165,6 +168,74 @@ def test_stale_decision_does_not_create_update_task(monkeypatch) -> None:
             expected_revision=1, recommended_version="0.111", queue_task=True,
         )
     create_task.assert_not_called()
+
+
+def test_queued_decision_retries_after_task_creation_failure(monkeypatch) -> None:
+    reviewed = {
+        "revision": 1, "evidence_hash": "digest",
+        "evidence": {"inventory": {"name": "fastapi"}},
+    }
+    committed = {
+        **reviewed, "id": 42, "revision": 2, "decision": "update",
+        "recommended_version": "0.141.1", "rationale": "Reviewed release",
+        "task_id": None,
+    }
+    latest: list[dict] = [reviewed]
+    monkeypatch.setattr(management.dependency_reviews, "latest", lambda *_args: latest[0])
+
+    def append(*_args, **_kwargs):
+        latest[0] = committed
+        return committed, True
+
+    monkeypatch.setattr(management.dependency_reviews, "append", append)
+    monkeypatch.setattr(
+        management.dependency_reviews, "attach_task",
+        lambda *_args: {**committed, "task_id": "task-recovered"},
+    )
+    with patch("app.storage.tasks.core.create_task", side_effect=[RuntimeError("queue unavailable"), {"id": "task-recovered"}]) as create_task:
+        with pytest.raises(RuntimeError, match="queue unavailable"):
+            management.record_decision(
+                "summitflow", "python/backend/fastapi", decision="update",
+                rationale="Reviewed release", expected_revision=1,
+                recommended_version="0.141.1", queue_task=True,
+            )
+        recovered = management.record_decision(
+            "summitflow", "python/backend/fastapi", decision="update",
+            rationale="Reviewed release", expected_revision=1,
+            recommended_version="0.141.1", queue_task=True,
+        )
+    assert create_task.call_count == 2
+    assert recovered["task_id"] == "task-recovered"
+
+
+def test_queued_decision_reuses_task_after_link_failure(monkeypatch) -> None:
+    committed = {
+        "id": 42, "revision": 2, "decision": "update",
+        "recommended_version": "0.141.1", "rationale": "Reviewed release",
+        "evidence": {"inventory": {"name": "fastapi"}}, "task_id": None,
+    }
+    monkeypatch.setattr(management.dependency_reviews, "latest", lambda *_args: committed)
+    with (
+        patch("app.storage.tasks.core.create_task", return_value={"id": "task-existing"}) as create_task,
+        patch.object(
+            management.dependency_reviews, "attach_task",
+            side_effect=[RuntimeError("link unavailable"), {**committed, "task_id": "task-existing"}],
+        ) as attach_task,
+    ):
+        with pytest.raises(RuntimeError, match="link unavailable"):
+            management.record_decision(
+                "summitflow", "python/backend/fastapi", decision="update",
+                rationale="Reviewed release", expected_revision=1,
+                recommended_version="0.141.1", queue_task=True,
+            )
+        linked = management.record_decision(
+            "summitflow", "python/backend/fastapi", decision="update",
+            rationale="Reviewed release", expected_revision=1,
+            recommended_version="0.141.1", queue_task=True,
+        )
+    assert create_task.call_count == 2
+    assert attach_task.call_count == 2
+    assert linked["task_id"] == "task-existing"
 
 
 def test_scheduled_review_skips_unchanged_recent_evidence(monkeypatch) -> None:

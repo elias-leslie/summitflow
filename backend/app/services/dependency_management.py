@@ -255,33 +255,48 @@ def record_decision(
 ) -> dict[str, Any]:
     """Save an explicit decision against the reviewed evidence revision."""
     previous = dependency_reviews.latest(project_id, entry_path)
-    if previous is None or previous["revision"] != expected_revision:
+    reason = rationale.strip()
+    retry_queued_update = bool(
+        previous
+        and queue_task
+        and decision == "update"
+        and previous["revision"] == expected_revision + 1
+        and previous["decision"] == "update"
+        and previous["recommended_version"] == recommended_version
+        and previous["rationale"] == reason
+    )
+    if previous is None or (previous["revision"] != expected_revision and not retry_queued_update):
         raise ValueError("Review changed; refresh the decision packet before recording")
     if decision not in {"update", "hold", "investigate"}:
         raise ValueError("Decision must be update, hold, or investigate")
-    if not rationale.strip():
+    if not reason:
         raise ValueError("A reason is required")
     if decision == "update" and not recommended_version:
         raise ValueError("An update decision requires a recommended version")
     if queue_task and decision != "update":
         raise ValueError("Only a justified update can queue work")
-    record, _ = dependency_reviews.append(
-        project_id, entry_path, evidence_hash=previous["evidence_hash"],
-        evidence=previous["evidence"], decision=decision,
-        recommended_version=recommended_version if decision == "update" else None,
-        rationale=rationale.strip(),
-        expected_revision=expected_revision,
-    )
+    if retry_queued_update:
+        record = previous
+    else:
+        record, _ = dependency_reviews.append(
+            project_id, entry_path, evidence_hash=previous["evidence_hash"],
+            evidence=previous["evidence"], decision=decision,
+            recommended_version=recommended_version if decision == "update" else None,
+            rationale=reason,
+            expected_revision=expected_revision,
+        )
     if queue_task:
+        if record.get("task_id"):
+            return record
         from ..storage.tasks.core import create_task
 
-        name = previous["evidence"]["inventory"]["name"]
+        name = record["evidence"]["inventory"]["name"]
         identity_key = f"{project_id}:{entry_path}:{recommended_version}"
         task = create_task(
             project_id, f"Update {name} to {recommended_version}",
             description=(
                 f"Dependency decision revision {record['revision']} for {entry_path}. "
-                f"Reason: {rationale.strip()}. Review evidence before changing lockfiles."
+                f"Reason: {reason}. Review evidence before changing lockfiles."
             ),
             labels=["dependencies"],
             external_identity={
