@@ -6,6 +6,7 @@ import importlib
 import json
 import subprocess
 from contextlib import contextmanager, nullcontext
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -224,6 +225,21 @@ def test_build_frontend_suppresses_successful_build_output() -> None:
 
     assert run.call_args_list[0].args[0] == ["pnpm", "install", "--frozen-lockfile"]
     run.assert_called_with(["pnpm", "build"], cwd=project.frontend_dir, quiet_success=True)
+
+
+def test_build_frontend_installs_npm_lock_in_accepted_source(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text('{"scripts":{"build":"echo ready"}}')
+    (tmp_path / "package-lock.json").write_text("{}")
+    project = replace(_project(), root=tmp_path, frontend_dir=tmp_path)
+
+    with patch("cli.lib.service_ops.run", return_value=0) as run:
+        assert service_ops.build_frontend(project) == 0
+
+    assert [call.args[0] for call in run.call_args_list] == [
+        ["npm", "ci"],
+        ["npm", "run", "build"],
+    ]
+    assert all(call.kwargs == {"cwd": tmp_path, "quiet_success": True} for call in run.call_args_list)
 
 
 def test_kill_port_parses_ss_listener_pids(monkeypatch: pytest.MonkeyPatch) -> None:

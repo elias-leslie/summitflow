@@ -573,6 +573,16 @@ def build_frontend(project: ProjectServices) -> int:
     if not (project.frontend_dir / "package.json").exists():
         return 0
     print("[service] building frontend")
+    # Some managed products (including Electron shells) keep an npm lock at the
+    # project root. Install inside the accepted release before its service unit
+    # starts; the unit must never depend on checkout-local node_modules.
+    if (project.frontend_dir / "package-lock.json").exists() and not (
+        project.frontend_dir / "pnpm-lock.yaml"
+    ).exists():
+        install = run(["npm", "ci"], cwd=project.frontend_dir, quiet_success=True)
+        if install != 0:
+            return install
+        return run(["npm", "run", "build"], cwd=project.frontend_dir, quiet_success=True)
     # pnpm resolves workspace dependencies at the workspace root. Always verify
     # the frozen lock, even when an existing node_modules directory is present.
     install_dir = project.frontend_dir
