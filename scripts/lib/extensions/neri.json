@@ -56,12 +56,13 @@
     "report severity list": "Usage: neri report severity list [OPTIONS] {investigation_id} {revision_id}\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --limit <int range>      [default: 40; 1<=x<=100]\n  --before-sequence <int>  Continue from the returned next_before_sequence\n  --help                   Show this message and exit.",
     "report severity show": "Usage: neri report severity show [OPTIONS] {investigation_id} {revision_id}\n                                 {assessment_id}\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n  assessment_id     [required]\n\nOptions:\n  --help  Show this message and exit.",
     "report severity save": "Usage: neri report severity save [OPTIONS] {investigation_id} {revision_id}\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
-    "execute": "Usage: neri execute [OPTIONS] COMMAND [ARGS]...\n\n  Submit explicit typed actions to a registered local target\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  operation\n  external-http\n  runtime\n  runtime-snapshot\n  sequence\n  reset",
+    "execute": "Usage: neri execute [OPTIONS] COMMAND [ARGS]...\n\n  Submit explicit typed actions to a registered local target\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  operation\n  external-http\n  runtime\n  runtime-snapshot\n  sequence\n  curl-batch\n  reset",
     "execute operation": "Usage: neri execute operation [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "execute external-http": "Usage: neri execute external-http [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --full\n  --help         Show this message and exit.",
     "execute runtime": "Usage: neri execute runtime [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "execute runtime-snapshot": "Usage: neri execute runtime-snapshot [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "execute sequence": "Usage: neri execute sequence [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "execute curl-batch": "Usage: neri execute curl-batch [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "execute reset": "Usage: neri execute reset [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "target": "Usage: neri target [OPTIONS] COMMAND [ARGS]...\n\n  Inspect and maintain registered target metadata\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  register\n  status\n  notes     Save target direction and read its state history\n  programs  Record exact target applicability and its revision history",
     "target list": "Usage: neri target list [OPTIONS]\n\nOptions:\n  --workspace / --no-workspace    [default: no-workspace]\n  --limit <int range>             [default: 40; 1<=x<=100]\n  --cursor <str>\n  --search <str>\n  --filter <all|active|attention|awaiting_review|reviewed_findings|reviewed_no_findings>\n  --help                          Show this message and exit.",
@@ -103,7 +104,7 @@
     "runtime show": "Usage: neri runtime show [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
     "runtime stop": "Usage: neri runtime stop [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
     "runtime release": "Usage: neri runtime release [OPTIONS]\n\nOptions:\n  --revision <int range>  [x>=1; required]\n  --help                  Show this message and exit.",
-    "research": "Usage: neri research [OPTIONS] COMMAND [ARGS]...\n\n  Read research capability progress and save exact associations\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  catalogue\n  application-models\n  application-model-projection\n  application-model-current\n  application-model\n  save-application-model\n  hypotheses\n  hypothesis\n  hypothesis-revision\n  record-hypothesis\n  show\n  case-schema\n  matrix\n  context\n  recommend\n  links\n  associate\n  prepare-case\n  associate-case\n  invalidate-case\n  snapshot\n  snapshots\n  outcomes\n  record-outcome\n  cohorts\n  cohort\n  register-cohort\n  catalog-campaigns\n  catalog-campaign\n  register-catalog-campaign\n  record-catalog-plan\n  verify-catalog-item\n  record-catalog-replay\n  close-cohort\n  finalize-accounting\n  work\n  record-work\n  application\n  promote-application-source\n  application-snapshots\n  snapshot-application",
+    "research": "Usage: neri research [OPTIONS] COMMAND [ARGS]...\n\n  Read research capability progress and save exact associations\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  catalogue\n  application-models\n  application-model-projection\n  application-model-current\n  application-model\n  save-application-model\n  hypotheses\n  hypothesis\n  hypothesis-revision\n  record-hypothesis\n  show\n  case-schema\n  matrix\n  context\n  recommend\n  links\n  associate\n  prepare-case\n  associate-case\n  invalidate-case\n  snapshot\n  snapshots\n  outcomes\n  record-outcome\n  cohorts\n  cohort\n  register-cohort\n  catalog-campaigns\n  catalog-campaign\n  register-catalog-campaign\n  supersede-catalog-campaign\n  record-catalog-plan\n  verify-catalog-item\n  record-catalog-replay\n  close-cohort\n  finalize-accounting\n  work\n  record-work\n  application\n  promote-application-source\n  application-snapshots\n  snapshot-application",
     "research catalogue": "Usage: neri research catalogue [OPTIONS]\n\nOptions:\n  --full / --no-full  [default: no-full]\n  --help              Show this message and exit.",
     "research application-models": "Usage: neri research application-models [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "research application-model-projection": "Usage: neri research application-model-projection [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
@@ -131,9 +132,10 @@
     "research cohorts": "Usage: neri research cohorts [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
     "research cohort": "Usage: neri research cohort [OPTIONS] {cohort_id}\n\nArguments:\n  cohort_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "research register-cohort": "Usage: neri research register-cohort [OPTIONS]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
-    "research catalog-campaigns": "Usage: neri research catalog-campaigns [OPTIONS]\n\nOptions:\n  --full / --no-full    [default: no-full]\n  --status <str>\n  --target <str>\n  --manifest <str>\n  --offset <int range>  [default: 0; x>=0]\n  --limit <int range>   [default: 20; 1<=x<=100]\n  --help                Show this message and exit.",
+    "research catalog-campaigns": "Usage: neri research catalog-campaigns [OPTIONS]\n\nOptions:\n  --full / --no-full    [default: no-full]\n  --status <str>\n  --target <str>\n  --manifest <str>\n  --include-superseded\n  --offset <int range>  [default: 0; x>=0]\n  --limit <int range>   [default: 20; 1<=x<=100]\n  --help                Show this message and exit.",
     "research catalog-campaign": "Usage: neri research catalog-campaign [OPTIONS] {campaign_id}\n\nArguments:\n  campaign_id  [required]\n\nOptions:\n  --full / --no-full    [default: no-full]\n  --item-status <str>\n  --outcome <str>\n  --offset <int range>  [default: 0; x>=0]\n  --limit <int range>   [default: 40; 1<=x<=100]\n  --help                Show this message and exit.",
     "research register-catalog-campaign": "Usage: neri research register-catalog-campaign [OPTIONS]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "research supersede-catalog-campaign": "Usage: neri research supersede-catalog-campaign [OPTIONS]\n                                                {successor_campaign_id}\n\nArguments:\n  successor_campaign_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "research record-catalog-plan": "Usage: neri research record-catalog-plan [OPTIONS] {campaign_id}\n\nArguments:\n  campaign_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "research verify-catalog-item": "Usage: neri research verify-catalog-item [OPTIONS] {campaign_id} {item_key}\n\nArguments:\n  campaign_id  [required]\n  item_key     [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "research record-catalog-replay": "Usage: neri research record-catalog-replay [OPTIONS] {campaign_id}\n\nArguments:\n  campaign_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
@@ -655,6 +657,20 @@
       ],
       "task_types": [
         "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.execute.curl_batch",
+      "tier": "reference",
+      "cmd": "st neri execute curl-batch <investigation-id> --file batch.json [--id UUID]",
+      "when": "run a finite GET/HEAD workload through the qualified curl adapter on a registered owned fixture",
+      "precautions": [
+        "target actions; one compiled campaign envelope governs the complete bounded batch",
+        "include current controller identity; no automatic retry; inspect the same batch UUID after uncertainty"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
       ]
     },
     {
@@ -1456,6 +1472,20 @@
       "precautions": [
         "bind the exact target build, source digests, runner, reset procedure and policy/configuration",
         "a material identity or workflow change requires a successor campaign"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.research.catalog_campaign.supersede",
+      "tier": "reference",
+      "cmd": "st neri research supersede-catalog-campaign <successor-campaign-id> --file supersession.json [--id UUID]",
+      "when": "record immutable canonical lineage for an existing catalogue campaign successor",
+      "precautions": [
+        "the predecessor and successor must share the exact target build and frozen denominator",
+        "superseded campaigns remain readable but reject new result-generating work"
       ],
       "task_types": [
         "neri",
