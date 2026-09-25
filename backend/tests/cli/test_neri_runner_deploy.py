@@ -61,6 +61,18 @@ def new_bundle():
     return payload({name: b"new-" + name.encode() for name in guest.FILES})
 
 
+def test_runner_bundle_transport_is_bounded_and_round_trips_exact_payload():
+    value = payload({
+        "proxy_runner.py": b"runner-source\n" * 8000,
+        "proxy_core.py": b"core-source\n" * 6000,
+    })
+    raw = json.dumps(value, separators=(",", ":"))
+    encoded = guest.encode_payload(value)
+
+    assert guest.decode_payload(encoded) == value
+    assert len(encoded) < len(raw) // 10
+
+
 def test_success_preserves_old_bundle_and_atomically_selects_new(installed):
     root, old, state = installed
     result = guest.deploy(ATTEMPT, new_bundle())
@@ -315,7 +327,7 @@ class LocalGuestClient:
         else:
             assert command[3] in {"bootstrap", "deploy"}
             operation = guest.bootstrap if command[3] == "bootstrap" else guest.deploy
-            value = operation(command[4], json.loads(command[5]))
+            value = operation(command[4], guest.decode_payload(command[5]))
             code = 0 if value["state"] in {"succeeded", "noop"} else 1
         pid = len(self.commands)
         self.results[pid] = {"exited": True, "exitcode": code, "out-data": json.dumps(value)}

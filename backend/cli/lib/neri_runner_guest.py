@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ PROFILES = (
 SERVICES = ("neri-proxy.service", "neri-wordpress-proxy.service")
 FILES = ("proxy_runner.py", "proxy_core.py")
 PRIVILEGED_UID = 0
+MAX_TRANSFER_PAYLOAD_BYTES = 4 * 1024 * 1024
 
 
 class DeploymentError(RuntimeError):
@@ -38,6 +40,32 @@ def identity(contents: dict[str, bytes]) -> dict[str, Any]:
     hashes = {name: hashlib.sha256(value).hexdigest() for name, value in contents.items()}
     digest = hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return {"release_id": "sha256:" + digest, "files": hashes}
+
+
+def encode_payload(payload: dict[str, Any]) -> str:
+    """Compress the fixed source bundle before passing it through guest argv."""
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    if len(raw) > MAX_TRANSFER_PAYLOAD_BYTES:
+        raise DeploymentError("Runner bundle exceeds the fixed transfer limit")
+    return base64.b64encode(zlib.compress(raw, level=9)).decode("ascii")
+
+
+def decode_payload(encoded: str) -> dict[str, Any]:
+    """Decode one bounded compressed bundle; source hashes still verify its contents."""
+    if not isinstance(encoded, str) or len(encoded) > MAX_TRANSFER_PAYLOAD_BYTES * 2:
+        raise DeploymentError("Runner bundle transport is invalid")
+    try:
+        compressed = base64.b64decode(encoded, validate=True)
+        decoder = zlib.decompressobj()
+        raw = decoder.decompress(compressed, MAX_TRANSFER_PAYLOAD_BYTES + 1)
+        if decoder.unconsumed_tail or not decoder.eof or decoder.unused_data:
+            raise DeploymentError("Runner bundle transport is incomplete")
+        value = json.loads(raw)
+    except (ValueError, TypeError, zlib.error) as exc:
+        raise DeploymentError("Runner bundle transport is invalid") from exc
+    if len(raw) > MAX_TRANSFER_PAYLOAD_BYTES or not isinstance(value, dict):
+        raise DeploymentError("Runner bundle transport is invalid")
+    return value
 
 
 def read_identity(directory: Path) -> dict[str, Any]:
@@ -386,7 +414,7 @@ def main() -> int:
     if len(sys.argv) != 4 or sys.argv[1] not in {"bootstrap", "deploy"}:
         raise DeploymentError("Unsupported fixed adapter action")
     operation = bootstrap if sys.argv[1] == "bootstrap" else deploy
-    result = operation(sys.argv[2], json.loads(sys.argv[3]))
+    result = operation(sys.argv[2], decode_payload(sys.argv[3]))
     print(json.dumps(result))
     return 0 if result["state"] in {"noop", "succeeded"} else 1
 

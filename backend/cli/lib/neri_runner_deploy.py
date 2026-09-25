@@ -110,7 +110,7 @@ def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
             raise ProxmoxError("Existing runner interlock retained; recovery required")
         if action == "deploy":
             guest.require_release(observation, observation["installed"], blocked=False)
-        code, result = execute(action, attempt, json.dumps(bundle.payload, separators=(",", ":")))
+        code, result = execute(action, attempt, guest.encode_payload(bundle.payload))
         phase("result", guest=result, state=result.get("state", "uncertain"))
         if result.get("attempt") != attempt:
             raise ProxmoxError("Guest result identity mismatch")
