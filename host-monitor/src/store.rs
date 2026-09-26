@@ -60,7 +60,7 @@ impl Store {
             }
         }
         if first {
-            conn.pragma_update(None, "page_size", 1024)?;
+            conn.pragma_update(None, "page_size", 512)?;
             conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
             conn.execute_batch("VACUUM")?;
         }
@@ -465,6 +465,24 @@ mod tests {
         db.write(&sample(60_000_000_000, "baseline", &host, &rows))
             .unwrap();
         db.flush_rollups().unwrap();
+        assert_eq!(
+            db.conn
+                .query_row("PRAGMA auto_vacuum", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            db.conn
+                .query_row("PRAGMA synchronous", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            db.conn
+                .query_row("PRAGMA journal_mode", [], |r| r.get::<_, String>(0))
+                .unwrap(),
+            "wal"
+        );
         drop(db);
         let read = Connection::open_with_flags(
             dir.path().join("monitor.sqlite3"),
@@ -474,7 +492,7 @@ mod tests {
         assert_eq!(
             read.query_row("PRAGMA page_size", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            1024
+            512
         );
         let cols = read
             .prepare("PRAGMA table_info(samples)")
@@ -546,6 +564,69 @@ mod tests {
                 .mode()
                 & 0o777,
             0o600
+        );
+    }
+    #[test]
+    fn existing_1024_page_wal_store_reopens_without_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("monitor.sqlite3");
+        let legacy = Connection::open(&path).unwrap();
+        legacy.pragma_update(None, "page_size", 1024).unwrap();
+        legacy
+            .pragma_update(None, "auto_vacuum", "INCREMENTAL")
+            .unwrap();
+        legacy.execute_batch("VACUUM").unwrap();
+        legacy.pragma_update(None, "journal_mode", "WAL").unwrap();
+        legacy
+            .execute_batch(
+                "CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);\
+                 INSERT INTO meta(key,value) VALUES('schema_version','1');",
+            )
+            .unwrap();
+        assert_eq!(
+            legacy
+                .query_row("PRAGMA page_size", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1024
+        );
+        drop(legacy);
+
+        let mut db = Store::open(dir.path(), "host", "boot-a").unwrap();
+        let host = json!({"cpu_busy_pct":5});
+        db.write(&sample(1, "baseline", &host, &[])).unwrap();
+        assert_eq!(
+            db.conn
+                .query_row("PRAGMA page_size", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1024
+        );
+        assert_eq!(
+            db.conn
+                .query_row("PRAGMA auto_vacuum", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            db.conn
+                .query_row("PRAGMA synchronous", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            db.conn
+                .query_row("PRAGMA journal_mode", [], |r| r.get::<_, String>(0))
+                .unwrap(),
+            "wal"
+        );
+        assert_eq!(
+            db.conn
+                .query_row(
+                    "SELECT COUNT(*) FROM samples WHERE mode='baseline'",
+                    [],
+                    |r| { r.get::<_, i64>(0) }
+                )
+                .unwrap(),
+            1
         );
     }
     #[test]
