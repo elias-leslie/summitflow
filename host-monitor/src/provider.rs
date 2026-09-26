@@ -190,12 +190,15 @@ fn psi(kind: &str, errors: &mut Vec<Value>) -> Value {
     }
     json!(val)
 }
-fn net(errors: &mut Vec<Value>) -> (Value, Value) {
-    let Some(s) = read("/proc/net/dev", errors) else {
-        return (Value::Null, Value::Null);
-    };
+fn source_set(kind: &str, mut names: Vec<String>) -> Value {
+    names.sort_unstable();
+    names.dedup();
+    json!(format!("{kind}:{}", json!(names)))
+}
+fn net_counters(s: &str, errors: &mut Vec<Value>) -> (Value, Value, Value) {
     let mut rx = 0u64;
     let mut tx = 0u64;
+    let mut names = Vec::new();
     for line in s.lines().skip(2) {
         let Some((iface, data)) = line.split_once(':') else {
             continue;
@@ -207,17 +210,52 @@ fn net(errors: &mut Vec<Value>) -> (Value, Value) {
         let (Some(r), Some(t)) = (parse_num(v.first().copied()), parse_num(v.get(8).copied()))
         else {
             err(errors, "/proc/net/dev", "parse_failed");
-            return (Value::Null, Value::Null);
+            return (Value::Null, Value::Null, Value::Null);
         };
+        names.push(iface.trim().to_owned());
         rx = rx.saturating_add(r);
         tx = tx.saturating_add(t);
     }
-    (json!(rx), json!(tx))
+    (json!(rx), json!(tx), source_set("net", names))
+}
+fn net(errors: &mut Vec<Value>) -> (Value, Value, Value) {
+    let Some(s) = read("/proc/net/dev", errors) else {
+        return (Value::Null, Value::Null, Value::Null);
+    };
+    net_counters(&s, errors)
 }
 fn eligible_block(name: &str) -> bool {
     !name.starts_with("loop") && !name.starts_with("ram")
 }
-fn disks(errors: &mut Vec<Value>) -> (Value, Value) {
+fn disk_counters(
+    s: &str,
+    blocks: &HashSet<String>,
+    errors: &mut Vec<Value>,
+) -> (Value, Value, Value) {
+    let mut r = 0u64;
+    let mut w = 0u64;
+    let mut matched = Vec::new();
+    for line in s.lines() {
+        let v: Vec<&str> = line.split_whitespace().collect();
+        if v.len() < 10 || !blocks.contains(v[2]) {
+            continue;
+        }
+        let (Some(a), Some(b)) = (parse_num(v.get(5).copied()), parse_num(v.get(9).copied()))
+        else {
+            err(errors, "/proc/diskstats", "parse_failed");
+            return (Value::Null, Value::Null, Value::Null);
+        };
+        matched.push(v[2].to_owned());
+        r = r.saturating_add(a.saturating_mul(512));
+        w = w.saturating_add(b.saturating_mul(512));
+    }
+    if matched.is_empty() {
+        err(errors, "/proc/diskstats", "no_whole_devices");
+        return (Value::Null, Value::Null, Value::Null);
+    }
+    (json!(r), json!(w), source_set("disk", matched))
+}
+fn disks(errors: &mut Vec<Value>) -> (Value, Value, Value) {
     let blocks = match fs::read_dir("/sys/block") {
         Ok(entries) => entries
             .filter_map(Result::ok)
@@ -234,34 +272,13 @@ fn disks(errors: &mut Vec<Value>) -> (Value, Value) {
                     "read_failed"
                 },
             );
-            return (Value::Null, Value::Null);
+            return (Value::Null, Value::Null, Value::Null);
         }
     };
     let Some(s) = read("/proc/diskstats", errors) else {
-        return (Value::Null, Value::Null);
+        return (Value::Null, Value::Null, Value::Null);
     };
-    let mut r = 0u64;
-    let mut w = 0u64;
-    let mut matched = 0;
-    for line in s.lines() {
-        let v: Vec<&str> = line.split_whitespace().collect();
-        if v.len() < 10 || !blocks.contains(v[2]) {
-            continue;
-        }
-        let (Some(a), Some(b)) = (parse_num(v.get(5).copied()), parse_num(v.get(9).copied()))
-        else {
-            err(errors, "/proc/diskstats", "parse_failed");
-            return (Value::Null, Value::Null);
-        };
-        matched += 1;
-        r = r.saturating_add(a.saturating_mul(512));
-        w = w.saturating_add(b.saturating_mul(512));
-    }
-    if matched == 0 {
-        err(errors, "/proc/diskstats", "no_whole_devices");
-        return (Value::Null, Value::Null);
-    }
-    (json!(r), json!(w))
+    disk_counters(&s, &blocks, errors)
 }
 fn root_disk(errors: &mut Vec<Value>) -> (Value, Value) {
     let path = std::ffi::CString::new("/").unwrap();
@@ -576,10 +593,10 @@ pub fn host(
     };
     let (total, available, swap) = mem(sys, errors);
     let (disk_total, disk_free) = root_disk(errors);
-    let (rx, tx) = net(errors);
-    let (disk_read, disk_write) = disks(errors);
+    let (rx, tx, net_source) = net(errors);
+    let (disk_read, disk_write, disk_source) = disks(errors);
     (
-        json!({"cpu_busy_pct":busy,"memory_total_bytes":total,"memory_available_bytes":available,"swap_used_bytes":swap,"disk_total_bytes":disk_total,"disk_free_bytes":disk_free,"cpu_some_avg10_pct":psi("cpu",errors),"memory_some_avg10_pct":psi("memory",errors),"io_some_avg10_pct":psi("io",errors),"net_rx_bytes":rx,"net_tx_bytes":tx,"disk_read_bytes":disk_read,"disk_write_bytes":disk_write}),
+        json!({"cpu_busy_pct":busy,"memory_total_bytes":total,"memory_available_bytes":available,"swap_used_bytes":swap,"disk_total_bytes":disk_total,"disk_free_bytes":disk_free,"cpu_some_avg10_pct":psi("cpu",errors),"memory_some_avg10_pct":psi("memory",errors),"io_some_avg10_pct":psi("io",errors),"net_rx_bytes":rx,"net_tx_bytes":tx,"net_source":net_source,"disk_read_bytes":disk_read,"disk_write_bytes":disk_write,"disk_source":disk_source}),
         cpu_now,
     )
 }
@@ -670,6 +687,50 @@ mod tests {
                 .iter()
                 .any(|e| { e["source"] == "/proc/*/io" && e["code"] == "permission_denied" })
         );
+    }
+    #[test]
+    fn network_source_tracks_sorted_non_loopback_interface_set() {
+        let line = |name: &str, rx: u64, tx: u64| {
+            format!("{name}: {rx} 0 0 0 0 0 0 0 {tx} 0 0 0 0 0 0 0\n")
+        };
+        let header = "Inter-| Receive | Transmit\n face | bytes | bytes\n";
+        let first = format!(
+            "{header}{}{}{}",
+            line("eth1", 10, 20),
+            line("lo", 999, 999),
+            line("eth0", 5, 7)
+        );
+        let reordered = format!("{header}{}{}", line("eth0", 50, 70), line("eth1", 100, 200));
+        let changed = format!("{header}{}", line("eth0", 50, 70));
+        let mut errors = Vec::new();
+        let (rx, tx, source) = net_counters(&first, &mut errors);
+        assert_eq!((rx, tx), (json!(15), json!(27)));
+        assert_eq!(source, "net:[\"eth0\",\"eth1\"]");
+        assert_eq!(source, net_counters(&reordered, &mut errors).2);
+        assert_ne!(source, net_counters(&changed, &mut errors).2);
+        assert!(errors.is_empty());
+    }
+    #[test]
+    fn disk_source_tracks_only_matched_whole_device_set() {
+        let line = |name: &str, read: u64, write: u64| {
+            format!("8 0 {name} 1 2 {read} 4 5 6 {write} 8 9 10\n")
+        };
+        let blocks = HashSet::from(["sda".to_owned(), "sdb".to_owned()]);
+        let first = format!(
+            "{}{}{}",
+            line("sdb", 3, 4),
+            line("loop0", 99, 99),
+            line("sda", 1, 2)
+        );
+        let reordered = format!("{}{}", line("sda", 10, 20), line("sdb", 30, 40));
+        let changed = line("sda", 10, 20);
+        let mut errors = Vec::new();
+        let (read, write, source) = disk_counters(&first, &blocks, &mut errors);
+        assert_eq!((read, write), (json!(4 * 512), json!(6 * 512)));
+        assert_eq!(source, "disk:[\"sda\",\"sdb\"]");
+        assert_eq!(source, disk_counters(&reordered, &blocks, &mut errors).2);
+        assert_ne!(source, disk_counters(&changed, &blocks, &mut errors).2);
+        assert!(errors.is_empty());
     }
     #[test]
     fn missing_process_is_not_reported_as_zero() {

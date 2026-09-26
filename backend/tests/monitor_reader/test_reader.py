@@ -189,6 +189,58 @@ def test_host_series_counts_baseline_once_when_detail_row_shares_timestamp(store
         "expected": 1, "observed": 1, "valid": 1, "missing": 0, "unavailable": {}}
 
 
+def test_host_throughput_uses_monotonic_interval_and_previous_page_sample(store):
+    directory, conn = store
+    first = {"disk_read_bytes": 100, "disk_write_bytes": 200,
+             "net_rx_bytes": 300, "net_tx_bytes": 400}
+    second = {"disk_read_bytes": 600, "disk_write_bytes": 400,
+              "net_rx_bytes": 1_300, "net_tx_bytes": 2_400}
+    _sample(conn, when=NOW - 10 * NSEC, mono=10 * NSEC, host=first)
+    _sample(conn, when=NOW - 5 * NSEC, mono=20 * NSEC, host=second)
+    _sample(conn, when=NOW - 5 * NSEC, mono=20 * NSEC, mode="detail", host=second)
+    conn.commit()
+    reader = MonitorReader(directory)
+    for metric, rate in (("disk_read_bytes_per_second", 50),
+                         ("disk_write_bytes_per_second", 20),
+                         ("net_rx_bytes_per_second", 100),
+                         ("net_tx_bytes_per_second", 200)):
+        result = reader.series(metric, since=NOW - 5 * NSEC, until=NOW,
+                               step=5, now=NOW)
+        assert result["items"][0]["value"]["last"] == rate
+        assert result["items"][0]["coverage"]["valid"] == 1
+        assert result["items"][0]["unit"] == "bytes/s"
+
+
+def test_host_throughput_reports_gaps_for_reset_boot_source_and_interval(store):
+    directory, conn = store
+    records = (
+        (30, 10, "boot-a", 100, "/proc/net/dev"),
+        (25, 15, "boot-a", 150, "/proc/net/dev"),
+        (20, 20, "boot-a", 30, "/proc/net/dev"),  # Counter reset.
+        (15, 25, "boot-b", 80, "/proc/net/dev"),
+        (10, 30, "boot-b", 100, "other-provider"),
+        (5, 50, "boot-b", 200, "other-provider"),  # Interval exceeds 15s.
+    )
+    for ago, mono, boot, counter, source in records:
+        _sample(conn, when=NOW - ago * NSEC, mono=mono * NSEC, boot=boot,
+                host={"net_rx_bytes": counter, "net_source": source})
+    conn.commit()
+    result = MonitorReader(directory).series("net_rx_bytes_per_second",
+                                             since=NOW - 30 * NSEC, until=NOW,
+                                             step=5, now=NOW)
+    assert [item["value"]["last"] if item["value"] else None for item in result["items"]] == [None, 10, None, None, None, None]
+    assert result["items"][2]["coverage"]["unavailable"] == {"not_collected": 1}
+
+
+def test_historical_host_throughput_rejects_counter_rollups(store):
+    directory, conn = store
+    conn.commit()
+    with pytest.raises(MonitorQueryError, match="rollup counters cannot provide a valid rate"):
+        MonitorReader(directory).series("disk_read_bytes_per_second",
+                                        since=NOW - 2 * 24 * 60 * 60 * NSEC,
+                                        until=NOW, step=60, now=NOW)
+
+
 def test_historical_host_series_uses_rollups_and_reports_gaps(store):
     directory, conn = store
     start = NOW - 3 * 24 * 60 * 60 * NSEC

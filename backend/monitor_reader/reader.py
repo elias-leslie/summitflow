@@ -47,6 +47,16 @@ HOST_METRICS = {
     "net_tx_bytes": "bytes",
     "disk_read_bytes": "bytes",
     "disk_write_bytes": "bytes",
+    "disk_read_bytes_per_second": "bytes/s",
+    "disk_write_bytes_per_second": "bytes/s",
+    "net_rx_bytes_per_second": "bytes/s",
+    "net_tx_bytes_per_second": "bytes/s",
+}
+HOST_RATE_METRICS = {
+    "disk_read_bytes_per_second": "disk_read_bytes",
+    "disk_write_bytes_per_second": "disk_write_bytes",
+    "net_rx_bytes_per_second": "net_rx_bytes",
+    "net_tx_bytes_per_second": "net_tx_bytes",
 }
 SERVICE_METRICS = {
     "cpu_usage_usec": "microseconds",
@@ -76,6 +86,10 @@ SOURCE_BY_METRIC = {
     "net_tx_bytes": "/proc/net/dev",
     "disk_read_bytes": "/proc/diskstats",
     "disk_write_bytes": "/proc/diskstats",
+    "disk_read_bytes_per_second": "/proc/diskstats",
+    "disk_write_bytes_per_second": "/proc/diskstats",
+    "net_rx_bytes_per_second": "/proc/net/dev",
+    "net_tx_bytes_per_second": "/proc/net/dev",
 }
 AVAILABILITY = {
     "ok", "unsupported", "permission_denied", "timeout", "error", "stale",
@@ -328,6 +342,8 @@ class MonitorReader:
         historical = end - start > MAX_WINDOW_NS
         if historical and (entity != "host" or step < 60):
             raise MonitorQueryError("windows over 24 hours require host metric and step at least 60 seconds")
+        if historical and metric in HOST_RATE_METRICS:
+            raise MonitorQueryError("host throughput requires raw samples within 24 hours; rollup counters cannot provide a valid rate")
         if historical and (start % (60 * NSEC) or end % (60 * NSEC) or step % 60):
             raise MonitorQueryError("windows over 24 hours require UTC minute-aligned since/until and step")
         unit = (HOST_METRICS if entity == "host" else SERVICE_METRICS)[metric]
@@ -342,7 +358,7 @@ class MonitorReader:
         if historical:
             return self._rollup_series(metric, unit, start, end, step, limit, after,
                                        filters, base, max_bytes, now_ns)
-        rate_metric = metric in SERVICE_RATE_METRICS and entity != "host"
+        rate_metric = (metric in HOST_RATE_METRICS if entity == "host" else metric in SERVICE_RATE_METRICS)
         read_start = max(0, query_start - 60 * NSEC) if rate_metric else query_start
         with self._connect() as conn:
             rows = conn.execute("SELECT id,sampled_at_ns,monotonic_ns,boot_id,mode,host_json,services_json,errors_json "
@@ -351,7 +367,7 @@ class MonitorReader:
                                 (read_start, query_end, MAX_ROWS + 1)).fetchall()
         if len(rows) > MAX_ROWS:
             raise MonitorQueryError("series row cap reached; narrow the time window")
-        rates = self._service_rates(rows, entity, metric) if rate_metric else {}
+        rates = (self._host_rates(rows, metric) if entity == "host" else self._service_rates(rows, entity, metric)) if rate_metric else {}
         buckets: dict[int, list[sqlite3.Row]] = {}
         for row in rows:
             if row["sampled_at_ns"] < query_start:
@@ -398,6 +414,35 @@ class MonitorReader:
                             "available_bucket_candidates": available_buckets,
                             "raw_samples": len(rows)}
         return self._pack(base, candidates, filters, limit, max_bytes)
+
+    @staticmethod
+    def _host_rates(rows: list[sqlite3.Row], metric: str) -> dict[int, float | None]:
+        """Use distinct same-source host counter observations and monotonic time."""
+        counter_key = HOST_RATE_METRICS[metric]
+        source_key = "disk_source" if counter_key.startswith("disk_") else "net_source"
+        source = SOURCE_BY_METRIC[metric]
+        rates: dict[int, float | None] = {}
+        previous: tuple[str, str, int, float] | None = None
+        for row in rows:
+            host = _decode_json(row["host_json"], dict)
+            counter = host.get(counter_key)
+            provider = host.get(source_key, source)
+            mono = row["monotonic_ns"]
+            if (not isinstance(provider, str) or not provider
+                    or not isinstance(counter, (int, float)) or isinstance(counter, bool)
+                    or not math.isfinite(counter) or counter < 0 or type(mono) is not int):
+                previous = None
+                continue
+            value = None
+            if previous is not None:
+                old_boot, old_provider, old_mono, old_counter = previous
+                interval = mono - old_mono
+                if (row["boot_id"] == old_boot and provider == old_provider
+                        and 0 < interval <= 15 * NSEC and counter >= old_counter):
+                    value = (counter - old_counter) * NSEC / interval
+            rates[row["id"]] = value
+            previous = (row["boot_id"], provider, mono, counter)
+        return rates
 
     @staticmethod
     def _service_rates(rows: list[sqlite3.Row], entity: str, metric: str) -> dict[int, float | None]:

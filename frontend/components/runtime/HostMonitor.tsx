@@ -16,8 +16,28 @@ const METRICS = [
   { value: 'disk_free_bytes', label: 'Free disk', unit: 'bytes' },
   { value: 'disk_read_bytes', label: 'Disk read counter', unit: 'bytes' },
   { value: 'disk_write_bytes', label: 'Disk write counter', unit: 'bytes' },
+  {
+    value: 'disk_read_bytes_per_second',
+    label: 'Disk read rate',
+    unit: 'bytes/s',
+  },
+  {
+    value: 'disk_write_bytes_per_second',
+    label: 'Disk write rate',
+    unit: 'bytes/s',
+  },
   { value: 'net_rx_bytes', label: 'Network received counter', unit: 'bytes' },
   { value: 'net_tx_bytes', label: 'Network sent counter', unit: 'bytes' },
+  {
+    value: 'net_rx_bytes_per_second',
+    label: 'Network receive rate',
+    unit: 'bytes/s',
+  },
+  {
+    value: 'net_tx_bytes_per_second',
+    label: 'Network send rate',
+    unit: 'bytes/s',
+  },
   { value: 'cpu_some_avg10_pct', label: 'CPU pressure', unit: '%' },
   { value: 'memory_some_avg10_pct', label: 'Memory pressure', unit: '%' },
   { value: 'io_some_avg10_pct', label: 'I/O pressure', unit: '%' },

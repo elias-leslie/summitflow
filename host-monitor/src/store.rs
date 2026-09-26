@@ -383,6 +383,8 @@ fn rebuild_rollup(tx: &rusqlite::Transaction<'_>, bucket: i64) -> rusqlite::Resu
                     "leaders_sampled_at_ns"
                         | "process_scan_observed_at_ns"
                         | "process_scan_observed_monotonic_ns"
+                        | "net_source"
+                        | "disk_source"
                 ) {
                     continue;
                 }
@@ -453,7 +455,8 @@ mod tests {
     fn exact_schema_and_readonly_gzip_history() {
         let dir = tempfile::tempdir().unwrap();
         let mut db = Store::open(dir.path(), "host", "boot-a").unwrap();
-        let host = json!({"cpu_busy_pct":23.0,"memory_available_bytes":null});
+        let host = json!({"cpu_busy_pct":23.0,"memory_available_bytes":null,
+                          "net_source":"net:[\"eth0\"]","disk_source":"disk:[\"sda\"]"});
         let rows = [
             json!({"pid":7,"start_ticks":21,"name":"unit","cpu_user_ns":10,"cpu_system_ns":0,"rss_bytes":4096,"read_bytes":0,"write_bytes":0,"leader_reasons":["rss"]}),
         ];
@@ -524,6 +527,12 @@ mod tests {
             serde_json::from_str::<Value>(&coverage).unwrap()["memory_available_bytes_unavailable_count"],
             1
         );
+        let values: Value = serde_json::from_str(&values).unwrap();
+        let coverage: Value = serde_json::from_str(&coverage).unwrap();
+        assert!(values.get("net_source").is_none());
+        assert!(values.get("disk_source").is_none());
+        assert!(coverage.get("net_source_unavailable_count").is_none());
+        assert!(coverage.get("disk_source_unavailable_count").is_none());
         assert_eq!(
             fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
             0o700
