@@ -74,7 +74,10 @@ def collector_latency(state: Path) -> tuple[int, int | None]:
             status = json.loads(stream.readline(262_144))
     if not status.get("ok"):
         raise RuntimeError("collector status unavailable")
-    return int(status["sample_commit_count"]), status.get("sample_commit_last_ns")
+    total = status.get("sample_commit_total")
+    if type(total) is not int or total < 0:
+        raise RuntimeError("collector status lacks monotonic sample_commit_total; rebuild the collector")
+    return total, status.get("sample_commit_last_ns")
 
 
 def snapshot(cgroup: Path, state: Path, pid: int) -> dict[str, float | int]:
@@ -105,6 +108,9 @@ def percentile(values: list[float], p: float) -> float | None:
 def summarize(rows: list[dict[str, float | int]]) -> dict[str, float | int | None]:
     first, last = rows[0], rows[-1]
     seconds = float(last["at"] - first["at"])
+    counts = [int(row["commit_count"]) for row in rows]
+    if any(current < previous for previous, current in zip(counts, counts[1:])):
+        raise RuntimeError("collector commit total reset during profile")
     commits = [int(row["commit_last_ns"]) / 1_000_000 for previous, row in zip(rows, rows[1:])
                if int(row["commit_count"]) > int(previous["commit_count"]) and row["commit_last_ns"]]
     return {"seconds": round(seconds, 3),
@@ -115,7 +121,8 @@ def summarize(rows: list[dict[str, float | int]]) -> dict[str, float | int | Non
             "io_write_bytes": int(last["io_write_bytes"]) - int(first["io_write_bytes"]),
             "io_write_bytes_per_day_extrapolated": round((int(last["io_write_bytes"]) - int(first["io_write_bytes"])) / seconds * 86400),
             "store_bytes_delta": int(last["store_bytes"]) - int(first["store_bytes"]),
-            "observed_sample_commits": len(commits),
+            "observed_sample_commits": counts[-1] - counts[0],
+            "sample_plus_commit_latency_observations": len(commits),
             "sample_plus_commit_p95_ms": round(percentile(commits, .95), 3) if commits else None}
 
 

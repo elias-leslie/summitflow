@@ -32,6 +32,17 @@ def _sample(conn, *, when, mono=None, mode="baseline", host=None, services=None,
     )
 
 
+def _host_counters(kind: str, members: dict[str, list[int | str]]) -> dict:
+    source = f"{kind}:{json.dumps(sorted(members), separators=(',', ':'))}"
+    if kind == "net":
+        return {"net_source": source, "net_members": members,
+                "net_rx_bytes": sum(member[0] for member in members.values()),
+                "net_tx_bytes": sum(member[1] for member in members.values())}
+    return {"disk_source": source, "disk_members": members,
+            "disk_read_bytes": sum(member[0] for member in members.values()),
+            "disk_write_bytes": sum(member[1] for member in members.values())}
+
+
 @pytest.fixture
 def store(tmp_path: Path):
     path = tmp_path / "monitor.sqlite3"
@@ -191,10 +202,10 @@ def test_host_series_counts_baseline_once_when_detail_row_shares_timestamp(store
 
 def test_host_throughput_uses_monotonic_interval_and_previous_page_sample(store):
     directory, conn = store
-    first = {"disk_read_bytes": 100, "disk_write_bytes": 200,
-             "net_rx_bytes": 300, "net_tx_bytes": 400}
-    second = {"disk_read_bytes": 600, "disk_write_bytes": 400,
-              "net_rx_bytes": 1_300, "net_tx_bytes": 2_400}
+    first = {**_host_counters("disk", {"sda": [100, 200, "8:0"]}),
+             **_host_counters("net", {"eth0": [300, 400, "2"]})}
+    second = {**_host_counters("disk", {"sda": [600, 400, "8:0"]}),
+              **_host_counters("net", {"eth0": [1_300, 2_400, "2"]})}
     _sample(conn, when=NOW - 10 * NSEC, mono=10 * NSEC, host=first)
     _sample(conn, when=NOW - 5 * NSEC, mono=20 * NSEC, host=second)
     _sample(conn, when=NOW - 5 * NSEC, mono=20 * NSEC, mode="detail", host=second)
@@ -214,22 +225,64 @@ def test_host_throughput_uses_monotonic_interval_and_previous_page_sample(store)
 def test_host_throughput_reports_gaps_for_reset_boot_source_and_interval(store):
     directory, conn = store
     records = (
-        (30, 10, "boot-a", 100, "/proc/net/dev"),
-        (25, 15, "boot-a", 150, "/proc/net/dev"),
-        (20, 20, "boot-a", 30, "/proc/net/dev"),  # Counter reset.
-        (15, 25, "boot-b", 80, "/proc/net/dev"),
+        (30, 10, "boot-a", 100, "net:[\"eth0\"]"),
+        (25, 15, "boot-a", 150, "net:[\"eth0\"]"),
+        (20, 20, "boot-a", 30, "net:[\"eth0\"]"),  # Counter reset.
+        (15, 25, "boot-b", 80, "net:[\"eth0\"]"),
         (10, 30, "boot-b", 100, "other-provider"),
         (5, 50, "boot-b", 200, "other-provider"),  # Interval exceeds 15s.
     )
     for ago, mono, boot, counter, source in records:
         _sample(conn, when=NOW - ago * NSEC, mono=mono * NSEC, boot=boot,
-                host={"net_rx_bytes": counter, "net_source": source})
+                host={**_host_counters("net", {"eth0": [counter, 0, "2"]}),
+                      "net_source": source})
     conn.commit()
     result = MonitorReader(directory).series("net_rx_bytes_per_second",
                                              since=NOW - 30 * NSEC, until=NOW,
                                              step=5, now=NOW)
     assert [item["value"]["last"] if item["value"] else None for item in result["items"]] == [None, 10, None, None, None, None]
     assert result["items"][2]["coverage"]["unavailable"] == {"not_collected": 1}
+
+
+def test_host_throughput_rejects_masked_member_reset_and_recreation(store):
+    directory, conn = store
+    samples = (
+        (20, {"eth0": [100, 10, "2"], "eth1": [100, 20, "3"]}),
+        (15, {"eth0": [90, 11, "2"], "eth1": [300, 30, "3"]}),
+        (10, {"eth0": [110, 12, "4"], "eth1": [320, 31, "3"]}),
+        (5, {"eth0": [130, 13, "4"], "eth1": [340, 32, "3"]}),
+    )
+    for ago, members in samples:
+        _sample(conn, when=NOW - ago * NSEC, mono=(30 - ago) * NSEC,
+                host=_host_counters("net", members))
+    conn.commit()
+    result = MonitorReader(directory).series("net_rx_bytes_per_second",
+                                             since=NOW - 20 * NSEC, until=NOW,
+                                             step=5, now=NOW)
+    assert [item["value"]["last"] if item["value"] else None for item in result["items"]] == [None, None, None, 8]
+    assert result["items"][1]["coverage"]["unavailable"] == {"not_collected": 1}
+
+
+def test_host_throughput_requires_member_evidence_and_invalid_last_is_gap(store):
+    directory, conn = store
+    _sample(conn, when=NOW - 20 * NSEC, mono=10 * NSEC,
+            host={"net_rx_bytes": 100, "net_source": "net:[\"eth0\"]"})
+    _sample(conn, when=NOW - 15 * NSEC, mono=15 * NSEC,
+            host=_host_counters("net", {"eth0": [150, 0, "2"]}))
+    _sample(conn, when=NOW - 10 * NSEC, mono=20 * NSEC,
+            host=_host_counters("net", {"eth0": [200, 0, "2"]}))
+    _sample(conn, when=NOW - 5 * NSEC, mono=25 * NSEC,
+            host=_host_counters("net", {"eth0": [10, 0, "2"]}))
+    conn.commit()
+    result = MonitorReader(directory).series("net_rx_bytes_per_second",
+                                             since=NOW - 20 * NSEC, until=NOW,
+                                             step=10, now=NOW)
+    assert result["items"][0]["value"] is None
+    assert result["items"][1]["value"] is None  # Last sample reset despite earlier valid rate.
+    assert result["items"][1]["coverage"]["valid"] == 1
+    assert result["items"][1]["availability"] == "not_collected"
+    status = MonitorReader(directory).status(now=NOW)
+    assert "net_members" not in status["items"][0]["host"]
 
 
 def test_historical_host_throughput_rejects_counter_rollups(store):

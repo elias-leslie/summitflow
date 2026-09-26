@@ -303,6 +303,9 @@ class MonitorReader:
             base["errors"] = [{"code": "not_collected", "message": "no committed samples"}]
             return self._pack(base, [], {}, 1, max_bytes)
         host = _decode_json(row["host_json"], dict)
+        # Per-device counters are retained for rate validation, not status output.
+        host.pop("net_members", None)
+        host.pop("disk_members", None)
         services = _decode_json(row["services_json"], dict)
         errors = _decode_json(row["errors_json"], list)
         cadence = 5
@@ -396,16 +399,17 @@ class MonitorReader:
                 modes.add(row["mode"])
             expected = math.ceil(min(step_ns, end - (start + index * step_ns)) / (5 * NSEC))
             missing = max(0, expected - len(subset))
-            if values:
+            if values and not (rate_metric and subset and rates.get(subset[-1]["id"]) is None):
                 available_buckets += 1
-            availability = "ok" if values else (next(iter(unavailable)) if unavailable else "not_collected")
+            last_rate_invalid = bool(rate_metric and subset and rates.get(subset[-1]["id"]) is None)
+            availability = "ok" if values and not last_rate_invalid else (next(iter(unavailable)) if unavailable else "not_collected")
             bucket_start = start + index * step_ns
             item = {"sampled_at": _utc(bucket_start), "freshness": "ok" if now_ns - bucket_start <= 10 * NSEC else "stale",
                     "last_sampled_at": _utc(subset[-1]["sampled_at_ns"]) if subset else None,
                     "source": "sqlite", "provider": "collector", "mode": ",".join(sorted(modes)) or None,
                     "unit": unit, "availability": availability, "entity": entity, "metric": metric,
                     "value": {"min": min(values), "max": max(values), "mean": sum(values) / len(values),
-                              "last": values[-1]} if values else None,
+                              "last": values[-1]} if values and not last_rate_invalid else None,
                     "coverage": {"expected": expected, "observed": len(subset), "valid": len(values),
                                  "missing": missing, "unavailable": unavailable}}
             candidates.append((item, index))
@@ -420,28 +424,46 @@ class MonitorReader:
         """Use distinct same-source host counter observations and monotonic time."""
         counter_key = HOST_RATE_METRICS[metric]
         source_key = "disk_source" if counter_key.startswith("disk_") else "net_source"
-        source = SOURCE_BY_METRIC[metric]
         rates: dict[int, float | None] = {}
-        previous: tuple[str, str, int, float] | None = None
+        previous: tuple[str, str, int, dict[str, tuple[int, int, str]]] | None = None
         for row in rows:
             host = _decode_json(row["host_json"], dict)
             counter = host.get(counter_key)
-            provider = host.get(source_key, source)
+            provider = host.get(source_key)
+            members_key = "disk_members" if counter_key.startswith("disk_") else "net_members"
+            raw_members = host.get(members_key)
             mono = row["monotonic_ns"]
+            members: dict[str, tuple[int, int, str]] = {}
+            if isinstance(raw_members, dict) and raw_members:
+                for name, raw in raw_members.items():
+                    if (not isinstance(name, str) or not name
+                            or not isinstance(raw, list) or len(raw) != 3
+                            or any(type(value) is not int or value < 0 for value in raw[:2])
+                            or not isinstance(raw[2], str) or not raw[2]):
+                        members = {}
+                        break
+                    members[name] = (raw[0], raw[1], raw[2])
             if (not isinstance(provider, str) or not provider
-                    or not isinstance(counter, (int, float)) or isinstance(counter, bool)
-                    or not math.isfinite(counter) or counter < 0 or type(mono) is not int):
+                    or type(counter) is not int or counter < 0 or type(mono) is not int
+                    or not members or counter != sum(pair[0 if counter_key.endswith(("read_bytes", "rx_bytes")) else 1]
+                                                     for pair in members.values())):
                 previous = None
                 continue
             value = None
             if previous is not None:
-                old_boot, old_provider, old_mono, old_counter = previous
+                old_boot, old_provider, old_mono, old_members = previous
                 interval = mono - old_mono
                 if (row["boot_id"] == old_boot and provider == old_provider
-                        and 0 < interval <= 15 * NSEC and counter >= old_counter):
-                    value = (counter - old_counter) * NSEC / interval
+                        and 0 < interval <= 15 * NSEC and members.keys() == old_members.keys()
+                        and all(members[name][2] == old_members[name][2]
+                                and members[name][0] >= old_members[name][0]
+                                and members[name][1] >= old_members[name][1]
+                                for name in members)):
+                    index = 0 if counter_key.endswith(("read_bytes", "rx_bytes")) else 1
+                    delta = sum(members[name][index] - old_members[name][index] for name in members)
+                    value = delta * NSEC / interval
             rates[row["id"]] = value
-            previous = (row["boot_id"], provider, mono, counter)
+            previous = (row["boot_id"], provider, mono, members)
         return rates
 
     @staticmethod

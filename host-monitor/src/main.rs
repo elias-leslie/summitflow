@@ -343,6 +343,7 @@ struct Runtime {
     service_states: HashMap<String, String>,
     source_failures: HashSet<String>,
     sample_commit_ns: VecDeque<u64>,
+    sample_commit_total: u64,
 }
 impl Runtime {
     fn new(policy_error: Option<String>) -> Self {
@@ -358,6 +359,14 @@ impl Runtime {
             service_states: HashMap::new(),
             source_failures: HashSet::new(),
             sample_commit_ns: VecDeque::new(),
+            sample_commit_total: 0,
+        }
+    }
+    fn record_sample_commit(&mut self, duration_ns: u64) {
+        self.sample_commit_total = self.sample_commit_total.saturating_add(1);
+        self.sample_commit_ns.push_back(duration_ns);
+        if self.sample_commit_ns.len() > 256 {
+            self.sample_commit_ns.pop_front();
         }
     }
     fn detail(&mut self, now: Instant) -> bool {
@@ -438,7 +447,7 @@ impl Runtime {
                             [((durations.len() as f64 * 0.95).ceil() as usize).saturating_sub(1)],
                     )
                 };
-                json!({"ok":true,"schema":1,"collector_version":env!("CARGO_PKG_VERSION"),"detail_active":self.detail(now),"active_leases":self.leases.len(),"max_active_leases":MAX_ACTIVE_LEASES,"writer_failure":self.writer_failure.as_ref().or(self.event_failure.as_ref()),"policy_error":self.policy_error,"latest":self.latest,"storage_bytes":bytes,"sample_commit_p95_ns":p95,"sample_commit_last_ns":self.sample_commit_ns.back(),"sample_commit_count":self.sample_commit_ns.len()})
+                json!({"ok":true,"schema":1,"collector_version":env!("CARGO_PKG_VERSION"),"detail_active":self.detail(now),"active_leases":self.leases.len(),"max_active_leases":MAX_ACTIVE_LEASES,"writer_failure":self.writer_failure.as_ref().or(self.event_failure.as_ref()),"policy_error":self.policy_error,"latest":self.latest,"storage_bytes":bytes,"sample_commit_p95_ns":p95,"sample_commit_last_ns":self.sample_commit_ns.back(),"sample_commit_count":self.sample_commit_ns.len(),"sample_commit_total":self.sample_commit_total})
             }
             "lease_start" => {
                 if self.leases.len() >= MAX_ACTIVE_LEASES {
@@ -490,20 +499,34 @@ fn socket(state: &Path) -> io::Result<UnixListener> {
     Ok(listener)
 }
 
+struct PersistResult {
+    baseline_committed: bool,
+    failure: Option<String>,
+}
+
 fn persist_pair(
     store: &mut store::Store,
     baseline: &store::Sample<'_>,
     detail: Option<&store::Sample<'_>>,
-) -> Option<String> {
+) -> PersistResult {
     if let Err(e) = store.write(baseline) {
-        return Some(format!("baseline write failed: {e}"));
+        return PersistResult {
+            baseline_committed: false,
+            failure: Some(format!("baseline write failed: {e}")),
+        };
     }
     if let Some(detail) = detail {
         if let Err(e) = store.write(detail) {
-            return Some(format!("detail write failed; baseline committed: {e}"));
+            return PersistResult {
+                baseline_committed: true,
+                failure: Some(format!("detail write failed; baseline committed: {e}")),
+            };
         }
     }
-    None
+    PersistResult {
+        baseline_committed: true,
+        failure: None,
+    }
 }
 
 fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
@@ -836,15 +859,15 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
                         "lease"
                     }),
                 });
-                state.writer_failure = persist_pair(&mut store, &baseline, detail.as_ref());
+                let result = persist_pair(&mut store, &baseline, detail.as_ref());
+                state.writer_failure = result.failure;
                 if let Some(e) = &state.writer_failure {
                     eprintln!("monitor write failed: {e}");
                 }
-                state
-                    .sample_commit_ns
-                    .push_back(started.elapsed().as_nanos().min(u64::MAX as u128) as u64);
-                if state.sample_commit_ns.len() > 256 {
-                    state.sample_commit_ns.pop_front();
+                if result.baseline_committed {
+                    state.record_sample_commit(
+                        started.elapsed().as_nanos().min(u64::MAX as u128) as u64
+                    );
                 }
                 while next_baseline <= now {
                     next_baseline += BASELINE;
@@ -897,6 +920,23 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn commit_total_continues_after_latency_window_fills() {
+        let mut runtime = Runtime::new(None);
+        for duration in 1..=260 {
+            runtime.record_sample_commit(duration);
+        }
+        let status = runtime.dispatch(&json!({"command":"status"}), 0);
+        assert_eq!(status["sample_commit_count"], 256);
+        assert_eq!(status["sample_commit_total"], 260);
+        assert_eq!(status["sample_commit_last_ns"], 260);
+        assert_eq!(status["sample_commit_p95_ns"], 248);
+        runtime.record_sample_commit(261);
+        let next = runtime.dispatch(&json!({"command":"status"}), 0);
+        assert_eq!(next["sample_commit_count"], 256);
+        assert_eq!(next["sample_commit_total"], 261);
+        assert_eq!(next["sample_commit_last_ns"], 261);
+    }
     #[test]
     fn main_pid_fallback_keeps_process_scan_timestamps() {
         let p = Proc {
@@ -957,7 +997,9 @@ mod tests {
             duration_ns: 1,
             reason: None,
         };
-        let failure = persist_pair(&mut store, &baseline, Some(&detail)).unwrap();
+        let result = persist_pair(&mut store, &baseline, Some(&detail));
+        assert!(result.baseline_committed);
+        let failure = result.failure.unwrap();
         assert!(failure.contains("baseline committed"));
         let (mode, reason, blob): (String, Option<String>, Vec<u8>) = store
             .conn
@@ -978,6 +1020,32 @@ mod tests {
             serde_json::from_str::<Value>(&decoded).unwrap(),
             json!(leaders)
         );
+    }
+    #[test]
+    fn rejected_baseline_is_not_counted_as_committed() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = store::Store::open(dir.path(), "h", "b").unwrap();
+        store.conn.execute_batch("CREATE TRIGGER reject_baseline BEFORE INSERT ON samples BEGIN SELECT RAISE(FAIL,'baseline_fixture'); END;").unwrap();
+        let host = json!({"cpu_busy_pct":10});
+        let services = json!({});
+        let baseline = store::Sample {
+            at_ns: 1,
+            mono_ns: 1,
+            boot_id: "b",
+            mode: "baseline",
+            host: &host,
+            services: &services,
+            processes: &[],
+            seen: 0,
+            denied: 0,
+            exited: 0,
+            errors: &[],
+            duration_ns: 1,
+            reason: None,
+        };
+        let result = persist_pair(&mut store, &baseline, None);
+        assert!(!result.baseline_committed);
+        assert!(result.failure.unwrap().contains("baseline write failed"));
     }
     #[test]
     fn lease_expires_and_renews() {

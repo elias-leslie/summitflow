@@ -385,6 +385,8 @@ fn rebuild_rollup(tx: &rusqlite::Transaction<'_>, bucket: i64) -> rusqlite::Resu
                         | "process_scan_observed_monotonic_ns"
                         | "net_source"
                         | "disk_source"
+                        | "net_members"
+                        | "disk_members"
                 ) {
                     continue;
                 }

@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs, io,
     os::unix::fs::MetadataExt,
     path::Path,
@@ -195,10 +195,17 @@ fn source_set(kind: &str, mut names: Vec<String>) -> Value {
     names.dedup();
     json!(format!("{kind}:{}", json!(names)))
 }
-fn net_counters(s: &str, errors: &mut Vec<Value>) -> (Value, Value, Value) {
+const MAX_COUNTER_MEMBERS: usize = 64;
+
+fn net_counters(
+    s: &str,
+    errors: &mut Vec<Value>,
+    identity: impl Fn(&str) -> Option<String>,
+) -> (Value, Value, Value, Value) {
     let mut rx = 0u64;
     let mut tx = 0u64;
     let mut names = Vec::new();
+    let mut members = BTreeMap::new();
     for line in s.lines().skip(2) {
         let Some((iface, data)) = line.split_once(':') else {
             continue;
@@ -210,19 +217,35 @@ fn net_counters(s: &str, errors: &mut Vec<Value>) -> (Value, Value, Value) {
         let (Some(r), Some(t)) = (parse_num(v.first().copied()), parse_num(v.get(8).copied()))
         else {
             err(errors, "/proc/net/dev", "parse_failed");
-            return (Value::Null, Value::Null, Value::Null);
+            return (Value::Null, Value::Null, Value::Null, Value::Null);
         };
-        names.push(iface.trim().to_owned());
+        let name = iface.trim().to_owned();
+        names.push(name.clone());
+        members.insert(name.clone(), json!([r, t, identity(&name)]));
         rx = rx.saturating_add(r);
         tx = tx.saturating_add(t);
     }
-    (json!(rx), json!(tx), source_set("net", names))
+    if members.len() > MAX_COUNTER_MEMBERS {
+        err(errors, "/proc/net/dev", "too_many_sources");
+        return (Value::Null, Value::Null, Value::Null, Value::Null);
+    }
+    (
+        json!(rx),
+        json!(tx),
+        source_set("net", names),
+        json!(members),
+    )
 }
-fn net(errors: &mut Vec<Value>) -> (Value, Value, Value) {
+fn net(errors: &mut Vec<Value>) -> (Value, Value, Value, Value) {
     let Some(s) = read("/proc/net/dev", errors) else {
-        return (Value::Null, Value::Null, Value::Null);
+        return (Value::Null, Value::Null, Value::Null, Value::Null);
     };
-    net_counters(&s, errors)
+    net_counters(&s, errors, |name| {
+        fs::read_to_string(Path::new("/sys/class/net").join(name).join("ifindex"))
+            .ok()
+            .and_then(|value| value.trim().parse::<u32>().ok())
+            .map(|index| index.to_string())
+    })
 }
 fn eligible_block(name: &str) -> bool {
     !name.starts_with("loop") && !name.starts_with("ram")
@@ -231,10 +254,12 @@ fn disk_counters(
     s: &str,
     blocks: &HashSet<String>,
     errors: &mut Vec<Value>,
-) -> (Value, Value, Value) {
+    identity: impl Fn(&str) -> Option<String>,
+) -> (Value, Value, Value, Value) {
     let mut r = 0u64;
     let mut w = 0u64;
     let mut matched = Vec::new();
+    let mut members = BTreeMap::new();
     for line in s.lines() {
         let v: Vec<&str> = line.split_whitespace().collect();
         if v.len() < 10 || !blocks.contains(v[2]) {
@@ -243,19 +268,44 @@ fn disk_counters(
         let (Some(a), Some(b)) = (parse_num(v.get(5).copied()), parse_num(v.get(9).copied()))
         else {
             err(errors, "/proc/diskstats", "parse_failed");
-            return (Value::Null, Value::Null, Value::Null);
+            return (Value::Null, Value::Null, Value::Null, Value::Null);
         };
-        matched.push(v[2].to_owned());
-        r = r.saturating_add(a.saturating_mul(512));
-        w = w.saturating_add(b.saturating_mul(512));
+        let name = v[2].to_owned();
+        let read = a.saturating_mul(512);
+        let write = b.saturating_mul(512);
+        matched.push(name.clone());
+        members.insert(name.clone(), json!([read, write, identity(&name)]));
+        r = r.saturating_add(read);
+        w = w.saturating_add(write);
     }
     if matched.is_empty() {
         err(errors, "/proc/diskstats", "no_whole_devices");
-        return (Value::Null, Value::Null, Value::Null);
+        return (Value::Null, Value::Null, Value::Null, Value::Null);
     }
-    (json!(r), json!(w), source_set("disk", matched))
+    if members.len() > MAX_COUNTER_MEMBERS {
+        err(errors, "/proc/diskstats", "too_many_sources");
+        return (Value::Null, Value::Null, Value::Null, Value::Null);
+    }
+    (
+        json!(r),
+        json!(w),
+        source_set("disk", matched),
+        json!(members),
+    )
 }
-fn disks(errors: &mut Vec<Value>) -> (Value, Value, Value) {
+fn disk_instance(dev: Option<&str>, diskseq: Option<&str>) -> Option<String> {
+    let (major, minor) = dev?.trim().split_once(':')?;
+    let major = major.parse::<u32>().ok()?;
+    let minor = minor.parse::<u32>().ok()?;
+    let device = format!("{major}:{minor}");
+    Some(
+        match diskseq.and_then(|value| value.trim().parse::<u64>().ok()) {
+            Some(sequence) => format!("{device}@{sequence}"),
+            None => device,
+        },
+    )
+}
+fn disks(errors: &mut Vec<Value>) -> (Value, Value, Value, Value) {
     let blocks = match fs::read_dir("/sys/block") {
         Ok(entries) => entries
             .filter_map(Result::ok)
@@ -272,13 +322,18 @@ fn disks(errors: &mut Vec<Value>) -> (Value, Value, Value) {
                     "read_failed"
                 },
             );
-            return (Value::Null, Value::Null, Value::Null);
+            return (Value::Null, Value::Null, Value::Null, Value::Null);
         }
     };
     let Some(s) = read("/proc/diskstats", errors) else {
-        return (Value::Null, Value::Null, Value::Null);
+        return (Value::Null, Value::Null, Value::Null, Value::Null);
     };
-    disk_counters(&s, &blocks, errors)
+    disk_counters(&s, &blocks, errors, |name| {
+        let device = Path::new("/sys/block").join(name);
+        let dev = fs::read_to_string(device.join("dev")).ok();
+        let diskseq = fs::read_to_string(device.join("diskseq")).ok();
+        disk_instance(dev.as_deref(), diskseq.as_deref())
+    })
 }
 fn root_disk(errors: &mut Vec<Value>) -> (Value, Value) {
     let path = std::ffi::CString::new("/").unwrap();
@@ -593,10 +648,10 @@ pub fn host(
     };
     let (total, available, swap) = mem(sys, errors);
     let (disk_total, disk_free) = root_disk(errors);
-    let (rx, tx, net_source) = net(errors);
-    let (disk_read, disk_write, disk_source) = disks(errors);
+    let (rx, tx, net_source, net_members) = net(errors);
+    let (disk_read, disk_write, disk_source, disk_members) = disks(errors);
     (
-        json!({"cpu_busy_pct":busy,"memory_total_bytes":total,"memory_available_bytes":available,"swap_used_bytes":swap,"disk_total_bytes":disk_total,"disk_free_bytes":disk_free,"cpu_some_avg10_pct":psi("cpu",errors),"memory_some_avg10_pct":psi("memory",errors),"io_some_avg10_pct":psi("io",errors),"net_rx_bytes":rx,"net_tx_bytes":tx,"net_source":net_source,"disk_read_bytes":disk_read,"disk_write_bytes":disk_write,"disk_source":disk_source}),
+        json!({"cpu_busy_pct":busy,"memory_total_bytes":total,"memory_available_bytes":available,"swap_used_bytes":swap,"disk_total_bytes":disk_total,"disk_free_bytes":disk_free,"cpu_some_avg10_pct":psi("cpu",errors),"memory_some_avg10_pct":psi("memory",errors),"io_some_avg10_pct":psi("io",errors),"net_rx_bytes":rx,"net_tx_bytes":tx,"net_source":net_source,"net_members":net_members,"disk_read_bytes":disk_read,"disk_write_bytes":disk_write,"disk_source":disk_source,"disk_members":disk_members}),
         cpu_now,
     )
 }
@@ -703,11 +758,18 @@ mod tests {
         let reordered = format!("{header}{}{}", line("eth0", 50, 70), line("eth1", 100, 200));
         let changed = format!("{header}{}", line("eth0", 50, 70));
         let mut errors = Vec::new();
-        let (rx, tx, source) = net_counters(&first, &mut errors);
+        let (rx, tx, source, members) = net_counters(&first, &mut errors, |name| Some(name.into()));
         assert_eq!((rx, tx), (json!(15), json!(27)));
         assert_eq!(source, "net:[\"eth0\",\"eth1\"]");
-        assert_eq!(source, net_counters(&reordered, &mut errors).2);
-        assert_ne!(source, net_counters(&changed, &mut errors).2);
+        assert_eq!(members["eth0"], json!([5, 7, "eth0"]));
+        assert_eq!(
+            source,
+            net_counters(&reordered, &mut errors, |name| Some(name.into())).2
+        );
+        assert_ne!(
+            source,
+            net_counters(&changed, &mut errors, |name| Some(name.into())).2
+        );
         assert!(errors.is_empty());
     }
     #[test]
@@ -725,12 +787,37 @@ mod tests {
         let reordered = format!("{}{}", line("sda", 10, 20), line("sdb", 30, 40));
         let changed = line("sda", 10, 20);
         let mut errors = Vec::new();
-        let (read, write, source) = disk_counters(&first, &blocks, &mut errors);
+        let (read, write, source, members) =
+            disk_counters(&first, &blocks, &mut errors, |name| Some(name.into()));
         assert_eq!((read, write), (json!(4 * 512), json!(6 * 512)));
         assert_eq!(source, "disk:[\"sda\",\"sdb\"]");
-        assert_eq!(source, disk_counters(&reordered, &blocks, &mut errors).2);
-        assert_ne!(source, disk_counters(&changed, &blocks, &mut errors).2);
+        assert_eq!(members["sda"], json!([512, 1024, "sda"]));
+        assert_eq!(
+            source,
+            disk_counters(&reordered, &blocks, &mut errors, |name| Some(name.into())).2
+        );
+        assert_ne!(
+            source,
+            disk_counters(&changed, &blocks, &mut errors, |name| Some(name.into())).2
+        );
         assert!(errors.is_empty());
+    }
+    #[test]
+    fn disk_instance_detects_replacement_with_same_major_minor() {
+        assert_eq!(
+            disk_instance(Some("8:0\n"), Some("9\n")),
+            Some("8:0@9".into())
+        );
+        assert_ne!(
+            disk_instance(Some("8:0"), Some("9")),
+            disk_instance(Some("8:0"), Some("10"))
+        );
+        assert_eq!(disk_instance(Some("8:0"), None), Some("8:0".into()));
+        assert_eq!(
+            disk_instance(Some("8:0"), Some("unavailable")),
+            Some("8:0".into())
+        );
+        assert_eq!(disk_instance(None, Some("10")), None);
     }
     #[test]
     fn missing_process_is_not_reported_as_zero() {
