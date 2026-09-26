@@ -14,6 +14,11 @@ and some projects have no service declaration at all.
 | Runtime | Only services declared by that project's identity are checked. A project with no declared services is valid; stopped optional or on-demand services do not imply retirement. |
 | Backups | A project backup source points at the canonical checkout. Its enablement and history are independent of runtime and lifecycle. A disabled source is reported explicitly; retirement does not erase backups. |
 
+The registry's `base_url` plus `health_endpoint` is the internal health target;
+`public_url` is the user-facing Open app destination. Probe the internal target
+when registering or changing a runtime so a working service does not appear
+unhealthy because of an unreachable public hostname or a frontend 404.
+
 An owner-authenticated retirement decision in the SummitFlow database controls
 whether a project is retired. The decision includes a reason, actor, timestamp,
 and history. A checkout manifest's `project.lifecycle` is advisory so a source
