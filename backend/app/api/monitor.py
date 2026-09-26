@@ -269,11 +269,11 @@ def startup(_owner: Owner, response: Response,
 
 @router.get("/apps")
 def apps(_owner: Owner, response: Response,
-         provider: str = "dpkg", cursor: str | None = None,
+         provider: str = "dpkg", name: str | None = None, cursor: str | None = None,
          limit: Annotated[int, Query(ge=1, le=100)] = 10,
          max_bytes: Annotated[int, Query(ge=512, le=65536)] = 4096) -> dict[str, Any]:
     _private(response)
-    return _observe(query_apps, provider=provider, cursor=cursor, limit=limit, max_bytes=max_bytes)
+    return _observe(query_apps, provider=provider, name=name, cursor=cursor, limit=limit, max_bytes=max_bytes)
 
 
 @router.get("/drivers")

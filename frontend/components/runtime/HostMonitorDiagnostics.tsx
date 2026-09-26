@@ -156,10 +156,16 @@ function fields(item: MonitorItem, kind: Diagnostic): Array<[string, unknown]> {
             ['Shell', value.shell],
           ]
     case 'apps':
-      return [
-        ['Package', value.name],
-        ['Version', value.version],
-      ]
+      return value.name_truncated === true
+        ? [
+            ['Package', value.name],
+            ['Version', value.version],
+            ['Package name', 'Shortened to 128 characters'],
+          ]
+        : [
+            ['Package', value.name],
+            ['Version', value.version],
+          ]
     case 'disk-space':
     case 'benchmark':
     case 'export':
@@ -192,7 +198,7 @@ function summary(item: MonitorItem, kind: Diagnostic): string {
         ? `Active session · UID ${display(value.uid)}`
         : `${display(value.name)} · UID ${display(value.uid)} · local account`
     case 'apps':
-      return `${display(value.name)} · ${display(value.version)}`
+      return `${display(value.name)}${value.name_truncated === true ? '…' : ''} · ${display(value.version)}`
     case 'drivers':
       return `${display(value.module)} · ${display(value.use_count)} uses`
     case 'disk-space':
@@ -233,6 +239,8 @@ export function HostMonitorDiagnostics({
   const [appsProvider, setAppsProvider] = useState<'dpkg' | 'snap' | 'flatpak'>(
     'dpkg',
   )
+  const [appsNameDraft, setAppsNameDraft] = useState('')
+  const [appsName, setAppsName] = useState('')
   const [appsCursor, setAppsCursor] = useState<string | null>(null)
   const [appsPrevious, setAppsPrevious] = useState<Array<string | null>>([])
   const [revision, setRevision] = useState(0)
@@ -247,6 +255,7 @@ export function HostMonitorDiagnostics({
       showAddresses,
       includeProcess,
       appsProvider,
+      appsName,
       appsCursor,
       revision,
     ],
@@ -281,6 +290,7 @@ export function HostMonitorDiagnostics({
       if (active === 'apps')
         return monitorApi.diagnostics('apps', 50, {
           provider: appsProvider,
+          name: appsName || undefined,
           cursor: appsCursor || undefined,
         })
       throw new Error('Choose a diagnostic view')
@@ -465,6 +475,44 @@ export function HostMonitorDiagnostics({
               <p className="text-xs text-slate-500">
                 Live inventory; pages may shift when packages change.
               </p>
+              <form
+                className="flex basis-full flex-wrap items-end gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  setAppsName(appsNameDraft.trim())
+                  setAppsCursor(null)
+                  setAppsPrevious([])
+                }}
+              >
+                <label className="min-w-[min(100%,18rem)] flex-1 text-xs text-slate-400">
+                  Search package names
+                  <input
+                    type="search"
+                    value={appsNameDraft}
+                    maxLength={128}
+                    onChange={(event) => setAppsNameDraft(event.target.value)}
+                    placeholder="Package name"
+                    className={`${control} mt-1 w-full`}
+                  />
+                </label>
+                <button type="submit" className={control}>
+                  Search
+                </button>
+                {appsName && (
+                  <button
+                    type="button"
+                    className={control}
+                    onClick={() => {
+                      setAppsNameDraft('')
+                      setAppsName('')
+                      setAppsCursor(null)
+                      setAppsPrevious([])
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </form>
             </div>
           )}
           {active === 'disk-space' ? (
@@ -536,7 +584,9 @@ export function HostMonitorDiagnostics({
                     <span>
                       {display(query.data.coverage.source)} · page{' '}
                       {appsPrevious.length + 1} ·{' '}
-                      {display(query.data.coverage.entries_seen)} entries seen
+                      {appsName
+                        ? `${display(query.data.coverage.matches_seen)} matches in ${display(query.data.coverage.entries_seen)} entries seen · name contains “${appsName}”`
+                        : `${display(query.data.coverage.entries_seen)} entries seen`}
                     </span>
                     {appsPrevious.length > 0 && (
                       <button

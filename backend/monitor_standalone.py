@@ -161,6 +161,7 @@ def _parser() -> argparse.ArgumentParser:
         inventory.add_argument("--max-bytes", type=budget, default=4096)
         if name == "apps":
             inventory.add_argument("--provider", choices=("dpkg", "snap", "flatpak"), default="dpkg")
+            inventory.add_argument("--name")
             inventory.add_argument("--cursor")
 
     connections = commands.add_parser("connections", help="On-demand socket states")
@@ -242,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
                                     _required_time(args.until), limit=args.limit, cursor=args.cursor,
                                     max_bytes=max_bytes)
         elif command == "apps":
-            result = query_apps(provider=args.provider, cursor=args.cursor, limit=args.limit,
+            result = query_apps(provider=args.provider, name=args.name, cursor=args.cursor, limit=args.limit,
                                 max_bytes=max_bytes)
         elif command in {"sensors", "users", "startup", "drivers"}:
             query = {"sensors": query_sensors, "users": query_users, "startup": query_startup,

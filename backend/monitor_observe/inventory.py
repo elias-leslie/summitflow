@@ -1,8 +1,10 @@
 """Fixed-source, read-only host and software inventories."""
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
+import re
 import stat
 from pathlib import Path
 from typing import Any
@@ -238,49 +240,80 @@ _APP_COMMANDS = {
     "snap": (["snap", "list", "--color=never", "--unicode=never"], "snap"),
     "flatpak": (["flatpak", "list", "--app", "--columns=application,version"], "flatpak"),
 }
+_APP_CURSOR = re.compile(r"a1\.([0-9a-f]{16})\.(0|[1-9][0-9]{0,5})\Z")
 
 
-def _app_rows(stdout: bytes, provider: str, clipped: bool) -> tuple[list[dict[str, Any]], int]:
+def _app_context(provider: str, name: str | None) -> str:
+    key = f"{provider}\0{name.casefold() if name else ''}".encode()
+    return hashlib.sha256(key).hexdigest()[:16]
+
+
+def _app_cursor(context: str, offset: int) -> str:
+    return f"a1.{context}.{offset}"
+
+
+def _app_rows(stdout: bytes, provider: str, clipped: bool,
+              needle: str | None) -> tuple[list[dict[str, Any]], int, int]:
     lines = stdout.decode("utf-8", "replace").splitlines()
     if clipped and lines:
         lines = lines[:-1]  # The final record may be incomplete.
+    lines = [line for line in lines if line.strip()]
     if provider in {"snap", "flatpak"} and lines:
         heading = "Name" if provider == "snap" else "Application"
         if lines[0].split(maxsplit=1)[0] == heading:
             lines = lines[1:]
     rows: list[dict[str, Any]] = []
     malformed = 0
+    entries_seen = 0
     for line in lines:
-        parts = line.split("\t", 1) if provider == "dpkg" else line.split(maxsplit=2)
+        if provider == "dpkg" or (provider == "flatpak" and "\t" in line):
+            parts = line.split("\t", 1)
+        elif provider == "snap":
+            parts = line.split(maxsplit=2)
+        else:
+            parts = line.split(maxsplit=1)
         if not parts or not parts[0] or (provider == "dpkg" and len(parts) != 2):
             malformed += 1
             continue
-        name = bounded_text(parts[0].strip(), 128)
+        full_name = parts[0].strip()
+        name = bounded_text(full_name, 128)
         version = bounded_text(parts[1].strip(), 128) if len(parts) > 1 else None
         if not name:
             malformed += 1
             continue
+        entries_seen += 1
+        if needle is not None and needle not in full_name.casefold():
+            continue
         source = "dpkg-query" if provider == "dpkg" else provider
-        rows.append(item(source, source, "ok", {"name": name, "version": version}))
-    return rows, malformed
+        value: dict[str, Any] = {"name": name, "version": version}
+        if len(full_name) > 128:
+            value["name_truncated"] = True
+        rows.append(item(source, source, "ok", value))
+    return rows, malformed, entries_seen
 
 
-def query_apps(*, provider: str = "dpkg", cursor: str | None = None,
+def query_apps(*, provider: str = "dpkg", name: str | None = None, cursor: str | None = None,
                limit: int = 10, max_bytes: int = 4096) -> dict[str, Any]:
     """On-demand, byte-capped package inventory for one explicitly chosen source.
 
-    Cursor is an offset into a fresh command result; entries can move between
-    pages when the local package inventory changes.
+    Cursor identifies a provider/filter context and offset into a fresh command
+    result; entries can move between pages when the local inventory changes.
     """
     limits(limit, max_bytes)
     if provider not in _APP_COMMANDS:
         raise ObserveQueryError("provider must be dpkg, snap, or flatpak")
-    if cursor is not None and (not cursor.isascii() or not cursor.isdecimal()
-                               or len(cursor) > 6 or int(cursor) > 100_000):
-        raise ObserveQueryError("invalid apps cursor")
-    offset = int(cursor) if cursor is not None else 0
+    if name is not None and (not isinstance(name, str) or not 1 <= len(name) <= 128
+                             or not name.strip() or not name.isprintable()
+                             or bounded_text(name, 128) != name):
+        raise ObserveQueryError("name must be 1..128 printable characters")
+    context = _app_context(provider, name)
+    match = _APP_CURSOR.fullmatch(cursor) if isinstance(cursor, str) else None
+    if cursor is not None and (match is None or match.group(1) != context
+                               or int(match.group(2)) > 100_000):
+        raise ObserveQueryError("invalid apps cursor for provider and name")
+    offset = int(match.group(2)) if match else 0
     argv, source = _APP_COMMANDS[provider]
-    payload = base("apps", {"provider": provider, "cursor": cursor})
+    payload = base("apps", {"provider": provider, "name": name, "cursor": cursor})
     try:
         stdout, stderr, returncode, clipped = _run(argv)
     except (OSError, TimeoutError) as exc:
@@ -297,20 +330,25 @@ def query_apps(*, provider: str = "dpkg", cursor: str | None = None,
             payload["coverage"] = {"availability": code, "source": source, "entries_seen": 0}
             payload["errors"].append(error(code, source, "inventory command exited with an error"))
             return pack(payload, [], limit=limit, max_bytes=max_bytes)
-    rows, malformed = _app_rows(stdout, provider, clipped)
+    needle = name.casefold() if name is not None else None
+    matches, malformed, entries_seen = _app_rows(stdout, provider, clipped, needle)
     partial = clipped or bool(malformed)
     if clipped:
         payload["errors"].append(error("source_truncated", source))
     if malformed:
         payload["errors"].append(error("parse_error", source, f"{malformed} inventory rows skipped"))
     payload["coverage"] = {"availability": "partial" if partial else "ok", "source": source,
-                           "entries_seen": len(rows), "malformed_rows": malformed,
+                           "entries_seen": entries_seen, "matches_seen": len(matches),
+                           "malformed_rows": malformed,
                            "source_truncated": clipped,
                            "pagination": "live_offset"}
-    selected = rows[offset:]
-    cursors: list[str | None] = [str(index + 1) for index in range(offset, offset + min(limit, len(selected)))]
+    selected = matches[offset:]
+    cursors: list[str | None] = [
+        _app_cursor(context, index + 1) if index + 1 < len(matches) else None
+        for index in range(offset, offset + min(limit, len(selected)))
+    ]
     return pack(payload, selected, limit=limit, max_bytes=max_bytes,
-                next_cursors=cursors, more=clipped)
+                next_cursors=cursors, more=clipped and bool(selected))
 
 
 def query_drivers(*, limit: int = 10, max_bytes: int = 4096) -> dict[str, Any]:

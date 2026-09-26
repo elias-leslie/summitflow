@@ -109,7 +109,11 @@ export const monitorApi = {
   diagnostics: (
     kind: 'sensors' | 'system-info' | 'startup' | 'users' | 'apps' | 'drivers',
     limit = 50,
-    options?: { provider?: 'dpkg' | 'snap' | 'flatpak'; cursor?: string },
+    options?: {
+      provider?: 'dpkg' | 'snap' | 'flatpak'
+      name?: string
+      cursor?: string
+    },
   ) =>
     get(
       `/api/monitor/v1/${kind}${buildQueryString({ limit: kind === 'system-info' ? undefined : limit, ...options, max_bytes: 65536 })}`,

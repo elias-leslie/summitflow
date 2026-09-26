@@ -137,10 +137,11 @@ def test_apps_provider_and_cursor_reach_owner_query(monkeypatch) -> None:
     observe = Mock(return_value={"schema": 1, "items": []})
     monkeypatch.setattr(monitor, "_observe", observe)
     with _client("owner") as client:
-        response = client.get("/api/monitor/v1/apps?provider=snap&cursor=2&limit=1&max_bytes=2048")
+        response = client.get("/api/monitor/v1/apps?provider=snap&name=fire&cursor=a1.1234567890abcdef.2&limit=1&max_bytes=2048")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
-    observe.assert_called_once_with(monitor.query_apps, provider="snap", cursor="2",
+    observe.assert_called_once_with(monitor.query_apps, provider="snap", name="fire",
+                                    cursor="a1.1234567890abcdef.2",
                                     limit=1, max_bytes=2048)
 
 

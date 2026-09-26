@@ -293,7 +293,7 @@ def test_apps_provider_commands_and_pagination(monkeypatch: pytest.MonkeyPatch) 
     assert first["coverage"]["source"] == "snap"
     assert first["coverage"]["entries_seen"] == 2
     assert first["items"][0]["value"] == {"name": "firefox", "version": "1.2"}
-    assert first["next_cursor"] == "1"
+    assert first["next_cursor"].startswith("a1.")
     second = query_apps(provider="snap", cursor=first["next_cursor"], limit=1)
     assert second["items"][0]["value"]["name"] == "editor"
     assert second["next_cursor"] is None
@@ -306,6 +306,80 @@ def test_apps_provider_commands_and_pagination(monkeypatch: pytest.MonkeyPatch) 
         ["snap", "list", "--color=never", "--unicode=never"],
         ["flatpak", "list", "--app", "--columns=application,version"],
     ]
+
+
+def test_apps_blank_lines_flatpak_version_and_filtered_cursor(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run(argv: list[str]):
+        if argv[0] == "flatpak":
+            return (b"\n\nApplication Version\norg.example.Editor\t1.0 beta\n"
+                    b"org.example.Viewer\t2.0\norg.other.Tool\t3.0\n", b"", 0, False)
+        return b"\nName Version\neditor 1.0\nviewer 2.0\n", b"", 0, False
+
+    monkeypatch.setattr(inventory, "_run", run)
+    first = query_apps(provider="flatpak", name="example", limit=1)
+    assert first["coverage"]["entries_seen"] == 3
+    assert first["coverage"]["matches_seen"] == 2
+    assert first["items"][0]["value"] == {"name": "org.example.Editor", "version": "1.0 beta"}
+    second = query_apps(provider="flatpak", name="example", cursor=first["next_cursor"], limit=1)
+    assert second["items"][0]["value"]["name"] == "org.example.Viewer"
+    assert second["next_cursor"] is None
+    snap = query_apps(provider="snap", name="editor")
+    assert snap["items"][0]["value"]["name"] == "editor"
+    for changed_provider, changed_name in (("snap", "example"), ("flatpak", "other")):
+        with pytest.raises(inventory.ObserveQueryError, match="invalid apps cursor"):
+            query_apps(provider=changed_provider, name=changed_name, cursor=first["next_cursor"])
+
+
+@pytest.mark.parametrize("provider", ["snap", "flatpak"])
+def test_apps_blank_only_success_is_empty_inventory(
+    monkeypatch: pytest.MonkeyPatch, provider: str
+) -> None:
+    # An installed provider can have no apps; blank successful output is empty,
+    # not a parse failure or an implicit assertion that packages are installed.
+    monkeypatch.setattr(inventory, "_run", lambda _argv: (b"\n", b"", 0, False))
+    result = query_apps(provider=provider)
+    assert result["coverage"]["availability"] == "ok"
+    assert result["coverage"]["entries_seen"] == 0
+    assert result["coverage"]["matches_seen"] == 0
+    assert result["items"] == []
+    assert result["next_cursor"] is None
+    assert result["errors"] == []
+
+
+@pytest.mark.parametrize("provider", ["dpkg", "snap", "flatpak"])
+def test_apps_filter_matches_full_name_before_display_cap(
+    monkeypatch: pytest.MonkeyPatch, provider: str
+) -> None:
+    full_name = "a" * 130 + "target"
+    if provider == "dpkg":
+        stdout = f"{full_name}\t1.0\n".encode()
+    elif provider == "snap":
+        stdout = f"Name Version\n{full_name} 1.0 1 stable publisher -\n".encode()
+    else:
+        stdout = f"Application Version\n{full_name}\t1.0\n".encode()
+    monkeypatch.setattr(inventory, "_run", lambda _argv: (stdout, b"", 0, False))
+    result = query_apps(provider=provider, name="target")
+    assert result["coverage"]["availability"] == "ok"
+    assert result["coverage"]["entries_seen"] == 1
+    assert result["coverage"]["matches_seen"] == 1
+    assert result["items"][0]["value"] == {
+        "name": "a" * 128, "version": "1.0", "name_truncated": True}
+    assert full_name not in json.dumps(result)
+
+
+def test_apps_source_cap_does_not_offer_uncaptured_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(inventory, "_run", lambda _argv: (
+        b"Name Version\napp 1.0\npartial", b"", -9, True))
+    result = query_apps(provider="snap", limit=1)
+    assert result["coverage"]["availability"] == "partial"
+    assert result["coverage"]["source_truncated"] is True
+    assert result["truncated"] is True
+    assert result["next_cursor"] is None
+    past_capture = inventory._app_cursor(inventory._app_context("snap", None), 1)
+    empty = query_apps(provider="snap", cursor=past_capture)
+    assert empty["items"] == []
+    assert empty["next_cursor"] is None
+    assert all(row["code"] != "output_budget" for row in empty["errors"])
 
 
 def test_apps_failures_and_capture_limit_are_explicit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -332,5 +406,9 @@ def test_apps_bad_provider_cursor_and_budget(monkeypatch: pytest.MonkeyPatch) ->
         query_apps(provider="snap", cursor="-1")
     with pytest.raises(inventory.ObserveQueryError):
         query_apps(provider="snap", cursor="1;bad")
+    with pytest.raises(inventory.ObserveQueryError):
+        query_apps(provider="snap", name="\n")
+    with pytest.raises(inventory.ObserveQueryError):
+        query_apps(provider="snap", name="x" * 129)
     page = query_apps(provider="snap", limit=1, max_bytes=512)
     assert len(json.dumps(page, separators=(",", ":")).encode()) <= 512
