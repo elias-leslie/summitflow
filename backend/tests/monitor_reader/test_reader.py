@@ -60,13 +60,14 @@ def store(tmp_path: Path):
 def test_status_and_series_preserve_zero_denial_and_gap(store):
     directory, conn = store
     _sample(conn, when=NOW - 20 * NSEC, host={"cpu_busy_pct": 0})
-    _sample(conn, when=NOW - 10 * NSEC, host={"cpu_busy_pct": None},
+    _sample(conn, when=NOW - 10 * NSEC, host={"cpu_busy_pct": None, "process_io_permission_denied": 3},
             errors=[{"source": "/proc/stat", "code": "permission_denied"}], denied=2)
     conn.commit()
     reader = MonitorReader(directory)
     status = reader.status(now=NOW)
     assert status["coverage"]["availability"] == "ok"
     assert status["coverage"]["processes_permission_denied"] == 2
+    assert status["coverage"]["process_io_permission_denied"] == 3
     assert status["items"][0]["host"]["cpu_busy_pct"] is None
     result = reader.series("cpu_busy_pct", since=NOW - 30 * NSEC, until=NOW,
                            step=10, limit=10, now=NOW)

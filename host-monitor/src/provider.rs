@@ -276,8 +276,11 @@ fn root_disk(errors: &mut Vec<Value>) -> (Value, Value) {
         json!((stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64)),
     )
 }
-fn proc_io(path: &str, errors: &mut Vec<Value>) -> (Option<u64>, Option<u64>, bool) {
-    let s = match fs::read_to_string(path) {
+fn proc_io(
+    result: io::Result<String>,
+    errors: &mut Vec<Value>,
+) -> (Option<u64>, Option<u64>, bool) {
+    let s = match result {
         Ok(s) => s,
         Err(e) => {
             let denied = e.kind() == io::ErrorKind::PermissionDenied;
@@ -306,83 +309,121 @@ fn proc_io(path: &str, errors: &mut Vec<Value>) -> (Option<u64>, Option<u64>, bo
     }
     (a, b, false)
 }
-pub fn processes(errors: &mut Vec<Value>, services: &[String]) -> (Vec<Proc>, u64, u64, u64) {
-    let mut out = Vec::new();
-    let mut seen = 0;
-    let mut denied = 0;
-    let mut exited = 0;
-    let Ok(entries) = fs::read_dir("/proc") else {
-        err(errors, "/proc", "read_failed");
-        return (out, seen, denied, exited);
+
+#[derive(Clone, Copy, Default)]
+pub struct ProcessCounts {
+    pub seen: u64,
+    pub stat_denied: u64,
+    pub io_denied: u64,
+    pub exited: u64,
+}
+
+fn process_from_stat(
+    pid: u32,
+    s: &str,
+    ticks: u64,
+    pages: u64,
+    io_result: io::Result<String>,
+    uid: Option<u32>,
+    service: Option<String>,
+    errors: &mut Vec<Value>,
+) -> Option<(Proc, bool)> {
+    let open = s.find('(');
+    let close = s.rfind(')');
+    let (Some(open), Some(close)) = (open, close) else {
+        err(errors, "/proc/*/stat", "parse_failed");
+        return None;
     };
-    let ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
-    let pages = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-    if ticks <= 0 || pages <= 0 {
-        err(errors, "sysconf", "unavailable");
-        return (out, seen, denied, exited);
+    if close <= open {
+        err(errors, "/proc/*/stat", "parse_failed");
+        return None;
     }
-    for entry in entries.flatten() {
-        let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
-            continue;
-        };
-        seen += 1;
-        let stat_path = format!("/proc/{pid}/stat");
-        let s = match fs::read_to_string(&stat_path) {
-            Ok(v) => v,
-            Err(e) => {
-                if e.kind() == io::ErrorKind::PermissionDenied {
-                    denied += 1
-                } else {
-                    exited += 1
-                }
-                continue;
-            }
-        };
-        let Some(open) = s.find('(') else {
-            err(errors, "/proc/*/stat", "parse_failed");
-            continue;
-        };
-        let Some(close) = s.rfind(')') else {
-            err(errors, "/proc/*/stat", "parse_failed");
-            continue;
-        };
-        let name = s[open + 1..close].to_string();
-        let v: Vec<&str> = s[close + 1..].split_whitespace().collect();
-        let (Some(ppid), Some(user), Some(system), Some(start), Some(rss)) = (
-            parse_ppid(&v),
-            parse_num(v.get(11).copied()),
-            parse_num(v.get(12).copied()),
-            parse_num(v.get(19).copied()),
-            parse_num(v.get(21).copied()),
-        ) else {
-            err(errors, "/proc/*/stat", "parse_failed");
-            continue;
-        };
-        let io_path = format!("/proc/{pid}/io");
-        let (read, write, io_denied) = proc_io(&io_path, errors);
-        let uid = fs::metadata(&stat_path).ok().map(|m| m.uid());
-        let service = fs::read_to_string(format!("/proc/{pid}/cgroup"))
-            .ok()
-            .and_then(|s| service_from_cgroup(&s, services));
-        if io_denied {
-            denied += 1;
-        }
-        out.push(Proc {
+    let name = s[open + 1..close].to_string();
+    let v: Vec<&str> = s[close + 1..].split_whitespace().collect();
+    let (Some(ppid), Some(user), Some(system), Some(start), Some(rss)) = (
+        parse_ppid(&v),
+        parse_num(v.get(11).copied()),
+        parse_num(v.get(12).copied()),
+        parse_num(v.get(19).copied()),
+        parse_num(v.get(21).copied()),
+    ) else {
+        err(errors, "/proc/*/stat", "parse_failed");
+        return None;
+    };
+    let (read, write, io_denied) = proc_io(io_result, errors);
+    Some((
+        Proc {
             pid,
             ppid,
             state: ProcState::from_code(v.first().copied()),
             start,
             name,
-            user: user.saturating_mul(1_000_000_000) / (ticks as u64),
-            system: system.saturating_mul(1_000_000_000) / (ticks as u64),
-            rss: rss.saturating_mul(pages as u64),
+            user: user.saturating_mul(1_000_000_000) / ticks,
+            system: system.saturating_mul(1_000_000_000) / ticks,
+            rss: rss.saturating_mul(pages),
             read,
             write,
             uid,
             service,
-        });
+        },
+        io_denied,
+    ))
+}
+
+pub fn processes(errors: &mut Vec<Value>, services: &[String]) -> (Vec<Proc>, ProcessCounts) {
+    let mut out = Vec::new();
+    let mut counts = ProcessCounts::default();
+    let Ok(entries) = fs::read_dir("/proc") else {
+        err(errors, "/proc", "read_failed");
+        return (out, counts);
+    };
+    let ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    let pages = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    if ticks <= 0 || pages <= 0 {
+        err(errors, "sysconf", "unavailable");
+        return (out, counts);
     }
-    (out, seen, denied, exited)
+    for entry in entries.flatten() {
+        let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
+            continue;
+        };
+        counts.seen += 1;
+        let stat_path = format!("/proc/{pid}/stat");
+        let s = match fs::read_to_string(&stat_path) {
+            Ok(v) => v,
+            Err(e) => {
+                if e.kind() == io::ErrorKind::PermissionDenied {
+                    counts.stat_denied += 1;
+                    err(errors, "/proc/*/stat", "permission_denied");
+                } else {
+                    counts.exited += 1
+                }
+                continue;
+            }
+        };
+        let io_path = format!("/proc/{pid}/io");
+        let uid = fs::metadata(&stat_path).ok().map(|m| m.uid());
+        let service = fs::read_to_string(format!("/proc/{pid}/cgroup"))
+            .ok()
+            .and_then(|s| service_from_cgroup(&s, services));
+        let Some((process, io_denied)) = process_from_stat(
+            pid,
+            &s,
+            ticks as u64,
+            pages as u64,
+            fs::read_to_string(&io_path),
+            uid,
+            service,
+            errors,
+        ) else {
+            continue;
+        };
+        if io_denied {
+            counts.io_denied += 1;
+        }
+        out.push(process);
+    }
+    (out, counts)
 }
 fn service_from_cgroup(cgroup: &str, services: &[String]) -> Option<String> {
     cgroup
@@ -589,6 +630,46 @@ mod tests {
         );
         assert_eq!(ProcState::from_code(Some("unrecognized")).code(), "?");
         assert_eq!(p(42, 7, 0, 1).value(Vec::new())["state"], "running");
+    }
+    #[test]
+    fn denied_process_io_keeps_valid_stat_row_and_separate_coverage() {
+        let mut fields = vec!["0"; 22];
+        fields[0] = "S";
+        fields[1] = "1";
+        fields[11] = "10";
+        fields[12] = "2";
+        fields[19] = "77";
+        fields[21] = "3";
+        let stat = format!("42 (fixture) {}", fields.join(" "));
+        let mut errors = Vec::new();
+        let (row, io_denied) = process_from_stat(
+            42,
+            &stat,
+            100,
+            4096,
+            Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+            Some(1000),
+            None,
+            &mut errors,
+        )
+        .unwrap();
+        let mut counts = ProcessCounts {
+            seen: 1,
+            ..ProcessCounts::default()
+        };
+        counts.io_denied += u64::from(io_denied);
+        assert_eq!(row.pid, 42);
+        assert_eq!(row.start, 77);
+        assert_eq!(row.rss, 3 * 4096);
+        assert_eq!(row.read, None);
+        assert_eq!(row.write, None);
+        assert_eq!(counts.stat_denied, 0);
+        assert_eq!(counts.io_denied, 1);
+        assert!(
+            errors
+                .iter()
+                .any(|e| { e["source"] == "/proc/*/io" && e["code"] == "permission_denied" })
+        );
     }
     #[test]
     fn missing_process_is_not_reported_as_zero() {

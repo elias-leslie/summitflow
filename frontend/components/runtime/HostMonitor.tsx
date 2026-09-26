@@ -138,6 +138,7 @@ function services(
   const keyed = record(source)
   return keyed
     ? Object.entries(keyed).flatMap(([id, value]) => {
+        if (id === 'backend_health') return []
         const data = record(value)
         return data ? [{ id, data }] : []
       })
@@ -353,6 +354,12 @@ export function HostMonitor() {
   })
   const latest = latestItem(status.data)
   const hostData = host(latest)
+  const memoryTotal = number(hostData.memory_total_bytes)
+  const memoryAvailable = number(hostData.memory_available_bytes)
+  const memoryUsed =
+    memoryTotal !== null && memoryAvailable !== null
+      ? Math.max(0, memoryTotal - memoryAvailable)
+      : null
   const metricOptions: ReadonlyArray<{
     value: string
     label: string
@@ -459,8 +466,12 @@ export function HostMonitor() {
                     <div className="text-xs text-slate-400">{label}</div>
                     <div className="mt-1 font-mono text-sm text-slate-100">
                       {format(
-                        hostData[key] ??
-                          (key === 'cpu_pct' ? hostData.cpu_busy_pct : null),
+                        key === 'memory_used_bytes'
+                          ? memoryUsed
+                          : (hostData[key] ??
+                              (key === 'cpu_pct'
+                                ? hostData.cpu_busy_pct
+                                : null)),
                         unit,
                       )}
                     </div>
@@ -477,7 +488,10 @@ export function HostMonitor() {
                 processes seen ·{' '}
                 {number(status.data?.coverage.processes_permission_denied) ??
                   'Unknown'}{' '}
-                permission denied
+                process stat reads denied ·{' '}
+                {number(status.data?.coverage.process_io_permission_denied) ??
+                  'Unknown'}{' '}
+                process I/O reads denied
               </p>
             </>
           ) : (

@@ -378,7 +378,12 @@ fn rebuild_rollup(tx: &rusqlite::Transaction<'_>, bucket: i64) -> rusqlite::Resu
             let values_obj = values.as_object_mut().unwrap();
             let coverage_obj = coverage.as_object_mut().unwrap();
             for (key, raw) in fields {
-                if key == "leaders_sampled_at_ns" {
+                if matches!(
+                    key.as_str(),
+                    "leaders_sampled_at_ns"
+                        | "process_scan_observed_at_ns"
+                        | "process_scan_observed_monotonic_ns"
+                ) {
                     continue;
                 }
                 let item = values_obj.entry(key).or_insert_with(

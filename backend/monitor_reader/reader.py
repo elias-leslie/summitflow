@@ -298,6 +298,7 @@ class MonitorReader:
                             "age_seconds": round(age, 3), "availability": freshness,
                             "processes_seen": row["processes_seen"],
                             "processes_permission_denied": row["processes_permission_denied"],
+                            "process_io_permission_denied": host.get("process_io_permission_denied"),
                             "processes_exited": row["processes_exited"]}
         item = {"sampled_at": _utc(row["sampled_at_ns"]), "freshness": freshness,
                 "source": "sqlite", "provider": meta.get("collector_version", "collector"),

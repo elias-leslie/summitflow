@@ -2,7 +2,7 @@ mod provider;
 mod store;
 
 use chrono::Utc;
-use provider::Proc;
+use provider::{Proc, ProcessCounts};
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -564,7 +564,7 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
     let mut cached_leaders = Vec::new();
     let mut leader_scan_at = None;
     let mut leader_scan_mono = None;
-    let mut cached_scan_stats = (0, 0, 0);
+    let mut cached_scan_stats = ProcessCounts::default();
     let mut cached_services = json!({});
     let mut was_detail = false;
     let mut probe_rx: Option<Receiver<(i64, Value)>> = None;
@@ -587,12 +587,12 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
             let (mut host_data, new_cpu) = provider::host(&mut sys, cpu_prev, &mut errors);
             cpu_prev = new_cpu;
             let mut scan = detail || leaders_due;
-            let (mut seen, mut denied, mut exited) = if scan {
-                let (procs, seen, denied, exited) = provider::processes(&mut errors, &names);
+            let mut scan_counts = if scan {
+                let (procs, counts) = provider::processes(&mut errors, &names);
                 latest_procs = procs;
-                (seen, denied, exited)
+                counts
             } else {
-                (0, 0, 0)
+                cached_scan_stats
             };
             let mut service_data = if baseline_due {
                 services(
@@ -705,11 +705,9 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
             }
             let active = state.detail(now);
             if active && !scan {
-                let (procs, s, d, e) = provider::processes(&mut errors, &names);
+                let (procs, counts) = provider::processes(&mut errors, &names);
                 latest_procs = procs;
-                seen = s;
-                denied = d;
-                exited = e;
+                scan_counts = counts;
                 scan = true;
             }
             for error in &errors {
@@ -763,10 +761,19 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 leader_scan_at = Some(at);
                 leader_scan_mono = Some(mono);
-                cached_scan_stats = (seen, denied, exited);
+                cached_scan_stats = scan_counts;
             }
             if let Some(object) = host_data.as_object_mut() {
                 object.insert("leaders_sampled_at_ns".into(), json!(leader_scan_at));
+                object.insert(
+                    "process_io_permission_denied".into(),
+                    json!(scan_counts.io_denied),
+                );
+                object.insert("process_scan_observed_at_ns".into(), json!(leader_scan_at));
+                object.insert(
+                    "process_scan_observed_monotonic_ns".into(),
+                    json!(leader_scan_mono),
+                );
             }
             let detail_rows = if active && baseline_due {
                 latest_procs
@@ -791,7 +798,7 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             state.latest = Some(
-                json!({"sampled_at_ns":at,"monotonic_ns":mono,"mode":mode,"host":host_data,"services":service_data,"processes_seen":seen,"errors":errors}),
+                json!({"sampled_at_ns":at,"monotonic_ns":mono,"mode":mode,"host":host_data,"services":service_data,"processes_seen":scan_counts.seen,"processes_permission_denied":scan_counts.stat_denied,"process_io_permission_denied":scan_counts.io_denied,"processes_exited":scan_counts.exited,"process_scan_observed_at_ns":leader_scan_at,"process_scan_observed_monotonic_ns":leader_scan_mono,"errors":errors}),
             );
             if baseline_due {
                 let duration_ns = started.elapsed().as_nanos() as u64;
@@ -803,9 +810,9 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
                     host: &host_data,
                     services: &service_data,
                     processes: &cached_leaders,
-                    seen: if scan { seen } else { cached_scan_stats.0 },
-                    denied: if scan { denied } else { cached_scan_stats.1 },
-                    exited: if scan { exited } else { cached_scan_stats.2 },
+                    seen: scan_counts.seen,
+                    denied: scan_counts.stat_denied,
+                    exited: scan_counts.exited,
                     errors: &errors,
                     duration_ns,
                     reason: None,
@@ -818,9 +825,9 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
                     host: &host_data,
                     services: &service_data,
                     processes: &detail_rows,
-                    seen,
-                    denied,
-                    exited,
+                    seen: scan_counts.seen,
+                    denied: scan_counts.stat_denied,
+                    exited: scan_counts.exited,
                     errors: &errors,
                     duration_ns,
                     reason: Some(if state.leases.is_empty() {

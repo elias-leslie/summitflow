@@ -60,6 +60,24 @@ def test_read_and_capture_require_owner(monkeypatch) -> None:
     control.assert_called_once_with("lease_start", ttl_seconds=30)
 
 
+def test_local_bypass_rejects_forwarded_nonlocal_monitor_callers(monkeypatch) -> None:
+    read = Mock(return_value={"schema": 1, "items": []})
+    monkeypatch.setattr(monitor, "_read", read)
+    app = FastAPI()
+
+    @app.middleware("http")
+    async def bypass(request: Request, call_next):
+        request.state.principal = AccessPrincipal("local@example.test", "owner", True, True)
+        return await call_next(request)
+
+    app.include_router(monitor.router)
+    with TestClient(app) as client:
+        for forwarded in ("192.168.1.4", "127.0.0.1, 10.0.0.4", "invalid"):
+            response = client.get("/api/monitor/v1/status", headers={"X-Forwarded-For": forwarded})
+            assert response.status_code == 403
+        assert client.get("/api/monitor/v1/status", headers={"X-Forwarded-For": "127.0.0.1"}).status_code == 200
+    read.assert_called_once()
+
 @pytest.mark.parametrize("path", [
     "/api/monitor/v1/series?metric=cpu_busy_pct",
     "/api/monitor/v1/processes",

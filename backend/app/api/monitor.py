@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from ipaddress import ip_address
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -27,7 +28,29 @@ from ..access_control import AccessPrincipal, require_owner
 from .backups.key_endpoints import _require_same_origin
 
 router = APIRouter(prefix="/api/monitor/v1", tags=["monitor"])
-Owner = Annotated[AccessPrincipal, Depends(require_owner)]
+
+def require_monitor_owner(request: Request) -> AccessPrincipal:
+    """Reject forwarded nonlocal callers that could inherit the desktop bypass."""
+    principal = require_owner(request)
+    if not principal.is_local_bypass:
+        return principal
+    # Caddy and Next.js append their peer addresses. Check every hop so a
+    # client-supplied leftmost value cannot conceal a remote origin.
+    for header in ("x-forwarded-for", "x-real-ip"):
+        for values in request.headers.getlist(header):
+            for value in values.split(","):
+                value = value.strip()
+                if not value:
+                    continue
+                try:
+                    if not ip_address(value).is_loopback:
+                        raise HTTPException(status_code=403, detail="Monitor requires local owner access")
+                except ValueError as exc:
+                    raise HTTPException(status_code=403, detail="Invalid forwarded client address") from exc
+    return principal
+
+
+Owner = Annotated[AccessPrincipal, Depends(require_monitor_owner)]
 _diagnostic_slots = threading.BoundedSemaphore(2)
 
 
