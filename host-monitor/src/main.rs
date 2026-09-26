@@ -187,6 +187,14 @@ fn mono_ns() -> i64 {
         .saturating_mul(1_000_000_000)
         .saturating_add(ts.tv_nsec)
 }
+fn status_host(host: &Value) -> Value {
+    let mut snapshot = host.clone();
+    if let Some(object) = snapshot.as_object_mut() {
+        object.remove("net_members");
+        object.remove("disk_members");
+    }
+    snapshot
+}
 fn read_id(path: &str) -> Result<String, String> {
     fs::read_to_string(path)
         .map(|s| s.trim().to_owned())
@@ -821,7 +829,7 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             state.latest = Some(
-                json!({"sampled_at_ns":at,"monotonic_ns":mono,"mode":mode,"host":host_data,"services":service_data,"processes_seen":scan_counts.seen,"processes_permission_denied":scan_counts.stat_denied,"process_io_permission_denied":scan_counts.io_denied,"processes_exited":scan_counts.exited,"process_scan_observed_at_ns":leader_scan_at,"process_scan_observed_monotonic_ns":leader_scan_mono,"errors":errors}),
+                json!({"sampled_at_ns":at,"monotonic_ns":mono,"mode":mode,"host":status_host(&host_data),"services":service_data,"processes_seen":scan_counts.seen,"processes_permission_denied":scan_counts.stat_denied,"process_io_permission_denied":scan_counts.io_denied,"processes_exited":scan_counts.exited,"process_scan_observed_at_ns":leader_scan_at,"process_scan_observed_monotonic_ns":leader_scan_mono,"errors":errors}),
             );
             if baseline_due {
                 let duration_ns = started.elapsed().as_nanos() as u64;
@@ -920,6 +928,24 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn socket_status_omits_internal_member_maps_at_provider_limit() {
+        let members: serde_json::Map<String, Value> = (0..64)
+            .map(|index| (format!("device-{index:02}"), json!([100, 200, "259:0:9"])))
+            .collect();
+        let host = json!({"cpu_busy_pct":25,"net_members":members,"disk_members":members});
+        let public = status_host(&host);
+        assert_eq!(host["net_members"].as_object().unwrap().len(), 64);
+        assert_eq!(host["disk_members"].as_object().unwrap().len(), 64);
+        assert!(public.get("net_members").is_none());
+        assert!(public.get("disk_members").is_none());
+        let mut runtime = Runtime::new(None);
+        runtime.latest = Some(
+            json!({"host":public,"services":{"summitflow-backend.service":{"active_state":"active","metrics":{"cpu_usage_usec":1,"memory_current_bytes":2}}},"sampled_at_ns":1,"mode":"baseline"}),
+        );
+        let response = runtime.dispatch(&json!({"command":"status"}), 0);
+        assert!(serde_json::to_vec(&response).unwrap().len() < 8192);
+    }
     #[test]
     fn commit_total_continues_after_latency_window_fills() {
         let mut runtime = Runtime::new(None);
