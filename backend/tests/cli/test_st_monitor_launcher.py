@@ -43,7 +43,8 @@ def installed(tmp_path: Path):
     link.symlink_to(root / "scripts" / "st")
     state = tmp_path / "state" / "summitflow" / "monitor"
     state.mkdir(parents=True)
-    env = {**os.environ, "SUMMITFLOW_MONITOR_STATE_DIR": str(tmp_path / "state/summitflow/monitor"), "PYTHONNOUSERSITE": "1"}
+    env = {**os.environ, "SUMMITFLOW_MONITOR_STATE_DIR": str(tmp_path / "state/summitflow/monitor"),
+           "SUMMITFLOW_SERVICE_STATE_ROOT": str(tmp_path / "isolated-services"), "PYTHONNOUSERSITE": "1"}
     return root, link, state, env
 
 
