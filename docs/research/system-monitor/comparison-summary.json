@@ -1,0 +1,184 @@
+{
+  "aggregate": {
+    "go:baseline": {
+      "collector_physical_write_bytes_median": 0,
+      "collector_rchar_median": 1370281,
+      "cpu_one_core_pct_median": 0.44227059495086074,
+      "cpu_one_core_pct_range": [
+        0.43441747691885896,
+        0.46362670847954973
+      ],
+      "errors": [],
+      "output_bytes_per_sample_median": 4899.5,
+      "peak_rss_bytes_median": 10035200,
+      "process_io_available_fraction": 0.9338842975206612,
+      "processes_seen_range": [
+        696,
+        711
+      ],
+      "runs": 3,
+      "sample_duration_p95_ns": 18345736,
+      "sample_plus_commit_p95_ns": 18469555,
+      "source_errors": [
+        "/proc/<pid>/io:permission_denied",
+        "cgroup2:io.stat:not_found"
+      ],
+      "sqlite_before_checkpoint_bytes_median": 123416,
+      "warm_cpu_one_core_pct_median": 0.3597675433252778,
+      "writer_physical_write_bytes_median": 319488
+    },
+    "go:detail": {
+      "collector_physical_write_bytes_median": 0,
+      "collector_rchar_median": 2317387,
+      "cpu_one_core_pct_median": 1.8858307278721136,
+      "cpu_one_core_pct_range": [
+        1.8269562847148657,
+        1.9842192158599656
+      ],
+      "errors": [],
+      "output_bytes_per_sample_median": 122999.4,
+      "peak_rss_bytes_median": 10129408,
+      "process_io_available_fraction": 0.3844167025398192,
+      "processes_seen_range": [
+        695,
+        708
+      ],
+      "runs": 3,
+      "sample_duration_p95_ns": 17791996,
+      "sample_plus_commit_p95_ns": 18325032,
+      "source_errors": [
+        "/proc/<pid>/io:permission_denied",
+        "/proc/<pid>/stat:not_found",
+        "cgroup2:io.stat:not_found"
+      ],
+      "sqlite_before_checkpoint_bytes_median": 1371776,
+      "warm_cpu_one_core_pct_median": 1.6655781954004476,
+      "writer_physical_write_bytes_median": 3928064
+    },
+    "python:baseline": {
+      "collector_physical_write_bytes_median": 0,
+      "collector_rchar_median": 4276437,
+      "cpu_one_core_pct_median": 1.3061695327645229,
+      "cpu_one_core_pct_range": [
+        1.2911166053373615,
+        1.334740446549804
+      ],
+      "errors": [],
+      "output_bytes_per_sample_median": 4934.0,
+      "peak_rss_bytes_median": 20004864,
+      "process_io_available_fraction": 0.926829268292683,
+      "processes_seen_range": [
+        697,
+        707
+      ],
+      "runs": 3,
+      "sample_duration_p95_ns": 52697320,
+      "sample_plus_commit_p95_ns": 52795203,
+      "source_errors": [
+        "cgroup2/io.stat:missing"
+      ],
+      "sqlite_before_checkpoint_bytes_median": 123416,
+      "warm_cpu_one_core_pct_median": 0.9997631653039609,
+      "writer_physical_write_bytes_median": 319488
+    },
+    "python:detail": {
+      "collector_physical_write_bytes_median": 0,
+      "collector_rchar_median": 6459312,
+      "cpu_one_core_pct_median": 5.8454243394946035,
+      "cpu_one_core_pct_range": [
+        5.838861952013671,
+        5.915120785423317
+      ],
+      "errors": [],
+      "output_bytes_per_sample_median": 123046.3,
+      "peak_rss_bytes_median": 21032960,
+      "process_io_available_fraction": 0.3857388316151203,
+      "processes_seen_range": [
+        695,
+        710
+      ],
+      "runs": 3,
+      "sample_duration_p95_ns": 52558108,
+      "sample_plus_commit_p95_ns": 52975682,
+      "source_errors": [
+        "cgroup2/io.stat:missing"
+      ],
+      "sqlite_before_checkpoint_bytes_median": 1371776,
+      "warm_cpu_one_core_pct_median": 4.99776132500435,
+      "writer_physical_write_bytes_median": 3928064
+    },
+    "rust:baseline": {
+      "collector_physical_write_bytes_median": 0,
+      "collector_rchar_median": 1176086,
+      "cpu_one_core_pct_median": 0.32310652619153296,
+      "cpu_one_core_pct_range": [
+        0.3217933361308624,
+        0.3482588325943375
+      ],
+      "errors": [],
+      "output_bytes_per_sample_median": 5047.833333333333,
+      "peak_rss_bytes_median": 3174400,
+      "process_io_available_fraction": 0.9338842975206612,
+      "processes_seen_range": [
+        696,
+        711
+      ],
+      "runs": 3,
+      "sample_duration_p95_ns": 14886454,
+      "sample_plus_commit_p95_ns": 15010975,
+      "source_errors": [
+        "/proc/*/io:permission_denied",
+        "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/summitflow-backend.service/io.stat:not_found",
+        "cgroup2/io.stat:unavailable"
+      ],
+      "sqlite_before_checkpoint_bytes_median": 127536,
+      "warm_cpu_one_core_pct_median": 0.24000234849978086,
+      "writer_physical_write_bytes_median": 303104
+    },
+    "rust:detail": {
+      "collector_physical_write_bytes_median": 0,
+      "collector_rchar_median": 1883255,
+      "cpu_one_core_pct_median": 1.6415836845484235,
+      "cpu_one_core_pct_range": [
+        1.5965899138738513,
+        1.6978399356774918
+      ],
+      "errors": [],
+      "output_bytes_per_sample_median": 123061.3,
+      "peak_rss_bytes_median": 4505600,
+      "process_io_available_fraction": 0.38355771985104553,
+      "processes_seen_range": [
+        695,
+        712
+      ],
+      "runs": 3,
+      "sample_duration_p95_ns": 14735383,
+      "sample_plus_commit_p95_ns": 15235015,
+      "source_errors": [
+        "/proc/*/io:permission_denied",
+        "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/summitflow-backend.service/io.stat:not_found",
+        "cgroup2/io.stat:unavailable"
+      ],
+      "sqlite_before_checkpoint_bytes_median": 1371776,
+      "warm_cpu_one_core_pct_median": 1.3332002491367307,
+      "writer_physical_write_bytes_median": 3911680
+    }
+  },
+  "checked_date": "2026-09-26",
+  "identity_sha256": {
+    "go_binary": "c857166f03c25cf9d7467d1f71352e8b72b583acbc30e0303aa15ea4cd333ac0",
+    "go_manifest": "b4777a49e857d45d2b249d41f441b0b6923fbae2a81824abf15df577da2b0a2f",
+    "python_source": "5800d0f42d1d36106021b2bedd1d10cace5d66bab5861ae285e43ade26fcf14a",
+    "rust_binary": "0a2968444dd2060ab48206bfbeb861221d460dc08eeefbcc00a17ac71becea41",
+    "rust_manifest": "c1f1776d8ad71f91b363851f39f565f161718d93fb40283f060d71fa386d803f"
+  },
+  "raw_local_artifact": "/home/kasadis/.local/share/summitflow/evidence/task-ea952b00a68b4940/collector-profile-corrected",
+  "schema": 1,
+  "task_id": "task-ea952b00a68b4940",
+  "toolchain": {
+    "go": "go version go1.22.2 linux/amd64",
+    "psutil": "7.2.2",
+    "python": "3.13.12",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)"
+  }
+}
