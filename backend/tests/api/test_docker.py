@@ -58,7 +58,15 @@ class TestDockerRuntime:
         from app.api.docker import _status_probing, helpers
 
         identities = []
+        retired: set[str] = set()
         mocker.patch("app.project_identity.list_project_identities", side_effect=lambda: identities)
+        mocker.patch(
+            "app.project_identity.get_project_lifecycles",
+            side_effect=lambda project_ids, **_: {
+                project_id: "retired" if project_id in retired else "active"
+                for project_id in project_ids
+            },
+        )
         mocker.patch.object(helpers, "_docker_container_map", new=mocker.AsyncMock(return_value={}))
         probe = mocker.patch.object(_status_probing, "_runtime_service_status", new=mocker.AsyncMock())
         await helpers._runtime_service_statuses()
@@ -84,6 +92,8 @@ class TestDockerRuntime:
         assert definition["probe_url"] == "http://localhost:8123/healthz"
         assert definition["ports"] == ["8123"]
         identities[0]["project"]["lifecycle"] = "retired"
+        assert helpers._service_definition("new-project-api")["ports"] == ["8123"]
+        retired.add("new-project")
         with pytest.raises(HTTPException, match="Unknown service"):
             helpers._service_definition("new-project-api")
 
