@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+import socket
 import statistics
 import subprocess
 import time
@@ -28,6 +29,13 @@ def cgroup_path() -> Path:
     return path
 
 
+def service_pid() -> int:
+    pid = int(command("systemctl", "--user", "show", "-P", "MainPID", "summitflow-host-monitor.service"))
+    if pid <= 0:
+        raise RuntimeError("managed monitor process is unavailable")
+    return pid
+
+
 def cpu_usec(root: Path) -> int:
     for line in (root / "cpu.stat").read_text().splitlines():
         key, value = line.split()
@@ -36,9 +44,13 @@ def cpu_usec(root: Path) -> int:
     raise RuntimeError("cgroup CPU usage is unavailable")
 
 
-def io_bytes(root: Path) -> tuple[int, int]:
+def io_bytes(root: Path, pid: int) -> tuple[int, int]:
+    source = root / "io.stat"
+    if not source.exists():
+        values = dict(line.split(":", 1) for line in Path(f"/proc/{pid}/io").read_text().splitlines())
+        return int(values["read_bytes"]), int(values["write_bytes"])
     read = write = 0
-    for line in (root / "io.stat").read_text().splitlines():
+    for line in source.read_text().splitlines():
         for entry in line.split()[1:]:
             key, _, value = entry.partition("=")
             if key == "rbytes":
@@ -53,19 +65,33 @@ def store_bytes(root: Path) -> int:
                                                 root / "monitor.sqlite3-shm") if path.exists())
 
 
-def snapshot(cgroup: Path, state: Path) -> dict[str, float | int]:
-    read, write = io_bytes(cgroup)
+def collector_latency(state: Path) -> tuple[int, int | None]:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as channel:
+        channel.settimeout(2)
+        channel.connect(str(state / "control.sock"))
+        channel.sendall(b'{"command":"status"}\n')
+        with channel.makefile("rb") as stream:
+            status = json.loads(stream.readline(262_144))
+    if not status.get("ok"):
+        raise RuntimeError("collector status unavailable")
+    return int(status["sample_commit_count"]), status.get("sample_commit_last_ns")
+
+
+def snapshot(cgroup: Path, state: Path, pid: int) -> dict[str, float | int]:
+    read, write = io_bytes(cgroup, pid)
+    commit_count, commit_last = collector_latency(state)
     return {"at": time.monotonic(), "cpu_usec": cpu_usec(cgroup),
             "memory_bytes": int((cgroup / "memory.current").read_text()),
-            "io_read_bytes": read, "io_write_bytes": write, "store_bytes": store_bytes(state)}
+            "io_read_bytes": read, "io_write_bytes": write, "store_bytes": store_bytes(state),
+            "commit_count": commit_count, "commit_last_ns": commit_last or 0}
 
 
-def measure(cgroup: Path, state: Path, seconds: int) -> list[dict[str, float | int]]:
-    observations = [snapshot(cgroup, state)]
+def measure(cgroup: Path, state: Path, pid: int, seconds: int) -> list[dict[str, float | int]]:
+    observations = [snapshot(cgroup, state, pid)]
     deadline = observations[0]["at"] + seconds
     while time.monotonic() < deadline:
         time.sleep(min(1, max(0, deadline - time.monotonic())))
-        observations.append(snapshot(cgroup, state))
+        observations.append(snapshot(cgroup, state, pid))
     return observations
 
 
@@ -79,6 +105,8 @@ def percentile(values: list[float], p: float) -> float | None:
 def summarize(rows: list[dict[str, float | int]]) -> dict[str, float | int | None]:
     first, last = rows[0], rows[-1]
     seconds = float(last["at"] - first["at"])
+    commits = [int(row["commit_last_ns"]) / 1_000_000 for previous, row in zip(rows, rows[1:])
+               if int(row["commit_count"]) > int(previous["commit_count"]) and row["commit_last_ns"]]
     return {"seconds": round(seconds, 3),
             "cpu_percent_one_core": round((int(last["cpu_usec"]) - int(first["cpu_usec"])) / (seconds * 10_000), 3),
             "memory_mib_median": round(statistics.median(int(row["memory_bytes"]) for row in rows) / 2**20, 3),
@@ -86,7 +114,9 @@ def summarize(rows: list[dict[str, float | int]]) -> dict[str, float | int | Non
             "io_read_bytes": int(last["io_read_bytes"]) - int(first["io_read_bytes"]),
             "io_write_bytes": int(last["io_write_bytes"]) - int(first["io_write_bytes"]),
             "io_write_bytes_per_day_extrapolated": round((int(last["io_write_bytes"]) - int(first["io_write_bytes"])) / seconds * 86400),
-            "store_bytes_delta": int(last["store_bytes"]) - int(first["store_bytes"])}
+            "store_bytes_delta": int(last["store_bytes"]) - int(first["store_bytes"]),
+            "observed_sample_commits": len(commits),
+            "sample_plus_commit_p95_ms": round(percentile(commits, .95), 3) if commits else None}
 
 
 def committed_stats(state: Path, since: int) -> dict[str, float | int | None]:
@@ -96,8 +126,8 @@ def committed_stats(state: Path, since: int) -> dict[str, float | int | None]:
     out: dict[str, float | int | None] = {}
     for mode in ("baseline", "detail"):
         values = [duration / 1_000_000 for kind, duration in rows if kind == mode]
-        out[f"{mode}_commits"] = len(values)
-        out[f"{mode}_sample_commit_p95_ms"] = round(percentile(values, .95), 3) if values else None
+        out[f"{mode}_rows_in_full_profile"] = len(values)
+        out[f"{mode}_precommit_collection_p95_ms"] = round(percentile(values, .95), 3) if values else None
     return out
 
 
@@ -108,7 +138,9 @@ def query_latency() -> dict[str, float | None]:
         values = []
         for _ in range(20):
             started = time.monotonic()
-            command("st", "monitor", *args)
+            payload = json.loads(command("st", "monitor", *args))
+            if payload.get("schema") != 1 or not isinstance(payload.get("items"), list):
+                raise RuntimeError(f"{name} returned an invalid monitor response")
             values.append((time.monotonic() - started) * 1000)
         result[f"{name}_cli_p95_ms"] = round(percentile(values, .95), 3)
     return result
@@ -123,19 +155,22 @@ def main() -> None:
     if not 10 <= args.baseline_seconds <= 600 or not 5 <= args.detail_seconds <= 300:
         parser.error("baseline must be 10..600 seconds and detail 5..300 seconds")
     cgroup = cgroup_path()
+    pid = service_pid()
     state = Path.home() / ".local/state/summitflow/monitor"
     since = time.time_ns()
-    baseline = measure(cgroup, state, args.baseline_seconds)
+    baseline = measure(cgroup, state, pid, args.baseline_seconds)
     lease = json.loads(command("st", "monitor", "capture", "--ttl-seconds", str(min(300, args.detail_seconds + 5))))
     lease_id = lease.get("lease_id")
     if not lease.get("ok") or not isinstance(lease_id, str):
         raise RuntimeError("collector rejected detail lease")
     try:
-        detail = measure(cgroup, state, args.detail_seconds)
+        detail = measure(cgroup, state, pid, args.detail_seconds)
     finally:
         command("st", "monitor", "capture-end", lease_id)
     result = {"schema": 1, "measured_at": datetime.now(UTC).isoformat(),
-              "unit": "summitflow-host-monitor.service", "baseline": summarize(baseline),
+              "unit": "summitflow-host-monitor.service",
+              "io_source": "cgroup2/io.stat" if (cgroup / "io.stat").exists() else "proc/pid/io",
+              "baseline": summarize(baseline),
               "detail": summarize(detail), "committed": committed_stats(state, since),
               "query": query_latency()}
     args.output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
