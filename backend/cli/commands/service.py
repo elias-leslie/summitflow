@@ -97,6 +97,12 @@ def _restore_previous_units(
             )
             return
         previous = service_ops.project_at_source(project, previous_root)
+        added_monitor = (
+            "summitflow-host-monitor.service" in project.default_workers
+            and "summitflow-host-monitor.service" not in previous.default_workers
+        )
+        if added_monitor:
+            service_ops.run(["systemctl", "--user", "disable", "--now", "summitflow-host-monitor.service"])
         restored = service_ops.sync_systemd_units(previous) == 0
         service_release.mark_phase(
             release,
@@ -276,6 +282,7 @@ def rebuild(
                 raise typer.Exit(1)
             steps = [("infrastructure", lambda: service_ops.ensure_infra(services))]
             steps.append(("backend_dependencies", lambda: service_ops.sync_backend(services)))
+            steps.append(("host_monitor_build", lambda: service_ops.build_host_monitor(services)))
             steps.append(("frontend_build", lambda: service_ops.build_frontend(services)))
             if backend:
                 steps.append(("migrations", lambda: service_ops.run_migrations(services)))
@@ -287,6 +294,8 @@ def rebuild(
                     reason="frontend_restart_scope",
                 )
             steps.append(("systemd_units", lambda: service_ops.sync_systemd_units(services)))
+            steps.append(("host_monitor_policy", lambda: service_ops.sync_host_monitor_policy(services)))
+            steps.append(("host_monitor_enable", lambda: service_ops.enable_host_monitor(services)))
             for name, step in steps:
                 assert_backup_restart_owned()
                 phase_started = time.monotonic()
@@ -388,6 +397,9 @@ def rebuild(
                 f"[service] deployment_receipt={result['artifact']} "
                 f"deployment_id={result['deployment_id']}"
             )
+            if service_ops.install_st_monitor_launcher(development_services) != 0:
+                print("[service] release is live; st monitor launcher needs installation")
+                raise typer.Exit(1)
             print(f"[service] rebuild complete ({int(time.time() - start_time)}s)")
     except (service_ops.ServiceError, service_release.ReleaseError, BackupLockLeaseError) as exc:
         if release is not None:

@@ -20,7 +20,8 @@
     "backend": "summitflow-backend.service",
     "frontend": "summitflow-frontend.service",
     "default_workers": [
-      "summitflow-hatchet-worker.service"
+      "summitflow-hatchet-worker.service",
+      "summitflow-host-monitor.service"
     ],
     "optional_workers": []
   },

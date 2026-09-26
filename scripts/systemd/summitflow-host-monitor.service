@@ -1,0 +1,24 @@
+[Unit]
+Description=SummitFlow local host monitor
+After=basic.target
+
+[Service]
+Type=simple
+WorkingDirectory=__SUMMITFLOW_ROOT__/host-monitor
+Environment="HOME=%h"
+ExecStart=__SUMMITFLOW_ROOT__/host-monitor/target/release/summitflow-host-monitor --state-dir %h/.local/state/summitflow/monitor --project-identity __SUMMITFLOW_ROOT__/project.identity.json
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/state/summitflow/monitor
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=summitflow-host-monitor
+
+[Install]
+WantedBy=default.target

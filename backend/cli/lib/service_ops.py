@@ -569,6 +569,90 @@ def sync_backend(project: ProjectServices) -> int:
     return run(command, cwd=project.backend_dir, quiet_success=True)
 
 
+def build_host_monitor(project: ProjectServices) -> int:
+    """Build the independent host collector in the accepted SummitFlow release."""
+    if project.project_id != "summitflow" or "summitflow-host-monitor.service" not in project.default_workers:
+        return 0
+    source = project.root / "host-monitor"
+    if not (source / "Cargo.toml").is_file() or not (source / "Cargo.lock").is_file():
+        print("[service] host monitor requires Cargo.toml and Cargo.lock in accepted source")
+        return 1
+    print("[service] building locked host monitor")
+    return run(["cargo", "build", "--locked", "--release"], cwd=source, quiet_success=True)
+
+
+def sync_host_monitor_policy(project: ProjectServices) -> int:
+    """Snapshot canonical runtime pressure thresholds for the standalone collector."""
+    if project.project_id != "summitflow" or "summitflow-host-monitor.service" not in project.default_workers:
+        return 0
+    from app.tasks.runtime_hygiene_common import (
+        CPU_CRIT_PERCENT,
+        DISK_CRIT_FREE_GB,
+        DISK_CRIT_PERCENT,
+        MEMORY_CRIT_PERCENT,
+    )
+
+    state_dir = Path.home() / ".local/state/summitflow/monitor"
+    state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    state_dir.chmod(0o700)
+    policy = {
+        "schema": 1,
+        "cpu_critical_pct": CPU_CRIT_PERCENT,
+        "memory_critical_pct": MEMORY_CRIT_PERCENT,
+        "disk_critical_pct": DISK_CRIT_PERCENT,
+        "disk_critical_free_bytes": int(DISK_CRIT_FREE_GB * 1024**3),
+        "source": "runtime_hygiene_common",
+    }
+    with tempfile.NamedTemporaryFile("w", dir=state_dir, prefix=".policy-", delete=False) as file:
+        temporary = Path(file.name)
+        try:
+            os.fchmod(file.fileno(), 0o600)
+            json.dump(policy, file, separators=(",", ":"), sort_keys=True)
+            file.flush()
+            os.fsync(file.fileno())
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
+    os.replace(temporary, state_dir / "policy.json")
+    return 0
+
+
+def enable_host_monitor(project: ProjectServices) -> int:
+    """Make the standalone default worker part of the user boot target."""
+    service = "summitflow-host-monitor.service"
+    if project.project_id != "summitflow" or service not in project.default_workers:
+        return 0
+    return run(["systemctl", "--user", "enable", service])
+
+
+def install_st_monitor_launcher(project: ProjectServices) -> int:
+    """Atomically adopt the narrow st launcher after a verified SummitFlow release."""
+    if project.project_id != "summitflow" or "summitflow-host-monitor.service" not in project.default_workers:
+        return 0
+    source = project.root / "scripts" / "st"
+    legacy = project.root / "backend" / ".venv" / "bin" / "st"
+    target = Path.home() / "bin" / "st"
+    if not source.is_file() or not os.access(source, os.X_OK):
+        print("[service] st monitor launcher is missing or not executable")
+        return 1
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.is_symlink():
+        if target.resolve(strict=False) not in {source.resolve(), legacy.resolve(strict=False)}:
+            print("[service] existing st symlink has a custom target; launcher install refused")
+            return 1
+    elif target.exists():
+        print("[service] existing st executable is not a symlink; launcher install refused")
+        return 1
+    temporary = target.with_name(".st-monitor-next")
+    if temporary.exists() or temporary.is_symlink():
+        print("[service] stale st launcher staging link; launcher install refused")
+        return 1
+    temporary.symlink_to(source)
+    os.replace(temporary, target)
+    print(f"[service] linked st -> {source}")
+    return 0
+
+
 def build_frontend(project: ProjectServices) -> int:
     if not (project.frontend_dir / "package.json").exists():
         return 0

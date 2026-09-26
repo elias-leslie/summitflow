@@ -1,0 +1,16 @@
+[package]
+name = "summitflow-host-monitor"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+flate2 = "1"
+libc = "0.2"
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde_json = "1"
+sysinfo = "0.39.6"
+
+[dev-dependencies]
+tempfile = "3"

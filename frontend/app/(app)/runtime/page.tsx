@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { SystemHealthWidget } from '@/components/dashboard/SystemHealthWidget'
 import { GpuStatusCard } from '@/components/runtime/GpuStatusCard'
 import { HealthBar } from '@/components/runtime/HealthBar'
+import { HostMonitor } from '@/components/runtime/HostMonitor'
 import { MaintenanceStatusCard } from '@/components/runtime/MaintenanceStatusCard'
 import { ProxmoxStatusCard } from '@/components/runtime/ProxmoxStatusCard'
 import { RuntimeDependencies } from '@/components/runtime/RuntimeDependencies'
@@ -16,7 +17,9 @@ import { runtimeApi } from '@/lib/api/runtime'
 import { POLL_MONITOR } from '@/lib/polling'
 
 export default function RuntimePage() {
-  const [tab, setTab] = useState<'services' | 'dependencies'>('services')
+  const [tab, setTab] = useState<'services' | 'monitor' | 'dependencies'>(
+    'services',
+  )
   const {
     data: health,
     isLoading: healthLoading,
@@ -41,7 +44,7 @@ export default function RuntimePage() {
   const error = healthError || servicesError
 
   return (
-    <div className="p-6 space-y-5 max-w-7xl mx-auto">
+    <div className="mx-auto max-w-[1800px] space-y-5 p-4 sm:p-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 14 }}
@@ -82,10 +85,10 @@ export default function RuntimePage() {
         className="flex gap-2 border-b border-slate-700/60"
         aria-label="Runtime sections"
       >
-        {(['services', 'dependencies'] as const).map((section) => (
+        {(['services', 'monitor', 'dependencies'] as const).map((section) => (
           <button
             key={section}
-            className={`px-3 py-2 text-sm capitalize ${tab === section ? 'border-b-2 border-cyan-400 text-cyan-300' : 'text-slate-400'}`}
+            className={`px-3 py-2 text-sm capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${tab === section ? 'border-b-2 border-cyan-400 text-cyan-300' : 'text-slate-400'}`}
             onClick={() => setTab(section)}
             aria-current={tab === section ? 'page' : undefined}
           >
@@ -95,6 +98,8 @@ export default function RuntimePage() {
       </nav>
       {tab === 'dependencies' ? (
         <RuntimeDependencies />
+      ) : tab === 'monitor' ? (
+        <HostMonitor />
       ) : (
         <>
           {/* Error state */}

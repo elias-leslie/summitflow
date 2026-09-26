@@ -35,6 +35,7 @@ from .api import (
     git,
     graphify,
     mockups,
+    monitor,
     notes,
     notifications,
     projects,
@@ -127,6 +128,7 @@ app.middleware("http")(access_control_middleware)
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(monitor.router)
 app.include_router(viewer.router, prefix="/api/viewer", tags=["viewer"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])

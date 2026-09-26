@@ -309,7 +309,7 @@ def _remove_scripts_path_from_rc() -> None:
 
 def _link_st() -> None:
     _bin_dir().mkdir(parents=True, exist_ok=True)
-    st_source = get_repo_root() / "backend" / ".venv" / "bin" / "st"
+    st_source = get_repo_root() / "scripts" / "st"
     if st_source.exists():
         target = _bin_dir() / "st"
         if target.exists() or target.is_symlink():

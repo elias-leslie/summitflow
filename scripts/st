@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -e
+
+# Resolve the installed symlink before locating the repository. A broken backend
+# environment must not prevent monitor reads of the collector-owned store.
+launcher=$(readlink -f -- "$0")
+repo_root=$(cd -- "$(dirname -- "$launcher")/.." && pwd)
+
+if [[ ${1-} == monitor ]]; then
+    shift
+    service_state=${SUMMITFLOW_SERVICE_STATE_ROOT:-$HOME/.summitflow/services}
+    accepted_source="$service_state/projects/summitflow/current/source"
+    monitor_source="$repo_root"
+    if [[ -f "$accepted_source/backend/monitor_standalone.py" ]]; then
+        monitor_source="$accepted_source"
+    fi
+    exec /usr/bin/python3 "$monitor_source/backend/monitor_standalone.py" "$@"
+fi
+
+exec "$repo_root/backend/.venv/bin/st" "$@"
