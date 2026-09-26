@@ -199,9 +199,16 @@ def rebuild(
             help="Full successful local-acceptance receipt. Omit to accept the current clean HEAD locally.",
         ),
     ] = None,
+    migrate_monitor_store: Annotated[
+        bool,
+        typer.Option("--migrate-monitor-store", help="Explicitly convert the stopped monitor database to 512-byte pages after the reader lock release is live"),
+    ] = False,
 ) -> None:
     """Build, migrate, restart, and health-check a project."""
     services = _load(project)
+    if migrate_monitor_store and (project != "summitflow" or scope == RebuildScope.frontend):
+        output_error("--migrate-monitor-store requires a SummitFlow backend or full rebuild.")
+        raise typer.Exit(1)
     requested_workers = tuple(worker or ())
     unknown = set(requested_workers) - set(services.workers(include_all=True))
     if unknown or (scope == RebuildScope.frontend and (requested_workers or include_all_workers)):
@@ -224,6 +231,7 @@ def rebuild(
                     scope=scope.value,
                     workers=requested_workers,
                     accepted_source=accepted_source,
+                    **({"migrate_monitor_store": True} if migrate_monitor_store else {}),
                 )
             )
         except (service_ops.ServiceError, service_release.ReleaseError) as exc:
@@ -319,6 +327,21 @@ def rebuild(
                     name,
                     status="succeeded",
                     duration_seconds=time.monotonic() - phase_started,
+                )
+            if migrate_monitor_store:
+                assert_backup_restart_owned()
+                try:
+                    migration = service_ops.migrate_host_monitor_store(services)
+                except service_ops.ServiceError:
+                    service_release.mark_phase(release, "host_monitor_store_migration", status="failed")
+                    _restore_previous_units(development_services, release)
+                    service_release.fail_release(release, "host_monitor_store_migration")
+                    raise
+                service_release.mark_phase(
+                    release,
+                    "host_monitor_store_migration",
+                    status=migration.status,
+                    receipt=str(migration.receipt) if migration.receipt else None,
                 )
             skipped = [name for name in services.optional_workers if name not in workers]
             if skipped:

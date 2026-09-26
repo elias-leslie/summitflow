@@ -31,6 +31,14 @@ from app.utils.shared_paths import get_repo_root
 
 from ..details import display_path, emit_result_or_details, summary_hint, write_details
 from . import service_release
+from .monitor_store_migration import (
+    MigrationResult,
+    MonitorMigrationDeferred,
+    MonitorMigrationFailed,
+    migrate_stopped_store,
+    retain_restart_interlock,
+    update_restart_receipt,
+)
 from .neri_runner_deploy import RunnerAdapter
 
 
@@ -401,6 +409,19 @@ def _service_main_pid(service: str) -> int:
         return 0
 
 
+def _backend_process_release_root(pid: int, *, proc_root: Path = Path("/proc")) -> Path:
+    """Attest the release from the running service process, not the current symlink."""
+    if pid <= 0:
+        raise ServiceError("cannot attest the running backend reader release")
+    try:
+        backend_dir = (proc_root / str(pid) / "cwd").resolve(strict=True)
+    except OSError as exc:
+        raise ServiceError("cannot attest the running backend reader release") from exc
+    if backend_dir.name != "backend":
+        raise ServiceError("running backend working directory is unexpected")
+    return backend_dir.parent
+
+
 def _service_active_state(service: str) -> str:
     return _systemctl_value(service, "ActiveState") or "unknown"
 
@@ -412,6 +433,16 @@ def _wait_service_inactive(service: str, *, timeout: float = 8.0) -> bool:
             return True
         time.sleep(0.25)
     return _service_active_state(service) in {"inactive", "failed"}
+
+
+def _wait_service_active(service: str, *, timeout: float = 8.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _service_active_state(service) == "active" and _service_main_pid(service) > 0:
+            time.sleep(0.25)
+            return _service_active_state(service) == "active" and _service_main_pid(service) > 0
+        time.sleep(0.25)
+    return False
 
 
 def restart_service(service: str, *, port: int = 0) -> int:
@@ -636,6 +667,67 @@ def enable_host_monitor(project: ProjectServices) -> int:
     if project.project_id != "summitflow" or service not in project.default_workers:
         return 0
     return run(["systemctl", "--user", "enable", service])
+
+
+def migrate_host_monitor_store(project: ProjectServices) -> MigrationResult:
+    """Stop the sole writer for an explicitly requested, guarded page conversion."""
+    service = "summitflow-host-monitor.service"
+    if project.project_id != "summitflow" or service not in project.default_workers:
+        raise ServiceError("monitor store migration requires the SummitFlow host monitor")
+    try:
+        live_source = service_release.current_source_root("summitflow")
+    except service_release.ReleaseError as exc:
+        raise ServiceError("cannot verify the live monitor reader lock release") from exc
+    if live_source is None:
+        raise ServiceError("deploy the monitor reader lock release before migrating the store")
+    try:
+        reader_file = live_source / "backend/monitor_reader/reader.py"
+        reader_ready = reader_file.is_file() and (
+            "MONITOR_MAINTENANCE_LOCK_VERSION = 2" in reader_file.read_text()
+        )
+    except OSError as exc:
+        raise ServiceError("cannot verify the live monitor reader lock release") from exc
+    if not reader_ready:
+        raise ServiceError("deploy the monitor reader lock release before migrating the store")
+    backend_root = _backend_process_release_root(_service_main_pid(project.backend_service))
+    if backend_root != live_source.resolve(strict=True):
+        raise ServiceError("running backend has not loaded the monitor reader lock release")
+    state_dir = Path.home() / ".local/state/summitflow/monitor"
+    if (state_dir / "migration.interlock").exists() or (state_dir / "migration.interlock").is_symlink():
+        raise ServiceError("existing monitor migration interlock requires manual recovery")
+    db = state_dir / "monitor.sqlite3"
+    if not db.exists():
+        return MigrationResult("absent")
+    if not service_exists(service):
+        raise ServiceError("host monitor service is not installed")
+    if run(["systemctl", "--user", "stop", service]) != 0 or not _wait_service_inactive(service):
+        raise ServiceError("host monitor did not stop cleanly; conversion refused")
+    try:
+        result = migrate_stopped_store(state_dir)
+    except MonitorMigrationDeferred as exc:
+        if run(["systemctl", "--user", "start", service]) != 0 or not _wait_service_active(service):
+            raise ServiceError(f"monitor migration deferred and collector restart failed: {exc}") from exc
+        print(f"[service] monitor store migration deferred: {exc}")
+        return MigrationResult("deferred")
+    except MonitorMigrationFailed as exc:
+        raise ServiceError(str(exc)) from exc
+    if run(["systemctl", "--user", "start", service]) != 0 or not _wait_service_active(service):
+        if result.status == "converted_restart_pending" and result.receipt is not None:
+            try:
+                retain_restart_interlock(state_dir, result.receipt)
+                update_restart_receipt(result.receipt, status="collector_restart_failed")
+            except (OSError, ValueError) as exc:
+                run(["systemctl", "--user", "stop", service])
+                raise ServiceError(f"collector restart failed; recovery interlock/receipt failed: {exc}") from exc
+        run(["systemctl", "--user", "stop", service])
+        raise ServiceError("collector did not become active after monitor store migration")
+    if result.status == "converted_restart_pending" and result.receipt is not None:
+        try:
+            update_restart_receipt(result.receipt, status="succeeded")
+        except (OSError, ValueError) as exc:
+            raise ServiceError(f"collector active but migration restart receipt remains pending: {exc}") from exc
+        return MigrationResult("migrated", result.receipt)
+    return result
 
 
 def install_st_monitor_launcher(project: ProjectServices) -> int:
@@ -974,6 +1066,7 @@ def queue_detached(
     scope: str = "full",
     workers: tuple[str, ...] = (),
     accepted_source: Mapping[str, Any] | None = None,
+    migrate_monitor_store: bool = False,
 ) -> int:
     unit = f"sf-rebuild-{project}"
     if systemctl("is-active", f"{unit}.service").stdout.strip() in {"active", "activating", "deactivating", "reloading"}:
@@ -982,6 +1075,8 @@ def queue_detached(
     command = ["st", "service", "rebuild"]
     if include_all_workers:
         command.append("--include-all-workers")
+    if migrate_monitor_store:
+        command.append("--migrate-monitor-store")
     if scope != "full":
         command.extend(["--scope", scope])
     for worker in workers:

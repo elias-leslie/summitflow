@@ -80,7 +80,8 @@ def _read(method: str, **kwargs: Any) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="Monitor store schema is incompatible") from exc
     except MonitorQueryError as exc:
         message = str(exc)
-        if "store unavailable" in message or "store read failed" in message or "malformed monitor store" in message:
+        if ("store unavailable" in message or "store read failed" in message
+                or "store maintenance" in message or "malformed monitor store" in message):
             raise HTTPException(status_code=503, detail="Monitor history unavailable") from exc
         raise HTTPException(status_code=400, detail=message) from exc
 

@@ -78,6 +78,21 @@ def test_local_bypass_rejects_forwarded_nonlocal_monitor_callers(monkeypatch) ->
         assert client.get("/api/monitor/v1/status", headers={"X-Forwarded-For": "127.0.0.1"}).status_code == 200
     read.assert_called_once()
 
+
+def test_monitor_maintenance_is_transient_service_unavailable(monkeypatch) -> None:
+    class MaintenanceReader:
+        def __init__(self, _state_dir):
+            pass
+
+        def status(self, **_kwargs):
+            raise monitor.MonitorQueryError("monitor store maintenance in progress")
+
+    monkeypatch.setattr(monitor, "MonitorReader", MaintenanceReader)
+    with _client("owner") as client:
+        response = client.get("/api/monitor/v1/status")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Monitor history unavailable"
+
 @pytest.mark.parametrize("path", [
     "/api/monitor/v1/series?metric=cpu_busy_pct",
     "/api/monitor/v1/processes",

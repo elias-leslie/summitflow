@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import base64
 import binascii
+import fcntl
 import gzip
 import hashlib
 import io
 import json
 import math
+import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -24,6 +26,7 @@ from urllib.parse import quote
 SCHEMA_VERSION = "1"
 ENVELOPE_VERSION = 1
 DB_NAME = "monitor.sqlite3"
+MONITOR_MAINTENANCE_LOCK_VERSION = 2
 DEFAULT_BYTES = 4096
 MAX_BYTES = 65536
 MAX_LIMIT = 100
@@ -235,26 +238,54 @@ class MonitorReader:
 
     def __init__(self, state_dir: Path):
         self.db_path = Path(state_dir) / DB_NAME
+        self.maintenance_path = Path(state_dir) / "maintenance.lock"
+        self.interlock_path = Path(state_dir) / "migration.interlock"
+
+    @contextmanager
+    def _reader_slot(self) -> Iterator[None]:
+        """Prevent new SQLite readers during explicit page-size maintenance."""
+        fd: int | None = None
+        try:
+            fd = os.open(
+                self.maintenance_path,
+                os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW,
+                0o600,
+            )
+            fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except OSError as exc:
+            if fd is not None:
+                os.close(fd)
+            if isinstance(exc, BlockingIOError):
+                raise MonitorQueryError("monitor store maintenance in progress") from exc
+            raise MonitorQueryError("monitor store unavailable: maintenance lock") from exc
+        try:
+            if self.interlock_path.exists() or self.interlock_path.is_symlink():
+                raise MonitorQueryError("monitor store maintenance recovery required")
+            yield
+        finally:
+            if fd is not None:
+                os.close(fd)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
         # URI mode=ro does not create a missing file. The path is quoted as data.
         uri = "file:" + quote(str(self.db_path.resolve()), safe="/") + "?mode=ro"
-        try:
-            connection = sqlite3.connect(uri, uri=True, timeout=1.0)
-        except sqlite3.Error as exc:
-            raise MonitorQueryError(f"monitor store unavailable: {exc}") from exc
-        try:
-            connection.row_factory = sqlite3.Row
-            connection.execute("PRAGMA query_only=ON")
-            row = connection.execute("SELECT value FROM meta WHERE key IN ('schema_version','schema') ORDER BY key DESC LIMIT 1").fetchone()
-            if row is None or row[0] != SCHEMA_VERSION:
-                raise MonitorSchemaError(f"unsupported monitor schema: {row[0] if row else 'missing'}")
-            yield connection
-        except sqlite3.Error as exc:
-            raise MonitorQueryError(f"monitor store read failed: {exc}") from exc
-        finally:
-            connection.close()
+        with self._reader_slot():
+            try:
+                connection = sqlite3.connect(uri, uri=True, timeout=1.0)
+            except sqlite3.Error as exc:
+                raise MonitorQueryError(f"monitor store unavailable: {exc}") from exc
+            try:
+                connection.row_factory = sqlite3.Row
+                connection.execute("PRAGMA query_only=ON")
+                row = connection.execute("SELECT value FROM meta WHERE key IN ('schema_version','schema') ORDER BY key DESC LIMIT 1").fetchone()
+                if row is None or row[0] != SCHEMA_VERSION:
+                    raise MonitorSchemaError(f"unsupported monitor schema: {row[0] if row else 'missing'}")
+                yield connection
+            except sqlite3.Error as exc:
+                raise MonitorQueryError(f"monitor store read failed: {exc}") from exc
+            finally:
+                connection.close()
 
     @staticmethod
     def _base(requested: dict[str, Any], now_ns: int) -> dict[str, Any]:

@@ -2,9 +2,13 @@ use flate2::{Compression, write::GzEncoder};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 use std::{
-    fs,
-    os::unix::fs::PermissionsExt,
+    fs::{self, File, OpenOptions},
+    os::{
+        fd::AsRawFd,
+        unix::fs::{OpenOptionsExt, PermissionsExt},
+    },
     path::{Path, PathBuf},
+    time::{Duration, Instant},
 };
 
 const MINUTE_NS: i64 = 60_000_000_000;
@@ -12,6 +16,11 @@ const RAW_AGE_NS: i64 = 48 * 60 * MINUTE_NS;
 const ROLLUP_AGE_NS: i64 = 14 * 24 * 60 * MINUTE_NS;
 const MAX_BYTES: u64 = 512 * 1024 * 1024;
 const MIN_FREE_BYTES: u64 = 1024 * 1024 * 1024;
+const BASELINE_HEADROOM_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_SAMPLE_BYTES: u64 = 1024 * 1024;
+const RETENTION_BATCH_ROWS: i64 = 16;
+const MAX_RETENTION_BATCHES: usize = 128;
+const PRUNE_WORK_BUDGET: Duration = Duration::from_secs(1);
 const DETAIL_RESERVE_BYTES: i64 = 192 * 1024 * 1024;
 const BASELINE_RESERVE_BYTES: i64 = 256 * 1024 * 1024;
 const RECENT_BASELINE_NS: i64 = 60 * MINUTE_NS;
@@ -35,7 +44,9 @@ pub struct Sample<'a> {
 pub struct Store {
     pub conn: Connection,
     pub path: PathBuf,
+    _maintenance_lock: File,
     detail_bytes: i64,
+    checkpoint_blocked: bool,
     pending_bucket: Option<i64>,
     pending_count: u8,
 }
@@ -49,7 +60,38 @@ impl Store {
         fs::create_dir_all(state).map_err(|e| sqlite_error(&e.to_string()))?;
         fs::set_permissions(state, fs::Permissions::from_mode(0o700))
             .map_err(|e| sqlite_error(&e.to_string()))?;
+        let maintenance_lock = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(state.join("maintenance.lock"))
+            .map_err(|e| sqlite_error(&format!("maintenance lock open failed: {e}")))?;
+        maintenance_lock
+            .set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(|e| sqlite_error(&format!("maintenance lock permissions failed: {e}")))?;
+        if unsafe { libc::flock(maintenance_lock.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } != 0
+        {
+            return Err(sqlite_error(&format!(
+                "monitor maintenance lock unavailable: {}",
+                std::io::Error::last_os_error()
+            )));
+        }
         let path = state.join("monitor.sqlite3");
+        match fs::symlink_metadata(state.join("migration.interlock")) {
+            Ok(_) => {
+                return Err(sqlite_error(
+                    "monitor migration interlock present; inspect receipt",
+                ));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return Err(sqlite_error(&format!(
+                    "migration interlock check failed: {e}"
+                )));
+            }
+        }
         let first = !path.exists();
         let conn = Connection::open(&path)?;
         for suffix in ["", "-wal", "-shm"] {
@@ -117,7 +159,9 @@ impl Store {
         let mut store = Self {
             conn,
             path,
+            _maintenance_lock: maintenance_lock,
             detail_bytes,
+            checkpoint_blocked: false,
             pending_bucket: None,
             pending_count: 0,
         };
@@ -128,25 +172,57 @@ impl Store {
     }
 
     pub fn write(&mut self, s: &Sample<'_>) -> rusqlite::Result<()> {
+        self.write_with_limits(s, MAX_BYTES, MIN_FREE_BYTES)
+    }
+
+    fn write_with_limits(
+        &mut self,
+        s: &Sample<'_>,
+        max_bytes: u64,
+        min_free: u64,
+    ) -> rusqlite::Result<()> {
         let mut enc = GzEncoder::new(Vec::new(), Compression::fast());
         serde_json::to_writer(&mut enc, s.processes).map_err(|e| sqlite_error(&e.to_string()))?;
         let blob = enc.finish().map_err(|e| sqlite_error(&e.to_string()))?;
+        let host_json = s.host.to_string();
+        let services_json = s.services.to_string();
+        let errors_json = Value::Array(s.errors.to_vec()).to_string();
+        let sample_bytes = host_json
+            .len()
+            .saturating_add(services_json.len())
+            .saturating_add(errors_json.len())
+            .saturating_add(blob.len()) as u64;
+        if sample_bytes > MAX_SAMPLE_BYTES {
+            return Err(sqlite_error(if s.mode == "detail" {
+                "detail sample too large"
+            } else {
+                "baseline sample too large"
+            }));
+        }
+        let has_headroom = |store: &Self| {
+            store.bytes().saturating_add(BASELINE_HEADROOM_BYTES) < max_bytes
+                && store.free_bytes() >= min_free.saturating_add(BASELINE_HEADROOM_BYTES)
+        };
         if s.mode == "detail" {
+            if !has_headroom(self) {
+                return Err(sqlite_error("detail skipped: storage headroom"));
+            }
             self.evict_detail_for(blob.len() as i64, s.at_ns)?;
             if self.detail_bytes.saturating_add(blob.len() as i64) > DETAIL_RESERVE_BYTES
-                || self.bytes() > MAX_BYTES.saturating_sub(64 * 1024 * 1024)
-                || self.free_bytes() < MIN_FREE_BYTES
+                || !has_headroom(self)
             {
                 return Err(sqlite_error("detail skipped: storage headroom"));
             }
-        } else if self.bytes() >= MAX_BYTES || self.free_bytes() < MIN_FREE_BYTES {
-            self.prune(s.at_ns)?;
-            if self.bytes() >= MAX_BYTES || self.free_bytes() < MIN_FREE_BYTES {
+        } else {
+            if !has_headroom(self) {
+                self.prune_to(s.at_ns, max_bytes, min_free)?;
+            }
+            if !has_headroom(self) {
                 return Err(sqlite_error("baseline skipped: storage headroom"));
             }
         }
         let tx = self.conn.transaction()?;
-        tx.execute("INSERT INTO samples(sampled_at_ns,monotonic_ns,boot_id,mode,host_json,services_json,process_blob,processes_seen,processes_permission_denied,processes_exited,errors_json,duration_ns,capture_reason) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)", params![s.at_ns,s.mono_ns,s.boot_id,s.mode,s.host.to_string(),s.services.to_string(),&blob,s.seen,s.denied,s.exited,Value::Array(s.errors.to_vec()).to_string(),s.duration_ns,s.reason])?;
+        tx.execute("INSERT INTO samples(sampled_at_ns,monotonic_ns,boot_id,mode,host_json,services_json,process_blob,processes_seen,processes_permission_denied,processes_exited,errors_json,duration_ns,capture_reason) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)", params![s.at_ns,s.mono_ns,s.boot_id,s.mode,host_json,services_json,&blob,s.seen,s.denied,s.exited,errors_json,s.duration_ns,s.reason])?;
         let next_rollup = if s.mode == "baseline" {
             let bucket = s.at_ns.div_euclid(MINUTE_NS) * MINUTE_NS;
             let changed = self.pending_bucket.is_some_and(|b| b != bucket);
@@ -196,8 +272,17 @@ impl Store {
     }
     fn evict_detail_to(&mut self, incoming: i64, at: i64, quota: i64) -> rusqlite::Result<()> {
         let mut evicted = 0;
+        let mut blocked = false;
         while self.detail_bytes.saturating_add(incoming) > quota {
-            let n=self.conn.execute("DELETE FROM samples WHERE id IN (SELECT id FROM samples WHERE mode='detail' ORDER BY sampled_at_ns,id LIMIT 100)",[])?;
+            if self.bytes().saturating_add(BASELINE_HEADROOM_BYTES) >= MAX_BYTES
+                || self.free_bytes() < MIN_FREE_BYTES.saturating_add(BASELINE_HEADROOM_BYTES)
+            {
+                return Err(sqlite_error("detail skipped: storage headroom"));
+            }
+            if self.checkpoint_blocked && !self.truncate_checkpoint()? {
+                return Err(sqlite_error("detail skipped: WAL checkpoint busy"));
+            }
+            let n=self.conn.execute("DELETE FROM samples WHERE id IN (SELECT id FROM samples WHERE mode='detail' ORDER BY sampled_at_ns,id LIMIT ?1)",[RETENTION_BATCH_ROWS])?;
             if n == 0 {
                 break;
             }
@@ -207,6 +292,10 @@ impl Store {
                 [],
                 |r| r.get(0),
             )?;
+            if !self.truncate_checkpoint()? {
+                blocked = true;
+                break;
+            }
         }
         if evicted > 0 {
             self.event(
@@ -216,6 +305,9 @@ impl Store {
                 None,
                 &json!({"detail_samples_evicted":evicted,"reason":"detail_quota"}),
             )?;
+        }
+        if blocked {
+            return Err(sqlite_error("detail skipped: WAL checkpoint busy"));
         }
         Ok(())
     }
@@ -266,21 +358,66 @@ impl Store {
     pub fn prune(&mut self, now_ns: i64) -> rusqlite::Result<()> {
         self.prune_to(now_ns, MAX_BYTES, MIN_FREE_BYTES)
     }
+    fn truncate_checkpoint(&mut self) -> rusqlite::Result<bool> {
+        let busy: i64 = self
+            .conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))?;
+        self.checkpoint_blocked = busy != 0;
+        Ok(!self.checkpoint_blocked)
+    }
     fn prune_to(&mut self, now_ns: i64, max_bytes: u64, min_free: u64) -> rusqlite::Result<()> {
-        let tx = self.conn.transaction()?;
-        let aged = tx.execute(
-            "DELETE FROM samples WHERE sampled_at_ns < ?1",
-            [now_ns - RAW_AGE_NS],
-        )?;
-        tx.execute(
-            "DELETE FROM host_rollups WHERE bucket_start_ns < ?1",
-            [now_ns - ROLLUP_AGE_NS],
-        )?;
-        tx.execute(
-            "DELETE FROM events WHERE sampled_at_ns < ?1",
-            [now_ns - ROLLUP_AGE_NS],
-        )?;
-        tx.commit()?;
+        // Stop starting batches after one second of the five-second sample interval.
+        // An in-flight SQLite operation can still take longer.
+        let started = Instant::now();
+        if self.checkpoint_blocked
+            || self.bytes() > max_bytes.saturating_sub(BASELINE_HEADROOM_BYTES)
+            || self.free_bytes() < min_free
+        {
+            // A pinned reader prevents physical reclamation. Defer age eviction
+            // until the checkpoint can complete, even on a later prune call.
+            if !self.truncate_checkpoint()? {
+                return if self.bytes() > max_bytes || self.free_bytes() < min_free {
+                    Err(sqlite_error(
+                        "retention could not restore storage headroom: WAL checkpoint busy",
+                    ))
+                } else {
+                    Ok(())
+                };
+            }
+        }
+        let mut aged = 0;
+        for _ in 0..MAX_RETENTION_BATCHES {
+            if started.elapsed() >= PRUNE_WORK_BUDGET {
+                break;
+            }
+            let tx = self.conn.transaction()?;
+            let samples = tx.execute(
+                "DELETE FROM samples WHERE id IN (SELECT id FROM samples WHERE sampled_at_ns < ?1 ORDER BY sampled_at_ns,id LIMIT ?2)",
+                params![now_ns - RAW_AGE_NS, RETENTION_BATCH_ROWS],
+            )?;
+            let rollups = tx.execute(
+                "DELETE FROM host_rollups WHERE bucket_start_ns IN (SELECT bucket_start_ns FROM host_rollups WHERE bucket_start_ns < ?1 ORDER BY bucket_start_ns LIMIT ?2)",
+                params![now_ns - ROLLUP_AGE_NS, RETENTION_BATCH_ROWS],
+            )?;
+            let events = tx.execute(
+                "DELETE FROM events WHERE id IN (SELECT id FROM events WHERE sampled_at_ns < ?1 ORDER BY sampled_at_ns,id LIMIT ?2)",
+                params![now_ns - ROLLUP_AGE_NS, RETENTION_BATCH_ROWS],
+            )?;
+            tx.commit()?;
+            if samples + rollups + events == 0 {
+                break;
+            }
+            aged += samples;
+            if self.bytes() > max_bytes.saturating_sub(BASELINE_HEADROOM_BYTES)
+                || self.free_bytes() < min_free
+                || self.wal_bytes() > 32 * 1024 * 1024
+            {
+                self.conn.execute_batch("PRAGMA incremental_vacuum(100)")?;
+                if !self.truncate_checkpoint()? {
+                    break;
+                }
+            }
+        }
         self.detail_bytes = self.conn.query_row(
             "SELECT COALESCE(SUM(length(process_blob)),0) FROM samples WHERE mode='detail'",
             [],
@@ -288,14 +425,20 @@ impl Store {
         )?;
         let mut detail_evicted = 0;
         let mut baseline_evicted = 0;
-        for _ in 0..100 {
+        for _ in 0..MAX_RETENTION_BATCHES {
+            if self.checkpoint_blocked {
+                break;
+            }
+            if started.elapsed() >= PRUNE_WORK_BUDGET {
+                break;
+            }
             let baseline_bytes:i64=self.conn.query_row("SELECT COALESCE(SUM(length(host_json)+length(services_json)+length(process_blob)+length(errors_json)),0) FROM samples WHERE mode='baseline'",[],|r|r.get(0))?;
-            let over_total = self.bytes() > max_bytes.saturating_sub(64 * 1024 * 1024)
+            let over_total = self.bytes() > max_bytes.saturating_sub(BASELINE_HEADROOM_BYTES)
                 || self.free_bytes() < min_free;
             if !over_total && baseline_bytes <= BASELINE_RESERVE_BYTES {
                 break;
             }
-            let n = self.conn.execute("DELETE FROM samples WHERE id IN (SELECT id FROM samples WHERE mode='detail' ORDER BY sampled_at_ns,id LIMIT 100)", [])?;
+            let n = self.conn.execute("DELETE FROM samples WHERE id IN (SELECT id FROM samples WHERE mode='detail' ORDER BY sampled_at_ns,id LIMIT ?1)", [RETENTION_BATCH_ROWS])?;
             if n > 0 {
                 detail_evicted += n;
                 self.detail_bytes = self.conn.query_row(
@@ -304,14 +447,16 @@ impl Store {
                     |r| r.get(0),
                 )?;
             } else {
-                let n=self.conn.execute("DELETE FROM samples WHERE id IN (SELECT id FROM samples WHERE mode='baseline' AND sampled_at_ns < ?1 ORDER BY sampled_at_ns,id LIMIT 100)",[now_ns-RECENT_BASELINE_NS])?;
+                let n=self.conn.execute("DELETE FROM samples WHERE id IN (SELECT id FROM samples WHERE mode='baseline' AND sampled_at_ns < ?1 ORDER BY sampled_at_ns,id LIMIT ?2)",params![now_ns-RECENT_BASELINE_NS,RETENTION_BATCH_ROWS])?;
                 if n == 0 {
                     break;
                 }
                 baseline_evicted += n;
             }
             self.conn.execute_batch("PRAGMA incremental_vacuum(500)")?;
-            let _ = self.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)");
+            if !self.truncate_checkpoint()? {
+                break;
+            }
         }
         if aged > 0 || detail_evicted > 0 || baseline_evicted > 0 {
             let _ = self.event(
@@ -322,15 +467,23 @@ impl Store {
                 &json!({"age_samples_evicted":aged,"detail_samples_evicted":detail_evicted,"baseline_samples_evicted":baseline_evicted}),
             );
         }
-        if aged > 0 || detail_evicted > 0 || baseline_evicted > 0 {
+        if (aged > 0 || detail_evicted > 0 || baseline_evicted > 0) && !self.checkpoint_blocked {
             self.conn.execute_batch("PRAGMA incremental_vacuum(100)")?;
-            let _ = self.conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)");
         }
-        let wal_bytes = fs::metadata(format!("{}-wal", self.path.display()))
-            .map(|m| m.len())
-            .unwrap_or(0);
-        if wal_bytes > 32 * 1024 * 1024 {
-            let _ = self.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)");
+        let wal_bytes = self.wal_bytes();
+        if (wal_bytes > 32 * 1024 * 1024
+            || self.bytes() > max_bytes
+            || self.free_bytes() < min_free)
+            && !self.checkpoint_blocked
+        {
+            self.truncate_checkpoint()?;
+        }
+        if self.bytes() > max_bytes || self.free_bytes() < min_free {
+            return Err(sqlite_error(if self.checkpoint_blocked {
+                "retention could not restore storage headroom: WAL checkpoint busy"
+            } else {
+                "retention could not restore storage headroom"
+            }));
         }
         Ok(())
     }
@@ -344,6 +497,11 @@ impl Store {
                     .unwrap_or(0)
             })
             .sum()
+    }
+    fn wal_bytes(&self) -> u64 {
+        fs::metadata(format!("{}-wal", self.path.display()))
+            .map(|m| m.len())
+            .unwrap_or(0)
     }
     fn free_bytes(&self) -> u64 {
         let Ok(path) = std::ffi::CString::new(self.path.to_string_lossy().as_bytes()) else {
@@ -630,6 +788,85 @@ mod tests {
         );
     }
     #[test]
+    fn migration_interlock_blocks_open_including_dangling_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("migration.interlock");
+        fs::write(&marker, b"/private/receipt.json\n").unwrap();
+        let error = Store::open(dir.path(), "h", "b")
+            .err()
+            .expect("interlock must block a fresh store");
+        assert!(
+            error
+                .to_string()
+                .contains("monitor migration interlock present")
+        );
+        assert!(!dir.path().join("monitor.sqlite3").exists());
+
+        fs::remove_file(&marker).unwrap();
+        std::os::unix::fs::symlink("missing-receipt.json", &marker).unwrap();
+        let error = Store::open(dir.path(), "h", "b")
+            .err()
+            .expect("a dangling interlock symlink must block the store");
+        assert!(
+            error
+                .to_string()
+                .contains("monitor migration interlock present")
+        );
+        assert!(!dir.path().join("monitor.sqlite3").exists());
+    }
+    #[test]
+    fn maintenance_lock_excludes_migration_for_store_lifetime() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock_path = dir.path().join("maintenance.lock");
+        let migration = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .unwrap();
+        assert_eq!(
+            unsafe { libc::flock(migration.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+            0
+        );
+        let marker = dir.path().join("migration.interlock");
+        fs::write(&marker, b"/private/receipt.json\n").unwrap();
+        let error = Store::open(dir.path(), "h", "b")
+            .err()
+            .expect("exclusive migration lock must block collector");
+        assert!(
+            error
+                .to_string()
+                .contains("monitor maintenance lock unavailable")
+        );
+        assert!(!dir.path().join("monitor.sqlite3").exists());
+        drop(migration);
+        let error = Store::open(dir.path(), "h", "b")
+            .err()
+            .expect("interlock must still block collector after migration unlocks");
+        assert!(
+            error
+                .to_string()
+                .contains("monitor migration interlock present")
+        );
+        fs::remove_file(marker).unwrap();
+
+        let db = Store::open(dir.path(), "h", "b").unwrap();
+        let migration = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .unwrap();
+        assert_ne!(
+            unsafe { libc::flock(migration.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+            0
+        );
+        drop(db);
+        assert_eq!(
+            unsafe { libc::flock(migration.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+            0
+        );
+    }
+    #[test]
     fn retention_preserves_recent_baseline_and_rejects_version_mismatch() {
         let dir = tempfile::tempdir().unwrap();
         let mut db = Store::open(dir.path(), "h", "b").unwrap();
@@ -668,6 +905,100 @@ mod tests {
         let read = Connection::open_with_flags(&db.path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
         assert_eq!(
             read.query_row("SELECT count(*) FROM samples", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+    }
+    #[test]
+    fn oversized_baseline_is_rejected_before_sqlite_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Store::open(dir.path(), "h", "b").unwrap();
+        let host = json!({"payload":"x".repeat(1024 * 1024)});
+        let error = db.write(&sample(1, "baseline", &host, &[])).unwrap_err();
+        assert!(error.to_string().contains("baseline sample too large"));
+        assert_eq!(
+            db.conn
+                .query_row("SELECT COUNT(*) FROM samples", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+    #[test]
+    fn baseline_preflight_reserves_space_before_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Store::open(dir.path(), "h", "b").unwrap();
+        let host = json!({"cpu_busy_pct":5});
+        let bytes = db.bytes();
+        let tight_cap = bytes + BASELINE_HEADROOM_BYTES;
+        let error = db
+            .write_with_limits(&sample(1, "baseline", &host, &[]), tight_cap, 0)
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("baseline skipped: storage headroom")
+        );
+        assert_eq!(
+            db.conn
+                .query_row("SELECT COUNT(*) FROM samples", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+
+        db.write_with_limits(
+            &sample(2, "baseline", &host, &[]),
+            bytes + BASELINE_HEADROOM_BYTES + 1024 * 1024,
+            0,
+        )
+        .unwrap();
+        assert_eq!(
+            db.conn
+                .query_row("SELECT COUNT(*) FROM samples", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+    }
+    #[test]
+    fn detail_preflight_reserves_space_and_bounds_sample() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Store::open(dir.path(), "h", "b").unwrap();
+        let host = json!({"cpu_busy_pct":5});
+        let rows = [json!({"pid":1})];
+        let bytes = db.bytes();
+        let tight_cap = bytes + BASELINE_HEADROOM_BYTES;
+        let error = db
+            .write_with_limits(&sample(1, "detail", &host, &rows), tight_cap, 0)
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("detail skipped: storage headroom")
+        );
+        assert_eq!(
+            db.conn
+                .query_row("SELECT COUNT(*) FROM samples", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+
+        db.write_with_limits(
+            &sample(2, "detail", &host, &rows),
+            bytes + BASELINE_HEADROOM_BYTES + 1024 * 1024,
+            0,
+        )
+        .unwrap();
+        let huge_host = json!({"payload":"x".repeat(1024 * 1024)});
+        let error = db
+            .write(&sample(3, "detail", &huge_host, &rows))
+            .unwrap_err();
+        assert!(error.to_string().contains("detail sample too large"));
+        assert_eq!(
+            db.conn
+                .query_row(
+                    "SELECT COUNT(*) FROM samples WHERE mode='detail'",
+                    [],
+                    |r| { r.get::<_, i64>(0) }
+                )
                 .unwrap(),
             1
         );
@@ -753,7 +1084,12 @@ mod tests {
         );
         let aged = 3 * 60 * MINUTE_NS;
         db.write(&sample(aged, "baseline", &host, &rows)).unwrap();
-        db.prune_to(aged, 0, 0).unwrap();
+        assert!(
+            db.prune_to(aged, 0, 0)
+                .unwrap_err()
+                .to_string()
+                .contains("retention could not restore storage headroom")
+        );
         assert_eq!(
             db.conn
                 .query_row(
@@ -781,6 +1117,213 @@ mod tests {
                 .unwrap()
                 > 0
         );
+    }
+    #[test]
+    fn pinned_reader_stops_repeated_detail_quota_eviction() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Store::open(dir.path(), "h", "b").unwrap();
+        db.conn
+            .busy_timeout(std::time::Duration::from_millis(20))
+            .unwrap();
+        let host = json!({"cpu_busy_pct":5});
+        let rows = [json!({"pid":1})];
+        for at in 1..=40 {
+            db.write(&sample(at, "detail", &host, &rows)).unwrap();
+        }
+        let quota = 0;
+        let reader =
+            Connection::open_with_flags(&db.path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        reader.execute_batch("BEGIN").unwrap();
+        reader
+            .query_row("SELECT COUNT(*) FROM samples", [], |r| r.get::<_, i64>(0))
+            .unwrap();
+
+        for _ in 0..3 {
+            assert!(
+                db.evict_detail_to(1, 41, quota)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("WAL checkpoint busy")
+            );
+        }
+        assert_eq!(
+            db.conn
+                .query_row(
+                    "SELECT COUNT(*) FROM samples WHERE mode='detail'",
+                    [],
+                    |r| { r.get::<_, i64>(0) }
+                )
+                .unwrap(),
+            24
+        );
+        drop(reader);
+        db.evict_detail_to(1, 41, quota).unwrap();
+    }
+    #[test]
+    fn prune_reports_unreclaimable_bytes_with_pinned_wal_reader() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Store::open(dir.path(), "h", "b").unwrap();
+        db.conn
+            .busy_timeout(std::time::Duration::from_millis(20))
+            .unwrap();
+        let host = json!({"payload":"x".repeat(1024)});
+        for at in 1..=20 {
+            db.write(&sample(at, "baseline", &host, &[])).unwrap();
+        }
+        let reader =
+            Connection::open_with_flags(&db.path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        reader.execute_batch("BEGIN").unwrap();
+        assert_eq!(
+            reader
+                .query_row("SELECT COUNT(*) FROM samples", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            20
+        );
+        let cap = db.bytes() - 1;
+        let error = db.prune_to(2 * RECENT_BASELINE_NS, cap, 0).unwrap_err();
+        assert!(
+            error.to_string().contains("WAL checkpoint busy"),
+            "unexpected pruning failure: {error}"
+        );
+        assert!(db.bytes() > cap);
+        drop(reader);
+        db.prune_to(2 * RECENT_BASELINE_NS, cap, 0).unwrap();
+        assert!(db.bytes() <= cap);
+    }
+    #[test]
+    fn pinned_reader_stops_repeated_retention_eviction() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Store::open(dir.path(), "h", "b").unwrap();
+        db.conn
+            .busy_timeout(std::time::Duration::from_millis(20))
+            .unwrap();
+        let host = json!({"payload":"x".repeat(256)});
+        for at in 1..=220 {
+            db.write(&sample(at, "baseline", &host, &[])).unwrap();
+        }
+        let reader =
+            Connection::open_with_flags(&db.path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        reader.execute_batch("BEGIN").unwrap();
+        assert_eq!(
+            reader
+                .query_row("SELECT COUNT(*) FROM samples", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            220
+        );
+        let cap = db.bytes() - 1;
+        for _ in 0..3 {
+            assert!(
+                db.write_with_limits(
+                    &sample(2 * RECENT_BASELINE_NS, "baseline", &host, &[]),
+                    cap,
+                    0
+                )
+                .unwrap_err()
+                .to_string()
+                .contains("WAL checkpoint busy")
+            );
+        }
+        assert_eq!(
+            db.conn
+                .query_row("SELECT COUNT(*) FROM samples", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            220,
+            "later blocked prunes must not delete additional history"
+        );
+    }
+    #[test]
+    fn aged_history_prunes_in_bounded_batches_and_defers_when_wal_is_pinned() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Store::open(dir.path(), "h", "b").unwrap();
+        db.conn
+            .busy_timeout(std::time::Duration::from_millis(20))
+            .unwrap();
+        let host = json!({"cpu_busy_pct":5});
+        for at in 1..=40 {
+            db.write(&sample(at, "baseline", &host, &[])).unwrap();
+            db.conn
+                .execute(
+                    "INSERT INTO host_rollups(bucket_start_ns,sample_count,values_json,coverage_json) VALUES(?1,1,'{}','{}')",
+                    [at * MINUTE_NS],
+                )
+                .unwrap();
+            db.conn
+                .execute(
+                    "INSERT INTO events(sampled_at_ns,kind,severity,details_json) VALUES(?1,'fixture','info','{}')",
+                    [at],
+                )
+                .unwrap();
+        }
+        let now = RAW_AGE_NS + ROLLUP_AGE_NS + MINUTE_NS;
+        let counts = |db: &Store| {
+            let samples = db
+                .conn
+                .query_row(
+                    "SELECT COUNT(*) FROM samples WHERE sampled_at_ns < ?1",
+                    [now - RAW_AGE_NS],
+                    |r| r.get::<_, i64>(0),
+                )
+                .unwrap();
+            let rollups = db
+                .conn
+                .query_row(
+                    "SELECT COUNT(*) FROM host_rollups WHERE bucket_start_ns < ?1",
+                    [now - ROLLUP_AGE_NS],
+                    |r| r.get::<_, i64>(0),
+                )
+                .unwrap();
+            let events = db
+                .conn
+                .query_row(
+                    "SELECT COUNT(*) FROM events WHERE sampled_at_ns < ?1",
+                    [now - ROLLUP_AGE_NS],
+                    |r| r.get::<_, i64>(0),
+                )
+                .unwrap();
+            (samples, rollups, events)
+        };
+        let before = counts(&db);
+        let reader =
+            Connection::open_with_flags(&db.path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        reader.execute_batch("BEGIN").unwrap();
+        reader
+            .query_row("SELECT COUNT(*) FROM samples", [], |r| r.get::<_, i64>(0))
+            .unwrap();
+
+        let cap = db.bytes() + BASELINE_HEADROOM_BYTES + 1;
+        db.prune_to(now, cap, 0).unwrap();
+        let after_one = counts(&db);
+        assert_eq!(after_one, (before.0 - 16, before.1 - 16, before.2 - 16));
+        db.prune_to(now, cap, 0).unwrap();
+        assert_eq!(counts(&db), after_one);
+
+        drop(reader);
+        db.prune_to(now, cap, 0).unwrap();
+        assert_eq!(counts(&db), (0, 0, 0));
+    }
+    #[test]
+    fn aged_backlog_prune_leaves_time_for_next_baseline() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Store::open(dir.path(), "h", "b").unwrap();
+        let host = json!({"cpu_busy_pct":5});
+        for at in 1..=1000 {
+            db.write(&sample(at, "baseline", &host, &[])).unwrap();
+        }
+        let now = RAW_AGE_NS + MINUTE_NS;
+        let started = Instant::now();
+        db.prune(now).unwrap();
+        let pruned = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM samples", [], |r| r.get::<_, i64>(0))
+            .unwrap();
+        db.write(&sample(now, "baseline", &host, &[])).unwrap();
+        let elapsed = started.elapsed();
+        eprintln!(
+            "aged backlog: pruned {} of 1000 in {elapsed:?} including next baseline",
+            1000 - pruned
+        );
+        assert!(pruned < 1000);
+        assert!(elapsed < Duration::from_secs(5));
     }
     #[test]
     fn sustained_detail_eviction_preserves_baseline_cadence_and_rollup() {

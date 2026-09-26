@@ -1,5 +1,6 @@
 """Fixture-backed checks of the standalone SQLite monitor reader."""
 
+import fcntl
 import gzip
 import json
 import sqlite3
@@ -17,6 +18,34 @@ from monitor_reader import (
 
 NSEC = 1_000_000_000
 NOW = int(datetime(2026, 9, 26, 12, tzinfo=UTC).timestamp() * NSEC)
+
+
+def test_maintenance_lock_blocks_new_reader_without_touching_history(store):
+    directory, conn = store
+    _sample(conn, when=NOW - NSEC)
+    conn.commit()
+    lock_path = directory / "maintenance.lock"
+    assert MonitorReader(directory).status(now=NOW)["coverage"]["sample_count"] == 1
+    with lock_path.open("a+b") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(MonitorQueryError, match="maintenance in progress"):
+            MonitorReader(directory).status(now=NOW)
+    assert MonitorReader(directory).status(now=NOW)["coverage"]["sample_count"] == 1
+    assert lock_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_surviving_migration_interlock_blocks_reader_after_lock_released(store):
+    directory, conn = store
+    _sample(conn, when=NOW - NSEC)
+    conn.commit()
+    reader = MonitorReader(directory)
+    assert reader.status(now=NOW)["coverage"]["sample_count"] == 1
+    marker = directory / "migration.interlock"
+    marker.write_text("recovery receipt\n")
+    with pytest.raises(MonitorQueryError, match="maintenance recovery required"):
+        reader.status(now=NOW)
+    marker.unlink()
+    assert reader.status(now=NOW)["coverage"]["sample_count"] == 1
 
 
 def _sample(conn, *, when, mono=None, mode="baseline", host=None, services=None, processes=None,

@@ -228,6 +228,8 @@ export function HostMonitorDiagnostics({
   const [priority, setPriority] = useState('')
   const [showAddresses, setShowAddresses] = useState(false)
   const [includeProcess, setIncludeProcess] = useState(false)
+  const [connectionFilter, setConnectionFilter] = useState('')
+  const [connectionState, setConnectionState] = useState('all')
   const [revision, setRevision] = useState(0)
   const chosenService = logService || selectedService || ''
   const query = useQuery({
@@ -276,6 +278,37 @@ export function HostMonitorDiagnostics({
     refetchOnWindowFocus: false,
   })
   const current = views.find((view) => view.key === active)
+  const connectionItems = query.data?.items || []
+  const filteredConnections =
+    active === 'connections'
+      ? connectionItems.filter((item) => {
+          const value = record(item.value) || {}
+          const state = String(value.state || '').toLowerCase()
+          const protocol = String(value.protocol || '').toLowerCase()
+          const term = connectionFilter.trim().toLowerCase()
+          const stateMatches =
+            connectionState === 'all' ||
+            (connectionState === 'listening' && state.includes('listen')) ||
+            (connectionState === 'connected' && state === 'established') ||
+            (connectionState === 'udp' && protocol.startsWith('udp'))
+          return (
+            stateMatches &&
+            (!term ||
+              [
+                value.protocol,
+                value.family,
+                value.state,
+                value.local,
+                value.remote,
+                value.pid,
+              ].some((field) =>
+                String(field ?? '')
+                  .toLowerCase()
+                  .includes(term),
+              ))
+          )
+        })
+      : connectionItems
   return (
     <section
       className="rounded-lg border border-slate-700/60 bg-slate-900/45 p-4"
@@ -351,6 +384,29 @@ export function HostMonitorDiagnostics({
           )}
           {active === 'connections' && (
             <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-300">
+              <label className="min-w-[min(100%,18rem)] flex-1 text-xs text-slate-400">
+                Filter returned connections
+                <input
+                  type="search"
+                  value={connectionFilter}
+                  onChange={(event) => setConnectionFilter(event.target.value)}
+                  placeholder="Protocol, state, address or PID"
+                  className={`${control} mt-1 w-full`}
+                />
+              </label>
+              <label className="text-xs text-slate-400">
+                State or protocol
+                <select
+                  value={connectionState}
+                  onChange={(event) => setConnectionState(event.target.value)}
+                  className={`${control} mt-1 block`}
+                >
+                  <option value="all">All returned</option>
+                  <option value="connected">Connected</option>
+                  <option value="listening">Listening</option>
+                  <option value="udp">UDP</option>
+                </select>
+              </label>
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -434,11 +490,20 @@ export function HostMonitorDiagnostics({
                     {query.data.coverage.addresses_redacted === true
                       ? 'redacted'
                       : 'shown'}
+                    {' · '}
+                    {filteredConnections.length} match in{' '}
+                    {query.data.items.length} returned
                   </p>
                 )}
-                {query.data.items.length ? (
+                {(active === 'connections'
+                  ? filteredConnections
+                  : query.data.items
+                ).length ? (
                   <div className="mt-3 max-h-96 space-y-1 overflow-y-auto">
-                    {query.data.items.map((item, index) => (
+                    {(active === 'connections'
+                      ? filteredConnections
+                      : query.data.items
+                    ).map((item, index) => (
                       <details
                         key={`${item.sampled_at}-${index}`}
                         className="group rounded-md border border-slate-800 bg-slate-950/40 text-sm"
@@ -472,9 +537,11 @@ export function HostMonitorDiagnostics({
                   </div>
                 ) : (
                   <p className="mt-3 text-sm text-slate-400">
-                    {query.data.coverage.availability === 'ok'
-                      ? 'No results in this check.'
-                      : `No results: ${display(query.data.coverage.availability)}.`}
+                    {active === 'connections' && query.data.items.length
+                      ? 'No returned connections match these filters.'
+                      : query.data.coverage.availability === 'ok'
+                        ? 'No results in this check.'
+                        : `No results: ${display(query.data.coverage.availability)}.`}
                   </p>
                 )}
               </>
@@ -516,6 +583,19 @@ function DiskSpacePanel() {
       }),
   })
   const coverage = scan.data?.coverage
+  const diskRows = (scan.data?.items || []).map((item) => ({
+    item,
+    value: record(item.value) || {},
+  }))
+  const returnedBytes = diskRows.reduce(
+    (sum, row) =>
+      sum +
+      (typeof row.value.apparent_bytes === 'number' &&
+      Number.isFinite(row.value.apparent_bytes)
+        ? Math.max(0, row.value.apparent_bytes)
+        : 0),
+    0,
+  )
   return (
     <div className="mt-3 space-y-3">
       <form
@@ -576,25 +656,45 @@ function DiskSpacePanel() {
           )}
           {scan.data.items.length ? (
             <div className="max-h-80 overflow-y-auto rounded-md border border-slate-800">
-              {scan.data.items.map((item, index) => {
-                const value = record(item.value) || {}
+              <p className="border-b border-slate-800 px-3 py-2 text-xs text-slate-400">
+                Top-level entries · bars compare returned sizes only
+              </p>
+              {diskRows.map(({ value }, index) => {
+                const apparent =
+                  typeof value.apparent_bytes === 'number' &&
+                  Number.isFinite(value.apparent_bytes)
+                    ? Math.max(0, value.apparent_bytes)
+                    : 0
                 return (
                   <div
                     key={`${value.name}-${index}`}
-                    className="flex items-center justify-between gap-3 border-b border-slate-800 px-3 py-2 text-xs"
+                    className="border-b border-slate-800 px-3 py-2 text-xs"
                   >
-                    <span
-                      className="min-w-0 truncate text-slate-200"
-                      title={display(value.name)}
-                    >
-                      {display(value.name)}{' '}
-                      <span className="text-slate-500">
-                        {display(value.kind)}
+                    <div className="flex items-center justify-between gap-3">
+                      <span
+                        className="min-w-0 truncate text-slate-200"
+                        title={display(value.name)}
+                      >
+                        {display(value.name)}{' '}
+                        <span className="text-slate-500">
+                          {display(value.kind)}
+                        </span>
                       </span>
-                    </span>
-                    <span className="shrink-0 font-mono text-slate-300">
-                      <Bytes value={value.apparent_bytes} />
-                    </span>
+                      <span className="shrink-0 font-mono text-slate-300">
+                        <Bytes value={value.apparent_bytes} />
+                      </span>
+                    </div>
+                    <div
+                      className="mt-1 h-1.5 rounded bg-slate-800"
+                      aria-hidden="true"
+                    >
+                      <div
+                        className="h-full rounded bg-cyan-500"
+                        style={{
+                          width: `${returnedBytes > 0 ? (apparent / returnedBytes) * 100 : 0}%`,
+                        }}
+                      />
+                    </div>
                   </div>
                 )
               })}

@@ -288,6 +288,7 @@ export function HostMonitor() {
   const [metric, setMetric] = useState<string>('cpu_busy_pct')
   const [minutes, setMinutes] = useState(15)
   const [sort, setSort] = useState('cpu')
+  const [processFilter, setProcessFilter] = useState('')
   const [selectedAt, setSelectedAt] = useState<string | null>(null)
   const [selectedService, setSelectedService] = useState<string | null>(null)
   const [selectedProcess, setSelectedProcess] = useState<string | null>(null)
@@ -394,7 +395,16 @@ export function HostMonitor() {
   const service = serviceList.find((entry) => entry.id === selectedService)
   const processItems = processes.data?.items || []
   const eventItems = events.data?.items || []
-  const filteredProcesses = processItems
+  const filteredProcesses = processItems.filter((item) => {
+    const term = processFilter.trim().toLowerCase()
+    return (
+      !term ||
+      String(record(item.process)?.name || '')
+        .toLowerCase()
+        .includes(term) ||
+      String(record(item.identity)?.pid || '').includes(term)
+    )
+  })
   const filteredEvents = selectedService
     ? eventItems.filter(
         (item) =>
@@ -708,18 +718,30 @@ export function HostMonitor() {
                 ? `at ${when(selectedSampleAt || selectedAt)}`
                 : 'latest'}
             </h3>
-            <label className="text-xs text-slate-400">
-              Sort{' '}
-              <select
-                className={`${control} ml-1`}
-                value={sort}
-                onChange={(e) => setSort(e.target.value)}
-              >
-                <option value="cpu">CPU</option>
-                <option value="rss">Memory</option>
-                <option value="io">I/O</option>
-              </select>
-            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-xs text-slate-400">
+                Filter this page{' '}
+                <input
+                  type="search"
+                  value={processFilter}
+                  onChange={(e) => setProcessFilter(e.target.value)}
+                  placeholder="Name or PID"
+                  className={`${control} ml-1 w-32`}
+                />
+              </label>
+              <label className="text-xs text-slate-400">
+                Sort{' '}
+                <select
+                  className={`${control} ml-1`}
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value)}
+                >
+                  <option value="cpu">CPU</option>
+                  <option value="rss">Memory</option>
+                  <option value="io">I/O</option>
+                </select>
+              </label>
+            </div>
           </div>
           {processes.isLoading ? (
             <p className="mt-3 text-sm text-slate-400">Loading processes…</p>
@@ -782,21 +804,27 @@ export function HostMonitor() {
               </div>
               {filteredProcesses.length === 0 && (
                 <p className="mt-3 text-sm text-slate-400">
-                  {processes.data?.coverage.availability === 'unsupported'
-                    ? 'Service attribution is unavailable in this process sample.'
-                    : processes.data?.coverage.availability === 'not_collected'
-                      ? 'No process observation is available at this time.'
+                  {processFilter.trim() && processItems.length
+                    ? 'No processes on this page match the filter.'
+                    : processes.data?.coverage.availability === 'unsupported'
+                      ? 'Service attribution is unavailable in this process sample.'
                       : processes.data?.coverage.availability ===
-                          'retention_expired'
-                        ? 'This process sample is outside retained history.'
-                        : selectedService
-                          ? 'No processes linked to this service in the sample.'
-                          : 'No process rows in this sample.'}
+                          'not_collected'
+                        ? 'No process observation is available at this time.'
+                        : processes.data?.coverage.availability ===
+                            'retention_expired'
+                          ? 'This process sample is outside retained history.'
+                          : selectedService
+                            ? 'No processes linked to this service in the sample.'
+                            : 'No process rows in this sample.'}
                 </p>
               )}
               {processes.data && (
                 <p className="mt-2 text-xs text-slate-500">
                   {processes.data.truncated ? 'Result truncated · ' : ''}
+                  {processFilter.trim()
+                    ? `${filteredProcesses.length} match on this page · `
+                    : ''}
                   {errorText(processes.data.errors) ||
                     `${processItems.length} returned`}
                 </p>
