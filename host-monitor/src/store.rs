@@ -181,7 +181,7 @@ impl Store {
         max_bytes: u64,
         min_free: u64,
     ) -> rusqlite::Result<()> {
-        let mut enc = GzEncoder::new(Vec::new(), Compression::fast());
+        let mut enc = GzEncoder::new(Vec::new(), Compression::new(6));
         serde_json::to_writer(&mut enc, s.processes).map_err(|e| sqlite_error(&e.to_string()))?;
         let blob = enc.finish().map_err(|e| sqlite_error(&e.to_string()))?;
         let host_json = s.host.to_string();
@@ -723,6 +723,61 @@ mod tests {
                 & 0o777,
             0o600
         );
+    }
+    #[test]
+    fn legacy_and_new_process_blobs_read_together() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Store::open(dir.path(), "host", "boot-a").unwrap();
+        let legacy_rows = json!([
+            {"pid": 7, "start_ticks": 21, "name": "legacy", "rss_bytes": 4096}
+        ]);
+        let mut old_encoder = GzEncoder::new(Vec::new(), Compression::fast());
+        serde_json::to_writer(&mut old_encoder, &legacy_rows).unwrap();
+        let old_blob = old_encoder.finish().unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO samples(sampled_at_ns,monotonic_ns,boot_id,mode,host_json,services_json,process_blob,processes_seen,processes_permission_denied,processes_exited,errors_json,duration_ns,capture_reason) VALUES(?1,?1,'boot-a','baseline','{}','null',?2,1,0,0,'[]',12,NULL)",
+                params![60_000_000_000_i64, old_blob],
+            )
+            .unwrap();
+        let new_rows = [
+            json!({"pid": 8, "start_ticks": 35, "name": "current", "rss_bytes": 8192}),
+            json!({"pid": 9, "start_ticks": 40, "name": "worker", "rss_bytes": 16384}),
+        ];
+        db.write(&sample(65_000_000_000, "baseline", &json!({}), &new_rows))
+            .unwrap();
+        drop(db);
+
+        let read = Connection::open_with_flags(
+            dir.path().join("monitor.sqlite3"),
+            OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
+        let mut query = read
+            .prepare("SELECT sampled_at_ns,process_blob FROM samples ORDER BY sampled_at_ns,id")
+            .unwrap();
+        let rows = query
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })
+            .unwrap()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 2);
+        for ((at, blob), (expected_at, expected_rows)) in rows.iter().zip([
+            (60_000_000_000, legacy_rows),
+            (65_000_000_000, json!(new_rows)),
+        ]) {
+            let mut decoded = String::new();
+            GzDecoder::new(&blob[..])
+                .read_to_string(&mut decoded)
+                .unwrap();
+            assert_eq!(*at, expected_at);
+            assert_eq!(
+                serde_json::from_str::<Value>(&decoded).unwrap(),
+                expected_rows
+            );
+        }
     }
     #[test]
     fn existing_1024_page_wal_store_reopens_without_migration() {
