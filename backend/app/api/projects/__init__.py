@@ -2,8 +2,10 @@
 
 import asyncio
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
+from ...access_control import require_owner
+from ...project_identity import get_project_lifecycles, validate_project_root
 from ...services import explorer
 from ...storage import quality_check_results as qcr_store
 from ...storage.connection import get_connection
@@ -35,7 +37,6 @@ from .listing import (
     build_project_response,
     check_registered_project_health,
     list_project_rows,
-    project_is_active,
     resolve_project_health_statuses,
 )
 from .models import (
@@ -44,6 +45,7 @@ from .models import (
     ProjectOnboardingRequest,
     ProjectOnboardingResponse,
     ProjectResponse,
+    ProjectRetirementRequest,
     ProjectsWithStatsResponse,
     ProjectUpdate,
 )
@@ -74,6 +76,10 @@ async def create_project(
 
     Triggers an initial Explorer scan for all types in the background.
     """
+    try:
+        validate_project_root(project.id, project.root_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     effective_base_url, effective_public_url = resolve_project_create_urls(project)
     response = create_project_in_db(
         project.id,
@@ -109,10 +115,11 @@ async def create_project(
 async def list_projects(include_inactive: bool = False) -> list[ProjectResponse]:
     """List active non-testing projects; opt in to the complete inventory."""
     rows = list_project_rows(include_inactive=True) if include_inactive else list_project_rows()
+    lifecycles = get_project_lifecycles([row[0] for row in rows])
     health_statuses = await _resolve_project_health_statuses(
-        (row[0], row[2], row[4]) for row in rows if project_is_active(row)
+        (row[0], row[2], row[4]) for row in rows if row[6] != "testing" and lifecycles[row[0]] == "active"
     )
-    return [build_project_response(row, health_statuses.get(row[0])) for row in rows]
+    return [build_project_response(row, health_statuses.get(row[0]), lifecycles[row[0]]) for row in rows]
 
 
 @router.get("/with-stats", response_model=ProjectsWithStatsResponse)
@@ -124,15 +131,16 @@ async def list_projects_with_stats(include_inactive: bool = False) -> ProjectsWi
         return ProjectsWithStatsResponse(projects=[], total=0)
 
     project_ids = [row[0] for row in projects]
+    lifecycles = await asyncio.to_thread(get_project_lifecycles, project_ids)
     stats_dict, quality_summaries, active_checkpoints, health_statuses = await asyncio.gather(
         asyncio.to_thread(fetch_project_stats, project_ids),
         asyncio.to_thread(_get_quality_summaries, project_ids),
         asyncio.to_thread(get_active_checkpoint_map),
         _resolve_project_health_statuses(
-            (row[0], row[2], row[4]) for row in projects if project_is_active(row)
+            (row[0], row[2], row[4]) for row in projects if row[6] != "testing" and lifecycles[row[0]] == "active"
         ),
     )
-    result = [build_project_with_stats(row, stats_dict[row[0]]) for row in projects]
+    result = [build_project_with_stats(row, stats_dict[row[0]], lifecycles[row[0]]) for row in projects]
     for project in result:
         project.health_status = health_statuses.get(project.id)
         project.quality_gate = HealthSummaryResponse(
@@ -177,9 +185,56 @@ async def check_project_health(project_id: str) -> ProjectHealthResponse:
 
 
 @router.patch("/{project_id}", response_model=ProjectResponse)
-async def update_project(project_id: str, update: ProjectUpdate) -> ProjectResponse:
+async def update_project(project_id: str, update: ProjectUpdate, request: Request) -> ProjectResponse:
     """Update a project."""
+    if "category" in update.model_fields_set:
+        require_owner(request)
     return update_project_in_db(project_id, update)
+
+
+@router.post("/{project_id}/retirement", response_model=ProjectResponse)
+async def retire_project(project_id: str, decision: ProjectRetirementRequest, request: Request) -> ProjectResponse:
+    """Record an owner decision to retire a registered project."""
+    owner = require_owner(request)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM projects WHERE id = %s FOR UPDATE", (project_id,))
+        if cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        cur.execute(
+            """INSERT INTO project_retirement_decisions (project_id, owner_email, reason)
+               VALUES (%s, %s, %s)
+               ON CONFLICT (project_id) DO NOTHING""",
+            (project_id, owner.email, decision.reason),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=409, detail="Project already retired")
+        cur.execute(
+            """INSERT INTO project_lifecycle_events (project_id, action, owner_email, reason)
+               VALUES (%s, 'retired', %s, %s)""",
+            (project_id, owner.email, decision.reason),
+        )
+        conn.commit()
+    return get_project_from_db(project_id)
+
+
+@router.delete("/{project_id}/retirement", response_model=ProjectResponse)
+async def reactivate_project(project_id: str, request: Request) -> ProjectResponse:
+    """Remove an owner retirement decision and restore routine discovery."""
+    owner = require_owner(request)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM projects WHERE id = %s FOR UPDATE", (project_id,))
+        if cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        cur.execute("DELETE FROM project_retirement_decisions WHERE project_id = %s", (project_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=409, detail="Project is already active")
+        cur.execute(
+            """INSERT INTO project_lifecycle_events (project_id, action, owner_email)
+               VALUES (%s, 'reactivated', %s)""",
+            (project_id, owner.email),
+        )
+        conn.commit()
+    return get_project_from_db(project_id)
 
 
 @router.post("/{project_id}/onboard", response_model=ProjectOnboardingResponse)

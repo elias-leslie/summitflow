@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import subprocess
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal, cast
+
+import psycopg
 
 from app.utils.shared_paths import get_repo_root
 
 _WORKSPACES_ROOT = Path(os.environ.get("ST_WORKSPACES_ROOT", Path.home() / ".local" / "share" / "summitflow" / "workspaces"))
 _PROJECTS_ROOT = _WORKSPACES_ROOT / "projects"
 _MANIFEST_NAME = "project.identity.json"
+logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=256)
@@ -226,7 +231,7 @@ def _load_manifest(path: str) -> dict[str, Any]:
 
 
 def identity_lifecycle(identity: dict[str, Any] | None) -> ProjectLifecycle:
-    """Read canonical lifecycle; absent metadata preserves existing active behavior."""
+    """Read advisory manifest lifecycle; owner DB decisions control discovery."""
     project = (identity or {}).get("project", {})
     value = project.get("lifecycle", "active") if isinstance(project, dict) else "active"
     if value not in ("active", "retired"):
@@ -235,4 +240,74 @@ def identity_lifecycle(identity: dict[str, Any] | None) -> ProjectLifecycle:
 
 
 def get_project_lifecycle(project_id: str, root_path: str | None = None) -> ProjectLifecycle:
-    return identity_lifecycle(get_project_identity(project_id, root_path))
+    """Return the owner-approved lifecycle; a repo manifest cannot retire a project."""
+    return get_project_lifecycles([project_id])[project_id]
+
+
+def get_project_lifecycles(
+    project_ids: list[str], *, allow_unavailable: bool = False
+) -> dict[str, ProjectLifecycle]:
+    """Fetch owner decisions; service recovery can opt into active fallback on DB outage."""
+    if not project_ids:
+        return {}
+    from app.storage.connection import get_cursor
+
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                "SELECT project_id FROM project_retirement_decisions WHERE project_id = ANY(%s)",
+                (project_ids,),
+            )
+            retired = {row[0] for row in cur.fetchall()}
+    except psycopg.OperationalError:
+        if not allow_unavailable:
+            raise
+        logger.warning("Project retirement decisions unavailable; service discovery is using active fallback")
+        retired = set()
+    return {project_id: "retired" if project_id in retired else "active" for project_id in project_ids}
+
+
+def validate_project_root(
+    project_id: str, root_path: str | None, *, require_checkout_identity: bool = False
+) -> None:
+    """Reject managed releases and require a matching checkout for root updates."""
+    if not root_path:
+        if require_checkout_identity:
+            raise ValueError("Registered project root requires a matching checkout identity")
+        return
+    root = Path(root_path).expanduser().resolve()
+    state_root = Path(
+        os.environ.get("SUMMITFLOW_SERVICE_STATE_ROOT", Path.home() / ".summitflow" / "services")
+    ).expanduser().resolve()
+    try:
+        relative = root.relative_to(state_root / "projects")
+    except ValueError:
+        relative = None
+    if relative is not None and len(relative.parts) >= 4 and relative.parts[1] == "releases" and relative.parts[3] == "source":
+        raise ValueError("Deployment release source cannot be a project root")
+    manifest = root / _MANIFEST_NAME
+    if not manifest.is_file():
+        if require_checkout_identity and not _is_legacy_git_checkout(root, project_id):
+            raise ValueError("Registered project root requires a matching identity manifest or Git checkout")
+        return
+    identity = _load_manifest(str(manifest))
+    project = identity.get("project")
+    if not isinstance(project, dict) or project.get("id") != project_id:
+        raise ValueError(f"Project root identity does not match {project_id}")
+
+
+def _is_legacy_git_checkout(root: Path, project_id: str) -> bool:
+    """Allow existing manifest-free projects only at a real matching Git root."""
+    if root.name != project_id or not (root / ".git").exists():
+        return False
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0 and Path(result.stdout.strip()).resolve() == root

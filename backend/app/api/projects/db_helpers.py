@@ -7,7 +7,12 @@ import psycopg
 from fastapi import HTTPException
 from psycopg import sql
 
-from ...project_identity import canonicalize_project_name, get_project_lifecycle
+from ...project_identity import (
+    ProjectLifecycle,
+    canonicalize_project_name,
+    get_project_lifecycle,
+    validate_project_root,
+)
 from ...storage.connection import get_connection, get_cursor
 from .models import ProjectCategory, ProjectResponse, ProjectStats, ProjectUpdate, ProjectWithStats
 from .public_urls import build_project_urls, resolve_project_public_url
@@ -149,6 +154,7 @@ def fetch_project_stats(project_ids: list[str]) -> dict[str, ProjectStats]:
 def build_project_with_stats(
     row: tuple[str, str, str, str | None, str, str | None, ProjectCategory, int | None, datetime],
     stats: ProjectStats,
+    lifecycle: ProjectLifecycle | None = None,
 ) -> ProjectWithStats:
     """Build a ProjectWithStats object from a database row and stats."""
     return ProjectWithStats(
@@ -165,7 +171,7 @@ def build_project_with_stats(
         root_path=row[5],
         logo_url=None,  # Logo support will be added later
         category=row[6],
-        lifecycle=get_project_lifecycle(row[0], row[5]),
+        lifecycle=lifecycle or get_project_lifecycle(row[0], row[5]),
         sidebar_rank=row[7],
         created_at=row[8],
         stats=stats,
@@ -182,6 +188,10 @@ def create_project_in_db(
     category: str,
 ) -> ProjectResponse:
     """Create a new project in the database."""
+    try:
+        validate_project_root(project_id, root_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     canonical_name = canonicalize_project_name(project_id, name, root_path)
     with get_connection() as conn, conn.cursor() as cur:
         # Check if already exists
@@ -258,6 +268,11 @@ def update_project_in_db(project_id: str, update: ProjectUpdate) -> ProjectRespo
             raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
         root_path_updated = "root_path" in update.model_fields_set
+        if root_path_updated:
+            try:
+                validate_project_root(project_id, update.root_path, require_checkout_identity=True)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         base_url_updated = "base_url" in update.model_fields_set
         public_url_updated = "public_url" in update.model_fields_set
 

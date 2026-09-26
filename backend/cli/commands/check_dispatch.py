@@ -50,6 +50,7 @@ class CheckRuntime:
     tool_selections: dict[str, ToolSelection]
     cleanroom_main: Callable[[list[str]], int]
     run_architecture_check: Callable[[Path, list[str] | None], int]
+    run_project_identity_check: Callable[[Path], int]
     output_error: Callable[[str], None]
     resolve_repo_root: Callable[[], Path]
     workdir: Callable[[Path, ToolConfig], Path]
@@ -142,6 +143,7 @@ def run_selected(
     root = runtime.resolve_repo_root()
     changed_files = runtime.changed_files(root) if changed_only else []
     failures = int(runtime.run_architecture_check(root, changed_files if changed_only else None) != 0)
+    failures += int(runtime.run_project_identity_check(root) != 0)
     for name in selected:
         if name in {"gitleaks", "semgrep", "osv", "security"}:
             failures += int(

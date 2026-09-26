@@ -17,12 +17,13 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import psycopg
 from dotenv import dotenv_values
 
 from app.project_identity import (
     get_project_identity,
     get_project_identity_root,
-    identity_lifecycle,
+    get_project_lifecycles,
     list_project_identities,
 )
 from app.utils.env_files import project_env_files
@@ -129,12 +130,24 @@ def project_ids(*, include_inactive: bool = False) -> list[str]:
     ids: list[str] = []
     from app.storage.projects import testing_project_ids
 
-    testing = set() if include_inactive else testing_project_ids()
-    for identity in list_project_identities():
+    if include_inactive:
+        testing = set()
+    else:
+        try:
+            testing = testing_project_ids()
+        except psycopg.OperationalError:
+            # Service recovery must remain possible while the database is down.
+            testing = set()
+    identities = list_project_identities()
+    candidate_ids = [project.get("id") for identity in identities
+                     if isinstance(project := identity.get("project"), dict)
+                     and isinstance(project.get("id"), str) and project.get("id")]
+    lifecycles = get_project_lifecycles(candidate_ids, allow_unavailable=True) if not include_inactive else {}
+    for identity in identities:
         project = _dict_value(identity.get("project"))
         project_id = project.get("id")
         if (isinstance(project_id, str) and project_id
-                and (include_inactive or (identity_lifecycle(identity) == "active" and project_id not in testing))):
+                and (include_inactive or (lifecycles[project_id] == "active" and project_id not in testing))):
             ids.append(project_id)
     return sorted(set(ids))
 

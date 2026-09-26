@@ -9,7 +9,12 @@ from typing import cast
 
 import httpx
 
-from ...project_identity import canonicalize_project_name, get_project_lifecycle
+from ...project_identity import (
+    ProjectLifecycle,
+    canonicalize_project_name,
+    get_project_lifecycle,
+    get_project_lifecycles,
+)
 from ...storage.connection import get_cursor
 from .models import ProjectCategory, ProjectHealthResponse, ProjectResponse
 from .public_urls import resolve_project_public_url
@@ -73,12 +78,16 @@ def list_project_rows(*, include_inactive: bool = False) -> list[ProjectListRow]
     with get_cursor() as cur:
         cur.execute(SQL_LIST_PROJECTS)
         rows = cast(list[ProjectListRow], sorted(cur.fetchall(), key=project_sort_key))
-    return rows if include_inactive else [row for row in rows if project_is_active(row)]
+    if include_inactive:
+        return rows
+    lifecycles = get_project_lifecycles([row[0] for row in rows])
+    return [row for row in rows if row[6] != "testing" and lifecycles[row[0]] == "active"]
 
 
 def build_project_response(
     row: ProjectListRow,
     health_status: str | None = None,
+    lifecycle: ProjectLifecycle | None = None,
 ) -> ProjectResponse:
     """Build API response model for one raw project row."""
     return ProjectResponse(
@@ -94,7 +103,7 @@ def build_project_response(
         health_endpoint=row[4],
         root_path=row[5],
         category=row[6],
-        lifecycle=get_project_lifecycle(row[0], row[5]),
+        lifecycle=lifecycle or get_project_lifecycle(row[0], row[5]),
         sidebar_rank=row[7],
         created_at=row[8],
         health_status=health_status,

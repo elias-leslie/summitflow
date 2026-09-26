@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -161,3 +162,56 @@ def test_get_project_upload_dir_name_uses_manifest_artifacts(tmp_path: Path, mon
     project_identity._workspace_manifest_paths.cache_clear()
 
     assert project_identity.get_project_upload_dir_name("terminal") == "a-term-uploads"
+
+
+def test_validate_project_root_rejects_release_and_mismatched_manifest(tmp_path: Path) -> None:
+    import json
+
+    import pytest
+
+    from app.project_identity import validate_project_root
+
+    checkout = tmp_path / "a-term"
+    checkout.mkdir()
+    (checkout / "project.identity.json").write_text(json.dumps({"project": {"id": "a-term"}}))
+    validate_project_root("a-term", str(checkout))
+
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "project.identity.json").write_text(json.dumps({"project": {"id": "other"}}))
+    with pytest.raises(ValueError, match="does not match"):
+        validate_project_root("a-term", str(other))
+
+    unrelated = tmp_path / "releases" / "build-1" / "source"
+    unrelated.mkdir(parents=True)
+    (unrelated / "project.identity.json").write_text(json.dumps({"project": {"id": "a-term"}}))
+    validate_project_root("a-term", str(unrelated), require_checkout_identity=True)
+
+    release = tmp_path / "state" / "projects" / "a-term" / "releases" / "build-1" / "source"
+    release.mkdir(parents=True)
+    (release / "project.identity.json").write_text(json.dumps({"project": {"id": "a-term"}}))
+    from pytest import MonkeyPatch
+
+    with MonkeyPatch.context() as patch:
+        patch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(tmp_path / "state"))
+        with pytest.raises(ValueError, match="release"):
+            validate_project_root("a-term", str(release))
+
+        alias = tmp_path / "release-alias"
+        alias.symlink_to(release, target_is_directory=True)
+        with pytest.raises(ValueError, match="release"):
+            validate_project_root("a-term", str(alias))
+
+    missing = tmp_path / "missing"
+    missing.mkdir()
+    with pytest.raises(ValueError, match="requires a matching"):
+        validate_project_root("a-term", str(missing), require_checkout_identity=True)
+    validate_project_root("a-term", str(missing))
+    legacy = tmp_path / "a-term-legacy"
+    legacy.mkdir()
+    (legacy / ".git").mkdir()
+    with pytest.raises(ValueError, match="matching identity"):
+        validate_project_root("a-term", str(legacy), require_checkout_identity=True)
+    (checkout / "project.identity.json").unlink()
+    subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+    validate_project_root("a-term", str(checkout), require_checkout_identity=True)

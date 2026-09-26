@@ -119,6 +119,20 @@ class ProjectUpdate(BaseModel):
     sidebar_rank: int | None = Field(default=None, ge=0)
 
 
+class ProjectRetirementRequest(BaseModel):
+    """Owner's explicit reason for removing a project from routine discovery."""
+
+    reason: str = Field(min_length=10, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def non_blank_reason(cls, value: str) -> str:
+        reason = value.strip()
+        if len(reason) < 10:
+            raise ValueError("Retirement reason must contain at least 10 characters")
+        return reason
+
+
 class ProjectStats(BaseModel):
     """Stats for a single project."""
 

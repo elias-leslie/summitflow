@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -14,6 +15,182 @@ from fastapi import HTTPException
 from app.api.projects.public_urls import clear_public_url_config_cache, resolve_project_public_url
 from app.storage import quality_check_results as qcr_store
 from app.storage.connection import get_connection
+
+
+def test_retirement_requires_owner_and_persists_decision(client) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.api.projects import router
+
+    project_id = f"retire-{uuid4().hex[:8]}"
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO projects (id, name, base_url) VALUES (%s, %s, %s)",
+            (project_id, "Retirement test", ""),
+        )
+        conn.commit()
+    try:
+        unauthenticated_app = FastAPI()
+        unauthenticated_app.include_router(router, prefix="/projects")
+        response = TestClient(unauthenticated_app).post(
+            f"/projects/{project_id}/retirement",
+            json={"reason": "Owner approved retirement"},
+        )
+        assert response.status_code == 403
+        assert client.get("/api/projects/" + project_id).json()["lifecycle"] == "active"
+        assert client.post(
+            f"/api/projects/{project_id}/retirement", json={"reason": "short"}
+        ).status_code == 422
+        response = client.post(
+            f"/api/projects/{project_id}/retirement",
+            json={"reason": "Owner approved retirement"},
+        )
+        assert response.status_code == 200
+        assert response.json()["lifecycle"] == "retired"
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT owner_email, reason, approved_at FROM project_retirement_decisions WHERE project_id = %s",
+                (project_id,),
+            )
+            decision = cur.fetchone()
+        assert decision is not None
+        assert decision[0]
+        assert decision[1] == "Owner approved retirement"
+        assert decision[2] is not None
+        assert client.post(
+            f"/api/projects/{project_id}/retirement",
+            json={"reason": "Owner approved retirement"},
+        ).status_code == 409
+        response = client.delete(f"/api/projects/{project_id}/retirement")
+        assert response.status_code == 200
+        assert response.json()["lifecycle"] == "active"
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT action, owner_email, reason, recorded_at FROM project_lifecycle_events "
+                "WHERE project_id = %s ORDER BY id",
+                (project_id,),
+            )
+            events = cur.fetchall()
+        assert [row[0] for row in events] == ["retired", "reactivated"]
+        assert all(row[1] and row[3] for row in events)
+        assert events[0][2] == "Owner approved retirement"
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            cur.execute(
+                "SELECT action FROM project_lifecycle_events WHERE project_id = %s ORDER BY id",
+                (project_id,),
+            )
+            assert [row[0] for row in cur.fetchall()] == ["retired", "reactivated"]
+            cur.execute("DELETE FROM project_lifecycle_events WHERE project_id = %s", (project_id,))
+            conn.commit()
+
+
+def test_project_root_update_rejects_release_without_changing_backup(client, tmp_path: Path, monkeypatch) -> None:
+    project_id = f"root-guard-{uuid4().hex[:8]}"
+    checkout = tmp_path / project_id
+    checkout.mkdir()
+    (checkout / "project.identity.json").write_text(json.dumps({"project": {"id": project_id}}))
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(tmp_path / "state"))
+    release = tmp_path / "state" / "projects" / project_id / "releases" / "build-1" / "source"
+    release.mkdir(parents=True)
+    (release / "project.identity.json").write_text(json.dumps({"project": {"id": project_id}}))
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO projects (id, name, base_url, root_path) VALUES (%s, %s, %s, %s)",
+            (project_id, "Root guard", "", str(checkout)),
+        )
+        cur.execute(
+            """INSERT INTO backup_sources (id, name, path, source_type, project_id, enabled, frequency)
+               VALUES (%s, %s, %s, 'project', %s, TRUE, 'weekly')""",
+            (project_id, "Root guard", str(checkout), project_id),
+        )
+        conn.commit()
+    try:
+        response = client.patch(
+            f"/api/projects/{project_id}", json={"root_path": str(release)}
+        )
+        assert response.status_code == 400
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
+            project_root = cur.fetchone()
+            cur.execute(
+                "SELECT path, enabled, frequency FROM backup_sources WHERE id = %s", (project_id,)
+            )
+            backup = cur.fetchone()
+        assert project_root == (str(checkout),)
+        assert backup == (str(checkout), True, "weekly")
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
+
+
+def test_category_patch_requires_owner_but_other_patch_does_not(client) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.api.projects import router
+
+    project_id = f"category-guard-{uuid4().hex[:8]}"
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO projects (id, name, base_url, category) VALUES (%s, %s, %s, 'dev')",
+            (project_id, "Category guard", ""),
+        )
+        conn.commit()
+    try:
+        app = FastAPI()
+        app.include_router(router, prefix="/projects")
+        unauthenticated = TestClient(app)
+        assert unauthenticated.patch(
+            f"/projects/{project_id}", json={"category": "testing"}
+        ).status_code == 403
+        assert unauthenticated.patch(
+            f"/projects/{project_id}", json={"name": "Updated name"}
+        ).status_code == 200
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT category FROM projects WHERE id = %s", (project_id,))
+            assert cur.fetchone() == ("dev",)
+        assert client.patch(
+            f"/api/projects/{project_id}", json={"category": "testing"}
+        ).status_code == 200
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
+
+
+def test_root_patch_requires_manifest_or_matching_legacy_git_checkout(client, tmp_path: Path) -> None:
+    project_id = f"legacy-root-{uuid4().hex[:8]}"
+    old_root = tmp_path / "old" / project_id
+    old_root.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(old_root)], check=True)
+    candidate = tmp_path / "candidate" / project_id
+    candidate.mkdir(parents=True)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO projects (id, name, base_url, root_path) VALUES (%s, %s, %s, %s)",
+            (project_id, "Legacy root", "", str(old_root)),
+        )
+        conn.commit()
+    try:
+        assert client.patch(
+            f"/api/projects/{project_id}", json={"root_path": str(candidate)}
+        ).status_code == 400
+        subprocess.run(["git", "init", "-q", str(candidate)], check=True)
+        response = client.patch(
+            f"/api/projects/{project_id}", json={"root_path": str(candidate)}
+        )
+        assert response.status_code == 200
+        assert response.json()["root_path"] == str(candidate)
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
 
 
 def test_create_project_creates_backup_source(client, monkeypatch) -> None:
@@ -446,9 +623,12 @@ def test_run_project_onboarding_seeds_backup_schedule_anchor(monkeypatch) -> Non
     assert args[1] is not None
 
 
-def test_update_project_syncs_backup_source(client) -> None:
+def test_update_project_syncs_backup_source(client, tmp_path: Path) -> None:
     """PATCH /api/projects should keep the matching backup source in sync."""
     project_id = f"update-{uuid4().hex[:8]}"
+    new_root = tmp_path / project_id
+    new_root.mkdir()
+    (new_root / "project.identity.json").write_text(json.dumps({"project": {"id": project_id}}))
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -470,7 +650,7 @@ def test_update_project_syncs_backup_source(client) -> None:
     try:
         response = client.patch(
             f"/api/projects/{project_id}",
-            json={"name": "New Name", "root_path": "/new/root"},
+            json={"name": "New Name", "root_path": str(new_root)},
         )
 
         assert response.status_code == 200
@@ -482,7 +662,7 @@ def test_update_project_syncs_backup_source(client) -> None:
             )
             row = cur.fetchone()
 
-        assert row == ("New Name", "/new/root", project_id)
+        assert row == ("New Name", str(new_root), project_id)
     finally:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
@@ -490,10 +670,13 @@ def test_update_project_syncs_backup_source(client) -> None:
             conn.commit()
 
 
-def test_update_project_clears_stale_public_url_when_hosting_is_removed(client) -> None:
+def test_update_project_clears_stale_public_url_when_hosting_is_removed(client, tmp_path: Path) -> None:
     """PATCH /api/projects should clear stored public URLs that no longer apply."""
     project_id = f"public-clear-{uuid4().hex[:8]}"
     original_root = f"/srv/workspaces/projects/{project_id}"
+    new_root = tmp_path / project_id
+    new_root.mkdir()
+    (new_root / "project.identity.json").write_text(json.dumps({"project": {"id": project_id}}))
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -515,7 +698,7 @@ def test_update_project_clears_stale_public_url_when_hosting_is_removed(client) 
     try:
         response = client.patch(
             f"/api/projects/{project_id}",
-            json={"root_path": f"/tmp/{project_id}"},
+            json={"root_path": str(new_root)},
         )
 
         assert response.status_code == 200
@@ -526,7 +709,7 @@ def test_update_project_clears_stale_public_url_when_hosting_is_removed(client) 
             cur.execute("SELECT public_url, root_path FROM projects WHERE id = %s", (project_id,))
             row = cur.fetchone()
 
-        assert row == (None, f"/tmp/{project_id}")
+        assert row == (None, str(new_root))
     finally:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
@@ -797,9 +980,12 @@ def test_list_projects_includes_live_health_status(client, monkeypatch) -> None:
             conn.commit()
 
 
-def test_update_project_updates_selected_fields(client) -> None:
+def test_update_project_updates_selected_fields(client, tmp_path: Path) -> None:
     """PATCH should update only the provided project fields."""
     project_id = f"patch-{uuid4().hex[:8]}"
+    new_root = tmp_path / project_id
+    new_root.mkdir()
+    (new_root / "project.identity.json").write_text(json.dumps({"project": {"id": project_id}}))
 
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -816,7 +1002,7 @@ def test_update_project_updates_selected_fields(client) -> None:
             f"/api/projects/{project_id}",
             json={
                 "name": "New Name",
-                "root_path": "/new/root",
+                "root_path": str(new_root),
                 "category": "production",
                 "sidebar_rank": 2,
             },
@@ -824,7 +1010,7 @@ def test_update_project_updates_selected_fields(client) -> None:
 
         assert response.status_code == 200
         assert response.json()["name"] == "New Name"
-        assert response.json()["root_path"] == "/new/root"
+        assert response.json()["root_path"] == str(new_root)
         assert response.json()["base_url"] == "http://old.example"
         assert response.json()["health_endpoint"] == "/healthz"
         assert response.json()["category"] == "production"
@@ -1077,4 +1263,3 @@ def test_create_native_project_without_runtime_url(client, monkeypatch) -> None:
             cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
             cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
             conn.commit()
-

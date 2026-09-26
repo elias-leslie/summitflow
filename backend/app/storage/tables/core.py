@@ -6,6 +6,7 @@ import psycopg
 def create_core_tables(cur: psycopg.Cursor) -> None:
     """Create core tables and their indexes."""
     _create_projects_table(cur)
+    _create_project_retirement_decisions_table(cur)
     _create_access_tables(cur)
     _create_sitemap_entries_table(cur)
     _create_tasks_table(cur)
@@ -44,6 +45,40 @@ def _create_projects_table(cur: psycopg.Cursor) -> None:
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
         """
+    )
+
+
+def _create_project_retirement_decisions_table(cur: psycopg.Cursor) -> None:
+    """Keep owner retirement decisions outside mutable repository manifests."""
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS project_retirement_decisions (
+            project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+            owner_email TEXT NOT NULL,
+            reason TEXT NOT NULL CHECK (length(trim(reason)) >= 10),
+            approved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS project_lifecycle_events (
+            id BIGSERIAL PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            action TEXT NOT NULL CHECK (action IN ('retired', 'reactivated')),
+            owner_email TEXT NOT NULL,
+            reason TEXT,
+            recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute(
+        "ALTER TABLE project_lifecycle_events "
+        "DROP CONSTRAINT IF EXISTS project_lifecycle_events_project_id_fkey"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_project_lifecycle_events_project_id "
+        "ON project_lifecycle_events (project_id, id)"
     )
 
 

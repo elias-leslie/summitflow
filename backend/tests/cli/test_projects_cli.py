@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -280,3 +281,138 @@ def test_projects_create_native_without_base_url() -> None:
     assert body["native"] is True
     assert body["base_url"] == ""
     assert body["root_path"] == "/srv/workspaces/projects/fydor"
+
+
+def test_projects_audit_reports_complete_inventory_and_representation(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ST_WORKSPACES_ROOT", str(tmp_path))
+    active = tmp_path / "aico"
+    active.mkdir()
+    (active / ".git").mkdir()
+    (active / "project.identity.json").write_text(json.dumps({
+        "project": {"id": "aico", "lifecycle": "retired"},
+        "services": {"backend": "aico-shell.service"},
+    }))
+    fixture = tmp_path / "test1"
+    fixture.mkdir()
+    projects = [
+        {"id": "aico", "name": "Aico", "root_path": str(active), "lifecycle": "active", "category": "dev"},
+        {"id": "test1", "name": "Test", "root_path": str(fixture), "lifecycle": "active", "category": "testing"},
+    ]
+    def api(path: str, *, required: bool = False):
+        return {
+            "/projects?include_inactive=true": (projects, None),
+            "/projects": (projects[:1], None),
+            "/backup-sources": ([{"id": "aico", "project_id": "aico", "path": "/stale", "enabled": False, "source_type": "project"}], None),
+            "/docker/status": ([{"service": "aico-shell", "state": "running", "health": "healthy"}], None),
+        }[path]
+    with patch("cli.commands._projects_audit._get_list", side_effect=api):
+        result = runner.invoke(app, ["audit"])
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.output)["projects"]
+    assert [row["id"] for row in rows] == ["aico", "test1"]
+    assert rows[0]["checkout"]["git"] is True
+    assert rows[0]["lifecycle_conflict"] is True
+    assert rows[0]["visibility"]["observed_default_listing"] is True
+    assert rows[0]["backup"]["status"] == "path_mismatch"
+    assert rows[0]["backup"]["sources"][0]["enabled"] is False
+    assert rows[0]["runtime"]["services"][0]["state"] == "running"
+    assert rows[1]["visibility"]["expected_default_listing_and_picker"] is False
+    assert rows[1]["backup"]["expected_enabled"] is False
+    assert rows[1]["backup"]["status"] == "not_configured"
+    assert rows[1]["runtime"]["declaration"] == "unknown"
+
+
+def test_projects_audit_marks_unavailable_evidence_unknown(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ST_WORKSPACES_ROOT", str(tmp_path))
+    projects = [{"id": "native", "root_path": str(tmp_path), "lifecycle": "active", "category": "dev"}]
+    def api(path: str, *, required: bool = False):
+        if path == "/projects?include_inactive=true":
+            return projects, None
+        return None, "unavailable"
+    with patch("cli.commands._projects_audit._get_list", side_effect=api):
+        result = runner.invoke(app, ["audit", "native"])
+    assert result.exit_code == 0, result.output
+    row = json.loads(result.output)["projects"][0]
+    assert row["visibility"]["observed_default_listing"] is None
+    assert row["backup"]["status"] == "unknown"
+    assert row["runtime"]["declaration"] == "unknown"
+
+
+def test_projects_audit_detects_registry_checkout_drift_and_optional_runtime(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ST_WORKSPACES_ROOT", str(tmp_path))
+    checkout = tmp_path / "projects" / "native"
+    checkout.mkdir(parents=True)
+    (checkout / ".git").mkdir()
+    (checkout / "project.identity.json").write_text(json.dumps({
+        "project": {"id": "native", "lifecycle": "active"},
+        "services": {},
+    }))
+    stale = tmp_path / "old-release"
+    projects = [{"id": "native", "root_path": str(stale), "lifecycle": "active", "category": "dev"}]
+    def api(path: str, *, required: bool = False):
+        return {
+            "/projects?include_inactive=true": (projects, None),
+            "/projects": (projects, None),
+            "/backup-sources": ([], None),
+            "/docker/status": ([], None),
+        }[path]
+    with patch("cli.commands._projects_audit._get_list", side_effect=api):
+        result = runner.invoke(app, ["audit", "native"])
+    assert result.exit_code == 0, result.output
+    row = json.loads(result.output)["projects"][0]
+    assert row["checkout"]["exists"] is False
+    assert row["checkout"]["manifest_checkout"] == str(checkout)
+    assert row["checkout"]["registry_matches_manifest_checkout"] is False
+    assert row["runtime"]["declaration"] == "none"
+
+
+def test_projects_audit_does_not_attribute_foreign_manifest(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ST_WORKSPACES_ROOT", str(tmp_path))
+    root = tmp_path / "aico"
+    root.mkdir()
+    (root / ".git").mkdir()
+    (root / "project.identity.json").write_text(json.dumps({
+        "project": {"id": "other", "lifecycle": "retired"},
+        "services": {"backend": "other.service"},
+    }))
+    projects = [{"id": "aico", "root_path": str(root), "lifecycle": "active", "category": "dev"}]
+    def api(path: str, *, required: bool = False):
+        return {
+            "/projects?include_inactive=true": (projects, None),
+            "/projects": (projects, None),
+            "/backup-sources": ([], None),
+            "/docker/status": ([{"service": "other", "state": "running"}], None),
+        }[path]
+    with patch("cli.commands._projects_audit._get_list", side_effect=api):
+        result = runner.invoke(app, ["audit", "aico"])
+    assert result.exit_code == 0, result.output
+    row = json.loads(result.output)["projects"][0]
+    assert row["checkout"]["manifest_project_id"] == "other"
+    assert row["checkout"]["manifest_matches_project"] is False
+    assert row["declared_lifecycle"] is None
+    assert row["runtime"]["declaration"] == "unknown"
+
+
+def test_projects_audit_ignores_foreign_conventional_checkout(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ST_WORKSPACES_ROOT", str(tmp_path))
+    candidate = tmp_path / "projects" / "aico"
+    candidate.mkdir(parents=True)
+    (candidate / "project.identity.json").write_text(json.dumps({
+        "project": {"id": "other", "lifecycle": "retired"},
+        "services": {"backend": "other.service"},
+    }))
+    projects = [{"id": "aico", "root_path": str(tmp_path / "missing"), "lifecycle": "active", "category": "dev"}]
+    def api(path: str, *, required: bool = False):
+        return {
+            "/projects?include_inactive=true": (projects, None),
+            "/projects": (projects, None),
+            "/backup-sources": ([], None),
+            "/docker/status": ([], None),
+        }[path]
+    with patch("cli.commands._projects_audit._get_list", side_effect=api):
+        result = runner.invoke(app, ["audit", "aico"])
+    assert result.exit_code == 0, result.output
+    row = json.loads(result.output)["projects"][0]
+    assert row["checkout"]["manifest_checkout"] is None
+    assert row["declared_lifecycle"] is None
+    assert row["runtime"]["declaration"] == "unknown"

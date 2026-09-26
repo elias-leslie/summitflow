@@ -55,6 +55,7 @@ from .check_execution import (
     tool_output,
     tool_result_line,
 )
+from .check_project_identity import run_project_identity_check
 from .check_runner import (
     _normalize_explicit_args,
     _resolve_repo_root,
@@ -244,6 +245,7 @@ def _runtime() -> CheckRuntime:
         tool_selections=_TOOL_SELECTIONS,
         cleanroom_main=cleanroom_main,
         run_architecture_check=run_architecture_check,
+        run_project_identity_check=run_project_identity_check,
         output_error=output_error,
         resolve_repo_root=_resolve_repo_root,
         workdir=_workdir,

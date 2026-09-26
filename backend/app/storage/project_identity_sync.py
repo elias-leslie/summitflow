@@ -13,6 +13,7 @@ from ..project_identity import (
     get_project_display_name,
     get_project_identity,
     get_project_identity_root,
+    validate_project_root,
 )
 from .connection import get_connection
 
@@ -106,6 +107,7 @@ def _build_metadata(project_id: str) -> ProjectIdentityMetadata:
     root_path = get_project_identity_root(project_id)
     if canonical_id is None or root_path is None:
         raise ValueError(f"Project identity manifest is incomplete for {project_id}")
+    validate_project_root(canonical_id, root_path)
 
     display_name = get_project_display_name(project_id, fallback=canonical_id)
     if display_name is None:

@@ -338,15 +338,51 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
 )
 _RUNTIME_SERVICE_MAP = {svc["service"]: svc for svc in _RUNTIME_SERVICE_DEFS}
 
+_STATIC_PROJECT_SERVICE_PREFIXES = (
+    ("summitflow-", "summitflow"),
+    ("a-loom-", "a-loom"),
+    ("agent-hub-", "agent-hub"),
+    ("a-term-", "a-term"),
+    ("portfolio-", "portfolio-ai"),
+    ("sha-", "sha"),
+    ("vantage-", "vantage"),
+    ("test1-", "test1"),
+    ("test2-", "test2"),
+    ("test3-", "test3"),
+)
+
+
+def _static_service_project_id(service: str) -> str | None:
+    if service == "monkey-fight":
+        return "monkey-fight"
+    return next(
+        (project_id for prefix, project_id in _STATIC_PROJECT_SERVICE_PREFIXES if service.startswith(prefix)),
+        None,
+    )
+
 
 def runtime_service_definitions() -> tuple[dict[str, Any], ...]:
     """Discover declared project services on each request, retaining legacy IDs."""
-    from ...project_identity import identity_lifecycle, list_project_identities
+    from ...project_identity import get_project_lifecycles, list_project_identities
 
-    definitions = {svc["service"]: dict(svc) for svc in _RUNTIME_SERVICE_DEFS}
-    by_unit = {svc.get("unit"): svc["service"] for svc in _RUNTIME_SERVICE_DEFS}
-    for identity in list_project_identities():
-        if identity_lifecycle(identity) != "active":
+    identities = list_project_identities()
+    project_ids = {
+        identity["project"]["id"] for identity in identities
+        if isinstance(identity.get("project"), dict) and isinstance(identity["project"].get("id"), str)
+    }
+    project_ids.update(
+        project_id for svc in _RUNTIME_SERVICE_DEFS
+        if (project_id := _static_service_project_id(svc["service"])) is not None
+    )
+    lifecycles = get_project_lifecycles(sorted(project_ids), allow_unavailable=True)
+    definitions = {
+        svc["service"]: dict(svc) for svc in _RUNTIME_SERVICE_DEFS
+        if (project_id := _static_service_project_id(svc["service"])) is None
+        or lifecycles[project_id] == "active"
+    }
+    by_unit = {svc.get("unit"): svc["service"] for svc in definitions.values()}
+    for identity in identities:
+        if lifecycles.get(identity["project"]["id"]) != "active":
             continue
         project_id = identity["project"]["id"]
         services = identity.get("services", {})

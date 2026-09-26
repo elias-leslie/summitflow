@@ -12,6 +12,7 @@ import typer
 
 from ..config import get_config
 from ..output import output_error, output_json
+from ._projects_audit import run_audit
 from ._projects_helpers import (
     DEFAULT_HEALTH_ENDPOINT,
     ENV_PROJECT_ID,
@@ -75,6 +76,18 @@ def list_projects(
         st projects list -v
     """
     run_list(verbose=verbose)
+
+
+@app.command("audit")
+def audit_projects(
+    project_id: Annotated[str | None, typer.Argument(help="Optional project ID to inspect")] = None,
+) -> None:
+    """Audit registered projects across checkout, listing, backups, and runtime.
+
+    Emits JSON; observations marked unknown have insufficient evidence.
+    This command only reads registry APIs and local project files.
+    """
+    run_audit(project_id)
 
 
 @app.command()
