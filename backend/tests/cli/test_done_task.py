@@ -557,6 +557,46 @@ def test_local_commit_event_supports_linkage_before_separate_acceptance():
         assert _task_has_published_commit_event('task-123')
 
 
+def test_missing_checkpoint_base_recovers_only_from_task_linked_direct_commit(tmp_path):
+    import subprocess
+
+    import typer
+
+    from cli.commands.done_task import _run_diff_gate
+
+    def git(*args):
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True,
+        ).stdout.strip()
+
+    git("init", "-q", "--initial-branch=main")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    git("config", "core.hooksPath", "/dev/null")
+    (tmp_path / "app.py").write_text("before\n")
+    git("add", "app.py")
+    git("commit", "-qm", "baseline")
+    (tmp_path / "app.py").write_text("after\n")
+    git("commit", "-qam", "task change")
+    commit = git("rev-parse", "HEAD")
+
+    with (
+        patch("cli.commands.done_task.resolve_task_branch", return_value="missing/task-branch"),
+        patch(
+            "app.storage.events.get_events_by_trace",
+            return_value=[{"message": f"st commit commit={commit} pushed=false"}],
+        ),
+    ):
+        _run_diff_gate(str(tmp_path), "task-direct", "a-term", "main")
+
+    with (
+        patch("cli.commands.done_task.resolve_task_branch", return_value="missing/task-branch"),
+        patch("app.storage.events.get_events_by_trace", return_value=[]),
+        pytest.raises(typer.Exit),
+    ):
+        _run_diff_gate(str(tmp_path), "task-direct", "a-term", "main")
+
+
 def test_verified_existing_remote_commit_can_support_closeout():
     from cli.commands.done_task import _task_has_published_commit_event
     with patch('app.storage.events.get_events_by_trace', return_value=[{'message': 'st commit commit=abcdef pushed=false publication_complete=true'}]):

@@ -257,6 +257,38 @@ def _initial_checkpoint_tree(repo_root: str, claimed_at: str | None) -> str | No
         return None
 
 
+def _task_commit_diff_ref(repo_root: str, task_id: str) -> tuple[str, str] | None:
+    """Recover a direct-main task diff when a broken checkpoint lacks its base."""
+    import re
+
+    from app.storage.events import get_events_by_trace
+
+    try:
+        events = get_events_by_trace(task_id, limit=1000)
+    except Exception:
+        return None
+    for event in events:
+        message = event.get("message") or ""
+        match = re.search(r"\bst commit\b.*\bcommit=([0-9a-f]{7,40})\b", message)
+        if not match:
+            continue
+        commit = match.group(1)
+        ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
+            cwd=repo_root, capture_output=True, check=False,
+        )
+        if ancestor.returncode != 0:
+            continue
+        parents = subprocess.run(
+            ["git", "rev-list", "--parents", "-n", "1", commit],
+            cwd=repo_root, capture_output=True, text=True, check=False,
+        )
+        parts = parents.stdout.strip().split() if parents.returncode == 0 else []
+        if len(parts) >= 2 and parts[0].startswith(commit):
+            return parts[0], parts[1]
+    return None
+
+
 def _run_diff_gate(
     repo_root: str,
     task_id: str,
@@ -277,6 +309,11 @@ def _run_diff_gate(
     initial_tree = _initial_checkpoint_tree(repo_root, claimed_at) if not base_commit else None
     diff_result = (check_diff_gate(repo_root, head_ref="HEAD", base_tree=initial_tree) if initial_tree
                    else check_diff_gate(repo_root, head_ref=head_ref, base_ref=base_commit or base_branch))
+    if (not diff_result.passed and not base_commit and not initial_tree
+            and diff_result.summary == "Could not determine merge-base — completion blocked"
+            and (task_diff := _task_commit_diff_ref(repo_root, task_id))):
+        commit, parent = task_diff
+        diff_result = check_diff_gate(repo_root, head_ref=commit, base_tree=parent)
     if diff_result.passed:
         return
     output_error(
