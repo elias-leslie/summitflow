@@ -36,6 +36,7 @@ import {
   PROJECT_CATEGORY_LABELS,
   type Project,
   type ProjectCategory,
+  type ProjectUpdate,
   updateProject,
 } from '@/lib/api'
 import {
@@ -106,13 +107,7 @@ export function ProjectSettingsClient() {
   }, [loadProjectForm, project])
 
   const mutation = useMutation({
-    mutationFn: (payload: {
-      name: string
-      base_url: string
-      health_endpoint: string
-      root_path?: string
-      category: ProjectCategory
-    }) => updateProject(projectId, payload),
+    mutationFn: (payload: ProjectUpdate) => updateProject(projectId, payload),
     onSuccess: async (updatedProject) => {
       queryClient.setQueryData(['project', projectId], updatedProject)
       await Promise.all([
@@ -182,13 +177,22 @@ export function ProjectSettingsClient() {
     setErrors(validationErrors)
     if (Object.keys(validationErrors).length > 0) return
 
-    mutation.mutate({
-      name: currentValues.name,
-      base_url: currentValues.baseUrl,
-      health_endpoint: currentValues.healthEndpoint,
-      root_path: currentValues.rootPath || undefined,
-      category,
-    })
+    const changes: ProjectUpdate = {}
+    if (currentValues.name !== persistedValues.name)
+      changes.name = currentValues.name
+    if (currentValues.baseUrl !== persistedValues.baseUrl)
+      changes.base_url = currentValues.baseUrl
+    if (currentValues.healthEndpoint !== persistedValues.healthEndpoint) {
+      changes.health_endpoint = currentValues.healthEndpoint
+    }
+    if (
+      currentValues.rootPath !== persistedValues.rootPath &&
+      currentValues.rootPath
+    ) {
+      changes.root_path = currentValues.rootPath
+    }
+    if (category !== project?.category) changes.category = category
+    mutation.mutate(changes)
   }
 
   const handleReset = () => {

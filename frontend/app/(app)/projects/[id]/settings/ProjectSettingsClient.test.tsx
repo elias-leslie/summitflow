@@ -150,15 +150,41 @@ describe('ProjectSettingsClient', () => {
     await waitFor(() => {
       expect(apiMocks.updateProject).toHaveBeenCalledWith('summitflow', {
         name: 'SummitFlow Ops',
-        base_url: 'https://summitflow.example.com',
         health_endpoint: '/healthz',
-        root_path: '/home/testuser/summitflow',
         category: 'testing',
       })
     })
     expect(
       await screen.findByText('Project registration details saved.'),
     ).toBeInTheDocument()
+  })
+
+  it('sends only the category when the registered root is stale', async () => {
+    const staleProject = {
+      ...TEST_PROJECT,
+      id: 'delete-017b002c',
+      root_path: '/srv/workspaces/projects/delete-017b002c',
+      category: 'dev',
+    }
+    navigationMocks.useParams.mockReturnValue({ id: staleProject.id })
+    apiMocks.fetchProject.mockResolvedValue(staleProject)
+    apiMocks.updateProject.mockResolvedValue({
+      ...staleProject,
+      category: 'testing',
+    })
+
+    renderClient()
+
+    expect(await screen.findByText('Settings')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Sidebar Category'))
+    fireEvent.click(screen.getByRole('button', { name: 'Testing' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => {
+      expect(apiMocks.updateProject).toHaveBeenCalledWith(staleProject.id, {
+        category: 'testing',
+      })
+    })
   })
 
   it('uses the stored public URL for the open app link', async () => {
