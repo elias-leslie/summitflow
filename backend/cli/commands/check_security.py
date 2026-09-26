@@ -29,7 +29,6 @@ _LOCK_NAMES = {
     "bun.lockb",
     "Cargo.lock",
     "go.mod",
-    "go.sum",
     "package-lock.json",
     "pnpm-lock.yaml",
     "poetry.lock",
@@ -37,7 +36,7 @@ _LOCK_NAMES = {
     "uv.lock",
     "yarn.lock",
 }
-_MANIFEST_NAMES = {"package.json", "pyproject.toml"}
+_MANIFEST_NAMES = {"go.sum", "package.json", "pyproject.toml"}
 
 
 def _git_paths(root: Path) -> list[str]:

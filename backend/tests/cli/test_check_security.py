@@ -149,6 +149,14 @@ def test_osv_scans_only_candidate_lockfiles(
     assert str(tmp_path / "pnpm-lock.yaml") not in command
 
 
+def test_changed_go_sum_selects_supported_go_mod(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = tmp_path / "go.mod"
+    module.write_text("module example.test/monitor\n")
+    (tmp_path / "go.sum").write_text("example.test/module v1 h1:fixture\n")
+    monkeypatch.setattr(check_security, "_git_paths", lambda _root: ["go.mod", "go.sum"])
+    assert check_security._lockfiles(tmp_path, ["go.sum"], True) == [module]
+
+
 def test_security_aggregate_states_codeql_limitation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
