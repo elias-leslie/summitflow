@@ -7,7 +7,7 @@ import stat
 from pathlib import Path
 from typing import Any
 
-from .common import availability, base, bounded_text, error, item, limits, pack
+from .common import ObserveQueryError, availability, base, bounded_text, error, item, limits, pack
 from .logs import _run
 
 OS_RELEASE = Path("/etc/os-release")
@@ -130,39 +130,6 @@ def query_users(*, limit: int = 10, max_bytes: int = 4096) -> dict[str, Any]:
     return pack(payload, sessions + accounts, limit=limit, max_bytes=max_bytes,
                 more=session_capped)
 
-def _command_inventory(kind: str, argv: list[str], provider: str, *, limit: int,
-                       max_bytes: int, parse: str) -> dict[str, Any]:
-    limits(limit, max_bytes)
-    payload = base(kind)
-    try:
-        stdout, _stderr, returncode, clipped = _run(argv)
-    except (OSError, TimeoutError) as exc:
-        return _failure(payload, provider, exc, limit=limit, max_bytes=max_bytes)
-    if returncode and not clipped:
-        payload["coverage"] = {"availability": "error", "source": provider}
-        payload["errors"].append(error("error", provider, "inventory command exited with an error"))
-        return pack(payload, [], limit=limit, max_bytes=max_bytes)
-    lines = stdout.decode("utf-8", "replace").splitlines()
-    if clipped:
-        lines = lines[:-1]
-        payload["errors"].append(error("source_truncated", provider))
-    entries = []
-    for line in lines:
-        if parse == "packages":
-            parts = line.split("\t", 1)
-            if len(parts) != 2:
-                continue
-            value = {"name": bounded_text(parts[0], 128), "version": bounded_text(parts[1], 128)}
-        else:
-            parts = line.split()
-            if not parts or not parts[0].endswith(".service"):
-                continue
-            value = {"unit": bounded_text(parts[0], 128), "state": bounded_text(parts[1], 32) if len(parts) > 1 else None}
-        entries.append(item(provider, provider, "ok", value))
-    payload["coverage"] = {"availability": "ok", "entries_seen": len(entries), "source": provider}
-    return pack(payload, entries, limit=limit, max_bytes=max_bytes, more=clipped)
-
-
 def _desktop_metadata(path: Path) -> dict[str, Any] | None:
     """Read only selected Desktop Entry keys from a regular, non-symlink file."""
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
@@ -266,10 +233,84 @@ def query_startup(*, limit: int = 10, max_bytes: int = 4096) -> dict[str, Any]:
     }
     return pack(payload, desktop_entries + entries, limit=limit, max_bytes=max_bytes, more=capped)
 
-def query_apps(*, limit: int = 10, max_bytes: int = 4096) -> dict[str, Any]:
-    """Debian package inventory where dpkg-query is present."""
-    return _command_inventory("apps", ["dpkg-query", "-W", "-f=${Package}\t${Version}\n"],
-                              "dpkg-query", limit=limit, max_bytes=max_bytes, parse="packages")
+_APP_COMMANDS = {
+    "dpkg": (["dpkg-query", "-W", "-f=${Package}\t${Version}\n"], "dpkg-query"),
+    "snap": (["snap", "list", "--color=never", "--unicode=never"], "snap"),
+    "flatpak": (["flatpak", "list", "--app", "--columns=application,version"], "flatpak"),
+}
+
+
+def _app_rows(stdout: bytes, provider: str, clipped: bool) -> tuple[list[dict[str, Any]], int]:
+    lines = stdout.decode("utf-8", "replace").splitlines()
+    if clipped and lines:
+        lines = lines[:-1]  # The final record may be incomplete.
+    if provider in {"snap", "flatpak"} and lines:
+        heading = "Name" if provider == "snap" else "Application"
+        if lines[0].split(maxsplit=1)[0] == heading:
+            lines = lines[1:]
+    rows: list[dict[str, Any]] = []
+    malformed = 0
+    for line in lines:
+        parts = line.split("\t", 1) if provider == "dpkg" else line.split(maxsplit=2)
+        if not parts or not parts[0] or (provider == "dpkg" and len(parts) != 2):
+            malformed += 1
+            continue
+        name = bounded_text(parts[0].strip(), 128)
+        version = bounded_text(parts[1].strip(), 128) if len(parts) > 1 else None
+        if not name:
+            malformed += 1
+            continue
+        source = "dpkg-query" if provider == "dpkg" else provider
+        rows.append(item(source, source, "ok", {"name": name, "version": version}))
+    return rows, malformed
+
+
+def query_apps(*, provider: str = "dpkg", cursor: str | None = None,
+               limit: int = 10, max_bytes: int = 4096) -> dict[str, Any]:
+    """On-demand, byte-capped package inventory for one explicitly chosen source.
+
+    Cursor is an offset into a fresh command result; entries can move between
+    pages when the local package inventory changes.
+    """
+    limits(limit, max_bytes)
+    if provider not in _APP_COMMANDS:
+        raise ObserveQueryError("provider must be dpkg, snap, or flatpak")
+    if cursor is not None and (not cursor.isascii() or not cursor.isdecimal()
+                               or len(cursor) > 6 or int(cursor) > 100_000):
+        raise ObserveQueryError("invalid apps cursor")
+    offset = int(cursor) if cursor is not None else 0
+    argv, source = _APP_COMMANDS[provider]
+    payload = base("apps", {"provider": provider, "cursor": cursor})
+    try:
+        stdout, stderr, returncode, clipped = _run(argv)
+    except (OSError, TimeoutError) as exc:
+        code = availability(exc)
+        payload["coverage"] = {"availability": code, "source": source, "entries_seen": 0}
+        payload["errors"].append(error(code, source))
+        return pack(payload, [], limit=limit, max_bytes=max_bytes)
+    if returncode and not clipped:
+        message = stderr[:512].decode("utf-8", "replace").lower()
+        if provider == "snap" and "no snaps are installed" in message:
+            stdout = b""
+        else:
+            code = "permission_denied" if "permission denied" in message or "access denied" in message else "error"
+            payload["coverage"] = {"availability": code, "source": source, "entries_seen": 0}
+            payload["errors"].append(error(code, source, "inventory command exited with an error"))
+            return pack(payload, [], limit=limit, max_bytes=max_bytes)
+    rows, malformed = _app_rows(stdout, provider, clipped)
+    partial = clipped or bool(malformed)
+    if clipped:
+        payload["errors"].append(error("source_truncated", source))
+    if malformed:
+        payload["errors"].append(error("parse_error", source, f"{malformed} inventory rows skipped"))
+    payload["coverage"] = {"availability": "partial" if partial else "ok", "source": source,
+                           "entries_seen": len(rows), "malformed_rows": malformed,
+                           "source_truncated": clipped,
+                           "pagination": "live_offset"}
+    selected = rows[offset:]
+    cursors: list[str | None] = [str(index + 1) for index in range(offset, offset + min(limit, len(selected)))]
+    return pack(payload, selected, limit=limit, max_bytes=max_bytes,
+                next_cursors=cursors, more=clipped)
 
 
 def query_drivers(*, limit: int = 10, max_bytes: int = 4096) -> dict[str, Any]:

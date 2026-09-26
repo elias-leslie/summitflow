@@ -47,7 +47,7 @@ const views: Array<{ key: Diagnostic; label: string; description: string }> = [
     label: 'Users',
     description: 'Local accounts and active login sessions',
   },
-  { key: 'apps', label: 'Apps', description: 'Installed Debian packages' },
+  { key: 'apps', label: 'Apps', description: 'Installed packages by provider' },
   { key: 'drivers', label: 'Drivers', description: 'Loaded kernel modules' },
   {
     key: 'disk-space',
@@ -230,6 +230,11 @@ export function HostMonitorDiagnostics({
   const [includeProcess, setIncludeProcess] = useState(false)
   const [connectionFilter, setConnectionFilter] = useState('')
   const [connectionState, setConnectionState] = useState('all')
+  const [appsProvider, setAppsProvider] = useState<'dpkg' | 'snap' | 'flatpak'>(
+    'dpkg',
+  )
+  const [appsCursor, setAppsCursor] = useState<string | null>(null)
+  const [appsPrevious, setAppsPrevious] = useState<Array<string | null>>([])
   const [revision, setRevision] = useState(0)
   const chosenService = logService || selectedService || ''
   const query = useQuery({
@@ -241,6 +246,8 @@ export function HostMonitorDiagnostics({
       priority,
       showAddresses,
       includeProcess,
+      appsProvider,
+      appsCursor,
       revision,
     ],
     enabled:
@@ -265,13 +272,17 @@ export function HostMonitorDiagnostics({
         active === 'system-info' ||
         active === 'startup' ||
         active === 'users' ||
-        active === 'apps' ||
         active === 'drivers'
       )
         return monitorApi.diagnostics(
           active,
           active === 'users' || active === 'startup' ? 100 : 50,
         )
+      if (active === 'apps')
+        return monitorApi.diagnostics('apps', 50, {
+          provider: appsProvider,
+          cursor: appsCursor || undefined,
+        })
       throw new Error('Choose a diagnostic view')
     },
     staleTime: Infinity,
@@ -431,6 +442,31 @@ export function HostMonitorDiagnostics({
               </p>
             </div>
           )}
+          {active === 'apps' && (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <label className="text-xs text-slate-400">
+                Package source{' '}
+                <select
+                  className={`${control} ml-1`}
+                  value={appsProvider}
+                  onChange={(event) => {
+                    setAppsProvider(
+                      event.target.value as 'dpkg' | 'snap' | 'flatpak',
+                    )
+                    setAppsCursor(null)
+                    setAppsPrevious([])
+                  }}
+                >
+                  <option value="dpkg">Debian packages</option>
+                  <option value="snap">Snap packages</option>
+                  <option value="flatpak">Flatpak apps</option>
+                </select>
+              </label>
+              <p className="text-xs text-slate-500">
+                Live inventory; pages may shift when packages change.
+              </p>
+            </div>
+          )}
           {active === 'disk-space' ? (
             <DiskSpacePanel />
           ) : active === 'benchmark' ? (
@@ -494,6 +530,40 @@ export function HostMonitorDiagnostics({
                     {filteredConnections.length} match in{' '}
                     {query.data.items.length} returned
                   </p>
+                )}
+                {active === 'apps' && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                    <span>
+                      {display(query.data.coverage.source)} · page{' '}
+                      {appsPrevious.length + 1} ·{' '}
+                      {display(query.data.coverage.entries_seen)} entries seen
+                    </span>
+                    {appsPrevious.length > 0 && (
+                      <button
+                        type="button"
+                        className={control}
+                        onClick={() => {
+                          const previous = appsPrevious.at(-1) ?? null
+                          setAppsPrevious((value) => value.slice(0, -1))
+                          setAppsCursor(previous)
+                        }}
+                      >
+                        Previous page
+                      </button>
+                    )}
+                    {query.data.next_cursor && (
+                      <button
+                        type="button"
+                        className={control}
+                        onClick={() => {
+                          setAppsPrevious((value) => [...value, appsCursor])
+                          setAppsCursor(query.data?.next_cursor || null)
+                        }}
+                      >
+                        Next page
+                      </button>
+                    )}
+                  </div>
                 )}
                 {(active === 'connections'
                   ? filteredConnections

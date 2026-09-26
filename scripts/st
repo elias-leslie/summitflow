@@ -8,6 +8,9 @@ repo_root=$(cd -- "$(dirname -- "$launcher")/.." && pwd)
 
 if [[ ${1-} == monitor ]]; then
     shift
+    # The accepted release lives under service state. Keep the registered host
+    # checkout available to bounded on-demand providers such as disk-space.
+    export SUMMITFLOW_HOST_CONFIG_ROOT="$repo_root"
     service_state=${SUMMITFLOW_SERVICE_STATE_ROOT:-$HOME/.summitflow/services}
     accepted_source="$service_state/projects/summitflow/current/source"
     monitor_source="$repo_root"

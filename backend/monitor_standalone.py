@@ -153,12 +153,15 @@ def _parser() -> argparse.ArgumentParser:
         ("sensors", "Temperatures, fans, CPU frequencies and power readings"),
         ("users", "Local account inventory"),
         ("startup", "Enabled user service inventory"),
-        ("apps", "Installed Debian packages"),
+        ("apps", "Installed packages from one selected provider"),
         ("drivers", "Loaded kernel modules"),
     ):
         inventory = commands.add_parser(name, help=help_text)
         inventory.add_argument("--limit", type=limit, default=10)
         inventory.add_argument("--max-bytes", type=budget, default=4096)
+        if name == "apps":
+            inventory.add_argument("--provider", choices=("dpkg", "snap", "flatpak"), default="dpkg")
+            inventory.add_argument("--cursor")
 
     connections = commands.add_parser("connections", help="On-demand socket states")
     connections.add_argument("--limit", type=limit, default=10)
@@ -238,9 +241,12 @@ def main(argv: list[str] | None = None) -> int:
             result = export_capture(MonitorReader(monitor_state_dir()), _required_time(args.since),
                                     _required_time(args.until), limit=args.limit, cursor=args.cursor,
                                     max_bytes=max_bytes)
-        elif command in {"sensors", "users", "startup", "apps", "drivers"}:
+        elif command == "apps":
+            result = query_apps(provider=args.provider, cursor=args.cursor, limit=args.limit,
+                                max_bytes=max_bytes)
+        elif command in {"sensors", "users", "startup", "drivers"}:
             query = {"sensors": query_sensors, "users": query_users, "startup": query_startup,
-                     "apps": query_apps, "drivers": query_drivers}[command]
+                     "drivers": query_drivers}[command]
             result = query(limit=args.limit, max_bytes=max_bytes)
         else:
             reader = MonitorReader(monitor_state_dir())

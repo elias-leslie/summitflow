@@ -55,6 +55,7 @@ def _run(link: Path, env: dict[str, str], *args: str) -> subprocess.CompletedPro
 def test_installed_monitor_prefers_accepted_release_source(installed, tmp_path: Path) -> None:
     root, link, state, env = installed
     _store(state)
+    (root / "visible.txt").write_text("visible")
     service_state = tmp_path / "managed-services"
     accepted = service_state / "projects/summitflow/current/source"
     shutil.copytree(root / "backend", accepted / "backend")
@@ -63,6 +64,9 @@ def test_installed_monitor_prefers_accepted_release_source(installed, tmp_path: 
     result = _run(link, env, "monitor", "status")
     assert result.returncode == 0
     assert json.loads(result.stdout)["schema"] == 1
+    disk = _run(link, env, "monitor", "disk-space", str(root), "--limit", "5")
+    assert disk.returncode == 0, disk.stderr or disk.stdout
+    assert json.loads(disk.stdout)["coverage"]["scope"] == "project"
 
 
 def _store(state: Path) -> None:

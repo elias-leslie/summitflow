@@ -1,7 +1,7 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, RefreshCw } from 'lucide-react'
+import { Activity, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import {
   type MonitorEnvelope,
@@ -172,6 +172,91 @@ function processSortValue(item: MonitorItem, sort: string): string {
   if (sort === 'io') return `${bytes(value)}/s`
   return bytes(value)
 }
+type ProcessRow = {
+  item: MonitorItem
+  key: string
+  depth: number
+  children: number
+  parentNotLinked: boolean
+}
+
+function processKey(item: MonitorItem, index: number): string {
+  const identity = record(item.identity)
+  const pid = number(identity?.pid)
+  const start = number(identity?.start_ticks)
+  return pid !== null && start !== null
+    ? `${string(identity?.boot_id) || 'boot-unknown'}-${pid}-${start}`
+    : `row-${index}`
+}
+
+function processRows(
+  items: MonitorItem[],
+  collapsed: ReadonlySet<string>,
+): ProcessRow[] {
+  const nodes = items.map((item, index) => ({
+    item,
+    key: processKey(item, index),
+    pid: number(record(item.identity)?.pid),
+    ppid: number(record(item.process)?.ppid),
+    start: number(record(item.identity)?.start_ticks),
+    boot: string(record(item.identity)?.boot_id),
+    observed: string(item.observed_at),
+    children: [] as number[],
+    parent: null as number | null,
+  }))
+  const byPid = new Map<number, number[]>()
+  nodes.forEach((node, index) => {
+    if (node.pid === null) return
+    byPid.set(node.pid, [...(byPid.get(node.pid) || []), index])
+  })
+  nodes.forEach((node, index) => {
+    if (node.ppid === null || node.ppid <= 0 || node.ppid === node.pid) return
+    const candidates = byPid.get(node.ppid) || []
+    if (candidates.length !== 1) return
+    const parentIndex = candidates[0]
+    const parent = nodes[parentIndex]
+    if (
+      !parent ||
+      parent.boot !== node.boot ||
+      parent.start === null ||
+      node.start === null ||
+      parent.start > node.start ||
+      (parent.observed && node.observed && parent.observed !== node.observed)
+    )
+      return
+    node.parent = parentIndex
+    parent.children.push(index)
+  })
+  const rows: ProcessRow[] = []
+  const visited = new Set<number>()
+  const visit = (index: number, depth: number, visible = true) => {
+    if (visited.has(index)) return
+    visited.add(index)
+    const node = nodes[index]
+    if (visible) {
+      rows.push({
+        item: node.item,
+        key: node.key,
+        depth,
+        children: node.children.length,
+        parentNotLinked:
+          node.ppid !== null &&
+          node.ppid > 0 &&
+          node.ppid !== node.pid &&
+          node.parent === null,
+      })
+    }
+    node.children.forEach((child) =>
+      visit(child, depth + 1, visible && !collapsed.has(node.key)),
+    )
+  }
+  nodes.forEach((node, index) => {
+    if (node.parent === null) visit(index, 0)
+  })
+  // A malformed parent cycle cannot hide rows from the user.
+  nodes.forEach((_, index) => visit(index, 0))
+  return rows
+}
 function sampleValue(item: MonitorItem, metric: string): number | null {
   return (
     number(item.value) ??
@@ -289,6 +374,10 @@ export function HostMonitor() {
   const [minutes, setMinutes] = useState(15)
   const [sort, setSort] = useState('cpu')
   const [processFilter, setProcessFilter] = useState('')
+  const [processView, setProcessView] = useState<'list' | 'tree'>('list')
+  const [collapsedProcesses, setCollapsedProcesses] = useState<Set<string>>(
+    () => new Set(),
+  )
   const [selectedAt, setSelectedAt] = useState<string | null>(null)
   const [selectedService, setSelectedService] = useState<string | null>(null)
   const [selectedProcess, setSelectedProcess] = useState<string | null>(null)
@@ -341,6 +430,7 @@ export function HostMonitor() {
       : { key: processPageKey, cursor: null, history: [] }
   useEffect(() => {
     setProcessPage({ key: processPageKey, cursor: null, history: [] })
+    setCollapsedProcesses(new Set())
   }, [processPageKey])
   const processes = useQuery({
     queryKey: [
@@ -405,6 +495,16 @@ export function HostMonitor() {
       String(record(item.identity)?.pid || '').includes(term)
     )
   })
+  const displayedProcesses =
+    processView === 'tree'
+      ? processRows(filteredProcesses, collapsedProcesses)
+      : filteredProcesses.map((item, index) => ({
+          item,
+          key: processKey(item, index),
+          depth: 0,
+          children: 0,
+          parentNotLinked: false,
+        }))
   const filteredEvents = selectedService
     ? eventItems.filter(
         (item) =>
@@ -719,6 +819,23 @@ export function HostMonitor() {
                 : 'latest'}
             </h3>
             <div className="flex flex-wrap items-center gap-2">
+              <div
+                role="group"
+                aria-label="Process view"
+                className="flex gap-1"
+              >
+                {(['list', 'tree'] as const).map((view) => (
+                  <button
+                    key={view}
+                    type="button"
+                    className={`${control} ${processView === view ? 'border-cyan-700 text-cyan-300' : ''}`}
+                    aria-pressed={processView === view}
+                    onClick={() => setProcessView(view)}
+                  >
+                    {view === 'list' ? 'List' : 'Tree'}
+                  </button>
+                ))}
+              </div>
               <label className="text-xs text-slate-400">
                 Filter this page{' '}
                 <input
@@ -758,6 +875,13 @@ export function HostMonitor() {
                   ? 'Baseline includes metric leaders only. Start detail capture for all visible processes.'
                   : 'Visible processes in the selected sample.'}
               </p>
+              {processView === 'tree' && (
+                <p className="mt-1 text-xs text-slate-500">
+                  Parent links use this page’s returned rows. A parent may be on
+                  another page, hidden by the filter, or unavailable in this
+                  observation.
+                </p>
+              )}
               <div className="mt-2 max-h-72 overflow-auto">
                 <table className="w-full min-w-[420px] text-left text-xs">
                   <thead className="text-slate-500">
@@ -771,34 +895,83 @@ export function HostMonitor() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredProcesses.map((item, index) => (
-                      <tr
-                        key={`${record(item.identity)?.boot_id}-${record(item.identity)?.pid}-${record(item.identity)?.start_ticks}-${index}`}
-                      >
-                        <td className="border-t border-slate-800 py-1.5 pr-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setSelectedProcess(
-                                `${record(item.identity)?.pid}:${record(item.identity)?.start_ticks}`,
-                              )
-                            }
-                            className="block max-w-[15rem] truncate text-left text-cyan-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
-                          >
-                            {string(record(item.process)?.name) || 'Unknown'}
-                          </button>
-                        </td>
-                        <td className="border-t border-slate-800 py-1.5 text-slate-300">
-                          {number(record(item.identity)?.pid) ?? '—'}
-                        </td>
-                        <td className="border-t border-slate-800 py-1.5 text-slate-300">
-                          {string(record(item.process)?.state) || 'Unknown'}
-                        </td>
-                        <td className="border-t border-slate-800 py-1.5 text-slate-300">
-                          {processSortValue(item, sort)}
-                        </td>
-                      </tr>
-                    ))}
+                    {displayedProcesses.map(
+                      ({ item, key, depth, children, parentNotLinked }) => (
+                        <tr key={key}>
+                          <td className="border-t border-slate-800 py-1.5 pr-2">
+                            <div
+                              className="flex min-w-0 items-center"
+                              style={{
+                                paddingLeft:
+                                  processView === 'tree'
+                                    ? `${Math.min(depth, 8) * 16}px`
+                                    : undefined,
+                              }}
+                            >
+                              {processView === 'tree' &&
+                                (children ? (
+                                  <button
+                                    type="button"
+                                    aria-label={`${collapsedProcesses.has(key) ? 'Expand' : 'Collapse'} ${string(record(item.process)?.name) || 'process'} PID ${number(record(item.identity)?.pid) ?? 'unknown'}`}
+                                    aria-expanded={!collapsedProcesses.has(key)}
+                                    className="mr-1 shrink-0 rounded text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+                                    onClick={() =>
+                                      setCollapsedProcesses((current) => {
+                                        const next = new Set(current)
+                                        if (next.has(key)) next.delete(key)
+                                        else next.add(key)
+                                        return next
+                                      })
+                                    }
+                                  >
+                                    {collapsedProcesses.has(key) ? (
+                                      <ChevronRight className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <ChevronDown className="h-3.5 w-3.5" />
+                                    )}
+                                  </button>
+                                ) : (
+                                  <span
+                                    aria-hidden="true"
+                                    className="mr-1 w-3.5 shrink-0"
+                                  />
+                                ))}
+                              <button
+                                type="button"
+                                aria-label={
+                                  processView === 'tree'
+                                    ? `${string(record(item.process)?.name) || 'Unknown'}, PID ${number(record(item.identity)?.pid) ?? 'unknown'}, level ${depth + 1}${parentNotLinked ? ', parent not linked among displayed rows' : ''}`
+                                    : undefined
+                                }
+                                onClick={() =>
+                                  setSelectedProcess(
+                                    `${record(item.identity)?.pid}:${record(item.identity)?.start_ticks}`,
+                                  )
+                                }
+                                title={
+                                  parentNotLinked && processView === 'tree'
+                                    ? 'Parent not linked among displayed rows'
+                                    : undefined
+                                }
+                                className="block max-w-[15rem] truncate text-left text-cyan-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+                              >
+                                {string(record(item.process)?.name) ||
+                                  'Unknown'}
+                              </button>
+                            </div>
+                          </td>
+                          <td className="border-t border-slate-800 py-1.5 text-slate-300">
+                            {number(record(item.identity)?.pid) ?? '—'}
+                          </td>
+                          <td className="border-t border-slate-800 py-1.5 text-slate-300">
+                            {string(record(item.process)?.state) || 'Unknown'}
+                          </td>
+                          <td className="border-t border-slate-800 py-1.5 text-slate-300">
+                            {processSortValue(item, sort)}
+                          </td>
+                        </tr>
+                      ),
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -827,6 +1000,10 @@ export function HostMonitor() {
                     : ''}
                   {errorText(processes.data.errors) ||
                     `${processItems.length} returned`}
+                  {processView === 'tree' &&
+                  displayedProcesses.length < filteredProcesses.length
+                    ? ` · ${displayedProcesses.length} shown; expand branches to see the rest`
+                    : ''}
                 </p>
               )}
               {(activeProcessPage.history.length > 0 ||

@@ -133,6 +133,17 @@ def test_extended_diagnostics_owner_and_same_origin(monkeypatch) -> None:
     assert replay.call_count == 1
 
 
+def test_apps_provider_and_cursor_reach_owner_query(monkeypatch) -> None:
+    observe = Mock(return_value={"schema": 1, "items": []})
+    monkeypatch.setattr(monitor, "_observe", observe)
+    with _client("owner") as client:
+        response = client.get("/api/monitor/v1/apps?provider=snap&cursor=2&limit=1&max_bytes=2048")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    observe.assert_called_once_with(monitor.query_apps, provider="snap", cursor="2",
+                                    limit=1, max_bytes=2048)
+
+
 def test_extended_diagnostics_reject_viewer_writes() -> None:
     with _client("viewer") as client:
         response = client.post("/api/monitor/v1/benchmark", json={"kind": "cpu"},

@@ -274,3 +274,63 @@ def test_inventory_sources_and_command_failures(tmp_path: Path, monkeypatch: pyt
     assert query_startup()["coverage"]["providers"]["systemd_user"] == "error"
     passwd.unlink()
     assert query_users()["coverage"]["availability"] == "unsupported"
+
+
+def test_apps_provider_commands_and_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[list[str]] = []
+
+    def run(argv: list[str]):
+        seen.append(argv)
+        if argv[0] == "snap":
+            return (b"Name Version Rev Tracking Publisher Notes\nfirefox 1.2 10 stable owner -\n"
+                    b"editor 2.3 11 stable owner -\n", b"", 0, False)
+        return (b"Application Version\norg.example.Editor 2.3\norg.example.Viewer 1.0\n",
+                b"", 0, False)
+
+    monkeypatch.setattr(inventory, "_run", run)
+    first = query_apps(provider="snap", limit=1)
+    assert first["requested"]["provider"] == "snap"
+    assert first["coverage"]["source"] == "snap"
+    assert first["coverage"]["entries_seen"] == 2
+    assert first["items"][0]["value"] == {"name": "firefox", "version": "1.2"}
+    assert first["next_cursor"] == "1"
+    second = query_apps(provider="snap", cursor=first["next_cursor"], limit=1)
+    assert second["items"][0]["value"]["name"] == "editor"
+    assert second["next_cursor"] is None
+    flatpak = query_apps(provider="flatpak", limit=5)
+    assert [row["value"]["name"] for row in flatpak["items"]] == [
+        "org.example.Editor", "org.example.Viewer"]
+    assert flatpak["coverage"]["source"] == "flatpak"
+    assert seen == [
+        ["snap", "list", "--color=never", "--unicode=never"],
+        ["snap", "list", "--color=never", "--unicode=never"],
+        ["flatpak", "list", "--app", "--columns=application,version"],
+    ]
+
+
+def test_apps_failures_and_capture_limit_are_explicit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(inventory, "_run", lambda _argv: (_ for _ in ()).throw(FileNotFoundError()))
+    missing = query_apps(provider="flatpak")
+    assert missing["coverage"]["availability"] == "unsupported"
+    assert missing["errors"][0]["source"] == "flatpak"
+    monkeypatch.setattr(inventory, "_run", lambda _argv: (b"", b"permission denied", 1, False))
+    denied = query_apps(provider="snap")
+    assert denied["coverage"]["availability"] == "permission_denied"
+    monkeypatch.setattr(inventory, "_run", lambda _argv: (b"Name Version\napp 1.0\npartial", b"", -9, True))
+    partial = query_apps(provider="snap")
+    assert partial["coverage"]["availability"] == "partial"
+    assert partial["coverage"]["source_truncated"] is True
+    assert partial["items"][0]["value"]["name"] == "app"
+    assert partial["errors"][0]["code"] == "source_truncated"
+
+
+def test_apps_bad_provider_cursor_and_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(inventory, "_run", lambda _argv: (b"Name Version\napp 1.0\nnext 2.0\n", b"", 0, False))
+    with pytest.raises(inventory.ObserveQueryError):
+        query_apps(provider="other")
+    with pytest.raises(inventory.ObserveQueryError):
+        query_apps(provider="snap", cursor="-1")
+    with pytest.raises(inventory.ObserveQueryError):
+        query_apps(provider="snap", cursor="1;bad")
+    page = query_apps(provider="snap", limit=1, max_bytes=512)
+    assert len(json.dumps(page, separators=(",", ":")).encode()) <= 512

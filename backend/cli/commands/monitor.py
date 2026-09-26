@@ -263,9 +263,11 @@ def startup(limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 10,
 
 @app.command()
 def apps(limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 10,
+         provider: Annotated[str, typer.Option("--provider", help="dpkg, snap, or flatpak")] = "dpkg",
+         cursor: Annotated[str | None, typer.Option("--cursor", help="Offset cursor from previous page")] = None,
          max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65536)] = 4096) -> None:
-    """Installed Debian packages, bounded and read-only."""
-    _observe(query_apps, max_bytes, limit=limit)
+    """Installed packages from one on-demand provider, bounded and read-only."""
+    _observe(query_apps, max_bytes, provider=provider, cursor=cursor, limit=limit)
 
 
 @app.command()
