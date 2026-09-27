@@ -15,7 +15,7 @@ export type MonitorAvailability =
   | 'leaders_only'
   | 'retention_expired'
 
-export type MonitorLogScope = 'user' | 'system' | 'container'
+export type MonitorLogScope = 'user' | 'system' | 'container' | 'package'
 
 export interface MonitorEnvelope<T> {
   schema: number

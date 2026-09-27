@@ -24,7 +24,7 @@ const views: Array<{ key: Diagnostic; label: string; description: string }> = [
   {
     key: 'logs',
     label: 'Logs',
-    description: 'User, system, and container logs',
+    description: 'User, system, container, and package logs',
   },
   {
     key: 'sensors',
@@ -107,10 +107,10 @@ function detailRows(value: unknown): Array<[string, string]> {
         : JSON.stringify(entry),
   ])
 }
-function recentLogWindow() {
+function recentLogWindow(minutes = 15) {
   const until = new Date()
   return {
-    since: new Date(until.getTime() - 15 * 60_000).toISOString(),
+    since: new Date(until.getTime() - minutes * 60_000).toISOString(),
     until: until.toISOString(),
   }
 }
@@ -288,10 +288,23 @@ export function HostMonitorDiagnostics({
   const [appsCursor, setAppsCursor] = useState<string | null>(null)
   const [appsPrevious, setAppsPrevious] = useState<Array<string | null>>([])
   const [revision, setRevision] = useState(0)
-  const resetLogPage = () => {
-    setLogWindow(recentLogWindow())
+  const resetLogPage = (scope: MonitorLogScope = logScope) => {
+    setLogWindow(recentLogWindow(scope === 'package' ? 1440 : 15))
     setLogCursors([undefined])
   }
+  const namedLogSource = logScope === 'container' || logScope === 'package'
+  const logSourceLabel =
+    logScope === 'container'
+      ? 'Container'
+      : logScope === 'package'
+        ? 'Package source'
+        : 'Service'
+  const logSourcePlural =
+    logScope === 'container'
+      ? 'containers'
+      : logScope === 'package'
+        ? 'package sources'
+        : 'services'
   const logServices = useQuery({
     queryKey: ['monitor', 'log-services', logScope],
     queryFn: () => monitorApi.logServices(logScope),
@@ -308,7 +321,7 @@ export function HostMonitorDiagnostics({
     ]),
   ).sort()
   const chosenService =
-    logService || (logScope === 'container' ? availableServices[0] || '' : '')
+    logService || (namedLogSource ? availableServices[0] || '' : '')
   const query = useQuery({
     queryKey: [
       'monitor',
@@ -329,16 +342,15 @@ export function HostMonitorDiagnostics({
     enabled:
       active !== null &&
       !['disk-space', 'benchmark', 'export'].includes(active) &&
-      (active !== 'logs' || logScope !== 'container' || !!chosenService),
+      (active !== 'logs' || !namedLogSource || !!chosenService),
     queryFn: () => {
       if (active === 'logs')
         return monitorApi.logs({
           service: chosenService || undefined,
           scope: logScope,
           ...logWindow,
-          cursor: logScope === 'container' ? undefined : logCursors.at(-1),
-          priority:
-            logScope !== 'container' && priority ? Number(priority) : undefined,
+          cursor: namedLogSource ? undefined : logCursors.at(-1),
+          priority: !namedLogSource && priority ? Number(priority) : undefined,
           limit: 40,
         })
       if (active === 'connections')
@@ -456,19 +468,21 @@ export function HostMonitorDiagnostics({
                   className={`${control} ml-1`}
                   value={logScope}
                   onChange={(event) => {
-                    setLogScope(event.target.value as MonitorLogScope)
+                    const nextScope = event.target.value as MonitorLogScope
+                    setLogScope(nextScope)
                     setLogService('')
                     setPriority('')
-                    resetLogPage()
+                    resetLogPage(nextScope)
                   }}
                 >
                   <option value="user">User</option>
                   <option value="system">System</option>
                   <option value="container">Containers</option>
+                  <option value="package">Package logs</option>
                 </select>
               </label>
               <label className="text-xs text-slate-400">
-                {logScope === 'container' ? 'Container' : 'Service'}{' '}
+                {logSourceLabel}{' '}
                 <select
                   className={`${control} ml-1`}
                   value={chosenService}
@@ -477,9 +491,7 @@ export function HostMonitorDiagnostics({
                     resetLogPage()
                   }}
                 >
-                  {logScope !== 'container' && (
-                    <option value="">All services</option>
-                  )}
+                  {!namedLogSource && <option value="">All services</option>}
                   {availableServices.map((name) => (
                     <option key={name} value={name}>
                       {name}
@@ -487,7 +499,7 @@ export function HostMonitorDiagnostics({
                   ))}
                 </select>
               </label>
-              {logScope !== 'container' && (
+              {!namedLogSource && (
                 <label className="text-xs text-slate-400">
                   Priority{' '}
                   <select
@@ -509,22 +521,20 @@ export function HostMonitorDiagnostics({
               )}
               {logServices.isLoading && (
                 <p role="status" className="self-center text-xs text-slate-400">
-                  Loading {logScope === 'container' ? 'containers' : 'services'}
-                  …
+                  Loading {logSourcePlural}…
                 </p>
               )}
               {logServices.error && (
                 <p role="alert" className="self-center text-xs text-amber-300">
-                  {logScope === 'container' ? 'Container' : 'Service'} list
-                  unavailable: {logServices.error.message}
+                  {logSourceLabel} list unavailable: {logServices.error.message}
                 </p>
               )}
               {logServices.data &&
                 (logServices.data.coverage.availability !== 'ok' ||
                   logServices.data.errors.length > 0) && (
                   <p className="basis-full text-xs text-amber-300">
-                    {logScope === 'container' ? 'Container' : 'Service'}{' '}
-                    inventory: {display(logServices.data.coverage.availability)}
+                    {logSourceLabel} inventory:{' '}
+                    {display(logServices.data.coverage.availability)}
                     {errors(logServices.data.errors)
                       ? ` · ${errors(logServices.data.errors)}`
                       : ''}
@@ -632,17 +642,15 @@ export function HostMonitorDiagnostics({
             <BenchmarkPanel />
           ) : active === 'export' ? (
             <FlightRecorderPanel />
-          ) : active === 'logs' &&
-            logScope === 'container' &&
-            !chosenService ? (
+          ) : active === 'logs' && namedLogSource && !chosenService ? (
             <p role="status" className="mt-3 text-sm text-slate-400">
               {logServices.isLoading
-                ? 'Loading containers…'
+                ? `Loading ${logSourcePlural}…`
                 : logServices.error
-                  ? 'Container list unavailable.'
+                  ? `${logSourceLabel} list unavailable.`
                   : logServices.data?.coverage.availability !== 'ok'
-                    ? `Container inventory ${display(logServices.data?.coverage.availability)}.`
-                    : 'No containers available.'}
+                    ? `${logSourceLabel} inventory ${display(logServices.data?.coverage.availability)}.`
+                    : `No ${logSourcePlural} available.`}
             </p>
           ) : query.isLoading ? (
             <p role="status" className="mt-3 text-sm text-slate-400">
@@ -702,12 +710,10 @@ export function HostMonitorDiagnostics({
                 {active === 'logs' && (
                   <p className="mt-2 text-xs text-slate-500">
                     {time(logWindow.since)} to {time(logWindow.until)}
-                    {logScope === 'container'
-                      ? ''
-                      : ` · page ${logCursors.length}`}
+                    {namedLogSource ? '' : ` · page ${logCursors.length}`}
                   </p>
                 )}
-                {active === 'logs' && logScope === 'container' && (
+                {active === 'logs' && namedLogSource && (
                   <p className="mt-1 text-xs text-slate-500">
                     Priority filter:{' '}
                     {display(query.data.coverage.priority_filter)}
@@ -799,7 +805,7 @@ export function HostMonitorDiagnostics({
                         : `No results: ${display(query.data.coverage.availability)}.`}
                   </p>
                 )}
-                {((active === 'logs' && logScope !== 'container') ||
+                {((active === 'logs' && !namedLogSource) ||
                   active === 'connections') &&
                   ((active === 'logs' ? logCursors : connectionCursors).length >
                     1 ||

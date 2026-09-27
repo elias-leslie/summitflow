@@ -155,7 +155,7 @@ def _parser() -> argparse.ArgumentParser:
 
     logs = commands.add_parser("logs", help="Journal entries from user or system services")
     logs.add_argument("service", nargs="?")
-    logs.add_argument("--scope", choices=("user", "system", "container"), default="user")
+    logs.add_argument("--scope", choices=("user", "system", "container", "package"), default="user")
     logs.add_argument("--since")
     logs.add_argument("--until")
     logs.add_argument("--cursor")
@@ -164,7 +164,7 @@ def _parser() -> argparse.ArgumentParser:
     logs.add_argument("--max-bytes", type=budget, default=4096)
 
     log_services = commands.add_parser("log-services", help="Discover selectable service units")
-    log_services.add_argument("--scope", choices=("user", "system", "container"), default="user")
+    log_services.add_argument("--scope", choices=("user", "system", "container", "package"), default="user")
     log_services.add_argument("--cursor")
     log_services.add_argument("--limit", type=limit, default=100)
     log_services.add_argument("--max-bytes", type=budget, default=4096)

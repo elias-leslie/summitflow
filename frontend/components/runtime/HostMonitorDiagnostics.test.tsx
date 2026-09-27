@@ -5,7 +5,10 @@ import { HostMonitorDiagnostics } from './HostMonitorDiagnostics'
 const mocks = vi.hoisted(() => ({ useQuery: vi.fn(), useMutation: vi.fn() }))
 vi.mock('@tanstack/react-query', () => mocks)
 
-const envelope = (items: unknown[], coverage = { availability: 'ok' }) => ({
+const envelope = (
+  items: unknown[],
+  coverage: Record<string, unknown> = { availability: 'ok' },
+) => ({
   schema: 1,
   generated_at: '2026-09-27T12:00:00Z',
   requested: {},
@@ -123,6 +126,63 @@ describe('HostMonitorDiagnostics system views', () => {
       screen.queryByRole('combobox', { name: /Priority/ }),
     ).not.toBeInTheDocument()
     expect(queries.at(-1)?.queryKey).toContain('web')
+  })
+
+  it('uses a full-day window for a selected package log source', () => {
+    const queries: Array<{ queryKey: unknown[] }> = []
+    mocks.useQuery.mockImplementation((options) => {
+      queries.push(options)
+      return {
+        data:
+          options.queryKey[1] === 'log-services'
+            ? envelope([
+                { value: { service: 'apt-history', scope: 'package' } },
+              ])
+            : envelope([], {
+                availability: 'ok',
+                priority_filter: 'unsupported',
+                pagination: 'unsupported',
+              }),
+        isLoading: false,
+        error: null,
+      }
+    })
+    render(<HostMonitorDiagnostics serviceNames={[]} selectedService={null} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Logs' }))
+    fireEvent.change(screen.getByRole('combobox', { name: /Log source/ }), {
+      target: { value: 'package' },
+    })
+    expect(
+      screen.getByRole('combobox', { name: /Package source/ }),
+    ).toHaveValue('apt-history')
+    expect(
+      screen.queryByRole('option', { name: 'All services' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('combobox', { name: /Priority/ }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Next page' }),
+    ).not.toBeInTheDocument()
+    const key = queries.at(-1)?.queryKey || []
+    expect(key).toContain('apt-history')
+    expect(key).toContain('package')
+    expect(
+      new Date(String(key[7])).getTime() - new Date(String(key[6])).getTime(),
+    ).toBe(24 * 60 * 60_000)
+    fireEvent.click(screen.getByRole('button', { name: 'Run again' }))
+    const refreshed = queries.at(-1)?.queryKey || []
+    expect(
+      new Date(String(refreshed[7])).getTime() -
+        new Date(String(refreshed[6])).getTime(),
+    ).toBe(24 * 60 * 60_000)
+    fireEvent.change(screen.getByRole('combobox', { name: /Log source/ }), {
+      target: { value: 'user' },
+    })
+    const user = queries.at(-1)?.queryKey || []
+    expect(
+      new Date(String(user[7])).getTime() - new Date(String(user[6])).getTime(),
+    ).toBe(15 * 60_000)
   })
 
   it('shows mounted capacity and scans a selected mount', () => {

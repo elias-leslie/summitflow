@@ -1,12 +1,14 @@
 """Bounded, on-demand reads from journals and container logs."""
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
 import pwd
 import re
 import selectors
+import stat
 import subprocess
 import time
 from datetime import UTC, datetime, timedelta
@@ -26,8 +28,13 @@ _SECRET = re.compile(r"(?i)(\b(?:password|passwd|pwd|secret|token|api[_-]?key|ac
 _BEARER = re.compile(r"(?i)\bBearer\s+\S+")
 _URL_AUTH = re.compile(r"(://[^:/\s]+:)[^@/\s]+(@)")
 _PRIVATE_BLOCK = re.compile(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----.*?(?:-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----|\Z)", re.S)
-_SCOPES = {"user", "system", "container"}
+_SCOPES = {"user", "system", "container", "package"}
 _SERVICE_CURSOR = re.compile(r"ls1\.([0-9a-f]{16})\.(0|[1-9][0-9]{0,5})\Z")
+_PACKAGE_LOGS = {"apt-history": Path("/var/log/apt/history.log"),
+                 "apt-term": Path("/var/log/apt/term.log"),
+                 "dpkg": Path("/var/log/dpkg.log")}
+_PACKAGE_STAMP = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (.*)$")
+_APT_START = re.compile(r"^(?:Start-Date|Log started):\s*(\d{4}-\d{2}-\d{2}  \d{2}:\d{2}:\d{2})\s*$")
 
 
 def _services(identity_path: Path | None = None) -> dict[str, str]:
@@ -125,7 +132,7 @@ def _redact(message: str, cap: int) -> str:
 
 def _scope(scope: str) -> str:
     if not isinstance(scope, str) or scope not in _SCOPES:
-        raise ObserveQueryError("scope must be user, system, or container")
+        raise ObserveQueryError("scope must be user, system, container, or package")
     return scope
 
 
@@ -203,6 +210,83 @@ def _discover_containers() -> tuple[dict[str, str], str, bool]:
     return containers, "ok", clipped
 
 
+def _package_error(exc: OSError) -> str:
+    return "unsupported" if exc.errno == errno.ELOOP else availability(exc)
+
+
+def _open_package_log(path: Path) -> int:
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        raise OSError(errno.EINVAL, "package log is not a regular file")
+    return descriptor
+
+
+def _package_availability(path: Path) -> str:
+    try:
+        descriptor = _open_package_log(path)
+    except OSError as exc:
+        return _package_error(exc)
+    os.close(descriptor)
+    return "ok"
+
+
+def _package_tail(path: Path) -> tuple[bytes, bool]:
+    descriptor = _open_package_log(path)
+    try:
+        size = os.fstat(descriptor).st_size
+        offset = max(0, size - MAX_CAPTURE_BYTES)
+        os.lseek(descriptor, offset, os.SEEK_SET)
+        data = bytearray()
+        while len(data) < size - offset:
+            chunk = os.read(descriptor, min(8192, size - offset - len(data)))
+            if not chunk:
+                break
+            data.extend(chunk)
+        return bytes(data), offset > 0 or len(data) < size - offset
+    finally:
+        os.close(descriptor)
+
+
+def _package_rows(source: str, data: bytes, clipped: bool) -> tuple[list[tuple[datetime, str]], int]:
+    text = _PRIVATE_BLOCK.sub("[REDACTED PRIVATE KEY]", data.decode("utf-8", "replace"))
+    lines = text.splitlines()
+    if clipped and lines:
+        lines = lines[1:]  # The first line may start in the middle of a record.
+    records: list[tuple[datetime, str]] = []
+    malformed = 0
+    block_time: datetime | None = None
+    for line in lines:
+        if not line:
+            continue
+        if source == "dpkg":
+            match = _PACKAGE_STAMP.fullmatch(line)
+            if not match:
+                malformed += 1
+                continue
+            stamp_text, message = match.groups()
+        else:
+            match = _APT_START.fullmatch(line)
+            if match:
+                try:
+                    block_time = datetime.strptime(match.group(1), "%Y-%m-%d  %H:%M:%S").astimezone(UTC)
+                except ValueError:
+                    malformed += 1
+                    block_time = None
+                    continue
+            if block_time is None:
+                continue
+            records.append((block_time, line))
+            continue
+        try:
+            stamp = datetime.strptime(stamp_text, "%Y-%m-%d %H:%M:%S").astimezone(UTC)
+        except ValueError:
+            malformed += 1
+            continue
+        records.append((stamp, message))
+    return records, malformed
+
+
 def query_log_services(*, scope: str = "user", cursor: str | None = None, limit: int = 100,
                        max_bytes: int = 4096) -> dict[str, Any]:
     """Page through a fresh sorted unit catalog; units may move between reads."""
@@ -216,7 +300,14 @@ def query_log_services(*, scope: str = "user", cursor: str | None = None, limit:
         raise ObserveQueryError("invalid log services cursor for scope")
     offset = int(match.group(2)) if match else 0
     payload = base("log_services", {"scope": scope, "cursor": cursor})
-    if scope == "container":
+    if scope == "package":
+        names = sorted(_PACKAGE_LOGS)
+        statuses = {name: _package_availability(_PACKAGE_LOGS[name]) for name in names}
+        status = "ok" if all(code == "ok" for code in statuses.values()) else (
+            "partial" if any(code == "ok" for code in statuses.values()) else "unavailable")
+        clipped = False
+        source = "package-files"
+    elif scope == "container":
         containers, status, clipped = _discover_containers()
         names = sorted(containers)
         source = "docker"
@@ -224,14 +315,18 @@ def query_log_services(*, scope: str = "user", cursor: str | None = None, limit:
         units, status, clipped = _discover_units(scope, owner_uid)
         names = sorted(units)
         source = "systemctl"
-    payload["coverage"] = {"availability": status, "source": source, "scope": scope,
-                           "units_seen": len(names)}
+    coverage: dict[str, Any] = {"availability": status, "source": source, "scope": scope,
+                                "units_seen": len(names)}
+    if scope == "package":
+        coverage["sources"] = statuses
+    payload["coverage"] = coverage
     if status != "ok":
         payload["errors"].append(error(status, source, "service discovery incomplete"))
     if clipped:
         payload["errors"].append(error("source_truncated", source, "service listing reached capture cap"))
     selected = names[offset:]
-    entries = [item(source, "docker" if scope == "container" else "systemd", "ok",
+    entries = [item(source, "docker" if scope == "container" else "file" if scope == "package" else "systemd",
+                    statuses[name] if scope == "package" else "ok",
                     {"service": name, "scope": scope,
                      **({"container_id": containers[name]} if scope == "container" else {})})
                for name in selected[:limit]]
@@ -323,6 +418,47 @@ def _query_container_logs(service: str | None, *, since: str | datetime | None,
     return pack(payload, entries, limit=limit, max_bytes=max_bytes, more=capture_truncated)
 
 
+def _query_package_logs(service: str | None, *, since: str | datetime | None,
+                        until: str | datetime | None, cursor: str | None,
+                        priority: int | None, limit: int, max_bytes: int) -> dict[str, Any]:
+    if not isinstance(service, str) or service not in _PACKAGE_LOGS:
+        raise ObserveQueryError("package service must be apt-history, apt-term, or dpkg")
+    if cursor is not None or priority is not None:
+        raise ObserveQueryError("package logs do not support cursor or priority")
+    now = datetime.now(UTC)
+    start = _time(since, now - timedelta(minutes=15))
+    end = _time(until, now)
+    start_dt, end_dt = datetime.fromisoformat(start), datetime.fromisoformat(end)
+    if start_dt >= end_dt or end_dt - start_dt > timedelta(days=1):
+        raise ObserveQueryError("log window must be positive and at most 24 hours")
+    payload = base("logs", {"service": service, "unit": service, "scope": "package",
+                            "since": start, "until": end, "priority": None,
+                            "cursor": None, "redacted": True})
+    try:
+        data, clipped = _package_tail(_PACKAGE_LOGS[service])
+    except OSError as exc:
+        code = _package_error(exc)
+        payload["coverage"] = {"availability": code, "source": service, "scope": "package",
+                               "priority_filter": "unsupported", "pagination": "unsupported"}
+        payload["errors"].append(error(code, service, "package log is unavailable"))
+        return pack(payload, [], limit=limit, max_bytes=max_bytes)
+    rows, malformed = _package_rows(service, data, clipped)
+    selected = [(stamp, message) for stamp, message in rows if start_dt <= stamp <= end_dt]
+    selected.sort(key=lambda row: row[0], reverse=True)
+    entries = [item(service, "package-file", "ok",
+                    {"service": service, "unit": service, "scope": "package",
+                     "message": _redact(message, max(160, max_bytes - 1024))},
+                    measured_at=stamp.isoformat()) for stamp, message in selected[:limit + 1]]
+    if clipped:
+        payload["errors"].append(error("source_truncated", service, "package log tail reached capture cap"))
+    if malformed:
+        payload["errors"].append(error("error", service, f"{malformed} malformed entries skipped"))
+    payload["coverage"] = {"availability": "partial" if clipped or malformed else "ok",
+                           "source": service, "scope": "package", "rows_seen": len(selected),
+                           "redacted": True, "priority_filter": "unsupported", "pagination": "unsupported"}
+    return pack(payload, entries, limit=limit, max_bytes=max_bytes, more=clipped or len(selected) > limit)
+
+
 def query_logs(service: str | None = None, *, scope: str = "user",
                since: str | datetime | None = None,
                until: str | datetime | None = None, cursor: str | None = None,
@@ -334,6 +470,9 @@ def query_logs(service: str | None = None, *, scope: str = "user",
     if scope == "container":
         return _query_container_logs(service, since=since, until=until, cursor=cursor,
                                      priority=priority, limit=limit, max_bytes=max_bytes)
+    if scope == "package":
+        return _query_package_logs(service, since=since, until=until, cursor=cursor,
+                                   priority=priority, limit=limit, max_bytes=max_bytes)
     owner_uid = _owner_uid(scope)
     unit = None
     if service is not None:

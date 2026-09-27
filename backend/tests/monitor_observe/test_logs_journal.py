@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import socket
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -272,3 +272,86 @@ def test_container_source_errors_and_unsupported_filters(monkeypatch: pytest.Mon
     assert unavailable["coverage"]["availability"] == "permission_denied"
     unknown = query_logs("redis", scope="container")
     assert unknown["coverage"]["availability"] == "permission_denied"
+
+
+def test_package_catalog_and_timestamped_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    local_stamp = (datetime.now().astimezone() - timedelta(minutes=2))
+    apt_stamp = local_stamp.strftime("%Y-%m-%d  %H:%M:%S")
+    dpkg_stamp = local_stamp.strftime("%Y-%m-%d %H:%M:%S")
+    history = tmp_path / "history.log"
+    history.write_text(f"Start-Date:  {apt_stamp}\nCommandline: apt install app\n"
+                       "Install: app:amd64 (1.0)\n"
+                       f"End-Date:  {apt_stamp}\n")
+    term = tmp_path / "term.log"
+    key_label = "PRIVATE" + " KEY"
+    term.write_text(f"Log started: {apt_stamp}\n"
+                    "password='secret with spaces'\n"
+                    f"-----BEGIN {key_label}-----\nprivate material\n-----END {key_label}-----\n"
+                    f"Log ended: {apt_stamp}\n")
+    dpkg = tmp_path / "dpkg.log"
+    dpkg.write_text(f"{dpkg_stamp} install app:amd64 <none> 1.0\n"
+                    "2020-01-01 00:00:00 old action\n")
+    monkeypatch.setattr(logs, "_PACKAGE_LOGS", {"apt-history": history, "apt-term": term, "dpkg": dpkg})
+    catalog = query_log_services(scope="package")
+    assert catalog["coverage"]["sources"] == {"apt-history": "ok", "apt-term": "ok", "dpkg": "ok"}
+    assert [row["value"]["service"] for row in catalog["items"]] == ["apt-history", "apt-term", "dpkg"]
+    since = datetime.now(UTC) - timedelta(minutes=10)
+    until = datetime.now(UTC) + timedelta(minutes=1)
+    history_result = query_logs("apt-history", scope="package", since=since, until=until)
+    assert any("Install: app" in row["value"]["message"] for row in history_result["items"])
+    term_result = query_logs("apt-term", scope="package", since=since, until=until)
+    term_messages = " ".join(row["value"]["message"] for row in term_result["items"])
+    assert "secret with spaces" not in term_messages and "private material" not in term_messages
+    assert "[REDACTED PRIVATE KEY]" in term_messages
+    dpkg_result = query_logs("dpkg", scope="package", since=since, until=until)
+    assert len(dpkg_result["items"]) == 1
+    assert dpkg_result["items"][0]["value"]["message"] == "install app:amd64 <none> 1.0"
+    assert dpkg_result["coverage"]["pagination"] == "unsupported"
+    assert len(json.dumps(dpkg_result, separators=(",", ":")).encode()) <= 4096
+    with pytest.raises(ObserveQueryError, match="package service"):
+        query_logs("/var/log/dpkg.log", scope="package")
+    with pytest.raises(ObserveQueryError, match="cursor or priority"):
+        query_logs("dpkg", scope="package", cursor="x")
+    with pytest.raises(ObserveQueryError, match="cursor or priority"):
+        query_logs("dpkg", scope="package", priority=3)
+
+
+def test_package_tail_cap_and_symlink_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stamp = (datetime.now().astimezone() - timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M:%S")
+    dpkg = tmp_path / "dpkg.log"
+    dpkg.write_text("".join(f"{stamp} install app-{number}:amd64 <none> 1.0\n" for number in range(20)))
+    link = tmp_path / "term.log"
+    link.symlink_to(dpkg)
+    monkeypatch.setattr(logs, "_PACKAGE_LOGS", {"apt-history": tmp_path / "missing",
+                                              "apt-term": link, "dpkg": dpkg})
+    monkeypatch.setattr(logs, "MAX_CAPTURE_BYTES", 150)
+    catalog = query_log_services(scope="package")
+    assert catalog["coverage"]["availability"] == "partial"
+    assert catalog["coverage"]["sources"] == {"apt-history": "unsupported",
+                                              "apt-term": "unsupported", "dpkg": "ok"}
+    since = datetime.now(UTC) - timedelta(minutes=10)
+    until = datetime.now(UTC) + timedelta(minutes=1)
+    clipped = query_logs("dpkg", scope="package", since=since, until=until)
+    assert clipped["coverage"]["availability"] == "partial"
+    assert clipped["truncated"]
+    assert any(row["code"] == "source_truncated" for row in clipped["errors"])
+    assert all("app-0:" not in row["value"]["message"] for row in clipped["items"])
+    denied = query_logs("apt-term", scope="package", since=since, until=until)
+    assert denied["coverage"]["availability"] == "unsupported"
+    assert denied["items"] == []
+
+
+def test_package_permission_denial_is_explicit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "term.log"
+    path.write_text("not read")
+    monkeypatch.setattr(logs, "_PACKAGE_LOGS", {"apt-term": path})
+    monkeypatch.setattr(logs, "_open_package_log", lambda _path: (_ for _ in ()).throw(PermissionError()))
+    catalog = query_log_services(scope="package")
+    assert catalog["coverage"]["sources"] == {"apt-term": "permission_denied"}
+    result = query_logs("apt-term", scope="package")
+    assert result["coverage"]["availability"] == "permission_denied"
+    assert result["items"] == []
