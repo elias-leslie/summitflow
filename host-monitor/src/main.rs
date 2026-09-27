@@ -24,6 +24,8 @@ use sysinfo::System;
 
 const BASELINE: Duration = Duration::from_secs(5);
 const LEADERS: Duration = Duration::from_secs(15);
+const GPU_INTERVAL: Duration = Duration::from_secs(15);
+const GPU_IDLE_STATUS_INTERVAL: Duration = Duration::from_secs(60 * 60);
 const MAX_CONTROL_BYTES: u64 = 4096;
 const MAX_ACTIVE_LEASES: usize = 16;
 static STOP: AtomicBool = AtomicBool::new(false);
@@ -37,6 +39,7 @@ struct Config {
     policy: PathBuf,
     samples: Option<u64>,
     interval: Duration,
+    gpu_enabled: bool,
 }
 impl Config {
     fn parse() -> Result<Self, String> {
@@ -95,12 +98,22 @@ impl Config {
             return Err("samples and interval must be positive".into());
         }
         let policy = policy.unwrap_or_else(|| state.join("policy.json"));
+        let gpu_enabled = match env::var("SUMMITFLOW_MONITOR_GPU") {
+            Ok(value) if value == "off" => false,
+            Ok(value) if value == "on" => true,
+            Ok(_) => return Err("SUMMITFLOW_MONITOR_GPU must be on or off".into()),
+            Err(env::VarError::NotPresent) => true,
+            Err(env::VarError::NotUnicode(_)) => {
+                return Err("SUMMITFLOW_MONITOR_GPU must be on or off".into());
+            }
+        };
         Ok(Self {
             state,
             identity,
             policy,
             samples,
             interval: Duration::from_millis(interval_ms),
+            gpu_enabled,
         })
     }
 }
@@ -187,11 +200,56 @@ fn mono_ns() -> i64 {
         .saturating_mul(1_000_000_000)
         .saturating_add(ts.tv_nsec)
 }
+
+fn gpu_poll_due(now: Instant, next: &mut Instant, pending: bool) -> bool {
+    if pending || now < *next {
+        return false;
+    }
+    let periods = now.duration_since(*next).as_secs() / GPU_INTERVAL.as_secs() + 1;
+    *next = if let Ok(periods) = u32::try_from(periods) {
+        *next + GPU_INTERVAL * periods
+    } else {
+        now + GPU_INTERVAL
+    };
+    true
+}
+fn gpu_idle_status_due(now: Instant, next: &mut Instant) -> bool {
+    if now < *next {
+        return false;
+    }
+    *next = now + GPU_IDLE_STATUS_INTERVAL;
+    true
+}
+fn add_gpu_observation(host: &mut Value, mut reading: Value, observed_at: i64) {
+    reading["observed_at_ns"] = json!(observed_at);
+    reading["device_identity_scope"] = json!("sample_boot_id+index");
+    if reading.get("poll_interval_seconds").is_none() {
+        reading["poll_interval_seconds"] = json!(GPU_INTERVAL.as_secs());
+    }
+    if let Some(object) = host.as_object_mut() {
+        object.insert(
+            "gpu_max_utilization_pct".into(),
+            reading["max_utilization_pct"].clone(),
+        );
+        object.insert(
+            "gpu_memory_used_bytes".into(),
+            reading["memory_used_bytes"].clone(),
+        );
+        object.insert(
+            "gpu_memory_total_bytes".into(),
+            reading["memory_total_bytes"].clone(),
+        );
+        object.insert("gpu".into(), reading);
+    }
+}
 fn status_host(host: &Value) -> Value {
     let mut snapshot = host.clone();
     if let Some(object) = snapshot.as_object_mut() {
         object.remove("net_members");
         object.remove("disk_members");
+        if let Some(gpu) = object.get_mut("gpu").and_then(Value::as_object_mut) {
+            gpu.remove("devices");
+        }
     }
     snapshot
 }
@@ -600,10 +658,15 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
     let mut was_detail = false;
     let mut probe_rx: Option<Receiver<(i64, Value)>> = None;
     let mut last_health = json!({"availability":"not_collected"});
+    let mut gpu_rx: Option<Receiver<(i64, Value, Vec<Value>)>> = None;
+    let mut gpu_worker: Option<thread::JoinHandle<()>> = None;
+    let mut gpu_available = Path::new("/usr/bin/nvidia-smi").is_file();
     let mut iterations = 0u64;
     let mut target = Instant::now();
     let mut next_baseline = target;
     let mut next_leaders = target;
+    let mut next_gpu = target;
+    let mut next_gpu_idle_status = target;
     'run: loop {
         let now = Instant::now();
         state.control(&listener, store.bytes());
@@ -617,6 +680,69 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
             let mut errors = Vec::new();
             let (mut host_data, new_cpu) = provider::host(&mut sys, cpu_prev, &mut errors);
             cpu_prev = new_cpu;
+            if baseline_due {
+                if (!cfg.gpu_enabled || !gpu_available)
+                    && gpu_idle_status_due(now, &mut next_gpu_idle_status)
+                {
+                    // A one-time disabled/unsupported sample ages out of raw history.
+                    // Recheck an absent executable and retain a bounded status record
+                    // without starting a subprocess or a separate transaction.
+                    if cfg.gpu_enabled {
+                        gpu_available = Path::new("/usr/bin/nvidia-smi").is_file();
+                    }
+                    if !cfg.gpu_enabled || !gpu_available {
+                        let mut reading = provider::gpu_unavailable(if cfg.gpu_enabled {
+                            "unsupported"
+                        } else {
+                            "disabled"
+                        });
+                        reading["poll_interval_seconds"] = Value::Null;
+                        reading["status_refresh_seconds"] =
+                            json!(GPU_IDLE_STATUS_INTERVAL.as_secs());
+                        add_gpu_observation(&mut host_data, reading, at);
+                    } else {
+                        next_gpu = now;
+                    }
+                }
+                if let Some(rx) = &gpu_rx {
+                    match rx.try_recv() {
+                        Ok((observed_at, reading, gpu_errors)) => {
+                            add_gpu_observation(&mut host_data, reading, observed_at);
+                            errors.extend(gpu_errors);
+                            gpu_rx = None;
+                            if let Some(worker) = gpu_worker.take() {
+                                let _ = worker.join();
+                            }
+                        }
+                        Err(TryRecvError::Disconnected) => {
+                            errors
+                                .push(json!({"source":"nvidia-smi","code":"worker_disconnected"}));
+                            add_gpu_observation(
+                                &mut host_data,
+                                provider::gpu_unavailable("error"),
+                                at,
+                            );
+                            gpu_rx = None;
+                            if let Some(worker) = gpu_worker.take() {
+                                let _ = worker.join();
+                            }
+                        }
+                        Err(TryRecvError::Empty) => {}
+                    }
+                }
+                if cfg.gpu_enabled
+                    && gpu_available
+                    && gpu_poll_due(now, &mut next_gpu, gpu_rx.is_some())
+                {
+                    let (tx, rx) = mpsc::channel();
+                    gpu_worker = Some(thread::spawn(move || {
+                        let mut errors = Vec::new();
+                        let reading = provider::gpu(Path::new("/usr/bin/nvidia-smi"), &mut errors);
+                        let _ = tx.send((utc_ns(), reading, errors));
+                    }));
+                    gpu_rx = Some(rx);
+                }
+            }
             let mut scan = detail || leaders_due;
             let mut scan_counts = if scan {
                 let (procs, counts) = provider::processes(&mut errors, &names);
@@ -909,6 +1035,9 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
             thread::sleep((target - now).min(Duration::from_millis(100)));
         }
     }
+    if let Some(worker) = gpu_worker.take() {
+        let _ = worker.join();
+    }
     store.flush_rollups()?;
     let _ = fs::remove_file(cfg.state.join("control.sock"));
     Ok(())
@@ -928,20 +1057,95 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gpu_poll_schedule_does_not_overlap_or_catch_up_in_a_burst() {
+        let started = Instant::now();
+        let mut next = started;
+        assert!(gpu_poll_due(started, &mut next, false));
+        assert!(!gpu_poll_due(
+            started + Duration::from_secs(10),
+            &mut next,
+            false
+        ));
+        assert!(!gpu_poll_due(
+            started + Duration::from_secs(15),
+            &mut next,
+            true
+        ));
+        assert!(gpu_poll_due(
+            started + Duration::from_secs(45),
+            &mut next,
+            false
+        ));
+        assert!(!gpu_poll_due(
+            started + Duration::from_secs(45),
+            &mut next,
+            false
+        ));
+    }
+    #[test]
+    fn disabled_or_absent_gpu_status_remains_in_raw_history_after_a_day() {
+        let started = Instant::now();
+        let mut next = started;
+        assert!(gpu_idle_status_due(started, &mut next));
+        assert!(!gpu_idle_status_due(
+            started + Duration::from_secs(59 * 60),
+            &mut next
+        ));
+        assert!(gpu_idle_status_due(
+            started + Duration::from_secs(60 * 60),
+            &mut next
+        ));
+        assert!(gpu_idle_status_due(
+            started + Duration::from_secs(25 * 60 * 60),
+            &mut next
+        ));
+    }
+    #[test]
+    fn gpu_observation_keeps_disabled_distinct_from_sampled_provider() {
+        let mut disabled = json!({});
+        add_gpu_observation(
+            &mut disabled,
+            json!({"availability":"disabled","poll_interval_seconds":null}),
+            123,
+        );
+        assert_eq!(disabled["gpu"]["availability"], "disabled");
+        assert_eq!(disabled["gpu"]["poll_interval_seconds"], Value::Null);
+        assert_eq!(disabled["gpu_max_utilization_pct"], Value::Null);
+        let mut sampled = json!({});
+        add_gpu_observation(
+            &mut sampled,
+            json!({"availability":"ok","max_utilization_pct":25.0}),
+            456,
+        );
+        assert_eq!(sampled["gpu"]["poll_interval_seconds"], 15);
+        assert_eq!(sampled["gpu"]["observed_at_ns"], 456);
+        assert_eq!(sampled["gpu_max_utilization_pct"], 25.0);
+    }
     #[test]
     fn socket_status_omits_internal_member_maps_at_provider_limit() {
         let members: serde_json::Map<String, Value> = (0..64)
             .map(|index| (format!("device-{index:02}"), json!([100, 200, "259:0:9"])))
             .collect();
-        let host = json!({"cpu_busy_pct":25,"net_members":members,"disk_members":members});
+        let gpu_devices: Vec<Value> = (0..32)
+            .map(|index| {
+                json!({"index":index,"name":"X".repeat(64),"utilization_pct":25.0,"memory_used_bytes":1024,"memory_total_bytes":2048,"temperature_c":45.0,"power_w":100.0})
+            })
+            .collect();
+        let host = json!({"cpu_busy_pct":25,"memory_total_bytes":64_000_000_000u64,"memory_available_bytes":32_000_000_000u64,"net_members":members,"disk_members":members,"gpu":{"provider":"nvidia-smi","availability":"ok","observed_at_ns":123,"poll_interval_seconds":15,"devices_seen":32,"devices_scanned":32,"max_utilization_pct":25.0,"memory_used_bytes":32768,"memory_total_bytes":65536,"devices":gpu_devices}});
+        assert!(serde_json::to_vec(&host).unwrap().len() > 8192);
         let public = status_host(&host);
         assert_eq!(host["net_members"].as_object().unwrap().len(), 64);
         assert_eq!(host["disk_members"].as_object().unwrap().len(), 64);
         assert!(public.get("net_members").is_none());
         assert!(public.get("disk_members").is_none());
+        assert!(public["gpu"].get("devices").is_none());
+        assert_eq!(public["gpu"]["devices_seen"], 32);
+        assert_eq!(public["gpu"]["observed_at_ns"], 123);
         let mut runtime = Runtime::new(None);
         runtime.latest = Some(
-            json!({"host":public,"services":{"summitflow-backend.service":{"active_state":"active","metrics":{"cpu_usage_usec":1,"memory_current_bytes":2}}},"sampled_at_ns":1,"mode":"baseline"}),
+            json!({"host":public,"services":{"summitflow-backend.service":{"active_state":"active","metrics":{"cpu_usage_usec":1,"memory_current_bytes":2}},"summitflow-frontend.service":{"active_state":"active","metrics":{"cpu_usage_usec":1,"memory_current_bytes":2}},"summitflow-hatchet-worker.service":{"active_state":"active","metrics":{"cpu_usage_usec":1,"memory_current_bytes":2}},"summitflow-host-monitor.service":{"active_state":"active","metrics":{"cpu_usage_usec":1,"memory_current_bytes":2}}},"sampled_at_ns":1,"mode":"baseline"}),
         );
         let response = runtime.dispatch(&json!({"command":"status"}), 0);
         assert!(serde_json::to_vec(&response).unwrap().len() < 8192);

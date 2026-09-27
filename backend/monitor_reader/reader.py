@@ -95,9 +95,18 @@ SOURCE_BY_METRIC = {
     "net_tx_bytes_per_second": "/proc/net/dev",
 }
 AVAILABILITY = {
-    "ok", "unsupported", "permission_denied", "timeout", "error", "stale",
+    "ok", "partial", "disabled", "source_truncated", "unsupported", "permission_denied", "timeout", "error", "stale",
     "collector_stopped", "not_collected", "leaders_only", "retention_expired",
 }
+GPU_HOST_METRICS = {"gpu_max_utilization_pct": ("max_utilization_pct", "%"),
+                    "gpu_memory_used_bytes": ("memory_used_bytes", "bytes"),
+                    "gpu_memory_total_bytes": ("memory_total_bytes", "bytes")}
+GPU_DEVICE_METRICS = {"gpu_utilization_pct": ("utilization_pct", "%"),
+                      "gpu_memory_used_bytes": ("memory_used_bytes", "bytes"),
+                      "gpu_memory_total_bytes": ("memory_total_bytes", "bytes"),
+                      "gpu_temperature_c": ("temperature_c", "celsius"),
+                      "gpu_power_w": ("power_w", "watts")}
+HOST_METRICS.update({key: unit for key, (_, unit) in GPU_HOST_METRICS.items()})
 
 
 class MonitorQueryError(ValueError):
@@ -204,7 +213,7 @@ def _availability(metric: str, value: Any, errors: list[dict[str, Any]]) -> str:
     return "not_collected"
 
 
-def _cursor(filters: dict[str, Any], position: tuple[int, int] | int) -> str:
+def _cursor(filters: dict[str, Any], position: tuple[int, int] | tuple[int, int, int, str] | int) -> str:
     digest = hashlib.sha256(_json(filters).encode()).hexdigest()[:24]
     raw = _json({"v": 1, "f": digest, "p": position}).encode()
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
@@ -225,6 +234,12 @@ def _cursor_position(cursor: str | None, filters: dict[str, Any], kind: type) ->
         if kind is tuple:
             if not (isinstance(position, list) and len(position) == 2 and all(type(x) is int for x in position)):
                 raise ValueError("invalid position")
+            return tuple(position)
+        if kind is list:
+            if not (isinstance(position, list) and len(position) == 4
+                    and all(type(x) is int for x in position[:3])
+                    and isinstance(position[3], str) and 0 < len(position[3]) <= 128):
+                raise ValueError("invalid process observation position")
             return tuple(position)
         if type(position) is not int:
             raise ValueError("invalid position")
@@ -337,6 +352,9 @@ class MonitorReader:
         # Per-device counters are retained for rate validation, not status output.
         host.pop("net_members", None)
         host.pop("disk_members", None)
+        # Sparse device detail has a dedicated paged query; preserve status's
+        # small default budget even on multi-GPU hosts.
+        host.pop("gpu", None)
         services = _decode_json(row["services_json"], dict)
         errors = _decode_json(row["errors_json"], list)
         cadence = 5
@@ -355,7 +373,7 @@ class MonitorReader:
                 "host_id": meta.get("host_id"), "source_errors": errors}
         return self._pack(base, [(item, (row["sampled_at_ns"], row["id"]))], {}, 1, max_bytes)
 
-    def series(self, metric: str, *, entity: str = "host",
+    def series(self, metric: str, *, entity: str = "host", boot_id: str | None = None,
                since: str | int | datetime | None = None,
                until: str | int | datetime | None = None, step: int = 60,
                limit: int = 10, cursor: str | None = None,
@@ -371,24 +389,45 @@ class MonitorReader:
         if math.ceil((end - start) / (step * NSEC)) > 5000:
             raise MonitorQueryError("series has too many buckets; increase step")
         entity = _text_filter(entity, "entity") or "host"
-        if metric not in (HOST_METRICS if entity == "host" else SERVICE_METRICS):
+        boot_id = _text_filter(boot_id, "boot_id")
+        gpu_device = entity.startswith("gpu:") and entity[4:].isascii() and entity[4:].isdecimal() \
+            and 0 <= int(entity[4:]) < 32
+        if entity.startswith("gpu:") and not gpu_device:
+            raise MonitorQueryError("GPU entity must be gpu:<index> with index 0..31")
+        if gpu_device and boot_id is None:
+            raise MonitorQueryError("GPU device series requires boot_id from st monitor gpu")
+        if not gpu_device and boot_id is not None:
+            raise MonitorQueryError("boot_id applies only to GPU device series")
+        metric_catalog = GPU_DEVICE_METRICS if gpu_device else HOST_METRICS if entity == "host" else SERVICE_METRICS
+        if metric not in metric_catalog:
             raise MonitorQueryError("metric is not in the public whitelist")
         historical = end - start > MAX_WINDOW_NS
+        gpu_metric = gpu_device or metric in GPU_HOST_METRICS
+        if historical and gpu_metric:
+            raise MonitorQueryError("GPU series requires retained raw observations within 24 hours")
         if historical and (entity != "host" or step < 60):
             raise MonitorQueryError("windows over 24 hours require host metric and step at least 60 seconds")
         if historical and metric in HOST_RATE_METRICS:
             raise MonitorQueryError("host throughput requires raw samples within 24 hours; rollup counters cannot provide a valid rate")
         if historical and (start % (60 * NSEC) or end % (60 * NSEC) or step % 60):
             raise MonitorQueryError("windows over 24 hours require UTC minute-aligned since/until and step")
-        unit = (HOST_METRICS if entity == "host" else SERVICE_METRICS)[metric]
+        if gpu_device:
+            unit = GPU_DEVICE_METRICS[metric][1]
+        elif entity == "host":
+            unit = HOST_METRICS[metric]
+        else:
+            unit = SERVICE_METRICS[metric]
         filters = {"kind": "series", "metric": metric, "entity": entity,
-                   "since": start, "until": end, "step": step, "sort": "time_asc"}
+                   "boot_id": boot_id, "since": start, "until": end, "step": step, "sort": "time_asc"}
         after = _cursor_position(cursor, filters, int)
         base = self._base(filters, now_ns)
         step_ns = step * NSEC
         first_index = after + 1 if after is not None else 0
         query_start = start + first_index * step_ns
         query_end = min(end, start + (first_index + limit + 1) * step_ns)
+        if gpu_metric:
+            return self._gpu_series(metric, entity, boot_id, unit, start, end, step, limit,
+                                    first_index, query_start, query_end, filters, base, max_bytes, now_ns)
         if historical:
             return self._rollup_series(metric, unit, start, end, step, limit, after,
                                        filters, base, max_bytes, now_ns)
@@ -448,6 +487,193 @@ class MonitorReader:
                             "returned_bucket_candidates": len(candidates),
                             "available_bucket_candidates": available_buckets,
                             "raw_samples": len(rows)}
+        return self._pack(base, candidates, filters, limit, max_bytes)
+
+    def _gpu_series(self, metric: str, entity: str, boot_id: str | None, unit: str,
+                    start: int, end: int, step: int, limit: int, first_index: int,
+                    query_start: int, query_end: int, filters: dict[str, Any],
+                    base: dict[str, Any], max_bytes: int, now_ns: int) -> dict[str, Any]:
+        """Bucket only completed GPU polls, using provider rather than commit time."""
+        step_ns = step * NSEC
+        conditions = ["mode='baseline'", "sampled_at_ns>=?", "sampled_at_ns<?"]
+        # A completed poll normally reaches the next 5s baseline. Allow one
+        # extra baseline interval for write delay without scanning the rest of
+        # retained history on every paged query. Later commits can be missed.
+        params: list[Any] = [query_start, query_end + 10 * NSEC]
+        if boot_id is not None:
+            conditions.append("boot_id=?")
+            params.append(boot_id)
+        params.append(MAX_ROWS + 1)
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT sampled_at_ns,boot_id,host_json,errors_json FROM samples WHERE "
+                + " AND ".join(conditions) + " ORDER BY sampled_at_ns,id LIMIT ?", params,
+            ).fetchall()
+        if len(rows) > MAX_ROWS:
+            raise MonitorQueryError("GPU series row cap reached; narrow the time window")
+        buckets: dict[int, list[tuple[sqlite3.Row, dict[str, Any], int]]] = {}
+        for row in rows:
+            gpu = _decode_json(row["host_json"], dict).get("gpu")
+            if not isinstance(gpu, dict):
+                continue
+            observed = gpu.get("observed_at_ns")
+            if type(observed) is not int or not 0 <= observed <= row["sampled_at_ns"]:
+                # Malformed source timing cannot be presented as a measured value.
+                observed = row["sampled_at_ns"]
+                gpu = {**gpu, "availability": "error", "invalid_observation_time": True}
+            if not query_start <= observed < query_end:
+                continue
+            index = (observed - start) // step_ns
+            buckets.setdefault(index, []).append((row, gpu, observed))
+        candidates: list[tuple[dict[str, Any], int]] = []
+        available_buckets = 0
+        field = (GPU_HOST_METRICS if entity == "host" else GPU_DEVICE_METRICS)[metric][0]
+        device_index = int(entity[4:]) if entity != "host" else None
+        for index in range(first_index, min(math.ceil((end - start) / step_ns), first_index + limit + 1)):
+            subset = buckets.get(index, [])
+            values: list[float | int] = []
+            unavailable: dict[str, int] = {}
+            source_outcomes: dict[str, int] = {}
+            last_value: float | int | None = None
+            for _row, gpu, _observed in subset:
+                outcome = gpu.get("availability")
+                outcome = outcome if isinstance(outcome, str) and outcome in AVAILABILITY else "error"
+                source_outcomes[outcome] = source_outcomes.get(outcome, 0) + 1
+                source = gpu
+                if device_index is not None:
+                    devices = gpu.get("devices")
+                    matches = [device for device in devices if isinstance(device, dict)
+                               and type(device.get("index")) is int and device["index"] == device_index] \
+                        if isinstance(devices, list) else []
+                    source = matches[0] if len(matches) == 1 else {}
+                value = source.get(field) if not gpu.get("invalid_observation_time") else None
+                if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0:
+                    values.append(value)
+                    last_value = value
+                else:
+                    last_value = None
+                    code = outcome if outcome != "ok" else "not_collected"
+                    unavailable[code] = unavailable.get(code, 0) + 1
+            last = subset[-1] if subset else None
+            last_gpu = last[1] if last else {}
+            last_observed = last[2] if last else None
+            provider = last_gpu.get("provider") if last else None
+            provider = provider if isinstance(provider, str) and provider else "nvidia-smi"
+            availability = ("ok" if last_value is not None else
+                            last_gpu.get("availability", "not_collected") if last else "not_collected")
+            if last and last_value is None and availability == "ok":
+                availability = "not_collected"
+            if availability not in AVAILABILITY:
+                availability = "error"
+            if last_value is not None:
+                available_buckets += 1
+            bucket_start = start + index * step_ns
+            expected = math.ceil(min(step_ns, end - bucket_start) / (15 * NSEC))
+            item = {"sampled_at": _utc(bucket_start),
+                    "observed_at": _utc(last_observed) if last_observed is not None else None,
+                    "last_sampled_at": _utc(last[0]["sampled_at_ns"]) if last else None,
+                    "freshness": "ok" if last_observed is not None and now_ns - last_observed <= 30 * NSEC else "stale",
+                    "source": "sqlite", "provider": provider,
+                    "provider_availability": last_gpu.get("availability") if last else None,
+                    "mode": "baseline" if last else None, "unit": unit,
+                    "availability": availability, "entity": entity, "metric": metric,
+                    "boot_id": last[0]["boot_id"] if last else boot_id,
+                    "device_identity_scope": "sample_boot_id+index" if device_index is not None else None,
+                    "value": {"min": min(values), "max": max(values), "mean": sum(values) / len(values),
+                              "last": last_value} if values and last_value is not None else None,
+                    "coverage": {"expected": expected, "observed": len(subset), "valid": len(values),
+                                 "missing": max(0, expected - len(subset)),
+                                 "unavailable": unavailable, "source_outcomes": source_outcomes,
+                                 "resolution_seconds": 15}}
+            candidates.append((item, index))
+        base["coverage"] = {"from": _utc(start), "until": _utc(end),
+                            "returned_bucket_candidates": len(candidates),
+                            "available_bucket_candidates": available_buckets,
+                            "raw_samples": len(rows), "resolution_seconds": 15,
+                            "commit_lookahead_seconds": 10,
+                            "sparse_observations": sum(len(items) for items in buckets.values())}
+        return self._pack(base, candidates, filters, limit, max_bytes)
+
+    def gpu(self, *, at: str | int | datetime | None = None,
+            limit: int = 10, cursor: str | None = None,
+            max_bytes: int = DEFAULT_BYTES,
+            now: str | int | datetime | None = None) -> dict[str, Any]:
+        """Latest retained GPU poll with bounded, boot-scoped device pages."""
+        max_bytes, limit = _budget(max_bytes), _limit(limit)
+        now_ns = _time_ns(now, int(datetime.now(UTC).timestamp() * NSEC))
+        at_ns = _time_ns(at, now_ns)
+        filters = {"kind": "gpu", "at": at_ns if at is not None else None}
+        position = _cursor_position(cursor, filters, list)
+        offset = position[1] if position is not None else 0
+        base = self._base(filters, now_ns)
+        with self._connect() as conn:
+            if position is None:
+                row = conn.execute(
+                    "SELECT id,sampled_at_ns,boot_id,host_json,errors_json FROM samples "
+                    "WHERE mode='baseline' AND sampled_at_ns<=? AND sampled_at_ns>=? "
+                    "AND json_type(host_json,'$.gpu')='object' "
+                    "ORDER BY sampled_at_ns DESC,id DESC LIMIT 1",
+                    (at_ns, max(0, now_ns - MAX_WINDOW_NS)),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT id,sampled_at_ns,boot_id,host_json,errors_json FROM samples WHERE id=?",
+                    (position[0],),
+                ).fetchone()
+                if row is not None and (row["sampled_at_ns"], row["boot_id"]) != position[2:]:
+                    row = None
+        if row is None:
+            availability = "retention_expired" if position is not None or at_ns < now_ns - MAX_WINDOW_NS else "not_collected"
+            base["coverage"] = {"availability": availability, "retention_seconds": 24 * 3600}
+            base["errors"] = [{"code": availability, "message": "no retained GPU observation at or before time"}]
+            return self._pack(base, [], filters, limit, max_bytes)
+        host = _decode_json(row["host_json"], dict)
+        gpu = host.get("gpu")
+        if not isinstance(gpu, dict):
+            raise MonitorQueryError("malformed GPU observation")
+        devices = gpu.get("devices")
+        if not isinstance(devices, list) or len(devices) > 32:
+            raise MonitorQueryError("malformed or oversized GPU device list")
+        observed = gpu.get("observed_at_ns")
+        if type(observed) is not int or not 0 <= observed <= row["sampled_at_ns"]:
+            raise MonitorQueryError("malformed GPU observation time")
+        provider = gpu.get("provider")
+        provider = provider if isinstance(provider, str) and provider else "unknown"
+        availability = gpu.get("availability")
+        availability = availability if isinstance(availability, str) and availability in AVAILABILITY else "error"
+        age = max(0, now_ns - observed) / NSEC
+        refresh = gpu.get("status_refresh_seconds")
+        static_status = availability in {"disabled", "unsupported"} and type(refresh) is int and 0 < refresh <= 3600
+        fresh_limit = refresh + 30 if static_status else 30
+        errors = _decode_json(row["errors_json"], list)
+        source_errors = [error.get("code") for error in errors if isinstance(error, dict)
+                         and error.get("source") == "nvidia-smi" and isinstance(error.get("code"), str)][:8]
+        base["coverage"] = {
+            "availability": availability, "freshness": "ok" if age <= fresh_limit else "stale",
+            "sampled_at": _utc(row["sampled_at_ns"]), "observed_at": _utc(observed),
+            "age_seconds": round(age, 3), "provider": provider,
+            "boot_id": row["boot_id"], "sample_id": row["id"],
+            "device_identity_scope": "sample_boot_id+index",
+            "devices_seen": gpu.get("devices_seen"), "devices_scanned": gpu.get("devices_scanned"),
+            "missing_fields": gpu.get("missing_fields") if isinstance(gpu.get("missing_fields"), dict) else {},
+            "poll_interval_seconds": gpu.get("poll_interval_seconds"),
+            "status_refresh_seconds": refresh if static_status else None,
+            "max_utilization_pct": gpu.get("max_utilization_pct"),
+            "memory_used_bytes": gpu.get("memory_used_bytes"),
+            "memory_total_bytes": gpu.get("memory_total_bytes"),
+            "source_errors": source_errors,
+        }
+        candidates: list[tuple[dict[str, Any], tuple[int, int, int, str]]] = []
+        for index, device in enumerate(devices[offset:offset + limit + 1], offset + 1):
+            if not isinstance(device, dict):
+                raise MonitorQueryError("malformed GPU device")
+            item = {"sampled_at": _utc(row["sampled_at_ns"]), "observed_at": _utc(observed),
+                    "freshness": base["coverage"]["freshness"], "source": "sqlite", "provider": provider,
+                    "availability": availability, "boot_id": row["boot_id"],
+                    "identity": {"boot_id": row["boot_id"], "index": device.get("index"),
+                                 "scope": "sample_boot_id+index"},
+                    "device": device}
+            candidates.append((item, (row["id"], index, row["sampled_at_ns"], row["boot_id"])))
         return self._pack(base, candidates, filters, limit, max_bytes)
 
     @staticmethod
@@ -608,7 +834,7 @@ class MonitorReader:
 
     def processes(self, *, at: str | int | datetime | None = None,
                   name: str | None = None, user: str | None = None,
-                  service: str | None = None, sort: str = "rss",
+                  service: str | None = None, sort: str = "rss", view: str = "list",
                   limit: int = 10, cursor: str | None = None,
                   max_bytes: int = DEFAULT_BYTES,
                   now: str | int | datetime | None = None) -> dict[str, Any]:
@@ -619,10 +845,12 @@ class MonitorReader:
                                _text_filter(service, "service"))
         if sort not in {"cpu", "rss", "io"}:
             raise MonitorQueryError("sort must be cpu, rss, or io")
+        if view not in {"list", "tree"}:
+            raise MonitorQueryError("view must be list or tree")
         filters = {"kind": "processes", "at": _time_ns(at, now_ns) if at is not None else None,
                    "name": name, "user": user,
-                   "service": service, "sort": sort}
-        position = _cursor_position(cursor, filters, tuple)
+                   "service": service, "sort": sort, "view": view}
+        position = _cursor_position(cursor, filters, list if view == "tree" else tuple)
         offset = position[1] if position is not None else 0
         base = self._base(filters, now_ns)
         with self._connect() as conn:
@@ -632,6 +860,11 @@ class MonitorReader:
                                    (at_ns,)).fetchone()
             else:
                 row = conn.execute(select + "WHERE id=?", (position[0],)).fetchone()
+                if (view == "tree" and row is not None
+                        and (row["sampled_at_ns"], row["boot_id"]) != position[2:]):
+                    # SQLite can reuse an INTEGER PRIMARY KEY after retention.
+                    # Never resume a tree against a different observation.
+                    row = None
             previous = []
             if row is not None and sort in {"cpu", "io"}:
                 previous = conn.execute("SELECT sampled_at_ns,process_blob FROM samples "
@@ -732,11 +965,90 @@ class MonitorReader:
             if elapsed_ns <= 0:
                 return None
             return delta * (100 if sort == "cpu" else NSEC) / elapsed_ns
-        selected.sort(key=lambda process: (score(process) is None,
-                                         -(score(process) or 0),
-                                         process.get("pid", 0), process.get("start_ticks", 0)))
+        if view == "tree":
+            # Rate scores depend on a prior sample that retention may evict while
+            # the current sample remains. Cursor pages must keep their order.
+            selected.sort(key=lambda process: (
+                process["pid"] if type(process.get("pid")) is int else -1,
+                process["start_ticks"] if type(process.get("start_ticks")) is int else -1,
+            ))
+        else:
+            selected.sort(key=lambda process: (score(process) is None,
+                                             -(score(process) or 0),
+                                             process.get("pid", 0), process.get("start_ticks", 0)))
+        tree_metadata: dict[int, dict[str, Any]] = {}
+        if view == "tree":
+            # The entire stored observation establishes ancestry before page budgeting.
+            # A PID can be reused, so only a unique parent from this boot, observed
+            # at the same instant and started before its child can be linked.
+            by_pid: dict[int, list[dict[str, Any]]] = {}
+            for process in processes:
+                if not isinstance(process, dict):
+                    continue
+                pid = process.get("pid")
+                if type(pid) is int and pid > 0:
+                    by_pid.setdefault(pid, []).append(process)
+            selected_ids = {id(process) for process in selected}
+            parent_of: dict[int, int] = {}
+            children: dict[int, list[int]] = {id(process): [] for process in selected}
+            for process in selected:
+                identity = id(process)
+                pid, ppid, start = (process.get(key) for key in ("pid", "ppid", "start_ticks"))
+                link = "root"
+                parent_identity = None
+                if type(ppid) is int and ppid > 0 and ppid != pid:
+                    matches = by_pid.get(ppid, [])
+                    link = "unavailable_in_capture"
+                    if len(matches) > 1:
+                        link = "ambiguous_pid"
+                    elif matches:
+                        parent = matches[0]
+                        parent_start = parent.get("start_ticks")
+                        if (type(start) is int and type(parent_start) is int
+                                and parent_start <= start
+                                and observed_ns(parent, row["sampled_at_ns"]) == observed_ns(process, row["sampled_at_ns"])):
+                            parent_identity = {"boot_id": row["boot_id"], "pid": ppid,
+                                               "start_ticks": parent_start}
+                            if id(parent) in selected_ids:
+                                link = "linked"
+                                parent_of[identity] = id(parent)
+                                children[id(parent)].append(identity)
+                            else:
+                                link = "filtered_out"
+                        else:
+                            link = "identity_or_observation_mismatch"
+                tree_metadata[identity] = {"depth": 0, "children": 0,
+                                           "parent_link": link, "parent_identity": parent_identity}
+            by_id = {id(process): process for process in selected}
+            ordered: list[dict[str, Any]] = []
+            visited: set[int] = set()
+
+            def visit(identity: int) -> None:
+                pending = [(identity, 0)]
+                while pending:
+                    current, depth = pending.pop()
+                    if current in visited:
+                        continue
+                    visited.add(current)
+                    tree_metadata[current]["depth"] = depth
+                    tree_metadata[current]["children"] = len(children[current])
+                    ordered.append(by_id[current])
+                    pending.extend((child, depth + 1) for child in reversed(children[current]))
+
+            for process in selected:
+                if id(process) not in parent_of:
+                    visit(id(process))
+            # Defensive cycle handling: malformed source data must not hide rows.
+            for process in selected:
+                if id(process) not in visited:
+                    tree_metadata[id(process)]["parent_link"] = "invalid_cycle"
+                    visit(id(process))
+            selected = ordered
         base["coverage"] = {"availability": "leaders_only" if row["mode"] == "baseline" else "ok",
                             "sampled_at": _utc(row["sampled_at_ns"]), "sample_age_seconds": round(age, 3),
+                            "observation_cursor": _cursor(filters, (row["id"], 0,
+                                                                    row["sampled_at_ns"], row["boot_id"]))
+                            if view == "tree" else _cursor(filters, (row["id"], 0)),
                             "observed_at": _utc(latest_observed),
                             "observation_age_seconds": round(observation_age, 3),
                             "processes_seen": row["processes_seen"],
@@ -745,6 +1057,19 @@ class MonitorReader:
                             "user_attribution": {"username_unknown": username_unknown,
                                                  "uid_unknown": uid_unknown,
                                                  "partial": partial_attribution}}
+        if view == "tree":
+            missing = sum(meta["parent_link"] == "unavailable_in_capture"
+                          for meta in tree_metadata.values())
+            base["coverage"]["tree"] = {
+                "scope": "stored_observation", "sample_id": row["id"],
+                "order": "parent_before_child_pid_siblings",
+                "value_metric": sort,
+                "captured_rows": len(processes),
+                "observed_processes": row["processes_seen"],
+                "unavailable_parent_links": missing,
+                "permission_denied": row["processes_permission_denied"],
+                "filtered": any(value is not None for value in (name, user, service)),
+            }
         if user is not None and partial_attribution:
             base["errors"].append({"code": "partial_attribution",
                                    "message": "some process owners could not be attributed for this filter"})
@@ -762,7 +1087,11 @@ class MonitorReader:
                     "identity": {"boot_id": row["boot_id"], "pid": process.get("pid"),
                                  "start_ticks": process.get("start_ticks")},
                     "process": process}
-            candidates.append((item, (row["id"], index)))
+            if view == "tree":
+                item["tree"] = tree_metadata[id(process)]
+            candidate_position = ((row["id"], index, row["sampled_at_ns"], row["boot_id"])
+                                  if view == "tree" else (row["id"], index))
+            candidates.append((item, candidate_position))
         return self._pack(base, candidates, filters, limit, max_bytes)
 
     def events(self, *, since: str | int | datetime | None = None,

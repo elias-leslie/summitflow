@@ -345,6 +345,166 @@ def test_historical_host_series_uses_rollups_and_reports_gaps(store):
     assert series["coverage"]["resolution_seconds"] == 60
 
 
+def test_sparse_gpu_series_uses_poll_time_and_preserves_provider_outcomes(store):
+    directory, conn = store
+    devices = [
+        {"index": 0, "name": "GPU A", "utilization_pct": 50, "memory_used_bytes": 10,
+         "memory_total_bytes": 100, "temperature_c": 40, "power_w": 75},
+        {"index": 1, "name": "GPU B", "utilization_pct": 25, "memory_used_bytes": 20,
+         "memory_total_bytes": 100, "temperature_c": 45, "power_w": 80},
+    ]
+    first = {"provider": "nvidia-smi", "availability": "ok", "observed_at_ns": NOW - 47 * NSEC,
+             "poll_interval_seconds": 15, "device_identity_scope": "sample_boot_id+index",
+             "devices_seen": 2, "devices_scanned": 2, "devices": devices, "missing_fields": {},
+             "max_utilization_pct": 50, "memory_used_bytes": 30, "memory_total_bytes": 200}
+    second = {**first, "availability": "partial", "observed_at_ns": NOW - 32 * NSEC,
+              "devices": [{**devices[0], "utilization_pct": None}, devices[1]],
+              "max_utilization_pct": None, "missing_fields": {"utilization_pct": 1}}
+    _sample(conn, when=NOW - 45 * NSEC, host={"gpu": first, "gpu_max_utilization_pct": 50})
+    _sample(conn, when=NOW - 40 * NSEC, host={"cpu_busy_pct": 9})
+    _sample(conn, when=NOW - 30 * NSEC, host={"gpu": second, "gpu_max_utilization_pct": None},
+            errors=[{"source": "nvidia-smi", "code": "field_unavailable"}])
+    conn.commit()
+    reader = MonitorReader(directory)
+    aggregate = reader.series("gpu_max_utilization_pct", since=NOW - 60 * NSEC,
+                              until=NOW, step=15, now=NOW)
+    assert aggregate["items"][0]["value"]["last"] == 50
+    assert aggregate["items"][0]["observed_at"] == reader.gpu(at=NOW - 45 * NSEC, now=NOW)["coverage"]["observed_at"]
+    assert aggregate["items"][1]["value"] is None
+    assert aggregate["items"][1]["availability"] == "partial"
+    assert aggregate["items"][1]["provider_availability"] == "partial"
+    assert aggregate["items"][1]["coverage"]["observed"] == 1
+    assert aggregate["items"][2]["value"] is None
+    assert aggregate["items"][2]["coverage"]["missing"] == 1
+    with pytest.raises(MonitorQueryError, match="boot_id"):
+        reader.series("gpu_utilization_pct", entity="gpu:0", since=NOW - 60 * NSEC,
+                      until=NOW, step=15, now=NOW)
+    device = reader.series("gpu_utilization_pct", entity="gpu:0", boot_id="boot-a",
+                           since=NOW - 60 * NSEC, until=NOW, step=15, now=NOW)
+    assert device["items"][0]["value"]["last"] == 50
+    assert device["items"][1]["value"] is None
+    assert device["items"][1]["availability"] == "partial"
+    assert device["items"][1]["coverage"]["unavailable"] == {"partial": 1}
+    assert device["items"][0]["device_identity_scope"] == "sample_boot_id+index"
+    snapshot = reader.gpu(now=NOW, limit=1)
+    assert snapshot["coverage"]["availability"] == "partial"
+    assert snapshot["coverage"]["freshness"] == "stale"
+    assert snapshot["coverage"]["source_errors"] == ["field_unavailable"]
+    assert snapshot["items"][0]["device"]["name"] == "GPU A"
+    next_page = reader.gpu(now=NOW, limit=1, cursor=snapshot["next_cursor"])
+    assert next_page["items"][0]["device"]["name"] == "GPU B"
+    assert next_page["coverage"]["sample_id"] == snapshot["coverage"]["sample_id"]
+    status = reader.status(now=NOW)
+    assert "gpu" not in status["items"][0]["host"]
+    assert status["items"][0]["host"]["gpu_max_utilization_pct"] is None
+
+
+def test_gpu_latest_distinguishes_disabled_and_retention(store):
+    directory, conn = store
+    gpu = {"provider": "nvidia-smi", "availability": "disabled", "observed_at_ns": NOW,
+           "poll_interval_seconds": None, "status_refresh_seconds": 3600,
+           "device_identity_scope": "sample_boot_id+index",
+           "devices_seen": 0, "devices_scanned": 0, "devices": [], "missing_fields": {},
+           "max_utilization_pct": None, "memory_used_bytes": None, "memory_total_bytes": None}
+    _sample(conn, when=NOW, host={"gpu": gpu})
+    conn.commit()
+    result = MonitorReader(directory).gpu(now=NOW)
+    assert result["items"] == []
+    assert result["coverage"]["availability"] == "disabled"
+    assert result["coverage"]["freshness"] == "ok"
+    assert result["coverage"]["status_refresh_seconds"] == 3600
+    assert MonitorReader(directory).gpu(now=NOW + 1800 * NSEC)["coverage"]["freshness"] == "ok"
+    assert MonitorReader(directory).gpu(now=NOW + 3700 * NSEC)["coverage"]["freshness"] == "stale"
+    expired = MonitorReader(directory).gpu(now=NOW + 2 * 24 * 60 * 60 * NSEC)
+    assert expired["coverage"]["availability"] == "not_collected"
+
+
+def test_gpu_device_history_never_joins_same_index_across_boots(store):
+    directory, conn = store
+    for ago, boot, value in ((30, "boot-a", 10), (15, "boot-b", 90)):
+        gpu = {"provider": "nvidia-smi", "availability": "ok",
+               "observed_at_ns": NOW - (ago + 2) * NSEC,
+               "devices": [{"index": 0, "name": "GPU", "utilization_pct": value}],
+               "max_utilization_pct": value}
+        _sample(conn, when=NOW - ago * NSEC, host={"gpu": gpu}, boot=boot)
+    conn.commit()
+    reader = MonitorReader(directory)
+    aggregate = reader.series("gpu_max_utilization_pct", since=NOW - 45 * NSEC,
+                              until=NOW, step=15, now=NOW)
+    assert [item["value"]["last"] if item["value"] else None for item in aggregate["items"]] == [10, 90, None]
+    scoped = reader.series("gpu_utilization_pct", entity="gpu:0", boot_id="boot-a",
+                           since=NOW - 45 * NSEC, until=NOW, step=15, now=NOW)
+    assert [item["value"]["last"] if item["value"] else None for item in scoped["items"]] == [10, None, None]
+    with pytest.raises(MonitorQueryError, match="retained raw observations"):
+        reader.series("gpu_max_utilization_pct", since=NOW - 2 * 24 * 60 * 60 * NSEC,
+                      until=NOW, step=60, now=NOW)
+
+
+def test_gpu_device_page_rejects_reused_sample_id(store):
+    directory, conn = store
+    gpu = {"provider": "nvidia-smi", "availability": "ok", "observed_at_ns": NOW,
+           "devices": [{"index": 0, "name": "A"}, {"index": 1, "name": "B"}]}
+    _sample(conn, when=NOW, host={"gpu": gpu})
+    conn.commit()
+    reader = MonitorReader(directory)
+    first = reader.gpu(limit=1, now=NOW)
+    old_id = first["coverage"]["sample_id"]
+    assert first["next_cursor"]
+    conn.execute("DELETE FROM samples")
+    _sample(conn, when=NOW + NSEC, host={"gpu": {**gpu, "observed_at_ns": NOW + NSEC}}, boot="boot-b")
+    conn.commit()
+    assert conn.execute("SELECT id FROM samples").fetchone()[0] == old_id
+    resumed = reader.gpu(limit=1, cursor=first["next_cursor"], now=NOW + NSEC)
+    assert resumed["items"] == []
+    assert resumed["coverage"]["availability"] == "retention_expired"
+
+
+def test_historical_gpu_page_reads_only_its_bucket_range_plus_commit_allowance(store):
+    directory, conn = store
+    start = NOW - 3600 * NSEC
+    for index in range(720):
+        sampled = start + index * 5 * NSEC
+        host: dict[str, object] = {"cpu_busy_pct": 1}
+        if index % 3 == 0:
+            host["gpu"] = {"provider": "nvidia-smi", "availability": "ok",
+                           "observed_at_ns": sampled, "max_utilization_pct": 20}
+        _sample(conn, when=sampled, host=host)
+    conn.commit()
+    reader = MonitorReader(directory)
+    first = reader.series("gpu_max_utilization_pct", since=start, until=NOW,
+                          step=15, limit=10, now=NOW)
+    assert first["next_cursor"]
+    assert first["coverage"]["raw_samples"] <= 36
+    assert first["coverage"]["commit_lookahead_seconds"] == 10
+    second = reader.series("gpu_max_utilization_pct", since=start, until=NOW,
+                           step=15, limit=10, cursor=first["next_cursor"], now=NOW)
+    assert second["coverage"]["raw_samples"] <= 36
+    assert second["items"][0]["sampled_at"] > first["items"][-1]["sampled_at"]
+
+
+def test_gpu_default_budget_pages_32_devices_without_losing_rows(store):
+    directory, conn = store
+    devices = [{"index": index, "name": f"GPU {index}", "utilization_pct": index,
+                "memory_used_bytes": 1024, "memory_total_bytes": 4096,
+                "temperature_c": 40, "power_w": 80} for index in range(32)]
+    _sample(conn, when=NOW, host={"gpu": {"provider": "nvidia-smi", "availability": "ok",
+                                          "observed_at_ns": NOW, "devices_seen": 32,
+                                          "devices_scanned": 32, "devices": devices}})
+    conn.commit()
+    reader = MonitorReader(directory)
+    cursor = None
+    seen = []
+    for _ in range(32):
+        page = reader.gpu(cursor=cursor, now=NOW)
+        assert len(encode_budgeted_json(page, 4096).encode()) <= 4096
+        seen.extend(item["identity"]["index"] for item in page["items"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+    assert seen == list(range(32))
+    assert cursor is None
+
+
 def test_rollups_reject_unaligned_long_range_and_raw_short_range_excludes_them(store):
     directory, conn = store
     start = NOW - 3 * 24 * 60 * 60 * NSEC
@@ -451,6 +611,117 @@ def test_process_cursor_pins_sample_and_cpu_uses_interval_delta(store):
     second = reader.processes(sort="cpu", limit=1, cursor=first["next_cursor"], now=NOW + NSEC)
     assert second["items"][0]["identity"]["pid"] == 1
     assert second["items"][0]["sort_value"] == pytest.approx(0.00000002)
+
+
+def test_process_tree_pages_one_detail_observation_with_ancestry_and_gaps(store):
+    directory, conn = store
+    rows = [
+        {"pid": 21, "ppid": 10, "start_ticks": 21, "name": "child", "rss_bytes": 20},
+        {"pid": 10, "ppid": 1, "start_ticks": 10, "name": "parent", "rss_bytes": 10},
+        {"pid": 30, "ppid": 999, "start_ticks": 30, "name": "orphan", "rss_bytes": 30},
+        {"pid": 22, "ppid": 21, "start_ticks": 22, "name": "grandchild", "rss_bytes": 22},
+    ]
+    _sample(conn, when=NOW, mode="detail", processes=rows, denied=1)
+    conn.commit()
+    reader = MonitorReader(directory)
+    first = reader.processes(view="tree", limit=1, max_bytes=4096, now=NOW)
+    assert [item["identity"]["pid"] for item in first["items"]] == [10]
+    assert first["items"][0]["tree"]["parent_link"] == "unavailable_in_capture"
+    assert first["coverage"]["tree"]["permission_denied"] == 1
+    assert first["coverage"]["tree"]["unavailable_parent_links"] == 2
+    assert first["next_cursor"]
+    second = reader.processes(view="tree", limit=1, cursor=first["next_cursor"], now=NOW + NSEC)
+    assert [item["identity"]["pid"] for item in second["items"]] == [21]
+    third = reader.processes(view="tree", limit=1, cursor=second["next_cursor"], now=NOW + NSEC)
+    assert [item["identity"]["pid"] for item in third["items"]] == [22]
+    assert second["items"][0]["tree"] == {
+        "depth": 1, "children": 1, "parent_link": "linked",
+        "parent_identity": {"boot_id": "boot-a", "pid": 10, "start_ticks": 10},
+    }
+    _sample(conn, when=NOW + NSEC, mode="detail", processes=[])
+    conn.commit()
+    returned_first = reader.processes(view="tree", limit=1,
+                                      cursor=first["coverage"]["observation_cursor"],
+                                      now=NOW + 2 * NSEC)
+    assert returned_first["items"][0]["identity"]["pid"] == 10
+    fourth = reader.processes(view="tree", limit=1, cursor=third["next_cursor"], now=NOW + 2 * NSEC)
+    assert [item["identity"]["pid"] for item in fourth["items"]] == [30]
+    assert fourth["coverage"]["tree"]["sample_id"] == first["coverage"]["tree"]["sample_id"]
+    with pytest.raises(MonitorQueryError, match="cursor"):
+        reader.processes(view="list", limit=1, cursor=first["next_cursor"], now=NOW + NSEC)
+    filtered = reader.processes(at=NOW, view="tree", name="child", now=NOW)
+    assert filtered["items"][0]["tree"]["parent_link"] == "filtered_out"
+
+
+def test_process_tree_requires_same_observation_and_respects_byte_budget(store):
+    directory, conn = store
+    rows = [
+        {"pid": 1, "ppid": 0, "start_ticks": 1, "name": "root", "rss_bytes": 3,
+         "observed_at_ns": NOW - NSEC},
+        {"pid": 2, "ppid": 1, "start_ticks": 2, "name": "later", "rss_bytes": 2,
+         "observed_at_ns": NOW},
+    ]
+    _sample(conn, when=NOW, mode="detail", processes=rows)
+    conn.commit()
+    reader = MonitorReader(directory)
+    result = reader.processes(view="tree", max_bytes=2048, now=NOW)
+    assert len(encode_budgeted_json(result, 2048).encode()) <= 2048
+    items = list(result["items"])
+    if result["next_cursor"]:
+        second = reader.processes(view="tree", max_bytes=2048,
+                                  cursor=result["next_cursor"], now=NOW)
+        assert len(encode_budgeted_json(second, 2048).encode()) <= 2048
+        items.extend(second["items"])
+    later = next(item for item in items if item["identity"]["pid"] == 2)
+    assert later["tree"]["parent_link"] == "identity_or_observation_mismatch"
+    with pytest.raises(MonitorQueryError, match="view"):
+        reader.processes(view="graph", now=NOW)
+
+
+def test_process_tree_order_survives_prior_rate_sample_eviction(store):
+    directory, conn = store
+    prior = [
+        {"pid": 1, "ppid": 0, "start_ticks": 1, "name": "first", "rss_bytes": 1,
+         "cpu_user_ns": 1, "cpu_system_ns": 0, "observed_monotonic_ns": NSEC},
+        {"pid": 2, "ppid": 0, "start_ticks": 2, "name": "second", "rss_bytes": 1,
+         "cpu_user_ns": 1, "cpu_system_ns": 0, "observed_monotonic_ns": NSEC},
+    ]
+    current = [{**prior[0], "cpu_user_ns": 2, "observed_monotonic_ns": 2 * NSEC},
+               {**prior[1], "cpu_user_ns": 100, "observed_monotonic_ns": 2 * NSEC}]
+    _sample(conn, when=NOW - NSEC, mode="detail", processes=prior)
+    _sample(conn, when=NOW, mode="detail", processes=current)
+    conn.commit()
+    reader = MonitorReader(directory)
+    first = reader.processes(view="tree", sort="cpu", limit=1, now=NOW)
+    assert first["items"][0]["identity"]["pid"] == 1
+    assert first["items"][0]["sort_value"] is not None
+    conn.execute("DELETE FROM samples WHERE sampled_at_ns=?", (NOW - NSEC,))
+    conn.commit()
+    second = reader.processes(view="tree", sort="cpu", limit=1,
+                              cursor=first["next_cursor"], now=NOW + NSEC)
+    assert second["items"][0]["identity"]["pid"] == 2
+    assert second["items"][0]["sort_value"] is None
+    assert second["coverage"]["tree"]["sample_id"] == first["coverage"]["tree"]["sample_id"]
+
+
+def test_process_tree_cursor_rejects_reused_sqlite_sample_id(store):
+    directory, conn = store
+    rows = [{"pid": pid, "ppid": 0, "start_ticks": pid, "name": str(pid), "rss_bytes": pid}
+            for pid in (1, 2)]
+    _sample(conn, when=NOW, mode="detail", processes=rows)
+    conn.commit()
+    reader = MonitorReader(directory)
+    first = reader.processes(view="tree", limit=1, now=NOW)
+    old_id = first["coverage"]["tree"]["sample_id"]
+    assert first["next_cursor"]
+    conn.execute("DELETE FROM samples")
+    _sample(conn, when=NOW + NSEC, mode="detail", processes=rows, boot="boot-b")
+    conn.commit()
+    assert conn.execute("SELECT id FROM samples").fetchone()[0] == old_id
+    resumed = reader.processes(view="tree", limit=1, cursor=first["next_cursor"], now=NOW + NSEC)
+    assert resumed["items"] == []
+    assert resumed["coverage"]["availability"] == "retention_expired"
+    assert resumed["errors"][0]["code"] == "retention_expired"
 
 
 def test_cached_process_observation_age_and_distinct_interval(store):

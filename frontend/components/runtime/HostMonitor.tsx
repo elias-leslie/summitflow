@@ -56,6 +56,18 @@ const SERVICE_METRICS = [
     unit: 'bytes/s',
   },
 ] as const
+const GPU_METRICS = [
+  { value: 'gpu_max_utilization_pct', label: 'Maximum utilization', unit: '%' },
+  { value: 'gpu_memory_used_bytes', label: 'Memory used', unit: 'bytes' },
+  { value: 'gpu_memory_total_bytes', label: 'Memory total', unit: 'bytes' },
+] as const
+const GPU_DEVICE_METRICS = [
+  { value: 'gpu_utilization_pct', label: 'Utilization', unit: '%' },
+  { value: 'gpu_memory_used_bytes', label: 'Memory used', unit: 'bytes' },
+  { value: 'gpu_memory_total_bytes', label: 'Memory total', unit: 'bytes' },
+  { value: 'gpu_temperature_c', label: 'Temperature', unit: 'celsius' },
+  { value: 'gpu_power_w', label: 'Power', unit: 'watts' },
+] as const
 const control =
   'rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-sm text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 disabled:opacity-50'
 const panel = 'rounded-lg border border-slate-700/60 bg-slate-900/45 p-4'
@@ -96,6 +108,8 @@ function format(value: unknown, unit?: string): string {
   if (unit === 'bytes/s') return `${bytes(measured)}/s`
   if (unit === 'nanoseconds')
     return `${(measured / 1_000_000_000).toFixed(1)} s`
+  if (unit === 'celsius') return `${measured.toFixed(1)} °C`
+  if (unit === 'watts') return `${measured.toFixed(1)} W`
   return `${measured.toFixed(1)}${unit || ''}`
 }
 function errorText(errors: unknown[]): string | null {
@@ -178,6 +192,7 @@ type ProcessRow = {
   depth: number
   children: number
   parentNotLinked: boolean
+  parentStatus?: string
 }
 
 function processKey(item: MonitorItem, index: number): string {
@@ -193,68 +208,56 @@ function processRows(
   items: MonitorItem[],
   collapsed: ReadonlySet<string>,
 ): ProcessRow[] {
-  const nodes = items.map((item, index) => ({
-    item,
-    key: processKey(item, index),
-    pid: number(record(item.identity)?.pid),
-    ppid: number(record(item.process)?.ppid),
-    start: number(record(item.identity)?.start_ticks),
-    boot: string(record(item.identity)?.boot_id),
-    observed: string(item.observed_at),
-    children: [] as number[],
-    parent: null as number | null,
-  }))
-  const byPid = new Map<number, number[]>()
-  nodes.forEach((node, index) => {
-    if (node.pid === null) return
-    byPid.set(node.pid, [...(byPid.get(node.pid) || []), index])
-  })
-  nodes.forEach((node, index) => {
-    if (node.ppid === null || node.ppid <= 0 || node.ppid === node.pid) return
-    const candidates = byPid.get(node.ppid) || []
-    if (candidates.length !== 1) return
-    const parentIndex = candidates[0]
-    const parent = nodes[parentIndex]
-    if (
-      !parent ||
-      parent.boot !== node.boot ||
-      parent.start === null ||
-      node.start === null ||
-      parent.start > node.start ||
-      (parent.observed && node.observed && parent.observed !== node.observed)
-    )
-      return
-    node.parent = parentIndex
-    parent.children.push(index)
-  })
   const rows: ProcessRow[] = []
-  const visited = new Set<number>()
-  const visit = (index: number, depth: number, visible = true) => {
-    if (visited.has(index)) return
-    visited.add(index)
-    const node = nodes[index]
-    if (visible) {
-      rows.push({
-        item: node.item,
-        key: node.key,
-        depth,
-        children: node.children.length,
-        parentNotLinked:
-          node.ppid !== null &&
-          node.ppid > 0 &&
-          node.ppid !== node.pid &&
-          node.parent === null,
-      })
+  let hiddenBelow: number | null = null
+  items.forEach((item, index) => {
+    const tree = record(item.tree)
+    const depth = number(tree?.depth) ?? 0
+    if (hiddenBelow !== null && depth > hiddenBelow) return
+    hiddenBelow = null
+    const key = processKey(item, index)
+    const parentLink = string(tree?.parent_link) || 'unknown'
+    const parent = record(tree?.parent_identity)
+    const parentOnPage = parent
+      ? items.some((candidate) => {
+          const identity = record(candidate.identity)
+          return (
+            identity?.boot_id === parent.boot_id &&
+            identity?.pid === parent.pid &&
+            identity?.start_ticks === parent.start_ticks
+          )
+        })
+      : false
+    let childOnPage = false
+    for (const candidate of items.slice(index + 1)) {
+      const nextDepth = number(record(candidate.tree)?.depth) ?? 0
+      if (nextDepth <= depth) break
+      childOnPage = true
     }
-    node.children.forEach((child) =>
-      visit(child, depth + 1, visible && !collapsed.has(node.key)),
-    )
-  }
-  nodes.forEach((node, index) => {
-    if (node.parent === null) visit(index, 0)
+    rows.push({
+      item,
+      key,
+      depth,
+      children: childOnPage ? (number(tree?.children) ?? 0) : 0,
+      parentNotLinked:
+        parentLink !== 'root' && (parentLink !== 'linked' || !parentOnPage),
+      parentStatus:
+        parentLink === 'linked' && !parentOnPage
+          ? `parent PID ${number(parent?.pid) ?? 'unknown'} is on another page`
+          : parentLink === 'unavailable_in_capture'
+            ? 'parent unavailable in this capture or denied by permissions'
+            : parentLink === 'filtered_out'
+              ? 'parent omitted by query filter'
+              : parentLink === 'identity_or_observation_mismatch'
+                ? 'parent identity or observation differs'
+                : parentLink === 'ambiguous_pid'
+                  ? 'parent PID is ambiguous in this capture'
+                  : parentLink === 'invalid_cycle'
+                    ? 'invalid process ancestry cycle'
+                    : undefined,
+    })
+    if (collapsed.has(key)) hiddenBelow = depth
   })
-  // A malformed parent cycle cannot hide rows from the user.
-  nodes.forEach((_, index) => visit(index, 0))
   return rows
 }
 function sampleValue(item: MonitorItem, metric: string): number | null {
@@ -372,6 +375,11 @@ export function HostMonitor() {
   const queryClient = useQueryClient()
   const [metric, setMetric] = useState<string>('cpu_busy_pct')
   const [minutes, setMinutes] = useState(15)
+  const [gpuMinutes, setGpuMinutes] = useState(15)
+  const [gpuMetric, setGpuMetric] = useState('gpu_max_utilization_pct')
+  const [gpuDeviceMetric, setGpuDeviceMetric] = useState('gpu_utilization_pct')
+  const [selectedGpu, setSelectedGpu] = useState<string | null>(null)
+  const [selectedGpuAt, setSelectedGpuAt] = useState<string | null>(null)
   const [sort, setSort] = useState('cpu')
   const [processFilter, setProcessFilter] = useState('')
   const [processView, setProcessView] = useState<'list' | 'tree'>('list')
@@ -396,6 +404,50 @@ export function HostMonitor() {
     queryKey: ['monitor', 'status'],
     queryFn: monitorApi.status,
     refetchInterval: 15_000,
+  })
+  const gpu = useQuery({
+    queryKey: ['monitor', 'gpu'],
+    queryFn: () => monitorApi.gpu({ limit: 32 }),
+    refetchInterval: 15_000,
+  })
+  const gpuBoot = string(gpu.data?.coverage.boot_id)
+  const activeGpu = gpu.data?.items.find((item) => {
+    const identity = record(item.identity)
+    return `${identity?.boot_id}:${identity?.index}` === selectedGpu
+  })
+  const gpuEntity = activeGpu
+    ? `gpu:${number(record(activeGpu.identity)?.index)}`
+    : 'host'
+  const gpuSeriesMetric = activeGpu ? gpuDeviceMetric : gpuMetric
+  const gpuMetricInfo = (activeGpu ? GPU_DEVICE_METRICS : GPU_METRICS).find(
+    (option) => option.value === gpuSeriesMetric,
+  )
+  const gpuUntil = until
+  const gpuSince = new Date(
+    new Date(gpuUntil).getTime() - gpuMinutes * 60_000,
+  ).toISOString()
+  const gpuSeries = useQuery({
+    queryKey: [
+      'monitor',
+      'gpu-series',
+      gpuEntity,
+      gpuBoot,
+      gpuSeriesMetric,
+      gpuMinutes,
+      nowBucket,
+    ],
+    queryFn: () =>
+      monitorApi.series({
+        metric: gpuSeriesMetric,
+        entity: gpuEntity,
+        boot_id: activeGpu ? gpuBoot || undefined : undefined,
+        since: gpuSince,
+        until: gpuUntil,
+        step: gpuMinutes === 15 ? 15 : 60,
+        limit: 80,
+      }),
+    enabled: !activeGpu || Boolean(gpuBoot),
+    staleTime: 10_000,
   })
   const series = useQuery({
     queryKey: [
@@ -423,7 +475,8 @@ export function HostMonitor() {
           ?.last_sampled_at,
       ) || (selectedEvent ? selectedAt : null)
     : null
-  const processPageKey = `${selectedSampleAt || 'latest'}:${sort}:${selectedService || 'host'}`
+  const processMetric = processView === 'tree' ? 'rss' : sort
+  const processPageKey = `${selectedSampleAt || 'latest'}:${processMetric}:${selectedService || 'host'}:${processView}`
   const activeProcessPage =
     processPage.key === processPageKey
       ? processPage
@@ -437,14 +490,16 @@ export function HostMonitor() {
       'monitor',
       'processes',
       selectedSampleAt,
-      sort,
+      processMetric,
+      processView,
       selectedService,
       activeProcessPage.cursor,
     ],
     queryFn: () =>
       monitorApi.processes({
         at: selectedSampleAt || undefined,
-        sort,
+        sort: processMetric,
+        view: processView,
         service: selectedService || undefined,
         limit: 50,
         cursor: activeProcessPage.cursor || undefined,
@@ -481,11 +536,15 @@ export function HostMonitor() {
   const selectedBucket = series.data?.items.find(
     (item) => measuredAt(item) === selectedAt,
   )
+  const selectedGpuBucket = gpuSeries.data?.items.find(
+    (item) => measuredAt(item) === selectedGpuAt,
+  )
   const serviceList = useMemo(() => services(latest), [latest])
   const service = serviceList.find((entry) => entry.id === selectedService)
   const processItems = processes.data?.items || []
   const eventItems = events.data?.items || []
   const filteredProcesses = processItems.filter((item) => {
+    if (processView === 'tree') return true
     const term = processFilter.trim().toLowerCase()
     return (
       !term ||
@@ -504,6 +563,7 @@ export function HostMonitor() {
           depth: 0,
           children: 0,
           parentNotLinked: false,
+          parentStatus: undefined,
         }))
   const filteredEvents = selectedService
     ? eventItems.filter(
@@ -641,6 +701,210 @@ export function HostMonitor() {
             )}
         </div>
       )}
+      <div className={panel}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold text-slate-100">GPU</h3>
+          <span className="text-xs text-slate-400">
+            {gpu.isLoading
+              ? 'Loading last poll…'
+              : gpu.error
+                ? 'Poll query failed'
+                : `${string(gpu.data?.coverage.freshness) || 'Freshness unavailable'} · ${string(gpu.data?.coverage.availability) || 'Availability unavailable'}`}
+          </span>
+        </div>
+        {gpu.error ? (
+          <p role="alert" className="mt-2 text-sm text-rose-300">
+            {gpu.error.message}
+          </p>
+        ) : gpu.isLoading ? (
+          <p className="mt-2 text-sm text-slate-400">
+            Loading GPU observation…
+          </p>
+        ) : (
+          <>
+            <p className="mt-2 text-xs text-slate-400">
+              {string(gpu.data?.coverage.provider) || 'Provider unavailable'} ·
+              last poll {when(gpu.data?.coverage.observed_at)} · age{' '}
+              {format(gpu.data?.coverage.age_seconds, ' s')}
+              {number(gpu.data?.coverage.poll_interval_seconds) !== null
+                ? ` · nominal ${format(gpu.data?.coverage.poll_interval_seconds, ' s')} poll`
+                : ''}
+            </p>
+            {gpu.data?.coverage.availability === 'not_collected' ||
+            gpu.data?.coverage.availability === 'retention_expired' ? (
+              <p className="mt-2 text-sm text-slate-400">
+                No retained GPU poll is available for this time.
+              </p>
+            ) : (
+              <>
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {(
+                    [
+                      ['Maximum utilization', 'max_utilization_pct', '%'],
+                      ['Memory used', 'memory_used_bytes', 'bytes'],
+                      ['Memory total', 'memory_total_bytes', 'bytes'],
+                    ] as const
+                  ).map(([label, key, unit]) => (
+                    <div
+                      key={key}
+                      className="rounded-md border border-slate-800 bg-slate-950/50 p-2"
+                    >
+                      <div className="text-xs text-slate-400">{label}</div>
+                      <div className="mt-1 font-mono text-sm text-slate-100">
+                        {format(gpu.data?.coverage[key], unit)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  {number(gpu.data?.coverage.devices_scanned) ?? 'Unknown'} of{' '}
+                  {number(gpu.data?.coverage.devices_seen) ?? 'unknown'} device
+                  rows read · device index is scoped to this boot and may change
+                  after a driver reload
+                </p>
+                {gpu.data?.items.length ? (
+                  <div
+                    className="mt-2 flex flex-wrap gap-2"
+                    aria-label="GPU devices"
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={!activeGpu}
+                      className={`${control} ${!activeGpu ? 'border-cyan-700 text-cyan-300' : ''}`}
+                      onClick={() => {
+                        setSelectedGpu(null)
+                        setSelectedGpuAt(null)
+                      }}
+                    >
+                      All devices
+                    </button>
+                    {gpu.data.items.map((item) => {
+                      const device = record(item.device)
+                      const identity = record(item.identity)
+                      const key = `${identity?.boot_id}:${identity?.index}`
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          aria-pressed={selectedGpu === key}
+                          className={`${control} ${selectedGpu === key ? 'border-cyan-700 text-cyan-300' : ''}`}
+                          onClick={() => {
+                            setSelectedGpu(key)
+                            setSelectedGpuAt(null)
+                          }}
+                        >
+                          {string(device?.name) || 'GPU'} · index{' '}
+                          {number(identity?.index) ?? 'unknown'} ·{' '}
+                          {format(device?.utilization_pct, '%')}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-400">
+                    No device readings in the last poll.
+                  </p>
+                )}
+                {activeGpu && (
+                  <p className="mt-2 text-xs text-slate-400">
+                    {string(record(activeGpu.device)?.name) || 'GPU'} · memory{' '}
+                    {format(
+                      record(activeGpu.device)?.memory_used_bytes,
+                      'bytes',
+                    )}{' '}
+                    /{' '}
+                    {format(
+                      record(activeGpu.device)?.memory_total_bytes,
+                      'bytes',
+                    )}{' '}
+                    · temperature{' '}
+                    {format(record(activeGpu.device)?.temperature_c, 'celsius')}{' '}
+                    · power {format(record(activeGpu.device)?.power_w, 'watts')}
+                  </p>
+                )}
+              </>
+            )}
+            {Array.isArray(gpu.data?.coverage.source_errors) &&
+              gpu.data.coverage.source_errors.length > 0 && (
+                <p className="mt-2 text-xs text-amber-300">
+                  Source errors: {gpu.data.coverage.source_errors.join(', ')}
+                </p>
+              )}
+            {gpu.data?.truncated && (
+              <p className="mt-2 text-xs text-amber-300">
+                Device list truncated.
+              </p>
+            )}
+          </>
+        )}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <label className="text-xs text-slate-400">
+            GPU metric{' '}
+            <select
+              className={`${control} ml-1`}
+              value={gpuSeriesMetric}
+              onChange={(event) => {
+                if (activeGpu) setGpuDeviceMetric(event.target.value)
+                else setGpuMetric(event.target.value)
+                setSelectedGpuAt(null)
+              }}
+            >
+              {(activeGpu ? GPU_DEVICE_METRICS : GPU_METRICS).map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-slate-400">
+            GPU window{' '}
+            <select
+              className={`${control} ml-1`}
+              value={gpuMinutes}
+              onChange={(event) => {
+                setGpuMinutes(Number(event.target.value))
+                setSelectedGpuAt(null)
+              }}
+            >
+              <option value={15}>15 minutes</option>
+              <option value={60}>1 hour</option>
+            </select>
+          </label>
+        </div>
+        {gpuSeries.isLoading ? (
+          <p className="mt-3 text-sm text-slate-400">Loading GPU history…</p>
+        ) : gpuSeries.error ? (
+          <p role="alert" className="mt-3 text-sm text-rose-300">
+            {gpuSeries.error.message}
+          </p>
+        ) : gpuSeries.data?.items.length ? (
+          <div className="mt-3">
+            <Timeline
+              items={gpuSeries.data.items}
+              metric={gpuSeriesMetric}
+              unit={gpuMetricInfo?.unit || '%'}
+              selectedAt={selectedGpuAt}
+              onSelect={setSelectedGpuAt}
+            />
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-slate-400">
+            No retained GPU history in this window.
+          </p>
+        )}
+        {selectedGpuBucket && (
+          <p className="mt-2 text-xs text-slate-400">
+            {when(selectedGpuBucket.observed_at)} ·{' '}
+            {string(selectedGpuBucket.provider) || 'Provider unavailable'} ·{' '}
+            {string(selectedGpuBucket.provider_availability) ||
+              string(selectedGpuBucket.availability) ||
+              'Availability unavailable'}{' '}
+            · {number(record(selectedGpuBucket.coverage)?.observed) ?? 0} polls
+            observed ·{' '}
+            {number(record(selectedGpuBucket.coverage)?.missing) ?? 0} missing
+          </p>
+        )}
+      </div>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
         <div className={`${panel} min-w-0 space-y-3`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -836,28 +1100,32 @@ export function HostMonitor() {
                   </button>
                 ))}
               </div>
-              <label className="text-xs text-slate-400">
-                Filter this page{' '}
-                <input
-                  type="search"
-                  value={processFilter}
-                  onChange={(e) => setProcessFilter(e.target.value)}
-                  placeholder="Name or PID"
-                  className={`${control} ml-1 w-32`}
-                />
-              </label>
-              <label className="text-xs text-slate-400">
-                Sort{' '}
-                <select
-                  className={`${control} ml-1`}
-                  value={sort}
-                  onChange={(e) => setSort(e.target.value)}
-                >
-                  <option value="cpu">CPU</option>
-                  <option value="rss">Memory</option>
-                  <option value="io">I/O</option>
-                </select>
-              </label>
+              {processView === 'list' && (
+                <label className="text-xs text-slate-400">
+                  Filter this page{' '}
+                  <input
+                    type="search"
+                    value={processFilter}
+                    onChange={(e) => setProcessFilter(e.target.value)}
+                    placeholder="Name or PID"
+                    className={`${control} ml-1 w-32`}
+                  />
+                </label>
+              )}
+              {processView === 'list' && (
+                <label className="text-xs text-slate-400">
+                  Sort{' '}
+                  <select
+                    className={`${control} ml-1`}
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value)}
+                  >
+                    <option value="cpu">CPU</option>
+                    <option value="rss">Memory</option>
+                    <option value="io">I/O</option>
+                  </select>
+                </label>
+              )}
             </div>
           </div>
           {processes.isLoading ? (
@@ -876,11 +1144,32 @@ export function HostMonitor() {
                   : 'Visible processes in the selected sample.'}
               </p>
               {processView === 'tree' && (
-                <p className="mt-1 text-xs text-slate-500">
-                  Parent links use this page’s returned rows. A parent may be on
-                  another page, hidden by the filter, or unavailable in this
-                  observation.
-                </p>
+                <div className="mt-1 text-xs text-slate-500">
+                  <p>
+                    Tree order and ancestry come from one captured observation.
+                    Parents precede children; siblings follow PID. Pages keep
+                    that observation; unavailable parents are marked. Collapse
+                    applies to rows on this page. Values show RSS.
+                  </p>
+                  {record(processes.data?.coverage.tree) && (
+                    <p>
+                      {number(
+                        record(processes.data?.coverage.tree)?.captured_rows,
+                      ) ?? 'Unknown'}{' '}
+                      captured rows ·{' '}
+                      {number(
+                        record(processes.data?.coverage.tree)
+                          ?.unavailable_parent_links,
+                      ) ?? 'Unknown'}{' '}
+                      parent links unavailable in the capture ·{' '}
+                      {number(
+                        record(processes.data?.coverage.tree)
+                          ?.permission_denied,
+                      ) ?? 'Unknown'}{' '}
+                      permission denied
+                    </p>
+                  )}
+                </div>
               )}
               <div className="mt-2 max-h-72 overflow-auto">
                 <table className="w-full min-w-[420px] text-left text-xs">
@@ -890,13 +1179,24 @@ export function HostMonitor() {
                       <th>PID</th>
                       <th>State</th>
                       <th>
-                        {sort === 'cpu' ? 'CPU' : sort === 'io' ? 'I/O' : 'RSS'}
+                        {processMetric === 'cpu'
+                          ? 'CPU'
+                          : processMetric === 'io'
+                            ? 'I/O'
+                            : 'RSS'}
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     {displayedProcesses.map(
-                      ({ item, key, depth, children, parentNotLinked }) => (
+                      ({
+                        item,
+                        key,
+                        depth,
+                        children,
+                        parentNotLinked,
+                        parentStatus,
+                      }) => (
                         <tr key={key}>
                           <td className="border-t border-slate-800 py-1.5 pr-2">
                             <div
@@ -940,7 +1240,7 @@ export function HostMonitor() {
                                 type="button"
                                 aria-label={
                                   processView === 'tree'
-                                    ? `${string(record(item.process)?.name) || 'Unknown'}, PID ${number(record(item.identity)?.pid) ?? 'unknown'}, level ${depth + 1}${parentNotLinked ? ', parent not linked among displayed rows' : ''}`
+                                    ? `${string(record(item.process)?.name) || 'Unknown'}, PID ${number(record(item.identity)?.pid) ?? 'unknown'}, level ${depth + 1}${parentStatus ? `, ${parentStatus}` : ''}`
                                     : undefined
                                 }
                                 onClick={() =>
@@ -950,7 +1250,7 @@ export function HostMonitor() {
                                 }
                                 title={
                                   parentNotLinked && processView === 'tree'
-                                    ? 'Parent not linked among displayed rows'
+                                    ? parentStatus
                                     : undefined
                                 }
                                 className="block max-w-[15rem] truncate text-left text-cyan-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
@@ -967,7 +1267,7 @@ export function HostMonitor() {
                             {string(record(item.process)?.state) || 'Unknown'}
                           </td>
                           <td className="border-t border-slate-800 py-1.5 text-slate-300">
-                            {processSortValue(item, sort)}
+                            {processSortValue(item, processMetric)}
                           </td>
                         </tr>
                       ),
@@ -995,7 +1295,7 @@ export function HostMonitor() {
               {processes.data && (
                 <p className="mt-2 text-xs text-slate-500">
                   {processes.data.truncated ? 'Result truncated · ' : ''}
-                  {processFilter.trim()
+                  {processView === 'list' && processFilter.trim()
                     ? `${filteredProcesses.length} match on this page · `
                     : ''}
                   {errorText(processes.data.errors) ||
@@ -1026,16 +1326,23 @@ export function HostMonitor() {
                   <button
                     type="button"
                     className={control}
-                    disabled={!processes.data?.next_cursor}
+                    disabled={
+                      !processes.data?.next_cursor ||
+                      (!activeProcessPage.cursor &&
+                        !string(processes.data?.coverage.observation_cursor))
+                    }
                     onClick={() => {
                       const next = processes.data?.next_cursor
-                      if (next)
+                      const first = string(
+                        processes.data?.coverage.observation_cursor,
+                      )
+                      if (next && (activeProcessPage.cursor || first))
                         setProcessPage({
                           key: processPageKey,
                           cursor: next,
                           history: [
                             ...activeProcessPage.history,
-                            activeProcessPage.cursor,
+                            activeProcessPage.cursor || first,
                           ],
                         })
                     }}

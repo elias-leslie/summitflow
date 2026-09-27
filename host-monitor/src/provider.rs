@@ -1,10 +1,14 @@
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fs, io,
-    os::unix::fs::MetadataExt,
+    fs,
+    io::{self, Read},
+    os::{fd::AsRawFd, unix::fs::MetadataExt},
     path::Path,
+    process::{ChildStdout, Command, Stdio},
     sync::OnceLock,
+    thread,
+    time::{Duration, Instant},
 };
 use sysinfo::System;
 
@@ -122,6 +126,220 @@ fn err(errors: &mut Vec<Value>, source: &str, code: &str) {
         .any(|e| e["source"] == source && e["code"] == code)
     {
         errors.push(json!({"source":source,"code":code}));
+    }
+}
+
+const GPU_SOURCE: &str = "nvidia-smi";
+const GPU_MAX_DEVICES: usize = 32;
+const GPU_MAX_OUTPUT_BYTES: u64 = 8192;
+const GPU_TIMEOUT: Duration = Duration::from_millis(500);
+
+pub fn gpu_unavailable(code: &str) -> Value {
+    json!({"provider":GPU_SOURCE,"availability":code,"devices":[],"devices_seen":0,"devices_scanned":0,"missing_fields":{},"max_utilization_pct":null,"memory_used_bytes":null,"memory_total_bytes":null})
+}
+
+fn gpu_csv_line(line: &str) -> Option<Vec<String>> {
+    let mut cells = Vec::new();
+    let mut cell = String::new();
+    let mut quoted = false;
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' if quoted && chars.peek() == Some(&'"') => {
+                cell.push('"');
+                chars.next();
+            }
+            '"' => quoted = !quoted,
+            ',' if !quoted => {
+                cells.push(cell.trim().to_owned());
+                cell.clear();
+            }
+            c if !c.is_control() => cell.push(c),
+            _ => return None,
+        }
+    }
+    if quoted {
+        return None;
+    }
+    cells.push(cell.trim().to_owned());
+    Some(cells)
+}
+
+fn gpu_number(raw: &str, max: f64) -> Option<f64> {
+    raw.parse::<f64>()
+        .ok()
+        .filter(|number| number.is_finite() && *number >= 0.0 && *number <= max)
+}
+
+fn gpu_from_csv(output: &str, errors: &mut Vec<Value>) -> Value {
+    let mut devices = Vec::new();
+    let mut indexes = HashSet::new();
+    let mut missing = BTreeMap::<&'static str, usize>::new();
+    let mut seen = 0;
+    let mut used = 0u64;
+    let mut total = 0u64;
+    let mut memory_complete = true;
+    let mut utilization_complete = true;
+    let mut busy: Option<f64> = None;
+    for line in output.lines().filter(|line| !line.trim().is_empty()) {
+        seen += 1;
+        if seen > GPU_MAX_DEVICES {
+            err(errors, GPU_SOURCE, "source_truncated");
+            memory_complete = false;
+            utilization_complete = false;
+            continue;
+        }
+        let Some(fields) = gpu_csv_line(line).filter(|fields| fields.len() == 7) else {
+            err(errors, GPU_SOURCE, "parse_failed");
+            memory_complete = false;
+            utilization_complete = false;
+            continue;
+        };
+        let Ok(index) = fields[0].parse::<u32>() else {
+            err(errors, GPU_SOURCE, "parse_failed");
+            memory_complete = false;
+            utilization_complete = false;
+            continue;
+        };
+        if !indexes.insert(index) {
+            err(errors, GPU_SOURCE, "parse_failed");
+            memory_complete = false;
+            utilization_complete = false;
+            continue;
+        }
+        let name: String = fields[1].chars().take(64).collect();
+        let utilization = gpu_number(&fields[2], 100.0);
+        if utilization.is_none() {
+            utilization_complete = false;
+        }
+        let mut memory_used =
+            gpu_number(&fields[3], 1_000_000_000.0).map(|n| (n * 1024.0 * 1024.0) as u64);
+        let memory_total =
+            gpu_number(&fields[4], 1_000_000_000.0).map(|n| (n * 1024.0 * 1024.0) as u64);
+        let temperature = gpu_number(&fields[5], 150.0);
+        let power = gpu_number(&fields[6], 100_000.0);
+        if let (Some(a), Some(b)) = (memory_used, memory_total) {
+            if a <= b {
+                used = used.saturating_add(a);
+                total = total.saturating_add(b);
+            } else {
+                err(errors, GPU_SOURCE, "parse_failed");
+                memory_used = None;
+                memory_complete = false;
+            }
+        } else {
+            memory_complete = false;
+        }
+        for (field, absent) in [
+            ("utilization_pct", utilization.is_none()),
+            ("memory_used_bytes", memory_used.is_none()),
+            ("memory_total_bytes", memory_total.is_none()),
+            ("temperature_c", temperature.is_none()),
+            ("power_w", power.is_none()),
+        ] {
+            if absent {
+                *missing.entry(field).or_default() += 1;
+            }
+        }
+        if let Some(value) = utilization {
+            busy = Some(busy.map_or(value, |prior| prior.max(value)));
+        }
+        devices.push(json!({"index":index,"name":name,"utilization_pct":utilization,"memory_used_bytes":memory_used,"memory_total_bytes":memory_total,"temperature_c":temperature,"power_w":power}));
+    }
+    if devices.is_empty() {
+        let mut unavailable = gpu_unavailable(if seen == 0 { "unsupported" } else { "error" });
+        unavailable["devices_seen"] = json!(seen);
+        return unavailable;
+    }
+    if !missing.is_empty() {
+        err(errors, GPU_SOURCE, "field_unavailable");
+    }
+    json!({"provider":GPU_SOURCE,"availability":if errors.iter().any(|e| e["source"] == GPU_SOURCE) {"partial"} else {"ok"},"devices":devices,"devices_seen":seen,"devices_scanned":devices.len(),"missing_fields":missing,"max_utilization_pct":if utilization_complete {busy} else {None},"memory_used_bytes":if memory_complete && total > 0 {Some(used)} else {None},"memory_total_bytes":if memory_complete && total > 0 {Some(total)} else {None}})
+}
+
+fn gpu_drain_output(stream: &mut ChildStdout, bytes: &mut Vec<u8>) -> io::Result<bool> {
+    let mut chunk = [0u8; 1024];
+    loop {
+        let allowed = ((GPU_MAX_OUTPUT_BYTES + 1) as usize - bytes.len()).min(chunk.len());
+        if allowed == 0 {
+            return Ok(true);
+        }
+        match stream.read(&mut chunk[..allowed]) {
+            Ok(0) => return Ok(false),
+            Ok(n) => bytes.extend_from_slice(&chunk[..n]),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(false),
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+pub fn gpu(command_path: &Path, errors: &mut Vec<Value>) -> Value {
+    let mut child = match Command::new(command_path)
+        .args(["--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw", "--format=csv,noheader,nounits"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            let code = match e.kind() {
+                io::ErrorKind::NotFound => "unsupported",
+                io::ErrorKind::PermissionDenied => "permission_denied",
+                _ => "error",
+            };
+            if code != "unsupported" {
+                err(errors, GPU_SOURCE, code);
+            }
+            return gpu_unavailable(code);
+        }
+    };
+    let mut stream = child.stdout.take().expect("requested piped stdout");
+    let fd = stream.as_raw_fd();
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        let _ = child.kill();
+        let _ = child.wait();
+        err(errors, GPU_SOURCE, "error");
+        return gpu_unavailable("error");
+    }
+    let mut bytes = Vec::new();
+    let started = Instant::now();
+    let result = loop {
+        match gpu_drain_output(&mut stream, &mut bytes) {
+            Ok(true) => break Err("source_truncated"),
+            Err(_) => break Err("error"),
+            Ok(false) => {}
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => match gpu_drain_output(&mut stream, &mut bytes) {
+                Ok(true) => break Err("source_truncated"),
+                Err(_) => break Err("error"),
+                Ok(false) => break Ok(status),
+            },
+            Ok(None) if started.elapsed() < GPU_TIMEOUT => thread::sleep(Duration::from_millis(10)),
+            Ok(None) => break Err("timeout"),
+            Err(_) => break Err("error"),
+        }
+    };
+    let status = match result {
+        Ok(status) => status,
+        Err(code) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            err(errors, GPU_SOURCE, code);
+            return gpu_unavailable(code);
+        }
+    };
+    if !status.success() {
+        err(errors, GPU_SOURCE, "error");
+        return gpu_unavailable("error");
+    }
+    match std::str::from_utf8(&bytes) {
+        Ok(output) => gpu_from_csv(output, errors),
+        Err(_) => {
+            err(errors, GPU_SOURCE, "parse_failed");
+            gpu_unavailable("error")
+        }
     }
 }
 fn read(path: &str, errors: &mut Vec<Value>) -> Option<String> {
@@ -659,6 +877,116 @@ pub fn host(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn gpu_csv_preserves_quoted_name_and_null_reading_without_guessing() {
+        let mut errors = Vec::new();
+        let result = gpu_from_csv("0, \"GPU, Model\", 25, 100, 1000, N/A, 35.5\n", &mut errors);
+        assert_eq!(result["availability"], "partial");
+        assert_eq!(result["devices"][0]["name"], "GPU, Model");
+        assert_eq!(result["devices"][0]["temperature_c"], Value::Null);
+        assert_eq!(result["missing_fields"]["temperature_c"], 1);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error["code"] == "field_unavailable")
+        );
+        assert_eq!(result["max_utilization_pct"], 25.0);
+        assert_eq!(result["memory_used_bytes"], 100 * 1024 * 1024);
+    }
+
+    #[test]
+    fn gpu_partial_rows_and_excess_devices_do_not_fabricate_aggregate() {
+        let mut errors = Vec::new();
+        let result = gpu_from_csv(
+            "0, GPU, 20, 900, 1000, 40, 50\n1, GPU, 30, N/A, 1000, 50, 60\n",
+            &mut errors,
+        );
+        assert_eq!(result["memory_used_bytes"], Value::Null);
+        assert_eq!(result["devices"][1]["memory_used_bytes"], Value::Null);
+        assert_eq!(result["availability"], "partial");
+        assert_eq!(result["missing_fields"]["memory_used_bytes"], 1);
+        assert_eq!(result["max_utilization_pct"], 30.0);
+        let rows = (0..33)
+            .map(|index| {
+                format!(
+                    "{index}, GPU, {}, 1, 2, 40, 50\n",
+                    if index == 32 { 99 } else { 20 }
+                )
+            })
+            .collect::<String>();
+        let capped = gpu_from_csv(&rows, &mut errors);
+        assert_eq!(capped["devices_seen"], 33);
+        assert_eq!(capped["devices_scanned"], 32);
+        assert_eq!(capped["availability"], "partial");
+        assert_eq!(capped["max_utilization_pct"], Value::Null);
+        assert_eq!(capped["memory_used_bytes"], Value::Null);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error["code"] == "source_truncated")
+        );
+        let duplicate = gpu_from_csv(
+            "0, GPU, 20, 1, 2, 40, 50\n0, GPU, 30, 1, 2, 40, 50\n",
+            &mut Vec::new(),
+        );
+        assert_eq!(duplicate["devices_scanned"], 1);
+        assert_eq!(duplicate["availability"], "partial");
+        assert_eq!(duplicate["memory_used_bytes"], Value::Null);
+        assert_eq!(duplicate["max_utilization_pct"], Value::Null);
+        let missing_util = gpu_from_csv(
+            "0, GPU, 50, 1, 2, 40, 50\n1, GPU, N/A, 1, 2, 40, 50\n",
+            &mut Vec::new(),
+        );
+        assert_eq!(missing_util["availability"], "partial");
+        assert_eq!(missing_util["max_utilization_pct"], Value::Null);
+        assert_eq!(missing_util["memory_used_bytes"], 2 * 1024 * 1024);
+        assert_eq!(missing_util["missing_fields"]["utilization_pct"], 1);
+    }
+
+    #[test]
+    fn gpu_command_timeout_and_permission_failure_are_bounded() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("smi");
+        fs::write(&script, "#!/bin/sh\nexec sleep 2\n").unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+        let mut errors = Vec::new();
+        let started = Instant::now();
+        let timed = gpu(&script, &mut errors);
+        assert_eq!(timed["availability"], "timeout");
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(errors.iter().any(|error| error["code"] == "timeout"));
+        if unsafe { libc::geteuid() } != 0 {
+            fs::set_permissions(&script, fs::Permissions::from_mode(0o000)).unwrap();
+            let denied = gpu(&script, &mut Vec::new());
+            assert_eq!(denied["availability"], "permission_denied");
+        }
+        let absent = gpu(&dir.path().join("missing"), &mut Vec::new());
+        assert_eq!(absent["availability"], "unsupported");
+    }
+
+    #[test]
+    fn gpu_oversized_output_is_truncated_before_pipe_stall() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("smi");
+        fs::write(
+            &script,
+            "#!/bin/sh\nexec /usr/bin/head -c 20000 /dev/zero\n",
+        )
+        .unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+        let mut errors = Vec::new();
+        let started = Instant::now();
+        let result = gpu(&script, &mut errors);
+        assert_eq!(result["availability"], "source_truncated");
+        assert!(started.elapsed() < GPU_TIMEOUT);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error["code"] == "source_truncated")
+        );
+    }
     fn p(pid: u32, start: u64, user: u64, rss: u64) -> Proc {
         Proc {
             pid,

@@ -2,6 +2,9 @@ import { buildQueryString, fetchWithErrorHandling } from './utils'
 
 export type MonitorAvailability =
   | 'ok'
+  | 'partial'
+  | 'disabled'
+  | 'source_truncated'
   | 'unsupported'
   | 'permission_denied'
   | 'timeout'
@@ -84,6 +87,7 @@ export const monitorApi = {
   series: (params: {
     metric: string
     entity?: string
+    boot_id?: string
     since: string
     until: string
     step: number
@@ -95,12 +99,17 @@ export const monitorApi = {
   processes: (params: {
     at?: string
     sort: string
+    view?: 'list' | 'tree'
     service?: string
     limit: number
     cursor?: string
   }) =>
     get(
       `/api/monitor/v1/processes${buildQueryString({ ...params, max_bytes: 65536 })}`,
+    ),
+  gpu: (params: { at?: string; limit?: number; cursor?: string } = {}) =>
+    get(
+      `/api/monitor/v1/gpu${buildQueryString({ ...params, max_bytes: 65536 })}`,
     ),
   events: (params: { since: string; limit: number }) =>
     get(

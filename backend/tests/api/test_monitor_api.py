@@ -95,6 +95,7 @@ def test_monitor_maintenance_is_transient_service_unavailable(monkeypatch) -> No
 
 @pytest.mark.parametrize("path", [
     "/api/monitor/v1/series?metric=cpu_busy_pct",
+    "/api/monitor/v1/gpu",
     "/api/monitor/v1/processes",
     "/api/monitor/v1/events",
     "/api/monitor/v1/logs?service=backend",
@@ -143,6 +144,19 @@ def test_apps_provider_and_cursor_reach_owner_query(monkeypatch) -> None:
     observe.assert_called_once_with(monitor.query_apps, provider="snap", name="fire",
                                     cursor="a1.1234567890abcdef.2",
                                     limit=1, max_bytes=2048)
+
+
+def test_gpu_and_boot_scoped_series_reach_owner_reader(monkeypatch) -> None:
+    read = Mock(return_value={"schema": 1, "items": []})
+    monkeypatch.setattr(monitor, "_read", read)
+    with _client("owner") as client:
+        gpu = client.get("/api/monitor/v1/gpu?limit=2&max_bytes=2048")
+        series = client.get("/api/monitor/v1/series?metric=gpu_utilization_pct&entity=gpu:0&boot_id=boot-a")
+    assert gpu.status_code == series.status_code == 200
+    assert gpu.headers["cache-control"] == series.headers["cache-control"] == "no-store"
+    assert read.call_args_list[0].args == ("gpu",)
+    assert read.call_args_list[0].kwargs == {"at": None, "limit": 2, "cursor": None, "max_bytes": 2048}
+    assert read.call_args_list[1].kwargs["boot_id"] == "boot-a"
 
 
 def test_extended_diagnostics_reject_viewer_writes() -> None:

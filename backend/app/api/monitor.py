@@ -135,6 +135,7 @@ def series(
     response: Response,
     metric: str,
     entity: str = "host",
+    boot_id: str | None = None,
     since: str | None = None,
     until: str | None = None,
     step: Annotated[int, Query(ge=5, le=3600)] = 60,
@@ -145,8 +146,21 @@ def series(
     _private(response)
     if cursor and (since is None or until is None):
         raise HTTPException(status_code=400, detail="Cursor pages require explicit since and until")
-    return _read("series", metric=metric, entity=entity, since=since, until=until,
+    return _read("series", metric=metric, entity=entity, boot_id=boot_id, since=since, until=until,
                  step=step, limit=limit, cursor=cursor, max_bytes=max_bytes)
+
+
+@router.get("/gpu")
+def gpu(
+    _owner: Owner,
+    response: Response,
+    at: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 10,
+    cursor: str | None = None,
+    max_bytes: Annotated[int, Query(ge=512, le=65536)] = 4096,
+) -> dict[str, Any]:
+    _private(response)
+    return _read("gpu", at=at, limit=limit, cursor=cursor, max_bytes=max_bytes)
 
 
 @router.get("/processes")
@@ -158,13 +172,14 @@ def processes(
     user: str | None = None,
     service: str | None = None,
     sort: str = "rss",
+    view: str = "list",
     limit: Annotated[int, Query(ge=1, le=100)] = 10,
     cursor: str | None = None,
     max_bytes: Annotated[int, Query(ge=512, le=65536)] = 4096,
 ) -> dict[str, Any]:
     _private(response)
     return _read("processes", at=at, name=name, user=user, service=service,
-                 sort=sort, limit=limit, cursor=cursor, max_bytes=max_bytes)
+                 sort=sort, view=view, limit=limit, cursor=cursor, max_bytes=max_bytes)
 
 
 @router.get("/events")

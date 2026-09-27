@@ -114,6 +114,7 @@ def status(max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65
 def series(
     metric: Annotated[str, typer.Argument(help="Whitelisted host or service metric")],
     entity: Annotated[str, typer.Option("--entity", help="host or managed service id")] = "host",
+    boot_id: Annotated[str | None, typer.Option("--boot-id", help="Required for gpu:<index> device history")] = None,
     since: Annotated[str | None, typer.Option("--since", help="UTC timestamp or 15m/6h/1d")] = None,
     until: Annotated[str | None, typer.Option("--until", help="UTC timestamp")] = None,
     step: Annotated[int, typer.Option("--step", min=5, max=3600)] = 60,
@@ -124,8 +125,28 @@ def series(
     """Bucketed timeline with gaps, coverage and source availability."""
     if cursor and (not since or _RELATIVE.fullmatch(since) or not until):
         _failure(MonitorQueryError("pagination requires absolute --since and --until from coverage"), max_bytes)
-    _query("series", max_bytes, metric=metric, entity=entity, since=_time(since), until=_time(until),
+    _query("series", max_bytes, metric=metric, entity=entity, boot_id=boot_id, since=_time(since), until=_time(until),
            step=step, limit=limit, cursor=cursor)
+
+
+@app.command()
+@usage(
+    surface="st.monitor.gpu",
+    cmd="st monitor gpu",
+    when="inspect the latest retained GPU poll, provider outcome, and boot-scoped device readings",
+    precautions=("read-only owner-local history", "poll age and unavailable fields are explicit"),
+    examples=("st monitor gpu", "st monitor gpu --limit 1 --max-bytes 4096"),
+    task_types=("devops", "debugging"),
+    tier="reference",
+)
+def gpu(
+    at: Annotated[str | None, typer.Option("--at", help="Latest poll at or before UTC time")] = None,
+    limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 10,
+    cursor: Annotated[str | None, typer.Option("--cursor")] = None,
+    max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65536)] = 4096,
+) -> None:
+    """Latest retained NVIDIA poll and bounded per-device readings."""
+    _query("gpu", max_bytes, at=_time(at), limit=limit, cursor=cursor)
 
 
 @app.command()
@@ -135,13 +156,14 @@ def processes(
     user: Annotated[str | None, typer.Option("--user")] = None,
     service: Annotated[str | None, typer.Option("--service")] = None,
     sort: Annotated[str, typer.Option("--sort", help="cpu, rss, io")] = "rss",
+    view: Annotated[str, typer.Option("--view", help="list or tree; tree traverses one captured observation")] = "list",
     limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 10,
     cursor: Annotated[str | None, typer.Option("--cursor")] = None,
     max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65536)] = 4096,
 ) -> None:
     """Process leaders or bounded detail at a specific sample."""
     _query("processes", max_bytes, at=_time(at), name=name, user=user, service=service,
-           sort=sort, limit=limit, cursor=cursor)
+           sort=sort, view=view, limit=limit, cursor=cursor)
 
 
 @app.command()

@@ -105,6 +105,7 @@ def _parser() -> argparse.ArgumentParser:
     series = commands.add_parser("series", help="Bucketed metric timeline")
     series.add_argument("metric")
     series.add_argument("--entity", default="host")
+    series.add_argument("--boot-id")
     series.add_argument("--since")
     series.add_argument("--until")
     series.add_argument("--step", type=_bounded_int(5, 3600), default=60)
@@ -112,12 +113,19 @@ def _parser() -> argparse.ArgumentParser:
     series.add_argument("--cursor")
     series.add_argument("--max-bytes", type=budget, default=4096)
 
+    gpu = commands.add_parser("gpu", help="Latest retained GPU poll and device readings")
+    gpu.add_argument("--at")
+    gpu.add_argument("--limit", type=limit, default=10)
+    gpu.add_argument("--cursor")
+    gpu.add_argument("--max-bytes", type=budget, default=4096)
+
     processes = commands.add_parser("processes", help="Process leaders or detail at a sample")
     processes.add_argument("--at")
     processes.add_argument("--name")
     processes.add_argument("--user")
     processes.add_argument("--service")
     processes.add_argument("--sort", default="rss")
+    processes.add_argument("--view", choices=("list", "tree"), default="list")
     processes.add_argument("--limit", type=limit, default=10)
     processes.add_argument("--cursor")
     processes.add_argument("--max-bytes", type=budget, default=4096)
@@ -254,12 +262,15 @@ def main(argv: list[str] | None = None) -> int:
             if command == "status":
                 result = enrich_status(reader.status(max_bytes=max_bytes), max_bytes)
             elif command == "series":
-                result = reader.series(args.metric, entity=args.entity, since=_time(args.since),
+                result = reader.series(args.metric, entity=args.entity, boot_id=args.boot_id, since=_time(args.since),
                                        until=_time(args.until), step=args.step, limit=args.limit,
                                        cursor=args.cursor, max_bytes=max_bytes)
+            elif command == "gpu":
+                result = reader.gpu(at=_time(args.at), limit=args.limit, cursor=args.cursor,
+                                    max_bytes=max_bytes)
             elif command == "processes":
                 result = reader.processes(at=_time(args.at), name=args.name, user=args.user,
-                                          service=args.service, sort=args.sort, limit=args.limit,
+                                          service=args.service, sort=args.sort, view=args.view, limit=args.limit,
                                           cursor=args.cursor, max_bytes=max_bytes)
             else:
                 result = reader.events(since=_time(args.since), until=_time(args.until),

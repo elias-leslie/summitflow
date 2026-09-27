@@ -122,6 +122,47 @@ def test_monitor_queries_use_system_python_with_broken_backend(installed):
     assert json.loads(small.stdout)["schema"] == 1
 
 
+def test_installed_process_tree_flag_reaches_standalone_reader(installed):
+    _, link, state, env = installed
+    _store(state)
+    result = _run(link, env, "monitor", "processes", "--view", "tree", "--limit", "1")
+    assert result.returncode == 0, result.stderr or result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["requested"]["view"] == "tree"
+    assert payload["coverage"]["tree"]["scope"] == "stored_observation"
+    assert payload["items"][0]["tree"]["depth"] == 0
+
+
+def test_installed_gpu_query_and_series_share_retained_observation(installed):
+    _, link, state, env = installed
+    _store(state)
+    with sqlite3.connect(state / "monitor.sqlite3") as conn:
+        sampled = conn.execute("SELECT sampled_at_ns FROM samples").fetchone()[0]
+        gpu = {"provider": "nvidia-smi", "availability": "ok",
+               "observed_at_ns": sampled - 1_000_000_000,
+               "poll_interval_seconds": 15, "device_identity_scope": "sample_boot_id+index",
+               "devices_seen": 1, "devices_scanned": 1, "missing_fields": {},
+               "max_utilization_pct": 32, "memory_used_bytes": 100, "memory_total_bytes": 1000,
+               "devices": [{"index": 0, "name": "GPU A", "utilization_pct": 32,
+                            "memory_used_bytes": 100, "memory_total_bytes": 1000,
+                            "temperature_c": 40, "power_w": 50}]}
+        conn.execute("UPDATE samples SET host_json=?", (json.dumps({"gpu": gpu,
+                     "gpu_max_utilization_pct": 32}),))
+    snapshot = _run(link, env, "monitor", "gpu")
+    assert snapshot.returncode == 0, snapshot.stderr or snapshot.stdout
+    payload = json.loads(snapshot.stdout)
+    assert payload["coverage"]["provider"] == "nvidia-smi"
+    assert payload["items"][0]["device"]["name"] == "GPU A"
+    start = datetime.fromtimestamp((sampled - 10_000_000_000) / 1_000_000_000, UTC).isoformat()
+    end = datetime.fromtimestamp((sampled + 10_000_000_000) / 1_000_000_000, UTC).isoformat()
+    series = _run(link, env, "monitor", "series", "gpu_utilization_pct", "--entity", "gpu:0",
+                  "--boot-id", payload["coverage"]["boot_id"], "--since", start,
+                  "--until", end, "--step", "5")
+    assert series.returncode == 0, series.stderr or series.stdout
+    assert any(item["value"] and item["value"]["last"] == 32
+               for item in json.loads(series.stdout)["items"])
+
+
 def test_monitor_failures_stay_structured_without_store(installed):
     _, link, _, env = installed
     result = _run(link, env, "monitor", "status")
