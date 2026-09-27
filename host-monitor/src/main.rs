@@ -330,24 +330,17 @@ fn command_timeout(mut command: Command, timeout: Duration) -> io::Result<String
 fn services(
     names: &[String],
     owner_uid: u32,
-    owner_gid: u32,
     procs: &[Proc],
     procs_at: Option<i64>,
     procs_mono_at: Option<i64>,
     errors: &mut Vec<Value>,
 ) -> Value {
     let mut cmd = Command::new("systemctl");
+    cmd.arg("--user");
     if unsafe { libc::geteuid() } == 0 && owner_uid != 0 {
-        use std::os::unix::process::CommandExt;
-        cmd.uid(owner_uid).gid(owner_gid);
-        cmd.env("XDG_RUNTIME_DIR", format!("/run/user/{owner_uid}"));
-        cmd.env(
-            "DBUS_SESSION_BUS_ADDRESS",
-            format!("unix:path=/run/user/{owner_uid}/bus"),
-        );
+        cmd.arg(format!("--machine={owner_uid}@.host"));
     }
     cmd.args([
-        "--user",
         "show",
         "--no-pager",
         "--property=Id,ActiveState,SubState,ControlGroup,MainPID",
@@ -1092,7 +1085,6 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
                 services(
                     &names,
                     cfg.owner_uid,
-                    cfg.owner_gid,
                     &latest_procs,
                     if scan { Some(at) } else { leader_scan_at },
                     if scan { Some(mono) } else { leader_scan_mono },
