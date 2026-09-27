@@ -79,7 +79,9 @@ describe('HostMonitorDiagnostics system views', () => {
     ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
     expect(queries.at(-1)?.queryKey).toContain('journal-next')
-    fireEvent.click(screen.getByRole('button', { name: 'Previous page' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Apply window' }))
+    expect(queries.at(-1)?.queryKey[8]).toBeUndefined()
+    expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Connections' }))
     expect(screen.getAllByText(/127.0.0.1:22/).length).toBeGreaterThan(0)
@@ -170,12 +172,26 @@ describe('HostMonitorDiagnostics system views', () => {
     expect(
       new Date(String(key[7])).getTime() - new Date(String(key[6])).getTime(),
     ).toBe(24 * 60 * 60_000)
+    fireEvent.change(screen.getByLabelText('From'), {
+      target: { value: '2026-09-24T00:00' },
+    })
+    fireEvent.change(screen.getByLabelText('To'), {
+      target: { value: '2026-09-25T23:59' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply window' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('up to 24 hours')
+    expect(queries.at(-1)?.queryKey[6]).toBe(key[6])
+    fireEvent.change(screen.getByLabelText('From'), {
+      target: { value: '2026-09-25T00:00' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply window' }))
+    const historical = queries.at(-1)?.queryKey || []
+    expect(historical[6]).toBe(new Date('2026-09-25T00:00').toISOString())
+    expect(historical[7]).toBe(new Date('2026-09-25T23:59').toISOString())
     fireEvent.click(screen.getByRole('button', { name: 'Run again' }))
     const refreshed = queries.at(-1)?.queryKey || []
-    expect(
-      new Date(String(refreshed[7])).getTime() -
-        new Date(String(refreshed[6])).getTime(),
-    ).toBe(24 * 60 * 60_000)
+    expect(refreshed[6]).toBe(historical[6])
+    expect(refreshed[7]).toBe(historical[7])
     fireEvent.change(screen.getByRole('combobox', { name: /Log source/ }), {
       target: { value: 'user' },
     })

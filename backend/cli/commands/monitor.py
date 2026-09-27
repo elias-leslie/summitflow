@@ -313,7 +313,7 @@ def capture_end(lease_id: Annotated[str, typer.Argument()]) -> None:
     precautions=(
         'discover exact unit, container, or package source IDs with st monitor log-services --scope user, --scope system, --scope container, or --scope package; omit service for a whole user or system journal',
         'collector is required; credential redaction remains enabled and does not imply arbitrary logs are safe to publish',
-        'follow journal cursors with the same absolute since/until window; container and package logs do not support priority or cursor filtering',
+        'follow journal cursors with the same absolute since/until window; use absolute windows of at most 24 hours for older package records; container and package logs do not support priority or cursor filtering',
     ),
     examples=(
         'st monitor logs summitflow-backend.service --scope user --since 15m',

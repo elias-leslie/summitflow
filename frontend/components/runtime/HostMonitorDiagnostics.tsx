@@ -114,6 +114,11 @@ function recentLogWindow(minutes = 15) {
     until: until.toISOString(),
   }
 }
+function localDateTime(value: string): string {
+  const date = new Date(value)
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
 function fields(item: MonitorItem, kind: Diagnostic): Array<[string, unknown]> {
   const value = record(item.value) || {}
   switch (kind) {
@@ -272,6 +277,11 @@ export function HostMonitorDiagnostics({
   const [logScope, setLogScope] = useState<MonitorLogScope>('user')
   const [priority, setPriority] = useState('')
   const [logWindow, setLogWindow] = useState(recentLogWindow)
+  const [logWindowDraft, setLogWindowDraft] = useState(() => ({
+    from: localDateTime(logWindow.since),
+    to: localDateTime(logWindow.until),
+  }))
+  const [logWindowError, setLogWindowError] = useState<string | null>(null)
   const [logCursors, setLogCursors] = useState<Array<string | undefined>>([
     undefined,
   ])
@@ -289,7 +299,13 @@ export function HostMonitorDiagnostics({
   const [appsPrevious, setAppsPrevious] = useState<Array<string | null>>([])
   const [revision, setRevision] = useState(0)
   const resetLogPage = (scope: MonitorLogScope = logScope) => {
-    setLogWindow(recentLogWindow(scope === 'package' ? 1440 : 15))
+    const window = recentLogWindow(scope === 'package' ? 1440 : 15)
+    setLogWindow(window)
+    setLogWindowDraft({
+      from: localDateTime(window.since),
+      to: localDateTime(window.until),
+    })
+    setLogWindowError(null)
     setLogCursors([undefined])
   }
   const namedLogSource = logScope === 'container' || logScope === 'package'
@@ -450,7 +466,7 @@ export function HostMonitorDiagnostics({
                 type="button"
                 className={control}
                 onClick={() => {
-                  if (active === 'logs') resetLogPage()
+                  if (active === 'logs') setLogCursors([undefined])
                   if (active === 'connections')
                     setConnectionCursors([undefined])
                   setRevision((value) => value + 1)
@@ -488,7 +504,7 @@ export function HostMonitorDiagnostics({
                   value={chosenService}
                   onChange={(event) => {
                     setLogService(event.target.value)
-                    resetLogPage()
+                    setLogCursors([undefined])
                   }}
                 >
                   {!namedLogSource && <option value="">All services</option>}
@@ -507,7 +523,7 @@ export function HostMonitorDiagnostics({
                     value={priority}
                     onChange={(event) => {
                       setPriority(event.target.value)
-                      resetLogPage()
+                      setLogCursors([undefined])
                     }}
                   >
                     <option value="">All</option>
@@ -519,6 +535,73 @@ export function HostMonitorDiagnostics({
                   </select>
                 </label>
               )}
+              <form
+                className="flex basis-full flex-wrap items-end gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  const from = new Date(logWindowDraft.from)
+                  const to = new Date(logWindowDraft.to)
+                  const duration = to.getTime() - from.getTime()
+                  if (
+                    !Number.isFinite(duration) ||
+                    duration <= 0 ||
+                    duration > 24 * 60 * 60_000
+                  ) {
+                    setLogWindowError(
+                      'Choose a positive window of up to 24 hours.',
+                    )
+                    return
+                  }
+                  setLogWindow({
+                    since: from.toISOString(),
+                    until: to.toISOString(),
+                  })
+                  setLogWindowError(null)
+                  setLogCursors([undefined])
+                  setRevision((value) => value + 1)
+                }}
+              >
+                <label className="text-xs text-slate-400">
+                  From
+                  <input
+                    required
+                    type="datetime-local"
+                    value={logWindowDraft.from}
+                    onChange={(event) => {
+                      setLogWindowDraft((current) => ({
+                        ...current,
+                        from: event.target.value,
+                      }))
+                      setLogWindowError(null)
+                    }}
+                    className={`${control} mt-1 block max-w-full`}
+                  />
+                </label>
+                <label className="text-xs text-slate-400">
+                  To
+                  <input
+                    required
+                    type="datetime-local"
+                    value={logWindowDraft.to}
+                    onChange={(event) => {
+                      setLogWindowDraft((current) => ({
+                        ...current,
+                        to: event.target.value,
+                      }))
+                      setLogWindowError(null)
+                    }}
+                    className={`${control} mt-1 block max-w-full`}
+                  />
+                </label>
+                <button type="submit" className={control}>
+                  Apply window
+                </button>
+                {logWindowError && (
+                  <p role="alert" className="basis-full text-xs text-rose-300">
+                    {logWindowError}
+                  </p>
+                )}
+              </form>
               {logServices.isLoading && (
                 <p role="status" className="self-center text-xs text-slate-400">
                   Loading {logSourcePlural}…
