@@ -309,22 +309,23 @@ def capture_end(lease_id: Annotated[str, typer.Argument()]) -> None:
 @usage(
     surface='st.monitor.logs',
     cmd='st monitor logs [service] --scope user --since 15m',
-    when='read bounded journal evidence for project services or the whole host',
+    when='read bounded user, system, or selected container logs for project and host troubleshooting',
     precautions=(
-        'discover exact unit IDs with st monitor log-services --scope user or --scope system; omit service for the selected journal',
+        'discover exact unit or container IDs with st monitor log-services --scope user, --scope system, or --scope container; omit service for a whole user or system journal',
         'collector is required; credential redaction remains enabled and does not imply arbitrary logs are safe to publish',
-        'follow cursors with the same absolute since/until window; container scope currently reports unsupported',
+        'follow journal cursors with the same absolute since/until window; container logs do not support priority or cursor filtering',
     ),
     examples=(
         'st monitor logs summitflow-backend.service --scope user --since 15m',
         'st monitor logs --scope system --priority 3 --since 15m --max-bytes 8192',
+        'st monitor logs summitflow-stack-postgres-1 --scope container --since 15m',
     ),
     task_types=("devops", "debugging"),
     on_demand="host and project troubleshooting",
     tier="reference",
 )
 def logs(
-    service: Annotated[str | None, typer.Argument(help="Service unit; omit for the full journal")] = None,
+    service: Annotated[str | None, typer.Argument(help="Service unit or container ID; omit for the full user or system journal")] = None,
     scope: Annotated[str, typer.Option("--scope", help="user, system, or container logs")] = "user",
     since: Annotated[str | None, typer.Option("--since", help="UTC timestamp or 15m/6h/1d")] = None,
     until: Annotated[str | None, typer.Option("--until", help="UTC timestamp")] = None,
@@ -333,7 +334,7 @@ def logs(
     limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 10,
     max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65536)] = 4096,
 ) -> None:
-    """Bounded journal entries from the selected host scope."""
+    """Bounded journal or selected container entries from the host."""
     if cursor and (not since or _RELATIVE.fullmatch(since) or not until):
         _failure(MonitorQueryError("pagination requires absolute --since and --until from requested"), max_bytes)
     _privileged("logs", max_bytes, service=service, scope=scope, since=_time(since), until=_time(until),
@@ -344,14 +345,15 @@ def logs(
 @usage(
     surface='st.monitor.log-services',
     cmd='st monitor log-services --scope user',
-    when='discover selectable project and system journal service units before requesting logs',
+    when='discover selectable user, system, and container log sources before requesting logs',
     precautions=(
-        'use user or system scope and reuse the returned exact unit name in st monitor logs',
-        'follow next_cursor; discovery and journal access can have different availability',
+        'reuse the returned exact unit or container ID in st monitor logs with the same scope',
+        'follow next_cursor; source discovery and log access can have different availability',
     ),
     examples=(
         'st monitor log-services --scope user --max-bytes 8192',
         'st monitor log-services --scope system --max-bytes 8192',
+        'st monitor log-services --scope container --max-bytes 8192',
     ),
     task_types=("devops", "debugging"),
     on_demand="host and project troubleshooting",
@@ -361,7 +363,7 @@ def log_services(scope: Annotated[str, typer.Option("--scope")] = "user",
                  cursor: Annotated[str | None, typer.Option("--cursor")] = None,
                  limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 100,
                  max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65536)] = 4096) -> None:
-    """List service units available in the selected journal scope."""
+    """List service units or containers available in the selected scope."""
     _observe(query_log_services, max_bytes, scope=scope, cursor=cursor, limit=limit)
 
 

@@ -1,5 +1,19 @@
 # Host monitor delivery and verification
 
+## System-wide deployment, 2026-09-27
+
+The current monitor is a headless root system service with a single SQLite writer at `/var/lib/summitflow/monitor`. The owner-only Unix socket and root:owner state permissions let the SummitFlow backend and standalone `st monitor` read committed history and request bounded diagnostics without running the backend as root. The legacy user collector is disabled. The system unit is enabled and active; its current sample reported 809 processes, zero denied process stat reads, and zero denied process I/O reads. The Runtime service card now reports all four SummitFlow units active. The monitor has no desktop-app dependency or network listener.
+
+Live checks after managed rebuild job `6c9e63488da24c388ced4e17e382a998` (source commit `3b50c0ce968e6c576998a608c6b83ed67ec09e5e`) showed 12 real mounts across six distinct filesystems with no `statvfs` errors, including `/`, `/boot`, `/boot/efi`, and the mounted external backup volume. Btrfs subvolumes remain visible but shared capacity is counted once. The historical mounts API returned the same inventory from a sample five minutes earlier. Bounded path attribution worked on root, boot, and backup paths; a depth-limited scan reported partial coverage rather than a false complete total.
+
+The live source catalogs reported 162 user service units, 363 system units, and seven Docker containers, with cursors where needed. User and system journal queries and a selected PostgreSQL container log query returned entries. Docker logs do not offer journal priority or cursor filtering. Live connections returned full local and remote addresses, owning PID and process where available, and a working second page; one sample scanned 520 sockets and 810 PIDs without hitting its scan cap. Event entity and detail fields are retained. Only credential and private-key patterns are masked; technical addresses and paths are shown.
+
+The owner API returned HTTP 200 and `Cache-Control: no-store` for status, mounts, all three source catalogs, system logs, connections, and disk attribution. The refreshed Runtime UI showed mount capacities and scan actions, all three log scopes, a selected container with log entries, expanded socket ownership, and connection pagination. At a 390 px viewport, the diagnostic controls and expanded data remained usable; the timeline's sample strip scrolls within its own card. Full managed acceptance passed 3,720 Python tests, 237 frontend tests, security checks, and a healthy release deployment; 49 Rust collector tests and formatting passed separately.
+
+The system unit is enabled independently of the desktop login, but an actual logout/reboot and an intentional backend/database outage have not been run against this shared workstation. The prior isolated outage tests below demonstrate committed-history recovery, not that live lifecycle check. Per-service cgroup `io.stat` is absent for some user units on this host and remains unavailable rather than zero. File-only project logs outside the journal and discovered Docker containers are not a registered source; the log view covers managed user/system units and available containers.
+
+## Prior non-root MVP, retained for history
+
 Task `task-ea952b00a68b4940`; verified on the Ubuntu desktop on 2026-09-26. The implementation is local and non-root. The collector, CLI reader, API, and Runtime Monitor tab share schema v1. Protected screenshots and raw profiles are under `/home/kasadis/.local/share/summitflow/evidence/task-ea952b00a68b4940/`; they contain local host details and are not committed.
 
 ## Installed architecture

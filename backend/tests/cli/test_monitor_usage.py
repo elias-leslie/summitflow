@@ -44,3 +44,4 @@ def test_exact_manifest_lookup_exposes_bounds_and_operational_requirements():
     assert "collector is required" in text
     assert "absolute since/until" in text
     assert "log-services" in text
+    assert "container logs do not support priority or cursor" in text
