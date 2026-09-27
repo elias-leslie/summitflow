@@ -210,12 +210,19 @@ def _managed_project(root: Path) -> service_ops.ProjectServices:
     )
 
 
+def test_managed_migration_refuses_system_collector_store(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(service_ops, "system_systemctl", lambda *_args: subprocess.CompletedProcess([], 0))
+    with pytest.raises(service_ops.ServiceError, match="legacy user-store operation"):
+        service_ops.migrate_host_monitor_store(_managed_project(tmp_path))
+
+
 def test_managed_migration_requires_prior_live_reader_release(tmp_path: Path, monkeypatch) -> None:
     live = tmp_path / "live"
     reader = live / "backend/monitor_reader/reader.py"
     reader.parent.mkdir(parents=True)
     reader.write_text("# old release has no lock\n")
     monkeypatch.setattr(service_release, "current_source_root", lambda _project: live)
+    monkeypatch.setattr(service_ops, "system_systemctl", lambda *_args: subprocess.CompletedProcess([], 1))
     stops = []
     monkeypatch.setattr(service_ops, "run", lambda command: stops.append(command) or 0)
     with pytest.raises(service_ops.ServiceError, match="deploy the monitor reader lock"):
@@ -240,6 +247,7 @@ def test_stale_backend_process_blocks_before_collector_stop(tmp_path: Path, monk
     reader.parent.mkdir(parents=True)
     reader.write_text("MONITOR_MAINTENANCE_LOCK_VERSION = 2\n")
     monkeypatch.setattr(service_release, "current_source_root", lambda _project: live)
+    monkeypatch.setattr(service_ops, "system_systemctl", lambda *_args: subprocess.CompletedProcess([], 1))
     monkeypatch.setattr(service_ops, "_service_main_pid", lambda _service: 42)
     monkeypatch.setattr(service_ops, "_backend_process_release_root", lambda _pid: tmp_path / "stale")
     stops = []
