@@ -3,6 +3,7 @@
 import fcntl
 import json
 import sqlite3
+import subprocess
 from contextlib import closing
 from pathlib import Path
 
@@ -263,8 +264,10 @@ def test_converted_store_starts_collector_before_reporting_success(
     state = tmp_path / ".local/state/summitflow/monitor"
     db = legacy_store(state)
     monkeypatch.setattr(service_ops, "service_exists", lambda _service: True)
-    monkeypatch.setattr(service_ops, "_wait_service_inactive", lambda _service: True)
-    monkeypatch.setattr(service_ops, "_wait_service_active", lambda _service: active)
+    monkeypatch.setattr(service_ops, "system_systemctl", lambda *_args: subprocess.CompletedProcess([], 1))
+    monkeypatch.setattr(service_ops, "systemctl", lambda *_args: subprocess.CompletedProcess([], 0))
+    monkeypatch.setattr(service_ops, "_wait_service_inactive", lambda _service, **_kwargs: True)
+    monkeypatch.setattr(service_ops, "_wait_service_active", lambda _service, **_kwargs: active)
     commands = []
     monkeypatch.setattr(service_ops, "run", lambda command: commands.append(command) or 0)
     if active:
@@ -305,8 +308,10 @@ def test_managed_migration_resumes_only_pre_mutation_failure(
     state.mkdir(parents=True)
     (state / "monitor.sqlite3").touch()
     monkeypatch.setattr(service_ops, "service_exists", lambda _service: True)
-    monkeypatch.setattr(service_ops, "_wait_service_inactive", lambda _service: True)
-    monkeypatch.setattr(service_ops, "_wait_service_active", lambda _service: True)
+    monkeypatch.setattr(service_ops, "system_systemctl", lambda *_args: subprocess.CompletedProcess([], 1))
+    monkeypatch.setattr(service_ops, "systemctl", lambda *_args: subprocess.CompletedProcess([], 0))
+    monkeypatch.setattr(service_ops, "_wait_service_inactive", lambda _service, **_kwargs: True)
+    monkeypatch.setattr(service_ops, "_wait_service_active", lambda _service, **_kwargs: True)
     commands = []
     monkeypatch.setattr(service_ops, "run", lambda command: commands.append(command) or 0)
     monkeypatch.setattr(service_ops, "migrate_stopped_store", lambda _state: (_ for _ in ()).throw(failure))

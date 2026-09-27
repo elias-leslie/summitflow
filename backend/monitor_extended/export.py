@@ -1,4 +1,4 @@
-"""Redacted, paginated Flight Recorder replay from committed monitor history.
+"""Paginated Flight Recorder replay from committed monitor history.
 
 This intentionally reads the v1 SQLite tables through the reader's read-only,
 schema-checked connection. Public series/events/process queries cannot join
@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from monitor_observe.common import ObserveQueryError, base, error, limits, pack
+from monitor_observe.logs import _redact
 from monitor_reader.reader import MonitorReader, _decode_process_blob, _time_ns, _utc
 
 NSEC = 1_000_000_000
@@ -25,8 +26,7 @@ HOST_FIELDS = ("cpu_busy_pct", "memory_total_bytes", "memory_available_bytes",
                "disk_total_bytes", "disk_free_bytes", "cpu_some_avg10_pct",
                "memory_some_avg10_pct", "io_some_avg10_pct", "net_rx_bytes",
                "net_tx_bytes", "disk_read_bytes", "disk_write_bytes")
-PUBLIC_EVENTS = frozenset({"capture_start", "capture_stop", "service_state_change",
-                           "source_failure", "collector_restart", "retention_gap"})
+SECRET_KEYS = ("password", "passwd", "secret", "token", "api_key", "access_key", "private_key", "authorization")
 
 
 def _cursor(filters: str, position: tuple[int, int, int], newer_sample: int | None) -> str:
@@ -96,20 +96,35 @@ def _sample(row: sqlite3.Row) -> dict[str, Any]:
             "capture_active": row["mode"] == "detail", "source_error_count": len(json.loads(row["errors_json"]))}
 
 
+def _safe_detail(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key)[:128]: ("[REDACTED CREDENTIAL]" if any(secret in str(key).lower() for secret in SECRET_KEYS)
+                                 else _safe_detail(entry)) for key, entry in value.items()}
+    if isinstance(value, list):
+        return [_safe_detail(entry) for entry in value[:32]]
+    if isinstance(value, str):
+        return _redact(value, 2048)
+    return value if value is None or type(value) in (bool, int, float) else str(value)[:160]
+
+
 def _event(row: sqlite3.Row) -> dict[str, Any]:
-    kind = row["kind"] if row["kind"] in PUBLIC_EVENTS else "redacted"
+    kind = _redact(str(row["kind"]), 128)
     severity = row["severity"] if row["severity"] in {"info", "warning", "error", "critical"} else "unknown"
+    try:
+        details = _safe_detail(json.loads(row["details_json"]))
+    except (ValueError, TypeError):
+        details = None
     return {"sampled_at": _utc(row["sampled_at_ns"]), "freshness": "historical",
             "source": "sqlite", "provider": "collector", "mode": None, "unit": None,
             "availability": "ok", "type": "event", "kind": kind, "severity": severity,
-            "entity": "[REDACTED]" if row["entity"] else None,
-            "details": "[REDACTED]"}
+            "entity": _redact(str(row["entity"]), 256) if row["entity"] else None,
+            "details": details}
 
 
 def export_capture(reader: MonitorReader, since: str | int | datetime,
                    until: str | int | datetime, *, limit: int = 10,
                    max_bytes: int = 4096, cursor: str | None = None) -> dict[str, Any]:
-    """Return a redacted replay page; no file is written and no raw log/argv is read.
+    """Return a replay page; no file is written and no raw log/argv is read.
 
     Sample and event rows share one descending cursor. At most `limit+1` rows
     of each type are read, with a 24-hour window and 64 KiB wire ceiling.
@@ -124,7 +139,7 @@ def export_capture(reader: MonitorReader, since: str | int | datetime,
         raise ObserveQueryError("export window must be positive and at most 24 hours")
     digest = hashlib.sha256(f"export:1:{start}:{end}".encode()).hexdigest()[:24]
     before = _position(cursor, digest)
-    payload = base("capture_export", {"since": _utc(start), "until": _utc(end), "redacted": True})
+    payload = base("capture_export", {"since": _utc(start), "until": _utc(end)})
 
     def rows(table: str, fields: str, category: int) -> list[sqlite3.Row]:
         condition = "sampled_at_ns>=? AND sampled_at_ns<?"
@@ -141,7 +156,7 @@ def export_capture(reader: MonitorReader, since: str | int | datetime,
 
     with reader._connect() as conn:
         samples = rows("samples", "mode,boot_id,host_json,process_blob,processes_seen,processes_permission_denied,errors_json", 0)
-        events = rows("events", "kind,severity,entity", 1)
+        events = rows("events", "kind,severity,entity,details_json", 1)
     combined = [(row["sampled_at_ns"], 0, row["id"], row) for row in samples]
     combined += [(row["sampled_at_ns"], 1, row["id"], row) for row in events]
     combined.sort(key=lambda entry: entry[:3], reverse=True)
@@ -162,9 +177,8 @@ def export_capture(reader: MonitorReader, since: str | int | datetime,
                            "from": _utc(start), "until": _utc(end),
                            "samples_in_page": sum(entry[1] == 0 for entry in combined[:limit]),
                            "events_in_page": sum(entry[1] == 1 for entry in combined[:limit]),
-                           "gaps_in_page": gaps, "redacted": True,
-            "processes": "top_three_rss_redacted_per_sample",
-                           "details": "redacted"}
+                           "gaps_in_page": gaps,
+                           "processes": "top_three_rss_per_sample"}
     if not candidates:
         payload["errors"].append(error("not_collected", "sqlite"))
     return pack(payload, candidates, limit=limit, max_bytes=max_bytes,

@@ -9,14 +9,19 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
-from monitor_control import MonitorControlError, control_request, enrich_status, monitor_state_dir
-from monitor_extended import export_capture, query_disk_space, run_benchmark
+from monitor_control import (
+    MonitorControlError,
+    control_request,
+    enrich_status,
+    monitor_state_dir,
+    observe_request,
+)
+from monitor_extended import export_capture, run_benchmark
 from monitor_observe import (
     ObserveQueryError,
     query_apps,
-    query_connections,
     query_drivers,
-    query_logs,
+    query_log_services,
     query_sensors,
     query_startup,
     query_system_info,
@@ -101,6 +106,13 @@ def _observe(query: Any, **kwargs: Any) -> dict[str, Any]:
         return query(**kwargs)
     except ObserveQueryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _privileged(source: str, *, limit: int, max_bytes: int, **params: Any) -> dict[str, Any]:
+    try:
+        return observe_request(source, params, limit=limit, max_bytes=max_bytes)
+    except MonitorControlError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 def _export(**kwargs: Any) -> dict[str, Any]:
@@ -228,7 +240,7 @@ def capture_end(_owner: Owner, response: Response, http_request: Request,
 
 @router.get("/logs")
 def logs(
-    _owner: Owner, response: Response, service: str,
+    _owner: Owner, response: Response, service: str | None = None, scope: str = "user",
     since: str | None = None, until: str | None = None, cursor: str | None = None,
     priority: Annotated[int | None, Query(ge=0, le=7)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 10,
@@ -237,8 +249,18 @@ def logs(
     _private(response)
     if cursor and (since is None or until is None):
         raise HTTPException(status_code=400, detail="Cursor pages require explicit since and until")
-    return _observe(query_logs, service=service, since=since, until=until,
+    return _bounded(_privileged, source="logs", service=service, scope=scope, since=since, until=until,
                     cursor=cursor, priority=priority, limit=limit, max_bytes=max_bytes)
+
+
+@router.get("/log-services")
+def log_services(_owner: Owner, response: Response, scope: str = "user",
+                 cursor: str | None = None,
+                 limit: Annotated[int, Query(ge=1, le=100)] = 100,
+                 max_bytes: Annotated[int, Query(ge=512, le=65536)] = 65536) -> dict[str, Any]:
+    _private(response)
+    return _bounded(_observe, query=query_log_services, scope=scope, cursor=cursor,
+                    limit=limit, max_bytes=max_bytes)
 
 
 @router.get("/sensors")
@@ -252,11 +274,21 @@ def sensors(_owner: Owner, response: Response,
 @router.get("/connections")
 def connections(_owner: Owner, response: Response,
                 limit: Annotated[int, Query(ge=1, le=100)] = 10,
-                show_addresses: bool = False, include_process: bool = False,
+                cursor: str | None = None,
+                show_addresses: bool = True, include_process: bool = True,
                 max_bytes: Annotated[int, Query(ge=512, le=65536)] = 4096) -> dict[str, Any]:
     _private(response)
-    return _observe(query_connections, limit=limit, max_bytes=max_bytes,
-                    include_addresses=show_addresses, include_process=include_process)
+    return _bounded(_privileged, source="connections", limit=limit, max_bytes=max_bytes,
+                    cursor=cursor, include_addresses=True, include_process=True)
+
+
+@router.get("/mounts")
+def mounts(_owner: Owner, response: Response,
+           at: str | None = None,
+           cursor: str | None = None,
+           max_bytes: Annotated[int, Query(ge=512, le=65536)] = 65536) -> dict[str, Any]:
+    _private(response)
+    return _read("mounts", at=at, cursor=cursor, max_bytes=max_bytes)
 
 
 @router.get("/system-info")
@@ -307,7 +339,7 @@ def disk_space(_owner: Owner, response: Response, path: str,
                limit: Annotated[int, Query(ge=1, le=100)] = 10,
                max_bytes: Annotated[int, Query(ge=512, le=65536)] = 4096) -> dict[str, Any]:
     _private(response)
-    return _bounded(_observe, query=query_disk_space, path=path, max_entries=max_entries,
+    return _bounded(_privileged, source="disk_space", path=path, max_entries=max_entries,
                     max_depth=max_depth, timeout_seconds=timeout_seconds,
                     limit=limit, max_bytes=max_bytes)
 

@@ -99,8 +99,10 @@ def test_monitor_maintenance_is_transient_service_unavailable(monkeypatch) -> No
     "/api/monitor/v1/processes",
     "/api/monitor/v1/events",
     "/api/monitor/v1/logs?service=backend",
+    "/api/monitor/v1/log-services",
     "/api/monitor/v1/sensors",
     "/api/monitor/v1/connections",
+    "/api/monitor/v1/mounts",
     "/api/monitor/v1/system-info",
     "/api/monitor/v1/users",
     "/api/monitor/v1/startup",
@@ -117,8 +119,10 @@ def test_all_diagnostic_routes_reject_viewers(path: str) -> None:
 
 def test_extended_diagnostics_owner_and_same_origin(monkeypatch) -> None:
     observe = Mock(return_value={"schema": 1, "items": []})
+    privileged = Mock(return_value={"schema": 1, "items": []})
     replay = Mock(return_value={"schema": 1, "items": []})
     monkeypatch.setattr(monitor, "_observe", observe)
+    monkeypatch.setattr(monitor, "_privileged", privileged)
     monkeypatch.setattr(monitor, "_export", replay)
     with _client("owner") as client:
         disk = client.get("/api/monitor/v1/disk-space?path=/home/example")
@@ -130,8 +134,34 @@ def test_extended_diagnostics_owner_and_same_origin(monkeypatch) -> None:
     assert disk.status_code == export.status_code == benchmark.status_code == 200
     assert denied.status_code == 403
     assert all(response.headers["cache-control"] == "no-store" for response in (disk, export, benchmark))
-    assert observe.call_count == 2
+    assert observe.call_count == 1
+    privileged.assert_called_once_with(source="disk_space", path="/home/example", max_entries=1024,
+                                       max_depth=6, timeout_seconds=2.0, limit=10, max_bytes=4096)
     assert replay.call_count == 1
+
+
+def test_privileged_diagnostics_use_collector_and_show_connection_details(monkeypatch) -> None:
+    request = Mock(return_value={"schema": 1, "items": []})
+    monkeypatch.setattr(monitor, "observe_request", request)
+    with _client("owner") as client:
+        logs = client.get("/api/monitor/v1/logs?scope=system&service=sshd.service")
+        connections = client.get("/api/monitor/v1/connections?cursor=page2&show_addresses=false&include_process=false")
+    assert logs.status_code == connections.status_code == 200
+    assert request.call_args_list[0].args == ("logs", {"service": "sshd.service", "scope": "system",
+                                                       "since": None, "until": None, "cursor": None,
+                                                       "priority": None})
+    assert request.call_args_list[1].args == ("connections", {"cursor": "page2",
+                                                              "include_addresses": True,
+                                                              "include_process": True})
+
+
+def test_mount_page_reads_committed_history(monkeypatch) -> None:
+    read = Mock(return_value={"schema": 1, "items": [], "next_cursor": None})
+    monkeypatch.setattr(monitor, "_read", read)
+    with _client("owner") as client:
+        response = client.get("/api/monitor/v1/mounts?cursor=page2")
+    assert response.status_code == 200
+    read.assert_called_once_with("mounts", at=None, cursor="page2", max_bytes=65536)
 
 
 def test_apps_provider_and_cursor_reach_owner_query(monkeypatch) -> None:

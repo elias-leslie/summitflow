@@ -1,4 +1,4 @@
-"""Cancellable, metadata-only disk attribution beneath fixed owner roots.
+"""Cancellable, metadata-only disk attribution within mounted filesystems.
 
 The walk is intrinsically unbounded on a general filesystem, so entry count,
 depth and wall time are independent hard caps. Reported bytes are observed
@@ -6,7 +6,6 @@ file sizes, not allocated blocks or a complete filesystem usage figure.
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 import stat
@@ -16,72 +15,47 @@ from pathlib import Path
 
 from monitor_observe.common import ObserveQueryError, availability, base, error, item, limits, pack
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MAX_ENTRIES = 10_000
 MAX_DEPTH = 12
 MAX_SECONDS = 5.0
-_SENSITIVE = re.compile(r"(?i)(secret|credential|password|passwd|token|api[_-]?key|private[_-]?key|\.pem$|\.env(?:\.|$)|(?:^|[._-])(?:id_rsa|id_ed25519|oauth|auth_key)(?:[._-]|$))")
 
 
-def _registered(path: Path) -> bool:
-    """Only fixed/configured roots with the checked-in SummitFlow identity qualify."""
-    if not path.is_absolute() or ".." in path.parts:
-        return False
-    current = Path(path.anchor)
-    for part in path.parts[1:]:
-        current /= part
-        try:
-            if current.is_symlink():
-                return False
-        except OSError:
-            return False
-    identity = path / "project.identity.json"
+def _mount_roots() -> tuple[Path, ...]:
+    """Read kernel mountpoints, longest first, without trusting request paths."""
+    roots = {Path("/")}
     try:
-        descriptor = os.open(identity, os.O_RDONLY | os.O_NOFOLLOW)
-        try:
-            if os.fstat(descriptor).st_size > 64 * 1024:
-                return False
-            with os.fdopen(descriptor, "rb", closefd=False) as stream:
-                data = json.loads(stream.read(64 * 1024 + 1))
-        finally:
-            os.close(descriptor)
-        return data.get("project", {}).get("id") == "summitflow"
-    except (OSError, ValueError, TypeError, AttributeError):
-        return False
-
-
-def _roots() -> tuple[tuple[str, Path], ...]:
-    # The deployment config root comes from the managed service environment,
-    # never from a query argument. Verify identity before accepting it.
-    roots = [("home", Path.home())]
-    if _registered(PROJECT_ROOT):
-        roots.append(("project", PROJECT_ROOT))
-    configured = os.environ.get("SUMMITFLOW_HOST_CONFIG_ROOT")
-    if configured:
-        candidate = Path(configured)
-        if candidate != PROJECT_ROOT and _registered(candidate):
-            roots.append(("project", candidate))
-    return tuple(roots)
-
-
-def _safe_name(name: str) -> bool:
-    return bool(name) and not name.startswith(".") and not _SENSITIVE.search(name)
+        with Path("/proc/self/mountinfo").open(encoding="utf-8") as stream:
+            for line in stream:
+                fields = line.split(" - ", 1)[0].split()
+                if len(fields) < 5:
+                    continue
+                mountpoint = re.sub(r"\\([0-7]{3})", lambda match: chr(int(match[1], 8)), fields[4])
+                path = Path(mountpoint)
+                if path.is_absolute():
+                    roots.add(path)
+    except OSError:
+        pass
+    return tuple(sorted(roots, key=lambda path: (-len(path.parts), str(path))))
 
 
 def _scope(path: str | Path) -> tuple[str, Path, tuple[str, ...]]:
-    if not isinstance(path, (str, Path)) or not str(path):
-        raise ObserveQueryError("path must be below the owner home or registered project root")
-    candidate = Path(path).expanduser().absolute()
-    if ".." in Path(path).parts:
+    if not isinstance(path, (str, Path)) or not str(path) or not Path(path).is_absolute():
+        raise ObserveQueryError("path must be an absolute path on a mounted filesystem")
+    candidate = Path(path)
+    if ".." in candidate.parts:
         raise ObserveQueryError("parent traversal is not allowed")
-    for label, root in _roots():
+    current = Path("/")
+    for part in candidate.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            raise ObserveQueryError("symlink path is not allowed")
+    for root in _mount_roots():
         try:
             parts = candidate.relative_to(root.absolute()).parts
         except ValueError:
             continue
-        if all(_safe_name(part) for part in parts):
-            return label, root, parts
-    raise ObserveQueryError("path must be below the owner home or registered project root")
+        return "mount", root, parts
+    raise ObserveQueryError("path is not on a mounted filesystem")
 
 
 def query_disk_space(path: str | Path, *, max_entries: int = 1024,
@@ -136,9 +110,6 @@ def query_disk_space(path: str | Path, *, max_entries: int = 1024,
                 for entry in stream:
                     if expired():
                         break
-                    if not _safe_name(entry.name):
-                        skipped += 1
-                        continue
                     scanned += 1
                     try:
                         info = entry.stat(follow_symlinks=False)
@@ -208,7 +179,7 @@ def query_disk_space(path: str | Path, *, max_entries: int = 1024,
     entries.sort(key=lambda row: (-row[1], row[0]))
     complete = stop is None and denied == 0 and skipped == 0
     payload["coverage"] = {"availability": "ok" if complete else "partial",
-                           "scope": label, "entries_scanned": scanned, "entries_hidden_or_skipped": skipped,
+                           "scope": label, "mountpoint": str(root), "entries_scanned": scanned, "entries_hidden_or_skipped": skipped,
                            "entries_permission_denied": denied,
                            "stop_reason": stop or ("permission_denied" if denied else "excluded_entries" if skipped else None),
                            "bytes_observed": sum(size for _, size, _ in entries),

@@ -261,11 +261,14 @@ class MonitorReader:
         """Prevent new SQLite readers during explicit page-size maintenance."""
         fd: int | None = None
         try:
-            fd = os.open(
-                self.maintenance_path,
-                os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW,
-                0o600,
-            )
+            try:
+                fd = os.open(self.maintenance_path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+            except FileNotFoundError:
+                # Legacy owner-writable stores created this lock on first read.
+                # A protected system store is not writable by the reader and
+                # therefore must already provide its root-owned lock file.
+                fd = os.open(self.maintenance_path,
+                             os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
             fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
         except OSError as exc:
             if fd is not None:
@@ -355,6 +358,7 @@ class MonitorReader:
         # Sparse device detail has a dedicated paged query; preserve status's
         # small default budget even on multi-GPU hosts.
         host.pop("gpu", None)
+        host.pop("mounts", None)
         services = _decode_json(row["services_json"], dict)
         errors = _decode_json(row["errors_json"], list)
         cadence = 5
@@ -372,6 +376,42 @@ class MonitorReader:
                 "host": host, "services": services, "boot_id": row["boot_id"],
                 "host_id": meta.get("host_id"), "source_errors": errors}
         return self._pack(base, [(item, (row["sampled_at_ns"], row["id"]))], {}, 1, max_bytes)
+
+    def mounts(self, *, at: str | int | datetime | None = None, cursor: str | None = None, limit: int = 100,
+               max_bytes: int = MAX_BYTES) -> dict[str, Any]:
+        """Page filesystem mounts from one committed collector observation."""
+        max_bytes, limit = _budget(max_bytes), _limit(limit)
+        now_ns = int(datetime.now(UTC).timestamp() * NSEC)
+        at_ns = _time_ns(at, now_ns)
+        base = self._base({"kind": "mounts", "at": _utc(at_ns) if at is not None else None}, now_ns)
+        with self._connect() as conn:
+            row = conn.execute("SELECT sampled_at_ns,host_json FROM samples WHERE sampled_at_ns<=? "
+                               "ORDER BY sampled_at_ns DESC,id DESC LIMIT 1", (at_ns,)).fetchone()
+        if row is None:
+            base["coverage"] = {"availability": "not_collected"}
+            return base
+        host = _decode_json(row["host_json"], dict)
+        mounts = host.get("mounts")
+        if not isinstance(mounts, list):
+            base["coverage"] = {"availability": "not_collected"}
+            return base
+        filters = {"kind": "mounts", "at": at_ns if at is not None else None}
+        offset = _cursor_position(cursor, filters, int) or 0
+        coverage = host.get("mount_coverage")
+        mount_coverage: dict[str, Any] = dict(coverage) if isinstance(coverage, dict) else {"availability": "partial"}
+        base["coverage"] = mount_coverage
+        base["coverage"]["sampled_at"] = _utc(row["sampled_at_ns"])
+        base["coverage"]["live_pages_may_shift"] = at is None
+        candidates = []
+        for index, mount in enumerate(mounts[offset:offset + limit + 1], start=offset):
+            if not isinstance(mount, dict):
+                continue
+            item = {"sampled_at": _utc(row["sampled_at_ns"]), "freshness": "historical",
+                    "source": "mountinfo", "provider": "collector", "mode": "baseline",
+                    "unit": "bytes", "availability": "ok", "value": mount}
+            candidates.append((item, index + 1))
+        return self._pack(base, candidates, filters, limit, max_bytes,
+                          more=len(mounts) > offset + limit)
 
     def series(self, metric: str, *, entity: str = "host", boot_id: str | None = None,
                since: str | int | datetime | None = None,

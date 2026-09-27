@@ -9,13 +9,14 @@ from .inventory import (
     query_system_info,
     query_users,
 )
-from .logs import query_logs
+from .logs import query_log_services, query_logs
 
 __all__ = [
     "ObserveQueryError",
     "query_apps",
     "query_connections",
     "query_drivers",
+    "query_log_services",
     "query_logs",
     "query_sensors",
     "query_startup",

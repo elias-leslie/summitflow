@@ -57,20 +57,45 @@ fn sqlite_error(message: &str) -> rusqlite::Error {
 
 impl Store {
     pub fn open(state: &Path, host_id: &str, boot_id: &str) -> rusqlite::Result<Self> {
+        Self::open_with_owner(state, host_id, boot_id, None)
+    }
+
+    pub fn open_with_owner(
+        state: &Path,
+        host_id: &str,
+        boot_id: &str,
+        owner_gid: Option<u32>,
+    ) -> rusqlite::Result<Self> {
+        let shared = unsafe { libc::geteuid() } == 0 && owner_gid.is_some();
+        let dir_mode = if shared { 0o750 } else { 0o700 };
+        let file_mode = if shared { 0o640 } else { 0o600 };
         fs::create_dir_all(state).map_err(|e| sqlite_error(&e.to_string()))?;
-        fs::set_permissions(state, fs::Permissions::from_mode(0o700))
+        if let Some(gid) = owner_gid.filter(|_| shared) {
+            let c = std::ffi::CString::new(state.as_os_str().as_encoded_bytes())
+                .map_err(|e| sqlite_error(&e.to_string()))?;
+            if unsafe { libc::chown(c.as_ptr(), 0, gid) } != 0 {
+                return Err(sqlite_error(&format!(
+                    "state ownership failed: {}",
+                    std::io::Error::last_os_error()
+                )));
+            }
+        }
+        fs::set_permissions(state, fs::Permissions::from_mode(dir_mode))
             .map_err(|e| sqlite_error(&e.to_string()))?;
         let maintenance_lock = OpenOptions::new()
             .create(true)
             .read(true)
             .write(true)
-            .mode(0o600)
+            .mode(file_mode)
             .custom_flags(libc::O_NOFOLLOW)
             .open(state.join("maintenance.lock"))
             .map_err(|e| sqlite_error(&format!("maintenance lock open failed: {e}")))?;
         maintenance_lock
-            .set_permissions(fs::Permissions::from_mode(0o600))
+            .set_permissions(fs::Permissions::from_mode(file_mode))
             .map_err(|e| sqlite_error(&format!("maintenance lock permissions failed: {e}")))?;
+        if shared {
+            set_owner_group(state.join("maintenance.lock").as_path(), owner_gid.unwrap())?;
+        }
         if unsafe { libc::flock(maintenance_lock.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } != 0
         {
             return Err(sqlite_error(&format!(
@@ -97,8 +122,11 @@ impl Store {
         for suffix in ["", "-wal", "-shm"] {
             let p = PathBuf::from(format!("{}{}", path.display(), suffix));
             if p.exists() {
-                fs::set_permissions(p, fs::Permissions::from_mode(0o600))
+                fs::set_permissions(&p, fs::Permissions::from_mode(file_mode))
                     .map_err(|e| sqlite_error(&e.to_string()))?;
+                if shared {
+                    set_owner_group(&p, owner_gid.unwrap())?;
+                }
             }
         }
         if first {
@@ -139,8 +167,11 @@ impl Store {
         for suffix in ["-wal", "-shm"] {
             let p = PathBuf::from(format!("{}{}", path.display(), suffix));
             if p.exists() {
-                fs::set_permissions(p, fs::Permissions::from_mode(0o600))
+                fs::set_permissions(&p, fs::Permissions::from_mode(file_mode))
                     .map_err(|e| sqlite_error(&e.to_string()))?;
+                if shared {
+                    set_owner_group(&p, owner_gid.unwrap())?;
+                }
             }
         }
         let detail_bytes = conn.query_row(
@@ -514,6 +545,18 @@ impl Store {
         let stat = unsafe { stat.assume_init() };
         stat.f_bavail.saturating_mul(stat.f_frsize)
     }
+}
+
+fn set_owner_group(path: &Path, gid: u32) -> rusqlite::Result<()> {
+    let c = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())
+        .map_err(|e| sqlite_error(&e.to_string()))?;
+    if unsafe { libc::chown(c.as_ptr(), 0, gid) } != 0 {
+        return Err(sqlite_error(&format!(
+            "file ownership failed: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
+    Ok(())
 }
 
 fn rebuild_rollup(tx: &rusqlite::Transaction<'_>, bucket: i64) -> rusqlite::Result<()> {

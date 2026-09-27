@@ -17,7 +17,7 @@ class MonitorControlError(RuntimeError):
 
 def monitor_state_dir() -> Path:
     override = os.environ.get("SUMMITFLOW_MONITOR_STATE_DIR")
-    return Path(override) if override else Path.home() / ".local/state/summitflow/monitor"
+    return Path(override) if override else Path("/var/lib/summitflow/monitor")
 
 
 def control_request(command: str, *, lease_id: str | None = None,
@@ -53,6 +53,49 @@ def control_request(command: str, *, lease_id: str | None = None,
     if not isinstance(response, dict) or not isinstance(response.get("ok"), bool):
         raise MonitorControlError("invalid collector control response")
     return response
+
+
+def observe_request(source: str, params: dict[str, Any], *, limit: int = 10,
+                    max_bytes: int = 4096, state_dir: Path | None = None) -> dict[str, Any]:
+    """Ask the collector's fixed privileged providers for one bounded page."""
+    if source not in {"logs", "connections", "disk_space"} or not isinstance(params, dict):
+        raise MonitorControlError("unsupported observation")
+    if type(limit) is not int or not 1 <= limit <= 100 or type(max_bytes) is not int or not 512 <= max_bytes <= 65536:
+        raise MonitorControlError("invalid observation bounds")
+    request = {"schema": 1, "command": "observe", "source": source,
+               "params": params, "limit": limit, "max_bytes": max_bytes}
+    wire = (json.dumps(request, separators=(",", ":")) + "\n").encode()
+    if len(wire) > 4096:
+        raise MonitorControlError("observation request too large")
+    path = (state_dir or monitor_state_dir()) / "control.sock"
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(8.0)
+            connection.connect(str(path))
+            connection.sendall(wire)
+            with connection.makefile("rb") as stream:
+                raw = stream.readline(70 * 1024 + 1)
+    except (OSError, TimeoutError) as exc:
+        raise MonitorControlError("collector observation unavailable") from exc
+    if not raw or len(raw) > 70 * 1024 or not raw.endswith(b"\n"):
+        raise MonitorControlError("invalid collector observation response")
+    try:
+        response = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise MonitorControlError("invalid collector observation JSON") from exc
+    if not isinstance(response, dict) or response.get("schema") != 1 or type(response.get("ok")) is not bool:
+        raise MonitorControlError("invalid collector observation response")
+    if not response["ok"]:
+        code = response.get("error")
+        if code not in {"invalid_request", "invalid_source", "invalid_limits", "helper_unavailable",
+                        "helper_io_error", "helper_timeout", "helper_failed", "helper_output_too_large",
+                        "helper_invalid_json", "helper_invalid_result", "observe_busy"}:
+            code = "unavailable"
+        raise MonitorControlError(f"collector observation {code}")
+    result = response.get("result")
+    if not isinstance(result, dict) or result.get("schema") != 1 or not isinstance(result.get("items"), list):
+        raise MonitorControlError("invalid collector observation envelope")
+    return result
 
 
 def enrich_status(payload: dict[str, Any], max_bytes: int) -> dict[str, Any]:

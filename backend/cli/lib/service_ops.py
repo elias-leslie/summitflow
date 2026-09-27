@@ -30,7 +30,7 @@ from app.utils.env_files import project_env_files
 from app.utils.shared_paths import get_repo_root
 
 from ..details import display_path, emit_result_or_details, summary_hint, write_details
-from . import service_release
+from . import host_monitor_deploy, service_release
 from .monitor_store_migration import (
     MigrationResult,
     MonitorMigrationDeferred,
@@ -214,15 +214,25 @@ def system_systemctl(*args: str) -> subprocess.CompletedProcess[str]:
     return capture(["systemctl", *args])
 
 
+def _manager(service: str):
+    return system_systemctl if service == host_monitor_deploy.UNIT else systemctl
+
+
+def _service_command(service: str, *args: str) -> list[str]:
+    if service == host_monitor_deploy.UNIT:
+        return ["sudo", "-n", "/usr/bin/systemctl", *args, service]
+    return ["systemctl", "--user", *args, service]
+
+
 def service_state(service: str) -> str:
     if not service:
         return "missing"
-    result = systemctl("is-active", service)
+    result = _manager(service)("is-active", service)
     return (result.stdout or result.stderr).strip() or "unknown"
 
 
 def service_exists(service: str) -> bool:
-    return systemctl("cat", service).returncode == 0
+    return _manager(service)("cat", service).returncode == 0
 
 
 def _release_references_for_manager(
@@ -329,6 +339,8 @@ def sync_systemd_units(project: ProjectServices) -> int:
     durable_data_root = project.durable_data_root or project.root / "data"
     host_config_root = project.host_config_root or project.root
     for service in project.all_services:
+        if service == host_monitor_deploy.UNIT:
+            continue
         template = project.root / "scripts" / "systemd" / service
         if not template.exists():
             continue
@@ -398,7 +410,7 @@ def _kill_port(port: int) -> bool:
 
 
 def _systemctl_value(service: str, key: str) -> str:
-    return systemctl("show", service, "-p", key, "--value").stdout.strip()
+    return _manager(service)("show", service, "-p", key, "--value").stdout.strip()
 
 
 def _service_main_pid(service: str) -> int:
@@ -426,21 +438,32 @@ def _service_active_state(service: str) -> str:
     return _systemctl_value(service, "ActiveState") or "unknown"
 
 
-def _wait_service_inactive(service: str, *, timeout: float = 8.0) -> bool:
+def _wait_service_inactive(service: str, *, timeout: float = 8.0, manager=None) -> bool:
+    def state():
+        return (manager("show", service, "-p", "ActiveState", "--value").stdout.strip()
+                if manager is not None else _service_active_state(service))
+
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if _service_active_state(service) in {"inactive", "failed"}:
+        if state() in {"inactive", "failed"}:
             return True
         time.sleep(0.25)
-    return _service_active_state(service) in {"inactive", "failed"}
+    return state() in {"inactive", "failed"}
 
 
-def _wait_service_active(service: str, *, timeout: float = 8.0) -> bool:
+def _wait_service_active(service: str, *, timeout: float = 8.0, manager=None) -> bool:
+    def ready():
+        if manager is None:
+            return _service_active_state(service) == "active" and _service_main_pid(service) > 0
+        state = manager("show", service, "-p", "ActiveState", "--value").stdout.strip()
+        pid = manager("show", service, "-p", "MainPID", "--value").stdout.strip()
+        return state == "active" and pid.isdecimal() and int(pid) > 0
+
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if _service_active_state(service) == "active" and _service_main_pid(service) > 0:
+        if ready():
             time.sleep(0.25)
-            return _service_active_state(service) == "active" and _service_main_pid(service) > 0
+            return ready()
         time.sleep(0.25)
     return False
 
@@ -453,19 +476,19 @@ def restart_service(service: str, *, port: int = 0) -> int:
         return 1
     current_invocation = os.environ.get("INVOCATION_ID", "")
     if current_invocation:
-        unit_invocation = systemctl("show", service, "-p", "InvocationID", "--value").stdout.strip()
+        unit_invocation = _manager(service)("show", service, "-p", "InvocationID", "--value").stdout.strip()
         if unit_invocation == current_invocation:
             print(f"[service] skipping current unit {service}")
             return 0
     print(f"[service] restarting {service}")
     old_pid = _service_main_pid(service)
-    stop_result = run(["systemctl", "--user", "stop", service])
+    stop_result = run(_service_command(service, "stop"))
     if stop_result != 0 or not _wait_service_inactive(service):
         print(f"[service] {service} did not stop cleanly; killing unit")
-        run(["systemctl", "--user", "kill", "--kill-who=all", "-s", "SIGKILL", service])
+        run(_service_command(service, "kill", "--kill-who=all", "-s", "SIGKILL"))
         _wait_service_inactive(service, timeout=3.0)
     if old_pid and _pid_alive(old_pid):
-        capture(["kill", "-9", str(old_pid)])
+        capture((["sudo", "-n", "/usr/bin/kill"] if service == host_monitor_deploy.UNIT else ["kill"]) + ["-9", str(old_pid)])
         time.sleep(0.25)
     if port and not _kill_port(port):
         print(f"[service] {service} FAIL: port {port} still in use")
@@ -473,7 +496,7 @@ def restart_service(service: str, *, port: int = 0) -> int:
     if old_pid and _pid_alive(old_pid):
         print(f"[service] {service} FAIL: old PID {old_pid} still alive")
         return 1
-    result = run(["systemctl", "--user", "start", service])
+    result = run(_service_command(service, "start"))
     print(f"[service] {service} {'OK' if result == 0 else 'FAIL'}")
     return result
 
@@ -491,7 +514,7 @@ def start_services(project: ProjectServices) -> int:
         return 1
     for service in project.all_services:
         if service_exists(service):
-            errors += run(["systemctl", "--user", "start", service]) != 0
+            errors += run(_service_command(service, "start")) != 0
     return errors
 
 
@@ -499,7 +522,7 @@ def stop_services(project: ProjectServices) -> int:
     errors = 0
     for service in reversed(project.all_services):
         if service_exists(service):
-            errors += run(["systemctl", "--user", "stop", service]) != 0
+            errors += run(_service_command(service, "stop")) != 0
     return errors
 
 
@@ -622,7 +645,10 @@ def build_host_monitor(project: ProjectServices) -> int:
         print("[service] host monitor requires Cargo.toml and Cargo.lock in accepted source")
         return 1
     print("[service] building locked host monitor")
-    return run(["cargo", "build", "--locked", "--release"], cwd=source, quiet_success=True)
+    code = run(["cargo", "build", "--locked", "--release"], cwd=source, quiet_success=True)
+    if code == 0:
+        host_monitor_deploy.build_helper(project.root)
+    return code
 
 
 def sync_host_monitor_policy(project: ProjectServices) -> int:
@@ -636,9 +662,8 @@ def sync_host_monitor_policy(project: ProjectServices) -> int:
         MEMORY_CRIT_PERCENT,
     )
 
-    state_dir = Path.home() / ".local/state/summitflow/monitor"
-    state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    state_dir.chmod(0o700)
+    state_dir = project.root / "host-monitor/target/release"
+    state_dir.mkdir(parents=True, exist_ok=True)
     policy = {
         "schema": 1,
         "cpu_critical_pct": CPU_CRIT_PERCENT,
@@ -662,11 +687,57 @@ def sync_host_monitor_policy(project: ProjectServices) -> int:
 
 
 def enable_host_monitor(project: ProjectServices) -> int:
-    """Make the standalone default worker part of the user boot target."""
+    """Enable the installed collector in the system boot target."""
     service = "summitflow-host-monitor.service"
     if project.project_id != "summitflow" or service not in project.default_workers:
         return 0
-    return run(["systemctl", "--user", "enable", service])
+    return run(_service_command(service, "enable"))
+
+
+def has_host_monitor(project: ProjectServices) -> bool:
+    return project.project_id == "summitflow" and host_monitor_deploy.UNIT in project.default_workers
+
+
+def preflight_host_monitor(project: ProjectServices) -> int:
+    if not has_host_monitor(project):
+        return 0
+    if os.getuid() == 0:
+        print("[service] run rebuild as the owner; only collector installation uses sudo")
+        return 1
+    result = run(["sudo", "-n", "/usr/bin/true"], quiet_success=True)
+    if result:
+        print("[service] root collector installation requires available noninteractive sudo; no services changed")
+    return result
+
+
+def host_monitor_deployment(project: ProjectServices, transaction: str, action: str) -> int:
+    if not has_host_monitor(project):
+        return 0
+    script = project.root / "backend/cli/lib/host_monitor_deploy.py"
+    return run(["sudo", "-n", "/usr/bin/python3", "-I", str(script), action,
+                "--source", str(project.root), "--uid", str(os.getuid()),
+                "--gid", str(os.getgid()), "--transaction", transaction], quiet_success=True)
+
+
+def verify_host_monitor(project: ProjectServices) -> int:
+    if not has_host_monitor(project):
+        return 0
+    from monitor_control import control_request
+    from monitor_reader import MonitorReader
+
+    for _ in range(15):
+        try:
+            status = control_request("status", state_dir=host_monitor_deploy.STATE)
+            latest = status.get("latest") or {}
+            if (status.get("ok") and not status.get("writer_failure")
+                    and latest.get("sampled_at_ns", 0) > time.time_ns() - 30_000_000_000):
+                MonitorReader(host_monitor_deploy.STATE).status(max_bytes=4096)
+                return 0
+        except (OSError, ValueError, RuntimeError):
+            pass
+        time.sleep(1)
+    print("[service] collector control, freshness, or owner history access failed")
+    return 1
 
 
 def migrate_host_monitor_store(project: ProjectServices) -> MigrationResult:
@@ -674,6 +745,8 @@ def migrate_host_monitor_store(project: ProjectServices) -> MigrationResult:
     service = "summitflow-host-monitor.service"
     if project.project_id != "summitflow" or service not in project.default_workers:
         raise ServiceError("monitor store migration requires the SummitFlow host monitor")
+    if system_systemctl("cat", service).returncode == 0:
+        raise ServiceError("page-size conversion is a legacy user-store operation; system store is already managed")
     try:
         live_source = service_release.current_source_root("summitflow")
     except service_release.ReleaseError as exc:
@@ -698,20 +771,20 @@ def migrate_host_monitor_store(project: ProjectServices) -> MigrationResult:
     db = state_dir / "monitor.sqlite3"
     if not db.exists():
         return MigrationResult("absent")
-    if not service_exists(service):
+    if systemctl("cat", service).returncode != 0:
         raise ServiceError("host monitor service is not installed")
-    if run(["systemctl", "--user", "stop", service]) != 0 or not _wait_service_inactive(service):
+    if run(["systemctl", "--user", "stop", service]) != 0 or not _wait_service_inactive(service, manager=systemctl):
         raise ServiceError("host monitor did not stop cleanly; conversion refused")
     try:
         result = migrate_stopped_store(state_dir)
     except MonitorMigrationDeferred as exc:
-        if run(["systemctl", "--user", "start", service]) != 0 or not _wait_service_active(service):
+        if run(["systemctl", "--user", "start", service]) != 0 or not _wait_service_active(service, manager=systemctl):
             raise ServiceError(f"monitor migration deferred and collector restart failed: {exc}") from exc
         print(f"[service] monitor store migration deferred: {exc}")
         return MigrationResult("deferred")
     except MonitorMigrationFailed as exc:
         raise ServiceError(str(exc)) from exc
-    if run(["systemctl", "--user", "start", service]) != 0 or not _wait_service_active(service):
+    if run(["systemctl", "--user", "start", service]) != 0 or not _wait_service_active(service, manager=systemctl):
         if result.status == "converted_restart_pending" and result.receipt is not None:
             try:
                 retain_restart_interlock(state_dir, result.receipt)

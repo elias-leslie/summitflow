@@ -15,8 +15,9 @@ use std::{
     },
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::atomic::{AtomicBool, Ordering},
-    sync::mpsc::{self, Receiver, TryRecvError},
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    sync::mpsc::{self, Receiver, SyncSender, TryRecvError},
+    sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
@@ -28,6 +29,9 @@ const GPU_INTERVAL: Duration = Duration::from_secs(15);
 const GPU_IDLE_STATUS_INTERVAL: Duration = Duration::from_secs(60 * 60);
 const MAX_CONTROL_BYTES: u64 = 4096;
 const MAX_ACTIVE_LEASES: usize = 16;
+const OBSERVE_TIMEOUT: Duration = Duration::from_secs(7);
+const MAX_OBSERVE_BYTES: u64 = 64 * 1024;
+const MAX_OBSERVE_RESPONSE: usize = 70 * 1024;
 static STOP: AtomicBool = AtomicBool::new(false);
 extern "C" fn stop_signal(_: libc::c_int) {
     STOP.store(true, Ordering::Relaxed);
@@ -40,6 +44,9 @@ struct Config {
     samples: Option<u64>,
     interval: Duration,
     gpu_enabled: bool,
+    owner_uid: u32,
+    owner_gid: u32,
+    observe_helper: Option<PathBuf>,
 }
 impl Config {
     fn parse() -> Result<Self, String> {
@@ -55,6 +62,9 @@ impl Config {
         let mut policy = None;
         let mut samples = None;
         let mut interval_ms = 1000;
+        let mut owner_uid = unsafe { libc::geteuid() };
+        let mut owner_gid = unsafe { libc::getegid() };
+        let mut observe_helper = None;
         let mut args = env::args().skip(1);
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -85,9 +95,28 @@ impl Config {
                         .parse()
                         .map_err(|_| "invalid interval-ms")?
                 }
+                "--owner-uid" => {
+                    owner_uid = args
+                        .next()
+                        .ok_or("--owner-uid needs a number")?
+                        .parse()
+                        .map_err(|_| "invalid owner-uid")?
+                }
+                "--owner-gid" => {
+                    owner_gid = args
+                        .next()
+                        .ok_or("--owner-gid needs a number")?
+                        .parse()
+                        .map_err(|_| "invalid owner-gid")?
+                }
+                "--observe-helper" => {
+                    observe_helper = Some(PathBuf::from(
+                        args.next().ok_or("--observe-helper needs a path")?,
+                    ))
+                }
                 "--help" | "-h" => {
                     println!(
-                        "host-monitor [--state-dir DIR] [--project-identity FILE] [--policy-snapshot FILE] [--once | --samples N] [--interval-ms N]"
+                        "host-monitor [--state-dir DIR] [--project-identity FILE] [--policy-snapshot FILE] [--owner-uid UID] [--owner-gid GID] [--observe-helper ABSOLUTE_FILE] [--once | --samples N] [--interval-ms N]"
                     );
                     std::process::exit(0)
                 }
@@ -96,6 +125,17 @@ impl Config {
         }
         if samples == Some(0) || interval_ms == 0 {
             return Err("samples and interval must be positive".into());
+        }
+        if observe_helper
+            .as_ref()
+            .is_some_and(|path| !path.is_absolute() || !path.is_file())
+        {
+            return Err("--observe-helper must be an existing absolute file".into());
+        }
+        if unsafe { libc::geteuid() } != 0
+            && (owner_uid != unsafe { libc::geteuid() } || owner_gid != unsafe { libc::getegid() })
+        {
+            return Err("unprivileged collector cannot select another owner".into());
         }
         let policy = policy.unwrap_or_else(|| state.join("policy.json"));
         let gpu_enabled = match env::var("SUMMITFLOW_MONITOR_GPU") {
@@ -114,6 +154,9 @@ impl Config {
             samples,
             interval: Duration::from_millis(interval_ms),
             gpu_enabled,
+            owner_uid,
+            owner_gid,
+            observe_helper,
         })
     }
 }
@@ -286,12 +329,23 @@ fn command_timeout(mut command: Command, timeout: Duration) -> io::Result<String
 }
 fn services(
     names: &[String],
+    owner_uid: u32,
+    owner_gid: u32,
     procs: &[Proc],
     procs_at: Option<i64>,
     procs_mono_at: Option<i64>,
     errors: &mut Vec<Value>,
 ) -> Value {
     let mut cmd = Command::new("systemctl");
+    if unsafe { libc::geteuid() } == 0 && owner_uid != 0 {
+        use std::os::unix::process::CommandExt;
+        cmd.uid(owner_uid).gid(owner_gid);
+        cmd.env("XDG_RUNTIME_DIR", format!("/run/user/{owner_uid}"));
+        cmd.env(
+            "DBUS_SESSION_BUS_ADDRESS",
+            format!("unix:path=/run/user/{owner_uid}/bus"),
+        );
+    }
     cmd.args([
         "--user",
         "show",
@@ -303,7 +357,11 @@ fn services(
         Ok(s) => s,
         Err(e) => {
             errors.push(json!({"source":"systemctl --user show","code":if e.kind()==io::ErrorKind::TimedOut {"timeout"}else{"error"}}));
-            return Value::Object(names.iter().map(|name|(name.clone(),json!({"active_state":null,"sub_state":null,"metrics":null,"availability":if e.kind()==io::ErrorKind::TimedOut {"timeout"}else{"error"}}))).collect());
+            let mut unavailable: serde_json::Map<String, Value> = names.iter().map(|name|(name.clone(),json!({"active_state":null,"sub_state":null,"metrics":null,"availability":if e.kind()==io::ErrorKind::TimedOut {"timeout"}else{"error"}}))).collect();
+            if unsafe { libc::geteuid() } == 0 {
+                add_system_monitor(&mut unavailable, errors);
+            }
+            return Value::Object(unavailable);
         }
     };
     let mut out = serde_json::Map::new();
@@ -342,7 +400,33 @@ fn services(
         out.entry(name.clone())
             .or_insert_with(|| json!({"active_state":null,"sub_state":null,"metrics":null}));
     }
+    if unsafe { libc::geteuid() } == 0 {
+        add_system_monitor(&mut out, errors);
+    }
     Value::Object(out)
+}
+
+fn add_system_monitor(out: &mut serde_json::Map<String, Value>, errors: &mut Vec<Value>) {
+    let mut system = Command::new("systemctl");
+    system.args([
+        "--system",
+        "show",
+        "--no-pager",
+        "--property=Id,ActiveState,SubState,ControlGroup,MainPID",
+        "summitflow-host-monitor.service",
+    ]);
+    match command_timeout(system, Duration::from_millis(500)) {
+        Ok(output) => {
+            let props: HashMap<_, _> = output.lines().filter_map(|line| line.split_once('=')).collect();
+            let mut metrics = Value::Null;
+            if let Some(group) = props.get("ControlGroup").filter(|g| g.starts_with('/') && !g.contains("..")) {
+                let path = Path::new("/sys/fs/cgroup").join(group.trim_start_matches('/'));
+                if path.exists() { metrics = provider::service(&path.to_string_lossy(), errors); }
+            }
+            out.insert("summitflow-host-monitor.service".into(), json!({"active_state":props.get("ActiveState"),"sub_state":props.get("SubState"),"main_pid":props.get("MainPID").and_then(|p|p.parse::<u32>().ok()),"scope":"system","metrics":metrics}));
+        }
+        Err(e) => errors.push(json!({"source":"systemctl --system show","code":if e.kind()==io::ErrorKind::TimedOut {"timeout"} else {"error"}})),
+    }
 }
 
 fn main_pid_fallback(p: &Proc, at: Option<i64>, mono: Option<i64>) -> Value {
@@ -456,48 +540,6 @@ impl Runtime {
             }
         }
     }
-    fn control(&mut self, listener: &UnixListener, bytes: u64) {
-        for _ in 0..8 {
-            let Ok((stream, _)) = listener.accept() else {
-                break;
-            };
-            let _ = self.request(stream, bytes);
-        }
-    }
-    fn request(&mut self, mut stream: UnixStream, bytes: u64) -> io::Result<()> {
-        stream.set_read_timeout(Some(Duration::from_millis(200)))?;
-        stream.set_write_timeout(Some(Duration::from_millis(200)))?;
-        let uid = unsafe { libc::geteuid() };
-        let mut cred = std::mem::MaybeUninit::<libc::ucred>::uninit();
-        let mut size = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
-        if unsafe {
-            libc::getsockopt(
-                std::os::fd::AsRawFd::as_raw_fd(&stream),
-                libc::SOL_SOCKET,
-                libc::SO_PEERCRED,
-                cred.as_mut_ptr().cast(),
-                &mut size,
-            )
-        } != 0
-            || unsafe { cred.assume_init() }.uid != uid
-        {
-            return Ok(());
-        }
-        let mut line = String::new();
-        let n = BufReader::new(&stream)
-            .take(MAX_CONTROL_BYTES + 1)
-            .read_line(&mut line)?;
-        let result = if n as u64 > MAX_CONTROL_BYTES {
-            json!({"ok":false,"error":"request_too_large"})
-        } else {
-            match serde_json::from_str::<Value>(&line) {
-                Ok(v) => self.dispatch(&v, bytes),
-                Err(_) => json!({"ok":false,"error":"invalid_json"}),
-            }
-        };
-        writeln!(stream, "{result}")?;
-        Ok(())
-    }
     fn dispatch(&mut self, v: &Value, bytes: u64) -> Value {
         let now = Instant::now();
         self.detail(now);
@@ -554,15 +596,275 @@ impl Runtime {
     }
 }
 
-fn socket(state: &Path) -> io::Result<UnixListener> {
+fn socket(state: &Path, shared: bool, owner_gid: u32) -> io::Result<UnixListener> {
     let path = state.join("control.sock");
     if path.exists() {
         fs::remove_file(&path)?;
     }
     let listener = UnixListener::bind(&path)?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+    if shared {
+        set_group(&path, owner_gid)?;
+    }
+    fs::set_permissions(
+        &path,
+        fs::Permissions::from_mode(if shared { 0o660 } else { 0o600 }),
+    )?;
     listener.set_nonblocking(true)?;
     Ok(listener)
+}
+
+fn set_group(path: &Path, gid: u32) -> io::Result<()> {
+    let c = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())?;
+    if unsafe { libc::chown(c.as_ptr(), 0, gid) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+type Mutation = (Value, mpsc::Sender<Value>);
+
+fn peer_is_owner(stream: &UnixStream, owner_uid: u32) -> bool {
+    let mut cred = std::mem::MaybeUninit::<libc::ucred>::uninit();
+    let mut size = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    let success = unsafe {
+        libc::getsockopt(
+            std::os::fd::AsRawFd::as_raw_fd(stream),
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            cred.as_mut_ptr().cast(),
+            &mut size,
+        )
+    } == 0;
+    success
+        && size as usize == std::mem::size_of::<libc::ucred>()
+        && unsafe { cred.assume_init() }.uid == owner_uid
+}
+
+fn observe_request(v: &Value) -> Result<(), &'static str> {
+    if v["schema"] != 1 || v["command"] != "observe" {
+        return Err("invalid_request");
+    }
+    if !matches!(
+        v["source"].as_str(),
+        Some("logs" | "connections" | "disk_space")
+    ) {
+        return Err("invalid_source");
+    }
+    if !v["params"].is_object()
+        || v.as_object().is_none_or(|o| {
+            o.keys().any(|key| {
+                !matches!(
+                    key.as_str(),
+                    "schema" | "command" | "source" | "params" | "limit" | "max_bytes"
+                )
+            })
+        })
+    {
+        return Err("invalid_request");
+    }
+    if !v["limit"].as_u64().is_some_and(|n| (1..=100).contains(&n))
+        || !v["max_bytes"]
+            .as_u64()
+            .is_some_and(|n| (256..=MAX_OBSERVE_BYTES).contains(&n))
+    {
+        return Err("invalid_limits");
+    }
+    Ok(())
+}
+
+fn observe(helper: &Path, request: &Value, owner_uid: u32) -> Value {
+    let mut child = match Command::new(helper)
+        .env("SUMMITFLOW_MONITOR_OWNER_UID", owner_uid.to_string())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return json!({"schema":1,"ok":false,"error":"helper_unavailable"}),
+    };
+    let input = format!("{request}\n");
+    if child
+        .stdin
+        .take()
+        .is_none_or(|mut input_pipe| input_pipe.write_all(input.as_bytes()).is_err())
+    {
+        let _ = child.kill();
+        let _ = child.wait();
+        return json!({"schema":1,"ok":false,"error":"helper_io_error"});
+    }
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let fd = std::os::fd::AsRawFd::as_raw_fd(&stdout);
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        let _ = child.kill();
+        let _ = child.wait();
+        return json!({"schema":1,"ok":false,"error":"helper_io_error"});
+    }
+    let started = Instant::now();
+    let mut output = Vec::new();
+    let result = loop {
+        let mut chunk = [0u8; 4096];
+        match stdout.read(&mut chunk) {
+            Ok(0) => {}
+            Ok(n) => output.extend_from_slice(&chunk[..n]),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+            Err(_) => break Err("helper_io_error"),
+        }
+        if output.len() > MAX_OBSERVE_RESPONSE {
+            break Err("helper_output_too_large");
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    break Err("helper_failed");
+                }
+                // The helper writes a single JSON line; allow the pipe to settle after exit.
+                let mut rest = Vec::new();
+                if stdout.read_to_end(&mut rest).is_err() {
+                    break Err("helper_io_error");
+                }
+                output.extend(rest);
+                if output.len() > MAX_OBSERVE_RESPONSE {
+                    break Err("helper_output_too_large");
+                }
+                break Ok(());
+            }
+            Ok(None) if started.elapsed() < OBSERVE_TIMEOUT => {
+                thread::sleep(Duration::from_millis(10))
+            }
+            Ok(None) => break Err("helper_timeout"),
+            Err(_) => break Err("helper_io_error"),
+        }
+    };
+    if let Err(code) = result {
+        let _ = child.kill();
+        let _ = child.wait();
+        return json!({"schema":1,"ok":false,"error":code});
+    }
+    let Ok(value) = serde_json::from_slice::<Value>(&output) else {
+        return json!({"schema":1,"ok":false,"error":"helper_invalid_json"});
+    };
+    if value["schema"] != 1
+        || !value["items"].is_array()
+        || !value["errors"].is_array()
+        || !value["coverage"].is_object()
+    {
+        return json!({"schema":1,"ok":false,"error":"helper_invalid_result"});
+    }
+    if serde_json::to_vec(&value)
+        .is_ok_and(|bytes| bytes.len() > request["max_bytes"].as_u64().unwrap_or(0) as usize)
+    {
+        return json!({"schema":1,"ok":false,"error":"helper_output_too_large"});
+    }
+    json!({"schema":1,"ok":true,"result":value})
+}
+
+fn control_request(
+    mut stream: UnixStream,
+    owner_uid: u32,
+    snapshot: &Arc<Mutex<Value>>,
+    mutations: &SyncSender<Mutation>,
+    helper: Option<&Path>,
+    active: &Arc<AtomicUsize>,
+) -> io::Result<()> {
+    stream.set_read_timeout(Some(Duration::from_millis(300)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(1)))?;
+    if !peer_is_owner(&stream, owner_uid) {
+        return Ok(());
+    }
+    let mut line = String::new();
+    let n = BufReader::new(&stream)
+        .take(MAX_CONTROL_BYTES + 1)
+        .read_line(&mut line)?;
+    let response = if n as u64 > MAX_CONTROL_BYTES {
+        json!({"ok":false,"error":"request_too_large"})
+    } else if let Ok(v) = serde_json::from_str::<Value>(&line) {
+        match v["command"].as_str() {
+            Some("status") => snapshot
+                .lock()
+                .map(|v| v.clone())
+                .unwrap_or_else(|_| json!({"ok":false,"error":"status_unavailable"})),
+            Some("observe") => {
+                if let Err(code) = observe_request(&v) {
+                    json!({"schema":1,"ok":false,"error":code})
+                } else if let Some(helper) = helper {
+                    if active
+                        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                            (n < 2).then_some(n + 1)
+                        })
+                        .is_err()
+                    {
+                        json!({"schema":1,"ok":false,"error":"observe_busy"})
+                    } else {
+                        let result = observe(helper, &v, owner_uid);
+                        active.fetch_sub(1, Ordering::AcqRel);
+                        result
+                    }
+                } else {
+                    json!({"schema":1,"ok":false,"error":"helper_unavailable"})
+                }
+            }
+            Some("lease_start" | "lease_renew" | "lease_end") => {
+                let (tx, rx) = mpsc::channel();
+                if mutations.try_send((v, tx)).is_err() {
+                    json!({"ok":false,"error":"control_busy"})
+                } else {
+                    rx.recv_timeout(Duration::from_secs(2))
+                        .unwrap_or_else(|_| json!({"ok":false,"error":"control_timeout"}))
+                }
+            }
+            _ => json!({"ok":false,"error":"unknown_command"}),
+        }
+    } else {
+        json!({"ok":false,"error":"invalid_json"})
+    };
+    writeln!(stream, "{response}")
+}
+
+fn control_loop(
+    listener: UnixListener,
+    owner_uid: u32,
+    snapshot: Arc<Mutex<Value>>,
+    mutations: SyncSender<Mutation>,
+    helper: Option<PathBuf>,
+) {
+    let active = Arc::new(AtomicUsize::new(0));
+    let clients = Arc::new(AtomicUsize::new(0));
+    while !STOP.load(Ordering::Relaxed) {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                let snapshot = Arc::clone(&snapshot);
+                let mutations = mutations.clone();
+                let helper = helper.clone();
+                let active = Arc::clone(&active);
+                if clients
+                    .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                        (n < 8).then_some(n + 1)
+                    })
+                    .is_err()
+                {
+                    continue;
+                }
+                let clients = Arc::clone(&clients);
+                thread::spawn(move || {
+                    let _ = control_request(
+                        stream,
+                        owner_uid,
+                        &snapshot,
+                        &mutations,
+                        helper.as_deref(),
+                        &active,
+                    );
+                    clients.fetch_sub(1, Ordering::AcqRel);
+                });
+            }
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(10))
+            }
+            Err(_) => thread::sleep(Duration::from_millis(50)),
+        }
+    }
 }
 
 struct PersistResult {
@@ -607,13 +909,29 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
     let boot = read_id("/proc/sys/kernel/random/boot_id")?;
     let host = read_id("/etc/machine-id").unwrap_or_else(|_| "unknown".into());
     fs::create_dir_all(&cfg.state)?;
-    fs::set_permissions(&cfg.state, fs::Permissions::from_mode(0o700))?;
+    let shared = unsafe { libc::geteuid() } == 0 && cfg.owner_uid != 0;
+    if shared {
+        unsafe { libc::umask(0o027) };
+    }
+    if shared {
+        set_group(&cfg.state, cfg.owner_gid)?;
+    }
+    fs::set_permissions(
+        &cfg.state,
+        fs::Permissions::from_mode(if shared { 0o750 } else { 0o700 }),
+    )?;
     let lock_path = cfg.state.join("collector.lock");
     let lock = fs::OpenOptions::new()
         .create(true)
         .write(true)
         .open(&lock_path)?;
-    fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600))?;
+    if shared {
+        set_group(&lock_path, cfg.owner_gid)?;
+    }
+    fs::set_permissions(
+        &lock_path,
+        fs::Permissions::from_mode(if shared { 0o640 } else { 0o600 }),
+    )?;
     if unsafe {
         libc::flock(
             std::os::fd::AsRawFd::as_raw_fd(&lock),
@@ -623,10 +941,27 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
     {
         return Err("collector already running".into());
     }
-    let mut store = store::Store::open(&cfg.state, &host, &boot)?;
-    let listener = socket(&cfg.state)?;
+    let mut store =
+        store::Store::open_with_owner(&cfg.state, &host, &boot, shared.then_some(cfg.owner_gid))?;
+    let listener = socket(&cfg.state, shared, cfg.owner_gid)?;
     let pol = policy(&cfg.policy);
     let mut state = Runtime::new(pol.as_ref().err().cloned());
+    let snapshot = Arc::new(Mutex::new(
+        state.dispatch(&json!({"command":"status"}), store.bytes()),
+    ));
+    let (mutation_tx, mutation_rx) = mpsc::sync_channel::<Mutation>(32);
+    let control_snapshot = Arc::clone(&snapshot);
+    let control_helper = cfg.observe_helper.clone();
+    let owner_uid = cfg.owner_uid;
+    let control_worker = thread::spawn(move || {
+        control_loop(
+            listener,
+            owner_uid,
+            control_snapshot,
+            mutation_tx,
+            control_helper,
+        )
+    });
     state.event(
         &store,
         utc_ns(),
@@ -669,7 +1004,9 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
     let mut next_gpu_idle_status = target;
     'run: loop {
         let now = Instant::now();
-        state.control(&listener, store.bytes());
+        for (request, reply) in mutation_rx.try_iter().take(32) {
+            let _ = reply.send(state.dispatch(&request, store.bytes()));
+        }
         let detail = state.detail(now);
         let baseline_due = now >= next_baseline;
         let leaders_due = now >= next_leaders;
@@ -754,6 +1091,8 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
             let mut service_data = if baseline_due {
                 services(
                     &names,
+                    cfg.owner_uid,
+                    cfg.owner_gid,
                     &latest_procs,
                     if scan { Some(at) } else { leader_scan_at },
                     if scan { Some(mono) } else { leader_scan_mono },
@@ -1007,6 +1346,9 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
                     next_baseline += BASELINE;
                 }
             }
+            if let Ok(mut current) = snapshot.lock() {
+                *current = state.dispatch(&json!({"command":"status"}), store.bytes());
+            }
         }
         if last_prune.is_none_or(|t: Instant| now.duration_since(t) > Duration::from_secs(60)) {
             if let Err(e) = store.prune(utc_ns()) {
@@ -1027,7 +1369,12 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
             if STOP.load(Ordering::Relaxed) {
                 break 'run;
             }
-            state.control(&listener, store.bytes());
+            for (request, reply) in mutation_rx.try_iter().take(32) {
+                let _ = reply.send(state.dispatch(&request, store.bytes()));
+            }
+            if let Ok(mut current) = snapshot.lock() {
+                *current = state.dispatch(&json!({"command":"status"}), store.bytes());
+            }
             let now = Instant::now();
             if now >= target {
                 break;
@@ -1039,6 +1386,8 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
         let _ = worker.join();
     }
     store.flush_rollups()?;
+    STOP.store(true, Ordering::Relaxed);
+    let _ = control_worker.join();
     let _ = fs::remove_file(cfg.state.join("control.sock"));
     Ok(())
 }
@@ -1057,6 +1406,50 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observe_contract_rejects_unbounded_or_untyped_requests() {
+        let good = json!({"schema":1,"command":"observe","source":"disk_space","params":{},"limit":10,"max_bytes":4096});
+        assert!(observe_request(&good).is_ok());
+        let mut bad = good.clone();
+        bad["source"] = json!("command");
+        assert_eq!(observe_request(&bad), Err("invalid_source"));
+        bad = good.clone();
+        bad["max_bytes"] = json!(65537);
+        assert_eq!(observe_request(&bad), Err("invalid_limits"));
+        bad = good.clone();
+        bad["params"] = json!(["/"]);
+        assert_eq!(observe_request(&bad), Err("invalid_request"));
+        bad = good;
+        bad["argv"] = json!(["sh"]);
+        assert_eq!(observe_request(&bad), Err("invalid_request"));
+    }
+
+    #[test]
+    fn observe_helper_output_is_wrapped_and_bounded() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("helper");
+        fs::write(&script, "#!/bin/sh\ncat >/dev/null\nprintf '{\"schema\":1,\"coverage\":{\"owner_uid\":\"%s\"},\"items\":[],\"errors\":[]}\\n' \"$SUMMITFLOW_MONITOR_OWNER_UID\"\n").unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+        let request = json!({"schema":1,"command":"observe","source":"disk_space","params":{},"limit":10,"max_bytes":4096});
+        let response = observe(&script, &request, 42);
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["result"]["schema"], 1);
+        assert_eq!(response["result"]["coverage"]["owner_uid"], "42");
+        fs::write(&script, "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '[]'\n").unwrap();
+        assert_eq!(
+            observe(&script, &request, unsafe { libc::geteuid() })["error"],
+            "helper_invalid_result"
+        );
+    }
+
+    #[test]
+    fn socket_peer_is_exact_owner_uid() {
+        let (left, _right) = UnixStream::pair().unwrap();
+        let uid = unsafe { libc::geteuid() };
+        assert!(peer_is_owner(&left, uid));
+        assert!(!peer_is_owner(&left, uid.wrapping_add(1)));
+    }
 
     #[test]
     fn gpu_poll_schedule_does_not_overlap_or_catch_up_in_a_burst() {

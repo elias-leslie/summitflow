@@ -84,7 +84,7 @@ def _load(project: str) -> service_ops.ProjectServices:
 def _restore_previous_units(
     project: service_ops.ProjectServices,
     release: service_release.PreparedRelease,
-) -> None:
+) -> bool:
     """Keep the next restart recoverable after candidate activation fails."""
     try:
         previous_root = service_release.previous_source_root(release)
@@ -95,7 +95,7 @@ def _restore_previous_units(
                 status="unavailable",
                 database="not_rolled_back",
             )
-            return
+            return False
         previous = service_ops.project_at_source(project, previous_root)
         added_monitor = (
             "summitflow-host-monitor.service" in project.default_workers
@@ -112,6 +112,7 @@ def _restore_previous_units(
             database="not_rolled_back; migration downgrade is unsupported",
             running_services="not_restarted_automatically",
         )
+        return restored
     except (service_ops.ServiceError, service_release.ReleaseError):
         service_release.mark_phase(
             release,
@@ -120,6 +121,35 @@ def _restore_previous_units(
             database="not_rolled_back; migration downgrade is unsupported",
             running_services="requires_manual_recovery",
         )
+        return False
+
+
+def _rollback_monitor_and_reader(
+    candidate: service_ops.ProjectServices,
+    development: service_ops.ProjectServices,
+    release: service_release.PreparedRelease,
+    backend_restart_attempted: bool,
+) -> bool:
+    """Restore the old reader before removing its candidate collector/state."""
+    if not _restore_previous_units(development, release):
+        print("[service] prior reader unit unavailable; retaining system collector for recovery")
+        return False
+    if backend_restart_attempted and service_ops.restart_service(
+        candidate.backend_service, port=candidate.backend_port
+    ) != 0:
+        # The old reader could not resume. Keep the candidate pair recoverable.
+        restored = service_ops.sync_systemd_units(candidate) == 0
+        restarted = restored and service_ops.restart_service(candidate.backend_service, port=candidate.backend_port) == 0
+        print(f"[service] previous reader failed; system collector retained, candidate reader restart {'succeeded' if restarted else 'requires recovery'}")
+        return False
+    if service_ops.host_monitor_deployment(candidate, release.build_id, "rollback") != 0:
+        restored = service_ops.sync_systemd_units(candidate) == 0
+        restarted = restored and service_ops.restart_service(candidate.backend_service, port=candidate.backend_port) == 0
+        print(f"[service] monitor rollback failed; candidate reader restart {'succeeded' if restarted else 'failed'}, deployment receipt requires recovery")
+        return False
+    service_release.mark_phase(release, "host_monitor_rollback", status="succeeded",
+                               reader="previous_restarted" if backend_restart_attempted else "previous_running")
+    return True
 
 
 @app.command()
@@ -221,6 +251,8 @@ def rebuild(
     if scope != RebuildScope.full and overlapping_components:
         print("[service] shared component directory; using full rebuild")
         scope = RebuildScope.full
+    if scope != RebuildScope.frontend and service_ops.preflight_host_monitor(services) != 0:
+        raise typer.Exit(1)
     if detach:
         try:
             accepted_source = service_ops.resolve_accepted_source(services, acceptance)
@@ -257,6 +289,8 @@ def rebuild(
     start_time = time.time()
     errors = 0
     release: service_release.PreparedRelease | None = None
+    monitor_activated = False
+    backend_restart_attempted = False
     development_services = services
     development_root = services.root
     try:
@@ -290,7 +324,8 @@ def rebuild(
                 raise typer.Exit(1)
             steps = [("infrastructure", lambda: service_ops.ensure_infra(services))]
             steps.append(("backend_dependencies", lambda: service_ops.sync_backend(services)))
-            steps.append(("host_monitor_build", lambda: service_ops.build_host_monitor(services)))
+            if backend:
+                steps.append(("host_monitor_build", lambda: service_ops.build_host_monitor(services)))
             steps.append(("frontend_build", lambda: service_ops.build_frontend(services)))
             if backend:
                 steps.append(("migrations", lambda: service_ops.run_migrations(services)))
@@ -302,8 +337,8 @@ def rebuild(
                     reason="frontend_restart_scope",
                 )
             steps.append(("systemd_units", lambda: service_ops.sync_systemd_units(services)))
-            steps.append(("host_monitor_policy", lambda: service_ops.sync_host_monitor_policy(services)))
-            steps.append(("host_monitor_enable", lambda: service_ops.enable_host_monitor(services)))
+            if backend:
+                steps.append(("host_monitor_policy", lambda: service_ops.sync_host_monitor_policy(services)))
             for name, step in steps:
                 assert_backup_restart_owned()
                 phase_started = time.monotonic()
@@ -343,18 +378,31 @@ def rebuild(
                     status=migration.status,
                     receipt=str(migration.receipt) if migration.receipt else None,
                 )
+            if backend and service_ops.has_host_monitor(services):
+                if service_ops.host_monitor_deployment(services, release.build_id, "install") != 0:
+                    _restore_previous_units(development_services, release)
+                    service_release.fail_release(release, "host_monitor_install")
+                    raise typer.Exit(1)
+                monitor_activated = True
+                service_release.mark_phase(release, "host_monitor_install", status="succeeded")
+                if service_ops.verify_host_monitor(services) != 0:
+                    raise service_ops.ServiceError("root collector activation failed verification")
             skipped = [name for name in services.optional_workers if name not in workers]
             if skipped:
                 print("[service] leaving optional workers unchanged: " + " ".join(skipped))
             restarted: list[str] = []
             restart_started = time.monotonic()
             if backend and services.backend_service:
+                backend_restart_attempted = True
                 assert_backup_restart_owned()
                 errors += service_ops.restart_service(
                     services.backend_service, port=services.backend_port
                 ) != 0
                 restarted.append(services.backend_service)
             for name in workers:
+                if monitor_activated and name == "summitflow-host-monitor.service":
+                    restarted.append(name)
+                    continue
                 assert_backup_restart_owned()
                 errors += service_ops.restart_service(name) != 0
                 restarted.append(name)
@@ -395,7 +443,11 @@ def rebuild(
                     duration_seconds=time.monotonic() - seeds_started,
                 )
             if errors:
-                _restore_previous_units(development_services, release)
+                if monitor_activated:
+                    _rollback_monitor_and_reader(services, development_services, release, backend_restart_attempted)
+                    monitor_activated = False
+                else:
+                    _restore_previous_units(development_services, release)
                 service_release.fail_release(
                     release,
                     "restart_health",
@@ -407,6 +459,12 @@ def rebuild(
                 )
                 print(f"[service] rebuild completed with {errors} error(s)")
                 raise typer.Exit(1)
+            if monitor_activated:
+                if service_ops.verify_host_monitor(services) != 0:
+                    raise service_ops.ServiceError("collector owner access failed after backend restart")
+                if service_ops.host_monitor_deployment(services, release.build_id, "finalize") != 0:
+                    raise service_ops.ServiceError("collector deployment receipt could not be finalized")
+                monitor_activated = False
             service_references = service_ops.release_references_for_services(
                 release.release_root.parent
             )
@@ -425,6 +483,8 @@ def rebuild(
                 raise typer.Exit(1)
             print(f"[service] rebuild complete ({int(time.time() - start_time)}s)")
     except (service_ops.ServiceError, service_release.ReleaseError, BackupLockLeaseError) as exc:
+        if monitor_activated and release is not None:
+            _rollback_monitor_and_reader(services, development_services, release, backend_restart_attempted)
         if release is not None:
             with suppress(service_release.ReleaseError):
                 service_release.fail_release(release, "deployment")

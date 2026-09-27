@@ -15,6 +15,8 @@ export type MonitorAvailability =
   | 'leaders_only'
   | 'retention_expired'
 
+export type MonitorLogScope = 'user' | 'system' | 'container'
+
 export interface MonitorEnvelope<T> {
   schema: number
   generated_at: string
@@ -128,19 +130,49 @@ export const monitorApi = {
       `/api/monitor/v1/${kind}${buildQueryString({ limit: kind === 'system-info' ? undefined : limit, ...options, max_bytes: 65536 })}`,
     ),
   logs: (params: {
-    service: string
+    service?: string
+    scope: MonitorLogScope
     since?: string
     until?: string
+    cursor?: string
     priority?: number
     limit: number
   }) =>
     get(
       `/api/monitor/v1/logs${buildQueryString({ ...params, max_bytes: 65536 })}`,
     ),
+  logServices: async (scope: MonitorLogScope) => {
+    let cursor: string | undefined
+    let combined: MonitorEnvelope<MonitorItem> | null = null
+    const seen = new Set<string>()
+    do {
+      const page = await get(
+        `/api/monitor/v1/log-services${buildQueryString({ scope, cursor, max_bytes: 65536 })}`,
+      )
+      if (!combined) {
+        combined = { ...page, items: [...page.items], next_cursor: null }
+      } else {
+        combined.items.push(...page.items)
+        combined.errors.push(...page.errors)
+        combined.truncated = page.truncated
+        if (page.coverage.availability !== 'ok')
+          combined.coverage = page.coverage
+      }
+      cursor = page.next_cursor || undefined
+      if (cursor) {
+        if (seen.has(cursor))
+          throw new Error('Monitor service list returned a repeated page')
+        seen.add(cursor)
+      }
+    } while (cursor)
+    if (!combined) throw new Error('Monitor service list returned no page')
+    return combined
+  },
   connections: (params: {
     show_addresses: boolean
     include_process: boolean
     limit: number
+    cursor?: string
   }) =>
     get(
       `/api/monitor/v1/connections${buildQueryString({ ...params, max_bytes: 65536 })}`,
@@ -154,6 +186,10 @@ export const monitorApi = {
   }) =>
     get(
       `/api/monitor/v1/disk-space${buildQueryString({ ...params, max_bytes: 65536 })}`,
+    ),
+  mounts: (cursor?: string) =>
+    get(
+      `/api/monitor/v1/mounts${buildQueryString({ cursor, max_bytes: 65536 })}`,
     ),
   benchmark: async (params: {
     kind: 'cpu' | 'disk'

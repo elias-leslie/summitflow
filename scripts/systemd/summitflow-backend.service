@@ -7,6 +7,7 @@ Type=simple
 WorkingDirectory=__SUMMITFLOW_ROOT__/backend
 Environment="PATH=%h/.local/bin:__SUMMITFLOW_ROOT__/backend/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="HOME=%h"
+Environment="SUMMITFLOW_MONITOR_STATE_DIR=/var/lib/summitflow/monitor"
 Environment="SUMMITFLOW_MOCKUP_BASE_DIR=__SUMMITFLOW_DATA_ROOT__/design-studio/mockups"
 Environment="SUMMITFLOW_HOST_CONFIG_ROOT=__SUMMITFLOW_HOST_CONFIG_ROOT__"
 EnvironmentFile=-%h/.env.local

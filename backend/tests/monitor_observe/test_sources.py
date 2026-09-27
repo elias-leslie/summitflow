@@ -147,17 +147,18 @@ def test_gpu_sensor_provider_uses_fixed_query_and_no_serial(monkeypatch: pytest.
     assert all("--query-gpu=" not in part or "serial" not in part for part in captured[0])
 
 
-def test_connections_redacted_and_optional_owner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_connections_show_endpoints_and_owners_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / "tcp").write_text(
         "sl local_address rem_address st tx rx tr tm retr uid timeout inode\n"
         "0: 0100007F:1F90 0200007F:1234 01 0 0 0 1000 0 999\n"
     )
     monkeypatch.setattr(connections, "PROC_NET", tmp_path)
-    monkeypatch.setattr(connections, "_owner_map", lambda inodes: ({"999": 123}, "ok", {}))
-    result = query_connections(include_process=True)
+    monkeypatch.setattr(connections, "_owner_map", lambda inodes: ({"999": [(123, "server")]}, "ok", {}))
+    result = query_connections()
     _bounded(result)
-    assert result["items"][0]["value"]["local"] == "[REDACTED]"
+    assert result["items"][0]["value"]["local"] == "127.0.0.1:8080"
     assert result["items"][0]["value"]["pid"] == 123
+    assert result["items"][0]["value"]["process_name"] == "server"
     assert result["coverage"]["tables"]["tcp6"] == "unsupported"
     raw = query_connections(include_addresses=True)
     assert raw["items"][0]["value"]["local"] == "127.0.0.1:8080"

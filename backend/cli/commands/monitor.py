@@ -1,4 +1,4 @@
-"""Read the independent, owner-local host monitor from st."""
+"""Agent-facing queries for the independent system host collector."""
 
 from __future__ import annotations
 
@@ -10,14 +10,19 @@ from typing import Annotated, Any
 
 import typer
 
-from monitor_control import MonitorControlError, control_request, enrich_status, monitor_state_dir
-from monitor_extended import export_capture, query_disk_space, run_benchmark
+from monitor_control import (
+    MonitorControlError,
+    control_request,
+    enrich_status,
+    monitor_state_dir,
+    observe_request,
+)
+from monitor_extended import export_capture, run_benchmark
 from monitor_observe import (
     ObserveQueryError,
     query_apps,
-    query_connections,
     query_drivers,
-    query_logs,
+    query_log_services,
     query_sensors,
     query_startup,
     query_system_info,
@@ -27,7 +32,7 @@ from monitor_reader import MonitorQueryError, MonitorReader
 
 from ..lib.usage import usage
 
-app = typer.Typer(help="Bounded local host telemetry and troubleshooting history.", no_args_is_help=True)
+app = typer.Typer(help="System and project troubleshooting: bounded JSON with coverage, freshness, and cursors. Start with status.", no_args_is_help=True)
 _RELATIVE = re.compile(r"^(\d+)([mhd])$")
 
 
@@ -95,14 +100,26 @@ def _observe(query: Any, max_bytes: int, **kwargs: Any) -> None:
         _failure(MonitorQueryError(str(exc)), max_bytes)
 
 
+def _privileged(source: str, max_bytes: int, *, limit: int, **params: Any) -> None:
+    try:
+        _emit(observe_request(source, params, limit=limit, max_bytes=max_bytes), max_bytes)
+    except MonitorControlError as exc:
+        _failure(MonitorQueryError(str(exc)), max_bytes)
+
+
 @app.command()
 @usage(
     surface="st.monitor.status",
     cmd="st monitor status",
     when="inspect current host and managed-service health without PostgreSQL or backend availability",
-    precautions=("read-only, owner-local monitor store", "freshness and source errors are explicit"),
+    precautions=(
+        "start here for system or project troubleshooting; inspect coverage, observation age, errors, and truncated before drawing conclusions",
+        "history works without the backend or PostgreSQL; live logs, connections, disk scans, and capture need the host collector",
+        "use st monitor --help for queries; st logs tail retains alias/follow views and st runtime metrics reads older application runtime history",
+    ),
     examples=("st monitor status", "st monitor status --max-bytes 8192"),
     task_types=("devops", "debugging"),
+    on_demand="host and project troubleshooting",
     tier="reference",
 )
 def status(max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65536)] = 4096) -> None:
@@ -111,6 +128,21 @@ def status(max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65
 
 
 @app.command()
+@usage(
+    surface='st.monitor.series',
+    cmd='st monitor series <metric> --since 15m',
+    when='compare host or service metrics over a bounded historical window',
+    precautions=(
+        'choose a supported metric and entity from command help or query errors; unsupported fields are unavailable, not zero',
+        'follow next_cursor with the same absolute since/until window; increasing response bytes does not remove source limits',
+    ),
+    examples=(
+        'st monitor series cpu_busy_pct --since 15m --limit 20 --max-bytes 8192',
+    ),
+    task_types=("devops", "debugging"),
+    on_demand="host and project troubleshooting",
+    tier="reference",
+)
 def series(
     metric: Annotated[str, typer.Argument(help="Whitelisted host or service metric")],
     entity: Annotated[str, typer.Option("--entity", help="host or managed service id")] = "host",
@@ -137,6 +169,7 @@ def series(
     precautions=("read-only owner-local history", "poll age and unavailable fields are explicit"),
     examples=("st monitor gpu", "st monitor gpu --limit 1 --max-bytes 4096"),
     task_types=("devops", "debugging"),
+    on_demand="host and project troubleshooting",
     tier="reference",
 )
 def gpu(
@@ -150,6 +183,22 @@ def gpu(
 
 
 @app.command()
+@usage(
+    surface='st.monitor.processes',
+    cmd='st monitor processes --sort rss',
+    when='find retained process CPU, memory, IO, ownership, and parent-child evidence',
+    precautions=(
+        'baseline rows are process leaders; use st monitor capture when the problem requires all-process detail',
+        'keep the returned observation time with cursor pages; process identity includes boot and start time, not PID alone',
+    ),
+    examples=(
+        'st monitor processes --sort cpu --limit 20 --max-bytes 8192',
+        'st monitor processes --name postgres --view tree',
+    ),
+    task_types=("devops", "debugging"),
+    on_demand="host and project troubleshooting",
+    tier="reference",
+)
 def processes(
     at: Annotated[str | None, typer.Option("--at", help="UTC timestamp; defaults to latest")] = None,
     name: Annotated[str | None, typer.Option("--name")] = None,
@@ -167,6 +216,21 @@ def processes(
 
 
 @app.command()
+@usage(
+    surface='st.monitor.events',
+    cmd='st monitor events --since 15m',
+    when='correlate source failures, service transitions, and capture triggers with a problem',
+    precautions=(
+        'events describe recorded observations, not a complete audit log',
+        'pagination requires the same absolute since/until window',
+    ),
+    examples=(
+        'st monitor events --since 15m --limit 20 --max-bytes 8192',
+    ),
+    task_types=("devops", "debugging"),
+    on_demand="host and project troubleshooting",
+    tier="reference",
+)
 def events(
     since: Annotated[str | None, typer.Option("--since", help="UTC timestamp or 15m/6h/1d")] = None,
     until: Annotated[str | None, typer.Option("--until", help="UTC timestamp")] = None,
@@ -185,6 +249,22 @@ def events(
 
 
 @app.command()
+@usage(
+    surface='st.monitor.capture',
+    cmd='st monitor capture --ttl-seconds 30',
+    when='record temporary all-process detail while investigating a live incident',
+    precautions=(
+        'changes collector sampling detail for a bounded lease; the collector must be running',
+        'retain lease_id; use st monitor capture-renew <lease-id> --ttl-seconds 30 or st monitor capture-end <lease-id>',
+        'query st monitor processes and export retained evidence; leases expire automatically',
+    ),
+    examples=(
+        'st monitor capture --ttl-seconds 30',
+    ),
+    task_types=("devops", "debugging"),
+    on_demand="host and project troubleshooting",
+    tier="reference",
+)
 def capture(
     ttl_seconds: Annotated[int, typer.Option("--ttl-seconds", min=1, max=300)] = 30,
 ) -> None:
@@ -226,8 +306,26 @@ def capture_end(lease_id: Annotated[str, typer.Argument()]) -> None:
 
 
 @app.command()
+@usage(
+    surface='st.monitor.logs',
+    cmd='st monitor logs [service] --scope user --since 15m',
+    when='read bounded journal evidence for project services or the whole host',
+    precautions=(
+        'discover exact unit IDs with st monitor log-services --scope user or --scope system; omit service for the selected journal',
+        'collector is required; credential redaction remains enabled and does not imply arbitrary logs are safe to publish',
+        'follow cursors with the same absolute since/until window; container scope currently reports unsupported',
+    ),
+    examples=(
+        'st monitor logs summitflow-backend.service --scope user --since 15m',
+        'st monitor logs --scope system --priority 3 --since 15m --max-bytes 8192',
+    ),
+    task_types=("devops", "debugging"),
+    on_demand="host and project troubleshooting",
+    tier="reference",
+)
 def logs(
-    service: Annotated[str, typer.Argument(help="Managed service id or backend/frontend alias")],
+    service: Annotated[str | None, typer.Argument(help="Service unit; omit for the full journal")] = None,
+    scope: Annotated[str, typer.Option("--scope", help="user, system, or container logs")] = "user",
     since: Annotated[str | None, typer.Option("--since", help="UTC timestamp or 15m/6h/1d")] = None,
     until: Annotated[str | None, typer.Option("--until", help="UTC timestamp")] = None,
     cursor: Annotated[str | None, typer.Option("--cursor", help="Opaque journal cursor")] = None,
@@ -235,11 +333,61 @@ def logs(
     limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 10,
     max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65536)] = 4096,
 ) -> None:
-    """Redacted, bounded journal entries for one managed service."""
+    """Bounded journal entries from the selected host scope."""
     if cursor and (not since or _RELATIVE.fullmatch(since) or not until):
         _failure(MonitorQueryError("pagination requires absolute --since and --until from requested"), max_bytes)
-    _observe(query_logs, max_bytes, service=service, since=_time(since), until=_time(until),
-             cursor=cursor, priority=priority, limit=limit)
+    _privileged("logs", max_bytes, service=service, scope=scope, since=_time(since), until=_time(until),
+                cursor=cursor, priority=priority, limit=limit)
+
+
+@app.command("log-services")
+@usage(
+    surface='st.monitor.log-services',
+    cmd='st monitor log-services --scope user',
+    when='discover selectable project and system journal service units before requesting logs',
+    precautions=(
+        'use user or system scope and reuse the returned exact unit name in st monitor logs',
+        'follow next_cursor; discovery and journal access can have different availability',
+    ),
+    examples=(
+        'st monitor log-services --scope user --max-bytes 8192',
+        'st monitor log-services --scope system --max-bytes 8192',
+    ),
+    task_types=("devops", "debugging"),
+    on_demand="host and project troubleshooting",
+    tier="reference",
+)
+def log_services(scope: Annotated[str, typer.Option("--scope")] = "user",
+                 cursor: Annotated[str | None, typer.Option("--cursor")] = None,
+                 limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 100,
+                 max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65536)] = 4096) -> None:
+    """List service units available in the selected journal scope."""
+    _observe(query_log_services, max_bytes, scope=scope, cursor=cursor, limit=limit)
+
+
+@app.command()
+@usage(
+    surface='st.monitor.mounts',
+    cmd='st monitor mounts',
+    when='locate filesystem capacity and usage before investigating disk consumption',
+    precautions=(
+        'reads committed collector history; use --at to pin an observation and check coverage',
+        'use st monitor disk-space <mount-path> for bounded directory attribution',
+    ),
+    examples=(
+        'st monitor mounts --max-bytes 8192',
+        'st monitor mounts --at 2026-09-27T12:00:00Z --max-bytes 8192',
+    ),
+    task_types=("devops", "debugging"),
+    on_demand="host and project troubleshooting",
+    tier="reference",
+)
+def mounts(at: Annotated[str | None, typer.Option("--at", help="Latest observation at or before UTC time")] = None,
+           cursor: Annotated[str | None, typer.Option("--cursor")] = None,
+           limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 100,
+           max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65536)] = 65536) -> None:
+    """Mounted filesystems from a committed collector observation."""
+    _query("mounts", max_bytes, at=_time(at), cursor=cursor, limit=limit)
 
 
 @app.command()
@@ -252,18 +400,50 @@ def sensors(
 
 
 @app.command()
+@usage(
+    surface='st.monitor.connections',
+    cmd='st monitor connections',
+    when='inspect local and remote socket endpoints and owning processes for connectivity troubleshooting',
+    precautions=(
+        'collector is required; addresses and process attribution are included by default',
+        'follow next_cursor and inspect namespace, table, ownership, and scan coverage; partial results are not absence of activity',
+    ),
+    examples=(
+        'st monitor connections --limit 20 --max-bytes 8192',
+    ),
+    task_types=("devops", "debugging"),
+    on_demand="host and project troubleshooting",
+    tier="reference",
+)
 def connections(
     limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 10,
-    show_addresses: Annotated[bool, typer.Option("--show-addresses", help="Include local and remote endpoints")] = False,
-    include_process: Annotated[bool, typer.Option("--include-process", help="Attempt socket owner lookup")] = False,
+    show_addresses: Annotated[bool, typer.Option("--show-addresses", help="Compatibility flag; endpoints are always included")] = True,
+    include_process: Annotated[bool, typer.Option("--include-process", help="Compatibility flag; owner lookup is always included")] = True,
+    cursor: Annotated[str | None, typer.Option("--cursor")] = None,
     max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65536)] = 4096,
 ) -> None:
-    """On-demand socket states, with endpoints redacted by default."""
-    _observe(query_connections, max_bytes, limit=limit, include_addresses=show_addresses,
-             include_process=include_process)
+    """On-demand socket states with endpoints and owning processes."""
+    _privileged("connections", max_bytes, limit=limit, include_addresses=True,
+                include_process=True, cursor=cursor)
 
 
 @app.command("system-info")
+@usage(
+    surface='st.monitor.system-info',
+    cmd='st monitor system-info',
+    when='establish operating-system and hardware context before choosing diagnostics',
+    precautions=(
+        'read-only inventory; related commands are sensors, users, startup, apps, and drivers under st monitor',
+        'startup reports enabled user services; users is an account inventory, not session telemetry',
+    ),
+    examples=(
+        'st monitor system-info',
+        'st monitor apps --provider dpkg --name python --max-bytes 8192',
+    ),
+    task_types=("devops", "debugging"),
+    on_demand="host and project troubleshooting",
+    tier="reference",
+)
 def system_info(max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65536)] = 4096) -> None:
     """Static OS and hardware information without serial numbers."""
     _observe(query_system_info, max_bytes)
@@ -301,8 +481,24 @@ def drivers(limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 10,
 
 
 @app.command("disk-space")
+@usage(
+    surface='st.monitor.disk-space',
+    cmd='st monitor disk-space <directory>',
+    when='attribute disk use within a selected mounted filesystem without reading file contents',
+    precautions=(
+        'collector is required; discover mounts first and choose the affected directory',
+        'entry, depth, time, and filesystem boundaries remain bounded; reported partial totals are observed lower bounds',
+        'no symlink traversal; use coverage and errors to distinguish denied, skipped, and truncated paths',
+    ),
+    examples=(
+        'st monitor disk-space /var --max-entries 10000 --max-depth 6 --timeout-seconds 5 --max-bytes 8192',
+    ),
+    task_types=("devops", "debugging"),
+    on_demand="host and project troubleshooting",
+    tier="reference",
+)
 def disk_space(
-    path: Annotated[Path, typer.Argument(help="Directory within owner home or registered project root")],
+    path: Annotated[Path, typer.Argument(help="Directory on a mounted filesystem")],
     max_entries: Annotated[int, typer.Option("--max-entries", min=1, max=10000)] = 1024,
     max_depth: Annotated[int, typer.Option("--max-depth", min=0, max=12)] = 6,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds", min=0.001, max=5.0)] = 2.0,
@@ -310,8 +506,8 @@ def disk_space(
     max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65536)] = 4096,
 ) -> None:
     """Metadata-only disk attribution with explicit scan coverage."""
-    _observe(query_disk_space, max_bytes, path=path, max_entries=max_entries,
-             max_depth=max_depth, timeout_seconds=timeout_seconds, limit=limit)
+    _privileged("disk_space", max_bytes, path=str(path), max_entries=max_entries,
+                max_depth=max_depth, timeout_seconds=timeout_seconds, limit=limit)
 
 
 @app.command()
@@ -325,6 +521,21 @@ def benchmark(
 
 
 @app.command()
+@usage(
+    surface='st.monitor.export',
+    cmd='st monitor export --since <UTC> --until <UTC>',
+    when='replay retained host samples and capture events for an incident window',
+    precautions=(
+        'reads committed history and works with the collector stopped; does not create a new capture',
+        'use an explicit UTC window and follow next_cursor with that same window; export is bounded',
+    ),
+    examples=(
+        'st monitor export --since 2026-09-27T12:00:00Z --until 2026-09-27T12:05:00Z --max-bytes 8192',
+    ),
+    task_types=("devops", "debugging"),
+    on_demand="host and project troubleshooting",
+    tier="reference",
+)
 def export(
     since: Annotated[str, typer.Option("--since", help="UTC start of capture interval")],
     until: Annotated[str, typer.Option("--until", help="UTC end of capture interval")],
@@ -332,7 +543,7 @@ def export(
     cursor: Annotated[str | None, typer.Option("--cursor")] = None,
     max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65536)] = 4096,
 ) -> None:
-    """Redacted replay page from committed host samples and capture events."""
+    """Replay page from committed host samples and capture events."""
     if cursor and (_RELATIVE.fullmatch(since) or _RELATIVE.fullmatch(until)):
         _failure(MonitorQueryError("pagination requires absolute --since and --until from coverage"), max_bytes)
     try:

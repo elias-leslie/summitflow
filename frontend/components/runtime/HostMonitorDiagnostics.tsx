@@ -2,7 +2,11 @@
 
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { type MonitorItem, monitorApi } from '@/lib/api/monitor'
+import {
+  type MonitorItem,
+  type MonitorLogScope,
+  monitorApi,
+} from '@/lib/api/monitor'
 
 type Diagnostic =
   | 'logs'
@@ -20,7 +24,7 @@ const views: Array<{ key: Diagnostic; label: string; description: string }> = [
   {
     key: 'logs',
     label: 'Logs',
-    description: 'Managed service journal entries from the last 15 minutes',
+    description: 'User, system, and container logs',
   },
   {
     key: 'sensors',
@@ -52,7 +56,7 @@ const views: Array<{ key: Diagnostic; label: string; description: string }> = [
   {
     key: 'disk-space',
     label: 'Disk space',
-    description: 'Explicit, bounded file-size attribution',
+    description: 'Mounted capacity and bounded path scan',
   },
   {
     key: 'benchmark',
@@ -62,7 +66,7 @@ const views: Array<{ key: Diagnostic; label: string; description: string }> = [
   {
     key: 'export',
     label: 'Flight recorder',
-    description: 'Paged, redacted sample and event replay',
+    description: 'Paged sample and event replay',
   },
 ]
 const control =
@@ -89,12 +93,41 @@ function time(value: unknown): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
+function detailRows(value: unknown): Array<[string, string]> {
+  const details = record(value)
+  if (!details) return []
+  return Object.entries(details).map(([key, entry]) => [
+    key.replaceAll('_', ' '),
+    typeof entry === 'string' ||
+    typeof entry === 'number' ||
+    typeof entry === 'boolean'
+      ? String(entry)
+      : entry === null
+        ? 'Unavailable'
+        : JSON.stringify(entry),
+  ])
+}
+function recentLogWindow() {
+  const until = new Date()
+  return {
+    since: new Date(until.getTime() - 15 * 60_000).toISOString(),
+    until: until.toISOString(),
+  }
+}
 function fields(item: MonitorItem, kind: Diagnostic): Array<[string, unknown]> {
   const value = record(item.value) || {}
   switch (kind) {
     case 'logs':
       return [
-        ['Time', item.sampled_at],
+        ['Time', item.measured_at || item.sampled_at],
+        ['Source', value.container_name || value.unit || value.service],
+        ...(value.scope === 'container'
+          ? ([
+              ['Container ID', value.container_id],
+              ['Stream', value.stream],
+            ] as Array<[string, unknown]>)
+          : []),
+        ['Scope', value.scope],
         ['Priority', value.priority],
         ['Message', value.message],
       ]
@@ -113,6 +146,11 @@ function fields(item: MonitorItem, kind: Diagnostic): Array<[string, unknown]> {
         ['Local', value.local],
         ['Remote', value.remote],
         ['PID', value.pid],
+        [
+          'Owning PIDs',
+          Array.isArray(value.pids) ? value.pids.join(', ') : value.pids,
+        ],
+        ['Process', value.process_name],
         ['Process availability', value.process_availability],
       ]
     case 'system-info':
@@ -182,7 +220,7 @@ function summary(item: MonitorItem, kind: Diagnostic): string {
   const value = record(item.value) || {}
   switch (kind) {
     case 'logs':
-      return `${time(item.sampled_at)} · ${display(value.message)}`
+      return `${time(item.measured_at || item.sampled_at)} · ${display(value.container_name || value.unit || value.service)} · ${display(value.message)}`
     case 'sensors':
       return `${display(value.label || value.sensor || value.metric)} · ${display(value.reading)}${typeof item.unit === 'string' ? ` ${item.unit}` : ''}`
     case 'connections':
@@ -230,10 +268,16 @@ export function HostMonitorDiagnostics({
   selectedService: string | null
 }) {
   const [active, setActive] = useState<Diagnostic | null>(null)
-  const [logService, setLogService] = useState('')
+  const [logService, setLogService] = useState(selectedService || '')
+  const [logScope, setLogScope] = useState<MonitorLogScope>('user')
   const [priority, setPriority] = useState('')
-  const [showAddresses, setShowAddresses] = useState(false)
-  const [includeProcess, setIncludeProcess] = useState(false)
+  const [logWindow, setLogWindow] = useState(recentLogWindow)
+  const [logCursors, setLogCursors] = useState<Array<string | undefined>>([
+    undefined,
+  ])
+  const [connectionCursors, setConnectionCursors] = useState<
+    Array<string | undefined>
+  >([undefined])
   const [connectionFilter, setConnectionFilter] = useState('')
   const [connectionState, setConnectionState] = useState('all')
   const [appsProvider, setAppsProvider] = useState<'dpkg' | 'snap' | 'flatpak'>(
@@ -244,16 +288,39 @@ export function HostMonitorDiagnostics({
   const [appsCursor, setAppsCursor] = useState<string | null>(null)
   const [appsPrevious, setAppsPrevious] = useState<Array<string | null>>([])
   const [revision, setRevision] = useState(0)
-  const chosenService = logService || selectedService || ''
+  const resetLogPage = () => {
+    setLogWindow(recentLogWindow())
+    setLogCursors([undefined])
+  }
+  const logServices = useQuery({
+    queryKey: ['monitor', 'log-services', logScope],
+    queryFn: () => monitorApi.logServices(logScope),
+    enabled: active === 'logs',
+    staleTime: 60_000,
+  })
+  const availableServices = Array.from(
+    new Set([
+      ...(logScope === 'user' ? serviceNames : []),
+      ...(logServices.data?.items || []).flatMap((item) => {
+        const service = record(item.value)?.service
+        return typeof service === 'string' ? [service] : []
+      }),
+    ]),
+  ).sort()
+  const chosenService =
+    logService || (logScope === 'container' ? availableServices[0] || '' : '')
   const query = useQuery({
     queryKey: [
       'monitor',
       'diagnostic',
       active,
       chosenService,
+      logScope,
       priority,
-      showAddresses,
-      includeProcess,
+      logWindow.since,
+      logWindow.until,
+      logCursors.at(-1),
+      connectionCursors.at(-1),
       appsProvider,
       appsName,
       appsCursor,
@@ -262,19 +329,24 @@ export function HostMonitorDiagnostics({
     enabled:
       active !== null &&
       !['disk-space', 'benchmark', 'export'].includes(active) &&
-      (active !== 'logs' || chosenService !== ''),
+      (active !== 'logs' || logScope !== 'container' || !!chosenService),
     queryFn: () => {
       if (active === 'logs')
         return monitorApi.logs({
-          service: chosenService,
-          priority: priority ? Number(priority) : undefined,
+          service: chosenService || undefined,
+          scope: logScope,
+          ...logWindow,
+          cursor: logScope === 'container' ? undefined : logCursors.at(-1),
+          priority:
+            logScope !== 'container' && priority ? Number(priority) : undefined,
           limit: 40,
         })
       if (active === 'connections')
         return monitorApi.connections({
-          show_addresses: showAddresses,
-          include_process: includeProcess,
+          show_addresses: true,
+          include_process: true,
           limit: 50,
+          cursor: connectionCursors.at(-1),
         })
       if (
         active === 'sensors' ||
@@ -322,6 +394,8 @@ export function HostMonitorDiagnostics({
                 value.local,
                 value.remote,
                 value.pid,
+                value.pids,
+                value.process_name,
               ].some((field) =>
                 String(field ?? '')
                   .toLowerCase()
@@ -363,7 +437,12 @@ export function HostMonitorDiagnostics({
               <button
                 type="button"
                 className={control}
-                onClick={() => setRevision((value) => value + 1)}
+                onClick={() => {
+                  if (active === 'logs') resetLogPage()
+                  if (active === 'connections')
+                    setConnectionCursors([undefined])
+                  setRevision((value) => value + 1)
+                }}
               >
                 Run again
               </button>
@@ -372,35 +451,85 @@ export function HostMonitorDiagnostics({
           {active === 'logs' && (
             <div className="mt-3 flex flex-wrap gap-3">
               <label className="text-xs text-slate-400">
-                Managed service{' '}
+                Log source{' '}
+                <select
+                  className={`${control} ml-1`}
+                  value={logScope}
+                  onChange={(event) => {
+                    setLogScope(event.target.value as MonitorLogScope)
+                    setLogService('')
+                    setPriority('')
+                    resetLogPage()
+                  }}
+                >
+                  <option value="user">User</option>
+                  <option value="system">System</option>
+                  <option value="container">Containers</option>
+                </select>
+              </label>
+              <label className="text-xs text-slate-400">
+                {logScope === 'container' ? 'Container' : 'Service'}{' '}
                 <select
                   className={`${control} ml-1`}
                   value={chosenService}
-                  onChange={(event) => setLogService(event.target.value)}
+                  onChange={(event) => {
+                    setLogService(event.target.value)
+                    resetLogPage()
+                  }}
                 >
-                  <option value="">Choose service</option>
-                  {serviceNames.map((name) => (
+                  {logScope !== 'container' && (
+                    <option value="">All services</option>
+                  )}
+                  {availableServices.map((name) => (
                     <option key={name} value={name}>
                       {name}
                     </option>
                   ))}
                 </select>
               </label>
-              <label className="text-xs text-slate-400">
-                Priority{' '}
-                <select
-                  className={`${control} ml-1`}
-                  value={priority}
-                  onChange={(event) => setPriority(event.target.value)}
-                >
-                  <option value="">All</option>
-                  {Array.from({ length: 8 }, (_, value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {logScope !== 'container' && (
+                <label className="text-xs text-slate-400">
+                  Priority{' '}
+                  <select
+                    className={`${control} ml-1`}
+                    value={priority}
+                    onChange={(event) => {
+                      setPriority(event.target.value)
+                      resetLogPage()
+                    }}
+                  >
+                    <option value="">All</option>
+                    {Array.from({ length: 8 }, (_, value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {logServices.isLoading && (
+                <p role="status" className="self-center text-xs text-slate-400">
+                  Loading {logScope === 'container' ? 'containers' : 'services'}
+                  …
+                </p>
+              )}
+              {logServices.error && (
+                <p role="alert" className="self-center text-xs text-amber-300">
+                  {logScope === 'container' ? 'Container' : 'Service'} list
+                  unavailable: {logServices.error.message}
+                </p>
+              )}
+              {logServices.data &&
+                (logServices.data.coverage.availability !== 'ok' ||
+                  logServices.data.errors.length > 0) && (
+                  <p className="basis-full text-xs text-amber-300">
+                    {logScope === 'container' ? 'Container' : 'Service'}{' '}
+                    inventory: {display(logServices.data.coverage.availability)}
+                    {errors(logServices.data.errors)
+                      ? ` · ${errors(logServices.data.errors)}`
+                      : ''}
+                  </p>
+                )}
             </div>
           )}
           {active === 'connections' && (
@@ -428,27 +557,9 @@ export function HostMonitorDiagnostics({
                   <option value="udp">UDP</option>
                 </select>
               </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={showAddresses}
-                  onChange={(event) => setShowAddresses(event.target.checked)}
-                  className="accent-cyan-400"
-                />
-                Show socket addresses
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={includeProcess}
-                  onChange={(event) => setIncludeProcess(event.target.checked)}
-                  className="accent-cyan-400"
-                />
-                Look up owning PIDs
-              </label>
               <p className="basis-full text-xs text-slate-500">
-                Addresses are redacted by default. Process ownership depends on
-                procfs access.
+                Socket addresses and owning PIDs are shown when the collector
+                can read them. Live pages may shift as sockets change.
               </p>
             </div>
           )}
@@ -521,9 +632,17 @@ export function HostMonitorDiagnostics({
             <BenchmarkPanel />
           ) : active === 'export' ? (
             <FlightRecorderPanel />
-          ) : active === 'logs' && !chosenService ? (
-            <p className="mt-3 text-sm text-slate-400">
-              Choose a managed service to read its logs.
+          ) : active === 'logs' &&
+            logScope === 'container' &&
+            !chosenService ? (
+            <p role="status" className="mt-3 text-sm text-slate-400">
+              {logServices.isLoading
+                ? 'Loading containers…'
+                : logServices.error
+                  ? 'Container list unavailable.'
+                  : logServices.data?.coverage.availability !== 'ok'
+                    ? `Container inventory ${display(logServices.data?.coverage.availability)}.`
+                    : 'No containers available.'}
             </p>
           ) : query.isLoading ? (
             <p role="status" className="mt-3 text-sm text-slate-400">
@@ -572,11 +691,27 @@ export function HostMonitorDiagnostics({
                     {display(query.data.coverage.socket_count_scanned)} sockets
                     scanned · addresses{' '}
                     {query.data.coverage.addresses_redacted === true
-                      ? 'redacted'
+                      ? 'unavailable'
                       : 'shown'}
                     {' · '}
                     {filteredConnections.length} match in{' '}
-                    {query.data.items.length} returned
+                    {query.data.items.length} returned · namespace{' '}
+                    {display(query.data.coverage.network_namespace)}
+                  </p>
+                )}
+                {active === 'logs' && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    {time(logWindow.since)} to {time(logWindow.until)}
+                    {logScope === 'container'
+                      ? ''
+                      : ` · page ${logCursors.length}`}
+                  </p>
+                )}
+                {active === 'logs' && logScope === 'container' && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Priority filter:{' '}
+                    {display(query.data.coverage.priority_filter)}
+                    {' · '}Paging: {display(query.data.coverage.pagination)}
                   </p>
                 )}
                 {active === 'apps' && (
@@ -664,6 +799,50 @@ export function HostMonitorDiagnostics({
                         : `No results: ${display(query.data.coverage.availability)}.`}
                   </p>
                 )}
+                {((active === 'logs' && logScope !== 'container') ||
+                  active === 'connections') &&
+                  ((active === 'logs' ? logCursors : connectionCursors).length >
+                    1 ||
+                    query.data.next_cursor) && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        type="button"
+                        className={control}
+                        disabled={
+                          (active === 'logs' ? logCursors : connectionCursors)
+                            .length === 1
+                        }
+                        onClick={() => {
+                          if (active === 'logs')
+                            setLogCursors((items) => items.slice(0, -1))
+                          else
+                            setConnectionCursors((items) => items.slice(0, -1))
+                        }}
+                      >
+                        Previous page
+                      </button>
+                      <span className="text-xs text-slate-500">
+                        Page{' '}
+                        {active === 'logs'
+                          ? logCursors.length
+                          : connectionCursors.length}
+                      </span>
+                      <button
+                        type="button"
+                        className={control}
+                        disabled={!query.data.next_cursor}
+                        onClick={() => {
+                          const next = query.data?.next_cursor
+                          if (!next) return
+                          if (active === 'logs')
+                            setLogCursors((items) => [...items, next])
+                          else setConnectionCursors((items) => [...items, next])
+                        }}
+                      >
+                        Next page
+                      </button>
+                    </div>
+                  )}
               </>
             )
           )}
@@ -692,6 +871,14 @@ function Bytes({ value }: { value: unknown }) {
 
 function DiskSpacePanel() {
   const [path, setPath] = useState('')
+  const [mountCursors, setMountCursors] = useState<Array<string | undefined>>([
+    undefined,
+  ])
+  const mounts = useQuery({
+    queryKey: ['monitor', 'mounts', mountCursors.at(-1)],
+    queryFn: () => monitorApi.mounts(mountCursors.at(-1)),
+    staleTime: 60_000,
+  })
   const scan = useMutation({
     mutationFn: (value: string) =>
       monitorApi.diskSpace({
@@ -718,6 +905,140 @@ function DiskSpacePanel() {
   )
   return (
     <div className="mt-3 space-y-3">
+      <div className="rounded-md border border-slate-800 bg-slate-950/40">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
+          <h5 className="text-sm font-medium text-slate-200">
+            Mounted filesystems
+          </h5>
+          <button
+            type="button"
+            className={control}
+            onClick={() => mounts.refetch()}
+          >
+            Refresh mounts
+          </button>
+        </div>
+        {mounts.isLoading ? (
+          <p role="status" className="px-3 py-3 text-sm text-slate-400">
+            Loading mounts…
+          </p>
+        ) : mounts.error ? (
+          <p role="alert" className="px-3 py-3 text-sm text-rose-300">
+            {mounts.error.message}
+          </p>
+        ) : mounts.data ? (
+          <div className="px-3 py-2">
+            <p className="text-xs text-slate-500">
+              Page {mountCursors.length} · {mounts.data.items.length} returned ·{' '}
+              {display(mounts.data.coverage.availability)}
+              {' · sampled '}
+              {time(mounts.data.coverage.sampled_at)}
+              {mounts.data.truncated ? ' · truncated' : ''}
+            </p>
+            {mounts.data.coverage.live_pages_may_shift === true && (
+              <p className="mt-1 text-xs text-slate-500">
+                Pages may shift after a new collector sample.
+              </p>
+            )}
+            {errors(mounts.data.errors) && (
+              <p className="mt-1 text-xs text-amber-300">
+                {errors(mounts.data.errors)}
+              </p>
+            )}
+            {mounts.data.items.length ? (
+              <div className="mt-2 max-h-72 overflow-auto">
+                <table className="w-full min-w-[36rem] text-left text-xs">
+                  <thead className="text-slate-500">
+                    <tr>
+                      <th className="pb-2">Mount</th>
+                      <th>Source / type</th>
+                      <th>Total</th>
+                      <th>Available</th>
+                      <th className="sr-only">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mounts.data.items.map((item, index) => {
+                      const value = record(item.value) || {}
+                      const mountpoint =
+                        typeof value.mountpoint === 'string'
+                          ? value.mountpoint
+                          : ''
+                      return (
+                        <tr
+                          key={`${mountpoint}-${index}`}
+                          className="border-t border-slate-800 text-slate-300"
+                        >
+                          <td className="py-2 pr-3 font-mono break-all">
+                            {display(mountpoint)}
+                          </td>
+                          <td className="py-2 pr-3 break-all">
+                            {display(value.source)}{' '}
+                            <span className="text-slate-500">
+                              {display(value.filesystem)}
+                              {value.counted_in_coverage === false
+                                ? ' · shared filesystem capacity'
+                                : ''}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-3 whitespace-nowrap">
+                            <Bytes value={value.total_bytes} />
+                          </td>
+                          <td className="py-2 pr-3 whitespace-nowrap">
+                            <Bytes value={value.available_bytes} />
+                          </td>
+                          <td className="py-2 text-right">
+                            {mountpoint && (
+                              <button
+                                type="button"
+                                className={control}
+                                onClick={() => {
+                                  setPath(mountpoint)
+                                  scan.mutate(mountpoint)
+                                }}
+                              >
+                                Scan
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-slate-400">No mounts returned.</p>
+            )}
+            {(mountCursors.length > 1 || mounts.data.next_cursor) && (
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  className={control}
+                  disabled={mountCursors.length === 1}
+                  onClick={() => setMountCursors((items) => items.slice(0, -1))}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className={control}
+                  disabled={!mounts.data.next_cursor}
+                  onClick={() => {
+                    if (mounts.data?.next_cursor)
+                      setMountCursors((items) => [
+                        ...items,
+                        mounts.data.next_cursor || undefined,
+                      ])
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
       <form
         onSubmit={(event) => {
           event.preventDefault()
@@ -726,7 +1047,7 @@ function DiskSpacePanel() {
         className="flex flex-wrap items-end gap-2"
       >
         <label className="min-w-[min(100%,22rem)] flex-1 text-xs text-slate-400">
-          Path beneath owner home or registered project root
+          Path on a mounted filesystem
           <input
             required
             type="text"
@@ -735,7 +1056,7 @@ function DiskSpacePanel() {
               setPath(event.target.value)
               scan.reset()
             }}
-            placeholder="Enter an allowed absolute path"
+            placeholder="Enter an absolute path"
             className={`${control} mt-1 w-full`}
           />
         </label>
@@ -985,8 +1306,8 @@ function FlightRecorderPanel() {
         </button>
       </div>
       <p className="text-xs text-slate-500">
-        {time(range.since)} to {time(range.until)} · redacted samples and events
-        · up to 20 rows per page
+        {time(range.since)} to {time(range.until)} · samples and events · up to
+        20 rows per page
       </p>
       {page.isLoading ? (
         <p role="status" className="text-sm text-slate-400">
@@ -1029,9 +1350,25 @@ function FlightRecorderPanel() {
                     </summary>
                     <div className="space-y-1 border-t border-slate-800 p-3 text-slate-400">
                       {item.type === 'event' ? (
-                        <p>
-                          {display(item.severity)} · entity and details redacted
-                        </p>
+                        <div className="space-y-2">
+                          <p>
+                            {display(item.severity)} · {display(item.entity)}
+                          </p>
+                          {detailRows(item.details).length ? (
+                            <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[max-content_minmax(0,1fr)]">
+                              {detailRows(item.details).map(([key, value]) => (
+                                <div key={key} className="contents">
+                                  <dt className="text-slate-500">{key}</dt>
+                                  <dd className="break-all text-slate-300">
+                                    {value}
+                                  </dd>
+                                </div>
+                              ))}
+                            </dl>
+                          ) : (
+                            <p>No additional details recorded.</p>
+                          )}
+                        </div>
                       ) : (
                         <>
                           <p>

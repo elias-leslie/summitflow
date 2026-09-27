@@ -119,6 +119,26 @@ def test_status_and_series_preserve_zero_denial_and_gap(store):
     assert len(encode_budgeted_json(result)) <= 4096
 
 
+def test_mount_inventory_pages_without_losing_filesystems(store):
+    directory, conn = store
+    rows = [{"mountpoint": mount, "filesystem": "ext4", "total_bytes": 100,
+             "available_bytes": 50} for mount in ("/", "/boot", "/media/backup")]
+    _sample(conn, when=NOW - NSEC, host={"mounts": rows,
+                                        "mount_coverage": {"availability": "ok", "mounts_reported": 3}})
+    _sample(conn, when=NOW, host={"mounts": [{"mountpoint": "/new", "total_bytes": 200}],
+                                  "mount_coverage": {"availability": "ok", "mounts_reported": 1}})
+    conn.commit()
+    reader = MonitorReader(directory)
+    first = reader.mounts(at=NOW - NSEC, limit=2)
+    assert [entry["value"]["mountpoint"] for entry in first["items"]] == ["/", "/boot"]
+    assert first["next_cursor"] and first["truncated"]
+    second = reader.mounts(at=NOW - NSEC, cursor=first["next_cursor"], limit=2)
+    assert [entry["value"]["mountpoint"] for entry in second["items"]] == ["/media/backup"]
+    assert second["next_cursor"] is None and not second["truncated"]
+    assert reader.mounts(at=NOW)["items"][0]["value"]["mountpoint"] == "/new"
+    assert "mounts" not in reader.status(now=NOW)["items"][0]["host"]
+
+
 def test_status_stale_and_backend_independent_read(store):
     directory, conn = store
     _sample(conn, when=NOW - 100 * NSEC)

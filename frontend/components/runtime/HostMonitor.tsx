@@ -1014,7 +1014,7 @@ export function HostMonitor() {
           )}
         </div>
         <div className={`${panel} min-w-0`}>
-          <h3 className="font-semibold text-slate-100">Managed services</h3>
+          <h3 className="font-semibold text-slate-100">SummitFlow services</h3>
           {serviceList.length ? (
             <div className="mt-3 max-h-72 space-y-1 overflow-y-auto">
               {serviceList.map(({ id, data }) => (
@@ -1434,6 +1434,26 @@ export function HostMonitor() {
                   string(record(event.details)?.reason) ||
                   'No further event details.'}
               </p>
+              {record(event.details) && (
+                <dl className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-[max-content_minmax(0,1fr)]">
+                  {Object.entries(record(event.details) || {}).map(
+                    ([key, value]) => (
+                      <div key={key} className="contents">
+                        <dt className="text-slate-500">
+                          {key.replaceAll('_', ' ')}
+                        </dt>
+                        <dd className="break-all text-slate-300">
+                          {value === null || value === undefined
+                            ? 'Unavailable'
+                            : typeof value === 'object'
+                              ? JSON.stringify(value)
+                              : String(value)}
+                        </dd>
+                      </div>
+                    ),
+                  )}
+                </dl>
+              )}
             </div>
           )}
           {events.data && (

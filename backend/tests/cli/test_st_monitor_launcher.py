@@ -10,6 +10,7 @@ import socket
 import sqlite3
 import subprocess
 import threading
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -52,6 +53,45 @@ def _run(link: Path, env: dict[str, str], *args: str) -> subprocess.CompletedPro
     return subprocess.run([str(link), *args], env=env, text=True, capture_output=True, check=False)
 
 
+@contextmanager
+def _observations(state: Path, count: int):
+    """A collector socket proves the standalone CLI uses the privileged protocol."""
+    received = []
+    path = state / "control.sock"
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+        server.bind(str(path))
+        server.listen(count)
+        server.settimeout(3)
+
+        def serve() -> None:
+            for _ in range(count):
+                connection, _ = server.accept()
+                with connection:
+                    with connection.makefile("rb") as stream:
+                        request = json.loads(stream.readline())
+                    received.append(request)
+                    source = request["source"]
+                    params = request["params"]
+                    value = ({"message": "token=[REDACTED]"} if source == "logs" else
+                             {"local": "127.0.0.1:8080"} if source == "connections" else
+                             {"name": "visible.txt", "apparent_bytes": 5})
+                    result = {"schema": 1, "generated_at": datetime.now(UTC).isoformat(),
+                              "requested": {"kind": source, **params},
+                              "coverage": {"scope": "mount", "complete": False},
+                              "items": [{"value": value}], "next_cursor": None,
+                              "truncated": False, "errors": []}
+                    response = {"schema": 1, "ok": True, "result": result}
+                    connection.sendall((json.dumps(response) + "\n").encode())
+
+        worker = threading.Thread(target=serve, daemon=True)
+        worker.start()
+        try:
+            yield received
+        finally:
+            worker.join(timeout=3)
+            assert not worker.is_alive()
+
+
 def test_installed_monitor_prefers_accepted_release_source(installed, tmp_path: Path) -> None:
     root, link, state, env = installed
     _store(state)
@@ -64,9 +104,11 @@ def test_installed_monitor_prefers_accepted_release_source(installed, tmp_path: 
     result = _run(link, env, "monitor", "status")
     assert result.returncode == 0
     assert json.loads(result.stdout)["schema"] == 1
-    disk = _run(link, env, "monitor", "disk-space", str(root), "--limit", "5")
+    with _observations(state, 1) as received:
+        disk = _run(link, env, "monitor", "disk-space", str(root), "--limit", "5")
     assert disk.returncode == 0, disk.stderr or disk.stdout
-    assert json.loads(disk.stdout)["coverage"]["scope"] == "project"
+    assert json.loads(disk.stdout)["coverage"]["scope"] == "mount"
+    assert received[0]["params"]["path"] == str(root)
 
 
 def _store(state: Path) -> None:
@@ -182,7 +224,7 @@ def test_monitor_failures_stay_structured_without_store(installed):
 
 
 def test_on_demand_commands_use_standalone_dispatch(installed, tmp_path: Path):
-    _, link, _, env = installed
+    _, link, state, env = installed
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
     commands = {
@@ -207,30 +249,32 @@ def test_on_demand_commands_use_standalone_dispatch(installed, tmp_path: Path):
         (("apps", "--limit", "2"), "apps"),
         (("drivers", "--limit", "2"), "drivers"),
     )
-    for args, kind in cases:
-        result = _run(link, env, "monitor", *args)
-        assert result.returncode == 0, (args, result.stderr, result.stdout)
-        payload = json.loads(result.stdout)
-        assert payload["schema"] == 1
-        assert payload["requested"]["kind"] == kind
-        assert len(result.stdout.encode()) <= 4097
-        if kind == "logs":
-            assert payload["requested"]["priority"] == 6
-        if kind == "connections":
-            assert payload["requested"]["include_addresses"] is True
-            assert payload["requested"]["include_process"] is True
-    log = json.loads(_run(link, env, "monitor", "logs", "backend", "--since", "1m").stdout)
-    assert log["items"][0]["value"]["message"] == "token=[REDACTED]"
-    assert log["requested"]["since"].endswith("+00:00")
-    connections = json.loads(_run(link, env, "monitor", "connections", "--show-addresses").stdout)
-    assert connections["requested"]["include_addresses"] is True
+    with _observations(state, 4) as received:
+        for args, kind in cases:
+            result = _run(link, env, "monitor", *args)
+            assert result.returncode == 0, (args, result.stderr, result.stdout)
+            payload = json.loads(result.stdout)
+            assert payload["schema"] == 1
+            assert payload["requested"]["kind"] == kind
+            assert len(result.stdout.encode()) <= 4097
+            if kind == "logs":
+                assert payload["requested"]["priority"] == 6
+            if kind == "connections":
+                assert payload["requested"]["include_addresses"] is True
+                assert payload["requested"]["include_process"] is True
+        log = json.loads(_run(link, env, "monitor", "logs", "backend", "--since", "1m").stdout)
+        assert log["items"][0]["value"]["message"] == "token=[REDACTED]"
+        assert log["requested"]["since"].endswith("+00:00")
+        connections = json.loads(_run(link, env, "monitor", "connections", "--show-addresses").stdout)
+        assert connections["requested"]["include_addresses"] is True
+    assert [row["source"] for row in received] == ["logs", "connections", "logs", "connections"]
 
 
 def test_on_demand_failures_stay_structured(installed):
     _, link, _, env = installed
     result = _run(link, env, "monitor", "logs", "other-service")
     assert result.returncode == 1
-    assert json.loads(result.stdout)["errors"][0]["message"] == "service is not a managed unit"
+    assert json.loads(result.stdout)["errors"][0]["message"] == "collector observation unavailable"
     result = _run(link, env, "monitor", "logs", "backend", "--since", "1m",
                   "--until", "2026-09-26T12:00:00Z", "--cursor", "s=1")
     assert result.returncode == 1
@@ -245,14 +289,16 @@ def test_extended_commands_use_standalone_dispatch(installed, tmp_path: Path):
     (scan / "visible.txt").write_bytes(b"12345")
     (scan / ".hidden").write_bytes(b"hidden")
 
-    disk = _run(link, env, "monitor", "disk-space", str(scan), "--max-depth", "1",
-                "--max-entries", "20")
+    with _observations(state, 1) as received:
+        disk = _run(link, env, "monitor", "disk-space", str(scan), "--max-depth", "1",
+                    "--max-entries", "20")
     assert disk.returncode == 0, disk.stderr or disk.stdout
     disk_payload = json.loads(disk.stdout)
     assert disk_payload["requested"]["kind"] == "disk_space"
     assert disk_payload["items"][0]["value"]["name"] == "visible.txt"
     assert disk_payload["coverage"]["complete"] is False
     assert len(disk.stdout.encode()) <= 4097
+    assert received[0]["params"]["path"] == str(scan)
 
     cpu = _run(link, env, "monitor", "benchmark", "cpu", "--duration-seconds", "0.01")
     assert cpu.returncode == 0, cpu.stderr or cpu.stdout

@@ -4,7 +4,7 @@ use std::{
     fs,
     io::{self, Read},
     os::{fd::AsRawFd, unix::fs::MetadataExt},
-    path::Path,
+    path::{Path, PathBuf},
     process::{ChildStdout, Command, Stdio},
     sync::OnceLock,
     thread,
@@ -566,6 +566,152 @@ fn root_disk(errors: &mut Vec<Value>) -> (Value, Value) {
         json!((stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64)),
     )
 }
+
+fn mount_field(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\'
+            && i + 3 < bytes.len()
+            && bytes[i + 1..i + 4]
+                .iter()
+                .all(|b| (b'0'..=b'7').contains(b))
+        {
+            out.push((bytes[i + 1] - b'0') * 64 + (bytes[i + 2] - b'0') * 8 + bytes[i + 3] - b'0');
+            i += 4;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn real_mount(kind: &str, source: &str) -> bool {
+    !matches!(
+        kind,
+        "proc"
+            | "sysfs"
+            | "tmpfs"
+            | "devtmpfs"
+            | "devpts"
+            | "cgroup"
+            | "cgroup2"
+            | "securityfs"
+            | "debugfs"
+            | "tracefs"
+            | "configfs"
+            | "fusectl"
+            | "mqueue"
+            | "hugetlbfs"
+            | "pstore"
+            | "efivarfs"
+            | "bpf"
+            | "nsfs"
+            | "ramfs"
+            | "autofs"
+            | "binfmt_misc"
+    ) && !kind.starts_with("overlay")
+        && !source.starts_with("/dev/loop")
+}
+
+fn mount_inventory_from(
+    contents: &str,
+    errors: &mut Vec<Value>,
+    measure: impl Fn(&Path) -> io::Result<(u64, u64)>,
+) -> (Value, Value) {
+    let mut rows = Vec::new();
+    let mut filesystems = HashSet::new();
+    let mut seen = 0usize;
+    let mut serialized_bytes = 0usize;
+    for line in contents.lines() {
+        let Some((front, back)) = line.split_once(" - ") else {
+            err(errors, "/proc/self/mountinfo", "parse_failed");
+            continue;
+        };
+        let fields: Vec<_> = front.split_whitespace().collect();
+        let tail: Vec<_> = back.split_whitespace().collect();
+        if fields.len() < 5 || tail.len() < 2 {
+            err(errors, "/proc/self/mountinfo", "parse_failed");
+            continue;
+        }
+        let kind = tail[0];
+        let source = mount_field(tail[1]);
+        if !real_mount(kind, &source) {
+            continue;
+        }
+        seen += 1;
+        if rows.len() >= 128 {
+            err(errors, "/proc/self/mountinfo", "source_truncated");
+            continue;
+        }
+        let path = PathBuf::from(mount_field(fields[4]));
+        let root = mount_field(fields[3]);
+        let key = format!("{}:{kind}:{source}", fields[2]);
+        let counted = !filesystems.contains(&key);
+        let (total, free) = match measure(&path) {
+            Ok((total, free)) => (Some(total), Some(free)),
+            Err(e) => {
+                err(
+                    errors,
+                    "/proc/self/mountinfo",
+                    if e.kind() == io::ErrorKind::PermissionDenied {
+                        "permission_denied"
+                    } else {
+                        "statvfs_failed"
+                    },
+                );
+                (None, None)
+            }
+        };
+        let row = json!({"mountpoint":path,"root":root,"filesystem":kind,"source":source,"device":fields[2],"total_bytes":total,"available_bytes":free,"counted_in_coverage":counted});
+        let size = row.to_string().len();
+        if serialized_bytes.saturating_add(size) > 24 * 1024 {
+            err(errors, "/proc/self/mountinfo", "source_truncated");
+            continue;
+        }
+        serialized_bytes += size;
+        filesystems.insert(key);
+        rows.push(row);
+    }
+    let failed = rows.iter().filter(|r| r["total_bytes"].is_null()).count();
+    (
+        json!(rows),
+        json!({"availability":if failed > 0 || seen > rows.len() {"partial"} else {"ok"},"mounts_seen":seen,"mounts_reported":rows.len(),"filesystems_seen":filesystems.len(),"statvfs_failed":failed,"truncated":seen > rows.len()}),
+    )
+}
+
+fn mounts(errors: &mut Vec<Value>) -> (Value, Value) {
+    let contents = match fs::read_to_string("/proc/self/mountinfo") {
+        Ok(contents) => contents,
+        Err(e) => {
+            err(
+                errors,
+                "/proc/self/mountinfo",
+                if e.kind() == io::ErrorKind::PermissionDenied {
+                    "permission_denied"
+                } else {
+                    "read_failed"
+                },
+            );
+            return (Value::Null, json!({"availability":"unavailable"}));
+        }
+    };
+    mount_inventory_from(&contents, errors, |path| {
+        let c = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid mountpoint"))?;
+        let mut stat = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+        if unsafe { libc::statvfs(c.as_ptr(), stat.as_mut_ptr()) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let stat = unsafe { stat.assume_init() };
+        Ok((
+            (stat.f_blocks as u64).saturating_mul(stat.f_frsize as u64),
+            (stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64),
+        ))
+    })
+}
 fn proc_io(
     result: io::Result<String>,
     errors: &mut Vec<Value>,
@@ -866,10 +1012,11 @@ pub fn host(
     };
     let (total, available, swap) = mem(sys, errors);
     let (disk_total, disk_free) = root_disk(errors);
+    let (mounts, mount_coverage) = mounts(errors);
     let (rx, tx, net_source, net_members) = net(errors);
     let (disk_read, disk_write, disk_source, disk_members) = disks(errors);
     (
-        json!({"cpu_busy_pct":busy,"memory_total_bytes":total,"memory_available_bytes":available,"swap_used_bytes":swap,"disk_total_bytes":disk_total,"disk_free_bytes":disk_free,"cpu_some_avg10_pct":psi("cpu",errors),"memory_some_avg10_pct":psi("memory",errors),"io_some_avg10_pct":psi("io",errors),"net_rx_bytes":rx,"net_tx_bytes":tx,"net_source":net_source,"net_members":net_members,"disk_read_bytes":disk_read,"disk_write_bytes":disk_write,"disk_source":disk_source,"disk_members":disk_members}),
+        json!({"cpu_busy_pct":busy,"memory_total_bytes":total,"memory_available_bytes":available,"swap_used_bytes":swap,"disk_total_bytes":disk_total,"disk_free_bytes":disk_free,"mounts":mounts,"mount_coverage":mount_coverage,"cpu_some_avg10_pct":psi("cpu",errors),"memory_some_avg10_pct":psi("memory",errors),"io_some_avg10_pct":psi("io",errors),"net_rx_bytes":rx,"net_tx_bytes":tx,"net_source":net_source,"net_members":net_members,"disk_read_bytes":disk_read,"disk_write_bytes":disk_write,"disk_source":disk_source,"disk_members":disk_members}),
         cpu_now,
     )
 }
@@ -878,6 +1025,34 @@ pub fn host(
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn mount_inventory_keeps_subvolumes_and_counts_filesystem_once() {
+        let input = "1 0 0:42 /@ / rw - btrfs /dev/nvme0n1p2 rw\n2 1 0:42 /@home /home rw - btrfs /dev/nvme0n1p2 rw\n3 1 0:43 / /proc rw - proc proc rw\n4 1 8:1 / /data rw - ext4 /dev/sdb1 rw\n";
+        let mut errors = Vec::new();
+        let (rows, coverage) = mount_inventory_from(input, &mut errors, |_| Ok((100, 40)));
+        assert_eq!(rows.as_array().unwrap().len(), 3);
+        assert_eq!(rows[0]["root"], "/@");
+        assert_eq!(rows[1]["root"], "/@home");
+        assert_eq!(rows[1]["counted_in_coverage"], false);
+        assert_eq!(rows[1]["available_bytes"], 40);
+        assert_eq!(coverage["filesystems_seen"], 2);
+        assert_eq!(coverage["availability"], "ok");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn mount_inventory_reports_stat_failure_without_zero_usage() {
+        let mut errors = Vec::new();
+        let (rows, coverage) = mount_inventory_from(
+            "1 0 8:1 / /data rw - ext4 /dev/sdb1 rw",
+            &mut errors,
+            |_| Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+        );
+        assert_eq!(rows[0]["total_bytes"], Value::Null);
+        assert_eq!(coverage["availability"], "partial");
+        assert_eq!(errors[0]["code"], "permission_denied");
+    }
 
     #[test]
     fn gpu_csv_preserves_quoted_name_and_null_reading_without_guessing() {
