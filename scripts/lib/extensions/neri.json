@@ -147,6 +147,9 @@
     "research promote-application-source": "Usage: neri research promote-application-source [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "research application-snapshots": "Usage: neri research application-snapshots [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "research snapshot-application": "Usage: neri research snapshot-application [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "session": "Usage: neri session [OPTIONS] COMMAND [ARGS]...\n\n  Bind Codex sessions and inspect captured investigation timelines\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  bind\n  timeline",
+    "session bind": "Usage: neri session bind [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --session-id <str>\n  --hook-session-id <str>\n  --agent-id <str>\n  --campaign-id <str>\n  --help                   Show this message and exit.",
+    "session timeline": "Usage: neri session timeline [OPTIONS] {target_id} {investigation_group_id}\n\nArguments:\n  target_id               [required]\n  investigation_group_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "worker": "Usage: neri worker [OPTIONS] COMMAND [ARGS]...\n\n  Inspect the bounded local candidate and Neri-owned qualification evidence\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  status         Inspect the dedicated local runtime and promotion state.\n  evaluate       Run one fallback-free, tool-free local analysis over a...\n  benchmark      Run the bounded harness-arm suite sequentially on the...\n  qualification  Read current qualification state from Neri, not the...\n  qualify        Append one qualification decision while retaining its...\n  shadow         Create one predeclared shadow assignment through Neri.\n  assignments    List assignment projections, optionally narrowed to one...\n  assignment     Read one assignment using its server-issued identity...\n  review         Append one immutable frontier review to an exact...",
     "worker status": "Usage: neri worker status [OPTIONS]\n\n  Inspect the dedicated local runtime and promotion state.\n\nOptions:\n  --help  Show this message and exit.",
     "worker evaluate": "Usage: neri worker evaluate [OPTIONS]\n\n  Run one fallback-free, tool-free local analysis over a sanitized packet.\n\nOptions:\n  --task-family <facts_unknowns|evidence_consistency|scope_policy_parse|evidence_condensation|matrix_construction|hypothesis_controls|candidate_triage|learning_draft>\n                                  [required]\n  --file <file>                   [required]\n  --arm <bare_schema|role_checklist|grounded_decomposition|critique_repair>\n                                  [default: grounded_decomposition]\n  --reasoning-effort <low|medium|xhigh>\n                                  [default: xhigh]\n  --max-output-tokens <int range>\n                                  [default: 4096; 256<=x<=8192]\n  --help                          Show this message and exit.",
@@ -1640,6 +1643,35 @@
       "precautions": [
         "server rejects a stale source digest",
         "saving a projection performs no target interaction and grants no capability credit"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.session.bind",
+      "tier": "reference",
+      "cmd": "st neri session bind <investigation-id> [--session-id ID] [--hook-session-id ID] [--agent-id ID] [--campaign-id ID]",
+      "when": "bind the current Codex operator session to one exact Neri investigation",
+      "precautions": [
+        "the binding is immutable and cannot be moved to another investigation",
+        "bind each live subagent with its agent ID and parent hook session ID; authority is not inherited",
+        "the command saves only identity and provenance, never transcript or challenge secrets"
+      ],
+      "task_types": [
+        "neri",
+        "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.session.timeline",
+      "tier": "reference",
+      "cmd": "st neri session timeline <target-id> <investigation-group-id>",
+      "when": "inspect the captured chronological hunt activity for one investigation",
+      "precautions": [
+        "read-only; exact terminal output may contain sensitive target material",
+        "the compact response preserves capture gaps and evidence health"
       ],
       "task_types": [
         "neri",
