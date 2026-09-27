@@ -60,9 +60,21 @@ def _time(value: str | datetime | None, default: datetime) -> str:
     return parsed.astimezone(UTC).isoformat(timespec="seconds")
 
 
+def _command_env(argv: list[str], *, runtime_root: Path = Path("/run/user")) -> dict[str, str] | None:
+    """Pin the owner's existing user bus for non-login agent shells."""
+    if argv[:2] == ["systemctl", "--user"]:
+        uid = os.getuid()
+        runtime = runtime_root / str(uid)
+        bus = runtime / "bus"
+        if runtime.is_dir() and runtime.stat().st_uid == uid and bus.is_socket():
+            return {**os.environ, "XDG_RUNTIME_DIR": str(runtime),
+                    "DBUS_SESSION_BUS_ADDRESS": f"unix:path={bus}"}
+    return None
+
+
 def _run(argv: list[str]) -> tuple[bytes, bytes, int, bool]:
     """Drain both pipes with a deadline and a combined byte cap."""
-    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_command_env(argv))
     selector = selectors.DefaultSelector()
     assert proc.stdout and proc.stderr
     selector.register(proc.stdout, selectors.EVENT_READ, "out")

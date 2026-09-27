@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import socket
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,6 +10,22 @@ from types import SimpleNamespace
 import pytest
 
 from monitor_observe import ObserveQueryError, logs, query_log_services, query_logs
+
+
+def test_user_service_discovery_pins_owner_bus_in_non_login_shell(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = tmp_path / str(os.getuid())
+    runtime.mkdir()
+    with socket.socket(socket.AF_UNIX) as bus:
+        bus.bind(str(runtime / "bus"))
+        monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+        monkeypatch.delenv("DBUS_SESSION_BUS_ADDRESS", raising=False)
+        environment = logs._command_env(["systemctl", "--user", "list-units"], runtime_root=tmp_path)
+        assert environment is not None
+        assert environment["XDG_RUNTIME_DIR"] == str(runtime)
+        assert environment["DBUS_SESSION_BUS_ADDRESS"] == f"unix:path={runtime / 'bus'}"
+        assert logs._command_env(["docker", "ps"], runtime_root=tmp_path) is None
 
 
 def _journal_row(*, unit: str, scope: str, message: str = "ready", cursor: str = "s=1") -> bytes:
