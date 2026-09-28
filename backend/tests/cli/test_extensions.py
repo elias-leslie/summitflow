@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -238,8 +239,57 @@ def test_neri_binding_forwards_only_the_native_codex_session_identity():
         row for row in registry["extensions"] if row["namespace"] == "neri"
     )
 
-    assert binding["environment"] == ["CODEX_SESSION_ID", "ST_NERI_API_URL"]
+    assert binding["environment"] == [
+        "CODEX_SESSION_ID",
+        "NERI_HOOK_STATE_DIR",
+        "ST_NERI_API_URL",
+    ]
     assert "AICO_SESSION_ID" not in binding["environment"]
+
+
+def test_actual_neri_binding_preserves_only_approved_runtime_context(
+    tmp_path, capfd, monkeypatch,
+):
+    registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
+    record = next(
+        row
+        for row in load_extensions(set(), registry_path=registry_path).records
+        if row.manifest is not None and row.manifest.namespace == "neri"
+    )
+    assert record.binding is not None
+    record = replace(
+        record,
+        binding=record.binding.model_copy(update={"executable": "fixture"}),
+    )
+    executable = tmp_path / "fixture"
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import json,os\n"
+        "print(json.dumps({key: os.getenv(key) for key in "
+        "['CODEX_SESSION_ID','NERI_HOOK_STATE_DIR','AICO_SESSION_ID',"
+        "'CODEX_THREAD_ID','UNRELATED_SECRET']}))\n"
+    )
+    executable.chmod(0o755)
+    monkeypatch.setenv("CODEX_SESSION_ID", "native-root-session")
+    monkeypatch.setenv("NERI_HOOK_STATE_DIR", "/tmp/neri-hook-state")
+    monkeypatch.setenv("AICO_SESSION_ID", "widget-session")
+    monkeypatch.setenv("CODEX_THREAD_ID", "thread-session")
+    monkeypatch.setenv("UNRELATED_SECRET", "must-not-cross")
+
+    assert dispatch_extension(
+        record,
+        [],
+        context=context(tmp_path),
+        root_resolver=lambda _owner: str(tmp_path),
+    ) == 0
+    payload = json.loads(capfd.readouterr().out)
+    assert payload == {
+        "CODEX_SESSION_ID": "native-root-session",
+        "NERI_HOOK_STATE_DIR": "/tmp/neri-hook-state",
+        "AICO_SESSION_ID": None,
+        "CODEX_THREAD_ID": None,
+        "UNRELATED_SECRET": None,
+    }
 
 
 @pytest.mark.parametrize("signum", [signal.SIGINT, signal.SIGTERM])

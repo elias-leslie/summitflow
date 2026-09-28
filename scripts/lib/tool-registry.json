@@ -258,6 +258,7 @@
       },
       "environment": [
         "CODEX_SESSION_ID",
+        "NERI_HOOK_STATE_DIR",
         "ST_NERI_API_URL"
       ]
     },
