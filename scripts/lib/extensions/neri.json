@@ -112,9 +112,10 @@
     "session verify": "Usage: neri session verify [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --id <uuid>\n  --help       Show this message and exit.",
     "session finalize": "Usage: neri session finalize [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --id <uuid>\n  --help       Show this message and exit.",
     "session timeline": "Usage: neri session timeline [OPTIONS] {target_id} {investigation_group_id}\n\nArguments:\n  target_id               [required]\n  investigation_group_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
-    "closeout": "Usage: neri closeout [OPTIONS] COMMAND [ARGS]...\n\n  Inspect and record authoritative investigation closeout\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  readiness\n  save",
-    "closeout readiness": "Usage: neri closeout readiness [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --disposition <finding|no_finding|evaluation|provider_completed|inconclusive|blocked>\n  --help                          Show this message and exit.",
+    "closeout": "Usage: neri closeout [OPTIONS] COMMAND [ARGS]...\n\n  Inspect and record authoritative investigation closeout\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  readiness\n  save\n  training",
+    "closeout readiness": "Usage: neri closeout readiness [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --disposition <finding|no_finding|evaluation|provider_completed|inconclusive|blocked>\n  --provider-evidence-id <uuid>\n  --help                          Show this message and exit.",
     "closeout save": "Usage: neri closeout save [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "closeout training": "Usage: neri closeout training [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "research": "Usage: neri research [OPTIONS] COMMAND [ARGS]...\n\n  Read research capability progress and save exact associations\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  catalogue\n  application-models\n  application-model-projection\n  application-model-current\n  application-model\n  save-application-model\n  hypotheses\n  hypothesis\n  hypothesis-revision\n  record-hypothesis\n  show\n  case-schema\n  matrix\n  context\n  recommend\n  links\n  associate\n  prepare-case\n  associate-case\n  invalidate-case\n  snapshot\n  snapshots\n  outcomes\n  record-outcome\n  cohorts\n  cohort\n  register-cohort\n  catalog-campaigns\n  catalog-campaign\n  register-catalog-campaign\n  supersede-catalog-campaign\n  retire-catalog-campaign\n  record-catalog-plan\n  verify-catalog-item\n  record-catalog-replay\n  close-cohort\n  finalize-accounting\n  work\n  record-work\n  application\n  promote-application-source\n  application-snapshots\n  snapshot-application",
     "research catalogue": "Usage: neri research catalogue [OPTIONS]\n\nOptions:\n  --full / --no-full  [default: no-full]\n  --help              Show this message and exit.",
     "research application-models": "Usage: neri research application-models [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
@@ -1202,7 +1203,7 @@
     {
       "surface": "st.neri.closeout.readiness",
       "tier": "reference",
-      "cmd": "st neri closeout readiness <investigation-id> [--disposition finding|no_finding|evaluation|provider_completed|inconclusive|blocked]",
+      "cmd": "st neri closeout readiness <investigation-id> [--disposition finding|no_finding|evaluation|provider_completed|inconclusive|blocked] [--provider-evidence-id UUID]...",
       "when": "read the one authoritative closeout state, exact references and blockers",
       "precautions": [
         "read-only; the returned state_digest must be supplied to closeout save",
@@ -1211,6 +1212,23 @@
       "task_types": [
         "neri",
         "security-research"
+      ]
+    },
+    {
+      "surface": "st.neri.closeout.training",
+      "tier": "reference",
+      "cmd": "st neri closeout training <investigation-id> --file closeout.json [--id UUID]",
+      "when": "finish one stopped pwn.college study, finalize complete native capture, retain exact provider evidence, and save revision-checked provider closeout",
+      "precautions": [
+        "stop target execution and emit the exact native closeout checkpoint first",
+        "the command performs no target action and never manufactures a finding or review",
+        "partial capture or missing provider completion returns pending and cannot close the run",
+        "reuse the same request ID and unchanged content after interruption"
+      ],
+      "task_types": [
+        "neri",
+        "security-research",
+        "learning"
       ]
     },
     {
