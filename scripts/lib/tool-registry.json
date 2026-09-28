@@ -286,6 +286,7 @@
         "XDG_STATE_HOME",
         "SSH_AUTH_SOCK",
         "CLAUDECODE",
+        "CODEX_SESSION_ID",
         "CODEX_THREAD_ID",
         "CURSOR_TRACE_ID",
         "PI_CODING_AGENT_DIR",

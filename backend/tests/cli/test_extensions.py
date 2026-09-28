@@ -292,6 +292,16 @@ def test_actual_neri_binding_preserves_only_approved_runtime_context(
     }
 
 
+def test_learn_binding_forwards_native_codex_session_identity():
+    registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
+    registry = json.loads(registry_path.read_text())
+    binding = next(
+        row for row in registry["extensions"] if row["namespace"] == "learn"
+    )
+
+    assert "CODEX_SESSION_ID" in binding["environment"]
+
+
 @pytest.mark.parametrize("signum", [signal.SIGINT, signal.SIGTERM])
 def test_real_cancellation_forwards_signal_and_reaps(tmp_path, signum):
     registry = registration(tmp_path)
