@@ -887,6 +887,7 @@ def run_migrations(project: ProjectServices) -> int:
         "PORTFOLIO_DB_URL",
         "PORTFOLIO_AI_DB_URL",
         "NERI_DB_URL",
+        "LEARN_DB_URL",
         "JOBINATOR_DB_URL",
         "POSTGRES_ADMIN_URL",
         "DATABASE_ADMIN_URL",
@@ -904,13 +905,17 @@ def run_migrations(project: ProjectServices) -> int:
         "agent-hub": {"AGENT_HUB_DB_URL"},
         "portfolio-ai": {"PORTFOLIO_DB_URL"},
         "neri": {"NERI_DB_URL", "POSTGRES_ADMIN_URL", "DATABASE_ADMIN_URL"},
+        "learn-o-tron": {"LEARN_DB_URL"},
         "jobinator-4000": {"JOBINATOR_DB_URL"},
     }.get(project.project_id, {"DATABASE_URL"})
     host_root = project.host_config_root or project.root
     # Neri and Jobinator read their database URLs from the operator's shared
     # env; Alembic needs that source when running from an accepted release.
     shared_env = [Path.home() / ".env.local"] if project.project_id in {"neri", "jobinator-4000"} else []
-    for path in [*shared_env, *project_env_files(host_root)]:
+    project_env = project_env_files(host_root)
+    if project.project_id == "learn-o-tron":
+        project_env.append(host_root / "backend" / ".env")
+    for path in [*shared_env, *project_env]:
         if path.name == ".env.example" or not path.is_file():
             continue
         for key, value in dotenv_values(path, interpolate=False).items():

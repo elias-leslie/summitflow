@@ -439,6 +439,36 @@ def test_neri_migrations_use_approved_operator_db_env(project, monkeypatch, tmp_
     assert "INTERNAL_SERVICE_SECRET" not in migration_env
 
 
+def test_learn_migrations_use_host_backend_database_env(project, monkeypatch, tmp_path):
+    accepted_root = tmp_path / "release" / "source"
+    backend_dir = accepted_root / "backend"
+    (backend_dir / ".venv" / "bin").mkdir(parents=True)
+    (backend_dir / "alembic.ini").touch()
+    (backend_dir / ".venv" / "bin" / "alembic").touch()
+    host_root = tmp_path / "host-checkout"
+    (host_root / "backend").mkdir(parents=True)
+    (host_root / "backend" / ".env").write_text(
+        "LEARN_DB_URL=postgresql://approved-learn\n"
+        "NERI_DB_URL=postgresql://other-project\n"
+        "INTERNAL_SERVICE_SECRET=not-for-migrations\n"
+    )
+    run = Mock(return_value=0)
+    monkeypatch.setattr(service_ops, "run", run)
+    deployed = replace(
+        project,
+        project_id="learn-o-tron",
+        root=accepted_root,
+        backend_dir=backend_dir,
+        host_config_root=host_root,
+    )
+
+    assert service_ops.run_migrations(deployed) == 0
+    migration_env = run.call_args.kwargs["env"]
+    assert migration_env["LEARN_DB_URL"] == "postgresql://approved-learn"
+    assert "NERI_DB_URL" not in migration_env
+    assert "INTERNAL_SERVICE_SECRET" not in migration_env
+
+
 def test_jobinator_migrations_use_approved_operator_db_env(project, monkeypatch, tmp_path):
     backend_dir = tmp_path / "release" / "backend"
     (backend_dir / ".venv" / "bin").mkdir(parents=True)
