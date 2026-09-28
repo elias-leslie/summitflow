@@ -257,6 +257,7 @@
         ]
       },
       "environment": [
+        "CODEX_SESSION_ID",
         "ST_NERI_API_URL"
       ]
     },
