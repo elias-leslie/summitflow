@@ -1217,11 +1217,12 @@
     {
       "surface": "st.neri.closeout.training",
       "tier": "reference",
-      "cmd": "st neri closeout training <investigation-id> --file closeout.json [--id UUID]",
+      "cmd": "st neri closeout training <investigation-id> --file - [--id UUID]",
       "when": "finish one stopped pwn.college study, finalize complete native capture, retain exact provider evidence, and save revision-checked provider closeout",
       "precautions": [
         "after target execution settles, stop the run, then emit one standalone exact native closeout checkpoint",
         "--file - reads JSON from stdin and avoids a file edit inside the captured interval",
+        "input contains only id (UUID), study_session_id, activity_id, summary, and next_action; all text fields are required and nonempty",
         "the command performs no target action and never manufactures a finding or review",
         "partial capture or missing provider completion returns pending and cannot close the run",
         "reuse the same request ID and unchanged content after interruption"
