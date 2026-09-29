@@ -55,6 +55,7 @@ def test_entrypoint_requires_complete_project_binding_arguments(monkeypatch) -> 
 
 def test_binding_requires_current_thread_and_credentials(monkeypatch, capsys) -> None:
     module = _load_module()
+    monkeypatch.delenv("CODEX_SESSION_ID", raising=False)
     monkeypatch.setenv("CODEX_THREAD_ID", "thread-1")
     monkeypatch.setattr(module, "load_env_credentials", lambda: "")
 
@@ -71,11 +72,36 @@ def test_binding_requires_current_thread_and_credentials(monkeypatch, capsys) ->
 
     args[1] = "another-thread"
     assert module.main(args) == 2
-    assert "must match the current CODEX_THREAD_ID" in capsys.readouterr().err
+    assert "must match the current Codex session ID" in capsys.readouterr().err
+
+
+def test_binding_prefers_native_session_id_over_inherited_thread_id(
+    monkeypatch,
+) -> None:
+    module = _load_module()
+    captured = {}
+    monkeypatch.setenv("CODEX_THREAD_ID", "stale-parent-thread")
+    monkeypatch.setenv("CODEX_SESSION_ID", "native-session")
+    monkeypatch.setattr(module, "load_env_credentials", lambda: "summitflow")
+
+    def fake_run_sync(args, **kwargs):
+        captured["session_id"] = args.bind_session
+        return 0
+
+    monkeypatch.setattr(module, "run_sync", fake_run_sync)
+    result = module.main([
+        "--bind-session", "native-session",
+        "--bind-project", "neri",
+        "--project-root", "/srv/workspaces/projects/neri",
+    ])
+
+    assert result == 0
+    assert captured["session_id"] == "native-session"
 
 
 def test_binding_warnings_are_visible_to_cli_subprocess(monkeypatch, capsys) -> None:
     module = _load_module()
+    monkeypatch.delenv("CODEX_SESSION_ID", raising=False)
     monkeypatch.setenv("CODEX_THREAD_ID", "thread-1")
     monkeypatch.setattr(module, "load_env_credentials", lambda: "summitflow")
 

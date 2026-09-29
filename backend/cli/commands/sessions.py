@@ -362,11 +362,15 @@ def bind_session(
     ] = "current",
 ) -> None:
     """Bind the current Codex session to the resolved SummitFlow project."""
-    session_id = (os.getenv("CODEX_THREAD_ID") or "").strip()
+    session_id = (
+        os.getenv("CODEX_SESSION_ID")
+        or os.getenv("CODEX_THREAD_ID")
+        or ""
+    ).strip()
     if not session_id:
-        _bind_error("CODEX_THREAD_ID is not set; no current Codex session can be bound.")
+        _bind_error("No current Codex session identity is available for binding.")
     if target not in {"current", session_id}:
-        _bind_error("Only 'current' or the exact CODEX_THREAD_ID may be bound.")
+        _bind_error("Only 'current' or the exact current Codex session ID may be bound.")
 
     project_id, project_root = _binding_project()
     client = STClient(require_project=False)

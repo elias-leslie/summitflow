@@ -93,9 +93,13 @@ def main(argv: list[str]) -> int:
             "[WARN] Binding requires --bind-session, --bind-project, and --project-root"
         )
         return 2
-    current_thread_id = (os.environ.get("CODEX_THREAD_ID") or "").strip()
-    if binding_mode and args.bind_session != current_thread_id:
-        emit("[WARN] --bind-session must match the current CODEX_THREAD_ID")
+    current_session_id = (
+        os.environ.get("CODEX_SESSION_ID")
+        or os.environ.get("CODEX_THREAD_ID")
+        or ""
+    ).strip()
+    if binding_mode and args.bind_session != current_session_id:
+        emit("[WARN] --bind-session must match the current Codex session ID")
         return 2
     if not args.scan and args.transcript is None:
         args.scan = True

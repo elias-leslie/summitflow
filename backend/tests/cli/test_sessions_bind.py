@@ -23,7 +23,8 @@ _PROJECT_ROOT = "/srv/workspaces/projects/rootfall"
 
 
 @pytest.fixture(autouse=True)
-def _reset_project_override() -> Iterator[None]:
+def _reset_project_override(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.delenv("CODEX_SESSION_ID", raising=False)
     set_project_override(None)
     yield
     set_project_override(None)
@@ -141,7 +142,7 @@ def test_bind_accepts_only_current_literal_or_exact_current_id(
         rejected = runner.invoke(app, ["sessions", "bind", "019f62d8"])
 
     assert rejected.exit_code == 1
-    assert "Only 'current' or the exact CODEX_THREAD_ID may be bound" in rejected.output
+    assert "Only 'current' or the exact current Codex session ID may be bound" in rejected.output
     client_cls.assert_not_called()
 
     client = MagicMock()
@@ -159,7 +160,7 @@ def test_bind_accepts_only_current_literal_or_exact_current_id(
     assert "result=refreshed" in accepted.output
 
 
-def test_bind_requires_codex_thread_id(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bind_requires_current_codex_session_identity(monkeypatch: pytest.MonkeyPatch) -> None:
     from cli.commands import sessions as sessions_cmd
 
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
@@ -167,8 +168,49 @@ def test_bind_requires_codex_thread_id(monkeypatch: pytest.MonkeyPatch) -> None:
         result = runner.invoke(app, ["sessions", "bind", "current"])
 
     assert result.exit_code == 1
-    assert "CODEX_THREAD_ID is not set" in result.output
+    assert "No current Codex session identity is available" in result.output
     client_cls.assert_not_called()
+
+
+def test_bind_prefers_native_session_id_over_inherited_thread_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.commands import sessions as sessions_cmd
+
+    native_session_id = "019f62d8-881c-7393-8c19-ae9b2b21e570"
+    monkeypatch.setenv("CODEX_THREAD_ID", "stale-parent-thread")
+    monkeypatch.setenv("CODEX_SESSION_ID", native_session_id)
+    client = MagicMock()
+    client.get_session.side_effect = [
+        APIError(404, "not found"),
+        {
+            "id": native_session_id,
+            "project_id": _PROJECT_ID,
+            "status": "active",
+        },
+    ]
+    completed = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout="synced", stderr="",
+    )
+
+    with (
+        patch.object(sessions_cmd, "STClient", return_value=client),
+        patch.object(sessions_cmd, "get_project_override", return_value=_PROJECT_ID),
+        patch.object(
+            sessions_cmd, "get_project_root_path", return_value=_PROJECT_ROOT,
+        ),
+        patch.object(
+            sessions_cmd.subprocess, "run", return_value=completed,
+        ) as run,
+    ):
+        result = runner.invoke(
+            app, ["sessions", "bind", native_session_id],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert f"SESSION_BIND:{native_session_id}" in result.output
+    run.assert_called_once()
+    assert run.call_args.args[0][2] == native_session_id
 
 
 def test_bind_falls_back_to_config_project_and_requires_registered_root(
