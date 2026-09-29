@@ -14,7 +14,7 @@
   ],
   "namespace": "jobs",
   "help": {
-    "": "Usage: jobs [OPTIONS] COMMAND [ARGS]...\n\n  Find, evaluate, tailor for, and track job applications\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  ready                  Open strong and possible roles; score is optional.\n  show                   Posting detail: description, evaluation report,...\n  scan                   Run a scan across the enabled sources and report...\n  screen                 Queue screening within the shared daily allowance.\n  evaluate               Run the evaluator agent over one posting and...\n  tailor                 Generate a tailored resume and/or cover letter...\n  apply                  Record an application against a posting.\n  status                 Move an application to a new status and record...\n  track                  List applications, most recently moved first.\n  followups              Pending follow-ups, earliest due first.\n  prep                   The interview brief for one application.\n  stats                  Application funnel and posting-state counts.\n  profile                The candidate profile every agent prompt is...\n  profile-edit\n  update-profile\n  cv-versions\n  save-cv\n  search                 Postings narrowed by work mode, employment type,...\n  session\n  cv\n  assess\n  review-company\n  record-board\n  event-add\n  events\n  feedback\n  feedback-queue\n  feedback-claim\n  feedback-outcome\n  feedback-answer\n  feedback-undo\n  qualify-company\n  company-qualification\n  company-exception\n  application-readiness\n  prepare-application\n  set-preferences\n  exclude-company\n  coverage\n  import-posting\n  associate-posting\n  supply-document\n  companies              Tracked employers with their size, ownership,...",
+    "": "Usage: jobs [OPTIONS] COMMAND [ARGS]...\n\n  Find, evaluate, tailor for, and track job applications\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  ready                        Open strong and possible roles; score is...\n  show                         Posting detail: description, evaluation...\n  scan                         Run a scan across the enabled sources and...\n  screen                       Queue screening within the shared daily...\n  evaluate                     Run the evaluator agent over one posting...\n  tailor                       Generate a tailored resume and/or cover...\n  apply                        Record an application against a posting.\n  status                       Move an application to a new status and...\n  track                        List applications, most recently moved first.\n  followups                    Pending follow-ups, earliest due first.\n  prep                         The interview brief for one application.\n  stats                        Application funnel and posting-state counts.\n  profile                      The candidate profile every agent prompt...\n  profile-edit\n  update-profile\n  cv-versions\n  save-cv\n  search                       Postings narrowed by work mode, employment...\n  session\n  cv\n  assess\n  review-company\n  record-board\n  event-add\n  events\n  webinar-refresh\n  webinar-sources\n  webinar-follow\n  feedback\n  feedback-queue\n  feedback-claim\n  feedback-outcome\n  feedback-answer\n  feedback-undo\n  qualify-company\n  company-qualification\n  company-exception\n  application-readiness\n  prepare-application\n  set-preferences\n  exclude-company\n  coverage\n  filters\n  set-filters\n  import-posting\n  record-posting-source\n  posting-source-history\n  associate-posting\n  correct-posting-company\n  posting-company-corrections\n  supply-document\n  companies                    Tracked employers with their size,...",
     "ready": "Usage: jobs ready [OPTIONS]\n\n  Open strong and possible roles; score is optional.\n\nOptions:\n  --limit <int range>        [default: 10; 1<=x<=50]\n  --min-score <float range>  Explicit scored-only filter  [0<=x<=5]\n  --human                    Plain-text rendering\n  --remote                   Use hosts.production_api\n  --help                     Show this message and exit.",
     "show": "Usage: jobs show [OPTIONS] {posting_id}\n\n  Posting detail: description, evaluation report, skill gap, legitimacy.\n\nArguments:\n  posting_id  Posting id from st jobs ready  [required]\n\nOptions:\n  --description / --no-description\n                                  [default: description]\n  --human                         Plain-text rendering\n  --remote                        Use hosts.production_api\n  --help                          Show this message and exit.",
     "scan": "Usage: jobs scan [OPTIONS]\n\n  Run a scan across the enabled sources and report its counters.\n\nOptions:\n  --source <str>   Limit to one source slug\n  --company <str>  Limit to one company\n  --background     Return immediately; read results from the UI\n  --human          Plain-text rendering\n  --remote         Use hosts.production_api\n  --help           Show this message and exit.",
@@ -32,7 +32,7 @@
     "update-profile": "Usage: jobs update-profile [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
     "cv-versions": "Usage: jobs cv-versions [OPTIONS]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
     "save-cv": "Usage: jobs save-cv [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --base-cv-id <int range>  [x>=1; required]\n  --verified\n  --label <str>             [default: Reviewed CV revision]\n  --human\n  --remote\n  --help                    Show this message and exit.",
-    "search": "Usage: jobs search [OPTIONS]\n\n  Postings narrowed by work mode, employment type, company size and distance.\n\nOptions:\n  --state <str>              new|triaged|shortlisted|applied|discarded\n  --fit <str>                matches|strong|possible|poor|pending|research_onl\n                             y|all  [default: matches]\n  --remote-kind <str>        remote|hybrid|onsite|unknown; repeatable\n  --employment <str>         full_time|part_time|contract|…; repeatable\n  --employee-band <str>      startup_1_50|small_51_200|…; repeatable\n  --segment <str>            msp|mssp|edr_xdr|…; repeatable\n  --channel-focus            Only companies that sell through MSPs\n  --max-distance <float>     Miles to the nearest researched office\n  --min-salary <int>         Advertised ceiling must reach this\n  --exclude-clearance        Drop postings that require a clearance\n  --min-score <float range>  [0<=x<=5]\n  --search <str>             Title or company substring\n  --limit <int range>        [default: 25; 1<=x<=200]\n  --human                    Plain-text rendering\n  --remote                   Use hosts.production_api\n  --help                     Show this message and exit.",
+    "search": "Usage: jobs search [OPTIONS]\n\n  Postings narrowed by work mode, employment type, company size and distance.\n\nOptions:\n  --state <str>              new|triaged|shortlisted|applied|discarded\n  --fit <str>                matches|strong|possible|poor|pending|research_onl\n                             y|all  [default: matches]\n  --remote-kind <str>        remote|hybrid|onsite|unknown; repeatable\n  --employment <str>         full_time|part_time|contract|…; repeatable\n  --employee-band <str>      startup_1_50|small_51_200|…; repeatable\n  --segment <str>            msp|mssp|edr_xdr|…; repeatable\n  --channel-focus            Only companies that sell through MSPs\n  --max-distance <float>     Miles to the nearest researched office\n  --min-salary <int>         Advertised ceiling must reach this\n  --exclude-clearance        Drop postings that require a clearance\n  --min-score <float range>  [0<=x<=5]\n  --search <str>             Title or company substring\n  --limit <int range>        [default: 25; 1<=x<=500]\n  --offset <int range>       [default: 0; x>=0]\n  --human                    Plain-text rendering\n  --remote                   Use hosts.production_api\n  --help                     Show this message and exit.",
     "session": "Usage: jobs session [OPTIONS]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
     "cv": "Usage: jobs cv [OPTIONS]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
     "assess": "Usage: jobs assess [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
@@ -40,6 +40,9 @@
     "record-board": "Usage: jobs record-board [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
     "event-add": "Usage: jobs event-add [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
     "events": "Usage: jobs events [OPTIONS]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "webinar-refresh": "Usage: jobs webinar-refresh [OPTIONS]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "webinar-sources": "Usage: jobs webinar-sources [OPTIONS]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "webinar-follow": "Usage: jobs webinar-follow [OPTIONS] {key}\n\nArguments:\n  key  [required]\n\nOptions:\n  --follow / --unfollow  [default: follow]\n  --human\n  --remote\n  --help                 Show this message and exit.",
     "feedback": "Usage: jobs feedback [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
     "feedback-queue": "Usage: jobs feedback-queue [OPTIONS]\n\nOptions:\n  --limit <int range>   [default: 100; 1<=x<=500]\n  --offset <int range>  [default: 0; x>=0]\n  --status <str>\n  --human\n  --remote\n  --help                Show this message and exit.",
     "feedback-claim": "Usage: jobs feedback-claim [OPTIONS] {feedback_id} {expected_revision}\n\nArguments:\n  feedback_id        [required]\n  expected_revision  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
@@ -54,8 +57,14 @@
     "set-preferences": "Usage: jobs set-preferences [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
     "exclude-company": "Usage: jobs exclude-company [OPTIONS] {company_id}\n\nArguments:\n  company_id  [required]\n\nOptions:\n  --reason <str>  Owner's reason for exclusion  [required]\n  --human\n  --remote\n  --help          Show this message and exit.",
     "coverage": "Usage: jobs coverage [OPTIONS]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "filters": "Usage: jobs filters [OPTIONS]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "set-filters": "Usage: jobs set-filters [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
     "import-posting": "Usage: jobs import-posting [OPTIONS] {path}\n\nArguments:\n  path  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "record-posting-source": "Usage: jobs record-posting-source [OPTIONS] {posting_id} {path}\n\nArguments:\n  posting_id  [required]\n  path        [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "posting-source-history": "Usage: jobs posting-source-history [OPTIONS] {posting_id}\n\nArguments:\n  posting_id  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
     "associate-posting": "Usage: jobs associate-posting [OPTIONS] {posting_id} {company_id}\n\nArguments:\n  posting_id  [required]\n  company_id  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
+    "correct-posting-company": "Usage: jobs correct-posting-company [OPTIONS] {posting_id} {company_id}\n\nArguments:\n  posting_id  [required]\n  company_id  [required]\n\nOptions:\n  --expected-company-id <int>  [required]\n  --expected-url <str>         [required]\n  --reason <str>               [required]\n  --evidence-url <str>         [required]\n  --human\n  --remote\n  --help                       Show this message and exit.",
+    "posting-company-corrections": "Usage: jobs posting-company-corrections [OPTIONS] {posting_id}\n\nArguments:\n  posting_id  [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
     "supply-document": "Usage: jobs supply-document [OPTIONS] {posting_id} {kind} {path}\n\nArguments:\n  posting_id  [required]\n  kind        [required]\n  path        [required]\n\nOptions:\n  --human\n  --remote\n  --help    Show this message and exit.",
     "companies": "Usage: jobs companies [OPTIONS]\n\n  Tracked employers with their size, ownership, segments and nearest office.\n\nOptions:\n  --segment <str>        Repeatable\n  --employee-band <str>  Repeatable\n  --channel-focus\n  --hiring               Only companies with open roles\n  --search <str>\n  --limit <int range>    [default: 50; 1<=x<=200]\n  --human                Plain-text rendering\n  --remote               Use hosts.production_api\n  --help                 Show this message and exit."
   },
@@ -314,16 +323,17 @@
     {
       "surface": "st.jobs.search",
       "tier": "mandate",
-      "cmd": "st jobs search --remote remote --employment full_time",
+      "cmd": "st jobs search --remote-kind remote --employment full_time",
       "when": "answer a shaped question about the board — remote full-time at small companies, anything within 50 miles, channel vendors only",
       "why": "`ready` ranks the whole queue by score; this is the same list narrowed by work mode, employment type, company size, segment and distance",
       "precautions": [
         "read-only",
         "--employee-band, --segment and --max-distance only match companies that have been researched; an unresearched company is unknown, not excluded on merit",
-        "--max-distance drops remote roles, which have no distance to measure — pass --remote remote instead"
+        "--max-distance drops remote roles, which have no distance to measure — pass --remote-kind remote instead",
+        "page with --limit (up to 500) and --offset; --remote selects the production API, not remote-work eligibility"
       ],
       "examples": [
-        "st jobs search --remote remote --remote hybrid --employment full_time --employee-band startup_1_50 --employee-band small_51_200",
+        "st jobs search --remote-kind remote --remote-kind hybrid --employment full_time --employee-band startup_1_50 --employee-band small_51_200",
         "st jobs search --channel-focus --min-score 3.5 --human"
       ],
       "task_types": [
@@ -378,7 +388,7 @@
       "when": "record a verified official board or unsupported employer",
       "why": "monitored boards enter Jobinator's collector with their official link evidence",
       "precautions": [
-        "monitored entries require an installed source and official evidence"
+        "monitored entries require an installed source and official evidence; pass company_id for an existing employer"
       ]
     },
     {
@@ -398,6 +408,35 @@
       "when": "review upcoming sourced events",
       "precautions": [
         "read-only; past events are excluded"
+      ]
+    },
+    {
+      "surface": "st.jobs.webinar-refresh",
+      "tier": "reference",
+      "cmd": "st jobs webinar-refresh",
+      "when": "refresh official public webinar sources now",
+      "why": "uses the same serialized importer as the daily worker and reports source failures",
+      "precautions": [
+        "does not register or notify anyone"
+      ]
+    },
+    {
+      "surface": "st.jobs.webinar-sources",
+      "tier": "reference",
+      "cmd": "st jobs webinar-sources",
+      "when": "review official webinar feeds and this profile's follow choices",
+      "precautions": [
+        "read-only"
+      ]
+    },
+    {
+      "surface": "st.jobs.webinar-follow",
+      "tier": "reference",
+      "cmd": "st jobs webinar-follow huntress",
+      "when": "follow or unfollow an official webinar source for this profile",
+      "why": "unfollow immediately hides that source's events and stops imports without deleting history",
+      "precautions": [
+        "profile-specific; no registration or notification"
       ]
     },
     {
@@ -459,9 +498,9 @@
       "surface": "st.jobs.qualify-company",
       "tier": "reference",
       "cmd": "st jobs qualify-company baseline.json",
-      "when": "save direct-employer, official careers, Florida, and ownership evidence",
+      "when": "save direct-employer, official careers, Florida eligibility, and PE control evidence",
       "precautions": [
-        "unresolved employers remain research-only"
+        "unresolved direct-employer or location evidence remains research-only; unknown PE control does not block monitoring"
       ]
     },
     {
@@ -477,9 +516,9 @@
       "surface": "st.jobs.company-exception",
       "tier": "reference",
       "cmd": "st jobs company-exception exception.json",
-      "when": "record a private owner exception to PE-controlled MSP exclusion",
+      "when": "record a historical owner exception decision",
       "precautions": [
-        "named exclusions and non-employers still block monitoring"
+        "legacy exception records no longer change the monitoring gate"
       ]
     },
     {
@@ -531,6 +570,25 @@
       ]
     },
     {
+      "surface": "st.jobs.filters",
+      "tier": "reference",
+      "cmd": "st jobs filters",
+      "when": "inspect the live per-profile posting filters before changing eligibility",
+      "precautions": [
+        "read-only"
+      ]
+    },
+    {
+      "surface": "st.jobs.set-filters",
+      "tier": "reference",
+      "cmd": "st jobs set-filters filters-patch.json",
+      "when": "update live per-profile posting filters after reviewing their current values",
+      "why": "the existing filter API reapplies matching to saved postings",
+      "precautions": [
+        "send only intended fields; arrays replace the complete current list"
+      ]
+    },
+    {
       "surface": "st.jobs.import-posting",
       "tier": "reference",
       "cmd": "st jobs import-posting posting.json",
@@ -541,6 +599,28 @@
       ]
     },
     {
+      "surface": "st.jobs.record-posting-source",
+      "tier": "reference",
+      "cmd": "st jobs record-posting-source 41 source.json",
+      "when": "retain a complete verified official job description before a role assessment",
+      "why": "refreshes posting content with revision-bound identity and owner audit, without opening an application",
+      "precautions": [
+        "read the current posting first; source must be the exact official requisition; prior assessments become stale",
+        "optional source_posted_at is a verified YYYY-MM-DD publication date, never an updated/reposted or hiring-start date; it cannot advance the retained date or postdate the capture",
+        "unknown/omitted dates preserve existing evidence; changed sources reapply only this role's filters without restoring its disposition"
+      ]
+    },
+    {
+      "surface": "st.jobs.posting-source-history",
+      "tier": "reference",
+      "cmd": "st jobs posting-source-history 41",
+      "when": "check retained source provenance after a posting or scanner refresh",
+      "why": "shows source hashes, dates and whether the saved content still matches",
+      "precautions": [
+        "read-only; a matching hash does not establish that the job is still open"
+      ]
+    },
+    {
       "surface": "st.jobs.associate-posting",
       "tier": "reference",
       "cmd": "st jobs associate-posting 41 629",
@@ -548,6 +628,26 @@
       "why": "resolves company identity while leaving the employer qualification gate in place",
       "precautions": [
         "confirm the posting names this employer before associating"
+      ]
+    },
+    {
+      "surface": "st.jobs.correct-posting-company",
+      "tier": "reference",
+      "cmd": "st jobs correct-posting-company 41 629 --expected-company-id 677 --expected-url https://jobs.ashbyhq.com/stellar/role --reason 'Board belongs to Stellar Development Foundation' --evidence-url https://stellar.org/foundation/careers",
+      "when": "correct a posting attributed to the wrong employer after checking its source",
+      "why": "retains the posting and records the owner correction with evidence",
+      "precautions": [
+        "review the exact posting URL and current employer before correcting"
+      ]
+    },
+    {
+      "surface": "st.jobs.posting-company-corrections",
+      "tier": "reference",
+      "cmd": "st jobs posting-company-corrections 41",
+      "when": "review the owner-audited company correction history for one posting",
+      "why": "shows the evidence and prior attribution after later scanner refreshes",
+      "precautions": [
+        "read-only"
       ]
     },
     {
