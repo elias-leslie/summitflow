@@ -46,7 +46,7 @@
     "pwn status": "Usage: learn pwn status [OPTIONS]\n\nOptions:\n  --full\n  --help  Show this message and exit.",
     "pwn activities": "Usage: learn pwn activities [OPTIONS]\n\nOptions:\n  --dojo <str>\n  --module <str>\n  --solved / --unsolved\n  --query <str>\n  --help                 Show this message and exit.",
     "session": "Usage: learn session [OPTIONS] COMMAND [ARGS]...\n\n  Start in native SSH, close to pause, resume later, then finish with learner\n  evidence\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  start\n  continue\n  list\n  show\n  attach\n  handoff\n  resume\n  pause\n  finish\n  evidence\n  review\n  transcript",
-    "session start": "Usage: learn session start [OPTIONS]\n\nOptions:\n  --activity <str>    [required]\n  --objective <str>\n  --harness <str>\n  --agent-name <str>\n  --model <str>\n  --open / --no-open  [default: open]\n  --sync / --no-sync  [default: sync]\n  --help              Show this message and exit.",
+    "session start": "Usage: learn session start [OPTIONS]\n\n  Start the requested activity or reject a different unfinished study.\n\n  A mismatch opens no target terminal and returns the exact existing activity plus the commands to continue or finish it.\n\nOptions:\n  --activity <str>    [required]\n  --objective <str>\n  --harness <str>\n  --agent-name <str>\n  --model <str>\n  --open / --no-open  [default: open]\n  --sync / --no-sync  [default: sync]\n  --help              Show this message and exit.",
     "session continue": "Usage: learn session continue [OPTIONS]\n\nOptions:\n  --activity <str>\n  --objective <str>\n  --harness <str>\n  --agent-name <str>\n  --model <str>\n  --open / --no-open  [default: open]\n  --sync / --no-sync  [default: sync]\n  --help              Show this message and exit.",
     "session list": "Usage: learn session list [OPTIONS]\n\nOptions:\n  --status <str>\n  --help          Show this message and exit.",
     "session show": "Usage: learn session show [OPTIONS] {session_id}\n\nArguments:\n  session_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
@@ -378,7 +378,8 @@
       "cmd": "st learn session start --activity ID [--objective TEXT] [--harness NAME] [--no-open]",
       "when": "bind and open a private pwn.college study session in the native terminal",
       "precautions": [
-        "OpenSSH owns the private key; only sanitized output is spooled and uploaded"
+        "OpenSSH owns the private key; only sanitized output is spooled and uploaded",
+        "an unfinished study for another activity is rejected before terminal open; the response names the exact existing activity and finish or continue command"
       ],
       "task_types": [
         "learning",

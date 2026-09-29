@@ -18,10 +18,10 @@
   "help": {
     "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Read and maintain Neri targets, investigations, notes, reports and\n  disclosure programs\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  investigations\n  create           Create a saved attempt through the legacy...\n  show\n  activity\n  record-activity\n  context\n  capabilities\n  reports\n  control\n  operation\n  evidence         Import evidence and inspect retained artifacts\n  notes            Save contextual notes and direction\n  report           Read exact report and review revisions, save reports...\n  execute          Submit explicit typed actions to a registered local...\n  target           Inspect and maintain registered target metadata\n  group            Read and organize passive investigations containing...\n  program          Maintain passive disclosure programs and exact policy...\n  runtime          Inspect or operate Neri's emergency admission stop\n  session          Bind Codex sessions and inspect captured investigation...\n  closeout         Inspect and record authoritative investigation closeout\n  research         Read research capability progress and save exact...\n  worker           Inspect the bounded local candidate and Neri-owned...\n  jev              Run typed Jev evaluations through Agent Hub",
     "investigations": "Usage: neri investigations [OPTIONS]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
-    "create": "Usage: neri create [OPTIONS]\n\n  Create an explicit saved attempt; incomplete JSON is rejected before any write.\n\n  Input JSON requires nonempty target_id, title, and objective. pwn.college also requires training_selection with provider, activity_id, provider_revision, provider_synced_at, platform_solved, and purpose. --file - reads stdin.\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "create": "Usage: neri create [OPTIONS]\n\n  Create an explicit saved attempt; incomplete JSON is rejected before any write.\n\n  Input JSON requires nonempty target_id, title, and objective. pwn.college also requires training_selection with provider, activity_id, provider_revision, provider_synced_at, platform_solved, and purpose. Purpose is one of fresh, regression, reproduction, or tool_qualification. --file - reads stdin.\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "show": "Usage: neri show [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "activity": "Usage: neri activity [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --after <int range>  [default: 0; x>=0]\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --help               Show this message and exit.",
-    "record-activity": "Usage: neri record-activity [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "record-activity": "Usage: neri record-activity [OPTIONS] {investigation_id}\n\n  Record one public fact after validating its complete structured shape.\n\n  A blocker requires kind, title, summary, and next_step. Replace the sample values with retained facts. Example: {\"kind\":\"blocker\",\"title\":\"Required route is unavailable\",\"summary\":\"The selected activity cannot use the available transport.\",\"next_step\":\"Choose a compatible activity in a separate fresh run.\"}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "context": "Usage: neri context [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --after <int range>      [default: 0; x>=0]\n  --limit <int range>      [default: 40; 1<=x<=100]\n  --research-digest <str>\n  --help                   Show this message and exit.",
     "capabilities": "Usage: neri capabilities [OPTIONS]\n\nOptions:\n  --full / --no-full  [default: no-full]\n  --help              Show this message and exit.",
     "reports": "Usage: neri reports [OPTIONS]\n\nOptions:\n  --limit <int range>          [default: 40; 1<=x<=100]\n  --cursor <str>\n  --view <investigations>\n  --target, --target-id <str>\n  --help                       Show this message and exit.",
@@ -114,7 +114,7 @@
     "session timeline": "Usage: neri session timeline [OPTIONS] {target_id} {investigation_group_id}\n\nArguments:\n  target_id               [required]\n  investigation_group_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "closeout": "Usage: neri closeout [OPTIONS] COMMAND [ARGS]...\n\n  Inspect and record authoritative investigation closeout\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  readiness\n  save\n  training",
     "closeout readiness": "Usage: neri closeout readiness [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --disposition <finding|no_finding|evaluation|provider_completed|inconclusive|blocked>\n  --provider-evidence-id <uuid>\n  --help                          Show this message and exit.",
-    "closeout save": "Usage: neri closeout save [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "closeout save": "Usage: neri closeout save [OPTIONS] {investigation_id}\n\n  Save a terminal disposition after local validation and server readiness.\n\n  Supply the exact state digest and references returned by readiness. The example shape does not bypass evidence or review requirements. Example: {\"disposition\":\"blocked\",\"summary\":\"The run stopped before target work.\",\"next_action\":\"Start a fresh run after fixing the route.\",\"provider_evidence_ids\":[],\"expected_state_digest\":\"<64 lowercase hex>\"}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "closeout training": "Usage: neri closeout training [OPTIONS] {investigation_id}\n\nClose one captured training run through the authoritative gate.\n\nInput JSON contains only id (UUID), study_session_id, activity_id, summary, and next_action. All fields are required; use --file - for stdin. If the terminal tool yields while this process is still running, resume the same process instead of starting a second closeout.\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "research": "Usage: neri research [OPTIONS] COMMAND [ARGS]...\n\n  Read research capability progress and save exact associations\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  catalogue\n  application-models\n  application-model-projection\n  application-model-current\n  application-model\n  save-application-model\n  hypotheses\n  hypothesis\n  hypothesis-revision\n  record-hypothesis\n  show\n  case-schema\n  matrix\n  context\n  recommend\n  links\n  associate\n  prepare-case\n  associate-case\n  invalidate-case\n  snapshot\n  snapshots\n  outcomes\n  record-outcome\n  cohorts\n  cohort\n  register-cohort\n  catalog-campaigns\n  catalog-campaign\n  register-catalog-campaign\n  supersede-catalog-campaign\n  retire-catalog-campaign\n  record-catalog-plan\n  verify-catalog-item\n  record-catalog-replay\n  close-cohort\n  finalize-accounting\n  work\n  record-work\n  application\n  promote-application-source\n  application-snapshots\n  snapshot-application",
     "research catalogue": "Usage: neri research catalogue [OPTIONS]\n\nOptions:\n  --full / --no-full  [default: no-full]\n  --help              Show this message and exit.",
@@ -194,6 +194,7 @@
       "precautions": [
         "passive creation; incomplete CLI input is rejected before the API applies legacy defaults",
         "preserve group_id and role when supplied; pwn.college requires training_selection with provider, activity_id, provider_revision, provider_synced_at, platform_solved and purpose",
+        "training_selection purpose is one of fresh, regression, reproduction or tool_qualification",
         "minimal non-training example (replace values): {\"target_id\":\"documents\",\"title\":\"Document review\",\"objective\":\"Review the retained documents.\"}",
         "JSON id or --id is retained, otherwise generated and printed; reuse only for identical content"
       ],
@@ -231,7 +232,9 @@
       "cmd": "st neri record-activity <investigation-id> --file activity.json [--id UUID]",
       "when": "record a public objective, hypothesis, decision, progress update, blocker or follow-up",
       "precautions": [
-        "passive record only; cite exact evidence and SummitFlow task IDs; private chain-of-thought does not belong here; UUID is retained or generated"
+        "passive record only; cite exact evidence and SummitFlow task IDs; private chain-of-thought does not belong here; UUID is retained or generated",
+        "invalid input is rejected before any write and returns a complete validator-backed JSON example",
+        "blocker example (replace values): {\"id\":\"00000000-0000-4000-8000-000000000000\",\"kind\":\"blocker\",\"title\":\"Required route is unavailable\",\"summary\":\"The selected activity cannot be reached through the available transport.\",\"state\":\"blocked\",\"evidence_ids\":[],\"task_ids\":[],\"next_step\":\"Choose a compatible unsolved activity in a separate fresh run.\"}"
       ],
       "task_types": [
         "neri"
@@ -1212,7 +1215,8 @@
       "when": "read the one authoritative closeout state, exact references and blockers",
       "precautions": [
         "read-only; the returned state_digest must be supplied to closeout save",
-        "provider completion and successful Neri completion remain distinct"
+        "provider completion and successful Neri completion remain distinct",
+        "each blocker returns the exact repair action; blocker_missing names st neri record-activity and its required JSON shape"
       ],
       "task_types": [
         "neri",
@@ -1249,7 +1253,10 @@
       "precautions": [
         "preserve expected_state_digest and exact report, review and provider-evidence IDs",
         "re-read readiness after a 409; do not reinterpret rejected or needs-work review",
-        "closed_with_limits is not successful completion"
+        "closed_with_limits is not successful completion",
+        "invalid input is rejected before any write and returns a complete validator-backed JSON example",
+        "blocked example (replace values, including the readiness digest): {\"id\":\"00000000-0000-4000-8000-000000000000\",\"disposition\":\"blocked\",\"summary\":\"The bounded run stopped before target work because the required route was unavailable.\",\"next_action\":\"Start a separate fresh run with a compatible activity.\",\"provider_evidence_ids\":[],\"expected_state_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\"}",
+        "the example is only an input shape; readiness, evidence, report and review requirements still apply"
       ],
       "task_types": [
         "neri",
