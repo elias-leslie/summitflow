@@ -18,7 +18,7 @@
   "help": {
     "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Read and maintain Neri targets, investigations, notes, reports and\n  disclosure programs\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  investigations\n  create           Create a saved attempt through the legacy...\n  show\n  activity\n  record-activity\n  context\n  capabilities\n  reports\n  control\n  operation\n  evidence         Import evidence and inspect retained artifacts\n  notes            Save contextual notes and direction\n  report           Read exact report and review revisions, save reports...\n  execute          Submit explicit typed actions to a registered local...\n  target           Inspect and maintain registered target metadata\n  group            Read and organize passive investigations containing...\n  program          Maintain passive disclosure programs and exact policy...\n  runtime          Inspect or operate Neri's emergency admission stop\n  session          Bind Codex sessions and inspect captured investigation...\n  closeout         Inspect and record authoritative investigation closeout\n  research         Read research capability progress and save exact...\n  worker           Inspect the bounded local candidate and Neri-owned...\n  jev              Run typed Jev evaluations through Agent Hub",
     "investigations": "Usage: neri investigations [OPTIONS]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
-    "create": "Usage: neri create [OPTIONS]\n\n  Create a saved attempt through the legacy investigation API. --file - reads\n  JSON from stdin.\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "create": "Usage: neri create [OPTIONS]\n\n  Create an explicit saved attempt; incomplete JSON is rejected before any write.\n\n  Input JSON requires nonempty target_id, title, and objective. pwn.college also requires training_selection with provider, activity_id, provider_revision, provider_synced_at, platform_solved, and purpose. --file - reads stdin.\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "show": "Usage: neri show [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "activity": "Usage: neri activity [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --after <int range>  [default: 0; x>=0]\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --help               Show this message and exit.",
     "record-activity": "Usage: neri record-activity [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
@@ -190,9 +190,9 @@
       "surface": "st.neri.create",
       "tier": "reference",
       "cmd": "st neri create --file investigation.json [--id UUID]",
-      "when": "save an attempt with title, objective, scope and optional group membership",
+      "when": "save an attempt with explicit target_id, title and objective",
       "precautions": [
-        "passive creation; preserve group_id and role when supplied; exact training challenges require a current provider selection and explicit fresh or repeat purpose; JSON id or --id is retained, otherwise generated and printed; reuse only for identical content"
+        "passive creation; incomplete CLI input is rejected before the API applies legacy defaults; preserve group_id and role when supplied; pwn.college requires training_selection with provider, activity_id, provider_revision, provider_synced_at, platform_solved and purpose; JSON id or --id is retained, otherwise generated and printed; reuse only for identical content"
       ],
       "task_types": [
         "neri"
