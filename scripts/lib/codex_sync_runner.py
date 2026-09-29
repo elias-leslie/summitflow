@@ -135,7 +135,9 @@ def sync_transcript(
     verbose: bool,
     project_binding: ProjectBinding | None = None,
 ) -> tuple[bool, str, int | None]:
-    project, effective_cwd, project_error = _resolve_project_context(info, project_binding)
+    project, effective_cwd, project_error, transcript_git_verified = (
+        _resolve_project_context(info, project_binding)
+    )
     if project_error:
         return False, project_error, None
     assert project is not None
@@ -144,6 +146,7 @@ def sync_transcript(
         info,
         project,
         explicitly_bound=project_binding is not None,
+        transcript_git_verified=transcript_git_verified,
     )
     if mapping_error:
         return False, mapping_error, None
@@ -224,13 +227,13 @@ def sync_transcript(
 def _resolve_project_context(
     info: TranscriptInfoLike,
     project_binding: ProjectBinding | None,
-) -> tuple[dict[str, object] | None, Path, str]:
+) -> tuple[dict[str, object] | None, Path, str, bool]:
     git_project_data = build_project_context(info.cwd)
     git_project = git_project_data if isinstance(git_project_data, dict) else None
     if project_binding is None:
         if git_project is None:
-            return None, info.cwd, f"skip unmapped/unregistered cwd={info.cwd}"
-        return git_project, info.cwd, ""
+            return None, info.cwd, f"skip unmapped/unregistered cwd={info.cwd}", False
+        return git_project, info.cwd, "", True
 
     bound_project_data = build_project_context(Path(project_binding.project_root))
     if not isinstance(bound_project_data, dict):
@@ -239,6 +242,7 @@ def _resolve_project_context(
             info.cwd,
             "conflict invalid Codex thread project binding "
             f"project={project_binding.project_id} root={project_binding.project_root} ",
+            False,
         )
     bound_project: dict[str, object] = bound_project_data
     bound_root = Path(str(bound_project.get("repo_root") or "")).resolve()
@@ -249,6 +253,7 @@ def _resolve_project_context(
             info.cwd,
             "conflict stale Codex thread project binding "
             f"project={project_binding.project_id} root={project_binding.project_root}",
+            False,
         )
     if git_project is not None and _project_ids(git_project).isdisjoint(_project_ids(bound_project)):
         return (
@@ -257,8 +262,9 @@ def _resolve_project_context(
             "conflict Codex thread binding/Git project mismatch "
             f"binding={project_binding.project_id} git={git_project['project_id']} "
             f"transcript={info.path}",
+            False,
         )
-    return bound_project, bound_root, ""
+    return bound_project, bound_root, "", git_project is not None
 
 
 def _project_ids(project: dict[str, object]) -> set[str]:
@@ -286,12 +292,18 @@ def _project_mapping_state(
     project: dict[str, object],
     *,
     explicitly_bound: bool = False,
+    transcript_git_verified: bool = False,
 ) -> tuple[str, str]:
     if info.ownership_ambiguous:
         return "ambiguous", f"conflict ambiguous AICO ownership transcript={info.path}"
     owner = info.process_owner
     if owner is None:
         return ("explicit_binding" if explicitly_bound else "git_only"), ""
+    if explicitly_bound and (
+        transcript_git_verified
+        or owner.aico_project_id == AICO_PERSONAL_PROJECT_ID
+    ):
+        return "explicit_binding", ""
 
     project_id = str(project["project_id"])
     aliases = {
@@ -304,8 +316,6 @@ def _project_mapping_state(
             "unmapped",
             f"conflict AICO owner has no project mapping transcript={info.path}",
         )
-    if owner.aico_project_id == AICO_PERSONAL_PROJECT_ID and explicitly_bound:
-        return "explicit_binding", ""
     if owner.aico_project_id not in {project_id, *aliases}:
         return (
             "mismatch",
@@ -621,6 +631,7 @@ def _project_binding_request(
         info,
         project_data,
         explicitly_bound=True,
+        transcript_git_verified=isinstance(git_project_data, dict),
     )
     if mapping_error:
         return None, mapping_error

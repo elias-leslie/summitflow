@@ -623,6 +623,83 @@ def test_binding_request_validates_registered_root_and_current_git_mapping(
     assert error.startswith("conflict Codex thread binding/Git project mismatch")
 
 
+@pytest.mark.parametrize("aico_project_id", ["summitflow", None])
+def test_explicit_binding_uses_matching_transcript_git_over_enclosing_aico_project(
+    tmp_path: Path,
+    monkeypatch,
+    aico_project_id: str | None,
+) -> None:
+    root = Path("/srv/workspaces/projects/neri")
+    owner = codex_sync_transcripts.AicoProcessOwner(
+        harness="codex",
+        aico_session_id="aico-summitflow-session",
+        aico_widget_id="summitflow-widget",
+        aico_project_id=aico_project_id,
+    )
+    base = _info(tmp_path, "nested-neri-session", owner=owner)
+    info = codex_sync_transcripts.TranscriptInfo(
+        **{**base.__dict__, "cwd": root}
+    )
+    monkeypatch.setattr(
+        codex_sync_runner,
+        "fetch_registered_project_root",
+        lambda _project_id: root,
+    )
+    monkeypatch.setattr(
+        codex_sync_runner,
+        "build_project_context",
+        lambda _cwd: _project("neri"),
+    )
+
+    binding, error = codex_sync_runner._project_binding_request(
+        _args(
+            bind_session=info.session_id,
+            bind_project="neri",
+            project_root=root,
+        ),
+        [info],
+    )
+
+    assert error == ""
+    assert binding is not None
+    assert binding.project_id == "neri"
+    assert binding.project_root == str(root)
+
+    captured: dict[str, object] = {}
+
+    def fake_upsert(*args, **kwargs):
+        captured["kwargs"] = kwargs
+        return True, "", 200
+
+    monkeypatch.setattr(codex_sync_runner, "upsert_session", fake_upsert)
+    monkeypatch.setattr(
+        codex_sync_runner,
+        "ingest_transcript",
+        lambda *_args, **_kwargs: (True, "checkpoint-1", "appended=1", "", 200),
+    )
+    state: dict[str, object] = {"transcripts": {}}
+    ok, _, _ = codex_sync_runner.sync_transcript(
+        info,
+        state,
+        "http://agent-hub.test/api",
+        "summitflow",
+        "/scripts/codex-session-sync.py",
+        close_session=False,
+        ingest_required=True,
+        heartbeat_required=False,
+        log_fn=lambda _message: None,
+        verbose=False,
+        project_binding=binding,
+    )
+
+    assert ok
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    metadata = cast(dict[str, object], kwargs["provider_metadata"])
+    external = cast(dict[str, object], metadata["external_identity"])
+    assert external["aico_project_id"] == aico_project_id
+    assert external["project_mapping_state"] == "explicit_binding"
+
+
 def test_explicit_binding_still_rejects_mapped_git_project_mismatch(
     tmp_path: Path,
     monkeypatch,
