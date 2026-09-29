@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
@@ -28,6 +29,8 @@ def create_infra_backup(
     keep_local: bool = False,
     retention_days: int | None = None,
     on_progress: Callable[[], None] | None = None,
+    storage_backend_id: str | None = None,
+    local_only: bool = False,
 ) -> dict[str, object]:
     """Create an infrastructure backup (pg_dumpall + configs)."""
     logger.info("create_infra_backup_started", source_id=source_id, backup_type=backup_type)
@@ -45,6 +48,8 @@ def create_infra_backup(
         retention_days,
         owner_token,
         on_progress=on_progress,
+        storage_backend_id=storage_backend_id,
+        local_only=local_only,
     )
 
 
@@ -56,6 +61,8 @@ def _run_infra_backup(
     retention_days: int | None,
     owner_token: str | None = None,
     on_progress: Callable[[], None] | None = None,
+    storage_backend_id: str | None = None,
+    local_only: bool = False,
 ) -> dict[str, object]:
     """Execute infrastructure backup with lock held."""
     # Use a pseudo project_id for infrastructure
@@ -67,23 +74,25 @@ def _run_infra_backup(
         if owner_token is None:
             raise RuntimeError("Backup lock owner token is required")
         with maintain_backup_lock(source_id, owner_token):
+            run_env = build_storage_env(source_id, storage_backend_id) if storage_backend_id else build_storage_env(source_id)
             backup_record = backup_store.create_backup_record(
                 project_id=project_id,
                 backup_type=backup_type,
                 note=note,
                 source_id=source_id,
+                **({"storage_backend_id": run_env["BACKUP_STORAGE_BACKEND_ID"]} if run_env.get("BACKUP_STORAGE_BACKEND_ID") else {}),
             )
             backup_id = str(backup_record["id"])
             backup_store.update_backup_status(backup_id, "running")
             if isinstance(on_progress, BackupActivity):
                 on_progress.lease_owned = lambda: owns_backup_lease(source_id, owner_token)
             with bind_backup_activity(backup_id, on_progress):
-                parsed_output = run_infra_backup(
-                    env=build_storage_env(source_id),
-                    keep_local=keep_local,
-                    retention_days=retention_days,
-                    on_progress=on_progress,
-                )
+                if run_env.get("BACKUP_ENGINE") == "restic":
+                    from .backup_repository_runtime import run_repository_backup
+
+                    parsed_output = run_repository_backup(project_dir=str(Path(__file__).resolve().parents[3]), source_id=source_id, env=run_env, local_only=local_only, infrastructure=True)
+                else:
+                    parsed_output = run_infra_backup(env=run_env, keep_local=keep_local, retention_days=retention_days, on_progress=on_progress)
                 if isinstance(on_progress, BackupActivity):
                     backup_store.merge_backup_verification_json(
                         backup_id, dict(as_mapping(parsed_output.get("verification")) or {}),

@@ -139,39 +139,6 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
 
         due_sources = backup_store.list_due_sources()
 
-        if not due_sources:
-            result = {
-                "status": "success",
-                "message": "No scheduled backups due",
-                "count": 0,
-                "succeeded": 0,
-                "failed": 0,
-                "stale_failed": stale_failed,
-                "stale_cleaned": stale_cleaned,
-                "expired_cleaned": expired_count,
-                "local_archives_deleted": local_archives_deleted,
-                "local_bytes_deleted": local_bytes_deleted,
-                "rows_cleaned": stale_failed + stale_cleaned + expired_count,
-                "results": [],
-            }
-            maintenance_store.record_maintenance_run(
-                "scheduled_backups",
-                result["status"],
-                started_at=started_at,
-                finished_at=datetime.now(UTC),
-                rows_cleaned=result["rows_cleaned"],
-                summary=result,
-            )
-            logger.info(
-                "no_scheduled_backups_due",
-                stale_failed=stale_failed,
-                stale_cleaned=stale_cleaned,
-                expired_cleaned=expired_count,
-                local_archives_deleted=local_archives_deleted,
-                local_bytes_deleted=local_bytes_deleted,
-            )
-            return result
-
         results: list[dict[str, Any]] = []
         for source in due_sources:
             try:
@@ -204,6 +171,26 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
             "rows_cleaned": stale_failed + stale_cleaned + expired_count,
             "results": results,
         }
+        if not due_sources:
+            result["message"] = "No scheduled backups due"
+
+        # Restore drill cadence is independent of whether any backup is due.
+        try:
+            result["drill"] = run_scheduled_drills()
+        except Exception:
+            logger.exception("scheduled_drill_failed")
+            result["drill"] = {"status": "error"}
+
+        try:
+            from .backup_repository_runtime import run_repository_maintenance
+
+            repositories = run_repository_maintenance()
+            if repositories:
+                result["repository_maintenance"] = repositories
+        except Exception:
+            logger.exception("scheduled_repository_maintenance_failed")
+            result["repository_maintenance"] = {"status": "error"}
+
         maintenance_store.record_maintenance_run(
             "scheduled_backups",
             result["status"],
@@ -224,14 +211,6 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
             local_archives_deleted=local_archives_deleted,
             local_bytes_deleted=local_bytes_deleted,
         )
-
-        # Run scheduled restore drills after backups complete
-        try:
-            drill_result = run_scheduled_drills()
-            result["drill"] = drill_result
-        except Exception:
-            logger.exception("scheduled_drill_failed")
-            result["drill"] = {"status": "error"}
 
         return result
     except Exception as exc:

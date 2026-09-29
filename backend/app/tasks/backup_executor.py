@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hmac
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
@@ -15,6 +17,7 @@ from .backup_lock import acquire_backup_lock, maintain_backup_lock, owns_backup_
 from .backup_native import BACKUP_TIMEOUT, run_project_backup
 from .backup_native_archive import archive_sha256
 from .backup_native_offsite import replicate_completed_archive
+from .backup_native_recovery import RECOVERY_DIR_NAME, RECOVERY_MANIFEST_NAME, restore_mapped_links
 from .backup_native_restore import restore_isolated_archive
 from .backup_utils import (
     as_mapping,
@@ -44,6 +47,28 @@ def sync_backup_offsite(
     source = backup_store.get_source(source_id)
     if not source:
         raise RuntimeError(f"Backup source {source_id} not found")
+    from .backup_repository_runtime import is_repository_backup, sync_repository_backup
+
+    if is_repository_backup(backup):
+        token = owner_token or acquire_backup_lock(source_id)
+        if token is None:
+            raise RuntimeError("A backup/sync is active for this source")
+        if owner_token is not None and not owns_backup_lease(source_id, token):
+            raise RuntimeError("A backup/sync is active or this retry no longer owns its source lease")
+        repository_token: str = token
+        if isinstance(on_progress, BackupActivity):
+            on_progress.lease_owned = lambda: owns_backup_lease(source_id, repository_token)
+        with maintain_backup_lock(source_id, token), bind_backup_activity(backup_id, on_progress):
+            result = sync_repository_backup(backup)
+            verification = dict(result.get("verification") or {})
+            # Offsite failure cannot revoke the verified local recovery point.
+            verification.pop("verified", None)
+            if result.get("status") == "verified":
+                verification.update(remote_snapshot_id=result["remote_snapshot_id"], remote_repository_id=result["remote_repository_id"])
+            updated = backup_store.merge_backup_verification_json(backup_id, verification)
+            if result.get("status") == "verified":
+                backup_store.update_backup_status(backup_id, "completed")
+            return updated or {**backup, "verification_json": verification}
     source_path = Path(str(source.get("path") or ""))
     archive_name = str(backup.get("name") or "")
     recorded_location = Path(str(backup.get("location") or ""))
@@ -63,10 +88,15 @@ def sync_backup_offsite(
     if isinstance(on_progress, BackupActivity):
         on_progress.lease_owned = lambda: owns_backup_lease(source_id, token)
     with maintain_backup_lock(source_id, token), bind_backup_activity(backup_id, on_progress):
+        expected_checksum = str(backup.get("checksum") or "")
+        if not expected_checksum:
+            raise RuntimeError("Retained archive has no recorded checksum; offsite sync refused")
+        if not hmac.compare_digest(archive_sha256(archive), expected_checksum):
+            raise RuntimeError("Archive checksum mismatch: refusing offsite sync")
         backup_store.merge_backup_verification_json(backup_id, {"offsite": {"status": "pending"}})
         result = replicate_completed_archive(
             archive, source_id=source_id, local_dir=archive.parent,
-            env=build_storage_env(source_id), retention_days=int(source.get("retention_days") or 14),
+            env=build_storage_env(source_id, str(backup["storage_backend_id"])) if backup.get("storage_backend_id") else build_storage_env(source_id), retention_days=int(source.get("retention_days") or 14),
             retry=True, on_progress=on_progress,
         )
         activity = current_activity()
@@ -85,6 +115,8 @@ def restore_backup_isolated(
     *,
     expected_source_id: str | None = None,
     archive_file: Path | None = None,
+    remote: bool = False,
+    destination_roots: dict[str, Path] | None = None,
 ) -> dict[str, object]:
     """Restore one retained archive in isolation and persist drill evidence."""
     backup = backup_store.get_backup(backup_id)
@@ -98,6 +130,29 @@ def restore_backup_isolated(
     source = backup_store.get_source(source_id)
     if not source:
         raise RuntimeError(f"Backup source {source_id} not found")
+    from .backup_repository_runtime import is_repository_backup, materialize_repository_archive
+
+    if is_repository_backup(backup):
+        if archive_file is not None:
+            raise RuntimeError("Repository restore does not accept an archive-file override")
+        verified_at = datetime.now(UTC).isoformat()
+        try:
+            with materialize_repository_archive(backup, remote=remote) as archive:
+                result = restore_isolated_archive(archive, destination)
+            result.update(_complete_mapped_recovery(destination, destination_roots))
+            evidence = {
+                "ok": True, "verified_at": verified_at, "format": "restic-v1", "remote": remote,
+                "git_restored": bool((result.get("recovery") or {}).get("git_restored")),
+                "database_copy_preserved": bool(result.get("database_copy")),
+                "recovery_complete": result["recovery_complete"],
+            }
+        except Exception as exc:
+            backup_store.merge_backup_verification_json(backup_id, {"isolated_restore": {"ok": False, "verified_at": verified_at, "error": str(exc)}})
+            raise
+        backup_store.merge_backup_verification_json(backup_id, {"isolated_restore": evidence})
+        return {**result, "evidence": evidence}
+    if remote:
+        raise RuntimeError("Legacy isolated restore requires a downloaded archive-file")
     source_path = Path(str(source.get("path") or ""))
     archive_name = str(backup.get("name") or "")
     recorded_location = Path(str(backup.get("location") or ""))
@@ -121,12 +176,14 @@ def restore_backup_isolated(
     verified_at = datetime.now(UTC).isoformat()
     try:
         result = restore_isolated_archive(archive, destination)
+        result.update(_complete_mapped_recovery(destination, destination_roots))
         evidence: dict[str, object] = {
             "ok": True,
             "verified_at": verified_at,
             "archive_checksum": backup.get("checksum"),
             "git_restored": bool((result.get("recovery") or {}).get("git_restored")),
             "database_copy_preserved": bool(result.get("database_copy")),
+            "recovery_complete": result["recovery_complete"],
         }
     except Exception as exc:
         backup_store.merge_backup_verification_json(
@@ -141,6 +198,21 @@ def restore_backup_isolated(
     return {**result, "evidence": evidence}
 
 
+def _complete_mapped_recovery(destination: Path, destination_roots: dict[str, Path] | None) -> dict[str, object]:
+    manifest = destination / RECOVERY_DIR_NAME / RECOVERY_MANIFEST_NAME
+    mappings = json.loads(manifest.read_text()).get("mapped_links", []) if manifest.is_file() else []
+    if not mappings:
+        return {"recovery_complete": True, "mapped_links_restored": 0, "mapped_links_pending": []}
+    if not destination_roots:
+        return {"recovery_complete": False, "mapped_links_restored": 0, "mapped_links_pending": mappings}
+    isolated_root = destination.resolve().parent
+    for root in destination_roots.values():
+        if root.is_symlink() or root.resolve().parent != isolated_root or not (root / RECOVERY_DIR_NAME / RECOVERY_MANIFEST_NAME).is_file():
+            raise RuntimeError("Mapped targets must be restored source siblings inside the isolated recovery directory")
+    result = restore_mapped_links(destination, destination_roots=destination_roots, isolated_root=isolated_root)
+    return {**result, "recovery_complete": True, "mapped_links_pending": []}
+
+
 def create_backup(
     project_id: str,
     note: str | None = None,
@@ -150,6 +222,7 @@ def create_backup(
     retention_days: int | None = None,
     source_id: str | None = None,
     on_progress: Callable[[], None] | None = None,
+    storage_backend_id: str | None = None,
 ) -> dict[str, object]:
     """Create a backup for a source through the native backup engine."""
     resolved_source_id = source_id or project_id
@@ -162,6 +235,11 @@ def create_backup(
     if source_type == "infrastructure":
         from .backup_infra import create_infra_backup
 
+        infra_options: dict[str, Any] = {}
+        if storage_backend_id:
+            infra_options["storage_backend_id"] = storage_backend_id
+        if local_only:
+            infra_options["local_only"] = True
         return create_infra_backup(
             source_id=resolved_source_id,
             note=note,
@@ -169,6 +247,7 @@ def create_backup(
             keep_local=keep_local,
             retention_days=retention_days,
             on_progress=on_progress,
+            **infra_options,
         )
 
     backup_dir = get_source_path(resolved_source_id) if source_id else None
@@ -195,6 +274,7 @@ def create_backup(
         resolved_source_id,
         owner_token,
         on_progress=on_progress,
+        storage_backend_id=storage_backend_id,
     )
 
 
@@ -209,6 +289,7 @@ def _run_backup(
     source_id: str | None = None,
     owner_token: str | None = None,
     on_progress: Callable[[], None] | None = None,
+    storage_backend_id: str | None = None,
 ) -> dict[str, object]:
     """Execute backup with lock already held."""
     resolved_source_id = source_id or project_id
@@ -218,11 +299,13 @@ def _run_backup(
         if owner_token is None:
             raise RuntimeError("Backup lock owner token is required")
         with maintain_backup_lock(resolved_source_id, owner_token):
+            run_env = build_storage_env(resolved_source_id, storage_backend_id) if storage_backend_id else build_storage_env(resolved_source_id)
             backup_record = backup_store.create_backup_record(
                 project_id=project_id,
                 backup_type=backup_type,
                 note=note,
                 source_id=source_id,
+                **({"storage_backend_id": run_env["BACKUP_STORAGE_BACKEND_ID"]} if run_env.get("BACKUP_STORAGE_BACKEND_ID") else {}),
             )
             backup_id = str(backup_record["id"])
             backup_store.update_backup_status(backup_id, "running")
@@ -233,7 +316,7 @@ def _run_backup(
                 parsed_output = run_project_backup(
                     project_dir=project_dir,
                     source_id=resolved_source_id,
-                    env=build_storage_env(resolved_source_id),
+                    env=run_env,
                     keep_local=keep_local,
                     local_only=local_only,
                     retention_days=retention_days,
@@ -345,7 +428,7 @@ def _handle_backup_pending(
         "backup_id": backup_id,
         "project_id": project_id,
         "location": pending_path or "pending_upload",
-        "message": "Backup saved locally, pending SMB upload",
+        "message": "Backup saved locally, offsite copy pending",
         **size_info,
     }
 

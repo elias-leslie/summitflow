@@ -19,6 +19,8 @@ from .backup_native_recovery import _safe_relative_symlink, build_consistent_sna
 BACKUP_TIMEOUT = 600
 PROJECT_DATABASE_DUMP_NAME = "database.sql.gz"
 INFRASTRUCTURE_DATABASE_DUMP_NAME = "pgdumpall.sql.gz"
+PROJECT_DATABASE_PAYLOAD_NAME = "database.sql"
+INFRASTRUCTURE_DATABASE_PAYLOAD_NAME = "pgdumpall.sql"
 DEFAULT_EXCLUDES = (
     ".venv",
     "frontend/node_modules",
@@ -111,6 +113,8 @@ def _should_exclude(rel_path: str, patterns: tuple[str, ...]) -> bool:
 
 def _load_excludes(project_dir: Path) -> tuple[str, ...]:
     patterns = list(DEFAULT_EXCLUDES)
+    if project_dir.is_file():
+        return tuple(patterns)
     ignore_file = project_dir / ".backupignore"
     if ignore_file.exists():
         for raw_line in ignore_file.read_text(errors="ignore").splitlines():
@@ -149,6 +153,39 @@ def _run_gzip_stream(
         attention_after=timeout, stdout_sink=compress, text=False,
     )
     return result.returncode, result.stderr
+
+
+def _run_plain_stream(
+    command: list[str], destination: Path, *, env: dict[str, str] | None, timeout: float,
+) -> tuple[int, bytes]:
+    """Capture bounded dump output before any archival compression."""
+    def copy(source: BinaryIO) -> None:
+        with destination.open("wb") as out:
+            while True:
+                check_backup_cancelled()
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+
+    result = run_bulk_process(
+        command, env=env, phase="database_dump", object_name=destination.name,
+        attention_after=timeout, stdout_sink=copy, text=False,
+    )
+    return result.returncode, result.stderr
+
+
+def _gzip_payload_file(source: Path, destination: Path) -> int:
+    with source.open("rb") as plain, destination.open("wb") as raw, gzip.GzipFile(
+        filename="", mode="wb", fileobj=raw, mtime=0,
+    ) as compressed:
+        while True:
+            check_backup_cancelled()
+            chunk = plain.read(1024 * 1024)
+            if not chunk:
+                break
+            compressed.write(chunk)
+    return destination.stat().st_size
 
 
 class _CheckedReader(io.BufferedReader):
@@ -198,7 +235,8 @@ def _dump_database(project_name: str, destination: Path, env: dict[str, str]) ->
             user, password = unquote(admin.username), unquote(admin.password)
     run_env["PGPASSWORD"] = password
     command = ["pg_dump", "-U", user, "-h", db["host"], "-p", db["port"], db["name"]]
-    returncode, stderr = _run_gzip_stream(command, destination, env=run_env, timeout=BACKUP_TIMEOUT)
+    stream = _run_gzip_stream if destination.suffix == ".gz" else _run_plain_stream
+    returncode, stderr = stream(command, destination, env=run_env, timeout=BACKUP_TIMEOUT)
     if returncode != 0:
         detail = stderr.decode(errors="ignore").strip()
         raise RuntimeError(f"Database dump failed: {detail or returncode}")
@@ -280,31 +318,104 @@ def _recoverable_file_filter(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
     return member if member.isreg() or member.issym() else None
 
 
-def _create_project_archive(
+def payload_tree_metadata(snapshot_dir: Path) -> dict[str, Any]:
+    """Measure regular bytes in the actual materialized tree without following links."""
+    names: list[str] = []
+    logical_bytes = 0
+    def walk_error(error: OSError) -> None:
+        raise error
+
+    for root, dirs, files in os.walk(snapshot_dir, followlinks=False, onerror=walk_error):
+        check_backup_cancelled()
+        root_path = Path(root)
+        dirs[:] = [name for name in dirs if not (root_path / name).is_symlink()]
+        for name in files:
+            path = root_path / name
+            metadata = path.lstat()
+            if stat.S_ISREG(metadata.st_mode):
+                logical_bytes += metadata.st_size
+                names.append(path.relative_to(snapshot_dir).as_posix())
+    return {"total_bytes": logical_bytes, "logical_bytes": logical_bytes, "total_files": len(names), "tree": _archive_tree([f"payload/{name}" for name in names])}
+
+
+def prepare_project_payload(
     project_dir: Path,
     project_name: str,
     staging: Path,
     env: dict[str, str],
+    *,
+    source_roots: dict[str, Path] | None = None,
+    sensitive_paths: tuple[Path, ...] = (),
+    git_bundle_reuse: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Validate and materialize recovery files and plain SQL in private staging.
+
+    The caller owns staging lifetime and encryption. No tar/gzip/age is applied;
+    total_bytes/logical_bytes count actual regular files including recovery data.
+    Reuse is optional {'bundle_path': Path, 'git': prior_manifest['git']}.
+    """
     capture_started = time.monotonic()
     backup_phase("capture")
+    mode = project_dir.lstat().st_mode
+    if not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+        raise RuntimeError("Backup source must be a directory or explicit regular file")
+    excludes = _load_excludes(project_dir)
+    if project_dir.is_dir():
+        excludes = (*excludes, f"./{PROJECT_DATABASE_DUMP_NAME}")
+    snapshot_dir, recovery = build_consistent_snapshot(
+        project_dir, staging, excludes, _should_exclude, sensitive_paths,
+        source_roots=source_roots, git_bundle_reuse=git_bundle_reuse,
+    )
+    db_dump = snapshot_dir / PROJECT_DATABASE_PAYLOAD_NAME
+    if db_dump.exists():
+        # Preserve a source SQL file at the project root; generated recovery SQL
+        # then uses the already-reserved recovery directory instead of replacing
+        # the original asset.
+        db_dump = snapshot_dir / ".summitflow-recovery" / PROJECT_DATABASE_PAYLOAD_NAME
+    # An explicitly registered configuration file has no project database.
+    db_size, expects_db = (0, False) if recovery["source_kind"] == "file" else _dump_database(project_name, db_dump, env)
+    db_size = db_dump.stat().st_size if recovery["source_kind"] != "file" and db_dump.exists() else 0
+    if db_size == 0 and expects_db:
+        raise RuntimeError(f"Database dump skipped: missing credentials for {project_name}")
+    metadata = payload_tree_metadata(snapshot_dir)
+    verification = {
+        "verified": True, "verified_at": datetime.now(UTC).isoformat(), "errors": [],
+        "tree": metadata["tree"], "total_files": metadata["total_files"],
+        "has_db": db_size > 0, "expects_db": expects_db, "recovery": recovery,
+        "capture": {"duration_ms": int((time.monotonic() - capture_started) * 1000), "logical_bytes": metadata["logical_bytes"]},
+    }
+    return {
+        **metadata, "snapshot_dir": snapshot_dir, "db_bytes": db_size,
+        "files_bytes": metadata["total_bytes"] - db_size, "recovery": recovery,
+        "expects_db": expects_db, "db_dump_name": db_dump.relative_to(snapshot_dir).as_posix(),
+        "verification": verification,
+    }
+
+
+def _create_project_archive(
+    project_dir: Path, project_name: str, staging: Path, env: dict[str, str],
+    *, source_roots: dict[str, Path] | None = None,
+    sensitive_paths: tuple[Path, ...] = (),
+) -> dict[str, Any]:
+    capture_started = time.monotonic()
+    payload = prepare_project_payload(
+        project_dir, project_name, staging, env,
+        source_roots=source_roots, sensitive_paths=sensitive_paths,
+    )
+    snapshot_dir = payload["snapshot_dir"]
+    recovery = payload["recovery"]
+    expects_db = payload["expects_db"]
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     archive_name = f"{project_name}-{timestamp}.tar.gz"
     archive_path = staging / archive_name
     db_dump = staging / PROJECT_DATABASE_DUMP_NAME
-    db_size, expects_db = _dump_database(project_name, db_dump, env)
-    if db_size == 0 and expects_db:
-        raise RuntimeError(f"Database dump skipped: missing credentials for {project_name}")
-    excludes = _load_excludes(project_dir)
-    snapshot_dir, recovery = build_consistent_snapshot(
-        project_dir,
-        staging,
-        excludes,
-        _should_exclude,
-    )
+    db_size = 0
+    if payload["db_bytes"]:
+        db_size = _gzip_payload_file(snapshot_dir / payload["db_dump_name"], db_dump)
     backup_phase("archive", archive_name)
     with tarfile.open(archive_path, "w:gz") as archive:
-        files_count = _add_project_files(archive, snapshot_dir, project_name, ())
+        dump_excludes = (f"./{payload['db_dump_name']}",) if payload["db_bytes"] else ()
+        files_count = _add_project_files(archive, snapshot_dir, project_name, dump_excludes)
         if db_dump.exists():
             _add_checked_file(archive, db_dump, f"{project_name}/{PROJECT_DATABASE_DUMP_NAME}", regular_only=True)
             files_count += 1
@@ -323,6 +434,7 @@ def _create_project_archive(
         "archive_name": archive_name,
         "archive_path": archive_path,
         "total_bytes": total_size,
+        "logical_bytes": payload["logical_bytes"],
         "db_bytes": db_size,
         "files_bytes": max(total_size - db_size, 0),
         "total_files": files_count,

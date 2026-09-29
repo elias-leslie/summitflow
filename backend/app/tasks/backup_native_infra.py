@@ -29,11 +29,20 @@ from .backup_activity import (
 )
 from .backup_native_archive import (
     INFRASTRUCTURE_DATABASE_DUMP_NAME,
+    INFRASTRUCTURE_DATABASE_PAYLOAD_NAME,
+    _gzip_payload_file,
     _regular_file_filter,
     _run_gzip_stream,
+    _run_plain_stream,
+    payload_tree_metadata,
     verify_archive,
 )
 from .backup_native_offsite import encrypt_completed_archive, replicate_completed_archive
+from .backup_native_recovery import (
+    _snapshot_entry_is_stable,
+    copy_inventory_snapshot,
+    inventory_project_tree,
+)
 from .backup_native_smb import StorageConfig, _save_pending, _smb_upload, _storage_config
 from .backup_native_storage import (
     apply_local_retention,
@@ -67,13 +76,14 @@ def _dump_infra_database(destination: Path) -> int:
     pg_user = os.environ.get("PGUSER", "admin")
     pg_host = os.environ.get("PGHOST", "localhost")
     pg_container = os.environ.get("POSTGRES_CONTAINER") or _find_compose_container("postgres")
+    stream = _run_gzip_stream if destination.suffix == ".gz" else _run_plain_stream
     if pg_container:
         command = ["docker", "exec", pg_container, "pg_dumpall", "-U", pg_user]
-        returncode, stderr = _run_gzip_stream(command, destination, env=None, timeout=INFRA_BACKUP_TIMEOUT)
+        returncode, stderr = stream(command, destination, env=None, timeout=INFRA_BACKUP_TIMEOUT)
     else:
         env = {**os.environ, "PGPASSWORD": os.environ.get("PGPASSWORD", "")}
         command = ["pg_dumpall", "-U", pg_user, "-h", pg_host]
-        returncode, stderr = _run_gzip_stream(command, destination, env=env, timeout=INFRA_BACKUP_TIMEOUT)
+        returncode, stderr = stream(command, destination, env=env, timeout=INFRA_BACKUP_TIMEOUT)
     if returncode != 0:
         detail = stderr.decode(errors="ignore").strip()
         raise RuntimeError(f"pg_dumpall failed: {detail or returncode}")
@@ -89,17 +99,7 @@ def _copy_if_exists(src: Path, dest: Path) -> int:
         return 0
     if not (stat.S_ISDIR(source_mode) or stat.S_ISREG(source_mode)):
         return 0
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if stat.S_ISDIR(source_mode):
-        shutil.copytree(
-            src,
-            dest,
-            dirs_exist_ok=True,
-            symlinks=True,
-            ignore=_ignore_unsafe_copy_entries,
-        )
-    else:
-        shutil.copy2(src, dest)
+    _copy_regular_path(src, dest)
     return 1
 
 
@@ -164,7 +164,7 @@ def _copy_regular_path(
     def excluded(path: Path) -> bool:
         return any(_path_is_within(path, root) for root in exclusions)
 
-    def copy_entry(path: Path, target: Path, relative: Path) -> None:
+    def record_entry(path: Path, relative: Path) -> None:
         check_backup_cancelled()
         if excluded(path):
             result["excluded_paths"] += 1
@@ -176,22 +176,48 @@ def _copy_regular_path(
             )
             return
         if stat.S_ISREG(mode):
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, target, follow_symlinks=False)
-            result["files"] += 1
+            inventory_path = relative.as_posix() if stat.S_ISDIR(source_mode) else source.name
+            if inventory_path in before:
+                result["files"] += 1
             return
         if not stat.S_ISDIR(mode):
             result["special_files_skipped"] += 1
             return
 
-        target.mkdir(parents=True, exist_ok=True)
         with os.scandir(path) as entries:
             children = sorted(entries, key=lambda item: item.name)
         for child in children:
             child_path = Path(child.path)
-            copy_entry(child_path, target / child.name, relative / child.name)
+            record_entry(child_path, relative / child.name)
 
-    copy_entry(source, destination, Path("."))
+    if excluded(source):
+        result["excluded_paths"] = 1
+        return result
+    source_mode = source.lstat().st_mode
+    if not (stat.S_ISDIR(source_mode) or stat.S_ISREG(source_mode)):
+        record_entry(source, Path("."))
+        return result
+    source_base = source if stat.S_ISDIR(source_mode) else source.parent
+
+    def excluded_relative(relative: str, _patterns: tuple[str, ...]) -> bool:
+        return excluded(source_base / relative)
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="infra-capture-", dir=destination.parent) as temporary:
+        captured = Path(temporary) / "snapshot"
+        before = inventory_project_tree(source, (), excluded_relative)
+        copy_inventory_snapshot(source, captured, {rel: entry for rel, entry in before.items() if entry.kind == "file"})
+        record_entry(source, Path("."))
+        after = inventory_project_tree(source, (), excluded_relative)
+        if any(
+            not _snapshot_entry_is_stable(source, captured, rel, before.get(rel), after.get(rel))
+            for rel in set(before) | set(after)
+        ):
+            raise RuntimeError("Infrastructure backup source changed during capture")
+        if stat.S_ISREG(source_mode):
+            shutil.copy2(captured / source.name, destination, follow_symlinks=False)
+        else:
+            shutil.copytree(captured, destination, dirs_exist_ok=True, symlinks=False)
     result["links"] = sorted(result["links"], key=lambda item: item["path"])
     return result
 
@@ -552,18 +578,23 @@ def _collect_redis_dump(destination: Path) -> None:
         )
 
 
-def _build_infra_archive(
+def prepare_infrastructure_payload(
     project_dir: Path,
     staging: Path,
-    archive_name: str,
     *,
     host_config_root: Path | None = None,
-) -> tuple[Path, int, dict[str, Any]]:
+) -> dict[str, Any]:
+    """Stage infrastructure configs/state and plain SQL before archive packing."""
+    backup_phase("capture")
     config_root = host_config_root or project_dir
-    configs = staging / "configs"
+    snapshot_dir = staging / "infrastructure-snapshot"
+    configs = snapshot_dir / "configs"
     configs.mkdir(parents=True, exist_ok=True)
-    db_dump = staging / INFRASTRUCTURE_DATABASE_DUMP_NAME
-    db_size = _dump_infra_database(db_dump)
+    db_dump = snapshot_dir / INFRASTRUCTURE_DATABASE_PAYLOAD_NAME
+    _dump_infra_database(db_dump)
+    db_size = db_dump.stat().st_size
+    if db_size == 0:
+        raise RuntimeError("Infrastructure database dump is empty")
     _copy_if_exists(Path.home() / ".env.local", configs / "env.local")
     _copy_if_exists(config_root / "docker" / "compose" / ".env", configs / "compose-env")
     _copy_if_exists(Path.home() / ".smbcredentials", configs / "smbcredentials")
@@ -572,7 +603,29 @@ def _build_infra_archive(
         configs / "hatchet-config",
     )
     _collect_redis_dump(configs / "redis-dump.rdb")
-    coverage = _capture_recovery_state(staging, _base_config_components(configs))
+    coverage = _capture_recovery_state(snapshot_dir, _base_config_components(configs))
+    metadata = payload_tree_metadata(snapshot_dir)
+    verification = {
+        "verified": True, "errors": [], "has_db": True, "expects_db": True,
+        "tree": metadata["tree"], "total_files": metadata["total_files"], "coverage": coverage,
+    }
+    return {
+        **metadata, "snapshot_dir": snapshot_dir, "db_bytes": db_size,
+        "files_bytes": metadata["total_bytes"] - db_size, "expects_db": True,
+        "db_dump_name": INFRASTRUCTURE_DATABASE_PAYLOAD_NAME,
+        "recovery": coverage, "verification": verification,
+    }
+
+
+def _build_infra_archive(
+    project_dir: Path, staging: Path, archive_name: str,
+    *, host_config_root: Path | None = None,
+) -> tuple[Path, int, dict[str, Any]]:
+    payload = prepare_infrastructure_payload(project_dir, staging, host_config_root=host_config_root)
+    snapshot_dir = payload["snapshot_dir"]
+    configs = snapshot_dir / "configs"
+    db_dump = staging / INFRASTRUCTURE_DATABASE_DUMP_NAME
+    db_size = _gzip_payload_file(snapshot_dir / INFRASTRUCTURE_DATABASE_PAYLOAD_NAME, db_dump)
     archive_path = staging / archive_name
     with tarfile.open(archive_path, "w:gz") as archive:
         archive.add(
@@ -588,7 +641,7 @@ def _build_infra_archive(
             filter=_safe_config_archive_filter,
         )
         archive.add(
-            staging / "state",
+            snapshot_dir / "state",
             arcname="infrastructure/state",
             recursive=True,
             filter=_safe_config_archive_filter,
@@ -598,11 +651,12 @@ def _build_infra_archive(
         db_dump_name=INFRASTRUCTURE_DATABASE_DUMP_NAME,
         expects_db=True,
     )
-    verification["coverage"] = coverage
+    verification["coverage"] = payload["verification"]["coverage"]
     result = {
         "archive_name": archive_name,
         "archive_path": archive_path,
         "total_bytes": archive_path.stat().st_size,
+        "logical_bytes": payload["logical_bytes"],
         "db_bytes": db_size,
         "files_bytes": max(archive_path.stat().st_size - db_size, 0),
         "verification": verification,

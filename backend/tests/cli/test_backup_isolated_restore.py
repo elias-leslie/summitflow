@@ -3,10 +3,46 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
 from typer.testing import CliRunner
 
 runner = CliRunner()
 
+
+def test_isolated_restore_forwards_remote_and_canonical_roots(tmp_path: Path, monkeypatch) -> None:
+    from cli.commands import backup
+    from cli.main import app
+
+    restore = MagicMock()
+    monkeypatch.setattr(backup, "restore_backup_isolated_command", restore)
+    destination = tmp_path / "recovered"
+    codex = tmp_path / "codex"
+    skills = tmp_path / "skills"
+    result = runner.invoke(app, [
+        "backup", "restore", "backup-1", "--into", str(destination), "--remote",
+        "--source-root", f"codex-config={codex}", "--source-root", f"agent-skills={skills}",
+    ])
+    assert result.exit_code == 0, result.output
+    assert restore.call_args.kwargs["remote"] is True
+    assert restore.call_args.kwargs["destination_roots"] == {"codex-config": codex, "agent-skills": skills}
+
+
+@pytest.mark.parametrize("args", [
+    ["--remote"],
+    ["--source-root", "codex-config=/fixture/codex"],
+    ["--into", "/fixture/restore", "--source-root", "codex-config=relative"],
+    ["--into", "/fixture/restore", "--source-root", "unknown=/fixture/source"],
+    ["--into", "/fixture/restore", "--source-root", "codex-config=/fixture/codex", "--source-root", "codex-config=/fixture/other"],
+])
+def test_isolated_restore_rejects_invalid_repository_or_mapping_options(monkeypatch, args) -> None:
+    from cli.commands import backup
+    from cli.main import app
+
+    restore = MagicMock()
+    monkeypatch.setattr(backup, "restore_backup_isolated_command", restore)
+    result = runner.invoke(app, ["backup", "restore", "backup-1", *args])
+    assert result.exit_code == 1
+    restore.assert_not_called()
 
 def test_backup_restore_into_runs_isolated_restore_and_states_db_limit(
     tmp_path: Path,

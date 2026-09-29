@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -44,12 +44,14 @@ from .backup_testbed import app as testbed_app
 from .backup_veeam import app as veeam_app
 
 app = typer.Typer(help="Backup management commands")
+source_app = typer.Typer(help="Backup source registration and execution")
 
 # Register sub-command groups
 app.add_typer(storage_app, name="storage")
 app.add_typer(infra_app, name="infra")
 app.add_typer(testbed_app, name="testbed")
 app.add_typer(veeam_app, name="veeam")
+app.add_typer(source_app, name="source")
 
 
 @app.callback()
@@ -98,6 +100,8 @@ def create_backup(
     note: Annotated[str | None, typer.Option("--note", "-n", help="Backup note")] = None,
     keep_local: Annotated[bool, typer.Option("--keep-local", help="Keep local copy")] = False,
     source: Annotated[str | None, typer.Option("--source", help="Source ID (for non-project backups)")] = None,
+    storage_backend: Annotated[str | None, typer.Option("--storage-backend", help="Use a specific storage backend ID")] = None,
+    local_only: Annotated[bool, typer.Option("--local-only", help="Create a local recovery point without requesting an offsite copy")] = False,
     dry_run: Annotated[
         bool,
         typer.Option("--dry-run", help="Preview project backup contents without queuing; --source only reports that a local preview is unavailable."),
@@ -115,9 +119,17 @@ def create_backup(
             _create_backup_dry_run(source=source)
             return
         if source:
-            result = _get_source_api().create_source_backup(source, note=note, keep_local=keep_local)
+            api = _get_source_api()
+            options: dict[str, Any] = {"storage_backend_id": storage_backend} if storage_backend is not None else {}
+            if local_only:
+                options["local_only"] = True
+            result = api.create_source_backup(source, note=note, keep_local=keep_local, **options)
         else:
-            result = _get_project_api().create_backup(note=note, keep_local=keep_local)
+            project_api = _get_project_api()
+            project_options: dict[str, Any] = {"storage_backend_id": storage_backend} if storage_backend is not None else {}
+            if local_only:
+                project_options["local_only"] = True
+            result = project_api.create_backup(note=note, keep_local=keep_local, **project_options)
         task_id = result.get("task_id")
         if task_id:
             output_task_queued(ctx.obj, task_id)
@@ -129,6 +141,47 @@ def create_backup(
                 source_id=source,
                 project_id=None if source else get_config().project_id,
             )
+    except APIError as e:
+        handle_api_error(e)
+
+
+@source_app.command("create")
+def create_registered_source_backup(
+    ctx: typer.Context,
+    source_id: Annotated[str, typer.Argument(help="Registered backup source ID")],
+    note: Annotated[str | None, typer.Option("--note", "-n", help="Backup note")] = None,
+    keep_local: Annotated[bool, typer.Option("--keep-local", help="Keep local copy")] = False,
+    storage_backend: Annotated[str | None, typer.Option("--storage-backend", help="Use a specific storage backend ID")] = None,
+    local_only: Annotated[bool, typer.Option("--local-only", help="Create only a local recovery point")] = False,
+) -> None:
+    """Create a backup for a registered source."""
+    create_backup(ctx, note=note, keep_local=keep_local, source=source_id, storage_backend=storage_backend, local_only=local_only, dry_run=False)
+
+
+@source_app.command("register")
+def register_backup_source(
+    ctx: typer.Context,
+    source_id: Annotated[str, typer.Argument(help="New backup source ID")],
+    path: Annotated[str, typer.Option("--path", help="Absolute directory or regular-file path")],
+    name: Annotated[str | None, typer.Option("--name", "-n", help="Source name")] = None,
+    source_type: Annotated[str, typer.Option("--type", help="Source type: project, config, workspace or infrastructure")] = "config",
+    project_id: Annotated[str | None, typer.Option("--project-id", help="Associated project ID")] = None,
+) -> None:
+    """Register an explicit source path through the backup API."""
+    if not Path(path).is_absolute():
+        output_error("Source --path must be absolute")
+        raise typer.Exit(1)
+    if source_type not in {"project", "config", "workspace", "infrastructure"}:
+        output_error("Unsupported source type")
+        raise typer.Exit(1)
+    try:
+        result = _get_source_api().register_source(
+            source_id, name=name or source_id, path=path, source_type=source_type, project_id=project_id,
+        )
+        if ctx.obj.is_compact:
+            print(f"REGISTERED {result['id']}|{result['path']}")
+        else:
+            output_json(result)
     except APIError as e:
         handle_api_error(e)
 
@@ -319,8 +372,23 @@ def restore_backup(
     ] = None,
     db_only: Annotated[bool, typer.Option("--db-only", help="Restore database only for archive restores")] = False,
     files_only: Annotated[bool, typer.Option("--files-only", help="Restore files only for archive restores")] = False,
+    remote: Annotated[bool, typer.Option("--remote", help="Use the independent Restic offsite repository for isolated restore")] = False,
+    source_root: Annotated[list[str] | None, typer.Option("--source-root", help="Restored canonical source mapping: ID=/absolute/path (repeatable)")] = None,
 ) -> None:
     """Restore by backup ID, archive selector, or DB-free encrypted archive."""
+    destination_roots: dict[str, Path] = {}
+    for mapping in source_root or []:
+        source_id, separator, root = mapping.partition("=")
+        if not separator or source_id not in {"codex-config", "claude-config", "agent-skills"} or not Path(root).is_absolute():
+            output_error("--source-root requires a canonical source ID and an absolute path: ID=/absolute/path")
+            raise typer.Exit(1)
+        if source_id in destination_roots:
+            output_error("Each --source-root ID may appear only once")
+            raise typer.Exit(1)
+        destination_roots[source_id] = Path(root)
+    if (remote or destination_roots) and (into is None or identity_file is not None):
+        output_error("--remote and --source-root require a backup ID with --into")
+        raise typer.Exit(1)
     if into is not None:
         if dry_run or latest or archive_name or db_only or files_only or confirm:
             output_error(
@@ -351,12 +419,18 @@ def restore_backup(
         if not backup_id:
             output_error("Backup ID required with --into so archive checksum and source can be proven.")
             raise typer.Exit(1) from None
+        restore_options: dict[str, Any] = {}
+        if remote:
+            restore_options["remote"] = True
+        if destination_roots:
+            restore_options["destination_roots"] = destination_roots
         restore_backup_isolated_command(
             ctx,
             backup_id=backup_id,
             destination=into,
             source=source,
             archive_file=Path(archive_file).expanduser() if archive_file else None,
+            **restore_options,
         )
         return
 

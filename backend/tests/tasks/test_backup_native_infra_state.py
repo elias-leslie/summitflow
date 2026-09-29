@@ -350,3 +350,104 @@ def test_generic_infrastructure_copy_hard_excludes_backup_key_directory(
     assert infra._copy_if_exists(source, destination) == 1
     assert (destination / "kept.txt").is_file()
     assert not (destination / "nested" / "backup-keys").exists()
+
+
+def test_infrastructure_payload_contains_plain_sql_and_measured_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import gzip
+
+    _configure_recovery_roots(tmp_path, monkeypatch)
+    project = tmp_path / "project"
+    project.mkdir()
+    sql = b"-- PostgreSQL database cluster dump\nSELECT 1;\n"
+
+    def dump(destination):
+        assert destination.name == "pgdumpall.sql"
+        destination.write_bytes(sql)
+        return len(sql)
+
+    monkeypatch.setattr(infra, "_dump_infra_database", dump)
+    monkeypatch.setattr(infra, "_collect_redis_dump", lambda _path: None)
+    payload = infra.prepare_infrastructure_payload(project, tmp_path / "stage")
+    snapshot = payload["snapshot_dir"]
+    assert (snapshot / "pgdumpall.sql").read_bytes() == sql
+    assert not (snapshot / "pgdumpall.sql.gz").exists()
+    assert payload["db_bytes"] == len(sql)
+    assert payload["logical_bytes"] == sum(path.stat().st_size for path in snapshot.rglob("*") if path.is_file())
+    assert payload["total_files"] == sum(path.is_file() for path in snapshot.rglob("*"))
+    assert payload["verification"]["coverage"]["schema_version"] == 1
+    assert payload["verification"]["verified"] is True
+    legacy, db_bytes, result = infra._build_infra_archive(project, tmp_path / "legacy-stage", "fixture.tar.gz")
+    with tarfile.open(legacy, "r:gz") as packed:
+        database = packed.extractfile("infrastructure/pgdumpall.sql.gz")
+        assert database is not None
+        compressed = database.read()
+        assert gzip.decompress(compressed) == sql
+        assert "infrastructure/pgdumpall.sql" not in packed.getnames()
+    assert db_bytes == len(compressed)
+    assert result["verification"]["has_db"] is True
+
+
+def test_infrastructure_payload_rejects_empty_database_dump(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_recovery_roots(tmp_path, monkeypatch)
+    monkeypatch.setattr(infra, "_dump_infra_database", lambda path: path.write_bytes(b""))
+    with pytest.raises(RuntimeError, match="dump is empty"):
+        infra.prepare_infrastructure_payload(tmp_path / "project", tmp_path / "stage")
+
+
+def test_infrastructure_copy_preserves_live_sqlite_and_jsonl_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sqlite3
+
+    source = tmp_path / "source"
+    source.mkdir()
+    database = source / "state.db"
+    log = source / "sessions.jsonl"
+    prefix = b'{"before":true}\n'
+    log.write_bytes(prefix)
+    original = infra.copy_inventory_snapshot
+    with sqlite3.connect(database) as writer:
+        writer.execute("PRAGMA journal_mode=WAL")
+        writer.execute("CREATE TABLE records (value TEXT)")
+        writer.execute("INSERT INTO records VALUES ('before')")
+        writer.commit()
+
+        def copy_then_write(*args):
+            original(*args)
+            writer.execute("INSERT INTO records VALUES ('after')")
+            writer.commit()
+            with log.open("ab") as output:
+                output.write(b'{"after":true}\n')
+
+        monkeypatch.setattr(infra, "copy_inventory_snapshot", copy_then_write)
+        destination = tmp_path / "destination"
+        result = infra._copy_regular_path(source, destination)
+    assert result["files"] == 2
+    assert (destination / "sessions.jsonl").read_bytes() == prefix
+    assert not (destination / "state.db-wal").exists()
+    with sqlite3.connect(destination / "state.db") as restored:
+        assert restored.execute("SELECT value FROM records").fetchall() == [("before",)]
+
+
+def test_infrastructure_copy_rejects_concurrent_regular_file_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    file = source / "config.json"
+    file.write_text("before")
+    original = infra.copy_inventory_snapshot
+
+    def copy_then_write(*args):
+        original(*args)
+        file.write_text("after")
+
+    monkeypatch.setattr(infra, "copy_inventory_snapshot", copy_then_write)
+    destination = tmp_path / "destination"
+    with pytest.raises(RuntimeError, match="source changed during capture"):
+        infra._copy_regular_path(source, destination)
+    assert not destination.exists()

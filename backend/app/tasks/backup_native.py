@@ -39,7 +39,7 @@ from .backup_native_storage import (
     storage_backend_type,
     update_backup_index,
 )
-from .backup_utils import require_verified_backup_output
+from .backup_utils import canonical_backup_source_roots, require_verified_backup_output
 
 logger = get_logger(__name__)
 
@@ -66,7 +66,7 @@ def _store_local_project_archive(
     retention: int,
 ) -> dict[str, Any]:
     backup_phase("local-storage")
-    final_dir = project_path / "backups"
+    final_dir = (project_path if project_path.is_dir() else project_path.parent) / "backups"
     final_dir.mkdir(parents=True, exist_ok=True)
     final_path = final_dir / archive_name
     shutil.copy2(archive_path, final_path)
@@ -146,13 +146,19 @@ def run_project_backup(
 ) -> dict[str, Any]:
     """Create a project/source archive and return parsed backup metadata."""
     project_path = Path(project_dir)
-    if not project_path.is_dir():
-        raise FileNotFoundError(f"Backup source directory does not exist: {project_dir}")
+    if not project_path.is_dir() and not project_path.is_file():
+        raise FileNotFoundError(f"Backup source does not exist: {project_dir}")
     project_name = project_path.name
     run_env = dict(env or {})
+    if run_env.get("BACKUP_ENGINE") == "restic":
+        from .backup_repository_runtime import run_repository_backup
+
+        return run_repository_backup(project_dir=project_dir, source_id=source_id, env=run_env, local_only=local_only)
     retention = retention_days or 14
     with tempfile.TemporaryDirectory(prefix=f"{project_name}-backup-") as temp_dir:
-        result = _create_project_archive(project_path, project_name, Path(temp_dir), run_env)
+        roots = canonical_backup_source_roots()
+        capture_options: dict[str, Any] = {"source_roots": roots} if roots else {}
+        result = _create_project_archive(project_path, project_name, Path(temp_dir), run_env, **capture_options)
         require_verified_backup_output(result)
         plaintext_path = Path(result["archive_path"])
         plaintext_path.chmod(0o600)

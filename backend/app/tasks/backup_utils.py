@@ -290,17 +290,28 @@ def get_source_type(source_id: str) -> str | None:
         return str(row[0]) if row and row[0] else None
 
 
-def get_storage_config(source_id: str) -> dict[str, Any] | None:
+def get_storage_config(source_id: str, backend_id: str | None = None) -> dict[str, Any] | None:
     """Resolve storage config: source → default backend → env/files.
 
     Checks if the source has a storage_backend_id, then falls back to the
     default backend, then returns None (caller uses env/file-based config).
     """
+    if backend_id is not None:
+        from ..storage.backups import get_backend
+
+        backend = get_backend(backend_id)
+        if not backend or not backend.get("enabled"):
+            raise ValueError("Backup storage backend is missing or disabled")
+        config = backend.get("config")
+        if not isinstance(config, dict):
+            raise ValueError("Backup storage backend has no usable configuration")
+        return {**config, "__backend_type": backend["backend_type"], "__backend_id": backend_id}
+
     with get_cursor() as cur:
         # Check source-specific backend
         cur.execute(
             """
-            SELECT sb.backend_type, sb.config FROM storage_backends sb
+            SELECT sb.backend_type, sb.config, sb.id FROM storage_backends sb
             JOIN backup_sources bs ON bs.storage_backend_id = sb.id
             WHERE bs.id = %s AND sb.enabled = TRUE
             """,
@@ -310,31 +321,37 @@ def get_storage_config(source_id: str) -> dict[str, Any] | None:
         if row and row[1]:
             config = row[1] if isinstance(row[1], dict) else None
             if config is not None:
-                return {**config, "__backend_type": row[0]}
+                return {**config, "__backend_type": row[0], **({"__backend_id": row[2]} if len(row) > 2 else {})}
 
         # Fall back to default backend
         cur.execute(
-            "SELECT backend_type, config FROM storage_backends WHERE is_default = TRUE AND enabled = TRUE LIMIT 1"
+            "SELECT backend_type, config, id FROM storage_backends WHERE is_default = TRUE AND enabled = TRUE LIMIT 1"
         )
         row = cur.fetchone()
         if row and row[1]:
             config = row[1] if isinstance(row[1], dict) else None
             if config is not None:
-                return {**config, "__backend_type": row[0]}
+                return {**config, "__backend_type": row[0], **({"__backend_id": row[2]} if len(row) > 2 else {})}
 
     return None
 
 
-def build_storage_env(source_id: str) -> dict[str, str]:
+def build_storage_env(source_id: str, backend_id: str | None = None) -> dict[str, str]:
     """Resolve storage backend config and return as env var overrides.
 
     Returns a dict of storage env vars that can be passed as
     extra env vars to subprocess calls. Returns empty dict if no backend
     is configured (scripts will use their own env/file-based config).
     """
-    config = get_storage_config(source_id)
+    config = get_storage_config(source_id, backend_id) if backend_id is not None else get_storage_config(source_id)
     if not config:
         return {}
+
+    return storage_config_env(config)
+
+
+def storage_config_env(config: Mapping[str, Any]) -> dict[str, str]:
+    """Translate non-secret backend settings and private file references."""
 
     env_map: dict[str, str] = {}
     backend_type = str(config.get("__backend_type") or config.get("backend_type") or "smb")
@@ -356,4 +373,32 @@ def build_storage_env(source_id: str) -> dict[str, str]:
         env_map["CREDENTIALS_FILE"] = str(config["credentials_file"])
     if config.get("offsite_gio_uri"):
         env_map["BACKUP_OFFSITE_GIO_URI"] = str(config["offsite_gio_uri"])
+    if config.get("__backend_id"):
+        env_map["BACKUP_STORAGE_BACKEND_ID"] = str(config["__backend_id"])
+    if config.get("engine"):
+        engine = str(config["engine"])
+        if engine not in {"native", "restic"}:
+            raise ValueError("Unsupported backup engine")
+        if engine == "restic" and backend_type != "local":
+            raise ValueError("Restic capture requires a local repository backend")
+        env_map["BACKUP_ENGINE"] = engine
+    for key in (
+        "local_repository", "remote_repository", "local_password_file", "remote_password_file",
+        "rclone_config", "key_directory", "lock_directory", "hostname", "offsite_prune_qualified",
+    ):
+        value = config.get(f"restic_{key}")
+        if value is not None:
+            env_map[f"RESTIC_{key.upper()}"] = str(value).lower() if isinstance(value, bool) else str(value)
     return env_map
+
+
+def canonical_backup_source_roots() -> dict[str, Path]:
+    """Only explicitly registered canonical agent roots may be mapped links."""
+    from ..storage.backups import list_sources
+
+    canonical = {"codex-config", "claude-config", "agent-skills"}
+    return {
+        str(source["id"]): Path(_translate_path(str(source["path"])) or str(source["path"]))
+        for source in list_sources()
+        if source.get("id") in canonical and source.get("enabled") and source.get("path")
+    }

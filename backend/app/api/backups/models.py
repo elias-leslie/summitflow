@@ -15,6 +15,8 @@ class BackupCreate(BaseModel):
 
     note: str | None = None
     keep_local: bool = False
+    local_only: bool = False
+    storage_backend_id: str | None = None
 
 
 class BackupResponse(BaseModel):
@@ -40,6 +42,13 @@ class BackupResponse(BaseModel):
     total_files: int | None = None
     verification_json: dict[str, object] | None = None
     source_id: str | None = None
+    storage_backend_id: str | None = None
+    artifact_format: str | None = None
+    repository_id: str | None = None
+    snapshot_id: str | None = None
+    data_added_bytes: int | None = None
+    logical_bytes: int | None = None
+    stored_bytes: int | None = None
 
 
 class BackupListResponse(BaseModel):
@@ -115,6 +124,11 @@ class StorageSummaryResponse(BaseModel):
     total_count: int
     total_bytes: int
     by_status: dict[str, int]
+    measurement: str = "catalogue-artifact-bytes"
+    archive_bytes: int = 0
+    repository_logical_bytes: int = 0
+    repository_point_count: int = 0
+    repository_physical_bytes: int | None = None
 
 
 # ─── Storage Backend Models ─────────────────────────────────────

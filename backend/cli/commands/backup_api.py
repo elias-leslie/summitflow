@@ -38,10 +38,14 @@ class BackupProjectAPI:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
 
-    def create_backup(self, note: str | None = None, keep_local: bool = False) -> dict[str, Any]:
+    def create_backup(self, note: str | None = None, keep_local: bool = False, storage_backend_id: str | None = None, local_only: bool = False) -> dict[str, Any]:
         """Create a new backup."""
         url = f"{self.base_url}/projects/{self.project_id}/backups"
         data = {"note": note, "keep_local": keep_local}
+        if storage_backend_id is not None:
+            data["storage_backend_id"] = storage_backend_id
+        if local_only:
+            data["local_only"] = True
         response = httpx.post(url, json=data, timeout=self.timeout)
         if response.status_code >= 400:
             raise _make_api_error(response)
@@ -119,12 +123,31 @@ class BackupSourceAPI:
         return cast(dict[str, Any], response.json())
 
     def create_source_backup(
-        self, source_id: str, note: str | None = None, keep_local: bool = False
+        self, source_id: str, note: str | None = None, keep_local: bool = False,
+        storage_backend_id: str | None = None,
+        local_only: bool = False,
     ) -> dict[str, Any]:
         """Create a backup for a specific source."""
         url = f"{self.base_url}/backup-sources/{source_id}/backups"
         data = {"note": note, "keep_local": keep_local}
+        if storage_backend_id is not None:
+            data["storage_backend_id"] = storage_backend_id
+        if local_only:
+            data["local_only"] = True
         response = httpx.post(url, json=data, timeout=self.timeout)
+        if response.status_code >= 400:
+            raise _make_api_error(response)
+        return cast(dict[str, Any], response.json())
+
+    def register_source(
+        self, source_id: str, *, name: str, path: str, source_type: str = "config",
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Register an explicit directory or regular-file backup source."""
+        data = {"id": source_id, "name": name, "path": path, "source_type": source_type}
+        if project_id is not None:
+            data["project_id"] = project_id
+        response = httpx.post(f"{self.base_url}/backup-sources", json=data, timeout=self.timeout)
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())

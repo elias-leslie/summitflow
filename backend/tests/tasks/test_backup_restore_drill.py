@@ -1,8 +1,95 @@
 from __future__ import annotations
 
+import io
+import json
+import os
+import subprocess
+import tarfile
 from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
+
+
+@pytest.mark.parametrize("mode,expected", [
+    ("start-failed", False),
+    ("ping-failed", False),
+    ("ping-wrong", False),
+    ("dbsize-failed", False),
+    ("dbsize-invalid", False),
+    ("dbsize-multiline", False),
+    ("dbsize-negative", False),
+    ("empty", True),
+    ("nonempty", True),
+])
+def test_redis_drill_requires_successful_start_ping_and_numeric_dbsize(
+    tmp_path: Path, mode: str, expected: bool,
+) -> None:
+    from app.tasks import backup_restore_drill
+
+    archive = tmp_path / "infrastructure.tar.gz"
+    payload = b"REDIS0009fixture"
+    with tarfile.open(archive, "w:gz") as tar:
+        member = tarfile.TarInfo("infrastructure/redis-dump.rdb")
+        member.size = len(payload)
+        tar.addfile(member, io.BytesIO(payload))
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    docker = fake_bin / "docker"
+    docker.write_text("""#!/bin/bash
+printf '%s\\n' "$*" >> "$FAKE_DOCKER_LOG"
+case "$1" in
+    rm) exit 0 ;;
+    run) [ "$FAKE_REDIS_MODE" != start-failed ]; exit $? ;;
+    exec)
+        case "${@: -1}" in
+            ping)
+                case "$FAKE_REDIS_MODE" in
+                    ping-failed) printf 'PONG\\n'; exit 1 ;;
+                    ping-wrong) printf 'LOADING\\n'; exit 0 ;;
+                    *) printf 'PONG\\n'; exit 0 ;;
+                esac ;;
+            dbsize)
+                case "$FAKE_REDIS_MODE" in
+                    dbsize-failed) printf '0\\n'; exit 1 ;;
+                    dbsize-invalid) printf 'ERR 123 command failed\\n' ;;
+                    dbsize-multiline) printf '1\\n2\\n' ;;
+                    dbsize-negative) printf '%s\\n' '-1' ;;
+                    empty) printf '0\\n' ;;
+                    *) printf '42\\n' ;;
+                esac
+                exit 0 ;;
+        esac ;;
+esac
+exit 99
+""")
+    docker.chmod(0o755)
+    sleep = fake_bin / "sleep"
+    sleep.write_text("#!/bin/sh\nexit 0\n")
+    sleep.chmod(0o755)
+    log = tmp_path / "docker.log"
+    env = {
+        **os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "FAKE_REDIS_MODE": mode, "FAKE_DOCKER_LOG": str(log),
+    }
+    env.pop("BASH_ENV", None)
+    env.pop("ENV", None)
+
+    result = subprocess.run(
+        ["bash", str(backup_restore_drill.DRILL_SCRIPT), str(archive)],
+        env=env, capture_output=True, text=True, timeout=10, check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    component = next(item for item in json.loads(result.stdout)["components"] if item["key"] == "redis_state")
+    assert component["ok"] is expected
+    commands = log.read_text().splitlines()
+    assert commands[-1].startswith("rm -fv sf-drill-pg-")
+    if mode in {"start-failed", "ping-failed", "ping-wrong"}:
+        assert not any("dbsize" in command for command in commands)
+    if mode == "start-failed":
+        assert not any(command.startswith("exec") for command in commands)
 
 
 def test_drill_script_points_to_repo_script() -> None:

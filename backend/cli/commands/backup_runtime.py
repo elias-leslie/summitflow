@@ -7,6 +7,7 @@ import hmac
 import re
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -70,20 +71,30 @@ def restore_backup_isolated_command(
     destination: Path,
     source: str | None,
     archive_file: Path | None,
+    remote: bool = False,
+    destination_roots: dict[str, Path] | None = None,
 ) -> None:
     """Restore a checksum-proven backup into an empty isolated directory."""
     try:
+        options: dict[str, Any] = {}
+        if remote:
+            options["remote"] = True
+        if destination_roots:
+            options["destination_roots"] = destination_roots
         result = restore_backup_isolated(
             backup_id,
             destination,
             expected_source_id=source,
             archive_file=archive_file,
+            **options,
         )
     except Exception as exc:
         output_error(str(exc))
         raise typer.Exit(1) from None
 
     typer.echo("Database dumps are copied for inspection; no database was restored.")
+    if result.get("recovery_complete") is False:
+        typer.echo("Canonical links are pending: restore their target sources and supply --source-root mappings.")
     if ctx.obj.is_compact:
         typer.echo(
             f"ISOLATED_RESTORE {backup_id}|destination:{destination}|"

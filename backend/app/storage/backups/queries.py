@@ -102,8 +102,9 @@ def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: i
     Uses per-source retention_days from backup_sources table, falling back to
     default_retention_days for backups without a matching source.
 
-    A window function ensures at least min_keep completed records
-    are preserved per source regardless of age.
+    Pending uploads and active/pending verification are always preserved and
+    do not displace the minimum completed recovery records retained per source.
+    Restic snapshot records belong to repository retention and reconciliation.
 
     Args:
         default_retention_days: Fallback for backups without a source retention setting
@@ -116,8 +117,10 @@ def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: i
         cur.execute(
             """
             DELETE FROM backups
-            WHERE status IN ('completed', 'completed_pending_upload')
+            WHERE status = 'completed'
+              AND (verification_json ->> 'format') IS DISTINCT FROM 'restic-v1'
               AND (verification_json #>> '{activity,active}') IS DISTINCT FROM 'true'
+              AND (verification_json #>> '{offsite,status}') IS DISTINCT FROM 'pending'
               AND created_at < NOW() - INTERVAL '1 day' * COALESCE(
                 (SELECT bs.retention_days FROM backup_sources bs
                  WHERE bs.id = backups.source_id),
@@ -126,9 +129,12 @@ def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: i
               AND id NOT IN (
                 SELECT id FROM (
                   SELECT id, ROW_NUMBER() OVER (
-                    PARTITION BY source_id ORDER BY created_at DESC
+                    PARTITION BY COALESCE(source_id, project_id) ORDER BY created_at DESC, id DESC
                   ) AS rn
-                  FROM backups WHERE status IN ('completed', 'completed_pending_upload')
+                  FROM backups WHERE status = 'completed'
+                    AND (verification_json ->> 'format') IS DISTINCT FROM 'restic-v1'
+                    AND (verification_json #>> '{activity,active}') IS DISTINCT FROM 'true'
+                    AND (verification_json #>> '{offsite,status}') IS DISTINCT FROM 'pending'
                 ) ranked WHERE rn <= %s
               )
             RETURNING id
@@ -175,7 +181,9 @@ def get_storage_summary(
                     COUNT(*) FILTER (WHERE status = 'completed_pending_upload') as pending_upload_count,
                     COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
                     COUNT(*) FILTER (WHERE status = 'running') as running_count,
-                    COUNT(*) FILTER (WHERE status = 'failed') as failed_count
+                    COUNT(*) FILTER (WHERE status = 'failed') as failed_count,
+                    COALESCE(SUM(size_bytes) FILTER (WHERE verification_json->>'format' = 'restic-v1'), 0) as repository_logical_bytes,
+                    COUNT(*) FILTER (WHERE verification_json->>'format' = 'restic-v1') as repository_point_count
                 FROM backups
                 {where_clause}
                 """
@@ -208,6 +216,11 @@ def get_storage_summary(
         "total_bytes": int(row[1]) if row[1] else 0,
         "by_status": by_status,
         "pending_upload_count": int(row[3]) if row[3] else 0,
+        "measurement": "mixed-catalogue-logical-not-physical" if len(row) > 8 and row[8] else "catalogue-artifact-bytes",
+        "archive_bytes": int(row[1] or 0) - int(row[7] or 0) if len(row) > 7 else int(row[1] or 0),
+        "repository_logical_bytes": int(row[7] or 0) if len(row) > 7 else 0,
+        "repository_point_count": int(row[8] or 0) if len(row) > 8 else 0,
+        "repository_physical_bytes": None,
     }
 
 

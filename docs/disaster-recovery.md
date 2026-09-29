@@ -4,6 +4,12 @@ Use this runbook when the original computer and its disks are unavailable. It
 recovers SummitFlow from the encrypted archives in the `SummitFlow Backups`
 Google Drive folder plus the recovery key that the owner saved separately.
 
+Native age archives remain the production default. For an explicitly enabled
+Restic pilot recovery point, use the [repository recovery procedure](local-first-recovery.md#repository-payload-recovery)
+and [qualification gates](backup-optimization-rollout.md). The repository script
+works without the SummitFlow database or API. Retain this native archive path,
+its separately saved age key, and the existing Veeam seven-point image policy.
+
 This is not an operating-system image. It does not recreate Linux packages,
 users, groups, device configuration, Google Online Accounts, package caches, or
 container-image caches. It also does not make an existing database safe to

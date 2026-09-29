@@ -235,6 +235,7 @@ def _publish_verified_file(
     expected_checksum: str,
     verification_path: Path,
     retry: bool,
+    before_replace: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Publish one object and prove its exact bytes through a readback."""
     expected_size = local_path.stat().st_size
@@ -260,12 +261,16 @@ def _publish_verified_file(
             }
         if not retry:
             raise RuntimeError("Offsite verification checksum mismatch")
+        if before_replace is not None:
+            before_replace()
         removed = _run(["gio", "remove", remote_uri], timeout=60)
         if removed.returncode != 0:
             raise _command_error("GIO stale archive removal", removed)
         remote_uri = None
 
     if not remote_uri:
+        if not preexisting_remote and before_replace is not None:
+            before_replace()
         requested_uri = f"{folder_uri.rstrip('/')}/{quote(remote_name, safe='')}"
         uploaded = _run(
             ["gio", "copy", "-T", str(local_path), requested_uri],
@@ -334,6 +339,20 @@ def _replicate_parts(
     parts: list[dict[str, Any]] = []
     artifacts: list[dict[str, Any]] = []
     transfer_bytes = 0
+    manifest_name = f"{archive_path.name}.parts.json"
+    completion_withdrawn = False
+
+    def withdraw_completion() -> None:
+        nonlocal completion_withdrawn
+        if completion_withdrawn:
+            return
+        manifest_uri = _find_display_child(source_folder_uri, manifest_name)
+        if manifest_uri:
+            removed = _run(["gio", "remove", manifest_uri], timeout=60)
+            if removed.returncode != 0:
+                raise _command_error("GIO completion manifest withdrawal", removed)
+        completion_withdrawn = True
+
     with archive_path.open("rb") as source:
         part_number = 0
         while True:
@@ -364,6 +383,7 @@ def _replicate_parts(
                 expected_checksum=part_checksum,
                 verification_path=temporary_dir / "verification-download.part",
                 retry=retry,
+                before_replace=withdraw_completion if retry else None,
             )
             if on_progress is not None:
                 on_progress()
@@ -404,7 +424,6 @@ def _replicate_parts(
         "checksum": local_checksum,
         "parts": parts,
     }
-    manifest_name = f"{archive_path.name}.parts.json"
     manifest_path = temporary_dir / manifest_name
     manifest_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
@@ -491,6 +510,7 @@ def replicate_completed_archive(
             remote_uri = str(replicated["location"])
         verified_at = datetime.now(UTC).isoformat()
         entry = {
+            "status": "verified",
             "archive_name": archive_path.name,
             "source_id": source_id,
             "local_checksum": local_checksum,
@@ -504,14 +524,19 @@ def replicate_completed_archive(
             },
         }
         _write_manifest(local_dir, entry)
-        deleted = _apply_remote_retention(source_folder_uri, retention_days, remote_uri)
+        retention: dict[str, Any] = {"retention_status": "completed", "retention_deleted": 0}
+        try:
+            deleted = _apply_remote_retention(source_folder_uri, retention_days, remote_uri)
+            retention["retention_deleted"] = len(deleted)
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+            retention.update(retention_status="failed", retention_deleted=None, maintenance_error=str(exc))
         return {
             "status": "verified",
             "location": remote_uri,
             "checksum": encrypted_checksum,
             "local_checksum": local_checksum,
             "verified_at": verified_at,
-            "retention_deleted": len(deleted),
+            **retention,
             "replication_duration_ms": int((time.monotonic() - started) * 1000),
             "encrypted_bytes": encrypted_bytes,
             "transfer_bytes": replicated["transfer_bytes"],

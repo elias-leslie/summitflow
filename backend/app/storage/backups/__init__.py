@@ -40,6 +40,7 @@ from .sources import (
     update_source_last_run,
 )
 from .storage_backends import (
+    backend_has_backups,
     create_backend,
     delete_backend,
     get_backend,
@@ -50,6 +51,7 @@ from .storage_backends import (
 )
 
 __all__ = [
+    "backend_has_backups",
     "cleanup_expired_backup_records",
     "cleanup_stale_backup_records",
     "create_backend",

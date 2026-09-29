@@ -20,7 +20,7 @@ def drive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     folder = "google-drive://account/source"
     state: dict[str, Any] = {
         "archive": archive, "folder": folder, "remote": {}, "commands": [],
-        "fail_upload": None, "fail_download": None, "corrupt_download": None,
+        "fail_upload": None, "fail_download": None, "fail_remove": None, "corrupt_download": None,
         "mutate_archive": False, "staged_part_sizes": [],
     }
     monkeypatch.setattr(offsite, "PART_SIZE_BYTES", 8)
@@ -35,6 +35,8 @@ def drive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         assert timeout <= 600
         state["commands"].append(command)
         if command[1] == "remove":
+            if state["fail_remove"] and command[-1].endswith(state["fail_remove"]):
+                return subprocess.CompletedProcess(command, 1, "", "removal unavailable")
             del state["remote"][command[-1]]
             return subprocess.CompletedProcess(command, 0, "", "")
         assert command[:2] == ["gio", "copy"]
@@ -148,8 +150,68 @@ def test_retry_replaces_only_part_proven_mismatching(drive: dict[str, Any]) -> N
     drive["remote"][part] = b"corrupt"
     drive["commands"].clear()
     assert replicate(drive, retry=True)["status"] == "verified"
-    assert uploads(drive) == [part]
-    assert [command[-1] for command in drive["commands"] if command[1] == "remove"] == [part]
+    manifest = f"{drive['folder']}/{drive['archive'].name}.parts.json"
+    assert uploads(drive) == [part, manifest]
+    assert [command[-1] for command in drive["commands"] if command[1] == "remove"] == [manifest, part]
+
+
+@pytest.mark.parametrize("missing_part", [False, True])
+def test_failed_part_repair_withdraws_old_completion(drive: dict[str, Any], missing_part: bool) -> None:
+    assert replicate(drive)["status"] == "verified"
+    part = next(name for name in drive["remote"] if name.endswith(".part000002"))
+    if missing_part:
+        del drive["remote"][part]
+    else:
+        drive["remote"][part] = b"corrupt"
+    drive["commands"].clear()
+    drive["fail_upload"] = ".part000002"
+
+    assert replicate(drive, retry=True)["status"] == "failed"
+    assert not any(name.endswith(".parts.json") for name in drive["remote"])
+    removal_names = [command[-1] for command in drive["commands"] if command[1] == "remove"]
+    assert removal_names[0].endswith(".parts.json")
+    assert sum(name.endswith(".parts.json") for name in removal_names) == 1
+
+
+def test_failed_completion_withdrawal_preserves_part_bytes(drive: dict[str, Any]) -> None:
+    assert replicate(drive)["status"] == "verified"
+    part = next(name for name in drive["remote"] if name.endswith(".part000002"))
+    drive["remote"][part] = b"corrupt"
+    before = dict(drive["remote"])
+    drive["commands"].clear()
+    drive["fail_remove"] = ".parts.json"
+
+    result = replicate(drive, retry=True)
+
+    assert result["status"] == "failed"
+    assert "completion manifest withdrawal" in result["error"]
+    assert drive["remote"] == before
+    assert not uploads(drive)
+
+
+@pytest.mark.parametrize("part_size", [8, 100])
+def test_retention_failure_preserves_verified_copy_and_manifest(
+    drive: dict[str, Any], monkeypatch: pytest.MonkeyPatch, part_size: int,
+) -> None:
+    from app.tasks import backup_native_offsite as offsite
+
+    monkeypatch.setattr(offsite, "PART_SIZE_BYTES", part_size)
+
+    def retention(*_args):
+        raise RuntimeError("retention unavailable")
+
+    monkeypatch.setattr(offsite, "_apply_remote_retention", retention)
+    result = replicate(drive)
+
+    assert result["status"] == "verified"
+    assert result["retention_status"] == "failed"
+    assert result["retention_deleted"] is None
+    assert result["maintenance_error"] == "retention unavailable"
+    assert result["location"] in drive["remote"]
+    entry = json.loads((drive["archive"].parent / offsite.OFFSITE_MANIFEST_NAME).read_text())["archives"][0]
+    assert entry["status"] == "verified"
+    assert entry["remote_uri"] == result["location"]
+    assert entry["encrypted_checksum"] == result["checksum"]
 
 
 def test_changed_local_ciphertext_is_not_advertised_as_complete(drive: dict[str, Any]) -> None:

@@ -58,6 +58,18 @@ def restore_backup(
 
     try:
         backup_record = backup_store.get_backup(backup_id) if backup_id else None
+        from .backup_repository_runtime import is_repository_backup, materialize_repository_archive
+
+        if backup_record and is_repository_backup(backup_record):
+            if backup_file:
+                raise RuntimeError("Repository restore does not accept an archive-file override")
+            if _backup_is_explicitly_unverified(backup_record):
+                raise RuntimeError("Backup failed verification and cannot be restored")
+            if str(backup_record.get("source_id") or backup_record.get("project_id")) != resolved_id:
+                raise RuntimeError("Backup does not belong to the requested source")
+            with materialize_repository_archive(backup_record) as archive:
+                result = restore_archive(archive, Path(restore_dir), dry_run=dry_run, db_only=db_only, files_only=files_only)
+            return _handle_restore_success(resolved_id, dry_run, result)
         archive = locate_archive(Path(restore_dir), backup_record, backup_file)
         if archive is None:
             archive_name = _resolve_archive_name(backup_record)

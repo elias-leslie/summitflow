@@ -55,6 +55,14 @@ def get_backend(backend_id: str) -> dict[str, Any] | None:
     return row_to_backend(row) if row else None
 
 
+def backend_has_backups(backend_id: str) -> bool:
+    """Whether retained backup records still depend on this backend identity."""
+    with get_cursor() as cur:
+        cur.execute("SELECT EXISTS(SELECT 1 FROM backups WHERE storage_backend_id = %s)", (backend_id,))
+        row = cur.fetchone()
+    return bool(row and row[0])
+
+
 def get_default_backend() -> dict[str, Any] | None:
     """Get the default storage backend."""
     with get_cursor() as cur:

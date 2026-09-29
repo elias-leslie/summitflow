@@ -64,6 +64,17 @@ def run_infra_drill() -> dict[str, Any]:
         return {"ok": False, "error": ERR_NO_COMPLETED_BACKUPS}
 
     backup_id = latest["id"]
+    from .backup_repository_runtime import is_repository_backup, materialize_repository_archive
+
+    if is_repository_backup(latest):
+        try:
+            with materialize_repository_archive(latest) as archive:
+                drill_result = _run_drill_script(str(archive), backup_id)
+            _record_drill_result(source_id, backup_id, ok=bool(drill_result.get("ok")), result=drill_result)
+            return drill_result
+        except Exception as exc:
+            _record_drill_result(source_id, backup_id, ok=False, error=str(exc))
+            return {"ok": False, "backup_id": backup_id, "error": str(exc)}
     location = str(latest.get("location") or "")
     name = str(latest.get("name") or "")
 

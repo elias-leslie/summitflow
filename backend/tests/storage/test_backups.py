@@ -313,6 +313,81 @@ class TestStorageSummary:
 class TestCleanupExpiredRecords:
     """Tests for cleanup_expired_backup_records."""
 
+    @pytest.mark.parametrize("min_keep", [0, 3])
+    def test_old_pending_uploads_never_expire(self, conn: Any, cleanup_project: str, min_keep: int) -> None:
+        pending = []
+        for _ in range(6):
+            rec = backups.create_backup_record(cleanup_project)
+            backups.update_backup_status(rec["id"], "completed_pending_upload")
+            pending.append(rec["id"])
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE backups SET created_at = NOW() - INTERVAL '90 days' WHERE project_id = %s",
+                (cleanup_project,),
+            )
+            conn.commit()
+        for _ in range(3):
+            rec = backups.create_backup_record(cleanup_project)
+            backups.update_backup_status(rec["id"], "completed")
+
+        assert backups.cleanup_expired_backup_records(min_keep=min_keep) == 0
+        assert all(backups.get_backup(backup_id) is not None for backup_id in pending)
+
+    @pytest.mark.parametrize("status,verification", [
+        ("completed_pending_upload", {}),
+        ("completed", {"activity": {"active": True}}),
+        ("completed", {"offsite": {"status": "pending"}}),
+        ("completed", {"format": "restic-v1"}),
+    ])
+    def test_protected_copies_do_not_displace_completed_minimum(
+        self, conn: Any, cleanup_project: str, status: str, verification: dict[str, Any],
+    ) -> None:
+        stable_ids = []
+        for _ in range(3):
+            rec = backups.create_backup_record(cleanup_project)
+            backups.update_backup_status(rec["id"], "completed")
+            stable_ids.append(rec["id"])
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE backups SET created_at = NOW() - INTERVAL '90 days' WHERE project_id = %s",
+                (cleanup_project,),
+            )
+            conn.commit()
+        for _ in range(3):
+            rec = backups.create_backup_record(cleanup_project)
+            backups.update_backup_status(rec["id"], status, verification_json=verification)
+
+        assert backups.cleanup_expired_backup_records(min_keep=3) == 0
+        assert all(backups.get_backup(backup_id) is not None for backup_id in stable_ids)
+
+    def test_old_pending_verification_never_expires(self, conn: Any, cleanup_project: str) -> None:
+        rec = backups.create_backup_record(cleanup_project)
+        backups.update_backup_status(rec["id"], "completed", verification_json={"offsite": {"status": "pending"}})
+        with conn.cursor() as cur:
+            cur.execute("UPDATE backups SET created_at = NOW() - INTERVAL '90 days' WHERE id = %s", (rec["id"],))
+            conn.commit()
+
+        assert backups.cleanup_expired_backup_records(min_keep=0) == 0
+        assert backups.get_backup(rec["id"]) is not None
+
+    def test_legacy_cleanup_never_expires_restic_snapshot_records(self, conn: Any, cleanup_project: str) -> None:
+        records = []
+        for _ in range(4):
+            rec = backups.create_backup_record(cleanup_project)
+            backups.update_backup_status(rec["id"], "completed", verification_json={
+                "format": "restic-v1", "snapshot_id": "fixture-snapshot",
+            })
+            records.append(rec["id"])
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE backups SET created_at = NOW() - INTERVAL '90 days' WHERE project_id = %s",
+                (cleanup_project,),
+            )
+            conn.commit()
+
+        assert backups.cleanup_expired_backup_records(min_keep=0) == 0
+        assert all(backups.get_backup(backup_id) is not None for backup_id in records)
+
     def test_cleanup_expired_deletes_old_records(self, conn: Any, cleanup_project: str) -> None:
         """Cleanup deletes completed records older than retention, keeping min per project."""
         # Create 5 completed backups, backdate 4 of them to 20 days ago

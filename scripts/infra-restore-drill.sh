@@ -92,22 +92,29 @@ REDIS_RDB=$(find "$EXTRACT_ROOT" -name "redis-dump.rdb" -type f 2>/dev/null | he
 if [ -n "$REDIS_RDB" ]; then
     HEADER=$(head -c 5 "$REDIS_RDB" 2>/dev/null || true)
     if [ "$HEADER" = "REDIS" ]; then
-        docker run -d --name "$DRILL_REDIS_CONTAINER" \
+        if ! docker run -d --name "$DRILL_REDIS_CONTAINER" \
             -v "$REDIS_RDB:/data/dump.rdb:ro" \
-            redis:7-alpine redis-server --appendonly no >/dev/null 2>&1
-
-        for _ in $(seq 1 15); do
-            if docker exec "$DRILL_REDIS_CONTAINER" redis-cli ping 2>/dev/null | grep -q PONG; then
-                break
-            fi
-            sleep 1
-        done
-
-        key_count=$(docker exec "$DRILL_REDIS_CONTAINER" redis-cli dbsize 2>/dev/null | grep -oP '\d+' || echo "0")
-        if [ "${key_count:-0}" -ge 0 ]; then
-            add_result "redis_state" "true"
+            redis:7-alpine redis-server --appendonly no >/dev/null 2>&1; then
+            add_result "redis_state" "false" "Failed to start disposable Redis container"
         else
-            add_result "redis_state" "false" "Redis started but dbsize check failed"
+            redis_ready=false
+            for _ in $(seq 1 15); do
+                if ping_output=$(docker exec "$DRILL_REDIS_CONTAINER" redis-cli --raw ping 2>/dev/null) \
+                    && [ "$ping_output" = "PONG" ]; then
+                    redis_ready=true
+                    break
+                fi
+                sleep 1
+            done
+
+            if [ "$redis_ready" != true ]; then
+                add_result "redis_state" "false" "Redis did not become ready with a successful PONG"
+            elif key_count=$(docker exec "$DRILL_REDIS_CONTAINER" redis-cli --raw dbsize 2>/dev/null) \
+                && [[ "$key_count" =~ ^[0-9]+$ ]]; then
+                add_result "redis_state" "true"
+            else
+                add_result "redis_state" "false" "Redis started but dbsize check failed"
+            fi
         fi
     else
         add_result "redis_state" "false" "Invalid RDB header (expected REDIS magic bytes)"

@@ -7,6 +7,8 @@ from .models import BackupResponse
 
 def backup_to_response(backup: dict[str, object]) -> BackupResponse:
     """Convert backup dict to response model."""
+    verification = _get_dict_or_none(backup, "verification_json") or {}
+    repository = _get_dict_or_none(verification, "repository") or (verification if verification.get("format") == "restic-v1" else {})
     return BackupResponse(
         id=str(backup["id"]),
         project_id=str(backup["project_id"]),
@@ -28,6 +30,13 @@ def backup_to_response(backup: dict[str, object]) -> BackupResponse:
         total_files=_get_int_or_none(backup, "total_files"),
         verification_json=_get_dict_or_none(backup, "verification_json"),
         source_id=_get_str_or_none(backup, "source_id"),
+        storage_backend_id=_get_str_or_none(backup, "storage_backend_id"),
+        artifact_format=_get_str_or_none(verification, "format"),
+        repository_id=_get_str_or_none(repository, "repository_id"),
+        snapshot_id=_get_str_or_none(repository, "snapshot_id"),
+        data_added_bytes=_get_int_or_none(repository, "data_added_bytes"),
+        logical_bytes=_get_int_or_none(repository, "logical_bytes"),
+        stored_bytes=_get_int_or_none(repository, "stored_bytes"),
     )
 
 

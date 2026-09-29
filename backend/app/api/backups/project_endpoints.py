@@ -62,6 +62,8 @@ async def create_project_backup(
             note=request.note,
             backup_type="manual",
             keep_local=request.keep_local,
+            local_only=request.local_only,
+            storage_backend_id=request.storage_backend_id,
         )
     )
     return RestoreResponse(

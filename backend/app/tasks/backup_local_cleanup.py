@@ -114,6 +114,8 @@ def _configured_local_roots() -> list[Path]:
         config = backend.get("config")
         if not isinstance(config, dict):
             continue
+        if config.get("engine") == "restic":
+            continue  # Repository objects are maintained exclusively by Restic.
         root = _local_backend_archive_root(config)
         if root is None:
             continue

@@ -26,6 +26,7 @@ def create_backup_record(
     backup_type: str = "manual",
     note: str | None = None,
     source_id: str | None = None,
+    storage_backend_id: str | None = None,
 ) -> dict[str, Any]:
     """Create a new backup record in pending status.
 
@@ -49,12 +50,12 @@ def create_backup_record(
         cur.execute(
             static_sql(
                 f"""
-                INSERT INTO backups (id, project_id, name, backup_type, status, note, source_id)
-                VALUES (%s, %s, %s, %s, 'pending', %s, %s)
+                INSERT INTO backups (id, project_id, name, backup_type, status, note, source_id, storage_backend_id)
+                VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s)
                 RETURNING {BACKUP_COLUMNS}
                 """
             ),
-            (backup_id, project_id, name, backup_type, note, resolved_source_id),
+            (backup_id, project_id, name, backup_type, note, resolved_source_id, storage_backend_id),
         )
         row = cur.fetchone()
         conn.commit()

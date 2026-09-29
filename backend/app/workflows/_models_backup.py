@@ -15,7 +15,9 @@ class BackupInput(BaseModel):
     note: str | None = None
     backup_type: str = DEFAULT_BACKUP_TYPE
     keep_local: bool = False
+    local_only: bool = False
     retention_days: int | None = None
+    storage_backend_id: str | None = None
 
     @model_validator(mode="after")
     def default_source_id(self) -> Self:

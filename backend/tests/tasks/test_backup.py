@@ -478,11 +478,14 @@ class TestScheduledBackups:
             patch("app.tasks.backup_scheduler.backup_store.cleanup_stale_backup_records") as mock_stale_cleanup,
             patch("app.tasks.backup_scheduler.cleanup_local_backup_archives") as mock_local_cleanup,
             patch("app.tasks.backup_scheduler.maintenance_store.record_maintenance_run") as mock_record,
+            patch("app.tasks.backup_scheduler.backup_store.list_due_sources", return_value=[]),
+            patch("app.tasks.backup_scheduler.run_scheduled_drills") as mock_drill,
         ):
             mock_stale_fail.return_value = 3
             mock_cleanup.return_value = 4
             mock_stale_cleanup.return_value = 2
             mock_local_cleanup.return_value = {"deleted": 5, "bytes_deleted": 123}
+            mock_drill.return_value = {"status": "completed", "ok": True}
 
             result = run_scheduled_backups()
 
@@ -494,11 +497,34 @@ class TestScheduledBackups:
         assert result["local_archives_deleted"] == 5
         assert result["local_bytes_deleted"] == 123
         assert result["rows_cleaned"] == 9
+        assert result["drill"] == {"status": "completed", "ok": True}
         mock_stale_fail.assert_called_once()
         mock_cleanup.assert_called_once()
         mock_stale_cleanup.assert_called_once()
         mock_local_cleanup.assert_called_once_with(dry_run=False)
         mock_record.assert_called_once()
+        mock_drill.assert_called_once()
+        assert mock_record.call_args.kwargs["summary"]["drill"] == result["drill"]
+
+    def test_no_due_backups_persists_drill_failure_without_failing_cleanup(self) -> None:
+        from app.tasks import backup_scheduler as scheduler
+
+        with (
+            patch.object(scheduler, "_fail_stale_running_records", return_value=0),
+            patch.object(scheduler, "_cleanup_stale_records", return_value=0),
+            patch.object(scheduler, "_cleanup_expired_records", return_value=0),
+            patch.object(scheduler, "_cleanup_local_archives", return_value={}),
+            patch.object(scheduler.backup_store, "list_due_sources", return_value=[]),
+            patch.object(scheduler, "run_scheduled_drills", side_effect=RuntimeError("drill unavailable")) as drill,
+            patch.object(scheduler.maintenance_store, "record_maintenance_run") as record,
+        ):
+            result = scheduler.run_scheduled_backups()
+
+        assert result["status"] == "success"
+        assert result["count"] == 0
+        assert result["drill"] == {"status": "error"}
+        drill.assert_called_once()
+        assert record.call_args.kwargs["summary"]["drill"] == {"status": "error"}
 
     def test_run_scheduled_backups_with_due(self, cleanup_project: str, conn: Any) -> None:
         """Run scheduled backups triggers backup for due projects."""

@@ -78,6 +78,11 @@ async def quality_auto_fix_wf(input: AutoFixInput, ctx: Context) -> dict[str, An
 async def backup_create_wf(input: BackupInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.backup import create_backup
 
+    options: dict[str, Any] = {}
+    if input.local_only:
+        options["local_only"] = True
+    if input.storage_backend_id is not None:
+        options["storage_backend_id"] = input.storage_backend_id
     return await asyncio.to_thread(
         create_backup,
         project_id=input.project_id,
@@ -87,6 +92,7 @@ async def backup_create_wf(input: BackupInput, ctx: Context) -> dict[str, Any]:
         retention_days=input.retention_days,
         source_id=input.source_id,
         on_progress=make_backup_progress_callback(ctx),
+        **options,
     )
 
 
