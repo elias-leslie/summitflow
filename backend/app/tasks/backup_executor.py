@@ -210,7 +210,7 @@ def _complete_mapped_recovery(destination: Path, destination_roots: dict[str, Pa
         if root.is_symlink() or root.resolve().parent != isolated_root or not (root / RECOVERY_DIR_NAME / RECOVERY_MANIFEST_NAME).is_file():
             raise RuntimeError("Mapped targets must be restored source siblings inside the isolated recovery directory")
     result = restore_mapped_links(destination, destination_roots=destination_roots, isolated_root=isolated_root)
-    return {**result, "recovery_complete": True, "mapped_links_pending": []}
+    return {**result, "recovery_complete": not bool(result.get("mapped_links_pending"))}
 
 
 def create_backup(

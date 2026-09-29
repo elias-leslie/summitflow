@@ -162,10 +162,56 @@ def test_registered_external_links_are_manifest_only_and_restore_inside_isolatio
     destination = isolated / "agent-skills"
     shutil.copytree(canonical, destination)
     result = recovery.restore_mapped_links(restored, destination_roots={"agent-skills": destination}, isolated_root=isolated)
-    assert result == {"mapped_links_restored": 1}
+    assert result == {"mapped_links_restored": 1, "mapped_links_pending": []}
     assert (restored / "skills").is_symlink()
     assert (restored / "skills").resolve() == destination
     assert not Path(os.readlink(restored / "skills")).is_absolute()
+
+
+def test_existing_stale_canonical_link_is_pending_without_losing_valid_links(tmp_path: Path) -> None:
+    from app.tasks import backup_executor as executor
+
+    isolated = tmp_path / "isolated"
+    project = isolated / "claude-config"
+    target = isolated / "agent-skills"
+    (project / recovery.RECOVERY_DIR_NAME).mkdir(parents=True)
+    (target / recovery.RECOVERY_DIR_NAME).mkdir(parents=True)
+    (target / "SKILL.md").write_text("recovered")
+    (target / recovery.RECOVERY_DIR_NAME / recovery.RECOVERY_MANIFEST_NAME).write_text("{}")
+    mappings = [
+        {"path": "skills", "target_source": "agent-skills", "target_relative_path": "."},
+        {"path": "commands/stale.md", "target_source": "agent-skills", "target_relative_path": "commands/stale.md"},
+    ]
+    (project / recovery.RECOVERY_DIR_NAME / recovery.RECOVERY_MANIFEST_NAME).write_text(
+        json.dumps({"mapped_links_version": 1, "mapped_links": mappings})
+    )
+
+    result = executor._complete_mapped_recovery(project, {"agent-skills": target})
+
+    assert result == {"mapped_links_restored": 1, "mapped_links_pending": [mappings[1]], "recovery_complete": False}
+    assert (project / "skills").is_symlink()
+    assert (project / "skills" / "SKILL.md").read_text() == "recovered"
+    assert not (project / "commands" / "stale.md").exists()
+
+
+def test_mapped_link_restore_rejects_symlink_target_outside_isolation(tmp_path: Path) -> None:
+    isolated = tmp_path / "isolated"
+    project = isolated / "claude-config"
+    target = isolated / "agent-skills"
+    (project / recovery.RECOVERY_DIR_NAME).mkdir(parents=True)
+    target.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside")
+    (target / "outside.txt").symlink_to(outside)
+    (project / recovery.RECOVERY_DIR_NAME / recovery.RECOVERY_MANIFEST_NAME).write_text(
+        json.dumps({"mapped_links_version": 1, "mapped_links": [
+            {"path": "linked", "target_source": "agent-skills", "target_relative_path": "outside.txt"},
+        ]})
+    )
+
+    with pytest.raises(RuntimeError, match="escape"):
+        recovery.restore_mapped_links(project, destination_roots={"agent-skills": target}, isolated_root=isolated)
+    assert not (project / "linked").is_symlink()
 
 
 def test_sensitive_targets_are_not_registered_as_links(tmp_path: Path) -> None:

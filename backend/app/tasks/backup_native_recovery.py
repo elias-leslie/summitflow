@@ -742,6 +742,7 @@ def restore_mapped_links(
     if not project.is_relative_to(isolated):
         raise RuntimeError("Mapped link source is outside isolated recovery root")
     planned: list[tuple[Path, Path]] = []
+    pending: list[dict[str, Any]] = []
     seen: set[str] = set()
     for mapping in mappings:
         if not isinstance(mapping, dict):
@@ -762,7 +763,8 @@ def restore_mapped_links(
         seen.add(path)
         link = project / path
         target_root = destination_roots[source_name].resolve(strict=True)
-        target = (target_root / relative_target).resolve(strict=True)
+        target_candidate = target_root / relative_target
+        target = target_candidate.resolve(strict=False)
         if (
             not target_root.is_relative_to(isolated)
             or not target.is_relative_to(target_root)
@@ -771,12 +773,17 @@ def restore_mapped_links(
             or link.exists() or link.is_symlink()
         ):
             raise RuntimeError("Mapped link recovery would escape or overwrite isolated content")
+        if not target_candidate.exists():
+            # A captured link may already have been dangling at source. Keep
+            # that dependency visible without failing the usable siblings.
+            pending.append(mapping)
+            continue
         planned.append((link, target))
     for link, target in planned:
         check_backup_cancelled()
         link.parent.mkdir(parents=True, exist_ok=True)
         link.symlink_to(os.path.relpath(target, link.parent))
-    return {"mapped_links_restored": len(planned)}
+    return {"mapped_links_restored": len(planned), "mapped_links_pending": pending}
 
 
 def _safe_manifest_path(value: Any, *, allow_root: bool = False) -> bool:
