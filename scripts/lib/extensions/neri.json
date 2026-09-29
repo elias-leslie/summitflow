@@ -192,7 +192,10 @@
       "cmd": "st neri create --file investigation.json [--id UUID]",
       "when": "save an attempt with explicit target_id, title and objective",
       "precautions": [
-        "passive creation; incomplete CLI input is rejected before the API applies legacy defaults; preserve group_id and role when supplied; pwn.college requires training_selection with provider, activity_id, provider_revision, provider_synced_at, platform_solved and purpose; JSON id or --id is retained, otherwise generated and printed; reuse only for identical content"
+        "passive creation; incomplete CLI input is rejected before the API applies legacy defaults",
+        "preserve group_id and role when supplied; pwn.college requires training_selection with provider, activity_id, provider_revision, provider_synced_at, platform_solved and purpose",
+        "minimal non-training example (replace values): {\"target_id\":\"documents\",\"title\":\"Document review\",\"objective\":\"Review the retained documents.\"}",
+        "JSON id or --id is retained, otherwise generated and printed; reuse only for identical content"
       ],
       "task_types": [
         "neri"
@@ -1225,6 +1228,8 @@
         "after target execution settles, stop the run, then emit one standalone exact native closeout checkpoint with one Result milestone and no other milestone",
         "--file - reads JSON from stdin and avoids a file edit inside the captured interval",
         "input contains only id (UUID), study_session_id, activity_id, summary, and next_action; all text fields are required and nonempty",
+        "invalid input is rejected before closeout begins and returns a complete JSON example; replace every sample value with exact retained identifiers and facts",
+        "example (replace values): {\"id\":\"00000000-0000-4000-8000-000000000000\",\"study_session_id\":\"study-session:...\",\"activity_id\":\"pwn-college:dojo:module:challenge\",\"summary\":\"Captured provider completion is ready for reconciliation.\",\"next_action\":\"Use a separate fresh run for the next sample.\"}",
         "the command performs no target action and never manufactures a finding or review",
         "partial capture or missing provider completion returns pending and cannot close the run",
         "if the foreground tool boundary returns while this process is still running, resume that process for its receipt; do not launch an overlapping closeout",
