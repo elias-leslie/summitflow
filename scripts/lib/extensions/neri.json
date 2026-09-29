@@ -115,7 +115,7 @@
     "closeout": "Usage: neri closeout [OPTIONS] COMMAND [ARGS]...\n\n  Inspect and record authoritative investigation closeout\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  readiness\n  save\n  training",
     "closeout readiness": "Usage: neri closeout readiness [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --disposition <finding|no_finding|evaluation|provider_completed|inconclusive|blocked>\n  --provider-evidence-id <uuid>\n  --help                          Show this message and exit.",
     "closeout save": "Usage: neri closeout save [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
-    "closeout training": "Usage: neri closeout training [OPTIONS] {investigation_id}\n\nClose one captured training run through the authoritative gate.\n\nInput JSON contains only id (UUID), study_session_id, activity_id, summary, and next_action. All fields are required; use --file - for stdin.\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "closeout training": "Usage: neri closeout training [OPTIONS] {investigation_id}\n\nClose one captured training run through the authoritative gate.\n\nInput JSON contains only id (UUID), study_session_id, activity_id, summary, and next_action. All fields are required; use --file - for stdin. If the terminal tool yields while this process is still running, resume the same process instead of starting a second closeout.\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "research": "Usage: neri research [OPTIONS] COMMAND [ARGS]...\n\n  Read research capability progress and save exact associations\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  catalogue\n  application-models\n  application-model-projection\n  application-model-current\n  application-model\n  save-application-model\n  hypotheses\n  hypothesis\n  hypothesis-revision\n  record-hypothesis\n  show\n  case-schema\n  matrix\n  context\n  recommend\n  links\n  associate\n  prepare-case\n  associate-case\n  invalidate-case\n  snapshot\n  snapshots\n  outcomes\n  record-outcome\n  cohorts\n  cohort\n  register-cohort\n  catalog-campaigns\n  catalog-campaign\n  register-catalog-campaign\n  supersede-catalog-campaign\n  retire-catalog-campaign\n  record-catalog-plan\n  verify-catalog-item\n  record-catalog-replay\n  close-cohort\n  finalize-accounting\n  work\n  record-work\n  application\n  promote-application-source\n  application-snapshots\n  snapshot-application",
     "research catalogue": "Usage: neri research catalogue [OPTIONS]\n\nOptions:\n  --full / --no-full  [default: no-full]\n  --help              Show this message and exit.",
     "research application-models": "Usage: neri research application-models [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
@@ -1222,12 +1222,13 @@
       "cmd": "st neri closeout training <investigation-id> --file - [--id UUID]",
       "when": "finish one stopped pwn.college study, finalize complete native capture, retain exact provider evidence, and save revision-checked provider closeout",
       "precautions": [
-        "after target execution settles, stop the run, then emit one standalone exact native closeout checkpoint with one bounded Result milestone",
+        "after target execution settles, stop the run, then emit one standalone exact native closeout checkpoint with one Result milestone and no other milestone",
         "--file - reads JSON from stdin and avoids a file edit inside the captured interval",
         "input contains only id (UUID), study_session_id, activity_id, summary, and next_action; all text fields are required and nonempty",
         "the command performs no target action and never manufactures a finding or review",
         "partial capture or missing provider completion returns pending and cannot close the run",
-        "reuse the same request ID and unchanged content after interruption"
+        "if the foreground tool boundary returns while this process is still running, resume that process for its receipt; do not launch an overlapping closeout",
+        "reuse the same request ID and unchanged content only after the first process has ended with transport uncertainty"
       ],
       "task_types": [
         "neri",
