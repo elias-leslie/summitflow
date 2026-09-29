@@ -13,6 +13,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 RECOVER = ROOT / "scripts" / "backup-repository-recover.sh"
 INVENTORY = ROOT / "scripts" / "backup-cleanup-inventory.py"
+AUTHORIZE_DRIVE = ROOT / "scripts" / "authorize-backup-drive.sh"
 
 
 @pytest.fixture
@@ -276,3 +277,12 @@ def test_inventory_protects_explicit_active_release(tmp_path: Path) -> None:
     report = module["inventory"]([root], protected_paths=[active], older_than_days=30, max_entries=100)
     entry = next(entry for entry in report["entries"] if entry["path"] == "releases/active/package.bin")
     assert entry["category"] == "protected-recovery"
+
+
+def test_drive_authorization_requires_private_terminal_and_accepts_no_secret_arguments() -> None:
+    piped = subprocess.run(["bash", str(AUTHORIZE_DRIVE)], capture_output=True, text=True, check=False)
+    assert piped.returncode != 0
+    assert "private interactive terminal" in piped.stderr
+    with_argument = subprocess.run(["bash", str(AUTHORIZE_DRIVE), "do-not-use-cli-secrets"], capture_output=True, text=True, check=False)
+    assert with_argument.returncode != 0
+    assert "takes no arguments" in with_argument.stderr

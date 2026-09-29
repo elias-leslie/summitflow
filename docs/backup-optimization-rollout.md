@@ -45,6 +45,55 @@ and maintenance. Missing traffic measurement leaves the cutover gate open.
 Record the baseline scope, observation interval and attribution method so
 unrelated host traffic is not silently compared with backup-only traffic.
 
+## Owner-only Drive authorization
+
+The mounted Google Drive keeps the current backup path working, but its GNOME
+login is not an rclone configuration. No Restic backend is registered until the
+dedicated rclone remote is authorized, so the scheduler cannot run an incomplete
+pilot against it.
+
+Use the [rclone Drive client guide](https://rclone.org/drive/#making-your-own-client-id)
+to create or reuse a personal Google OAuth **Desktop app** client with Drive API
+enabled. The new repository uses the narrow `drive.file` scope (files created
+by this app), not full-account Drive access. Use the existing backup Google
+account during consent. For a personal external app, rclone's guide recommends
+publishing it rather than leaving it in Testing, whose grant expires after a
+week. Do not enable billing or increase quotas without a separate decision.
+
+Run this command yourself in a private terminal on the backup host. The script
+asks for the client ID and secret with hidden input, then opens rclone's Google
+consent flow. Do not put those values, a token, or the config contents in chat,
+shell arguments, task records or screenshots.
+
+```bash
+cd /srv/workspaces/projects/summitflow
+bash scripts/authorize-backup-drive.sh
+```
+
+When rclone asks whether to use a local browser, choose **Y**. Do not choose
+the headless **N** path: its suggested command can include the client secret.
+If the browser cannot open on this host, stop and ask for a safe headless path.
+
+The script keeps the mode-600 rclone config inside the canonical private
+backup-key directory and checks that authorization can list the
+app-visible Drive root without printing filenames. It does not create a backup
+backend, repository or Drive folder, or change the default. When it prints
+`AUTH_READY`, report only the remote name and config path. If consent was
+interrupted, run the same script again in your private terminal. It will reuse
+the private dedicated config, clear inherited tool overrides and repeat its
+permission/access checks. The later pilot will generate independent repository
+passwords without displaying them; offline custody of those passwords and
+this config is still required before cold recovery qualifies.
+
+The reserved pilot references are the new local repository at
+`/media/kasadis/Backups/davion-gem/restic`, the new bounded Drive repository
+`rclone:summitflow-drive:SummitFlow-Restic`, and separate password files named
+`restic-local.password` and `restic-drive.password` directly inside the private
+backup-key directory. These paths were available at preparation time; no
+repository, password file or Drive folder is created by this document or the
+authorization helper. The existing native backend remains default while the
+pilot is seeded, recovered and measured.
+
 Retention keeps daily recovery points for each source's configured 7/14/30-day
 window. Preserve minimum-three, pins, last-good points and pending verification
 protection. No global Drive cleanup, account-wide deletion or local purge is
