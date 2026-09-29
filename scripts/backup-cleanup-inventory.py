@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-ALLOWED_ROOT_NAMES = {".codex", ".claude", "aftertimes", "aft"}
+ALLOWED_ROOT_NAMES = {".codex", ".claude", "aftertimes", "theaftertimes", "aft"}
 SENSITIVE_NAMES = {
     "auth.json", "credentials.json", ".credentials.json", "credentials", "rclone.conf", ".env", ".env.local",
     "backup-keys", ".ssh", ".gnupg", ".aws", "secrets", ".secrets",

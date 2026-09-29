@@ -256,6 +256,17 @@ def test_inventory_cli_truncated_report_exits_nonzero_without_modifying_files(tm
     assert (root / "retained.txt").read_text() == "unchanged"
 
 
+def test_inventory_cli_accepts_actual_aftertimes_project_name(tmp_path: Path) -> None:
+    root = tmp_path / "the-aftertimes"
+    root.mkdir()
+    (root / "LICENSE.txt").write_text("retained")
+    result = subprocess.run(["python3", str(INVENTORY), "--root", str(root)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["complete"] is True
+    assert next(entry for entry in report["entries"] if entry["path"] == "LICENSE.txt")["category"] == "protected-recovery"
+
+
 def test_inventory_protects_explicit_active_release(tmp_path: Path) -> None:
     module = runpy.run_path(str(INVENTORY))
     root = tmp_path / "AfterTimes"
