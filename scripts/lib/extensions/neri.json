@@ -1162,8 +1162,9 @@
       "cmd": "st neri session verify <investigation-id> [--id UUID]",
       "when": "prove canonical capture and checkpoint projection before target traffic and at each structured checkpoint",
       "precautions": [
-        "emit the exact structured initial or update checkpoint before running this command",
+        "emit the exact structured initial or update checkpoint before running this command; initial requires one real Hypothesis milestone",
         "do not proceed with target work unless every binding returns state ready",
+        "code capture_preflight_ready with state ready is the complete receipt; do not query show or activity for another receipt",
         "the bounded readiness expires at the existing checkpoint interval"
       ],
       "task_types": [
@@ -1178,6 +1179,7 @@
       "when": "freeze stopped operator-session intervals and retain sanitized report-citable evidence",
       "precautions": [
         "stop the investigation first",
+        "the standalone closeout checkpoint requires one bounded Result milestone",
         "exact transcript bytes remain restricted; incomplete or unsafe capture stays partial",
         "a repeated UUID returns the same finalization and does not refetch source events"
       ],
@@ -1220,7 +1222,7 @@
       "cmd": "st neri closeout training <investigation-id> --file - [--id UUID]",
       "when": "finish one stopped pwn.college study, finalize complete native capture, retain exact provider evidence, and save revision-checked provider closeout",
       "precautions": [
-        "after target execution settles, stop the run, then emit one standalone exact native closeout checkpoint",
+        "after target execution settles, stop the run, then emit one standalone exact native closeout checkpoint with one bounded Result milestone",
         "--file - reads JSON from stdin and avoids a file edit inside the captured interval",
         "input contains only id (UUID), study_session_id, activity_id, summary, and next_action; all text fields are required and nonempty",
         "the command performs no target action and never manufactures a finding or review",
