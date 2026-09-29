@@ -592,7 +592,10 @@
       "cmd": "st neri report save <investigation-id> --file report.json [--id UUID]",
       "when": "save a report revision based on retained evidence",
       "precautions": [
-        "JSON object or stdin; UUID is retained or generated and printed; does not submit reports externally"
+        "invalid input is rejected before any write and returns a complete validator-backed JSON example",
+        "no-finding shape example (replace values): {\"id\":\"00000000-0000-4000-8000-000000000000\",\"status\":\"no_finding\",\"title\":\"Bounded no-finding result\",\"summary\":\"The tested boundary did not produce a supported finding.\",\"findings\":[],\"uncertainties\":[\"Untested surfaces remain outside this result.\"]}",
+        "the example is only an input shape; retained evidence and closeout readiness remain authoritative",
+        "UUID is retained or generated and printed; saving does not submit reports externally"
       ],
       "task_types": [
         "neri"
@@ -604,7 +607,10 @@
       "cmd": "st neri report review <investigation-id> --file review.json [--id UUID]",
       "when": "record an independent review of a specific report revision",
       "precautions": [
-        "preserve report_revision_id, objections and actual verification attempts; UUID is retained or generated and printed"
+        "invalid input is rejected before any write and returns a complete validator-backed JSON example",
+        "assigned review example (replace values): {\"id\":\"00000000-0000-4000-8000-000000000000\",\"report_revision_id\":\"00000000-0000-4000-8000-000000000001\",\"verdict\":\"needs_work\",\"summary\":\"The cited evidence does not yet support the report conclusion.\",\"review_assignment_id\":\"00000000-0000-4000-8000-000000000002\",\"review_result_id\":\"00000000-0000-4000-8000-000000000003\",\"packet_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"reviewer_session_id\":\"native-reviewer-session\",\"objections\":[\"Add the missing negative control.\"],\"improvements\":[],\"verification_attempts\":[]}",
+        "preserve exact assignment, retained result, packet digest, reviewer session, report revision, objections and verification attempts",
+        "the example is only an input shape; it cannot establish independence or support"
       ],
       "task_types": [
         "neri"
@@ -1150,9 +1156,12 @@
     {
       "surface": "st.neri.session.bind",
       "tier": "reference",
-      "cmd": "st neri session bind <investigation-id> [--session-id ID] [--campaign-id ID]",
+      "cmd": "st neri session bind <investigation-id>",
       "when": "bind the current Codex operator session to one exact Neri investigation",
       "precautions": [
+        "root entry rail: run this exact command, emit one standalone hunt_checkpoint:v1 initial block, then run st neri session verify <investigation-id>",
+        "there is no st neri bind, st.neri.bind or st.neri.checkpoint command; do not guess aliases or search source",
+        "root binding derives CODEX_SESSION_ID automatically; --session-id is only for an actual verified native child",
         "the binding is immutable and cannot be moved to another investigation",
         "the server derives root or child identity from Agent Hub; caller-supplied relationships are rejected",
         "the command saves verified identity and source availability, never transcript or challenge secrets"
@@ -1165,12 +1174,13 @@
     {
       "surface": "st.neri.session.verify",
       "tier": "reference",
-      "cmd": "st neri session verify <investigation-id> [--id UUID]",
+      "cmd": "st neri session verify <investigation-id>",
       "when": "prove canonical capture and checkpoint projection before target traffic and at each structured checkpoint",
       "precautions": [
         "emit the exact structured initial or update checkpoint before running this command; initial requires one real Hypothesis milestone",
         "do not proceed with target work unless every binding returns state ready",
-        "code capture_preflight_ready with state ready is the complete receipt; do not query show or activity for another receipt",
+        "code capture_preflight_ready with state ready is the complete receipt for this run, session and checkpoint; proceed without another preflight query",
+        "omit --id normally; use one retained --id UUID only to reconcile an identical request after transport uncertainty",
         "the bounded readiness expires at the existing checkpoint interval"
       ],
       "task_types": [
