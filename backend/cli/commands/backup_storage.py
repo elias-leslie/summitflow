@@ -12,6 +12,7 @@ from ..output import handle_api_error, output_json
 from ..output_context import OutputContext
 
 app = typer.Typer(help="Storage backend management")
+LONG_RUNNING_TIMEOUT = httpx.Timeout(30.0, read=None)
 
 
 @app.callback()
@@ -33,9 +34,11 @@ def _api_get(path: str) -> Any:
     return resp.json()
 
 
-def _api_post(path: str, data: dict[str, Any] | None = None) -> Any:
+def _api_post(
+    path: str, data: dict[str, Any] | None = None, *, timeout: float | httpx.Timeout = 30.0,
+) -> Any:
     url = f"{_get_base_url()}/{path.lstrip('/')}"
-    resp = httpx.post(url, json=data or {}, timeout=30.0)
+    resp = httpx.post(url, json=data or {}, timeout=timeout)
     if resp.status_code >= 400:
         raise APIError(resp.status_code, resp.text)
     return resp.json()
@@ -284,7 +287,10 @@ def initialize_repository(
 ) -> None:
     """Explicitly initialize a configured pilot repository."""
     try:
-        result = _api_post(f"backup-storage/{backend_id}/initialize?local_only={str(local_only).lower()}")
+        result = _api_post(
+            f"backup-storage/{backend_id}/initialize?local_only={str(local_only).lower()}",
+            timeout=LONG_RUNNING_TIMEOUT,
+        )
         output_json(result)
     except APIError as e:
         handle_api_error(e)
@@ -310,7 +316,10 @@ def repository_maintenance(
 ) -> None:
     """Preview or explicitly apply repository-scoped maintenance."""
     try:
-        result = _api_post(f"backup-storage/{backend_id}/maintenance?dry_run={str(preview).lower()}")
+        result = _api_post(
+            f"backup-storage/{backend_id}/maintenance?dry_run={str(preview).lower()}",
+            timeout=LONG_RUNNING_TIMEOUT,
+        )
         output_json(result)
     except APIError as e:
         handle_api_error(e)

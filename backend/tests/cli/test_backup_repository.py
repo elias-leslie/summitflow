@@ -191,4 +191,24 @@ def test_repository_commands_are_explicit_and_maintenance_defaults_to_preview(mo
     monkeypatch.setattr(backup_storage, method, request)
     result = runner.invoke(app, ["backup", "storage", command, "pilot", *tail])
     assert result.exit_code == 0, result.output
-    request.assert_called_once_with(path)
+    if command in {"initialize", "maintenance"}:
+        request.assert_called_once_with(path, timeout=backup_storage.LONG_RUNNING_TIMEOUT)
+    else:
+        request.assert_called_once_with(path)
+
+
+def test_long_running_storage_requests_keep_connection_timeout_without_read_deadline(monkeypatch):
+    from cli.commands import backup_storage
+
+    response = MagicMock(status_code=200)
+    response.json.return_value = {"status": "complete"}
+    post = MagicMock(return_value=response)
+    monkeypatch.setattr(backup_storage, "_get_base_url", lambda: "https://fixture.invalid/api")
+    monkeypatch.setattr(backup_storage.httpx, "post", post)
+
+    assert backup_storage._api_post(
+        "backup-storage/pilot/initialize", timeout=backup_storage.LONG_RUNNING_TIMEOUT,
+    ) == {"status": "complete"}
+    timeout = post.call_args.kwargs["timeout"]
+    assert timeout.connect == timeout.write == timeout.pool == 30.0
+    assert timeout.read is None
