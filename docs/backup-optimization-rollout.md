@@ -54,10 +54,20 @@ worker unit and included in the infrastructure archive. The Restic pilot is
 disabled. Retained Restic repositories remain available for recovery; automatic
 maintenance can be disabled without changing their identity or deleting points.
 
-Completion still requires the new lean archives for every enabled source,
-verified copies in the new Drive folder, and the actual compressed-size tally.
-Only then may the explicitly authorized old dedicated Drive folder be permanently
-purged. Preserve local legacy archives, keys, Veeam and unrelated Drive data.
+The 2026-09-30 rollout completed captures and verified identical Drive copies for
+all 34 enabled sources. Fresh provider ID, size and hash checks passed without
+payload readback. The full ciphertext set is 7,658,475,390 bytes (7.66 GB decimal).
+A downloaded Rootfall point restored Git HEAD/index, original assets and editable
+workspace in an isolated directory; designated cache/build paths were absent.
+The updated native recovery kit and dated 34-source inventory are also verified
+in `SummitFlow-Archives`.
+
+After those checks, the owner-authorized old dedicated Drive root was permanently
+purged: 592 files, 38 subfolders and the root, totaling 163,595,768,889 file bytes.
+Its absence and the continued presence of the new root/kit and retained Restic
+folders were checked. Local legacy archives, escrow keys, Veeam and unrelated
+Drive data remain intact. Private rollout and purge receipts are in
+`.dev-tools/backup-native-rollout-20260930/`.
 
 Native Drive rotation initially uses normal Drive trash, not account-wide trash
 emptying. Trashed archives continue to consume quota until permanent deletion
@@ -66,6 +76,12 @@ traffic/storage when reporting steady-state utilization. Immediate permanent
 expiry within the new bounded archive folder needs explicit owner authorization;
 the authorization to purge the old dedicated folder is not a global trash grant.
 See [Google's deletion/storage guidance](https://support.google.com/drive/answer/2375102).
+At measured full sizes and unchanged daily cadence, the current 7/14/30-day
+windows imply about 118.9 GB of visible retained native archives, plus about
+229.8 GB during the 30-day trash period: roughly 348.6 GB steady-state native
+quota usage. These are estimates, excluding retained Restic and unrelated data;
+source sizes and actual capture frequency can change them. Immediate bounded
+permanent expiry would remove the trash overhead, but is not currently enabled.
 
 ## Historical Restic rollout — superseded, not completion requirements
 
