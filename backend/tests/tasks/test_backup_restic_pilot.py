@@ -286,24 +286,32 @@ def test_missing_explicit_backend_reserves_all_repository_maintenance(configured
     maintenance.assert_not_called()
 
 
-@pytest.mark.parametrize("physical,default,error", [
-    (False, "enp8s0", "physical"), (True, "other", "default route"), (True, "enp8s0", None),
-])
-def test_physical_counter_sampler_rejects_virtual_or_wrong_route(tmp_path, monkeypatch, physical, default, error):
+@pytest.fixture
+def interface_files(tmp_path, monkeypatch):
     net = tmp_path / "sys/class/net/enp8s0"
     (net / "statistics").mkdir(parents=True)
-    if physical:
-        (net / "device").mkdir()
+    (net / "device").mkdir()
     for name, value in {"ifindex": "2", "iflink": "2", "address": "fixture"}.items():
         (net / name).write_text(value)
     (net / "statistics/rx_bytes").write_text("123")
     (net / "statistics/tx_bytes").write_text("456")
     (tmp_path / "proc/net").mkdir(parents=True)
-    (tmp_path / "proc/net/route").write_text(f"Iface Destination Gateway Flags\n{default} 00000000 01010101 0003\n")
+    (tmp_path / "proc/net/route").write_text("Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT\nenp8s0 00000000 01010101 0003 0 0 100 00000000 0 0 0\n")
     (tmp_path / "proc/net/ipv6_route").write_text("")
     (tmp_path / "proc/sys/kernel/random").mkdir(parents=True)
     (tmp_path / "proc/sys/kernel/random/boot_id").write_text("fixture-boot")
     monkeypatch.setattr(pilot, "Path", lambda value: tmp_path / str(value).lstrip("/"))
+    return tmp_path
+
+
+@pytest.mark.parametrize("physical,default,error", [
+    (False, "enp8s0", "physical"), (True, "other", "default route"), (True, "enp8s0", None),
+])
+def test_physical_counter_sampler_rejects_virtual_or_wrong_route(interface_files, physical, default, error):
+    if not physical:
+        (interface_files / "sys/class/net/enp8s0/device").rmdir()
+    route = interface_files / "proc/net/route"
+    route.write_text(route.read_text().replace("enp8s0", default))
     if error:
         with pytest.raises(ValueError, match=error):
             pilot.sample_interface("enp8s0")
@@ -312,6 +320,39 @@ def test_physical_counter_sampler_rejects_virtual_or_wrong_route(tmp_path, monke
         assert sample["rx_bytes"] == 123
         assert sample["tx_bytes"] == 456
         assert sample["boot_id"] == "fixture-boot"
+
+
+@pytest.mark.parametrize("change,changed", [
+    ("usage-counters", False), ("container-link-local", False),
+    ("ipv6-usage-counters", False), ("row-order", False),
+    ("metric", True),
+    ("gateway", True), ("public-ipv6", True),
+])
+def test_route_identity_ignores_usage_and_container_link_local_not_egress_changes(interface_files, change, changed):
+    route = interface_files / "proc/net/route"
+    ipv6 = interface_files / "proc/net/ipv6_route"
+    if change == "ipv6-usage-counters":
+        ipv6.write_text("20010db8000000000000000000000000 40 " + "0" * 32 + " 00 " + "0" * 32 + " 00000100 00000001 00000000 00000001 enp8s0\n")
+    if change == "row-order":
+        route.write_text(route.read_text() + "docker0 000011AC 00000000 0001 0 0 0 0000FFFF 0 0 0\n")
+    first = pilot.sample_interface("enp8s0")
+    if change == "usage-counters":
+        route.write_text(route.read_text().replace("0003 0 0", "0003 3 42"))
+    elif change == "container-link-local":
+        ipv6.write_text("fe800000000000000000000000000000 40 " + "0" * 32 + " 00 " + "0" * 32 + " 00000100 00000001 00000000 00000001 veth-fixture\n")
+    elif change == "gateway":
+        route.write_text(route.read_text().replace("01010101", "02020202"))
+    elif change == "public-ipv6":
+        ipv6.write_text("20010db8000000000000000000000000 40 " + "0" * 32 + " 00 " + "0" * 32 + " 00000100 00000001 00000000 00000001 other\n")
+    elif change == "ipv6-usage-counters":
+        ipv6.write_text(ipv6.read_text().replace("00000100 00000001 00000000", "00000100 00000003 00000042"))
+    elif change == "row-order":
+        header, *rows = route.read_text().splitlines()
+        route.write_text("\n".join([header, *reversed(rows)]) + "\n")
+    elif change == "metric":
+        route.write_text(route.read_text().replace("0 0 100", "0 0 200"))
+    second = pilot.sample_interface("enp8s0")
+    assert (first["route_sha256"] != second["route_sha256"]) is changed
 
 
 def test_scheduler_maintenance_failures_are_truthful(configured, monkeypatch):

@@ -15,6 +15,7 @@ import re
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
+from ipaddress import IPv6Address
 from itertools import pairwise
 from pathlib import Path
 from threading import Event, RLock, Thread
@@ -53,6 +54,27 @@ def pilot_reserves_backend(backend_id: str) -> bool:
     return settings.backup_restic_pilot_enabled and (not pilot_backend_id() or backend_id == pilot_backend_id())
 
 
+def _route_fingerprint(routes: str, ipv6: str) -> str:
+    """Hash routing topology, not usage counters or container link-local paths."""
+    topology: list[tuple[str, ...]] = []
+    for line in routes.splitlines()[1:]:
+        fields = line.split()
+        if len(fields) != 11:
+            raise ValueError("IPv4 route evidence is malformed")
+        # RefCnt and Use vary with ordinary traffic, not routing topology.
+        topology.append(("ipv4", *fields[:4], *fields[6:]))
+    for line in ipv6.splitlines():
+        fields = line.split()
+        if len(fields) != 10:
+            raise ValueError("IPv6 route evidence is malformed")
+        if int(fields[1], 16) >= 10 and IPv6Address(int(fields[0], 16)).is_link_local:
+            # Starting an isolated restore container adds a veth fe80:: route.
+            # It cannot redirect public Drive traffic away from the uplink.
+            continue
+        topology.append(("ipv6", *fields[:6], *fields[8:]))
+    return hashlib.sha256(repr(sorted(topology)).encode()).hexdigest()
+
+
 def sample_interface(interface: str) -> dict[str, Any]:
     """Read physical RX+TX; never replace unreadable/missing counters with zero."""
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,15}", interface):
@@ -77,7 +99,7 @@ def sample_interface(interface: str) -> dict[str, Any]:
         "timestamp": datetime.now(UTC).isoformat(), "monotonic_ns": time.monotonic_ns(),
         "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
         "interface": interface, "device": str((root / "device").resolve()),
-        "route_sha256": hashlib.sha256((routes + ipv6).encode()).hexdigest(),
+        "route_sha256": _route_fingerprint(routes, ipv6),
     }
     for field in ("ifindex", "iflink", "address"):
         result[field] = (root / field).read_text().strip()

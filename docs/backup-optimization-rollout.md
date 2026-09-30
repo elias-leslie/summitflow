@@ -107,6 +107,10 @@ operation-boundary counters, sample count and accumulated continuity failures;
 periodic samples validate the previous interval without retaining unbounded
 sample history. Evidence records UTC and monotonic times,
 boot ID, physical device path, interface index/link/MAC and route-table identity.
+Route identity normalizes row order and excludes usage counters and IPv6
+link-local routes, which change during ordinary traffic and isolated container
+restore tests without changing the public egress path. Gateway, metric,
+public-route and interface changes still invalidate the interval.
 The interface must be physical and the sole IPv4 default route; an alternate
 IPv6 default route is rejected. Missing counters, observed resets, route/device
 changes or invalid intervals fail measurement, without substituting zero.
