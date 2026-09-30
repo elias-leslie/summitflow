@@ -235,7 +235,12 @@ class ResticAdapter:
         password = self.config.remote_password_file if remote else self.config.local_password_file
         if not repository or not password:
             raise ResticError("Repository configuration is incomplete")
-        command = ["restic", "--repo", repository, "--password-file", str(password), "--compression", "auto", "--no-cache", "--json"]
+        command = ["restic", "--repo", repository, "--password-file", str(password), "--compression", "auto", "--json"]
+        # Check creates and removes its own fresh cache. Disabling that cache
+        # repeatedly downloads tree packs within the same check; --with-cache
+        # would instead reuse old data and is deliberately never supplied.
+        if not args or args[0] != "check":
+            command.append("--no-cache")
         if permanent_delete and repository.startswith("rclone:"):
             if not self.config.offsite_prune_qualified:
                 raise ResticError("Offsite permanent prune has not been explicitly qualified")

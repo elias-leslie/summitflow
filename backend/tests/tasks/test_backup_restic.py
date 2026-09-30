@@ -238,6 +238,20 @@ def test_local_only_initialize_never_opens_remote(setup):
     assert not any("rclone:fixture:repository" in command or command[0] == "rclone" for command in process.commands)
 
 
+@pytest.mark.parametrize("remote", [False, True])
+def test_checks_use_fresh_temporary_cache_without_reusing_prior_data(setup, remote):
+    adapter, process, payload = _adapter(setup)
+    adapter.save_payload("fixture", payload)
+    adapter.sync(SNAPSHOT, state={}, persist=lambda state: None)
+    assert adapter.check(remote=remote, monthly_state={})["verified"] is True
+    checks = [command for command in process.commands if "check" in command]
+    assert checks
+    assert any("--read-data-subset=1/30" in command for command in checks)
+    assert all("--no-cache" not in command and "--with-cache" not in command for command in checks)
+    assert all("--no-cache" in command for command in process.commands if command[0] == "restic" and "check" not in command)
+    assert "--no-cache" in adapter._command("restore", SNAPSHOT, remote=remote)
+
+
 def test_save_changed_and_unchanged_snapshots_use_stable_parent_and_truthful_metrics(setup):
     adapter, process, payload = _adapter(setup)
     first = adapter.save_payload("fixture", payload)

@@ -54,6 +54,12 @@ and maintenance. Missing traffic measurement leaves the cutover gate open.
 Record the baseline scope, observation interval and attribution method so
 unrelated host traffic is not silently compared with backup-only traffic.
 
+Integrity checks use Restic's fresh per-check temporary cache, which is removed
+when the command finishes. They never use `--with-cache` or reuse a prior
+check's metadata. This avoids repeated downloads of the same tree packs within
+one check without weakening repository verification or adding a durable cache.
+Other adapter commands and standalone recovery continue to use `--no-cache`.
+
 ## Opt-in daily pilot and physical measurement
 
 The existing hourly backup workflow can run a separate daily UTC Restic pilot.
