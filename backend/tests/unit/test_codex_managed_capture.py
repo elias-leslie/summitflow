@@ -109,6 +109,15 @@ def test_ownership_catalog_and_quarantine_share_the_outbox_quota(outbox):
     assert len(outbox.threads()) == 1
 
 
+def test_outbox_never_changes_permissions_on_a_shared_existing_directory(tmp_path):
+    shared = tmp_path / "shared"
+    shared.mkdir(mode=0o755)
+    with pytest.raises(ValueError, match="private owned directory"):
+        outbox_module.ManagedOutbox(shared / "spool.sqlite", max_bytes=1000, retention_seconds=0)
+    assert shared.stat().st_mode & 0o777 == 0o755
+    assert not (shared / "spool.sqlite").exists()
+
+
 def test_oversized_transport_preserves_the_owned_native_process(tmp_path, monkeypatch):
     binary = tmp_path / "native-fixture"
     binary.write_text("#!/usr/bin/env python3\nimport sys\nfor line in sys.stdin.buffer:\n sys.stdout.buffer.write(line); sys.stdout.buffer.flush()\n")

@@ -6,6 +6,7 @@ import fcntl
 import json
 import os
 import sqlite3
+import stat
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -27,13 +28,19 @@ class ManagedOutbox:
         if max_bytes <= 0 or retention_seconds < 0:
             raise ValueError("Explicit positive outbox quota and nonnegative retention are required")
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        os.chmod(path.parent, 0o700)
+        directory = path.parent.lstat()
+        if not stat.S_ISDIR(directory.st_mode) or directory.st_uid != os.getuid() or stat.S_IMODE(directory.st_mode) != 0o700:
+            raise ValueError("Managed outbox requires a private owned directory (0700)")
         self.path = path
         self.max_bytes = max_bytes
         self.retention_seconds = retention_seconds
         fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-        os.close(fd)
-        os.chmod(path, 0o600)
+        try:
+            if os.fstat(fd).st_uid != os.getuid():
+                raise ValueError("Managed outbox requires an owned database")
+            os.fchmod(fd, 0o600)
+        finally:
+            os.close(fd)
         with self.connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS owner (

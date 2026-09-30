@@ -54,6 +54,8 @@ spawn ownership alone is not proof of captured child notifications.
 ## Delivery and health
 
 Private directory mode is 0700, database/locks 0600, no symlink database/lock targets.
+Initialization creates a private directory or requires an existing owned 0700
+directory; it rejects shared directories without changing their permissions.
 SQLite FULL commits precede forwarding native events or an existing authority's
 approval response. Original envelopes, producer UUID, epoch UUID and source positions
 survive restart. Process and delivery leases fence local concurrent owners. Pending
@@ -103,8 +105,8 @@ and isolates HOME/CODEX_HOME without credentials. No external or target traffic 
 ```
 st check cleanroom --env CODEX_REAL=/home/kasadis/.local/bin/codex-real -- \
   unshare -Urn /srv/workspaces/projects/summitflow/backend/.venv/bin/python \
-  scripts/codex-managed-canary.py --output /tmp/architecture-d-release-canary.json \
-  --evidence-directory /tmp/architecture-d-release-private
+  scripts/codex-managed-canary.py --output /tmp/architecture-d-final-canary.json \
+  --evidence-directory /tmp/architecture-d-final-private
 ```
 
 The evidence-directory option exports only toy outbox/rollouts with private permissions
@@ -114,7 +116,7 @@ host-specific; verify its native binary mapping when running elsewhere.
 
 ```
 # Agent Hub, isolated migration-owned PostgreSQL schema:
-ARCHITECTURE_D_CANARY_EVIDENCE=/tmp/architecture-d-release-private st check pytest -- \
+ARCHITECTURE_D_CANARY_EVIDENCE=/tmp/architecture-d-final-private st check pytest -- \
   tests/services/session_ingestion/test_native_observations.py \
   tests/services/session_ingestion/test_native_sdk.py \
   tests/api/test_session_ingestion.py --run-integration -q
@@ -128,7 +130,7 @@ st check pytest -- tests/unit/test_codex_managed_capture.py \
 
 The PostgreSQL suite passed 22 tests, including atomic rollback, concurrent receipt
 replay and actual canary evidence with registration before/after rollout ingestion.
-The SummitFlow focused suite passed 64 tests. All 50 collector Rust tests passed,
+The SummitFlow focused suite passed 65 tests. All 50 collector Rust tests passed,
 including a real registry-load regression that reproduced and fixed an invalid
 `.timer` worker entry before deployment. The focused suite covers durability,
 ownership fencing, quota, Agent Hub downtime,
