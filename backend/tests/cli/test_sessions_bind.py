@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
@@ -24,6 +25,15 @@ _PROJECT_ROOT = "/srv/workspaces/projects/rootfall"
 
 @pytest.fixture(autouse=True)
 def _reset_project_override(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    from cli.commands import sessions as sessions_cmd
+
+    def current():
+        session_id = os.getenv("CODEX_SESSION_ID") or os.getenv("CODEX_THREAD_ID")
+        if not session_id:
+            raise ValueError("No current Codex session identity is available for binding.")
+        return SimpleNamespace(session_id=session_id, parent_session_id=None, agent_path=None)
+
+    monkeypatch.setattr(sessions_cmd, "_current_codex_transcript", current)
     monkeypatch.delenv("CODEX_SESSION_ID", raising=False)
     set_project_override(None)
     yield
@@ -333,3 +343,43 @@ def test_bind_rejects_inactive_post_sync_session(monkeypatch: pytest.MonkeyPatch
     assert result.exit_code == 1
     assert f"Session {_THREAD_ID} is completed, not active" in result.output
     assert "SESSION_BIND:" not in result.output
+
+
+@pytest.mark.parametrize("external", [
+    {"runtime_session_id": _THREAD_ID, "agent_path": "/root/copied-child"},
+    {"runtime_session_id": "copied-parent", "agent_path": "/root"},
+])
+def test_bind_rejects_public_external_identity_conflict_before_sync(monkeypatch, external):
+    from cli.commands import sessions as sessions_cmd
+    monkeypatch.setenv("CODEX_THREAD_ID", _THREAD_ID)
+    client = MagicMock()
+    client.get_session.return_value = {**_active_session(), "external_identity": external}
+    with (
+        patch.object(sessions_cmd, "STClient", return_value=client),
+        patch.object(sessions_cmd, "get_project_override", return_value=_PROJECT_ID),
+        patch.object(sessions_cmd, "get_project_root_path", return_value=_PROJECT_ROOT),
+        patch.object(sessions_cmd.subprocess, "run") as run,
+    ):
+        result = runner.invoke(app, ["sessions", "bind"])
+    assert result.exit_code == 1
+    assert "conflicts with current native Codex provenance" in result.output
+    run.assert_not_called()
+
+
+def test_bind_child_rejects_parent_cross_project_before_sync(monkeypatch):
+    from cli.commands import sessions as sessions_cmd
+    monkeypatch.setattr(sessions_cmd, "_current_codex_transcript", lambda: SimpleNamespace(
+        session_id=_THREAD_ID, parent_session_id="native-parent", agent_path="/root/child"))
+    client = MagicMock()
+    client.get_session.side_effect = [APIError(404, "not found"), {
+        "id": "native-parent", "project_id": "other-project", "status": "active"}]
+    with (
+        patch.object(sessions_cmd, "STClient", return_value=client),
+        patch.object(sessions_cmd, "get_project_override", return_value=_PROJECT_ID),
+        patch.object(sessions_cmd, "get_project_root_path", return_value=_PROJECT_ROOT),
+        patch.object(sessions_cmd.subprocess, "run") as run,
+    ):
+        result = runner.invoke(app, ["sessions", "bind"])
+    assert result.exit_code == 1
+    assert "belongs to project other-project" in result.output
+    run.assert_not_called()

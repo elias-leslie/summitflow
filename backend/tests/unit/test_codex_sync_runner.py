@@ -80,6 +80,61 @@ def _args(**overrides) -> argparse.Namespace:
     return argparse.Namespace(**values)
 
 
+def test_model_evidence_growth_updates_upsert_once_then_stays_stable(tmp_path, monkeypatch):
+    info = replace(_info(tmp_path, "root"), model="unknown", native_session_id="root",
+        model_evidence={"session_id": "root", "turn_id": "t1", "source": "codex_transcript",
+            "requested_model": "gpt-6.1-sol", "requested_reasoning_effort": "high",
+            "observed_model": None, "source_line": 2})
+    state = {"transcripts": {}}
+    upserts = []
+    ingests = []
+    monkeypatch.setattr(codex_sync_runner, "build_project_context", lambda _: _project())
+    monkeypatch.setattr(codex_sync_runner, "upsert_session", lambda *args, **kwargs: (upserts.append((args, kwargs)) or (True, "", 200)))
+    monkeypatch.setattr(codex_sync_runner, "ingest_transcript", lambda *args, **kwargs: (ingests.append(args) or (True, "cp", "ok", "", 200)))
+    def sync(current):
+        return codex_sync_runner.sync_transcript(current, state, "http://agent-hub.test/api", "summitflow", "/sync",
+            close_session=False, ingest_required=True, heartbeat_required=False,
+            log_fn=lambda _: None, verbose=False)
+    assert sync(info)[0]
+    assert sync(info)[0]
+    assert len(upserts) == 1
+    observed = replace(info, model="served-model", size=400,
+        model_evidence={**info.model_evidence, "observed_model": "served-model", "observed_source": "codex.token_usage_record.model", "observed_source_line": 3})
+    assert sync(observed)[0]
+    assert len(upserts) == 2
+    assert upserts[-1][0][2] == "served-model"
+    assert upserts[-1][1]["provider_metadata"]["model_evidence"]["requested_model"] == "gpt-6.1-sol"
+    assert sync(observed)[0]
+    assert len(upserts) == 2
+    assert ingests[-1][2] == "cp"
+
+
+def test_binding_rejects_contradictory_native_identity_before_snapshot_write(tmp_path, monkeypatch):
+    info = replace(_info(tmp_path, "root"), identity_error="contradictory native parent provenance")
+    monkeypatch.setattr(codex_sync_runner, "load_state", lambda: {"transcripts": {}})
+    monkeypatch.setattr(codex_sync_runner, "load_project_bindings", lambda: {})
+    monkeypatch.setattr(codex_sync_runner, "sync_lock", nullcontext)
+    monkeypatch.setattr(codex_sync_runner, "discover_open_transcripts", codex_sync_transcripts.OpenTranscriptSnapshot.empty)
+    monkeypatch.setattr(codex_sync_runner, "_transcript_infos", lambda *_: [info])
+    writes = []
+    monkeypatch.setattr(codex_sync_runner, "save_project_bindings_locked", lambda _: writes.append("binding"))
+    monkeypatch.setattr(codex_sync_runner, "save_state", lambda _: writes.append("state"))
+    monkeypatch.setattr(codex_sync_runner, "upsert_session", lambda *_, **__: writes.append("remote"))
+    result = codex_sync_runner.run_sync(_args(bind_session="root", bind_project="a-loom", project_root=info.cwd),
+        api_url="http://agent-hub.test/api", client_id="summitflow", source_path="/sync", log_fn=lambda _: None)
+    assert result == 2
+    assert writes == []
+
+
+def test_passive_scan_never_inherits_binding_for_contradictory_child(tmp_path):
+    info = replace(_info(tmp_path, "child", parent_session_id="parent"), identity_error="contradictory native parent provenance")
+    bindings = {"parent": _binding("parent")}
+    changed, error = codex_sync_runner._prepare_project_bindings([info], bindings, None)
+    assert not changed
+    assert error == ""
+    assert set(bindings) == {"parent"}
+
+
 @pytest.mark.parametrize("status", [403, 409])
 def test_rejected_sync_waits_for_identity_change_or_force(tmp_path: Path, monkeypatch, status: int) -> None:
     info = _info(tmp_path, "rejected-session")

@@ -14,9 +14,13 @@ from typing import Protocol
 from codex_sync_api import finalize_and_close, ingest_transcript, send_heartbeat, upsert_session
 from codex_sync_bindings import (
     ProjectBinding,
-    load_snapshot as load_project_bindings,
-    save_snapshot_locked as save_project_bindings_locked,
     sync_lock,
+)
+from codex_sync_bindings import (
+    load_snapshot as load_project_bindings,
+)
+from codex_sync_bindings import (
+    save_snapshot_locked as save_project_bindings_locked,
 )
 from codex_sync_git import build_project_context, fetch_registered_project_root
 from codex_sync_state import (
@@ -57,6 +61,10 @@ class TranscriptInfoLike(Protocol):
     is_open: bool
     process_owner: AicoProcessOwner | None
     ownership_ambiguous: bool
+    native_session_id: str | None
+    identity_error: str | None
+    model_evidence: dict[str, object]
+    model_scan: dict[str, object]
 
 
 def run_sync(
@@ -136,6 +144,8 @@ def sync_transcript(
     project_binding: ProjectBinding | None = None,
     reactivate_open_session: bool = False,
 ) -> tuple[bool, str, int | None]:
+    if info.identity_error:
+        return False, info.identity_error, None
     project, effective_cwd, project_error, transcript_git_verified = (
         _resolve_project_context(info, project_binding)
     )
@@ -216,6 +226,8 @@ def sync_transcript(
         identity_fingerprint=identity_fingerprint,
         project_binding_fingerprint=project_binding_fingerprint,
         heartbeat_at=heartbeat_at,
+        model_fingerprint=_model_fingerprint(meta),
+        model_scan=info.model_scan,
     )
     if verbose:
         log_fn(
@@ -336,6 +348,8 @@ def _session_meta(
     owner = info.process_owner
     harness = owner.harness if owner is not None else "codex"
     return {
+        "native_session_id": info.native_session_id,
+        "model_evidence": info.model_evidence or None,
         "transcript_path": str(info.path),
         "repo_root": project["repo_root"],
         "cwd": str(effective_cwd),
@@ -369,6 +383,10 @@ def _identity_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _model_fingerprint(meta: dict[str, object]) -> str:
+    return hashlib.sha256(json.dumps(meta.get("model_evidence") or {}, sort_keys=True).encode()).hexdigest()
+
+
 def _sync_keywords(api_url: str, client_id: str, source_path: str) -> dict[str, str]:
     return {
         "api_url": api_url,
@@ -395,6 +413,7 @@ def _ensure_session_upserted(
         identity_fingerprint,
         is_open=info.is_open,
         reactivate_open_session=reactivate_open_session,
+        model_changed=bool(info.model_evidence) and (entry or {}).get("model_fingerprint") != _model_fingerprint(meta),
     ):
         return True, "", None, project
     return _upsert_with_project_aliases(
@@ -437,6 +456,7 @@ def _should_upsert(
     *,
     is_open: bool,
     reactivate_open_session: bool = False,
+    model_changed: bool = False,
 ) -> bool:
     if entry is None:
         return True
@@ -462,6 +482,8 @@ def _should_upsert(
         # richer identity previously recorded while it was live instead of
         # replacing it with a synthetic direct-launch identity during closeout.
         return False
+    if model_changed:
+        return True
     return not (
         entry.get("session_id") == session_id
         and entry.get("identity_fingerprint") == identity_fingerprint
@@ -525,6 +547,7 @@ def _transcript_infos(
             args.transcript,
             log_fn=log_fn,
             open_snapshot=open_snapshot,
+            scan_state=(get_state_entry(_resolve_transcript_path(args.transcript), state) or {}).get("model_scan"),
         )
         infos: list[TranscriptInfoLike] = [info] if info is not None else []
     else:
@@ -532,6 +555,7 @@ def _transcript_infos(
             args.recent_hours,
             log_fn=log_fn,
             open_snapshot=open_snapshot,
+            scan_states=state.get("transcripts"),
         )
         by_path: dict[Path, TranscriptInfoLike] = {
             _resolve_transcript_path(info.path): info for info in recent
@@ -543,7 +567,8 @@ def _transcript_infos(
             resolved = _resolve_transcript_path(path)
             if resolved in by_path:
                 continue
-            info = read_transcript_info(path, log_fn=log_fn, open_snapshot=open_snapshot)
+            info = read_transcript_info(path, log_fn=log_fn, open_snapshot=open_snapshot,
+                scan_state=(get_state_entry(resolved, state) or {}).get("model_scan"))
             if info is not None:
                 by_path[resolved] = info
         infos = list(by_path.values())
@@ -616,6 +641,8 @@ def _project_binding_request(
     if len(matches) != 1:
         return None, f"live Codex transcript not found for session={session_id}"
     info = matches[0]
+    if info.identity_error:
+        return None, info.identity_error
     if not info.is_open:
         return None, f"Codex transcript is not open for session={session_id}"
     if info.ownership_ambiguous:
@@ -684,6 +711,8 @@ def _effective_project_binding(
     project_bindings: dict[str, ProjectBinding],
     binding_request: ProjectBinding | None,
 ) -> tuple[ProjectBinding | None, bool, str]:
+    if info.identity_error:
+        return None, False, info.identity_error
     existing = project_bindings.get(info.session_id)
     requested = binding_request if binding_request and binding_request.session_id == info.session_id else None
     if existing is not None and requested is not None and not _same_binding_target(existing, requested):

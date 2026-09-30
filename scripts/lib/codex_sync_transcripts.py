@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 TRANSCRIPTS_ROOT = Path.home() / ".codex" / "sessions"
 PROC_ROOT = Path("/proc")
 DEFAULT_MODEL = "unknown"
-TRANSCRIPT_SCAN_LINES = 100
 AICO_PERSONAL_PROJECT_ID = "__aico_personal_workspace__"
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _AGENT_PATH_RE = re.compile(r"^/[A-Za-z0-9._/-]{1,254}$")
@@ -65,6 +65,10 @@ class TranscriptInfo:
     is_open: bool = False
     process_owner: AicoProcessOwner | None = None
     ownership_ambiguous: bool = False
+    native_session_id: str | None = None
+    identity_error: str | None = None
+    model_evidence: dict[str, object] = field(default_factory=dict)
+    model_scan: dict[str, object] = field(default_factory=dict)
 
 
 def _safe_identifier(value: object) -> str:
@@ -103,60 +107,291 @@ def _subagent_identity(source: object) -> tuple[str | None, str | None, str | No
     return parent, nickname, agent_path
 
 
+def _native_identity(payload: dict[str, object]) -> dict[str, object]:
+    parent, nickname, agent_path = _subagent_identity(payload.get("source"))
+    error = None
+    for key, nested, validate in (
+        ("parent_thread_id", parent, _safe_identifier),
+        ("agent_path", agent_path, _safe_agent_path),
+    ):
+        raw = payload.get(key)
+        if raw is not None:
+            direct = validate(raw)
+            if not direct or (nested and direct != nested):
+                error = f"contradictory native {key} provenance"
+            elif key == "parent_thread_id":
+                parent = direct
+            else:
+                agent_path = direct
+    session_id = _safe_identifier(payload.get("id"))
+    native_session_id = _safe_identifier(payload.get("session_id"))
+    if payload.get("session_id") is not None and not native_session_id:
+        error = "invalid native runtime session provenance"
+    source = payload.get("source")
+    if isinstance(source, dict) and "subagent" in source and not parent:
+        error = "invalid native subagent provenance"
+    if parent == session_id or (parent and (not agent_path or agent_path == "/root")):
+        error = "contradictory native child provenance"
+    if not parent and agent_path not in {None, "/root"}:
+        error = "native child agent path has no parent provenance"
+    raw_cwd = payload.get("cwd")
+    return {
+        "session_id": session_id,
+        "native_session_id": native_session_id or session_id,
+        "cwd": raw_cwd if isinstance(raw_cwd, str) and Path(raw_cwd).is_absolute() else "",
+        "parent_session_id": parent,
+        "agent_nickname": nickname or _safe_display_identity(payload.get("agent_nickname")),
+        "agent_path": agent_path,
+        "identity_error": error,
+        "history_start_ordinal": payload.get("subagent_history_start_ordinal"),
+    }
+
+
+def _timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo is not None else None
+    except ValueError:
+        return None
+
+
+def _model_name(value: object) -> str | None:
+    return value if isinstance(value, str) and 0 < len(value) <= 128 else None
+
+
 def _extract_transcript_fields(
-    path: Path,
-) -> tuple[str, str, str, str | None, str | None, str | None]:
-    """Extract identity from the first session_meta and model from turn context."""
-    session_id = cwd = model = ""
-    parent_session_id = agent_nickname = agent_path = None
-    saw_session_meta = False
-    with path.open(encoding="utf-8") as f:
-        for i, line in enumerate(f):
-            if i >= TRANSCRIPT_SCAN_LINES:
-                break
+    path: Path, previous: dict[str, object] | None = None,
+) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+    """Read immutable identity and latest locally attributed turn evidence."""
+    stat = path.stat()
+    file_generation = f"{stat.st_dev}:{stat.st_ino}"
+    saved = previous or {}
+    if saved.get("generation") != file_generation or int(saved.get("offset") or 0) > stat.st_size:
+        saved = {}
+    if saved:
+        with path.open("rb") as prefix:
+            head = prefix.read(int(saved.get("head_size") or 0))
+            prefix.seek(int(saved.get("tail_start") or 0))
+            tail = prefix.read(int(saved.get("offset") or 0) - int(saved.get("tail_start") or 0))
+        if (
+            hashlib.sha256(head).hexdigest() != saved.get("head_digest")
+            or hashlib.sha256(tail).hexdigest() != saved.get("tail_digest")
+        ):
+            saved = {}
+    generation = str(saved.get("source_generation") or file_generation)
+    identity: dict[str, object] = dict(saved.get("identity") or {})
+    evidence: dict[str, object] = dict(saved.get("evidence") or {})
+    inherited = bool(saved.get("inherited"))
+    started_at = _timestamp(saved.get("started_at"))
+    active_turn = saved.get("active_turn")
+    line_number = int(saved.get("line_number") or 0)
+    offset = int(saved.get("offset") or 0)
+    with path.open("rb") as handle:
+        handle.seek(offset)
+        while line := handle.readline():
+            if not line.endswith(b"\n"):
+                break  # Retry an in-progress JSONL record on the next pass.
+            offset = handle.tell()
+            line_number += 1
             try:
                 obj = json.loads(line)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            if not isinstance(obj, dict):
                 continue
             payload = obj.get("payload") or {}
             if not isinstance(payload, dict):
                 continue
-            obj_type = obj.get("type")
-            if obj_type == "session_meta" and not saw_session_meta:
-                # Child rollout files can contain a copied parent session_meta on
-                # their second line.  The first record is the immutable identity
-                # of this rollout and must never be overwritten by that copy.
-                saw_session_meta = True
-                session_id = _safe_identifier(payload.get("id"))
-                raw_cwd = payload.get("cwd")
-                cwd = raw_cwd if isinstance(raw_cwd, str) and Path(raw_cwd).is_absolute() else ""
-                parent_session_id, agent_nickname, agent_path = _subagent_identity(
-                    payload.get("source")
-                )
-            elif obj_type == "turn_context" and not model:
-                raw_model = payload.get("model")
-                if isinstance(raw_model, str) and len(raw_model) <= 128:
-                    model = raw_model
-            if saw_session_meta and session_id and cwd and model:
-                break
-    return session_id, cwd, model, parent_session_id, agent_nickname, agent_path
+            kind = obj.get("type")
+            if kind == "session_meta":
+                if not identity:
+                    identity = _native_identity(payload)
+                    started_at = _timestamp(payload.get("timestamp") or obj.get("timestamp"))
+                    generation += ":" + hashlib.sha256(line).hexdigest()
+                    inherited = bool(identity.get("parent_session_id"))
+                elif payload.get("id") != identity["session_id"]:
+                    # Fork history follows the first immutable child header.
+                    inherited = True
+                elif _native_identity(payload) != identity:
+                    identity["identity_error"] = "contradictory repeated native session provenance"
+                continue
+            if not identity:
+                continue
+            ordinal = obj.get("ordinal")
+            start_ordinal = identity.get("history_start_ordinal")
+            ordinal_local = isinstance(start_ordinal, int) and isinstance(ordinal, int) and ordinal >= start_ordinal
+            if isinstance(start_ordinal, int) and isinstance(ordinal, int) and ordinal < start_ordinal:
+                continue
+            attributed_id = payload.get("thread_id")
+            runtime_id = payload.get("session_id")
+            if runtime_id and runtime_id != identity.get("native_session_id"):
+                continue
+            if ordinal_local or attributed_id == identity["session_id"]:
+                inherited = False
+            if attributed_id and attributed_id != identity["session_id"]:
+                continue
+            event_type = payload.get("type") if kind == "event_msg" else kind
+            if event_type in {"task_started", "turn_started"}:
+                record_at = _timestamp(obj.get("timestamp"))
+                if inherited and not (
+                    attributed_id == identity["session_id"]
+                    or (started_at and record_at and record_at >= started_at)
+                ):
+                    continue
+                inherited = False
+                active_turn = _safe_identifier(payload.get("turn_id")) or None
+                evidence = {
+                    "session_id": identity["session_id"], "native_session_id": identity.get("native_session_id"),
+                    "turn_id": active_turn, "source": "codex_transcript",
+                    "source_path": str(path.resolve()), "source_generation": generation,
+                    "source_line": line_number, "source_timestamp": obj.get("timestamp"),
+                    "requested_model": None, "requested_reasoning_effort": None, "observed_model": None,
+                }
+                continue
+            if inherited:
+                continue
+            turn_id = _safe_identifier(payload.get("turn_id")) or active_turn
+            if kind == "turn_context":
+                if identity.get("parent_session_id") and active_turn and turn_id != active_turn:
+                    continue
+                if turn_id != evidence.get("turn_id"):
+                    evidence = {}
+                evidence.update({
+                    "session_id": identity["session_id"], "turn_id": turn_id,
+                    "source": "codex_transcript",
+                    "requested_model": _model_name(payload.get("model")),
+                    "requested_reasoning_effort": _safe_identifier(payload.get("effort")) or None,
+                    "observed_model": evidence.get("observed_model"),
+                    "native_session_id": identity.get("native_session_id"),
+                    "source_path": str(path.resolve()), "source_generation": generation,
+                    "source_line": line_number, "source_timestamp": obj.get("timestamp"),
+                })
+                active_turn = turn_id
+            elif (
+                event_type == "token_usage_record"
+                or (kind == "response_item" and (
+                    payload.get("type") == "reasoning"
+                    or (payload.get("type") == "message" and payload.get("role") == "assistant")
+                ))
+            ):
+                observed = _model_name(payload.get("model"))
+                if observed and turn_id and turn_id == active_turn:
+                    evidence.update({
+                        "session_id": identity["session_id"], "turn_id": turn_id,
+                        "source": "codex_transcript",
+                        "observed_model": observed,
+                        "observed_source": f"codex.{kind if kind == 'response_item' else event_type}.model",
+                        "observed_source_line": line_number,
+                        "observed_source_timestamp": obj.get("timestamp"),
+                    })
+        head_size = min(offset, 4096)
+        tail_start = max(offset - 4096, 0)
+        handle.seek(0)
+        head_digest = hashlib.sha256(handle.read(head_size)).hexdigest()
+        handle.seek(tail_start)
+        tail_digest = hashlib.sha256(handle.read(offset - tail_start)).hexdigest()
+    scan = {
+        "generation": file_generation, "source_generation": generation,
+        "offset": offset, "line_number": line_number, "identity": identity,
+        "evidence": evidence, "inherited": inherited, "active_turn": active_turn,
+        "started_at": started_at.isoformat() if started_at else None,
+        "head_size": head_size, "head_digest": head_digest,
+        "tail_start": tail_start, "tail_digest": tail_digest,
+    }
+    return identity, evidence, scan
+
+
+def resolve_current_transcript(
+    environment: dict[str, str] | None = None,
+    open_snapshot: OpenTranscriptSnapshot | None = None,
+    caller_identity: dict[str, str] | None = None,
+) -> TranscriptInfo:
+    """Validate native thread identity; environment values are candidate hints."""
+    env = os.environ if environment is None else environment
+    session_hint = (env.get("CODEX_SESSION_ID") or "").strip()
+    thread_hint = (env.get("CODEX_THREAD_ID") or "").strip()
+    if not session_hint and not thread_hint:
+        raise ValueError("No current Codex session identity is available for binding.")
+    snapshot = open_snapshot or discover_open_transcripts()
+    candidates = []
+    for path in snapshot.paths:
+        info = read_transcript_info(path, open_snapshot=snapshot)
+        if info is not None and info.session_id in {session_hint, thread_hint}:
+            candidates.append(info)
+    if any(info.identity_error or info.ownership_ambiguous for info in candidates):
+        raise ValueError("Conflicting native Codex transcript provenance.")
+    by_id = {info.session_id: info for info in candidates}
+    if len(by_id) != len(candidates):
+        raise ValueError("Ambiguous native Codex transcript identity.")
+    caller = _caller_native_identity() if caller_identity is None else caller_identity
+    caller_thread = caller.get("CODEX_THREAD_ID") or caller.get("CODEX_SESSION_ID")
+    if caller_thread:
+        current = by_id.get(caller_thread)
+        if current is None:
+            raise ValueError("Caller native identity conflicts with supplied Codex environment identity.")
+        caller_runtime = caller.get("CODEX_SESSION_ID")
+        if caller_runtime and caller_runtime not in {current.session_id, current.native_session_id}:
+            raise ValueError("Caller runtime session conflicts with native Codex provenance.")
+        return current
+    raise ValueError("Current native Codex identity requires validated caller provenance.")
+
+
+def _caller_native_identity(proc_root: Path = PROC_ROOT) -> dict[str, str]:
+    """Read only native ID hints from our initial process ancestry below Codex."""
+    processes: list[dict[str, str]] = []
+    pid = os.getpid()
+    visited: set[int] = set()
+    while pid > 1 and pid not in visited:
+        visited.add(pid)
+        process = proc_root / str(pid)
+        parts = _read_cmdline(process)
+        if _looks_like_codex_process(parts):
+            identities = [item for item in processes if item]
+            if not identities:
+                return {}
+            # The process closest to Codex was created by its native exec runtime;
+            # intermediary launchers must not silently replace that identity.
+            original = identities[-1]
+            if any(item != original for item in identities):
+                raise ValueError("Contradictory native caller ancestry identity.")
+            return original
+        if parts:
+            try:
+                raw = (process / "environ").read_bytes()
+            except OSError:
+                return {}
+            identity: dict[str, str] = {}
+            for item in raw.split(b"\0"):
+                key, _, value = item.partition(b"=")
+                if key in {b"CODEX_THREAD_ID", b"CODEX_SESSION_ID"}:
+                    parsed = _safe_identifier(value.decode("utf-8", "ignore"))
+                    if parsed:
+                        identity[key.decode("ascii")] = parsed
+            processes.append(identity)
+        try:
+            status = (process / "status").read_text(encoding="utf-8")
+            pid = next(int(line.split()[1]) for line in status.splitlines() if line.startswith("PPid:"))
+        except (OSError, ValueError, StopIteration):
+            return {}
+    return {}
 
 
 def read_transcript_info(
     path: Path,
     log_fn: object = None,
     open_snapshot: OpenTranscriptSnapshot | None = None,
+    scan_state: dict[str, object] | None = None,
 ) -> TranscriptInfo | None:
-    """Parse a JSONL transcript file and return metadata from its header lines."""
+    """Parse native identity and advance the retained model evidence cursor."""
     try:
-        session_id, cwd, model, parent_session_id, agent_nickname, agent_path = (
-            _extract_transcript_fields(path)
-        )
+        identity, evidence, model_scan = _extract_transcript_fields(path, scan_state)
     except OSError as exc:
         if log_fn:
             log_fn(f"[WARN] Failed to read transcript {path}: {exc}")
         return None
-    if not session_id or not cwd:
+    if not identity.get("session_id") or not identity.get("cwd"):
         return None
     try:
         stat = path.stat()
@@ -168,14 +403,18 @@ def read_transcript_info(
     snapshot = open_snapshot or OpenTranscriptSnapshot.empty()
     return TranscriptInfo(
         path=resolved,
-        session_id=session_id,
-        cwd=Path(cwd),
-        model=model or DEFAULT_MODEL,
+        session_id=identity["session_id"],
+        cwd=Path(identity["cwd"]),
+        model=evidence.get("observed_model") or DEFAULT_MODEL,
         mtime=stat.st_mtime,
         size=stat.st_size,
-        parent_session_id=parent_session_id,
-        agent_nickname=agent_nickname,
-        agent_path=agent_path,
+        parent_session_id=identity["parent_session_id"],
+        agent_nickname=identity["agent_nickname"],
+        agent_path=identity["agent_path"],
+        native_session_id=identity["native_session_id"],
+        identity_error=identity["identity_error"],
+        model_evidence=evidence,
+        model_scan=model_scan,
         is_open=resolved in snapshot.paths,
         process_owner=snapshot.owners.get(resolved),
         ownership_ambiguous=resolved in snapshot.ambiguous_paths,
@@ -186,6 +425,7 @@ def iter_recent_transcripts(
     recent_hours: int,
     log_fn: object = None,
     open_snapshot: OpenTranscriptSnapshot | None = None,
+    scan_states: dict[str, object] | None = None,
 ) -> list[TranscriptInfo]:
     if not TRANSCRIPTS_ROOT.exists():
         return []
@@ -198,7 +438,9 @@ def iter_recent_transcripts(
             continue
         if modified_at < cutoff:
             continue
-        info = read_transcript_info(path, log_fn=log_fn, open_snapshot=open_snapshot)
+        entry = (scan_states or {}).get(str(path.resolve()))
+        scan_state = entry.get("model_scan") if isinstance(entry, dict) else None
+        info = read_transcript_info(path, log_fn=log_fn, open_snapshot=open_snapshot, scan_state=scan_state)
         if info is not None:
             transcripts.append(info)
     transcripts.sort(key=lambda item: item.mtime)

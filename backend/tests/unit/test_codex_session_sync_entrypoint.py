@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "codex-session-sync.py"
 
@@ -58,6 +59,7 @@ def test_binding_requires_current_thread_and_credentials(monkeypatch, capsys) ->
     monkeypatch.delenv("CODEX_SESSION_ID", raising=False)
     monkeypatch.setenv("CODEX_THREAD_ID", "thread-1")
     monkeypatch.setattr(module, "load_env_credentials", lambda: "")
+    monkeypatch.setattr(module, "resolve_current_transcript", lambda: SimpleNamespace(session_id="thread-1"))
 
     args = [
         "--bind-session",
@@ -72,7 +74,7 @@ def test_binding_requires_current_thread_and_credentials(monkeypatch, capsys) ->
 
     args[1] = "another-thread"
     assert module.main(args) == 2
-    assert "must match the current Codex session ID" in capsys.readouterr().err
+    assert "must match the validated current native Codex thread ID" in capsys.readouterr().err
 
 
 def test_binding_prefers_native_session_id_over_inherited_thread_id(
@@ -83,6 +85,7 @@ def test_binding_prefers_native_session_id_over_inherited_thread_id(
     monkeypatch.setenv("CODEX_THREAD_ID", "stale-parent-thread")
     monkeypatch.setenv("CODEX_SESSION_ID", "native-session")
     monkeypatch.setattr(module, "load_env_credentials", lambda: "summitflow")
+    monkeypatch.setattr(module, "resolve_current_transcript", lambda: SimpleNamespace(session_id="native-session"))
 
     def fake_run_sync(args, **kwargs):
         captured["session_id"] = args.bind_session
@@ -104,6 +107,7 @@ def test_binding_warnings_are_visible_to_cli_subprocess(monkeypatch, capsys) -> 
     monkeypatch.delenv("CODEX_SESSION_ID", raising=False)
     monkeypatch.setenv("CODEX_THREAD_ID", "thread-1")
     monkeypatch.setattr(module, "load_env_credentials", lambda: "summitflow")
+    monkeypatch.setattr(module, "resolve_current_transcript", lambda: SimpleNamespace(session_id="thread-1"))
 
     def fake_run_sync(_args, **kwargs):
         kwargs["log_fn"]("[WARN] simulated binding conflict")
@@ -123,3 +127,17 @@ def test_binding_warnings_are_visible_to_cli_subprocess(monkeypatch, capsys) -> 
 
     assert result == 2
     assert "simulated binding conflict" in capsys.readouterr().err
+
+
+def test_binding_native_validation_failure_never_loads_credentials_or_mutates(monkeypatch, capsys):
+    module = _load_module()
+    calls = []
+    def rejected():
+        raise ValueError("contradictory native provenance")
+    monkeypatch.setattr(module, "resolve_current_transcript", rejected)
+    monkeypatch.setattr(module, "load_env_credentials", lambda: calls.append("credentials"))
+    monkeypatch.setattr(module, "run_sync", lambda *_, **__: calls.append("mutation"))
+    monkeypatch.setattr(module, "log", lambda _: None)
+    assert module.main(["--bind-session", "unrelated", "--bind-project", "neri", "--project-root", "/srv/workspaces/projects/neri"]) == 2
+    assert calls == []
+    assert "contradictory native provenance" in capsys.readouterr().err

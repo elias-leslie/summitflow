@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 SCRIPTS_LIB = Path(__file__).resolve().parents[3] / "scripts" / "lib"
 if str(SCRIPTS_LIB) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_LIB))
@@ -123,3 +125,181 @@ def test_read_transcript_info_root_has_no_parent_identity(tmp_path: Path) -> Non
     assert info.parent_session_id is None
     assert info.agent_nickname is None
     assert info.agent_path is None
+
+
+def _meta(session_id="root", *, parent=None, native_session=None, agent_path=None):
+    payload = {
+        "id": session_id, "session_id": native_session or session_id,
+        "cwd": "/srv/workspaces/projects/a-loom", "timestamp": "2026-09-30T10:00:00Z",
+        "source": "cli",
+    }
+    if parent:
+        payload.update({"parent_thread_id": parent, "agent_path": agent_path or "/root/child"})
+        payload["source"] = {"subagent": {"thread_spawn": {
+            "parent_thread_id": parent, "agent_path": agent_path or "/root/child",
+        }}}
+    return {"type": "session_meta", "payload": payload}
+
+
+def _context(turn, model, timestamp="2026-09-30T10:01:00Z"):
+    return {"type": "turn_context", "timestamp": timestamp,
+            "payload": {"turn_id": turn, "model": model, "effort": "high"}}
+
+
+def _started(turn, timestamp="2026-09-30T10:01:00Z"):
+    return {"type": "event_msg", "timestamp": timestamp,
+            "payload": {"type": "task_started", "turn_id": turn}}
+
+
+def test_incremental_model_evidence_latest_turn_and_stable_nonmodel_append(tmp_path):
+    transcript = tmp_path / "root.jsonl"
+    records = [_meta(), _context("t1", "gpt-old")]
+    _write_jsonl(transcript, records)
+    first = codex_sync_transcripts.read_transcript_info(transcript)
+    assert first.model == "unknown"
+    assert first.model_evidence["requested_model"] == "gpt-old"
+    assert first.model_evidence["observed_model"] is None
+    unchanged = codex_sync_transcripts.read_transcript_info(transcript, scan_state=first.model_scan)
+    assert unchanged.model_evidence == first.model_evidence
+    assert unchanged.model_scan == first.model_scan
+    records += [{"type": "event_msg", "payload": {"type": "token_count"}}]
+    _write_jsonl(transcript, records)
+    other = codex_sync_transcripts.read_transcript_info(transcript, scan_state=first.model_scan)
+    assert other.model_evidence == first.model_evidence
+    records += [_started("t2"), _context("t2", "gpt-6.1-sol")]
+    _write_jsonl(transcript, records)
+    latest = codex_sync_transcripts.read_transcript_info(transcript, scan_state=other.model_scan)
+    assert latest.model_evidence["requested_model"] == "gpt-6.1-sol"
+    assert latest.model_evidence["requested_reasoning_effort"] == "high"
+    assert latest.model_evidence["source_line"] == 5
+    assert latest.model_evidence["source_generation"] == first.model_evidence["source_generation"]
+    assert latest.model == "unknown"
+
+
+def test_child_excludes_inherited_turns_and_accepts_attributed_usage_model(tmp_path):
+    transcript = tmp_path / "child.jsonl"
+    records = [
+        _meta("child", parent="root", native_session="root"), _meta(),
+        _started("parent-turn", "2026-09-30T09:00:00Z"), _context("parent-turn", "parent-model"),
+    ]
+    _write_jsonl(transcript, records)
+    parent_only = codex_sync_transcripts.read_transcript_info(transcript)
+    assert parent_only.model == "unknown"
+    assert parent_only.model_evidence == {}
+    records += [_started("child-turn"), _context("child-turn", "gpt-6.1-sol"), {
+        "type": "event_msg", "timestamp": "2026-09-30T10:02:00Z", "payload": {
+            "type": "token_usage_record", "thread_id": "child", "session_id": "root",
+            "turn_id": "child-turn", "model": "served-model",
+        },
+    }]
+    _write_jsonl(transcript, records)
+    child = codex_sync_transcripts.read_transcript_info(transcript, scan_state=parent_only.model_scan)
+    assert child.model == "served-model"
+    assert child.model_evidence["requested_model"] == "gpt-6.1-sol"
+    assert child.model_evidence["source_line"] == 6
+    assert child.model_evidence["observed_source_line"] == 7
+    assert child.model_evidence["observed_source"] == "codex.token_usage_record.model"
+    records += [_started("next"), _context("next", "later-model")]
+    _write_jsonl(transcript, records)
+    latest = codex_sync_transcripts.read_transcript_info(transcript, scan_state=child.model_scan)
+    assert latest.model == "unknown"
+    assert latest.model_evidence["observed_model"] is None
+
+
+@pytest.mark.parametrize("wrong", [{"thread_id": "other"}, {"session_id": "other"}, {"turn_id": "old"}])
+def test_observed_model_rejects_wrong_attribution(tmp_path, wrong):
+    payload = {"type": "token_usage_record", "thread_id": "root", "session_id": "root",
+               "turn_id": "current", "model": "wrong-model"}
+    payload.update(wrong)
+    transcript = tmp_path / "root.jsonl"
+    _write_jsonl(transcript, [_meta(), _context("current", "requested"), {"type": "event_msg", "payload": payload}])
+    assert codex_sync_transcripts.read_transcript_info(transcript).model == "unknown"
+
+
+@pytest.mark.parametrize("environment,caller,current", [
+    ({"CODEX_SESSION_ID": "root", "CODEX_THREAD_ID": "stale"}, {"CODEX_SESSION_ID": "root"}, "root"),
+    ({"CODEX_SESSION_ID": "root", "CODEX_THREAD_ID": "child"}, {"CODEX_SESSION_ID": "root", "CODEX_THREAD_ID": "child"}, "child"),
+    ({"CODEX_SESSION_ID": "child", "CODEX_THREAD_ID": "root"}, {"CODEX_THREAD_ID": "child"}, "child"),
+])
+def test_resolver_validates_both_native_identity_layouts(tmp_path, environment, caller, current):
+    root = tmp_path / "root.jsonl"
+    child = tmp_path / "child.jsonl"
+    _write_jsonl(root, [_meta()])
+    _write_jsonl(child, [_meta("child", parent="root", native_session="root")])
+    snapshot = codex_sync_transcripts.OpenTranscriptSnapshot(frozenset({root, child}), {}, frozenset())
+    info = codex_sync_transcripts.resolve_current_transcript(environment, snapshot, caller)
+    assert info.session_id == current
+    assert info.parent_session_id == ("root" if current == "child" else None)
+    assert info.agent_path == ("/root/child" if current == "child" else None)
+
+
+@pytest.mark.parametrize("caller", [{}, {"CODEX_THREAD_ID": "unrelated"}, {"CODEX_THREAD_ID": "child", "CODEX_SESSION_ID": "other"}])
+def test_resolver_rejects_unproven_or_conflicting_caller(tmp_path, caller):
+    child = tmp_path / "child.jsonl"
+    _write_jsonl(child, [_meta("child", parent="root", native_session="root")])
+    snapshot = codex_sync_transcripts.OpenTranscriptSnapshot(frozenset({child}), {}, frozenset())
+    with pytest.raises(ValueError):
+        codex_sync_transcripts.resolve_current_transcript({"CODEX_THREAD_ID": "child", "CODEX_SESSION_ID": "root"}, snapshot, caller)
+
+
+@pytest.mark.parametrize("key,value", [("parent_thread_id", "other"), ("agent_path", "/root/other"), ("session_id", "invalid identity")])
+def test_resolver_rejects_contradictory_header(tmp_path, key, value):
+    record = _meta("child", parent="root", native_session="root")
+    record["payload"][key] = value
+    child = tmp_path / "child.jsonl"
+    _write_jsonl(child, [record])
+    snapshot = codex_sync_transcripts.OpenTranscriptSnapshot(frozenset({child}), {}, frozenset())
+    with pytest.raises(ValueError, match="Conflicting"):
+        codex_sync_transcripts.resolve_current_transcript({"CODEX_THREAD_ID": "child"}, snapshot, {"CODEX_THREAD_ID": "child"})
+
+
+def test_incremental_partial_record_retried_and_truncation_resets(tmp_path):
+    transcript = tmp_path / "root.jsonl"
+    _write_jsonl(transcript, [_meta(), _context("current", "requested")])
+    first = codex_sync_transcripts.read_transcript_info(transcript)
+    with transcript.open("ab") as handle:
+        handle.write(b'{"type":"turn_context","payload":')
+    partial = codex_sync_transcripts.read_transcript_info(transcript, scan_state=first.model_scan)
+    assert partial.model_scan["offset"] == first.model_scan["offset"]
+    with transcript.open("ab") as handle:
+        handle.write(b'{"turn_id":"next","model":"new"}}\n')
+    complete = codex_sync_transcripts.read_transcript_info(transcript, scan_state=partial.model_scan)
+    assert complete.model_evidence["requested_model"] == "new"
+    _write_jsonl(transcript, [_meta("replacement")])
+    replacement = codex_sync_transcripts.read_transcript_info(transcript, scan_state=complete.model_scan)
+    assert replacement.session_id == "replacement"
+    assert replacement.model_evidence == {}
+
+
+def test_incremental_same_inode_larger_rewrite_revalidates_header(tmp_path):
+    transcript = tmp_path / "root.jsonl"
+    _write_jsonl(transcript, [_meta(), _context("current", "requested")])
+    first = codex_sync_transcripts.read_transcript_info(transcript)
+    _write_jsonl(transcript, [_meta("replacement"), _context("replacement-turn", "replacement-model"),
+        {"type": "event_msg", "payload": {"type": "token_count", "padding": "x" * 200}}])
+    assert transcript.stat().st_size > first.size
+    replacement = codex_sync_transcripts.read_transcript_info(transcript, scan_state=first.model_scan)
+    assert replacement.session_id == "replacement"
+    assert replacement.model_evidence["requested_model"] == "replacement-model"
+    assert replacement.model_evidence["source_generation"] != first.model_evidence["source_generation"]
+
+
+@pytest.mark.parametrize("override", [False, True])
+def test_caller_native_ancestry_rejects_intermediary_identity_override(tmp_path, monkeypatch, override):
+    proc = tmp_path / "proc"
+    for pid, parent, command, identity in [
+        (10, 20, b"python\0st\0", "other" if override else "child"),
+        (20, 30, b"bash\0-c\0st sessions bind\0", "child"),
+        (30, 1, b"/usr/bin/codex\0", "root"),
+    ]:
+        entry = proc / str(pid)
+        entry.mkdir(parents=True)
+        (entry / "cmdline").write_bytes(command)
+        (entry / "environ").write_bytes(f"CODEX_THREAD_ID={identity}\0CODEX_SESSION_ID=root\0PRIVATE_SECRET=excluded\0".encode())
+        (entry / "status").write_text(f"PPid:\t{parent}\n")
+    monkeypatch.setattr(codex_sync_transcripts.os, "getpid", lambda: 10)
+    if override:
+        with pytest.raises(ValueError, match="Contradictory"):
+            codex_sync_transcripts._caller_native_identity(proc)
+    else:
+        assert codex_sync_transcripts._caller_native_identity(proc) == {"CODEX_THREAD_ID": "child", "CODEX_SESSION_ID": "root"}

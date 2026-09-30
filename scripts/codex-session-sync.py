@@ -21,6 +21,7 @@ def _load_symbol(module_name: str, symbol: str) -> Any:
 
 load_env_credentials = _load_symbol("codex_sync_credentials", "load_env_credentials")
 run_sync = _load_symbol("codex_sync_runner", "run_sync")
+resolve_current_transcript = _load_symbol("codex_sync_transcripts", "resolve_current_transcript")
 
 DEFAULT_API = os.environ.get("AGENT_HUB_API", "http://localhost:8003/api")
 LOG_PATH = Path.home() / ".codex" / "session-integrations" / "codex-session-sync.log"
@@ -93,14 +94,15 @@ def main(argv: list[str]) -> int:
             "[WARN] Binding requires --bind-session, --bind-project, and --project-root"
         )
         return 2
-    current_session_id = (
-        os.environ.get("CODEX_SESSION_ID")
-        or os.environ.get("CODEX_THREAD_ID")
-        or ""
-    ).strip()
-    if binding_mode and args.bind_session != current_session_id:
-        emit("[WARN] --bind-session must match the current Codex session ID")
-        return 2
+    if binding_mode:
+        try:
+            current = resolve_current_transcript()
+        except ValueError as exc:
+            emit(f"[WARN] {exc}")
+            return 2
+        if args.bind_session != current.session_id:
+            emit("[WARN] --bind-session must match the validated current native Codex thread ID")
+            return 2
     if not args.scan and args.transcript is None:
         args.scan = True
 

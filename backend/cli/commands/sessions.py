@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import subprocess
+import sys
 from collections.abc import Iterable
+from importlib import import_module
 from pathlib import Path
-from typing import Annotated, NoReturn, cast
+from typing import Annotated, NoReturn, Protocol, cast
 
 import typer
 
@@ -85,6 +86,41 @@ app = typer.Typer(
 )
 
 _CODEX_SESSION_SYNC = Path(__file__).resolve().parents[3] / "scripts" / "codex-session-sync.py"
+
+
+class _NativeTranscript(Protocol):
+    session_id: str
+    parent_session_id: str | None
+    agent_path: str | None
+    native_session_id: str | None
+
+
+def _current_codex_transcript() -> _NativeTranscript:
+    """Use the synchronizer's native provenance validation without mutating state."""
+    library = str(_CODEX_SESSION_SYNC.parent / "lib")
+    if library not in sys.path:
+        sys.path.insert(0, library)
+    return import_module("codex_sync_transcripts").resolve_current_transcript()
+
+
+def _require_native_binding(session: dict[str, object], info: _NativeTranscript) -> None:
+    if session.get("parent_session_id") != info.parent_session_id:
+        _bind_error("Session parent conflicts with current native Codex provenance.")
+    metadata = session.get("provider_metadata")
+    external = session.get("external_identity")
+    if isinstance(metadata, dict):
+        metadata = cast(dict[str, object], metadata)
+        native_session = metadata.get("native_session_id")
+        if native_session and native_session != info.native_session_id:
+            _bind_error("Session runtime identity conflicts with current native Codex provenance.")
+        if external is None:
+            external = metadata.get("external_identity")
+    if isinstance(external, dict):
+        external = cast(dict[str, object], external)
+        if external.get("runtime_session_id") != info.session_id:
+            _bind_error("Session thread identity conflicts with current native Codex provenance.")
+        if external.get("agent_path") != (info.agent_path or "/root"):
+            _bind_error("Session agent path conflicts with current native Codex provenance.")
 
 
 def _bind_error(message: str) -> NoReturn:
@@ -373,13 +409,11 @@ def bind_session(
     ] = "current",
 ) -> None:
     """Bind the current Codex session to the resolved SummitFlow project."""
-    session_id = (
-        os.getenv("CODEX_SESSION_ID")
-        or os.getenv("CODEX_THREAD_ID")
-        or ""
-    ).strip()
-    if not session_id:
-        _bind_error("No current Codex session identity is available for binding.")
+    try:
+        info = _current_codex_transcript()
+    except ValueError as exc:
+        _bind_error(str(exc))
+    session_id = info.session_id
     if target not in {"current", session_id}:
         _bind_error("Only 'current' or the exact current Codex session ID may be bound.")
 
@@ -387,11 +421,16 @@ def bind_session(
     client = STClient(require_project=False)
     existing = _get_exact_session(client, session_id)
     if existing is not None:
+        _require_native_binding(existing, info)
         _require_same_project_binding(
             existing,
             session_id=session_id,
             project_id=project_id,
         )
+    if info.parent_session_id:
+        parent = _get_exact_session(client, info.parent_session_id)
+        if parent is not None:
+            _require_same_project_binding(parent, session_id=info.parent_session_id, project_id=project_id)
     existing_status = str(existing.get("status") or "") if existing is not None else ""
     binding_result = (
         "bound"
@@ -430,6 +469,7 @@ def bind_session(
     if bound is None:
         _bind_error(f"Session {session_id} was not found after Codex session sync.")
     _require_active_binding(bound, session_id=session_id, project_id=project_id)
+    _require_native_binding(bound, info)
     _print_binding(session_id, project_id, result=binding_result)
 
 
