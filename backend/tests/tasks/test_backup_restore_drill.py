@@ -86,6 +86,13 @@ exit 99
     assert component["ok"] is expected
     commands = log.read_text().splitlines()
     assert commands[-1].startswith("rm -fv sf-drill-pg-")
+    redis_start = next(command for command in commands if command.startswith("run "))
+    # The image entrypoint chowns /data; a read-only recovered RDB must not be
+    # changed, even when testing as root. Match the recovery user's file access.
+    assert "--entrypoint redis-server" in redis_start
+    assert f"--user {os.getuid()}:{os.getgid()}" in redis_start
+    assert "/data/dump.rdb:ro" in redis_start
+    assert "--save" in redis_start
     if mode in {"start-failed", "ping-failed", "ping-wrong"}:
         assert not any("dbsize" in command for command in commands)
     if mode == "start-failed":

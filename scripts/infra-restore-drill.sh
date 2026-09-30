@@ -93,8 +93,9 @@ if [ -n "$REDIS_RDB" ]; then
     HEADER=$(head -c 5 "$REDIS_RDB" 2>/dev/null || true)
     if [ "$HEADER" = "REDIS" ]; then
         if ! docker run -d --name "$DRILL_REDIS_CONTAINER" \
+            --user "$(id -u):$(id -g)" --entrypoint redis-server \
             -v "$REDIS_RDB:/data/dump.rdb:ro" \
-            redis:7-alpine redis-server --appendonly no >/dev/null 2>&1; then
+            redis:7-alpine --appendonly no --save "" >/dev/null 2>&1; then
             add_result "redis_state" "false" "Failed to start disposable Redis container"
         else
             redis_ready=false
