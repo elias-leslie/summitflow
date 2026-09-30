@@ -110,6 +110,35 @@ def test_bind_current_refreshes_local_binding_for_existing_active_project_sessio
     run.assert_called_once()
 
 
+def test_bind_current_reactivates_existing_completed_project_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.commands import sessions as sessions_cmd
+
+    monkeypatch.setenv("CODEX_THREAD_ID", _THREAD_ID)
+    completed_session = {
+        "id": _THREAD_ID,
+        "project_id": _PROJECT_ID,
+        "status": "completed",
+    }
+    client = MagicMock()
+    client.get_session.side_effect = [completed_session, _active_session()]
+    completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="synced", stderr="")
+
+    with (
+        patch.object(sessions_cmd, "STClient", return_value=client),
+        patch.object(sessions_cmd, "get_project_override", return_value=_PROJECT_ID),
+        patch.object(sessions_cmd, "get_project_root_path", return_value=_PROJECT_ROOT),
+        patch.object(sessions_cmd.subprocess, "run", return_value=completed) as run,
+    ):
+        result = runner.invoke(app, ["sessions", "bind"])
+
+    assert result.exit_code == 0
+    assert "status=active|result=reactivated" in result.output
+    assert client.get_session.call_count == 2
+    run.assert_called_once()
+
+
 def test_bind_current_rejects_existing_session_owned_by_another_project(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

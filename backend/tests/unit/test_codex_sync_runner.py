@@ -437,6 +437,50 @@ def test_live_codex_process_without_detectable_fds_blocks_mass_close(tmp_path: P
     )
 
 
+def test_open_terminal_transcript_requires_session_reactivation() -> None:
+    entry = {
+        "session_id": "continued-session",
+        "identity_fingerprint": "same-identity",
+        "status": "terminal",
+    }
+
+    assert codex_sync_runner._should_upsert(
+        entry,
+        "continued-session",
+        "same-identity",
+        is_open=True,
+    )
+    assert not codex_sync_runner._should_upsert(
+        entry,
+        "continued-session",
+        "same-identity",
+        is_open=False,
+    )
+
+
+def test_explicit_binding_rechecks_an_open_session_with_stale_local_active_state() -> None:
+    entry = {
+        "session_id": "continued-session",
+        "identity_fingerprint": "same-identity",
+        "status": "active",
+    }
+
+    assert codex_sync_runner._should_upsert(
+        entry,
+        "continued-session",
+        "same-identity",
+        is_open=True,
+        reactivate_open_session=True,
+    )
+    assert not codex_sync_runner._should_upsert(
+        entry,
+        "continued-session",
+        "same-identity",
+        is_open=False,
+        reactivate_open_session=True,
+    )
+
+
 def test_aico_git_project_mismatch_fails_closed_before_api_calls(
     tmp_path: Path,
     monkeypatch,

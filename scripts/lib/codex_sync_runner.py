@@ -134,6 +134,7 @@ def sync_transcript(
     log_fn: LogFn,
     verbose: bool,
     project_binding: ProjectBinding | None = None,
+    reactivate_open_session: bool = False,
 ) -> tuple[bool, str, int | None]:
     project, effective_cwd, project_error, transcript_git_verified = (
         _resolve_project_context(info, project_binding)
@@ -163,6 +164,7 @@ def sync_transcript(
         identity_fingerprint,
         effective_cwd,
         kw,
+        reactivate_open_session=reactivate_open_session,
     )
     if not ok:
         return False, err, status
@@ -383,9 +385,17 @@ def _ensure_session_upserted(
     identity_fingerprint: str,
     effective_cwd: Path,
     kw: dict[str, str],
+    *,
+    reactivate_open_session: bool = False,
 ) -> tuple[bool, str, int | None, dict[str, object]]:
     entry = get_state_entry(info.path, state)
-    if not _should_upsert(entry, info.session_id, identity_fingerprint, is_open=info.is_open):
+    if not _should_upsert(
+        entry,
+        info.session_id,
+        identity_fingerprint,
+        is_open=info.is_open,
+        reactivate_open_session=reactivate_open_session,
+    ):
         return True, "", None, project
     return _upsert_with_project_aliases(
         info=info,
@@ -426,8 +436,21 @@ def _should_upsert(
     identity_fingerprint: str,
     *,
     is_open: bool,
+    reactivate_open_session: bool = False,
 ) -> bool:
     if entry is None:
+        return True
+    if (
+        is_open
+        and entry.get("session_id") == session_id
+        and (
+            entry.get("status") == "terminal"
+            or reactivate_open_session
+        )
+    ):
+        # A restarted client can continue writing the exact native transcript
+        # after an earlier process marked its Agent Hub row complete.  The open
+        # file identity is the authority for reactivating that same session.
         return True
     if (
         not is_open
@@ -836,6 +859,11 @@ def _sync_infos(
             log_fn=log_fn,
             verbose=args.verbose,
             project_binding=project_binding,
+            reactivate_open_session=(
+                binding_request is not None
+                and info.session_id == binding_request.session_id
+                and info.is_open
+            ),
         )
         if ok:
             if should_store_binding and project_binding is not None:

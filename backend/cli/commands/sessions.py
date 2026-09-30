@@ -117,9 +117,24 @@ def _require_active_binding(
     session: dict[str, object], *, session_id: str, project_id: str
 ) -> None:
     """Require the exact active Agent Hub binding requested by the caller."""
+    _require_same_project_binding(
+        session,
+        session_id=session_id,
+        project_id=project_id,
+    )
+    actual_status = str(session.get("status") or "")
+    if actual_status != "active":
+        _bind_error(
+            f"Session {session_id} is {actual_status or 'missing status'}, not active."
+        )
+
+
+def _require_same_project_binding(
+    session: dict[str, object], *, session_id: str, project_id: str
+) -> None:
+    """Require the exact Agent Hub identity and immutable project binding."""
     actual_id = str(session.get("id") or "")
     actual_project = str(session.get("project_id") or "")
-    actual_status = str(session.get("status") or "")
     if actual_id != session_id:
         _bind_error(
             f"Agent Hub returned session {actual_id or '-'} for exact id {session_id}."
@@ -127,10 +142,6 @@ def _require_active_binding(
     if actual_project != project_id:
         _bind_error(
             f"Session {session_id} belongs to project {actual_project or '-'}, not {project_id}."
-        )
-    if actual_status != "active":
-        _bind_error(
-            f"Session {session_id} is {actual_status or 'missing status'}, not active."
         )
 
 
@@ -376,8 +387,19 @@ def bind_session(
     client = STClient(require_project=False)
     existing = _get_exact_session(client, session_id)
     if existing is not None:
-        _require_active_binding(existing, session_id=session_id, project_id=project_id)
-    binding_result = "refreshed" if existing is not None else "bound"
+        _require_same_project_binding(
+            existing,
+            session_id=session_id,
+            project_id=project_id,
+        )
+    existing_status = str(existing.get("status") or "") if existing is not None else ""
+    binding_result = (
+        "bound"
+        if existing is None
+        else "refreshed"
+        if existing_status == "active"
+        else "reactivated"
+    )
 
     command = [
         str(_CODEX_SESSION_SYNC),
