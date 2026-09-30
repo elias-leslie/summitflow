@@ -267,6 +267,15 @@ def test_unbound_unsupported_frame_is_quarantined_without_attributing_a_subject(
     assert all(r["kind"] == "capture_health" for r in rows)
 
 
+def test_legacy_approval_is_explicitly_unattributed_and_never_silently_discarded(outbox):
+    capture = collector(outbox)
+    wire = {"id": 1, "method": "execCommandApproval", "params": {"conversationId": "thread", "callId": "legacy-call", "command": ["printf", "fixture"], "cwd": "/tmp", "parsedCmd": []}}
+    assert capture.validators["ServerRequest"].is_valid(wire)
+    capture.server_message(wire)
+    assert not capture.capturing and outbox.status()["quarantined"] == 1
+    assert outbox.status()["health"] == "unsupported" and not capture.approvals
+
+
 def test_model_configuration_stays_separate_from_observed_delivery(outbox):
     capture = collector(outbox)
     capture.client_message({"id": 1, "method": "turn/start", "params": {"threadId": "thread", "model": "requested-only", "input": [{"type": "text", "text": "not retained by request capture"}]}})

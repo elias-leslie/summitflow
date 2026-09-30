@@ -20,29 +20,29 @@
     "health": "disabled",
     "delivery_health": "pending",
     "capture_disabled": true,
-    "capture_gaps": 4,
-    "pending": 116,
-    "pending_bytes": 65606,
-    "quarantined": 2,
-    "quarantined_bytes": 394,
-    "used_bytes": 67395,
+    "capture_gaps": 3,
+    "pending": 115,
+    "pending_bytes": 65818,
+    "quarantined": 1,
+    "quarantined_bytes": 148,
+    "used_bytes": 67361,
     "quota_bytes": 10485760,
     "raw_retention_seconds": 0,
     "threads": [
       {
-        "thread_id": "01a0f40d-77f1-72e2-95ec-c34012d72601",
+        "thread_id": "01a0f42a-890d-7ad1-afdd-fcb647d7cc67",
         "project_id": "canary",
         "source_id": null,
         "acknowledged": 0
       },
       {
-        "thread_id": "01a0f40d-78e5-78d2-be02-f4a3a03e9db5",
+        "thread_id": "01a0f42a-8a04-7201-baaa-0ed22eae3b80",
         "project_id": "canary",
         "source_id": null,
         "acknowledged": 0
       },
       {
-        "thread_id": "01a0f40d-8ece-7d60-8ab2-b4e057144551",
+        "thread_id": "01a0f42a-9fe1-7eb1-b574-1d354519f1f0",
         "project_id": "canary",
         "source_id": null,
         "acknowledged": 0
@@ -51,7 +51,7 @@
   },
   "notification_counts": {
     "thread/started": 2,
-    "warning": 6,
+    "warning": 7,
     "thread/status/changed": 17,
     "turn/started": 7,
     "item/started": 16,

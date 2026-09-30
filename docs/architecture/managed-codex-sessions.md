@@ -29,8 +29,10 @@ set the following in the existing managed operator environment:
 
 The existing `codex-session-sync.service`/timer runs through SummitFlow's managed
 Python environment, including the bundled public Agent Hub SDK. Its approved
-EnvironmentFile is optional. These existing units are declared optional workers;
-managed rebuild refreshes templates and retains active/inactive worker policy.
+EnvironmentFile is optional. The existing sync service is declared an optional
+worker; its existing timer stays active independently. Timers are not collector
+service entries. Managed rebuild refreshes the service template and retains
+active/inactive worker policy.
 No rollout polling or reconciliation depends on successful capture or delivery.
 Before normal transcript ingestion, sync tries managed source registration; afterwards
 it drains durable pending receipts. Either failure preserves rollout operation. The
@@ -42,6 +44,8 @@ Installed support is `codex-cli 0.159.2`, stdio JSON-RPC and schema fingerprint
 Version/schema are probed from the installed executable before startup and recorded
 in each source registration. Notification/request shapes are checked as captured;
 unsupported raw evidence remains retained or quarantined without an invented subject.
+Legacy approval requests lacking an exact modern turn/item subject are explicitly
+quarantined and fail capture; they are never silently treated as global messages.
 Unsupported startup fails clearly with content-free local health. Unsupported live
 capture, storage failure or oversized frames preserve the native connection and
 explicitly fall back to rollout. A live child requires client subscription/resume;
@@ -99,8 +103,8 @@ and isolates HOME/CODEX_HOME without credentials. No external or target traffic 
 ```
 st check cleanroom --env CODEX_REAL=/home/kasadis/.local/bin/codex-real -- \
   unshare -Urn /srv/workspaces/projects/summitflow/backend/.venv/bin/python \
-  scripts/codex-managed-canary.py --output /tmp/architecture-d-verified-canary.json \
-  --evidence-directory /tmp/architecture-d-verified-private
+  scripts/codex-managed-canary.py --output /tmp/architecture-d-release-canary.json \
+  --evidence-directory /tmp/architecture-d-release-private
 ```
 
 The evidence-directory option exports only toy outbox/rollouts with private permissions
@@ -110,7 +114,7 @@ host-specific; verify its native binary mapping when running elsewhere.
 
 ```
 # Agent Hub, isolated migration-owned PostgreSQL schema:
-ARCHITECTURE_D_CANARY_EVIDENCE=/tmp/architecture-d-verified-private st check pytest -- \
+ARCHITECTURE_D_CANARY_EVIDENCE=/tmp/architecture-d-release-private st check pytest -- \
   tests/services/session_ingestion/test_native_observations.py \
   tests/services/session_ingestion/test_native_sdk.py \
   tests/api/test_session_ingestion.py --run-integration -q
@@ -124,7 +128,10 @@ st check pytest -- tests/unit/test_codex_managed_capture.py \
 
 The PostgreSQL suite passed 22 tests, including atomic rollback, concurrent receipt
 replay and actual canary evidence with registration before/after rollout ingestion.
-The SummitFlow suite passes durability, ownership fencing, quota, Agent Hub downtime,
+The SummitFlow focused suite passed 64 tests. All 50 collector Rust tests passed,
+including a real registry-load regression that reproduced and fixed an invalid
+`.timer` worker entry before deployment. The focused suite covers durability,
+ownership fencing, quota, Agent Hub downtime,
 lost acknowledgements, approvals, explicit rollback and unsupported evidence tests.
 The runtime canary passed nine cases, including live rollback. These are isolated
 tests, not proof of deployed real-service outage recovery or physical disk durability.

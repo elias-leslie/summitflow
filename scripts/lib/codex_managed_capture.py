@@ -156,11 +156,17 @@ class ManagedCapture:
             if thread:
                 self.health_all("capture_gap", gap=True)
                 self.outbox.quarantine(wire)
-            elif not self.validators["ServerRequest" if "id" in wire else "ServerNotification"].is_valid(wire):
+            elif wire["method"] in {"applyPatchApproval", "execCommandApproval"} or not self.validators["ServerRequest" if "id" in wire else "ServerNotification"].is_valid(wire):
+                # Legacy approval requests have no exact modern turn/item subject.
+                # Validating their shape does not establish attribution; retain
+                # them explicitly instead of silently treating them as globals.
                 self.outbox.quarantine(wire)
                 self.health_all("unsupported", gap=True)
                 self.capturing = False
                 self.failure = "unsupported"
+            elif wire["method"].startswith(("thread/", "turn/", "item/", "process/", "command/")):
+                self.outbox.quarantine(wire)
+                self.health_all("capture_gap", gap=True)
             return
         schema = "ServerRequest" if "id" in wire else "ServerNotification"
         valid = self.validators[schema].is_valid(wire)

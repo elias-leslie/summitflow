@@ -1400,6 +1400,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn managed_project_registry_is_accepted_by_collector() {
+        let identity = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("project.identity.json");
+        let (names, _, _) = service_names(&identity).unwrap();
+        assert!(names.contains(&"codex-session-sync.service".to_owned()));
+    }
+
+    #[test]
     fn observe_contract_rejects_unbounded_or_untyped_requests() {
         let good = json!({"schema":1,"command":"observe","source":"disk_space","params":{},"limit":10,"max_bytes":4096});
         assert!(observe_request(&good).is_ok());
