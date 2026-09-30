@@ -23,7 +23,10 @@
       "summitflow-hatchet-worker.service",
       "summitflow-host-monitor.service"
     ],
-    "optional_workers": []
+    "optional_workers": [
+      "codex-session-sync.service",
+      "codex-session-sync.timer"
+    ]
   },
   "hosts": {
     "production_frontend": "localhost:3001",

@@ -8,6 +8,7 @@ def test_periodic_service_closes_inactive_sessions() -> None:
     )
 
     assert "--scan --close-inactive" in service
+    assert "__SUMMITFLOW_ROOT__/backend/.venv/bin/python" in service
     assert "--verbose" not in service
     assert "StandardOutput=journal" in service
     assert "StandardError=journal" in service

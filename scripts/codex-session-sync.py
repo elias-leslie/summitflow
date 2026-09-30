@@ -128,6 +128,16 @@ def main(argv: list[str]) -> int:
         source_path=_SOURCE_PATH,
         log_fn=emit,
     )
+    # Rollout ingestion always runs first. Managed delivery is independent of
+    # its discovery and remains retryable while new managed capture is disabled.
+    if os.environ.get("SUMMITFLOW_CODEX_OUTBOX"):
+        try:
+            recover = _load_symbol("codex_managed_delivery", "recover_configured_outbox")
+            status = recover(DEFAULT_API)
+            if status:
+                log(f"[INFO] Managed Codex delivery health={status['health']} pending={status['pending']} gaps={status['capture_gaps']}")
+        except Exception:
+            emit("[WARN] Managed Codex delivery unavailable; rollout sync remains active")
     level = "INFO" if exit_code == 0 else "ERROR"
     log(f"[{level}] Codex sync completed status={exit_code} synced={synced} warnings={warnings}")
     return exit_code

@@ -88,6 +88,27 @@ app = typer.Typer(
 
 app.command("inspect")(inspect_native_session)
 
+
+@app.command("managed-codex")
+def managed_codex(
+    status: Annotated[bool, typer.Option(help="Show content-free local capture health")] = False,
+    drain: Annotated[bool, typer.Option(help="Retry the durable outbox through Agent Hub")] = False,
+    disable_capture: Annotated[bool, typer.Option(help="Disable capture immediately; preserve execution and rollout ingestion")] = False,
+) -> None:
+    """Run an explicitly owned Codex App Server stdio connection."""
+    import os
+
+    project, root = _binding_project()
+    script = Path(__file__).resolve().parents[3] / "scripts" / "codex-managed-session.py"
+    argv = [sys.executable, str(script), "--project", project, "--project-root", str(root)]
+    if status:
+        argv.append("--status")
+    if drain:
+        argv.append("--drain")
+    if disable_capture:
+        argv.append("--disable-capture")
+    os.execv(sys.executable, argv)
+
 _CODEX_SESSION_SYNC = Path(__file__).resolve().parents[3] / "scripts" / "codex-session-sync.py"
 
 

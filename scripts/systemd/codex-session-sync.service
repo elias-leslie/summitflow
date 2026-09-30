@@ -4,6 +4,7 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=__SUMMITFLOW_ROOT__/scripts/codex-session-sync.py --scan --close-inactive
+EnvironmentFile=-%h/.env.local
+ExecStart=__SUMMITFLOW_ROOT__/backend/.venv/bin/python __SUMMITFLOW_ROOT__/scripts/codex-session-sync.py --scan --close-inactive
 StandardOutput=journal
 StandardError=journal

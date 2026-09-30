@@ -29,6 +29,16 @@ if [ "$#" -gt 1 ]; then
     exit 2
   fi
   selected_owner="$3"
+  if [ "$selected_owner" = "agent-hub-client" ]; then
+    owner_root="$(resolve_project_root agent-hub 2>/dev/null || true)"
+    if [ -z "$owner_root" ] || [ ! -f "$owner_root/packages/agent-hub-client/pyproject.toml" ]; then
+      echo "Agent Hub client package unavailable" >&2
+      exit 1
+    fi
+    echo "Building agent-hub-client wheel..."
+    (cd "$owner_root/packages/agent-hub-client" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
+    exit 0
+  fi
   if [ "$selected_owner" = "summitflow" ]; then
     echo "Building summitflow-st-sdk wheel..."
     (cd "$SUMMITFLOW_ROOT/packages/st-sdk" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)

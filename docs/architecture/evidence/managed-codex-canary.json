@@ -1,0 +1,67 @@
+{
+  "version": "codex-cli 0.159.2",
+  "schema_fingerprint": "6f7a929fad56ae9fc103a8364f0a7f51bd520c007b826d8e3edf5fe167c253e2",
+  "transport": "stdio",
+  "external_network": "absent",
+  "provider": "scripted_loopback_fixture",
+  "provider_requests": 11,
+  "cases": {
+    "completed_command": true,
+    "live_approval_request_resolution": true,
+    "turn_interruption_resume": true,
+    "compaction": true,
+    "fork_snapshot": true,
+    "native_child": true,
+    "supervisor_restart_resume": true,
+    "usage_snapshots": true,
+    "runtime_rollback_to_rollout": true
+  },
+  "outbox": {
+    "health": "disabled",
+    "delivery_health": "pending",
+    "capture_disabled": true,
+    "capture_gaps": 4,
+    "pending": 116,
+    "pending_bytes": 65606,
+    "quarantined": 2,
+    "quarantined_bytes": 394,
+    "used_bytes": 67395,
+    "quota_bytes": 10485760,
+    "raw_retention_seconds": 0,
+    "threads": [
+      {
+        "thread_id": "01a0f40d-77f1-72e2-95ec-c34012d72601",
+        "project_id": "canary",
+        "source_id": null,
+        "acknowledged": 0
+      },
+      {
+        "thread_id": "01a0f40d-78e5-78d2-be02-f4a3a03e9db5",
+        "project_id": "canary",
+        "source_id": null,
+        "acknowledged": 0
+      },
+      {
+        "thread_id": "01a0f40d-8ece-7d60-8ab2-b4e057144551",
+        "project_id": "canary",
+        "source_id": null,
+        "acknowledged": 0
+      }
+    ]
+  },
+  "notification_counts": {
+    "thread/started": 2,
+    "warning": 6,
+    "thread/status/changed": 17,
+    "turn/started": 7,
+    "item/started": 16,
+    "item/completed": 15,
+    "thread/tokenUsage/updated": 15,
+    "turn/completed": 7,
+    "item/commandExecution/requestApproval": 1,
+    "serverRequest/resolved": 1,
+    "thread/goal/cleared": 2
+  },
+  "observed_model": null,
+  "promotion_state": "shadow"
+}

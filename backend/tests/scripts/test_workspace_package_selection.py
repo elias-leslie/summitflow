@@ -9,7 +9,7 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[3] / "docker/scripts/pack-workspace-packages.sh"
 
 
-@pytest.mark.parametrize("selected_owner", ["code-intelligence", "summitflow", "agent-hub"])
+@pytest.mark.parametrize("selected_owner", ["code-intelligence", "summitflow", "agent-hub", "agent-hub-client"])
 def test_selected_python_owner_builds_only_its_wheel(tmp_path: Path, selected_owner: str) -> None:
     owner = tmp_path / "code-intelligence"
     owner.mkdir()
@@ -17,6 +17,9 @@ def test_selected_python_owner_builds_only_its_wheel(tmp_path: Path, selected_ow
     cli_package = owner / "packages/st-cli"
     cli_package.mkdir(parents=True)
     (cli_package / "pyproject.toml").write_text('[project]\nname = "agent-hub-st"\n')
+    client_package = owner / "packages/agent-hub-client"
+    client_package.mkdir(parents=True)
+    (client_package / "pyproject.toml").write_text('[project]\nname = "agent-hub-client"\n')
     commands = tmp_path / "bin"
     commands.mkdir()
     log = tmp_path / "commands.log"
@@ -35,6 +38,7 @@ def test_selected_python_owner_builds_only_its_wheel(tmp_path: Path, selected_ow
         "code-intelligence": owner,
         "summitflow": SCRIPT.parents[2] / "packages/st-sdk",
         "agent-hub": cli_package,
+        "agent-hub-client": client_package,
     }[selected_owner]
     assert log.read_text().splitlines() == [f"{expected_root}|1577836800|build --wheel --out-dir {tmp_path / 'out'}"]
 

@@ -189,6 +189,13 @@ def sync_transcript(
     next_checkpoint = checkpoint
     detail = str(entry.get("detail") or "unchanged")
     if ingest_required:
+        if os.environ.get("SUMMITFLOW_CODEX_OUTBOX"):
+            try:
+                from codex_managed_delivery import recover_configured_outbox
+
+                recover_configured_outbox(api_url, session_id=info.session_id, register_only=True)
+            except Exception:
+                pass
         ok, next_checkpoint, detail, err, status = ingest_transcript(
             info.session_id,
             info.path,
