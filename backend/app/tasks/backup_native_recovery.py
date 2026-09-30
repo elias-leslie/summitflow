@@ -38,6 +38,7 @@ class SnapshotEntry:
     link_target: str | None = None
     sqlite_database: bool = False
     append_only_jsonl: bool = False
+    point_in_time_json: bool = False
     target_source: str | None = None
     target_relative_path: str | None = None
 
@@ -145,6 +146,13 @@ def inventory_project_tree(
                     inode=metadata.st_ino,
                     sqlite_database=sqlite_database,
                     append_only_jsonl=not sqlite_database and path.suffix.lower() == ".jsonl",
+                    # Desktop bookkeeping changes independently of conversation
+                    # payloads. Keep a stable, validated copy rather than
+                    # requiring it to remain untouched throughout a long tree
+                    # capture. No general JSON or source-edit exception.
+                    point_in_time_json=project_dir.name == ".codex" and rel in {
+                        ".codex-global-state.json", ".codex-global-state.json.bak",
+                    },
                 )
     return inventory
 
@@ -274,6 +282,13 @@ def copy_inventory_snapshot(
                 if not _regular_identity_matches(os.fstat(input_file.fileno()), entry):
                     raise RuntimeError(f"Backup source changed during capture: {rel}")
             shutil.copystat(source, target, follow_symlinks=False)
+            if entry.point_in_time_json:
+                try:
+                    with target.open() as captured_json:
+                        if not isinstance(json.load(captured_json), dict):
+                            raise ValueError("Expected desktop state object")
+                except (OSError, ValueError):
+                    raise RuntimeError(f"Invalid point-in-time JSON snapshot: {rel}") from None
 
 
 def _regular_identity_matches(metadata: os.stat_result, entry: SnapshotEntry) -> bool:
@@ -665,6 +680,7 @@ def build_consistent_snapshot(
                 for rel, entry in sorted(before.items()) if entry.kind == "mapped_link"
             ],
             "consistent": True,
+            "point_in_time_json_files": sorted(rel for rel, entry in before.items() if entry.point_in_time_json),
         }
     )
     manifest_path = snapshot_dir / RECOVERY_DIR_NAME / RECOVERY_MANIFEST_NAME
@@ -681,6 +697,11 @@ def _snapshot_entry_is_stable(
 ) -> bool:
     if before is None or after is None:
         return False
+    if before.point_in_time_json:
+        # The copy operation already checked the opened inode before/after its
+        # read and validated the complete JSON. Later desktop updates do not
+        # invalidate that point-in-time document. Type/mode changes still fail.
+        return after.point_in_time_json and after.kind == before.kind and after.mode == before.mode
     if not before.append_only_jsonl:
         if before != after:
             return False

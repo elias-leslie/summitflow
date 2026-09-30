@@ -10,6 +10,66 @@ from typing import Any, cast
 import pytest
 
 
+@pytest.mark.parametrize("filename", [".codex-global-state.json", ".codex-global-state.json.bak"])
+def test_live_codex_desktop_state_keeps_validated_point_in_time_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, filename: str,
+) -> None:
+    from app.tasks import backup_native_archive
+    from app.tasks import backup_native_recovery as recovery
+
+    project = tmp_path / ".codex"
+    project.mkdir()
+    state = project / filename
+    original = '{"queued-follow-ups":["preserved"],"selected-project":"old"}'
+    state.write_text(original)
+    copy = recovery.copy_inventory_snapshot
+
+    def copy_then_replace(*args: Any, **kwargs: Any) -> None:
+        copy(*args, **kwargs)
+        replacement = project / "replacement"
+        replacement.write_text('{"selected-project":"new"}')
+        replacement.replace(state)
+
+    monkeypatch.setattr(recovery, "copy_inventory_snapshot", copy_then_replace)
+    snapshot, evidence = recovery.build_consistent_snapshot(
+        project, tmp_path / "staging", (), backup_native_archive._should_exclude,
+    )
+    assert (snapshot / filename).read_text() == original
+    assert evidence["point_in_time_json_files"] == [filename]
+
+
+def test_codex_desktop_json_exception_is_not_applied_to_other_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.tasks import backup_native_archive
+    from app.tasks import backup_native_recovery as recovery
+
+    project = tmp_path / "ordinary-project"
+    project.mkdir()
+    state = project / ".codex-global-state.json"
+    state.write_text('{"old":true}')
+    copy = recovery.copy_inventory_snapshot
+
+    def copy_then_change(*args: Any, **kwargs: Any) -> None:
+        copy(*args, **kwargs)
+        state.write_text('{"new":true}')
+
+    monkeypatch.setattr(recovery, "copy_inventory_snapshot", copy_then_change)
+    with pytest.raises(RuntimeError, match="source changed"):
+        recovery.build_consistent_snapshot(project, tmp_path / "staging", (), backup_native_archive._should_exclude)
+
+
+def test_live_codex_desktop_json_rejects_incomplete_document(tmp_path: Path) -> None:
+    from app.tasks import backup_native_archive
+    from app.tasks import backup_native_recovery as recovery
+
+    project = tmp_path / ".codex"
+    project.mkdir()
+    (project / ".codex-global-state.json").write_text('{"unfinished":')
+    with pytest.raises(RuntimeError, match="point-in-time JSON"):
+        recovery.build_consistent_snapshot(project, tmp_path / "staging", (), backup_native_archive._should_exclude)
+
+
 def _git(project: Path, *args: str) -> str:
     result = subprocess.run(
         ["git", "-C", str(project), *args],

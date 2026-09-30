@@ -1,7 +1,8 @@
 # Backup optimization rollout and inventory
 
-Native encrypted age archives remain the production default. Restic is an
-explicit pilot until recovery coverage and measured incremental operation pass. Retain legacy
+During rollout, native encrypted age archives remain the production default.
+Restic becomes the default only after recovery coverage and measured incremental
+operation pass. Retain local legacy
 archive readers, retained ciphertext and keys. Preserve the existing Veeam
 seven-point image policy. Veeam remains the full-system recovery path; these
 backups provide portable source, configuration and data recovery on the same or
@@ -44,8 +45,11 @@ The rollout must retain these distinct gates:
 The owner approved this lean rollout on 2026-09-30. A full fresh-OS application
 rebuild/four-hour deadline and mandatory seven-day parallel pilot are superseded,
 not claimed achieved. The fresh VM is a one-off restore test, not new permanent
-infrastructure. Legacy backups, keys, retention protections and the no-purge
-rule remain intact.
+infrastructure. Local legacy backups, keys, retention protections and the
+no-local-purge rule remain intact. The owner's subsequent approval permits
+permanently deleting only the dedicated previous SummitFlow Backups Drive
+folder after replacement offsites are complete and verified. That is not
+permission to empty Drive trash, remove other folders, or delete local archives.
 
 `new_object_bytes` measures a repository inventory delta. It is not network
 traffic and cannot qualify the reduction. Record actual transferred bytes in
@@ -216,6 +220,12 @@ capture `.claude.json` as an explicit regular file. Keep Git history, refs and
 the exact staged index, alongside unstaged and untracked files. Exclude backup
 private keys and rclone credential references from source captures; their
 separate custody is a recovery prerequisite.
+
+The two top-level Codex desktop-state JSON documents are preserved as complete,
+validated point-in-time copies. Each open file must remain stable during its
+read; later desktop bookkeeping updates do not invalidate a long conversation
+capture. This exception does not apply to other JSON, nested files, project
+edits, or configuration changes elsewhere.
 
 AfterTimes must retain source art, editable originals, source code, licensing,
 manifests, import originals with unproven replaceability, and unfinished work.
