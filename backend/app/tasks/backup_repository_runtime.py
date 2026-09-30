@@ -444,7 +444,11 @@ def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any]) -
     previous = maintenance.get("critical_restore_at")
     if previous and datetime.fromisoformat(previous) > datetime.now(UTC) - timedelta(days=REPOSITORY_CRITICAL_RESTORE_DAYS):
         return {"status": "skipped", "reason": "weekly-cadence", "verified_at": previous}
-    critical = {"infrastructure", ".codex", ".claude", "codex-config", "claude-config", "agent-skills", "claude-user-config"}
+    # Conversation trees remain fully backed up and covered by provider hashes
+    # and rotating payload checks. Re-downloading them in full every week adds
+    # transfer/staging cost without exercising the critical configuration or
+    # database rebuilds this drill is intended to verify.
+    critical = {"infrastructure", "codex-config", "claude-config", "agent-skills", "claude-user-config"}
     enabled = {str(source["id"]) for source in backup_store.list_sources() if source.get("enabled")}
     required = critical & enabled
     selected: dict[str, dict[str, Any]] = {}

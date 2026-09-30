@@ -527,6 +527,30 @@ def test_weekly_offsite_drill_records_actual_database_result(monkeypatch: pytest
     assert ("critical_restore_at" in maintenance) is ok
 
 
+def test_weekly_critical_restore_does_not_redownload_conversation_trees(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    from app.tasks import backup_executor, backup_native_restore
+
+    canonical = {"codex-config", "claude-config", "agent-skills", "claude-user-config"}
+    enabled = canonical | {".codex", ".claude"}
+    monkeypatch.setattr(runtime.backup_store, "list_sources", lambda: [{"id": source, "enabled": True} for source in enabled])
+    requested = []
+
+    def points(*, source_id, limit):
+        requested.append(source_id)
+        return [_catalogue_row("point-" + source_id, source_id=source_id)], 1
+
+    monkeypatch.setattr(runtime.backup_store, "list_backups", points)
+    monkeypatch.setattr(runtime, "materialize_repository_archive", lambda *_args, **_kwargs: nullcontext(tmp_path / "archive.tar.gz"))
+    monkeypatch.setattr(backup_native_restore, "restore_isolated_archive", lambda *_args: {})
+    monkeypatch.setattr(backup_executor, "_complete_mapped_recovery", lambda *_args: {"recovery_complete": True})
+
+    result = runtime._weekly_critical_restore({"BACKUP_STORAGE_BACKEND_ID": "pilot"}, {})
+
+    assert result["status"] == "verified"
+    assert set(requested) == canonical
+    assert set(result["sources"]) == canonical
+
+
 @pytest.mark.parametrize("failure_stage", ["restore", "database"])
 def test_weekly_offsite_drill_records_preverification_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure_stage: str):
     from app.tasks import backup_restore_drill as drill
