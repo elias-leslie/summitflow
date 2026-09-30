@@ -176,10 +176,24 @@ def _pending_archive_names(local_dir: Path) -> set[str]:
                 not isinstance(entry, dict)
                 or not isinstance(entry.get("archive_name"), str)
                 or not entry["archive_name"]
-                or entry.get("status") not in {"pending", "failed", "verified", "unconfigured"}
             ):
                 raise ValueError("Invalid manifest archive entry")
-            if entry["status"] in {"pending", "failed"}:
+            status = entry.get("status")
+            if "status" not in entry:
+                # Earlier version-one writers recorded verified copies without
+                # a status field. Retain those entries unchanged and protect
+                # them conservatively rather than blocking all future rotation.
+                if not (
+                    isinstance(entry.get("verified_at"), str) and entry["verified_at"]
+                    and isinstance(entry.get("remote_uri"), str) and entry["remote_uri"]
+                    and isinstance(entry.get("local_checksum"), str)
+                    and re.fullmatch(r"sha256:[0-9a-f]{64}", entry["local_checksum"])
+                ):
+                    raise ValueError("Invalid legacy manifest archive entry")
+                status = "pending"
+            elif status not in {"pending", "failed", "verified", "unconfigured"}:
+                raise ValueError("Invalid manifest archive status")
+            if status in {"pending", "failed"}:
                 pending.add(entry["archive_name"])
         return pending
     except (OSError, ValueError, TypeError):

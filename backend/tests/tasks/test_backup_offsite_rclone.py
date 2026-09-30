@@ -518,6 +518,36 @@ def test_corrupt_manifest_blocks_remote_cleanup_across_retries_but_upload_stays_
     assert not any(args[0] == "deletefile" for args in drive["commands"])
 
 
+def test_legacy_verified_manifest_without_status_allows_rotation_and_stays_protected(drive):
+    from app.tasks.backup_native_offsite import OFFSITE_MANIFEST_NAME
+
+    legacy_name = "source-20160101-000000.tar.gz.age"
+    legacy = {"archive_name": legacy_name, "verified_at": "2016-01-01T00:00:00+00:00",
+              "remote_uri": "google-drive://legacy-folder/legacy-id", "local_checksum": "sha256:" + "a" * 64}
+    manifest = drive["archive"].parent / OFFSITE_MANIFEST_NAME
+    manifest.write_text(json.dumps({"version": 1, "archives": [legacy]}))
+    for year in range(2016, 2021):
+        drive["objects"][drive["folder"] + f"/source-{year}0101-000000.tar.gz.age"] = {"id": f"old-{year}", "content": b"old"}
+    result = replicate(drive)
+    assert result["status"] == "verified"
+    assert result["retention_status"] == "completed"
+    assert result["retention_deleted"] > 0
+    assert drive["folder"] + "/" + legacy_name in drive["objects"]
+    assert json.loads(manifest.read_text())["archives"][1] == legacy
+
+
+@pytest.mark.parametrize("fields", [{}, {"status": None}, {"status": "unknown"},
+                                   {"verified_at": "yesterday", "remote_uri": "somewhere", "local_checksum": "bad"}])
+def test_unknown_legacy_manifest_entry_still_blocks_rotation(tmp_path, fields):
+    from app.tasks.backup_native_offsite import OFFSITE_MANIFEST_NAME, _pending_archive_names
+
+    (tmp_path / OFFSITE_MANIFEST_NAME).write_text(json.dumps({"version": 1, "archives": [
+        {"archive_name": "source-20160101-000000.tar.gz.age", **fields},
+    ]}))
+    with pytest.raises(RuntimeError, match="manifest state is unknown"):
+        _pending_archive_names(tmp_path)
+
+
 def test_retention_preserves_old_copy_just_verified_on_retry(drive):
     old = drive["archive"].with_name("source-20200101-000000.tar.gz.age")
     drive["archive"].rename(old)
