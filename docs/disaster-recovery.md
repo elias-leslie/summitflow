@@ -1,14 +1,14 @@
 # SummitFlow hard-loss recovery
 
 Use this runbook when the original computer and its disks are unavailable. It
-recovers SummitFlow from the encrypted archives in the `SummitFlow Backups`
+recovers SummitFlow from the encrypted archives in the `SummitFlow-Archives`
 Google Drive folder plus the recovery key that the owner saved separately.
 
-Native age archives remain the production default. For an explicitly enabled
-Restic pilot recovery point, use the [repository recovery procedure](local-first-recovery.md#repository-payload-recovery)
-and [qualification gates](backup-optimization-rollout.md). The repository script
-works without the SummitFlow database or API. Retain this native archive path,
-its separately saved age key, and the existing Veeam seven-point image policy.
+Native age archives are the production path for both local and offsite backups;
+the offsite is an identical whole ciphertext copy, not a separate repository.
+Restic automation is disabled. Retained Restic points remain readable using the
+[repository recovery procedure](local-first-recovery.md#repository-payload-recovery)
+and their own recorded inventory. Veeam remains the full-system recovery path.
 
 This is not an operating-system image. It does not recreate Linux packages,
 users, groups, device configuration, Google Online Accounts, package caches, or
@@ -18,7 +18,7 @@ Docker volume.
 
 ## What must still exist
 
-Keep these in `SummitFlow Backups`:
+Keep these in `SummitFlow-Archives`:
 
 - this runbook as `START-HERE.md`;
 - the source-only companion runbook as `OFFLINE-RESTORE.md`;
@@ -663,12 +663,29 @@ not be used to replace configured material. Do not generate a replacement key:
 existing Drive archives are encrypted to the saved one. Local bypass sessions
 are intentionally not allowed to import or reveal recovery keys.
 
-Next sign the Linux desktop into the Google account again through Google Online
-Accounts, or establish another supported authenticated GIO mount. GOA/GVfs
-tokens and keyring contents are not backup contents. Configure the recovered
-`BACKUP_OFFSITE_GIO_URI` for the newly mounted `SummitFlow Backups` folder and
-verify that GIO can list it. Initial recovery may use browser downloads; future
-offsite replication requires the mounted provider URI.
+Recover the dedicated rclone configuration from the owner's password manager,
+not from a backup archive. Restore it as a user-owned mode-600 regular file in
+the private mode-700 backup-key directory. Reuse the existing production OAuth
+client and authorization; if Google rejects the saved authorization, run
+`scripts/authorize-backup-drive.sh` and complete consent privately. Never paste
+credentials or tokens into chat. Desktop GOA/GVfs sign-in is not required for
+the current offsite path.
+
+Configure the existing native storage backend through the restored CLI:
+
+```bash
+st backup storage update <native-backend-id> \
+  --offsite-transport rclone \
+  --offsite-rclone-remote summitflow-drive:SummitFlow-Archives \
+  --offsite-rclone-config <absolute-private-rclone-config-path>
+st backup storage test <native-backend-id>
+```
+
+Use the backend ID from the recovered registry and the exact folder/remote name
+from the recovery inventory; do not create a replacement folder silently.
+Initial recovery may use browser downloads. Routine offsite verification uses
+the fresh provider checksum, not a full archive download. Interrupted uploads
+retry the retained ciphertext; failed publication does not block the backup.
 
 ## 10. Validate before resuming automation
 

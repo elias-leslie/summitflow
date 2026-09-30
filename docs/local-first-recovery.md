@@ -167,18 +167,18 @@ steps from the application README for restoring existing credentials.
 
 ## Repository payload recovery
 
-Use this procedure only for a recorded Restic pilot snapshot. Native age
+Use this procedure only for a retained recorded Restic snapshot. Native age
 archives remain the default. The local and Google Drive repositories are
 independent encrypted repositories. The Drive recovery procedure must work when
 the local repository, SummitFlow database/API and original host are unavailable.
 
 Keep `scripts/backup-repository-recover.sh`, this runbook, the pinned tool
 checksums, and a dated repository/source inventory in the recovery kit. Verify
-the kit against its independently saved checksums before running it. The pilot
-kit is additional recovery material; the existing native kit and age key remain
-necessary for retained native archives. Publication of the expanded kit and
-dedicated Drive OAuth setup are qualification work, not completed by checking
-these files into Git.
+the kit against its independently saved checksums before running it. The Restic
+kit is additional recovery material, not the current automated backup path.
+Native recovery uses the archive kit and separately saved age identity. Keep
+each repository's original locator/password; disabling automatic maintenance
+does not convert or delete its snapshots.
 
 Prepare Linux with Bash, Python 3.12+, restic 0.19.1 and rclone 1.75.1. Verify
 the tool releases with their published checksums and signatures. Git is needed
@@ -199,11 +199,11 @@ tested before recovery; the desktop Drive mount is not a substitute.
 ### Select a recovery point from Drive
 
 Use the exact repository locator in the dated inventory. This example names a
-bounded folder; replace `backup-drive` and the folder with the recorded values:
+bounded retained folder; replace the remote/folder with the recorded values:
 
 ```bash
 bash scripts/backup-repository-recover.sh snapshots \
-  --repository 'rclone:backup-drive:SummitFlow Backups/restic' \
+  --repository 'rclone:summitflow-drive:SummitFlow-Restic' \
   --password-file /secure/offline/restic-drive.password \
   --rclone-config /secure/offline/restic-rclone.conf \
   --source summitflow
@@ -219,7 +219,7 @@ Check repository structure before restoring:
 
 ```bash
 bash scripts/backup-repository-recover.sh check \
-  --repository 'rclone:backup-drive:SummitFlow Backups/restic' \
+  --repository 'rclone:summitflow-drive:SummitFlow-Restic' \
   --password-file /secure/offline/restic-drive.password \
   --rclone-config /secure/offline/restic-rclone.conf
 ```
@@ -244,7 +244,7 @@ space for the selected source. Keep credentials outside the destination:
 umask 077
 mkdir -m 700 -p /srv/recovery/restic/summitflow
 bash scripts/backup-repository-recover.sh restore \
-  --repository 'rclone:backup-drive:SummitFlow Backups/restic' \
+  --repository 'rclone:summitflow-drive:SummitFlow-Restic' \
   --password-file /secure/offline/restic-drive.password \
   --rclone-config /secure/offline/restic-rclone.conf \
   --snapshot <full-remote-snapshot-id> \
