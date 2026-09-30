@@ -10,6 +10,33 @@ import pytest
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("engine,remote,hours,expected", [
+    ("restic", "rclone:fixture:bounded", 72, "verified"),
+    ("restic", "rclone:fixture:bounded", 169, "stale"),
+    ("restic", "", 72, "stale"),
+    ("native", "", 72, "stale"),
+])
+async def test_infrastructure_confidence_matches_effective_recovery_cadence(monkeypatch, engine, remote, hours, expected) -> None:
+    from app.api.backups import health_endpoints
+
+    monkeypatch.setattr(health_endpoints.backup_store, "get_backup_health_summary", lambda: [{
+        "source_id": "infrastructure", "source_name": "System Backup", "source_type": "infrastructure", "enabled": True,
+        "last_success_at": "2026-09-21T12:00:00+00:00", "last_backup_status": "completed",
+        "latest_backup_id": "current-point", "last_drill_backup_id": "tested-point",
+        "last_drill_ok": True, "last_drill_at": "2026-09-21T12:00:00+00:00",
+        "latest_verification_json": {"offsite": {"status": "verified"}},
+    }])
+    monkeypatch.setattr(health_endpoints, "build_storage_env", lambda _: {"BACKUP_ENGINE": engine, "RESTIC_REMOTE_REPOSITORY": remote})
+    monkeypatch.setattr(health_endpoints, "_hours_since", lambda _: hours)
+    monkeypatch.setattr(health_endpoints, "verify_archive_coverage", lambda _: SimpleNamespace(complete=True))
+
+    result = await health_endpoints.backup_health()
+
+    assert result.sources[0].restore_confidence == expected
+    assert result.sources[0].last_drill_backup_id == "tested-point"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("drill_backup_id", "confidence", "coverage_complete", "drill_ok", "expected"),
     [("older-backup", "verified", True, True, "green"), ("backup-current", "verified", True, True, "green"),

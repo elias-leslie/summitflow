@@ -241,7 +241,7 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
 
 
 def run_scheduled_drills() -> dict[str, Any]:
-    """Run infra restore drill if stale (>24h since last drill).
+    """Use repository offsite recovery, otherwise the existing daily drill.
 
     Returns:
         Drill result summary.
@@ -251,6 +251,15 @@ def run_scheduled_drills() -> dict[str, Any]:
 
     if not infra_source:
         return {"status": "skipped", "reason": "no enabled infrastructure source"}
+
+    # The repository manager already restores offsite PostgreSQL/Redis and
+    # configuration weekly. Do not rebuild those databases locally every day
+    # as well. Resolve the effective source backend, including overrides.
+    from .backup_utils import get_storage_config
+
+    config = get_storage_config(str(infra_source["id"])) or {}
+    if config.get("engine") == "restic" and config.get("restic_remote_repository"):
+        return {"status": "skipped", "reason": "repository-managed-weekly-offsite-drill", "backend_id": config.get("__backend_id")}
 
     # Check staleness — only drill if >24h old
     last_drill_at = infra_source.get("last_drill_at")

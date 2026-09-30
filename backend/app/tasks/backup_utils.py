@@ -15,6 +15,7 @@ from ..project_identity import get_project_upload_dir_name
 from ..storage.connection import get_cursor
 
 logger = get_logger(__name__)
+REPOSITORY_CRITICAL_RESTORE_DAYS = 7
 
 # Docker path translation for host-mounted directories
 _HOST_HOME_PATH = os.environ.get("HOST_HOME_PATH", "")

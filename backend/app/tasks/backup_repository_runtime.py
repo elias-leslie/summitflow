@@ -35,7 +35,11 @@ from .backup_native_archive import (
 from .backup_native_infra import prepare_infrastructure_payload
 from .backup_native_recovery import GIT_BUNDLE_NAME, RECOVERY_DIR_NAME
 from .backup_restic import ResticAdapter, ResticConfig, ResticError
-from .backup_utils import build_storage_env, canonical_backup_source_roots
+from .backup_utils import (
+    REPOSITORY_CRITICAL_RESTORE_DAYS,
+    build_storage_env,
+    canonical_backup_source_roots,
+)
 
 
 def is_repository_backup(backup: Mapping[str, Any]) -> bool:
@@ -438,7 +442,7 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True) -> dict[st
 def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any]) -> dict[str, Any]:
     """Restore essential configuration and databases weekly from offsite only."""
     previous = maintenance.get("critical_restore_at")
-    if previous and datetime.fromisoformat(previous) > datetime.now(UTC) - timedelta(days=7):
+    if previous and datetime.fromisoformat(previous) > datetime.now(UTC) - timedelta(days=REPOSITORY_CRITICAL_RESTORE_DAYS):
         return {"status": "skipped", "reason": "weekly-cadence", "verified_at": previous}
     critical = {"infrastructure", ".codex", ".claude", "codex-config", "claude-config", "agent-skills", "claude-user-config"}
     enabled = {str(source["id"]) for source in backup_store.list_sources() if source.get("enabled")}
@@ -454,25 +458,29 @@ def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any]) -
         return {"status": "pending", "reason": "critical-offsite-coverage-missing", "missing_sources": missing}
     from .backup_executor import _complete_mapped_recovery
     from .backup_native_restore import restore_isolated_archive
-    from .backup_restore_drill import _run_drill_script
+    from .backup_restore_drill import _record_drill_result, _run_drill_script
 
     evidence: dict[str, Any] = {}
     with tempfile.TemporaryDirectory(prefix="st-critical-offsite-drill-") as temporary:
         isolated = Path(temporary)
         targets: dict[str, Path] = {}
         for source_id, backup in selected.items():
+            drill_result: dict[str, Any] | None = None
             try:
                 with materialize_repository_archive(backup, remote=True) as archive:
                     if source_id == "infrastructure":
-                        result = _run_drill_script(str(archive), str(backup["id"]))
-                        if result.get("ok") is not True:
+                        drill_result = _run_drill_script(str(archive), str(backup["id"]))
+                        _record_drill_result(source_id, str(backup["id"]), ok=drill_result.get("ok") is True, result=drill_result)
+                        if drill_result.get("ok") is not True:
                             raise ResticError("Infrastructure database/Redis/config restore drill failed")
                     else:
                         target = isolated / source_id
-                        result = restore_isolated_archive(archive, target)
+                        restore_isolated_archive(archive, target)
                         targets[source_id] = target
                 evidence[source_id] = {"ok": True, "backup_id": backup["id"], "remote_snapshot_id": backup["verification_json"]["remote_snapshot_id"]}
             except Exception as exc:
+                if source_id == "infrastructure" and drill_result is None:
+                    _record_drill_result(source_id, str(backup["id"]), ok=False, error=str(exc))
                 return {"status": "failed", "sources": evidence, "failed_source": source_id, "error": str(exc)}
         for source_id, target in targets.items():
             try:

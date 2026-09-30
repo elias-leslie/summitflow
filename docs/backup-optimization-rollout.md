@@ -199,6 +199,15 @@ protection. No global Drive cleanup, account-wide deletion or local purge is
 part of this implementation. The separate offline offsite key escrow, cold
 recovery and observation gates cannot be replaced with code or fixture success.
 
+For an infrastructure source using Restic with an offsite repository, the
+existing repository manager owns the weekly Drive-only PostgreSQL/Redis and
+configuration restore drill. The scheduler does not also rebuild those
+databases locally every day. Actual database results update the existing dated
+drill evidence, and infrastructure health follows that seven-day cadence.
+Native and local-only backends retain their existing daily drill behavior;
+failed repository recovery still blocks expiry/prune and does not advance the
+last successful weekly check.
+
 ## Keep and exclude without removing originals
 
 Preserve `.codex` and `.claude` conversations/transcripts, plans, skills, settings,

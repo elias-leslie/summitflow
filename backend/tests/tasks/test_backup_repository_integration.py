@@ -474,6 +474,81 @@ def test_infrastructure_drill_uses_repository_materialization_and_records_actual
     legacy.assert_not_called()
 
 
+@pytest.mark.parametrize("config,delegated", [
+    ({"engine": "restic", "restic_remote_repository": "rclone:fixture:bounded", "__backend_id": "pilot"}, True),
+    ({"engine": "restic"}, False),
+    ({"engine": "native"}, False),
+    (None, False),
+])
+def test_scheduled_drill_delegates_only_remote_repository_recovery(monkeypatch: pytest.MonkeyPatch, config, delegated: bool):
+    from app.tasks import backup_restore_drill as drill
+    from app.tasks import backup_scheduler as scheduler
+    from app.tasks import backup_utils
+
+    monkeypatch.setattr(scheduler.backup_store, "list_sources", lambda: [{"id": "infrastructure", "enabled": True, "source_type": "infrastructure"}])
+    resolve = MagicMock(return_value=config)
+    monkeypatch.setattr(backup_utils, "get_storage_config", resolve)
+    run = MagicMock(return_value={"ok": True})
+    monkeypatch.setattr(drill, "run_infra_drill", run)
+
+    result = scheduler.run_scheduled_drills()
+
+    if delegated:
+        assert result == {"status": "skipped", "reason": "repository-managed-weekly-offsite-drill", "backend_id": "pilot"}
+        run.assert_not_called()
+    else:
+        assert result["status"] == "completed"
+        run.assert_called_once()
+    resolve.assert_called_once_with("infrastructure")
+
+
+@pytest.mark.parametrize("ok", [False, True])
+def test_weekly_offsite_drill_records_actual_database_result(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ok: bool):
+    from app.tasks import backup_restore_drill as drill
+
+    backup = _catalogue_row("offsite-infrastructure-point", source_id="infrastructure")
+    archive = tmp_path / "offsite.tar.gz"
+    archive.touch()
+    monkeypatch.setattr(runtime.backup_store, "list_sources", lambda: [{"id": "infrastructure", "enabled": True}])
+    monkeypatch.setattr(runtime.backup_store, "list_backups", lambda **_: ([backup], 1))
+    materialize = MagicMock(return_value=nullcontext(archive))
+    monkeypatch.setattr(runtime, "materialize_repository_archive", materialize)
+    actual = {"ok": ok, "components": [{"name": "postgres", "ok": ok}], "backup_id": backup["id"]}
+    monkeypatch.setattr(drill, "_run_drill_script", MagicMock(return_value=actual))
+    record = MagicMock()
+    monkeypatch.setattr(drill, "_record_drill_result", record)
+    maintenance = {}
+
+    result = runtime._weekly_critical_restore({"BACKUP_STORAGE_BACKEND_ID": "pilot"}, maintenance)
+
+    assert result["status"] == ("verified" if ok else "failed")
+    materialize.assert_called_once_with(backup, remote=True)
+    record.assert_called_once_with("infrastructure", backup["id"], ok=ok, result=actual)
+    assert ("critical_restore_at" in maintenance) is ok
+
+
+@pytest.mark.parametrize("failure_stage", ["restore", "database"])
+def test_weekly_offsite_drill_records_preverification_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure_stage: str):
+    from app.tasks import backup_restore_drill as drill
+
+    backup = _catalogue_row("failed-offsite-point", source_id="infrastructure")
+    monkeypatch.setattr(runtime.backup_store, "list_sources", lambda: [{"id": "infrastructure", "enabled": True}])
+    monkeypatch.setattr(runtime.backup_store, "list_backups", lambda **_: ([backup], 1))
+    failure = ResticError("isolated recovery failed")
+    materialize = MagicMock(side_effect=failure) if failure_stage == "restore" else MagicMock(return_value=nullcontext(tmp_path / "archive.tar.gz"))
+    monkeypatch.setattr(runtime, "materialize_repository_archive", materialize)
+    monkeypatch.setattr(drill, "_run_drill_script", MagicMock(side_effect=failure))
+    record = MagicMock()
+    monkeypatch.setattr(drill, "_record_drill_result", record)
+    maintenance = {}
+
+    result = runtime._weekly_critical_restore({"BACKUP_STORAGE_BACKEND_ID": "pilot"}, maintenance)
+
+    assert result["status"] == "failed"
+    record.assert_called_once_with("infrastructure", backup["id"], ok=False, error="isolated recovery failed")
+    assert "critical_restore_at" not in maintenance
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("endpoint,source_type", [("project", "project"), ("source", "project"), ("source", "infrastructure")])
 async def test_selected_backend_flows_from_api_workflow_to_project_and_infrastructure_record(

@@ -11,7 +11,7 @@ from ...logging_config import get_logger
 from ...storage import backups as backup_store
 from ...tasks.backup_coverage import get_coverage_summary, verify_archive_coverage
 from ...tasks.backup_lock import has_active_backup_lease
-from ...tasks.backup_utils import build_storage_env
+from ...tasks.backup_utils import REPOSITORY_CRITICAL_RESTORE_DAYS, build_storage_env
 from .models import (
     BackupHealthItem,
     BackupHealthResponse,
@@ -55,7 +55,8 @@ async def backup_health() -> BackupHealthResponse:
         offsite = offsite if isinstance(offsite, Mapping) else {}
         isolated_restore = verification.get("isolated_restore")
         isolated_restore = isolated_restore if isinstance(isolated_restore, Mapping) else {}
-        offsite_configured = bool(build_storage_env(str(row["source_id"])).get("BACKUP_OFFSITE_GIO_URI"))
+        storage_env = build_storage_env(str(row["source_id"]))
+        offsite_configured = bool(storage_env.get("BACKUP_OFFSITE_GIO_URI"))
         offsite_status = str(offsite.get("status") or ("pending" if offsite_configured and last_success else "unconfigured"))
         raw_activity = row.get("backup_activity")
         activity = dict(raw_activity) if isinstance(raw_activity, Mapping) else None
@@ -79,6 +80,9 @@ async def backup_health() -> BackupHealthResponse:
             last_drill_ok=last_drill_ok,
             last_restore_test_ok=last_restore_test_ok,
             last_restore_tested_at=row.get("last_restore_tested_at"),
+            drill_freshness_hours=REPOSITORY_CRITICAL_RESTORE_DAYS * 24
+            if storage_env.get("BACKUP_ENGINE") == "restic" and storage_env.get("RESTIC_REMOTE_REPOSITORY")
+            else 48,
         )
 
         # Infrastructure combines current archive checks with dated drill evidence.
@@ -236,6 +240,7 @@ def _compute_restore_confidence(
     last_drill_ok: bool | None,
     last_restore_test_ok: bool | None,
     last_restore_tested_at: str | None,
+    drill_freshness_hours: int = 48,
 ) -> str:
     """Compute restore confidence level.
 
@@ -247,9 +252,9 @@ def _compute_restore_confidence(
             return "untested"
         if last_drill_ok is False:
             return "partial"
-        # Drill passed — check staleness (48h threshold)
+        # Match the effective backend's drill cadence, retaining dated evidence.
         hours = _hours_since(last_drill_at)
-        if hours is not None and hours <= 48:
+        if hours is not None and hours <= drill_freshness_hours:
             return "verified"
         return "stale"
 
