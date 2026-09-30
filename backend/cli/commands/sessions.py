@@ -40,6 +40,7 @@ from .sessions_monitor import (
 from .sessions_monitor import (
     monitor_task_target as _monitor_task_target,
 )
+from .sessions_native_inspection import inspect_native_session
 from .sessions_options import (
     IncludeUnassignedOption,
     JsonOutputOption,
@@ -84,6 +85,8 @@ app = typer.Typer(
     invoke_without_command=True,
     no_args_is_help=False,
 )
+
+app.command("inspect")(inspect_native_session)
 
 _CODEX_SESSION_SYNC = Path(__file__).resolve().parents[3] / "scripts" / "codex-session-sync.py"
 
