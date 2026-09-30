@@ -8,6 +8,11 @@ Retain its completed local archive and copy that exact ciphertext to a dedicated
 Drive archive folder with rclone. Fresh Drive object ID, size and provider hash
 verification replace the previous full-download verification. Retry the retained
 artifact after outages; never recapture a project merely to retry its offsite.
+New rclone copies stay one whole encrypted file, including files larger than
+512 MiB. The old mounted-Drive segmentation workaround is not needed for this
+transport; existing segmented archives and their strict v1 assembler remain
+compatible. Rclone handles chunked upload internally, without making those
+transport chunks separate recovery artifacts.
 Native archive restore and the existing backup UI remain the common recovery path.
 Veeam remains the full-system recovery path.
 

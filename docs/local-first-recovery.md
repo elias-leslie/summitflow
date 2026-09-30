@@ -9,7 +9,8 @@ database.
 - The downloaded native SummitFlow project archive. New archives are named
   `summitflow-YYYYMMDD-HHMMSS.tar.gz.age`. A large archive may instead be a
   `.parts.json` manifest plus all of its `.partNNNNNN` files from the same
-  source folder.
+  source folder for legacy mounted-Drive points. New rclone offsites copy the
+  same whole `.tar.gz.age` file as the local point, even above 512 MiB.
 - The separately saved age identity exported by SummitFlow. Keep the file private;
   it contains one `AGE-SECRET-KEY-...` line.
 - Linux with `age`, Git, Python 3.13+, and `uv`. The standalone source bootstrap

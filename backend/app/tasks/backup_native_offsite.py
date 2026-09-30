@@ -444,7 +444,6 @@ def _replicate_parts(
                     "name": part_name,
                     "size_bytes": part_bytes,
                     "checksum": part_checksum,
-                    **({"location": published["location"], "provider_id": published["provider_id"]} if provider else {}),
                 }
             )
             artifacts.append(
@@ -558,7 +557,7 @@ def replicate_completed_archive(
                     on_progress=on_progress,
                     provider=provider,
                 )
-                if encrypted_bytes > PART_SIZE_BYTES
+                if provider is None and encrypted_bytes > PART_SIZE_BYTES
                 else _replicate_single_file(
                     archive_path,
                     source_folder_uri=source_folder_uri,

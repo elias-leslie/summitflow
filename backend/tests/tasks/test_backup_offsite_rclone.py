@@ -6,6 +6,8 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -135,6 +137,43 @@ def replicate(drive: dict[str, Any], *, retry: bool = False, on_progress=None) -
 
 def uploads(drive: dict[str, Any]) -> list[str]:
     return [args[2] for args in drive["commands"] if args[0] == "copyto"]
+
+
+def replicate_legacy_parts(drive: dict[str, Any], *, retry: bool = False, on_progress=None) -> dict[str, Any]:
+    """Exercise legacy multipart repair independently of whole-file dispatch."""
+    from app.tasks import backup_native_offsite as offsite
+    from app.tasks.backup_native_rclone import NativeRcloneProvider
+
+    provider = NativeRcloneProvider(drive["env"])
+    folder = provider.ensure_folder("source")
+    with tempfile.TemporaryDirectory(prefix="test-offsite-parts-") as staging:
+        return offsite._replicate_parts(
+            drive["archive"], source_folder_uri=folder,
+            local_checksum="sha256:" + hashlib.sha256(drive["archive"].read_bytes()).hexdigest(),
+            temporary_dir=Path(staging), retry=retry, on_progress=on_progress, provider=provider,
+        )
+
+
+def test_rclone_above_legacy_part_threshold_copies_one_exact_archive(drive, monkeypatch):
+    from app.tasks import backup_native_offsite as offsite
+
+    monkeypatch.setattr(offsite, "PART_SIZE_BYTES", 8)
+    original = drive["archive"].read_bytes()
+    result = replicate(drive)
+    target = drive["folder"] + "/" + drive["archive"].name
+    assert result["status"] == "verified"
+    assert uploads(drive) == [target]
+    assert drive["objects"][target]["content"] == original
+    assert drive["archive"].read_bytes() == original
+    assert not any(".part" in path for path in drive["objects"])
+    assert not any(args[0] in {"copy", "cat"} for args in drive["commands"])
+    assert result["transfer_bytes"] == len(original)
+    drive["commands"].clear()
+    retried = replicate(drive, retry=True)
+    assert retried["status"] == "verified"
+    assert retried["transfer_bytes"] == 0
+    assert not uploads(drive)
+    assert drive["objects"][target]["content"] == original
 
 
 @pytest.mark.parametrize("hash_name,method", [("SHA-256", "sha256"), ("SHA-1", "sha1"), ("MD5", "md5")])
@@ -321,12 +360,12 @@ def test_existing_object_without_hash_is_not_removed_or_reuploaded(drive):
 
 
 @pytest.mark.parametrize("missing", [False, True])
-def test_multipart_repair_withdraws_completion_before_replacing_part(drive, monkeypatch, missing):
+def test_multipart_repair_withdraws_completion_before_replacing_part(drive, monkeypatch, missing, tmp_path):
     from app.tasks import backup_native_offsite as offsite
 
     monkeypatch.setattr(offsite, "PART_SIZE_BYTES", 8)
     original = drive["archive"].read_bytes()
-    assert replicate(drive)["status"] == "verified"
+    assert replicate_legacy_parts(drive)["layout"] == "parts-v1"
     part = drive["folder"] + "/" + drive["archive"].name + ".part000002"
     manifest = drive["folder"] + "/" + drive["archive"].name + ".parts.json"
     if missing:
@@ -335,17 +374,33 @@ def test_multipart_repair_withdraws_completion_before_replacing_part(drive, monk
         drive["objects"][part]["content"] = b"corrupt"
     drive["commands"].clear()
     progress = []
-    result = replicate(drive, retry=True, on_progress=lambda: progress.append(True))
-    assert result["status"] == "verified"
+    result = replicate_legacy_parts(drive, retry=True, on_progress=lambda: progress.append(True))
     assert result["layout"] == "parts-v1"
     assert uploads(drive) == [part, manifest]
     removals = [args[1] for args in drive["commands"] if args[0] == "deletefile"]
     assert removals == ([manifest] if missing else [manifest, part])
     assert len(progress) == result["part_count"]
     metadata = json.loads(drive["objects"][manifest]["content"])
-    assert all(item["location"] == "gdrive://" + item["provider_id"] for item in metadata["parts"])
-    restored = b"".join(drive["objects"][drive["folder"] + "/" + item["name"]]["content"] for item in metadata["parts"])
-    assert restored == original
+    assert all(set(item) == {"name", "size_bytes", "checksum"} for item in metadata["parts"])
+    assert all(item["location"] == "gdrive://" + item["provider_id"] for item in result["artifacts"])
+    download = tmp_path / "download"
+    download.mkdir()
+    manifest_path = download / (drive["archive"].name + ".parts.json")
+    manifest_path.write_bytes(drive["objects"][manifest]["content"])
+    for item in metadata["parts"]:
+        (download / item["name"]).write_bytes(drive["objects"][drive["folder"] + "/" + item["name"]]["content"])
+    restored_dir = tmp_path / "restored"
+    restored_dir.mkdir()
+    destination = restored_dir / drive["archive"].name
+    script = Path(__file__).resolve().parents[3] / "scripts/recovery-bootstrap.py"
+    assembled = subprocess.run(
+        [sys.executable, str(script), "--assemble-parts", str(manifest_path), "--output-file", str(destination)],
+        capture_output=True, text=True, check=False,
+    )
+    assert assembled.returncode == 0, assembled.stderr
+    assert destination.read_bytes() == original
+    assert "sha256:" + hashlib.sha256(destination.read_bytes()).hexdigest() == metadata["checksum"]
+    assert drive["archive"].read_bytes() == original
 
 
 def test_failed_multipart_upload_or_hash_never_publishes_completion(drive, monkeypatch):
@@ -353,12 +408,13 @@ def test_failed_multipart_upload_or_hash_never_publishes_completion(drive, monke
 
     monkeypatch.setattr(offsite, "PART_SIZE_BYTES", 8)
     drive["fail_upload"] = ".part000003"
-    assert replicate(drive)["status"] == "failed"
+    with pytest.raises(RuntimeError):
+        replicate_legacy_parts(drive)
     assert not any(path.endswith(".parts.json") for path in drive["objects"])
     drive["fail_upload"] = None
     drive["commands"].clear()
-    result = replicate(drive, retry=True)
-    assert result["status"] == "verified"
+    result = replicate_legacy_parts(drive, retry=True)
+    assert result["layout"] == "parts-v1"
     assert not any(path.endswith((".part000001", ".part000002")) for path in uploads(drive))
 
 
@@ -366,13 +422,14 @@ def test_failed_multipart_repair_withdrawal_preserves_part(drive, monkeypatch):
     from app.tasks import backup_native_offsite as offsite
 
     monkeypatch.setattr(offsite, "PART_SIZE_BYTES", 8)
-    assert replicate(drive)["status"] == "verified"
+    assert replicate_legacy_parts(drive)["layout"] == "parts-v1"
     part = drive["folder"] + "/" + drive["archive"].name + ".part000002"
     drive["objects"][part]["content"] = b"corrupt"
     before = dict(drive["objects"])
     drive["fail_remove"] = ".parts.json"
     drive["commands"].clear()
-    assert replicate(drive, retry=True)["status"] == "failed"
+    with pytest.raises(RuntimeError):
+        replicate_legacy_parts(drive, retry=True)
     assert drive["objects"] == before
     assert not uploads(drive)
 
