@@ -24,15 +24,14 @@ run_sync = _load_symbol("codex_sync_runner", "run_sync")
 resolve_current_transcript = _load_symbol("codex_sync_transcripts", "resolve_current_transcript")
 
 DEFAULT_API = os.environ.get("AGENT_HUB_API", "http://localhost:8003/api")
-LOG_PATH = Path.home() / ".codex" / "session-integrations" / "codex-session-sync.log"
 _SOURCE_PATH = str(Path(__file__))
 
 
 def log(message: str) -> None:
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    """Use the caller's streams so systemd applies the host journal policy."""
     timestamp = datetime.now(UTC).isoformat()
-    with LOG_PATH.open("a", encoding="utf-8") as handle:
-        handle.write(f"[{timestamp}] {message}\n")
+    stream = sys.stderr if message.startswith(("[WARN]", "[ERROR]")) else sys.stdout
+    print(f"[{timestamp}] {message}", file=stream, flush=True)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -72,7 +71,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help="Write success entries to the sync log",
+        help="Show per-session success entries in addition to the sync summary",
     )
     return parser.parse_args(argv)
 
@@ -80,11 +79,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     binding_mode = args.bind_session is not None
+    synced = 0
+    warnings = 0
 
     def emit(message: str) -> None:
+        nonlocal synced, warnings
+        if message.startswith("[INFO] Synced session="):
+            synced += 1
+            if not args.verbose:
+                return
+        if message.startswith("[WARN]"):
+            warnings += 1
         log(message)
-        if binding_mode and message.startswith("[WARN]"):
-            print(message, file=sys.stderr)
 
     binding_values = (args.bind_session, args.bind_project, args.project_root)
     if any(value is not None for value in binding_values) and not all(
@@ -111,13 +117,20 @@ def main(argv: list[str]) -> int:
         emit("[WARN] Missing SUMMITFLOW_CLIENT_ID; skipping Codex sync")
         return 2 if binding_mode else 0
 
-    return run_sync(
-        args,
+    # The runner's verbose flag only emits successful sync events. Collect those
+    # events for a compact summary without changing direct CLI verbosity.
+    sync_args = argparse.Namespace(**vars(args))
+    sync_args.verbose = True
+    exit_code = run_sync(
+        sync_args,
         api_url=DEFAULT_API,
         client_id=client_id,
         source_path=_SOURCE_PATH,
         log_fn=emit,
     )
+    level = "INFO" if exit_code == 0 else "ERROR"
+    log(f"[{level}] Codex sync completed status={exit_code} synced={synced} warnings={warnings}")
+    return exit_code
 
 
 if __name__ == "__main__":

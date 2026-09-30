@@ -137,7 +137,6 @@ def test_binding_native_validation_failure_never_loads_credentials_or_mutates(mo
     monkeypatch.setattr(module, "resolve_current_transcript", rejected)
     monkeypatch.setattr(module, "load_env_credentials", lambda: calls.append("credentials"))
     monkeypatch.setattr(module, "run_sync", lambda *_, **__: calls.append("mutation"))
-    monkeypatch.setattr(module, "log", lambda _: None)
     assert module.main(["--bind-session", "unrelated", "--bind-project", "neri", "--project-root", "/srv/workspaces/projects/neri"]) == 2
     assert calls == []
     assert "contradictory native provenance" in capsys.readouterr().err

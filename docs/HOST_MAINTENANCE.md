@@ -65,6 +65,30 @@ guardian's JSON status, but native maintenance never consumes SummitFlow.
 
 ## Operator commands
 
+Codex session sync writes one status summary per scan to stdout, and warnings
+and errors to stderr. `synced` counts successful session operations (including
+heartbeats); `warnings` counts warnings emitted during the scan. The periodic
+user service sends both streams to the journal without per-session verbose
+output. Direct CLI calls can add `--verbose` for per-session success details.
+The existing host journal policy (`20-storage-guardrails.conf`) limits journals
+to 500 MB, keeps 5 GB free, and retains entries for at most 14 days; Codex sync
+adds no separate retention policy, daemon, or scheduler.
+
+The legacy `~/.codex/session-integrations/codex-session-sync.log` is preserved
+in place and is no longer appended to. Keep it available for diagnostic recovery;
+this change does not rotate or delete existing history. This auxiliary unit is
+outside the project's declared managed service set, so a managed project rebuild
+alone does not update it. Owner-authorized adoption must render the service
+template's `__SUMMITFLOW_ROOT__` to the checkout root in the installed user unit
+and reload the user systemd manager. The next timer tick uses the new arguments
+without restarting the timer. The checkout-backed script uses journal-compatible
+streams immediately; until template adoption, the installed service still
+requests per-session output.
+
+```bash
+journalctl --user -u codex-session-sync.service --since '10 days ago'
+```
+
 ```bash
 sudo systemctl start summitflow-host-guardian.service
 sudo systemctl start summitflow-host-maintenance.service

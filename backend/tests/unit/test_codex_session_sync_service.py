@@ -7,4 +7,7 @@ def test_periodic_service_closes_inactive_sessions() -> None:
         encoding="utf-8"
     )
 
-    assert "--scan --close-inactive --verbose" in service
+    assert "--scan --close-inactive" in service
+    assert "--verbose" not in service
+    assert "StandardOutput=journal" in service
+    assert "StandardError=journal" in service
