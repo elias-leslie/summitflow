@@ -1,10 +1,11 @@
 # Backup optimization rollout and inventory
 
 Native encrypted age archives remain the production default. Restic is an
-explicit pilot until qualification and measured observation pass. Retain legacy
+explicit pilot until recovery coverage and measured incremental operation pass. Retain legacy
 archive readers, retained ciphertext and keys. Preserve the existing Veeam
-seven-point image policy; Veeam's role in a future recovery design needs review
-before any policy change.
+seven-point image policy. Veeam remains the full-system recovery path; these
+backups provide portable source, configuration and data recovery on the same or
+a new system.
 
 ## Repository and qualification gates
 
@@ -22,21 +23,29 @@ The rollout must retain these distinct gates:
 2. An operator provisions dedicated Drive OAuth and a bounded remote, verifies
    provider behavior, and saves the offsite password/bootstrap references in
    separate offline custody. These credentials remain pending until that occurs.
-3. A fresh-OS recovery succeeds from Drive alone, with no local repository or
-   surviving SummitFlow database/API, and recovers essential sources/state with
-   the agreed critical functions validated within four hours. File extraction
-   alone does not pass. Use the [offline repository procedure](local-first-recovery.md#repository-payload-recovery).
+3. Seed every enabled source into both repositories. On a fresh VM, recover
+   project/Git and configuration payloads from Drive alone without the local
+   repository or surviving SummitFlow database/API, and actually load the
+   PostgreSQL and Redis data. File extraction alone does not pass. Use the
+   [offline repository procedure](local-first-recovery.md#repository-payload-recovery).
 4. After the cold-recovery gate, separately qualify offsite retention/prune and
    authorize its bounded policy. This can precede default cutover so maintenance
    traffic is included in observation. Prune qualification is not cutover.
-5. Observe at least seven post-seed days with every enabled source's daily
-   offsite coverage, daily transfer/structure checks, deterministic monthly
-   payload coverage over 30 successful runs, and weekly critical recovery tests.
-   Include metadata operations, payload scrub reads, critical restore downloads,
-   retention and prune in actual total backup WAN bytes, both upload and download.
-6. Switch the default only after that total averages at most 17.9 GiB/day,
-   at least 50% below the audited 35.8 GiB/day baseline, and all recovery/coverage
-   gates pass. Keep failed or interrupted runs and their traffic in the evidence.
+5. Measure a complete normal post-seed incremental cycle, including all enabled
+   sources, transfer/structure checks and due maintenance. Include metadata,
+   payload scrub reads, critical restore downloads, retention and prune in actual
+   total backup traffic, both upload and download; account for the cadence of
+   weekly restores and monthly rotating payload checks when judging daily cost.
+6. Switch only after recovery/coverage gates pass and measured operation shows
+   a substantial reduction against the audited 35.8 GiB/day baseline (17.9
+   GiB/day remains the efficiency target). Keep failed or interrupted attempts
+   and their traffic in the evidence. Disable the temporary pilot after cutover.
+
+The owner approved this lean rollout on 2026-09-30. A full fresh-OS application
+rebuild/four-hour deadline and mandatory seven-day parallel pilot are superseded,
+not claimed achieved. The fresh VM is a one-off restore test, not new permanent
+infrastructure. Legacy backups, keys, retention protections and the no-purge
+rule remain intact.
 
 `new_object_bytes` measures a repository inventory delta. It is not network
 traffic and cannot qualify the reduction. Record actual transferred bytes in
@@ -44,6 +53,86 @@ both directions across every backup operation, including rclone/HTTP metadata
 and maintenance. Missing traffic measurement leaves the cutover gate open.
 Record the baseline scope, observation interval and attribution method so
 unrelated host traffic is not silently compared with backup-only traffic.
+
+## Opt-in daily pilot and physical measurement
+
+The existing hourly backup workflow can run a separate daily UTC Restic pilot.
+Seed traffic is excluded from observation. Before capture, the runner checks
+existing verified offsite Restic coverage for every enabled source/backend;
+missing coverage marks the whole attempt `seed=true` with `missing_seed_sources`.
+This includes the first all-source expansion and newly enabled sources. Only a
+later complete run after initial coverage can become a post-seed candidate. The
+canonical worker Settings accept these environment variables through the normal
+managed service configuration (this document does not enable them):
+
+```text
+BACKUP_RESTIC_PILOT_ENABLED=true
+BACKUP_RESTIC_PILOT_BACKEND_ID=<explicit enabled nondefault Restic backend ID>
+BACKUP_RESTIC_PILOT_DAILY_UTC=02:00
+BACKUP_RESTIC_PILOT_INTERFACE=enp8s0
+```
+
+The first existing hourly pass after the selected UTC time captures every
+enabled source with that explicit backend, irrespective of its native frequency.
+Native `last_run`/`next_run` and the production default stay intact. The pilot
+attempts each UTC date once; overlapping invocations skip, and an interrupted
+attempt is recorded as incomplete on restart. A same-day retry cannot turn that
+incomplete date into qualified coverage. Changing the enabled source set during
+a run, or an envelope crossing the UTC date, invalidates its daily coverage result
+while preserving measured bytes. Pilot maintenance follows the
+existing `restic_offsite_prune_qualified` policy: retention/prune remain previews
+until that flag is separately authorized after cold recovery. The pilot never
+sets or promotes the flag, so scheduling cannot enable destructive operations.
+
+The synchronous envelope starts before capture/copy and ends after all source
+outcomes and maintenance. A remaining pending offsite copy gets one synchronous
+retry through the existing source lease, and unresolved outcomes fail the day.
+A successful retry can complete the day when every source is eventually verified;
+failed attempts and their traffic remain in that day's evidence and byte total.
+Daily checks, rotating payload reads, weekly
+critical restores, retention/prune previews and their child process traffic are
+inside the envelope. The selected backend is excluded from ordinary hourly
+repository maintenance so those operations cannot escape the envelope through
+that scheduler path. Other backends retain their normal maintenance behavior.
+
+Raw `enp8s0` RX and TX counters are sampled before/after operations and every five
+seconds while the envelope is active. The journal retains raw first/latest and
+operation-boundary counters, sample count and accumulated continuity failures;
+periodic samples validate the previous interval without retaining unbounded
+sample history. Evidence records UTC and monotonic times,
+boot ID, physical device path, interface index/link/MAC and route-table identity.
+The interface must be physical and the sole IPv4 default route; an alternate
+IPv6 default route is rejected. Missing counters, observed resets, route/device
+changes or invalid intervals fail measurement, without substituting zero.
+Sampling cannot establish that no transient route change/reset occurred between
+samples. This is a **conservative HOST upper bound**, including unrelated and
+LAN traffic, not exact backup WAN attribution or repository-object accounting.
+
+The existing private `restic-state/pilot.json` journal stores the active/last
+daily attempt and bounded raw samples; `maintenance_runs` workflow `restic_daily_pilot`
+stores starts, source checkpoints and final/incomplete evidence. Journal and
+history failures cannot produce a successful result. No new daemon, telemetry
+service, schema or repository identity field is introduced.
+
+This scheduled envelope alone does not establish complete traffic attribution.
+Manual backups, `st backup all --backend`, offsite retries, repository checks and
+restores outside it must be suspended during observation or separately audited
+and measured. An unaudited/outside operation invalidates that day's qualification;
+the runner explicitly records `outside_operations_audited=false` and never
+automatically qualifies cutover. Review operation/task/backup history from the
+post-seed boundary, retain failed/incomplete intervals and their measured bytes,
+and require every enabled source's verified point in the normal incremental
+cycle. A complete audited post-seed cycle can support the owner-approved lean
+traffic gate, alongside independent recovery and maintenance evidence. Include
+failed-attempt traffic; do not select a lower-traffic subset or omit failures.
+Preview traffic does not establish the cost of destructive prune; qualification
+must measure the separately authorized policy in the same envelope before
+default cutover.
+
+`st backup all --backend <ID>` forwards the explicit backend to each enabled
+source's existing queued API. The default invocation is unchanged. Its `QUEUED`
+output means tasks were submitted, not that offsite coverage or physical
+measurement completed; it does not create a scheduled daily pilot evidence row.
 
 ## Owner-only Drive authorization
 

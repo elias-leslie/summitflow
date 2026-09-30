@@ -10,6 +10,7 @@ runner = CliRunner()
 class SourceAPI:
     def __init__(self) -> None:
         self.created: list[str] = []
+        self.backends: list[str | None] = []
 
     def list_sources(self) -> list[dict[str, object]]:
         return [
@@ -23,9 +24,11 @@ class SourceAPI:
         *,
         note: str | None = None,
         keep_local: bool = False,
+        storage_backend_id: str | None = None,
     ) -> dict[str, str]:
         del note, keep_local
         self.created.append(source_id)
+        self.backends.append(storage_backend_id)
         return {"task_id": f"task-{source_id}"}
 
 
@@ -43,6 +46,31 @@ def test_backup_all_queues_only_enabled_sources(monkeypatch) -> None:
     assert "QUEUED enabled-project|task-enabled-project" in result.output
     assert "retired-project" not in result.output
     assert "BACKUP_ALL queued:1" in result.output
+    assert source_api.backends == [None]
+
+
+def test_backup_all_explicit_backend_is_forwarded(monkeypatch) -> None:
+    from cli.commands import backup
+    from cli.main import app
+
+    source_api = SourceAPI()
+    monkeypatch.setattr(backup, "_get_source_api", lambda: source_api)
+    result = runner.invoke(app, ["backup", "all", "--backend", "stb-pilot"])
+    assert result.exit_code == 0, result.output
+    assert source_api.created == ["enabled-project"]
+    assert source_api.backends == ["stb-pilot"]
+    assert "BACKUP_ALL queued:1" in result.output
+
+
+def test_backup_all_rejects_unknown_legacy_passthrough(monkeypatch) -> None:
+    from cli.commands import backup
+    from cli.main import app
+
+    source_api = SourceAPI()
+    monkeypatch.setattr(backup, "_get_source_api", lambda: source_api)
+    result = runner.invoke(app, ["backup", "all", "--legacy"])
+    assert result.exit_code == 2
+    assert not source_api.created
 
 
 def test_explicit_create_remains_available_for_disabled_source(monkeypatch) -> None:

@@ -182,14 +182,28 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
             result["drill"] = {"status": "error"}
 
         try:
-            from .backup_repository_runtime import run_repository_maintenance
+            from .backup_repository_runtime import (
+                repository_maintenance_failed,
+                run_repository_maintenance,
+            )
 
             repositories = run_repository_maintenance()
             if repositories:
                 result["repository_maintenance"] = repositories
+                if repository_maintenance_failed(repositories):
+                    result["status"] = "partial"
         except Exception:
             logger.exception("scheduled_repository_maintenance_failed")
             result["repository_maintenance"] = {"status": "error"}
+            result["status"] = "partial"
+
+        from .backup_restic_pilot import run_daily_restic_pilot
+
+        pilot = run_daily_restic_pilot(on_progress=on_progress)
+        if pilot.get("reason") != "pilot-disabled":
+            result["restic_daily_pilot"] = pilot
+            if pilot.get("status") in {"failed", "incomplete"} or pilot.get("daily_status") in {"failed", "incomplete"}:
+                result["status"] = "partial"
 
         maintenance_store.record_maintenance_run(
             "scheduled_backups",

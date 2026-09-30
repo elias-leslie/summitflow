@@ -21,7 +21,7 @@ from ..output import handle_api_error, output_error, output_json
 from .backup_formatters import format_size, output_backup_queue, output_source, output_sources
 
 
-def backup_all_command(source_api) -> None:
+def backup_all_command(source_api, *, storage_backend: str | None = None) -> None:
     """Run all-source backup orchestration through the canonical st surface."""
     try:
         queued = 0
@@ -31,7 +31,8 @@ def backup_all_command(source_api) -> None:
             source_id = source.get("id")
             if not source_id:
                 continue
-            result = source_api.create_source_backup(str(source_id))
+            options = {"storage_backend_id": storage_backend} if storage_backend is not None else {}
+            result = source_api.create_source_backup(str(source_id), **options)
             queued += 1
             print(f"QUEUED {source_id}|{result.get('task_id') or result.get('message', 'queued')}")
         print(f"BACKUP_ALL queued:{queued}")

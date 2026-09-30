@@ -21,10 +21,11 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ..services.backup_keys import backup_key_directory
 from ..storage import backups as backup_store
+from ..utils.shared_paths import get_host_config_root
 from .backup_activity import check_backup_cancelled, record_local_archive
 from .backup_native_archive import (
     _gzip_payload_file,
@@ -186,7 +187,7 @@ def run_repository_backup(
             previous = state["sources"].get(source_id, {})
             reuse = None if infrastructure else _previous_bundle(adapter, previous, staging)
             if infrastructure:
-                payload = prepare_infrastructure_payload(Path(project_dir), staging)
+                payload = prepare_infrastructure_payload(Path(project_dir), staging, host_config_root=get_host_config_root())
             else:
                 payload = prepare_project_payload(
                     Path(project_dir), Path(project_dir).name, staging, env,
@@ -344,7 +345,7 @@ def repository_status(env: dict[str, str]) -> dict[str, Any]:
             "maintenance": state.get("maintenance", {}),
             "prune_qualified": config.offsite_prune_qualified,
             "cutover_qualified": False,
-            "cutover_status": "requires-cold-recovery-and-seven-day-measured-qualification",
+            "cutover_status": "requires-owner-approved-recovery-coverage-and-measured-qualification",
             "local_repository_physical_bytes": sum(path.stat().st_size for path in config.local_repository.rglob("*") if path.is_file() and not path.is_symlink()),
             "new_object_bytes_are_network_traffic": False,
         }
@@ -427,6 +428,7 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True) -> dict[st
             results[label] = {"monthly": previous.get("monthly_result"), "retention": selection, "prune": prune}
         if not preview and pair_healthy:
             results["catalogue_rows_deleted"] = _reconcile_catalogue(adapter, env)
+        results["status"] = "failed" if not pair_healthy or repository_maintenance_failed(results) else "completed"
         maintenance["last_run_at"] = now.isoformat()
         maintenance["result"] = results
         _save_json(directory / "state.json", state)
@@ -484,8 +486,19 @@ def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any]) -
     return {"status": "verified", "verified_at": maintenance["critical_restore_at"], "sources": evidence, "remote_only": True}
 
 
+def repository_maintenance_failed(value: object) -> bool:
+    """Retain truth across nested check, restore, retention and prune results."""
+    if not isinstance(value, Mapping):
+        return False
+    evidence = cast("Mapping[str, Any]", value)
+    if evidence.get("status") in {"failed", "error", "pending"} or evidence.get("verified") is False:
+        return True
+    return any(repository_maintenance_failed(child) for child in evidence.values())
+
+
 def run_repository_maintenance() -> dict[str, Any]:
     """Use the existing scheduler, not a new daemon or per-project schedule."""
+    from .backup_restic_pilot import pilot_reserves_backend
     from .backup_utils import storage_config_env
 
     results: dict[str, Any] = {}
@@ -493,8 +506,10 @@ def run_repository_maintenance() -> dict[str, Any]:
         config = backend.get("config") or {}
         if config.get("engine") != "restic":
             continue
-        env = storage_config_env({**config, "__backend_type": backend["backend_type"], "__backend_id": backend["id"]})
+        if pilot_reserves_backend(str(backend["id"])):
+            continue  # Daily runner owns *all* pilot maintenance in its measured window.
         try:
+            env = storage_config_env({**config, "__backend_type": backend["backend_type"], "__backend_id": backend["id"]})
             results[str(backend["id"])] = maintain_repository(env, dry_run=env.get("RESTIC_OFFSITE_PRUNE_QUALIFIED") != "true")
         except Exception as exc:
             results[str(backend["id"])] = {"status": "failed", "error": str(exc)}

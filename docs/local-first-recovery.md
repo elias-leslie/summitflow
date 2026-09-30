@@ -183,8 +183,8 @@ password separately from the Drive repository, and preserve the independent
 local repository password and native age identity. Put file references on the
 command line, never their contents. The script does not read shell env files or
 create OAuth credentials. GOA/GVfs desktop sign-in is not its authentication
-path. Dedicated Drive OAuth is pending until an operator provisions and proves
-the recorded bounded remote.
+path. Dedicated Drive OAuth must be provisioned and its recorded bounded remote
+tested before recovery; the desktop Drive mount is not a substitute.
 
 ### Select a recovery point from Drive
 
@@ -271,7 +271,7 @@ refs and HEAD with standard Git, installs the saved index, and runs `git fsck
 changes and untracked WIP. Inspect `git status --short --branch` before deciding
 what to deploy. Nothing in this step resets, cleans or commits recovered work.
 
-Restore canonical `codex-config`, `claude-config`, `claude-root-config` and
+Restore canonical `codex-config`, `claude-config`, `claude-user-config` and
 `agent-skills` sources before rebuilding registered links. An explicit
 `.claude.json` source restores as that named regular file inside its payload.
 External source links are versioned `mapped_links` metadata, not host links in
@@ -296,6 +296,13 @@ already used that path, the generated dump is
 manifests. They carry recovery data, not permission to load it. Require the
 expected component statuses and preserve missing/error evidence.
 
+The infrastructure capture must include the stable host's Compose environment
+and Hatchet configuration, not just files in an immutable application release.
+A verified encrypted snapshot with missing required configuration is not a
+successful infrastructure recovery point. To validate SummitFlow functions,
+also select a verified SummitFlow source snapshot; configuration snapshots alone
+cannot bootstrap the application on a fresh OS.
+
 Use the existing [hard-loss runbook](disaster-recovery.md) for reviewed fresh
 database volumes, Redis recovery, credential placement and managed rebuilds.
 Its native archive examples use `.sql.gz`; make a private gzip working copy of
@@ -305,9 +312,10 @@ accounts, place host secrets or activate recovered state.
 
 Record selected IDs and sources, repository check results, restored byte counts,
 Git/ref/index checks, conversation/WIP/original-asset coverage, infrastructure
-component results, missing prerequisites, and elapsed time. The essential
-Drive-only recovery must complete on a fresh OS within four hours, including
-validation of the agreed critical functions and state. File extraction alone
-does not prove those functions recover. Local-only
-or already-configured-host recovery does not satisfy that gate. Keep production
-activation and plaintext cleanup as separately reviewed operations.
+component results, missing prerequisites, and elapsed time. Under the
+owner-approved lean rollout (2026-09-30), validate project/Git and configuration
+recovery plus actual PostgreSQL and Redis loads on the fresh VM. File extraction
+alone, local-only recovery or an already-configured host does not satisfy that
+gate. Veeam remains the full-system recovery path; a full application rebuild
+within four hours is not required for this rollout. Keep production activation
+and plaintext cleanup as separately reviewed operations.

@@ -518,10 +518,13 @@ def list_archives() -> None:
 
 
 @app.command("all", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-def backup_all(ctx: typer.Context) -> None:
+def backup_all(
+    ctx: typer.Context,
+    storage_backend: Annotated[str | None, typer.Option("--backend", help="Explicit storage backend ID; queues backups, does not complete pilot measurement")] = None,
+) -> None:
     """Run all-source backup orchestration through the canonical st surface."""
     reject_backup_all_args(ctx.args)
-    backup_all_command(_get_source_api())
+    backup_all_command(_get_source_api(), storage_backend=storage_backend)
 
 
 @app.command("schedule")

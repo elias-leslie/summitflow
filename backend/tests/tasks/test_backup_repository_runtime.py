@@ -69,6 +69,28 @@ def test_recorded_backend_required_no_current_default_fallback() -> None:
         runtime._backup_environment({"source_id": "fixture", "verification_json": {"format": "restic-v1"}})
 
 
+def test_infrastructure_capture_uses_stable_host_config_root(repository_env, tmp_path) -> None:
+    release = tmp_path / "immutable-release"
+    release.mkdir()
+    host = tmp_path / "stable-host"
+    (host / "docker/compose/hatchet-config").mkdir(parents=True)
+    (host / "docker/compose/.env").write_text("SYNTHETIC_CONFIG=fixture\n")
+    snapshot = tmp_path / "fixture-payload"
+    snapshot.mkdir(mode=0o700)
+    payload = {"snapshot_dir": snapshot, "total_files": 1, "db_bytes": 1, "recovery": {}, "db_dump_name": "pgdumpall.sql"}
+    saved = {"snapshot_id": "a" * 64, "repository_id": "b" * 64, "location": "restic-v1:fixture", "verification": {"verified": True, "capture": {}}}
+    with (
+        patch.object(runtime, "get_host_config_root", return_value=host),
+        patch.object(runtime, "prepare_infrastructure_payload", return_value=payload) as prepare,
+        patch.object(ResticAdapter, "save_payload", return_value=saved),
+        patch.object(runtime, "record_local_archive"),
+    ):
+        runtime.run_repository_backup(project_dir=str(release), source_id="infrastructure", env=repository_env, local_only=True, infrastructure=True)
+    assert prepare.call_args.args[0] == release
+    assert prepare.call_args.kwargs["host_config_root"] == host
+    assert not (release / "docker/compose/.env").exists()
+
+
 def test_initialization_never_overwrites_existing_password(repository_env: dict[str, str]) -> None:
     password = Path(repository_env["RESTIC_LOCAL_PASSWORD_FILE"])
     before = password.stat()
